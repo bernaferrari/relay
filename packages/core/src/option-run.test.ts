@@ -219,10 +219,7 @@ test("a mapped suite cold-launches once then warms every generated setup", () =>
     relaunch: false,
   });
   const source = graph[setup.id]?.steps[1];
-  assert.deepEqual(source?.kind === "expect-screen" ? source.recovery : undefined, {
-    strategy: "back",
-    maxAttempts: 8,
-  });
+  assert.equal(source?.kind === "expect-screen" ? source.recovery : undefined, undefined);
 });
 
 test("a list modifier restores its saved row through the recorded sandwich", () => {

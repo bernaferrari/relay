@@ -15,6 +15,12 @@ import {
   snapshot,
 } from "./device.js";
 import { captureScreenshot } from "./workspace.js";
+import { attachScreenshotPayload } from "./workspace-capture.js";
+import { now } from "./events.js";
+import {
+  awaitStableDestinationEvidence,
+  recordDestinationEvidenceTiming,
+} from "./destination-evidence.js";
 import {
   extractTourStops,
   onTourOrigin,
@@ -613,6 +619,7 @@ export async function runTourStep(
   step: Extract<RecipeStep, { kind: "tour" }>,
   log: (line: string) => void,
   job?: TestJob,
+  dependencies: { captureScreenshot?: typeof captureScreenshot; clock?: () => number } = {},
 ): Promise<void> {
   const rightToLeft = isRightToLeftJob(job);
   // A setup Flow reaches this exact root through verified expect-screen steps.
@@ -779,29 +786,68 @@ export async function runTourStep(
     );
   }
   log(`tour: ${stops.length} stop(s)`);
+  const captureDestinationScreenshot = dependencies.captureScreenshot ?? captureScreenshot;
   for (const [index, stop] of stops.entries()) {
     const located = mappedRowsAligned
       ? await seekSemanticTourRow(device, step, stop, executionSurface, log)
       : { surface: executionSurface, stop };
+    const recordedStop = step.fallbackStops?.find(
+      (candidate) =>
+        (candidate.identifier && candidate.identifier === stop.identifier) ||
+        candidate.label.trim().toLocaleLowerCase() === stop.label.trim().toLocaleLowerCase(),
+    );
     const liveStop = {
       ...located.stop,
-      ...(stop.capture === undefined ? {} : { capture: stop.capture }),
-      ...(stop.optional === undefined ? {} : { optional: stop.optional }),
+      ...((recordedStop?.capture ?? stop.capture) === undefined
+        ? {}
+        : { capture: recordedStop?.capture ?? stop.capture }),
+      ...((recordedStop?.optional ?? stop.optional) === undefined
+        ? {}
+        : { optional: recordedStop?.optional ?? stop.optional }),
+      ...((recordedStop?.evidenceSurface ?? stop.evidenceSurface) === undefined
+        ? {}
+        : { evidenceSurface: recordedStop?.evidenceSurface ?? stop.evidenceSurface }),
     };
     executionSurface = located.surface;
     log(`tour → ${liveStop.label}`);
+    const navigationStartedAt = dependencies.clock?.() ?? now();
     await pressNamedControl(device, {
       ...(liveStop.identifier ? { identifier: liveStop.identifier } : {}),
       label: liveStop.label,
       ...(liveStop.point ? { point: liveStop.point } : {}),
     });
-    await sleep(350, device);
+    const stable = await awaitStableDestinationEvidence({
+      surface: liveStop.evidenceSurface ?? "ordinary",
+      navigationStartedAt,
+      observe: async (includeRaster) => {
+        const [nodes, screenshot] = await Promise.all([
+          snapshot(device),
+          includeRaster
+            ? captureDestinationScreenshot({
+                device,
+                caption: `Stabilize tour:${liveStop.label}`,
+                ephemeral: true,
+                includeScreenMatch: false,
+              })
+            : Promise.resolve(undefined),
+        ]);
+        return { nodes, ...(screenshot ? { screenshot } : {}) };
+      },
+      wait: (durationMs) => sleep(durationMs, device),
+      ...(dependencies.clock ? { clock: dependencies.clock } : {}),
+    });
+    recordDestinationEvidenceTiming(job?.artifacts, stable.timing, { label: liveStop.label });
     if (step.screenshot !== false && liveStop.capture !== false) {
-      await captureScreenshot({
-        jobId: job?.id,
-        caption: `tour:${liveStop.label}`,
-        device,
-      });
+      if (stable.screenshot) {
+        await attachScreenshotPayload(stable.screenshot, job?.id, `tour:${liveStop.label}`);
+      } else {
+        await captureDestinationScreenshot({
+          jobId: job?.id,
+          caption: `tour:${liveStop.label}`,
+          device,
+          semanticNodes: stable.nodes,
+        });
+      }
     }
     if (index < stops.length - 1 || step.returnAfterLast !== false) {
       await returnToTourOrigin(

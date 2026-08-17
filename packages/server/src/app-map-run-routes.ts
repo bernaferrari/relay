@@ -148,7 +148,9 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
 
     let compiled;
     try {
-      compiled = compileAppMapTest(map, test);
+      compiled = compileAppMapTest(map, test, {
+        forceRecaptureSurfaceScreenIds: body.surfaceCapture?.forceRecaptureScreenIds,
+      });
     } catch (error) {
       throw new HttpError(409, error instanceof Error ? error.message : String(error));
     }

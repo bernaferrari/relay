@@ -11,7 +11,6 @@ import {
   pressText,
   pressResolvedControl,
   androidNamedPressCompletedHandoff,
-  resolveNamedControl,
   resolveSnapshotTargetPoint,
   selectedPlatform,
   sleep,
@@ -20,6 +19,7 @@ import {
   snapshot,
   type SnapshotNode,
 } from "./device.js";
+import { resolveNamedControlOutcome } from "./device-target-resolution.js";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { now } from "./events.js";
 import { describeTarget, type RecipeStep, type StepTarget } from "./recipes.js";
@@ -419,6 +419,7 @@ async function tapTarget(
   const namedTarget = {
     ...(target.identifier ? { identifier: target.identifier } : {}),
     ...(target.label ? { label: target.label } : {}),
+    ...(target.role ? { role: target.role } : {}),
     ...(target.text ? { text: target.text } : {}),
     ...(literalPoint ? { point: literalPoint } : {}),
     ...(expectedApp ? { expectedApp } : {}),
@@ -426,8 +427,25 @@ async function tapTarget(
   // An immediately preceding expect-screen already paid for and verified this
   // exact tree. Reuse it until the first mutation; fallback strategies still
   // take a fresh snapshot when the cached tree cannot resolve the target.
-  const nodes = verifiedNodes?.length ? verifiedNodes : await snapshot(device);
-  const named = resolveNamedControl(nodes, namedTarget);
+  let nodes = verifiedNodes?.length ? verifiedNodes : await snapshot(device);
+  let namedOutcome = resolveNamedControlOutcome(nodes, namedTarget);
+  let named = namedOutcome.status === "resolved" ? namedOutcome.resolution : undefined;
+  if (
+    !named &&
+    selectedPlatform() === "android" &&
+    (target.identifier || target.label || target.text)
+  ) {
+    // Compose can publish the destination shell before its actionable rows.
+    // Wait for a few fresh accessibility generations; never convert absence
+    // into an unreviewed coordinate tap.
+    for (let attempt = 0; attempt < 5 && !named; attempt += 1) {
+      await cooperativeCheckpoint();
+      await sleep(250, device);
+      nodes = await snapshot(device);
+      namedOutcome = resolveNamedControlOutcome(nodes, namedTarget);
+      named = namedOutcome.status === "resolved" ? namedOutcome.resolution : undefined;
+    }
+  }
   if (named) {
     try {
       if (verifiedNodes && selectedPlatform() === "android") {
@@ -448,6 +466,24 @@ async function tapTarget(
       bounds: named.bounds,
       point: named.point,
     };
+  }
+  if (
+    selectedPlatform() === "android" &&
+    nodes.length > 0 &&
+    !target.point &&
+    (target.identifier || target.label || target.text)
+  ) {
+    const failure =
+      namedOutcome.status === "resolved"
+        ? { status: "absent", detail: "semantic resolution became stale" }
+        : namedOutcome;
+    const classification =
+      failure.status === "absent"
+        ? "absent from current Android accessibility tree"
+        : `${failure.status} in current Android accessibility tree`;
+    throw new Error(
+      `named target ${classification}: ${failure.detail} (${describeTarget(target)})`,
+    );
   }
   const attempts: { strategy: string; run: () => Promise<void> }[] = [];
   let attemptedPoint: { x: number; y: number } | undefined;
@@ -534,6 +570,7 @@ async function tapRecordedTarget(
     target: StepTarget;
     fallbackTargets?: StepTarget[];
     expectedApp?: string;
+    navigationContract?: Extract<RecipeStep, { kind: "tap" }>["navigationContract"];
     evidence?: Extract<RecipeStep, { kind: "tap" | "type" }>["evidence"];
     region?: NonNullable<RecipeStep["when"]>["region"];
   },
@@ -553,7 +590,7 @@ async function tapRecordedTarget(
       index,
   );
   const configuredTargetCount = 1 + (input.fallbackTargets?.length ?? 0);
-  const failures: string[] = [];
+  const failures: Array<{ target: StepTarget; error: string }> = [];
   for (const [index, candidate] of unique.entries()) {
     try {
       const hit = await tapTarget(
@@ -589,10 +626,34 @@ async function tapRecordedTarget(
             original: input.target,
             replacement: candidate,
             strategy: hit.strategy,
-            reason: failures.join("; "),
+            reason: failures.map((failure) => failure.error).join("; "),
             persisted: false,
           },
         });
+        if (input.navigationContract) {
+          ctx.job?.artifacts.push({
+            kind: "navigation-repair-proposal",
+            capturedAt: now(),
+            data: {
+              status: "pending-review",
+              connectionId: input.navigationContract.connectionId,
+              beforeSelector: input.target,
+              currentSelector: candidate,
+              currentResolution: {
+                strategy: hit.strategy,
+                ...(hit.bounds ? { bounds: hit.bounds } : {}),
+                ...(hit.point ? { point: hit.point } : {}),
+              },
+              attempts: structuredClone(failures),
+              expectedDestination: {
+                screenId: input.navigationContract.expectedScreenId,
+                fingerprint: input.navigationContract.expectedFingerprint,
+                evidenceIds: [...input.navigationContract.evidenceIds],
+              },
+              persisted: false,
+            },
+          });
+        }
         ctx.log(
           `locator: used ${configuredFallback ? "configured" : "recorded"} fallback ${index + 1}/${unique.length} (${hit.strategy})`,
         );
@@ -601,7 +662,7 @@ async function tapRecordedTarget(
     } catch (error) {
       if (isCancel(error)) throw error;
       const message = error instanceof Error ? error.message : String(error);
-      failures.push(message);
+      failures.push({ target: structuredClone(candidate), error: message });
       const attempt = {
         kind: "target-resolution-attempt" as const,
         capturedAt: now(),
@@ -615,7 +676,7 @@ async function tapRecordedTarget(
       ctx.artifacts?.push(attempt);
     }
   }
-  throw new Error(`tap failed: ${failures.at(-1) ?? "no locator candidate matched"}`);
+  throw new Error(`tap failed: ${failures.at(-1)?.error ?? "no locator candidate matched"}`);
 }
 
 async function longPressRecordedTarget(

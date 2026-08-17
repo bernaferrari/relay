@@ -34,7 +34,7 @@ import {
 } from "./recipes.js";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
 import type { RecipeRuntimeState } from "./recipe-runner-context.js";
-import { retryDeferredChecksForJob } from "./session-campaign-retry.js";
+import { finalizeDeferredChecksForJob } from "./session-campaign-finalization.js";
 import { PRIVATE_INPUT, redactPrivateValue } from "./private-inputs.js";
 import { REDACTED } from "./redaction.js";
 import { classifyRunOutcome } from "./outcomes.js";
@@ -672,7 +672,7 @@ async function runRecipeSteps(
       throw err;
     }
   }
-  await retryDeferredChecksForJob(device, job, pushLog, runtime);
+  finalizeDeferredChecksForJob(job, pushLog, runtime);
   setCurrentStep(undefined);
 }
 

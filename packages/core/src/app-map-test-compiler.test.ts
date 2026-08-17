@@ -58,6 +58,21 @@ function fixture(): AppMap {
         createdAt: at,
         updatedAt: at,
       },
+      "restore-cart": {
+        ...scope,
+        id: "restore-cart",
+        name: "Restore cart",
+        parameters: [],
+        actions: [
+          {
+            id: "assert-cart",
+            kind: "assertion",
+            assertion: { kind: "screen", screenId: "cart" },
+          },
+        ],
+        createdAt: at,
+        updatedAt: at,
+      },
     },
     flows: {},
     runs: {},
@@ -359,6 +374,33 @@ test("full-surface bindings compile one executable capture after reaching the de
     destinationRecipe?.steps.slice(-2).map((step) => step.kind),
     ["expect-screen", "capture-surface"],
   );
+
+  const freshRun = compileAppMapTest(current, work, {
+    forceRecaptureSurfaceScreenIds: ["cart"],
+  });
+  const freshCapture = Object.values(freshRun.graph)
+    .flatMap((recipe) => recipe.steps)
+    .find((step) => step.kind === "capture-surface");
+  assert.equal(freshCapture?.kind === "capture-surface" && freshCapture.forceRecapture, true);
+  assert.equal(
+    Object.values(freshRun.plan.recipes)
+      .flatMap((recipe) => recipe.steps)
+      .some((step) => step.kind === "capture-surface" && step.forceRecapture),
+    true,
+  );
+  assert.equal(
+    Object.values(compiled.graph)
+      .flatMap((recipe) => recipe.steps)
+      .some((step) => step.kind === "capture-surface" && step.forceRecapture),
+    false,
+  );
+  assert.throws(
+    () =>
+      compileAppMapTest(current, work, {
+        forceRecaptureSurfaceScreenIds: ["missing-surface"],
+      }),
+    /no full-surface binding for missing-surface/u,
+  );
 });
 
 test("a logical surface is captured once even when a later path returns to it", () => {
@@ -471,10 +513,97 @@ test("instruction branches compile as isolated campaign checks", () => {
   const moduleStep = compiled.root.steps.find(
     (step) => step.kind === "module" && step.check?.id === instruction.id,
   );
-  assert.deepEqual(moduleStep?.check, { id: instruction.id, title: instruction.intent });
+  assert.deepEqual(moduleStep?.check, {
+    id: instruction.id,
+    title: instruction.intent,
+    transitionDependencies: [
+      {
+        connectionId: "open-cart",
+        originScreenId: "home",
+        destination: { kind: "screen", screenId: "cart" },
+      },
+    ],
+  });
 });
 
-test("later instruction checks compile one canonical cold recovery path", () => {
+test("instruction cleanup compiles an auditable always-run routine and terminal state", () => {
+  const map = fixture();
+  const work = scenario();
+  const instruction = work.steps[0]!;
+  assert.equal(instruction.kind, "instruction");
+  if (instruction.kind !== "instruction") {
+    throw new Error("Expected the first scenario step to be an instruction");
+  }
+  work.steps = [
+    {
+      ...instruction,
+      cleanup: {
+        kind: "routine",
+        routineId: "restore-cart",
+        terminalScreenId: "cart",
+        onCancel: "skip",
+      },
+    },
+  ];
+
+  const compiled = compileAppMapTest(map, work);
+  const checkStep = compiled.root.steps.find(
+    (step) => step.kind === "module" && step.check?.id === "navigate",
+  );
+  assert.equal(checkStep?.kind, "module");
+  assert.deepEqual(checkStep.check?.cleanup, {
+    recipeId: "app-map:checkout:routine:restore-cart:r7",
+    terminalScreenId: "cart",
+    onCancel: "skip",
+  });
+  assert.ok(compiled.graph["app-map:checkout:routine:restore-cart:r7"]);
+  assert.equal(
+    compiled.plan.stepProvenance.some(
+      (entry) =>
+        entry.testStepId === "navigate" &&
+        entry.referencedEntityIds.includes("restore-cart") &&
+        entry.referencedEntityIds.includes("cart"),
+    ),
+    true,
+  );
+});
+
+test("nested cleanup cannot hide a cold app close in coverage", () => {
+  const map = fixture();
+  map.routines["kill-app"] = {
+    ...scope,
+    id: "kill-app",
+    name: "Kill app",
+    parameters: [],
+    actions: [{ id: "close", kind: "app", action: "close", app: "ai.x.grok" }],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const work = scenario();
+  const instruction = work.steps[0]!;
+  assert.equal(instruction.kind, "instruction");
+  if (instruction.kind !== "instruction") {
+    throw new Error("Expected the first scenario step to be an instruction");
+  }
+  work.steps = [
+    {
+      ...instruction,
+      cleanup: {
+        kind: "routine",
+        routineId: "kill-app",
+        terminalScreenId: "cart",
+        onCancel: "skip",
+      },
+    },
+  ];
+  assert.throws(
+    () => compileAppMapTest(map, work),
+    (error: unknown) =>
+      error instanceof AppMapTestCompileError && error.code === "cold-coverage-effect",
+  );
+});
+
+test("later instruction checks split warm confirmation from proposed cold recovery", () => {
   const map = fixture();
   const work = scenario();
   const setup = work.steps.find((step) => step.id === "module")!;
@@ -492,12 +621,28 @@ test("later instruction checks compile one canonical cold recovery path", () => 
   assert.ok(secondCheck.check?.recovery);
   const recovery = compiled.graph[secondCheck.check.recovery.recipeId];
   assert.ok(recovery);
-  assert.equal(recovery.steps[0]?.kind, "module");
+  assert.equal(recovery.steps[0]?.kind, "expect-screen");
+  assert.equal(
+    recovery.steps.some((step) => step.kind === "app" && step.action === "open"),
+    false,
+  );
   assert.equal(
     recovery.steps.some((step) => step.kind === "expect-screen" && step.screenId === "home"),
     true,
   );
-  assert.equal(secondCheck.check.recovery.groupId, "checkout-smoke:root:check:navigate-again");
+  assert.equal(secondCheck.check.recovery.groupId, "transition:open-cart");
+  assert.equal(secondCheck.check.recovery.transitionId, "open-cart");
+  assert.equal(secondCheck.check.recovery.mode, "warm-transition");
+  const proposedColdRecovery = compiled.graph[secondCheck.check.recovery.coldRecipeId!];
+  assert.ok(proposedColdRecovery);
+  assert.equal(proposedColdRecovery.steps[0]?.kind, "module");
+  assert.deepEqual(secondCheck.check.transitionDependencies, [
+    {
+      connectionId: "open-cart",
+      originScreenId: "home",
+      destination: { kind: "screen", screenId: "cart" },
+    },
+  ]);
 });
 
 test("scenario capture policy compiles explicit screen evidence", () => {
@@ -567,6 +712,14 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
       { id: "reveal-first", kind: "reveal", target: { label: "First" }, direction: "auto" },
       { id: "tap-first", kind: "tap", target: { label: "First" } },
     ],
+    return: {
+      kind: "back",
+      expectedDestination: {
+        screenId: "cart",
+        identity: structuredClone(map.screens.cart!.identity!),
+        evidenceIds: ["cart-after-first-back"],
+      },
+    },
   };
   map.connections["open-second"] = {
     ...map.connections["open-cart"]!,
@@ -618,7 +771,7 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
   assert.deepEqual(secondPath.steps[0], {
     kind: "key",
     key: "back",
-    id: "relay-recover-back-1",
+    id: "relay-return-open-first",
   });
   assert.equal(
     secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].screenId : undefined,
@@ -629,7 +782,197 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
     undefined,
   );
   assert.equal(
+    secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].id : undefined,
+    "relay-return-proof-open-first",
+  );
+  assert.equal(
     secondPath.steps.some((step) => step.kind === "tap" && step.target.label === "Second"),
+    true,
+  );
+});
+
+test("scenario siblings use a reviewed direct-ancestor Back before per-edge inverses", () => {
+  const map = fixture();
+  map.screens["add-home"] = {
+    ...screen("add-home"),
+    identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+  };
+  map.screens.privacy = {
+    ...screen("privacy"),
+    identity: { schemaVersion: 1, fingerprint: "d".repeat(64) },
+  };
+  map.connections["open-cart"]!.return = {
+    kind: "back",
+    expectedDestination: {
+      screenId: "home",
+      identity: structuredClone(map.screens.home!.identity!),
+      evidenceIds: ["settings-after-widget-back"],
+    },
+  };
+  map.connections["add-home"] = {
+    ...map.connections["open-cart"]!,
+    id: "add-home",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "add-home" },
+    actions: [{ id: "tap-add-home", kind: "tap", target: { label: "Add to Home screen" } }],
+    return: {
+      kind: "back",
+      expectedDestination: {
+        screenId: "cart",
+        identity: structuredClone(map.screens.cart!.identity!),
+        evidenceIds: ["add-home-back-tree"],
+      },
+    },
+  };
+  map.connections.privacy = {
+    ...map.connections["open-cart"]!,
+    id: "privacy",
+    fromScreenId: "home",
+    destination: { kind: "screen", screenId: "privacy" },
+    actions: [{ id: "tap-privacy", kind: "tap", target: { label: "Privacy" } }],
+    return: undefined,
+  };
+  map.connections["return-from-add-home"] = {
+    ...map.connections["open-cart"]!,
+    id: "return-from-add-home",
+    fromScreenId: "add-home",
+    // Android Back intentionally skips the logical Widget preview and lands
+    // directly on Settings. This one proof subsumes both forward edges.
+    destination: { kind: "screen", screenId: "home" },
+    actions: [
+      {
+        id: "back-from-add-home",
+        kind: "steps",
+        steps: [{ id: "press-back-from-add-home", kind: "key", key: "back" }],
+      },
+    ],
+    return: undefined,
+  };
+  const work: AppMapScenarioTest = {
+    ...scope,
+    id: "reviewed-returns",
+    name: "Reviewed returns",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "add-home",
+        kind: "instruction",
+        intent: "Open Add to Home screen",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-cart", "add-home"],
+        },
+      },
+      {
+        id: "privacy",
+        kind: "instruction",
+        intent: "Open Privacy",
+        binding: { status: "resolved", kind: "connections", connectionIds: ["privacy"] },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+
+  const compiled = compileAppMapTest(map, work);
+  const sibling = Object.values(compiled.graph).find(
+    (recipe) => recipe.title === "Checkout · Open Privacy",
+  )!;
+  assert.deepEqual(sibling.steps[0], {
+    kind: "module",
+    id: "relay-return-edge-return-from-add-home",
+    recipeId: `app-map:${map.id}:connection:return-from-add-home:r${map.revision}`,
+  });
+  assert.equal(
+    compiled.graph[
+      `app-map:${map.id}:connection:return-from-add-home:r${map.revision}`
+    ]?.steps.some((step) => step.kind === "key" && step.key === "back"),
+    true,
+  );
+  assert.equal(
+    sibling.steps.some(
+      (step) => step.kind === "expect-screen" && step.id === "relay-return-proof-add-home",
+    ),
+    false,
+  );
+  assert.equal(
+    sibling.steps.some(
+      (step) =>
+        step.id === "relay-return-open-cart" || step.id === "relay-return-required-open-cart",
+    ),
+    false,
+  );
+  assert.equal(
+    sibling.steps.some((step) => step.kind === "tap" && step.target.label === "Privacy"),
+    true,
+  );
+
+  delete map.connections["return-from-add-home"];
+  const embedded = compileAppMapTest(map, work);
+  const embeddedSibling = Object.values(embedded.graph).find(
+    (recipe) => recipe.title === "Checkout · Open Privacy",
+  )!;
+  assert.deepEqual(
+    embeddedSibling.steps.slice(0, 4).map((step) => [step.kind, step.id]),
+    [
+      ["key", "relay-return-add-home"],
+      ["expect-screen", "relay-return-proof-add-home"],
+      ["key", "relay-return-open-cart"],
+      ["expect-screen", "relay-return-proof-open-cart"],
+    ],
+  );
+  assert.equal(
+    embeddedSibling.steps[1]?.kind === "expect-screen"
+      ? embeddedSibling.steps[1].screenId
+      : undefined,
+    "cart",
+  );
+  assert.equal(
+    embeddedSibling.steps[3]?.kind === "expect-screen"
+      ? embeddedSibling.steps[3].screenId
+      : undefined,
+    "home",
+  );
+  assert.equal(
+    embeddedSibling.steps.some(
+      (step) => step.kind === "expect-screen" && step.recovery?.strategy === "back",
+    ),
+    false,
+  );
+  assert.equal(
+    embeddedSibling.steps.some((step) => step.kind === "tap" && step.target.label === "Privacy"),
+    true,
+  );
+
+  delete map.connections["open-cart"]!.return;
+  const missing = compileAppMapTest(map, work);
+  const blockedSibling = Object.values(missing.graph).find(
+    (recipe) => recipe.title === "Checkout · Open Privacy",
+  )!;
+  assert.deepEqual(
+    blockedSibling.steps.slice(0, 3).map((step) => [step.kind, step.id]),
+    [
+      ["key", "relay-return-add-home"],
+      ["expect-screen", "relay-return-proof-add-home"],
+      ["expect-screen", "relay-return-required-open-cart"],
+    ],
+  );
+  assert.equal(
+    blockedSibling.steps[2]?.kind === "expect-screen"
+      ? blockedSibling.steps[2].recovery
+      : undefined,
+    undefined,
+  );
+  assert.deepEqual(
+    blockedSibling.steps[2]?.kind === "expect-screen"
+      ? blockedSibling.steps[2].returnRequirement
+      : undefined,
+    { connectionId: "open-cart", fromScreenId: "home", destinationScreenId: "cart" },
+  );
+  assert.equal(
+    blockedSibling.steps.some((step) => step.kind === "tap" && step.target.label === "Privacy"),
     true,
   );
 });

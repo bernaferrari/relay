@@ -32,7 +32,7 @@ import { RunMatrixReview } from "./run-matrix-review";
 import { RunShareMenu } from "./run-share-menu";
 import { VisualDiffReview } from "./visual-diff-review";
 import { RunsRefreshControl } from "./runs-refresh-control";
-import { RunChecksPanel } from "./run-checks-panel";
+import { CampaignRunChecksPanel } from "./campaign-run-checks-panel";
 import {
   filterRunRows,
   dedupeLatestRunFlows,
@@ -111,9 +111,8 @@ export function RunsWorkspace(props: {
   const visibleRows = createMemo(() => {
     const filter = runFilter();
     const filtered = filterRunRows(rows(), filter);
-    // The default should answer “what needs review?” rather than repeat the
-    // same flow forty times. Full chronology remains one deliberate click
-    // away for audit work.
+    // The default should answer “what needs review?” rather than repeat the same flow forty times.
+    // Full chronology remains one deliberate click away for audit work.
     if (filter !== "all" || historyExpanded()) return filtered;
     return dedupeLatestRunFlows(filtered);
   });
@@ -1010,7 +1009,7 @@ export function RunsWorkspace(props: {
                   <RunNetworkEvidence evidence={runEvidence()} loading={runEvidenceLoading()} />
                 </Show>
                 <Show when={tab() === "evaluation"}>
-                  <RunChecksPanel
+                  <CampaignRunChecksPanel
                     job={job()}
                     frameSource={({ frame }) =>
                       frame.base64
@@ -1023,6 +1022,7 @@ export function RunsWorkspace(props: {
                       selectRunStep(stepIndexForMatrixCapture(job(), index));
                       setTab("timeline");
                     }}
+                    onOpenTest={props.onOpenTest}
                   />
                 </Show>
                 <Show when={tab() === "logs"}>

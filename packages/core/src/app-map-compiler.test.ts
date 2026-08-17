@@ -141,6 +141,7 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
       screenTitle: "Home",
       fingerprint: "b".repeat(64),
       timeoutMs: 5_000,
+      evidenceSurface: "dead-end",
     },
   ]);
   assert.deepEqual(plan.recipes[routineId]!.steps, [
@@ -346,6 +347,70 @@ test("compiles one connection from canonical actions with source and destination
     plan.caseStacks.map((stack) => stack.id),
     ["thinking-levels"],
   );
+});
+
+test("compiles a navigation contract in semantic order with its frozen destination proof", () => {
+  const map = fixture();
+  const connection = map.connections["open-home"]!;
+  map.screens.home!.identity!.aliases = ["c".repeat(64)];
+  connection.actions = [];
+  connection.navigation = {
+    targetAlternatives: [
+      { kind: "identifier", identifier: "settings_button" },
+      { kind: "accessibility", label: "Settings", role: "button" },
+      {
+        kind: "element-relative",
+        anchor: { label: "Settings", role: "button" },
+        xRatio: 0.5,
+        yRatio: 0.5,
+        reviewedAt: at,
+        reviewedBy: "human:reviewer",
+        evidenceIds: ["settings-source-tree"],
+      },
+    ],
+    expectedDestination: {
+      screenId: "home",
+      identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+      evidenceIds: ["settings-destination-tree"],
+    },
+  };
+
+  const plan = compileAppMapConnection(map, "open-home");
+  const root = plan.recipes[plan.rootRecipeId]!;
+  assert.deepEqual(
+    root.steps.map((step) => step.kind),
+    ["expect-screen", "tap", "expect-screen"],
+  );
+  assert.deepEqual(root.steps[1], {
+    id: "relay-navigation-open-home",
+    kind: "tap",
+    target: { identifier: "settings_button" },
+    fallbackTargets: [
+      { label: "Settings", role: "button" },
+      {
+        point: {
+          x: 0,
+          y: 0,
+          relativeTo: {
+            target: { label: "Settings", role: "button" },
+            xRatio: 0.5,
+            yRatio: 0.5,
+          },
+        },
+      },
+    ],
+    navigationContract: {
+      connectionId: "open-home",
+      expectedScreenId: "home",
+      expectedFingerprint: "c".repeat(64),
+      evidenceIds: ["settings-destination-tree"],
+    },
+  });
+  const destination = root.steps.find(
+    (step) => step.kind === "expect-screen" && step.screenId === "home",
+  );
+  assert.ok(destination?.kind === "expect-screen");
+  assert.equal(destination.fingerprint, "c".repeat(64));
 });
 
 test("compiles directly authored structured steps without inventing a recording", () => {

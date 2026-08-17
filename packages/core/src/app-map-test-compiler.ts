@@ -8,8 +8,13 @@ import type {
   RecipeStep,
 } from "@relay/protocol";
 import { assertScenarioTest } from "./app-map/test-intent-validation.js";
-import { compileAppMapFlow, compileAppMapRoutine } from "./app-map-compiler.js";
+import {
+  compileAppMapConnection,
+  compileAppMapFlow,
+  compileAppMapRoutine,
+} from "./app-map-compiler.js";
 import { warmCompiledFlowGraphFromSharedPrefix } from "./app-map-itinerary.js";
+import { frozenColdCoverageEffects } from "./campaign-recovery-effects.js";
 import { validateAppMap } from "./app-map.js";
 import type { Recipe } from "./recipes.js";
 
@@ -17,7 +22,8 @@ export type AppMapTestCompileErrorCode =
   | "unresolved-step"
   | "missing-reference"
   | "draft-connection"
-  | "compiled-step-limit";
+  | "compiled-step-limit"
+  | "cold-coverage-effect";
 
 export class AppMapTestCompileError extends Error {
   constructor(
@@ -32,6 +38,11 @@ export class AppMapTestCompileError extends Error {
 }
 
 const MAX_COMPILED_STEPS = 4_096;
+
+export type AppMapTestCompileOptions = {
+  /** Run-scoped cache bypass for selected full-surface Test bindings. */
+  forceRecaptureSurfaceScreenIds?: readonly string[];
+};
 
 function fail(
   code: AppMapTestCompileErrorCode,
@@ -64,6 +75,7 @@ function asRecipe(
 export function compileAppMapScenarioTest(
   map: AppMap,
   test: AppMapScenarioTest,
+  options: AppMapTestCompileOptions = {},
 ): { root: Recipe; graph: Record<string, Recipe>; plan: AppMapCompiledTest } {
   validateAppMap(map);
   assertScenarioTest(test, `Test ${test.id}`);
@@ -82,6 +94,20 @@ export function compileAppMapScenarioTest(
   const graph: Record<string, Recipe> = {};
   const provenance: AppMapTestStepProvenance[] = [];
   const scheduledLogicalSurfaces = new Set<string>();
+  const forceRecaptureSurfaceScreenIds = new Set(options.forceRecaptureSurfaceScreenIds ?? []);
+  for (const screenId of forceRecaptureSurfaceScreenIds) {
+    const binding = test.surfaceBindings?.find(
+      (candidate) => candidate.screenId === screenId && candidate.captureMode === "full-surface",
+    );
+    if (!binding) {
+      throw new AppMapTestCompileError(
+        "missing-reference",
+        test.id,
+        test.steps[0]?.id ?? test.id,
+        `Test ${test.id} has no full-surface binding for ${screenId}`,
+      );
+    }
+  }
   let compiledCount = 0;
   const captureScreen = (screenId: string): RecipeStep | undefined => {
     const capture = test.capture;
@@ -123,6 +149,7 @@ export function compileAppMapScenarioTest(
       baselineCaptureId: binding.baselineCaptureId,
       reason: binding.reason,
       maxScrolls: Math.max(1, Math.min(6, baseline.viewports.length + 1)),
+      ...(forceRecaptureSurfaceScreenIds.has(screenId) ? { forceRecapture: true } : {}),
       baseline: {
         ...(baseline.composite
           ? {
@@ -211,9 +238,6 @@ export function compileAppMapScenarioTest(
           let instructionGraph = Object.fromEntries(
             Object.values(plan.recipes).map((compiled) => [compiled.id, asRecipe(map, compiled)]),
           );
-          const coldRoot = instructionGraph[plan.rootRecipeId]
-            ? structuredClone(instructionGraph[plan.rootRecipeId])
-            : undefined;
           if (previousInstructionPlan) {
             instructionGraph = warmCompiledFlowGraphFromSharedPrefix(
               map,
@@ -221,14 +245,32 @@ export function compileAppMapScenarioTest(
               plan,
               previousInstructionPlan,
               previousTerminalScreenId,
-              { restoreParentViewport: false },
             );
           }
+          const transitionDependencies = connections.map((connection) => {
+            const destination = structuredClone(connection.destination);
+            const destinationScreen =
+              destination.kind === "screen" ? map.screens[destination.screenId] : undefined;
+            return {
+              connectionId: connection.id,
+              originScreenId: connection.fromScreenId,
+              destination,
+              ...(destinationScreen?.handoff?.ownerApp
+                ? { expectedApp: destinationScreen.handoff.ownerApp }
+                : {}),
+            };
+          });
           const terminalConnectionId = plan.connections.at(-1)?.connectionId;
           const decorateRecipe = (recipe: Recipe, recoveryAlternative = false): Recipe => ({
             ...recipe,
             steps: recipe.steps.flatMap((recipeStep) => {
               if (recipeStep.kind !== "expect-screen") return [recipeStep];
+              const boundedExpectation = recipeStep.recovery
+                ? {
+                    ...recipeStep,
+                    recovery: { ...recipeStep.recovery, maxAttempts: 1 },
+                  }
+                : recipeStep;
               const sourceExpectation =
                 recipeStep.id?.startsWith("relay-source-") === true ||
                 recipeStep.id?.endsWith(":warm") === true ||
@@ -245,7 +287,7 @@ export function compileAppMapScenarioTest(
                     })
                   : undefined;
               return [
-                recipeStep,
+                boundedExpectation,
                 ...(capture ? [capture] : []),
                 ...(logicalSurface ? [logicalSurface] : []),
               ];
@@ -255,38 +297,98 @@ export function compileAppMapScenarioTest(
             instructionGraph[recipeKey] = decorateRecipe(recipe);
           }
           let recoveryRecipeId: string | undefined;
-          if (previousInstructionPlan && campaignSetupSteps.length > 0 && coldRoot) {
-            recoveryRecipeId = `${plan.rootRecipeId}:recover`;
-            const decoratedColdRoot = decorateRecipe(coldRoot, true);
+          let coldRecoveryRecipeId: string | undefined;
+          const recoveryTransition = transitionDependencies[0];
+          if (campaignSetupSteps.length > 0 && recoveryTransition) {
+            const connectionPlan = compileAppMapConnection(map, recoveryTransition.connectionId);
+            for (const compiled of Object.values(connectionPlan.recipes)) {
+              instructionGraph[compiled.id] = asRecipe(map, compiled);
+            }
+            const connectionRoot = instructionGraph[connectionPlan.rootRecipeId]!;
+            recoveryRecipeId = `${id}:confirm:${recoveryTransition.connectionId}`;
             instructionGraph[recoveryRecipeId] = {
-              ...decoratedColdRoot,
               id: recoveryRecipeId,
-              title: `${decoratedColdRoot.title} · canonical recovery`,
-              steps: [...structuredClone(campaignSetupSteps), ...decoratedColdRoot.steps],
+              title: `${connectionRoot.title} · warm transition confirmation`,
+              source: "custom",
+              steps: structuredClone(connectionRoot.steps),
+              createdAt: map.createdAt,
+              updatedAt: map.updatedAt,
+            };
+            coldRecoveryRecipeId = `${id}:proposed-cold-recovery:${recoveryTransition.connectionId}`;
+            instructionGraph[coldRecoveryRecipeId] = {
+              id: coldRecoveryRecipeId,
+              title: `${connectionRoot.title} · proposed cold recovery`,
+              source: "custom",
+              steps: [
+                ...structuredClone(campaignSetupSteps),
+                ...structuredClone(connectionRoot.steps),
+              ],
+              createdAt: map.createdAt,
+              updatedAt: map.updatedAt,
+            };
+          }
+          let cleanup: NonNullable<RecipeStep["check"]>["cleanup"];
+          if (step.cleanup) {
+            const compiledCleanup = compileAppMapRoutine(map, step.cleanup.routineId);
+            importRecipes(step, compiledCleanup.recipes, [
+              step.cleanup.routineId,
+              step.cleanup.terminalScreenId,
+            ]);
+            cleanup = {
+              recipeId: compiledCleanup.rootRecipeId,
+              ...(step.cleanup.bindings
+                ? { bindings: structuredClone(step.cleanup.bindings) }
+                : {}),
+              terminalScreenId: step.cleanup.terminalScreenId,
+              onCancel: step.cleanup.onCancel,
             };
           }
           importRecipes(step, instructionGraph, step.binding.connectionIds);
+          const coldCoverage = frozenColdCoverageEffects({
+            graph,
+            coverageRecipeId: plan.rootRecipeId,
+            warmRecoveryRecipeId: recoveryRecipeId,
+            cleanupRecipeId: cleanup?.recipeId,
+            excludedRecipeIds: [coldRecoveryRecipeId],
+          });
+          if (coldCoverage[0]) {
+            fail(
+              "cold-coverage-effect",
+              test,
+              step,
+              `Coverage recipe ${coldCoverage[0].recipeId} contains a state-destroying effect (${coldCoverage[0].reason})`,
+            );
+          }
           recipeSteps.push({
             kind: "module",
             recipeId: plan.rootRecipeId,
             check: {
               id: step.id,
               title: step.intent,
+              transitionDependencies,
               ...(recoveryRecipeId
                 ? {
                     recovery: {
-                      groupId: `${test.id}:${suffix}:check:${step.id}`,
+                      groupId: `transition:${recoveryTransition!.connectionId}`,
                       recipeId: recoveryRecipeId,
+                      transitionId: recoveryTransition!.connectionId,
+                      mode: "warm-transition",
+                      coldRecipeId: coldRecoveryRecipeId!,
                     },
                   }
                 : {}),
+              ...(cleanup ? { cleanup } : {}),
             },
           });
           referencedEntityIds.push(...step.binding.connectionIds);
+          if (step.cleanup) {
+            referencedEntityIds.push(step.cleanup.routineId, step.cleanup.terminalScreenId);
+          }
           previousInstructionPlan = plan;
           const terminal = plan.connections.at(-1)?.destination;
           previousTerminalScreenId =
-            terminal?.kind === "screen" ? terminal.screenId : plan.flow.startScreenId;
+            cleanup?.terminalScreenId ??
+            (terminal?.kind === "screen" ? terminal.screenId : plan.flow.startScreenId);
           break;
         }
         case "validation":

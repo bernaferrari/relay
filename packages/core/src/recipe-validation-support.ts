@@ -9,6 +9,7 @@ import type {
   StepTarget,
   VerticalCoordinateAnchor,
 } from "@relay/protocol";
+import { parseCampaignCheck } from "./recipe-validation-campaign.js";
 
 const MAX_WAIT_MS = 15 * 60 * 1000;
 
@@ -280,7 +281,13 @@ function parseTapRuntimeOptions(
   index: number,
 ): Pick<
   Extract<RecipeStep, { kind: "tap" }>,
-  "fallbackTargets" | "gesture" | "tapCount" | "intervalMs" | "durationMs" | "expectedApp"
+  | "fallbackTargets"
+  | "gesture"
+  | "tapCount"
+  | "intervalMs"
+  | "durationMs"
+  | "expectedApp"
+  | "navigationContract"
 > {
   let fallbackTargets: StepTarget[] | undefined;
   if (raw.fallbackTargets !== undefined) {
@@ -322,6 +329,32 @@ function parseTapRuntimeOptions(
   if (raw.expectedApp !== undefined && !isString(raw.expectedApp)) {
     throw stepErr(index, "tap.expectedApp must be a string");
   }
+  let navigationContract: Extract<RecipeStep, { kind: "tap" }>["navigationContract"];
+  if (raw.navigationContract !== undefined) {
+    if (!isObject(raw.navigationContract)) {
+      throw stepErr(index, "tap.navigationContract must be an object");
+    }
+    const contract = raw.navigationContract;
+    if (
+      !isString(contract.connectionId) ||
+      !isString(contract.expectedScreenId) ||
+      !isString(contract.expectedFingerprint) ||
+      !/^[a-f0-9]{64}$/u.test(contract.expectedFingerprint) ||
+      !Array.isArray(contract.evidenceIds) ||
+      !contract.evidenceIds.every(isString)
+    ) {
+      throw stepErr(
+        index,
+        "tap.navigationContract requires connection, destination proof, and evidence",
+      );
+    }
+    navigationContract = {
+      connectionId: contract.connectionId,
+      expectedScreenId: contract.expectedScreenId,
+      expectedFingerprint: contract.expectedFingerprint,
+      evidenceIds: [...contract.evidenceIds],
+    };
+  }
   return {
     ...(fallbackTargets?.length ? { fallbackTargets } : {}),
     ...(raw.gesture !== undefined ? { gesture: raw.gesture as "single" | "multi" | "hold" } : {}),
@@ -329,6 +362,7 @@ function parseTapRuntimeOptions(
     ...(raw.intervalMs !== undefined ? { intervalMs: raw.intervalMs as number } : {}),
     ...(raw.durationMs !== undefined ? { durationMs: raw.durationMs as number } : {}),
     ...(isString(raw.expectedApp) ? { expectedApp: raw.expectedApp } : {}),
+    ...(navigationContract ? { navigationContract } : {}),
   };
 }
 
@@ -416,6 +450,10 @@ function parseTarget(raw: unknown, index: number, field: string): StepTarget {
   if (raw.label !== undefined) {
     if (!isString(raw.label)) throw stepErr(index, `${field}.label must be a string`);
     t.label = raw.label;
+  }
+  if (raw.role !== undefined) {
+    if (!isString(raw.role)) throw stepErr(index, `${field}.role must be a string`);
+    t.role = raw.role;
   }
   if (raw.text !== undefined) {
     if (!isString(raw.text)) throw stepErr(index, `${field}.text must be a string`);
@@ -721,57 +759,8 @@ function parseStepMetadata(
     if (typeof raw.optional !== "boolean") throw stepErr(index, "optional must be a boolean");
     metadata.optional = raw.optional;
   }
-  if (raw.check !== undefined) {
-    if (!isObject(raw.check)) throw stepErr(index, "check must be an object");
-    if (!isString(raw.check.id) || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(raw.check.id)) {
-      throw stepErr(index, "check.id must use letters, numbers, hyphens, and underscores only");
-    }
-    if (
-      !isString(raw.check.title) ||
-      !raw.check.title.trim() ||
-      raw.check.title.trim().length > 160
-    ) {
-      throw stepErr(index, "check.title must be a non-empty string of at most 160 characters");
-    }
-    if (raw.optional === true) {
-      throw stepErr(index, "check and optional cannot be combined");
-    }
-    let recovery: NonNullable<RecipeStep["check"]>["recovery"];
-    if (raw.check.recovery !== undefined) {
-      if (!isObject(raw.check.recovery)) {
-        throw stepErr(index, "check.recovery must be an object");
-      }
-      if (
-        !isString(raw.check.recovery.groupId) ||
-        !raw.check.recovery.groupId.trim() ||
-        raw.check.recovery.groupId.trim().length > 256
-      ) {
-        throw stepErr(
-          index,
-          "check.recovery.groupId must be a non-empty string of at most 256 characters",
-        );
-      }
-      if (
-        !isString(raw.check.recovery.recipeId) ||
-        !raw.check.recovery.recipeId.trim() ||
-        raw.check.recovery.recipeId.trim().length > 512
-      ) {
-        throw stepErr(
-          index,
-          "check.recovery.recipeId must be a non-empty string of at most 512 characters",
-        );
-      }
-      recovery = {
-        groupId: raw.check.recovery.groupId.trim(),
-        recipeId: raw.check.recovery.recipeId.trim(),
-      };
-    }
-    metadata.check = {
-      id: raw.check.id,
-      title: raw.check.title.trim(),
-      ...(recovery ? { recovery } : {}),
-    };
-  }
+  const check = parseCampaignCheck(raw, index);
+  if (check) metadata.check = check;
   if (raw.when !== undefined) {
     if (!isObject(raw.when)) throw stepErr(index, "when must be an object");
     if (!(raw.when.condition === "present" || raw.when.condition === "absent")) {

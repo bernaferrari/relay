@@ -7,7 +7,7 @@ import type { Glyph } from "./trace.js";
 export function describeTarget(t: StepTarget): string {
   if (t.identifier) return `identifier ${t.identifier}`;
   if (t.ref) return `ref ${t.ref}`;
-  if (t.label) return `label "${t.label}"`;
+  if (t.label) return `${t.role ? `${t.role} ` : ""}label "${t.label}"`;
   if (t.text) return `text "${t.text}"`;
   if (t.point?.relativeTo) {
     return `point inside ${describeTarget(t.point.relativeTo.target)}`;
@@ -44,6 +44,8 @@ export function describeRecipeStep(step: RecipeStep): string {
       return step.target ? `Type into ${describeTarget(step.target)}` : "Type text";
     case "scroll":
       return `Scroll ${step.direction}`;
+    case "reveal":
+      return `Reveal ${describeTarget(step.target)}`;
     case "swipe":
       return `swipe ${arrowForSwipe(step.from, step.to)} ${Math.round(step.from.x)},${Math.round(step.from.y)} → ${Math.round(step.to.x)},${Math.round(step.to.y)}`;
     case "key":
@@ -144,6 +146,7 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
     case "type":
       return ["type"];
     case "scroll":
+    case "reveal":
       return ["swipe"];
     case "swipe":
       return ["swipe"];

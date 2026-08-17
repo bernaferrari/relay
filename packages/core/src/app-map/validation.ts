@@ -1,5 +1,10 @@
 import { appMapFail } from "./errors.js";
-import { APP_MAP_SCHEMA_VERSION, type ActionSpec, type AppMap } from "./model.js";
+import {
+  APP_MAP_SCHEMA_VERSION,
+  type ActionSpec,
+  type AppMap,
+  type AppMapScenarioTestStep,
+} from "./model.js";
 import {
   assertActivity,
   assertAppMapNote,
@@ -167,8 +172,61 @@ function assertCombines(map: AppMap): void {
 }
 
 function assertTests(map: AppMap): void {
+  const visitSteps = function* (
+    steps: AppMapScenarioTestStep[],
+  ): Generator<AppMapScenarioTestStep> {
+    for (const step of steps) {
+      yield step;
+      if (step.kind === "decision") {
+        yield* visitSteps(step.thenSteps);
+        yield* visitSteps(step.elseSteps ?? []);
+      } else if (step.kind === "loop") {
+        yield* visitSteps(step.steps);
+      }
+    }
+  };
   for (const work of Object.values(map.tests ?? {})) {
     if (work.kind === "scenario") {
+      for (const step of visitSteps(work.steps)) {
+        if (step.kind !== "instruction") continue;
+        if (!step.cleanup) continue;
+        const routine = map.routines[step.cleanup.routineId];
+        if (!routine) {
+          appMapFail(
+            "missing-reference",
+            `Test ${work.id} cleanup references missing Routine ${step.cleanup.routineId}`,
+          );
+        }
+        if (!map.screens[step.cleanup.terminalScreenId]) {
+          appMapFail(
+            "missing-reference",
+            `Test ${work.id} cleanup references missing terminal Screen ${step.cleanup.terminalScreenId}`,
+          );
+        }
+        const parameters = new Map(
+          routine.parameters.map((parameter) => [parameter.name, parameter]),
+        );
+        for (const name of Object.keys(step.cleanup.bindings ?? {})) {
+          if (!parameters.has(name)) {
+            appMapFail(
+              "missing-reference",
+              `Test ${work.id} cleanup binds unknown parameter ${name} on Routine ${routine.id}`,
+            );
+          }
+        }
+        for (const parameter of routine.parameters) {
+          if (
+            parameter.required &&
+            parameter.default === undefined &&
+            step.cleanup.bindings?.[parameter.name] === undefined
+          ) {
+            appMapFail(
+              "missing-reference",
+              `Test ${work.id} cleanup does not bind required parameter ${parameter.name} on Routine ${routine.id}`,
+            );
+          }
+        }
+      }
       for (const binding of work.surfaceBindings ?? []) {
         const screen = map.screens[binding.screenId];
         const variant = map.screenVariants[binding.variantId];
@@ -233,6 +291,78 @@ function assertConnectionsAndActions(map: AppMap): void {
         "missing-reference",
         `Connection ${connection.id} ends at missing screen ${connection.destination.screenId}`,
       );
+    }
+    if (connection.navigation) {
+      if (connection.destination.kind !== "screen") {
+        appMapFail(
+          "invalid-map",
+          `Connection ${connection.id} navigation requires a screen destination`,
+        );
+      }
+      if (connection.navigation.expectedDestination.screenId !== connection.destination.screenId) {
+        appMapFail(
+          "missing-reference",
+          `Connection ${connection.id} navigation proof does not match its destination`,
+        );
+      }
+      const destination = map.screens[connection.destination.screenId];
+      const approvedFingerprints = new Set([
+        ...(destination?.identity
+          ? [destination.identity.fingerprint, ...(destination.identity.aliases ?? [])]
+          : []),
+        ...(destination?.variantIds.flatMap((variantId) => {
+          const observation = map.screenVariants[variantId]?.observation;
+          return observation ? [observation.fingerprint] : [];
+        }) ?? []),
+      ]);
+      if (
+        !approvedFingerprints.has(connection.navigation.expectedDestination.identity.fingerprint)
+      ) {
+        appMapFail(
+          "missing-reference",
+          `Connection ${connection.id} navigation proof is not an approved destination identity`,
+        );
+      }
+    }
+    if (connection.return) {
+      if (connection.destination.kind !== "screen") {
+        appMapFail(
+          "invalid-map",
+          `Connection ${connection.id} return proof requires a screen destination`,
+        );
+      }
+      if (connection.return.expectedDestination.screenId !== connection.fromScreenId) {
+        appMapFail(
+          "missing-reference",
+          `Connection ${connection.id} return proof does not match its origin`,
+        );
+      }
+      const origin = map.screens[connection.fromScreenId];
+      const approvedFingerprints = new Set([
+        ...(origin?.identity
+          ? [origin.identity.fingerprint, ...(origin.identity.aliases ?? [])]
+          : []),
+        ...(origin?.variantIds.flatMap((variantId) => {
+          const observation = map.screenVariants[variantId]?.observation;
+          return observation ? [observation.fingerprint] : [];
+        }) ?? []),
+      ]);
+      if (!approvedFingerprints.has(connection.return.expectedDestination.identity.fingerprint)) {
+        appMapFail(
+          "missing-reference",
+          `Connection ${connection.id} return proof is not an approved origin identity`,
+        );
+      }
+      if (
+        connection.return.expectedApp &&
+        origin?.handoff?.ownerApp &&
+        connection.return.expectedApp !== origin.handoff.ownerApp
+      ) {
+        appMapFail(
+          "missing-reference",
+          `Connection ${connection.id} return app does not match its origin owner`,
+        );
+      }
     }
     if (connection.caseStackId && !map.caseStacks[connection.caseStackId]) {
       appMapFail(

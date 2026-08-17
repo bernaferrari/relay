@@ -155,6 +155,7 @@ test("Test help exposes graph creation, semantic edits, and the required run tar
   assert.match(help, /test\.patch, step\.add/);
   assert.match(help, /expectedRevision \(number, required\)/);
   assert.match(help, /target \(object, required\)/);
+  assert.match(help, /forceRecaptureScreenIds/);
   assert.match(help, /"kind":"browser","platform":"browser"/);
   assert.match(help, /revision and target are mandatory/);
   assert.match(help, /eventId/);
@@ -242,6 +243,20 @@ test("persisted run replay has one friendly watched command", () => {
     commandPath: "run replay",
     input: { runId: "run-1" },
     behavior: "job-start-watch",
+  });
+});
+
+test("one failed check is inspectable and selectively retryable", () => {
+  assert.deepEqual(resolveCommand(["repair", "retry", "run-1", "usage"]), {
+    operationId: "run.repair.retry",
+    commandPath: "repair retry",
+    input: { runId: "run-1", checkId: "usage" },
+    behavior: "job-start-watch",
+  });
+  assert.deepEqual(resolveCommand(["repair", "get", "run-1", "usage"]), {
+    operationId: "run.repair.get",
+    commandPath: "repair get",
+    input: { runId: "run-1", checkId: "usage" },
   });
 });
 

@@ -9,7 +9,11 @@ import {
   resolveRecipeStep,
   runRecipeStep as runRecipeStepWithoutContext,
 } from "./recipe-runner.js";
-import { retryDeferredCampaignChecks } from "./recipe-runner-extended-steps.js";
+import {
+  finalizeDeferredCampaignChecks,
+  retryDeferredCampaignChecks,
+  runCampaignCheck,
+} from "./recipe-runner-campaign-checks.js";
 
 it("recognizes right-to-left app locales for mirrored point fallbacks", () => {
   assert.equal(isRightToLeftRun({ language: "ar" }), true);
@@ -21,9 +25,12 @@ import type { RecipeStepContext } from "./recipe-runner-context.js";
 import type { TestJob } from "./session.js";
 import { registerEvaluationProvider } from "./evaluation.js";
 import { saveRecipe } from "./recipes.js";
-import { clearControl, requestResume } from "./control.js";
+import { clearControl, JobCancelledError, requestResume } from "./control.js";
 import { runWithTargetContext } from "./target-context.js";
 import { observeScreenIdentity } from "./screen-identity.js";
+import { runExpectScreenStep } from "./recipe-runner-screen.js";
+import { runTourStep } from "./recipe-runner-tour.js";
+import type { ScreenshotPayload } from "./workspace-capture.js";
 
 const runRecipeStep: typeof runRecipeStepWithoutContext = (...args) =>
   runWithTargetContext({ kind: "device", platform: "android", serial: "recipe-runner-test" }, () =>
@@ -855,13 +862,40 @@ describe("runRecipeStep campaign check policy", () => {
     assert.ok(evidence);
     const evidenceData = evidence.data as {
       attempts?: Array<{ kind: string }>;
+      accessibility?: { available: boolean; nodeCount: number };
       nodes?: Array<{ label?: string }>;
     };
     assert.deepEqual(
       evidenceData.attempts?.map((attempt) => attempt.kind),
       ["target-resolution-attempt"],
     );
+    assert.deepEqual(evidenceData.accessibility, { available: true, nodeCount: 1 });
     assert.equal(evidenceData.nodes?.[0]?.label, "Settings");
+  });
+
+  it("records accessibility as unavailable when failure evidence cannot capture a tree", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const device = stubDevice({
+      press: () => Promise.reject(new Error("control missing")),
+      snapshot: () => Promise.reject(new Error("accessibility unavailable")),
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "settings.missing" },
+        check: { id: "missing", title: "Missing control" },
+      },
+      { ...noLog, job },
+    );
+
+    const evidence = job.artifacts.find((artifact) => artifact.kind === "campaign-check-evidence");
+    assert.deepEqual(
+      (evidence?.data as { accessibility?: unknown; nodes?: unknown[] } | undefined)?.accessibility,
+      { available: false, nodeCount: 0 },
+    );
+    assert.deepEqual((evidence?.data as { nodes?: unknown[] } | undefined)?.nodes, []);
   });
 
   it("records a passing check", async () => {
@@ -886,21 +920,267 @@ describe("runRecipeStep campaign check policy", () => {
     );
   });
 
-  it("defers one failed leaf while independent siblings continue", async () => {
+  it("always runs cleanup after a primary action failure and retains the product failure", async () => {
+    const presses: string[] = [];
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
-    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
     const recipeGraph = {
-      recover: {
-        id: "recover",
-        title: "Recover and visit next leaf",
+      primary: {
+        id: "primary",
+        title: "Primary",
         source: "custom" as const,
-        steps: [{ kind: "sleep" as const, ms: 0 }],
+        steps: [{ kind: "tap" as const, target: { identifier: "primary" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "Cleanup",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "cleanup" } }],
         createdAt: 1,
         updatedAt: 1,
       },
     };
-    const recovery = { groupId: "settings", recipeId: "recover" };
-    const device = stubDevice({ press: () => Promise.reject(new Error("row disappeared")) });
+    const device = stubDevice({
+      press: (options) => {
+        const selector = String((options as { selector?: string }).selector);
+        presses.push(selector);
+        return selector.includes("primary")
+          ? Promise.reject(new Error("primary changed"))
+          : Promise.resolve({});
+      },
+      snapshot: () => Promise.resolve({ nodes: [] }),
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "primary",
+        check: {
+          id: "kids",
+          title: "Kids Mode",
+          cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
+        },
+      },
+      { ...noLog, job, recipeGraph },
+    );
+
+    assert.deepEqual(presses, ['id="primary"', 'id="cleanup"']);
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "campaign-check-cleanup" &&
+          (artifact.data as { status?: string }).status === "passed",
+      ),
+      true,
+    );
+    const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result");
+    assert.ok(result);
+    const resultData = result.data as { status?: string; primaryError?: string };
+    assert.equal(resultData.status, "failed");
+    assert.match(resultData.primaryError ?? "", /identifier primary/u);
+  });
+
+  it("runs cleanup after a passing primary path before marking the check passed", async () => {
+    const order: string[] = [];
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const recipeGraph = {
+      primary: {
+        id: "primary",
+        title: "Primary",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "primary" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "Cleanup",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "cleanup" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    await runRecipeStep(
+      stubDevice({
+        press: (options) => {
+          order.push(String((options as { selector?: string }).selector));
+          return Promise.resolve({});
+        },
+      }),
+      {
+        kind: "module",
+        recipeId: "primary",
+        check: {
+          id: "kids",
+          title: "Kids Mode",
+          cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
+        },
+      },
+      { ...noLog, job, recipeGraph },
+    );
+
+    assert.deepEqual(order, ['id="primary"', 'id="cleanup"']);
+    const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result");
+    assert.ok(result);
+    assert.equal((result.data as { status?: string }).status, "passed");
+  });
+
+  it("reports primary and cleanup failures separately without hiding either", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const recipeGraph = {
+      primary: {
+        id: "primary",
+        title: "Primary",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "primary" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "Cleanup",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "cleanup" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const device = stubDevice({
+      press: (options) =>
+        Promise.reject(
+          new Error(
+            String((options as { selector?: string }).selector).includes("primary")
+              ? "primary changed"
+              : "cleanup could not restore off",
+          ),
+        ),
+      snapshot: () => Promise.resolve({ nodes: [] }),
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "primary",
+        check: {
+          id: "kids",
+          title: "Kids Mode",
+          cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
+        },
+      },
+      { ...noLog, job, recipeGraph },
+    );
+
+    const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result");
+    assert.ok(result);
+    const resultData = result.data as {
+      status?: string;
+      primaryError?: string;
+      cleanupError?: string;
+      error?: string;
+    };
+    assert.equal(resultData.status, "failed");
+    assert.match(resultData.primaryError ?? "", /identifier primary/u);
+    assert.match(resultData.cleanupError ?? "", /identifier cleanup/u);
+    assert.match(
+      resultData.error ?? "",
+      /Primary failed: .*identifier primary.*; cleanup failed: .*identifier cleanup/u,
+    );
+  });
+
+  it("skips cleanup on cancellation because cancellation revokes device authority", async () => {
+    const presses: string[] = [];
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const recipeGraph = {
+      primary: {
+        id: "primary",
+        title: "Primary",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "primary" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "Cleanup",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "cleanup" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const device = stubDevice({
+      press: (options) => {
+        presses.push(String((options as { selector?: string }).selector));
+        return Promise.reject(new JobCancelledError());
+      },
+    });
+
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        {
+          kind: "module",
+          recipeId: "primary",
+          check: {
+            id: "kids",
+            title: "Kids Mode",
+            cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
+          },
+        },
+        { ...noLog, job, recipeGraph },
+      ),
+      JobCancelledError,
+    );
+
+    assert.deepEqual(presses, ['id="primary"']);
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "campaign-check-cleanup" &&
+          (artifact.data as { status?: string }).status === "skipped",
+      ),
+      true,
+    );
+  });
+
+  it("defers one failed leaf while independent siblings continue", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const logs: string[] = [];
+    const waits: number[] = [];
+    const recipeGraph = {
+      warm: {
+        id: "warm",
+        title: "Visit next leaf from the current parent",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      recover: {
+        id: "recover",
+        title: "Cold recovery",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 99 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const recovery = {
+      groupId: "settings",
+      recipeId: "recover",
+      mode: "warm-transition" as const,
+    };
+    const device = stubDevice({
+      press: () => Promise.reject(new Error("row disappeared")),
+      wait: async () => {
+        waits.push(1);
+      },
+    });
 
     await runRecipeStep(
       device,
@@ -909,27 +1189,34 @@ describe("runRecipeStep campaign check policy", () => {
         target: { identifier: "missing" },
         check: { id: "missing", title: "Missing row", recovery },
       },
-      { ...noLog, job, runtime, recipeGraph },
+      { log: (line) => logs.push(line), job, runtime, recipeGraph },
     );
     await runRecipeStep(
       device,
       {
-        kind: "sleep",
-        ms: 0,
+        kind: "module",
+        recipeId: "warm",
         check: { id: "next", title: "Next leaf", recovery },
       },
-      { ...noLog, job, runtime, recipeGraph },
+      { log: (line) => logs.push(line), job, runtime, recipeGraph },
     );
-    const context = { ...noLog, job, runtime, recipeGraph };
-    await retryDeferredCampaignChecks(device, context, (recipeId) =>
-      runRecipeStep(device, { kind: "module", recipeId }, context),
-    );
+    const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph };
+    finalizeDeferredCampaignChecks(context);
 
     assert.deepEqual(
       job.artifacts
         .filter((artifact) => artifact.kind === "campaign-check-result")
         .map((artifact) => (artifact.data as { status: string }).status),
-      ["passed", "passed"],
+      ["passed", "failed"],
+    );
+    assert.equal(waits.length >= 1, true);
+    assert.equal(
+      logs.some((line) => line.includes("Cold recovery")),
+      true,
+    );
+    assert.equal(
+      logs.some((line) => line.includes("Visit next leaf from the current parent")),
+      false,
     );
     assert.equal(runtime.deferredCampaignChecks?.length, 0);
     assert.equal(
@@ -942,10 +1229,196 @@ describe("runRecipeStep campaign check policy", () => {
     );
   });
 
+  it("keeps an authored warm recipe when no canonical recovery was declared", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const logs: string[] = [];
+    const waits: number[] = [];
+    const recipeGraph = {
+      warm: {
+        id: "warm",
+        title: "Visit next leaf from the current parent",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      recover: {
+        id: "recover",
+        title: "Cold recovery",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 99 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const recovery = {
+      groupId: "settings",
+      recipeId: "recover",
+      mode: "warm-transition" as const,
+    };
+    const device = stubDevice({
+      press: () => Promise.reject(new Error("row disappeared")),
+      wait: async () => {
+        waits.push(1);
+      },
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "missing" },
+        check: { id: "missing", title: "Missing row", recovery },
+      },
+      { log: (line) => logs.push(line), job, runtime, recipeGraph },
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "warm",
+        check: { id: "next", title: "Next leaf" },
+      },
+      { log: (line) => logs.push(line), job, runtime, recipeGraph },
+    );
+    const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph };
+    finalizeDeferredCampaignChecks(context);
+
+    assert.deepEqual(
+      job.artifacts
+        .filter((artifact) => artifact.kind === "campaign-check-result")
+        .map((artifact) => (artifact.data as { status: string }).status),
+      ["passed", "failed"],
+    );
+    assert.equal(waits.length >= 1, true);
+    assert.equal(
+      logs.some((line) => line.includes("Visit next leaf from the current parent")),
+      true,
+    );
+    assert.equal(
+      logs.some((line) => line.includes("Cold recovery")),
+      false,
+    );
+    assert.equal(runtime.deferredCampaignChecks?.length, 0);
+  });
+
+  it("uses one canonical path after a failed check instead of probing an unknown warm state", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const logs: string[] = [];
+    const recipeGraph = {
+      warm: {
+        id: "warm",
+        title: "Warm path",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      recover: {
+        id: "recover",
+        title: "Canonical path",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 2 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const recovery = {
+      groupId: "settings",
+      recipeId: "recover",
+      mode: "warm-transition" as const,
+    };
+    const device = stubDevice({
+      press: () => Promise.reject(new Error("row disappeared")),
+      wait: async () => {},
+    });
+    const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph };
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "missing" },
+        check: { id: "missing", title: "Missing row", recovery },
+      },
+      context,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "warm",
+        check: { id: "next", title: "Next leaf", recovery },
+      },
+      context,
+    );
+
+    assert.equal(
+      logs.some((line) => line.includes("Canonical path")),
+      true,
+    );
+    assert.equal(
+      logs.some((line) => line.includes("Warm path")),
+      false,
+    );
+    assert.equal(runtime.campaignItineraryTrusted, true);
+  });
+
+  it("finalizes deferred checks without executing automatic recovery", async () => {
+    const logs: string[] = [];
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const recovery = { groupId: "settings", recipeId: "cold-recovery" };
+    const context = {
+      log: (line: string) => logs.push(line),
+      job,
+      runtime,
+      recipeGraph: {},
+    };
+
+    await runRecipeStep(
+      stubDevice({ press: () => Promise.reject(new Error("row disappeared")) }),
+      {
+        kind: "tap",
+        target: { identifier: "missing" },
+        check: { id: "missing", title: "Missing row", recovery },
+      },
+      context,
+    );
+    finalizeDeferredCampaignChecks(context);
+
+    const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result")
+      ?.data as {
+      status?: string;
+      error?: string;
+      recovery?: { recipeId?: string };
+      selectiveRepair?: { status?: string; recipeId?: string };
+    };
+    const deferred = job.artifacts.find((artifact) => artifact.kind === "campaign-check-deferred")
+      ?.data as { error?: string };
+    assert.equal(result.status, "failed");
+    assert.equal(result.error, deferred.error);
+    assert.match(result.error ?? "", /missing/u);
+    assert.equal(result.recovery?.recipeId, "cold-recovery");
+    assert.deepEqual(result.selectiveRepair, {
+      status: "pending",
+      recipeId: "cold-recovery",
+      groupId: "settings",
+    });
+    assert.match(logs.at(-1) ?? "", /check needs repair: Missing row/u);
+    assert.equal(runtime.deferredCampaignChecks?.length, 0);
+  });
+
   it("blocks only a dependency group after its canonical recovery fails", async () => {
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
-    const recovery = { groupId: "settings", recipeId: "recover" };
+    const recovery = {
+      groupId: "settings",
+      recipeId: "recover",
+      mode: "warm-transition" as const,
+    };
     const failingTap = { kind: "tap" as const, target: { identifier: "missing" } };
     const recipeGraph = {
       recover: {
@@ -981,6 +1454,310 @@ describe("runRecipeStep campaign check policy", () => {
       ["failed", "blocked"],
     );
     assert.equal(runtime.campaignRecoveryGroups?.settings?.status, "blocked");
+  });
+
+  it("opens one shared transition circuit after warm plus one canonical confirmation", async () => {
+    const job = { id: "fb3a7728", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const logs: string[] = [];
+    let settingsAttempts = 0;
+    const sharedDependency = {
+      connectionId: "open-settings-top",
+      originScreenId: "start",
+      destination: { kind: "screen" as const, screenId: "settings-top" },
+    };
+    const unrelatedDependency = {
+      connectionId: "open-profile",
+      originScreenId: "start",
+      destination: { kind: "screen" as const, screenId: "profile" },
+    };
+    const recovery = {
+      groupId: "transition:open-settings-top",
+      recipeId: "confirm-open-settings-top",
+      transitionId: "open-settings-top",
+      mode: "warm-transition" as const,
+      coldRecipeId: "proposed-cold-open-settings-top",
+    };
+    const recipeGraph = {
+      "confirm-open-settings-top": {
+        id: "confirm-open-settings-top",
+        title: "Confirm open settings top",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "settings_button" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      "dependent-warm": {
+        id: "dependent-warm",
+        title: "Dependent warm path",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      unrelated: {
+        id: "unrelated",
+        title: "Unrelated authored check",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const device = stubDevice({
+      press: () => {
+        settingsAttempts += 1;
+        return Promise.reject(new Error("settings_button was not resolved"));
+      },
+      wait: async () => {},
+    });
+    const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph };
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "settings_button" },
+        check: {
+          id: "visit-settings",
+          title: "Visit Settings",
+          recovery,
+          transitionDependencies: [sharedDependency],
+        },
+      },
+      context,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "dependent-warm",
+        check: {
+          id: "usage",
+          title: "Usage",
+          recovery,
+          transitionDependencies: [sharedDependency],
+        },
+      },
+      context,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "dependent-warm",
+        check: {
+          id: "privacy",
+          title: "Privacy",
+          recovery,
+          transitionDependencies: [sharedDependency],
+        },
+      },
+      context,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "unrelated",
+        check: {
+          id: "profile",
+          title: "Profile",
+          transitionDependencies: [unrelatedDependency],
+        },
+      },
+      context,
+    );
+    finalizeDeferredCampaignChecks(context);
+
+    assert.equal(settingsAttempts, 2, "warm attempt plus one canonical confirmation only");
+    assert.equal(runtime.campaignTransitionProofs?.["open-settings-top"]?.status, "open");
+    assert.equal(runtime.campaignTransitionProofs?.["open-profile"]?.status, "verified");
+    assert.equal(
+      job.artifacts.filter(
+        (artifact) =>
+          artifact.kind === "campaign-transition-circuit" &&
+          (artifact.data as { status?: string }).status === "open",
+      ).length,
+      1,
+    );
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "campaign-check-result" &&
+          (artifact.data as { id?: string; status?: string }).id === "privacy" &&
+          (artifact.data as { status?: string }).status === "blocked",
+      ),
+      true,
+    );
+    assert.equal(
+      logs.some((line) => line.includes("Unrelated authored check")),
+      true,
+    );
+  });
+
+  it("persists one SOS and never executes a cold recovery after coverage begins", async () => {
+    const job = { id: "d7ef41b4-regression", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const logs: string[] = [];
+    let coldExecutions = 0;
+    let unrelatedExecutions = 0;
+    const dependency = {
+      connectionId: "open-settings-top",
+      originScreenId: "start",
+      destination: { kind: "screen" as const, screenId: "settings-top" },
+    };
+    const unsafeRecovery = {
+      groupId: "transition:open-settings-top",
+      recipeId: "legacy-cold-open-settings",
+      transitionId: "open-settings-top",
+      coldRecipeId: "legacy-cold-open-settings",
+    };
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            {
+              text: "Settings",
+              visibleToUser: true,
+              rect: { x: 0, y: 0, width: 1080, height: 2200 },
+            },
+          ],
+        }),
+    });
+    const context = {
+      log: (line: string) => logs.push(line),
+      job,
+      runtime,
+      recipeGraph: {},
+    };
+    const failedCheck = {
+      kind: "sleep" as const,
+      ms: 1,
+      check: {
+        id: "visit-data-controls",
+        title: "Visit Data Controls",
+        recovery: unsafeRecovery,
+        transitionDependencies: [dependency],
+      },
+    };
+
+    await runWithTargetContext(
+      { kind: "device", platform: "android", serial: "recipe-runner-test" },
+      async () => {
+        await runCampaignCheck(device, failedCheck, context, async () => {
+          throw new Error("Settings origin was not found");
+        });
+        await runCampaignCheck(
+          device,
+          {
+            ...failedCheck,
+            check: {
+              ...failedCheck.check,
+              id: "visit-cloud-storage",
+              title: "Visit Cloud Storage",
+            },
+          },
+          context,
+          async (recipeId) => {
+            if (recipeId === "legacy-cold-open-settings") coldExecutions += 1;
+          },
+        );
+        await runCampaignCheck(
+          device,
+          {
+            ...failedCheck,
+            check: { ...failedCheck.check, id: "visit-privacy", title: "Visit Privacy" },
+          },
+          context,
+          async (recipeId) => {
+            if (recipeId === "legacy-cold-open-settings") coldExecutions += 1;
+          },
+        );
+        await runCampaignCheck(
+          device,
+          { kind: "sleep", ms: 1, check: { id: "visit-profile", title: "Visit Profile" } },
+          context,
+          async () => {
+            unrelatedExecutions += 1;
+          },
+        );
+      },
+    );
+
+    assert.equal(coldExecutions, 0);
+    assert.equal(unrelatedExecutions, 1);
+    assert.equal(
+      job.artifacts.filter((artifact) => artifact.kind === "human-intervention-requested").length,
+      1,
+    );
+    const intervention = job.artifacts.find(
+      (artifact) => artifact.kind === "campaign-recovery-intervention",
+    )?.data as {
+      transitionId?: string;
+      nodes?: unknown[];
+      screenshot?: { caption?: string };
+      recovery?: {
+        proposedColdRecipeId?: string;
+        implicitResumeAllowed?: boolean;
+        choices?: string[];
+      };
+    };
+    assert.equal(intervention.transitionId, "open-settings-top");
+    assert.equal(intervention.nodes?.length, 1);
+    assert.equal(intervention.screenshot?.caption, "sos:cold-recovery:open-settings-top");
+    assert.equal(intervention.recovery?.proposedColdRecipeId, "legacy-cold-open-settings");
+    assert.equal(intervention.recovery?.implicitResumeAllowed, false);
+    assert.deepEqual(intervention.recovery?.choices, [
+      "fix-current-state",
+      "teach-semantic-repair",
+      "approve-cold-once",
+      "defer",
+    ]);
+    assert.deepEqual(
+      job.artifacts
+        .filter((artifact) => artifact.kind === "campaign-check-result")
+        .map((artifact) => (artifact.data as { status?: string }).status),
+      ["blocked", "blocked", "passed"],
+    );
+    assert.equal(logs.filter((line) => line.includes("SOS: cold recovery blocked")).length, 1);
+  });
+
+  it("firewalls hidden cold effects in graph modules during coverage", async () => {
+    const job = { id: "coverage-firewall", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const context = {
+      ...noLog,
+      job,
+      runtime,
+      recipeGraph: {
+        "arbitrary-setup": {
+          id: "arbitrary-setup",
+          title: "Arbitrary graph setup",
+          source: "custom" as const,
+          steps: [{ kind: "app" as const, action: "close" as const, app: "ai.x.grok" }],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    };
+
+    await runRecipeStep(
+      stubDevice({}),
+      {
+        kind: "module",
+        recipeId: "arbitrary-setup",
+        check: { id: "unsafe-setup", title: "Unsafe setup" },
+      },
+      context,
+    );
+    finalizeDeferredCampaignChecks(context);
+
+    const blocked = job.artifacts.find((artifact) => artifact.kind === "campaign-effect-blocked")
+      ?.data as { reason?: string; coverageStarted?: boolean };
+    assert.match(blocked.reason ?? "", /setup\/reset effect/u);
+    assert.equal(blocked.coverageStarted, true);
+    assert.equal(runtime.campaignCoverageStarted, true);
   });
 });
 
@@ -1426,6 +2203,335 @@ describe("runRecipeStep expect-screen", () => {
   const nodes = [{ role: "button", label: "Continue", visibleToUser: true }];
   const fingerprint = observeScreenIdentity(nodes).fingerprint;
 
+  const screenshot = (name: string, visualFingerprint?: string): ScreenshotPayload => ({
+    capturedAt: 1,
+    mime: "image/png",
+    base64: Buffer.from(name).toString("base64"),
+    path: `/tmp/${name}.png`,
+    bytes: name.length,
+    ...(visualFingerprint
+      ? {
+          screenMatch: {
+            fingerprint: visualFingerprint,
+            visualFingerprint,
+            matchedScreenId: null,
+            status: "observed" as const,
+          },
+        }
+      : {}),
+  });
+
+  it("reports the exact missing inverse without attempting Back", async () => {
+    let backs = 0;
+    await assert.rejects(
+      () =>
+        runWithTargetContext(
+          { kind: "device", platform: "android", serial: "missing-return" },
+          () =>
+            runExpectScreenStep(
+              stubDevice({
+                snapshot: () => Promise.resolve({ nodes: [{ role: "heading", label: "Widget" }] }),
+                back: () => {
+                  backs += 1;
+                  return Promise.resolve({});
+                },
+              }),
+              {
+                kind: "expect-screen",
+                screenId: "settings",
+                screenTitle: "Settings",
+                fingerprint,
+                timeoutMs: 0,
+                returnRequirement: {
+                  connectionId: "open-widget",
+                  fromScreenId: "settings",
+                  destinationScreenId: "widget",
+                },
+              },
+              { log: () => {}, runtime: {}, observeVisualFingerprint: async () => "f".repeat(64) },
+            ),
+        ),
+      /return-edge open-widget: reviewed inverse is required for widget → settings.*no Back was attempted/u,
+    );
+    assert.equal(backs, 0);
+  });
+
+  it("persists immutable lineage after a fresh selective-repair checkpoint matches", async () => {
+    const job = { id: "repair-job", artifacts: [] } as unknown as TestJob;
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes }) }),
+      {
+        kind: "expect-screen",
+        screenId: "settings",
+        screenTitle: "Settings",
+        fingerprint,
+        timeoutMs: 0,
+        repairCheckpoint: {
+          sourceRunId: "0bc5b19f",
+          sourceCheckId: "visit-14",
+          sourceInputDigest: "immutable-source",
+          transitionId: "open-advanced",
+        },
+      },
+      { ...noLog, job, runtime: {} },
+    );
+
+    const proof = job.artifacts.find(
+      (artifact) => artifact.kind === "campaign-repair-checkpoint-proof",
+    )?.data as {
+      source?: { sourceRunId?: string; sourceCheckId?: string };
+      expected?: { screenId?: string };
+      observed?: { accessibility?: { nodeCount?: number }; nodes?: unknown[] };
+    };
+    assert.equal(proof.source?.sourceRunId, "0bc5b19f");
+    assert.equal(proof.source?.sourceCheckId, "visit-14");
+    assert.equal(proof.expected?.screenId, "settings");
+    assert.equal(proof.observed?.accessibility?.nodeCount, 1);
+    assert.equal(proof.observed?.nodes?.length, 1);
+  });
+
+  it("starts Android destination semantics and raster together and retains the matched pair", async () => {
+    let resolveNodes!: (value: { nodes: typeof nodes }) => void;
+    let resolveRaster!: (value: ScreenshotPayload) => void;
+    let markSemanticStarted!: () => void;
+    let markRasterStarted!: () => void;
+    const semanticStarted = new Promise<void>((resolve) => {
+      markSemanticStarted = resolve;
+    });
+    const rasterStarted = new Promise<void>((resolve) => {
+      markRasterStarted = resolve;
+    });
+    const semantic = new Promise<{ nodes: typeof nodes }>((resolve) => {
+      resolveNodes = resolve;
+    });
+    const raster = new Promise<ScreenshotPayload>((resolve) => {
+      resolveRaster = resolve;
+    });
+    const device = stubDevice({
+      snapshot: () => {
+        markSemanticStarted();
+        return semantic;
+      },
+    });
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const pending = runWithTargetContext(
+      { kind: "device", platform: "android", serial: "coalesced-observation" },
+      () =>
+        runExpectScreenStep(
+          device,
+          { kind: "expect-screen", screenId: "home", screenTitle: "Home", fingerprint },
+          {
+            log: () => {},
+            job: { id: "coalesced", platform: "android" } as TestJob,
+            runtime,
+          },
+          {
+            captureScreenshot: () => {
+              markRasterStarted();
+              return raster;
+            },
+          },
+        ),
+    );
+
+    await Promise.all([semanticStarted, rasterStarted]);
+    const captured = screenshot("destination");
+    resolveRaster(captured);
+    await Promise.resolve();
+    assert.equal(Boolean(runtime.verifiedScreen), false, "the pair waits for both observations");
+    resolveNodes({ nodes });
+    await pending;
+
+    assert.equal(runtime.verifiedScreen?.screenshot, captured);
+    assert.equal(runtime.verifiedScreen?.nodes, nodes);
+    assert.equal(captured.framePath, undefined, "ephemeral evidence is not attached early");
+    assert.equal(captured.screenMatch?.matchedScreenId, "home");
+  });
+
+  it("discards a mismatched raster and captures a new pair after recovery", async () => {
+    const wrongNodes = [{ role: "heading", label: "Wrong" }];
+    const rasters = [screenshot("wrong"), screenshot("recovered")];
+    let snapshots = 0;
+    let screenshots = 0;
+    let backs = 0;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    await runWithTargetContext(
+      { kind: "device", platform: "android", serial: "coalesced-recovery" },
+      () =>
+        runExpectScreenStep(
+          stubDevice({
+            snapshot: () => {
+              snapshots += 1;
+              return Promise.resolve({ nodes: snapshots === 1 ? wrongNodes : nodes });
+            },
+            press: () => {
+              backs += 1;
+              return Promise.resolve({});
+            },
+          }),
+          {
+            kind: "expect-screen",
+            screenId: "home",
+            screenTitle: "Home",
+            fingerprint,
+            recovery: { strategy: "back", maxAttempts: 1 },
+          },
+          {
+            log: () => {},
+            job: { id: "recovery", platform: "android" } as TestJob,
+            runtime,
+            observeVisualFingerprint: () => Promise.resolve("f".repeat(64)),
+          },
+          {
+            captureScreenshot: async () => rasters[screenshots++]!,
+          },
+        ),
+    );
+
+    assert.equal(snapshots, 3, "Back resolution takes its own fresh semantic snapshot");
+    assert.equal(screenshots, 2);
+    assert.equal(backs, 1);
+    assert.equal(runtime.verifiedScreen?.screenshot, rasters[1]);
+    assert.equal(rasters[0]?.framePath, undefined);
+  });
+
+  it("does not retain or attach a terminally mismatched raster", async () => {
+    const discarded = screenshot("discarded");
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    await assert.rejects(
+      runWithTargetContext(
+        { kind: "device", platform: "android", serial: "coalesced-mismatch" },
+        () =>
+          runExpectScreenStep(
+            stubDevice({
+              snapshot: () => Promise.resolve({ nodes: [{ role: "heading", label: "Wrong" }] }),
+            }),
+            {
+              kind: "expect-screen",
+              screenId: "home",
+              screenTitle: "Home",
+              fingerprint,
+              timeoutMs: 0,
+            },
+            {
+              log: () => {},
+              job: { id: "mismatch", platform: "android" } as TestJob,
+              runtime,
+            },
+            { captureScreenshot: async () => discarded },
+          ),
+      ),
+      /not “Home”/u,
+    );
+    assert.equal(runtime.observation, undefined);
+    assert.equal(runtime.verifiedScreen, undefined);
+    assert.equal(discarded.framePath, undefined);
+    assert.equal(discarded.jobId, undefined);
+  });
+
+  it("does not pre-capture raster evidence for source, warm, iOS, or browser expectations", async () => {
+    let screenshots = 0;
+    const cases = [
+      {
+        context: { kind: "device", platform: "android", serial: "source" } as const,
+        job: { id: "source", platform: "android" } as TestJob,
+        id: "relay-source-home",
+      },
+      {
+        context: { kind: "device", platform: "android", serial: "warm" } as const,
+        job: { id: "warm", platform: "android" } as TestJob,
+        id: "home:warm",
+      },
+      {
+        context: { kind: "device", platform: "ios", serial: "ios" } as const,
+        job: { id: "ios", platform: "ios" } as TestJob,
+        id: "home",
+      },
+      {
+        context: { kind: "browser", platform: "browser", targetId: "browser" } as const,
+        job: { id: "browser", platform: "android", targetKind: "browser" } as TestJob,
+        id: "home",
+      },
+    ];
+    for (const item of cases) {
+      await runWithTargetContext(item.context, () =>
+        runExpectScreenStep(
+          stubDevice({ snapshot: () => Promise.resolve({ nodes }) }),
+          {
+            kind: "expect-screen",
+            id: item.id,
+            screenId: "home",
+            screenTitle: "Home",
+            fingerprint,
+          },
+          { log: () => {}, job: item.job, runtime: {} },
+          {
+            captureScreenshot: async () => {
+              screenshots += 1;
+              return screenshot("unexpected");
+            },
+          },
+        ),
+      );
+    }
+    assert.equal(screenshots, 0);
+  });
+
+  it("uses the concurrent raster for visual fallback", async () => {
+    const visualFingerprint = "b".repeat(64);
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    await runWithTargetContext(
+      { kind: "device", platform: "android", serial: "visual-fallback" },
+      () =>
+        runExpectScreenStep(
+          stubDevice({ snapshot: () => Promise.resolve({ nodes: [] }) }),
+          {
+            kind: "expect-screen",
+            screenId: "canvas",
+            screenTitle: "Canvas",
+            fingerprint: "a".repeat(64),
+            aliases: [visualFingerprint],
+          },
+          {
+            log: () => {},
+            job: { id: "visual", platform: "android" } as TestJob,
+            runtime,
+          },
+          {
+            captureScreenshot: async () => screenshot("visual", visualFingerprint),
+          },
+        ),
+    );
+    assert.equal(
+      runtime.verifiedScreen?.screenshot?.screenMatch?.visualFingerprint,
+      visualFingerprint,
+    );
+  });
+
+  it("propagates concurrent cancellation after settling both promises", async () => {
+    let resolveNodes!: (value: { nodes: typeof nodes }) => void;
+    const semantic = new Promise<{ nodes: typeof nodes }>((resolve) => {
+      resolveNodes = resolve;
+    });
+    const pending = runWithTargetContext(
+      { kind: "device", platform: "android", serial: "cancelled-observation" },
+      () =>
+        runExpectScreenStep(
+          stubDevice({ snapshot: () => semantic }),
+          { kind: "expect-screen", screenId: "home", screenTitle: "Home", fingerprint },
+          {
+            log: () => {},
+            job: { id: "cancelled", platform: "android" } as TestJob,
+            runtime: {},
+          },
+          { captureScreenshot: () => Promise.reject(new JobCancelledError()) },
+        ),
+    );
+    await Promise.resolve();
+    resolveNodes({ nodes });
+    await assert.rejects(pending, JobCancelledError);
+  });
+
   it("passes when normalized visible semantics reach the expected destination", async () => {
     const lines: string[] = [];
     await runRecipeStep(
@@ -1840,9 +2946,82 @@ describe("runRecipeStep expect-screen", () => {
       {
         platform: "android",
         serial: "recipe-runner-test",
-        selector: 'label="Privacy Policy"',
+        x: 540,
+        y: 1345,
       },
     ]);
+  });
+
+  it("fails closed when Android accessibility says a named target is absent", async () => {
+    let snapshots = 0;
+    let presses = 0;
+    const visibleNodes = [
+      {
+        role: "button",
+        label: "App Language",
+        enabled: true,
+        hittable: true,
+        rect: { x: 45, y: 1700, width: 990, height: 158 },
+      },
+    ];
+    const device = stubDevice({
+      snapshot: () => {
+        snapshots += 1;
+        return Promise.resolve({ nodes: visibleNodes });
+      },
+      press: () => {
+        presses += 1;
+        return Promise.resolve({});
+      },
+    });
+    const ctx: RecipeStepContext = {
+      log: () => {},
+      runtime: {
+        verifiedScreen: {
+          screenId: "usage",
+          screenTitle: "Usage",
+          nodes: visibleNodes,
+          observedAt: 100,
+          verifiedAt: 100,
+        },
+      },
+    };
+
+    await assert.rejects(
+      runRecipeStep(device, { kind: "tap", target: { label: "Set Up Auto Top-Up" } }, ctx),
+      /named target absent from current Android accessibility tree/u,
+    );
+    assert.equal(snapshots, 5);
+    assert.equal(presses, 0);
+  });
+
+  it("waits for a late Android accessibility row before tapping it semantically", async () => {
+    let snapshots = 0;
+    const presses: unknown[] = [];
+    const lateTarget = {
+      role: "button",
+      identifier: "settings_button",
+      enabled: true,
+      hittable: true,
+      rect: { x: 860, y: 120, width: 120, height: 120 },
+    };
+    const device = stubDevice({
+      snapshot: () => {
+        snapshots += 1;
+        return Promise.resolve({ nodes: snapshots >= 2 ? [lateTarget] : [] });
+      },
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+      wait: async () => {},
+    });
+
+    await runRecipeStep(device, { kind: "tap", target: { identifier: "settings_button" } }, noLog);
+
+    assert.equal(snapshots, 3);
+    assert.equal(presses.length, 1);
+    assert.equal((presses[0] as { selector?: string }).selector, 'id="settings_button"');
   });
 
   it("reuses one unchanged automatic observation for destination assertion and semantic tap", async () => {
@@ -2379,6 +3558,68 @@ describe("runRecipeStep conversational evidence", () => {
     assert.equal(owner.artifacts.at(-1)?.kind, "locator-fallback");
   });
 
+  it("proposes a reviewable graph repair when selector drift uses a reviewed fallback", async () => {
+    const owner = job();
+    await runRecipeStep(
+      stubDevice({
+        snapshot: () =>
+          Promise.resolve({
+            nodes: [
+              {
+                role: "button",
+                label: "Settings",
+                enabled: true,
+                hittable: true,
+                rect: { x: 770, y: 2040, width: 80, height: 80 },
+              },
+            ],
+          }),
+        press: () => Promise.resolve({}),
+      }),
+      {
+        kind: "tap",
+        target: { identifier: "settings_button" },
+        fallbackTargets: [{ label: "Settings", role: "button" }],
+        navigationContract: {
+          connectionId: "open-settings",
+          expectedScreenId: "settings",
+          expectedFingerprint: "a".repeat(64),
+          evidenceIds: ["settings-destination-tree"],
+        },
+      },
+      { log: () => {}, job: owner },
+    );
+
+    const proposal = owner.artifacts.find(
+      (artifact) => artifact.kind === "navigation-repair-proposal",
+    );
+    assert.ok(proposal);
+    assert.deepEqual(proposal.data, {
+      status: "pending-review",
+      connectionId: "open-settings",
+      beforeSelector: { identifier: "settings_button" },
+      currentSelector: { label: "Settings", role: "button" },
+      currentResolution: {
+        strategy: "label",
+        bounds: { x: 770, y: 2040, width: 80, height: 80 },
+        point: { x: 810, y: 2080 },
+      },
+      attempts: [
+        {
+          target: { identifier: "settings_button" },
+          error:
+            "named target absent from current Android accessibility tree: selector is not present in the current accessibility tree (identifier settings_button)",
+        },
+      ],
+      expectedDestination: {
+        screenId: "settings",
+        fingerprint: "a".repeat(64),
+        evidenceIds: ["settings-destination-tree"],
+      },
+      persisted: false,
+    });
+  });
+
   it("binds declared reusable-flow inputs without leaking them into the parent", async () => {
     const root = await mkdtemp(join(tmpdir(), "relay-flow-inputs-"));
     const oldRecipes = process.env.RELAY_RECIPES_DIR;
@@ -2620,6 +3861,103 @@ describe("runRecipeStep tour", () => {
       () => runIosRecipeStep(device, { kind: "tour", screenshot: false }, noLog),
       /tour:no-rows/,
     );
+  });
+
+  it("keeps Add Widget evidence stable for 500ms before dismissing the preview", async () => {
+    let surface: "settings" | "preview" = "settings";
+    let elapsedMs = 0;
+    let dismissedAt: number | undefined;
+    const settings = [
+      {
+        type: "Button",
+        label: "Add Widget",
+        hittable: true,
+        rect: { x: 40, y: 420, width: 640, height: 64 },
+      },
+    ];
+    const preview = [
+      {
+        type: "Application",
+        label: "Widget preview",
+        rect: { x: 0, y: 0, width: 834, height: 1112 },
+      },
+      {
+        type: "Button",
+        label: "Back",
+        hittable: true,
+        rect: { x: 20, y: 70, width: 60, height: 36 },
+      },
+    ];
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: surface === "settings" ? settings : preview }),
+      press: (options) => {
+        const selector =
+          typeof options === "object" && options && "selector" in options
+            ? String((options as { selector?: string }).selector ?? "")
+            : "";
+        if (selector.includes("Add Widget")) {
+          surface = "preview";
+        } else if (
+          surface === "preview" &&
+          typeof options === "object" &&
+          options &&
+          "x" in options
+        ) {
+          dismissedAt = elapsedMs;
+          surface = "settings";
+        }
+        return Promise.resolve({});
+      },
+      wait: () => {
+        // sleep() chunks at 100ms; its requested duration is reflected by the
+        // injected clock below without imposing wall-clock time on the test.
+        elapsedMs += 100;
+        return Promise.resolve({});
+      },
+    });
+    const job = { id: "add-widget", artifacts: [] } as unknown as TestJob;
+    const raster: ScreenshotPayload = {
+      capturedAt: 1,
+      mime: "image/png",
+      base64: Buffer.from("preview").toString("base64"),
+      path: "/tmp/add-widget.png",
+      bytes: 7,
+      screenMatch: {
+        fingerprint: "a".repeat(64),
+        visualFingerprint: "a".repeat(64),
+        matchedScreenId: null,
+        status: "observed",
+      },
+    };
+
+    await runWithTargetContext(
+      { kind: "device", platform: "android", serial: "add-widget-preview" },
+      () =>
+        runTourStep(
+          device,
+          {
+            kind: "tour",
+            screenshot: false,
+            fallbackStops: [{ label: "Add Widget", evidenceSurface: "preview" }],
+          },
+          () => {},
+          job,
+          {
+            captureScreenshot: async () => ({ ...raster }),
+            clock: () => elapsedMs,
+          },
+        ),
+    );
+
+    assert.ok(
+      (dismissedAt ?? 0) >= 500,
+      `Back must not dismiss the preview before evidence dwell (dismissedAt=${String(dismissedAt)}, elapsed=${elapsedMs})`,
+    );
+    const timing = job.artifacts.find((artifact) => artifact.kind === "destination-evidence-timing")
+      ?.data as { navigationMs: number; evidenceDwellMs: number; surface: string };
+    assert.equal(timing.surface, "preview");
+    assert.equal(timing.navigationMs, 0);
+    assert.ok(timing.evidenceDwellMs >= 500);
   });
 
   it("walks mapped fallback stops when the live tree is empty", async () => {

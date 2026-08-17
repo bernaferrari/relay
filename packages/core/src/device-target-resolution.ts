@@ -14,6 +14,7 @@ export type SemanticSnapshotTarget = {
   identifier?: string;
   ref?: string;
   label?: string;
+  role?: string;
   text?: string;
 };
 
@@ -78,6 +79,7 @@ function resolveSnapshotTarget(
     identifier: target.identifier?.trim().toLocaleLowerCase(),
     ref: target.ref?.replace(/^@/u, "").trim().toLocaleLowerCase(),
     label: target.label?.trim().toLocaleLowerCase(),
+    role: target.role?.trim().toLocaleLowerCase(),
     text: target.text?.trim().toLocaleLowerCase(),
   };
   const nodesByIndex = new Map(
@@ -112,7 +114,7 @@ function resolveSnapshotTarget(
         right.rect!.width * right.rect!.height - left.rect!.width * left.rect!.height,
     )[0]?.rect;
   const viewport = explicitViewport ?? inferredViewport;
-  const fixedChrome = viewport
+  const fixedChromeNodes = viewport
     ? nodes.flatMap((node) => {
         const rect = node.rect;
         if (
@@ -126,9 +128,22 @@ function resolveSnapshotTarget(
         const spansLeftEdge = rect.x <= viewport.x;
         const atTop = spansLeftEdge && rect.y <= viewport.y;
         const atBottom = spansLeftEdge && rect.y + rect.height >= viewport.y + viewport.height;
-        return atTop || atBottom ? [rect] : [];
+        return atTop || atBottom ? [node] : [];
       })
     : [];
+  const fixedChrome = fixedChromeNodes.flatMap((node) => (node.rect ? [node.rect] : []));
+  const fixedChromeIndexes = new Set(
+    fixedChromeNodes.flatMap((node) => (typeof node.index === "number" ? [node.index] : [])),
+  );
+  const belongsToFixedChrome = (node: SnapshotNode): boolean => {
+    let current: SnapshotNode | undefined = node;
+    while (current) {
+      if (typeof current.index === "number" && fixedChromeIndexes.has(current.index)) return true;
+      current =
+        typeof current.parentIndex === "number" ? nodesByIndex.get(current.parentIndex) : undefined;
+    }
+    return false;
+  };
   const safeTop = Math.max(
     viewport?.y ?? Number.NEGATIVE_INFINITY,
     ...fixedChrome
@@ -154,6 +169,12 @@ function resolveSnapshotTarget(
         return false;
       }
       if (!isUsableTapTarget(node)) return false;
+      if (
+        normalized.role &&
+        (node.role ?? node.type ?? "").trim().toLocaleLowerCase() !== normalized.role
+      ) {
+        return false;
+      }
       if (region && viewport) {
         const point = center(node.rect);
         const x = (point.x - viewport.x) / viewport.width;
@@ -185,6 +206,17 @@ function resolveSnapshotTarget(
       const activationNode = closestHittableAncestor(node);
       const activationRect = activationNode?.rect ?? node.rect!;
       const point = center(activationRect);
+      const isFixedChromeControl =
+        (node.hittable === true || activationNode !== undefined) &&
+        (belongsToFixedChrome(node) ||
+          Boolean(activationNode && belongsToFixedChrome(activationNode))) &&
+        fixedChrome.some(
+          (rect) =>
+            point.x >= rect.x &&
+            point.x <= rect.x + rect.width &&
+            point.y >= rect.y &&
+            point.y <= rect.y + rect.height,
+        );
       // Device input coordinates are always expressed in the current viewport.
       // A reused Compose tree can retain translated document geometry after a
       // scroll; never let that stale geometry become a negative device tap.
@@ -203,9 +235,9 @@ function resolveSnapshotTarget(
         point,
         bounds: activationRect,
         usesActivationAncestor: activationNode !== undefined,
-        ...(point.y < safeTop
+        ...(!isFixedChromeControl && point.y < safeTop
           ? { revealDirection: "up" as const }
-          : point.y > safeBottom
+          : !isFixedChromeControl && point.y > safeBottom
             ? { revealDirection: "down" as const }
             : {}),
         // Compose often places the title inside an unlabeled tappable row.
@@ -274,6 +306,7 @@ export function resolveSnapshotTargetRevealDirection(
 export type NamedControlTarget = {
   identifier?: string;
   label?: string;
+  role?: string;
   text?: string;
   point?: { x: number; y: number };
   /** Exact Android package allowed to replace the current foreground app. */
@@ -295,6 +328,17 @@ export type NamedControlResolution = {
   activation?: "snapshot-point";
 };
 
+export type NamedControlResolutionFailure = {
+  status: "absent" | "ambiguous" | "offscreen" | "unhittable";
+  method: Exclude<NamedControlMethod, "point">;
+  matches: number;
+  detail: string;
+};
+
+export type NamedControlResolutionOutcome =
+  | { status: "resolved"; resolution: NamedControlResolution }
+  | NamedControlResolutionFailure;
+
 export function explicitPointResolution(
   point: { x: number; y: number } | undefined,
 ): NamedControlResolution | undefined {
@@ -314,19 +358,123 @@ export function explicitPointResolution(
  * its unique live bounds instead of its saved point. Otherwise selectors stay
  * first, and a caller point remains only the fallback when no name resolves.
  */
-export function resolveNamedControl(
+export function resolveNamedControlOutcome(
   nodes: SnapshotNode[],
   target: NamedControlTarget,
-): NamedControlResolution | undefined {
+): NamedControlResolutionOutcome {
+  const failures: NamedControlResolutionFailure[] = [];
   const resolve = (
     method: Exclude<NamedControlMethod, "point">,
     value: string | undefined,
   ): NamedControlResolution | undefined => {
     if (!value?.trim()) return undefined;
-    const hit = resolveSnapshotTarget(nodes, { [method]: value });
+    const semanticTarget = {
+      [method]: value,
+      ...(target.role ? { role: target.role } : {}),
+    };
+    const hit = resolveSnapshotTarget(nodes, semanticTarget);
     // Named control activation is not a reveal operation. Off-screen semantic
     // matches must be revealed first or resolved again from a fresh tree.
-    if (!hit || hit.revealDirection) return undefined;
+    if (hit?.revealDirection) {
+      failures.push({
+        status: "offscreen",
+        method,
+        matches: 1,
+        detail: `matched control requires reveal ${hit.revealDirection}`,
+      });
+      return undefined;
+    }
+    if (!hit) {
+      const normalizedValue = value.trim().toLocaleLowerCase();
+      const normalizedRole = target.role?.trim().toLocaleLowerCase();
+      const matches = nodes.filter((node) => {
+        if (
+          normalizedRole &&
+          (node.role ?? node.type ?? "").trim().toLocaleLowerCase() !== normalizedRole
+        ) {
+          return false;
+        }
+        if (method === "identifier") {
+          return node.identifier?.trim().toLocaleLowerCase() === normalizedValue;
+        }
+        if (method === "label") {
+          return node.label?.trim().toLocaleLowerCase() === normalizedValue;
+        }
+        return [node.label, node.value, node.identifier].some((candidate) =>
+          candidate?.toLocaleLowerCase().includes(normalizedValue),
+        );
+      });
+      const usable = matches.filter(
+        (node) =>
+          node.enabled !== false &&
+          node.visibleToUser !== false &&
+          node.rect !== undefined &&
+          node.rect.width > 0 &&
+          node.rect.height > 0 &&
+          isUsableTapTarget(node),
+      );
+      const distinctLocations = usable.filter(
+        (candidate, index) =>
+          usable.findIndex((other) => {
+            const left = candidate.rect!;
+            const right = other.rect!;
+            return (
+              Math.abs(left.x - right.x) <= 4 &&
+              Math.abs(left.y - right.y) <= 4 &&
+              Math.abs(left.width - right.width) <= 4 &&
+              Math.abs(left.height - right.height) <= 4
+            );
+          }) === index,
+      );
+      const diagnosticViewport =
+        nodes.find((node) =>
+          ["application", "window"].includes(
+            (node.type ?? node.role ?? "").trim().toLocaleLowerCase(),
+          ),
+        )?.rect ??
+        nodes
+          .filter((node) => node.rect && node.rect.x <= 0 && node.rect.y <= 0)
+          .sort(
+            (left, right) =>
+              right.rect!.width * right.rect!.height - left.rect!.width * left.rect!.height,
+          )[0]?.rect;
+      const outsideViewport = Boolean(
+        diagnosticViewport &&
+        usable.some((node) => {
+          const point = center(node.rect!);
+          return (
+            point.x < diagnosticViewport.x ||
+            point.x > diagnosticViewport.x + diagnosticViewport.width ||
+            point.y < diagnosticViewport.y ||
+            point.y > diagnosticViewport.y + diagnosticViewport.height
+          );
+        }),
+      );
+      const status =
+        matches.length === 0
+          ? "absent"
+          : usable.length === 0
+            ? "unhittable"
+            : distinctLocations.length > 1
+              ? "ambiguous"
+              : outsideViewport
+                ? "offscreen"
+                : "unhittable";
+      failures.push({
+        status,
+        method,
+        matches: matches.length,
+        detail:
+          status === "absent"
+            ? "selector is not present in the current accessibility tree"
+            : status === "ambiguous"
+              ? `selector matches ${distinctLocations.length} different control locations`
+              : status === "offscreen"
+                ? "selector exists outside the current viewport"
+                : "selector exists but has no unique actionable bounds",
+      });
+      return undefined;
+    }
     const hasVerifiedCurrentPoint =
       (hit.node.hittable === false && hit.usesActivationAncestor) ||
       (hit.node.hittable === undefined && explicitPointResolution(target.point) !== undefined);
@@ -339,11 +487,31 @@ export function resolveNamedControl(
   };
 
   const byIdentifier = resolve("identifier", target.identifier);
-  if (byIdentifier) return byIdentifier;
+  if (byIdentifier) return { status: "resolved", resolution: byIdentifier };
 
+  const byLabel = resolve("label", target.label);
+  if (byLabel) return { status: "resolved", resolution: byLabel };
+  const byText = resolve("text", target.text);
+  if (byText) return { status: "resolved", resolution: byText };
+  const point = explicitPointResolution(target.point);
+  if (point) return { status: "resolved", resolution: point };
   return (
-    resolve("label", target.label) ??
-    resolve("text", target.text) ??
-    explicitPointResolution(target.point)
+    failures.find((failure) => failure.status === "ambiguous") ??
+    failures.find((failure) => failure.status === "offscreen") ??
+    failures.find((failure) => failure.status === "unhittable") ??
+    failures[0] ?? {
+      status: "absent",
+      method: "label",
+      matches: 0,
+      detail: "target has no semantic selector",
+    }
   );
+}
+
+export function resolveNamedControl(
+  nodes: SnapshotNode[],
+  target: NamedControlTarget,
+): NamedControlResolution | undefined {
+  const outcome = resolveNamedControlOutcome(nodes, target);
+  return outcome.status === "resolved" ? outcome.resolution : undefined;
 }

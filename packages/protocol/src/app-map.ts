@@ -2,9 +2,21 @@ import type { RecipeParameter, RecipeStep, StepPoint, StepTarget } from "./recip
 import type { AppMapScenarioTest, AppMapScenarioTestEdit } from "./test-intent.js";
 import type { ActorKind } from "./coordination.js";
 import type { ScreenIdentity } from "./discovery-contract.js";
+import type {
+  ConnectionNavigationContract,
+  ConnectionReturnContract,
+  DestinationEvidenceSurface,
+} from "./connection-navigation.js";
 import type { TargetProfile } from "./target-contract.js";
 import type { ScreenConsolidationPreview } from "./screen-consolidation.js";
 import type { LogicalScrollSurface, ScrollSurfaceCapturePolicy } from "./scroll-surface.js";
+export type {
+  ConnectionNavigationContract,
+  ConnectionNavigationTarget,
+  ConnectionReturnContract,
+  ConnectionScreenProof,
+  DestinationEvidenceSurface,
+} from "./connection-navigation.js";
 export type {
   LogicalScrollSurface,
   LogicalScrollSurfaceImport,
@@ -97,6 +109,7 @@ export type Screen = AppMapEntity & {
     returnAction: "back" | "relaunch-source";
   };
   identity?: ScreenIdentity;
+  evidenceSurface?: DestinationEvidenceSurface;
   position?: AppMapPoint;
   variantIds: string[];
   /** Lossless audit trail for viewport cards absorbed into this logical
@@ -265,7 +278,10 @@ export type Connection = AppMapEntity & {
   label?: string;
   caseStackId?: string;
   state: "draft" | "ready";
+  /** Additional edge behavior after `navigation` activates the source control. */
   actions: ActionSpec[];
+  navigation?: ConnectionNavigationContract;
+  return?: ConnectionReturnContract;
   /** Recorded source control evidence. This is not a mutable canvas-style field. */
   sourceAnchor?: ConnectionSourceAnchor;
   presentation?: ConnectionPresentation;
@@ -527,6 +543,7 @@ export type ScreenPatch = {
   description?: string | null;
   handoff?: Screen["handoff"] | null;
   identity?: ScreenIdentity | null;
+  evidenceSurface?: DestinationEvidenceSurface | null;
   position?: AppMapPoint | null;
 };
 
@@ -543,6 +560,8 @@ export type ConnectionPatch = {
   caseStackId?: string | null;
   state?: Connection["state"];
   actions?: ActionSpec[];
+  navigation?: ConnectionNavigationContract | null;
+  return?: ConnectionReturnContract | null;
   /** Capture-derived origin evidence. `null` deliberately removes stale or
    * disproven evidence; normal canvas styling must never modify this field. */
   sourceAnchor?: ConnectionSourceAnchor | null;
@@ -555,7 +574,12 @@ export type CreateScreenInput = Pick<Screen, "id" | "title"> &
   Partial<Pick<Screen, "description" | "identity" | "position">>;
 
 export type CreateConnectionInput = Pick<Connection, "id" | "fromScreenId" | "destination"> &
-  Partial<Pick<Connection, "label" | "caseStackId" | "state" | "actions" | "presentation">>;
+  Partial<
+    Pick<
+      Connection,
+      "label" | "caseStackId" | "state" | "actions" | "navigation" | "return" | "presentation"
+    >
+  >;
 
 export type SaveRoutineInput = Pick<Routine, "name" | "actions"> &
   Partial<Pick<Routine, "description" | "parameters">>;

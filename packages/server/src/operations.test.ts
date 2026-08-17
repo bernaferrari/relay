@@ -21,8 +21,17 @@ test("every protocol operation has exactly one authoritative server route", () =
 });
 
 test("dynamic canonical routes resolve to their registered operation", () => {
+  assert.equal(findOperationHandler("GET", "/runs/repairs")?.id, "run.repair.list");
   assert.equal(findOperationHandler("POST", "/jobs/job-123/cancel")?.id, "job.cancel");
   assert.equal(findOperationHandler("POST", "/runs/run-123/replay")?.id, "run.replay");
+  assert.equal(
+    findOperationHandler("GET", "/runs/run-123/checks/usage/repair")?.id,
+    "run.repair.get",
+  );
+  assert.equal(
+    findOperationHandler("POST", "/runs/run-123/checks/usage/retry")?.id,
+    "run.repair.retry",
+  );
   assert.equal(
     findOperationHandler("POST", "/capture/scroll-survey")?.id,
     "target.scroll-survey.capture",

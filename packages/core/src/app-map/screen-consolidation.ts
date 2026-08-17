@@ -344,7 +344,10 @@ export function previewScreenConsolidation(
     const clone = structuredClone(connection);
     if (all.has(clone.fromScreenId)) {
       const originalFromScreenId = clone.fromScreenId;
-      if (sources.has(clone.fromScreenId)) clone.fromScreenId = input.targetScreenId;
+      if (sources.has(clone.fromScreenId)) {
+        clone.fromScreenId = input.targetScreenId;
+        if (clone.return) clone.return.expectedDestination.screenId = input.targetScreenId;
+      }
       const target = semanticTarget(connection);
       if (!target)
         blockers.push({
@@ -363,6 +366,7 @@ export function previewScreenConsolidation(
     }
     if (clone.destination.kind === "screen" && sources.has(clone.destination.screenId)) {
       clone.destination.screenId = input.targetScreenId;
+      if (clone.navigation) clone.navigation.expectedDestination.screenId = input.targetScreenId;
       rewiredConnectionIds.push(connection.id);
     }
     projected.push(clone);
@@ -637,7 +641,11 @@ export function consolidateAppMapScreens(
           continue;
         }
         if (all.has(connection.fromScreenId)) {
-          if (sources.has(connection.fromScreenId)) connection.fromScreenId = input.targetScreenId;
+          if (sources.has(connection.fromScreenId)) {
+            connection.fromScreenId = input.targetScreenId;
+            if (connection.return)
+              connection.return.expectedDestination.screenId = input.targetScreenId;
+          }
           const plan = revealPlan(connection)!;
           const alreadyRevealed = connection.actions
             .slice(0, plan.actionIndex)
@@ -657,6 +665,8 @@ export function consolidateAppMapScreens(
           sources.has(connection.destination.screenId)
         ) {
           connection.destination.screenId = input.targetScreenId;
+          if (connection.navigation)
+            connection.navigation.expectedDestination.screenId = input.targetScreenId;
           connection.updatedAt = context.at;
         }
         rewriteActionAssertions(connection.actions, sources, input.targetScreenId);

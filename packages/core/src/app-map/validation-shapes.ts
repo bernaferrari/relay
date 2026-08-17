@@ -1,4 +1,4 @@
-import type { ScreenIdentity, TargetProfile } from "@relay/protocol";
+import type { TargetProfile } from "@relay/protocol";
 import { appMapFail } from "./errors.js";
 import type {
   AddScreenInput,
@@ -30,6 +30,11 @@ import type {
 } from "./model.js";
 import type { ScreenIdentityObservation } from "../screen-identity.js";
 import { assertActions } from "./action-validation.js";
+import {
+  assertConnectionNavigation,
+  assertConnectionReturn,
+  assertIdentity,
+} from "./connection-navigation-validation.js";
 import { assertEntity } from "./entity-validation.js";
 import { assertScenarioTest } from "./test-intent-validation.js";
 import {
@@ -54,18 +59,6 @@ export {
   safeInteger,
 } from "./validation-primitives.js";
 export { assertActivity } from "./activity-validation.js";
-
-function assertIdentity(value: ScreenIdentity, label: string): void {
-  if (value.schemaVersion !== 1 || !/^[a-f0-9]{64}$/u.test(value.fingerprint)) {
-    appMapFail("invalid-map", `${label} must contain a schema-v1 SHA-256 fingerprint`);
-  }
-  if (value.aliases !== undefined) {
-    stringArray(value.aliases, `${label}.aliases`);
-    if (value.aliases.some((alias) => !/^[a-f0-9]{64}$/u.test(alias))) {
-      appMapFail("invalid-map", `${label}.aliases must contain SHA-256 fingerprints`);
-    }
-  }
-}
 
 function assertObservation(value: ScreenIdentityObservation, label: string): void {
   if (!/^[a-f0-9]{64}$/u.test(value.fingerprint)) {
@@ -157,6 +150,12 @@ export function assertScreen(screen: Screen, scope: AppMapScope, label: string):
     }
   }
   if (screen.identity) assertIdentity(screen.identity, `${label}.identity`);
+  if (
+    screen.evidenceSurface !== undefined &&
+    !["ordinary", "modal", "preview", "confirmation", "dead-end"].includes(screen.evidenceSurface)
+  ) {
+    appMapFail("invalid-map", `${label}.evidenceSurface is unsupported`);
+  }
   if (screen.position) {
     if (!Number.isFinite(screen.position.x) || !Number.isFinite(screen.position.y)) {
       appMapFail("invalid-map", `${label}.position must contain finite coordinates`);
@@ -387,6 +386,11 @@ export function assertConnection(connection: Connection, scope: AppMapScope, lab
   if (!(connection.state === "draft" || connection.state === "ready"))
     appMapFail("invalid-map", `${label}.state is unsupported`);
   assertActions(connection.actions, `${label}.actions`);
+  if (connection.navigation !== undefined)
+    assertConnectionNavigation(connection.navigation, `${label}.navigation`);
+  if (connection.return !== undefined) {
+    assertConnectionReturn(connection.return, `${label}.return`);
+  }
   if (connection.sourceAnchor !== undefined)
     assertConnectionSourceAnchor(connection.sourceAnchor, `${label}.sourceAnchor`);
   if (connection.presentation !== undefined)
@@ -692,6 +696,13 @@ export function assertScreenPatch(patch: ScreenPatch, label: string): void {
   if (patch.identity !== undefined && patch.identity !== null)
     assertIdentity(patch.identity, `${label}.identity`);
   if (
+    patch.evidenceSurface !== undefined &&
+    patch.evidenceSurface !== null &&
+    !["ordinary", "modal", "preview", "confirmation", "dead-end"].includes(patch.evidenceSurface)
+  ) {
+    appMapFail("invalid-map", `${label}.evidenceSurface is unsupported`);
+  }
+  if (
     patch.position !== undefined &&
     patch.position !== null &&
     (!Number.isFinite(patch.position.x) || !Number.isFinite(patch.position.y))
@@ -717,6 +728,11 @@ export function assertConnectionPatch(patch: ConnectionPatch, label: string): vo
   if (patch.state !== undefined && patch.state !== "draft" && patch.state !== "ready")
     appMapFail("invalid-map", `${label}.state is unsupported`);
   if (patch.actions !== undefined) assertActions(patch.actions, `${label}.actions`);
+  if (patch.navigation !== undefined && patch.navigation !== null)
+    assertConnectionNavigation(patch.navigation, `${label}.navigation`);
+  if (patch.return !== undefined && patch.return !== null) {
+    assertConnectionReturn(patch.return, `${label}.return`);
+  }
   if (patch.sourceAnchor !== undefined && patch.sourceAnchor !== null)
     assertConnectionSourceAnchor(patch.sourceAnchor, `${label}.sourceAnchor`);
   if (patch.presentation !== undefined && patch.presentation !== null)

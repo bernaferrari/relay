@@ -10,7 +10,10 @@ import {
   resolveNamedControl,
   resolveSnapshotTargetPoint,
 } from "./device.js";
-import { resolveSnapshotTargetRevealDirection } from "./device-target-resolution.js";
+import {
+  resolveNamedControlOutcome,
+  resolveSnapshotTargetRevealDirection,
+} from "./device-target-resolution.js";
 
 test("parses immutable Android app build facts from dumpsys output", () => {
   assert.deepEqual(
@@ -371,6 +374,62 @@ test("named control resolver uses an explicit point when Home labels collide", (
   const fallback = resolveNamedControl(nodes, { label: "Home", point: { x: 240, y: 720 } });
   assert.equal(fallback?.method, "point");
   assert.deepEqual(fallback?.point, { x: 240, y: 720 });
+});
+
+test("named control resolver coalesces duplicate Compose nodes for one fixed-chrome control", () => {
+  const application = {
+    type: "Application",
+    rect: { x: 0, y: 0, width: 900, height: 2200 },
+  };
+  const bottomBar = {
+    index: 1,
+    type: "Cell",
+    rect: { x: 0, y: 2080, width: 900, height: 120 },
+  };
+  const settings = {
+    index: 2,
+    parentIndex: 1,
+    role: "button",
+    identifier: "settings_button",
+    label: "Settings",
+    enabled: true,
+    hittable: true,
+    rect: { x: 770, y: 2088, width: 80, height: 80 },
+  };
+  const duplicate = { ...settings, index: 3, hittable: false };
+
+  const outcome = resolveNamedControlOutcome([application, bottomBar, settings, duplicate], {
+    identifier: "settings_button",
+  });
+  assert.equal(outcome.status, "resolved");
+  if (outcome.status === "resolved") {
+    assert.equal(outcome.resolution.method, "identifier");
+    assert.deepEqual(outcome.resolution.point, { x: 810, y: 2128 });
+  }
+});
+
+test("named control resolver preserves true different-location ambiguity", () => {
+  const controls = [
+    {
+      role: "button",
+      identifier: "settings_button",
+      enabled: true,
+      hittable: true,
+      rect: { x: 20, y: 100, width: 80, height: 80 },
+    },
+    {
+      role: "button",
+      identifier: "settings_button",
+      enabled: true,
+      hittable: true,
+      rect: { x: 700, y: 100, width: 80, height: 80 },
+    },
+  ];
+  const outcome = resolveNamedControlOutcome(controls, { identifier: "settings_button" });
+  if (outcome.status === "resolved") assert.fail("different control locations must not resolve");
+  assert.equal(outcome.status, "ambiguous");
+  assert.equal(outcome.matches, 2);
+  assert.match(outcome.detail, /2 different control locations/u);
 });
 
 test("iOS snapshot fails fast instead of waiting out the 90s daemon budget", async () => {

@@ -12,6 +12,7 @@ export * from "./test-intent.js";
 export * from "./case-expansion.js";
 export * from "./execution-summary.js";
 export * from "./run-review.js";
+export * from "./campaign-repair.js";
 export * from "./run-share.js";
 export * from "./visual-verification.js";
 export * from "./target-runtime.js";

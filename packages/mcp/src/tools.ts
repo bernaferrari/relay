@@ -228,6 +228,9 @@ const testOperations = [
   "job.cancel",
   "run.get",
   "run.evidence.get",
+  "run.repair.list",
+  "run.repair.get",
+  "run.repair.retry",
 ] as const satisfies readonly OperationId[];
 
 const runOperations = [
@@ -256,6 +259,9 @@ const runOperations = [
   "run.list",
   "run.get",
   "run.evidence.get",
+  "run.repair.list",
+  "run.repair.get",
+  "run.repair.retry",
 ] as const satisfies readonly OperationId[];
 
 const reviewOperations = [
@@ -283,6 +289,8 @@ const reviewOperations = [
   "run.list",
   "run.get",
   "run.evidence.get",
+  "run.repair.list",
+  "run.repair.get",
   "run.review",
   "run.visual.compare",
   "run.visual-baseline.update",

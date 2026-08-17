@@ -63,6 +63,10 @@ export type PersistedRun = {
   healed?: boolean;
   healMessage?: string;
   attempts: number;
+  /** Lineage links are immutable execution provenance, not an instruction to
+   * rewrite either run. */
+  retryOf?: string;
+  retriedBy?: string;
   queuedAt: number;
   startedAt?: number;
   finishedAt?: number;
@@ -239,6 +243,8 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     healed: job.healed,
     healMessage: job.healMessage,
     attempts: job.attempts,
+    retryOf: job.retryOf,
+    retriedBy: job.retriedBy,
     queuedAt: job.queuedAt,
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,

@@ -3,24 +3,32 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import {
   applyRunRetention,
+  buildCampaignRepairTarget,
+  campaignRepairPlanIdentity,
   buildCompatibilityReport,
   buildSoakReport,
   compareEvidenceMetrics,
+  campaignCheckRepairInput,
   buildRunEvidence,
   createRunShare,
+  enqueueJob,
   extractEvidenceMetrics,
   listJobs,
   listPersistedRuns,
+  listCampaignRepairTargets,
   listRunSummaries,
   listRunShares,
   readFrameFile,
+  readAppMap,
   readVisualBaselineFrame,
   readPersistedRun,
   rebuildRunCatalog,
+  reconcileCampaignCheckRepair,
   runArtifactFile,
   runsRoot,
   runStorageHealth,
   setRunPinned,
+  summarizeCampaignRepairTarget,
   compareVisualBaseline,
   getVisualBaseline,
   getVisualComparisonPolicy,
@@ -33,6 +41,7 @@ import {
   VisualVerificationError,
   visualTargetKey,
 } from "@relay/core";
+import { assertTargetControl } from "./access-control.js";
 import { recordAudit, resolveCommandActor, type RequestContext } from "./security.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
 
@@ -84,6 +93,19 @@ function reviewActor(context: RunRouteContext): {
 } {
   const actor = resolveCommandActor(context.request.headers, context.scope);
   return { id: actor.actorId, kind: actor.actorKind };
+}
+
+async function currentCampaignRepairReconciliation(
+  scope: RequestContext,
+  run: NonNullable<Awaited<ReturnType<typeof readPersistedRun>>>,
+  checkId: string,
+) {
+  const identity = campaignRepairPlanIdentity(run);
+  if (!identity.appMapId || !identity.testId) return undefined;
+  const map = await readAppMap(scope.projectId, identity.appMapId);
+  const test = map?.tests[identity.testId];
+  if (!map || !test) return undefined;
+  return reconcileCampaignCheckRepair(run, checkId, map, test);
 }
 
 export async function handleRunRoute(context: RunRouteContext): Promise<boolean> {
@@ -150,6 +172,75 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
             retentionClass: "standard" as const,
           }));
     json(response, 200, scope.localTrusted ? { runs, root: runsRoot() } : { runs });
+    return true;
+  }
+
+  if (method === "GET" && pathname === "/runs/repairs") {
+    const limit = Math.min(500, parseLimit(url.searchParams.get("limit"), 100));
+    const runs = (await listPersistedRuns(500)).filter((run) => runVisibleToScope(scope, run));
+    json(response, 200, {
+      repairs: listCampaignRepairTargets(runs).slice(0, limit).map(summarizeCampaignRepairTarget),
+    });
+    return true;
+  }
+
+  const repairGetMatch = matchPath(pathname, "/runs/:id/checks/:checkId/repair");
+  if (method === "GET" && repairGetMatch) {
+    const run = await readPersistedRun(repairGetMatch.id!);
+    assertRunAccess(scope, run);
+    const runs = (await listPersistedRuns(500)).filter((candidate) =>
+      runVisibleToScope(scope, candidate),
+    );
+    const frozenRepair = listCampaignRepairTargets(runs).find(
+      (candidate) =>
+        candidate.source.runId === run.id && candidate.source.checkId === repairGetMatch.checkId,
+    );
+    const reconciliation = await currentCampaignRepairReconciliation(
+      scope,
+      run,
+      repairGetMatch.checkId!,
+    ).catch(() => undefined);
+    const repair = buildCampaignRepairTarget(
+      run,
+      repairGetMatch.checkId!,
+      frozenRepair?.lineage.priorAttempts ?? [],
+      reconciliation,
+    );
+    if (!repair) throw new HttpError(404, `Failed check ${repairGetMatch.checkId} not found`);
+    json(response, 200, { repair });
+    return true;
+  }
+
+  const repairRetryMatch = matchPath(pathname, "/runs/:id/checks/:checkId/retry");
+  if (method === "POST" && repairRetryMatch) {
+    const run = await readPersistedRun(repairRetryMatch.id!);
+    assertRunAccess(scope, run);
+    await parseJsonBody(request);
+    await assertTargetControl(scope, run.serial);
+    try {
+      const reconciliation = await currentCampaignRepairReconciliation(
+        scope,
+        run,
+        repairRetryMatch.checkId!,
+      );
+      const repair = buildCampaignRepairTarget(run, repairRetryMatch.checkId!, [], reconciliation);
+      if (!repair) throw new HttpError(404, `Failed check ${repairRetryMatch.checkId} not found`);
+      const job = enqueueJob(
+        campaignCheckRepairInput(run, repairRetryMatch.checkId!, reconciliation),
+      );
+      recordAudit(scope, {
+        action: "run.repair.retry",
+        resource: repair.id,
+        result: "allow",
+      });
+      json(response, 202, { repair, job });
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(409, error instanceof Error ? error.message : String(error), {
+        code: "CAMPAIGN_CHECK_REPAIR_UNAVAILABLE",
+        recovery: "Inspect the repair target and propose a Test repair, or continue and report.",
+      });
+    }
     return true;
   }
 

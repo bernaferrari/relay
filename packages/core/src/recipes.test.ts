@@ -367,7 +367,7 @@ describe("validateRecipeSteps", () => {
           originTitle: "Settings",
           originFingerprint,
           preludeSteps: [{ kind: "tap", target: { identifier: "sidebar.settings.button" } }],
-          fallbackStops: [{ label: "Appearance" }],
+          fallbackStops: [{ label: "Appearance", evidenceSurface: "preview" }],
           landmarkStops: [{ label: "Profile" }, { label: "Appearance" }],
           scrollSearch: { maxScrolls: 20, amount: 0.5 },
           excludeLanguageRows: true,
@@ -380,7 +380,7 @@ describe("validateRecipeSteps", () => {
           originTitle: "Settings",
           originFingerprint,
           preludeSteps: [{ kind: "tap", target: { identifier: "sidebar.settings.button" } }],
-          fallbackStops: [{ label: "Appearance" }],
+          fallbackStops: [{ label: "Appearance", evidenceSurface: "preview" }],
           landmarkStops: [{ label: "Profile" }, { label: "Appearance" }],
           scrollSearch: { maxScrolls: 20, amount: 0.5 },
           excludeLanguageRows: true,
@@ -394,6 +394,13 @@ describe("validateRecipeSteps", () => {
     assert.throws(
       () => validateRecipeSteps([{ kind: "tour", scrollSearch: { amount: 0.95 } }]),
       /scrollSearch\.amount/,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          { kind: "tour", fallbackStops: [{ label: "Appearance", evidenceSurface: "slow" }] },
+        ]),
+      /evidenceSurface/,
     );
   });
 
@@ -644,6 +651,12 @@ describe("validateRecipeSteps", () => {
         screenId: "home",
         screenTitle: "Home",
         fingerprint: "a".repeat(64),
+        repairCheckpoint: {
+          sourceRunId: "run-1",
+          sourceCheckId: "visit-home",
+          sourceInputDigest: "digest-1",
+          transitionId: "open-home",
+        },
       },
       { kind: "extract", as: "response", target: { ref: "@answer" }, role: "assistant" },
       { kind: "assert-content", input: "response", expected: "France", match: "contains" },
@@ -700,6 +713,70 @@ describe("validateRecipeSteps", () => {
           { kind: "tap", target: { label: "Continue" }, fallbackTargets: [{}] },
         ]),
       /fallbackTargets\[0\].*semantic or coordinate target/,
+    );
+  });
+
+  it("preserves graph navigation proof and accessibility roles", () => {
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "tap",
+          target: { identifier: "settings_button" },
+          fallbackTargets: [{ label: "Settings", role: "button" }],
+          navigationContract: {
+            connectionId: "open-settings",
+            expectedScreenId: "settings",
+            expectedFingerprint: "a".repeat(64),
+            evidenceIds: ["settings-tree"],
+          },
+        },
+      ]),
+      [
+        {
+          kind: "tap",
+          target: { identifier: "settings_button" },
+          fallbackTargets: [{ label: "Settings", role: "button" }],
+          navigationContract: {
+            connectionId: "open-settings",
+            expectedScreenId: "settings",
+            expectedFingerprint: "a".repeat(64),
+            evidenceIds: ["settings-tree"],
+          },
+        },
+      ],
+    );
+  });
+
+  it("preserves an exact missing-return diagnostic without adding recovery", () => {
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "expect-screen",
+          screenId: "settings",
+          screenTitle: "Settings",
+          fingerprint: "a".repeat(64),
+          timeoutMs: 0,
+          returnRequirement: {
+            connectionId: "open-widget",
+            fromScreenId: "settings",
+            destinationScreenId: "widget",
+          },
+        },
+      ]),
+      [
+        {
+          kind: "expect-screen",
+          screenId: "settings",
+          screenTitle: "Settings",
+          fingerprint: "a".repeat(64),
+          timeoutMs: 0,
+          returnRequirement: {
+            connectionId: "open-widget",
+            fromScreenId: "settings",
+            destinationScreenId: "widget",
+          },
+        },
+      ],
     );
   });
 
@@ -880,6 +957,49 @@ describe("validateRecipeSteps", () => {
         ]),
       /check and optional cannot be combined/u,
     );
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "module",
+          recipeId: "kids-flow",
+          check: {
+            id: "kids",
+            title: "Kids Mode",
+            cleanup: {
+              recipeId: "restore-kids-off",
+              bindings: { locale: "en" },
+              terminalScreenId: "kids-off",
+              onCancel: "skip",
+            },
+          },
+        },
+      ])[0]?.check?.cleanup,
+      {
+        recipeId: "restore-kids-off",
+        bindings: { locale: "en" },
+        terminalScreenId: "kids-off",
+        onCancel: "skip",
+      },
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "module",
+            recipeId: "kids-flow",
+            check: {
+              id: "kids",
+              title: "Kids Mode",
+              cleanup: {
+                recipeId: "restore-kids-off",
+                terminalScreenId: "kids-off",
+                onCancel: "run",
+              },
+            },
+          },
+        ]),
+      /check\.cleanup\.onCancel must be "skip"/u,
+    );
   });
 
   it("rejects swipe missing from/to", () => {
@@ -1032,6 +1152,10 @@ describe("describeRecipeStep", () => {
     );
     assert.equal(describeRecipeStep({ kind: "scroll", direction: "up" }), "Scroll up");
     assert.equal(
+      describeRecipeStep({ kind: "reveal", target: { label: "Advanced" } }),
+      'Reveal label "Advanced"',
+    );
+    assert.equal(
       describeRecipeStep({ kind: "swipe", from: { x: 540, y: 1600 }, to: { x: 540, y: 600 } }),
       "swipe ↑ 540,1600 → 540,600",
     );
@@ -1085,6 +1209,7 @@ describe("describeRecipeStep", () => {
     assert.deepEqual(glyphsForStep({ kind: "tap", target: { ref: "x" } }), ["tap"]);
     assert.deepEqual(glyphsForStep({ kind: "type", text: "x" }), ["type"]);
     assert.deepEqual(glyphsForStep({ kind: "scroll", direction: "down" }), ["swipe"]);
+    assert.deepEqual(glyphsForStep({ kind: "reveal", target: { label: "Advanced" } }), ["swipe"]);
     assert.deepEqual(glyphsForStep({ kind: "swipe", from: { x: 0, y: 0 }, to: { x: 1, y: 1 } }), [
       "swipe",
     ]);

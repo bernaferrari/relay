@@ -418,9 +418,6 @@ export function composeOptionRunRecipes(input: {
           warmedLaunch = true;
           return { ...step, relaunch: false };
         }
-        if (step.kind === "expect-screen" && (step.id ?? "").startsWith("relay-source-")) {
-          return { ...step, recovery: { strategy: "back" as const, maxAttempts: 8 } };
-        }
         return step;
       });
       return {

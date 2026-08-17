@@ -1,5 +1,5 @@
 /** Canonical recipe contract shared by persistence, execution, HTTP, and UI. */
-import type { ScreenIdentityObservation } from "./app-map.js";
+import type { DestinationEvidenceSurface, ScreenIdentityObservation } from "./app-map.js";
 import type { SemanticRevealPlan } from "./scroll-surface.js";
 export type HorizontalCoordinateAnchor = "left" | "center" | "right";
 export type VerticalCoordinateAnchor = "top" | "center" | "bottom";
@@ -11,6 +11,7 @@ export type StepPointAnchorTarget = {
   identifier?: string;
   ref?: string;
   label?: string;
+  role?: string;
   text?: string;
 };
 
@@ -68,6 +69,8 @@ export type StepTarget = {
   identifier?: string;
   ref?: string;
   label?: string;
+  /** Stable accessibility role used with a label to disambiguate headings from controls. */
+  role?: string;
   text?: string;
   point?: StepPoint;
 };
@@ -162,12 +165,37 @@ export type RecipeStepMetadata = {
   check?: {
     id: string;
     title: string;
+    /** Ordered graph edges this check must prove. Connection ids are stable
+     * circuit keys shared by every check compiled from the same App Map edge. */
+    transitionDependencies?: Array<{
+      connectionId: string;
+      originScreenId: string;
+      destination: { kind: "screen"; screenId: string } | { kind: "end" };
+      expectedApp?: string;
+    }>;
     /** Canonical cold path used after a sibling check leaves the shared
      * origin uncertain. One failed recovery blocks only this dependency
      * group instead of cascading misleading failures through the campaign. */
     recovery?: {
       groupId: string;
+      /** Safe single-edge confirmation. It never contains app launch, reset,
+       * or campaign setup and may run at most once. */
       recipeId: string;
+      /** Exact shared edge confirmed by this canonical recovery. Legacy
+       * recipes without it retain group-scoped recovery behavior. */
+      transitionId?: string;
+      mode?: "warm-transition";
+      /** Proposed cold setup retained for SOS/review only. The campaign
+       * runner never executes it automatically or merely because a job resumed. */
+      coldRecipeId?: string;
+    };
+    /** Always-run compensating Routine for stateful campaign checks. */
+    cleanup?: {
+      recipeId: string;
+      bindings?: Record<string, string>;
+      terminalScreenId: string;
+      /** Cancellation is an immediate authority boundary; cleanup is skipped. */
+      onCancel: "skip";
     };
   };
   /** Run this step only when the target is currently present or absent. */
@@ -189,6 +217,14 @@ export type RecipeStep = RecipeStepMetadata &
         /** Ordered semantic alternatives for the same intent. The runner only
          * tries these when the primary target cannot be acted on. */
         fallbackTargets?: StepTarget[];
+        /** Graph-native provenance used to propose, never silently persist,
+         * selector repairs when a reviewed alternative replaces the primary. */
+        navigationContract?: {
+          connectionId: string;
+          expectedScreenId: string;
+          expectedFingerprint: string;
+          evidenceIds: string[];
+        };
         gesture?: "single" | "multi" | "hold";
         tapCount?: number;
         intervalMs?: number;
@@ -280,6 +316,17 @@ export type RecipeStep = RecipeStepMetadata &
         /** Approved semantic observations let dynamic screens retain one
          * identity while their body content changes between executions. */
         observations?: ScreenIdentityObservation[];
+        /** Compiler diagnostic used when the current hierarchy cannot be left
+         * safely because a forward edge has no reviewed inverse. It performs
+         * one observation and never mutates the device. */
+        returnRequirement?: {
+          connectionId: string;
+          fromScreenId: string;
+          destinationScreenId: string;
+        };
+        /** Review-sensitive destinations must remain semantically and visually
+         * stable before any later Back/Close/cleanup mutation. */
+        evidenceSurface?: DestinationEvidenceSurface;
         /**
          * Generated warm-suite source checks may return through the current
          * app hierarchy before replaying their recorded navigation. This is
@@ -292,6 +339,15 @@ export type RecipeStep = RecipeStepMetadata &
           /** After one Back reaches a scrollable parent list, return it to
            * its stable top checkpoint before considering another Back. */
           restoreParentViewport?: boolean;
+        };
+        /** A selective repair may begin only from this freshly re-observed
+         * frozen origin. The runner persists the proof and source lineage
+         * before any warm edge is allowed to mutate the device. */
+        repairCheckpoint?: {
+          sourceRunId: string;
+          sourceCheckId: string;
+          sourceInputDigest: string;
+          transitionId?: string;
         };
       }
     | {
@@ -400,6 +456,7 @@ export type RecipeStep = RecipeStepMetadata &
            * Its absence is reported and skipped, never tapped by its old
            * coordinate. */
           optional?: boolean;
+          evidenceSurface?: DestinationEvidenceSurface;
         }>;
         /**
          * Complete recorded row order for the current surface. These are

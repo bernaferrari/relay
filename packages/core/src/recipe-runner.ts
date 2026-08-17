@@ -21,6 +21,10 @@ import {
   stepBreaksVerifiedScreen,
   type RecipeStepContext,
 } from "./recipe-runner-context.js";
+import {
+  boundCoverageExpectScreen,
+  rejectForbiddenCoverageEffect,
+} from "./campaign-recovery-effects.js";
 export { isRightToLeftRun, resolveRecipeStep } from "./recipe-runner-support.js";
 export type { RecipeStepContext } from "./recipe-runner-context.js";
 import {
@@ -67,8 +71,8 @@ import {
 } from "./recipe-target-match.js";
 import { runTourStep } from "./recipe-runner-tour.js";
 import { captureRecipeScreenshot, runExpectScreenStep } from "./recipe-runner-screen.js";
+import { runCampaignCheck } from "./recipe-runner-campaign-checks.js";
 import {
-  runCampaignCheck,
   runCaptureSurfaceStep,
   runScrollOrRevealStep,
   runTapStep,
@@ -163,6 +167,7 @@ async function runRequiredRecipeStep(
   ctx: RecipeStepContext,
 ): Promise<void> {
   const { log, job } = ctx;
+  rejectForbiddenCoverageEffect(step, ctx);
   if (stepBreaksVerifiedScreen(step)) invalidateVerifiedScreen(ctx);
   switch (step.kind) {
     case "tap":
@@ -172,7 +177,6 @@ async function runRequiredRecipeStep(
         invalidateVerifiedScreen(ctx);
       }
       break;
-
     case "type": {
       try {
         await runTypeStep(device, step, ctx);
@@ -181,12 +185,10 @@ async function runRequiredRecipeStep(
       }
       break;
     }
-
     case "scroll":
     case "reveal":
       await runScrollOrRevealStep(device, step, ctx);
       break;
-
     case "swipe": {
       invalidateVerifiedScreen(ctx);
       const { from, to, durationMs } = step;
@@ -198,22 +200,18 @@ async function runRequiredRecipeStep(
       );
       break;
     }
-
     case "key":
       invalidateVerifiedScreen(ctx);
       await pressKey(device, step.key);
       break;
-
     case "sleep":
       invalidateVerifiedScreen(ctx);
       await sleep(step.ms, device);
       break;
-
     case "screenshot": {
       await captureRecipeScreenshot(device, step.caption, ctx);
       break;
     }
-
     case "capture-surface": {
       try {
         await runCaptureSurfaceStep(step, ctx);
@@ -222,11 +220,9 @@ async function runRequiredRecipeStep(
       }
       break;
     }
-
     case "tour":
       await runTourStep(device, step, log, job);
       break;
-
     case "wait-for": {
       const target = step.target;
       const timeout = Math.min(step.timeoutMs ?? 30_000, MAX_WAIT_MS);
@@ -256,11 +252,9 @@ async function runRequiredRecipeStep(
       }
       break;
     }
-
     case "wait-response":
       await waitForResponseCompletion(device, step, ctx);
       break;
-
     case "expect": {
       const target = step.target;
       const timeout = Math.min(step.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS, MAX_WAIT_MS);
@@ -315,7 +309,6 @@ async function runRequiredRecipeStep(
       }
       break;
     }
-
     case "expect-set": {
       const timeout = Math.min(step.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS, MAX_WAIT_MS);
       const deadline = Date.now() + timeout;
@@ -351,12 +344,10 @@ async function runRequiredRecipeStep(
       }
       break;
     }
-
     case "expect-screen": {
-      await runExpectScreenStep(device, step, ctx);
+      await runExpectScreenStep(device, boundCoverageExpectScreen(step, ctx), ctx);
       break;
     }
-
     case "extract": {
       const variables = job?.resolvedInputs ?? ctx.variables;
       if (!variables) throw new Error("extract: no execution context");
@@ -382,7 +373,6 @@ async function runRequiredRecipeStep(
       log(`extract: saved ${step.as} (${text.length} characters)`);
       break;
     }
-
     case "assert-content": {
       const actual = readInput(ctx, step.input);
       const passed =
@@ -404,7 +394,6 @@ async function runRequiredRecipeStep(
       log(`content assertion: passed (${step.match})`);
       break;
     }
-
     case "evaluate-semantic": {
       const input = readInput(ctx, step.input);
       const evaluate = (provider?: string, model?: string) =>
@@ -502,7 +491,6 @@ async function runRequiredRecipeStep(
       }
       break;
     }
-
     case "pause": {
       if (!job) throw new Error("pause: no job to pause (standalone step execution)");
       const checkpointStartedAt = now();
@@ -609,7 +597,6 @@ async function runRequiredRecipeStep(
       }
       break;
     }
-
     case "review": {
       if (!job) throw new Error("review: no job to annotate");
       const context = job.operationContext;
@@ -626,7 +613,6 @@ async function runRequiredRecipeStep(
       log(`? needs review · ${step.capability}: ${step.reason}`);
       break;
     }
-
     case "flow": {
       if (!isActionId(step.flow)) {
         throw new Error(`flow step references unknown action: ${step.flow}`);
@@ -635,12 +621,10 @@ async function runRequiredRecipeStep(
       if (!result.ok) throw new Error(result.error);
       break;
     }
-
     case "module": {
       await runReusableRecipe(device, step.recipeId, ctx, step.bindings);
       break;
     }
-
     case "branch": {
       const key = step.input.replace(/^\{\{\s*|\s*\}\}$/g, "");
       const actual = job?.resolvedInputs[key];
@@ -664,7 +648,6 @@ async function runRequiredRecipeStep(
       if (recipeId) await runReusableRecipe(device, recipeId, ctx);
       break;
     }
-
     case "repeat": {
       for (let iteration = 0; iteration < step.count; iteration += 1) {
         await cooperativeCheckpoint(job?.id);
@@ -679,7 +662,6 @@ async function runRequiredRecipeStep(
       });
       break;
     }
-
     case "script": {
       const before = { ...job?.resolvedInputs };
       runVariableScript(step.source, ctx);
@@ -691,7 +673,6 @@ async function runRequiredRecipeStep(
       log("script: variables transformed safely");
       break;
     }
-
     case "clipboard": {
       if (step.action === "write") {
         await clipboardWrite(device, step.text ?? "");
@@ -724,7 +705,6 @@ async function runRequiredRecipeStep(
       }
       break;
     }
-
     case "app": {
       if (step.action === "switcher") {
         await openAppSwitcher(device);
@@ -806,18 +786,15 @@ async function runRequiredRecipeStep(
       }
       break;
     }
-
     case "device":
       if (step.action === "lock" || step.action === "unlock")
         await setAndroidLockState(step.action);
       else await keyboardAction(device, step.action === "keyboard-dismiss" ? "dismiss" : "enter");
       break;
-
     case "rotate":
       await rotateDevice(device, step.orientation);
       runtimeBoundsCache.delete(device);
       break;
-
     case "settings": {
       const common = { ...base(), setting: step.setting };
       const result =
@@ -835,7 +812,6 @@ async function runRequiredRecipeStep(
       job?.artifacts.push({ kind: "device-setting", capturedAt: now(), data: result });
       break;
     }
-
     case "location": {
       const result = await updateSetting(device, {
         ...base(),
@@ -847,7 +823,6 @@ async function runRequiredRecipeStep(
       job?.artifacts.push({ kind: "location", capturedAt: now(), data: result });
       break;
     }
-
     case "permission": {
       const result = await updateSetting(device, {
         ...base(),
@@ -858,13 +833,11 @@ async function runRequiredRecipeStep(
       job?.artifacts.push({ kind: "permission", capturedAt: now(), data: result });
       break;
     }
-
     case "alert": {
       const result = await alertAction(device, step.action, step.timeoutMs);
       job?.artifacts.push({ kind: "alert", capturedAt: now(), data: result });
       break;
     }
-
     case "network": {
       const include = step.include ?? "summary";
       if (
@@ -882,7 +855,6 @@ async function runRequiredRecipeStep(
       log(`network: captured ${include}`);
       break;
     }
-
     case "logs": {
       const result = await manageLogs(device, { action: step.action, message: step.message });
       job?.artifacts.push({ kind: "device-log", capturedAt: now(), data: result });
@@ -923,8 +895,8 @@ export async function runRecipeStep(
       device,
       step as RecipeStep & { check: NonNullable<RecipeStep["check"]> },
       ctx,
-      (recoveryRecipeId) =>
-        runRequiredRecipeStep(device, campaignExecutionStep(step, recoveryRecipeId), ctx),
+      (recipeId, bindings) =>
+        runRequiredRecipeStep(device, campaignExecutionStep(step, recipeId, bindings), ctx),
     );
     return;
   }

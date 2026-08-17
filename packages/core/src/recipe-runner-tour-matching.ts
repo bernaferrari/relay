@@ -169,6 +169,9 @@ export function mergeMappedTourStops(
       ...landmarkPairs[index]!,
       ...(mappedStop.capture === undefined ? {} : { capture: mappedStop.capture }),
       ...(mappedStop.optional === undefined ? {} : { optional: mappedStop.optional }),
+      ...(mappedStop.evidenceSurface === undefined
+        ? {}
+        : { evidenceSurface: mappedStop.evidenceSurface }),
     }));
   }
   const pointPairs = options.alignByPoint ? mappedTourStopPointPairs(live, mapped) : undefined;
@@ -179,6 +182,9 @@ export function mergeMappedTourStops(
         ...liveStop,
         ...(mappedStop.capture === undefined ? {} : { capture: mappedStop.capture }),
         ...(mappedStop.optional === undefined ? {} : { optional: mappedStop.optional }),
+        ...(mappedStop.evidenceSurface === undefined
+          ? {}
+          : { evidenceSurface: mappedStop.evidenceSurface }),
       };
     });
   }
@@ -194,6 +200,9 @@ export function mergeMappedTourStops(
       // map point remains a final fallback, never the primary selector.
       ...(mappedStop.capture === undefined ? {} : { capture: mappedStop.capture }),
       ...(mappedStop.optional === undefined ? {} : { optional: mappedStop.optional }),
+      ...(mappedStop.evidenceSurface === undefined
+        ? {}
+        : { evidenceSurface: mappedStop.evidenceSurface }),
     }));
   }
   const unused = new Set(live.map((_, index) => index));
@@ -216,6 +225,9 @@ export function mergeMappedTourStops(
       ...live[matchIndex]!,
       ...(fallback.capture === undefined ? {} : { capture: fallback.capture }),
       ...(fallback.optional === undefined ? {} : { optional: fallback.optional }),
+      ...(fallback.evidenceSurface === undefined
+        ? {}
+        : { evidenceSurface: fallback.evidenceSurface }),
     };
   });
 }

@@ -2,7 +2,7 @@ import { describeSnapshotChrome } from "@relay/protocol";
 import type { Device } from "./device.js";
 import { pressKey, pressLabel, scrollUp, sleep, snapshot, type SnapshotNode } from "./device.js";
 import { now } from "./events.js";
-import type { RecipeStepContext } from "./recipe-runner-context.js";
+import type { FreshDeviceObservation, RecipeStepContext } from "./recipe-runner-context.js";
 import {
   handoffShellIdentityMatch,
   resilientScreenIdentityMatch,
@@ -15,7 +15,11 @@ import {
   observeScreenIdentity,
   observeVisualScreenFingerprint,
 } from "./screen-identity.js";
-import { captureScreenshot } from "./workspace.js";
+import { attachScreenshotPayload, captureScreenshot } from "./workspace-capture.js";
+import {
+  awaitStableDestinationEvidence,
+  recordDestinationEvidenceTiming,
+} from "./destination-evidence.js";
 
 const DEFAULT_EXPECT_TIMEOUT_MS = 5_000;
 const MAX_WAIT_MS = 15 * 60 * 1_000;
@@ -27,6 +31,17 @@ export async function captureRecipeScreenshot(
 ): Promise<void> {
   const verified = ctx.runtime?.verifiedScreen;
   const observation = ctx.runtime?.observation;
+  const retained = observation?.screenshot ?? verified?.screenshot;
+  if (retained) {
+    await attachScreenshotPayload(
+      retained,
+      ctx.job?.id,
+      caption ?? `screenshot · ${new Date().toISOString()}`,
+    );
+    if (observation) observation.screenshot = retained;
+    if (verified) verified.screenshot = retained;
+    return;
+  }
   const screenshot = await captureScreenshot({
     jobId: ctx.job?.id,
     caption,
@@ -37,11 +52,68 @@ export async function captureRecipeScreenshot(
   if (verified) verified.screenshot = screenshot;
 }
 
+type ExpectScreenDependencies = {
+  captureScreenshot?: typeof captureScreenshot;
+};
+
+function ownsAndroidDestinationEvidence(
+  step: Extract<RecipeStep, { kind: "expect-screen" }>,
+  ctx: RecipeStepContext,
+): boolean {
+  return (
+    ctx.job?.platform === "android" &&
+    ctx.job.targetKind !== "browser" &&
+    !step.id?.startsWith("relay-source-") &&
+    !step.id?.endsWith(":warm")
+  );
+}
+
+function isCancellation(error: unknown): boolean {
+  return error instanceof Error && error.name === "JobCancelledError";
+}
+
+async function observeDestinationAttempt(
+  device: Device,
+  reusable: FreshDeviceObservation | undefined,
+  captureRaster: (() => Promise<Awaited<ReturnType<typeof captureScreenshot>>>) | undefined,
+): Promise<{
+  nodes: SnapshotNode[];
+  observedAt: number;
+  screenshot?: Awaited<ReturnType<typeof captureScreenshot>>;
+}> {
+  const raster = captureRaster?.().then(
+    (screenshot) => ({ screenshot }),
+    (error: unknown) => ({ error }),
+  );
+  const semantics = (reusable?.nodes ? Promise.resolve(reusable.nodes) : snapshot(device)).then(
+    (nodes) => ({ nodes }),
+    (error: unknown) => ({ error }),
+  );
+  const [semanticResult, rasterResult] = await Promise.all([
+    semantics,
+    raster ?? Promise.resolve({ screenshot: undefined }),
+  ]);
+  if ("error" in semanticResult && isCancellation(semanticResult.error)) {
+    throw semanticResult.error;
+  }
+  if ("error" in rasterResult && isCancellation(rasterResult.error)) throw rasterResult.error;
+  const nodes = "nodes" in semanticResult ? semanticResult.nodes : [];
+  return {
+    nodes,
+    observedAt: reusable?.observedAt ?? now(),
+    ...("screenshot" in rasterResult && rasterResult.screenshot
+      ? { screenshot: rasterResult.screenshot }
+      : {}),
+  };
+}
+
 export async function runExpectScreenStep(
   device: Device,
   step: Extract<RecipeStep, { kind: "expect-screen" }>,
   ctx: RecipeStepContext,
+  dependencies: ExpectScreenDependencies = {},
 ): Promise<void> {
+  const navigationStartedAt = now();
   const priorObservation = ctx.runtime?.observation;
   if (ctx.runtime) {
     ctx.runtime.observation = undefined;
@@ -71,18 +143,23 @@ export async function runExpectScreenStep(
     // A recovery mutation makes pixels from the preceding attempt stale.
     const reusable = firstAttempt ? priorObservation : undefined;
     firstAttempt = false;
-    verifiedScreenshot = reusable?.screenshot;
-    let nodes: SnapshotNode[] = [];
-    if (reusable?.nodes) {
-      nodes = reusable.nodes;
-    } else {
-      try {
-        nodes = await snapshot(device);
-      } catch {
-        nodes = [];
-      }
-    }
-    const observedAt = reusable?.observedAt ?? now();
+    const captureDestinationScreenshot = dependencies.captureScreenshot ?? captureScreenshot;
+    const attempt = await observeDestinationAttempt(
+      device,
+      reusable,
+      ownsAndroidDestinationEvidence(step, ctx) && !reusable?.screenshot
+        ? () =>
+            captureDestinationScreenshot({
+              device,
+              caption: `Verify ${step.screenTitle}`,
+              ephemeral: true,
+              includeScreenMatch: false,
+            })
+        : undefined,
+    );
+    verifiedScreenshot = reusable?.screenshot ?? attempt.screenshot;
+    const nodes = attempt.nodes;
+    const observedAt = attempt.observedAt;
     const chrome = describeSnapshotChrome(nodes);
     observedTitle = chrome.header ?? chrome.app ?? "unknown";
     const observed = observeScreenIdentity(nodes);
@@ -108,9 +185,9 @@ export async function runExpectScreenStep(
 
     let visualFingerprint: string | undefined;
     if (verifiedScreenshot) {
-      visualFingerprint = observeVisualScreenFingerprint(
-        Buffer.from(verifiedScreenshot.base64, "base64"),
-      );
+      visualFingerprint =
+        verifiedScreenshot.screenMatch?.visualFingerprint ??
+        observeVisualScreenFingerprint(Buffer.from(verifiedScreenshot.base64, "base64"));
     } else if (ctx.observeVisualFingerprint) {
       visualFingerprint = await ctx.observeVisualFingerprint();
     } else {
@@ -158,9 +235,65 @@ export async function runExpectScreenStep(
   } while (Date.now() < deadline);
 
   if (!reached) {
+    if (step.returnRequirement) {
+      throw new Error(
+        `return-edge ${step.returnRequirement.connectionId}: reviewed inverse is required for ${step.returnRequirement.destinationScreenId} → ${step.returnRequirement.fromScreenId} (observed “${observedTitle}”; no Back was attempted)`,
+      );
+    }
     throw new Error(`expect-screen: on “${observedTitle}”, not “${step.screenTitle}”`);
   }
+  if (step.evidenceSurface && verifiedNodes) {
+    const captureDestinationScreenshot = dependencies.captureScreenshot ?? captureScreenshot;
+    const stable = await awaitStableDestinationEvidence({
+      surface: step.evidenceSurface,
+      navigationStartedAt,
+      initial: {
+        nodes: verifiedNodes,
+        ...(verifiedScreenshot ? { screenshot: verifiedScreenshot } : {}),
+      },
+      observe: async (includeRaster) => {
+        const observation = await observeDestinationAttempt(
+          device,
+          undefined,
+          includeRaster
+            ? () =>
+                captureDestinationScreenshot({
+                  device,
+                  caption: `Stabilize ${step.screenTitle}`,
+                  ephemeral: true,
+                  includeScreenMatch: false,
+                })
+            : undefined,
+        );
+        return {
+          nodes: observation.nodes,
+          ...(observation.screenshot ? { screenshot: observation.screenshot } : {}),
+        };
+      },
+      wait: (durationMs) => sleep(durationMs, device),
+    });
+    verifiedNodes = stable.nodes;
+    verifiedObservedAt = now();
+    verifiedScreenshot = stable.screenshot;
+    recordDestinationEvidenceTiming(ctx.job?.artifacts ?? ctx.artifacts, stable.timing, {
+      screenId: step.screenId,
+    });
+  }
   if (verifiedNodes && ctx.runtime) {
+    if (verifiedScreenshot) {
+      const observed = observeScreenIdentity(verifiedNodes);
+      const visualFingerprint =
+        verifiedScreenshot.screenMatch?.visualFingerprint ??
+        observeVisualScreenFingerprint(Buffer.from(verifiedScreenshot.base64, "base64"));
+      if (observed.fingerprint || visualFingerprint) {
+        verifiedScreenshot.screenMatch = {
+          fingerprint: observed.fingerprint || visualFingerprint!,
+          ...(visualFingerprint ? { visualFingerprint } : {}),
+          matchedScreenId: step.screenId,
+          status: "observed",
+        };
+      }
+    }
     const checkpoint = {
       screenId: step.screenId,
       screenTitle: step.screenTitle,
@@ -171,6 +304,56 @@ export async function runExpectScreenStep(
     };
     ctx.runtime.observation = checkpoint;
     ctx.runtime.verifiedScreen = checkpoint;
+  }
+  if (verifiedNodes && step.repairCheckpoint && ctx.job) {
+    const proofScreenshot = await captureScreenshot({
+      jobId: ctx.job.id,
+      device,
+      caption: `repair-checkpoint:${step.repairCheckpoint.sourceCheckId}:${step.screenId}`,
+      semanticNodes: verifiedNodes,
+      includeScreenMatch: true,
+    }).catch(() => undefined);
+    const observed = observeScreenIdentity(verifiedNodes);
+    const capturedAt = now();
+    ctx.job.artifacts.push({
+      kind: "campaign-repair-checkpoint-proof",
+      capturedAt,
+      data: {
+        schemaVersion: 1,
+        tokenId: `${ctx.job.id}:${step.repairCheckpoint.sourceRunId}:${step.repairCheckpoint.sourceCheckId}`,
+        source: structuredClone(step.repairCheckpoint),
+        expected: {
+          screenId: step.screenId,
+          screenTitle: step.screenTitle,
+          fingerprint: step.fingerprint,
+          aliases: [...(step.aliases ?? [])],
+          observations: structuredClone(step.observations ?? []),
+          ...(step.expectedApp ? { expectedApp: step.expectedApp } : {}),
+        },
+        observed: {
+          observedAt: verifiedObservedAt ?? capturedAt,
+          verifiedAt: capturedAt,
+          screenIdentity: observed,
+          chrome: describeSnapshotChrome(verifiedNodes),
+          accessibility: { available: true, nodeCount: verifiedNodes.length },
+          nodes: structuredClone(verifiedNodes),
+          ...(proofScreenshot
+            ? {
+                screenshot: {
+                  ...(proofScreenshot.framePath ? { framePath: proofScreenshot.framePath } : {}),
+                  ...(proofScreenshot.path ? { path: proofScreenshot.path } : {}),
+                  ...(proofScreenshot.width ? { width: proofScreenshot.width } : {}),
+                  ...(proofScreenshot.height ? { height: proofScreenshot.height } : {}),
+                  ...(proofScreenshot.screenMatch
+                    ? { screenMatch: structuredClone(proofScreenshot.screenMatch) }
+                    : {}),
+                },
+              }
+            : {}),
+        },
+      },
+    });
+    ctx.log(`repair checkpoint: verified ${step.screenTitle} from fresh device evidence`);
   }
   ctx.log(`screen: reached ${step.screenTitle}`);
 }

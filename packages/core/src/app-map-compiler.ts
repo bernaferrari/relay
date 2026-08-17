@@ -6,6 +6,7 @@ import type {
   AppMapCompiledRecipe,
   AppMapCompiledStepProvenance,
   AssertionSpec,
+  Connection,
   RecipeStep,
   Routine,
   Screen,
@@ -76,7 +77,12 @@ function stableStep(step: RecipeStep, actionId: string, index: number): RecipeSt
   };
 }
 
-function screenExpectation(map: AppMap, screen: Screen, stepId: string): RecipeStep {
+export function screenExpectation(
+  map: AppMap,
+  screen: Screen,
+  stepId: string,
+  evidenceSurface = screen.evidenceSurface,
+): RecipeStep {
   if (!screen.identity) {
     fail(
       "missing-screen-identity",
@@ -112,6 +118,7 @@ function screenExpectation(map: AppMap, screen: Screen, stepId: string): RecipeS
     screenTitle: screen.title,
     fingerprint: screen.identity.fingerprint,
     timeoutMs: 5000,
+    ...(evidenceSurface ? { evidenceSurface } : {}),
     ...(screen.handoff?.ownerApp ? { expectedApp: screen.handoff.ownerApp } : {}),
     ...(aliases.size ? { aliases: [...aliases] } : {}),
     ...(observations.length ? { observations } : {}),
@@ -324,6 +331,69 @@ function compileRecipe(input: {
   };
 }
 
+function navigationTarget(
+  target: NonNullable<Connection["navigation"]>["targetAlternatives"][number],
+): StepTarget {
+  switch (target.kind) {
+    case "identifier":
+      return { identifier: target.identifier };
+    case "accessibility":
+      return { label: target.label, ...(target.role ? { role: target.role } : {}) };
+    case "element-relative":
+      return {
+        point: {
+          x: 0,
+          y: 0,
+          relativeTo: {
+            target: structuredClone(target.anchor),
+            xRatio: target.xRatio,
+            yRatio: target.yRatio,
+          },
+        },
+      };
+  }
+}
+
+function navigationStep(connection: Connection): Extract<RecipeStep, { kind: "tap" }> | undefined {
+  const contract = connection.navigation;
+  if (!contract) return undefined;
+  const [primary, ...fallbacks] = contract.targetAlternatives.map(navigationTarget);
+  if (!primary) return undefined;
+  return {
+    id: `relay-navigation-${connection.id}`,
+    kind: "tap",
+    target: primary,
+    ...(fallbacks.length ? { fallbackTargets: fallbacks } : {}),
+    navigationContract: {
+      connectionId: connection.id,
+      expectedScreenId: contract.expectedDestination.screenId,
+      expectedFingerprint: contract.expectedDestination.identity.fingerprint,
+      evidenceIds: [...contract.expectedDestination.evidenceIds],
+    },
+  };
+}
+
+function destinationExpectation(map: AppMap, connection: Connection): RecipeStep {
+  const destination =
+    map.screens[
+      (connection.destination as Extract<Connection["destination"], { kind: "screen" }>).screenId
+    ]!;
+  const hasOutgoingConnection = Object.values(map.connections).some(
+    (candidate) => candidate.fromScreenId === destination.id && candidate.state !== "draft",
+  );
+  return screenExpectation(
+    map,
+    connection.navigation
+      ? {
+          ...destination,
+          identity: structuredClone(connection.navigation.expectedDestination.identity),
+        }
+      : destination,
+    `relay-destination-${connection.id}`,
+    destination.evidenceSurface ?? (hasOutgoingConnection ? "ordinary" : "dead-end"),
+  );
+}
+
 /** Compile one saved flow into the exact recipes consumed by the runner. */
 export function compileAppMapFlow(
   mapInput: AppMap,
@@ -401,6 +471,19 @@ export function compileAppMapFlow(
       );
     }
     const rangeStart = root.steps.length;
+    const contractStep = navigationStep(connection);
+    if (contractStep) {
+      root.steps.push(contractStep);
+      root.stepProvenance.push({
+        recipeId: rootRecipeId,
+        stepIndex: rangeStart,
+        stepId: contractStep.id!,
+        origin: "action",
+        ownerKind: "connection",
+        ownerId: connection.id,
+        actionId: "navigation-contract",
+      });
+    }
     const compiled = compileRecipe({
       map,
       id: rootRecipeId,
@@ -419,9 +502,8 @@ export function compileAppMapFlow(
       root.stepProvenance.push({ ...provenance, stepIndex });
     }
     if (connection.destination.kind === "screen") {
-      const destination = map.screens[connection.destination.screenId]!;
       const stepIndex = root.steps.length;
-      const step = screenExpectation(map, destination, `relay-destination-${connection.id}`);
+      const step = destinationExpectation(map, connection);
       let scrollIndex = -1;
       for (let index = rangeStart; index < root.steps.length; index += 1) {
         if (root.steps[index]?.kind === "scroll") scrollIndex = index;
@@ -533,14 +615,26 @@ export function compileAppMapConnection(
     actions: connection.actions,
     ensureRoutine,
   });
+  const contractStep = navigationStep(connection);
+  if (contractStep) {
+    root.steps.push(contractStep);
+    root.stepProvenance.push({
+      recipeId: rootRecipeId,
+      stepIndex: root.steps.length - 1,
+      stepId: contractStep.id!,
+      origin: "action",
+      ownerKind: "connection",
+      ownerId: connection.id,
+      actionId: "navigation-contract",
+    });
+  }
   for (let index = 0; index < compiled.steps.length; index += 1) {
     const stepIndex = root.steps.length;
     root.steps.push(compiled.steps[index]!);
     root.stepProvenance.push({ ...compiled.stepProvenance[index]!, stepIndex });
   }
   if (connection.destination.kind === "screen") {
-    const destination = map.screens[connection.destination.screenId]!;
-    const step = screenExpectation(map, destination, `relay-destination-${connection.id}`);
+    const step = destinationExpectation(map, connection);
     root.stepProvenance.push({
       recipeId: rootRecipeId,
       stepIndex: root.steps.length,

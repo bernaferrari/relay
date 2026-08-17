@@ -1,7 +1,4 @@
-// Keep the operation contract at the bottom of the protocol dependency graph.
-// In particular, do not import from `index.ts`: it re-exports this module and
-// doing so creates a public-barrel cycle. These transport DTOs intentionally
-// describe only the stable wire fields needed by every host.
+// Keep operations at the bottom of the protocol graph. Do not import `index.ts`.
 import {
   assertAuthoringSessionRef,
   parseAuthoringSessionListResponse,
@@ -32,6 +29,10 @@ import type {
   TargetWorkerStatus,
 } from "./target-runtime.js";
 import type { RunReview } from "./run-review.js";
+import {
+  runRepairOperationDefinitions,
+  type CampaignRepairOperationMap,
+} from "./run-repair-operations.js";
 import { runShareOperationDefinitions, type RunShareOperationMap } from "./run-share.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
@@ -63,9 +64,7 @@ type RedactionPolicyDto = {
   locked: boolean;
   updatedAt?: number;
 };
-
 type SensitiveEvidenceChannelDto = "audio" | "crash" | "network-body";
-
 type EvidenceCollectionPolicyDto = {
   schemaVersion: 1;
   sensitive: Partial<
@@ -73,7 +72,6 @@ type EvidenceCollectionPolicyDto = {
   >;
   updatedAt?: number;
 };
-
 type JobSummaryDto = {
   id: string;
   action: string;
@@ -83,7 +81,6 @@ type JobSummaryDto = {
   review?: RunReview;
   [key: string]: unknown;
 };
-
 type RunSummaryDto = JobSummaryDto & {
   writtenAt: number;
   artifactCount: number;
@@ -91,7 +88,6 @@ type RunSummaryDto = JobSummaryDto & {
   pinned: boolean;
   retentionClass: "standard" | "protected";
 };
-
 type RevisionedDto<T> = {
   revision: number;
   value: T;
@@ -624,6 +620,7 @@ type SpecificOperationMap = {
   };
   "lease.release": { input: { leaseId: string }; output: { lease: DeviceLeaseDto } };
 } & AppMapOperationMap &
+  CampaignRepairOperationMap &
   RunShareOperationMap;
 
 type GenericOperationId =
@@ -2533,6 +2530,7 @@ export const operationDefinitions = [
     category: "evidence",
     input: runIdInputParser,
   }),
+  ...runRepairOperationDefinitions,
   command("run.review", "Review a deferred run check", "POST", "/runs/:runId/review", {
     category: "evidence",
     confirmation: "confirm",

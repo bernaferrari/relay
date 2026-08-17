@@ -26,14 +26,56 @@ export type RecipeRuntimeState = {
   deferredCampaignChecks?: Array<{
     check: NonNullable<RecipeStep["check"]>;
     error: string;
+    startedAt: number;
     deferredAt: number;
   }>;
-  campaignItineraryDirty?: boolean;
   campaignRecoveryGroups?: Record<
     string,
     { status: "healthy" | "needs-recovery" | "blocked"; reason?: string }
   >;
+  /** Run-local proof graph keyed by canonical App Map connection id. An open
+   * circuit is terminal for this run and prevents every dependent mutation. */
+  campaignTransitionProofs?: Record<
+    string,
+    {
+      status: "verified" | "needs-confirmation" | "open";
+      checkId: string;
+      updatedAt: number;
+      reason?: string;
+    }
+  >;
+  /** Whether the next campaign check may use its compiled warm path. A failed
+   * check invalidates that assumption; the next check gets exactly one
+   * canonical recovery path instead of probing Back from an unknown state. */
+  campaignItineraryTrusted?: boolean;
+  /** Becomes true at the first coverage check and never resets during the run.
+   * Destructive setup effects are firewalled after this boundary, including
+   * when they are hidden inside reusable modules or graph routines. */
+  campaignCoverageStarted?: boolean;
 };
+
+export function campaignCoverageForbiddenEffect(step: RecipeStep): string | undefined {
+  if (step.kind === "app") {
+    if (step.action === "open") {
+      if (step.url) return "opening a URL is a reviewed handoff effect";
+      if (step.relaunch === true) return "app relaunch is a setup/reset effect";
+      return undefined;
+    }
+    if (!["inspect", "assert-installed", "assert-not-installed"].includes(step.action)) {
+      return `app ${step.action} is a setup/reset effect`;
+    }
+  }
+  if (["rotate", "settings", "location", "permission"].includes(step.kind)) {
+    return `${step.kind} is a setup/device mutation effect`;
+  }
+  if (step.kind === "device" && ["lock", "unlock"].includes(step.action)) {
+    return `device ${step.action} is a setup/device mutation effect`;
+  }
+  if (step.kind === "key" && step.key === "home") {
+    return "device Home is a setup/navigation reset effect";
+  }
+  return undefined;
+}
 
 const checkpointBreakingSteps = new Set<RecipeStep["kind"]>([
   "tour",
@@ -67,12 +109,19 @@ export function invalidateVerifiedScreen(ctx: RecipeStepContext): void {
   }
 }
 
-export function campaignExecutionStep(step: RecipeStep, recoveryRecipeId?: string): RecipeStep {
-  return recoveryRecipeId && step.kind === "module"
-    ? { ...step, recipeId: recoveryRecipeId }
+export function campaignExecutionStep(
+  step: RecipeStep,
+  recipeId?: string,
+  bindings?: Record<string, string>,
+): RecipeStep {
+  return recipeId && step.kind === "module"
+    ? {
+        ...step,
+        recipeId,
+        ...(bindings ? { bindings: structuredClone(bindings) } : {}),
+      }
     : step;
 }
-
 export type RecipeStepContext = {
   log: (line: string) => void;
   /**

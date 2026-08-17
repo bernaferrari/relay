@@ -1,9 +1,7 @@
-import { describeSnapshotChrome } from "@relay/protocol";
 import type { Device } from "./device.js";
 import { replaceText, scrollDown, scrollUp, sleep, snapshot, typeText } from "./device.js";
 import { cooperativeCheckpoint } from "./control.js";
 import { now } from "./events.js";
-import { captureScreenshot } from "./workspace.js";
 import { captureScrollableSurveyForTarget } from "./scrollable-survey.js";
 import { persistLogicalScrollSurface } from "./logical-scroll-surface.js";
 import { listPersistedRuns } from "./runs.js";
@@ -21,7 +19,6 @@ import {
 } from "./device-target-resolution.js";
 import {
   resilientScreenIdentityMatch,
-  isCancel,
   longPressRecordedTarget,
   tapRecordedTarget,
 } from "./recipe-runner-support.js";
@@ -37,51 +34,6 @@ function liveSemanticKeys(node: Awaited<ReturnType<typeof snapshot>>[number]): s
     node.label ? semanticTargetKey({ label: node.label }) : undefined,
     node.value ? semanticTargetKey({ text: node.value }) : undefined,
   ].flatMap((key) => (key ? [key] : []));
-}
-
-async function captureCampaignFailureEvidence(
-  device: Device,
-  check: NonNullable<RecipeStep["check"]>,
-  ctx: RecipeStepContext,
-  startedAt: number,
-  error: string,
-): Promise<void> {
-  const job = ctx.job;
-  if (!job) return;
-  const attempts = job.artifacts.flatMap((artifact) =>
-    artifact.capturedAt >= startedAt &&
-    ["target-resolution", "target-resolution-attempt", "locator-fallback", "locator-heal"].includes(
-      artifact.kind,
-    )
-      ? [{ kind: artifact.kind, capturedAt: artifact.capturedAt, data: artifact.data }]
-      : [],
-  );
-  let nodes: Awaited<ReturnType<typeof snapshot>> = [];
-  try {
-    nodes = await snapshot(device);
-  } catch {
-    // The action error and screenshot remain useful when AX is unavailable.
-  }
-  const capturedAt = now();
-  job.artifacts.push({
-    kind: "campaign-check-evidence",
-    capturedAt,
-    data: {
-      checkId: check.id,
-      checkTitle: check.title,
-      error,
-      attempts,
-      chrome: describeSnapshotChrome(nodes),
-      screenIdentity: observeScreenIdentity(nodes),
-      nodes,
-    },
-  });
-  await captureScreenshot({
-    jobId: job.id,
-    caption: `failed:${check.title}`,
-    device,
-    ...(nodes.length ? { semanticNodes: nodes } : {}),
-  }).catch(() => undefined);
 }
 
 function semanticRevealMovement(
@@ -454,120 +406,4 @@ export async function runCaptureSurfaceStep(
   ctx.log(
     `surface: ${step.screenTitle} · ${surface.viewports.length} viewport(s) · ${matches ? "matches baseline" : "repair proposed"}`,
   );
-}
-
-export async function runCampaignCheck(
-  device: Device,
-  step: RecipeStep & { check: NonNullable<RecipeStep["check"]> },
-  ctx: RecipeStepContext,
-  execute: (recoveryRecipeId?: string) => Promise<void>,
-  options: { allowDefer?: boolean } = {},
-): Promise<void> {
-  const startedAt = now();
-  const recovery = step.check.recovery;
-  const groups = ((ctx.runtime ??= {}).campaignRecoveryGroups ??= {});
-  const group = recovery ? groups[recovery.groupId] : undefined;
-  if (group?.status === "blocked") {
-    const finishedAt = now();
-    const dependencyReason = group.reason ?? "Shared origin recovery failed.";
-    ctx.job?.artifacts.push({
-      kind: "campaign-check-result",
-      capturedAt: finishedAt,
-      data: {
-        ...step.check,
-        status: "blocked",
-        error: `Blocked: ${dependencyReason}`,
-        dependencyReason,
-        startedAt,
-        finishedAt,
-      },
-    });
-    ctx.log(`check blocked: ${step.check.title} — ${dependencyReason}`);
-    return;
-  }
-  try {
-    const restoreItinerary = Boolean(recovery && ctx.runtime?.campaignItineraryDirty);
-    if (restoreItinerary) {
-      ctx.log(`check reset: ${step.check.title} — using canonical recovery path`);
-    }
-    await execute(restoreItinerary ? recovery?.recipeId : undefined);
-    if (restoreItinerary && ctx.runtime) ctx.runtime.campaignItineraryDirty = false;
-    const finishedAt = now();
-    if (recovery) groups[recovery.groupId] = { status: "healthy" };
-    ctx.job?.artifacts.push({
-      kind: "campaign-check-result",
-      capturedAt: finishedAt,
-      data: { ...step.check, status: "passed", startedAt, finishedAt },
-    });
-    ctx.log(`check passed: ${step.check.title}`);
-  } catch (error) {
-    if (isCancel(error)) throw error;
-    const message = error instanceof Error ? error.message : String(error);
-    const finishedAt = now();
-    await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message);
-    if (recovery && options.allowDefer !== false) {
-      ctx.runtime!.campaignItineraryDirty = true;
-      (ctx.runtime!.deferredCampaignChecks ??= []).push({
-        check: structuredClone(step.check),
-        error: message,
-        deferredAt: finishedAt,
-      });
-      ctx.job?.artifacts.push({
-        kind: "campaign-check-deferred",
-        capturedAt: finishedAt,
-        data: { ...step.check, status: "deferred", error: message },
-      });
-      ctx.log(`check deferred: ${step.check.title} — ${message}`);
-      return;
-    }
-    if (recovery) groups[recovery.groupId] = { status: "blocked", reason: message };
-    if (ctx.job) {
-      ctx.job.artifacts.push({
-        kind: "campaign-check-result",
-        capturedAt: finishedAt,
-        data: { ...step.check, status: "failed", error: message, startedAt, finishedAt },
-      });
-    }
-    ctx.log(`check failed: ${step.check.title} — ${message}`);
-  }
-}
-
-export async function retryDeferredCampaignChecks(
-  device: Device,
-  ctx: RecipeStepContext,
-  executeRecipe: (recipeId: string) => Promise<void>,
-  budgetMs = 30_000,
-): Promise<void> {
-  const queue = ctx.runtime?.deferredCampaignChecks?.splice(0) ?? [];
-  if (queue.length === 0) return;
-  const startedAt = Date.now();
-  ctx.log(`retrying ${queue.length} deferred campaign check${queue.length === 1 ? "" : "s"}`);
-  for (const deferred of queue) {
-    const recovery = deferred.check.recovery;
-    if (!recovery) continue;
-    if (Date.now() - startedAt >= budgetMs) {
-      const at = Date.now();
-      ctx.job?.artifacts.push({
-        kind: "campaign-check-result",
-        capturedAt: at,
-        data: {
-          ...deferred.check,
-          status: "blocked",
-          error: "Blocked: deferred retry budget exhausted",
-          dependencyReason: `Deferred retry budget exhausted after ${budgetMs}ms.`,
-          startedAt: at,
-          finishedAt: at,
-        },
-      });
-      ctx.log(`check blocked: ${deferred.check.title} — retry budget exhausted`);
-      continue;
-    }
-    await runCampaignCheck(
-      device,
-      { kind: "module", recipeId: recovery.recipeId, check: deferred.check },
-      ctx,
-      (recipeId) => executeRecipe(recipeId ?? recovery.recipeId),
-      { allowDefer: false },
-    );
-  }
 }

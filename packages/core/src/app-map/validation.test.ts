@@ -100,3 +100,100 @@ test("connection source evidence must stay inside its normalized viewport", () =
     /sourceAnchor\.rect must remain/u,
   );
 });
+
+test("navigation contracts reject weak-before-strong selectors and mismatched proof", () => {
+  const map = emptyMap();
+  const entity = {
+    organizationId: "org-1",
+    projectId: "project-1",
+    appMapId: "map-1",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  map.screens.source = {
+    ...entity,
+    id: "source",
+    title: "Ask",
+    identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
+    variantIds: [],
+  };
+  map.screens.settings = {
+    ...entity,
+    id: "settings",
+    title: "Settings",
+    identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+    variantIds: [],
+  };
+  map.connections.open = {
+    ...entity,
+    id: "open",
+    fromScreenId: "source",
+    destination: { kind: "screen", screenId: "settings" },
+    state: "ready",
+    actions: [],
+    navigation: {
+      targetAlternatives: [
+        { kind: "accessibility", label: "Settings", role: "button" },
+        { kind: "identifier", identifier: "settings_button" },
+      ],
+      expectedDestination: {
+        screenId: "source",
+        identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+        evidenceIds: ["destination-tree"],
+      },
+    },
+  };
+
+  assert.throws(() => validateAppMap(map), /identifier, accessibility/u);
+  map.connections.open.navigation!.targetAlternatives.reverse();
+  assert.throws(() => validateAppMap(map), /proof does not match its destination/u);
+});
+
+test("return contracts freeze the exact approved origin proof", () => {
+  const map = emptyMap();
+  const entity = {
+    organizationId: "org-1",
+    projectId: "project-1",
+    appMapId: "map-1",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  map.screens.settings = {
+    ...entity,
+    id: "settings",
+    title: "Settings",
+    identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+    variantIds: [],
+  };
+  map.screens.widget = {
+    ...entity,
+    id: "widget",
+    title: "Widget",
+    identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
+    variantIds: [],
+  };
+  map.connections.widget = {
+    ...entity,
+    id: "widget",
+    fromScreenId: "settings",
+    destination: { kind: "screen", screenId: "widget" },
+    state: "ready",
+    actions: [{ id: "tap-widget", kind: "tap", target: { label: "Widget" } }],
+    return: {
+      kind: "back",
+      expectedDestination: {
+        screenId: "settings",
+        identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+        evidenceIds: ["settings-return-tree"],
+      },
+      expectedApp: "ai.x.grok",
+    },
+  };
+
+  assert.doesNotThrow(() => validateAppMap(map));
+  map.connections.widget.return!.expectedDestination.screenId = "widget";
+  assert.throws(() => validateAppMap(map), /return proof does not match its origin/u);
+  map.connections.widget.return!.expectedDestination.screenId = "settings";
+  map.connections.widget.return!.expectedDestination.identity.fingerprint = "c".repeat(64);
+  assert.throws(() => validateAppMap(map), /return proof is not an approved origin identity/u);
+});

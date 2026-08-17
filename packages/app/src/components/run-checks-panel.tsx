@@ -1,6 +1,7 @@
 import { Show, createMemo } from "solid-js";
 import type { JobInfo } from "../lib/api-types";
 import type { CampaignCheckResult } from "../lib/campaign-check-results";
+import type { NavigationTransitionRepairEntry } from "../lib/navigation-transition-health";
 import { CampaignCheckResults } from "./campaign-check-results";
 import { EvidenceList } from "./run-evidence-panels";
 
@@ -18,6 +19,10 @@ export function RunChecksPanel(props: {
   job: JobInfo;
   frameSource: (frame: CampaignCheckResult["frames"][number]) => string;
   onOpenFrame: (index: number) => void;
+  onRetryCheck?: (checkId: string) => void;
+  onRepairTest?: (checkId: string) => void;
+  onReviewNavigationRepair?: (repair: NavigationTransitionRepairEntry) => void;
+  retryingCheckId?: string;
 }) {
   const evaluation = createMemo(() =>
     (props.job.artifacts ?? []).filter((item) => EVALUATION_KINDS.has(item.kind)),
@@ -31,6 +36,10 @@ export function RunChecksPanel(props: {
         job={props.job}
         frameSource={props.frameSource}
         onOpenFrame={props.onOpenFrame}
+        onRetryCheck={props.onRetryCheck}
+        onRepairTest={props.onRepairTest}
+        onReviewNavigationRepair={props.onReviewNavigationRepair}
+        retryingCheckId={props.retryingCheckId}
       />
       <Show when={evaluation().length > 0 || !hasCampaignChecks()}>
         <EvidenceList

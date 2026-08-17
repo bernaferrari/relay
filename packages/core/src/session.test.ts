@@ -12,6 +12,7 @@ import { captureAutomaticState, enqueueJob, waitForJobCompletion } from "./sessi
 import type { TestJob } from "./session-contract.js";
 import { runWithTargetContext } from "./target-context.js";
 import type { TraceStep } from "./trace.js";
+import { attachScreenshotPayload, type ScreenshotPayload } from "./workspace-capture.js";
 
 type RegistryJob = {
   id: string;
@@ -163,6 +164,57 @@ test("automatic evidence reuses one verified tree and raster without device late
   }
 });
 
+test("an ephemeral screenshot payload attaches exactly once", async () => {
+  const payload: ScreenshotPayload = {
+    capturedAt: 1,
+    mime: "image/png",
+    base64: Buffer.from("one raster").toString("base64"),
+    path: "/tmp/one-raster.png",
+    bytes: 10,
+  };
+  let attachments = 0;
+  const attach = async () => {
+    attachments += 1;
+    return { path: "frames/0001.png" };
+  };
+
+  await Promise.all([
+    attachScreenshotPayload(payload, "job-1", "Destination", attach),
+    attachScreenshotPayload(payload, "job-1", "Destination repeated", attach),
+  ]);
+  await attachScreenshotPayload(payload, "job-1", "Destination later", attach);
+
+  assert.equal(attachments, 1);
+  assert.equal(payload.jobId, "job-1");
+  assert.equal(payload.framePath, "frames/0001.png");
+});
+
+test("a rejected screenshot attachment is not retried", async () => {
+  const payload: ScreenshotPayload = {
+    capturedAt: 1,
+    mime: "image/png",
+    base64: Buffer.from("rejected raster").toString("base64"),
+    path: "/tmp/rejected-raster.png",
+    bytes: 15,
+  };
+  let attachments = 0;
+  const attach = async (): Promise<never> => {
+    attachments += 1;
+    throw new Error("attachment rejected");
+  };
+
+  await assert.rejects(
+    attachScreenshotPayload(payload, "job-2", "Rejected", attach),
+    /attachment rejected/,
+  );
+  await assert.rejects(
+    attachScreenshotPayload(payload, "job-2", "Rejected again", attach),
+    /attachment rejected/,
+  );
+  assert.equal(attachments, 1);
+  assert.equal(payload.framePath, undefined);
+});
+
 test("automatic failure evidence captures a fresh tree and raster after invalidation", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-observation-failure-"));
   const previousRuns = process.env.RELAY_RUNS_DIR;
@@ -208,7 +260,9 @@ test("automatic failure evidence captures a fresh tree and raster after invalida
 
     assert.equal(snapshots, 1, logs.join("; "));
     assert.equal(screenshots, 1, logs.join("; "));
-    assert.deepEqual((job.artifacts[0]?.data as { nodes: unknown }).nodes, freshNodes);
+    const treeArtifact = job.artifacts[0];
+    assert.ok(treeArtifact, "fresh failure evidence includes a UI-tree artifact");
+    assert.deepEqual((treeArtifact.data as { nodes: unknown }).nodes, freshNodes);
     assert.equal(job.frames.length, 1);
     assert.equal(step.frames.length, 1);
   } finally {
