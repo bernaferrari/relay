@@ -1,6 +1,6 @@
 <a href="https://www.callstack.com/open-source?utm_campaign=generic&utm_source=github&utm_medium=referral&utm_content=agent-device" align="center">
   <picture>
-    <img alt="agent-device: device automation CLI for AI agents" src="website/docs/public/agent-device-banner.jpg">
+    <img alt="agent-device: mobile app automation and verification for AI coding agents" src="website/docs/public/agent-device-banner.jpg">
   </picture>
 </a>
 
@@ -13,13 +13,13 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 [![Glama MCP server](https://glama.ai/mcp/servers/callstack/agent-device/badges/score.svg)](https://glama.ai/mcp/servers/callstack/agent-device)
 
-Let your coding agent verify its changes in the running app.
+**Mobile app automation and verification for AI coding agents.** Give coding agents a live app feedback loop through a CLI, built-in MCP server, or typed Node.js API.
 
-`agent-device` lets coding agents inspect, control, and verify apps on iOS, Android, HarmonyOS, tvOS, Android TV, Amazon Vega OS TV through the Vega Virtual Device (VVD), web, macOS, and Linux. Agents can read token-efficient accessibility snapshots where supported, find elements by ref or selector, run device actions, and save evidence for review. HarmonyOS support uses HDC and ArkUI `uitest` on connected devices and DevEco emulators; use `capabilities --platform harmonyos` to inspect its evidence-backed command subset. Initial Vega OS support is VVD-only and covers discovery, app lifecycle, and complete TV-remote control; physical Fire TV, capture, and selector backends remain unsupported.
+<!-- Intro rule: category line, job pitch with the platform list, works-with/proof line, nothing else. Per-platform transports, tool names, vendor lists, and support caveats belong in "How it works" and website/docs, never here. Every name in the proof line must link to public evidence. -->
 
-Your coding agent or QA tool reads each result and chooses the next command. `agent-device` runs the command and saves evidence when asked.
+Let your coding agent verify its changes in the running app. `agent-device` lets agents inspect, control, debug, and verify apps on iOS, Android, and HarmonyOS (simulators, emulators, and physical devices), plus tvOS, Android TV, Amazon Vega OS TV (Vega Virtual Device), web, macOS, and Linux. Agents read token-efficient accessibility snapshots instead of reasoning over screenshots alone, act through refs and selectors, and save evidence for review. It also coordinates device access across parallel agent worktrees and connects to remote device clouds.
 
-`agent-device` uses the inspect-act-verify process from Vercel's [agent-browser](https://github.com/vercel-labs/agent-browser) for mobile, TV, and desktop apps. Basic `--platform web` support runs `agent-browser` in the same session and replay system.
+Works with Claude Code, Codex, Cursor, Windsurf, Cline, Goose, and any agent that can run a CLI or connect over MCP, or as the runtime under agents you build with the [AI SDK](https://oss.callstack.com/agent-device/docs/ai-sdk) or [Eve](https://oss.callstack.com/agent-device/docs/eve). Developers at [Expensify](https://www.callstack.com/blog/how-expensify-uses-agent-device-for-mobile-bug-evidence-and-profiling), [Shopify](https://x.com/mustafa01ali/status/2036577353178943826), and [others](#who-uses-agent-device) use it to verify their apps.
 
 ## Quick start
 
@@ -31,7 +31,9 @@ agent-device doctor
 agent-device help workflow
 ```
 
-Run `agent-device doctor` yourself before handing the CLI to an agent. The installed CLI help defines current behavior. `agent-device help workflow` links to guides for debugging, replay, React Native profiling, and other tasks.
+Run `doctor` yourself before handing the CLI to an agent; `help workflow` links to the guides for debugging, replay, and profiling, and the installed help always matches the installed version.
+
+### Drive an app from the CLI
 
 Add a contact in the built-in iOS Contacts app:
 
@@ -59,13 +61,46 @@ agent-device screenshot ./contact-form.png
 agent-device close
 ```
 
-Use refs only from the latest output. Do not assume an earlier `@eN` still identifies the same element. After a command with `--settle`, use the refs in its diff. Take another snapshot only if the diff omits what you need.
-
-`--settle` works the same way on `scroll` and `back`, so scroll-then-observe and back-then-observe are one call too.
-
-Snapshots use the app's accessibility tree. Clear labels, roles, and test IDs make agent runs more reliable. Use screenshots and videos as evidence or when accessibility data is poor. Use refs and selectors for actions and assertions when you can.
+Refs are only valid from the latest output: after a `--settle` command, use the refs in its diff, and take a new snapshot only if the diff omits what you need. Snapshots come from the app's accessibility tree, so clear labels, roles, and test IDs make agent runs more reliable; use screenshots and video as evidence or when accessibility data is poor.
 
 ![agent-device demo showing Codex using agent-device to create a new contact in the iOS Contacts app from a simple prompt](./website/docs/public/agent-device-contacts.gif)
+
+### Add MCP tools to your agent
+
+`agent-device mcp` starts the official stdio MCP server, exposing the installed commands as structured tools over the same execution path as the CLI:
+
+```json
+{
+  "mcpServers": {
+    "agent-device": {
+      "command": "agent-device",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+See [AI Agent Setup](https://oss.callstack.com/agent-device/docs/agent-setup) for per-client setup and when to prefer plain CLI over MCP.
+
+### Script it from Node.js
+
+`createAgentDeviceClient()` gives Node.js code typed access to the same commands, as model tools in your own agent or from orchestration code:
+
+```ts
+import { createAgentDeviceClient } from 'agent-device';
+
+const client = createAgentDeviceClient({ session: 'qa-run' });
+try {
+  await client.apps.open({ app: 'com.apple.Preferences', platform: 'ios' });
+  const snapshot = await client.capture.snapshot({ interactiveOnly: true });
+  const button = snapshot.nodes.find((node) => node.role === 'button');
+  if (button) await client.interactions.press({ ref: button.ref });
+} finally {
+  await client.sessions.close();
+}
+```
+
+See the [Node.js API](https://oss.callstack.com/agent-device/docs/client-api), the [runnable examples](https://github.com/callstack/agent-device/tree/main/examples/sdk), and the [AI SDK](https://oss.callstack.com/agent-device/docs/ai-sdk) and [Eve](https://oss.callstack.com/agent-device/docs/eve) integration guides.
 
 ## What agents can do
 
@@ -78,11 +113,71 @@ See [Commands](https://oss.callstack.com/agent-device/docs/commands) for the com
 
 ![Diagram of the agentic development loop: humans assign tasks, agents write and review code, agent-device verifies mobile apps, pull requests receive evidence, and bugs or performance issues lead to fixes](./website/docs/public/agentic-development-loop.svg)
 
+## What to ask your agent
+
+With the CLI installed, prompts like these work end to end:
+
+- "Implement the onboarding screen, run it on the iOS simulator and Android emulator, and attach screenshots."
+- "Reproduce this crash and capture the logs that lead up to it."
+- "Check whether this change causes unnecessary React Native re-renders."
+- "Explore the checkout flow once, save it as a replay script, and run it in CI."
+- "Verify this pull request on a physical device and attach reviewable evidence."
+
 ## Next steps
 
-- **Set up your agent**: run the CLI from Cursor, Codex, Claude Code, Windsurf, or another agent terminal. See [AI Agent Setup](https://oss.callstack.com/agent-device/docs/agent-setup) for skills, rules, MCP tools, and setup for each client.
-- **Try the sample app**: clone the repo and run the bundled Expo test app. [Quick Start](https://oss.callstack.com/agent-device/docs/quick-start) covers a guided run with screenshots, replay, and performance data.
-- **Build repeatable tests**: use [Replay & E2E](https://oss.callstack.com/agent-device/docs/replay-e2e) to repeat tests. Use [Debugging & Profiling](https://oss.callstack.com/agent-device/docs/debugging-profiling) to find bugs.
+- [AI Agent Setup](https://oss.callstack.com/agent-device/docs/agent-setup): skills, project rules, and per-client setup for Cursor, Codex, Claude Code, Windsurf, and others.
+- [Quick Start](https://oss.callstack.com/agent-device/docs/quick-start): a guided run on the bundled Expo test app with screenshots, replay, and performance data.
+- [Replay & E2E](https://oss.callstack.com/agent-device/docs/replay-e2e) and [Debugging & Profiling](https://oss.callstack.com/agent-device/docs/debugging-profiling): repeatable tests and bug hunting.
+
+## Where to run agent-device
+
+The same session and evidence model works at every step: the agent explores the app, captures evidence, saves a replay, runs it in CI, and moves onto remote devices.
+
+| Path | Best for | Start with |
+| --- | --- | --- |
+| Local | Trying commands and debugging apps on simulators, emulators, physical devices, macOS, and Linux. | Follow the Quick Start. |
+| CI/CD | Automated pull request and merge validation with replay scripts and captured artifacts. | Try the [EAS workflow template](https://github.com/callstackincubator/eas-agent-device/blob/main/.eas/workflows/agent-qa-mobile.yml). |
+| Cloud / remote | Linux runners, managed devices, and remote jobs. | Set up a [remote proxy](https://oss.callstack.com/agent-device/docs/remote-proxy), connect a [device cloud](https://oss.callstack.com/agent-device/docs/device-clouds) (BrowserStack, AWS Device Farm, Limrun), or [contact Callstack](mailto:hello@callstack.com) for team QA. |
+
+## How it works
+
+`agent-device` keeps device state in sessions. It sends commands to XCTest on iOS and tvOS, ADB and the snapshot helper on Android, HDC and ArkUI `uitest` on HarmonyOS, Vega CLI/VDA on the Vega Virtual Device, a local helper on macOS, and AT-SPI on Linux.
+
+Support depth varies by target. Newer backends such as HarmonyOS and Vega OS cover a subset of commands; run `agent-device capabilities --platform <platform>` to see what a target supports.
+
+Sessions are scoped to the caller's git worktree, and host-local device claims stop parallel agents from taking over each other's simulators and emulators. The same commands drive hosted devices on [BrowserStack, AWS Device Farm, and Limrun](https://oss.callstack.com/agent-device/docs/device-clouds).
+
+`agent-device` uses the inspect-act-verify process from Vercel's [agent-browser](https://github.com/vercel-labs/agent-browser) for mobile, TV, and desktop apps. Basic `--platform web` support runs `agent-browser` in the same session and replay system.
+
+## FAQ
+
+### What is agent-device?
+
+`agent-device` is a command-line tool and MCP server that lets AI coding agents inspect, control, and verify mobile apps and save evidence for review. It supports iOS, Android, HarmonyOS, TV, web, macOS, and Linux.
+
+### Is there an MCP server for mobile app automation?
+
+Yes. `agent-device mcp` starts the official stdio MCP server. The Quick start above has the client config, and [AI Agent Setup](https://oss.callstack.com/agent-device/docs/agent-setup) covers per-client details.
+
+### Does it work with React Native, Expo, Flutter, and native apps?
+
+Yes. `agent-device` supports native iOS and Android apps, plus React Native, Expo, and Flutter apps on supported targets. The commands and evidence vary by target.
+
+### How is it different from mobile MCP servers?
+
+The MCP server is one entry point to the same runtime used by the CLI and typed Node.js API. Sessions, device ownership, selectors, evidence, replay, CI workflows, and cloud routing stay consistent across all three.
+
+### Can I build my own agent or QA product on agent-device?
+
+Yes. The typed Node.js client is a public surface over that same runtime, so an agent you build inherits everything above. Start from the [Node.js API](https://oss.callstack.com/agent-device/docs/client-api), [AI SDK](https://oss.callstack.com/agent-device/docs/ai-sdk), or [Eve](https://oss.callstack.com/agent-device/docs/eve) guides.
+
+### How is it different from Appium, Detox, or Maestro?
+
+With `agent-device`, an agent reads app state and chooses each command at run time. Teams use Appium, Detox, and Maestro to write and maintain test suites. `agent-device` can complement them by saving its runs as `.ad` scripts or exporting them as strict Maestro YAML.
+
+### Can agent-device run in CI?
+
+Yes. Record a run as an `.ad` script, replay it in CI, and keep the screenshots and logs as artifacts; the [EAS workflow template](https://github.com/callstackincubator/eas-agent-device/blob/main/.eas/workflows/agent-qa-mobile.yml) is a working example.
 
 ## Articles and videos
 
@@ -98,38 +193,6 @@ See [Commands](https://oss.callstack.com/agent-device/docs/commands) for the com
 - [Verifying mobile apps with agent-device](https://youtu.be/kZDU-k5r9kE)
 - [Using agent-device in an AI coding workflow](https://youtu.be/dfVG_aNPkW4)
 - [Cloud agents that test mobile apps on real devices](https://youtu.be/r5P0detC4bs?is=_KB6SZbLFRB1au_z)
-
-## Where to run agent-device
-
-| Path | Best for | Start with |
-| --- | --- | --- |
-| Local | Trying commands and debugging apps on simulators, emulators, physical devices, macOS, and Linux. | Follow the Quick Start. |
-| CI/CD | Automated pull request and merge validation with replay scripts and captured artifacts. | Try the [EAS workflow template](https://github.com/callstackincubator/eas-agent-device/blob/main/.eas/workflows/agent-qa-mobile.yml). GitHub Actions template coming soon. |
-| Cloud / remote | Linux runners, managed devices, and remote jobs. | Use [Agent Device Cloud](https://agent-device.dev/cloud), set a remote profile with [Commands](https://oss.callstack.com/agent-device/docs/commands), or [contact Callstack](mailto:hello@callstack.com) for team QA. |
-
-## How it works
-
-`agent-device` keeps device state in sessions. It sends commands to XCTest on iOS and tvOS, ADB and the snapshot helper on Android, HDC and ArkUI `uitest` on HarmonyOS, Vega CLI/VDA on the Vega Virtual Device, a local helper on macOS, and AT-SPI on Linux.
-
-Node.js apps can use the typed client or public subpaths. `agent-device/android-adb` provides the Android ADB provider interface, helpers for logcat, the clipboard, the keyboard, and apps, and port reverse management.
-
-## FAQ
-
-### What is agent-device?
-
-`agent-device` is a command-line tool that lets coding agents inspect, control, and verify apps and save evidence for review. It supports iOS, Android, HarmonyOS, TV, web, macOS, and Linux.
-
-### Does it work with React Native, Expo, Flutter, and native apps?
-
-Yes. `agent-device` supports native iOS and Android apps, plus React Native, Expo, and Flutter apps on supported targets. The commands and evidence vary by target.
-
-### How is it different from Appium, Detox, or Maestro?
-
-With `agent-device`, an agent reads app state and chooses each command at run time. Teams use Appium, Detox, and Maestro to write and maintain test suites. `agent-device` can complement them by saving its runs as `.ad` scripts or exporting them as strict Maestro YAML.
-
-### Can agent-device run in CI?
-
-Yes. Record a run as an `.ad` script, replay it locally or in CI, and save screenshots, logs, and other artifacts for review. See [Replay & E2E](https://oss.callstack.com/agent-device/docs/replay-e2e) or start with the [EAS workflow template](https://github.com/callstackincubator/eas-agent-device/blob/main/.eas/workflows/agent-qa-mobile.yml).
 
 ## Who uses agent-device?
 
