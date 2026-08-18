@@ -4,7 +4,7 @@ import { isAgentDeviceDaemonProcess, trySignalProcess } from './daemon-process.t
 import { isProcessAlive, waitForProcessExit } from '../utils/host-process.ts';
 import { sleep } from '../utils/timeouts.ts';
 import type { DaemonPaths } from './config.ts';
-import type { ProviderReleaseRecord } from './daemon-shutdown-report.ts';
+import type { DeviceClaimRecord, ProviderReleaseRecord } from './daemon-shutdown-report.ts';
 
 const DAEMON_STOP_GRACE_TIMEOUT_MS = 10_000;
 const DAEMON_STOP_KILL_TIMEOUT_MS = 2_000;
@@ -19,8 +19,15 @@ export type DaemonStopResult = {
   stopped: boolean;
   mode: 'graceful' | 'forced' | 'not-running';
   cleanupConfidence: 'known' | 'unknown';
-  claimsReleased: [];
-  claimsOrphaned: [];
+  /**
+   * #1320 claim results. Only a graceful stop can carry values: they come from
+   * the shutdown report the exiting daemon wrote, so a forced kill or a daemon
+   * that was not running reports none rather than claiming certainty.
+   */
+  claimsReleased: DeviceClaimRecord[];
+  claimsOrphaned: DeviceClaimRecord[];
+  /** Claims another owner had already taken over; this daemon released nothing. */
+  claimsSuperseded: DeviceClaimRecord[];
   providerReleases: {
     status: 'completed' | 'unknown';
     released: ProviderReleaseRecord[];
@@ -66,6 +73,7 @@ export async function stopDaemon(params: {
       cleanupConfidence: 'known',
       claimsReleased: [],
       claimsOrphaned: [],
+      claimsSuperseded: [],
       providerReleases: { status: 'completed', released: [], pending: [] },
       warnings: [],
     };
@@ -89,6 +97,7 @@ export async function stopDaemon(params: {
     cleanupConfidence: 'unknown',
     claimsReleased: [],
     claimsOrphaned: [],
+    claimsSuperseded: [],
     providerReleases: { status: 'unknown', released: [], pending: null },
     warnings: [
       'The daemon was force-killed before provider lease state could be finalized. Provider allocations may remain active.',
@@ -148,6 +157,7 @@ function notRunningResult(): DaemonStopResult {
     cleanupConfidence: 'known',
     claimsReleased: [],
     claimsOrphaned: [],
+    claimsSuperseded: [],
     providerReleases: { status: 'completed', released: [], pending: [] },
     warnings: [],
   };

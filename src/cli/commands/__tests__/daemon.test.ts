@@ -35,6 +35,7 @@ const GRACEFUL_RESULT: DaemonStopResult = {
   cleanupConfidence: 'known',
   claimsReleased: [],
   claimsOrphaned: [],
+  claimsSuperseded: [],
   providerReleases: { status: 'completed', released: [], pending: [] },
   warnings: [],
 };
@@ -68,11 +69,18 @@ test('merges a graceful shutdown report and cleans runner leases with the start-
   const stateDir = mkdtempForTestSync('agent-device-daemon-command-');
   mocks.readDaemonStopIdentity.mockReturnValue({ pid: 123, processStartTime: 'start-time' });
   mocks.stopDaemon.mockResolvedValue(GRACEFUL_RESULT);
+  const claim = {
+    deviceKey: 'local:android:none:emulator-5554',
+    session: 'default',
+    platform: 'android',
+    deviceId: 'emulator-5554',
+  };
   mocks.readDaemonShutdownReport.mockReturnValue({
     providerReleases: {
       released: [{ leaseId: 'lease-1', provider: 'limrun' }],
       pending: [],
     },
+    claims: { released: [claim], orphaned: [], superseded: [] },
   });
 
   try {
@@ -95,6 +103,10 @@ test('merges a graceful shutdown report and cleans runner leases with the start-
           released: [{ leaseId: 'lease-1', provider: 'limrun' }],
           pending: [],
         },
+        // #1799: a graceful stop reports the claims it actually released.
+        claimsReleased: [claim],
+        claimsOrphaned: [],
+        claimsSuperseded: [],
       }),
       expect.any(Function),
     );
