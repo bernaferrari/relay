@@ -12,7 +12,22 @@ export type WebDriverRequestPolicy = {
   timeoutMs?: number;
   retryAttempts?: number;
   retryDelayMs?: number;
+  /**
+   * Budget for creating the session, consumed by `WebDriverClient.createSession`
+   * rather than the transport: a cloud provider allocates a physical device
+   * inside that one request, so it cannot share `timeoutMs`, which is sized for
+   * a settled session's round trips.
+   */
+  sessionCreateTimeoutMs?: number;
 };
+
+/** Machine-readable `details.reason` of a request the transport gave up waiting on. */
+const WEBDRIVER_REQUEST_TIMEOUT_REASON = 'webdriver_request_timeout';
+
+/** A request the transport stopped waiting on; the server may still complete it. */
+export function isWebDriverRequestTimeout(error: unknown): error is AppError {
+  return error instanceof AppError && error.details?.reason === WEBDRIVER_REQUEST_TIMEOUT_REASON;
+}
 
 export type WebDriverRequestOverrides = {
   retryAttempts?: number;
@@ -31,7 +46,8 @@ export type WebDriverTransportOptions = {
   endpoint: string | URL;
   auth?: WebDriverAuth;
   headers?: Record<string, string>;
-  requestPolicy?: WebDriverRequestPolicy;
+  /** Session creation is the client's phase; the transport sees only per-request policy. */
+  requestPolicy?: Omit<WebDriverRequestPolicy, 'sessionCreateTimeoutMs'>;
 };
 
 type WebDriverResponse = {
@@ -45,11 +61,15 @@ type ResolvedWebDriverRequestOverrides = {
   signal?: AbortSignal;
 };
 
+type ResolvedWebDriverRequestPolicy = Required<
+  NonNullable<WebDriverTransportOptions['requestPolicy']>
+>;
+
 /** Focused HTTP/retry policy for one WebDriver endpoint; session semantics stay in WebDriverClient. */
 export class WebDriverTransport {
   private readonly endpoint: URL;
   private readonly headers: Record<string, string>;
-  private readonly requestPolicy: Required<WebDriverRequestPolicy>;
+  private readonly requestPolicy: ResolvedWebDriverRequestPolicy;
 
   constructor(options: WebDriverTransportOptions) {
     this.endpoint = withTrailingSlash(new URL(options.endpoint));
@@ -114,24 +134,48 @@ export class WebDriverTransport {
     timeoutMs: number,
     requestSignal?: AbortSignal,
   ): Promise<unknown> {
+    const { ok, status, text } = await this.fetchWebDriver(
+      method,
+      path,
+      body,
+      timeoutMs,
+      requestSignal,
+    );
+    const payload = text ? parseJsonResponse(text) : {};
+    if (!ok) throw webdriverError(status, payload);
+    return readWebDriverValue(payload);
+  }
+
+  private async fetchWebDriver(
+    method: string,
+    path: string,
+    body: unknown,
+    timeoutMs: number,
+    requestSignal?: AbortSignal,
+  ): Promise<Pick<Response, 'ok' | 'status'> & { text: string }> {
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const signal = requestSignal ? AbortSignal.any([requestSignal, timeoutSignal]) : timeoutSignal;
-    const response = await fetch(new URL(trimLeadingSlash(path), this.endpoint), {
-      method,
-      headers: {
-        Accept: 'application/json',
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-        ...this.headers,
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
-    });
-    const text = await response.text();
-    const payload = text ? parseJsonResponse(text) : {};
-    if (!response.ok) {
-      throw webdriverError(response.status, payload);
+    try {
+      const response = await fetch(new URL(trimLeadingSlash(path), this.endpoint), {
+        method,
+        headers: {
+          Accept: 'application/json',
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+          ...this.headers,
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal,
+      });
+      return { ok: response.ok, status: response.status, text: await response.text() };
+    } catch (error) {
+      // The caller's own cancellation keeps its reason; only the transport's
+      // deadline becomes a typed timeout, so callers key on `details.reason`
+      // instead of sniffing fetch's DOMException name.
+      if (timeoutSignal.aborted && !requestSignal?.aborted) {
+        throw webdriverTimeoutError(method, path, timeoutMs, error);
+      }
+      throw error;
     }
-    return readWebDriverValue(payload);
   }
 }
 
@@ -173,10 +217,25 @@ function webdriverError(status: number, payload: unknown): AppError {
   return new AppError('COMMAND_FAILED', message, { status, response: payload });
 }
 
+function webdriverTimeoutError(
+  method: string,
+  path: string,
+  timeoutMs: number,
+  cause: unknown,
+): AppError {
+  return new AppError(
+    'COMMAND_FAILED',
+    `WebDriver ${method} ${path} timed out after ${timeoutMs}ms.`,
+    { reason: WEBDRIVER_REQUEST_TIMEOUT_REASON, method, path, timeoutMs },
+    cause instanceof Error ? cause : undefined,
+  );
+}
+
 function isRetriableWebDriverError(error: unknown): boolean {
+  if (isWebDriverRequestTimeout(error)) return true;
   if (error instanceof AppError) {
     const status = error.details?.status;
     return typeof status === 'number' && status >= 500;
   }
-  return error instanceof TypeError || (error instanceof Error && error.name === 'TimeoutError');
+  return error instanceof TypeError;
 }

@@ -25,6 +25,14 @@ export type DeviceLease = {
 export type LeaseLifecycleContext = {
   flags?: Readonly<Record<string, unknown>>;
   cwd?: string;
+  /** Request-bound cancellation (explicit cancel or client disconnect). */
+  signal?: AbortSignal;
+  /**
+   * Epoch-ms deadline by which `allocate` must have settled; derived from the
+   * same budget as the client's `lease_allocate` envelope, so a provider that
+   * fits its remote phases within it is never abandoned by a client first.
+   */
+  deadline?: number;
 };
 
 export type LeaseLifecycleProvider = {
