@@ -1,4 +1,5 @@
 import type { SnapshotNode, SnapshotQualityVerdict } from '@agent-device/kernel/snapshot';
+import { isViewportRootNode } from '@agent-device/contracts/snapshot';
 import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
 import { now, sleep } from '../../runtime-common.ts';
 import {
@@ -74,10 +75,7 @@ export async function runStableCaptureLoop(
   let deadlineMs = start + timeoutMs;
   let privateAxRecoveryBudgetReset = false;
   const session = await runtime.sessions.get(options.session ?? 'default');
-  const transitionBaseline = stableCaptureTransitionBaseline(
-    params.broadTransitionBaselineNodes,
-    session?.snapshot,
-  );
+  let transitionBaseline: StableCaptureSignal | undefined;
   let preferredBackend = preferredSnapshotBackendForVerdict(session?.snapshot?.snapshotQuality);
   // Cadence derives from the quiet window (never slower than the default
   // poll): a caller asking for a 50ms quiet window should not be forced onto a
@@ -108,6 +106,11 @@ export async function runStableCaptureLoop(
     }
     captures += 1;
     lastCapture = capture;
+    transitionBaseline ??= stableCaptureTransitionBaseline(
+      params.broadTransitionBaselineNodes,
+      capture.snapshot,
+      runtime.backend.platform,
+    );
     const signal = stableCaptureSignal(capture.snapshot);
     requiredQuietMs = stableCaptureTransitionQuietMs({
       baseline: transitionBaseline,
@@ -179,10 +182,34 @@ export async function runStableCaptureLoop(
 function stableCaptureTransitionBaseline(
   baselineNodes: SnapshotNode[] | undefined,
   snapshot: Parameters<typeof stableCaptureSignal>[0] | undefined,
+  platform: AgentDeviceRuntime['backend']['platform'],
 ): StableCaptureSignal | undefined {
-  return baselineNodes && snapshot?.backend === 'xctest'
-    ? stableCaptureSignal({ ...snapshot, nodes: baselineNodes })
-    : undefined;
+  // SnapshotState.backend is optional at the runtime boundary. The bound iOS backend remains
+  // authoritative when a presented capture omits that provenance; a declared non-XCTest backend
+  // still wins so this confirmation cannot leak onto another capture implementation.
+  if (!baselineNodes || !snapshot || !isBoundIosXCTestCapture(snapshot.backend, platform)) {
+    return undefined;
+  }
+  // A broad *screen* replacement needs a complete post-action viewport projection. The baseline
+  // comes from settle's authoritative pre-action capture, but a presented iOS modal can omit its
+  // Application root and still be the complete interaction surface. Requiring the root only from
+  // the candidate prevents scoped/synthetic post-action fragments from extending settle latency.
+  const hasCompleteViewportProjection = snapshot.nodes.some(isViewportRootNode);
+  // Tiny pre-action surfaces are the other trustworthy completeness signal: iOS presents alerts
+  // and sheets as a handful of nodes, and their first post-dismissal capture can temporarily omit
+  // the viewport root. Treating that rootless replacement as an arbitrary scoped projection lets
+  // a coherent transitional tree win the default 500ms quiet window.
+  const hasTinyPresentedBaseline = baselineNodes.length <= TINY_STABLE_TREE_NODE_COUNT;
+  if (!hasCompleteViewportProjection && !hasTinyPresentedBaseline) return undefined;
+  return stableCaptureSignal({ ...snapshot, nodes: baselineNodes });
+}
+
+function isBoundIosXCTestCapture(
+  backend: Parameters<typeof stableCaptureSignal>[0]['backend'],
+  platform: AgentDeviceRuntime['backend']['platform'],
+): boolean {
+  if (backend === 'xctest') return true;
+  return backend === undefined && platform === 'ios';
 }
 
 function stableCaptureTransitionQuietMs(params: {
