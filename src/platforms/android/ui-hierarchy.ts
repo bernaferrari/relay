@@ -2,7 +2,6 @@ import type { RawSnapshotNode, Rect, SnapshotOptions } from '@agent-device/kerne
 import { parseBounds } from '@agent-device/kernel/bounds';
 import { decodeXmlCharacterReferences } from '@agent-device/xml';
 import { isScrollableType } from '@agent-device/contracts/snapshot';
-import { intersectArea } from '../../utils/screenshot-geometry.ts';
 import {
   type AndroidSystemChromeProvenance,
   isAndroidSystemChromeWindowResourceId,
@@ -452,13 +451,22 @@ type AndroidNodeInclusionInfo = {
   isVisual: boolean;
 };
 
-type AndroidTreePruneState = {
-  actionableContentMemo: WeakMap<AndroidNode, boolean>;
+type AndroidFootprint = {
+  /** Boxes of what the subtree paints: touch targets, scrollables and labelled leaves. */
+  paints: Rect[];
+  /** Boxes of what an agent would see of the subtree: `paints` plus labelled/identified nodes. */
+  shows: Rect[];
+  hasAgentTarget: boolean;
 };
 
-type AndroidCoveringCandidate = AndroidNode & {
-  rect: Rect;
+type AndroidTreePruneState = {
+  footprintMemo: WeakMap<AndroidNode, AndroidFootprint>;
+};
+
+type AndroidCoveringCandidate = {
+  node: AndroidNode;
   drawingOrder: number;
+  footprint: Rect[];
 };
 
 const ANDROID_WINDOW_TYPE_APPLICATION = 1;
@@ -525,7 +533,7 @@ export function parseUiHierarchyTree(xml: string): AndroidUiHierarchy {
   discardInactiveAndroidApplicationWindows(root);
   // UiAutomation can expose covered React Native navigation surfaces in the same accessibility
   // window. If a higher drawing-order sibling covers them, agents should see the foreground surface.
-  pruneAndroidCoveredSubtrees(root, { actionableContentMemo: new WeakMap() });
+  pruneAndroidCoveredSubtrees(root, { footprintMemo: new WeakMap() });
   applyAndroidScrollActionHints(root);
   return root;
 }
@@ -550,22 +558,126 @@ function hasSemanticContent(node: AndroidNode): boolean {
   return hasMeaningfulLabel(node) || hasMeaningfulIdentifier(node);
 }
 
-/** Focusability is traversal, not paint, so it is not evidence a node hides anything (#1733). */
+/**
+ * Focusability is traversal, not paint (#1733), and a label is an announcement, not paint (#1806):
+ * a container's content-desc describes its children and an empty labelled View draws nothing. Only
+ * a touch target is direct evidence that a node hides what lies under its box.
+ */
 function hasDirectOcclusionEvidence(node: AndroidNode): boolean {
-  return node.visibleToUser !== false && (isTouchTarget(node) || hasSemanticContent(node));
+  return node.visibleToUser !== false && isTouchTarget(node);
 }
 
 /** Evidence the node is a real surface because it contains something an agent could drive. */
 function hasDescendantOcclusionEvidence(node: AndroidNode, state: AndroidTreePruneState): boolean {
-  const cached = state.actionableContentMemo.get(node);
-  if (cached !== undefined) return cached;
-  const result = node.children.some(
-    (child) =>
-      child.visibleToUser !== false &&
-      (isAgentTarget(child) || hasDescendantOcclusionEvidence(child, state)),
+  return node.children.some(
+    (child) => child.visibleToUser !== false && subtreeFootprint(child, state).hasAgentTarget,
   );
-  state.actionableContentMemo.set(node, result);
-  return result;
+}
+
+/**
+ * What a subtree paints and what it shows. Paint is the boxes of its touch-consuming surfaces
+ * (touch targets, scrollables) and labelled leaves: a full-screen debug overlay
+ * holding one floating icon paints only that icon, so it can only hide what sits under the icon,
+ * never the whole app behind it (#1806). Rects are kept apart rather than merged into one bounding
+ * box: two controls in opposite corners paint two corners, not the screen between them.
+ *
+ * Shows adds every labelled or identified node — a testID marker or a described container paints
+ * nothing, so it never helps a candidate cover, but an agent would still lose it, so it always
+ * counts toward what a covered sibling has.
+ */
+function subtreeFootprint(node: AndroidNode, state: AndroidTreePruneState): AndroidFootprint {
+  const cached = state.footprintMemo.get(node);
+  if (cached !== undefined) return cached;
+  const footprint = hasPositiveRect(node)
+    ? footprintWithinBox(node, node.rect, state)
+    : childrenFootprint(node, state);
+  state.footprintMemo.set(node, footprint);
+  return footprint;
+}
+
+function footprintWithinBox(
+  node: AndroidNode,
+  ownBox: Rect,
+  state: AndroidTreePruneState,
+): AndroidFootprint {
+  if (paintsOwnBox(node)) {
+    // The whole box is painted; whatever it contains lies inside that box.
+    return { paints: [ownBox], shows: [ownBox], hasAgentTarget: isAgentTarget(node) };
+  }
+  const footprint = childrenFootprint(node, state);
+  if (hasSemanticContent(node)) footprint.shows.push(ownBox);
+  return footprint;
+}
+
+function childrenFootprint(node: AndroidNode, state: AndroidTreePruneState): AndroidFootprint {
+  const footprint: AndroidFootprint = {
+    paints: [],
+    shows: [],
+    hasAgentTarget: isAgentTarget(node),
+  };
+  for (const child of node.children) {
+    if (child.visibleToUser === false) continue;
+    const childFootprint = subtreeFootprint(child, state);
+    footprint.hasAgentTarget ||= childFootprint.hasAgentTarget;
+    footprint.paints.push(...childFootprint.paints);
+    footprint.shows.push(...childFootprint.shows);
+  }
+  return footprint;
+}
+
+/** Focusability is traversal, not paint (#1733); a container's label describes its children. */
+function paintsOwnBox(node: AndroidNode): boolean {
+  return (
+    isTouchTarget(node) ||
+    node.scrollable === true ||
+    (node.children.length === 0 && hasMeaningfulLabel(node))
+  );
+}
+
+/** Fraction of the covered rects' union that lies under the covering rects' union. */
+function unionCoverage(coveringRects: Rect[], coveredRects: Rect[]): number {
+  const xs = compressedEdges([...coveringRects, ...coveredRects], (rect) => [
+    rect.x,
+    rect.x + rect.width,
+  ]);
+  const ys = compressedEdges([...coveringRects, ...coveredRects], (rect) => [
+    rect.y,
+    rect.y + rect.height,
+  ]);
+  const covering = markCells(coveringRects, xs, ys);
+  const covered = markCells(coveredRects, xs, ys);
+  let coveredArea = 0;
+  let overlapArea = 0;
+  for (let column = 0; column < xs.length - 1; column += 1) {
+    const width = xs[column + 1]! - xs[column]!;
+    for (let row = 0; row < ys.length - 1; row += 1) {
+      const cell = column * (ys.length - 1) + row;
+      if (!covered[cell]) continue;
+      const area = width * (ys[row + 1]! - ys[row]!);
+      coveredArea += area;
+      if (covering[cell]) overlapArea += area;
+    }
+  }
+  return coveredArea <= 0 ? 0 : overlapArea / coveredArea;
+}
+
+function compressedEdges(rects: Rect[], edgesOf: (rect: Rect) => [number, number]): number[] {
+  return [...new Set(rects.flatMap(edgesOf))].sort((left, right) => left - right);
+}
+
+function markCells(rects: Rect[], xs: number[], ys: number[]): Uint8Array {
+  const rows = ys.length - 1;
+  const cells = new Uint8Array((xs.length - 1) * rows);
+  for (const rect of rects) {
+    const firstColumn = xs.indexOf(rect.x);
+    const lastColumn = xs.indexOf(rect.x + rect.width);
+    const firstRow = ys.indexOf(rect.y);
+    const lastRow = ys.indexOf(rect.y + rect.height);
+    for (let column = firstColumn; column < lastColumn; column += 1) {
+      cells.fill(1, column * rows + firstRow, column * rows + lastRow);
+    }
+  }
+  return cells;
 }
 
 /**
@@ -598,32 +710,47 @@ function pruneAndroidCoveredSubtrees(node: AndroidNode, state: AndroidTreePruneS
     return;
   }
   const siblings = node.children;
-  const coveringCandidates = siblings.filter((sibling) => canCoverSibling(sibling, state));
+  const coveringCandidates = siblings
+    .map((sibling) => coveringCandidateOf(sibling, state))
+    .filter((candidate) => candidate !== null);
   if (coveringCandidates.length === 0) return;
-  node.children = siblings.filter((child) => shouldKeepAndroidSibling(child, coveringCandidates));
+  node.children = siblings.filter((child) =>
+    shouldKeepAndroidSibling(child, coveringCandidates, state),
+  );
 }
 
 function shouldKeepAndroidSibling(
   node: AndroidNode,
   coveringCandidates: AndroidCoveringCandidate[],
+  state: AndroidTreePruneState,
 ): boolean {
   return (
-    isPresentationLeaf(node) || !isCoveredByHigherDrawingOrderSibling(node, coveringCandidates)
+    isPresentationLeaf(node) ||
+    !isCoveredByHigherDrawingOrderSibling(node, coveringCandidates, state)
   );
 }
 
+/**
+ * Covered means everything an agent would see of the sibling lies under what the candidate paints,
+ * by actual overlapped area. Comparing footprints rather than boxes lets two stacked screens with the
+ * same layout margins still register as covered, while a sparse overlay never condemns a rich
+ * screen however far apart its controls sit.
+ */
 function isCoveredByHigherDrawingOrderSibling(
   node: AndroidNode,
   coveringCandidates: AndroidCoveringCandidate[],
+  state: AndroidTreePruneState,
 ): boolean {
   if (node.visibleToUser === false || node.drawingOrder === undefined || !hasPositiveRect(node)) {
     return false;
   }
-  for (const sibling of coveringCandidates) {
-    if (sibling === node || sibling.drawingOrder <= node.drawingOrder) {
+  const shows = subtreeFootprint(node, state).shows;
+  const coveredRects = shows.length > 0 ? shows : [node.rect];
+  for (const candidate of coveringCandidates) {
+    if (candidate.node === node || candidate.drawingOrder <= node.drawingOrder) {
       continue;
     }
-    if (rectCoverage(sibling.rect, node.rect) >= 0.9) {
+    if (unionCoverage(candidate.footprint, coveredRects) >= 0.9) {
       return true;
     }
   }
@@ -635,21 +762,20 @@ function hasMeaningfulIdentifier(node: AndroidNode): boolean {
   return Boolean(identifier && !isGenericAndroidId(identifier));
 }
 
-function canCoverSibling(
+/** The single occlusion classification. Covering is never re-derived from a raw attribute. */
+function coveringCandidateOf(
   node: AndroidNode,
   state: AndroidTreePruneState,
-): node is AndroidCoveringCandidate {
-  return (
-    node.visibleToUser !== false &&
-    node.drawingOrder !== undefined &&
-    hasPositiveRect(node) &&
-    hasOcclusionEvidence(node, state)
-  );
-}
-
-/** The single occlusion classification. Covering is never re-derived from a raw attribute. */
-function hasOcclusionEvidence(node: AndroidNode, state: AndroidTreePruneState): boolean {
-  return hasDirectOcclusionEvidence(node) || hasDescendantOcclusionEvidence(node, state);
+): AndroidCoveringCandidate | null {
+  const { drawingOrder } = node;
+  if (node.visibleToUser === false || drawingOrder === undefined || !hasPositiveRect(node)) {
+    return null;
+  }
+  if (!hasDirectOcclusionEvidence(node) && !hasDescendantOcclusionEvidence(node, state)) {
+    return null;
+  }
+  const footprint = subtreeFootprint(node, state).paints;
+  return footprint.length > 0 ? { node, drawingOrder, footprint } : null;
 }
 
 function hasMeaningfulLabel(node: AndroidNode): boolean {
@@ -659,12 +785,6 @@ function hasMeaningfulLabel(node: AndroidNode): boolean {
 
 function hasPositiveRect(node: AndroidNode): node is AndroidNode & { rect: Rect } {
   return Boolean(node.rect && node.rect.width > 0 && node.rect.height > 0);
-}
-
-function rectCoverage(coveringRect: Rect, targetRect: Rect): number {
-  const targetArea = targetRect.width * targetRect.height;
-  if (targetArea <= 0) return 0;
-  return intersectArea(coveringRect, targetRect) / targetArea;
 }
 
 function applyAndroidScrollActionHints(root: AndroidUiHierarchy): void {
