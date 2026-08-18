@@ -248,6 +248,37 @@ test("does not resolve a Compose row hidden beneath fixed app chrome", () => {
   assert.equal(resolveSnapshotTargetRevealDirection(nodes, { label: "Customize Grok" }), "up");
 });
 
+test("matches a unique decorated live label without treating a longer name as the same control", () => {
+  const viewport = {
+    type: "Application",
+    rect: { x: 0, y: 0, width: 400, height: 800 },
+    enabled: true,
+  };
+  const superGrok = {
+    type: "Button",
+    label: "SuperGrok, X Premium",
+    enabled: true,
+    hittable: true,
+    rect: { x: 20, y: 400, width: 300, height: 56 },
+  };
+  const more = {
+    type: "Button",
+    label: "SuperGrok More",
+    enabled: true,
+    hittable: true,
+    rect: { x: 20, y: 470, width: 300, height: 56 },
+  };
+  assert.deepEqual(resolveSnapshotTargetPoint([viewport, superGrok], { label: "SuperGrok" }), {
+    x: 170,
+    y: 428,
+  });
+  assert.equal(resolveSnapshotTargetPoint([viewport, more], { label: "SuperGrok" }), undefined);
+  assert.deepEqual(
+    resolveSnapshotTargetPoint([viewport, superGrok, more], { label: "SuperGrok" }),
+    { x: 170, y: 428 },
+  );
+});
+
 test("refuses to guess between distinct controls with the same semantic label", () => {
   assert.equal(
     resolveSnapshotTargetPoint(

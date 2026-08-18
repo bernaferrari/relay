@@ -645,6 +645,54 @@ test("later instruction checks split warm confirmation from proposed cold recove
   ]);
 });
 
+test("leaf instruction recovery confirms the last connection, not the shared parent", () => {
+  const map = fixture();
+  map.screens.first = {
+    ...screen("first"),
+    identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+  };
+  map.connections["open-first"] = {
+    ...map.connections["open-cart"]!,
+    id: "open-first",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "first" },
+    label: "Open first",
+    actions: [{ id: "tap-first", kind: "tap", target: { label: "First" } }],
+  };
+  const work = scenario();
+  const setup = work.steps.find((step) => step.id === "module")!;
+  const leaf = structuredClone(work.steps[0]!);
+  assert.equal(leaf.kind, "instruction");
+  if (leaf.kind !== "instruction") throw new Error("Expected an instruction");
+  leaf.id = "open-first-row";
+  leaf.intent = "Open first";
+  leaf.binding = {
+    status: "resolved",
+    kind: "connections",
+    connectionIds: ["open-cart", "open-first"],
+  };
+  work.steps = [setup, leaf];
+
+  const compiled = compileAppMapTest(map, work);
+  const leafCheck = compiled.root.steps.find(
+    (step) => step.kind === "module" && step.check?.id === leaf.id,
+  );
+  assert.equal(leafCheck?.kind, "module");
+  assert.ok(leafCheck.check?.recovery);
+  assert.equal(leafCheck.check.recovery.groupId, "transition:open-first");
+  assert.equal(leafCheck.check.recovery.transitionId, "open-first");
+  const recovery = compiled.graph[leafCheck.check.recovery.recipeId];
+  assert.ok(recovery);
+  assert.equal(
+    recovery.steps.some((step) => step.kind === "expect-screen" && step.screenId === "home"),
+    false,
+  );
+  assert.equal(
+    recovery.steps.some((step) => step.kind === "tap" && step.target.label === "First"),
+    true,
+  );
+});
+
 test("scenario capture policy compiles explicit screen evidence", () => {
   const screenshotCaptions = (work: AppMapScenarioTest) => {
     const compiled = compileAppMapTest(fixture(), work);
@@ -788,6 +836,77 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
   assert.equal(
     secondPath.steps.some((step) => step.kind === "tap" && step.target.label === "Second"),
     true,
+  );
+});
+
+test("scenario siblings dismiss a child without a taught return using system Back", () => {
+  const map = fixture();
+  map.screens.first = {
+    ...screen("first"),
+    identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+  };
+  map.screens.second = {
+    ...screen("second"),
+    identity: { schemaVersion: 1, fingerprint: "d".repeat(64) },
+  };
+  map.connections["open-first"] = {
+    ...map.connections["open-cart"]!,
+    id: "open-first",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "first" },
+    actions: [{ id: "tap-first", kind: "tap", target: { label: "First" } }],
+  };
+  map.connections["open-second"] = {
+    ...map.connections["open-cart"]!,
+    id: "open-second",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "second" },
+    actions: [{ id: "tap-second", kind: "tap", target: { label: "Second" } }],
+  };
+  const work: AppMapScenarioTest = {
+    ...scope,
+    id: "coverage",
+    name: "Coverage",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "first",
+        kind: "instruction",
+        intent: "Open first",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-cart", "open-first"],
+        },
+      },
+      {
+        id: "second",
+        kind: "instruction",
+        intent: "Open second",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-cart", "open-second"],
+        },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+
+  const compiled = compileAppMapTest(map, work);
+  const secondPath = Object.values(compiled.graph).find(
+    (recipe) => recipe.title === "Checkout · Open second",
+  )!;
+  assert.deepEqual(secondPath.steps[0], {
+    kind: "key",
+    key: "back",
+    id: "relay-return-open-first",
+  });
+  assert.equal(
+    secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].screenId : undefined,
+    "cart",
   );
 });
 
@@ -952,24 +1071,25 @@ test("scenario siblings use a reviewed direct-ancestor Back before per-edge inve
     (recipe) => recipe.title === "Checkout · Open Privacy",
   )!;
   assert.deepEqual(
-    blockedSibling.steps.slice(0, 3).map((step) => [step.kind, step.id]),
+    blockedSibling.steps.slice(0, 4).map((step) => [step.kind, step.id]),
     [
       ["key", "relay-return-add-home"],
       ["expect-screen", "relay-return-proof-add-home"],
-      ["expect-screen", "relay-return-required-open-cart"],
+      ["key", "relay-return-open-cart"],
+      ["expect-screen", "relay-return-proof-open-cart"],
     ],
   );
   assert.equal(
-    blockedSibling.steps[2]?.kind === "expect-screen"
-      ? blockedSibling.steps[2].recovery
+    blockedSibling.steps[3]?.kind === "expect-screen"
+      ? blockedSibling.steps[3].screenId
+      : undefined,
+    "home",
+  );
+  assert.equal(
+    blockedSibling.steps[3]?.kind === "expect-screen"
+      ? blockedSibling.steps[3].returnRequirement
       : undefined,
     undefined,
-  );
-  assert.deepEqual(
-    blockedSibling.steps[2]?.kind === "expect-screen"
-      ? blockedSibling.steps[2].returnRequirement
-      : undefined,
-    { connectionId: "open-cart", fromScreenId: "home", destinationScreenId: "cart" },
   );
   assert.equal(
     blockedSibling.steps.some((step) => step.kind === "tap" && step.target.label === "Privacy"),

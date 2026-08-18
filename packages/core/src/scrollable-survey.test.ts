@@ -30,6 +30,19 @@ test("finds a vertical overlap and detects an unchanged terminal viewport", () =
   assert.ok(Math.abs(seam!.shiftY - 40) <= 2);
 });
 
+test("treats sticky-header shimmer as an unmoved viewport instead of an unknown seam", () => {
+  const quiet = androidScrollableFrame(0, 1);
+  const shimmer = androidScrollableFrame(0, 2);
+  const png = PNG.sync.read(shimmer.bytes);
+  for (let x = 0; x < png.width; x += 1) {
+    const offset = (400 * png.width + x) * 4;
+    png.data[offset] = Math.min(255, png.data[offset]! + 12);
+  }
+  const noisy = PNG.sync.write(png);
+  const seam = verticalScrollSeam(quiet.bytes, noisy, quiet.snapshot, shimmer.snapshot);
+  assert.equal(seam?.shiftY, 0);
+});
+
 function androidScrollableFrame(shiftY: number, capturedAt: number) {
   const width = 1080;
   const height = 2340;

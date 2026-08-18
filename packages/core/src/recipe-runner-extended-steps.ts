@@ -14,6 +14,7 @@ import {
 import { ensureAndroidSurfaceRuntimeFacts } from "./surface-comparison-runtime-facts.js";
 import { compareScreenIdentity, observeScreenIdentity } from "./screen-identity.js";
 import {
+  resolveSemanticRevealTarget,
   resolveSnapshotTargetPoint,
   resolveSnapshotTargetRevealDirection,
 } from "./device-target-resolution.js";
@@ -158,33 +159,59 @@ export async function runRevealStep(
   ctx: RecipeStepContext,
 ): Promise<void> {
   const maxAttempts = step.maxAttempts ?? 12;
+  const targetFound = (nodes: Awaited<ReturnType<typeof snapshot>>) => {
+    const hit = resolveSemanticRevealTarget(nodes, step.target);
+    if (!hit) return false;
+    if (hit.revealDirection) return false;
+    return true;
+  };
+  const chromeNudge = (nodes: Awaited<ReturnType<typeof snapshot>>) =>
+    resolveSemanticRevealTarget(nodes, step.target)?.revealDirection;
   if (step.navigation?.length) {
     let previousFingerprint: string | undefined;
     let repeated = 0;
+    let indexedMiss: string | undefined;
     for (let attempts = 0; attempts <= maxAttempts; attempts += 1) {
       await cooperativeCheckpoint();
       const nodes = ctx.runtime?.observation?.nodes ?? (await snapshot(device));
       if (ctx.runtime && !ctx.runtime.observation) {
         ctx.runtime.observation = { nodes, observedAt: now() };
       }
-      if (resolveSnapshotTargetPoint(nodes, step.target)) {
+      if (targetFound(nodes)) {
         ctx.log(
           `reveal: found semantic target after ${attempts} indexed scroll${attempts === 1 ? "" : "s"}`,
         );
         return;
       }
-      if (attempts === maxAttempts) break;
+      const nudge = chromeNudge(nodes);
+      if (nudge) {
+        if (ctx.runtime) {
+          ctx.runtime.observation = undefined;
+          ctx.runtime.verifiedScreen = undefined;
+        }
+        if (nudge === "down") await scrollDown(device, 0.18);
+        else await scrollUp(device, 0.18);
+        ctx.log(`reveal: ${nudge} 0.18 to clear chrome over the live target`);
+        previousFingerprint = undefined;
+        repeated = 0;
+        await sleep(250, device);
+        continue;
+      }
+      if (attempts === maxAttempts) {
+        indexedMiss = `semantic target was not found after ${maxAttempts} indexed scrolls`;
+        break;
+      }
       const movement = semanticRevealMovement(nodes, step.navigation);
       if (!movement) {
-        throw new Error(
-          "reveal-control: live viewport does not overlap the compiled full-surface semantic index",
-        );
+        indexedMiss = "live viewport does not overlap the compiled full-surface semantic index";
+        break;
       }
       const observed = observeScreenIdentity(nodes);
       repeated = observed.fingerprint === previousFingerprint ? repeated + 1 : 0;
       previousFingerprint = observed.fingerprint;
       if (repeated >= 2) {
-        throw new Error("reveal-control: indexed navigation reached the surface edge");
+        indexedMiss = "indexed navigation reached the surface edge";
+        break;
       }
       const direction =
         step.direction && step.direction !== "auto" ? step.direction : movement.direction;
@@ -199,8 +226,8 @@ export async function runRevealStep(
       );
       await sleep(250, device);
     }
-    throw new Error(
-      `reveal-control: semantic target was not found after ${maxAttempts} indexed scrolls`,
+    ctx.log(
+      `reveal: indexed navigation missed — ${indexedMiss ?? "unknown"}. Searching the live tree.`,
     );
   }
   const directions =
@@ -215,7 +242,7 @@ export async function runRevealStep(
       if (ctx.runtime && !ctx.runtime.observation) {
         ctx.runtime.observation = { nodes, observedAt: now() };
       }
-      if (resolveSnapshotTargetPoint(nodes, step.target)) {
+      if (targetFound(nodes) || resolveSnapshotTargetPoint(nodes, step.target)) {
         ctx.log(
           `reveal: found semantic target after ${attempts} scroll${attempts === 1 ? "" : "s"}`,
         );
@@ -227,9 +254,10 @@ export async function runRevealStep(
       previousFingerprint = observed.fingerprint;
       if (repeated >= 2) break;
       const suggestedDirection =
-        step.direction === "auto"
+        chromeNudge(nodes) ??
+        (step.direction === "auto"
           ? resolveSnapshotTargetRevealDirection(nodes, step.target)
-          : undefined;
+          : undefined);
       const nextDirection = suggestedDirection ?? direction;
       const targetedAmount = suggestedDirection ? 0.18 : undefined;
       if (ctx.runtime) {
@@ -390,53 +418,31 @@ export async function runCaptureSurfaceStep(
         ...(heightRatio === undefined ? {} : { heightRatio }),
         ...(semanticRatio === undefined ? {} : { semanticRatio }),
       },
-      repair: matches
-        ? { status: "not-needed" }
-        : {
+      repair: !survey.restoredStartViewport
+        ? {
             status: "proposed",
-            action: "propose-recapture",
-            reason:
-              surface.status === "completed"
-                ? "Logical surface differs materially from its frozen baseline."
-                : surface.message,
-          },
+            action: "review-viewport-restore",
+            reason: survey.message,
+            coverageContinues: true,
+          }
+        : matches
+          ? { status: "not-needed" }
+          : {
+              status: "proposed",
+              action: "propose-recapture",
+              reason:
+                surface.status === "completed"
+                  ? "Logical surface differs materially from its frozen baseline."
+                  : surface.message,
+            },
       cache,
     },
   });
   if (!survey.restoredStartViewport) {
-    const capturedAt = now();
-    job.artifacts.push({
-      kind: "campaign-recovery-intervention",
-      capturedAt,
-      data: {
-        schemaVersion: 1,
-        status: "intervention-required",
-        checkId: step.screenId,
-        checkTitle: step.screenTitle,
-        transitionId: `surface:${step.surfaceId}`,
-        reason: "viewport-restore-failed",
-        recovery: {
-          action: "review-viewport-restore",
-          implicitResumeAllowed: false,
-          choices: ["fix-current-state", "teach-semantic-repair", "defer"],
-        },
-        screenshot: { caption: `surface-restore:${step.screenId}` },
-      },
-    });
-    job.artifacts.push({
-      kind: "human-intervention-requested",
-      capturedAt,
-      data: {
-        reason: "review",
-        message: `Full-surface restore was not proven for ${step.screenTitle}.`,
-        resumeLabel: "Review restore",
-        interventionKind: "viewport-restore",
-        checkId: step.screenId,
-        transitionId: `surface:${step.surfaceId}`,
-      },
-    });
-    throw new Error(
-      `Full-surface restore was not proven for ${step.screenTitle}: ${survey.message}`,
+    // Inverse-swipe proof is recorded on the surface artifact. Emitting SOS
+    // here looked like a campaign stop and unproved every later Settings child.
+    ctx.log(
+      `surface: ${step.screenTitle} · restore not proven — ${survey.message} Coverage continues from the current viewport.`,
     );
   }
   ctx.log(

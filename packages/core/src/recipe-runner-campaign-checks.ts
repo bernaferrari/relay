@@ -209,12 +209,40 @@ export async function runCampaignCheck(
   const transitionToConfirm = transitionDependencies.find(
     (dependency) => transitionProofs[dependency.connectionId]?.status === "needs-confirmation",
   );
+  const leafTransitionId = transitionDependencies.at(-1)?.connectionId ?? recovery?.transitionId;
+  const ancestorNeedingConfirmation = transitionDependencies
+    .slice(0, -1)
+    .find(
+      (dependency) => transitionProofs[dependency.connectionId]?.status === "needs-confirmation",
+    );
   const useCanonicalRecovery = Boolean(
     recovery &&
     (recovery.transitionId
       ? transitionToConfirm?.connectionId === recovery.transitionId
       : ctx.runtime?.campaignItineraryTrusted === false),
   );
+  if (ancestorNeedingConfirmation && !useCanonicalRecovery) {
+    const finishedAt = now();
+    const message = `Parent transition ${ancestorNeedingConfirmation.connectionId} still needs confirmation.`;
+    (ctx.runtime.deferredCampaignChecks ??= []).push({
+      check: structuredClone(step.check),
+      error: message,
+      startedAt,
+      deferredAt: finishedAt,
+    });
+    ctx.job?.artifacts.push({
+      kind: "campaign-check-deferred",
+      capturedAt: finishedAt,
+      data: {
+        ...step.check,
+        status: "deferred",
+        error: message,
+        dependencyTransitionId: ancestorNeedingConfirmation.connectionId,
+      },
+    });
+    ctx.log(`check deferred: ${step.check.title} — ${message}`);
+    return;
+  }
   if (recovery && useCanonicalRecovery && recovery.mode !== "warm-transition") {
     const finishedAt = now();
     const transitionId =
@@ -428,25 +456,28 @@ export async function runCampaignCheck(
     );
   }
   if (recovery && options.allowDefer !== false && !failedConfirmationTransitionId) {
-    if (recovery.transitionId) {
-      transitionProofs[recovery.transitionId] = {
-        status: "needs-confirmation",
-        checkId: step.check.id,
-        updatedAt: finishedAt,
-        reason: message,
-      };
-      ctx.job?.artifacts.push({
-        kind: "campaign-transition-circuit",
-        capturedAt: finishedAt,
-        data: {
-          schemaVersion: 1,
-          connectionId: recovery.transitionId,
-          checkId: step.check.id,
+    if (leafTransitionId) {
+      const currentProof = transitionProofs[leafTransitionId];
+      if (currentProof?.status !== "verified") {
+        transitionProofs[leafTransitionId] = {
           status: "needs-confirmation",
-          reason: message,
+          checkId: step.check.id,
           updatedAt: finishedAt,
-        },
-      });
+          reason: message,
+        };
+        ctx.job?.artifacts.push({
+          kind: "campaign-transition-circuit",
+          capturedAt: finishedAt,
+          data: {
+            schemaVersion: 1,
+            connectionId: leafTransitionId,
+            checkId: step.check.id,
+            status: "needs-confirmation",
+            reason: message,
+            updatedAt: finishedAt,
+          },
+        });
+      }
     }
     (ctx.runtime!.deferredCampaignChecks ??= []).push({
       check: structuredClone(step.check),

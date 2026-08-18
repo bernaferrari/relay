@@ -168,7 +168,11 @@ export function verticalScrollSeam(
   if (left.width !== right.width || left.height !== right.height || left.height < 120)
     return undefined;
   const unchanged = sampleDifference(left, right, 0);
-  if (unchanged < 2.5) return { shiftY: 0, confidence: 1 };
+  // Status-bar clocks are cropped, but sticky headers and Compose shimmer still
+  // live in the sampled band. A mean per-channel delta under 8/255 is bounce or
+  // chrome noise, not a new viewport — treating it as motion made Settings
+  // inverse-swipe off the page when the first fling rubber-banded.
+  if (unchanged < 8) return { shiftY: 0, confidence: 1 };
   const semantic =
     previousSnapshot && currentSnapshot
       ? semanticScrollShift(previousSnapshot, currentSnapshot)

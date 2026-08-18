@@ -37,6 +37,16 @@ export const INTERACTIVE_SNAPSHOT_ROLES = new Set([
   "textview",
 ]);
 
+/** Mapped "SuperGrok" still matches the live "SuperGrok, X Premium" row.
+ * A following word ("SuperGrok More") is a different control. */
+export function snapshotLabelMatches(query: string, live: string | undefined): boolean {
+  if (!live) return false;
+  const normalizedLive = live.trim().toLocaleLowerCase();
+  if (normalizedLive === query) return true;
+  if (!normalizedLive.startsWith(query)) return false;
+  return /^[\s]*[,:;–—([{/-]/u.test(normalizedLive.slice(query.length));
+}
+
 /** Status-bar crumbs and 20px captions are unique matches that still waste a tap.
  * Prefer a real row; if nothing usable exists, treat the query as unmatched. */
 function isUsableTapTarget(node: SnapshotNode): boolean {
@@ -193,7 +203,7 @@ function resolveSnapshotTarget(
       }
       if (normalized.ref)
         return node.ref?.replace(/^@/u, "").toLocaleLowerCase() === normalized.ref;
-      if (normalized.label) return node.label?.trim().toLocaleLowerCase() === normalized.label;
+      if (normalized.label) return snapshotLabelMatches(normalized.label, node.label);
       if (normalized.text) {
         return [node.label, node.value, node.identifier].some((value) =>
           value?.toLocaleLowerCase().includes(normalized.text!),
@@ -246,7 +256,8 @@ function resolveSnapshotTarget(
         rank:
           (INTERACTIVE_SNAPSHOT_ROLES.has(role) ? 4 : 0) +
           (node.hittable ? 2 : 0) +
-          (activationNode ? 3 : 0),
+          (activationNode ? 3 : 0) +
+          (normalized.label && node.label?.trim().toLocaleLowerCase() === normalized.label ? 8 : 0),
         area: activationRect.width * activationRect.height,
       };
     })
@@ -301,6 +312,30 @@ export function resolveSnapshotTargetRevealDirection(
   target: SemanticSnapshotTarget,
 ): "up" | "down" | undefined {
   return resolveSnapshotTarget(nodes, target)?.revealDirection;
+}
+
+/**
+ * Reveal prefers identifier → ref → label → text independently. A combined
+ * `{ identifier, label }` query must not hide a unique live label when the
+ * recorded identifier has drifted ("SuperGrok" vs "SuperGrok, X Premium").
+ */
+export function resolveSemanticRevealTarget(
+  nodes: SnapshotNode[],
+  target: SemanticSnapshotTarget,
+  region?: SnapshotTargetRegion,
+) {
+  const role = target.role ? { role: target.role } : {};
+  const methods: SemanticSnapshotTarget[] = [
+    ...(target.identifier ? [{ identifier: target.identifier, ...role }] : []),
+    ...(target.ref ? [{ ref: target.ref, ...role }] : []),
+    ...(target.label ? [{ label: target.label, ...role }] : []),
+    ...(target.text ? [{ text: target.text, ...role }] : []),
+  ];
+  for (const method of methods.length > 0 ? methods : [target]) {
+    const hit = resolveSnapshotTarget(nodes, method, region);
+    if (hit) return hit;
+  }
+  return undefined;
 }
 
 export type NamedControlTarget = {
@@ -398,7 +433,7 @@ export function resolveNamedControlOutcome(
           return node.identifier?.trim().toLocaleLowerCase() === normalizedValue;
         }
         if (method === "label") {
-          return node.label?.trim().toLocaleLowerCase() === normalizedValue;
+          return snapshotLabelMatches(normalizedValue, node.label);
         }
         return [node.label, node.value, node.identifier].some((candidate) =>
           candidate?.toLocaleLowerCase().includes(normalizedValue),

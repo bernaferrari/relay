@@ -298,7 +298,7 @@ export function compileAppMapScenarioTest(
           }
           let recoveryRecipeId: string | undefined;
           let coldRecoveryRecipeId: string | undefined;
-          const recoveryTransition = transitionDependencies[0];
+          const recoveryTransition = transitionDependencies.at(-1);
           if (campaignSetupSteps.length > 0 && recoveryTransition) {
             const connectionPlan = compileAppMapConnection(map, recoveryTransition.connectionId);
             for (const compiled of Object.values(connectionPlan.recipes)) {

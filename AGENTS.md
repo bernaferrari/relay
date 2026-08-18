@@ -66,9 +66,9 @@ export RELAY_URL=http://127.0.0.1:8787
 export RELAY_ACTOR_ID=agent:grok-ios-mapper
 ```
 
-- One server on `:8787`. Do **not** wrap `tsx src/index.ts` in a long-lived agent bash task. Run `pnpm ensure:serve` — it **kills whatever is on the port and starts fresh**. Use `node scripts/ensure-server.mjs --reuse` only when you explicitly want the current process. Detached + `tsx watch` so core/server edits reload it. Logs: `.relay/server.log`. `GET /health` includes `pid` and `startedAt`.
+- One server on `:8787`. Do **not** wrap `tsx src/index.ts` in a long-lived agent bash task. Run `pnpm ensure:serve` or `node scripts/ensure-server.mjs` — it kills the port listener **and stray `tsx watch --port 8787` processes**. Use `--reuse` only when you explicitly want the current process. Detached + `tsx watch` so core/server edits reload it. Logs: `.relay/server.log`. `GET /health` includes `pid` and `startedAt`.
 - Exclusive lease owner must match `--actor`. Default CLI actor `human:local-cli` will 403 on a mapper lease. Local trusted server **mints** a 2-hour lease on first control if nobody else holds the device, and **renews** it while you work. Still set `RELAY_ACTOR_ID` so you do not fight yourself.
-- Prefer `pnpm exec tsx packages/cli/src/index.ts` with `--json` (avoid `pnpm --filter … exec` — it appends a failure footer to stdout). **Parse the first JSON object on stdout**. **Read stderr** for waits (`Waiting on iOS accessibility tree…`, last job log). Do not merge stderr into the JSON parser. Default HTTP timeout is 180s; pass `--timeout 240000` if a cold iOS snapshot still dies. `relay test run` infers iOS vs Android from the serial — do not omit `serial`.
+- Drive the CLI with **direct** `node node_modules/tsx/dist/cli.mjs packages/cli/src/index.ts` and `--json`. Avoid `pnpm exec tsx` — `@yume-chan/fetch-scrcpy-server` postinstall can restart the watched server mid-job. Never `pnpm --filter … exec` (failure footer on stdout). **Parse the first JSON object on stdout**. **Read stderr** for waits (`Waiting on iOS accessibility tree…`, last job log). Do not merge stderr into the JSON parser. Default HTTP timeout is 180s; pass `--timeout 240000` if a cold iOS snapshot still dies. `relay test run` infers iOS vs Android from the serial — do not omit `serial`.
 
 **Where am I**
 

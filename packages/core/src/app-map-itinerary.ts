@@ -23,6 +23,11 @@ function isVerticalSwipe(
   return verticalDistance > 0 && verticalDistance >= horizontalDistance * 1.5;
 }
 
+function isHierarchicalPushAction(action: ActionSpec): boolean {
+  if (action.kind === "tap" || action.kind === "reveal") return true;
+  return authoredSteps(action).some((step) => step.kind === "tap" || step.kind === "reveal");
+}
+
 function isScrollAction(action: ActionSpec): boolean {
   if (action.kind === "gesture") {
     return action.gesture.kind === "scroll" || isVerticalSwipe(action.gesture);
@@ -235,23 +240,38 @@ function reviewedReturnPlan(
       continue;
     }
     const reviewedReturn = connection.return;
-    if (!reviewedReturn) {
+    const origin = map.screens[connection.fromScreenId];
+    if (!origin?.identity) {
       return { status: "missing", steps, recipes, connectionId: connection.id, currentScreenId };
     }
-    const origin = map.screens[connection.fromScreenId];
-    if (!origin) {
-      return { status: "missing", steps, recipes, connectionId: connection.id, currentScreenId };
+    // A taught Cancel/Back contract wins. Settings children reached by tap/reveal
+    // still dismiss with the system Back key when that contract was never taught —
+    // forbidding that left Relay 40 stuck on Birth Year after a successful visit.
+    // Gesture traversals (horizontal pagers) are not hierarchy; do not invent Back.
+    if (
+      !reviewedReturn &&
+      (connection.actions.length === 0 || !connection.actions.every(isHierarchicalPushAction))
+    ) {
+      return {
+        status: "missing",
+        steps,
+        recipes,
+        connectionId: connection.id,
+        currentScreenId: cursorScreenId,
+      };
     }
     const expectation = screenExpectation(
       map,
-      { ...origin, identity: structuredClone(reviewedReturn.expectedDestination.identity) },
+      reviewedReturn
+        ? { ...origin, identity: structuredClone(reviewedReturn.expectedDestination.identity) }
+        : origin,
       `relay-return-proof-${connection.id}`,
     );
     steps.push(
       { kind: "key", key: "back", id: `relay-return-${connection.id}` },
       {
         ...expectation,
-        ...(reviewedReturn.expectedApp ? { expectedApp: reviewedReturn.expectedApp } : {}),
+        ...(reviewedReturn?.expectedApp ? { expectedApp: reviewedReturn.expectedApp } : {}),
       },
     );
     verifiedScreenId = connection.fromScreenId;

@@ -1229,6 +1229,198 @@ describe("runRecipeStep campaign check policy", () => {
     );
   });
 
+  it("does not reopen a verified shared transition after a later leaf defers", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const logs: string[] = [];
+    const sharedDependency = {
+      connectionId: "open-navigation",
+      originScreenId: "home",
+      destination: { kind: "screen" as const, screenId: "navigation" },
+    };
+    const leafDependency = {
+      connectionId: "open-supergrok",
+      originScreenId: "settings",
+      destination: { kind: "screen" as const, screenId: "supergrok" },
+    };
+    const appearanceDependency = {
+      connectionId: "open-appearance",
+      originScreenId: "settings",
+      destination: { kind: "screen" as const, screenId: "appearance" },
+    };
+    const moreDependency = {
+      connectionId: "open-supergrok-more",
+      originScreenId: "supergrok",
+      destination: { kind: "screen" as const, screenId: "supergrok-more" },
+    };
+    const settingsRecovery = {
+      groupId: "transition:open-navigation",
+      recipeId: "confirm-nav",
+      transitionId: "open-navigation",
+      mode: "warm-transition" as const,
+    };
+    const superGrokRecovery = {
+      groupId: "transition:open-supergrok",
+      recipeId: "confirm-supergrok",
+      transitionId: "open-supergrok",
+      mode: "warm-transition" as const,
+    };
+    const moreRecovery = {
+      groupId: "transition:open-supergrok-more",
+      recipeId: "confirm-more",
+      transitionId: "open-supergrok-more",
+      mode: "warm-transition" as const,
+    };
+    const appearanceRecovery = {
+      groupId: "transition:open-appearance",
+      recipeId: "confirm-appearance",
+      transitionId: "open-appearance",
+      mode: "warm-transition" as const,
+    };
+    const recipeGraph = {
+      settings: {
+        id: "settings",
+        title: "Visit Settings",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      appearance: {
+        id: "appearance",
+        title: "Visit Appearance from Settings",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      "supergrok-more": {
+        id: "supergrok-more",
+        title: "Visit SuperGrok More",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      "confirm-nav": {
+        id: "confirm-nav",
+        title: "Navigation · warm transition confirmation",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 99 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      "confirm-supergrok": {
+        id: "confirm-supergrok",
+        title: "SuperGrok · warm transition confirmation",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 99 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const device = stubDevice({
+      press: () => Promise.reject(new Error("SuperGrok was not resolved")),
+      wait: async () => {},
+    });
+    const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph };
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "settings",
+        check: {
+          id: "visit-settings",
+          title: "Visit Settings",
+          recovery: settingsRecovery,
+          transitionDependencies: [sharedDependency],
+        },
+      },
+      context,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "supergrok" },
+        check: {
+          id: "visit-supergrok",
+          title: "Visit SuperGrok",
+          recovery: superGrokRecovery,
+          transitionDependencies: [sharedDependency, leafDependency],
+        },
+      },
+      context,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "supergrok-more",
+        check: {
+          id: "visit-supergrok-more",
+          title: "Visit SuperGrok More",
+          recovery: moreRecovery,
+          transitionDependencies: [sharedDependency, leafDependency, moreDependency],
+        },
+      },
+      context,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "appearance",
+        check: {
+          id: "visit-appearance",
+          title: "Visit Appearance",
+          recovery: appearanceRecovery,
+          transitionDependencies: [sharedDependency, appearanceDependency],
+        },
+      },
+      context,
+    );
+
+    assert.equal(runtime.campaignTransitionProofs?.["open-navigation"]?.status, "verified");
+    assert.equal(
+      runtime.campaignTransitionProofs?.["open-supergrok"]?.status,
+      "needs-confirmation",
+    );
+    assert.deepEqual(
+      job.artifacts
+        .filter((artifact) => artifact.kind === "campaign-check-result")
+        .map((artifact) => [
+          (artifact.data as { id: string; status: string }).id,
+          (artifact.data as { status: string }).status,
+        ]),
+      [
+        ["visit-settings", "passed"],
+        ["visit-appearance", "passed"],
+      ],
+    );
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "campaign-check-deferred" &&
+          (artifact.data as { id?: string }).id === "visit-supergrok-more",
+      ),
+      true,
+    );
+    assert.equal(
+      logs.some((line) => line.includes("Navigation · warm transition confirmation")),
+      false,
+    );
+    assert.equal(
+      logs.some((line) => line.includes("check deferred: Visit SuperGrok More")),
+      true,
+    );
+    assert.equal(
+      logs.some((line) => line.includes("Visit Appearance from Settings")),
+      true,
+    );
+  });
+
   it("keeps an authored warm recipe when no canonical recovery was declared", async () => {
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
@@ -1946,7 +2138,58 @@ describe("runRecipeStep semantic reveal", () => {
     assert.equal(snapshots, 0);
   });
 
-  it("fails closed when a compiled surface does not overlap the live viewport", async () => {
+  it("finds a unique live label when indexed navigation cannot overlap the compiled surface", async () => {
+    const logs: string[] = [];
+    let scrolls = 0;
+    await runRecipeStep(
+      stubDevice({
+        snapshot: () =>
+          Promise.resolve({
+            nodes: [
+              {
+                type: "Application",
+                rect: { x: 0, y: 0, width: 400, height: 800 },
+                enabled: true,
+              },
+              {
+                role: "cell",
+                label: "SuperGrok, X Premium",
+                hittable: true,
+                rect: { x: 20, y: 420, width: 300, height: 56 },
+              },
+            ],
+          }),
+        scroll: () => {
+          scrolls += 1;
+          return Promise.resolve({});
+        },
+      }),
+      {
+        kind: "reveal",
+        target: { identifier: "stale-supergrok", label: "SuperGrok" },
+        navigation: [
+          {
+            schemaVersion: 1,
+            surfaceId: "settings",
+            captureId: "settings-r1",
+            documentHeight: 2_400,
+            viewportHeight: 800,
+            targetOrder: 0,
+            targetDocumentY: 2_000,
+            anchors: [{ order: 0, documentY: 2_000, target: { identifier: "kids-mode" } }],
+          },
+        ],
+      },
+      { log: (line) => logs.push(line), runtime: {} },
+    );
+    assert.equal(scrolls, 0);
+    assert.equal(
+      logs.some((line) => line.includes("found semantic target")),
+      true,
+    );
+  });
+
+  it("falls back to live-tree search when indexed navigation cannot overlap", async () => {
     let scrolls = 0;
     await assert.rejects(
       runRecipeStep(
@@ -1984,9 +2227,9 @@ describe("runRecipeStep semantic reveal", () => {
         },
         revealContext(),
       ),
-      /does not overlap the compiled full-surface semantic index/,
+      /was not found after \d+ scrolls/,
     );
-    assert.equal(scrolls, 0);
+    assert.ok(scrolls > 0);
   });
 });
 
@@ -2620,7 +2863,7 @@ describe("runRecipeStep expect-screen", () => {
     ]);
     const current = [
       ...shell,
-      ...Array.from({ length: 12 }, (_, index) => ({
+      ...Array.from({ length: 7 }, (_, index) => ({
         role: "text",
         label: `Entirely different conversation ${index}`,
         depth: 12,

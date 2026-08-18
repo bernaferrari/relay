@@ -87,20 +87,20 @@ function resilientScreenIdentityMatch(
     const sharedIdentifiers = [...expectedIdentifiers].filter((identifier) =>
       observedIdentifiers.has(identifier),
     );
-    // Dynamic lists can replace most visible copy while leaving the exact
-    // application-owned shell intact. Two reviewed, non-host identifiers plus
-    // the same substantial role structure are stronger proof than transient
-    // row labels, regardless of locale.
+    // Dynamic lists can replace most visible copy and change row count while
+    // leaving a compact application-owned identifier set intact. Grok
+    // Navigation is the usual case: profile_section + settings_button +
+    // new_conversation_button stay put, conversation titles do not. Role-bag
+    // overlap across that list is not screen identity — a handful of extra or
+    // missing rows already drops a ~80-node tree below 0.95.
+    // Richer shells (six or more reviewed identifiers) stay on the explicit
+    // handoff rule so a reflowed system Settings page cannot match without
+    // its declared owner app.
     const stableApplicationShell =
       expectedIdentifiers.size >= 2 &&
-      observedIdentifiers.size >= 2 &&
-      sharedIdentifiers.length === expectedIdentifiers.size &&
-      sharedIdentifiers.length === observedIdentifiers.size &&
-      // Scroll position and responsive headers can add or remove a handful of
-      // repeated roles without changing the screen. Exact agreement on the
-      // complete application-owned identifier set is the stronger anchor;
-      // retain a high, but not pixel-like, structural floor.
-      (structure ?? 0) >= 0.95;
+      expectedIdentifiers.size <= 5 &&
+      observedIdentifiers.size === expectedIdentifiers.size &&
+      sharedIdentifiers.length === expectedIdentifiers.size;
     return (
       (options.allowDynamicShell !== false && stableApplicationShell) ||
       (localized && (stableIdentifiers ?? 0) >= 0.98 && (structure ?? 0) >= 0.95) ||
