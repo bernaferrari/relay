@@ -2,6 +2,7 @@ import http from "node:http";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import {
+  buildRunStory,
   applyRunRetention,
   buildCampaignRepairTarget,
   campaignRepairPlanIdentity,
@@ -591,6 +592,14 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
       throw new HttpError(404, "Run not found");
     }
     json(response, 200, { ok: true, pinned: body.pinned !== false });
+    return true;
+  }
+
+  const storyMatch = matchPath(pathname, "/runs/:id/story");
+  if (method === "GET" && storyMatch) {
+    const run = await readPersistedRun(storyMatch.id!);
+    assertRunAccess(scope, run);
+    json(response, 200, { story: buildRunStory(run) });
     return true;
   }
 

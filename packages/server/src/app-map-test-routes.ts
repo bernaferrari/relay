@@ -3,6 +3,7 @@ import {
   AppMapDomainError,
   AppMapTestStepOperationError,
   compileAppMapTest,
+  compileIntentWalk,
   currentOperationContext,
   editAppMapScenarioTest,
   listDevices,
@@ -30,6 +31,18 @@ type AppMapTestRouteInput = {
 
 export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
+  const fromIntent = matchPath(pathname, "/app-maps/:appMapId/tests/from-intent");
+  if (method === "POST" && fromIntent) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.test.from-intent">,
+      "appMapId"
+    >;
+    const appMap = await readAppMap(scope.projectId, fromIntent.appMapId!);
+    if (!appMap) throw new HttpError(404, `App Map ${fromIntent.appMapId} not found`);
+    const walk = compileIntentWalk(appMap, String(body.intent ?? ""));
+    json(response, 200, walk);
+    return true;
+  }
   const testSave = matchPath(pathname, "/app-maps/:appMapId/tests/:testId");
   if (method === "PUT" && testSave) {
     const body = (await parseJsonBody(request)) as Omit<

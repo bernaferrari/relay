@@ -101,6 +101,20 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
     }),
   ),
   mapped(
+    "app-map.test.from-intent",
+    path("test from-intent", ["appMapId"], undefined, {
+      summary: "Compile English onto existing ready App Map edges",
+      inputHelp: [
+        {
+          name: "intent",
+          type: "string",
+          required: true,
+          description: "Coverage goal such as Cover Settings",
+        },
+      ],
+    }),
+  ),
+  mapped(
     "app-map.test.run",
     path("test run", ["appMapId", "testId"], undefined, {
       summary: "Run one exact saved graph-native Test revision",

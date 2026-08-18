@@ -76,6 +76,9 @@ export function useAppMapContextPanels(options: {
             setAgentOpen(false);
             setProposalReviewOpen(true);
           }}
+          keepBusyId={proposalBusyId()}
+          onKeep={(proposalId) => void decideProposal(proposalId, "approve")}
+          onSkip={(proposalId) => void decideProposal(proposalId, "reject")}
         />
       </Show>
       <Show when={historyOpen()}>

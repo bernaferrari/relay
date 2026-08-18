@@ -31,6 +31,7 @@ export function createAppMapOperationDefinitions(
     appMapImportParser,
     appMapListOutputParser,
     appMapMutationParser,
+    appMapProposalApproveParser,
     appMapOutputParser,
     appMapRefParser,
     appMapRoutineSaveParser,
@@ -47,6 +48,8 @@ export function createAppMapOperationDefinitions(
     appMapTeachParser,
     appMapTestCompileInputParser,
     appMapTestCompileOutputParser,
+    appMapTestFromIntentInputParser,
+    appMapTestFromIntentOutputParser,
     appMapTestEditInputParser,
     appMapTestProposeInputParser,
     appMapTestProposeOutputParser,
@@ -437,6 +440,17 @@ export function createAppMapOperationDefinitions(
       },
     ),
     command(
+      "app-map.test.from-intent",
+      "Compile English onto ready App Map edges",
+      "POST",
+      "/app-maps/:appMapId/tests/from-intent",
+      {
+        category: "authoring",
+        input: appMapTestFromIntentInputParser,
+        output: appMapTestFromIntentOutputParser,
+      },
+    ),
+    command(
       "app-map.test.run",
       "Compile and run one exact graph-native map test revision",
       "POST",
@@ -543,9 +557,7 @@ export function createAppMapOperationDefinitions(
       "/app-maps/:appMapId/proposals/:proposalId/approve",
       {
         category: "authoring",
-        input: appMapMutationParser<"app-map.proposal.approve">("proposal approval", undefined, [
-          "proposalId",
-        ]),
+        input: appMapProposalApproveParser,
         output: appMapOutputParser,
         confirmation: "confirm",
       },

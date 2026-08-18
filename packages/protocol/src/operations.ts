@@ -36,6 +36,7 @@ import {
 import { runShareOperationDefinitions, type RunShareOperationMap } from "./run-share.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
+import { createDiscoveryOperationDefinitions } from "./discovery-operation-definitions.js";
 import { createOperationBuilders } from "./operation-builders.js";
 import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import {
@@ -457,6 +458,7 @@ type SpecificOperationMap = {
     input: { runId: string; limit?: number; includeBodies?: boolean };
     output: { evidence: OperationRecord };
   };
+  "run.story.get": { input: { runId: string }; output: { story: OperationRecord } };
   "run.visual.compare": { input: { runId: string }; output: { comparison: VisualComparison } };
   "run.visual.review": {
     input: { runId: string; comparisonId: string; action: VisualReviewAction; note?: string };
@@ -679,6 +681,8 @@ type GenericOperationId =
   | "discovery.coverage"
   | "discovery.export"
   | "discovery.promote"
+  | "discovery.start"
+  | "discovery.cancel"
   | "corpus.list"
   | "corpus.create"
   | "corpus.get"
@@ -1713,6 +1717,8 @@ const authoringSessionListInputParser = objectParser<OperationInput<"authoring.s
 
 const { command, query } = createOperationBuilders<OperationId>(operationRecordParser);
 
+const discoveryOperationDefinitions = createDiscoveryOperationDefinitions(operationRecordParser);
+
 const appMapOperationDefinitions = createAppMapOperationDefinitions(operationRecordParser, {
   boolean,
   emptyInputParser,
@@ -2292,62 +2298,7 @@ export const operationDefinitions = [
   command("matrix.resolve", "Resolve compatibility matrix", "POST", "/matrices/:matrixId/resolve", {
     idempotency: "inherent",
   }),
-  query("discovery.list", "List Discovery Maps", "/discovery", { category: "discovery" }),
-  command("discovery.create", "Create Discovery Map", "POST", "/discovery", {
-    category: "discovery",
-  }),
-  query("discovery.get", "Get Discovery Map", "/discovery/:sessionId", { category: "discovery" }),
-  command("discovery.rename", "Rename Discovery Map", "POST", "/discovery/:sessionId/name", {
-    category: "discovery",
-  }),
-  command(
-    "discovery.status.update",
-    "Update Discovery status",
-    "POST",
-    "/discovery/:sessionId/status",
-    {
-      category: "discovery",
-    },
-  ),
-  command(
-    "discovery.capture",
-    "Capture discovered screen",
-    "POST",
-    "/discovery/:sessionId/capture",
-    {
-      category: "discovery",
-      targetCapabilities: ["snapshot", "screenshot"],
-      lease: "shared",
-    },
-  ),
-  command(
-    "discovery.interact",
-    "Explore discovered control",
-    "POST",
-    "/discovery/:sessionId/interact",
-    {
-      category: "discovery",
-      targetCapabilities: ["tap"],
-      lease: "exclusive",
-    },
-  ),
-  query(
-    "discovery.suggestion",
-    "Suggest next Discovery control",
-    "/discovery/:sessionId/suggestion",
-    {
-      category: "discovery",
-    },
-  ),
-  query("discovery.coverage", "Discovery coverage report", "/discovery/:sessionId/coverage", {
-    category: "discovery",
-  }),
-  query("discovery.export", "Export Discovery Map", "/discovery/:sessionId/export", {
-    category: "discovery",
-  }),
-  command("discovery.promote", "Promote Discovery path", "POST", "/discovery/:sessionId/promote", {
-    category: "discovery",
-  }),
+  ...discoveryOperationDefinitions,
   query("corpus.list", "List corpus sessions", "/corpus", { category: "corpus" }),
   command("corpus.create", "Create corpus session", "POST", "/corpus", {
     category: "corpus",
@@ -2540,6 +2491,10 @@ export const operationDefinitions = [
   query("run.evidence.get", "Get Run Evidence", "/runs/:runId/evidence", {
     category: "evidence",
     input: runEvidenceInputParser,
+  }),
+  query("run.story.get", "Get Run story", "/runs/:runId/story", {
+    category: "evidence",
+    input: runIdInputParser,
   }),
   ...runShareOperationDefinitions,
   command("run.catalog.rebuild", "Rebuild Run catalog", "POST", "/runs/catalog/rebuild", {

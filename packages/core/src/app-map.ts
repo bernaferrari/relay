@@ -52,7 +52,9 @@ export {
   updateAppMap,
 } from "./app-map/entity-operations.js";
 export { serializeAppMap } from "./app-map/serialization.js";
-export { proposalFromDiscovery } from "./app-map/observation-proposal.js";
+export { proposalFromDiscovery, proposalFromObservedEdge } from "./app-map/observation-proposal.js";
+export { compileIntentWalk, type IntentWalkResult } from "./app-map/intent-walk.js";
+export { connectionIdsFromProposal, proveConnectionOnDevice } from "./app-map/keep-prove.js";
 export {
   proposeNavigationFromObservation,
   type NavigationObservationAction,

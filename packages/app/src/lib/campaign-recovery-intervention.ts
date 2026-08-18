@@ -39,6 +39,8 @@ export type CampaignRecoveryInterventionModel = {
     choices: string[];
   };
   repair: NavigationTransitionRepairEntry;
+  jobId?: string;
+  paused?: boolean;
 };
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -180,5 +182,7 @@ export function campaignRecoveryInterventionFromJob(
       operationId: "run.repair.get",
       fixedInput: { runId: job.id, checkId },
     },
+    jobId: job.id,
+    paused: job.status === "paused",
   };
 }

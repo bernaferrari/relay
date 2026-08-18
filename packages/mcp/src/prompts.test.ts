@@ -425,10 +425,10 @@ test("mapping prompt turns one delegation into a bounded autonomous proposal", a
       }),
     );
     assert.match(text, /at most 7 reversible Target interactions/);
-    assert.match(text, /server-owned Authoring Session/);
-    assert.match(text, /reviewable proposal/);
-    assert.match(text, /Do not directly approve the proposal/);
-    assert.doesNotMatch(text, /Discovery operations/);
+    assert.match(text, /relay_discovery_start/);
+    assert.match(text, /pending proposal/);
+    assert.match(text, /Do not approve proposals/);
+    assert.doesNotMatch(text, /YAML recipe/);
   } finally {
     await session.close();
   }

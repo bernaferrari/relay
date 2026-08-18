@@ -14,6 +14,7 @@ import {
   approveDiscoverySuggestion as approveDiscoverySuggestionRemote,
   backtrackDiscovery as backtrackDiscoveryRemote,
   captureDiscoveryScreen,
+  cancelDiscoveryExplore,
   createDiscoverySession,
   discoveryScreenUrl as buildDiscoveryScreenUrl,
   getDiscoveryCoverage,
@@ -22,6 +23,7 @@ import {
   renameDiscoverySession,
   promoteDiscoveryPath,
   setDiscoveryStatus,
+  startDiscoveryExplore,
 } from "./server-discovery-remote";
 
 type DiscoveryControllerDependencies = {
@@ -87,6 +89,20 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
     return buildDiscoveryScreenUrl(deps.serverUrl(), sessionId, screenId);
   }
 
+  async function startDiscoveryExploreRemote(id: string): Promise<DiscoverySession> {
+    const session = await startDiscoveryExplore(deps.request, id);
+    await refreshDiscoverySessions();
+    deps.setActiveDiscoverySessionId(session.id);
+    return session;
+  }
+
+  async function cancelDiscoveryExploreRemote(id: string): Promise<DiscoverySession> {
+    const session = await cancelDiscoveryExplore(deps.request, id);
+    await refreshDiscoverySessions();
+    if (deps.activeDiscoverySessionId() === session.id) deps.setActiveDiscoverySessionId(null);
+    return session;
+  }
+
   async function promoteDiscoveryPathRemote(input: {
     sessionId: string;
     transitionIds: string[];
@@ -128,12 +144,14 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
 
   return {
     refreshDiscoverySessions,
-    createDiscoverySessionRemote,
-    setDiscoveryStatusRemote,
-    renameDiscoverySessionRemote,
-    captureDiscoveryScreenRemote,
+    createDiscoverySession: createDiscoverySessionRemote,
+    setDiscoveryStatus: setDiscoveryStatusRemote,
+    renameDiscoverySession: renameDiscoverySessionRemote,
+    captureDiscoveryScreen: captureDiscoveryScreenRemote,
+    startDiscoveryExplore: startDiscoveryExploreRemote,
+    cancelDiscoveryExplore: cancelDiscoveryExploreRemote,
     discoveryScreenUrl,
-    promoteDiscoveryPathRemote,
+    promoteDiscoveryPath: promoteDiscoveryPathRemote,
     discoverySuggestion,
     loadDiscoveryCoverage,
     approveDiscoverySuggestion,

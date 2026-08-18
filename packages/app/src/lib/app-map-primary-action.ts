@@ -98,7 +98,7 @@ export function appMapPrimaryAction(input: {
       case "keep":
         return {
           kind: "keep-path",
-          label: input.run.label || "Keep path",
+          label: input.run.label || "Keep",
           reason: input.run.reason,
           icon: "check",
         };

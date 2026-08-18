@@ -2,23 +2,20 @@ import type http from "node:http";
 import {
   buildDiscoveryCoverage,
   buildTargetProfiles,
-  captureScreenshot,
-  captureSnapshot,
-  cleanupScreenshot,
+  cancelDiscoveryExplore,
   createDiscoverySession,
   formatDiscoveryExport,
-  interact,
-  isSensitiveDiscoveryAction,
   listDevices,
   listDiscoverySessions,
   listTargets,
   promoteDiscoveryPath,
   readDiscoveryScreenAsset,
   readDiscoverySession,
-  recordObservedScreen,
-  recordObservedTransition,
   renameDiscoverySession,
+  runDiscoveryCapture,
+  runDiscoveryInteract,
   setDiscoveryStatus,
+  startDiscoveryExplore,
   suggestDiscoveryControl,
   type InteractInput,
 } from "@relay/core";
@@ -40,60 +37,6 @@ type DiscoveryRouteInput = {
   response: http.ServerResponse;
   scope: RequestContext;
 };
-
-function discoveryInteraction(input: InteractInput): {
-  kind: "tap" | "type" | "scroll" | "back" | "manual";
-  label?: string;
-  target?: {
-    identifier?: string;
-    ref?: string;
-    label?: string;
-    text?: string;
-    point?: { x: number; y: number };
-  };
-  text?: string;
-  direction?: "up" | "down";
-} {
-  switch (input.kind) {
-    case "identifier":
-      return {
-        kind: "tap",
-        label: input.identifier,
-        target: { identifier: input.identifier },
-      };
-    case "label":
-      return { kind: "tap", label: input.label, target: { label: input.label } };
-    case "ref":
-      return { kind: "tap", label: input.ref, target: { ref: input.ref } };
-    case "text-match":
-      return { kind: "tap", label: input.match, target: { text: input.match } };
-    case "find":
-      return { kind: "tap", label: input.query, target: { text: input.query } };
-    case "point":
-      return {
-        kind: "tap",
-        label: "Coordinate tap",
-        target: { point: { x: input.x, y: input.y } },
-      };
-    case "swipe":
-      return {
-        kind: "scroll",
-        label: "Swipe",
-        direction: input.to.y < input.from.y ? "down" : "up",
-      };
-    case "type":
-      return { kind: "type", label: "Type text", text: input.text };
-    case "replace":
-      return {
-        kind: "type",
-        label: "Replace text",
-        target: input.target,
-        text: input.text,
-      };
-    case "key":
-      return { kind: "manual", label: `Press ${input.key}` };
-  }
-}
 
 function projectFilter(scope: RequestContext): { projectId: string } | undefined {
   return scope.localTrusted ? undefined : { projectId: scope.projectId };
@@ -169,6 +112,21 @@ export async function handleDiscoveryRoute(input: DiscoveryRouteInput): Promise<
     return true;
   }
 
+  const discoveryStartMatch = matchPath(pathname, "/discovery/:id/start");
+  if (method === "POST" && discoveryStartMatch) {
+    const session = await loadScopedSession(discoveryStartMatch.id!, scope);
+    await assertTargetControl(scope, session.targetId);
+    json(response, 202, { session: await startDiscoveryExplore(session.id) });
+    return true;
+  }
+
+  const discoveryCancelMatch = matchPath(pathname, "/discovery/:id/cancel");
+  if (method === "POST" && discoveryCancelMatch) {
+    await loadScopedSession(discoveryCancelMatch.id!, scope);
+    json(response, 200, { session: await cancelDiscoveryExplore(discoveryCancelMatch.id!) });
+    return true;
+  }
+
   const discoverySuggestionMatch = matchPath(pathname, "/discovery/:id/suggestion");
   if (method === "GET" && discoverySuggestionMatch) {
     const session = await loadScopedSession(discoverySuggestionMatch.id!, scope);
@@ -189,18 +147,12 @@ export async function handleDiscoveryRoute(input: DiscoveryRouteInput): Promise<
   if (method === "POST" && discoveryCaptureMatch) {
     const session = await loadScopedSession(discoveryCaptureMatch.id!, scope);
     await assertTargetControl(scope, session.targetId);
-    const snap = await captureSnapshot({ serial: session.targetId });
-    const shot = await captureScreenshot({ serial: session.targetId, ephemeral: true });
-    const captured = await recordObservedScreen({
-      sessionId: session.id,
-      nodes: snap.nodes,
-      screenshotPath: shot.path,
-      makeCurrent: true,
-    }).finally(() => cleanupScreenshot(shot.path));
+    const captured = await runDiscoveryCapture(session.id);
+    const latest = await readDiscoverySession(session.id);
     json(response, 201, {
       screen: captured.screen,
       isNew: captured.isNew,
-      session: captured.session,
+      session: latest ?? session,
     });
     return true;
   }
@@ -220,37 +172,22 @@ export async function handleDiscoveryRoute(input: DiscoveryRouteInput): Promise<
       throw new HttpError(400, "body.kind required for Discovery Map interaction");
     }
     const { serial: _serial, decision, ...raw } = body;
-    const interaction = raw as InteractInput;
-    const observed = discoveryInteraction(interaction);
-    if (!session.scope.allowSensitiveControls && isSensitiveDiscoveryAction(observed)) {
-      throw new HttpError(403, "Discovery policy blocks this sensitive interaction");
+    try {
+      const result = await runDiscoveryInteract({
+        sessionId: session.id,
+        interaction: raw as InteractInput,
+        ...(decision ? { decision } : {}),
+      });
+      json(response, 201, {
+        transition: result.transition,
+        before: result.before,
+        after: result.after,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/blocks sensitive/.test(message)) throw new HttpError(403, message);
+      throw new HttpError(409, message);
     }
-    const beforeSnapshot = await captureSnapshot({ serial: session.targetId });
-    const beforeShot = await captureScreenshot({ serial: session.targetId, ephemeral: true });
-    const before = await recordObservedScreen({
-      sessionId: session.id,
-      nodes: beforeSnapshot.nodes,
-      screenshotPath: beforeShot.path,
-      makeCurrent: true,
-    }).finally(() => cleanupScreenshot(beforeShot.path));
-    await interact(interaction, { serial: session.targetId });
-    const afterSnapshot = await captureSnapshot({ serial: session.targetId });
-    const afterShot = await captureScreenshot({ serial: session.targetId, ephemeral: true });
-    const after = await recordObservedScreen({
-      sessionId: session.id,
-      nodes: afterSnapshot.nodes,
-      screenshotPath: afterShot.path,
-      makeCurrent: true,
-    }).finally(() => cleanupScreenshot(afterShot.path));
-    const transition = await recordObservedTransition({
-      sessionId: session.id,
-      fromScreenId: before.screen.id,
-      ...(before.screen.id !== after.screen.id ? { toScreenId: after.screen.id } : {}),
-      ...observed,
-      ...(decision ? { decision } : {}),
-      changedScreen: before.screen.id !== after.screen.id,
-    });
-    json(response, 201, { transition, before: before.screen, after: after.screen });
     return true;
   }
 
@@ -286,7 +223,7 @@ export async function handleDiscoveryRoute(input: DiscoveryRouteInput): Promise<
     }
     try {
       await loadScopedSession(discoveryPromoteMatch.id!, scope);
-      const promoted = await promoteDiscoveryPath({
+      await promoteDiscoveryPath({
         sessionId: discoveryPromoteMatch.id!,
         transitionIds: body.transitionIds,
         recipeId: body.recipeId,
@@ -294,7 +231,6 @@ export async function handleDiscoveryRoute(input: DiscoveryRouteInput): Promise<
         description: body.description,
         transitionLabels: body.transitionLabels,
       });
-      json(response, 201, promoted);
     } catch (error) {
       if (error instanceof HttpError) throw error;
       throw new HttpError(400, error instanceof Error ? error.message : String(error));

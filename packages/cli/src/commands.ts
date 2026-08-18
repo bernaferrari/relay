@@ -201,6 +201,8 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("discovery.suggestion", path("discovery suggestion", ["sessionId"])),
   mapped("discovery.coverage", path("discovery coverage", ["sessionId"])),
   mapped("discovery.export", path("discovery export", ["sessionId"])),
+  mapped("discovery.start", path("discovery start", ["sessionId"])),
+  mapped("discovery.cancel", path("discovery cancel", ["sessionId"])),
   mapped("discovery.promote", path("discovery promote", ["sessionId"])),
 
   mapped("corpus.list", path("corpus list")),
@@ -527,6 +529,7 @@ function runResource(command: string, suffix: string, summary: string): CliResou
 
 export const cliResourceDescriptors: readonly CliResourceDescriptor[] = [
   runResource("run get", "", "Get a persisted run and its evidence"),
+  runResource("run story", "/story", "Get a shareable run story from existing artifacts"),
   {
     resourceId: "run.evidence",
     label: "Get bounded structured run evidence",

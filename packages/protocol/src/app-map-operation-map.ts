@@ -421,6 +421,16 @@ export type AppMapOperationMap = {
     input: { appMapId: string; testId: string };
     output: { plan: AppMapCompiledTest };
   };
+  "app-map.test.from-intent": {
+    input: { appMapId: string; intent: string };
+    output: {
+      status: "compiled" | "stuck";
+      intent: string;
+      connectionIds?: string[];
+      missing?: string;
+      matches: { connectionId: string; label: string; fromScreenId: string; toScreenId?: string }[];
+    };
+  };
   "app-map.test.run": {
     input: {
       appMapId: string;
@@ -510,6 +520,8 @@ export type AppMapOperationMap = {
       expectedRevision: number;
       eventId?: string;
       reason?: string;
+      serial?: string;
+      prove?: boolean;
     };
     output: { appMap: AppMap };
   };

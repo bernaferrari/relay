@@ -1,7 +1,6 @@
 import {
   addAppMapScreen,
   authoringSessions,
-  approveAppMapProposal,
   attachAppMapCaseStack,
   connectAppMapScreens,
   commitAppMapChanges,
@@ -21,7 +20,6 @@ import {
   readDiscoverySession,
   appMapYamlFilename,
   parseAppMapYaml,
-  rejectAppMapProposal,
   removeAppMapConnection,
   removeAppMapCaseStack,
   removeAppMapVariable,
@@ -61,6 +59,7 @@ import {
   teachInteractionToAuthoringInteraction,
 } from "./app-map-capture-support.js";
 import { handleAppMapTestRoute } from "./app-map-test-routes.js";
+import { handleAppMapProposalRoute } from "./app-map-proposal-routes.js";
 import { handleAppMapScrollSurfaceRoute } from "./app-map-scroll-surface-route.js";
 import * as teachHandoff from "./app-map-handoff-support.js";
 
@@ -938,6 +937,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
   }
 
   if (await handleAppMapTestRoute(input)) return true;
+  if (await handleAppMapProposalRoute(input)) return true;
 
   const routineSave = matchPath(pathname, "/app-maps/:appMapId/routines/:routineId");
   if (method === "PUT" && routineSave) {
@@ -1043,29 +1043,6 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       },
     );
     json(response, 200, { appMap, proposalId });
-    return true;
-  }
-
-  for (const decision of ["approve", "reject"] as const) {
-    const proposalDecision = matchPath(
-      pathname,
-      `/app-maps/:appMapId/proposals/:proposalId/${decision}`,
-    );
-    if (method !== "POST" || !proposalDecision) continue;
-    const body = (await parseJsonBody(request)) as Omit<
-      OperationInput<`app-map.proposal.${typeof decision}`>,
-      "appMapId" | "proposalId"
-    >;
-    const appMap = await applyRebasableMutation(
-      scope,
-      proposalDecision.appMapId!,
-      body.eventId,
-      (map, context) =>
-        decision === "approve"
-          ? approveAppMapProposal(map, proposalDecision.proposalId!, context, body.reason)
-          : rejectAppMapProposal(map, proposalDecision.proposalId!, context, body.reason),
-    );
-    json(response, 200, { appMap });
     return true;
   }
 

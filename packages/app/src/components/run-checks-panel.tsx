@@ -1,4 +1,5 @@
 import { Show, createMemo } from "solid-js";
+import { useServer } from "../context/server";
 import type { JobInfo } from "../lib/api-types";
 import type { CampaignCheckResult } from "../lib/campaign-check-results";
 import type { NavigationTransitionRepairEntry } from "../lib/navigation-transition-health";
@@ -24,6 +25,7 @@ export function RunChecksPanel(props: {
   onReviewNavigationRepair?: (repair: NavigationTransitionRepairEntry) => void;
   retryingCheckId?: string;
 }) {
+  const server = useServer();
   const evaluation = createMemo(() =>
     (props.job.artifacts ?? []).filter((item) => EVALUATION_KINDS.has(item.kind)),
   );
@@ -39,6 +41,7 @@ export function RunChecksPanel(props: {
         onRetryCheck={props.onRetryCheck}
         onRepairTest={props.onRepairTest}
         onReviewNavigationRepair={props.onReviewNavigationRepair}
+        onResume={(jobId) => void server.resumeJob(jobId)}
         retryingCheckId={props.retryingCheckId}
       />
       <Show when={evaluation().length > 0 || !hasCampaignChecks()}>

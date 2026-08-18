@@ -49,6 +49,11 @@ export const relayMcpExclusions = [
     operationId,
     reason: "Compiled recipe storage is internal; agents author and run App Map flows.",
   })),
+  {
+    operationId: "discovery.promote",
+    reason:
+      "App Map is truth. Explore proposes edges; Keep accepts them. YAML recipe promote is not an MCP tool.",
+  },
 ] as const satisfies readonly { operationId: OperationId; reason: string }[];
 
 type ExcludedOperationId = (typeof relayMcpExclusions)[number]["operationId"];
@@ -95,6 +100,8 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Repair the runner without rebooting the device. A missing XCTest session is not a failed launch.",
   "lease.create":
     ' Only after TARGET_CONTROL_LEASE_REQUIRED. Pass poolId "local", deviceSerial, and confirm:true. Local trusted servers often mint a lease on first control.',
+  "discovery.start":
+    " Starts the server-owned explore job. Poll relay_discovery_get. Each identity-changing interact becomes one pending proposal. Do not self-approve.",
 };
 
 function toolDescriptor(
@@ -183,21 +190,24 @@ const mapOperations = [
   "app-map.get",
   "authoring.session.list",
   "authoring.session.get",
+  "discovery.create",
+  "discovery.get",
+  "discovery.start",
+  "discovery.suggestion",
+  "app-map.observations.propose",
+] as const satisfies readonly OperationId[];
+
+const authorOperations = [
+  ...mapOperations,
+  "app-map.proposal.submit",
+  "app-map.test.propose",
+  "workspace.variables.update",
   "authoring.session.create",
   "authoring.session.observe",
   "authoring.session.capture",
   "authoring.session.start",
   "authoring.session.interact",
   "authoring.session.stop",
-  "app-map.proposal.submit",
-] as const satisfies readonly OperationId[];
-
-const authorOperations = [
-  ...mapOperations,
-  ...observeOperations,
-  "app-map.test.propose",
-  "workspace.variables.get",
-  "workspace.variables.update",
   "authoring.take.trim",
   "authoring.take.reorder",
   "authoring.take.replace",
@@ -228,8 +238,12 @@ const testOperations = [
   "job.list",
   "job.get",
   "job.cancel",
+  "job.pause",
+  "job.resume",
   "run.get",
   "run.evidence.get",
+  "run.story.get",
+  "app-map.test.from-intent",
   "run.repair.list",
   "run.repair.get",
   "run.repair.retry",
@@ -256,11 +270,14 @@ const runOperations = [
   "job.start",
   "job.retry",
   "job.cancel",
+  "job.pause",
+  "job.resume",
   "job.combine.start",
   "job.combine.export",
   "run.list",
   "run.get",
   "run.evidence.get",
+  "run.story.get",
   "run.repair.list",
   "run.repair.get",
   "run.repair.retry",

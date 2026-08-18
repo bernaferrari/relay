@@ -11,6 +11,7 @@ import { UsageError } from "./errors.js";
 const familyGroups = [
   ["App Map", ["map", "screen", "connect", "flow"]],
   ["Author", ["state-set", "test", "run-matrix", "proposal", "routine", "case-stack"]],
+  ["Explore", ["discovery"]],
   ["Operate", ["device", "run", "activity"]],
   ["Automation", ["schedule", "matrix"]],
   ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],

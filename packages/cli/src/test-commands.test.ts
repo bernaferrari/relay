@@ -11,12 +11,21 @@ test("graph Test commands expose one canonical scenario-only workflow", () => {
       "app-map.test.edit",
       "app-map.test.propose",
       "app-map.test.compile",
+      "app-map.test.from-intent",
       "app-map.test.run",
       "app-map.test.remove",
     ],
   );
   assert.deepEqual(
     graphTestCommandDescriptors.flatMap(({ paths }) => paths.map(({ command }) => command)),
-    ["test save", "test edit", "test propose", "test compile", "test run", "test remove"],
+    [
+      "test save",
+      "test edit",
+      "test propose",
+      "test compile",
+      "test from-intent",
+      "test run",
+      "test remove",
+    ],
   );
 });

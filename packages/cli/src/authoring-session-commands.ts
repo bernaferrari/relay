@@ -394,7 +394,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
       ],
     }),
     path("proposal accept", ["sessionId"], undefined, {
-      summary: "Accept a proposal into the App Map",
+      summary: "Commit a demonstrated Take (alias of session commit)",
       argumentHelp: [
         { name: "proposalId", type: "string", description: "Authoring session identifier" },
       ],

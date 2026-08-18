@@ -298,7 +298,7 @@ export function AppMapProposalReview(props: {
                           ? "Saving…"
                           : isScreenReview
                             ? "Replace approved"
-                            : "Keep suggestion"}
+                            : "Keep"}
                       </Button>
                       <Button
                         variant="secondary"

@@ -29,7 +29,7 @@ const actions: AppMapPrimaryAction[] = [
     reason: "Record the next path",
     icon: "circle",
   },
-  { kind: "keep-path", label: "Keep path", reason: "Keep this Take", icon: "check" },
+  { kind: "keep-path", label: "Keep", reason: "Keep this Take", icon: "check" },
   {
     kind: "capture-screen",
     label: "Save first screen",

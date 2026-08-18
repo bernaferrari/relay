@@ -1,7 +1,13 @@
 import { describeSnapshotChrome } from "@relay/protocol";
 import type { Device } from "./device.js";
 import { snapshot } from "./device.js";
-import { now } from "./events.js";
+import { now, publish } from "./events.js";
+import {
+  cooperativeCheckpointWithTimeout,
+  getExecutingJobId,
+  requestPause,
+  requestResume,
+} from "./control.js";
 import { captureScreenshot } from "./workspace.js";
 import { observeScreenIdentity } from "./screen-identity.js";
 import { isCancel } from "./recipe-runner-support.js";
@@ -137,7 +143,7 @@ async function captureCampaignRecoveryIntervention(
     data: {
       reason: "review",
       message: `Cold recovery blocked for ${check.title}. Review transition ${transitionId}.`,
-      resumeLabel: "Review recovery",
+      resumeLabel: "Resume",
       interventionKind: "campaign-cold-recovery",
       checkId: check.id,
       transitionId,
@@ -145,6 +151,27 @@ async function captureCampaignRecoveryIntervention(
     },
   });
   ctx.log(`SOS: cold recovery blocked for transition ${transitionId} — intervention required`);
+  const jobId = getExecutingJobId();
+  if (jobId === job.id) {
+    const started = now();
+    job.status = "paused";
+    job.waitingFor = {
+      kind: "human",
+      message: `Stuck: ${check.title}. Resume when the device is ready.`,
+      reason: "review",
+      resumeLabel: "Resume",
+      since: started,
+    };
+    requestPause(job.id);
+    publish({ type: "job.paused", at: started, jobId: job.id, action: job.action });
+    try {
+      await cooperativeCheckpointWithTimeout(job.id);
+    } finally {
+      requestResume(job.id);
+      job.waitingFor = undefined;
+    }
+    job.status = "running";
+  }
 }
 
 export async function runCampaignCheck(

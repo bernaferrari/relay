@@ -2,12 +2,15 @@ import type {
   ActionSpec,
   AppMap,
   AppMapScope,
+  ConnectionNavigationContract,
+  ConnectionReturnContract,
   DiscoverySession,
   ObservedTransition,
   Proposal,
   ProposalChange,
   ScreenVariant,
 } from "@relay/protocol";
+import type { ProposedNavigationEdge } from "./navigation-observation.js";
 
 function observedId(sessionId: string, kind: "screen" | "connection" | "variant", id: string) {
   return `observed:${sessionId}:${kind}:${id}`;
@@ -45,6 +48,39 @@ function matchingScreenId(map: AppMap, fingerprint: string): string | undefined 
   )?.id;
 }
 
+function navigationFor(
+  edge: ProposedNavigationEdge | undefined,
+  fromScreenId: string,
+  destinationId: string,
+): {
+  navigation?: ConnectionNavigationContract;
+  return?: ConnectionReturnContract;
+} {
+  if (!edge) return {};
+  return {
+    navigation: {
+      targetAlternatives: structuredClone(edge.targetAlternatives),
+      expectedDestination: {
+        screenId: destinationId,
+        identity: structuredClone(edge.destinationIdentity),
+        evidenceIds: [],
+      },
+    },
+    ...(edge.returnBehavior
+      ? {
+          return: {
+            kind: "back" as const,
+            expectedDestination: {
+              screenId: fromScreenId,
+              identity: structuredClone(edge.returnBehavior.expectedDestination),
+              evidenceIds: [],
+            },
+          },
+        }
+      : {}),
+  };
+}
+
 /** Convert an exploration record into a reviewable canonical proposal.
  * Observation is shareable, while identity merges and executable behavior stay
  * pending until a human explicitly approves the proposal. */
@@ -54,6 +90,7 @@ export function proposalFromDiscovery(input: {
   proposalId: string;
   title?: string;
   transitionIds?: readonly string[];
+  navigationByTransitionId?: Record<string, ProposedNavigationEdge>;
   at: number;
 }): Proposal {
   const { map, session, at } = input;
@@ -68,10 +105,18 @@ export function proposalFromDiscovery(input: {
   const transitions = session.transitions.filter((transition) => selected.has(transition.id));
   if (!transitions.length) throw new Error("Choose at least one observed transition");
   if (selected.size !== transitions.length) throw new Error("An observed transition was not found");
+  const referenced = new Set(
+    transitions.flatMap((transition) =>
+      [transition.fromScreenId, transition.toScreenId].filter(
+        (id): id is string => typeof id === "string",
+      ),
+    ),
+  );
 
   const screenIds = new Map<string, string>();
   const changes: ProposalChange[] = [];
-  for (const [index, screen] of session.screens.entries()) {
+  const screens = session.screens.filter((screen) => referenced.has(screen.id));
+  for (const [index, screen] of screens.entries()) {
     const existingId = matchingScreenId(map, screen.fingerprint);
     const screenId = existingId ?? observedId(session.id, "screen", screen.id);
     screenIds.set(screen.id, screenId);
@@ -131,12 +176,14 @@ export function proposalFromDiscovery(input: {
       throw new Error(`Observed transition ${transition.id} references an unknown screen`);
     }
     const connectionId = observedId(session.id, "connection", transition.id);
+    const edge = input.navigationByTransitionId?.[transition.id];
     const value = {
       fromScreenId,
       destination: { kind: "screen" as const, screenId: destinationId },
       ...(transition.label?.trim() ? { label: transition.label.trim() } : {}),
       state: "draft" as const,
       actions: [actionFor(transition)],
+      ...navigationFor(edge, fromScreenId, destinationId),
     };
     const existing = map.connections[connectionId];
     changes.push(
@@ -160,11 +207,37 @@ export function proposalFromDiscovery(input: {
     ...scope,
     id: input.proposalId,
     title: input.title?.trim() || `Observed path from ${session.name}`,
-    description: `${session.targetProfile?.name ?? session.targetId} observed ${transitions.length} transition${transitions.length === 1 ? "" : "s"}. Review before adding them to the map.`,
+    description: `${session.targetProfile?.name ?? session.targetId} observed ${transitions.length} transition${transitions.length === 1 ? "" : "s"}. Keep to add ${transitions.length === 1 ? "this edge" : "these edges"} to the map.`,
     status: "pending",
     baseRevision: map.revision,
     changes,
     createdAt: at,
     updatedAt: at,
   };
+}
+
+/** One identity-changing interact becomes one reviewable Keep card. */
+export function proposalFromObservedEdge(input: {
+  map: AppMap;
+  session: DiscoverySession;
+  proposalId: string;
+  transitionId: string;
+  edge?: ProposedNavigationEdge;
+  title?: string;
+  at: number;
+}): Proposal {
+  const transition = input.session.transitions.find((item) => item.id === input.transitionId);
+  return proposalFromDiscovery({
+    map: input.map,
+    session: input.session,
+    proposalId: input.proposalId,
+    title:
+      input.title?.trim() ||
+      transition?.label?.trim() ||
+      input.edge?.action.label ||
+      "Observed edge",
+    transitionIds: [input.transitionId],
+    ...(input.edge ? { navigationByTransitionId: { [input.transitionId]: input.edge } } : {}),
+    at: input.at,
+  });
 }

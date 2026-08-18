@@ -370,19 +370,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       appendLog,
     });
 
-    const {
-      refreshDiscoverySessions,
-      createDiscoverySessionRemote,
-      setDiscoveryStatusRemote,
-      renameDiscoverySessionRemote,
-      captureDiscoveryScreenRemote,
-      discoveryScreenUrl,
-      promoteDiscoveryPathRemote,
-      discoverySuggestion,
-      loadDiscoveryCoverage,
-      approveDiscoverySuggestion,
-      backtrackDiscovery,
-    } = createServerDiscoveryController({
+    const { refreshDiscoverySessions, ...discoveryApi } = createServerDiscoveryController({
       request,
       health,
       serverUrl,
@@ -1086,16 +1074,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshTargetProfiles,
       refreshMatrices,
       refreshDiscoverySessions,
-      createDiscoverySession: createDiscoverySessionRemote,
-      renameDiscoverySession: renameDiscoverySessionRemote,
-      setDiscoveryStatus: setDiscoveryStatusRemote,
-      captureDiscoveryScreen: captureDiscoveryScreenRemote,
-      discoveryScreenUrl,
-      promoteDiscoveryPath: promoteDiscoveryPathRemote,
-      discoverySuggestion,
-      loadDiscoveryCoverage,
-      approveDiscoverySuggestion,
-      backtrackDiscovery,
+      ...discoveryApi,
       saveCompatibilityMatrix: saveCompatibilityMatrixRemote,
       deleteCompatibilityMatrix: deleteCompatibilityMatrixRemote,
       resolveCompatibilityMatrix: resolveCompatibilityMatrixRemote,

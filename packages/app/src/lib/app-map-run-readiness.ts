@@ -225,7 +225,7 @@ export function appMapRunReadiness(input: {
         ready: false,
         reason: "Try this path on the device, then keep it before running",
         next: "keep",
-        label: "Keep path",
+        label: "Keep",
         transitionPath: selected.transitionPath,
       };
     }

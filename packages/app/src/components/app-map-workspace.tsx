@@ -701,12 +701,14 @@ export function AppMapWorkspace(props: {
                       props.onOpenRun?.(runId);
                     }}
                     onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openLiveDevice())}
-                    onCaptureScreen={() => void captureCurrentScreen()}
-                    onOpenAgent={() => {
-                      closeCapturePanel();
-                      setHistoryOpen(false);
-                      setAgentOpen(true);
-                    }}
+                    onCaptureScreen={() =>
+                      void captureCurrentScreen().finally(() => void agentExploration.start())
+                    }
+                    onOpenAgent={() => (
+                      closeCapturePanel(),
+                      setHistoryOpen(false),
+                      setAgentOpen(true)
+                    )}
                   />
                 )}
               </Show>
@@ -1073,11 +1075,7 @@ export function AppMapWorkspace(props: {
                 explorationCount={agentExploration.workers().length}
                 onToolChange={setCanvasTool}
                 onAddNote={addNote}
-                onExplore={() => {
-                  closeCapturePanel();
-                  setHistoryOpen(false);
-                  setAgentOpen(true);
-                }}
+                onExplore={() => (closeCapturePanel(), setHistoryOpen(false), setAgentOpen(true))}
                 onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openLiveDevice())}
               />
               <AppMapMinimap

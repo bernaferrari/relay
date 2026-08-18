@@ -191,7 +191,7 @@ test("unkept paths point at keep path before run", () => {
         ready: false,
         reason: "Try this path on the device, then keep it before running",
         next: "keep",
-        label: "Keep path",
+        label: "Keep",
         transitionPath: ["t1"],
       },
       serverOnline: true,
@@ -199,7 +199,7 @@ test("unkept paths point at keep path before run", () => {
     }),
     {
       kind: "keep-path",
-      label: "Keep path",
+      label: "Keep",
       reason: "Try this path on the device, then keep it before running",
       icon: "check",
     },

@@ -17,7 +17,7 @@ const actions: AppMapPrimaryAction[] = [
   { kind: "choose-device", label: "Choose device", reason: "Choose a target", icon: "smartphone" },
   { kind: "open-device", label: "Reconnect device", reason: "Reconnect", icon: "refresh" },
   { kind: "record-path", label: "Start recording", reason: "Record", icon: "circle" },
-  { kind: "keep-path", label: "Keep path", reason: "Keep this Take", icon: "check" },
+  { kind: "keep-path", label: "Keep", reason: "Keep this Take", icon: "check" },
   { kind: "capture-screen", label: "Save first screen", reason: "Capture", icon: "camera" },
   { kind: "blocked", label: "Connecting…", reason: "Waiting for pixels", icon: "refresh" },
 ];

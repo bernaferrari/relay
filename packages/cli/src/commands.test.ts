@@ -420,6 +420,11 @@ test("declared read-only resources build encoded paths", () => {
     commandPath: "run get",
     resourcePath: "/runs/run%2Fa",
   });
+  assert.deepEqual(resolveResourceCommand(["run", "story", "run/a"]), {
+    resourceId: "run.story",
+    commandPath: "run story",
+    resourcePath: "/runs/run%2Fa/story",
+  });
   assert.deepEqual(
     resolveResourceCommand(["run", "evidence", "run/a"], {
       limit: 200,

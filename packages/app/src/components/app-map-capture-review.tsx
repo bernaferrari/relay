@@ -404,7 +404,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
             }
           />
           {canApprove()
-            ? "Keep path"
+            ? "Keep"
             : props.replayState === "running"
               ? "Playing…"
               : props.replayState === "failed"

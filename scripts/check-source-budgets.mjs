@@ -14,13 +14,13 @@ export const COMPONENT_SOURCE_LIMIT = 700;
  */
 export const grandfatheredSourceLimits = Object.freeze({
   "packages/app/src/components/app-map-capture-review.tsx": 1001,
-  "packages/app/src/components/app-map-workspace.tsx": 1170,
+  "packages/app/src/components/app-map-workspace.tsx": 1168,
   "packages/app/src/components/runs-workspace.tsx": 1070,
   "packages/app/src/components/stage.tsx": 1512,
   "packages/app/src/components/studio-shell.tsx": 1155,
   "packages/app/src/components/take-action-editor.tsx": 717,
   "packages/app/src/context/recorder.tsx": 1067,
-  "packages/app/src/context/server.tsx": 1191,
+  "packages/app/src/context/server.tsx": 1170,
   "packages/core/src/authoring-sessions.ts": 1522,
   "packages/core/src/corpus.ts": 1945,
   "packages/core/src/device.ts": 1663,
@@ -29,8 +29,8 @@ export const grandfatheredSourceLimits = Object.freeze({
   "packages/core/src/recipe-validation.ts": 1048,
   "packages/core/src/session.ts": 1002,
   "packages/core/src/switcher-profiles.ts": 931,
-  "packages/protocol/src/operations.ts": 2665,
-  "packages/server/src/app-map-routes.ts": 1073,
+  "packages/protocol/src/operations.ts": 2620,
+  "packages/server/src/app-map-routes.ts": 1050,
   "packages/server/src/index.ts": 1224,
 });
 

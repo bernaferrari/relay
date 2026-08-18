@@ -23,6 +23,9 @@ export function useAppMapProposalReview(activeAppMap: () => AppMap | undefined) 
         proposalId,
         expectedRevision: appMap.revision,
         ...(reason ? { reason } : {}),
+        ...(decision === "approve" && server.selectedDevice()
+          ? { serial: server.selectedDevice()!, prove: true }
+          : {}),
       });
       await server.refreshAppMaps();
       toast(

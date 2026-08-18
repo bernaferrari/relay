@@ -18,6 +18,11 @@ export const runEvidenceCommandDescriptors: readonly CliOperationDescriptor[] = 
     reason: "Exposed through the read-only `relay run evidence` resource command.",
   },
   {
+    operationId: "run.story.get",
+    exclusion: "internal",
+    reason: "Exposed through the read-only `relay run story` resource command.",
+  },
+  {
     operationId: "run.share.list",
     paths: [
       {

@@ -49,6 +49,7 @@ test("maps every tool-eligible operation exactly once", () => {
       "recipe.history.list",
       "recipe.history.restore",
       "recipe.stability.get",
+      "discovery.promote",
     ],
   );
   assert.ok(relayMcpExclusions.every(({ reason }) => reason.trim().length > 0));
@@ -294,12 +295,19 @@ test("defines deterministic task profiles with a compact authoring default", () 
   const observed = new Set(
     relayMcpToolsForProfile("observe").map(({ operationId }) => operationId),
   );
-  assert.equal(
-    [...observed].every((operationId) =>
-      relayMcpToolsForProfile("author").some((tool) => tool.operationId === operationId),
-    ),
-    true,
+  assert.ok(
+    relayMcpToolsForProfile("author").some(({ operationId }) => operationId === "discovery.start"),
   );
+  assert.ok(
+    relayMcpToolsForProfile("author").some(
+      ({ operationId }) => operationId === "authoring.session.create",
+    ),
+  );
+  assert.equal(
+    relayMcpToolsForProfile("author").some(({ operationId }) => operationId === "run.get"),
+    false,
+  );
+  assert.ok(observed.has("run.get"));
   assert.deepEqual(
     relayMcpToolsForProfile("test")
       .map(({ operationId }) => operationId)
@@ -338,11 +346,10 @@ test("defines deterministic task profiles with a compact authoring default", () 
       ({ operationId }) => operationId === "authoring.session.observe",
     ),
   );
-  assert.equal(
+  assert.ok(
     relayMcpToolsForProfile("author").some(({ operationId }) =>
       operationId.startsWith("discovery."),
     ),
-    false,
   );
   assert.equal(
     relayMcpToolsForProfile("author").some(

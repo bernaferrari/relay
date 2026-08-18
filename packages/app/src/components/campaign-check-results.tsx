@@ -291,6 +291,7 @@ export function CampaignCheckResults(props: {
   onRetryCheck?: (checkId: string) => void;
   onRepairTest?: (checkId: string) => void;
   onReviewNavigationRepair?: (repair: NavigationTransitionRepairEntry) => void;
+  onResume?: (jobId: string) => void;
   retryingCheckId?: string;
 }) {
   const checks = createMemo(() => campaignCheckResults(props.job));
@@ -320,6 +321,7 @@ export function CampaignCheckResults(props: {
               onOpenFrame={props.onOpenFrame}
               onReviewRepair={props.onReviewNavigationRepair}
               onTeachTransition={props.onRepairTest}
+              onResume={props.onResume}
             />
           )}
         </Show>

@@ -71,6 +71,28 @@ export function discoveryScreenUrl(base: string, sessionId: string, screenId: st
   return `${base}/discovery/${encodeURIComponent(sessionId)}/screens/${encodeURIComponent(screenId)}`;
 }
 
+export async function startDiscoveryExplore(
+  request: ServerRequest,
+  id: string,
+): Promise<DiscoverySession> {
+  const data = await request<{ session: DiscoverySession }>(
+    `/discovery/${encodeURIComponent(id)}/start`,
+    { method: "POST", body: "{}" },
+  );
+  return data.session;
+}
+
+export async function cancelDiscoveryExplore(
+  request: ServerRequest,
+  id: string,
+): Promise<DiscoverySession> {
+  const data = await request<{ session: DiscoverySession }>(
+    `/discovery/${encodeURIComponent(id)}/cancel`,
+    { method: "POST", body: "{}" },
+  );
+  return data.session;
+}
+
 export async function promoteDiscoveryPath(
   request: ServerRequest,
   input: {

@@ -80,15 +80,15 @@ test("discovery keeps a bounded, evidence-backed screen graph", async () => {
       },
       changedScreen: true,
     });
-    const promoted = await promoteDiscoveryPath({
-      sessionId: session.id,
-      transitionIds: [transition.id],
-      recipeId: "discovered-sign-in",
-      title: "Discovered sign in",
-      transitionLabels: { [transition.id]: "Open sign in" },
-    });
-    assert.equal(promoted.recipe.steps[0]?.kind, "tap");
-    assert.equal(promoted.recipe.steps[0]?.note, "Open sign in");
+    await assert.rejects(
+      promoteDiscoveryPath({
+        sessionId: session.id,
+        transitionIds: [transition.id],
+        recipeId: "discovered-sign-in",
+        title: "Discovered sign in",
+      }),
+      /App Map/,
+    );
     assert.equal(
       (await readDiscoverySession(session.id))?.transitions[0]?.label,
       "Continue",
@@ -98,15 +98,6 @@ test("discovery keeps a bounded, evidence-backed screen graph", async () => {
     assert.equal(
       (await readDiscoverySession(session.id))?.transitions[0]?.decision?.requestId,
       "request-1",
-    );
-    await assert.rejects(
-      promoteDiscoveryPath({
-        sessionId: session.id,
-        transitionIds: [transition.id],
-        recipeId: "discovered-sign-in",
-        title: "Duplicate",
-      }),
-      /already exists/,
     );
     const finished = await setDiscoveryStatus(session.id, "complete");
     assert.match(formatDiscoveryExport(finished, "markdown"), /Welcome → Sign in: tap “Continue”/);

@@ -528,6 +528,23 @@ export const appMapRoutineCommandDescriptors: readonly MappedOperationDescriptor
       summary: "Turn observed device paths into a reviewable proposal",
     }),
   ),
-  mapped("app-map.proposal.approve", path("proposal approve", ["appMapId", "proposalId"])),
+  mapped(
+    "app-map.proposal.approve",
+    path("proposal approve", ["appMapId", "proposalId"], undefined, {
+      summary: "Keep a reviewable App Map edge",
+      inputHelp: [
+        {
+          name: "serial",
+          type: "string",
+          description: "Optional device serial for one-shot replay proof",
+        },
+        {
+          name: "prove",
+          type: "boolean",
+          description: "Attempt replay when a serial is present (default true)",
+        },
+      ],
+    }),
+  ),
   mapped("app-map.proposal.reject", path("proposal reject", ["appMapId", "proposalId"])),
 ];

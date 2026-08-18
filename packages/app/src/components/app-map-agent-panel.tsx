@@ -10,6 +10,9 @@ export function AppMapAgentPanel(props: {
   onClose: () => void;
   onOpenTargets: () => void;
   onProposalReady: () => void;
+  onKeep?: (proposalId: string) => void;
+  onSkip?: (proposalId: string) => void;
+  keepBusyId?: string;
 }) {
   let panel: HTMLElement | undefined;
   const exploration = props.exploration;
@@ -82,6 +85,34 @@ export function AppMapAgentPanel(props: {
             onTargetIds={exploration.setTargetIds}
             onModelIds={exploration.setModelIds}
           />
+        </Show>
+        <Show when={exploration.liveProposals()[0]}>
+          {(proposal) => (
+            <section class="mt-4 grid gap-3 rounded-xl bg-[var(--surface-base)] p-4">
+              <h3 class="text-micro font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
+                This edge
+              </h3>
+              <p class="text-body font-semibold text-[var(--text-strong)]">{proposal().title}</p>
+              <p class="text-micro text-[var(--text-weak)]">{proposal().description}</p>
+              <div class="grid grid-cols-2 gap-2">
+                <Button
+                  variant="primary"
+                  size="lg"
+                  disabled={Boolean(props.keepBusyId)}
+                  onClick={() => props.onKeep?.(proposal().id)}
+                >
+                  {props.keepBusyId === proposal().id ? "Saving…" : "Keep"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={Boolean(props.keepBusyId)}
+                  onClick={() => props.onSkip?.(proposal().id)}
+                >
+                  Skip
+                </Button>
+              </div>
+            </section>
+          )}
         </Show>
       </div>
 

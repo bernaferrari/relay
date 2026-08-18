@@ -16,7 +16,6 @@ import type {
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { isExploreStateChangingNode, isUnsafeExploreControlText } from "./explore.js";
-import { readRecipe, saveRecipe, type Recipe, type RecipeStep } from "./recipes.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { observeScreenIdentity } from "./screen-identity.js";
 
@@ -495,81 +494,18 @@ export async function readDiscoveryScreenAsset(
   }
 }
 
-function pathSteps(transitions: ObservedTransition[]): { steps: RecipeStep[]; warnings: string[] } {
-  const steps: RecipeStep[] = [];
-  const warnings: string[] = [];
-  for (const transition of transitions) {
-    if (transition.kind === "tap" && transition.target) {
-      steps.push({ kind: "tap", target: transition.target, note: transition.label });
-    } else if (transition.kind === "scroll") {
-      steps.push({
-        kind: "scroll",
-        direction: transition.direction ?? "down",
-        note: transition.label,
-      });
-    } else if (transition.kind === "back") {
-      steps.push({ kind: "key", key: "back", note: transition.label });
-    } else if (transition.kind === "type" && transition.text) {
-      steps.push({
-        kind: "type",
-        text: transition.text,
-        target: transition.target,
-        note: transition.label,
-      });
-    } else {
-      warnings.push(
-        `Transition ${transition.id} needs review because it has no replayable ${transition.kind} detail.`,
-      );
-      steps.push({
-        kind: "pause",
-        message: transition.label ?? "Review this discovered interaction",
-      });
-    }
-  }
-  return { steps, warnings };
-}
-
-/** A discovered path never mutates an existing test; it becomes a new editable YAML definition. */
-export async function promoteDiscoveryPath(input: {
+/** App Map is truth. Discovery no longer writes YAML recipes. */
+export async function promoteDiscoveryPath(_input: {
   sessionId: string;
   transitionIds: string[];
   recipeId: string;
   title: string;
   description?: string;
-  /** Presentation-only review labels compiled into the new test; raw observations stay immutable. */
   transitionLabels?: Record<string, string>;
-}): Promise<{ recipe: Recipe; warnings: string[] }> {
-  const session = await readDiscoverySession(input.sessionId);
-  if (!session) throw new Error("discovery session not found");
-  assertDiscoveryAccess(session);
-  if (!input.title.trim()) throw new Error("test title is required");
-  if (await readRecipe(input.recipeId)) throw new Error("test id already exists; choose a new id");
-  const selected = input.transitionIds.map((id) => {
-    const transition = session.transitions.find((item) => item.id === id);
-    if (!transition) throw new Error(`discovery transition not found: ${id}`);
-    return transition;
-  });
-  if (selected.length === 0) throw new Error("select at least one discovery transition");
-  for (let index = 1; index < selected.length; index += 1) {
-    const previous = selected[index - 1]!;
-    const current = selected[index]!;
-    if (previous.toScreenId && previous.toScreenId !== current.fromScreenId) {
-      throw new Error("selected transitions must form one continuous path");
-    }
-  }
-  const reviewed = selected.map((transition) => ({
-    ...transition,
-    label: input.transitionLabels?.[transition.id]?.trim() || transition.label,
-  }));
-  const compiled = pathSteps(reviewed);
-  const recipe = await saveRecipe({
-    id: input.recipeId,
-    expectedRevision: (await readRecipe(input.recipeId))?.updatedAt ?? 0,
-    title: input.title,
-    description: input.description ?? `Observed path from Discovery Map · ${session.name}`,
-    steps: compiled.steps,
-  });
-  return { recipe, warnings: compiled.warnings };
+}): Promise<never> {
+  throw new Error(
+    "Discovery promotes to the App Map. Start explore, then Keep a proposed edge. YAML recipe promote is removed.",
+  );
 }
 
 export function formatDiscoveryExport(

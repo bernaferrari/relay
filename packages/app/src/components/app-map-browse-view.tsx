@@ -226,14 +226,14 @@ export function AppMapBrowseView(props: {
                     screenFiltersActive()
                       ? "Clear filters"
                       : props.deviceOpen
-                        ? "Capture current screen"
+                        ? "Start mapping"
                         : "Open device"
                   }
                   onAction={() =>
                     screenFiltersActive()
                       ? clearScreenFilters()
                       : props.deviceOpen
-                        ? props.onCaptureScreen()
+                        ? (props.onOpenAgent(), props.onCaptureScreen())
                         : props.onToggleDevice()
                   }
                 />

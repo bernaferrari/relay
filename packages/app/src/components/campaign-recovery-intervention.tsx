@@ -11,6 +11,7 @@ export function CampaignRecoveryIntervention(props: {
   onOpenFrame?: (index: number) => void;
   onReviewRepair?: (repair: NavigationTransitionRepairEntry) => void;
   onTeachTransition?: (checkId: string) => void;
+  onResume?: (jobId: string) => void;
 }) {
   const [leftDeferred, setLeftDeferred] = createSignal(false);
   const screenshotSource = () =>
@@ -141,6 +142,18 @@ export function CampaignRecoveryIntervention(props: {
         <button
           type="button"
           class="min-h-11 touch-manipulation rounded-lg bg-button-primary-base px-3.5 text-[10.5px] font-semibold text-button-primary-text hover:bg-button-primary-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!props.intervention.paused || !props.intervention.jobId || !props.onResume}
+          onClick={() => {
+            const jobId = props.intervention.jobId;
+            if (!jobId) return;
+            props.onResume?.(jobId);
+          }}
+        >
+          Resume
+        </button>
+        <button
+          type="button"
+          class="min-h-11 touch-manipulation rounded-lg px-3 text-[10.5px] font-medium text-text-base hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!props.onReviewRepair}
           onClick={() => props.onReviewRepair?.(props.intervention.repair)}
         >

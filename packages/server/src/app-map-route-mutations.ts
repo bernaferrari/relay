@@ -1,12 +1,16 @@
 import {
   AppMapDomainError,
+  connectionIdsFromProposal,
   currentOperationContext,
   mutateStoredAppMap,
   now,
+  proveConnectionOnDevice,
   readAppMap,
+  updateAppMapConnection,
   type AppMap,
   type AppMapMutationContext,
 } from "@relay/core";
+import { assertTargetControl } from "./access-control.js";
 import { HttpError } from "./http.js";
 import type { RequestContext } from "./security.js";
 
@@ -99,4 +103,31 @@ export async function applyRebasableAppMapMutation(
     }
     throw error;
   }
+}
+
+export async function proveApprovedProposal(
+  scope: RequestContext,
+  appMapId: string,
+  proposalId: string,
+  body: { eventId?: string; serial?: string; prove?: boolean },
+  appMap: AppMap,
+): Promise<AppMap> {
+  const serial = body.serial?.trim();
+  if (!serial || body.prove === false) return appMap;
+  await assertTargetControl(scope, serial);
+  const proposal = appMap.proposals[proposalId];
+  let next = appMap;
+  for (const connectionId of proposal ? connectionIdsFromProposal(proposal) : []) {
+    const connection = next.connections[connectionId];
+    if (!connection?.navigation) continue;
+    const proof = await proveConnectionOnDevice({ serial, connection });
+    if (!proof.proven) continue;
+    next = await applyRebasableAppMapMutation(
+      scope,
+      appMapId,
+      `${body.eventId ?? "keep"}:${connectionId}:ready`,
+      (map, context) => updateAppMapConnection(map, connectionId, { state: "ready" }, context),
+    );
+  }
+  return next;
 }

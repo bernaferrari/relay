@@ -205,7 +205,7 @@ function InstructionBinding(props: {
                     ? screenTitle(connection.destination.screenId)
                     : "End"
                 }${connection.state === "ready" ? "" : " · Needs review"}`}
-                disabled={connection.state !== "ready" && !chosen().includes(connection.id)}
+                disabled={connection.state !== "ready"}
                 onToggle={(checked) => {
                   const ids = checked
                     ? [...chosen(), connection.id]

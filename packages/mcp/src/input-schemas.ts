@@ -667,6 +667,12 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       testId: identifier("Graph-native Test identifier"),
     })
     .strict(),
+  "app-map.test.from-intent": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      intent: text("English coverage goal compiled onto ready App Map edges"),
+    })
+    .strict(),
   "app-map.proposal.submit": z
     .object({
       appMapId: identifier("App Map identifier"),
@@ -693,6 +699,8 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       expectedRevision: natural("Current App Map revision"),
       eventId: identifier("Optional idempotent activity event identifier").optional(),
       reason: z.string().optional(),
+      serial: identifier("Optional device serial for one-shot Keep replay").optional(),
+      prove: z.boolean().optional(),
     })
     .strict(),
   "app-map.proposal.reject": z
@@ -763,6 +771,8 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
     })
     .strict(),
   "discovery.capture": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
+  "discovery.start": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
+  "discovery.cancel": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
   "discovery.interact": z
     .object({ sessionId: identifier("Discovery session identifier"), kind: z.string() })
     .catchall(z.unknown()),

@@ -188,6 +188,18 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     });
   }
 
+  const appMapProposalApproveParser = objectParser<
+    AppMapOperationInput<"app-map.proposal.approve">
+  >("proposal approval", (input) => {
+    string(input.appMapId, "proposal approval appMapId");
+    number(input.expectedRevision, "proposal approval expectedRevision");
+    string(input.proposalId, "proposal approval proposalId");
+    if (input.eventId !== undefined) string(input.eventId, "proposal approval eventId");
+    if (input.reason !== undefined) string(input.reason, "proposal approval reason");
+    if (input.serial !== undefined) string(input.serial, "proposal approval serial");
+    if (input.prove !== undefined) boolean(input.prove, "proposal approval prove");
+  });
+
   function validateAppMapTestEdits(input: Record<string, unknown>, label: string): void {
     const edits = input.edits;
     if (!Array.isArray(edits) || edits.length === 0 || edits.length > 100) {
@@ -754,6 +766,21 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     (output) => record(output.plan, "Test compilation plan"),
   );
 
+  const appMapTestFromIntentInputParser = objectParser<
+    AppMapOperationInput<"app-map.test.from-intent">
+  >("intent walk", (input) => {
+    string(input.appMapId, "intent walk appMapId");
+    string(input.intent, "intent walk intent");
+  });
+
+  const appMapTestFromIntentOutputParser = objectParser<
+    AppMapOperationOutput<"app-map.test.from-intent">
+  >("intent walk response", (output) => {
+    string(output.status, "intent walk status");
+    string(output.intent, "intent walk intent");
+    if (!Array.isArray(output.matches)) fail("intent walk matches", "must be an array");
+  });
+
   return {
     appMapCommitParser,
     appMapCombinePreflightInputParser,
@@ -771,6 +798,7 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     appMapImportParser,
     appMapListOutputParser,
     appMapMutationParser,
+    appMapProposalApproveParser,
     appMapOutputParser,
     appMapRefParser,
     appMapRoutineSaveParser,
@@ -787,6 +815,8 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     appMapTeachParser,
     appMapTestCompileInputParser,
     appMapTestCompileOutputParser,
+    appMapTestFromIntentInputParser,
+    appMapTestFromIntentOutputParser,
     appMapTestEditInputParser,
     appMapTestProposeInputParser,
     appMapTestProposeOutputParser,
