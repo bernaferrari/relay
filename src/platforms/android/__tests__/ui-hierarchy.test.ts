@@ -269,7 +269,7 @@ test('parseUiHierarchy reads an omitted clickable attribute the same as clickabl
   const tree = (clickable: string) => `<hierarchy>
   <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
     <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="2">
-      <node class="android.widget.TextView" text="Foreground tile" bounds="[24,120][366,200]" enabled="true" visible-to-user="true" focusable="true" ${clickable} drawing-order="1"/>
+      <node class="android.widget.TextView" text="Foreground tile" bounds="[0,120][390,844]" enabled="true" visible-to-user="true" focusable="true" ${clickable} drawing-order="1"/>
     </node>
     <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="1">
       <node class="android.widget.TextView" text="Background row" bounds="[0,220][280,280]" enabled="true" visible-to-user="true" focusable="true" ${clickable} drawing-order="1"/>
@@ -329,10 +329,17 @@ test('parseUiHierarchy prunes descendants of Android nodes that are not visible 
 });
 
 test('parseUiHierarchy prunes lower drawing-order subtrees covered by a foreground sibling', () => {
+  // A pushed screen (header, scrollable body, footer) drawn above a still-attached drawer surface.
+  // The pushed screen's presented content lies over the drawer's content, so the drawer is covered.
   const xml = `<hierarchy>
   <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
     <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="2">
-      <node class="android.widget.Button" text="Foreground action" bounds="[24,420][366,480]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+      <node class="android.widget.Button" content-desc="Back" bounds="[8,40][56,88]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+      <node class="android.widget.TextView" text="Foreground screen" bounds="[72,44][300,84]" enabled="true" visible-to-user="true" drawing-order="2"/>
+      <node class="android.widget.ScrollView" bounds="[0,120][390,780]" scrollable="true" enabled="true" visible-to-user="true" drawing-order="3">
+        <node class="android.widget.Button" text="Foreground action" bounds="[24,140][366,200]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+      </node>
+      <node class="android.widget.Button" text="Foreground footer" bounds="[0,780][390,844]" clickable="true" enabled="true" visible-to-user="true" drawing-order="4"/>
     </node>
     <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="1">
       <node class="android.widget.ScrollView" bounds="[0,120][300,844]" scrollable="true" clickable="true" enabled="true" visible-to-user="true" drawing-order="1">
@@ -350,6 +357,140 @@ test('parseUiHierarchy prunes lower drawing-order subtrees covered by a foregrou
   assert.equal(
     result.nodes.some((node) => node.label === 'Hidden drawer action'),
     false,
+  );
+});
+
+test('parseUiHierarchy keeps app content under a full-screen overlay holding one floating icon (#1806)', () => {
+  // DoraemonKit injects a full-screen FrameLayout above the whole Activity purely as a drag surface
+  // for a small floating icon. It presents only the icon, so it can only hide what sits under it.
+  const xml = `<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][1224,2860]" visible-to-user="true" drawing-order="0">
+    <node class="android.widget.LinearLayout" bounds="[0,0][1224,2860]" visible-to-user="true" drawing-order="1">
+      <node class="android.widget.TextView" text="Editor" bounds="[48,160][600,240]" enabled="true" visible-to-user="true" drawing-order="1"/>
+      <node class="android.widget.Button" text="Save" bounds="[48,2600][1176,2760]" clickable="true" enabled="true" visible-to-user="true" drawing-order="2"/>
+    </node>
+    <node class="android.widget.FrameLayout" resource-id="com.example.app:id/dokit_contentview_id" content-desc="dokit_contentview_id_DokitFrameLayout[1]" bounds="[0,146][1224,2912]" visible-to-user="true" drawing-order="2">
+      <node class="android.widget.ImageView" content-desc="DoKit" bounds="[1000,1200][1189,1389]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+    </node>
+  </node>
+</hierarchy>`;
+
+  const result = parseUiHierarchy(xml, 800, { raw: true });
+  assert.deepEqual(
+    result.nodes.filter((node) => node.label).map((node) => node.label),
+    ['Editor', 'Save', 'dokit_contentview_id_DokitFrameLayout[1]', 'DoKit'],
+  );
+});
+
+test('parseUiHierarchy keeps app content beside an empty labelled full-screen placeholder (#1806)', () => {
+  // A match_parent placeholder container that stays VISIBLE and only receives a fragment later.
+  // Its content-desc is an announcement, not paint: it draws nothing over the app.
+  const xml = `<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
+    <node class="android.widget.LinearLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="1">
+      <node class="android.widget.Button" text="Toolbar action" bounds="[0,40][390,100]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+    </node>
+    <node class="android.widget.FrameLayout" resource-id="com.example.app:id/panel_host" content-desc="View[1]" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="2"/>
+  </node>
+</hierarchy>`;
+
+  const result = parseUiHierarchy(xml, 800, { raw: true });
+  assert.equal(
+    result.nodes.some((node) => node.label === 'Toolbar action'),
+    true,
+  );
+});
+
+test('parseUiHierarchy keeps app content under an overlay whose only controls sit in opposite corners', () => {
+  // Two floating controls in opposite corners present two corners, not the screen between them.
+  // A bounding box of the presented content would span the viewport and condemn the whole app.
+  const xml = `<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
+    <node class="android.widget.LinearLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="1">
+      <node class="android.widget.TextView" text="Editor" bounds="[24,60][300,120]" enabled="true" visible-to-user="true" drawing-order="1"/>
+      <node class="android.widget.ScrollView" bounds="[0,140][390,760]" scrollable="true" enabled="true" visible-to-user="true" drawing-order="2">
+        <node class="android.widget.Button" text="Save" bounds="[24,400][366,460]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+      </node>
+    </node>
+    <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="2">
+      <node class="android.widget.ImageView" content-desc="Debug menu" bounds="[8,8][56,56]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+      <node class="android.widget.ImageView" content-desc="Frame stats" bounds="[334,788][382,836]" clickable="true" enabled="true" visible-to-user="true" drawing-order="2"/>
+    </node>
+  </node>
+</hierarchy>`;
+
+  const result = parseUiHierarchy(xml, 800, { raw: true });
+  assert.deepEqual(
+    result.nodes.filter((node) => node.label).map((node) => node.label),
+    ['Editor', 'Save', 'Debug menu', 'Frame stats'],
+  );
+});
+
+test('parseUiHierarchy keeps app content under a focusable full-screen overlay holding one clickable icon', () => {
+  // The Telegram wrapper from #1733, but with one floating clickable icon inside it. The icon makes
+  // the wrapper a covering candidate; its focusability must still not paint the box, or the wrapper
+  // condemns the whole app under it exactly as it did before #1733.
+  const xml = `<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
+    <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="1">
+      <node class="android.widget.TextView" text="Your phone number" bounds="[24,200][366,260]" enabled="true" visible-to-user="true" drawing-order="1"/>
+      <node class="android.widget.EditText" text="208 379 7171" bounds="[24,320][366,380]" clickable="true" focusable="true" enabled="true" visible-to-user="true" drawing-order="2"/>
+    </node>
+    <node class="android.view.View" bounds="[0,0][390,844]" enabled="true" visible-to-user="true" focusable="true" drawing-order="3">
+      <node class="android.widget.ImageView" content-desc="Attach" bounds="[330,780][380,830]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+    </node>
+  </node>
+</hierarchy>`;
+
+  const result = parseUiHierarchy(xml, 800, { raw: true });
+  assert.deepEqual(
+    result.nodes.filter((node) => node.label).map((node) => node.label),
+    ['Your phone number', '208 379 7171', 'Attach'],
+  );
+});
+
+test('parseUiHierarchy counts identifier-only markers toward what a covered sibling shows', () => {
+  // A screen container carrying testID markers whose only painted content is one corner icon,
+  // under a clickable header bar. The bar covers the icon, but the agent would also lose the
+  // markers, which sit well outside the bar — so the container is not covered.
+  const xml = `<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
+    <node class="android.view.ViewGroup" resource-id="home-screen" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="1">
+      <node class="android.widget.ImageView" content-desc="Menu" bounds="[8,8][56,56]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+      <node class="android.view.ViewGroup" resource-id="home-body" bounds="[0,120][390,844]" visible-to-user="true" drawing-order="2"/>
+    </node>
+    <node class="android.view.ViewGroup" bounds="[0,0][390,120]" clickable="true" enabled="true" visible-to-user="true" drawing-order="2">
+      <node class="android.widget.TextView" text="Header" bounds="[72,40][300,80]" enabled="true" visible-to-user="true" drawing-order="1"/>
+    </node>
+  </node>
+</hierarchy>`;
+
+  const result = parseUiHierarchy(xml, 800, { raw: true });
+  assert.equal(
+    result.nodes.some((node) => node.identifier === 'home-body'),
+    true,
+  );
+});
+
+test('parseUiHierarchy compares presented footprints so a sparse overlay never condemns a rich sibling', () => {
+  // The overlay's only content is a corner badge; the sibling's content spans the screen. Box
+  // geometry alone (overlay box ⊇ sibling box) would call this covered.
+  const xml = `<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
+    <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="1">
+      <node class="android.widget.Button" text="Top action" bounds="[24,60][366,120]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+      <node class="android.widget.Button" text="Bottom action" bounds="[24,760][366,820]" clickable="true" enabled="true" visible-to-user="true" drawing-order="2"/>
+    </node>
+    <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="2">
+      <node class="android.widget.Button" text="Badge" bounds="[330,20][380,70]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+    </node>
+  </node>
+</hierarchy>`;
+
+  const result = parseUiHierarchy(xml, 800, { raw: true });
+  assert.deepEqual(
+    result.nodes.filter((node) => node.label).map((node) => node.label),
+    ['Top action', 'Bottom action', 'Badge'],
   );
 });
 
@@ -556,9 +697,10 @@ test('parseUiHierarchy keeps an overlapped text leaf drawn inside a composite wi
 });
 
 test('parseUiHierarchy still condemns a clickable leaf covered by a foreground sibling', () => {
+  // A tap-to-dismiss scrim is itself a touch target, so it hides its whole box.
   const xml = `<hierarchy>
   <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
-    <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="2">
+    <node class="android.view.ViewGroup" bounds="[0,0][390,844]" clickable="true" enabled="true" visible-to-user="true" drawing-order="2">
       <node class="android.widget.Button" text="Modal action" bounds="[24,420][366,480]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
     </node>
     <node class="android.widget.Button" text="Behind the modal" bounds="[0,220][280,280]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
