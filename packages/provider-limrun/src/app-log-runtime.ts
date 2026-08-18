@@ -1,4 +1,4 @@
-import type { DeviceInfo } from '@agent-device/kernel/device';
+import { isIosFamily, type DeviceInfo } from '@agent-device/kernel/device';
 import type { AppsFilter, ProviderPortReverseOptions } from '@agent-device/contracts/device';
 import type { Interactor, RunnerContext } from '@agent-device/contracts/interaction';
 import { AppError } from '@agent-device/kernel/errors';
@@ -21,9 +21,11 @@ import {
 import {
   applicationLifecycleOperationFacts,
   availableApplicationLifecycleOperations,
+  bindProviderSnapshotInteractor,
   createUnavailablePlatformRuntimeFacts,
   providerRuntimeOwner,
   sameRuntimeOwner,
+  snapshotRuntimeOperationFacts,
 } from '@agent-device/contracts/platform';
 import {
   createLimrunAppLogEnvelope,
@@ -77,6 +79,11 @@ function deploymentOptions(
 }
 
 const available = Object.freeze({ available: true } as const);
+const customSnapshotUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'Custom snapshot actions are available only for Limrun iOS simulator sessions.',
+} as const);
 const recordingUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-provider-mode',
@@ -334,6 +341,11 @@ function bindLimrunAppLogs(
       }),
       runtimeFacts.operations,
     ),
+    ...bindProviderSnapshotInteractor({
+      device,
+      signal,
+      resolveInteractor: (runner) => options.getInteractor(device, runner),
+    }),
     ...createLimrunAppDeploymentOperations(
       deploymentOptions(options),
       device,
@@ -405,6 +417,14 @@ function facts(
       screenRecordingStart: recordingUnavailable,
       screenRecordingReattach: recordingUnavailable,
       screenRecordingCleanup: recordingUnavailable,
+      ...snapshotRuntimeOperationFacts({
+        capture: available,
+        customActions:
+          isIosFamily(device) && device.kind === 'simulator'
+            ? available
+            : customSnapshotUnavailable,
+        withoutActiveApp: available,
+      }),
       ensureReady: available,
       bootTarget: available,
       bootTargetHeadless: headlessUnavailable,
@@ -438,6 +458,11 @@ function recoveryFacts(
       screenRecordingStart: liveSessionUnavailable,
       screenRecordingReattach: liveSessionUnavailable,
       screenRecordingCleanup: liveSessionUnavailable,
+      ...snapshotRuntimeOperationFacts({
+        capture: liveSessionUnavailable,
+        customActions: liveSessionUnavailable,
+        withoutActiveApp: liveSessionUnavailable,
+      }),
       ensureReady: liveSessionUnavailable,
       bootTarget: liveSessionUnavailable,
       bootTargetHeadless: liveSessionUnavailable,

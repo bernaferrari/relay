@@ -7,7 +7,9 @@ import type {
 import {
   applicationLifecycleOperationFacts,
   availableApplicationLifecycleOperations,
+  bindLocalSnapshotInteractor,
   localRuntimeOwner,
+  snapshotRuntimeOperationFacts,
 } from '@agent-device/contracts/platform';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { createHarmonyAppLogRuntime } from './logs/runtime.ts';
@@ -55,6 +57,16 @@ const portReverseUnavailable = Object.freeze({
   reason: 'unsupported-provider-mode',
   hint: 'Port reverse is supported only by an owning provider runtime.',
 } as const);
+const snapshotKindUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-device-kind',
+  hint: 'snapshot is supported only for HarmonyOS emulators and devices.',
+} as const);
+const snapshotCustomActionsUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-platform-leaf',
+  hint: 'Re-run without --actions, or target an iOS simulator.',
+} as const);
 
 function harmonyLifecycleFacts(device: DeviceInfo) {
   const openTarget = harmonyOpenTargetFact(device);
@@ -100,6 +112,17 @@ export function createHarmonyPlatformRuntime(host: PlatformRuntimeHost): Platfor
         screenRecordingStart: recordingFacts,
         screenRecordingReattach: recordingFacts,
         screenRecordingCleanup: recordingFacts,
+        ...snapshotRuntimeOperationFacts({
+          capture:
+            device.kind === 'emulator' || device.kind === 'device'
+              ? available
+              : snapshotKindUnavailable,
+          customActions: snapshotCustomActionsUnavailable,
+          withoutActiveApp:
+            device.kind === 'emulator' || device.kind === 'device'
+              ? available
+              : snapshotKindUnavailable,
+        }),
         ensureReady: available,
         bootTarget: unavailable,
         bootTargetHeadless: unavailable,
@@ -145,6 +168,13 @@ export function createHarmonyPlatformRuntime(host: PlatformRuntimeHost): Platfor
                 device: request.device,
                 owner,
                 signal: request.scope.signal,
+              })
+            : {}),
+          ...(facts.operations.captureSnapshot.available
+            ? bindLocalSnapshotInteractor({
+                device: request.device,
+                signal: request.scope.signal,
+                resolveInteractor: host.localInteractors.resolve,
               })
             : {}),
           listApps: async (input: { device: DeviceInfo; filter: 'all' | 'user-installed' }) =>

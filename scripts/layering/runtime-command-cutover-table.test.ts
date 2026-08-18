@@ -44,6 +44,66 @@ test('R20 boot operation singularity is scoped to the session-state handler', ()
   );
 });
 
+test('R32 snapshot rejects legacy admission and dispatcher projection', () => {
+  assert.deepEqual(
+    summariesFor('R32 snapshot-runtime-cutover', [
+      [
+        'src/core/command-descriptor/registry.ts',
+        `
+          const descriptors = [{
+            name: 'snapshot',
+            capability: { apple: {} },
+            dispatch: {},
+            platformExecution: { kind: 'device-runtime', use: snapshotCaptureUse },
+          }];
+        `,
+      ],
+      [
+        'src/daemon/snapshot-runtime.ts',
+        `
+          function selectActiveAppSnapshot() { runtime.operations.captureSnapshot(input); }
+          function selectCustomActionsSnapshot() {
+            runtime.operations.captureSnapshotWithCustomActions(input);
+          }
+          function selectSnapshotWithoutActiveApp() {
+            runtime.operations.captureSnapshotWithoutActiveApp(input);
+          }
+          function dispatchSnapshotViaRuntime() {
+            const plan = resolveSnapshotRuntimePlan(normalizedIntent);
+            inspectRequiredRuntimeUse({
+              device,
+              use: plan.use,
+              inspectFacts: params.inspectFacts,
+            });
+            requireCommandSupported('snapshot', device);
+          }
+          function handleSnapshotCommands() {
+            dispatchSnapshotViaRuntime(request);
+          }
+          handleSnapshotCommands(request);
+        `,
+      ],
+      ['src/daemon/snapshot-runtime-binding.ts', ''],
+      ['src/core/dispatch.ts', 'function handleSnapshotCommand() { return legacy.snapshot(); }'],
+      [
+        'src/core/capabilities.ts',
+        `
+          const HARMONYOS_SUPPORTED_COMMANDS = new Set(['snapshot']);
+          const WEB_SUPPORTED_COMMANDS = new Set(['snapshot']);
+        `,
+      ],
+    ]),
+    [
+      'src/core/command-descriptor/registry.ts: snapshot descriptor retains legacy capability admission',
+      'src/daemon/snapshot-runtime.ts: legacy snapshot capability admission requireCommandSupported',
+      'src/core/dispatch.ts: legacy snapshot capture route handleSnapshotCommand',
+      'src/core/capabilities.ts: static platform command set retains snapshot admission',
+      'src/core/capabilities.ts: static platform command set retains snapshot admission',
+      'src/core/command-descriptor/registry.ts: snapshot command still projects into the retired legacy dispatcher',
+    ],
+  );
+});
+
 // Per-row acceptance for the five migrated commands. Every older-row case here was carried over
 // from the per-command policy tests these rows replaced; the mechanism itself is proven
 // in runtime-command-cutover-policy.test.ts.

@@ -209,7 +209,14 @@ export type {
   InstalledAppInfo,
   ListAppsInput,
 } from '../app-inventory-runtime.ts';
-export { appsRuntimeUse, defineUse } from '../platform-runtime-operations.ts';
+export {
+  appsRuntimeUse,
+  captureSnapshotUse,
+  defineUse,
+  resolveSnapshotRuntimePlan,
+  snapshotRuntimePlanUses,
+} from '../platform-runtime-operations.ts';
+export type { SnapshotRuntimePlan } from '../platform-runtime-operations.ts';
 export type {
   PlatformRuntimeHost,
   PlatformRuntimeModule,
@@ -227,6 +234,21 @@ export {
   shutdownTargetUse,
 } from '../platform-runtime-operations.ts';
 export type { DeviceReadinessRuntimePlan } from '../platform-runtime-operations.ts';
+export {
+  bindLocalSnapshotInteractor,
+  bindProviderSnapshotInteractor,
+  snapshotRuntimeOperationFacts,
+} from '../snapshot-runtime.ts';
+export type {
+  CaptureSnapshotInput,
+  LocalSnapshotInteractorResolver,
+  ProviderSnapshotInteractorResolver,
+  SnapshotRuntimeExecution,
+  SnapshotRuntimeHost,
+  SnapshotRuntimeOperations,
+  SnapshotRuntimeOperationFacts,
+  SnapshotResult,
+} from '../snapshot-runtime.ts';
 export type {
   AppStateRuntimeCommand,
   AppStateRuntimeCommandResult,
