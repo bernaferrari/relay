@@ -89,10 +89,10 @@ export async function captureSnapshot(
 
 export async function captureSnapshotData(params: CaptureSnapshotParams): Promise<SnapshotData> {
   if (params.captureData) return await params.captureData();
-  const { device, session, flags, logPath, snapshotScope } = params;
+  const { device, session, logPath } = params;
   const context = contextFromFlags(
     logPath,
-    snapshotCaptureFlagsForBackend(device, { ...flags, snapshotScope }),
+    snapshotCaptureFlagsForBackend(device, resolveSnapshotStateFlags(params)),
     session?.appBundleId,
     session?.trace?.outPath,
   );
@@ -146,6 +146,12 @@ async function captureSnapshotAttempt(params: CaptureSnapshotParams): Promise<Sn
   return { data, snapshot, annotations };
 }
 
+/**
+ * The ONE effective scope of a capture, handed to both the platform capture and
+ * `buildSnapshotState`. Backends that resolve scope inside their projection (android) get no
+ * post-wire pass, so the two sides must see the same value: an explicit `snapshotScope` param
+ * overrides the flag, an absent param must never erase it (#1832 C2).
+ */
 function resolveSnapshotStateFlags(
   params: Pick<CaptureSnapshotParams, 'flags' | 'snapshotScope'>,
 ): CaptureSnapshotParams['flags'] {
@@ -177,7 +183,7 @@ export function buildSnapshotState(
     ? presentIosInteractiveSnapshot(normalizedNodes)
     : normalizedNodes;
   const scopedNodes =
-    flags?.snapshotScope && data?.backend !== 'macos-helper'
+    flags?.snapshotScope && backendScopesAfterWire(data?.backend)
       ? scopeSnapshotNodes(presentableNodes, flags.snapshotScope)
       : presentableNodes;
   const snapshotQuality = snapshotCaptureAnnotationsFrom(data).quality;
@@ -216,6 +222,16 @@ function snapshotCaptureFlagsForBackend(
     return flags;
   }
   return { ...flags, snapshotScope: undefined };
+}
+
+/**
+ * Scope resolves once per snapshot. Android resolves it inside its projection (the platform
+ * matcher implements the shared scope specification, `@agent-device/contracts/snapshot`), and the
+ * macOS helper scopes at capture; a second pass here would re-match inside an already-scoped tree
+ * and hand the two layers different no-match semantics (#1832 C2).
+ */
+function backendScopesAfterWire(backend: SnapshotBackend | undefined): boolean {
+  return backend !== 'macos-helper' && backend !== 'android';
 }
 
 function shouldPresentIosInteractiveSnapshot(

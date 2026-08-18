@@ -18,7 +18,6 @@ import {
 import { deriveMobileSnapshotHiddenContentHints } from '../../snapshot/mobile-snapshot-semantics.ts';
 import {
   buildUiHierarchySnapshot,
-  parseUiHierarchy,
   parseUiHierarchyTree,
   type AndroidBuiltSnapshot,
   type AndroidSnapshotAnalysis,
@@ -94,28 +93,54 @@ export async function snapshotAndroid(
   const adb = resolveAndroidAdbProvider(device, options.helperAdb).exec;
   const capture = await captureAndroidUiHierarchy(device, options, adb);
   const xml = capture.xml;
-  if (!options.interactiveOnly) {
-    const parsed = parseUiHierarchy(xml, undefined, options);
-    const truncated = mergeAndroidSnapshotTruncation(parsed.truncated, capture.metadata);
-    return {
-      ...parsed,
-      ...androidSnapshotTruncationFields(truncated),
-      androidSnapshot: capture.metadata,
-    };
-  }
-
   const tree = parseUiHierarchyTree(xml);
-  const interactiveSnapshot = buildUiHierarchySnapshot(tree, undefined, options);
-  const truncated = mergeAndroidSnapshotTruncation(interactiveSnapshot.truncated, capture.metadata);
-  if (options.includeHiddenContentHints !== false) {
-    applyHiddenContentHintsToInteractiveSnapshot({ options, tree, xml, interactiveSnapshot });
+  const built = buildUiHierarchySnapshot(tree, undefined, options);
+  const truncated = mergeAndroidSnapshotTruncation(built.truncated, capture.metadata);
+  if (options.interactiveOnly && options.includeHiddenContentHints !== false) {
+    applyHiddenContentHintsToInteractiveSnapshot({
+      options,
+      tree,
+      xml,
+      interactiveSnapshot: built,
+    });
   }
-  const { sourceNodes: _sourceNodes, ...snapshot } = interactiveSnapshot;
+  const { sourceNodes: _sourceNodes, ...snapshot } = built;
   return {
     ...snapshot,
     ...androidSnapshotTruncationFields(truncated),
-    androidSnapshot: capture.metadata,
+    androidSnapshot: withOcclusionScanDisclosure(capture.metadata, tree),
   };
+}
+
+/**
+ * C1 disclosure (#1832): the covered-sibling pruner keys on `drawing-order`, which the helper can
+ * only serialize on API 24+. On API 23 the same screen therefore presents a different node set —
+ * covered React Native navigation surfaces stay in — and nothing else in the payload says so. This
+ * is disclosure only; neutrality is restored when occlusion moves to the daemon annotator.
+ */
+function withOcclusionScanDisclosure(
+  metadata: AndroidSnapshotBackendMetadata,
+  tree: AndroidUiHierarchy,
+): AndroidSnapshotBackendMetadata {
+  return androidTreeCarriesDrawingOrder(tree) === false
+    ? { ...metadata, occlusionScanUnavailable: true }
+    : metadata;
+}
+
+/**
+ * Whether the acquired tree carries `drawing-order` (helper output on API 24+). `undefined` for
+ * an empty tree: nothing was acquired, so nothing is disclosed. Read on the PARSED tree, before any
+ * projection, because the answer must not depend on what membership later keeps.
+ */
+function androidTreeCarriesDrawingOrder(root: AndroidUiHierarchy): boolean | undefined {
+  const stack = [...root.children];
+  if (stack.length === 0) return undefined;
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (node.drawingOrder !== undefined) return true;
+    stack.push(...node.children);
+  }
+  return false;
 }
 
 function mergeAndroidSnapshotTruncation(
