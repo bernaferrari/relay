@@ -7,12 +7,13 @@ vi.mock('../../../core/dispatch.ts', async (importOriginal) => {
 });
 import fs from 'node:fs';
 import path from 'node:path';
-import { runReplayScriptFile } from '../session-replay-runtime.ts';
+import { runReplayScriptSource } from '../session-replay-runtime.ts';
 import { SessionStore } from '../../session-store.ts';
 import type { DaemonResponse } from '../../types.ts';
 import { dispatchCommand } from '../../../core/dispatch.ts';
 import { makeIosSession } from '../../../__tests__/test-utils/session-factories.ts';
 import { formatReplayDivergenceReport } from '@agent-device/contracts/divergence';
+import { maestroScriptSourceBundleFor } from '../../../__tests__/test-utils/replay-script-source.ts';
 import {
   baseReplayRequest as baseReq,
   writeReplayFile,
@@ -40,7 +41,7 @@ test('a failing replay step returns REPLAY_DIVERGENCE with cause preserved and c
     return { ok: true };
   });
 
-  const response = await runReplayScriptFile({
+  const response = await runReplayScriptSource({
     req: baseReq({ positionals: [filePath] }),
     sessionName,
     logPath: path.join(root, 'daemon.log'),
@@ -116,7 +117,7 @@ test('#1262: a LAST-step failure with NO active session carries NO empty-tail al
   const filePath = writeReplayFile(root, ['click "Save"']);
   mockDispatchCommand.mockRejectedValue(new Error('no device runner available'));
 
-  const response = await runReplayScriptFile({
+  const response = await runReplayScriptSource({
     req: baseReq({ positionals: [filePath] }),
     sessionName,
     logPath: path.join(root, 'daemon.log'),
@@ -157,7 +158,7 @@ test('a normalized nested failure preserves typed recovery signals on REPLAY_DIV
   const filePath = writeReplayFile(root, ['click "Save"']);
   mockDispatchCommand.mockRejectedValue(new Error('no device runner available'));
 
-  const response = await runReplayScriptFile({
+  const response = await runReplayScriptSource({
     req: baseReq({ positionals: [filePath] }),
     sessionName,
     logPath: path.join(root, 'daemon.log'),
@@ -205,7 +206,7 @@ test('a failing replay step captures an available screen digest with blessed ref
     backend: 'xctest',
   });
 
-  const response = await runReplayScriptFile({
+  const response = await runReplayScriptSource({
     req: baseReq({ positionals: [filePath] }),
     sessionName,
     logPath: path.join(root, 'daemon.log'),
@@ -255,7 +256,7 @@ test('a failing replay step ranks a re-resolved suggestion when the recorded sel
     backend: 'xctest',
   });
 
-  const response = await runReplayScriptFile({
+  const response = await runReplayScriptSource({
     req: baseReq({ positionals: [filePath] }),
     sessionName,
     logPath: path.join(root, 'daemon.log'),
@@ -287,7 +288,7 @@ test('divergence screen never masks the original cause when the session already 
   // Intentionally no session stored: simulates the session closing mid-replay.
   const filePath = writeReplayFile(root, ['click "Save"']);
 
-  const response: DaemonResponse = await runReplayScriptFile({
+  const response: DaemonResponse = await runReplayScriptSource({
     req: baseReq({ positionals: [filePath] }),
     sessionName,
     logPath: path.join(root, 'daemon.log'),
@@ -348,8 +349,14 @@ test('a failure inside a retry-wrapped runFlow include reports the include file 
   );
   mockDispatchCommand.mockRejectedValue(new Error('no device runner available'));
 
-  const response = await runReplayScriptFile({
-    req: baseReq({ positionals: [mainPath], flags: { replayBackend: 'maestro' } }),
+  const response = await runReplayScriptSource({
+    req: baseReq({
+      positionals: [mainPath],
+      flags: {
+        replayBackend: 'maestro',
+        replayScriptSource: await maestroScriptSourceBundleFor(mainPath),
+      },
+    }),
     sessionName,
     logPath: path.join(root, 'daemon.log'),
     sessionStore,
@@ -398,8 +405,14 @@ test('a failure inside a runtime runFlow.when-wrapped include reports the includ
   );
   mockDispatchCommand.mockRejectedValue(new Error('no device runner available'));
 
-  const response = await runReplayScriptFile({
-    req: baseReq({ positionals: [mainPath], flags: { replayBackend: 'maestro' } }),
+  const response = await runReplayScriptSource({
+    req: baseReq({
+      positionals: [mainPath],
+      flags: {
+        replayBackend: 'maestro',
+        replayScriptSource: await maestroScriptSourceBundleFor(mainPath),
+      },
+    }),
     sessionName,
     logPath: path.join(root, 'daemon.log'),
     sessionStore,
@@ -457,7 +470,7 @@ test('typed Maestro failures rank suggestions with Maestro regex selector semant
   ];
   mockDispatchCommand.mockResolvedValue({ nodes, truncated: false, backend: 'xctest' });
 
-  const response = await runReplayScriptFile({
+  const response = await runReplayScriptSource({
     req: baseReq({ positionals: [flowPath], flags: { replayBackend: 'maestro' } }),
     sessionName,
     logPath: path.join(root, 'daemon.log'),
@@ -496,7 +509,7 @@ test('typed Maestro failures never serialize input text', async () => {
   );
   mockDispatchCommand.mockRejectedValue(new Error('no device runner available'));
 
-  const response = await runReplayScriptFile({
+  const response = await runReplayScriptSource({
     req: baseReq({ positionals: [flowPath], flags: { replayBackend: 'maestro' } }),
     sessionName,
     logPath: path.join(root, 'daemon.log'),
