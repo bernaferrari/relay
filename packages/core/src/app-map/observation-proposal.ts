@@ -48,8 +48,15 @@ function matchingScreenId(map: AppMap, fingerprint: string): string | undefined 
   )?.id;
 }
 
+function screenEvidenceIds(session: DiscoverySession, screenId: string): string[] {
+  return [`discovery:${session.id}:screen:${screenId}`];
+}
+
 function navigationFor(
+  session: DiscoverySession,
   edge: ProposedNavigationEdge | undefined,
+  fromObservedId: string,
+  toObservedId: string | undefined,
   fromScreenId: string,
   destinationId: string,
 ): {
@@ -63,7 +70,7 @@ function navigationFor(
       expectedDestination: {
         screenId: destinationId,
         identity: structuredClone(edge.destinationIdentity),
-        evidenceIds: [],
+        evidenceIds: screenEvidenceIds(session, toObservedId ?? fromObservedId),
       },
     },
     ...(edge.returnBehavior
@@ -73,7 +80,7 @@ function navigationFor(
             expectedDestination: {
               screenId: fromScreenId,
               identity: structuredClone(edge.returnBehavior.expectedDestination),
-              evidenceIds: [],
+              evidenceIds: screenEvidenceIds(session, fromObservedId),
             },
           },
         }
@@ -183,7 +190,14 @@ export function proposalFromDiscovery(input: {
       ...(transition.label?.trim() ? { label: transition.label.trim() } : {}),
       state: "draft" as const,
       actions: [actionFor(transition)],
-      ...navigationFor(edge, fromScreenId, destinationId),
+      ...navigationFor(
+        session,
+        edge,
+        transition.fromScreenId,
+        transition.toScreenId,
+        fromScreenId,
+        destinationId,
+      ),
     };
     const existing = map.connections[connectionId];
     changes.push(

@@ -15,7 +15,11 @@ import type {
   TargetProfile,
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
-import { isExploreStateChangingNode, isUnsafeExploreControlText } from "./explore.js";
+import {
+  isExploreChromeNode,
+  isExploreStateChangingNode,
+  isUnsafeExploreControlText,
+} from "./explore.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { observeScreenIdentity } from "./screen-identity.js";
 
@@ -171,9 +175,38 @@ export function fingerprintDiscoveryScreen(
   return observeScreenIdentity(nodes).fingerprint;
 }
 
+function titleFromNodes(nodes: SnapshotNode[]): string | undefined {
+  const bar = nodes.find(
+    (node) =>
+      /collapsing_appbar|action_bar$/.test(node.identifier ?? "") && Boolean(node.label?.trim()),
+  );
+  if (bar?.label?.trim()) return bar.label.trim();
+  const heading = nodes.find(
+    (node) =>
+      /header|heading/.test(`${node.role ?? ""} ${node.type ?? ""}`) && Boolean(node.label?.trim()),
+  );
+  return heading?.label?.trim() || discoveryControls(nodes)[0]?.label;
+}
+
 function unsafeControlText(value: string): boolean {
   // Shared with tree crawl / explore — keep destructive filters consistent.
   return isUnsafeExploreControlText(value);
+}
+
+const LAYOUT_IDENTIFIER =
+  /(?:recycler_view|list_container|content_frame|action_bar|coordinator|framelayout|linearlayout|scrollview|content_parent|main_content)/i;
+const GENERIC_IDENTIFIER = /:id\/(?:title|summary|icon|text[12])$/i;
+
+function discoveryTarget(node: SnapshotNode): DiscoveryControl["target"] | undefined {
+  const spoken = (node.label ?? node.value ?? "").trim();
+  const identifier = node.identifier?.trim();
+  if (identifier && !LAYOUT_IDENTIFIER.test(identifier) && !GENERIC_IDENTIFIER.test(identifier)) {
+    return { identifier };
+  }
+  const ref = node.ref?.trim();
+  if (ref && !/^e\d+$/i.test(ref)) return { ref };
+  if (spoken) return { label: spoken };
+  return undefined;
 }
 
 /** Safe, semantic candidates for assisted exploration. These are suggestions, never commands. */
@@ -184,49 +217,55 @@ export function discoveryControls(nodes: SnapshotNode[]): DiscoveryControl[] {
       (node) =>
         node.visibleToUser !== false &&
         node.enabled !== false &&
+        !isExploreChromeNode(node) &&
         !isExploreStateChangingNode(node) &&
-        (node.hittable || node.identifier || node.ref),
+        (node.hittable || node.identifier || node.ref || Boolean((node.label ?? "").trim())),
     )
     .flatMap((node, index) => {
-      const label = (node.label ?? node.value ?? node.identifier ?? "").trim();
+      const label = (node.label ?? node.value ?? "").trim();
       if (!label || unsafeControlText(label)) return [];
-      const target = node.identifier
-        ? { identifier: node.identifier }
-        : node.ref
-          ? { ref: node.ref }
-          : node.label
-            ? { label: node.label }
-            : undefined;
+      if (/double tap to open/i.test(label)) return [];
+      if (node.identifier && label === node.identifier) return [];
+      if (
+        /^(first name|last name|email|password|phone|edit your name|date of birth)$/i.test(label)
+      ) {
+        return [];
+      }
+      const target = discoveryTarget(node);
       if (!target) return [];
       const key = JSON.stringify(target);
       if (seen.has(key)) return [];
       seen.add(key);
       return [
-        { id: `${index}-${digest(key).slice(0, 8)}`, label, role: node.role ?? node.type, target },
+        {
+          control: {
+            id: `${index}-${digest(key).slice(0, 8)}`,
+            label,
+            role: node.role ?? node.type,
+            target,
+          },
+          y: node.rect?.y ?? 1_000_000,
+        },
       ];
     });
 
-  // The deterministic planner consumes this order. Prefer semantic settings
-  // rows (Cell/ListItem) over generic buttons, then stable identifiers/refs
-  // over display labels. That maps ordinary navigation first without a model
-  // call and makes an accessibility-rich settings screen much faster to cover.
+  // Top to bottom, then list rows over generic buttons. That is how a person
+  // walks a settings screen, and it keeps off-screen chrome from jumping the
+  // queue just because its label sorts first.
   return controls
     .sort((left, right) => {
-      const priority = (control: DiscoveryControl) => {
-        const role = control.role?.toLocaleLowerCase() ?? "";
-        const row = /cell|listitem|row|menuitem|preference/.test(role) ? 0 : 1;
-        const semantic = control.target.identifier || control.target.ref ? 0 : 1;
-        return [row, semantic] as const;
-      };
-      const leftPriority = priority(left);
-      const rightPriority = priority(right);
+      const row = (control: DiscoveryControl) =>
+        /cell|listitem|row|menuitem|preference/.test(control.role?.toLocaleLowerCase() ?? "")
+          ? 0
+          : 1;
       return (
-        leftPriority[0] - rightPriority[0] ||
-        leftPriority[1] - rightPriority[1] ||
-        left.label.localeCompare(right.label) ||
-        left.id.localeCompare(right.id)
+        left.y - right.y ||
+        row(left.control) - row(right.control) ||
+        left.control.label.localeCompare(right.control.label) ||
+        left.control.id.localeCompare(right.control.id)
       );
     })
+    .map((item) => item.control)
     .slice(0, 40);
 }
 
@@ -391,11 +430,12 @@ export async function recordObservedScreen(input: {
   }
   if (session.screens.length >= session.scope.maxScreens)
     throw new Error("discovery screen budget is exhausted");
+  const title = input.title?.trim() || titleFromNodes(input.nodes);
   const screen: ObservedScreen = {
     id: `screen-${randomUUID()}`,
     fingerprint,
     identity: { schemaVersion: 1, fingerprint },
-    ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+    ...(title ? { title } : {}),
     capturedAt: Date.now(),
     ...(input.snapshotDigest ? { snapshotDigest: input.snapshotDigest } : {}),
     controls: discoveryControls(input.nodes),
@@ -414,15 +454,36 @@ export async function recordObservedScreen(input: {
   return { session, screen, isNew: true };
 }
 
-export function suggestDiscoveryControl(session: DiscoverySession): {
+export async function replaceDiscoveryScreenControls(
+  sessionId: string,
+  screenId: string,
+  controls: DiscoveryControl[],
+): Promise<DiscoverySession> {
+  const session = await readDiscoverySession(sessionId);
+  if (!session) throw new Error("discovery session not found");
+  assertDiscoveryAccess(session);
+  const screen = session.screens.find((item) => item.id === screenId);
+  if (!screen) throw new Error("discovery screen not found");
+  screen.controls = controls;
+  session.updatedAt = Date.now();
+  await writeSession(session);
+  emitDiscovery(session);
+  return session;
+}
+
+export function suggestDiscoveryControl(
+  session: DiscoverySession,
+  skipped: ReadonlySet<string> = new Set(),
+): {
   screenId: string;
   control: DiscoveryControl;
 } | null {
-  const used = new Set(
-    session.transitions
+  const used = new Set([
+    ...skipped,
+    ...session.transitions
       .filter((transition) => transition.target)
       .map((transition) => `${transition.fromScreenId}:${JSON.stringify(transition.target)}`),
-  );
+  ]);
   const currentScreen = session.currentScreenId
     ? session.screens.find((screen) => screen.id === session.currentScreenId)
     : undefined;

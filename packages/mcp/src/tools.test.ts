@@ -299,6 +299,9 @@ test("defines deterministic task profiles with a compact authoring default", () 
     relayMcpToolsForProfile("author").some(({ operationId }) => operationId === "discovery.start"),
   );
   assert.ok(
+    relayMcpToolsForProfile("map").some(({ operationId }) => operationId === "discovery.cancel"),
+  );
+  assert.ok(
     relayMcpToolsForProfile("author").some(
       ({ operationId }) => operationId === "authoring.session.create",
     ),

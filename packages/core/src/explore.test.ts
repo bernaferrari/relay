@@ -4,6 +4,7 @@ import {
   dismissTowardParent,
   exploreControls,
   isExploreChromeLabel,
+  isExploreChromeNode,
   isExploreStateChangingNode,
   isUnsafeExploreControlText,
   scrollContentFitsViewport,
@@ -13,7 +14,16 @@ import type { Device, SnapshotNode } from "./device.js";
 
 test("explore chrome filters sheet affordances and language switcher", () => {
   assert.equal(isExploreChromeLabel("Close"), true);
+  assert.equal(isExploreChromeLabel("Home"), true);
   assert.equal(isExploreChromeLabel("App Language, English"), true);
+  assert.equal(
+    isExploreChromeNode({
+      label: "Nav",
+      identifier: "com.android.systemui:id/home",
+      bundleId: "com.android.systemui",
+    }),
+    true,
+  );
   assert.equal(isExploreChromeLabel("APP"), true);
   assert.equal(isExploreChromeLabel("Appearance"), false);
   assert.equal(isExploreChromeLabel("grok-arrow-left"), true);

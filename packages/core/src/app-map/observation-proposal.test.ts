@@ -123,6 +123,7 @@ test("one observed edge carries a draft navigation contract for Keep", () => {
   if (connection?.kind !== "connection.connect") throw new Error("expected connection");
   assert.equal(connection.connection.state, "draft");
   assert.equal(connection.connection.navigation?.targetAlternatives[0]?.kind, "accessibility");
+  assert.equal(connection.connection.navigation?.expectedDestination.evidenceIds.length, 1);
   assert.deepEqual(connectionIdsFromProposal(proposal), [connection.connection.id]);
 });
 

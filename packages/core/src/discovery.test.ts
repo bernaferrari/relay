@@ -16,6 +16,10 @@ import {
   setDiscoveryStatus,
   suggestDiscoveryControl,
 } from "./discovery.js";
+import {
+  resetDiscoveryExploreJobsForTests,
+  startDiscoveryExplore,
+} from "./discovery-explore-job.js";
 
 test("discovery keeps a bounded, evidence-backed screen graph", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-discovery-"));
@@ -298,6 +302,115 @@ test("discovery prioritizes semantic navigation rows and skips toggles", () => {
   assert.deepEqual(controls[0]?.target, { identifier: "settings-appearance" });
 });
 
+test("discovery walks a settings list top to bottom", () => {
+  const controls = discoveryControls([
+    {
+      label: "Connections",
+      rect: { x: 0, y: 400, width: 100, height: 40 },
+      visibleToUser: true,
+      hittable: true,
+    },
+    {
+      label: "Notifications",
+      rect: { x: 0, y: 200, width: 100, height: 40 },
+      visibleToUser: true,
+      hittable: true,
+    },
+  ]);
+  assert.deepEqual(
+    controls.map((control) => control.label),
+    ["Notifications", "Connections"],
+  );
+});
+
+test("discovery skips Android system chrome instead of tapping Home", () => {
+  const controls = discoveryControls([
+    {
+      label: "Home",
+      identifier: "com.android.systemui:id/home",
+      bundleId: "com.android.systemui",
+      visibleToUser: true,
+      hittable: true,
+    },
+    {
+      label: "Back",
+      identifier: "com.android.systemui:id/back",
+      bundleId: "com.android.systemui",
+      visibleToUser: true,
+      hittable: true,
+    },
+    {
+      role: "listitem",
+      label: "Notifications",
+      identifier: "settings-notifications",
+      visibleToUser: true,
+      hittable: true,
+    },
+  ]);
+  assert.deepEqual(
+    controls.map((control) => control.label),
+    ["Notifications"],
+  );
+});
+
+test("discovery skips Settings search chrome and the collapsing title", () => {
+  const controls = discoveryControls([
+    {
+      label: "Settings",
+      identifier: "com.android.settings:id/collapsing_appbar_extended_title",
+      visibleToUser: true,
+      hittable: true,
+    },
+    {
+      label: "Voice search",
+      identifier: "com.android.settings:id/search_voice_btn",
+      visibleToUser: true,
+      hittable: true,
+    },
+    {
+      label: "Connections",
+      identifier: "android:id/title",
+      visibleToUser: true,
+      hittable: false,
+    },
+  ]);
+  assert.deepEqual(
+    controls.map((control) => control.label),
+    ["Connections"],
+  );
+});
+
+test("discovery taps Settings row labels instead of recycler chrome", () => {
+  const controls = discoveryControls([
+    {
+      identifier: "com.android.settings:id/recycler_view",
+      type: "androidx.recyclerview.widget.RecyclerView",
+      visibleToUser: true,
+      hittable: true,
+    },
+    {
+      label: "Connections",
+      identifier: "android:id/title",
+      ref: "e40",
+      type: "android.widget.TextView",
+      visibleToUser: true,
+      hittable: false,
+    },
+    {
+      label: "Home",
+      identifier: "com.android.systemui:id/home",
+      bundleId: "com.android.systemui",
+      visibleToUser: true,
+      hittable: true,
+    },
+  ]);
+  assert.deepEqual(
+    controls.map((control) => control.label),
+    ["Connections"],
+  );
+  assert.deepEqual(controls[0]?.target, { label: "Connections" });
+});
+
 test("discovery tracks the screen currently visible on the target", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-discovery-current-"));
   const previous = process.env.RELAY_WORKSPACE_ROOT;
@@ -369,6 +482,29 @@ test("discovery sessions are isolated by project", async () => {
     assert.equal(await readDiscoverySession("beta-map", { projectId: "alpha" }), null);
     assert.equal((await readDiscoverySession("beta-map", { projectId: "beta" }))?.name, "Beta");
   } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("discovery explore refuses to start without an App Map", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-discovery-explore-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  resetDiscoveryExploreJobsForTests();
+  try {
+    const session = await createDiscoverySession({
+      id: "no-map",
+      name: "No map",
+      targetId: "phone",
+    });
+    await assert.rejects(
+      () => startDiscoveryExplore(session.id),
+      /App Map to register screens/,
+    );
+  } finally {
+    resetDiscoveryExploreJobsForTests();
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previous;
     await rm(root, { recursive: true, force: true });

@@ -193,6 +193,7 @@ const mapOperations = [
   "discovery.create",
   "discovery.get",
   "discovery.start",
+  "discovery.cancel",
   "discovery.suggestion",
   "app-map.observations.propose",
 ] as const satisfies readonly OperationId[];
