@@ -9,6 +9,14 @@ import {
 
 export type { WebDriverAuth, WebDriverRequestPolicy } from './webdriver-transport.ts';
 
+/**
+ * Default budget for `POST /session`. Cloud providers allocate a physical
+ * device inside that one request — BrowserStack iOS real devices routinely
+ * take 45–90s (#1774) — so it is far above the per-request default that
+ * suits a settled session's round trips.
+ */
+const DEFAULT_SESSION_CREATE_TIMEOUT_MS = 180_000;
+
 export type WebDriverClientOptions = {
   clientVersion: string;
   endpoint: string | URL;
@@ -60,16 +68,35 @@ export type W3CActionSequence = {
 
 export class WebDriverClient {
   private readonly transport: WebDriverTransport;
+  private readonly sessionCreateTimeoutMs: number;
   private sessionId: string | undefined;
 
   constructor(options: WebDriverClientOptions) {
     this.transport = new WebDriverTransport(options);
+    this.sessionCreateTimeoutMs =
+      options.requestPolicy?.sessionCreateTimeoutMs ?? DEFAULT_SESSION_CREATE_TIMEOUT_MS;
   }
 
-  async createSession(capabilities: Record<string, unknown>): Promise<WebDriverSession> {
-    const value = await this.requestValue('POST', '/session', {
-      capabilities: normalizeCapabilities(capabilities),
-    });
+  /**
+   * `POST /session` is non-idempotent and its outcome after a client-side abort
+   * is indeterminate (the hub finishes allocating whether or not anyone is
+   * listening), so it takes no cancellation signal and never retries: a retry
+   * is a second billed session, an abort loses the id of the first (#1774).
+   * `deadline` (epoch ms) can only shorten the create budget, never extend it.
+   */
+  async createSession(
+    capabilities: Record<string, unknown>,
+    options?: { deadline?: number },
+  ): Promise<WebDriverSession> {
+    const value = await this.requestValue(
+      'POST',
+      '/session',
+      { capabilities: normalizeCapabilities(capabilities) },
+      {
+        retryAttempts: 0,
+        timeoutMs: budgetWithin(this.sessionCreateTimeoutMs, options?.deadline),
+      },
+    );
     const session = readSession(value);
     this.sessionId = session.sessionId;
     return session;
@@ -363,7 +390,16 @@ function readW3CElementId(value: unknown): string | undefined {
  */
 function requestBudget(deadline: number | undefined): WebDriverRequestOverrides {
   if (deadline === undefined) return { retryAttempts: 0 };
-  return { retryAttempts: 0, timeoutMs: Math.max(0, deadline - Date.now()) };
+  return { retryAttempts: 0, timeoutMs: remainingMs(deadline) };
+}
+
+/** A phase's own budget, capped by the operation deadline it runs under, if any. */
+function budgetWithin(budgetMs: number, deadline: number | undefined): number {
+  return deadline === undefined ? budgetMs : Math.min(budgetMs, remainingMs(deadline));
+}
+
+function remainingMs(deadline: number): number {
+  return Math.max(0, deadline - Date.now());
 }
 
 /** Nothing is focused right now — an expected state, not a driver defect. */

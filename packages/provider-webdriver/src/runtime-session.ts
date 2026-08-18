@@ -4,15 +4,17 @@ import type {
 } from '@agent-device/contracts/observability';
 import type { DeviceLease, LeaseLifecycleContext } from '@agent-device/contracts/device';
 import { deviceFieldsFromPublicPlatform, type DeviceInfo } from '@agent-device/kernel/device';
-import { AppError } from '@agent-device/kernel/errors';
+import { AppError, errorMessage } from '@agent-device/kernel/errors';
 import { unavailableCloudArtifactsResult } from './artifact-results.ts';
 import {
   createCloudWebDriverCapabilities,
   type CloudWebDriverProviderCapabilities,
 } from './capabilities.ts';
-import { WebDriverClient } from './webdriver-client.ts';
+import { WebDriverClient, type WebDriverSession } from './webdriver-client.ts';
+import { isWebDriverRequestTimeout } from './webdriver-transport.ts';
 import { createWebDriverInteractor } from './webdriver-interactor.ts';
 import { snapshotBackendForPlatform } from './runtime-helpers.ts';
+import { releaseOnFailure } from './webdriver-utils.ts';
 import type {
   CloudWebDriverBaseSession,
   CloudWebDriverPlatform,
@@ -89,7 +91,7 @@ export class WebDriverSessionManager {
       headers: prepared.headers,
       requestPolicy: this.options.requestPolicy,
     });
-    const session = await this.createSessionWithPreparedCleanup(client, prepared);
+    const session = await this.createSessionWithPreparedCleanup(client, prepared, lease, req);
     const device = this.deviceForLease(lease, prepared);
     const providerSessionId = prepared.providerSessionId ?? session.sessionId;
     const capabilities = createCloudWebDriverCapabilities({
@@ -167,12 +169,19 @@ export class WebDriverSessionManager {
   private async createSessionWithPreparedCleanup(
     client: WebDriverClient,
     prepared: CloudWebDriverPreparedSession,
-  ): Promise<Awaited<ReturnType<WebDriverClient['createSession']>>> {
+    lease: DeviceLease,
+    req: LeaseLifecycleContext | undefined,
+  ): Promise<WebDriverSession> {
     try {
-      return await client.createSession(prepared.webdriverCapabilities);
+      return await client.createSession(prepared.webdriverCapabilities, {
+        deadline: req?.deadline,
+      });
     } catch (error) {
-      await cleanupAfterCreateSessionFailure(prepared, error);
-      throw error;
+      const failure = isWebDriverRequestTimeout(error)
+        ? sessionCreateTimeoutError(error, this.options.provider, lease, prepared)
+        : error;
+      await releaseOnFailure(failure, () => prepared.cleanup?.());
+      throw failure;
     }
   }
 
@@ -277,22 +286,31 @@ export function buildCloudWebDriverBaseCapabilities(
   };
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-async function cleanupAfterCreateSessionFailure(
+/**
+ * The transport gave up on `POST /session`; the provider may still finish it,
+ * and nothing here can learn that session's id — so the error names the lease
+ * the capabilities were labelled with, which the provider dashboard can be
+ * searched by.
+ */
+function sessionCreateTimeoutError(
+  timeout: AppError,
+  provider: string,
+  lease: DeviceLease,
   prepared: CloudWebDriverPreparedSession,
-  primaryError: unknown,
-): Promise<void> {
-  try {
-    await prepared.cleanup?.();
-  } catch (cleanupError) {
-    if (primaryError instanceof AppError) {
-      primaryError.details = {
-        ...primaryError.details,
-        cleanupError: errorMessage(cleanupError),
-      };
-    }
-  }
+): AppError {
+  const timeoutMs = timeout.details?.timeoutMs;
+  return new AppError(
+    'COMMAND_FAILED',
+    `${provider} did not create the WebDriver session within ${String(timeoutMs)}ms.`,
+    {
+      reason: 'provider_session_create_timeout',
+      provider,
+      leaseId: lease.leaseId,
+      runId: lease.runId,
+      timeoutMs,
+      ...(prepared.providerSessionId ? { providerSessionId: prepared.providerSessionId } : {}),
+      hint: `${provider} may still finish creating the session after agent-device stopped waiting, and that session would keep billing until the provider reaps it. Before retrying, check ${provider} for a running session created for lease ${lease.leaseId} (run ${lease.runId}) and stop it.`,
+    },
+    timeout,
+  );
 }

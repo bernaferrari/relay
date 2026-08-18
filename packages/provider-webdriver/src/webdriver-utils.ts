@@ -1,6 +1,21 @@
 import type { DeviceLease } from '@agent-device/contracts/device';
+import { AppError, errorMessage } from '@agent-device/kernel/errors';
 
 export type LeaseValue<T> = T | ((lease: DeviceLease) => T);
+
+/** Best-effort release after a failure; a failed release rides along as `cleanupError`, never masks the primary. */
+export async function releaseOnFailure(
+  primaryError: unknown,
+  release: () => Promise<unknown> | undefined,
+): Promise<void> {
+  try {
+    await release();
+  } catch (cleanupError) {
+    if (primaryError instanceof AppError) {
+      primaryError.details = { ...primaryError.details, cleanupError: errorMessage(cleanupError) };
+    }
+  }
+}
 
 export function resolveLeaseValue<T>(
   value: LeaseValue<T> | undefined,
