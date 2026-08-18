@@ -123,6 +123,7 @@ async function settleAfterAction(
       quietMs,
       timeoutMs,
       resetBudgetOnPrivateAxRecovery: true,
+      broadTransitionBaselineNodes: params.baselineNodes,
     });
     return await readSettledOutcome(runtime, options, params, base, outcome);
   } catch (error) {
