@@ -73,7 +73,7 @@ export async function settleAfterInteraction(
 ): Promise<SettleOutcome> {
   return await settleAfterAction(runtime, options, {
     ...params,
-    baselineNodes: resolveBaselineNodes(params.resolved),
+    baselineNodes: await resolveBaselineNodes(runtime, options, params.resolved),
     actionPoint: params.resolved.point,
   });
 }
@@ -202,8 +202,45 @@ export function settleEvidence(
   return { ...after, changedFromBefore };
 }
 
-function resolveBaselineNodes(resolved: ResolvedInteractionTarget): SnapshotNode[] {
-  return 'preActionNodes' in resolved && resolved.preActionNodes ? resolved.preActionNodes : [];
+async function resolveBaselineNodes(
+  runtime: AgentDeviceRuntime,
+  options: CommandContext,
+  resolved: ResolvedInteractionTarget,
+): Promise<SnapshotNode[]> {
+  const session = await runtime.sessions.get(options.session ?? 'default');
+  // A ref is authorized against the stored ref frame. Keep that visible presentation as the
+  // transition baseline: a best-effort evidence recapture can recover through private AX and see
+  // covered background controls that were not actionable when the ref was issued.
+  // Resolved-target evidence is best-effort at the contracts boundary. The session still owns the
+  // authoritative ref frame, so reuse it rather than silently turning a missing optional field
+  // into an empty transition/diff baseline. Fall back to the latest observation for point targets
+  // and pre-frame sessions.
+  return (
+    authorizedRefBaseline(resolved, session) ??
+    evidenceBaseline(resolved) ??
+    sessionBaseline(session)
+  );
+}
+
+function authorizedRefBaseline(
+  resolved: ResolvedInteractionTarget,
+  session: CommandSessionRecord | undefined,
+): SnapshotNode[] | undefined {
+  if (resolved.kind !== 'ref') return undefined;
+  return nonEmptyNodes(session?.refFrameSnapshot?.nodes);
+}
+
+function evidenceBaseline(resolved: ResolvedInteractionTarget): SnapshotNode[] | undefined {
+  if (!('preActionNodes' in resolved)) return undefined;
+  return nonEmptyNodes(resolved.preActionNodes);
+}
+
+function sessionBaseline(session: CommandSessionRecord | undefined): SnapshotNode[] {
+  return session?.refFrameSnapshot?.nodes ?? session?.snapshot?.nodes ?? [];
+}
+
+function nonEmptyNodes(nodes: SnapshotNode[] | undefined): SnapshotNode[] | undefined {
+  return nodes?.length ? nodes : undefined;
 }
 
 function buildSettleDiff(
