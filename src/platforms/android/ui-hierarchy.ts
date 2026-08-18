@@ -2,6 +2,7 @@ import type { RawSnapshotNode, Rect, SnapshotOptions } from '@agent-device/kerne
 import { parseBounds } from '@agent-device/kernel/bounds';
 import { decodeXmlCharacterReferences } from '@agent-device/xml';
 import { isScrollableType } from '@agent-device/contracts/snapshot';
+import { scopePresentedAndroidSnapshot } from './ui-hierarchy-scope.ts';
 import {
   type AndroidSystemChromeProvenance,
   isAndroidSystemChromeWindowResourceId,
@@ -90,20 +91,6 @@ function readAndroidUiNodeMetadata(node: string): AndroidUiNodeMetadata {
   };
 }
 
-export function parseUiHierarchy(
-  xml: string,
-  maxNodes: number | undefined,
-  options: SnapshotOptions,
-): { nodes: RawSnapshotNode[]; truncated?: boolean; analysis: AndroidSnapshotAnalysis } {
-  const tree = parseUiHierarchyTree(xml);
-  const { sourceNodes: _sourceNodes, ...snapshot } = buildUiHierarchySnapshot(
-    tree,
-    maxNodes,
-    options,
-  );
-  return snapshot;
-}
-
 export type AndroidBuiltSnapshot = {
   nodes: AndroidRawSnapshotNode[];
   sourceNodes: AndroidUiHierarchy[];
@@ -127,29 +114,29 @@ export function buildUiHierarchySnapshot(
   maxNodes: number | undefined,
   options: SnapshotOptions,
 ): AndroidBuiltSnapshot {
+  const requestedDepth = options.depth ?? Number.POSITIVE_INFINITY;
   const state: AndroidSnapshotBuildState = {
     nodes: [],
     sourceNodes: [],
     ...(maxNodes !== undefined ? { maxNodes } : {}),
-    maxDepth: options.depth ?? Number.POSITIVE_INFINITY,
+    // Under --scope, depth is relative to the scope root, which is only known once the tree is
+    // presented: walk unbounded and cut after scoping.
+    maxDepth: options.scope ? Number.POSITIVE_INFINITY : requestedDepth,
     options,
     analysis: analyzeAndroidTree(tree),
     interactiveDescendantMemo: new Map(),
     truncated: false,
   };
-  const scopedRoot = options.scope ? findScopeNode(tree, options.scope) : null;
-  const roots = scopedRoot ? [scopedRoot] : tree.children;
 
-  for (const root of roots) {
+  for (const root of tree.children) {
     walkUiHierarchyNode(state, root, 0);
     if (state.truncated) break;
   }
 
-  const snapshot = {
-    nodes: state.nodes,
-    sourceNodes: state.sourceNodes,
-    analysis: state.analysis,
-  };
+  const { nodes, sourceNodes } = options.scope
+    ? scopePresentedAndroidSnapshot(state, tree.children, options.scope, requestedDepth)
+    : state;
+  const snapshot = { nodes, sourceNodes, analysis: state.analysis };
   return state.truncated ? { ...snapshot, truncated: true } : snapshot;
 }
 
@@ -971,23 +958,6 @@ function isGenericAndroidId(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
   return /^[\w.]+:id\/[\w.-]+$/i.test(trimmed);
-}
-
-function findScopeNode(root: AndroidNode, scope: string): AndroidNode | null {
-  const query = scope.toLowerCase();
-  const queue: AndroidNode[] = [...root.children];
-  let head = 0;
-  while (head < queue.length) {
-    const node = queue[head++] as AndroidNode;
-    const label = node.label?.toLowerCase() ?? '';
-    const value = node.value?.toLowerCase() ?? '';
-    const identifier = node.identifier?.toLowerCase() ?? '';
-    if (label.includes(query) || value.includes(query) || identifier.includes(query)) {
-      return node;
-    }
-    queue.push(...node.children);
-  }
-  return null;
 }
 
 function analyzeAndroidTree(root: AndroidNode): AndroidSnapshotAnalysis {
