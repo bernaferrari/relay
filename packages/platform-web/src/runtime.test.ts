@@ -47,6 +47,10 @@ test('preserves a narrow web provider dump including empty successful entries', 
   expect(binding.facts.operations.bootTarget).toMatchObject({ available: false });
   expect(binding.facts.operations.bootTargetHeadless).toMatchObject({ available: false });
   expect(binding.facts.operations.listApps).toMatchObject({ available: false });
+  expect(binding.facts.operations.captureSnapshot).toEqual({ available: true });
+  expect(binding.facts.operations.captureSnapshotWithCustomActions.available).toBe(false);
+  expect(binding.facts.operations.captureSnapshotWithoutActiveApp).toEqual({ available: true });
+  expect(binding.operations.captureSnapshot).toBeTypeOf('function');
   expectLifecycleFacts(binding);
 });
 
@@ -128,6 +132,8 @@ test.each([
       runtimeHints: false,
       portReverse: false,
     });
+    expect(binding.facts.operations.captureSnapshot.available).toBe(false);
+    expect(binding.operations.captureSnapshot).toBeUndefined();
   },
 );
 

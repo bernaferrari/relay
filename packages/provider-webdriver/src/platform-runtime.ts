@@ -1,8 +1,10 @@
 import {
   applicationLifecycleOperationFacts,
   availableApplicationLifecycleOperations,
+  bindProviderSnapshotInteractor,
   createUnavailablePlatformRuntimeFacts,
   sameRuntimeOwner,
+  snapshotRuntimeOperationFacts,
   type AppDeploymentInput,
   type DeployMaterializedAppInput,
   type DeviceBinding,
@@ -60,6 +62,16 @@ const inactiveSession = Object.freeze({
   available: false,
   reason: 'owner-capability-missing',
   hint: 'The WebDriver provider session is no longer active for this device.',
+} as const);
+const snapshotUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'This WebDriver provider runtime does not expose snapshot capture for this device.',
+} as const);
+const snapshotCustomActionsUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'WebDriver provider runtimes do not expose iOS simulator custom snapshot actions.',
 } as const);
 
 const appStateUnavailable = Object.freeze({
@@ -121,6 +133,7 @@ export function createWebDriverPlatformRuntimeOwner(
     ownsDevice(device: DeviceInfo): boolean;
     isSessionActive?(device: DeviceInfo): boolean;
     deployment?: WebDriverPlatformDeploymentRuntime;
+    snapshotAvailable?: boolean;
     getInteractor?(device: DeviceInfo, runner?: RunnerContext): Interactor | undefined;
   }>,
 ): PlatformRuntimeOwner {
@@ -160,6 +173,7 @@ function bindWebDriverPlatformRuntime(
     ownsDevice(device: DeviceInfo): boolean;
     isSessionActive?(device: DeviceInfo): boolean;
     deployment?: WebDriverPlatformDeploymentRuntime;
+    snapshotAvailable?: boolean;
     getInteractor?(device: DeviceInfo, runner?: RunnerContext): Interactor | undefined;
   }>,
   device: DeviceInfo,
@@ -179,6 +193,13 @@ function bindWebDriverPlatformRuntime(
       }),
       facts.operations,
     ),
+    ...(facts.operations.captureSnapshot.available
+      ? bindProviderSnapshotInteractor({
+          device,
+          signal,
+          resolveInteractor: (runner) => options.getInteractor?.(device, runner),
+        })
+      : {}),
     networkDump: async (input) => {
       const recent = await options.host.appLogs.readRecent(input.sessionId, input.maxScanLines);
       const dump = readRecentNetworkTrafficFromText(recent.text, {
@@ -225,6 +246,8 @@ function webDriverFacts(
     ownsDevice(device: DeviceInfo): boolean;
     isSessionActive?(device: DeviceInfo): boolean;
     deployment?: WebDriverPlatformDeploymentRuntime;
+    snapshotAvailable?: boolean;
+    getInteractor?(device: DeviceInfo, runner?: RunnerContext): Interactor | undefined;
   }>,
   device: DeviceInfo,
 ): RuntimeFacts<PlatformRuntimeOperations> {
@@ -263,6 +286,11 @@ function webDriverFacts(
         screenRecordingStart: inactiveSession,
         screenRecordingReattach: inactiveSession,
         screenRecordingCleanup: inactiveSession,
+        ...snapshotRuntimeOperationFacts({
+          capture: inactiveSession,
+          customActions: inactiveSession,
+          withoutActiveApp: inactiveSession,
+        }),
         ensureReady: inactiveSession,
         bootTarget: inactiveSession,
         bootTargetHeadless: inactiveSession,
@@ -307,6 +335,21 @@ function webDriverFacts(
       screenRecordingStart: recordingUnavailable,
       screenRecordingReattach: recordingUnavailable,
       screenRecordingCleanup: recordingUnavailable,
+      ...snapshotRuntimeOperationFacts({
+        capture:
+          options.snapshotAvailable !== false &&
+          options.getInteractor !== undefined &&
+          webDriverSnapshotDevice(device)
+            ? available
+            : snapshotUnavailable,
+        customActions: snapshotCustomActionsUnavailable,
+        withoutActiveApp:
+          options.snapshotAvailable !== false &&
+          options.getInteractor !== undefined &&
+          webDriverSnapshotDevice(device)
+            ? available
+            : snapshotUnavailable,
+      }),
       ensureReady: available,
       bootTarget: available,
       bootTargetHeadless: headlessUnavailable,
@@ -319,6 +362,14 @@ function webDriverFacts(
       ...webDriverLifecycleFacts(device),
     },
   });
+}
+
+function webDriverSnapshotDevice(device: DeviceInfo): boolean {
+  return (
+    device.kind === 'device' &&
+    device.target === 'mobile' &&
+    (device.platform === 'android' || (device.platform === 'apple' && device.appleOs === 'ios'))
+  );
 }
 
 function webDriverSessionActive(

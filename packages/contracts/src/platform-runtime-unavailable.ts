@@ -10,6 +10,7 @@ import type {
   RuntimeOperationUnavailability,
   RuntimeOwnerRef,
 } from './platform-runtime.ts';
+import { snapshotRuntimeOperationFacts } from './snapshot-runtime.ts';
 
 /**
  * A runtime-contract helper for provider ownership gaps. It never assigns lifecycle semantics:
@@ -22,6 +23,7 @@ export type UnavailablePlatformRuntimeFacts = Readonly<{
   appState?: RuntimeOperationUnavailability;
   network: RuntimeOperationUnavailability;
   screenRecording?: RuntimeOperationUnavailability;
+  snapshot?: RuntimeOperationUnavailability;
   readiness?: RuntimeOperationUnavailability;
   shutdown?: RuntimeOperationUnavailability;
   lifecycle: ApplicationLifecycleOperationFacts;
@@ -34,6 +36,7 @@ type FrozenUnavailablePlatformRuntimeFacts = Readonly<{
   appState: RuntimeOperationUnavailability;
   network: RuntimeOperationUnavailability;
   screenRecording: RuntimeOperationUnavailability;
+  snapshot: RuntimeOperationUnavailability;
   readiness: RuntimeOperationUnavailability;
   shutdown: RuntimeOperationUnavailability;
   lifecycle: ApplicationLifecycleOperationFacts;
@@ -65,6 +68,7 @@ export function createUnavailablePlatformRuntimeFacts(
     appState,
     network,
     screenRecording,
+    snapshot,
     readiness,
     shutdown,
     lifecycle,
@@ -90,6 +94,11 @@ export function createUnavailablePlatformRuntimeFacts(
       screenRecordingStart: screenRecording,
       screenRecordingReattach: screenRecording,
       screenRecordingCleanup: screenRecording,
+      ...snapshotRuntimeOperationFacts({
+        capture: snapshot,
+        customActions: snapshot,
+        withoutActiveApp: snapshot,
+      }),
       ensureReady: readiness,
       bootTarget: readiness,
       bootTargetHeadless: readiness,
@@ -111,6 +120,7 @@ function freezeUnavailableFacts(
     screenRecording: Object.freeze({
       ...(unavailable.screenRecording ?? unavailable.network),
     }),
+    snapshot: Object.freeze({ ...(unavailable.snapshot ?? unavailable.network) }),
     readiness: Object.freeze({ ...(unavailable.readiness ?? unavailable.network) }),
     shutdown: Object.freeze({ ...(unavailable.shutdown ?? unavailable.network) }),
     lifecycle: applicationLifecycleOperationFacts(unavailable.lifecycle),

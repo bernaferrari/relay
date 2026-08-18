@@ -9,6 +9,7 @@ import {
   applicationLifecycleOperationFacts,
   availableApplicationLifecycleOperations,
   localRuntimeOwner,
+  snapshotRuntimeOperationFacts,
 } from '@agent-device/contracts/platform';
 import {
   isIosFamily,
@@ -28,6 +29,7 @@ import {
   appleAppDeploymentFacts,
   createAppleAppDeploymentOperations,
 } from './deployment/runtime.ts';
+import { bindAppleSnapshotRuntime } from './runtime-snapshot.ts';
 
 const owner = localRuntimeOwner('apple');
 const available = Object.freeze({ available: true } as const);
@@ -66,21 +68,15 @@ const runtimeHintsUnavailable = Object.freeze({
   hint: 'Runtime hints are supported only for local iOS-family simulators and Android devices.',
 } as const);
 
-const appleOpenTargetKindUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-device-kind',
-  hint: 'open is supported only for Apple simulators and devices.',
-} as const);
-const applePrepareKindUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-device-kind',
-  hint: 'prepare is supported only for Apple simulators and devices.',
-} as const);
-const appleCloseTargetKindUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-device-kind',
-  hint: 'close is supported only for Apple simulators and devices.',
-} as const);
+const appleOpenTargetKindUnavailable = unsupportedAppleDeviceKind(
+  'open is supported only for Apple simulators and devices.',
+);
+const applePrepareKindUnavailable = unsupportedAppleDeviceKind(
+  'prepare is supported only for Apple simulators and devices.',
+);
+const appleCloseTargetKindUnavailable = unsupportedAppleDeviceKind(
+  'close is supported only for Apple simulators and devices.',
+);
 const portReverseUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-provider-mode',
@@ -91,6 +87,23 @@ const shutdownKindUnavailable = Object.freeze({
   reason: 'unsupported-device-kind',
   hint: 'shutdown is supported only for Apple simulators and Android emulators.',
 } as const);
+const snapshotKindUnavailable = unsupportedAppleDeviceKind(
+  'snapshot is supported only for Apple simulators and devices.',
+);
+const snapshotCustomActionsUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-platform-leaf',
+  hint: 'Re-run without --actions, or target an iOS simulator.',
+} as const);
+const snapshotActiveAppRequired = Object.freeze({
+  available: false,
+  reason: 'owner-capability-missing',
+  hint: 'Open the app under test before capturing its snapshot.',
+} as const);
+
+function unsupportedAppleDeviceKind(hint: string) {
+  return Object.freeze({ available: false, reason: 'unsupported-device-kind', hint } as const);
+}
 
 function shutdownFact(device: DeviceInfo) {
   if (!isIosFamily(device) || device.appleOs === 'watchos') return unavailable;
@@ -192,6 +205,7 @@ export function createApplePlatformRuntime(host: PlatformRuntimeHost): PlatformR
         screenRecordingStart: recordingFacts,
         screenRecordingReattach: recordingFacts,
         screenRecordingCleanup: recordingFacts,
+        ...appleSnapshotFacts(device),
         ensureReady: readiness,
         bootTarget: boot,
         bootTargetHeadless: headlessUnavailable,
@@ -227,6 +241,12 @@ export function createApplePlatformRuntime(host: PlatformRuntimeHost): PlatformR
                 host,
                 device: request.device,
                 owner,
+                signal: request.scope.signal,
+              })
+            : {}),
+          ...(facts.operations.captureSnapshot.available
+            ? bindAppleSnapshotRuntime(host, {
+                device: request.device,
                 signal: request.scope.signal,
               })
             : {}),
@@ -274,5 +294,24 @@ export function createApplePlatformRuntime(host: PlatformRuntimeHost): PlatformR
       }) satisfies DeviceBinding<PlatformRuntimeOperations>;
     },
     shutdown: async () => await appLogs.shutdown(),
+  });
+}
+
+function appleSnapshotFact(device: DeviceInfo) {
+  if (resolveDeviceAppleOs(device) === 'watchos') return snapshotKindUnavailable;
+  return device.kind === 'simulator' || device.kind === 'device'
+    ? available
+    : snapshotKindUnavailable;
+}
+
+function appleSnapshotFacts(device: DeviceInfo) {
+  const capture = appleSnapshotFact(device);
+  return snapshotRuntimeOperationFacts({
+    capture,
+    customActions:
+      capture.available && isIosFamily(device) && device.kind === 'simulator'
+        ? available
+        : snapshotCustomActionsUnavailable,
+    withoutActiveApp: isIosFamily(device) ? snapshotActiveAppRequired : capture,
   });
 }
