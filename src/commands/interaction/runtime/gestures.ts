@@ -1,5 +1,6 @@
 import type {
   DragGestureInput,
+  HoverCommandResult,
   LongPressCommandResult,
   ResolutionDisclosure,
   ScrollDirection,
@@ -41,6 +42,7 @@ import {
 import {
   assertSupportedInteractionSurface,
   captureInteractionSnapshot,
+  dispatchNativeRefInteraction,
   resolveInteractionTarget,
   type ExpectedResolvedTarget,
   type InteractionTarget,
@@ -112,6 +114,14 @@ export type LongPressCommandOptions = CommandContext & {
 } & SettlePostActionObservationOptions;
 
 export type { LongPressCommandResult };
+
+export type HoverCommandOptions = CommandContext & {
+  target: InteractionTarget;
+  /** ADR 0012 step 4: replay-only post-resolution guard; see resolution.ts. */
+  expectedResolvedTarget?: ExpectedResolvedTarget;
+} & SettlePostActionObservationOptions;
+
+export type { HoverCommandResult };
 
 export type GestureDirection = ScrollDirection;
 // The input vocabulary lives in contracts/scroll-gesture.ts beside the other scroll vocabularies,
@@ -217,6 +227,68 @@ export const longPressCommand: RuntimeCommand<
     observation,
   );
 };
+
+export const hoverCommand: RuntimeCommand<HoverCommandOptions, HoverCommandResult> = async (
+  runtime,
+  options,
+): Promise<HoverCommandResult> => {
+  const observation = planPostActionObservation(options);
+  const nativeRefHover = observation.needsPreActionBaseline
+    ? null
+    : await maybeHoverRefTarget(runtime, options);
+  if (nativeRefHover) return nativeRefHover;
+  // Hover keeps the element it resolved (no hittable-ancestor promotion): the
+  // pointer only has to enter the matched node's box for its hover state to
+  // raise, and promoting could move it onto a sibling-owned region.
+  const resolved = await resolveInteractionTarget(runtime, options, {
+    action: 'hover',
+    requireInteractive: false,
+    pipeline: SELECTOR_PIPELINE_POLICIES.resolvedTarget,
+    captureEvidenceBaseline: observation.needsPreActionBaseline,
+    expectedResolvedTarget: options.expectedResolvedTarget,
+  });
+  if (!runtime.backend.hover) {
+    throw new AppError('UNSUPPORTED_OPERATION', 'hover is not supported by this backend');
+  }
+  const point = requireResolvedPoint(resolved);
+  const backendResult = await runtime.backend.hover(toBackendContext(runtime, options), point);
+  const formattedBackendResult = toBackendResult(backendResult);
+  return await applyPostActionObservation(
+    runtime,
+    options,
+    resolved,
+    {
+      ...resolved,
+      ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
+      ...successText(`Hovered (${point.x}, ${point.y})`),
+    },
+    observation,
+  );
+};
+
+/**
+ * ADR 0011 `native-ref` path for hover: on web the ref IS the provider's own
+ * element handle (`hoverRef`), and the session's ref frame carries no rects,
+ * so a coordinate hover could not resolve it. Mirrors `maybeTapRefTarget`:
+ * the shared preflight guards run against the stored node, a guarded replay
+ * dispatch takes the runtime path, and `--settle` (which needs a pre-action
+ * baseline) is routed by the caller before reaching here.
+ */
+async function maybeHoverRefTarget(
+  runtime: AgentDeviceRuntime,
+  options: HoverCommandOptions,
+): Promise<HoverCommandResult | null> {
+  if (options.target.kind !== 'ref' || !runtime.backend.hoverTarget) return null;
+  if (options.expectedResolvedTarget) return null;
+  const { hoverTarget } = runtime.backend;
+  return await dispatchNativeRefInteraction(
+    runtime,
+    options,
+    options.target,
+    'hover',
+    async (context, refTarget) => await hoverTarget(context, refTarget),
+  );
+}
 
 export const dragCommand: RuntimeCommand<DragCommandOptions, DragCommandResult> = async (
   runtime,
