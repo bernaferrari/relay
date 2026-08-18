@@ -20,10 +20,12 @@ import type {
 } from './remote-config-fields.ts';
 import type { ScreenshotRequestFlags } from './screenshot.ts';
 import type { RecordingScope } from './recording-scope.ts';
+import type { ReplayRequestFields } from './replay-request-fields.ts';
 
 export type CliFlags = CloudProviderProfileFields &
   RemoteConfigMetroOptions &
-  ScreenshotRequestFlags & {
+  ScreenshotRequestFlags &
+  ReplayRequestFields & {
     json: boolean;
     config?: string;
     remoteConfig?: string;
@@ -139,23 +141,9 @@ export type CliFlags = CloudProviderProfileFields &
     record?: boolean;
     retainPaths?: boolean;
     retentionMs?: number;
-    replayUpdate?: boolean;
     replayMaestro?: boolean;
-    replayEnv?: string[];
-    replayShellEnv?: Record<string, string>;
-    replayFrom?: number;
-    replayPlanDigest?: string;
-    /** Replay: leave the session active by suppressing an authored terminal close in native .ad. */
-    replayKeepSession?: boolean;
-    failFast?: boolean;
-    timeoutMs?: number;
-    retries?: number;
-    recordVideo?: boolean;
-    artifactsDir?: string;
     reporter?: string[];
     reportJunit?: string;
-    shardAll?: number;
-    shardSplit?: number;
     steps?: string;
     stepsFile?: string;
     findFirst?: boolean;
