@@ -1141,6 +1141,135 @@ test("Add to home returns through one source-proven inverse before opening Advan
   );
 });
 
+test("a repeated terminal state uses its reviewed direct edge to the next sibling origin", () => {
+  const map = fixture();
+  map.screens.home!.title = "Settings";
+  map.screens["kids-off"] = {
+    ...screen("kids-off"),
+    title: "Kids mode · Off",
+    identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+  };
+  map.screens["kids-enabled"] = {
+    ...screen("kids-enabled"),
+    title: "Kids mode · Enabled",
+    identity: { schemaVersion: 1, fingerprint: "d".repeat(64) },
+  };
+  map.screens["kids-pin"] = {
+    ...screen("kids-pin"),
+    title: "Kids mode · PIN",
+    identity: { schemaVersion: 1, fingerprint: "e".repeat(64) },
+  };
+  map.screens.nsfw = {
+    ...screen("nsfw"),
+    title: "NSFW content",
+    identity: { schemaVersion: 1, fingerprint: "f".repeat(64) },
+  };
+  const connection = (
+    id: string,
+    fromScreenId: string,
+    destinationScreenId: string,
+    label: string,
+  ) => ({
+    ...map.connections["open-cart"]!,
+    id,
+    fromScreenId,
+    destination: { kind: "screen" as const, screenId: destinationScreenId },
+    label,
+    actions: [{ id: `tap-${id}`, kind: "tap" as const, target: { label } }],
+  });
+  map.connections["open-kids-mode"] = connection("open-kids-mode", "home", "kids-off", "Kids mode");
+  map.connections["enable-kids-mode"] = connection(
+    "enable-kids-mode",
+    "kids-off",
+    "kids-enabled",
+    "Enable",
+  );
+  map.connections["open-kids-pin"] = connection(
+    "open-kids-pin",
+    "kids-enabled",
+    "kids-pin",
+    "Lock",
+  );
+  map.connections["cancel-kids-pin"] = connection(
+    "cancel-kids-pin",
+    "kids-pin",
+    "kids-enabled",
+    "Cancel",
+  );
+  map.connections["disable-kids-mode"] = connection(
+    "disable-kids-mode",
+    "kids-enabled",
+    "kids-off",
+    "Disable",
+  );
+  map.connections["return-from-kids-mode"] = connection(
+    "return-from-kids-mode",
+    "kids-off",
+    "home",
+    "Back",
+  );
+  map.connections["open-nsfw"] = connection("open-nsfw", "home", "nsfw", "NSFW content");
+
+  const work: AppMapScenarioTest = {
+    ...scope,
+    id: "kids-state-machine",
+    name: "Kids state machine",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "open-kids",
+        kind: "instruction",
+        intent: "Open Kids mode",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-kids-mode"],
+        },
+      },
+      {
+        id: "exercise-kids",
+        kind: "instruction",
+        intent: "Enable, lock, cancel, then disable Kids mode",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: [
+            "enable-kids-mode",
+            "open-kids-pin",
+            "cancel-kids-pin",
+            "disable-kids-mode",
+          ],
+        },
+      },
+      {
+        id: "open-nsfw",
+        kind: "instruction",
+        intent: "Open NSFW content",
+        binding: { status: "resolved", kind: "connections", connectionIds: ["open-nsfw"] },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+
+  const compiled = compileAppMapTest(map, work);
+  const sibling = Object.values(compiled.graph).find(
+    (recipe) => recipe.title === "Checkout · Open NSFW content",
+  )!;
+  assert.deepEqual(sibling.steps[0], {
+    kind: "module",
+    id: "relay-return-edge-return-from-kids-mode",
+    recipeId: `app-map:${map.id}:connection:return-from-kids-mode:r${map.revision}`,
+  });
+  assert.equal(
+    sibling.steps.some(
+      (step) => step.kind === "expect-screen" && step.id?.startsWith("relay-return-required-"),
+    ),
+    false,
+  );
+});
+
 test("scenario siblings consume a named return connection that is not a pure Back key", () => {
   const map = fixture();
   map.screens["add-home"] = {

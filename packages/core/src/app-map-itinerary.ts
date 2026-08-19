@@ -61,6 +61,50 @@ type AncestorInverse =
   | { status: "resolved"; connection: ScreenConnection; destinationIndex: number }
   | { status: "absent" | "ambiguous" };
 
+function explicitReviewedConnection(
+  map: AppMap,
+  fromScreenId: string,
+  destinationScreenId: string,
+): ScreenConnection | undefined | null {
+  const candidates = Object.values(map.connections).filter(
+    (candidate): candidate is ScreenConnection =>
+      candidate.state === "ready" &&
+      candidate.fromScreenId === fromScreenId &&
+      candidate.destination.kind === "screen" &&
+      candidate.destination.screenId === destinationScreenId,
+  );
+  if (candidates.length === 0) return undefined;
+  if (candidates.length !== 1) return null;
+  return candidates[0]!;
+}
+
+function compileReviewedConnection(
+  map: AppMap,
+  connection: ScreenConnection,
+): { step: RecipeStep; recipes: Record<string, Recipe> } {
+  const compiled = compileAppMapConnection(map, connection.id);
+  const recipes: Record<string, Recipe> = {};
+  for (const recipe of Object.values(compiled.recipes)) {
+    recipes[recipe.id] = {
+      id: recipe.id,
+      title: recipe.title,
+      ...(recipe.description ? { description: recipe.description } : {}),
+      source: "custom",
+      steps: structuredClone(recipe.steps),
+      createdAt: map.createdAt,
+      updatedAt: map.updatedAt,
+    };
+  }
+  return {
+    step: {
+      kind: "module",
+      id: `relay-return-edge-${connection.id}`,
+      recipeId: compiled.rootRecipeId,
+    },
+    recipes,
+  };
+}
+
 function explicitReviewedAncestorInverse(
   map: AppMap,
   currentScreenId: string,
@@ -125,7 +169,27 @@ function reviewedReturnPlan(
       break;
     }
   }
-  if (current < 0 || target < 0 || current <= target) {
+  if (current < 0) {
+    return { status: "missing", steps: [], recipes: {}, currentScreenId };
+  }
+  if (target < 0) {
+    // A scenario step may intentionally begin below the shared root (for
+    // example Kids Off -> Enabled -> PIN -> Enabled -> Kids Off). Its next
+    // sibling can still have a reviewed direct edge back to that root even
+    // though the root is not part of the immediately previous local path.
+    const direct = explicitReviewedConnection(map, currentScreenId, targetScreenId);
+    if (!direct) {
+      return { status: "missing", steps: [], recipes: {}, currentScreenId };
+    }
+    const compiled = compileReviewedConnection(map, direct);
+    return {
+      status: "complete",
+      steps: [compiled.step],
+      recipes: compiled.recipes,
+      verifiedScreenId: targetScreenId,
+    };
+  }
+  if (current <= target) {
     return { status: "missing", steps: [], recipes: {}, currentScreenId };
   }
   const steps: RecipeStep[] = [];
@@ -172,23 +236,9 @@ function reviewedReturnPlan(
     }
     if (ancestorInverse.status === "resolved") {
       const inverse = ancestorInverse.connection;
-      const compiledInverse = compileAppMapConnection(map, inverse.id);
-      for (const recipe of Object.values(compiledInverse.recipes)) {
-        recipes[recipe.id] = {
-          id: recipe.id,
-          title: recipe.title,
-          ...(recipe.description ? { description: recipe.description } : {}),
-          source: "custom",
-          steps: structuredClone(recipe.steps),
-          createdAt: map.createdAt,
-          updatedAt: map.updatedAt,
-        };
-      }
-      steps.push({
-        kind: "module",
-        id: `relay-return-edge-${inverse.id}`,
-        recipeId: compiledInverse.rootRecipeId,
-      });
+      const reviewed = compileReviewedConnection(map, inverse);
+      Object.assign(recipes, reviewed.recipes);
+      steps.push(reviewed.step);
       verifiedScreenId = inverse.destination.screenId;
       cursor = ancestorInverse.destinationIndex;
       continue;
