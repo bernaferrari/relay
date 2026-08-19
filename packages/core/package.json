@@ -27,6 +27,7 @@
     "./outcomes": "./src/outcomes.ts",
     "./run-evidence": "./src/run-evidence.ts",
     "./run-observatory": "./src/run-observatory.ts",
+    "./offline-run-replay": "./src/offline-run-replay.ts",
     "./run-matrix": "./src/run-matrix.ts",
     "./matrix-yaml": "./src/matrix-yaml.ts",
     "./schedules": "./src/schedules.ts",

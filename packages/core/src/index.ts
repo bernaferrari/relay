@@ -29,6 +29,7 @@ export * from "./evaluation.js";
 export * from "./outcomes.js";
 export * from "./run-evidence.js";
 export * from "./run-observatory.js";
+export * from "./offline-run-replay.js";
 export * from "./campaign-repair.js";
 export * from "./campaign-repair-proposal.js";
 export * from "./run-matrix.js";
