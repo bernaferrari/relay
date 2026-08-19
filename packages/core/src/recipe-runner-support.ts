@@ -418,12 +418,17 @@ async function tapTarget(
     target.point && !target.point.relativeTo
       ? await resolvePointForDevice(device, target.point, mirrorPoints)
       : undefined;
+  const hasSemanticTarget = Boolean(target.identifier || target.label || target.text);
+  const allowNamedPointFallback =
+    selectedPlatform() !== "android" ||
+    !hasSemanticTarget ||
+    target.point?.fallbackPolicy === "reviewed";
   const namedTarget = {
     ...(target.identifier ? { identifier: target.identifier } : {}),
     ...(target.label ? { label: target.label } : {}),
     ...(target.role ? { role: target.role } : {}),
     ...(target.text ? { text: target.text } : {}),
-    ...(literalPoint ? { point: literalPoint } : {}),
+    ...(literalPoint && allowNamedPointFallback ? { point: literalPoint } : {}),
     ...(expectedApp ? { expectedApp } : {}),
   };
   // An immediately preceding expect-screen already paid for and verified this
@@ -472,7 +477,6 @@ async function tapTarget(
   if (
     selectedPlatform() === "android" &&
     nodes.length > 0 &&
-    !target.point &&
     (target.identifier || target.label || target.text)
   ) {
     const failure =

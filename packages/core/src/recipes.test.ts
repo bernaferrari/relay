@@ -475,6 +475,7 @@ describe("validateRecipeSteps", () => {
           point: {
             x: 10,
             y: 20,
+            fallbackPolicy: "reviewed",
             anchor: { horizontal: "right", vertical: "bottom" },
             referenceBounds: { width: 1080, height: 2400 },
             relativeTo: {
@@ -533,6 +534,7 @@ describe("validateRecipeSteps", () => {
       horizontal: "right",
       vertical: "bottom",
     });
+    assert.equal(step?.kind === "tap" ? step.target.point?.fallbackPolicy : undefined, "reviewed");
     assert.deepEqual(step?.kind === "tap" ? step.target.point?.relativeTo : undefined, {
       target: { identifier: "sign-in-button" },
       xRatio: 0.8,
@@ -550,6 +552,16 @@ describe("validateRecipeSteps", () => {
   });
 
   it("rejects unsafe element-relative point anchors", () => {
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "tap",
+            target: { label: "Home", point: { x: 20, y: 40, fallbackPolicy: "automatic" } },
+          },
+        ]),
+      /fallbackPolicy must be reviewed/,
+    );
     assert.throws(
       () =>
         validateRecipeSteps([

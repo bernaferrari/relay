@@ -471,6 +471,12 @@ function parseStepPoint(raw: unknown, index: number, field: string): StepPoint {
     throw stepErr(index, `${field} must be { x: number, y: number }`);
   }
   const point: StepPoint = { x: raw.x, y: raw.y };
+  if (raw.fallbackPolicy !== undefined) {
+    if (raw.fallbackPolicy !== "reviewed") {
+      throw stepErr(index, `${field}.fallbackPolicy must be reviewed`);
+    }
+    point.fallbackPolicy = "reviewed";
+  }
   if (raw.anchor !== undefined) {
     if (
       !isObject(raw.anchor) ||

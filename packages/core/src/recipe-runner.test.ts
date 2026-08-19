@@ -243,7 +243,7 @@ describe("runRecipeStep tap gestures", () => {
     ]);
   });
 
-  it("falls back to the explicit point when Home labels collide", async () => {
+  it("uses a reviewed point fallback when Home labels collide", async () => {
     const leftHome = {
       type: "Button",
       label: "Home",
@@ -274,7 +274,10 @@ describe("runRecipeStep tap gestures", () => {
     };
     await runRecipeStep(
       device,
-      { kind: "tap", target: { label: "Home", point: { x: 240, y: 720 } } },
+      {
+        kind: "tap",
+        target: { label: "Home", point: { x: 240, y: 720, fallbackPolicy: "reviewed" } },
+      },
       { log: () => {}, job: job as never },
     );
     assert.deepEqual(presses, [
@@ -3257,6 +3260,42 @@ describe("runRecipeStep expect-screen", () => {
       /named target absent from current Android accessibility tree/u,
     );
     assert.equal(snapshots, 5);
+    assert.equal(presses, 0);
+  });
+
+  it("does not hide Android semantic drift behind a recorded absolute point", async () => {
+    let presses = 0;
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            {
+              role: "button",
+              label: "Privacy Policy",
+              enabled: true,
+              hittable: true,
+              rect: { x: 40, y: 900, width: 900, height: 120 },
+            },
+          ],
+        }),
+      press: () => {
+        presses += 1;
+        return Promise.resolve({});
+      },
+      wait: async () => {},
+    });
+
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        {
+          kind: "tap",
+          target: { label: "Help & Support", point: { x: 500, y: 1700 } },
+        },
+        noLog,
+      ),
+      /named target absent from current Android accessibility tree/u,
+    );
     assert.equal(presses, 0);
   });
 

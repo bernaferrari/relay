@@ -26,6 +26,11 @@ export type StepPoint = {
   };
   /** Device size against which x/y and their anchored offsets were authored. */
   referenceBounds?: { width: number; height: number };
+  /**
+   * Allows this literal coordinate to replace a failed semantic selector.
+   * Omitted coordinates are point-only evidence, not silent selector fallbacks.
+   */
+  fallbackPolicy?: "reviewed";
   /** Re-find this element and preserve the authored fractional position inside
    * its current bounds. This is safer than a viewport coordinate when copy or
    * layout reflows, and fails closed when the element is absent or ambiguous. */
