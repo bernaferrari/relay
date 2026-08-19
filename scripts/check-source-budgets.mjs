@@ -82,6 +82,33 @@ export function evaluateSourceBudgets(entries, exceptions = grandfatheredSourceL
   return violations;
 }
 
+/**
+ * App-side observation records are read models, never editable documents.
+ * Converting Discovery/Corpus state into AppMap/CanvasGraph in the renderer
+ * creates a second authoring truth that bypasses typed proposals and revision
+ * checks. Core may project observations into proposals; the app may only
+ * render them or invoke the canonical operation boundary.
+ */
+export function evaluateProductDocumentBoundaries(entries) {
+  const violations = [];
+  for (const { path, source = "" } of entries) {
+    if (!path.startsWith("packages/app/src/") || !source) continue;
+    const readsObservationDocument = /\b(?:DiscoverySession|CorpusSession)\b/u.test(source);
+    const authorsMapDocument = /\bCanvasGraph\b/u.test(source);
+    if (readsObservationDocument && authorsMapDocument) {
+      violations.push(
+        `${path} mixes observation-session and App Map document types; project observations through a core review proposal instead.`,
+      );
+    }
+    if (/\b(?:importDiscoveryAppMap|discoverySessionToCanvasGraph)\b/u.test(source)) {
+      violations.push(
+        `${path} recreates the removed Discovery-to-canvas authoring path; App Map is the only editable document.`,
+      );
+    }
+  }
+  return violations;
+}
+
 async function sourceFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
@@ -113,16 +140,23 @@ async function inspectRepository() {
     }
   }
   return Promise.all(
-    files.map(async (path) => ({
-      path: relative(repositoryRoot, path).split(sep).join("/"),
-      lines: sourceLineCount(await readFile(path, "utf8")),
-    })),
+    files.map(async (path) => {
+      const source = await readFile(path, "utf8");
+      return {
+        path: relative(repositoryRoot, path).split(sep).join("/"),
+        lines: sourceLineCount(source),
+        source,
+      };
+    }),
   );
 }
 
 async function main() {
   const entries = await inspectRepository();
-  const violations = evaluateSourceBudgets(entries);
+  const violations = [
+    ...evaluateSourceBudgets(entries),
+    ...evaluateProductDocumentBoundaries(entries),
+  ];
   if (violations.length) {
     console.error("Source maintainability budget failed:");
     for (const violation of violations) console.error(`- ${violation}`);

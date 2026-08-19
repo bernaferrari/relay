@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   COMPONENT_SOURCE_LIMIT,
   DEFAULT_SOURCE_LIMIT,
+  evaluateProductDocumentBoundaries,
   evaluateSourceBudgets,
   sourceLineCount,
 } from "./check-source-budgets.mjs";
@@ -10,6 +11,38 @@ import {
 test("counts source lines without treating the final newline as a module", () => {
   assert.equal(sourceLineCount("one\ntwo\n"), 2);
   assert.equal(sourceLineCount(""), 0);
+});
+
+test("renderer observation sessions cannot become a second editable graph", () => {
+  assert.deepEqual(
+    evaluateProductDocumentBoundaries([
+      {
+        path: "packages/app/src/lib/parallel-import.ts",
+        lines: 3,
+        source:
+          "import type { DiscoverySession } from '@relay/protocol';\nimport type { CanvasGraph } from './canvas';\nexport function importDiscoveryAppMap() {}",
+      },
+    ]),
+    [
+      "packages/app/src/lib/parallel-import.ts mixes observation-session and App Map document types; project observations through a core review proposal instead.",
+      "packages/app/src/lib/parallel-import.ts recreates the removed Discovery-to-canvas authoring path; App Map is the only editable document.",
+    ],
+  );
+  assert.deepEqual(
+    evaluateProductDocumentBoundaries([
+      {
+        path: "packages/app/src/components/corpus-results.tsx",
+        lines: 1,
+        source: "import type { CorpusSession } from '@relay/protocol';",
+      },
+      {
+        path: "packages/core/src/app-map/observation-proposal.ts",
+        lines: 1,
+        source: "import type { DiscoverySession, AppMap } from '@relay/protocol';",
+      },
+    ]),
+    [],
+  );
 });
 
 test("rejects new component and source monoliths at their respective boundaries", () => {
