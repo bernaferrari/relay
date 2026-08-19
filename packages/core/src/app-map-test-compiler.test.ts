@@ -575,7 +575,7 @@ test("instruction cleanup compiles an auditable always-run routine and terminal 
         kind: "routine",
         routineId: "restore-cart",
         terminalScreenId: "cart",
-        onCancel: "skip",
+        onCancel: "run-if-controllable",
       },
     },
   ];
@@ -588,7 +588,7 @@ test("instruction cleanup compiles an auditable always-run routine and terminal 
   assert.deepEqual(checkStep.check?.cleanup, {
     recipeId: "app-map:checkout:routine:restore-cart:r7",
     terminalScreenId: "cart",
-    onCancel: "skip",
+    onCancel: "run-if-controllable",
   });
   assert.ok(compiled.graph["app-map:checkout:routine:restore-cart:r7"]);
   assert.equal(

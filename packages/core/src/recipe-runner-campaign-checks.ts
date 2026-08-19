@@ -3,10 +3,13 @@ import type { Device } from "./device.js";
 import { snapshot } from "./device.js";
 import { now, publish } from "./events.js";
 import {
+  armCompensatingCleanup,
   cooperativeCheckpointWithTimeout,
+  disarmCompensatingCleanup,
   getExecutingJobId,
   requestPause,
   requestResume,
+  runWithCancellationShield,
 } from "./control.js";
 import { captureScreenshot } from "./workspace.js";
 import { observeScreenIdentity } from "./screen-identity.js";
@@ -363,6 +366,12 @@ export async function runCampaignCheck(
     return;
   }
   let cleanupPassed = false;
+  let cleanupOutcome: "passed" | "failed" | "skipped" | "cancelled" | "interrupted" | undefined;
+  const cancellationCleanupJobId =
+    step.check.cleanup?.onCancel === "run-if-controllable"
+      ? (ctx.job?.id ?? getExecutingJobId())
+      : undefined;
+  armCompensatingCleanup(cancellationCleanupJobId);
   try {
     if (useCanonicalRecovery) {
       ctx.log(`check recovery: ${step.check.title} — one canonical path`);
@@ -383,6 +392,7 @@ export async function runCampaignCheck(
   } finally {
     const cleanup = step.check.cleanup;
     if (cleanup && targetUnavailableError) {
+      cleanupOutcome = "skipped";
       const capturedAt = now();
       ctx.job?.artifacts.push({
         kind: "campaign-check-cleanup",
@@ -400,7 +410,8 @@ export async function runCampaignCheck(
       ctx.log(`check cleanup skipped: ${step.check.title} — target unavailable`);
     } else if (cleanup) {
       const cleanupStartedAt = now();
-      if (primaryError && isCancel(primaryError)) {
+      if (primaryError && isCancel(primaryError) && cleanup.onCancel === "skip") {
+        cleanupOutcome = "skipped";
         ctx.job?.artifacts.push({
           kind: "campaign-check-cleanup",
           capturedAt: cleanupStartedAt,
@@ -409,16 +420,20 @@ export async function runCampaignCheck(
             recipeId: cleanup.recipeId,
             terminalScreenId: cleanup.terminalScreenId,
             status: "skipped",
-            reason: "Job cancellation is an immediate authority boundary.",
+            reason: "The frozen cleanup policy skips cancellation.",
             startedAt: cleanupStartedAt,
             finishedAt: cleanupStartedAt,
           },
         });
-        ctx.log(`check cleanup skipped: ${step.check.title} — job cancelled`);
+        ctx.log(`check cleanup skipped: ${step.check.title} — authored cancellation policy`);
       } else {
         try {
-          await execute(cleanup.recipeId, cleanup.bindings);
+          const runCleanup = () => execute(cleanup.recipeId, cleanup.bindings);
+          await (primaryError && isCancel(primaryError)
+            ? runWithCancellationShield(cancellationCleanupJobId, runCleanup)
+            : runCleanup());
           cleanupPassed = true;
+          cleanupOutcome = "passed";
           const finishedAt = now();
           ctx.job?.artifacts.push({
             kind: "campaign-check-cleanup",
@@ -437,6 +452,11 @@ export async function runCampaignCheck(
           cleanupError = error;
           const finishedAt = now();
           if (isTargetUnavailableError(error)) recordTargetUnavailable(error, "cleanup");
+          cleanupOutcome = isCancel(error)
+            ? "cancelled"
+            : isTargetUnavailableError(error)
+              ? "interrupted"
+              : "failed";
           ctx.job?.artifacts.push({
             kind: "campaign-check-cleanup",
             capturedAt: finishedAt,
@@ -471,10 +491,62 @@ export async function runCampaignCheck(
     // Preserve product outcomes collected before the disconnect. They remain
     // independently repairable, while the job itself ends as infrastructure.
     finalizeDeferredCampaignChecks(ctx);
+    disarmCompensatingCleanup(cancellationCleanupJobId);
     throw targetUnavailableError;
   }
-  if (primaryError && isCancel(primaryError)) throw primaryError;
-  if (cleanupError && isCancel(cleanupError)) throw cleanupError;
+  if (primaryError && isCancel(primaryError)) {
+    const finishedAt = now();
+    if (cleanupPassed && step.check.cleanup) {
+      proveNavigationDestination(ctx, {
+        screenId: step.check.cleanup.terminalScreenId,
+        source: "cleanup",
+        at: finishedAt,
+      });
+    } else {
+      markNavigationUnknown(
+        ctx,
+        cleanupError
+          ? `Cancelled primary; cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`
+          : `Cancelled primary; cleanup ${step.check.cleanup ? "did not prove its terminal" : "was not configured"}.`,
+      );
+    }
+    if (cleanupError) {
+      await runWithCancellationShield(cancellationCleanupJobId, () =>
+        captureCampaignFailureEvidence(
+          device,
+          step.check,
+          ctx,
+          startedAt,
+          `Cancelled primary; cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+          "cleanup",
+        ),
+      );
+    }
+    ctx.job?.artifacts.push({
+      kind: "campaign-check-result",
+      capturedAt: finishedAt,
+      data: {
+        ...step.check,
+        status: "cancelled",
+        primaryError: primaryError instanceof Error ? primaryError.message : String(primaryError),
+        ...(cleanupError
+          ? {
+              cleanupError:
+                cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+            }
+          : {}),
+        cleanupStatus: cleanupOutcome ?? "not-configured",
+        startedAt,
+        finishedAt,
+      },
+    });
+    disarmCompensatingCleanup(cancellationCleanupJobId);
+    throw primaryError;
+  }
+  if (cleanupError && isCancel(cleanupError)) {
+    disarmCompensatingCleanup(cancellationCleanupJobId);
+    throw cleanupError;
+  }
   if (!primaryError && !cleanupError) {
     const finishedAt = now();
     if (recovery) groups[recovery.groupId] = { status: "healthy" };
@@ -535,6 +607,7 @@ export async function runCampaignCheck(
       data: { ...step.check, status: "passed", startedAt, finishedAt },
     });
     ctx.log(`check passed: ${step.check.title}`);
+    disarmCompensatingCleanup(cancellationCleanupJobId);
     return;
   }
 
@@ -644,6 +717,7 @@ export async function runCampaignCheck(
       },
     });
     ctx.log(`check deferred: ${step.check.title} — ${message}`);
+    disarmCompensatingCleanup(cancellationCleanupJobId);
     return;
   }
   if (recovery && !failedConfirmationTransitionId) {
@@ -663,6 +737,7 @@ export async function runCampaignCheck(
     },
   });
   ctx.log(`check failed: ${step.check.title} — ${message}`);
+  disarmCompensatingCleanup(cancellationCleanupJobId);
 }
 
 /** Finish the coverage pass without moving the device again. The original

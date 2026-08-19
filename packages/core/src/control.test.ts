@@ -1,15 +1,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  armCompensatingCleanup,
+  compensatingCleanupIsArmed,
   JobCancelledError,
   clearControl,
   debugWaiterCount,
+  disarmCompensatingCleanup,
   ensureControl,
   getControl,
   raceCancel,
   requestCancel,
   requestPause,
   requestResume,
+  runWithCancellationShield,
   runWithJobControl,
   setControlValidator,
   setExecutingJobId,
@@ -88,6 +92,51 @@ describe("job control", () => {
     assert.equal(b, "ok");
     clearControl("parallel-a");
     clearControl("parallel-b");
+  });
+
+  it("shields only compensating work while preserving cancellation and ownership checks", async () => {
+    let validations = 0;
+    setControlValidator("cleanup", async () => {
+      validations += 1;
+    });
+    requestCancel("cleanup");
+
+    await runWithCancellationShield("cleanup", async () => {
+      await cooperativeCheckpoint("cleanup");
+      assert.doesNotThrow(() => throwIfCancelled("cleanup"));
+      assert.equal(await raceCancel(Promise.resolve("restored"), "cleanup"), "restored");
+    });
+
+    assert.equal(validations, 1);
+    assert.throws(() => throwIfCancelled("cleanup"), JobCancelledError);
+    clearControl("cleanup");
+  });
+
+  it("does not shield compensating work from lost ownership", async () => {
+    setControlValidator("cleanup-without-lease", async () => {
+      throw new Error("Job control lease is no longer valid");
+    });
+    requestCancel("cleanup-without-lease");
+
+    await assert.rejects(
+      runWithCancellationShield("cleanup-without-lease", () =>
+        cooperativeCheckpoint("cleanup-without-lease"),
+      ),
+      /lease is no longer valid/u,
+    );
+    clearControl("cleanup-without-lease");
+  });
+
+  it("arms cleanup only for the exact job and always clears it with control state", () => {
+    armCompensatingCleanup("kids");
+    assert.equal(compensatingCleanupIsArmed("kids"), true);
+    assert.equal(compensatingCleanupIsArmed("other"), false);
+    disarmCompensatingCleanup("kids");
+    assert.equal(compensatingCleanupIsArmed("kids"), false);
+
+    armCompensatingCleanup("kids");
+    clearControl("kids");
+    assert.equal(compensatingCleanupIsArmed("kids"), false);
   });
 
   it("validates ownership before a checkpoint continues", async () => {

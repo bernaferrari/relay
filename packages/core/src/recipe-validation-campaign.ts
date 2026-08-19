@@ -208,8 +208,11 @@ export function parseCampaignCheck(
           "check.cleanup.terminalScreenId must be a non-empty string of at most 96 characters",
         );
       }
-      if (raw.check.cleanup.onCancel !== "skip") {
-        throw stepErr(index, 'check.cleanup.onCancel must be "skip"');
+      if (
+        raw.check.cleanup.onCancel !== "run-if-controllable" &&
+        raw.check.cleanup.onCancel !== "skip"
+      ) {
+        throw stepErr(index, 'check.cleanup.onCancel must be "run-if-controllable" or "skip"');
       }
       let bindings: Record<string, string> | undefined;
       if (raw.check.cleanup.bindings !== undefined) {
@@ -228,7 +231,7 @@ export function parseCampaignCheck(
         recipeId: raw.check.cleanup.recipeId.trim(),
         ...(bindings ? { bindings } : {}),
         terminalScreenId: raw.check.cleanup.terminalScreenId.trim(),
-        onCancel: "skip",
+        onCancel: raw.check.cleanup.onCancel,
       };
     }
     return {

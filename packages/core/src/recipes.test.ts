@@ -981,7 +981,7 @@ describe("validateRecipeSteps", () => {
               recipeId: "restore-kids-off",
               bindings: { locale: "en" },
               terminalScreenId: "kids-off",
-              onCancel: "skip",
+              onCancel: "run-if-controllable",
             },
           },
         },
@@ -990,7 +990,7 @@ describe("validateRecipeSteps", () => {
         recipeId: "restore-kids-off",
         bindings: { locale: "en" },
         terminalScreenId: "kids-off",
-        onCancel: "skip",
+        onCancel: "run-if-controllable",
       },
     );
     assert.throws(
@@ -1010,7 +1010,7 @@ describe("validateRecipeSteps", () => {
             },
           },
         ]),
-      /check\.cleanup\.onCancel must be "skip"/u,
+      /check\.cleanup\.onCancel must be "run-if-controllable" or "skip"/u,
     );
   });
 

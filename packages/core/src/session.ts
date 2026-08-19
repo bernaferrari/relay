@@ -17,6 +17,7 @@ import {
 import type { Glyph, TraceFrameRef, TraceStep } from "./trace.js";
 import { persistRun, writeFramePng, ensureRunDir, type PersistedRun } from "./runs.js";
 import {
+  compensatingCleanupIsArmed,
   JobCancelledError,
   JobControlOwnershipError,
   clearControl,
@@ -421,7 +422,8 @@ function finalizeCancelled(job: TestJob, primary?: TraceStep): void {
   });
 }
 
-/** Cancel a queued or in-flight job and hard-stop the device session. */
+/** Cancel a queued or in-flight job. A currently armed compensating cleanup
+ * gets one bounded chance to finish; every other run is hard-stopped. */
 export function cancelJob(id: string): TestJob {
   const job = jobRegistry.get(id);
   if (!job) throw new Error(`Unknown job: ${id}`);
@@ -436,7 +438,8 @@ export function cancelJob(id: string): TestJob {
   }
 
   requestCancel(id);
-  if (job.status === "running" || job.status === "paused") {
+  const finishCompensatingCleanup = compensatingCleanupIsArmed(id);
+  if ((job.status === "running" || job.status === "paused") && !finishCompensatingCleanup) {
     void hardStopDeviceSession(job.targetContext);
     resetDeviceClient(job.targetContext);
   }
@@ -454,12 +457,15 @@ export function cancelJob(id: string): TestJob {
     return job;
   }
 
-  job.logs.push("==> cancel requested (hard-stop session)");
+  const cancellationLog = finishCompensatingCleanup
+    ? "==> cancel requested (finishing reviewed cleanup)"
+    : "==> cancel requested (hard-stop session)";
+  job.logs.push(cancellationLog);
   publish({
     type: "job.log",
     at: now(),
     jobId: job.id,
-    line: "==> cancel requested (hard-stop session)",
+    line: cancellationLog,
     level: "info",
   });
   return job;
@@ -779,8 +785,10 @@ async function executeJob(id: string): Promise<void> {
         throwIfCancelled(id);
       } catch (err) {
         pendingCancel = err instanceof Error ? err : new Error(String(err));
-        void hardStopDeviceSession(job.targetContext);
-        resetDeviceClient(job.targetContext);
+        if (!compensatingCleanupIsArmed(id)) {
+          void hardStopDeviceSession(job.targetContext);
+          resetDeviceClient(job.targetContext);
+        }
       }
     }, 50);
 

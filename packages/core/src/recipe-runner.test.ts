@@ -26,7 +26,14 @@ import { currentVerifiedScreen, type VerifiedScreenCheckpoint } from "./recipe-r
 import type { TestJob } from "./session.js";
 import { registerEvaluationProvider } from "./evaluation.js";
 import { saveRecipe } from "./recipes.js";
-import { clearControl, JobCancelledError, requestResume } from "./control.js";
+import {
+  clearControl,
+  cooperativeCheckpoint,
+  JobCancelledError,
+  requestCancel,
+  requestResume,
+  runWithJobControl,
+} from "./control.js";
 import { runWithTargetContext } from "./target-context.js";
 import { observeScreenIdentity } from "./screen-identity.js";
 import { runExpectScreenStep } from "./recipe-runner-screen.js";
@@ -1113,7 +1120,7 @@ describe("runRecipeStep campaign check policy", () => {
     );
   });
 
-  it("skips cleanup on cancellation because cancellation revokes device authority", async () => {
+  it("skips cleanup on cancellation when the frozen policy says skip", async () => {
     const presses: string[] = [];
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
     const recipeGraph = {
@@ -1164,6 +1171,120 @@ describe("runRecipeStep campaign check policy", () => {
         (artifact) =>
           artifact.kind === "campaign-check-cleanup" &&
           (artifact.data as { status?: string }).status === "skipped",
+      ),
+      true,
+    );
+  });
+
+  it("runs frozen cleanup after cancellation while the target remains controllable", async () => {
+    const executions: string[] = [];
+    const job = { id: "kids-cancel-cleanup", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const device = stubDevice({});
+
+    try {
+      await assert.rejects(
+        runWithJobControl(job.id, () =>
+          runCampaignCheck(
+            device,
+            {
+              kind: "sleep",
+              ms: 1,
+              check: {
+                id: "kids",
+                title: "Kids Mode",
+                cleanup: {
+                  recipeId: "cleanup",
+                  terminalScreenId: "kids-off",
+                  onCancel: "run-if-controllable",
+                },
+              },
+            },
+            { ...noLog, job, runtime, recipeGraph: {} },
+            async (recipeId) => {
+              if (!recipeId) {
+                executions.push("primary");
+                requestCancel(job.id);
+                throw new JobCancelledError("cancelled after Kids Mode was enabled");
+              }
+              executions.push(recipeId);
+              await cooperativeCheckpoint(job.id);
+            },
+          ),
+        ),
+        /cancelled after Kids Mode was enabled/u,
+      );
+    } finally {
+      clearControl(job.id);
+    }
+
+    assert.deepEqual(executions, ["primary", "cleanup"]);
+    const cleanup = job.artifacts.find((artifact) => artifact.kind === "campaign-check-cleanup")
+      ?.data as { status?: string };
+    assert.equal(cleanup.status, "passed");
+    const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result")
+      ?.data as { status?: string; cleanupStatus?: string; primaryError?: string };
+    assert.equal(result.status, "cancelled");
+    assert.equal(result.cleanupStatus, "passed");
+    assert.match(result.primaryError ?? "", /cancelled after Kids Mode was enabled/u);
+    assert.equal(runtime.navigationCursor?.status, "proven");
+    assert.equal(
+      runtime.navigationCursor?.status === "proven" ? runtime.navigationCursor.screenId : undefined,
+      "kids-off",
+    );
+  });
+
+  it("keeps cancellation primary when compensating cleanup also fails", async () => {
+    const job = { id: "kids-cancel-cleanup-fails", artifacts: [] } as unknown as TestJob;
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: [] }),
+    });
+
+    try {
+      await assert.rejects(
+        runWithJobControl(job.id, () =>
+          runCampaignCheck(
+            device,
+            {
+              kind: "sleep",
+              ms: 1,
+              check: {
+                id: "kids",
+                title: "Kids Mode",
+                cleanup: {
+                  recipeId: "cleanup",
+                  terminalScreenId: "kids-off",
+                  onCancel: "run-if-controllable",
+                },
+              },
+            },
+            { ...noLog, job, recipeGraph: {} },
+            async (recipeId) => {
+              if (!recipeId) {
+                requestCancel(job.id);
+                throw new JobCancelledError("primary cancellation");
+              }
+              await cooperativeCheckpoint(job.id);
+              throw new Error("Kids Mode could not be restored to Off");
+            },
+          ),
+        ),
+        /primary cancellation/u,
+      );
+    } finally {
+      clearControl(job.id);
+    }
+
+    const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result")
+      ?.data as { status?: string; primaryError?: string; cleanupError?: string };
+    assert.equal(result.status, "cancelled");
+    assert.match(result.primaryError ?? "", /primary cancellation/u);
+    assert.match(result.cleanupError ?? "", /could not be restored to Off/u);
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "campaign-check-evidence" &&
+          (artifact.data as { phase?: string }).phase === "cleanup",
       ),
       true,
     );

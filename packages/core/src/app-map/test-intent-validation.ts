@@ -52,8 +52,8 @@ function assertCleanup(step: AppMapScenarioTestStep, label: string): void {
   }
   identifier(cleanup.routineId, `${label}.cleanup.routineId`);
   identifier(cleanup.terminalScreenId, `${label}.cleanup.terminalScreenId`);
-  if (cleanup.onCancel !== "skip") {
-    appMapFail("invalid-map", `${label}.cleanup.onCancel must be skip`);
+  if (cleanup.onCancel !== "run-if-controllable" && cleanup.onCancel !== "skip") {
+    appMapFail("invalid-map", `${label}.cleanup.onCancel must be run-if-controllable or skip`);
   }
   if (cleanup.bindings !== undefined) {
     for (const [name, value] of Object.entries(

@@ -57,7 +57,7 @@ export type AppMapTestStepCleanup = {
   /** Proven terminal state after the cleanup Routine's mandatory assertions. */
   terminalScreenId: string;
   /** Required so cancellation behavior is never an implicit runner default. */
-  onCancel: "skip";
+  onCancel: "run-if-controllable" | "skip";
 };
 
 export type AppMapInstructionTestStep = TestStepBase & {
@@ -67,9 +67,9 @@ export type AppMapInstructionTestStep = TestStepBase & {
     | ResolvedTestBinding<{ kind: "connections"; connectionIds: string[] }>;
   /**
    * An auditable compensating Routine that restores product state after this
-   * graph path, whether the primary path passes or fails. Cancellation
-   * deliberately skips cleanup: cancelling a job is an immediate authority
-   * boundary and may already have hard-stopped the device session.
+   * graph path, whether the primary path passes or fails. The authored
+   * cancellation policy is frozen into the compiled recipe; a cleanup may
+   * continue only while ownership and target transport remain valid.
    */
   cleanup?: AppMapTestStepCleanup;
 };

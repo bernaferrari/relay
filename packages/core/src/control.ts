@@ -38,6 +38,37 @@ export type JobControlValidator = () => Promise<void>;
 
 const controls = new Map<string, JobControlState>();
 const cancelWaiters = new Map<string, Set<() => void>>();
+const cancellationShields = new AsyncLocalStorage<string>();
+const armedCompensatingCleanups = new Set<string>();
+
+function cancellationIsShielded(jobId: string): boolean {
+  return cancellationShields.getStore() === jobId;
+}
+
+/**
+ * Finish one explicitly compiled compensating action after ordinary job
+ * cancellation. The cancellation remains set and is rethrown by the caller;
+ * only this async scope ignores it. Ownership validation and transport errors
+ * remain active, so a lost lease or missing device still stops mutations.
+ */
+export function runWithCancellationShield<T>(
+  jobId: string | null | undefined,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return jobId ? cancellationShields.run(jobId, operation) : operation();
+}
+
+export function armCompensatingCleanup(jobId: string | null | undefined): void {
+  if (jobId) armedCompensatingCleanups.add(jobId);
+}
+
+export function disarmCompensatingCleanup(jobId: string | null | undefined): void {
+  if (jobId) armedCompensatingCleanups.delete(jobId);
+}
+
+export function compensatingCleanupIsArmed(jobId: string): boolean {
+  return armedCompensatingCleanups.has(jobId);
+}
 
 export function ensureControl(jobId: string): JobControlState {
   let c = controls.get(jobId);
@@ -50,6 +81,7 @@ export function ensureControl(jobId: string): JobControlState {
 
 export function clearControl(jobId: string): void {
   controls.delete(jobId);
+  armedCompensatingCleanups.delete(jobId);
   const waiters = cancelWaiters.get(jobId);
   if (waiters) {
     for (const w of waiters) w();
@@ -113,7 +145,7 @@ export function runWithJobControl<T>(jobId: string, operation: () => Promise<T>)
 export function throwIfCancelled(jobId?: string | null): void {
   const id = jobId ?? getExecutingJobId();
   if (!id) return;
-  if (controls.get(id)?.cancel) throw new JobCancelledError();
+  if (controls.get(id)?.cancel && !cancellationIsShielded(id)) throw new JobCancelledError();
 }
 
 /**
@@ -127,6 +159,7 @@ export function throwIfCancelled(jobId?: string | null): void {
 export async function raceCancel<T>(promise: Promise<T>, jobId?: string | null): Promise<T> {
   const id = jobId ?? getExecutingJobId();
   if (!id) return promise;
+  if (cancellationIsShielded(id)) return promise;
   throwIfCancelled(id);
 
   let cleanup = () => {};
@@ -161,9 +194,12 @@ export async function cooperativeCheckpoint(jobId?: string | null): Promise<void
   const c = controls.get(id);
   if (!c) return;
 
-  if (c.cancel) throw new JobCancelledError();
+  const shielded = cancellationIsShielded(id);
+  if (c.cancel && !shielded) throw new JobCancelledError();
   await c.validator?.();
-  if (c.cancel) throw new JobCancelledError();
+  if (c.cancel && !shielded) throw new JobCancelledError();
+
+  if (shielded) return;
 
   while (c.pause && !c.cancel) {
     await new Promise((r) => setTimeout(r, 50));

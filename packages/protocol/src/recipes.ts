@@ -203,8 +203,8 @@ export type RecipeStepMetadata = {
       recipeId: string;
       bindings?: Record<string, string>;
       terminalScreenId: string;
-      /** Cancellation is an immediate authority boundary; cleanup is skipped. */
-      onCancel: "skip";
+      /** Frozen policy for a cancellation received during the primary path. */
+      onCancel: "run-if-controllable" | "skip";
     };
   };
   /** Run this step only when the target is currently present or absent. */
