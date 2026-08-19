@@ -13,6 +13,7 @@ test("recognizes explicit target loss without confusing missing UI selectors", (
     true,
   );
   assert.equal(isTargetUnavailableError(new Error("device 'pixel-1' is offline")), true);
+  assert.equal(isTargetUnavailableError(new Error("device disconnected")), true);
   assert.equal(isTargetUnavailableError(new Error("No Android devices connected")), true);
   assert.equal(isTargetUnavailableError(new Error("Settings row was not found")), false);
   assert.equal(

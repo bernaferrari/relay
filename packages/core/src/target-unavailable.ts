@@ -13,7 +13,7 @@ export function isTargetUnavailableError(error: unknown): boolean {
   return [
     /\badb(?:\.exe)?\b[\s\S]*\bdevice\s+(?:['"][^'"]+['"]\s+)?(?:not found|offline|unauthorized)\b/iu,
     /\berror:\s*device\s+['"][^'"]+['"]\s+not found\b/iu,
-    /\bdevice\s+['"][^'"]+['"]\s+(?:is\s+)?(?:offline|unauthorized|disconnected)\b/iu,
+    /\bdevice(?:\s+(?:['"][^'"]+['"]|\S+))?\s+(?:is\s+)?(?:offline|unauthorized|disconnected)\b/iu,
     /\bno (?:android )?devices?(?:\/emulators?)? (?:found|connected|available)\b/iu,
     /\bmanaged browser missing\b/iu,
     /\bdevice missing:\s*\S+\s+is no longer connected\b/iu,

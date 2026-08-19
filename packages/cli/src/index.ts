@@ -144,10 +144,12 @@ function summarizeResult(operationId: string, result: unknown): unknown {
 }
 
 function failureMessage(value: unknown, fallback: string): string {
-  if (typeof value === "string" && value.trim()) return value.trim();
+  const bound = (message: string): string =>
+    message.length <= 4_000 ? message : `${message.slice(0, 3_999)}…`;
+  if (typeof value === "string" && value.trim()) return bound(value.trim());
   if (value && typeof value === "object" && "message" in value) {
     const message = value.message;
-    if (typeof message === "string" && message.trim()) return message.trim();
+    if (typeof message === "string" && message.trim()) return bound(message.trim());
   }
   return fallback;
 }

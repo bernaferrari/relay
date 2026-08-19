@@ -1075,7 +1075,8 @@ test("failed watched jobs use a non-zero exit", async () => {
 
 test("failed watched jobs emit a bounded summary with durable evidence pointers", async () => {
   const io = capture();
-  const huge = "full accessibility evidence ".repeat(50_000);
+  const huge = "aggregated failure ".repeat(50_000);
+  const evidenceHuge = "raw accessibility evidence ".repeat(50_000);
   const code = await runCli(["job", "watch", "failed-large", "--json"], {
     streams: io.streams,
     createClient: () => ({
@@ -1083,7 +1084,7 @@ test("failed watched jobs emit a bounded summary with durable evidence pointers"
         job: {
           id: "failed-large",
           status: "error",
-          error: "device 'pixel-1' not found",
+          error: huge,
           runDir: "/workspace/runs/failed-large",
           artifacts: [
             {
@@ -1097,7 +1098,10 @@ test("failed watched jobs emit a bounded summary with durable evidence pointers"
                 finishedAt: 2,
               },
             },
-            { kind: "campaign-check-evidence", data: { nodes: huge, screenshot: huge } },
+            {
+              kind: "campaign-check-evidence",
+              data: { nodes: evidenceHuge, screenshot: evidenceHuge },
+            },
           ],
         },
       }),
@@ -1110,12 +1114,13 @@ test("failed watched jobs emit a bounded summary with durable evidence pointers"
 
   const terminal = JSON.parse(io.stdout());
   assert.equal(code, ExitCode.validation);
+  assert.ok(terminal.error.message.length <= 4_000);
   assert.ok(io.stdout().length < 20_000);
   assert.equal(terminal.error.details.job.resources.run, "/runs/failed-large");
   assert.deepEqual(terminal.error.details.job.resources.repairs, [
     "/runs/failed-large/checks/privacy/repair",
   ]);
-  assert.equal(io.stdout().includes("full accessibility evidence"), false);
+  assert.equal(io.stdout().includes("raw accessibility evidence"), false);
 });
 
 test("unknown operations are usage errors without invoking a client", async () => {
