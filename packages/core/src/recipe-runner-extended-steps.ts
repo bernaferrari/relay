@@ -30,56 +30,49 @@ import {
   invalidateVerifiedScreen,
   type RecipeStepContext,
 } from "./recipe-runner-context.js";
-import { semanticTargetKey } from "./scroll-surface-semantic-index.js";
+import {
+  advanceSemanticRevealNavigation,
+  estimateSemanticRevealMovement,
+  initialSemanticRevealProgress,
+  type RevealDirection,
+  type SemanticRevealEstimate,
+} from "./semantic-reveal-navigation.js";
 
-function liveSemanticKeys(node: Awaited<ReturnType<typeof snapshot>>[number]): string[] {
-  return [
-    node.identifier ? semanticTargetKey({ identifier: node.identifier }) : undefined,
-    node.ref ? semanticTargetKey({ ref: node.ref }) : undefined,
-    node.label ? semanticTargetKey({ label: node.label }) : undefined,
-    node.value ? semanticTargetKey({ text: node.value }) : undefined,
-  ].flatMap((key) => (key ? [key] : []));
-}
+type SemanticRevealAttempt =
+  | ({ source: "semantic-index"; attemptedDirection: RevealDirection } & SemanticRevealEstimate)
+  | { source: "live-target"; attemptedDirection: RevealDirection; amount: number };
 
-function semanticRevealMovement(
+function semanticRevealRepair(
+  step: Extract<RecipeStep, { kind: "reveal" }>,
+  ctx: RecipeStepContext,
+  reason: string,
+  attempts: SemanticRevealAttempt[],
   nodes: Awaited<ReturnType<typeof snapshot>>,
-  plans: NonNullable<Extract<RecipeStep, { kind: "reveal" }>["navigation"]>,
-): { direction: "up" | "down"; amount: number; surfaceId: string } | undefined {
-  const candidates = plans.flatMap((plan) => {
-    const byKey = new Map(
-      plan.anchors.flatMap((anchor) => {
-        const key = semanticTargetKey(anchor.target);
-        return key ? [[key, anchor] as const] : [];
-      }),
-    );
-    const estimates: number[] = [];
-    const seen = new Set<string>();
-    for (const node of nodes) {
-      if (!node.rect || node.visibleToUser === false) continue;
-      for (const key of liveSemanticKeys(node)) {
-        const anchor = byKey.get(key);
-        if (!anchor || seen.has(key)) continue;
-        seen.add(key);
-        estimates.push(anchor.documentY - (node.rect.y + node.rect.height / 2));
-        break;
-      }
-    }
-    if (estimates.length === 0) return [];
-    estimates.sort((left, right) => left - right);
-    const viewportTop = estimates[Math.floor(estimates.length / 2)]!;
-    const currentCenter = viewportTop + plan.viewportHeight / 2;
-    const delta = plan.targetDocumentY - currentCenter;
-    return [{ plan, overlap: estimates.length, delta }];
-  });
-  const selected = candidates.sort(
-    (left, right) => right.overlap - left.overlap || Math.abs(left.delta) - Math.abs(right.delta),
-  )[0];
-  if (!selected) return undefined;
-  return {
-    direction: selected.delta < 0 ? "up" : "down",
-    amount: Math.max(0.18, Math.min(0.85, Math.abs(selected.delta) / selected.plan.viewportHeight)),
-    surfaceId: selected.plan.surfaceId,
+): never {
+  const data = {
+    schemaVersion: 1,
+    status: "needs-review",
+    reason,
+    target: structuredClone(step.target),
+    authoredDirection: step.direction ?? "auto",
+    maxAttempts: step.maxAttempts ?? 12,
+    surfaces: (step.navigation ?? []).map((plan) => ({
+      surfaceId: plan.surfaceId,
+      captureId: plan.captureId,
+      targetOrder: plan.targetOrder,
+      targetDocumentY: plan.targetDocumentY,
+    })),
+    attempts: structuredClone(attempts),
+    lastObservation: {
+      fingerprint: observeScreenIdentity(nodes).fingerprint,
+      nodeCount: nodes.length,
+      accessibilityTree: structuredClone(nodes),
+    },
   };
+  const artifact = { kind: "semantic-reveal-repair", capturedAt: now(), data };
+  ctx.job?.artifacts.push(artifact);
+  ctx.artifacts?.push(artifact);
+  throw new Error(`reveal-control: ${reason}; repair packet captured`);
 }
 
 export async function runTapStep(
@@ -174,7 +167,9 @@ export async function runRevealStep(
   if (step.navigation?.length) {
     let previousFingerprint: string | undefined;
     let repeated = 0;
-    let indexedMiss: string | undefined;
+    let progress = initialSemanticRevealProgress();
+    const movements: SemanticRevealAttempt[] = [];
+    let lastAttemptedDirection: RevealDirection | undefined;
     for (let attempts = 0; attempts <= maxAttempts; attempts += 1) {
       await cooperativeCheckpoint();
       const nodes = ctx.runtime?.observation?.nodes ?? (await snapshot(device));
@@ -189,11 +184,29 @@ export async function runRevealStep(
       }
       const nudge = chromeNudge(nodes);
       if (nudge) {
+        const priorDirection = lastAttemptedDirection;
+        if (priorDirection && priorDirection !== nudge) {
+          if (progress.directionChanges > 0) {
+            semanticRevealRepair(
+              step,
+              ctx,
+              `live target geometry requested a second direction reversal (${priorDirection} to ${nudge})`,
+              movements,
+              nodes,
+            );
+          }
+          // The target itself is stronger evidence than inferred anchors. One
+          // small correction may clear fixed chrome; it consumes the only
+          // permitted reversal for this reveal.
+          progress = { ...progress, direction: nudge, directionChanges: 1 };
+        }
         if (ctx.runtime) {
           invalidateVerifiedScreen(ctx);
         }
         if (nudge === "down") await scrollDown(device, 0.18);
         else await scrollUp(device, 0.18);
+        movements.push({ source: "live-target", attemptedDirection: nudge, amount: 0.18 });
+        lastAttemptedDirection = nudge;
         ctx.log(`reveal: ${nudge} 0.18 to clear chrome over the live target`);
         previousFingerprint = undefined;
         repeated = 0;
@@ -201,36 +214,60 @@ export async function runRevealStep(
         continue;
       }
       if (attempts === maxAttempts) {
-        indexedMiss = `semantic target was not found after ${maxAttempts} indexed scrolls`;
-        break;
+        semanticRevealRepair(
+          step,
+          ctx,
+          `semantic target was not found after ${maxAttempts} indexed scrolls`,
+          movements,
+          nodes,
+        );
       }
-      const movement = semanticRevealMovement(nodes, step.navigation);
-      if (!movement) {
-        indexedMiss = "live viewport does not overlap the compiled full-surface semantic index";
-        break;
+      const estimate = estimateSemanticRevealMovement(nodes, step.navigation);
+      if (!estimate) {
+        semanticRevealRepair(
+          step,
+          ctx,
+          "live viewport does not overlap the compiled full-surface semantic index",
+          movements,
+          nodes,
+        );
       }
       const observed = observeScreenIdentity(nodes);
       repeated = observed.fingerprint === previousFingerprint ? repeated + 1 : 0;
       previousFingerprint = observed.fingerprint;
       if (repeated >= 2) {
-        indexedMiss = "indexed navigation reached the surface edge";
-        break;
+        semanticRevealRepair(
+          step,
+          ctx,
+          "indexed navigation reached the surface edge without revealing the target",
+          movements,
+          nodes,
+        );
       }
-      const direction =
-        step.direction && step.direction !== "auto" ? step.direction : movement.direction;
+      const authoredDirection =
+        step.direction && step.direction !== "auto" ? step.direction : undefined;
+      const decision = advanceSemanticRevealNavigation(progress, estimate, authoredDirection);
+      if (decision.status === "unsafe") {
+        semanticRevealRepair(step, ctx, decision.reason, movements, nodes);
+      }
+      progress = decision.progress;
+      const movement = decision.movement;
+      movements.push({
+        source: "semantic-index",
+        ...movement,
+        attemptedDirection: movement.direction,
+      });
+      lastAttemptedDirection = movement.direction;
       if (ctx.runtime) {
         invalidateVerifiedScreen(ctx);
       }
-      if (direction === "down") await scrollDown(device, movement.amount);
+      if (movement.direction === "down") await scrollDown(device, movement.amount);
       else await scrollUp(device, movement.amount);
       ctx.log(
-        `reveal: ${direction} ${movement.amount.toFixed(2)} from semantic surface ${movement.surfaceId}`,
+        `reveal: ${movement.direction} ${movement.amount.toFixed(2)} from semantic surface ${movement.surfaceId}`,
       );
       await sleep(250, device);
     }
-    ctx.log(
-      `reveal: indexed navigation missed — ${indexedMiss ?? "unknown"}. Searching the live tree.`,
-    );
   }
   const directions =
     step.direction === "up" ? ["up"] : step.direction === "down" ? ["down"] : ["down", "up"];

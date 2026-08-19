@@ -2114,7 +2114,7 @@ describe("runRecipeStep semantic reveal", () => {
 
     assert.equal(movements.length, 1);
     assert.equal(movements[0]?.direction, "down");
-    assert.equal(movements[0]?.amount, 0.85);
+    assert.equal(movements[0]?.amount, 0.45);
   });
 
   it("reuses the verified source observation before indexed navigation", async () => {
@@ -2208,8 +2208,9 @@ describe("runRecipeStep semantic reveal", () => {
     );
   });
 
-  it("falls back to live-tree search when indexed navigation cannot overlap", async () => {
+  it("fails with a repair packet instead of blind scrolling when indexed navigation cannot overlap", async () => {
     let scrolls = 0;
+    const job = { artifacts: [] } as unknown as TestJob;
     await assert.rejects(
       runRecipeStep(
         stubDevice({
@@ -2244,11 +2245,94 @@ describe("runRecipeStep semantic reveal", () => {
             },
           ],
         },
-        revealContext(),
+        { log: () => {}, runtime: {}, job },
       ),
-      /was not found after \d+ scrolls/,
+      /does not overlap.*repair packet captured/,
     );
-    assert.ok(scrolls > 0);
+    assert.equal(scrolls, 0);
+    assert.equal(job.artifacts[0]?.kind, "semantic-reveal-repair");
+  });
+
+  it("stops the exact Memory-style alternating index loop after one proven correction", async () => {
+    const movements: Array<{ direction?: string; amount?: number }> = [];
+    const job = { artifacts: [] } as unknown as TestJob;
+    let viewport = 0;
+    const anchorNodes = (viewportTop: number, marker: string) => [
+      {
+        role: "cell",
+        identifier: "appearance",
+        label: "Appearance",
+        hittable: true,
+        rect: { x: 0, y: 300 - viewportTop, width: 300, height: 60 },
+      },
+      {
+        role: "cell",
+        identifier: "advanced",
+        label: "Advanced",
+        hittable: true,
+        rect: { x: 0, y: 700 - viewportTop, width: 300, height: 60 },
+      },
+      { role: "text", label: marker },
+    ];
+    const viewports = [
+      anchorNodes(0, "top"),
+      anchorNodes(1_100, "below-memory"),
+      anchorNodes(100, "above-memory"),
+    ];
+
+    await assert.rejects(
+      runRecipeStep(
+        stubDevice({
+          snapshot: () => Promise.resolve({ nodes: viewports[Math.min(viewport, 2)] }),
+          scroll: (options) => {
+            movements.push(options as { direction?: string; amount?: number });
+            viewport += 1;
+            return Promise.resolve({});
+          },
+        }),
+        {
+          kind: "reveal",
+          target: { identifier: "memory", label: "Memory" },
+          direction: "auto",
+          maxAttempts: 12,
+          navigation: [
+            {
+              schemaVersion: 1,
+              surfaceId: "scroll-surface-settings",
+              captureId: "settings-r1",
+              documentHeight: 2_400,
+              viewportHeight: 800,
+              targetOrder: 2,
+              targetDocumentY: 1_000,
+              anchors: [
+                { order: 0, documentY: 330, target: { identifier: "appearance" } },
+                { order: 1, documentY: 730, target: { identifier: "advanced" } },
+              ],
+            },
+          ],
+        },
+        { log: () => {}, runtime: {}, job },
+      ),
+      /second direction reversal.*repair packet captured/,
+    );
+
+    assert.deepEqual(
+      movements.map(({ direction, amount }) => ({ direction, amount })),
+      [
+        { direction: "down", amount: 0.45 },
+        { direction: "up", amount: 0.18 },
+      ],
+    );
+    const packet = job.artifacts.find((artifact) => artifact.kind === "semantic-reveal-repair");
+    assert.ok(packet);
+    assert.deepEqual((packet.data as { target: unknown }).target, {
+      identifier: "memory",
+      label: "Memory",
+    });
+    assert.equal(
+      (packet.data as { lastObservation: { nodeCount: number } }).lastObservation.nodeCount,
+      3,
+    );
   });
 });
 
