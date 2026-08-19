@@ -66,6 +66,25 @@ function context(id: string): RecipeStepContext & { job: TestJob } {
   };
 }
 
+function sourceProvenRecipe(id: string, screenId: string) {
+  return {
+    id,
+    title: `Confirm ${screenId}`,
+    source: "custom" as const,
+    steps: [
+      {
+        kind: "expect-screen" as const,
+        id: `relay-source-${id}`,
+        screenId,
+        screenTitle: screenId,
+        fingerprint: `${screenId}-fingerprint`,
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
 async function run(
   ctx: RecipeStepContext,
   value: Check,
@@ -85,8 +104,11 @@ function resultStatuses(ctx: RecipeStepContext): Array<{ id: string; status: str
   });
 }
 
-test("proof graph contains a broken shared edge while unrelated checks continue", async () => {
+test("a broken shared edge blocks unrelated work until its own origin is proven", async () => {
   const ctx = context("model-shared-edge");
+  ctx.recipeGraph = {
+    [recovery.recipeId]: sourceProvenRecipe(recovery.recipeId, settings.originScreenId),
+  };
   const executions: string[] = [];
 
   await run(ctx, check("missing-reset"), async () => {
@@ -109,18 +131,18 @@ test("proof graph contains a broken shared edge while unrelated checks continue"
     executions.push("profile:warm");
   });
 
-  assert.deepEqual(executions, [
-    "missing-reset:warm",
-    "privacy:confirm-open-settings",
-    "profile:warm",
-  ]);
+  assert.deepEqual(executions, ["missing-reset:warm", "privacy:confirm-open-settings"]);
   assert.deepEqual(resultStatuses(ctx), [
     { id: "privacy", status: "failed" },
     { id: "help", status: "blocked" },
-    { id: "profile", status: "passed" },
+    { id: "profile", status: "blocked" },
   ]);
   assert.equal(ctx.runtime?.campaignTransitionProofs?.[settings.connectionId]?.status, "open");
-  assert.equal(ctx.runtime?.campaignTransitionProofs?.[profile.connectionId]?.status, "verified");
+  assert.equal(
+    ctx.runtime?.campaignTransitionProofs?.[profile.connectionId],
+    undefined,
+    "an unrelated edge is not independent until its own origin is proven",
+  );
 
   const intervention = ctx.job.artifacts.find(
     (artifact) => artifact.kind === "campaign-recovery-intervention",
@@ -179,6 +201,9 @@ test("an unknown cursor confirms only the independently source-proven leaf", asy
     expectedApp: "ai.x.grok",
   };
   const executed: string[] = [];
+  ctx.recipeGraph = {
+    "confirm-open-advanced": sourceProvenRecipe("confirm-open-advanced", "settings"),
+  };
 
   await run(
     ctx,
@@ -204,6 +229,94 @@ test("an unknown cursor confirms only the independently source-proven leaf", asy
     | undefined;
   assert.equal(finalCursor?.status, "proven");
   assert.equal(finalCursor?.status === "proven" ? finalCursor.screenId : undefined, "advanced");
+});
+
+test("r173 Birth Year drift blocks every stale warm mutation behind one evidence root", async () => {
+  const ctx = context("90560436-r173");
+  ctx.runtime!.navigationCursor = {
+    status: "unknown",
+    reason: "Birth Year destination did not prove its reviewed return",
+    updatedAt: 173,
+    previous: { screenId: "birth-year", proofToken: "90560436:birth-year" },
+  };
+  const settingsToSuperGrok = {
+    connectionId: "open-supergrok",
+    originScreenId: "settings",
+    destination: { kind: "screen" as const, screenId: "supergrok" },
+    expectedApp: "ai.x.grok",
+  };
+  const settingsToUsage = {
+    connectionId: "open-usage",
+    originScreenId: "settings",
+    destination: { kind: "screen" as const, screenId: "usage" },
+    expectedApp: "ai.x.grok",
+  };
+  const mutations: string[] = [];
+
+  for (const value of [
+    check("visit-04-supergrok", [settingsToSuperGrok], {
+      warmSourceScreenId: "birth-year",
+      recovery: undefined,
+    }),
+    check("visit-05-usage", [settingsToUsage], {
+      warmSourceScreenId: "supergrok",
+      recovery: undefined,
+    }),
+    check("visit-06-privacy", [settingsToUsage], {
+      warmSourceScreenId: "settings",
+      recovery: undefined,
+    }),
+  ]) {
+    await run(ctx, value, async (recipeId) => {
+      mutations.push(recipeId ?? `${value.id}:stale-warm`);
+    });
+  }
+
+  assert.deepEqual(mutations, [], "no Back, tap, reveal, cleanup, or warm recipe may run");
+  assert.deepEqual(resultStatuses(ctx), [
+    { id: "visit-04-supergrok", status: "blocked" },
+    { id: "visit-05-usage", status: "blocked" },
+    { id: "visit-06-privacy", status: "blocked" },
+  ]);
+  const firewalls = ctx.job.artifacts.filter(
+    (artifact) => artifact.kind === "campaign-cursor-firewall",
+  );
+  assert.equal(firewalls.length, 1, "one unknown cursor produces one root Problem, not a cascade");
+  const evidence = firewalls[0]!.data as {
+    status?: string;
+    stoppedMutations?: boolean;
+    expected?: { originScreenId?: string; leafTransition?: { connectionId?: string } };
+    observed?: { cursor?: { status?: string; reason?: string }; screenIdentity?: unknown };
+    attemptedSelectors?: unknown[];
+    accessibility?: { available?: boolean; nodeCount?: number };
+    nodes?: unknown[];
+    screenshot?: { caption?: string };
+    repair?: { action?: string; implicitMutationAllowed?: boolean };
+  };
+  assert.equal(evidence.status, "blocked-before-mutation");
+  assert.equal(evidence.stoppedMutations, true);
+  assert.equal(evidence.expected?.originScreenId, "birth-year");
+  assert.equal(evidence.expected?.leafTransition?.connectionId, "open-supergrok");
+  assert.equal(evidence.observed?.cursor?.status, "unknown");
+  assert.match(evidence.observed?.cursor?.reason ?? "", /Birth Year/u);
+  assert.deepEqual(evidence.attemptedSelectors, []);
+  assert.deepEqual(evidence.accessibility, { available: true, nodeCount: 1 });
+  assert.equal(evidence.nodes?.length, 1);
+  assert.match(evidence.screenshot?.caption ?? "", /visit-04-supergrok/u);
+  assert.equal(evidence.repair?.action, "prove-origin-or-teach-canonical-leaf");
+  assert.equal(evidence.repair?.implicitMutationAllowed, false);
+  assert.equal(
+    ctx.job.artifacts
+      .filter((artifact) => artifact.kind === "campaign-check-result")
+      .every(
+        (artifact) =>
+          (artifact.data as { stoppedMutations?: boolean; evidenceCapturedAt?: number })
+            .stoppedMutations === true &&
+          typeof (artifact.data as { evidenceCapturedAt?: number }).evidenceCapturedAt === "number",
+      ),
+    true,
+  );
+  assert.equal(ctx.runtime?.navigationCursor?.status, "unknown");
 });
 
 test("a failed stateful cleanup remains visible and invalidates the cursor", async () => {

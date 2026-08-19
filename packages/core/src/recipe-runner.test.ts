@@ -909,7 +909,7 @@ describe("runRecipeStep campaign check policy", () => {
         target: { identifier: "settings.missing" },
         check: { id: "missing", title: "Missing control" },
       },
-      { ...noLog, job },
+      { ...noLog, job, runtime: {} },
     );
 
     const evidence = job.artifacts.find((artifact) => artifact.kind === "campaign-check-evidence");
@@ -929,7 +929,7 @@ describe("runRecipeStep campaign check policy", () => {
         ms: 0,
         check: { id: "settings", title: "Settings" },
       },
-      { ...noLog, job },
+      { ...noLog, job, runtime: {} },
     );
 
     assert.equal(
@@ -985,7 +985,7 @@ describe("runRecipeStep campaign check policy", () => {
           cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
         },
       },
-      { ...noLog, job, recipeGraph },
+      { ...noLog, job, runtime: {}, recipeGraph },
     );
 
     assert.deepEqual(presses, ['id="primary"', 'id="cleanup"']);
@@ -1100,7 +1100,7 @@ describe("runRecipeStep campaign check policy", () => {
           cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
         },
       },
-      { ...noLog, job, recipeGraph },
+      { ...noLog, job, runtime: {}, recipeGraph },
     );
 
     const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result");
@@ -1160,7 +1160,7 @@ describe("runRecipeStep campaign check policy", () => {
             cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
           },
         },
-        { ...noLog, job, recipeGraph },
+        { ...noLog, job, runtime: {}, recipeGraph },
       ),
       JobCancelledError,
     );
@@ -1258,7 +1258,7 @@ describe("runRecipeStep campaign check policy", () => {
                 },
               },
             },
-            { ...noLog, job, recipeGraph: {} },
+            { ...noLog, job, runtime: {}, recipeGraph: {} },
             async (recipeId) => {
               if (!recipeId) {
                 requestCancel(job.id);
@@ -1290,7 +1290,7 @@ describe("runRecipeStep campaign check policy", () => {
     );
   });
 
-  it("defers one failed leaf while independent siblings continue", async () => {
+  it("blocks a sibling warm path when the failed leaf leaves its origin unknown", async () => {
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
     const logs: string[] = [];
@@ -1350,12 +1350,12 @@ describe("runRecipeStep campaign check policy", () => {
       job.artifacts
         .filter((artifact) => artifact.kind === "campaign-check-result")
         .map((artifact) => (artifact.data as { status: string }).status),
-      ["passed", "failed"],
+      ["blocked", "failed"],
     );
     assert.equal(waits.length >= 1, true);
     assert.equal(
       logs.some((line) => line.includes("Cold recovery")),
-      true,
+      false,
     );
     assert.equal(
       logs.some((line) => line.includes("Visit next leaf from the current parent")),
@@ -1372,7 +1372,7 @@ describe("runRecipeStep campaign check policy", () => {
     );
   });
 
-  it("does not reopen a verified shared transition after a later leaf defers", async () => {
+  it("keeps verified ancestors but blocks later warm paths after a leaf loses the cursor", async () => {
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
     const logs: string[] = [];
@@ -1547,14 +1547,17 @@ describe("runRecipeStep campaign check policy", () => {
         ]),
       [
         ["visit-settings", "passed"],
-        ["visit-appearance", "passed"],
+        ["visit-supergrok-more", "blocked"],
+        ["visit-appearance", "blocked"],
       ],
     );
     assert.equal(
       job.artifacts.some(
         (artifact) =>
-          artifact.kind === "campaign-check-deferred" &&
-          (artifact.data as { id?: string }).id === "visit-supergrok-more",
+          artifact.kind === "campaign-check-result" &&
+          (artifact.data as { id?: string; stoppedMutations?: boolean }).id ===
+            "visit-supergrok-more" &&
+          (artifact.data as { stoppedMutations?: boolean }).stoppedMutations === true,
       ),
       true,
     );
@@ -1563,16 +1566,16 @@ describe("runRecipeStep campaign check policy", () => {
       false,
     );
     assert.equal(
-      logs.some((line) => line.includes("check deferred: Visit SuperGrok More")),
+      logs.some((line) => line.includes("check blocked before mutation: Visit SuperGrok More")),
       true,
     );
     assert.equal(
       logs.some((line) => line.includes("Appearance · source-proven transition confirmation")),
-      true,
+      false,
     );
   });
 
-  it("keeps an authored warm recipe when no canonical recovery was declared", async () => {
+  it("refuses an authored warm recipe when no canonical source proof was declared", async () => {
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
     const logs: string[] = [];
@@ -1632,12 +1635,12 @@ describe("runRecipeStep campaign check policy", () => {
       job.artifacts
         .filter((artifact) => artifact.kind === "campaign-check-result")
         .map((artifact) => (artifact.data as { status: string }).status),
-      ["passed", "failed"],
+      ["blocked", "failed"],
     );
     assert.equal(waits.length >= 1, true);
     assert.equal(
       logs.some((line) => line.includes("Visit next leaf from the current parent")),
-      true,
+      false,
     );
     assert.equal(
       logs.some((line) => line.includes("Cold recovery")),
@@ -1646,7 +1649,7 @@ describe("runRecipeStep campaign check policy", () => {
     assert.equal(runtime.deferredCampaignChecks?.length, 0);
   });
 
-  it("uses one canonical path after a failed check instead of probing an unknown warm state", async () => {
+  it("refuses a recovery merely labeled warm when it has no frozen source proof", async () => {
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
     const logs: string[] = [];
@@ -1700,11 +1703,20 @@ describe("runRecipeStep campaign check policy", () => {
 
     assert.equal(
       logs.some((line) => line.includes("Canonical path")),
-      true,
+      false,
     );
     assert.equal(
       logs.some((line) => line.includes("Warm path")),
       false,
+    );
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "campaign-check-result" &&
+          (artifact.data as { id?: string; status?: string }).id === "next" &&
+          (artifact.data as { status?: string }).status === "blocked",
+      ),
+      true,
     );
     assert.equal(
       runtime.navigationCursor?.status,
@@ -1782,6 +1794,13 @@ describe("runRecipeStep campaign check policy", () => {
       { allowDefer: false },
     );
     const snapshotReadsBeforeDisconnect = snapshotReads;
+    runtime.navigationCursor = {
+      status: "proven",
+      screenId: "settings",
+      proofToken: "transport-boundary:settings",
+      source: "transition",
+      updatedAt: Date.now(),
+    };
 
     await assert.rejects(
       runCampaignCheck(
@@ -1883,7 +1902,7 @@ describe("runRecipeStep campaign check policy", () => {
     assert.equal(interrupted.interruption, "target-unavailable");
   });
 
-  it("blocks only a dependency group after its canonical recovery fails", async () => {
+  it("does not execute a recovery that lacks an independently provable source", async () => {
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
     const recovery = {
@@ -1923,12 +1942,12 @@ describe("runRecipeStep campaign check policy", () => {
       job.artifacts
         .filter((artifact) => artifact.kind === "campaign-check-result")
         .map((artifact) => (artifact.data as { status: string }).status),
-      ["failed", "blocked"],
+      ["blocked", "blocked"],
     );
-    assert.equal(runtime.campaignRecoveryGroups?.settings?.status, "blocked");
+    assert.equal(runtime.campaignRecoveryGroups?.settings, undefined);
   });
 
-  it("opens one shared transition circuit after warm plus one canonical confirmation", async () => {
+  it("does not confirm a shared transition with a mutation-first recovery", async () => {
     const job = { id: "fb3a7728", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
     const logs: string[] = [];
@@ -2042,16 +2061,19 @@ describe("runRecipeStep campaign check policy", () => {
     );
     finalizeDeferredCampaignChecks(context);
 
-    assert.equal(settingsAttempts, 2, "warm attempt plus one canonical confirmation only");
-    assert.equal(runtime.campaignTransitionProofs?.["open-settings-top"]?.status, "open");
-    assert.equal(runtime.campaignTransitionProofs?.["open-profile"]?.status, "verified");
+    assert.equal(settingsAttempts, 1, "only the initially authorized warm attempt may mutate");
+    assert.equal(
+      runtime.campaignTransitionProofs?.["open-settings-top"]?.status,
+      "needs-confirmation",
+    );
+    assert.equal(runtime.campaignTransitionProofs?.["open-profile"], undefined);
     assert.equal(
       job.artifacts.filter(
         (artifact) =>
           artifact.kind === "campaign-transition-circuit" &&
           (artifact.data as { status?: string }).status === "open",
       ).length,
-      1,
+      0,
     );
     assert.equal(
       job.artifacts.some(
@@ -2064,11 +2086,11 @@ describe("runRecipeStep campaign check policy", () => {
     );
     assert.equal(
       logs.some((line) => line.includes("Unrelated authored check")),
-      true,
+      false,
     );
   });
 
-  it("persists one SOS and never executes a cold recovery after coverage begins", async () => {
+  it("persists one cursor-firewall Problem and never executes unsafe recovery", async () => {
     const job = { id: "d7ef41b4-regression", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
     const logs: string[] = [];
@@ -2158,41 +2180,37 @@ describe("runRecipeStep campaign check policy", () => {
     );
 
     assert.equal(coldExecutions, 0);
-    assert.equal(unrelatedExecutions, 1);
+    assert.equal(unrelatedExecutions, 0);
     assert.equal(
-      job.artifacts.filter((artifact) => artifact.kind === "human-intervention-requested").length,
+      job.artifacts.filter((artifact) => artifact.kind === "campaign-cursor-firewall").length,
       1,
     );
     const intervention = job.artifacts.find(
-      (artifact) => artifact.kind === "campaign-recovery-intervention",
+      (artifact) => artifact.kind === "campaign-cursor-firewall",
     )?.data as {
-      transitionId?: string;
+      expected?: { leafTransition?: { connectionId?: string } };
       nodes?: unknown[];
       screenshot?: { caption?: string };
-      recovery?: {
-        proposedColdRecipeId?: string;
-        implicitResumeAllowed?: boolean;
-        choices?: string[];
-      };
+      stoppedMutations?: boolean;
+      repair?: { implicitMutationAllowed?: boolean; choices?: string[] };
     };
-    assert.equal(intervention.transitionId, "open-settings-top");
+    assert.equal(intervention.expected?.leafTransition?.connectionId, "open-settings-top");
     assert.equal(intervention.nodes?.length, 1);
-    assert.equal(intervention.screenshot?.caption, "sos:cold-recovery:open-settings-top");
-    assert.equal(intervention.recovery?.proposedColdRecipeId, "legacy-cold-open-settings");
-    assert.equal(intervention.recovery?.implicitResumeAllowed, false);
-    assert.deepEqual(intervention.recovery?.choices, [
-      "fix-current-state",
-      "teach-semantic-repair",
-      "approve-cold-once",
+    assert.match(intervention.screenshot?.caption ?? "", /visit-cloud-storage/u);
+    assert.equal(intervention.stoppedMutations, true);
+    assert.equal(intervention.repair?.implicitMutationAllowed, false);
+    assert.deepEqual(intervention.repair?.choices, [
+      "prove-current-origin",
+      "teach-canonical-leaf",
       "defer",
     ]);
     assert.deepEqual(
       job.artifacts
         .filter((artifact) => artifact.kind === "campaign-check-result")
         .map((artifact) => (artifact.data as { status?: string }).status),
-      ["blocked", "blocked", "passed"],
+      ["blocked", "blocked", "blocked"],
     );
-    assert.equal(logs.filter((line) => line.includes("SOS: cold recovery blocked")).length, 1);
+    assert.equal(logs.filter((line) => line.includes("blocked before mutation")).length, 3);
   });
 
   it("firewalls hidden cold effects in graph modules during coverage", async () => {

@@ -179,6 +179,152 @@ async function captureCampaignRecoveryIntervention(
   }
 }
 
+function independentlySourceProvenLeafRecipe(
+  check: NonNullable<RecipeStep["check"]>,
+  ctx: RecipeStepContext,
+): boolean {
+  const recovery = check.recovery;
+  const leaf = check.transitionDependencies?.at(-1);
+  if (
+    !recovery ||
+    recovery.mode !== "warm-transition" ||
+    !recovery.transitionId ||
+    recovery.transitionId !== leaf?.connectionId
+  ) {
+    return false;
+  }
+  const frozen = ctx.recipeGraph?.[recovery.recipeId];
+  const sourceProof = frozen?.steps[0];
+  return (
+    sourceProof?.kind === "expect-screen" &&
+    sourceProof.screenId === leaf.originScreenId &&
+    sourceProof.recovery === undefined
+  );
+}
+
+async function blockUnprovenCampaignMutation(
+  device: Device,
+  check: NonNullable<RecipeStep["check"]>,
+  ctx: RecipeStepContext,
+  startedAt: number,
+  reason: string,
+): Promise<void> {
+  const job = ctx.job;
+  const cursor = ctx.runtime?.navigationCursor;
+  const expectedOriginScreenId =
+    check.warmSourceScreenId ?? check.transitionDependencies?.[0]?.originScreenId;
+  const cursorKey = cursor
+    ? `${cursor.status}:${cursor.updatedAt}:${cursor.status === "proven" ? cursor.screenId : cursor.reason}`
+    : "missing";
+  const prior = [...(job?.artifacts ?? [])]
+    .reverse()
+    .find(
+      (artifact) =>
+        artifact.kind === "campaign-cursor-firewall" &&
+        (artifact.data as { cursorKey?: string }).cursorKey === cursorKey,
+    );
+
+  let evidenceCapturedAt = prior?.capturedAt;
+  if (job && !prior) {
+    let nodes: Awaited<ReturnType<typeof snapshot>> = [];
+    let accessibilityAvailable = false;
+    try {
+      nodes = await snapshot(device);
+      accessibilityAvailable = true;
+    } catch {
+      // A raster and the frozen cursor are still a truthful no-mutation package.
+    }
+    const caption = `blocked:unproven-cursor:${check.id}`;
+    const screenshot = await captureScreenshot({
+      jobId: job.id,
+      caption,
+      device,
+      ...(nodes.length ? { semanticNodes: nodes } : {}),
+    }).catch(() => undefined);
+    const attempts = job.artifacts
+      .filter((artifact) =>
+        [
+          "target-resolution",
+          "target-resolution-attempt",
+          "locator-fallback",
+          "locator-heal",
+        ].includes(artifact.kind),
+      )
+      .slice(-32)
+      .map((artifact) => ({
+        kind: artifact.kind,
+        capturedAt: artifact.capturedAt,
+        data: artifact.data,
+      }));
+    evidenceCapturedAt = now();
+    job.artifacts.push({
+      kind: "campaign-cursor-firewall",
+      capturedAt: evidenceCapturedAt,
+      data: {
+        schemaVersion: 1,
+        status: "blocked-before-mutation",
+        cursorKey,
+        rootCheckId: check.id,
+        rootCheckTitle: check.title,
+        reason,
+        stoppedMutations: true,
+        expected: {
+          ...(expectedOriginScreenId ? { originScreenId: expectedOriginScreenId } : {}),
+          ...(check.transitionDependencies?.at(-1)
+            ? { leafTransition: structuredClone(check.transitionDependencies.at(-1)) }
+            : {}),
+        },
+        observed: {
+          cursor: cursor ? structuredClone(cursor) : { status: "missing" },
+          chrome: describeSnapshotChrome(nodes),
+          ...(nodes.length ? { screenIdentity: observeScreenIdentity(nodes) } : {}),
+        },
+        attemptedSelectors: attempts,
+        accessibility: { available: accessibilityAvailable, nodeCount: nodes.length },
+        nodes,
+        screenshot: {
+          caption,
+          ...(screenshot?.framePath ? { framePath: screenshot.framePath } : {}),
+          ...(screenshot?.path ? { path: screenshot.path } : {}),
+          ...(screenshot?.width ? { width: screenshot.width } : {}),
+          ...(screenshot?.height ? { height: screenshot.height } : {}),
+        },
+        repair: {
+          action: "prove-origin-or-teach-canonical-leaf",
+          ...(expectedOriginScreenId ? { requiredOriginScreenId: expectedOriginScreenId } : {}),
+          choices: ["prove-current-origin", "teach-canonical-leaf", "defer"],
+          implicitMutationAllowed: false,
+        },
+      },
+    });
+  }
+
+  const finishedAt = now();
+  job?.artifacts.push({
+    kind: "campaign-check-result",
+    capturedAt: finishedAt,
+    data: {
+      ...check,
+      status: "blocked",
+      error: `Blocked before mutation: ${reason}`,
+      dependencyReason: reason,
+      ...(expectedOriginScreenId ? { expectedOriginScreenId } : {}),
+      observedCursor: cursor ? structuredClone(cursor) : { status: "missing" },
+      stoppedMutations: true,
+      ...(evidenceCapturedAt ? { evidenceCapturedAt } : {}),
+      selectiveRepair: {
+        status: "pending",
+        ...(check.recovery
+          ? { recipeId: check.recovery.recipeId, groupId: check.recovery.groupId }
+          : {}),
+      },
+      startedAt,
+      finishedAt,
+    },
+  });
+  ctx.log(`check blocked before mutation: ${check.title} — ${reason}`);
+}
+
 export async function runCampaignCheck(
   device: Device,
   step: RecipeStep & { check: NonNullable<RecipeStep["check"]> },
@@ -289,8 +435,38 @@ export async function runCampaignCheck(
     .find(
       (dependency) => transitionProofs[dependency.connectionId]?.status === "needs-confirmation",
     );
+  const cursor = ctx.runtime.navigationCursor;
+  const cursorMismatch =
+    cursor?.status === "proven" &&
+    step.check.warmSourceScreenId !== undefined &&
+    cursor.screenId !== step.check.warmSourceScreenId;
+  const cursorUnproven = cursor !== undefined && cursor.status !== "proven";
+  const canonicalLeafIsSafe = independentlySourceProvenLeafRecipe(step.check, ctx);
+  if ((cursorUnproven || cursorMismatch) && !canonicalLeafIsSafe) {
+    const expected =
+      step.check.warmSourceScreenId ??
+      transitionDependencies[0]?.originScreenId ??
+      "an authored origin";
+    const observed =
+      cursor?.status === "proven"
+        ? cursor.screenId
+        : cursor?.status === "external-handoff"
+          ? `external handoff (${cursor.foregroundApp})`
+          : cursor?.status === "unknown"
+            ? `unknown (${cursor.reason})`
+            : "unproven";
+    await blockUnprovenCampaignMutation(
+      device,
+      step.check,
+      ctx,
+      startedAt,
+      `Expected ${expected}; runtime cursor is ${observed}. No frozen independently source-proven canonical leaf edge is available.`,
+    );
+    return;
+  }
   const useCanonicalRecovery = Boolean(
     recovery &&
+    canonicalLeafIsSafe &&
     ((!ancestorNeedingConfirmation &&
       (ctx.runtime?.navigationCursor?.status === "unknown" ||
         (ctx.runtime?.navigationCursor?.status === "proven" &&
