@@ -3,15 +3,6 @@ import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import type { AgentState, AgentWorker } from "./app-map-agent-types";
 
-function initials(value: string): string {
-  return value
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
-
 export function AppMapAgentProgress(props: {
   state: AgentState;
   stage: string;
@@ -45,7 +36,7 @@ export function AppMapAgentProgress(props: {
                 : "Exploring"}
           </span>
           <span class="text-micro text-[var(--text-weak)] tabular-nums">
-            {complete()}/{props.workers.length} agents
+            {complete()}/{props.workers.length} targets
           </span>
         </div>
         <div>
@@ -60,7 +51,7 @@ export function AppMapAgentProgress(props: {
 
       <section>
         <h3 class="mb-2 text-micro font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
-          Agents
+          Targets
         </h3>
         <ul class="grid gap-1.5">
           <For each={props.workers}>
@@ -77,18 +68,13 @@ export function AppMapAgentProgress(props: {
                   )}
                   aria-hidden="true"
                 >
-                  {initials(worker.model.shortLabel)}
+                  R
                 </span>
                 <span class="min-w-0">
                   <span class="flex min-w-0 items-center gap-1.5">
                     <strong class="truncate text-caption font-medium text-[var(--text-strong)]">
-                      {worker.model.label}
+                      Relay
                     </strong>
-                    <Show when={worker.planner === "semantic"}>
-                      <small class="shrink-0 rounded-full bg-[var(--background-base)] px-1.5 py-0.5 text-micro text-[var(--text-weak)]">
-                        local fallback
-                      </small>
-                    </Show>
                   </span>
                   <small class="mt-0.5 block truncate text-micro text-[var(--text-weak)]">
                     {worker.targetName}

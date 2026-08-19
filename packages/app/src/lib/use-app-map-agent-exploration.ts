@@ -5,12 +5,7 @@ import { toast } from "../context/toast";
 import { agentTargetQueues, buildAgentWorkers, journeyWorkerOptions } from "./app-map-agent-plan";
 import { deriveAppMapAreas } from "./app-map-browse";
 import { useDiscoveryJourney } from "./use-discovery-journey";
-import {
-  AGENT_MODELS,
-  type AgentState,
-  type AgentStrategy,
-  type AgentWorker,
-} from "../components/app-map-agent-types";
+import type { AgentState, AgentStrategy, AgentWorker } from "../components/app-map-agent-types";
 
 const MAX_WORKERS = 12;
 
@@ -31,7 +26,6 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
   const [targetIds, setTargetIds] = createSignal<string[]>(
     server.selectedDevice() ? [server.selectedDevice()!] : [],
   );
-  const [modelIds, setModelIds] = createSignal<string[]>(["relay"]);
   const [state, setState] = createSignal<AgentState>("idle");
   const [stage, setStage] = createSignal("Ready to explore");
   const [workers, setWorkers] = createSignal<AgentWorker[]>([]);
@@ -52,10 +46,7 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
           device.connectionState !== "unauthorized",
       ),
   );
-  const selectedModels = createMemo(() =>
-    AGENT_MODELS.filter((model) => modelIds().includes(model.id)),
-  );
-  const workerCount = createMemo(() => selectedTargets().length * selectedModels().length);
+  const workerCount = createMemo(() => selectedTargets().length);
   const liveProposals = createMemo(() => {
     const map = appMap();
     const sessionIds = new Set(
@@ -111,15 +102,14 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
     updateWorker(worker.id, { status: "running", stage: "Starting explore" });
     try {
       const session = await server.createDiscoverySession({
-        name: `${runMap.name} · ${worker.model.label} · ${worker.targetName}`,
+        name: `${runMap.name} · Relay · ${worker.targetName}`,
         targetId: worker.targetId,
         agent: {
           workerId: worker.id,
           appMapId: runMap.id,
           goal: goal().trim(),
           ...(worker.focus ? { focus: worker.focus } : {}),
-          provider: worker.model.provider,
-          ...(worker.model.model ? { model: worker.model.model } : {}),
+          provider: "relay",
           source: "ui",
         },
         scope: {
@@ -179,18 +169,18 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
       toast("Open a map before starting exploration.", "warning");
       return;
     }
-    if (!goal().trim() || !selectedTargets().length || !selectedModels().length) {
-      toast("Add a goal, at least one target, and one agent perspective.", "warning");
+    if (!goal().trim() || !selectedTargets().length) {
+      toast("Add a goal and at least one target.", "warning");
       return;
     }
     if (workerCount() > MAX_WORKERS) {
-      toast(`Choose at most ${MAX_WORKERS} target and perspective combinations.`, "warning");
+      toast(`Choose at most ${MAX_WORKERS} targets.`, "warning");
       return;
     }
 
     const token = ++runToken;
     const areas = deriveAppMapAreas(runMap).map((area) => area.title);
-    const plan = buildAgentWorkers(selectedTargets(), selectedModels(), {
+    const plan = buildAgentWorkers(selectedTargets(), {
       strategy: strategy(),
       areas,
       actionBudget: actionBudget(),
@@ -257,7 +247,7 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
       interactions: 0,
     });
     setState("running");
-    setStage(`Retrying ${worker.model.shortLabel} on ${worker.targetName}`);
+    setStage(`Retrying Relay on ${worker.targetName}`);
     await runWorker({ ...worker, status: "queued" }, token, runMap);
     if (token !== runToken) return;
     await server.refreshAppMaps();
@@ -275,7 +265,6 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
     minutes,
     strategy,
     targetIds,
-    modelIds,
     state,
     stage,
     workers,
@@ -292,7 +281,6 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
     setMinutes,
     setStrategy,
     setTargetIds,
-    setModelIds,
     start,
     stop,
     retry,

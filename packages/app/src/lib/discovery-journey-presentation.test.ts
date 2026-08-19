@@ -28,7 +28,6 @@ const journey = (steps: DiscoveryJourneyStep[]): DiscoveryJourney => ({
 
 const run = (patch: Partial<DiscoveryExploreRun> = {}): DiscoveryExploreRun => ({
   strategy: "surface",
-  mode: "semantic",
   maxDepth: 2,
   startedAt: 1,
   updatedAt: 2,

@@ -49,7 +49,7 @@ export function AppMapAgentGhosts(props: {
             >
               <div class="h-8 border-b border-[color-mix(in_srgb,var(--border-weak-base)_80%,transparent)] px-2.5">
                 <span class="flex h-full items-center truncate text-micro font-semibold text-[var(--text-interactive-base)]">
-                  {worker.model.shortLabel}
+                  Relay · {worker.targetName}
                 </span>
               </div>
               <div class="grid h-[calc(100%-32px)] place-items-center bg-[color-mix(in_srgb,var(--product-accent-soft)_55%,transparent)] motion-safe:animate-pulse">

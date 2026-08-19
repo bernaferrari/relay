@@ -15,7 +15,6 @@ import {
   readDiscoveryExploreOutcome,
   resetDiscoveryExploreJobsForTests,
   resolveExploreMaxDepth,
-  resolveExploreMode,
   resolveExploreStrategy,
   scoreExploreOption,
   startDiscoveryExplore,
@@ -57,20 +56,6 @@ test("resolveExploreStrategy prefers start options over scope", () => {
       strategy: "journey",
     }),
     "journey",
-  );
-});
-
-test("resolveExploreMode defaults to semantic; model stays available", () => {
-  assert.equal(
-    resolveExploreMode({ maxScreens: 1, maxTransitions: 1, maxDurationMs: 1 }),
-    "semantic",
-  );
-  assert.equal(
-    resolveExploreMode(
-      { maxScreens: 1, maxTransitions: 1, maxDurationMs: 1, mode: "semantic" },
-      { mode: "model" },
-    ),
-    "model",
   );
 });
 
@@ -133,7 +118,7 @@ test("scoreExploreOption ranks hard-edges above generic rows", () => {
   );
 });
 
-test("patchDiscoveryScope stores explore strategy fields", async () => {
+test("patchDiscoveryScope stores the one public explore strategy", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-explore-scope-"));
   const previous = process.env.RELAY_WORKSPACE_ROOT;
   process.env.RELAY_WORKSPACE_ROOT = root;
@@ -145,11 +130,9 @@ test("patchDiscoveryScope stores explore strategy fields", async () => {
     });
     const patched = await patchDiscoveryScope(session.id, {
       strategy: "journey",
-      mode: "model",
       maxDepth: 5,
     });
     assert.equal(patched.scope.strategy, "journey");
-    assert.equal(patched.scope.mode, "model");
     assert.equal(patched.scope.maxDepth, 5);
     assert.equal((await readDiscoverySession(session.id))?.scope.strategy, "journey");
   } finally {
@@ -222,12 +205,10 @@ test("startDiscoveryExplore applies strategy options onto a mapped session", asy
 
     const started = await startDiscoveryExplore(session.id, {
       strategy: "hard-edges",
-      mode: "model",
       maxDepth: 3,
     });
     assert.equal(started.status, "running");
     assert.equal(started.scope.strategy, "hard-edges");
-    assert.equal(started.scope.mode, "model");
     assert.equal(started.scope.maxDepth, 3);
     assert.equal(readDiscoveryExploreOutcome(session.id)?.strategy, "hard-edges");
 
@@ -242,7 +223,6 @@ test("startDiscoveryExplore applies strategy options onto a mapped session", asy
     assert.equal(readDiscoveryExploreOutcome(session.id), undefined);
     const restarted = await loadDiscoveryExploreRun(session.id);
     assert.equal(restarted?.strategy, "hard-edges");
-    assert.equal(restarted?.mode, "model");
     assert.equal(restarted?.maxDepth, 3);
     assert.equal(restarted?.stopReason?.code, "cancelled");
   } finally {

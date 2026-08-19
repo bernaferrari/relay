@@ -4,15 +4,21 @@ import type { NavigationProofCursorArtifact } from "./navigation-proof.js";
 /** -shaped explore crawl strategies (local-first here/do/ground loop). */
 export type DiscoveryExploreStrategy = "surface" | "journey" | "hard-edges";
 
-/** How the explorer picks the next option: semantic heuristics, or a stub model planner. */
-export type DiscoveryExploreMode = "semantic" | "model";
-
 export type DiscoveryExploreStopCode = "complete" | "cancelled" | "budget" | "left_app" | "error";
 
 export type DiscoveryExploreStopReason = {
   code: DiscoveryExploreStopCode;
   message: string;
   at: number;
+};
+
+/** A safe row Explore could not execute without guessing. */
+export type DiscoveryExploreProblem = {
+  screenId: string;
+  controlId: string;
+  label: string;
+  reason: string;
+  capturedAt: number;
 };
 
 /**
@@ -23,8 +29,9 @@ export type DiscoveryExploreStopReason = {
  */
 export type DiscoveryExploreRun = {
   strategy: DiscoveryExploreStrategy;
-  mode: DiscoveryExploreMode;
   maxDepth: number;
+  /** Unresolved rows are durable Problems, never silently skipped work. */
+  problems?: DiscoveryExploreProblem[];
   stopReason?: DiscoveryExploreStopReason;
   /**
    * The only runtime truth about where Explore has actually proved the device is.
@@ -43,8 +50,6 @@ export type DiscoveryScope = {
   allowSensitiveControls?: boolean;
   /** Explore strategy when discovery.start runs the server-owned crawl. */
   strategy?: DiscoveryExploreStrategy;
-  /** Option picker mode for explore (model stays stub/heuristic until a real planner lands). */
-  mode?: DiscoveryExploreMode;
   /** Max navigation depth from the seed screen; strategy supplies a default when omitted. */
   maxDepth?: number;
 };

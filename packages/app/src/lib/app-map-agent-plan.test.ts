@@ -1,40 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AGENT_MODELS } from "../components/app-map-agent-types";
 import { agentTargetQueues, buildAgentWorkers, journeyWorkerOptions } from "./app-map-agent-plan";
 
-test("expands target and model coverage while preserving one serial queue per target", () => {
+test("creates one explainable worker per target", () => {
   let sequence = 0;
   const workers = buildAgentWorkers(
     [
       { serial: "pixel", name: "Pixel", platform: "android" },
       { serial: "ipad", name: "iPad", platform: "ios" },
     ],
-    AGENT_MODELS.slice(0, 2),
     { strategy: "divide", areas: ["Account", "Settings"], actionBudget: 60 },
     () => `worker-${++sequence}`,
   );
   assert.deepEqual(
     workers.map((worker) => worker.focus),
-    ["Account", "Settings", "Account", "Settings"],
+    ["Account", "Settings"],
   );
 
-  assert.equal(workers.length, 4);
+  assert.equal(workers.length, 2);
   assert.deepEqual(
-    workers.map((worker) => [worker.targetId, worker.model.id]),
-    [
-      ["pixel", "relay"],
-      ["pixel", "gpt"],
-      ["ipad", "relay"],
-      ["ipad", "gpt"],
-    ],
+    workers.map((worker) => worker.targetId),
+    ["pixel", "ipad"],
   );
   assert.deepEqual(
     agentTargetQueues(workers).map((queue) => queue.map((worker) => worker.id)),
-    [
-      ["worker-1", "worker-2"],
-      ["worker-3", "worker-4"],
-    ],
+    [["worker-1"], ["worker-2"]],
   );
 });
 
@@ -45,7 +35,6 @@ test("every crawl that reached a session is offered as its own journey", () => {
       { serial: "pixel", name: "Pixel", platform: "android" },
       { serial: "ipad", name: "iPad", platform: "ios" },
     ],
-    AGENT_MODELS.slice(0, 1),
     { strategy: "divide", areas: ["Account", "Settings"], actionBudget: 60 },
     () => `worker-${++sequence}`,
   ).map((worker, index) => ({
@@ -61,11 +50,10 @@ test("every crawl that reached a session is offered as its own journey", () => {
   ]);
 });
 
-test("a worker without a session has no journey to show, and compare falls back to the model", () => {
+test("a worker without a session has no journey to show", () => {
   let sequence = 0;
   const workers = buildAgentWorkers(
     [{ serial: "pixel", name: "Pixel", platform: "android" }],
-    AGENT_MODELS.slice(0, 2),
     { strategy: "compare", areas: ["Account"], actionBudget: 60 },
     () => `worker-${++sequence}`,
   ).map((worker, index) => (index === 0 ? { ...worker, sessionId: "session-1" } : worker));

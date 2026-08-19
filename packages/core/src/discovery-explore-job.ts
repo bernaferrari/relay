@@ -6,8 +6,8 @@
  */
 import type {
   DiscoveryControl,
-  DiscoveryExploreMode,
   DiscoveryExploreRun,
+  DiscoveryExploreProblem,
   DiscoveryExploreStopReason,
   DiscoveryExploreStrategy,
   DiscoverySession,
@@ -32,7 +32,6 @@ import type { InteractInput } from "./workspace.js";
 
 export type StartDiscoveryExploreOptions = {
   strategy?: DiscoveryExploreStrategy;
-  mode?: DiscoveryExploreMode;
   maxDepth?: number;
 };
 
@@ -152,13 +151,6 @@ export function resolveExploreStrategy(
   return options?.strategy ?? scope.strategy ?? "surface";
 }
 
-export function resolveExploreMode(
-  scope: DiscoverySession["scope"],
-  options?: StartDiscoveryExploreOptions,
-): DiscoveryExploreMode {
-  return options?.mode ?? scope.mode ?? "semantic";
-}
-
 export function resolveExploreMaxDepth(
   strategy: DiscoveryExploreStrategy,
   scope: DiscoverySession["scope"],
@@ -216,16 +208,13 @@ export function scoreExploreOption(
   return score;
 }
 
-/** Pick the next unopened option; optional model mode is a stub that mirrors semantic. */
+/** Pick the next unopened option using Relay's single explainable semantic policy. */
 export function pickNextExploreOption(
   options: readonly DiscoveryHereOption[],
   strategy: DiscoveryExploreStrategy,
-  mode: DiscoveryExploreMode = "semantic",
 ): DiscoveryHereOption | null {
   const candidates = options.filter((option) => !option.opened);
   if (!candidates.length) return null;
-  // model mode: stub planner — same ranking as semantic until a real LLM planner lands.
-  void mode;
   const ranked = [...candidates].sort((left, right) => {
     const delta = scoreExploreOption(right, strategy) - scoreExploreOption(left, strategy);
     if (delta !== 0) return delta;
@@ -259,6 +248,22 @@ async function rememberExploreRun(sessionId: string, run: DiscoveryExploreRun): 
   }
 }
 
+async function rememberExploreProblem(
+  sessionId: string,
+  problem: DiscoveryExploreProblem,
+): Promise<void> {
+  const job = activeExploreJobs.get(sessionId);
+  if (!job) return;
+  const problems = [...(job.outcome.problems ?? [])];
+  const index = problems.findIndex(
+    (item) => item.screenId === problem.screenId && item.controlId === problem.controlId,
+  );
+  if (index >= 0) problems[index] = problem;
+  else problems.push(problem);
+  job.outcome = { ...job.outcome, problems, updatedAt: Date.now() };
+  await rememberExploreRun(sessionId, job.outcome);
+}
+
 async function finishExplore(
   sessionId: string,
   status: "complete" | "stopped",
@@ -288,6 +293,7 @@ async function finishExplore(
 async function resolveInteraction(input: {
   serial: string;
   option: DiscoveryHereOption;
+  ground?: typeof groundTarget;
 }): Promise<{ interaction: InteractInput; grounded: boolean }> {
   if (!needsExploreGrounding(input.option)) {
     const target = input.option.target;
@@ -313,25 +319,15 @@ async function resolveInteraction(input: {
   }
 
   try {
-    const grounded = await groundTarget({
+    const grounded = await (input.ground ?? groundTarget)({
       serial: input.serial,
       target: input.option.label,
     });
     return { interaction: grounded.interaction, grounded: true };
   } catch (error) {
-    if (error instanceof GroundingError) {
-      // Fall back to the option's stored target so explore can continue.
-      const target = input.option.target;
-      if (target.point) {
-        return {
-          interaction: { kind: "point", x: target.point.x, y: target.point.y },
-          grounded: false,
-        };
-      }
-      if (target.label) {
-        return { interaction: { kind: "label", label: target.label }, grounded: false };
-      }
-    }
+    // Ambiguous controls require fresh grounding. A stale label or viewport
+    // coordinate is not an automatic substitute for failed identity proof.
+    if (error instanceof GroundingError) throw error;
     throw error;
   }
 }
@@ -347,12 +343,14 @@ export type ExploreRuntime = {
   here: typeof runDiscoveryHere;
   act: typeof runDiscoveryDo;
   foreground: (serial: string) => Promise<string | undefined>;
+  ground: typeof groundTarget;
 };
 
 export const liveExploreRuntime: ExploreRuntime = {
   here: runDiscoveryHere,
   act: runDiscoveryDo,
   foreground: async (serial) => (await describeTargetUi(serial)).foregroundApp ?? undefined,
+  ground: groundTarget,
 };
 
 let exploreRuntime: ExploreRuntime = liveExploreRuntime;
@@ -379,7 +377,7 @@ async function exploreBack(sessionId: string): Promise<DiscoveryHere> {
 async function runExploreJob(sessionId: string): Promise<void> {
   const job = activeExploreJobs.get(sessionId);
   if (!job) return;
-  const { strategy, mode, maxDepth } = job.outcome;
+  const { strategy, maxDepth } = job.outcome;
   const runtime = exploreRuntime;
 
   // Yield so start→cancel wiring can stop before the first device snapshot.
@@ -478,7 +476,6 @@ async function runExploreJob(sessionId: string): Promise<void> {
       const next = pickNextExploreOption(
         here.options.filter((option) => frame.pendingIds.includes(option.id)),
         strategy,
-        mode,
       );
       if (!next) {
         frame.pendingIds = [];
@@ -495,10 +492,17 @@ async function runExploreJob(sessionId: string): Promise<void> {
         const resolved = await resolveInteraction({
           serial: session.targetId,
           option: next,
+          ground: runtime.ground,
         });
         interaction = resolved.interaction;
       } catch (error) {
-        console.error(`discovery explore ${sessionId} ground failed`, error);
+        await rememberExploreProblem(sessionId, {
+          screenId: frame.screenId,
+          controlId: next.id,
+          label: next.label,
+          reason: error instanceof Error ? error.message : String(error),
+          capturedAt: Date.now(),
+        });
         continue;
       }
 
@@ -527,7 +531,7 @@ async function runExploreJob(sessionId: string): Promise<void> {
           sessionId,
           ...(needsExploreGrounding(next) ? { interaction } : { controlId: next.id, interaction }),
           decision: {
-            mode: mode === "model" ? "model" : "semantic",
+            mode: "semantic",
             provider: session.agent?.provider ?? "relay",
             model: session.agent?.model ?? `explore-${strategy}-v1`,
             selectedControlId: next.id,
@@ -623,9 +627,15 @@ async function runExploreJob(sessionId: string): Promise<void> {
       Date.now() >= session.createdAt + session.scope.maxDurationMs ||
       session.transitions.length >= session.scope.maxTransitions ||
       session.screens.length >= session.scope.maxScreens;
-    await finishExplore(sessionId, hitBudget ? "stopped" : "complete", {
-      code: hitBudget ? "budget" : "complete",
-      message: hitBudget ? "Explore hit screen, transition, or time budget" : "Explore finished",
+    const problemCount = job.outcome.problems?.length ?? 0;
+    const stopped = hitBudget || problemCount > 0;
+    await finishExplore(sessionId, stopped ? "stopped" : "complete", {
+      code: hitBudget ? "budget" : problemCount > 0 ? "error" : "complete",
+      message: hitBudget
+        ? "Explore hit screen, transition, or time budget"
+        : problemCount > 0
+          ? `Explore finished with ${problemCount} unresolved problem${problemCount === 1 ? "" : "s"}`
+          : "Explore finished",
     });
   } catch (error) {
     console.error(`discovery explore ${sessionId} failed`, error);
@@ -658,24 +668,20 @@ export async function startDiscoveryExplore(
   if (activeExploreJobs.has(id)) throw new Error("discovery explore is already active");
 
   const strategy = resolveExploreStrategy(session.scope, options);
-  const mode = resolveExploreMode(session.scope, options);
   const maxDepth = resolveExploreMaxDepth(strategy, session.scope, options);
 
   if (
     options?.strategy ||
-    options?.mode ||
     options?.maxDepth ||
     session.scope.strategy !== strategy ||
-    session.scope.mode !== mode ||
     session.scope.maxDepth !== maxDepth
   ) {
-    session = await patchDiscoveryScope(id, { strategy, mode, maxDepth });
+    session = await patchDiscoveryScope(id, { strategy, maxDepth });
   }
 
   const startedAt = Date.now();
   const outcome: DiscoveryExploreRun = {
     strategy,
-    mode,
     maxDepth,
     startedAt,
     updatedAt: startedAt,

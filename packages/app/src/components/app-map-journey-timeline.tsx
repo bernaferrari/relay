@@ -42,10 +42,11 @@ export function AppMapJourneyTimeline(props: {
   const headline = () => journeyHeadline(props.journey);
   const outcome = () => journeyOutcomeSummary(props.run);
   const cursor = () => journeyCursorSummary(props.run);
+  const problems = () => props.run?.problems ?? [];
   const workers = () => props.workers ?? [];
 
   return (
-    <Show when={rows().length > 0 || workers().length > 1 || cursor()}>
+    <Show when={rows().length > 0 || workers().length > 1 || cursor() || problems().length > 0}>
       <section class="grid gap-2.5">
         <div class="flex items-baseline justify-between gap-3">
           <h3 class="text-micro font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
@@ -118,6 +119,28 @@ export function AppMapJourneyTimeline(props: {
               </span>
             </div>
           )}
+        </Show>
+
+        <Show when={problems().length > 0}>
+          <section
+            class="grid gap-1.5 rounded-xl bg-[var(--surface-base)] p-3"
+            aria-label="Explore problems"
+          >
+            <div class="flex items-baseline justify-between gap-3">
+              <strong class="text-caption font-medium text-[var(--text-strong)]">Problems</strong>
+              <span class="text-micro text-[var(--text-weak)] tabular-nums">
+                {problems().length}
+              </span>
+            </div>
+            <For each={problems()}>
+              {(problem) => (
+                <div class="grid gap-0.5 border-t border-[var(--border-weak-base)] pt-1.5 first:border-0 first:pt-0">
+                  <span class="text-caption text-[var(--text-strong)]">{problem.label}</span>
+                  <span class="text-micro/[1.4] text-[var(--text-weak)]">{problem.reason}</span>
+                </div>
+              )}
+            </For>
+          </section>
         </Show>
 
         <Show when={rows().length > 0}>

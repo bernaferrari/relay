@@ -1,31 +1,22 @@
 import type { DeviceInfo } from "./api-types";
-import type {
-  AgentModelOption,
-  AgentStrategy,
-  AgentWorker,
-} from "../components/app-map-agent-types";
+import type { AgentStrategy, AgentWorker } from "../components/app-map-agent-types";
 
 export function buildAgentWorkers(
   targets: readonly DeviceInfo[],
-  models: readonly AgentModelOption[],
   options: { strategy: AgentStrategy; areas: readonly string[]; actionBudget: number },
   id: () => string = () => crypto.randomUUID(),
 ): AgentWorker[] {
-  const workers = targets.flatMap((target) =>
-    models.map(
-      (model): AgentWorker => ({
-        id: id(),
-        targetId: target.serial,
-        targetName: target.name ?? target.serial,
-        model,
-        actionBudget: options.actionBudget,
-        status: "queued",
-        stage: "Waiting for target",
-        planner: "model",
-        screens: 0,
-        interactions: 0,
-      }),
-    ),
+  const workers = targets.map(
+    (target): AgentWorker => ({
+      id: id(),
+      targetId: target.serial,
+      targetName: target.name ?? target.serial,
+      actionBudget: options.actionBudget,
+      status: "queued",
+      stage: "Waiting for target",
+      screens: 0,
+      interactions: 0,
+    }),
   );
   return workers.map((worker, index) => ({
     ...worker,
@@ -51,7 +42,7 @@ export function journeyWorkerOptions(workers: readonly AgentWorker[]): JourneyWo
     .filter((worker) => worker.sessionId)
     .map((worker) => ({
       id: worker.id,
-      label: worker.focus?.trim() || worker.model.shortLabel,
+      label: worker.focus?.trim() || "Relay",
       detail: worker.targetName,
       live: worker.status === "running",
     }));

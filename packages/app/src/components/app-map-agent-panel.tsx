@@ -83,13 +83,11 @@ export function AppMapAgentPanel(props: {
             devices={exploration.devices()}
             targetIds={exploration.targetIds()}
             selectedTargetCount={exploration.targetCount()}
-            modelIds={exploration.modelIds()}
             onOpenTargets={props.onOpenTargets}
             onGoal={exploration.setGoal}
             onMinutes={exploration.setMinutes}
             onStrategy={exploration.setStrategy}
             onTargetIds={exploration.setTargetIds}
-            onModelIds={exploration.setModelIds}
           />
         </Show>
         <Show

@@ -21,6 +21,7 @@ import {
   type ExploreRuntime,
 } from "./discovery-explore-job.js";
 import type { DiscoveryHere } from "./discovery-turn.js";
+import { GroundingError } from "./grounding.js";
 
 type FakeScreen = {
   id: string;
@@ -36,6 +37,8 @@ type FakeDeviceOptions = {
   otherApp?: string;
   /** Adversarial device behavior: Back lands somewhere other than its reviewed parent. */
   backLandsOn?: string;
+  /** Controls that cannot be uniquely grounded must become durable Problems. */
+  groundingFailsFor?: string;
 };
 
 /**
@@ -117,6 +120,13 @@ function fakeDevice(options: FakeDeviceOptions) {
       };
     },
     foreground: async () => foregroundApp,
+    ground: async ({ target }) => {
+      const label = typeof target === "string" ? target : "structured target";
+      if (label === options.groundingFailsFor) {
+        throw new GroundingError(`${label} matched two controls`);
+      }
+      return { interaction: { kind: "label", label }, method: "a11y", confidence: 1 };
+    },
   };
 
   return {
@@ -285,5 +295,32 @@ test("explore finishes cleanly when the seed screen has nothing to open", async 
     assert.deepEqual(device.backs, []);
     const run = await loadDiscoveryExploreRun(created.id);
     assert.equal(run?.stopReason?.code, "complete");
+  });
+});
+
+test("explore reports an ungrounded row as a durable Problem instead of complete", async () => {
+  await withWorkspace("relay-explore-problem-", async () => {
+    const device = fakeDevice({
+      screens: [
+        { id: "home", edges: { Menu: "settings", Profile: "profile" } },
+        { id: "profile", edges: {} },
+      ],
+      groundingFailsFor: "Menu",
+    });
+    setExploreRuntimeForTests(device.runtime);
+
+    const created = await session("explore-problem");
+    await startDiscoveryExplore(created.id, { strategy: "surface" });
+    await waitDiscoveryExploreForTests(created.id);
+
+    const run = await loadDiscoveryExploreRun(created.id);
+    assert.equal(run?.stopReason?.code, "error");
+    assert.match(run?.stopReason?.message ?? "", /1 unresolved problem/);
+    assert.deepEqual(
+      run?.problems?.map(({ screenId, label, reason }) => ({ screenId, label, reason })),
+      [{ screenId: "screen-home", label: "Menu", reason: "Menu matched two controls" }],
+    );
+    assert.deepEqual(device.taps, ["home>Profile"]);
+    assert.equal((await readDiscoverySession(created.id))?.status, "stopped");
   });
 });

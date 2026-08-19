@@ -3,7 +3,6 @@ import type { DeviceInfo } from "../lib/api-types";
 import { presentTarget } from "../lib/target-presentation";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
-import { AGENT_MODELS } from "./app-map-agent-types";
 import type { AgentStrategy } from "./app-map-agent-types";
 
 function available(device: DeviceInfo): boolean {
@@ -17,17 +16,15 @@ export function AppMapAgentSetup(props: {
   devices: DeviceInfo[];
   targetIds: string[];
   selectedTargetCount: number;
-  modelIds: string[];
   onOpenTargets: () => void;
   onGoal: (value: string) => void;
   onMinutes: (value: number) => void;
   onStrategy: (value: AgentStrategy) => void;
   onTargetIds: (value: string[]) => void;
-  onModelIds: (value: string[]) => void;
 }) {
   const toggle = (values: string[], id: string): string[] =>
     values.includes(id) ? values.filter((value) => value !== id) : [...values, id];
-  const workerCount = () => props.selectedTargetCount * props.modelIds.length;
+  const workerCount = () => props.selectedTargetCount;
 
   return (
     <div class="grid gap-4">
@@ -133,8 +130,8 @@ export function AppMapAgentSetup(props: {
           <Icon name="grid" size={14} class="text-[var(--text-weak)]" />
           <span class="flex-1">Coverage</span>
           <span class="font-normal text-[var(--text-weak)]">
-            {props.selectedTargetCount} target{props.selectedTargetCount === 1 ? "" : "s"} ·{" "}
-            {props.modelIds.length} perspective{props.modelIds.length === 1 ? "" : "s"}
+            {props.selectedTargetCount} target{props.selectedTargetCount === 1 ? "" : "s"} · one
+            explainable planner
           </span>
           <Icon
             name="chevron-down"
@@ -189,38 +186,10 @@ export function AppMapAgentSetup(props: {
             </div>
           </fieldset>
 
-          <fieldset class="grid gap-2">
-            <legend class="text-micro font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
-              Agent perspectives
-            </legend>
-            <div class="flex flex-wrap gap-1.5">
-              <For each={AGENT_MODELS}>
-                {(model) => {
-                  const selected = () => props.modelIds.includes(model.id);
-                  return (
-                    <button
-                      type="button"
-                      class={cn(
-                        "min-h-11 rounded-full px-3 text-micro font-medium transition-[background-color,color,box-shadow] duration-hover",
-                        selected()
-                          ? "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_22%,transparent)]"
-                          : "bg-[var(--background-base)] text-[var(--text-base)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] hover:text-[var(--text-strong)]",
-                      )}
-                      aria-pressed={selected()}
-                      onClick={() => props.onModelIds(toggle(props.modelIds, model.id))}
-                    >
-                      {model.label}
-                    </button>
-                  );
-                }}
-              </For>
-            </div>
-            <p class="text-micro/[1.45] text-[var(--text-weak)]">
-              Targets run in parallel. Perspectives sharing one device queue safely and never tap
-              over each other. Named models use your OpenRouter connection; Relay falls back to its
-              built-in step planner when the cloud model is unavailable.
-            </p>
-          </fieldset>
+          <p class="text-micro/[1.45] text-[var(--text-weak)]">
+            Targets run in parallel. Every decision uses Relay's explainable semantic planner and
+            returns as a reviewable proposal.
+          </p>
         </div>
       </details>
 

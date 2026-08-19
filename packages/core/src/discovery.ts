@@ -43,7 +43,6 @@ const DEFAULT_SCOPE: DiscoveryScope = {
 };
 
 const EXPLORE_STRATEGIES = new Set(["surface", "journey", "hard-edges"]);
-const EXPLORE_MODES = new Set(["semantic", "model"]);
 
 function requiredText(value: unknown, label: string, maxLength: number): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`);
@@ -165,10 +164,6 @@ function normalizeScope(scope?: Partial<DiscoveryScope>): DiscoveryScope {
   if (strategy !== undefined && !EXPLORE_STRATEGIES.has(strategy)) {
     throw new Error("invalid discovery explore strategy");
   }
-  const mode = scope?.mode;
-  if (mode !== undefined && !EXPLORE_MODES.has(mode)) {
-    throw new Error("invalid discovery explore mode");
-  }
   const maxDepth = scope?.maxDepth;
   if (maxDepth !== undefined) {
     bounded(maxDepth, 2, 12);
@@ -186,7 +181,6 @@ function normalizeScope(scope?: Partial<DiscoveryScope>): DiscoveryScope {
       : {}),
     allowSensitiveControls: scope?.allowSensitiveControls ?? false,
     ...(strategy ? { strategy } : {}),
-    ...(mode ? { mode } : {}),
     ...(maxDepth !== undefined ? { maxDepth } : {}),
   };
 }
