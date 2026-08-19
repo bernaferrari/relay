@@ -5,16 +5,13 @@ import {
   summarizeCommandAttemptFailures,
   type CommandAttemptFailure,
 } from '../command-attempts.ts';
-import {
-  parsePermissionAction,
-  parsePermissionTarget,
-  type SettingOptions,
-} from '@agent-device/contracts/settings';
+import type { SettingOptions } from '@agent-device/contracts/settings';
 import { parseAppearanceAction } from '../appearance.ts';
 import { parseSettingState } from '../setting-state.ts';
 import { runAndroidAdb } from './adb.ts';
 import { androidAdbResultError } from './adb-executor.ts';
 import { resolveAndroidApp } from './app-deployment-resolution.ts';
+import { setAndroidPermission } from './settings-permission.ts';
 
 const ANDROID_ANIMATION_SCALE_SETTINGS = [
   'window_animation_scale',
@@ -142,28 +139,7 @@ export async function setAndroidSetting(
       if (!appPackage) {
         throw new AppError('INVALID_ARGS', 'permission setting requires an active app in session');
       }
-      const action = parsePermissionAction(state);
-      const target = parseAndroidPermissionTarget(
-        options?.permissionTarget,
-        options?.permissionMode,
-      );
-      if (target.kind === 'notifications') {
-        await setAndroidNotificationPermission(device, appPackage, action, target);
-        return;
-      }
-      const pmAction = action === 'grant' ? 'grant' : 'revoke';
-      if (target.type === 'photos') {
-        const permission = await setAndroidPhotoPermission(device, appPackage, pmAction);
-        if (action === 'reset') {
-          await clearAndroidPermissionFlags(device, appPackage, permission);
-        }
-        return;
-      }
-      await runAndroidAdb(device, ['shell', 'pm', pmAction, appPackage, target.value]);
-      if (action === 'reset') {
-        await clearAndroidPermissionFlags(device, appPackage, target.value);
-      }
-      return;
+      return await setAndroidPermission(device, appPackage, state, options);
     }
     default:
       throw new AppError('INVALID_ARGS', `Unsupported setting: ${setting}`);
@@ -286,117 +262,4 @@ function parseAndroidAppearance(stdout: string, stderr: string): 'light' | 'dark
   if (value === 'no') return 'light';
   if (value === 'auto') return 'auto';
   return null;
-}
-
-function parseAndroidPermissionTarget(
-  permissionTarget: string | undefined,
-  permissionMode: string | undefined,
-):
-  | { kind: 'pm'; value: string; type: 'camera' | 'microphone' | 'photos' | 'contacts' }
-  | { kind: 'notifications'; appOps: string; permission: string } {
-  const normalized = parsePermissionTarget(permissionTarget);
-  if (permissionMode?.trim()) {
-    throw new AppError(
-      'INVALID_ARGS',
-      `Permission mode is only supported for photos. Received: ${permissionMode}.`,
-    );
-  }
-  if (normalized === 'camera')
-    return { kind: 'pm', value: 'android.permission.CAMERA', type: 'camera' };
-  if (normalized === 'microphone') {
-    return { kind: 'pm', value: 'android.permission.RECORD_AUDIO', type: 'microphone' };
-  }
-  if (normalized === 'photos') {
-    return { kind: 'pm', value: 'android.permission.READ_MEDIA_IMAGES', type: 'photos' };
-  }
-  if (normalized === 'contacts') {
-    return { kind: 'pm', value: 'android.permission.READ_CONTACTS', type: 'contacts' };
-  }
-  if (normalized === 'notifications') {
-    return {
-      kind: 'notifications',
-      appOps: 'POST_NOTIFICATION',
-      permission: 'android.permission.POST_NOTIFICATIONS',
-    };
-  }
-  throw new AppError(
-    'INVALID_ARGS',
-    `Unsupported permission target on Android: ${permissionTarget}. Use camera|microphone|photos|contacts|notifications.`,
-  );
-}
-
-async function setAndroidPhotoPermission(
-  device: DeviceInfo,
-  appPackage: string,
-  pmAction: 'grant' | 'revoke',
-): Promise<string> {
-  const sdkInt = await getAndroidSdkInt(device);
-  const candidates =
-    sdkInt !== null && sdkInt >= 33
-      ? ['android.permission.READ_MEDIA_IMAGES', 'android.permission.READ_EXTERNAL_STORAGE']
-      : ['android.permission.READ_EXTERNAL_STORAGE', 'android.permission.READ_MEDIA_IMAGES'];
-
-  const failures: Array<{ permission: string; stderr: string; exitCode: number }> = [];
-  for (const permission of candidates) {
-    const result = await runAndroidAdb(device, ['shell', 'pm', pmAction, appPackage, permission], {
-      allowFailure: true,
-    });
-    if (result.exitCode === 0) return permission;
-    failures.push({ permission, stderr: result.stderr, exitCode: result.exitCode });
-  }
-
-  throw new AppError('COMMAND_FAILED', `Failed to ${pmAction} Android photos permission`, {
-    appPackage,
-    sdkInt,
-    attempts: failures,
-  });
-}
-
-async function setAndroidNotificationPermission(
-  device: DeviceInfo,
-  appPackage: string,
-  action: 'grant' | 'deny' | 'reset',
-  target: { appOps: string; permission: string },
-): Promise<void> {
-  const appOpsMode = action === 'grant' ? 'allow' : action === 'deny' ? 'deny' : 'default';
-  if (action === 'grant') {
-    await runAndroidAdb(device, ['shell', 'pm', 'grant', appPackage, target.permission], {
-      allowFailure: true,
-    });
-  } else {
-    await runAndroidAdb(device, ['shell', 'pm', 'revoke', appPackage, target.permission], {
-      allowFailure: true,
-    });
-    if (action === 'reset') {
-      await clearAndroidPermissionFlags(device, appPackage, target.permission);
-    }
-  }
-  await runAndroidAdb(device, ['shell', 'appops', 'set', appPackage, target.appOps, appOpsMode]);
-}
-
-async function clearAndroidPermissionFlags(
-  device: DeviceInfo,
-  appPackage: string,
-  permission: string,
-): Promise<void> {
-  await runAndroidAdb(
-    device,
-    ['shell', 'pm', 'clear-permission-flags', appPackage, permission, 'user-set'],
-    { allowFailure: true },
-  );
-  await runAndroidAdb(
-    device,
-    ['shell', 'pm', 'clear-permission-flags', appPackage, permission, 'user-fixed'],
-    { allowFailure: true },
-  );
-}
-
-async function getAndroidSdkInt(device: DeviceInfo): Promise<number | null> {
-  const result = await runAndroidAdb(device, ['shell', 'getprop', 'ro.build.version.sdk'], {
-    allowFailure: true,
-  });
-  if (result.exitCode !== 0) return null;
-  const value = Number.parseInt(result.stdout.trim(), 10);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return value;
 }
