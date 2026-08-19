@@ -148,6 +148,50 @@ function semanticScrollShift(
   return best && best[1] >= 3 ? { shiftY: best[0], support: best[1] } : undefined;
 }
 
+/** Prove that a completed scroll gesture did not move the content even when
+ * animated pixels make the visual seam unusable. This deliberately requires
+ * broad agreement across unique, non-system semantics: a few sticky controls
+ * are not enough to turn an uncertain moved viewport into end-of-content. */
+function semanticViewportIsStationary(
+  previous: SnapshotPayload,
+  current: SnapshotPayload,
+): boolean {
+  const uniquePositions = (snapshot: SnapshotPayload) => {
+    const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
+    const duplicates = new Set<string>();
+    for (const node of snapshot.nodes) {
+      const key =
+        node.rect && node.visibleToUser !== false && !isSystemSemantic(node)
+          ? semanticNodeKey(node)
+          : undefined;
+      if (!key) continue;
+      if (positions.has(key)) duplicates.add(key);
+      else positions.set(key, node.rect!);
+    }
+    for (const key of duplicates) positions.delete(key);
+    return positions;
+  };
+  const before = uniquePositions(previous);
+  const after = uniquePositions(current);
+  const deltas: Array<{ x: number; y: number; width: number; height: number }> = [];
+  for (const [key, left] of before) {
+    const right = after.get(key);
+    if (!right) continue;
+    deltas.push({
+      x: Math.abs(left.x - right.x),
+      y: Math.abs(left.y - right.y),
+      width: Math.abs(left.width - right.width),
+      height: Math.abs(left.height - right.height),
+    });
+  }
+  const support = deltas.length;
+  const coverage = support / Math.max(1, Math.min(before.size, after.size));
+  const stationary = deltas.filter(
+    (delta) => delta.x <= 4 && delta.y <= 4 && delta.width <= 4 && delta.height <= 4,
+  ).length;
+  return support >= 3 && coverage >= 0.7 && stationary / support >= 0.9;
+}
+
 /** Pixel agreement remains mandatory. Accessibility translation only selects
  * the meaningful body alignment when a sparse/dark screenshot admits a false
  * visual minimum. */
@@ -668,6 +712,18 @@ export async function captureScrollableSurvey(
         next.snapshot,
       );
       if (!seam) {
+        if (semanticViewportIsStationary(previous.snapshot, next.snapshot)) {
+          // The gesture resolved but accessibility proves the document did not
+          // move. Dynamic images/video can invalidate pixel overlap without
+          // creating a second viewport, so no inverse gesture is owed.
+          owedMovements -= 1;
+          decision = {
+            status: "completed",
+            reason: "end-of-content",
+            message: "Captured the complete visible list and restored the original viewport.",
+          };
+          break;
+        }
         decision = {
           status: "stopped",
           reason: "seam-ambiguous",

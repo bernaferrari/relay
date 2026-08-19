@@ -43,6 +43,126 @@ test("treats sticky-header shimmer as an unmoved viewport instead of an unknown 
   assert.equal(seam?.shiftY, 0);
 });
 
+function superGrokTerminalFrame(phase: number, capturedAt: number) {
+  const width = 1080;
+  const height = 2340;
+  const png = new PNG({ width, height });
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      png.data[offset] = phase ? 92 : 18;
+      png.data[offset + 1] = phase ? 38 : 24;
+      png.data[offset + 2] = phase ? 116 : 31;
+      png.data[offset + 3] = 255;
+    }
+  }
+  const labels = [
+    ["Super Grok", 283, 113],
+    ["Your subscription includes:", 441, 60],
+    ["World's smartest models", 602, 53],
+    ["Smarter answers in Expert mode", 821, 53],
+    ["Grok Imagine, with image & video", 983, 53],
+    ["Fastest responses to complex questions", 1202, 110],
+    ["Enhanced productivity", 1478, 53],
+    ["Early access", 1697, 53],
+    ["Close", 159, 68],
+    ["Manage your billing", 2061, 53],
+  ] as const;
+  const snapshot: SnapshotPayload = {
+    capturedAt,
+    foregroundApp: "ai.x.grok",
+    nodes: [
+      {
+        identifier: "android:id/content",
+        type: "android.widget.FrameLayout",
+        rect: { x: 0, y: 0, width, height },
+        visibleToUser: true,
+      },
+      {
+        type: "android.widget.ScrollView",
+        rect: { x: 45, y: 0, width: 990, height: 1969 },
+        visibleToUser: true,
+      },
+      ...labels.map(([label, y, nodeHeight]) => ({
+        label,
+        value: label,
+        type: "android.widget.TextView",
+        rect: { x: 90, y, width: 900, height: nodeHeight },
+        visibleToUser: true,
+      })),
+    ],
+    interactive: [],
+    bounds: { width, height },
+    inspectable: true,
+    source: "sdk",
+    screenIdentity: { fingerprint: "supergrok-terminal", nodes: [], volatileSignals: [] },
+  };
+  const bytes = PNG.sync.write(png);
+  return {
+    screenshot: { base64: bytes.toString("base64"), width, height, capturedAt },
+    snapshot,
+  };
+}
+
+test("completes a one-viewport SuperGrok surface when semantics prove the scroll did not move", async () => {
+  const frames = [superGrokTerminalFrame(0, 1), superGrokTerminalFrame(1, 2)];
+  assert.equal(
+    verticalScrollSeam(
+      Buffer.from(frames[0]!.screenshot.base64, "base64"),
+      Buffer.from(frames[1]!.screenshot.base64, "base64"),
+      frames[0]!.snapshot,
+      frames[1]!.snapshot,
+    ),
+    undefined,
+    "dynamic pixels intentionally provide no trustworthy visual seam",
+  );
+  let captureIndex = 0;
+  let inverseScrolls = 0;
+  const survey = await captureScrollableSurvey({
+    capture: async () => frames[Math.min(captureIndex++, frames.length - 1)]!,
+    scrollDown: async () => {},
+    scrollUp: async () => {
+      inverseScrolls += 1;
+    },
+    settle: async () => {},
+  });
+
+  assert.equal(survey.status, "completed");
+  assert.equal(survey.reason, "end-of-content");
+  assert.equal(survey.frames.length, 1);
+  assert.equal(survey.restoredStartViewport, true);
+  assert.equal(inverseScrolls, 0);
+  assert.ok(survey.stitched);
+  assert.ok(survey.mergedNodes.some((node) => node.label === "Manage your billing"));
+});
+
+test("keeps an uncertain moved SuperGrok viewport stopped instead of calling it terminal", async () => {
+  const frames = [superGrokTerminalFrame(0, 1), superGrokTerminalFrame(1, 2)];
+  frames[1]!.snapshot = {
+    ...frames[1]!.snapshot,
+    nodes: frames[1]!.snapshot.nodes.map((node) =>
+      node.rect && node.label && node.label !== "Close"
+        ? { ...node, rect: { ...node.rect, y: node.rect.y - 180 } }
+        : node,
+    ),
+  };
+  let captureIndex = 0;
+  let inverseScrolls = 0;
+  const survey = await captureScrollableSurvey({
+    capture: async () => frames[Math.min(captureIndex++, frames.length - 1)]!,
+    scrollDown: async () => {},
+    scrollUp: async () => {
+      inverseScrolls += 1;
+    },
+    settle: async () => {},
+  });
+
+  assert.equal(survey.status, "stopped");
+  assert.equal(survey.reason, "seam-ambiguous");
+  assert.equal(survey.frames.length, 1);
+  assert.equal(inverseScrolls, 1);
+});
+
 function androidScrollableFrame(shiftY: number, capturedAt: number) {
   const width = 1080;
   const height = 2340;
