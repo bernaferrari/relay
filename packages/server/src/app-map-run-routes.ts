@@ -151,6 +151,8 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     try {
       compiled = compileAppMapTest(map, test, {
         forceRecaptureSurfaceScreenIds: body.surfaceCapture?.forceRecaptureScreenIds,
+        entryCheckpointScreenId:
+          body.startup?.mode === "verified-checkpoint" ? body.startup.screenId : undefined,
       });
     } catch (error) {
       if (error instanceof AppMapTestCompileError) {

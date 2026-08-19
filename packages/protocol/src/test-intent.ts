@@ -289,6 +289,17 @@ export type AppMapCompiledTest = {
     }
   >;
   stepProvenance: AppMapTestStepProvenance[];
+  /** Static scheduled root/module accounting for the frozen graph. Branch and
+   * repeat bodies remain represented by their control operation; recovery/SOS
+   * recipes are intentionally excluded because they execute only on drift. */
+  performance: {
+    executableOperations: number;
+    moduleCalls: number;
+    operationCounts: Partial<Record<RecipeStep["kind"], number>>;
+    screenshotCount: number;
+    destinationProofCount: number;
+  };
+  startup: { mode: "cold" } | { mode: "verified-checkpoint"; screenId: string };
   omittedSteps?: Array<{
     stepId: string;
     intent: string;

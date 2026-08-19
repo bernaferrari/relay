@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapScenarioTest, Screen } from "@relay/protocol";
 import { compileAppMapTest } from "./map-work.js";
+import { compileAppMapConnection } from "./app-map-compiler.js";
 import {
   AppMapTestCompileError,
   appMapTestReturnRepairEndpoints,
@@ -748,6 +749,98 @@ test("scenario capture policy compiles explicit screen evidence", () => {
   assert.deepEqual(screenshotCaptions(final), ["final:Checkout smoke"]);
 });
 
+test("every-screen captures only intentional terminal states and reports exact happy-path cost", () => {
+  const map = fixture();
+  map.screens.detail = {
+    ...screen("detail"),
+    identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+  };
+  map.connections.detail = {
+    ...map.connections["open-cart"]!,
+    id: "detail",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "detail" },
+    actions: [{ id: "tap-detail", kind: "tap", target: { label: "Detail" } }],
+  };
+  const work = scenario();
+  work.steps = [
+    {
+      id: "navigate",
+      kind: "instruction",
+      intent: "Open detail",
+      binding: {
+        status: "resolved",
+        kind: "connections",
+        connectionIds: ["open-cart", "detail"],
+      },
+    },
+  ];
+  work.capture = { mode: "every-screen" };
+
+  const compiled = compileAppMapTest(map, work);
+  const screenshots = Object.values(compiled.graph).flatMap((recipe) =>
+    recipe.steps.flatMap((step) => (step.kind === "screenshot" ? [step.caption] : [])),
+  );
+  assert.deepEqual(screenshots, ["screen:detail"]);
+  assert.equal(compiled.plan.performance.screenshotCount, 1);
+  assert.equal(compiled.plan.performance.destinationProofCount, 3);
+  assert.equal(compiled.plan.performance.executableOperations, 6);
+  assert.deepEqual(compiled.plan.startup, { mode: "cold" });
+});
+
+test("verified checkpoint startup skips cold setup but begins with fresh destination proof", () => {
+  const map = fixture();
+  map.screens.detail = {
+    ...screen("detail"),
+    identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+  };
+  map.connections.detail = {
+    ...map.connections["open-cart"]!,
+    id: "detail",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "detail" },
+    actions: [{ id: "tap-detail", kind: "tap", target: { label: "Detail" } }],
+  };
+  const work = scenario();
+  work.steps = [
+    work.steps.find((step) => step.id === "module")!,
+    {
+      id: "navigate",
+      kind: "instruction",
+      intent: "Open the cart",
+      binding: { status: "resolved", kind: "connections", connectionIds: ["open-cart"] },
+    },
+    {
+      id: "detail",
+      kind: "instruction",
+      intent: "Open detail",
+      binding: { status: "resolved", kind: "connections", connectionIds: ["open-cart", "detail"] },
+    },
+  ];
+
+  const compiled = compileAppMapTest(map, work, { entryCheckpointScreenId: "cart" });
+  const firstCheck = compiled.root.steps[0];
+  assert.equal(firstCheck?.kind, "module");
+  const firstRecipe =
+    firstCheck?.kind === "module" ? compiled.graph[firstCheck.recipeId] : undefined;
+  assert.equal(firstRecipe?.steps[0]?.kind, "expect-screen");
+  assert.equal(
+    firstRecipe?.steps[0]?.kind === "expect-screen" ? firstRecipe.steps[0].screenId : undefined,
+    "cart",
+  );
+  assert.equal(firstRecipe?.steps[0]?.id?.endsWith(":live-entry"), true);
+  assert.equal(
+    Object.values(compiled.graph).some((recipe) =>
+      recipe.steps.some((step) => step.kind === "sleep" && step.ms === 50),
+    ),
+    false,
+  );
+  assert.deepEqual(compiled.plan.startup, { mode: "verified-checkpoint", screenId: "cart" });
+
+  const standalone = compileAppMapConnection(map, "open-cart");
+  assert.equal(standalone.recipes[standalone.rootRecipeId]?.steps[0]?.kind, "expect-screen");
+});
+
 test("scenario steps capture one result frame without recapturing their bound path", () => {
   const work = scenario();
   work.steps = [{ ...work.steps[0]!, capture: true }];
@@ -848,27 +941,23 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
   )!;
   assert.deepEqual(
     secondPath.steps.slice(0, 3).map((step) => step.kind),
-    ["expect-screen", "key", "expect-screen"],
+    ["key", "expect-screen", "tap"],
   );
-  assert.equal(
-    secondPath.steps[0]?.kind === "expect-screen" ? secondPath.steps[0].screenId : undefined,
-    "first",
-  );
-  assert.deepEqual(secondPath.steps[1], {
+  assert.deepEqual(secondPath.steps[0], {
     kind: "key",
     key: "back",
     id: "relay-return-open-first",
   });
   assert.equal(
-    secondPath.steps[2]?.kind === "expect-screen" ? secondPath.steps[2].screenId : undefined,
+    secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].screenId : undefined,
     "cart",
   );
   assert.equal(
-    secondPath.steps[2]?.kind === "expect-screen" ? secondPath.steps[2].recovery : undefined,
+    secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].recovery : undefined,
     undefined,
   );
   assert.equal(
-    secondPath.steps[2]?.kind === "expect-screen" ? secondPath.steps[2].id : undefined,
+    secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].id : undefined,
     "relay-return-proof-open-first",
   );
   assert.equal(
@@ -1073,7 +1162,6 @@ test("Add to home returns through one source-proven inverse before opening Advan
       .slice(0, 3)
       .map((step) => [step.kind, step.id]),
     [
-      ["expect-screen", "relay-source-return-from-add-home"],
       ["key", "press-back-from-add-home"],
       ["expect-screen", "relay-destination-return-from-add-home"],
     ],
@@ -1111,7 +1199,6 @@ test("Add to home returns through one source-proven inverse before opening Advan
       .slice(0, 3)
       .map((step) => [step.kind, step.id]),
     [
-      ["expect-screen", "relay-source-return-from-add-home"],
       ["tap", "relay-action-dismiss-add-home"],
       ["expect-screen", "relay-destination-return-from-add-home"],
     ],
@@ -1125,23 +1212,23 @@ test("Add to home returns through one source-proven inverse before opening Advan
   assert.deepEqual(
     embeddedSibling.steps.slice(0, 6).map((step) => [step.kind, step.id]),
     [
-      ["expect-screen", "relay-return-source-add-home"],
       ["key", "relay-return-add-home"],
       ["expect-screen", "relay-return-proof-add-home"],
-      ["expect-screen", "relay-return-source-open-cart"],
       ["key", "relay-return-open-cart"],
       ["expect-screen", "relay-return-proof-open-cart"],
+      ["tap", "relay-action-tap-privacy"],
+      ["expect-screen", "relay-destination-privacy"],
     ],
   );
   assert.equal(
-    embeddedSibling.steps[2]?.kind === "expect-screen"
-      ? embeddedSibling.steps[2].screenId
+    embeddedSibling.steps[1]?.kind === "expect-screen"
+      ? embeddedSibling.steps[1].screenId
       : undefined,
     "cart",
   );
   assert.equal(
-    embeddedSibling.steps[5]?.kind === "expect-screen"
-      ? embeddedSibling.steps[5].screenId
+    embeddedSibling.steps[3]?.kind === "expect-screen"
+      ? embeddedSibling.steps[3].screenId
       : undefined,
     "home",
   );

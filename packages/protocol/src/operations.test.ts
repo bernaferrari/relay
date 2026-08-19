@@ -285,6 +285,27 @@ test("graph Test runs require an exact revision and explicit target", () => {
     operationDefinition("app-map.test.run").input.parse(freshSurfaceInput),
     freshSurfaceInput,
   );
+  const warmInput = {
+    ...input,
+    startup: { mode: "verified-checkpoint" as const, screenId: "settings" },
+  };
+  assert.deepEqual(operationDefinition("app-map.test.run").input.parse(warmInput), warmInput);
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        startup: { mode: "verified-checkpoint" },
+      }),
+    /startup screenId/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        startup: { mode: "cold", screenId: "settings" },
+      }),
+    /only valid for verified-checkpoint/u,
+  );
   assert.throws(
     () =>
       operationDefinition("app-map.test.run").input.parse({

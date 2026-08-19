@@ -322,6 +322,18 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
           seen.add(screenId);
         }
       }
+      if (input.startup !== undefined) {
+        const startup = record(input.startup, "Test run startup");
+        if (startup.mode === "cold") {
+          if (startup.screenId !== undefined) {
+            fail("Test run startup screenId", "is only valid for verified-checkpoint mode");
+          }
+        } else if (startup.mode === "verified-checkpoint") {
+          string(startup.screenId, "Test run startup screenId");
+        } else {
+          fail("Test run startup mode", "must be cold or verified-checkpoint");
+        }
+      }
     },
   );
 

@@ -14,7 +14,10 @@ import {
   compileAppMapFlow,
   compileAppMapRoutine,
 } from "./app-map-compiler.js";
-import { warmCompiledFlowGraphFromSharedPrefix } from "./app-map-itinerary.js";
+import {
+  compiledFlowGraphFromLiveCheckpoint,
+  warmCompiledFlowGraphFromSharedPrefix,
+} from "./app-map-itinerary.js";
 import { frozenColdCoverageEffects } from "./campaign-recovery-effects.js";
 import { validateAppMap } from "./app-map.js";
 import type { Recipe } from "./recipes.js";
@@ -61,6 +64,10 @@ export function appMapTestReturnRepairEndpoints(
 export type AppMapTestCompileOptions = {
   /** Run-scoped cache bypass for selected full-surface Test bindings. */
   forceRecaptureSurfaceScreenIds?: readonly string[];
+  /** Start from a live product checkpoint instead of executing earlier setup.
+   * The compiled plan begins with a fresh exact screen proof and fails closed
+   * on mismatch; it never silently relaunches. */
+  entryCheckpointScreenId?: string;
 };
 
 function fail(
@@ -91,6 +98,39 @@ function asRecipe(
   };
 }
 
+function compiledPerformance(
+  rootRecipeId: string,
+  graph: Readonly<Record<string, Recipe>>,
+): AppMapCompiledTest["performance"] {
+  const operationCounts: Partial<Record<RecipeStep["kind"], number>> = {};
+  let moduleCalls = 0;
+  const visit = (recipeId: string, stack: ReadonlySet<string>): void => {
+    if (stack.has(recipeId)) return;
+    const recipe = graph[recipeId];
+    if (!recipe) return;
+    const nextStack = new Set(stack).add(recipeId);
+    for (const step of recipe.steps) {
+      if (step.kind === "module") {
+        moduleCalls += 1;
+        visit(step.recipeId, nextStack);
+        continue;
+      }
+      operationCounts[step.kind] = (operationCounts[step.kind] ?? 0) + 1;
+    }
+  };
+  visit(rootRecipeId, new Set());
+  return {
+    executableOperations: Object.values(operationCounts).reduce(
+      (total, count) => total + (count ?? 0),
+      0,
+    ),
+    moduleCalls,
+    operationCounts,
+    screenshotCount: operationCounts.screenshot ?? 0,
+    destinationProofCount: operationCounts["expect-screen"] ?? 0,
+  };
+}
+
 export function compileAppMapScenarioTest(
   map: AppMap,
   test: AppMapScenarioTest,
@@ -116,6 +156,7 @@ export function compileAppMapScenarioTest(
   const navigationDiagnostics: AppMapTestCompileDiagnostic[] = [];
   const navigationDiagnosticKeys = new Set<string>();
   const scheduledLogicalSurfaces = new Set<string>();
+  const scheduledScreenCaptures = new Set<string>();
   const forceRecaptureSurfaceScreenIds = new Set(options.forceRecaptureSurfaceScreenIds ?? []);
   for (const screenId of forceRecaptureSurfaceScreenIds) {
     const binding = test.surfaceBindings?.find(
@@ -140,6 +181,13 @@ export function compileAppMapScenarioTest(
     ) {
       return undefined;
     }
+    // `every-screen` describes logical product states, not every traversal of
+    // an edge that happens to pass through the state. The destination
+    // expectation already retains its fresh raster/tree for the immediately
+    // following screenshot step, so one attachment is sufficient until an
+    // author explicitly adds a step-level capture.
+    if (scheduledScreenCaptures.has(screenId)) return undefined;
+    scheduledScreenCaptures.add(screenId);
     return {
       kind: "screenshot",
       caption: `screen:${map.screens[screenId]?.title ?? screenId}`,
@@ -255,6 +303,8 @@ export function compileAppMapScenarioTest(
     let previousInstructionPlan: AppMapCompiledFlow | undefined;
     let previousTerminalScreenId: string | undefined;
     let campaignSetupSteps: RecipeStep[] | undefined;
+    let pendingEntryCheckpointScreenId =
+      suffix === "root" ? options.entryCheckpointScreenId : undefined;
     for (const step of steps) {
       if (step.execution?.status === "disabled") {
         omittedSteps.push({
@@ -268,11 +318,15 @@ export function compileAppMapScenarioTest(
       if (step.binding.status === "unresolved") {
         fail("unresolved-step", test, step, `${step.intent}: ${step.binding.reason}`);
       }
+      if (pendingEntryCheckpointScreenId && step.kind !== "instruction") {
+        continue;
+      }
       const start = recipeSteps.length;
       const referencedEntityIds: string[] = [];
       switch (step.kind) {
         case "instruction": {
-          campaignSetupSteps ??= structuredClone(recipeSteps);
+          if (pendingEntryCheckpointScreenId) campaignSetupSteps ??= [];
+          else campaignSetupSteps ??= structuredClone(recipeSteps);
           const warmSourceScreenId = previousTerminalScreenId;
           const connections = step.binding.connectionIds.map((connectionId) => {
             const connection = map.connections[connectionId];
@@ -307,7 +361,23 @@ export function compileAppMapScenarioTest(
           let instructionGraph = Object.fromEntries(
             Object.values(plan.recipes).map((compiled) => [compiled.id, asRecipe(map, compiled)]),
           );
-          if (previousInstructionPlan) {
+          if (pendingEntryCheckpointScreenId) {
+            const live = compiledFlowGraphFromLiveCheckpoint(
+              map,
+              instructionGraph,
+              plan,
+              pendingEntryCheckpointScreenId,
+            );
+            if (!live) {
+              // This instruction does not cross the requested checkpoint, so
+              // it belongs to cold setup and is omitted from this explicit
+              // warm execution plan.
+              continue;
+            }
+            instructionGraph = live;
+            previousTerminalScreenId = pendingEntryCheckpointScreenId;
+            pendingEntryCheckpointScreenId = undefined;
+          } else if (previousInstructionPlan) {
             instructionGraph = warmCompiledFlowGraphFromSharedPrefix(
               map,
               instructionGraph,
@@ -347,10 +417,17 @@ export function compileAppMapScenarioTest(
               // Source assertions guide navigation; they are not product
               // evidence. Destination assertions remain mandatory and own
               // the reviewable frame for every visited target.
-              const capture = sourceExpectation ? undefined : captureScreen(recipeStep.screenId);
+              const isTerminalDestination =
+                terminalConnectionId !== undefined &&
+                recipeStep.id === `relay-destination-${terminalConnectionId}`;
+              const isLiveEntry = recipeStep.id?.endsWith(":live-entry") === true;
+              const capture =
+                (sourceExpectation && !isLiveEntry) || (!isTerminalDestination && !isLiveEntry)
+                  ? undefined
+                  : captureScreen(recipeStep.screenId);
               const logicalSurface =
                 terminalConnectionId &&
-                recipeStep.id === `relay-destination-${terminalConnectionId}`
+                (recipeStep.id === `relay-destination-${terminalConnectionId}` || isLiveEntry)
                   ? captureLogicalSurface(recipeStep.screenId, {
                       schedule: !recoveryAlternative,
                     })
@@ -570,6 +647,14 @@ export function compileAppMapScenarioTest(
   };
 
   const rootRecipeId = compileSequence(test.steps, "root");
+  if (options.entryCheckpointScreenId && !graph[rootRecipeId]?.steps.length) {
+    throw new AppMapTestCompileError(
+      "missing-reference",
+      test.id,
+      test.steps[0]?.id ?? test.id,
+      `Test ${test.name} has no executable path through checkpoint ${options.entryCheckpointScreenId}`,
+    );
+  }
   if (navigationDiagnostics.length) {
     const first = navigationDiagnostics[0]!;
     throw new AppMapTestCompileError(
@@ -606,6 +691,10 @@ export function compileAppMapScenarioTest(
       ]),
     ),
     stepProvenance: provenance,
+    performance: compiledPerformance(rootRecipeId, graph),
+    startup: options.entryCheckpointScreenId
+      ? { mode: "verified-checkpoint", screenId: options.entryCheckpointScreenId }
+      : { mode: "cold" },
     ...(omittedSteps.length ? { omittedSteps } : {}),
   };
   return { root, graph, plan };

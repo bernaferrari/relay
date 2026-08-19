@@ -442,6 +442,9 @@ export type AppMapOperationMap = {
       surfaceCapture?: {
         forceRecaptureScreenIds: string[];
       };
+      /** Explicit startup behavior. Verified checkpoint performs a fresh
+       * destination proof and never falls back to an app relaunch. */
+      startup?: { mode: "cold" } | { mode: "verified-checkpoint"; screenId: string };
     };
     output: {
       planIdentity: {

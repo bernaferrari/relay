@@ -141,6 +141,12 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
           description:
             'Optional run-only fresh evidence policy: { forceRecaptureScreenIds: ["voice"] }',
         },
+        {
+          name: "startup",
+          type: "object",
+          description:
+            'Explicit startup: { mode: "cold" } or { mode: "verified-checkpoint", screenId: "settings" }. Checkpoint mode verifies live state and never relaunches.',
+        },
       ],
       examples: [
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',

@@ -85,12 +85,27 @@ function compileReviewedConnection(
   const compiled = compileAppMapConnection(map, connection.id);
   const recipes: Record<string, Recipe> = {};
   for (const recipe of Object.values(compiled.recipes)) {
+    const isRoot = recipe.id === compiled.rootRecipeId;
+    const rootSourceId = `relay-source-${connection.id}`;
     recipes[recipe.id] = {
       id: recipe.id,
       title: recipe.title,
       ...(recipe.description ? { description: recipe.description } : {}),
       source: "custom",
-      steps: structuredClone(recipe.steps),
+      // This compiler is used only while returning between adjacent scenario
+      // checks. The previous check's terminal destination is the reviewed
+      // source proof, and the campaign runner verifies its proof cursor before
+      // entering this module. Repeating the canonical connection's source
+      // expectation would read the same tree/raster a second time. Keep the
+      // mutation and mandatory destination proof; standalone connection runs
+      // still compile with both endpoint assertions.
+      steps: structuredClone(
+        isRoot
+          ? recipe.steps.filter(
+              (step) => !(step.kind === "expect-screen" && step.id === rootSourceId),
+            )
+          : recipe.steps,
+      ),
       createdAt: map.createdAt,
       updatedAt: map.updatedAt,
     };
@@ -300,18 +315,12 @@ function reviewedReturnPlan(
         currentScreenId: cursorScreenId,
       };
     }
-    const sourceExpectation = screenExpectation(
-      map,
-      currentScreen,
-      `relay-return-source-${connection.id}`,
-    );
     const expectation = screenExpectation(
       map,
       { ...origin, identity: structuredClone(reviewedReturn.expectedDestination.identity) },
       `relay-return-proof-${connection.id}`,
     );
     steps.push(
-      sourceExpectation,
       { kind: "key", key: "back", id: `relay-return-${connection.id}` },
       {
         ...expectation,
@@ -498,6 +507,51 @@ export function warmCompiledFlowGraphFromSharedPrefix(
                   : {}),
               },
             ]),
+        ...root.steps.slice(suffixStart),
+      ],
+    },
+  };
+}
+
+/** Enter a frozen flow from an explicitly requested live checkpoint. Unlike a
+ * same-run warm prefix, this never trusts process memory: the first executable
+ * operation is the checkpoint's exact screen expectation. A miss fails closed
+ * and cannot silently fall back to relaunch/reset behavior. */
+export function compiledFlowGraphFromLiveCheckpoint(
+  map: AppMap,
+  graph: Record<string, Recipe>,
+  plan: AppMapCompiledFlow,
+  checkpointScreenId: string,
+): Record<string, Recipe> | undefined {
+  const root = graph[plan.rootRecipeId];
+  if (!root) return undefined;
+  const checkpointConnection = plan.connections.find(
+    (connection) =>
+      connection.destination.kind === "screen" &&
+      connection.destination.screenId === checkpointScreenId,
+  );
+  const suffixStart = checkpointConnection?.compiledStepRange[1];
+  if (suffixStart === undefined) return undefined;
+  const checkpoint = root.steps
+    .slice(0, suffixStart)
+    .reverse()
+    .find(
+      (step): step is Extract<RecipeStep, { kind: "expect-screen" }> =>
+        step.kind === "expect-screen" && step.screenId === checkpointScreenId,
+    );
+  if (!checkpoint) return undefined;
+  return {
+    ...graph,
+    [plan.rootRecipeId]: {
+      ...root,
+      title: root.title.replace(/cold start/iu, "verified live checkpoint"),
+      steps: [
+        {
+          ...scrollFamilyExpectation(map, checkpoint),
+          id: `${checkpoint.id ?? `relay-source-${checkpointScreenId}`}:live-entry`,
+          recovery: undefined,
+          returnRequirement: undefined,
+        },
         ...root.steps.slice(suffixStart),
       ],
     },
