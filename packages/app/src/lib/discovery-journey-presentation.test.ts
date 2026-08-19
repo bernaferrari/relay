@@ -3,6 +3,7 @@ import test from "node:test";
 import type { DiscoveryExploreRun, DiscoveryJourney, DiscoveryJourneyStep } from "@relay/protocol";
 import {
   journeyHeadline,
+  journeyCursorSummary,
   journeyOutcomeSummary,
   journeyRows,
 } from "./discovery-journey-presentation.js";
@@ -29,7 +30,6 @@ const run = (patch: Partial<DiscoveryExploreRun> = {}): DiscoveryExploreRun => (
   strategy: "surface",
   mode: "semantic",
   maxDepth: 2,
-  softRecoveries: 0,
   startedAt: 1,
   updatedAt: 2,
   ...patch,
@@ -105,6 +105,51 @@ test("a running crawl has no outcome sentence", () => {
   assert.equal(journeyOutcomeSummary(undefined), undefined);
 });
 
+test("the cursor exposes proven, unknown, and handoff truth without inference", () => {
+  assert.deepEqual(
+    journeyCursorSummary(
+      run({
+        navigationCursor: {
+          schemaVersion: 1,
+          status: "proven",
+          screenId: "screen-settings",
+          proofToken: "proof-1",
+          source: "transition",
+          updatedAt: 4,
+        },
+      }),
+    ),
+    { label: "Position proven", detail: "screen-settings", tone: "proven" },
+  );
+  assert.deepEqual(
+    journeyCursorSummary(
+      run({
+        navigationCursor: {
+          schemaVersion: 1,
+          status: "unknown",
+          reason: "Tap did not settle",
+          updatedAt: 5,
+        },
+      }),
+    ),
+    { label: "Position unknown", detail: "Tap did not settle", tone: "unknown" },
+  );
+  assert.deepEqual(
+    journeyCursorSummary(
+      run({
+        navigationCursor: {
+          schemaVersion: 1,
+          status: "external-handoff",
+          foregroundApp: "com.android.settings",
+          reason: "Opened app languages",
+          updatedAt: 6,
+        },
+      }),
+    ),
+    { label: "External handoff", detail: "com.android.settings", tone: "handoff" },
+  );
+});
+
 test("a completed crawl reports the depth it finished within", () => {
   assert.equal(
     journeyOutcomeSummary(run({ stopReason: { code: "complete", message: "done", at: 3 } })),
@@ -112,12 +157,11 @@ test("a completed crawl reports the depth it finished within", () => {
   );
 });
 
-test("recoveries are mentioned when the crawl had to claw its way back", () => {
+test("an external handoff is preserved for review instead of auto-recovered", () => {
   const summary = journeyOutcomeSummary(
-    run({ softRecoveries: 2, stopReason: { code: "left_app", message: "gone", at: 3 } }),
+    run({ stopReason: { code: "left_app", message: "gone", at: 3 } }),
   );
-  assert.match(summary!, /left the app/);
-  assert.match(summary!, /2 recovery attempts/);
+  assert.equal(summary, "Stopped at an external app handoff for review.");
 });
 
 test("an error stop surfaces the message verbatim", () => {

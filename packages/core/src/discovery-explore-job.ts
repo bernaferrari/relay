@@ -1,7 +1,8 @@
 /**
  * Server-owned explore crawl: here → ground? → do → verify → land.
  * Strategies match  naming: surface / journey / hard-edges.
- * Leave-app recovery is one soft openApp max — never relaunch spam.
+ * Planner visits never imply live device location. The persisted navigation
+ * cursor is the only proof of where Explore is; mismatches stop for review.
  */
 import type {
   DiscoveryControl,
@@ -10,6 +11,7 @@ import type {
   DiscoveryExploreStopReason,
   DiscoveryExploreStrategy,
   DiscoverySession,
+  NavigationProofCursorArtifact,
 } from "@relay/protocol";
 import {
   patchDiscoveryScope,
@@ -23,12 +25,10 @@ import {
   type DiscoveryHere,
   type DiscoveryHereOption,
 } from "./discovery-turn.js";
-import { createDevice, openApp } from "./device.js";
 import { describeTargetUi } from "./explore.js";
 import { groundTarget, GroundingError } from "./grounding.js";
 import { currentOperationContext, runWithOperationContext } from "./operation-context.js";
-import { runWithTargetContext } from "./target-context.js";
-import { devicePlatformForSerial, type InteractInput } from "./workspace.js";
+import type { InteractInput } from "./workspace.js";
 
 export type StartDiscoveryExploreOptions = {
   strategy?: DiscoveryExploreStrategy;
@@ -62,11 +62,71 @@ const AMBIGUOUS_LABELS = new Set([
 const HARD_EDGE_RE =
   /(settings|permission|privacy|security|account|empty|no results|try again|offline|sign in|log in|notifications|accessibility|language|storage|battery)/i;
 
-type Frame = {
+type PlannedVisit = {
   screenId: string;
   /** Remaining unopened control ids for this visit (surface BFS / journey DFS share the stack). */
   pendingIds: string[];
 };
+
+function provenCursor(
+  here: DiscoveryHere,
+  source: "screen-observation" | "transition",
+): NavigationProofCursorArtifact {
+  return {
+    schemaVersion: 1,
+    status: "proven",
+    screenId: here.screen.id,
+    proofToken: `discovery:${here.screen.fingerprint}`,
+    source,
+    updatedAt: Date.now(),
+  };
+}
+
+function unknownCursor(
+  prior: NavigationProofCursorArtifact | undefined,
+  reason: string,
+): NavigationProofCursorArtifact {
+  return {
+    schemaVersion: 1,
+    status: "unknown",
+    reason,
+    updatedAt: Date.now(),
+    ...(prior?.status === "proven"
+      ? { previous: { screenId: prior.screenId, proofToken: prior.proofToken } }
+      : prior?.previous
+        ? { previous: prior.previous }
+        : {}),
+  };
+}
+
+function externalHandoffCursor(
+  prior: NavigationProofCursorArtifact | undefined,
+  foregroundApp: string,
+  reason: string,
+): NavigationProofCursorArtifact {
+  return {
+    schemaVersion: 1,
+    status: "external-handoff",
+    foregroundApp,
+    reason,
+    updatedAt: Date.now(),
+    ...(prior?.status === "proven"
+      ? { previous: { screenId: prior.screenId, proofToken: prior.proofToken } }
+      : prior?.previous
+        ? { previous: prior.previous }
+        : {}),
+  };
+}
+
+async function updateExploreCursor(
+  sessionId: string,
+  cursor: NavigationProofCursorArtifact,
+): Promise<void> {
+  const job = activeExploreJobs.get(sessionId);
+  if (!job) return;
+  job.outcome = { ...job.outcome, navigationCursor: cursor };
+  await rememberExploreRun(sessionId, job.outcome);
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -225,44 +285,6 @@ async function finishExplore(
   }
 }
 
-/**
- * Soft return to the origin app once. Never relaunches as the primary recovery path.
- * Returns left_app when still outside after the single soft recover (or when the
- * soft recover budget was already spent).
- */
-export function decideSoftRecover(input: {
-  foregroundApp?: string;
-  originApp?: string;
-  softRecoveries: number;
-  maxSoftRecoveries?: number;
-}): "ok" | "attempt_recover" | "left_app" {
-  if (!input.originApp) return "ok";
-  if (!input.foregroundApp || input.foregroundApp === input.originApp) return "ok";
-  const max = input.maxSoftRecoveries ?? 1;
-  if (input.softRecoveries >= max) return "left_app";
-  return "attempt_recover";
-}
-
-export async function softRecoverOriginApp(input: {
-  serial: string;
-  originApp?: string;
-  softRecoveries: number;
-  maxSoftRecoveries?: number;
-  runtime?: Pick<ExploreRuntime, "foreground" | "returnToApp">;
-}): Promise<"ok" | "recovered" | "left_app"> {
-  const runtime = input.runtime ?? liveExploreRuntime;
-  const decision = decideSoftRecover({
-    foregroundApp: await runtime.foreground(input.serial),
-    originApp: input.originApp,
-    softRecoveries: input.softRecoveries,
-    maxSoftRecoveries: input.maxSoftRecoveries,
-  });
-  if (decision === "ok") return "ok";
-  if (decision === "left_app") return "left_app";
-  await runtime.returnToApp(input.serial, input.originApp!);
-  return (await runtime.foreground(input.serial)) === input.originApp ? "recovered" : "left_app";
-}
-
 async function resolveInteraction(input: {
   serial: string;
   option: DiscoveryHereOption;
@@ -325,19 +347,12 @@ export type ExploreRuntime = {
   here: typeof runDiscoveryHere;
   act: typeof runDiscoveryDo;
   foreground: (serial: string) => Promise<string | undefined>;
-  returnToApp: (serial: string, app: string) => Promise<void>;
 };
 
 export const liveExploreRuntime: ExploreRuntime = {
   here: runDiscoveryHere,
   act: runDiscoveryDo,
   foreground: async (serial) => (await describeTargetUi(serial)).foregroundApp ?? undefined,
-  returnToApp: async (serial, app) => {
-    const platform = (await devicePlatformForSerial(serial)) ?? "android";
-    await runWithTargetContext({ kind: "device", platform, serial }, async () => {
-      await openApp(createDevice(), app, { relaunch: false });
-    });
-  },
 };
 
 let exploreRuntime: ExploreRuntime = liveExploreRuntime;
@@ -387,7 +402,8 @@ async function runExploreJob(sessionId: string): Promise<void> {
     const originApp = here.foregroundApp ?? (await runtime.foreground(session.targetId));
     const deadline = session.createdAt + session.scope.maxDurationMs;
     const explored = new Set<string>();
-    const stack: Frame[] = [
+    await updateExploreCursor(sessionId, provenCursor(here, "screen-observation"));
+    const stack: PlannedVisit[] = [
       {
         screenId: here.screen.id,
         pendingIds: here.options.filter((option) => !option.opened).map((option) => option.id),
@@ -406,13 +422,26 @@ async function runExploreJob(sessionId: string): Promise<void> {
       if (depth > maxDepth || frame.pendingIds.length === 0) {
         stack.pop();
         if (stack.length) {
+          const parent = stack[stack.length - 1]!;
           try {
             here = await exploreBack(sessionId);
           } catch (error) {
+            await updateExploreCursor(
+              sessionId,
+              unknownCursor(job.outcome.navigationCursor, "Reviewed Back action failed"),
+            );
             console.error(`discovery explore ${sessionId} back failed`, error);
             await finishExplore(sessionId, "stopped", {
               code: "error",
               message: error instanceof Error ? error.message : String(error),
+            });
+            return;
+          }
+          await updateExploreCursor(sessionId, provenCursor(here, "transition"));
+          if (here.screen.id !== parent.screenId) {
+            await finishExplore(sessionId, "stopped", {
+              code: "error",
+              message: `Back landed on ${here.screen.id}; expected ${parent.screenId}. Review this transition before resuming.`,
             });
             return;
           }
@@ -433,10 +462,14 @@ async function runExploreJob(sessionId: string): Promise<void> {
           return;
         }
         if (here.screen.id !== frame.screenId) {
-          // Lost the expected screen — back toward parent.
-          stack.pop();
-          continue;
+          await updateExploreCursor(sessionId, provenCursor(here, "screen-observation"));
+          await finishExplore(sessionId, "stopped", {
+            code: "error",
+            message: `Explore is on ${here.screen.id}, not planned screen ${frame.screenId}. Review or teach the transition; Relay did not guess a recovery.`,
+          });
+          return;
         }
+        await updateExploreCursor(sessionId, provenCursor(here, "screen-observation"));
         frame.pendingIds = here.options
           .filter((option) => !option.opened)
           .map((option) => option.id);
@@ -470,6 +503,23 @@ async function runExploreJob(sessionId: string): Promise<void> {
       }
 
       let result: Awaited<ReturnType<typeof runDiscoveryDo>>;
+      if (
+        job.outcome.navigationCursor?.status !== "proven" ||
+        job.outcome.navigationCursor.screenId !== frame.screenId
+      ) {
+        await updateExploreCursor(
+          sessionId,
+          unknownCursor(
+            job.outcome.navigationCursor,
+            `Action ${next.id} requires proof of ${frame.screenId}`,
+          ),
+        );
+        await finishExplore(sessionId, "stopped", {
+          code: "error",
+          message: `Explore deferred ${next.label}: ${frame.screenId} is not currently proven.`,
+        });
+        return;
+      }
       try {
         // Always act via do (verify + fresh here + land). Prefer grounded interaction
         // for ambiguous labels; otherwise controlId keeps provenance on the option.
@@ -484,33 +534,37 @@ async function runExploreJob(sessionId: string): Promise<void> {
           },
         });
       } catch (error) {
+        await updateExploreCursor(
+          sessionId,
+          unknownCursor(job.outcome.navigationCursor, `Action ${next.id} failed before proof`),
+        );
         console.error(`discovery explore ${sessionId} do failed`, error);
-        continue;
-      }
-
-      here = result.here;
-
-      const leave = await softRecoverOriginApp({
-        serial: session.targetId,
-        originApp,
-        softRecoveries: job.outcome.softRecoveries,
-        runtime,
-      });
-      if (leave === "recovered") {
-        job.outcome = { ...job.outcome, softRecoveries: job.outcome.softRecoveries + 1 };
-        await rememberExploreRun(sessionId, job.outcome);
-        try {
-          here = await runtime.here(sessionId);
-        } catch {
-          /* continue with prior here */
-        }
-      } else if (leave === "left_app") {
         await finishExplore(sessionId, "stopped", {
-          code: "left_app",
-          message: `Left origin app ${originApp ?? "(unknown)"}; soft recover budget exhausted`,
+          code: "error",
+          message: error instanceof Error ? error.message : String(error),
         });
         return;
       }
+
+      here = result.here;
+      const foregroundApp = here.foregroundApp ?? (await runtime.foreground(session.targetId));
+      if (originApp && foregroundApp && foregroundApp !== originApp) {
+        await updateExploreCursor(
+          sessionId,
+          externalHandoffCursor(
+            job.outcome.navigationCursor,
+            foregroundApp,
+            `Action ${next.id} left ${originApp}`,
+          ),
+        );
+        await finishExplore(sessionId, "stopped", {
+          code: "left_app",
+          message: `Opened ${foregroundApp} from ${originApp}. Relay preserved the handoff for review and did not reopen the app.`,
+        });
+        return;
+      }
+
+      await updateExploreCursor(sessionId, provenCursor(here, "transition"));
 
       const beforeId = frame.screenId;
       const afterId = here.screen.id;
@@ -521,13 +575,26 @@ async function runExploreJob(sessionId: string): Promise<void> {
 
       // currentDepth = stack.length - 1 (0 at seed). Cap hops by strategy maxDepth.
       if (stack.length - 1 >= maxDepth) {
+        const parent = stack[stack.length - 1]!;
         try {
           here = await exploreBack(sessionId);
         } catch (error) {
+          await updateExploreCursor(
+            sessionId,
+            unknownCursor(job.outcome.navigationCursor, "Depth-bound Back action failed"),
+          );
           console.error(`discovery explore ${sessionId} return failed`, error);
           await finishExplore(sessionId, "stopped", {
             code: "error",
             message: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+        await updateExploreCursor(sessionId, provenCursor(here, "transition"));
+        if (here.screen.id !== parent.screenId) {
+          await finishExplore(sessionId, "stopped", {
+            code: "error",
+            message: `Back landed on ${here.screen.id}; expected ${parent.screenId}.`,
           });
           return;
         }
@@ -610,7 +677,6 @@ export async function startDiscoveryExplore(
     strategy,
     mode,
     maxDepth,
-    softRecoveries: 0,
     startedAt,
     updatedAt: startedAt,
   };

@@ -2,6 +2,7 @@ import { For, Show } from "solid-js";
 import type { DiscoveryExploreRun, DiscoveryJourney } from "@relay/protocol";
 import {
   journeyHeadline,
+  journeyCursorSummary,
   journeyOutcomeSummary,
   journeyRows,
   type JourneyRowTone,
@@ -40,10 +41,11 @@ export function AppMapJourneyTimeline(props: {
   const rows = () => journeyRows(props.journey);
   const headline = () => journeyHeadline(props.journey);
   const outcome = () => journeyOutcomeSummary(props.run);
+  const cursor = () => journeyCursorSummary(props.run);
   const workers = () => props.workers ?? [];
 
   return (
-    <Show when={rows().length > 0 || workers().length > 1}>
+    <Show when={rows().length > 0 || workers().length > 1 || cursor()}>
       <section class="grid gap-2.5">
         <div class="flex items-baseline justify-between gap-3">
           <h3 class="text-micro font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
@@ -88,6 +90,33 @@ export function AppMapJourneyTimeline(props: {
               <Icon name="info" size={13} class="mt-0.5 shrink-0" />
               {summary()}
             </p>
+          )}
+        </Show>
+
+        <Show when={cursor()}>
+          {(status) => (
+            <div
+              class="flex min-h-10 items-center gap-2 rounded-xl bg-[var(--surface-base)] px-3 text-micro"
+              aria-live="polite"
+            >
+              <i
+                class={cn(
+                  "size-2 shrink-0 rounded-full",
+                  status().tone === "proven"
+                    ? "bg-[var(--icon-success-base)]"
+                    : status().tone === "handoff"
+                      ? "bg-[var(--icon-warning-base)]"
+                      : "bg-[var(--icon-critical-base)]",
+                )}
+                aria-hidden="true"
+              />
+              <strong class="shrink-0 font-medium text-[var(--text-strong)]">
+                {status().label}
+              </strong>
+              <span class="min-w-0 truncate text-[var(--text-weak)]" title={status().detail}>
+                {status().detail}
+              </span>
+            </div>
           )}
         </Show>
 

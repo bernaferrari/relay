@@ -12,21 +12,50 @@ export type JourneyRow = {
   tone: JourneyRowTone;
 };
 
+export type JourneyCursorSummary = {
+  label: string;
+  detail: string;
+  tone: "proven" | "unknown" | "handoff";
+};
+
+/** Compact, non-speculative answer to “where does Relay know the device is?” */
+export function journeyCursorSummary(
+  run: DiscoveryExploreRun | undefined,
+): JourneyCursorSummary | undefined {
+  const cursor = run?.navigationCursor;
+  if (!cursor) return undefined;
+  if (cursor.status === "proven") {
+    return {
+      label: "Position proven",
+      detail: cursor.screenId,
+      tone: "proven",
+    };
+  }
+  if (cursor.status === "external-handoff") {
+    return {
+      label: "External handoff",
+      detail: cursor.foregroundApp,
+      tone: "handoff",
+    };
+  }
+  return {
+    label: "Position unknown",
+    detail: cursor.reason,
+    tone: "unknown",
+  };
+}
+
 /** Sentence for the crawl outcome, or undefined while it is still walking. */
 export function journeyOutcomeSummary(run: DiscoveryExploreRun | undefined): string | undefined {
   const stop = run?.stopReason;
   if (!run || !stop) return undefined;
-  const recovered =
-    run.softRecoveries > 0
-      ? ` after ${run.softRecoveries} recovery${run.softRecoveries === 1 ? "" : " attempts"}`
-      : "";
   switch (stop.code) {
     case "complete":
-      return `Explored every safe row within depth ${run.maxDepth}${recovered}.`;
+      return `Explored every safe row within depth ${run.maxDepth}.`;
     case "budget":
-      return `Stopped at the screen, step, or time budget${recovered}.`;
+      return "Stopped at the screen, step, or time budget.";
     case "left_app":
-      return `Stopped because the device left the app and would not come back${recovered}.`;
+      return "Stopped at an external app handoff for review.";
     case "cancelled":
       return "Stopped because someone cancelled it.";
     case "error":

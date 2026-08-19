@@ -34,6 +34,8 @@ type FakeDeviceOptions = {
   leavesAppFrom?: string;
   originApp?: string;
   otherApp?: string;
+  /** Adversarial device behavior: Back lands somewhere other than its reviewed parent. */
+  backLandsOn?: string;
 };
 
 /**
@@ -88,7 +90,7 @@ function fakeDevice(options: FakeDeviceOptions) {
       const before = current;
       if (input.interaction?.kind === "key" && input.interaction.key === "back") {
         backs.push(before);
-        current = history.pop() ?? current;
+        current = options.backLandsOn ?? history.pop() ?? current;
       } else {
         const label = input.controlId?.replace(`control-${before}-`, "");
         const target = label ? byId.get(before)?.edges[label] : undefined;
@@ -115,10 +117,6 @@ function fakeDevice(options: FakeDeviceOptions) {
       };
     },
     foreground: async () => foregroundApp,
-    returnToApp: async () => {
-      // A device that refuses to come back is exactly the left-app case.
-      if (options.leavesAppFrom === undefined) foregroundApp = originApp;
-    },
   };
 
   return {
@@ -188,6 +186,10 @@ test("explore stops descending at maxDepth and walks back out", async () => {
     const run = await loadDiscoveryExploreRun(created.id);
     assert.equal(run?.maxDepth, 1);
     assert.equal(run?.stopReason?.code, "complete");
+    assert.equal(run?.navigationCursor?.status, "proven");
+    if (run?.navigationCursor?.status === "proven") {
+      assert.equal(run.navigationCursor.screenId, "screen-home");
+    }
     assert.equal((await readDiscoverySession(created.id))?.status, "complete");
   });
 });
@@ -233,9 +235,40 @@ test("explore stops with left_app when the device will not come back", async () 
     const run = await loadDiscoveryExploreRun(created.id);
     assert.equal(run?.stopReason?.code, "left_app");
     assert.match(run?.stopReason?.message ?? "", /com\.example\.app/);
-    // One soft recover attempt was spent and it did not land back in the app.
-    assert.equal(run?.softRecoveries, 0);
+    // The handoff is preserved as truth; Explore never silently reopens the app.
+    assert.equal(run?.navigationCursor?.status, "external-handoff");
+    if (run?.navigationCursor?.status === "external-handoff") {
+      assert.equal(run.navigationCursor.foregroundApp, "com.android.vending");
+      assert.equal(run.navigationCursor.previous?.screenId, "screen-home");
+    }
     assert.equal((await readDiscoverySession(created.id))?.status, "stopped");
+  });
+});
+
+test("a surprising Back result invalidates proof instead of popping the imagined stack", async () => {
+  await withWorkspace("relay-explore-back-drift-", async () => {
+    const device = fakeDevice({
+      screens: [
+        { id: "home", edges: { Settings: "settings" } },
+        { id: "settings", edges: {} },
+        { id: "rogue", edges: { Dangerous: "home" } },
+      ],
+      backLandsOn: "rogue",
+    });
+    setExploreRuntimeForTests(device.runtime);
+
+    const created = await session("explore-back-drift");
+    await startDiscoveryExplore(created.id, { strategy: "surface", maxDepth: 2 });
+    await waitDiscoveryExploreForTests(created.id);
+
+    const run = await loadDiscoveryExploreRun(created.id);
+    assert.equal(run?.stopReason?.code, "error");
+    assert.match(run?.stopReason?.message ?? "", /expected screen-home/);
+    assert.equal(run?.navigationCursor?.status, "proven");
+    if (run?.navigationCursor?.status === "proven") {
+      assert.equal(run.navigationCursor.screenId, "screen-rogue");
+    }
+    assert.deepEqual(device.taps, ["home>Settings"]);
   });
 });
 

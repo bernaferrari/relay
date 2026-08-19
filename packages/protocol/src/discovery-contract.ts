@@ -1,4 +1,5 @@
 import type { TargetProfile } from "./target-contract.js";
+import type { NavigationProofCursorArtifact } from "./navigation-proof.js";
 
 /** -shaped explore crawl strategies (local-first here/do/ground loop). */
 export type DiscoveryExploreStrategy = "surface" | "journey" | "hard-edges";
@@ -25,7 +26,11 @@ export type DiscoveryExploreRun = {
   mode: DiscoveryExploreMode;
   maxDepth: number;
   stopReason?: DiscoveryExploreStopReason;
-  softRecoveries: number;
+  /**
+   * The only runtime truth about where Explore has actually proved the device is.
+   * Planner visits and the session's last observed screen are not navigation proof.
+   */
+  navigationCursor?: NavigationProofCursorArtifact;
   startedAt: number;
   updatedAt: number;
 };

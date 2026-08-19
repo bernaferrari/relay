@@ -7,7 +7,6 @@ import type { DiscoveryHereOption } from "./discovery-turn.js";
 import { createDiscoverySession, patchDiscoveryScope, readDiscoverySession } from "./discovery.js";
 import {
   cancelDiscoveryExplore,
-  decideSoftRecover,
   defaultExploreDepth,
   isHardEdgeLabel,
   loadDiscoveryExploreRun,
@@ -134,33 +133,6 @@ test("scoreExploreOption ranks hard-edges above generic rows", () => {
   );
 });
 
-test("decideSoftRecover allows one attempt then stops with left_app", () => {
-  assert.equal(
-    decideSoftRecover({
-      originApp: "ai.x.grok",
-      foregroundApp: "ai.x.grok",
-      softRecoveries: 0,
-    }),
-    "ok",
-  );
-  assert.equal(
-    decideSoftRecover({
-      originApp: "ai.x.grok",
-      foregroundApp: "com.android.settings",
-      softRecoveries: 0,
-    }),
-    "attempt_recover",
-  );
-  assert.equal(
-    decideSoftRecover({
-      originApp: "ai.x.grok",
-      foregroundApp: "com.android.settings",
-      softRecoveries: 1,
-    }),
-    "left_app",
-  );
-});
-
 test("patchDiscoveryScope stores explore strategy fields", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-explore-scope-"));
   const previous = process.env.RELAY_WORKSPACE_ROOT;
@@ -272,7 +244,6 @@ test("startDiscoveryExplore applies strategy options onto a mapped session", asy
     assert.equal(restarted?.strategy, "hard-edges");
     assert.equal(restarted?.mode, "model");
     assert.equal(restarted?.maxDepth, 3);
-    assert.equal(restarted?.softRecoveries, 0);
     assert.equal(restarted?.stopReason?.code, "cancelled");
   } finally {
     resetDiscoveryExploreJobsForTests();
