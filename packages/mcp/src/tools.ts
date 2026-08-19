@@ -55,6 +55,25 @@ export const relayMcpExclusions = [
     reason:
       "App Map is truth. Explore proposes edges; Keep accepts them. YAML recipe promote is not an MCP tool.",
   },
+  ...(
+    [
+      "corpus.list",
+      "corpus.create",
+      "corpus.get",
+      "corpus.rename",
+      "corpus.status.update",
+      "corpus.start",
+      "corpus.cancel",
+      "corpus.coverage",
+      "corpus.analysis",
+      "corpus.export",
+      "corpus.screen.get",
+    ] as const
+  ).map((operationId) => ({
+    operationId,
+    reason:
+      "Legacy Corpus sessions are not an agent authoring surface; use a Language Variable × graph Test Combine and its durable job analysis.",
+  })),
 ] as const satisfies readonly { operationId: OperationId; reason: string }[];
 
 type ExcludedOperationId = (typeof relayMcpExclusions)[number]["operationId"];
@@ -107,10 +126,6 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     ' Only after TARGET_CONTROL_LEASE_REQUIRED. Pass poolId "local", deviceSerial, and confirm:true. Local trusted servers often mint a lease on first control.',
   "discovery.start":
     " Starts the server-owned explore job. Poll relay_discovery_get. Each identity-changing interact becomes one pending proposal. Do not self-approve.",
-  "corpus.start":
-    " Starts the multi-locale sweep: map the tree once in the map locale, then switch language and replay the same path plan per locale. Poll relay_corpus_get. Read findings with relay_corpus_analysis, not by diffing screenshots yourself.",
-  "corpus.analysis":
-    " Deterministic localization findings over the frozen screenshots and UI trees: missing screens, a language that never applied, missing or untranslated controls, and text that no longer fits its control. No model call.",
   "job.locale-matrix.export":
     " Writes the pack and returns its findings: the same codes as relay_corpus_analysis, each with the frame it came from. Read those before opening screenshots by hand.",
   "job.locale-matrix.analysis":
@@ -189,10 +204,6 @@ const observeOperations = [
   "run.list",
   "run.get",
   "run.evidence.get",
-  "corpus.list",
-  "corpus.get",
-  "corpus.coverage",
-  "corpus.analysis",
   "job.locale-matrix.analysis",
 ] as const satisfies readonly OperationId[];
 
@@ -318,9 +329,9 @@ const runOperations = [
 /**
  * Sweep one app's screens across languages and read what broke.
  *
- * The corpus verbs are the machine half of that goal, and until this profile
- * existed they were only reachable from `full` — an agent asked to check forty
- * locales had to take every tool in the product to get at eleven of them.
+ * One Language Variable × one graph Test is the canonical campaign. The
+ * profile intentionally omits the older Corpus session lifecycle so an agent
+ * cannot accidentally create a second source of authoring truth.
  */
 const localeOperations = [
   "system.health.get",
@@ -336,17 +347,6 @@ const localeOperations = [
   "app-map.get",
   "workspace.variables.get",
   "workspace.variables.update",
-  "corpus.list",
-  "corpus.create",
-  "corpus.get",
-  "corpus.rename",
-  "corpus.status.update",
-  "corpus.start",
-  "corpus.cancel",
-  "corpus.coverage",
-  "corpus.analysis",
-  "corpus.export",
-  "corpus.screen.get",
   "language-profile.list",
   "language-profile.scan",
   "language-profile.save",
@@ -398,9 +398,6 @@ const reviewOperations = [
   "run.visual-baseline.update",
   "run.visual.review",
   "run.pin.update",
-  "corpus.coverage",
-  "corpus.analysis",
-  "corpus.export",
 ] as const satisfies readonly OperationId[];
 
 const adminOperations = [

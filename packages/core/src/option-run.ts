@@ -231,6 +231,44 @@ export async function prepareOptionRunMatrix(
   };
 }
 
+/**
+ * A single app-locale Variable is already a sequence of complete worlds. If
+ * the saved restore locale is one of those worlds, running it last restores
+ * the device without replaying the same locale mutation after every world.
+ *
+ * This optimization is deliberately narrow: list pickers and multi-variable
+ * products may need authored exit/cleanup actions, and pairwise/cartesian
+ * ordering can carry other state. Those keep their explicit per-world restore.
+ */
+export function optimizeSequentialAppLocaleRestore(
+  request: OptionRunRequest,
+  matrix: PreparedRunMatrix,
+): { request: OptionRunRequest; matrix: PreparedRunMatrix; optimized: boolean } {
+  const [set] = request.sets;
+  const restoreId = set?.restoreId?.trim();
+  if (
+    request.restoreAtEnd === false ||
+    request.sets.length !== 1 ||
+    set?.apply.kind !== "appLocale" ||
+    !restoreId ||
+    matrix.cases.length < 2
+  ) {
+    return { request, matrix, optimized: false };
+  }
+  const restoreIndex = matrix.cases.findIndex((item) => item.values[set.id] === restoreId);
+  if (restoreIndex < 0) return { request, matrix, optimized: false };
+  const ordered = [
+    ...matrix.cases.slice(0, restoreIndex),
+    ...matrix.cases.slice(restoreIndex + 1),
+    matrix.cases[restoreIndex]!,
+  ].map((item, index) => ({ ...item, index }));
+  return {
+    request: { ...request, restoreAtEnd: false },
+    matrix: { ...matrix, cases: ordered },
+    optimized: true,
+  };
+}
+
 export function navStepsToRecipe(steps: VariableNavStep[] | undefined, app?: string): RecipeStep[] {
   if (!steps?.length) return [];
   const out: RecipeStep[] = [];
@@ -651,12 +689,15 @@ export async function startOptionRecipeRun(input: {
       preset: request.preset,
     });
   }
-  const matrix = await prepareOptionRunMatrix(request, input.seed);
+  const preparedMatrix = await prepareOptionRunMatrix(request, input.seed);
+  const optimized = optimizeSequentialAppLocaleRestore(request, preparedMatrix);
+  const matrix = optimized.matrix;
+  const executionRequest = optimized.request;
   const bodyGraph = await freezeRecipeGraph(body, input.compiledGraph ?? {});
   const { root, graph: seedGraph } = composeOptionRunRecipes({
     body,
     bodyGraph,
-    request,
+    request: executionRequest,
     batchId,
   });
   const recipeGraph: Record<string, Recipe> = {

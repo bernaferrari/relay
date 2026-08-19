@@ -33,6 +33,15 @@ test("friendly command paths are unique", () => {
   assert.equal(new Set(paths).size, paths.length);
 });
 
+test("legacy Corpus sessions are not a second public locale workflow", () => {
+  const corpus = cliOperationDescriptors.filter(({ operationId }) =>
+    operationId.startsWith("corpus."),
+  );
+  assert.ok(corpus.length > 0);
+  assert.ok(corpus.every((descriptor) => "exclusion" in descriptor));
+  assert.throws(() => resolveCommand(["corpus", "create"]), /Unknown command/);
+});
+
 test("every friendly path resolves with its declared arguments", () => {
   for (const descriptor of mappedCommandDescriptors) {
     for (const candidate of descriptor.paths) {

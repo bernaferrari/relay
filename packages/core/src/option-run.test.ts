@@ -9,6 +9,7 @@ import {
   navStepsToRecipe,
   stabilizeOptionIds,
   prepareOptionRunMatrix,
+  optimizeSequentialAppLocaleRestore,
   expectedRecipeScreenshotCount,
   type OptionRunSet,
 } from "./option-run.js";
@@ -99,6 +100,42 @@ test("a full 41-locale sweep is not rejected by a small UI-era cap", async () =>
   };
   const matrix = await prepareOptionRunMatrix({ sets: [locales], strategy: "zip" });
   assert.equal(matrix.cases.length, 41);
+});
+
+test("a single app-locale campaign restores once by scheduling its baseline last", async () => {
+  const language: OptionRunSet = {
+    id: "language",
+    name: "Language",
+    kind: "language",
+    apply: { kind: "appLocale", app: "com.example" },
+    options: [{ id: "en" }, { id: "it" }, { id: "pt-BR" }],
+    restoreId: "en",
+  };
+  const request = { sets: [language], strategy: "zip" as const };
+  const matrix = await prepareOptionRunMatrix(request);
+  const optimized = optimizeSequentialAppLocaleRestore(request, matrix);
+
+  assert.equal(optimized.optimized, true);
+  assert.equal(optimized.request.restoreAtEnd, false);
+  assert.deepEqual(
+    optimized.matrix.cases.map((item) => item.values.language),
+    ["it", "pt-BR", "en"],
+  );
+  assert.deepEqual(
+    optimized.matrix.cases.map((item) => item.index),
+    [0, 1, 2],
+  );
+});
+
+test("restore optimization never rewrites list or multi-variable campaigns", async () => {
+  const matrix = await prepareOptionRunMatrix({ sets: [languages], strategy: "zip" });
+  const result = optimizeSequentialAppLocaleRestore(
+    { sets: [{ ...languages, restoreId: "en" }], strategy: "zip" },
+    matrix,
+  );
+  assert.equal(result.optimized, false);
+  assert.equal(result.request.restoreAtEnd, undefined);
+  assert.deepEqual(result.matrix.cases, matrix.cases);
 });
 
 test("pairwise covers every pair without constructing the full product", async () => {
@@ -606,6 +643,55 @@ test("combine preflight previews the requested pilot selection", async () => {
   assert.equal(preflight.worlds, 1);
   assert.equal(preflight.deviceRuns, 1);
   assert.equal(preflight.variables[0]?.selectedCount, 1);
+});
+
+test("40 screens across 40 locales stay 40 device runs, not 1600 locale switches", async () => {
+  const base = sandwichMap();
+  for (const screen of Object.values(base.screens)) delete screen.identity;
+  const variable = {
+    ...entity("language"),
+    name: "Language",
+    kind: "language" as const,
+    apply: { kind: "appLocale" as const, app: "com.example" },
+    options: Array.from({ length: 40 }, (_, index) => ({
+      id: `locale-${index + 1}`,
+      label: `Locale ${index + 1}`,
+    })),
+  };
+  const work = {
+    ...entity("relay-40"),
+    name: "Relay 40",
+    kind: "scenario" as const,
+    intentSchemaVersion: 1 as const,
+    steps: Array.from({ length: 40 }, (_, index) => ({
+      id: `check-${index + 1}`,
+      kind: "script" as const,
+      intent: `Check screen ${index + 1}`,
+      capture: true,
+      binding: { status: "resolved" as const, kind: "script" as const, source: "return true" },
+    })),
+  };
+  const combine = {
+    ...entity("language-x-relay-40"),
+    name: "Language × Relay 40",
+    variableIds: [variable.id],
+    testIds: [work.id],
+    strategy: "cartesian" as const,
+  };
+  const map: AppMap = {
+    ...base,
+    variables: { [variable.id]: variable },
+    tests: { [work.id]: work },
+    combines: { [combine.id]: combine },
+  };
+
+  const preflight = await preflightAppMapCombine(map, combine);
+  assert.equal(preflight.ok, true, JSON.stringify(preflight.blockers));
+  assert.equal(preflight.worlds, 40);
+  assert.equal(preflight.deviceRuns, 40);
+  assert.equal(preflight.checks, 40);
+  assert.equal(preflight.expectedScreenshots, 1_600);
+  assert.match(preflight.formula, /Language × Relay 40/);
 });
 
 test("combine preflight blocks a deliberately empty Variable", async () => {

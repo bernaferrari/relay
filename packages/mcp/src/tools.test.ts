@@ -50,6 +50,17 @@ test("maps every tool-eligible operation exactly once", () => {
       "recipe.history.restore",
       "recipe.stability.get",
       "discovery.promote",
+      "corpus.list",
+      "corpus.create",
+      "corpus.get",
+      "corpus.rename",
+      "corpus.status.update",
+      "corpus.start",
+      "corpus.cancel",
+      "corpus.coverage",
+      "corpus.analysis",
+      "corpus.export",
+      "corpus.screen.get",
     ],
   );
   assert.ok(relayMcpExclusions.every(({ reason }) => reason.trim().length > 0));
@@ -413,18 +424,13 @@ test("publishes compact discovery metadata for every eligible operation", () => 
   });
 });
 
-test("the locale profile can run a language sweep and read what broke", () => {
+test("the locale profile exposes only the canonical Language Variable campaign", () => {
   const locale = new Set(relayMcpToolsForProfile("locale").map(({ operationId }) => operationId));
   for (const operationId of [
-    "corpus.create",
-    "corpus.start",
-    "corpus.cancel",
-    "corpus.coverage",
-    "corpus.analysis",
-    "corpus.export",
     "language-profile.scan",
     "switcher-profile.scan",
     "job.locale-matrix.start",
+    "job.locale-matrix.analysis",
     "target.screenshot.capture",
   ] as const) {
     assert.ok(locale.has(operationId), `locale profile is missing ${operationId}`);
@@ -433,10 +439,9 @@ test("the locale profile can run a language sweep and read what broke", () => {
   assert.equal(locale.has("app-map.proposal.submit"), false);
   assert.equal(locale.has("authoring.session.create"), false);
 
-  // Reading a finished sweep must stay available to the read-only profile.
-  const observe = new Set(relayMcpToolsForProfile("observe").map(({ operationId }) => operationId));
-  assert.ok(observe.has("corpus.analysis"));
-  assert.ok(observe.has("corpus.coverage"));
+  for (const tool of relayMcpTools) {
+    assert.equal(tool.operationId.startsWith("corpus."), false);
+  }
 });
 
 test("locale finding acceptance exposes safe cross-locale scope", () => {

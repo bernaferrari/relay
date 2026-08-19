@@ -21,18 +21,9 @@ import {
 import { Icon } from "./icon";
 import { EmptyState } from "./empty-state";
 import { AppMapScreenTile, type AppMapScreenState } from "./app-map-screen-tile";
-import { LocaleSweepReview } from "./locale-sweep-review";
 import type { ScreenshotOrientationEvidence } from "./oriented-screenshot";
 
 export type AppMapBrowseMode = "screens" | "coverage";
-
-/**
- * Coverage answers "what ran, and how it went". A path run and a locale sweep
- * are both answers to it, and they are read so differently — one row per run
- * against one cell per language — that they get a lane each rather than one
- * table that suits neither.
- */
-type CoverageLane = "runs" | "locales";
 
 export function AppMapBrowseView(props: {
   mode: AppMapBrowseMode;
@@ -64,8 +55,6 @@ export function AppMapBrowseView(props: {
   const [screenPlatform, setScreenPlatform] = createSignal<"all" | "android" | "ios" | "browser">(
     "all",
   );
-  const [coverageLane, setCoverageLane] = createSignal<CoverageLane>("runs");
-  const locales = () => props.mode === "coverage" && coverageLane() === "locales";
   const areas = createMemo(() => deriveAppMapAreas(props.appMap));
   const directory = createMemo(() =>
     screenDirectory(props.appMap, (id) => humanizeTitle(props.appMap.screens[id]?.title ?? "")),
@@ -157,11 +146,9 @@ export function AppMapBrowseView(props: {
               {props.mode === "screens" ? "Screens" : "Coverage"}
             </h2>
             <p class="mt-0.5 max-w-[680px] text-caption/[1.45] tabular-nums text-[var(--text-weak)]">
-              {locales()
-                ? "Every mapped screen, replayed in every language and compared against the baseline."
-                : props.mode === "screens"
-                  ? screensSummary(props.appMap, explicitGroupCount())
-                  : `${rows().length} ${rows().length === 1 ? "run" : "runs"} on this map`}
+              {props.mode === "screens"
+                ? screensSummary(props.appMap, explicitGroupCount())
+                : `${rows().length} ${rows().length === 1 ? "run" : "runs"} on this map`}
             </p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
@@ -175,43 +162,10 @@ export function AppMapBrowseView(props: {
                 <Icon name="scan" size={12} /> Map with AI
               </Button>
             </Show>
-            <Show when={props.mode === "coverage"}>
-              <div
-                class="flex h-9 items-center rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-0.5"
-                role="tablist"
-                aria-label="Coverage"
-              >
-                <For
-                  each={
-                    [
-                      ["runs", "Runs"],
-                      ["locales", "Languages"],
-                    ] as ReadonlyArray<readonly [CoverageLane, string]>
-                  }
-                >
-                  {([lane, label]) => (
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={coverageLane() === lane}
-                      class={cn(
-                        "inline-flex min-h-8 items-center rounded-md px-2.5 text-caption font-medium transition-[background-color,color,box-shadow] duration-hover focus-visible:outline-2 focus-visible:outline-[var(--border-strong-focus)]",
-                        coverageLane() === lane
-                          ? "bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-sm"
-                          : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
-                      )}
-                      onClick={() => setCoverageLane(lane)}
-                    >
-                      {label}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </Show>
           </div>
         </header>
 
-        <Show when={!locales() && (props.mode === "screens" || rows().length > 0)}>
+        <Show when={props.mode === "screens" || rows().length > 0}>
           <div class="mb-4 flex min-h-11 w-full items-center gap-1.5 rounded-xl border border-[var(--border-weak-base)] bg-[var(--background-base)] p-1 max-[680px]:flex-wrap">
             <label class="group/search relative min-w-[180px] flex-1 rounded-lg transition-colors focus-within:bg-[var(--surface-base)]">
               <span class="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-[var(--text-weak)] transition-colors group-focus-within/search:text-[var(--text-interactive-base)]">
@@ -271,21 +225,14 @@ export function AppMapBrowseView(props: {
         <Show
           when={props.mode === "screens"}
           fallback={
-            <Show
-              when={locales()}
-              fallback={
-                <CoverageTable
-                  rows={filteredRows()}
-                  hasAnyRuns={rows().length > 0}
-                  filtersActive={coverageFiltersActive()}
-                  onClearFilters={clearCoverageFilters}
-                  onOpenRun={props.onOpenRun}
-                  onOpenMap={props.onOpenMap}
-                />
-              }
-            >
-              <LocaleSweepReview suggestedName={`${props.appMap.name} · languages`} />
-            </Show>
+            <CoverageTable
+              rows={filteredRows()}
+              hasAnyRuns={rows().length > 0}
+              filtersActive={coverageFiltersActive()}
+              onClearFilters={clearCoverageFilters}
+              onOpenRun={props.onOpenRun}
+              onOpenMap={props.onOpenMap}
+            />
           }
         >
           <div class="flex flex-1 flex-col gap-y-9">

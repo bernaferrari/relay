@@ -208,17 +208,26 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("discovery.cancel", path("discovery cancel", ["sessionId"])),
   mapped("discovery.promote", path("discovery promote", ["sessionId"])),
 
-  mapped("corpus.list", path("corpus list")),
-  mapped("corpus.create", path("corpus create")),
-  mapped("corpus.get", path("corpus get", ["sessionId"])),
-  mapped("corpus.rename", path("corpus rename", ["sessionId"])),
-  mapped("corpus.status.update", path("corpus status update", ["sessionId"])),
-  mapped("corpus.start", path("corpus start", ["sessionId"])),
-  mapped("corpus.cancel", path("corpus cancel", ["sessionId"])),
-  mapped("corpus.coverage", path("corpus coverage", ["sessionId"])),
-  mapped("corpus.analysis", path("corpus analysis", ["sessionId"])),
-  mapped("corpus.export", path("corpus export", ["sessionId"])),
-  mapped("corpus.screen.get", path("corpus screen", ["sessionId", "screenId"])),
+  ...(
+    [
+      "corpus.list",
+      "corpus.create",
+      "corpus.get",
+      "corpus.rename",
+      "corpus.status.update",
+      "corpus.start",
+      "corpus.cancel",
+      "corpus.coverage",
+      "corpus.analysis",
+      "corpus.export",
+      "corpus.screen.get",
+    ] as const
+  ).map((operationId) => ({
+    operationId,
+    exclusion: "internal" as const,
+    reason:
+      "Legacy Corpus sessions are internal compatibility data; use a Language Variable × graph Test Combine and inspect its run analysis.",
+  })),
 
   mapped("locale-finding.known.list", path("finding known list")),
   mapped(
