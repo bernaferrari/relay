@@ -169,6 +169,20 @@ export function parseCampaignCheck(
         };
       });
     }
+    let warmSourceScreenId: string | undefined;
+    if (raw.check.warmSourceScreenId !== undefined) {
+      if (
+        !isString(raw.check.warmSourceScreenId) ||
+        !raw.check.warmSourceScreenId.trim() ||
+        raw.check.warmSourceScreenId.trim().length > 96
+      ) {
+        throw stepErr(
+          index,
+          "check.warmSourceScreenId must be a non-empty string of at most 96 characters",
+        );
+      }
+      warmSourceScreenId = raw.check.warmSourceScreenId.trim();
+    }
     let cleanup: NonNullable<RecipeStep["check"]>["cleanup"];
     if (raw.check.cleanup !== undefined) {
       if (!isObject(raw.check.cleanup)) {
@@ -220,6 +234,7 @@ export function parseCampaignCheck(
     return {
       id: raw.check.id,
       title: raw.check.title.trim(),
+      ...(warmSourceScreenId ? { warmSourceScreenId } : {}),
       ...(transitionDependencies ? { transitionDependencies } : {}),
       ...(recovery ? { recovery } : {}),
       ...(cleanup ? { cleanup } : {}),

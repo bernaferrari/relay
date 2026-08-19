@@ -23,11 +23,6 @@ function isVerticalSwipe(
   return verticalDistance > 0 && verticalDistance >= horizontalDistance * 1.5;
 }
 
-function isHierarchicalPushAction(action: ActionSpec): boolean {
-  if (action.kind === "tap" || action.kind === "reveal") return true;
-  return authoredSteps(action).some((step) => step.kind === "tap" || step.kind === "reveal");
-}
-
 function isScrollAction(action: ActionSpec): boolean {
   if (action.kind === "gesture") {
     return action.gesture.kind === "scroll" || isVerticalSwipe(action.gesture);
@@ -244,14 +239,11 @@ function reviewedReturnPlan(
     if (!origin?.identity) {
       return { status: "missing", steps, recipes, connectionId: connection.id, currentScreenId };
     }
-    // A taught Cancel/Back contract wins. Settings children reached by tap/reveal
-    // still dismiss with the system Back key when that contract was never taught —
-    // forbidding that left Relay 40 stuck on Birth Year after a successful visit.
-    // Gesture traversals (horizontal pagers) are not hierarchy; do not invent Back.
-    if (
-      !reviewedReturn &&
-      (connection.actions.length === 0 || !connection.actions.every(isHierarchicalPushAction))
-    ) {
+    // Returning is a graph mutation, not a platform assumption. Even a
+    // conventional Android child can override Back, open a dialog, or jump
+    // over multiple logical parents. Only an authored return contract may
+    // mutate the device here.
+    if (!reviewedReturn) {
       return {
         status: "missing",
         steps,
@@ -260,18 +252,32 @@ function reviewedReturnPlan(
         currentScreenId: cursorScreenId,
       };
     }
+    const currentScreen = map.screens[cursorScreenId];
+    if (!currentScreen?.identity) {
+      return {
+        status: "missing",
+        steps,
+        recipes,
+        connectionId: connection.id,
+        currentScreenId: cursorScreenId,
+      };
+    }
+    const sourceExpectation = screenExpectation(
+      map,
+      currentScreen,
+      `relay-return-source-${connection.id}`,
+    );
     const expectation = screenExpectation(
       map,
-      reviewedReturn
-        ? { ...origin, identity: structuredClone(reviewedReturn.expectedDestination.identity) }
-        : origin,
+      { ...origin, identity: structuredClone(reviewedReturn.expectedDestination.identity) },
       `relay-return-proof-${connection.id}`,
     );
     steps.push(
+      sourceExpectation,
       { kind: "key", key: "back", id: `relay-return-${connection.id}` },
       {
         ...expectation,
-        ...(reviewedReturn?.expectedApp ? { expectedApp: reviewedReturn.expectedApp } : {}),
+        ...(reviewedReturn.expectedApp ? { expectedApp: reviewedReturn.expectedApp } : {}),
       },
     );
     verifiedScreenId = connection.fromScreenId;

@@ -215,6 +215,7 @@ export function compileAppMapScenarioTest(
       switch (step.kind) {
         case "instruction": {
           campaignSetupSteps ??= structuredClone(recipeSteps);
+          const warmSourceScreenId = previousTerminalScreenId;
           const connections = step.binding.connectionIds.map((connectionId) => {
             const connection = map.connections[connectionId];
             if (!connection)
@@ -375,6 +376,7 @@ export function compileAppMapScenarioTest(
             check: {
               id: step.id,
               title: step.intent,
+              ...(warmSourceScreenId ? { warmSourceScreenId } : {}),
               transitionDependencies,
               ...(recoveryRecipeId
                 ? {

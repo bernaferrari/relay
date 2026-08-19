@@ -245,9 +245,14 @@ export async function runCampaignCheck(
     );
   const useCanonicalRecovery = Boolean(
     recovery &&
-    (recovery.transitionId
-      ? transitionToConfirm?.connectionId === recovery.transitionId
-      : ctx.runtime?.navigationCursor?.status === "unknown"),
+    ((!ancestorNeedingConfirmation &&
+      (ctx.runtime?.navigationCursor?.status === "unknown" ||
+        (ctx.runtime?.navigationCursor?.status === "proven" &&
+          step.check.warmSourceScreenId !== undefined &&
+          ctx.runtime.navigationCursor.screenId !== step.check.warmSourceScreenId))) ||
+      (recovery.transitionId
+        ? transitionToConfirm?.connectionId === recovery.transitionId
+        : false)),
   );
   if (ancestorNeedingConfirmation && !useCanonicalRecovery) {
     const finishedAt = now();
@@ -396,7 +401,16 @@ export async function runCampaignCheck(
   if (!primaryError && !cleanupError) {
     const finishedAt = now();
     if (recovery) groups[recovery.groupId] = { status: "healthy" };
-    for (const dependency of transitionDependencies) {
+    // A canonical recovery executes one independently compiled edge. It may
+    // prove that edge, but it cannot retroactively prove unexecuted ancestors
+    // merely because the leaf destination was reached.
+    const provenDependencies =
+      useCanonicalRecovery && recovery?.transitionId
+        ? transitionDependencies.filter(
+            (dependency) => dependency.connectionId === recovery.transitionId,
+          )
+        : transitionDependencies;
+    for (const dependency of provenDependencies) {
       if (transitionProofs[dependency.connectionId]?.status === "verified") continue;
       transitionProofs[dependency.connectionId] = {
         status: "verified",
@@ -419,13 +433,23 @@ export async function runCampaignCheck(
         },
       });
     }
-    const terminal = transitionDependencies.at(-1)?.destination;
-    if (terminal?.kind === "screen") {
+    const terminalDestination = transitionDependencies.at(-1)?.destination;
+    const terminalScreenId =
+      cleanupPassed && step.check.cleanup
+        ? step.check.cleanup.terminalScreenId
+        : terminalDestination?.kind === "screen"
+          ? terminalDestination.screenId
+          : undefined;
+    if (terminalScreenId) {
       proveNavigationDestination(ctx, {
-        screenId: terminal.screenId,
-        source: "transition",
+        screenId: terminalScreenId,
+        source: cleanupPassed ? "cleanup" : "transition",
         at: finishedAt,
-        token: `${ctx.job?.id ?? "local"}:${transitionDependencies.at(-1)!.connectionId}`,
+        ...(cleanupPassed
+          ? {}
+          : {
+              token: `${ctx.job?.id ?? "local"}:${transitionDependencies.at(-1)!.connectionId}`,
+            }),
       });
     }
     ctx.job?.artifacts.push({

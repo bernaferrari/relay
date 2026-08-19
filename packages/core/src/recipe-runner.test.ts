@@ -1000,6 +1000,7 @@ describe("runRecipeStep campaign check policy", () => {
   it("runs cleanup after a passing primary path before marking the check passed", async () => {
     const order: string[] = [];
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
     const recipeGraph = {
       primary: {
         id: "primary",
@@ -1034,13 +1035,19 @@ describe("runRecipeStep campaign check policy", () => {
           cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
         },
       },
-      { ...noLog, job, recipeGraph },
+      { ...noLog, job, runtime, recipeGraph },
     );
 
     assert.deepEqual(order, ['id="primary"', 'id="cleanup"']);
     const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result");
     assert.ok(result);
     assert.equal((result.data as { status?: string }).status, "passed");
+    assert.equal(runtime.navigationCursor?.status, "proven");
+    assert.equal(
+      runtime.navigationCursor?.status === "proven" ? runtime.navigationCursor.screenId : undefined,
+      "kids-off",
+      "cleanup owns the terminal cursor; the primary path must not overwrite it",
+    );
   });
 
   it("reports primary and cleanup failures separately without hiding either", async () => {
@@ -1333,6 +1340,14 @@ describe("runRecipeStep campaign check policy", () => {
         createdAt: 1,
         updatedAt: 1,
       },
+      "confirm-appearance": {
+        id: "confirm-appearance",
+        title: "Appearance · source-proven transition confirmation",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 99 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
     };
     const device = stubDevice({
       press: () => Promise.reject(new Error("SuperGrok was not resolved")),
@@ -1431,7 +1446,7 @@ describe("runRecipeStep campaign check policy", () => {
       true,
     );
     assert.equal(
-      logs.some((line) => line.includes("Visit Appearance from Settings")),
+      logs.some((line) => line.includes("Appearance · source-proven transition confirmation")),
       true,
     );
   });

@@ -158,6 +158,54 @@ test("proof graph contains a broken shared edge while unrelated checks continue"
   );
 });
 
+test("an unknown cursor confirms only the independently source-proven leaf", async () => {
+  const ctx = context("model-stale-terminal");
+  ctx.runtime!.navigationCursor = {
+    status: "unknown",
+    reason: "Add to home return did not prove Settings",
+    updatedAt: 1,
+    previous: { screenId: "add-to-home", proofToken: "old-terminal" },
+  };
+  const navigation = {
+    connectionId: "open-navigation",
+    originScreenId: "home",
+    destination: { kind: "screen" as const, screenId: "settings" },
+    expectedApp: "ai.x.grok",
+  };
+  const advanced = {
+    connectionId: "open-advanced",
+    originScreenId: "settings",
+    destination: { kind: "screen" as const, screenId: "advanced" },
+    expectedApp: "ai.x.grok",
+  };
+  const executed: string[] = [];
+
+  await run(
+    ctx,
+    check("advanced-after-failed-return", [navigation, advanced], {
+      warmSourceScreenId: "add-to-home",
+      recovery: {
+        groupId: "transition:open-advanced",
+        recipeId: "confirm-open-advanced",
+        transitionId: "open-advanced",
+        mode: "warm-transition",
+      },
+    }),
+    async (recipeId) => {
+      executed.push(recipeId ?? "stale-warm-path");
+    },
+  );
+
+  assert.deepEqual(executed, ["confirm-open-advanced"]);
+  assert.equal(ctx.runtime?.campaignTransitionProofs?.[navigation.connectionId], undefined);
+  assert.equal(ctx.runtime?.campaignTransitionProofs?.[advanced.connectionId]?.status, "verified");
+  const finalCursor = ctx.runtime?.navigationCursor as
+    | { status: string; screenId?: string }
+    | undefined;
+  assert.equal(finalCursor?.status, "proven");
+  assert.equal(finalCursor?.status === "proven" ? finalCursor.screenId : undefined, "advanced");
+});
+
 test("a failed stateful cleanup remains visible and invalidates the cursor", async () => {
   const ctx = context("model-cleanup");
   const cleanupCheck = check("kids-mode", [settings], {

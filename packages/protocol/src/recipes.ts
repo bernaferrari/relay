@@ -170,6 +170,10 @@ export type RecipeStepMetadata = {
   check?: {
     id: string;
     title: string;
+    /** Exact screen from which the compiled warm itinerary may begin. A
+     * different or unknown runtime cursor must use a source-verified edge
+     * confirmation instead of replaying this planned path. */
+    warmSourceScreenId?: string;
     /** Ordered graph edges this check must prove. Connection ids are stable
      * circuit keys shared by every check compiled from the same App Map edge. */
     transitionDependencies?: Array<{

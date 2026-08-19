@@ -813,24 +813,28 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
     (recipe) => recipe.title === "Checkout · Open second",
   )!;
   assert.deepEqual(
-    secondPath.steps.slice(0, 2).map((step) => step.kind),
-    ["key", "expect-screen"],
+    secondPath.steps.slice(0, 3).map((step) => step.kind),
+    ["expect-screen", "key", "expect-screen"],
   );
-  assert.deepEqual(secondPath.steps[0], {
+  assert.equal(
+    secondPath.steps[0]?.kind === "expect-screen" ? secondPath.steps[0].screenId : undefined,
+    "first",
+  );
+  assert.deepEqual(secondPath.steps[1], {
     kind: "key",
     key: "back",
     id: "relay-return-open-first",
   });
   assert.equal(
-    secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].screenId : undefined,
+    secondPath.steps[2]?.kind === "expect-screen" ? secondPath.steps[2].screenId : undefined,
     "cart",
   );
   assert.equal(
-    secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].recovery : undefined,
+    secondPath.steps[2]?.kind === "expect-screen" ? secondPath.steps[2].recovery : undefined,
     undefined,
   );
   assert.equal(
-    secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].id : undefined,
+    secondPath.steps[2]?.kind === "expect-screen" ? secondPath.steps[2].id : undefined,
     "relay-return-proof-open-first",
   );
   assert.equal(
@@ -839,7 +843,7 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
   );
 });
 
-test("scenario siblings dismiss a child without a taught return using system Back", () => {
+test("scenario siblings never invent system Back without a taught return", () => {
   const map = fixture();
   map.screens.first = {
     ...screen("first"),
@@ -899,25 +903,34 @@ test("scenario siblings dismiss a child without a taught return using system Bac
   const secondPath = Object.values(compiled.graph).find(
     (recipe) => recipe.title === "Checkout · Open second",
   )!;
-  assert.deepEqual(secondPath.steps[0], {
-    kind: "key",
-    key: "back",
-    id: "relay-return-open-first",
-  });
+  assert.equal(secondPath.steps[0]?.kind, "expect-screen");
   assert.equal(
-    secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].screenId : undefined,
-    "cart",
+    secondPath.steps[0]?.kind === "expect-screen"
+      ? secondPath.steps[0].returnRequirement?.connectionId
+      : undefined,
+    "open-first",
+  );
+  assert.equal(
+    secondPath.steps.some((step) => step.kind === "key" && step.key === "back"),
+    false,
+  );
+  assert.equal(
+    secondPath.steps[0]?.kind === "expect-screen" ? secondPath.steps[0].timeoutMs : 1,
+    0,
   );
 });
 
-test("scenario siblings use a reviewed direct-ancestor Back before per-edge inverses", () => {
+test("Add to home returns through one source-proven inverse before opening Advanced", () => {
   const map = fixture();
+  map.screens.home!.title = "Settings";
+  map.screens.cart!.title = "Widget";
   map.screens["add-home"] = {
     ...screen("add-home"),
     identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
   };
   map.screens.privacy = {
     ...screen("privacy"),
+    title: "Advanced",
     identity: { schemaVersion: 1, fingerprint: "d".repeat(64) },
   };
   map.connections["open-cart"]!.return = {
@@ -948,7 +961,7 @@ test("scenario siblings use a reviewed direct-ancestor Back before per-edge inve
     id: "privacy",
     fromScreenId: "home",
     destination: { kind: "screen", screenId: "privacy" },
-    actions: [{ id: "tap-privacy", kind: "tap", target: { label: "Privacy" } }],
+    actions: [{ id: "tap-privacy", kind: "tap", target: { label: "Advanced" } }],
     return: undefined,
   };
   map.connections["return-from-add-home"] = {
@@ -987,7 +1000,7 @@ test("scenario siblings use a reviewed direct-ancestor Back before per-edge inve
       {
         id: "privacy",
         kind: "instruction",
-        intent: "Open Privacy",
+        intent: "Open Advanced",
         binding: { status: "resolved", kind: "connections", connectionIds: ["privacy"] },
       },
     ],
@@ -997,18 +1010,26 @@ test("scenario siblings use a reviewed direct-ancestor Back before per-edge inve
 
   const compiled = compileAppMapTest(map, work);
   const sibling = Object.values(compiled.graph).find(
-    (recipe) => recipe.title === "Checkout · Open Privacy",
+    (recipe) => recipe.title === "Checkout · Open Advanced",
   )!;
+  const advancedCheck = compiled.root.steps.find(
+    (step) => step.check?.title === "Open Advanced",
+  )?.check;
+  assert.equal(advancedCheck?.warmSourceScreenId, "add-home");
   assert.deepEqual(sibling.steps[0], {
     kind: "module",
     id: "relay-return-edge-return-from-add-home",
     recipeId: `app-map:${map.id}:connection:return-from-add-home:r${map.revision}`,
   });
-  assert.equal(
-    compiled.graph[
-      `app-map:${map.id}:connection:return-from-add-home:r${map.revision}`
-    ]?.steps.some((step) => step.kind === "key" && step.key === "back"),
-    true,
+  assert.deepEqual(
+    compiled.graph[`app-map:${map.id}:connection:return-from-add-home:r${map.revision}`]?.steps
+      .slice(0, 3)
+      .map((step) => [step.kind, step.id]),
+    [
+      ["expect-screen", "relay-source-return-from-add-home"],
+      ["key", "press-back-from-add-home"],
+      ["expect-screen", "relay-destination-return-from-add-home"],
+    ],
   );
   assert.equal(
     sibling.steps.some(
@@ -1024,33 +1045,35 @@ test("scenario siblings use a reviewed direct-ancestor Back before per-edge inve
     false,
   );
   assert.equal(
-    sibling.steps.some((step) => step.kind === "tap" && step.target.label === "Privacy"),
+    sibling.steps.some((step) => step.kind === "tap" && step.target.label === "Advanced"),
     true,
   );
 
   delete map.connections["return-from-add-home"];
   const embedded = compileAppMapTest(map, work);
   const embeddedSibling = Object.values(embedded.graph).find(
-    (recipe) => recipe.title === "Checkout · Open Privacy",
+    (recipe) => recipe.title === "Checkout · Open Advanced",
   )!;
   assert.deepEqual(
-    embeddedSibling.steps.slice(0, 4).map((step) => [step.kind, step.id]),
+    embeddedSibling.steps.slice(0, 6).map((step) => [step.kind, step.id]),
     [
+      ["expect-screen", "relay-return-source-add-home"],
       ["key", "relay-return-add-home"],
       ["expect-screen", "relay-return-proof-add-home"],
+      ["expect-screen", "relay-return-source-open-cart"],
       ["key", "relay-return-open-cart"],
       ["expect-screen", "relay-return-proof-open-cart"],
     ],
   );
   assert.equal(
-    embeddedSibling.steps[1]?.kind === "expect-screen"
-      ? embeddedSibling.steps[1].screenId
+    embeddedSibling.steps[2]?.kind === "expect-screen"
+      ? embeddedSibling.steps[2].screenId
       : undefined,
     "cart",
   );
   assert.equal(
-    embeddedSibling.steps[3]?.kind === "expect-screen"
-      ? embeddedSibling.steps[3].screenId
+    embeddedSibling.steps[5]?.kind === "expect-screen"
+      ? embeddedSibling.steps[5].screenId
       : undefined,
     "home",
   );
@@ -1061,22 +1084,22 @@ test("scenario siblings use a reviewed direct-ancestor Back before per-edge inve
     false,
   );
   assert.equal(
-    embeddedSibling.steps.some((step) => step.kind === "tap" && step.target.label === "Privacy"),
+    embeddedSibling.steps.some((step) => step.kind === "tap" && step.target.label === "Advanced"),
     true,
   );
 
   delete map.connections["open-cart"]!.return;
   const missing = compileAppMapTest(map, work);
   const blockedSibling = Object.values(missing.graph).find(
-    (recipe) => recipe.title === "Checkout · Open Privacy",
+    (recipe) => recipe.title === "Checkout · Open Advanced",
   )!;
   assert.deepEqual(
     blockedSibling.steps.slice(0, 4).map((step) => [step.kind, step.id]),
     [
+      ["expect-screen", "relay-return-source-add-home"],
       ["key", "relay-return-add-home"],
       ["expect-screen", "relay-return-proof-add-home"],
-      ["key", "relay-return-open-cart"],
-      ["expect-screen", "relay-return-proof-open-cart"],
+      ["expect-screen", "relay-return-required-open-cart"],
     ],
   );
   assert.equal(
@@ -1087,12 +1110,12 @@ test("scenario siblings use a reviewed direct-ancestor Back before per-edge inve
   );
   assert.equal(
     blockedSibling.steps[3]?.kind === "expect-screen"
-      ? blockedSibling.steps[3].returnRequirement
+      ? blockedSibling.steps[3].returnRequirement?.connectionId
       : undefined,
-    undefined,
+    "open-cart",
   );
   assert.equal(
-    blockedSibling.steps.some((step) => step.kind === "tap" && step.target.label === "Privacy"),
+    blockedSibling.steps.some((step) => step.kind === "tap" && step.target.label === "Advanced"),
     true,
   );
 });
