@@ -4,6 +4,7 @@ import {
   toAppErrorCode,
   type DaemonError,
 } from '@agent-device/kernel/errors';
+import { sanitizeErrorCause } from '@agent-device/kernel/redaction';
 import { createRequestId } from '../../utils/diagnostics.ts';
 import type { DaemonRequest, DaemonResponse } from '../types.ts';
 import { materializeRemoteArtifacts } from '../../remote/daemon-artifacts.ts';
@@ -101,9 +102,11 @@ function toDaemonHttpRpcError(error: {
   data?: Record<string, unknown>;
 }): DaemonError {
   const data = error.data ?? {};
+  const cause = readDaemonErrorCause(data.cause);
   return {
     code: toAppErrorCode(data.code != null ? String(data.code) : undefined, 'COMMAND_FAILED'),
     message: String(data.message ?? error.message ?? 'Daemon RPC request failed'),
+    cause,
     details:
       typeof data.details === 'object' && data.details
         ? (data.details as Record<string, unknown>)
@@ -117,18 +120,27 @@ function toDaemonHttpRpcError(error: {
   };
 }
 
+function readDaemonErrorCause(value: unknown): DaemonError['cause'] {
+  return sanitizeErrorCause(value);
+}
+
 function appErrorFromDaemonError(error: DaemonError, requestId: string | undefined): AppError {
-  return new AppError(toAppErrorCode(error.code, 'COMMAND_FAILED'), error.message, {
-    ...(error.details ?? {}),
-    hint: error.hint,
-    diagnosticId: error.diagnosticId,
-    logPath: error.logPath,
-    logPathUnavailable: error.logPathUnavailable,
-    diagnosticsRecord: error.diagnosticsRecord,
-    retriable: error.retriable,
-    supportedOn: error.supportedOn,
-    requestId,
-  });
+  return new AppError(
+    toAppErrorCode(error.code, 'COMMAND_FAILED'),
+    error.message,
+    {
+      ...(error.details ?? {}),
+      hint: error.hint,
+      diagnosticId: error.diagnosticId,
+      logPath: error.logPath,
+      logPathUnavailable: error.logPathUnavailable,
+      diagnosticsRecord: error.diagnosticsRecord,
+      retriable: error.retriable,
+      supportedOn: error.supportedOn,
+      requestId,
+    },
+    error.cause,
+  );
 }
 
 async function resolveDaemonHttpResult(

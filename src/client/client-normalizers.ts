@@ -17,6 +17,7 @@ import {
   type AppleOS,
 } from '@agent-device/kernel/device';
 import { AppError, type DaemonError } from '@agent-device/kernel/errors';
+import { sanitizeErrorCause } from '@agent-device/kernel/redaction';
 import type { SnapshotNode } from '@agent-device/kernel/snapshot';
 import { leaseScopeFromOptions, leaseScopeToRequestMeta } from '../core/lease-scope.ts';
 import type { DaemonRequest, SessionRuntimeHints } from '../daemon/types.ts';
@@ -278,6 +279,7 @@ function normalizeDaemonError(value: unknown): DaemonError | undefined {
   if (!isRecord(value)) return undefined;
   if (typeof value.code !== 'string' || typeof value.message !== 'string') return undefined;
   const error: DaemonError = { code: value.code, message: value.message };
+  Object.assign(error, normalizeDaemonErrorCause(value.cause));
   for (const field of DAEMON_ERROR_STRING_FIELDS) {
     const candidate = value[field];
     if (typeof candidate === 'string') error[field] = candidate;
@@ -285,6 +287,11 @@ function normalizeDaemonError(value: unknown): DaemonError | undefined {
   if (isRecord(value.details)) error.details = value.details;
   if (typeof value.retriable === 'boolean') error.retriable = value.retriable;
   return error;
+}
+
+function normalizeDaemonErrorCause(value: unknown): Pick<DaemonError, 'cause'> | undefined {
+  const cause = sanitizeErrorCause(value);
+  return cause ? { cause } : undefined;
 }
 
 /**

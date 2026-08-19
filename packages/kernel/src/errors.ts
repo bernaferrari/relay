@@ -1,4 +1,4 @@
-import { redactDiagnosticData } from './redaction.ts';
+import { redactDiagnosticData, sanitizeErrorCause as normalizeErrorCause } from './redaction.ts';
 
 /**
  * The known error codes as a value, so gates can enumerate them: every code
@@ -56,6 +56,11 @@ export type DiagnosticsRecordRef = {
   requestId: string;
 };
 
+export type ErrorCause = {
+  message: string;
+  code?: string;
+};
+
 /**
  * Details bag for AppError. Free-form context is allowed, but these keys carry
  * meaning at normalize/render time and must keep their types:
@@ -88,6 +93,7 @@ export type AppErrorDetails = Record<string, unknown> & {
 export type NormalizedError = {
   code: string;
   message: string;
+  cause?: ErrorCause;
   hint?: string;
   diagnosticId?: string;
   /**
@@ -124,6 +130,7 @@ export type NormalizedError = {
 export type DaemonError = {
   code: string;
   message: string;
+  cause?: ErrorCause;
   hint?: string;
   diagnosticId?: string;
   /** Path on the DAEMON host. Meaningful to a local caller only (#1801). */
@@ -157,16 +164,21 @@ export class AppError extends Error {
 
 /** Rehydrate a daemon transport error into the error type used by local callers. */
 export function throwDaemonError(error: DaemonError): never {
-  throw new AppError(toAppErrorCode(error.code), error.message, {
-    ...(error.details ?? {}),
-    hint: error.hint,
-    diagnosticId: error.diagnosticId,
-    logPath: error.logPath,
-    logPathUnavailable: error.logPathUnavailable,
-    diagnosticsRecord: error.diagnosticsRecord,
-    retriable: error.retriable,
-    supportedOn: error.supportedOn,
-  });
+  throw new AppError(
+    toAppErrorCode(error.code),
+    error.message,
+    {
+      ...(error.details ?? {}),
+      hint: error.hint,
+      diagnosticId: error.diagnosticId,
+      logPath: error.logPath,
+      logPathUnavailable: error.logPathUnavailable,
+      diagnosticsRecord: error.diagnosticsRecord,
+      retriable: error.retriable,
+      supportedOn: error.supportedOn,
+    },
+    error.cause,
+  );
 }
 
 /**
@@ -246,10 +258,12 @@ export function normalizeError(err: unknown, context: NormalizeErrorContext = {}
   const supportedOn = stringDetail(details, 'supportedOn');
   const cleanDetails = stripDiagnosticMeta(details);
   const message = maybeEnrichCommandFailedMessage(appErr.code, appErr.message, details);
+  const cause = normalizeErrorCause(appErr.cause);
 
   return {
     code: appErr.code,
     message,
+    ...(cause !== undefined ? { cause } : {}),
     hint,
     diagnosticId,
     logPath,
