@@ -1,6 +1,7 @@
 import type http from "node:http";
 import {
   buildDiscoveryCoverage,
+  buildDiscoveryJourney,
   buildTargetProfiles,
   cancelDiscoveryExplore,
   createDiscoverySession,
@@ -13,6 +14,8 @@ import {
   readDiscoverySession,
   renameDiscoverySession,
   runDiscoveryCapture,
+  runDiscoveryDo,
+  runDiscoveryHere,
   runDiscoveryInteract,
   setDiscoveryStatus,
   startDiscoveryExplore,
@@ -134,12 +137,67 @@ export async function handleDiscoveryRoute(input: DiscoveryRouteInput): Promise<
     return true;
   }
 
+  const discoveryHereMatch = matchPath(pathname, "/discovery/:id/here");
+  if (method === "GET" && discoveryHereMatch) {
+    const session = await loadScopedSession(discoveryHereMatch.id!, scope);
+    await assertTargetControl(scope, session.targetId);
+    if (session.status !== "running" && session.status !== "draft") {
+      throw new HttpError(409, "Start or resume this Discovery Map before asking where you are");
+    }
+    try {
+      json(response, 200, { here: await runDiscoveryHere(session.id) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new HttpError(409, message);
+    }
+    return true;
+  }
+
+  const discoveryDoMatch = matchPath(pathname, "/discovery/:id/do");
+  if (method === "POST" && discoveryDoMatch) {
+    const session = await loadScopedSession(discoveryDoMatch.id!, scope);
+    await assertTargetControl(scope, session.targetId);
+    if (session.status !== "running") {
+      throw new HttpError(409, "Start or resume this Discovery Map before interacting");
+    }
+    const body = (await parseJsonBody(request)) as {
+      controlId?: string;
+      interaction?: InteractInput;
+      kind?: InteractInput["kind"];
+      decision?: DiscoveryDecisionProvenance;
+      serial?: string;
+    };
+    const interaction =
+      body.interaction ?? (body.kind ? ({ ...body } as InteractInput) : undefined);
+    try {
+      const result = await runDiscoveryDo({
+        sessionId: session.id,
+        ...(body.controlId ? { controlId: body.controlId } : {}),
+        ...(interaction ? { interaction } : {}),
+        ...(body.decision ? { decision: body.decision } : {}),
+      });
+      json(response, 201, result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/blocks sensitive/.test(message)) throw new HttpError(403, message);
+      throw new HttpError(409, message);
+    }
+    return true;
+  }
+
   const discoveryCoverageMatch = matchPath(pathname, "/discovery/:id/coverage");
   if (method === "GET" && discoveryCoverageMatch) {
     const session = await loadScopedSession(discoveryCoverageMatch.id!, scope);
     json(response, 200, {
       coverage: buildDiscoveryCoverage(session, await listDiscoverySessions(projectFilter(scope))),
     });
+    return true;
+  }
+
+  const discoveryJourneyMatch = matchPath(pathname, "/discovery/:id/journey");
+  if (method === "GET" && discoveryJourneyMatch) {
+    const session = await loadScopedSession(discoveryJourneyMatch.id!, scope);
+    json(response, 200, { journey: buildDiscoveryJourney(session) });
     return true;
   }
 

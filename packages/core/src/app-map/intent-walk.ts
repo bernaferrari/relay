@@ -45,7 +45,7 @@ export function compileIntentWalk(map: AppMap, intent: string): IntentWalkResult
   const requested = intent.trim();
   if (!requested) throw new Error("Intent is required");
   const words = tokens(requested);
-  const matches = readyConnections(map).flatMap((connection): IntentWalkMatch[] => {
+  const matchConnection = (connection: Connection): IntentWalkMatch[] => {
     const haystack = connectionHaystack(map, connection);
     const hit =
       haystack.includes(requested.toLocaleLowerCase()) ||
@@ -61,12 +61,19 @@ export function compileIntentWalk(map: AppMap, intent: string): IntentWalkResult
           : {}),
       },
     ];
-  });
+  };
+  const matches = readyConnections(map).flatMap(matchConnection);
   if (!matches.length) {
+    const seen = Object.values(map.connections)
+      .filter((connection) => connection.state === "draft")
+      .flatMap(matchConnection);
+    const seenLabel = seen[0]?.label;
     return {
       status: "stuck",
       intent: requested,
-      missing: `No ready App Map edge matches “${requested}”. Explore and Keep that path first.`,
+      missing: seenLabel
+        ? `“${requested}” is on the map as a draft (${seenLabel}). Keep it before a Test can run.`
+        : `No App Map edge matches “${requested}”. Start mapping to explore that path.`,
       matches: [],
     };
   }

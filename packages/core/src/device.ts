@@ -23,10 +23,13 @@ import { withRetry } from "./retry.js";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
 import {
   currentTargetContext,
+  selectedPlatform,
   targetIdentity,
   targetSessionName,
   type TargetContext,
 } from "./target-context.js";
+export { selectedPlatform } from "./target-context.js";
+export * from "./android-app-build.js";
 import { captureNativeCrashEvidence, type CrashEvidenceResult } from "./crash-evidence.js";
 import { launchIosAppOutsideXctest, primeIosAgentSession } from "./ios-app-launch.js";
 import {
@@ -55,10 +58,6 @@ export type {
 
 export type DevicePlatform = "android" | "ios";
 export const PLATFORM = "android" as const;
-export function selectedPlatform(): DevicePlatform {
-  const context = currentTargetContext();
-  return context.kind === "device" ? context.platform : "android";
-}
 export const GROK_PACKAGE = "ai.x.grok";
 export const PLAY_PACKAGE = "com.android.vending";
 export const WORK_ACCOUNT_MATCH = process.env.WORK_ACCOUNT_MATCH?.trim() || "teachx.ai";
@@ -240,8 +239,18 @@ export async function rememberTargetApplication(
   await persistTargetApplications();
 }
 
+/**
+ * Local AgentDevice client for the current (or explicit) target.
+ * Cloud contexts must use {@link createDeviceForTarget} / CloudDeviceProvider —
+ * do not bind a local agent-device session to a remote sessionId.
+ */
 export function createDevice(explicitContext?: TargetContext): Device {
   const context = explicitContext ?? currentTargetContext();
+  if (context.kind === "cloud") {
+    throw new Error(
+      `createDevice is local-only; use createDeviceForTarget for cloud provider "${context.provider}" (session ${context.sessionId})`,
+    );
+  }
   const key = targetKey(context);
   let device = devicesByTarget.get(key);
   if (!device) {
@@ -288,7 +297,8 @@ export function resetDeviceClients(): void {
 
 export function base() {
   const context = currentTargetContext();
-  const platform = context.kind === "device" ? context.platform : "android";
+  const platform =
+    context.kind === "device" || context.kind === "cloud" ? context.platform : "android";
   const serial = context.kind === "device" ? context.serial : undefined;
   return platform === "ios"
     ? ({ platform, ...(serial ? { udid: serial } : {}) } as const)
@@ -774,129 +784,6 @@ export async function clipboardCopy(
 
 export async function closeApp(device: Device, app?: string): Promise<void> {
   await controlled(() => device.apps.close({ ...base(), ...(app ? { app } : {}) }));
-}
-
-export type AndroidAppBuild = {
-  packageName: string;
-  installed: boolean;
-  versionName?: string;
-  versionCode?: string;
-};
-
-function androidAdbArgs(args: string[]): string[] {
-  const serial = targetIdentity();
-  return ["-s", serial, ...args];
-}
-
-function requireAndroidBuildControl(): void {
-  if (selectedPlatform() !== "android") {
-    throw new Error(
-      "capability unavailable: app build inspection and APK installation currently require Android",
-    );
-  }
-}
-
-/** Parse the stable fields from `adb shell dumpsys package`. Exported so the
- * evidence reader remains testable without a connected device. */
-export function parseAndroidAppBuild(packageName: string, output: string): AndroidAppBuild {
-  const versionName = output.match(/\bversionName=([^\s]+)/)?.[1];
-  const versionCode = output.match(/\bversionCode=(\d+)/)?.[1];
-  return {
-    packageName,
-    installed: Boolean(versionName || versionCode || output.includes(`Package [${packageName}]`)),
-    ...(versionName ? { versionName } : {}),
-    ...(versionCode ? { versionCode } : {}),
-  };
-}
-
-/** Inspect the build that is really installed on the selected Android device.
- * This is deliberately a narrow adb bridge: it never uses a shell string and
- * the output becomes immutable run evidence rather than mutable test state. */
-export async function inspectAndroidApp(packageName: string): Promise<AndroidAppBuild> {
-  requireAndroidBuildControl();
-  if (!/^[A-Za-z0-9._-]+$/.test(packageName)) {
-    throw new Error("app package name contains unsupported characters");
-  }
-  await cooperativeCheckpoint();
-  throwIfCancelled();
-  try {
-    const { stdout } = await raceCancel(
-      execFileAsync("adb", androidAdbArgs(["shell", "dumpsys", "package", packageName])),
-    );
-    return parseAndroidAppBuild(packageName, String(stdout));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (/unknown package|not found|does not exist|can't find/i.test(message)) {
-      return { packageName, installed: false };
-    }
-    throw error;
-  }
-}
-
-/** Set one app's locale through Android's public LocaleManager shell surface.
- * Package and BCP-47 tag are separate argv values, never interpolated shell. */
-export async function setAndroidAppLocale(packageName: string, locale: string): Promise<void> {
-  requireAndroidBuildControl();
-  if (!/^[A-Za-z0-9._-]+$/.test(packageName)) {
-    throw new Error("app package name contains unsupported characters");
-  }
-  if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(locale)) {
-    throw new Error(`app locale is not a BCP-47 language tag: ${locale}`);
-  }
-  await cooperativeCheckpoint();
-  throwIfCancelled();
-  await mutateCurrentTarget(() =>
-    raceCancel(
-      execFileAsync(
-        "adb",
-        androidAdbArgs([
-          "shell",
-          "cmd",
-          "locale",
-          "set-app-locales",
-          packageName,
-          "--locales",
-          locale,
-        ]),
-      ),
-    ),
-  );
-}
-
-async function runAndroidInstall(
-  action: "install" | "update" | "uninstall",
-  packageName: string,
-  artifact?: string,
-): Promise<AndroidAppBuild> {
-  requireAndroidBuildControl();
-  if (!/^[A-Za-z0-9._-]+$/.test(packageName)) {
-    throw new Error("app package name contains unsupported characters");
-  }
-  if ((action === "install" || action === "update") && !artifact?.trim()) {
-    throw new Error(`${action} requires a local APK artifact path`);
-  }
-  await cooperativeCheckpoint();
-  throwIfCancelled();
-  if (action === "uninstall") {
-    await mutateCurrentTarget(() =>
-      raceCancel(execFileAsync("adb", androidAdbArgs(["uninstall", packageName]))),
-    );
-    return { packageName, installed: false };
-  }
-  const args = action === "update" ? ["install", "-r", artifact!] : ["install", artifact!];
-  await mutateCurrentTarget(() => raceCancel(execFileAsync("adb", androidAdbArgs(args))));
-  return await inspectAndroidApp(packageName);
-}
-
-/** Install, update, or uninstall a known local Android APK. iOS and browser
- * targets fail explicitly instead of pretending those lifecycle operations
- * are portable. */
-export async function changeAndroidAppBuild(input: {
-  action: "install" | "update" | "uninstall";
-  packageName: string;
-  artifact?: string;
-}): Promise<AndroidAppBuild> {
-  return await runAndroidInstall(input.action, input.packageName, input.artifact);
 }
 
 export async function openAppSwitcher(device: Device): Promise<void> {

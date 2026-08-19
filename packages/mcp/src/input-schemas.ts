@@ -1,214 +1,25 @@
 import { operationDefinition, type OperationId } from "@relay/protocol";
 import * as z from "zod/v4";
 import { graphTest, testCapturePolicy, testSemanticEdits } from "./test-input-schemas.js";
+import {
+  authoringInteraction,
+  authoringTarget,
+  connectionDestination,
+  destination,
+  empty,
+  identifier,
+  natural,
+  open,
+  point,
+  sessionReference,
+  tapPoint,
+  targetReference,
+  text,
+  unknownRecord,
+} from "./input-schema-primitives.js";
 
 export type RelayOperationInputSchema = z.ZodObject;
 export type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
-
-const text = (description: string) => z.string().min(1).describe(description);
-const natural = (description: string) => z.number().nonnegative().describe(description);
-const identifier = (description: string) => text(description);
-const unknownRecord = z.record(z.string(), z.unknown());
-const empty = z.object({}).strict();
-const open = z.object({}).catchall(z.unknown());
-const tapPoint = z.object({ x: z.number(), y: z.number() }).strict();
-
-const targetReference = {
-  serial: identifier("Connected device or managed target identifier"),
-};
-
-const sessionReference = {
-  sessionId: identifier("Authoring session identifier"),
-};
-
-const authoringTarget = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("device"),
-      platform: z.enum(["android", "ios"]),
-      targetId: identifier("Connected device serial"),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("browser"),
-      platform: z.literal("browser"),
-      targetId: identifier("Managed browser target identifier"),
-    })
-    .strict(),
-]);
-
-const pointAnchorTarget = z
-  .object({
-    identifier: z.string().min(1).optional(),
-    ref: z.string().min(1).optional(),
-    label: z.string().min(1).optional(),
-    text: z.string().min(1).optional(),
-  })
-  .strict()
-  .refine(
-    ({ identifier: targetId, ref, label, text: targetText }) =>
-      Boolean(targetId || ref || label || targetText),
-    "Element-relative point needs a semantic anchor",
-  );
-const point = z
-  .object({
-    x: z.number(),
-    y: z.number(),
-    anchor: z
-      .object({
-        horizontal: z.enum(["left", "center", "right"]),
-        vertical: z.enum(["top", "center", "bottom"]),
-      })
-      .strict()
-      .optional(),
-    referenceBounds: z
-      .object({ width: z.number().positive(), height: z.number().positive() })
-      .strict()
-      .optional(),
-    relativeTo: z
-      .object({
-        target: pointAnchorTarget,
-        xRatio: z.number().min(0).max(1),
-        yRatio: z.number().min(0).max(1),
-      })
-      .strict()
-      .optional()
-      .describe("Re-find an element and tap this fractional position inside its live bounds"),
-  })
-  .strict();
-const stepTarget = z
-  .object({
-    identifier: z.string().min(1).optional(),
-    ref: z.string().min(1).optional(),
-    label: z.string().min(1).optional(),
-    text: z.string().min(1).optional(),
-    point: point.optional(),
-  })
-  .strict()
-  .refine(
-    ({ identifier, ref, label, text: targetText, point: targetPoint }) =>
-      Boolean(identifier || ref || label || targetText || targetPoint),
-    "Target needs an identifier, ref, label, text, or point",
-  )
-  .describe("Semantic selector, accessibility reference, or point");
-
-const authoringInteraction = z.discriminatedUnion("kind", [
-  z
-    .object({ kind: z.literal("tap"), target: stepTarget, applied: z.boolean().optional() })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("type"),
-      text: z.string(),
-      target: stepTarget.optional(),
-      mode: z.enum(["append", "replace"]).optional(),
-      applied: z.boolean().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("clipboard"),
-      action: z.enum(["write", "read", "paste", "copy"]),
-      text: z.string().optional(),
-      target: stepTarget.optional(),
-      expect: z.string().optional(),
-      match: z.enum(["exact", "contains"]).optional(),
-      applied: z.boolean().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("app"),
-      action: z.enum([
-        "open",
-        "close",
-        "switcher",
-        "inspect",
-        "assert-installed",
-        "assert-not-installed",
-        "install",
-        "update",
-        "uninstall",
-      ]),
-      app: z.string().optional(),
-      url: z.url().optional(),
-      relaunch: z.boolean().optional(),
-      artifact: z.string().optional(),
-      as: z.string().optional(),
-      version: z.string().optional(),
-      versionMatch: z.enum(["exact", "contains"]).optional(),
-      applied: z.boolean().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("device"),
-      action: z.enum(["lock", "unlock", "keyboard-dismiss", "keyboard-enter"]),
-      applied: z.boolean().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("rotate"),
-      orientation: z.enum([
-        "portrait",
-        "portrait-upside-down",
-        "landscape-left",
-        "landscape-right",
-      ]),
-      applied: z.boolean().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("swipe"),
-      from: point,
-      to: point,
-      durationMs: natural("Gesture duration in milliseconds").optional(),
-      applied: z.boolean().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("key"),
-      key: z.enum(["back", "home"]),
-      applied: z.boolean().optional(),
-    })
-    .strict(),
-  z.object({ kind: z.literal("wait"), ms: natural("Wait duration in milliseconds") }).strict(),
-  z.object({ kind: z.literal("observe"), label: z.string().optional() }).strict(),
-  z.object({ kind: z.literal("screenshot"), label: z.string().optional() }).strict(),
-  z
-    .object({
-      kind: z.literal("reusable"),
-      recipeId: identifier("Reusable action identifier"),
-      bindings: z.record(z.string(), z.string()).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("steps"),
-      steps: z.array(unknownRecord),
-      label: z.string().optional(),
-    })
-    .strict(),
-]);
-
-const destination = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("new-screen"), title: z.string().optional() }).strict(),
-  z
-    .object({ kind: z.literal("screen"), screenId: identifier("Destination screen identifier") })
-    .strict(),
-  z.object({ kind: z.literal("end") }).strict(),
-]);
-
-const connectionDestination = z.discriminatedUnion("kind", [
-  z
-    .object({ kind: z.literal("screen"), screenId: identifier("Destination screen identifier") })
-    .strict(),
-  z.object({ kind: z.literal("end") }).strict(),
-]);
 
 const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "system.audit.list": z.object({ limit: z.number().int().positive().optional() }).strict(),
@@ -291,6 +102,65 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
         })
         .strict()
         .optional(),
+    })
+    .strict(),
+  "target.ground": z
+    .object({
+      ...targetReference,
+      target: z
+        .union([
+          text("Accessibility label, identifier, or natural-language control name"),
+          z
+            .object({
+              kind: z.enum([
+                "label",
+                "identifier",
+                "point",
+                "ref",
+                "find",
+                "text-match",
+                "swipe",
+                "type",
+                "key",
+                "replace",
+              ]),
+            })
+            .catchall(z.unknown()),
+        ])
+        .describe("Text to resolve, or a full InteractInput to passthrough"),
+      screenshot: z
+        .object({
+          base64: text("PNG/JPEG base64 screenshot for vision fallback"),
+          mime: z.string().optional(),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+  "target.do": z
+    .object({
+      ...targetReference,
+      target: z
+        .union([
+          text("Accessibility label, identifier, or natural-language control name"),
+          z
+            .object({
+              kind: z.enum([
+                "label",
+                "identifier",
+                "point",
+                "ref",
+                "find",
+                "text-match",
+                "swipe",
+                "type",
+                "key",
+                "replace",
+              ]),
+            })
+            .catchall(z.unknown()),
+        ])
+        .describe("Text to ground then tap, or a full InteractInput"),
     })
     .strict(),
   "target.ui.describe": z.object(targetReference).strict(),
@@ -773,6 +643,18 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "discovery.capture": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
   "discovery.start": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
   "discovery.cancel": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
+  "discovery.here": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
+  "discovery.coverage": z
+    .object({ sessionId: identifier("Discovery session identifier") })
+    .strict(),
+  "discovery.journey": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
+  "discovery.do": z
+    .object({
+      sessionId: identifier("Discovery session identifier"),
+      controlId: identifier("Discovery control identifier").optional(),
+      kind: z.string().optional(),
+    })
+    .catchall(z.unknown()),
   "discovery.interact": z
     .object({ sessionId: identifier("Discovery session identifier"), kind: z.string() })
     .catchall(z.unknown()),

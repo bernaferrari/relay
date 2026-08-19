@@ -12,6 +12,8 @@ const SLOW_OPERATIONS = new Set([
   "target.snapshot.capture",
   "target.screenshot.capture",
   "target.interact",
+  "target.ground",
+  "target.do",
   "target.app.launch",
   "authoring.session.begin",
   "authoring.session.start",

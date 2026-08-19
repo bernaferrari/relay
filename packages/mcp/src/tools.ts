@@ -94,6 +94,10 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Step 1 of a tap: capture pixels, then call interact. Do not retry snapshot in a loop if the tree is missing.",
   "target.interact":
     " Step 2 of a tap: after screenshot or snapshot, send one interaction. Prefer identifier, then label, then text, then point. Use preview:true to mark without committing. Huge SwiftUI cells are often not hittable — tap the label. If pixels do not change, it is a dead cell, not a new screen.",
+  "target.ground":
+    " Resolve text (or InteractInput) to a tap without committing. Order: unique a11y label/id → Grok Menu/Private heuristics → optional OpenRouter vision. On miss, returns candidates — never relaunches the app.",
+  "target.do":
+    " Ground then interact in one call. Prefer this for NL taps (Menu, Appearance). Requires exclusive lease.",
   "target.snapshot.capture":
     " Step 1 of a tap when you need identifiers or labels. The accessibility tree may be missing. Screenshot plus a point tap still works. Do not retry snapshot in a loop.",
   "target.recover":
@@ -148,6 +152,8 @@ const controlOperations = [
   "target.snapshot.capture",
   "target.screenshot.capture",
   "target.interact",
+  "target.ground",
+  "target.do",
   "target.recover",
   "target.app.launch",
   "target.ui.describe",
@@ -194,7 +200,13 @@ const mapOperations = [
   "discovery.get",
   "discovery.start",
   "discovery.cancel",
+  "discovery.here",
+  "discovery.do",
   "discovery.suggestion",
+  "discovery.coverage",
+  "discovery.journey",
+  "target.ground",
+  "target.do",
   "app-map.observations.propose",
 ] as const satisfies readonly OperationId[];
 

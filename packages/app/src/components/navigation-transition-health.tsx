@@ -46,14 +46,14 @@ export function NavigationTransitionHealth(props: {
     <section class="grid gap-2.5" aria-labelledby="navigation-health-heading">
       <header class="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <strong id="navigation-health-heading" class="block text-[12px] font-semibold">
+          <strong id="navigation-health-heading" class="block text-body font-semibold">
             Navigation
           </strong>
-          <span class="mt-0.5 block text-[10px]/[1.4] text-text-weaker">
+          <span class="mt-0.5 block text-micro/[1.4] text-text-weaker">
             Shared paths are proven once and reused by their dependent checks.
           </span>
         </div>
-        <span class="text-[9.5px] tabular-nums text-text-weaker">
+        <span class="text-micro tabular-nums text-text-weaker">
           {props.model.counts.ready} ready · {props.model.counts.proven} proven ·{" "}
           {props.model.counts.drifted} drifted · {props.model.counts.blocked} blocked
         </span>
@@ -65,16 +65,16 @@ export function NavigationTransitionHealth(props: {
         {(repair) => (
           <div class="flex items-center justify-between gap-3 rounded-lg border border-border-weak-base bg-surface-warning-weak px-3 py-2.5">
             <span class="min-w-0">
-              <strong class="block truncate text-[10.5px] font-semibold text-text-strong">
+              <strong class="block truncate text-caption font-semibold text-text-strong">
                 {repair().title}
               </strong>
-              <span class="mt-0.5 block line-clamp-2 text-[9.5px]/[1.4] text-text-weak">
+              <span class="mt-0.5 block line-clamp-2 text-micro/[1.4] text-text-weak">
                 {repair().summary}
               </span>
             </span>
             <button
               type="button"
-              class="min-h-11 shrink-0 touch-manipulation rounded-lg px-3 text-[10.5px] font-semibold text-text-strong hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+              class="min-h-11 shrink-0 touch-manipulation rounded-lg px-3 text-caption font-semibold text-text-strong hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
               disabled={!props.onReviewRepair}
               onClick={() => props.onReviewRepair?.(repair())}
             >
@@ -98,17 +98,17 @@ function TransitionRow(props: { row: NavigationTransitionHealthRow }) {
         <Icon name={state().icon} size={12} />
       </span>
       <span class="min-w-0">
-        <strong class="block truncate text-[10.5px] font-medium text-text-strong">
+        <strong class="block truncate text-caption font-medium text-text-strong">
           {props.row.source.title} <span aria-hidden="true">→</span> {props.row.destination.title}
         </strong>
-        <span class="mt-0.5 block truncate text-[9.5px] text-text-weaker">
+        <span class="mt-0.5 block truncate text-micro text-text-weaker">
           {props.row.lastVerifiedDestination
             ? `Last verified at ${props.row.lastVerifiedDestination}`
             : "Not verified in this lineage"}
           {` · ${props.row.dependentCount} ${props.row.dependentCount === 1 ? "dependent" : "dependents"}`}
         </span>
       </span>
-      <span class={cn("text-[9.5px] font-semibold", state().tone)}>{state().label}</span>
+      <span class={cn("text-micro font-semibold", state().tone)}>{state().label}</span>
     </li>
   );
 }

@@ -31,14 +31,14 @@ export function CampaignRecoveryIntervention(props: {
           <Icon name="alert" size={15} />
         </span>
         <div class="min-w-0">
-          <strong id="campaign-recovery-heading" class="block text-[13px] text-text-strong">
+          <strong id="campaign-recovery-heading" class="block text-body text-text-strong">
             Relay stopped before resetting this app.
           </strong>
-          <p class="mt-1 mb-0 text-[10.5px]/[1.45] text-text-weak">{props.intervention.message}</p>
-          <p class="mt-1 mb-0 text-[9.5px] text-text-weaker">
+          <p class="mt-1 mb-0 text-caption/[1.45] text-text-weak">{props.intervention.message}</p>
+          <p class="mt-1 mb-0 text-micro text-text-weaker">
             {props.intervention.checkTitle} · transition {props.intervention.transitionId}
           </p>
-          <p class="mt-0.5 mb-0 text-[9.5px]/[1.4] text-text-weaker">{props.intervention.reason}</p>
+          <p class="mt-0.5 mb-0 text-micro/[1.4] text-text-weaker">{props.intervention.reason}</p>
         </div>
       </header>
 
@@ -57,7 +57,7 @@ export function CampaignRecoveryIntervention(props: {
             <img src={screenshotSource()} alt="" class="size-full object-cover" />
           </Show>
         </button>
-        <dl class="m-0 grid content-start gap-1.5 rounded-lg bg-surface-base px-3 py-2.5 text-[10px]/[1.4]">
+        <dl class="m-0 grid content-start gap-1.5 rounded-lg bg-surface-base px-3 py-2.5 text-micro/[1.4]">
           <EvidenceRow
             label="Current state"
             value={
@@ -91,7 +91,7 @@ export function CampaignRecoveryIntervention(props: {
 
       <Show when={props.intervention.attempts.length > 0}>
         <details class="group rounded-lg border border-border-weak-base bg-surface-base">
-          <summary class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3 text-[10.5px] font-medium text-text-base focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
+          <summary class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3 text-caption font-medium text-text-base focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
             Attempted selectors · {props.intervention.attempts.length}
             <Icon
               name="chevron-down"
@@ -102,7 +102,7 @@ export function CampaignRecoveryIntervention(props: {
           <ol class="m-0 grid list-decimal gap-2 border-t border-border-weak-base px-3 py-2.5 pl-8">
             <For each={props.intervention.attempts}>
               {(attempt) => (
-                <li class="text-[10px]/[1.4] text-text-base marker:text-text-weaker">
+                <li class="text-micro/[1.4] text-text-base marker:text-text-weaker">
                   <strong class="font-medium text-text-strong">{attempt.kind}</strong>
                   <Show when={attempt.target}> · {attempt.target}</Show>
                   <Show when={attempt.error}>
@@ -116,22 +116,22 @@ export function CampaignRecoveryIntervention(props: {
       </Show>
 
       <div class="grid gap-1.5 rounded-lg bg-surface-warning-weak px-3 py-2.5">
-        <strong class="text-[10.5px] font-semibold text-text-strong">
+        <strong class="text-caption font-semibold text-text-strong">
           Proposed cold recovery · not run
         </strong>
-        <p class="m-0 break-all font-mono text-[9.5px]/[1.45] text-text-weak">
+        <p class="m-0 break-all font-mono text-micro/[1.45] text-text-weak">
           {props.intervention.recovery.proposedColdRecipeId ?? "No cold recipe was recorded."}
         </p>
         <Show when={props.intervention.recovery.warmRecipeId}>
-          <span class="break-all font-mono text-[9px]/[1.4] text-text-weaker">
+          <span class="break-all font-mono text-micro/[1.4] text-text-weaker">
             Warm confirmation: {props.intervention.recovery.warmRecipeId}
           </span>
         </Show>
-        <span class="text-[9.5px] text-text-weaker">
+        <span class="text-micro text-text-weaker">
           Automatic resume is not allowed for this intervention.
         </span>
         <Show when={props.intervention.recovery.choices.includes("approve-cold-once")}>
-          <span class="mt-1 text-[9.5px]/[1.4] text-text-weaker">
+          <span class="mt-1 text-micro/[1.4] text-text-weaker">
             Approve one reset · Unavailable. This run has no operation that can approve or execute a
             reset.
           </span>
@@ -141,7 +141,7 @@ export function CampaignRecoveryIntervention(props: {
       <div class="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          class="min-h-11 touch-manipulation rounded-lg bg-button-primary-base px-3.5 text-[10.5px] font-semibold text-button-primary-text hover:bg-button-primary-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-not-allowed disabled:opacity-50"
+          class="min-h-11 touch-manipulation rounded-lg bg-button-primary-base px-3.5 text-caption font-semibold text-button-primary-text hover:bg-button-primary-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!props.intervention.paused || !props.intervention.jobId || !props.onResume}
           onClick={() => {
             const jobId = props.intervention.jobId;
@@ -153,7 +153,7 @@ export function CampaignRecoveryIntervention(props: {
         </button>
         <button
           type="button"
-          class="min-h-11 touch-manipulation rounded-lg px-3 text-[10.5px] font-medium text-text-base hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-not-allowed disabled:opacity-50"
+          class="min-h-11 touch-manipulation rounded-lg px-3 text-caption font-medium text-text-base hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!props.onReviewRepair}
           onClick={() => props.onReviewRepair?.(props.intervention.repair)}
         >
@@ -161,7 +161,7 @@ export function CampaignRecoveryIntervention(props: {
         </button>
         <button
           type="button"
-          class="min-h-11 touch-manipulation rounded-lg px-3 text-[10.5px] font-medium text-text-base hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-not-allowed disabled:opacity-50"
+          class="min-h-11 touch-manipulation rounded-lg px-3 text-caption font-medium text-text-base hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!props.onTeachTransition}
           onClick={() => props.onTeachTransition?.(props.intervention.checkId)}
         >
@@ -170,14 +170,14 @@ export function CampaignRecoveryIntervention(props: {
         <button
           type="button"
           aria-label="Leave this intervention deferred without changing the run"
-          class="min-h-11 touch-manipulation rounded-lg px-3 text-[10.5px] font-medium text-text-weak hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-default"
+          class="min-h-11 touch-manipulation rounded-lg px-3 text-caption font-medium text-text-weak hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-default"
           disabled={leftDeferred()}
           onClick={() => setLeftDeferred(true)}
         >
           {leftDeferred() ? "Deferred" : "Defer"}
         </button>
         <Show when={leftDeferred()}>
-          <span class="text-[9.5px] text-text-weaker">
+          <span class="text-micro text-text-weaker">
             Run unchanged · no reset approved · no automatic resume.
           </span>
         </Show>
@@ -190,7 +190,7 @@ function EvidenceRow(props: { label: string; value: string; mono?: boolean }) {
   return (
     <div class="grid grid-cols-[74px_minmax(0,1fr)] gap-2">
       <dt class="text-text-weaker">{props.label}</dt>
-      <dd class={props.mono ? "m-0 break-all font-mono text-[9px]" : "m-0 break-words"}>
+      <dd class={props.mono ? "m-0 break-all font-mono text-micro" : "m-0 break-words"}>
         {props.value}
       </dd>
     </div>

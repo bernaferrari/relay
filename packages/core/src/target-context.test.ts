@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { base, selectedPlatform } from "./device.js";
-import { runWithTargetContext, targetIdentity } from "./target-context.js";
+import {
+  isCloudTarget,
+  runWithTargetContext,
+  targetIdentity,
+  type TargetContext,
+} from "./target-context.js";
 
 test("target contexts remain isolated across interleaved operations", async () => {
   const [android, ios, browser] = await Promise.all([
@@ -37,5 +42,27 @@ test("target contexts remain isolated across interleaved operations", async () =
     base: { platform: "android" },
     platform: "android",
     identity: "browser-c",
+  });
+});
+
+test("cloud TargetContext constructs, narrows, and isolates identity", async () => {
+  const cloud: TargetContext = {
+    kind: "cloud",
+    provider: "browserstack",
+    sessionId: "bs-session-1",
+    platform: "android",
+  };
+  assert.ok(isCloudTarget(cloud));
+  assert.equal(targetIdentity(cloud), "bs-session-1");
+
+  const result = await runWithTargetContext(cloud, async () => ({
+    identity: targetIdentity(),
+    platform: selectedPlatform(),
+    base: base(),
+  }));
+  assert.deepEqual(result, {
+    identity: "bs-session-1",
+    platform: "android",
+    base: { platform: "android" },
   });
 });

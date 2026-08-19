@@ -53,12 +53,13 @@ export function isExploreChromeLabel(value: string, options?: ExploreChromeOptio
   const label = value.trim().toLocaleLowerCase();
   if (!label) return true;
   if (
-    /^(close|done|cancel|back|dismiss|dismiss popup|home|recents|recent apps|overview|navigate up|voice search|what are you looking for\??|more options|grok-close|grok-arrow-left|search|search settings)$/i.test(
+    /^(close|done|cancel|back|dismiss|dismiss popup|home|recents|recent apps|overview|navigate up|voice search|what are you looking for\??|more options|ask anything|launch gallery selector|open microsoft swiftkey toolbar|start dictation|voice typing|symbols and numbers|double tap for caps lock|grok-close|grok-arrow-left|search|search settings)$/i.test(
       label,
     )
   ) {
     return true;
   }
+  if (/^capital [a-z]$/i.test(label)) return true;
   // Toolbar / brand affordances that leak into a11y trees.
   if (/^grok[-_]/i.test(label)) return true;
   if (/^toolbar\./i.test(label)) return true;
@@ -92,7 +93,9 @@ export function isExploreChromeNode(node: SnapshotNode, options?: ExploreChromeO
   const owner = `${node.bundleId ?? ""} ${node.identifier ?? ""}`;
   if (EXPLORE_SYSTEM_OWNER.test(owner)) return true;
   if (EXPLORE_CHROME_IDENTIFIER.test(node.identifier ?? "")) return true;
-  return isExploreChromeLabel((node.label ?? node.value ?? node.identifier ?? "").trim(), options);
+  const spoken = (node.label ?? node.value ?? "").trim();
+  if (!spoken) return false;
+  return isExploreChromeLabel(spoken, options);
 }
 
 export type ExploreControl = {

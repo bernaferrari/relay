@@ -8,8 +8,13 @@ import {
   resetDeviceClient,
   type Device,
 } from "./device.js";
-import { inferDevicePlatformFromSerial } from "./target-context.js";
-import { glyphsFromLogLine, type Glyph, type TraceFrameRef, type TraceStep } from "./trace.js";
+import {
+  inferDevicePlatformFromSerial,
+  runWithTargetContext,
+  targetIdentity,
+  type TargetContext,
+} from "./target-context.js";
+import type { Glyph, TraceFrameRef, TraceStep } from "./trace.js";
 import { persistRun, writeFramePng, ensureRunDir, type PersistedRun } from "./runs.js";
 import {
   JobCancelledError,
@@ -46,7 +51,6 @@ import {
 } from "./run-evidence.js";
 import { getBrowserDevice } from "./browser-target.js";
 import { preflightTarget, readTarget } from "./targets.js";
-import { runWithTargetContext, type TargetContext } from "./target-context.js";
 import {
   TargetWorkerScheduler,
   defaultTargetWorkerAssignment,
@@ -70,6 +74,7 @@ import {
 } from "./session-job-support.js";
 import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import { captureAutomaticState } from "./session-automatic-evidence.js";
+import { appendStepLog, finishStep, observeStepActions, openStep } from "./session-trace-steps.js";
 export type { EnqueueJobInput, JobErrorCode, JobStatus, TestJob } from "./session-contract.js";
 export { summarizeJob } from "./session-summary.js";
 export { captureAutomaticState } from "./session-automatic-evidence.js";
@@ -221,7 +226,7 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
             (parent?.targetContext.kind === "device" ? parent.targetContext.serial : "") ||
             "",
         });
-  const targetId = targetContext.kind === "browser" ? targetContext.targetId : targetContext.serial;
+  const targetId = targetIdentity(targetContext);
   if (!targetId) throw new Error("Every Relay job requires an explicit target");
   const operationContext = currentOperationContext() ?? parent?.operationContext;
   const assignment = defaultTargetWorkerAssignment({
@@ -387,70 +392,6 @@ async function persistCompletedRun(job: TestJob, log: (line: string) => void): P
   } catch (error) {
     log(`warn: persist run failed: ${error instanceof Error ? error.message : String(error)}`);
   }
-}
-
-function openStep(
-  job: TestJob,
-  partial: Omit<TraceStep, "id" | "index" | "startedAt" | "frames" | "log"> & {
-    log?: string;
-    frames?: TraceFrameRef[];
-  },
-): TraceStep {
-  const step: TraceStep = {
-    id: randomUUID(),
-    index: job.steps.length,
-    kind: partial.kind,
-    tone: partial.tone,
-    title: partial.title,
-    glyphs: partial.glyphs,
-    startedAt: now(),
-    frames: partial.frames ?? [],
-    log: partial.log ?? "",
-    heal: partial.heal,
-    status: partial.status ?? "running",
-    // `glyphs` describes the plan; `actions` is an ordered observation log.
-    // Keeping the empty array is intentional: old traces omit the field and
-    // may fall back to glyphs, while new traces never present plans as facts.
-    actions: [],
-  };
-  job.steps.push(step);
-  publish({
-    type: "job.step",
-    at: step.startedAt,
-    jobId: job.id,
-    step,
-  });
-  return step;
-}
-
-function finishStep(step: TraceStep, status: TraceStep["status"], extraLog?: string): void {
-  step.finishedAt = now();
-  step.durationMs = step.finishedAt - step.startedAt;
-  step.status = status;
-  if (extraLog) step.log = step.log ? `${step.log}\n${extraLog}` : extraLog;
-}
-
-function appendStepLog(step: TraceStep | undefined, line: string): void {
-  if (!step) return;
-  step.log = step.log ? `${step.log}\n${line}` : line;
-  // enrich glyphs from live logs
-  const inferred = glyphsFromLogLine(line);
-  step.glyphs = [...new Set([...step.glyphs, ...inferred])].slice(0, 6);
-  if (inferred.length > 0) {
-    const at = now();
-    const actions = step.actions ?? [];
-    for (const kind of inferred) {
-      const previous = actions.at(-1);
-      if (previous?.kind === kind && at - previous.at < 250) continue;
-      actions.push({ kind, at, label: line });
-    }
-    step.actions = actions;
-  }
-}
-
-function observeStepActions(step: TraceStep, glyphs: Glyph[]): void {
-  const at = now();
-  step.actions = [...(step.actions ?? []), ...glyphs.map((kind) => ({ kind, at }))];
 }
 
 function finalizeCancelled(job: TestJob, primary?: TraceStep): void {

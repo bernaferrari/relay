@@ -204,6 +204,47 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "target.ground",
+    path("target ground", ["serial"]),
+    path("device ground", ["serial"], undefined, {
+      summary: "Resolve text or structured target to an InteractInput without tapping",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      inputHelp: [
+        {
+          name: "target",
+          type: "string | InteractInput",
+          required: true,
+          description: "Text to ground (Appearance, Menu), or a full InteractInput to passthrough",
+        },
+      ],
+      examples: [
+        'relay device ground emulator-5554 --input \'{"target":"Appearance"}\' --json',
+        'relay device ground emulator-5554 --input \'{"target":"Menu"}\' --actor agent:mapper --json',
+      ],
+      note: "Uses a11y → Grok header heuristics → optional OpenRouter vision. Does not tap. Prefer device do to ground+tap in one step.",
+    }),
+  ),
+  mapped(
+    "target.do",
+    path("target do", ["serial", "target"]),
+    path("device do", ["serial", "target"], undefined, {
+      summary: "Ground a text target then tap it",
+      argumentHelp: [
+        { name: "serial", type: "string", description: "Connected device serial" },
+        {
+          name: "target",
+          type: "string",
+          description: "Accessibility label, identifier, or natural-language name",
+        },
+      ],
+      examples: [
+        "relay device do emulator-5554 Appearance --actor agent:mapper --json",
+        "relay device do emulator-5554 Menu --actor agent:mapper --json",
+      ],
+      note: "Requires an exclusive lease. Grounds via a11y/heuristic/vision then commits interact.",
+    }),
+  ),
+  mapped(
     "target.touch",
     path("target touch", ["serial"]),
     path("device touch", ["serial"], undefined, {

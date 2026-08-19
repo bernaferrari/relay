@@ -9,8 +9,11 @@ export type DiscoveryOperationId =
   | "discovery.status.update"
   | "discovery.capture"
   | "discovery.interact"
+  | "discovery.here"
+  | "discovery.do"
   | "discovery.suggestion"
   | "discovery.coverage"
+  | "discovery.journey"
   | "discovery.export"
   | "discovery.promote"
   | "discovery.start"
@@ -60,6 +63,16 @@ export function createDiscoveryOperationDefinitions(
         lease: "exclusive",
       },
     ),
+    query("discovery.here", "Current Discovery screen and options", "/discovery/:sessionId/here", {
+      category: "discovery",
+      targetCapabilities: ["snapshot", "screenshot"],
+      lease: "shared",
+    }),
+    command("discovery.do", "Act on a Discovery option", "POST", "/discovery/:sessionId/do", {
+      category: "discovery",
+      targetCapabilities: ["tap"],
+      lease: "exclusive",
+    }),
     query(
       "discovery.suggestion",
       "Suggest next Discovery control",
@@ -69,6 +82,9 @@ export function createDiscoveryOperationDefinitions(
       },
     ),
     query("discovery.coverage", "Discovery coverage report", "/discovery/:sessionId/coverage", {
+      category: "discovery",
+    }),
+    query("discovery.journey", "Discovery journey timeline", "/discovery/:sessionId/journey", {
       category: "discovery",
     }),
     query("discovery.export", "Export Discovery Map", "/discovery/:sessionId/export", {

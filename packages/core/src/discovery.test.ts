@@ -6,8 +6,11 @@ import test from "node:test";
 import {
   createDiscoverySession,
   discoveryControls,
+  discoveryTitleFromNodes,
+  fingerprintDiscoveryScreen,
   formatDiscoveryExport,
   listDiscoverySessions,
+  looksLikeSettingsList,
   promoteDiscoveryPath,
   readDiscoverySession,
   readDiscoveryScreenAsset,
@@ -16,10 +19,104 @@ import {
   setDiscoveryStatus,
   suggestDiscoveryControl,
 } from "./discovery.js";
+import type { SnapshotNode } from "./device.js";
 import {
   resetDiscoveryExploreJobsForTests,
   startDiscoveryExplore,
 } from "./discovery-explore-job.js";
+
+function settingsListNodes(rows: string[]): SnapshotNode[] {
+  return rows.map((label, index) => ({
+    label,
+    role: "button",
+    type: "android.widget.TextView",
+    visibleToUser: true,
+    hittable: true,
+    rect: { x: 40, y: 180 + index * 72, width: 400, height: 56 },
+  }));
+}
+
+test("looksLikeSettingsList needs two or more Settings section rows", () => {
+  assert.equal(looksLikeSettingsList(settingsListNodes(["Appearance"])), false);
+  assert.equal(looksLikeSettingsList(settingsListNodes(["Appearance", "Haptics"])), true);
+  assert.equal(
+    looksLikeSettingsList(settingsListNodes(["Appearance", "Haptics", "Customize Grok"])),
+    true,
+  );
+});
+
+test("discoveryTitleFromNodes titles Settings hub when multiple section rows are visible", () => {
+  const nodes = settingsListNodes(["Appearance", "Haptics", "Widget", "Usage"]);
+  assert.equal(discoveryTitleFromNodes(nodes), "Settings");
+});
+
+test("discoveryTitleFromNodes titles Appearance child when only Appearance is a section row", () => {
+  const nodes: SnapshotNode[] = [
+    {
+      label: "Appearance",
+      role: "header",
+      type: "android.widget.TextView",
+      identifier: "collapsing_appbar",
+      visibleToUser: true,
+      rect: { x: 40, y: 80, width: 200, height: 40 },
+    },
+    {
+      label: "Dark Mode",
+      role: "button",
+      visibleToUser: true,
+      hittable: true,
+      rect: { x: 40, y: 200, width: 400, height: 56 },
+    },
+    {
+      label: "Accent Color",
+      role: "button",
+      visibleToUser: true,
+      hittable: true,
+      rect: { x: 40, y: 272, width: 400, height: 56 },
+    },
+  ];
+  assert.equal(looksLikeSettingsList(nodes), false);
+  assert.equal(discoveryTitleFromNodes(nodes), "Appearance");
+});
+
+test("recordObservedScreen reuses Settings hub by title when fingerprint drifts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-discovery-hub-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    const session = await createDiscoverySession({
+      id: "settings-hub",
+      name: "Settings hub reuse",
+      targetId: "phone",
+    });
+    await setDiscoveryStatus(session.id, "running");
+    const first = await recordObservedScreen({
+      sessionId: session.id,
+      nodes: settingsListNodes(["Appearance", "Haptics", "Widget"]),
+      makeCurrent: true,
+    });
+    assert.equal(first.screen.title, "Settings");
+    assert.equal(first.isNew, true);
+
+    // Scrolled/animated list: different tree → different fingerprint, same hub title.
+    const drifted = await recordObservedScreen({
+      sessionId: session.id,
+      nodes: settingsListNodes(["Haptics", "Widget", "Usage", "Advanced"]),
+      makeCurrent: true,
+    });
+    assert.equal(drifted.isNew, false);
+    assert.equal(drifted.screen.id, first.screen.id);
+    assert.equal(drifted.screen.title, "Settings");
+    assert.notEqual(
+      fingerprintDiscoveryScreen(settingsListNodes(["Appearance", "Haptics", "Widget"])),
+      fingerprintDiscoveryScreen(settingsListNodes(["Haptics", "Widget", "Usage", "Advanced"])),
+    );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("discovery keeps a bounded, evidence-backed screen graph", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-discovery-"));
@@ -302,6 +399,54 @@ test("discovery prioritizes semantic navigation rows and skips toggles", () => {
   assert.deepEqual(controls[0]?.target, { identifier: "settings-appearance" });
 });
 
+test("discovery adds Grok header Menu and Private point taps", () => {
+  const controls = discoveryControls([
+    {
+      label: "Ask",
+      visibleToUser: true,
+      hittable: true,
+      rect: { x: 400, y: 140, width: 80, height: 40 },
+    },
+    {
+      label: "Imagine",
+      visibleToUser: true,
+      hittable: true,
+      rect: { x: 520, y: 140, width: 100, height: 40 },
+    },
+    {
+      hittable: true,
+      visibleToUser: true,
+      rect: { x: 40, y: 140, width: 72, height: 72 },
+    },
+    {
+      hittable: true,
+      visibleToUser: true,
+      rect: { x: 960, y: 140, width: 72, height: 72 },
+    },
+  ]);
+  assert.equal(controls[0]?.label, "Menu");
+  assert.equal(controls[0]?.target.point?.x, 76);
+  assert.equal(controls[1]?.label, "Private");
+});
+
+test("discovery identity stays stable across translated copy when identifiers exist", () => {
+  const thick = (prefix: string) =>
+    Array.from({ length: 12 }, (_, i) => ({
+      identifier: `row-${i}`,
+      role: "button",
+      label: `${prefix}-${i}`,
+      visibleToUser: true,
+    }));
+  assert.equal(fingerprintDiscoveryScreen(thick("en")), fingerprintDiscoveryScreen(thick("pt")));
+});
+
+test("thin trees keep Settings pages distinct by visible copy", () => {
+  assert.notEqual(
+    fingerprintDiscoveryScreen([{ role: "button", label: "Memory", visibleToUser: true }]),
+    fingerprintDiscoveryScreen([{ role: "button", label: "Kids Mode", visibleToUser: true }]),
+  );
+});
+
 test("discovery walks a settings list top to bottom", () => {
   const controls = discoveryControls([
     {
@@ -499,10 +644,7 @@ test("discovery explore refuses to start without an App Map", async () => {
       name: "No map",
       targetId: "phone",
     });
-    await assert.rejects(
-      () => startDiscoveryExplore(session.id),
-      /App Map to register screens/,
-    );
+    await assert.rejects(() => startDiscoveryExplore(session.id), /App Map to register screens/);
   } finally {
     resetDiscoveryExploreJobsForTests();
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;

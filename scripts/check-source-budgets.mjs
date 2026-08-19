@@ -23,15 +23,15 @@ export const grandfatheredSourceLimits = Object.freeze({
   "packages/app/src/context/server.tsx": 1170,
   "packages/core/src/authoring-sessions.ts": 1522,
   "packages/core/src/corpus.ts": 1945,
-  "packages/core/src/device.ts": 1663,
+  "packages/core/src/device.ts": 1550,
   "packages/core/src/locale-run.ts": 1051,
   "packages/core/src/recipe-runner.ts": 919,
   "packages/core/src/recipe-validation.ts": 1048,
-  "packages/core/src/session.ts": 1002,
+  "packages/core/src/session.ts": 943,
   "packages/core/src/switcher-profiles.ts": 931,
-  "packages/protocol/src/operations.ts": 2620,
+  "packages/protocol/src/operations.ts": 2574,
   "packages/server/src/app-map-routes.ts": 1050,
-  "packages/server/src/index.ts": 1224,
+  "packages/server/src/index.ts": 1190,
 });
 
 export function defaultSourceLimit(path) {

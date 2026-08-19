@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PNG } from "pngjs";
-import { annotateTapPreview, mapTapPreviewToPixels } from "./tap-preview.js";
+import { annotateTapPreview, annotateVisitedRows, mapTapPreviewToPixels } from "./tap-preview.js";
 
 function solidPng(width: number, height: number, rgb: [number, number, number]): Buffer {
   const png = new PNG({ width, height });
@@ -54,6 +54,19 @@ test("preview paints a ring without changing the rest of the frame", () => {
   const corner = (80 * 2 + 2) << 2;
   assert.equal(after.data[corner], before.data[corner]);
   assert.equal(after.data[corner + 1], before.data[corner + 1]);
+});
+
+test("visited rows wash the opened control without wiping the frame", () => {
+  const original = solidPng(80, 80, [10, 20, 30]);
+  const marked = annotateVisitedRows(original, [
+    { bounds: { x: 10, y: 20, width: 40, height: 16 } },
+  ]);
+  const before = PNG.sync.read(original);
+  const after = PNG.sync.read(marked);
+  const inside = (80 * 28 + 20) << 2;
+  assert.notEqual(after.data[inside], before.data[inside]);
+  const corner = (80 * 2 + 2) << 2;
+  assert.equal(after.data[corner], before.data[corner]);
 });
 
 test("preview can outline a resolved control bounds", () => {

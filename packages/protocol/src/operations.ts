@@ -46,6 +46,19 @@ import {
   type ProjectRole,
   type RuntimeParser,
 } from "./operation-contract.js";
+import {
+  arrayFieldParser,
+  boolean,
+  emptyInputParser,
+  fail,
+  number,
+  objectFieldParser,
+  objectParser,
+  operationRecordParser,
+  record,
+  string,
+} from "./operation-parser-primitives.js";
+export { operationRecordParser } from "./operation-parser-primitives.js";
 export {
   projectRoleAllows,
   projectRoles,
@@ -638,6 +651,8 @@ type GenericOperationId =
   | "target.boot"
   | "target.authorize"
   | "target.interact"
+  | "target.ground"
+  | "target.do"
   | "target.ui.describe"
   | "target.ui.back"
   | "target.ui.scrollCollect"
@@ -677,8 +692,11 @@ type GenericOperationId =
   | "discovery.status.update"
   | "discovery.capture"
   | "discovery.interact"
+  | "discovery.here"
+  | "discovery.do"
   | "discovery.suggestion"
   | "discovery.coverage"
+  | "discovery.journey"
   | "discovery.export"
   | "discovery.promote"
   | "discovery.start"
@@ -725,82 +743,6 @@ export type RelayOperationMap = SpecificOperationMap & GenericOperationMap;
 export type OperationId = keyof RelayOperationMap;
 export type OperationInput<Id extends OperationId> = RelayOperationMap[Id]["input"];
 export type OperationOutput<Id extends OperationId> = RelayOperationMap[Id]["output"];
-
-function fail(label: string, message: string): never {
-  throw new Error(`${label} ${message}`);
-}
-
-function record(value: unknown, label: string): OperationRecord {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return fail(label, "must be an object");
-  }
-  return value as OperationRecord;
-}
-
-function string(value: unknown, label: string): string {
-  if (typeof value !== "string" || !value) return fail(label, "must be a non-empty string");
-  return value;
-}
-
-function number(value: unknown, label: string): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return fail(label, "must be a number");
-}
-
-function boolean(value: unknown, label: string): boolean {
-  if (typeof value !== "boolean") return fail(label, "must be a boolean");
-  return value;
-}
-
-export const operationRecordParser: RuntimeParser<OperationRecord> = {
-  description: "JSON object",
-  parse(value) {
-    return record(value, "operation value");
-  },
-};
-
-const emptyInputParser: RuntimeParser<Record<string, never>> = {
-  description: "empty object",
-  parse(value) {
-    const input = record(value, "operation input");
-    if (Object.keys(input).length) fail("operation input", "must be empty");
-    return {};
-  },
-};
-
-function objectParser<T extends OperationRecord>(
-  description: string,
-  validate?: (input: OperationRecord) => void,
-): RuntimeParser<T> {
-  return {
-    description,
-    parse(value) {
-      const input = record(value, description);
-      validate?.(input);
-      return input as T;
-    },
-  };
-}
-
-function arrayFieldParser<T extends OperationRecord>(
-  description: string,
-  field: string,
-): RuntimeParser<T> {
-  return objectParser<T>(description, (input) => {
-    if (!Array.isArray(input[field])) fail(`${description} ${field}`, "must be an array");
-  });
-}
-
-function objectFieldParser<T extends OperationRecord>(
-  description: string,
-  field: string,
-): RuntimeParser<T> {
-  return objectParser<T>(description, (input) => record(input[field], `${description} ${field}`));
-}
 
 const okParser = objectParser<{ ok: true }>("success response", (input) => {
   if (input.ok !== true) fail("success response ok", "must be true");
@@ -1881,6 +1823,18 @@ export const operationDefinitions = [
   command("target.interact", "Interact with target", "POST", "/interact", {
     category: "target",
     targetCapabilities: ["tap"],
+    lease: "exclusive",
+    input: targetInputParser,
+  }),
+  command("target.ground", "Ground a text or structured target", "POST", "/ground", {
+    category: "target",
+    targetCapabilities: ["snapshot", "screenshot"],
+    lease: "shared",
+    input: targetInputParser,
+  }),
+  command("target.do", "Ground a text target then interact", "POST", "/do", {
+    category: "target",
+    targetCapabilities: ["tap", "snapshot", "screenshot"],
     lease: "exclusive",
     input: targetInputParser,
   }),

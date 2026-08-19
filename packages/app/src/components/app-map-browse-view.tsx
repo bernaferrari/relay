@@ -120,8 +120,8 @@ export function AppMapBrowseView(props: {
             <p class="mt-0.5 max-w-[680px] text-caption/[1.45] text-[var(--text-weak)]">
               {props.mode === "screens"
                 ? explicitGroupCount()
-                  ? `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} · ${explicitGroupCount()} ${explicitGroupCount() === 1 ? "group" : "groups"}`
-                  : `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} on this map`
+                  ? `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} · ${explicitGroupCount()} ${explicitGroupCount() === 1 ? "group" : "groups"} · ${Object.keys(props.appMap.connections).length} ${Object.keys(props.appMap.connections).length === 1 ? "journey edge" : "journey edges"}`
+                  : `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} · ${Object.keys(props.appMap.connections).length} ${Object.keys(props.appMap.connections).length === 1 ? "journey edge" : "journey edges"} on this map`
                 : `${rows().length} ${rows().length === 1 ? "run" : "runs"} on this map`}
             </p>
           </div>
@@ -219,8 +219,8 @@ export function AppMapBrowseView(props: {
                     screenFiltersActive()
                       ? "Try broader filters."
                       : props.deviceOpen
-                        ? "Save the screen on the device to the map, or explore the app to find more."
-                        : "Show the live device, then save screens to the map."
+                        ? "Start mapping to crawl the app. Each new screen is filed on the canvas."
+                        : "Show the live device, then start mapping."
                   }
                   actionLabel={
                     screenFiltersActive()

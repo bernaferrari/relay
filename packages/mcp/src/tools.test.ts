@@ -383,7 +383,7 @@ test("defines deterministic task profiles with a compact authoring default", () 
   for (const profile of relayMcpProfiles) {
     const selected = relayMcpToolsForProfile(profile);
     assert.equal(new Set(selected.map(({ operationId }) => operationId)).size, selected.length);
-    if (profile !== "full") assert.ok(selected.length < 35, `${profile}: ${selected.length}`);
+    if (profile !== "full") assert.ok(selected.length <= 42, `${profile}: ${selected.length}`);
   }
 });
 

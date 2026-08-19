@@ -11,11 +11,19 @@ export type EvidenceServer = {
   recordingEvidenceUrl: (recipeId: string, id: string) => string;
   authoringEvidenceUrl: (uri: string, mime?: string) => string;
   devices: () => Array<{ serial: string; platform?: string }>;
+  serverUrl?: () => string;
 };
 
 export function screenshotUrl(server: EvidenceServer, step: RecipeStep | undefined): string {
   const screenshot = step?.evidence?.screenshot;
   return screenshot ? server.recordingEvidenceUrl(screenshot.recipeId, screenshot.id) : "";
+}
+
+function observedDiscoveryImage(server: EvidenceServer, screenId: string): string {
+  const match = /^observed:(discovery-[A-Za-z0-9-]+):screen:(screen-[A-Za-z0-9-]+)$/.exec(screenId);
+  const base = server.serverUrl?.()?.replace(/\/+$/, "");
+  if (!match || !base) return "";
+  return `${base}/discovery/${encodeURIComponent(match[1]!)}/screens/${encodeURIComponent(match[2]!)}`;
 }
 
 export function variantScreenshotUrl(
@@ -25,7 +33,8 @@ export function variantScreenshotUrl(
 ): string {
   const variant = latestScreenVariant(appMap, screenId);
   const uri = variant?.screenshotUri;
-  return uri ? server.authoringEvidenceUrl(uri, "image/png") : "";
+  if (uri) return server.authoringEvidenceUrl(uri, "image/png");
+  return observedDiscoveryImage(server, screenId);
 }
 
 /** The newest decomposable full-page capture for one logical map screen. */

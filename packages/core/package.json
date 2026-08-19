@@ -43,11 +43,14 @@
     "test": "tsx --test src/*.test.ts src/**/*.test.ts"
   },
   "dependencies": {
+    "@openrouter/ai-sdk-provider": "^3.0.0",
     "@relay/protocol": "workspace:*",
     "agent-device": "link:../../vendor/agent-device",
+    "ai": "^7.0.66",
     "playwright-core": "^1.62.1",
     "pngjs": "^7.0.0",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

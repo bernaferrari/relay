@@ -1,8 +1,26 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-export type TargetContext =
-  | { kind: "device"; platform: "android" | "ios"; serial: string }
-  | { kind: "browser"; platform: "browser"; targetId: string };
+export type DeviceTargetContext = {
+  kind: "device";
+  platform: "android" | "ios";
+  serial: string;
+};
+
+export type BrowserTargetContext = {
+  kind: "browser";
+  platform: "browser";
+  targetId: string;
+};
+
+/** Cloud device session (BrowserStack / Sauce / etc.) — provider filled later. */
+export type CloudTargetContext = {
+  kind: "cloud";
+  provider: string;
+  sessionId: string;
+  platform: "android" | "ios";
+};
+
+export type TargetContext = DeviceTargetContext | BrowserTargetContext | CloudTargetContext;
 
 const targets = new AsyncLocalStorage<TargetContext>();
 
@@ -19,8 +37,32 @@ export function runWithTargetContext<T>(
   return targets.run(Object.freeze({ ...context }), operation);
 }
 
+export function isDeviceTarget(context: TargetContext): context is DeviceTargetContext {
+  return context.kind === "device";
+}
+
+export function isBrowserTarget(context: TargetContext): context is BrowserTargetContext {
+  return context.kind === "browser";
+}
+
+export function isCloudTarget(context: TargetContext): context is CloudTargetContext {
+  return context.kind === "cloud";
+}
+
 export function targetIdentity(context = currentTargetContext()): string {
-  return context.kind === "browser" ? context.targetId : context.serial;
+  switch (context.kind) {
+    case "browser":
+      return context.targetId;
+    case "cloud":
+      return context.sessionId;
+    case "device":
+      return context.serial;
+  }
+}
+
+/** Device platform of the ambient target; browser targets fall back to android. */
+export function selectedPlatform(context = currentTargetContext()): "android" | "ios" {
+  return context.kind === "browser" ? "android" : context.platform;
 }
 
 /** Sync guess when a job omits platform. 40-hex is an iOS UDID, not Android. */

@@ -1,16 +1,24 @@
+import { createHash } from "node:crypto";
 import type {
   ActionSpec,
   AppMap,
+  AppMapBatchChange,
   AppMapScope,
   ConnectionNavigationContract,
   ConnectionReturnContract,
   DiscoverySession,
+  ObservedScreen,
   ObservedTransition,
   Proposal,
   ProposalChange,
   ScreenVariant,
 } from "@relay/protocol";
 import type { ProposedNavigationEdge } from "./navigation-observation.js";
+import {
+  preferSettingsChildTitle,
+  SETTINGS_HUB_OR_CHILD_TITLES,
+  settingsScreenTitlesConflict,
+} from "./settings-screen-titles.js";
 
 function observedId(sessionId: string, kind: "screen" | "connection" | "variant", id: string) {
   return `observed:${sessionId}:${kind}:${id}`;
@@ -40,12 +48,161 @@ function actionFor(transition: ObservedTransition): ActionSpec {
   return { id, kind: "passive", reason: "observe-only" };
 }
 
-function matchingScreenId(map: AppMap, fingerprint: string): string | undefined {
-  return Object.values(map.screens).find(
-    (screen) =>
-      screen.identity?.fingerprint === fingerprint ||
-      screen.identity?.aliases?.includes(fingerprint),
-  )?.id;
+/** Resolve an observed screen onto an existing App Map node without collapsing
+ * distinct Settings children that briefly share chrome fingerprints. */
+export function matchingScreenId(
+  map: AppMap,
+  fingerprint: string,
+  title?: string,
+): string | undefined {
+  const needle = canonicalFingerprint(fingerprint);
+  const wanted = title?.trim();
+  const byFingerprint = Object.values(map.screens).find((screen) => {
+    const identity = screen.identity?.fingerprint;
+    if (!identity) return false;
+    const canonical = canonicalFingerprint(identity);
+    const sameFp =
+      canonical === needle ||
+      screen.identity?.aliases?.some((alias) => canonicalFingerprint(alias) === needle) === true;
+    if (!sameFp) return false;
+    const existing = screen.title?.trim();
+    // Do not merge distinct named pages that briefly share chrome structure.
+    if (settingsScreenTitlesConflict(wanted, existing)) return false;
+    if (
+      wanted &&
+      existing &&
+      wanted !== existing &&
+      !/^(grok|screen|ask)$/i.test(wanted) &&
+      !/^(grok|screen|ask)$/i.test(existing)
+    ) {
+      return false;
+    }
+    return true;
+  })?.id;
+  if (byFingerprint) return byFingerprint;
+  // List hubs change fingerprint as rows scroll into view — keep one screen per title.
+  if (wanted && SETTINGS_HUB_OR_CHILD_TITLES.test(wanted)) {
+    return Object.values(map.screens).find((screen) => screen.title?.trim() === wanted)?.id;
+  }
+  return undefined;
+}
+
+function canonicalFingerprint(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (/^[a-f0-9]{64}$/u.test(trimmed)) return trimmed;
+  return createHash("sha256").update(trimmed).digest("hex");
+}
+
+function humanTitle(screen: ObservedScreen, fallback: string): string {
+  const title = screen.title?.trim();
+  const fallbackTitle = fallback.trim();
+  const bad = /^(grok|screen|back|close|coordinate tap)$/i;
+  const preferred = preferSettingsChildTitle(title, fallbackTitle);
+  if (preferred && !bad.test(preferred) && !/^observed screen \d+$/i.test(preferred)) {
+    return preferred;
+  }
+  if (fallbackTitle && !bad.test(fallbackTitle) && (!title || bad.test(title))) {
+    return fallbackTitle;
+  }
+  if (title && !/^observed screen \d+$/i.test(title) && !bad.test(title)) return title;
+  if (fallbackTitle && !bad.test(fallbackTitle)) return fallbackTitle;
+  return "Screen";
+}
+
+function alreadyConnected(
+  map: AppMap,
+  fromScreenId: string,
+  destinationId: string,
+  label: string | undefined,
+): boolean {
+  return Object.values(map.connections).some(
+    (connection) =>
+      connection.fromScreenId === fromScreenId &&
+      connection.destination.kind === "screen" &&
+      connection.destination.screenId === destinationId &&
+      (connection.label?.trim() || "") === (label?.trim() || ""),
+  );
+}
+
+/** Draft screens and edges the crawl can commit in one revision. Keep/prove stays a later pass. */
+export function discoveryLandChanges(input: {
+  map: AppMap;
+  session: DiscoverySession;
+  transitionId?: string;
+}): AppMapBatchChange[] {
+  const { map, session } = input;
+  const scope: AppMapScope = {
+    organizationId: map.organizationId,
+    projectId: map.projectId,
+    appMapId: map.id,
+  };
+  const transition = input.transitionId
+    ? session.transitions.find((item) => item.id === input.transitionId)
+    : undefined;
+  const referenced = transition
+    ? new Set(
+        [transition.fromScreenId, transition.toScreenId].filter(
+          (id): id is string => typeof id === "string",
+        ),
+      )
+    : new Set(session.screens.slice(0, 1).map((screen) => screen.id));
+  const changes: AppMapBatchChange[] = [];
+  const screenIds = new Map<string, string>();
+  const screens = session.screens.filter((screen) => referenced.has(screen.id));
+  for (const screen of screens) {
+    const fingerprint = canonicalFingerprint(screen.fingerprint);
+    const title = humanTitle(
+      screen,
+      transition?.toScreenId === screen.id ? (transition.label ?? "") : "",
+    );
+    const existingId = matchingScreenId(map, fingerprint, title);
+    const screenId = existingId ?? observedId(session.id, "screen", screen.id);
+    screenIds.set(screen.id, screenId);
+    if (existingId) continue;
+    changes.push({
+      kind: "screen.add",
+      input: {
+        screen: {
+          ...scope,
+          id: screenId,
+          title,
+          identity: { schemaVersion: 1, fingerprint },
+          position: {
+            x: 80 + (Object.keys(map.screens).length % 4) * 300,
+            y: 100 + Math.floor(Object.keys(map.screens).length / 4) * 420,
+          },
+          variantIds: [],
+          createdAt: screen.capturedAt,
+          updatedAt: screen.capturedAt,
+        },
+      },
+    });
+  }
+  if (!transition?.changedScreen || !transition.toScreenId) return changes;
+  if (transition.kind === "back") return changes;
+  const label = transition.label?.trim();
+  if (!label || /^coordinate tap$/i.test(label)) return changes;
+  const fromScreenId = screenIds.get(transition.fromScreenId);
+  const destinationId = screenIds.get(transition.toScreenId);
+  if (!fromScreenId || !destinationId) return changes;
+  if (alreadyConnected(map, fromScreenId, destinationId, label)) return changes;
+  const connectionId = observedId(session.id, "connection", transition.id);
+  if (map.connections[connectionId]) return changes;
+  changes.push({
+    kind: "connection.create",
+    connection: {
+      ...scope,
+      id: connectionId,
+      fromScreenId,
+      destination: { kind: "screen", screenId: destinationId },
+      ...(label ? { label } : {}),
+      state: "draft",
+      actions: [actionFor(transition)],
+      createdAt: transition.capturedAt,
+      updatedAt: transition.capturedAt,
+    },
+  });
+  return changes;
 }
 
 function screenEvidenceIds(session: DiscoverySession, screenId: string): string[] {
@@ -124,7 +281,8 @@ export function proposalFromDiscovery(input: {
   const changes: ProposalChange[] = [];
   const screens = session.screens.filter((screen) => referenced.has(screen.id));
   for (const [index, screen] of screens.entries()) {
-    const existingId = matchingScreenId(map, screen.fingerprint);
+    const title = humanTitle(screen, `Screen ${index + 1}`);
+    const existingId = matchingScreenId(map, screen.fingerprint, title);
     const screenId = existingId ?? observedId(session.id, "screen", screen.id);
     screenIds.set(screen.id, screenId);
     const evidenceIds = screen.screenshotPath
@@ -162,7 +320,7 @@ export function proposalFromDiscovery(input: {
         screen: {
           ...scope,
           id: screenId,
-          title: screen.title?.trim() || `Observed screen ${index + 1}`,
+          title,
           identity: screen.identity ?? { schemaVersion: 1, fingerprint: screen.fingerprint },
           position: { x: 80 + (index % 4) * 300, y: 100 + Math.floor(index / 4) * 420 },
           variantIds: variant ? [variant.id] : [],

@@ -72,20 +72,20 @@ function CheckDetail(props: {
     <div class="grid gap-3 border-t border-border-weak-base px-3.5 py-3">
       <Show when={props.check.error && !props.check.repair}>
         <div class="grid gap-1 rounded-lg bg-surface-critical-weak px-3 py-2.5">
-          <span class="text-[9px] font-semibold tracking-[0.08em] text-text-critical-base uppercase">
+          <span class="text-micro font-semibold tracking-[0.08em] text-text-critical-base uppercase">
             Failure
           </span>
-          <p class="m-0 whitespace-pre-wrap break-words text-[11px]/[1.5] text-text-strong">
+          <p class="m-0 whitespace-pre-wrap break-words text-caption/[1.5] text-text-strong">
             {props.check.error}
           </p>
         </div>
       </Show>
       <Show when={props.check.dependencyReason}>
         <div class="grid gap-1 rounded-lg bg-surface-warning-weak px-3 py-2.5">
-          <span class="text-[9px] font-semibold tracking-[0.08em] text-text-warning-base uppercase">
+          <span class="text-micro font-semibold tracking-[0.08em] text-text-warning-base uppercase">
             {reasonLabel()}
           </span>
-          <p class="m-0 whitespace-pre-wrap break-words text-[11px]/[1.5] text-text-strong">
+          <p class="m-0 whitespace-pre-wrap break-words text-caption/[1.5] text-text-strong">
             {props.check.dependencyReason}
           </p>
         </div>
@@ -94,7 +94,7 @@ function CheckDetail(props: {
         {(repair) => (
           <section class="grid gap-3" aria-label={`Repair evidence for ${props.check.title}`}>
             <div class="grid gap-2">
-              <h4 class="m-0 text-[10px] font-semibold text-text-strong">What Relay saw</h4>
+              <h4 class="m-0 text-micro font-semibold text-text-strong">What Relay saw</h4>
               <For each={props.check.frames}>
                 {(evidenceFrame) => {
                   const source = () => props.frameSource?.(evidenceFrame) ?? "";
@@ -121,7 +121,7 @@ function CheckDetail(props: {
                           class="h-11 w-16 rounded-md bg-background-deep object-cover"
                         />
                       </Show>
-                      <span class="min-w-0 break-words text-[10.5px]/[1.4] text-text-base">
+                      <span class="min-w-0 break-words text-caption/[1.4] text-text-base">
                         {caption()}
                       </span>
                       <Show when={props.onOpenFrame}>
@@ -131,7 +131,7 @@ function CheckDetail(props: {
                   );
                 }}
               </For>
-              <dl class="m-0 grid gap-1 rounded-lg bg-surface-base px-3 py-2.5 text-[10.5px]/[1.45]">
+              <dl class="m-0 grid gap-1 rounded-lg bg-surface-base px-3 py-2.5 text-caption/[1.45]">
                 <Show when={repair().observed.app || repair().observed.header}>
                   <div class="grid grid-cols-[72px_minmax(0,1fr)] gap-2">
                     <dt class="text-text-weaker">Location</dt>
@@ -145,7 +145,7 @@ function CheckDetail(props: {
                 <Show when={repair().observed.identity}>
                   <div class="grid grid-cols-[72px_minmax(0,1fr)] gap-2">
                     <dt class="text-text-weaker">Identity</dt>
-                    <dd class="m-0 break-all font-mono text-[9.5px] text-text-base">
+                    <dd class="m-0 break-all font-mono text-micro text-text-base">
                       {repair().observed.identity}
                     </dd>
                   </div>
@@ -157,11 +157,11 @@ function CheckDetail(props: {
               </dl>
             </div>
             <div class="grid gap-2">
-              <h4 class="m-0 text-[10px] font-semibold text-text-strong">What Relay tried</h4>
+              <h4 class="m-0 text-micro font-semibold text-text-strong">What Relay tried</h4>
               <Show
                 when={repair().attempts.length > 0}
                 fallback={
-                  <p class="m-0 text-[10.5px]/[1.45] text-text-weaker">
+                  <p class="m-0 text-caption/[1.45] text-text-weaker">
                     No locator attempts were recorded for this failure.
                   </p>
                 }
@@ -169,7 +169,7 @@ function CheckDetail(props: {
                 <ol class="m-0 grid list-decimal gap-2 pl-5">
                   <For each={repair().attempts}>
                     {(attempt) => (
-                      <li class="pl-1 text-[10.5px]/[1.45] text-text-base marker:text-text-weaker">
+                      <li class="pl-1 text-caption/[1.45] text-text-base marker:text-text-weaker">
                         <div class="grid gap-0.5">
                           <span class="break-words">
                             <strong class="font-medium text-text-strong">{attempt.method}</strong>
@@ -181,7 +181,7 @@ function CheckDetail(props: {
                             </span>
                           </Show>
                           <Show when={attempt.bounds || attempt.point}>
-                            <span class="break-words font-mono text-[9.5px] text-text-weaker">
+                            <span class="break-words font-mono text-micro text-text-weaker">
                               {[
                                 attempt.bounds ? `Bounds ${attempt.bounds}` : undefined,
                                 attempt.point ? `Tap ${attempt.point}` : undefined,
@@ -200,28 +200,26 @@ function CheckDetail(props: {
                 </ol>
               </Show>
               <Show when={repair().attemptsTruncated}>
-                <p class="m-0 text-[10px]/[1.4] text-text-weaker">
+                <p class="m-0 text-micro/[1.4] text-text-weaker">
                   Additional locator evidence remains in Raw evidence.
                 </p>
               </Show>
             </div>
             <div class="grid gap-1">
-              <h4 class="m-0 text-[10px] font-semibold text-text-strong">What happened</h4>
-              <p class="m-0 whitespace-pre-wrap break-words text-[10.5px]/[1.5] text-text-base">
+              <h4 class="m-0 text-micro font-semibold text-text-strong">What happened</h4>
+              <p class="m-0 whitespace-pre-wrap break-words text-caption/[1.5] text-text-base">
                 {repair().failureReason ?? "The check failed without a recorded failure reason."}
               </p>
             </div>
             <div class="grid gap-1 rounded-lg bg-surface-warning-weak px-3 py-2.5">
-              <h4 class="m-0 text-[10px] font-semibold text-text-warning-base">Next step</h4>
-              <p class="m-0 break-words text-[10.5px]/[1.5] text-text-strong">
-                {repair().nextStep}
-              </p>
+              <h4 class="m-0 text-micro font-semibold text-text-warning-base">Next step</h4>
+              <p class="m-0 break-words text-caption/[1.5] text-text-strong">{repair().nextStep}</p>
               <div class="mt-1 flex flex-wrap items-center gap-2">
-                <span class="text-[10px] text-text-weaker">Default: continue and report</span>
+                <span class="text-micro text-text-weaker">Default: continue and report</span>
                 <Show when={props.onRetryCheck}>
                   <button
                     type="button"
-                    class="min-h-9 touch-manipulation rounded-lg border border-border-strong-base bg-background-base px-3 text-[10.5px] font-medium text-text-strong hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-wait disabled:opacity-60"
+                    class="min-h-9 touch-manipulation rounded-lg border border-border-strong-base bg-background-base px-3 text-caption font-medium text-text-strong hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-wait disabled:opacity-60"
                     disabled={props.retrying}
                     onClick={() => props.onRetryCheck?.(props.check.id)}
                     aria-label={`Retry only failed check: ${props.check.title}`}
@@ -232,7 +230,7 @@ function CheckDetail(props: {
                 <Show when={props.onRepairTest}>
                   <button
                     type="button"
-                    class="min-h-9 touch-manipulation rounded-lg px-3 text-[10.5px] font-medium text-text-base hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+                    class="min-h-9 touch-manipulation rounded-lg px-3 text-caption font-medium text-text-base hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
                     onClick={() => props.onRepairTest?.(props.check.id)}
                   >
                     Repair Test
@@ -245,12 +243,12 @@ function CheckDetail(props: {
       </Show>
       <Show when={props.check.frames.length > 0 && !props.check.repair}>
         <div class="grid gap-2">
-          <strong class="text-[10px] font-medium text-text-weak">Failure screenshot</strong>
+          <strong class="text-micro font-medium text-text-weak">Failure screenshot</strong>
           <For each={props.check.frames}>
             {(evidenceFrame) => (
               <button
                 type="button"
-                class="min-h-11 touch-manipulation rounded-lg border border-border-weak-base bg-background-base px-3 text-left text-[10.5px] text-text-base focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+                class="min-h-11 touch-manipulation rounded-lg border border-border-weak-base bg-background-base px-3 text-left text-caption text-text-base focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
                 onClick={() => props.onOpenFrame?.(evidenceFrame.index)}
                 disabled={!props.onOpenFrame}
               >
@@ -262,7 +260,7 @@ function CheckDetail(props: {
       </Show>
       <Show when={props.check.evidence.length > 0}>
         <details class="group rounded-lg border border-border-weak-base bg-background-base">
-          <summary class="flex min-h-11 touch-manipulation cursor-pointer list-none items-center justify-between gap-2 px-3 text-[10.5px] font-medium text-text-base focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
+          <summary class="flex min-h-11 touch-manipulation cursor-pointer list-none items-center justify-between gap-2 px-3 text-caption font-medium text-text-base focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
             Raw evidence
             <Icon
               name="chevron-down"
@@ -270,13 +268,13 @@ function CheckDetail(props: {
               class="transition-transform motion-reduce:transition-none group-open:rotate-180"
             />
           </summary>
-          <pre class="m-0 max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-border-weak-base p-3 font-mono text-[9.5px]/[1.5] text-text-weak">
+          <pre class="m-0 max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-border-weak-base p-3 font-mono text-micro/[1.5] text-text-weak">
             {JSON.stringify(props.check.evidence, null, 2)}
           </pre>
         </details>
       </Show>
       {props.check.frames.length || props.check.evidence.length ? null : (
-        <p class="m-0 text-[10.5px]/[1.45] text-text-weaker">
+        <p class="m-0 text-caption/[1.45] text-text-weaker">
           No additional screenshot or evidence was captured for this check.
         </p>
       )}
@@ -337,16 +335,16 @@ export function CampaignCheckResults(props: {
               <div>
                 <strong
                   id="campaign-checks-heading"
-                  class="block text-[13px] font-semibold text-text-strong"
+                  class="block text-body font-semibold text-text-strong"
                 >
                   Campaign checks
                 </strong>
-                <span class="mt-0.5 block text-[10.5px]/[1.4] text-text-weaker">
+                <span class="mt-0.5 block text-caption/[1.4] text-text-weaker">
                   Independent checks keep their own outcome and evidence.
                 </span>
               </div>
               <div
-                class="flex flex-wrap justify-end gap-x-2 gap-y-1 text-[9.5px] tabular-nums text-text-weaker"
+                class="flex flex-wrap justify-end gap-x-2 gap-y-1 text-micro tabular-nums text-text-weaker"
                 aria-label="Check totals"
               >
                 <For
@@ -383,17 +381,17 @@ export function CampaignCheckResults(props: {
                           <Icon name={presentation().icon} size={13} />
                         </span>
                         <span class="min-w-0">
-                          <strong class="block truncate text-[11.5px] font-medium text-text-strong">
+                          <strong class="block truncate text-caption font-medium text-text-strong">
                             {check.title}
                           </strong>
                           <span
-                            class={cn("mt-0.5 block text-[9.5px] font-medium", presentation().tone)}
+                            class={cn("mt-0.5 block text-micro font-medium", presentation().tone)}
                           >
                             {presentation().label}
                           </span>
                         </span>
                         <Show when={check.durationMs !== undefined}>
-                          <span class="font-mono text-[9.5px] tabular-nums text-text-weaker">
+                          <span class="font-mono text-micro tabular-nums text-text-weaker">
                             {formatReviewTime(check.durationMs!)}
                           </span>
                         </Show>

@@ -1,0 +1,85 @@
+import { createDevice, type Device } from "./device.js";
+import type { TargetContext } from "./target-context.js";
+
+/**
+ * Device provider seam (Phase 4 /  cloud-ready).
+ *
+ * Routing today:
+ * - `device`  → LocalAgentDevice via {@link createDevice} (default, unchanged)
+ * - `browser` → same local client path used by existing callers (browser pool
+ *               still resolves through workspace helpers)
+ * - `cloud`   → {@link CloudDeviceProvider} stub — throw until a real
+ *               BrowserStack / Sauce / … adapter is plugged in
+ *
+ * Grounding, here/do, and explore stay above this factory: they call Device
+ * methods only. Adding a cloud provider must not change those clients.
+ */
+export type DeviceProviderKind = TargetContext["kind"];
+
+/** Future: implement Device methods for a remote cloud session. */
+export type CloudDeviceProvider = {
+  readonly kind: "cloud";
+  readonly provider: string;
+  create(context: Extract<TargetContext, { kind: "cloud" }>): Device | Promise<Device>;
+};
+
+/** Optional registry hook for a real cloud adapter (unset = stub). */
+let cloudDeviceProvider: CloudDeviceProvider | undefined;
+
+export function setCloudDeviceProvider(provider: CloudDeviceProvider | undefined): void {
+  cloudDeviceProvider = provider;
+}
+
+export function getCloudDeviceProvider(): CloudDeviceProvider | undefined {
+  return cloudDeviceProvider;
+}
+
+/**
+ * Resolve a Device for any TargetContext.
+ * Local device callers can keep using {@link createDevice} directly; this is
+ * the explicit factory entry for code that must handle cloud later.
+ */
+export function createDeviceForTarget(context: TargetContext): Device {
+  switch (context.kind) {
+    case "cloud": {
+      const registered = cloudDeviceProvider;
+      if (!registered) {
+        throw new Error(
+          `Cloud device provider "${context.provider}" is not implemented yet (session ${context.sessionId})`,
+        );
+      }
+      if (registered.provider !== context.provider) {
+        throw new Error(
+          `Cloud device provider mismatch: context wants "${context.provider}", registry has "${registered.provider}"`,
+        );
+      }
+      const device = registered.create(context);
+      if (device instanceof Promise) {
+        throw new Error(
+          `Cloud device provider "${context.provider}" returned a Promise; sync createDeviceForTarget requires a sync Device (use createDeviceForTargetAsync)`,
+        );
+      }
+      return device;
+    }
+    case "browser":
+    case "device":
+      return createDevice(context);
+  }
+}
+
+/** Async variant for cloud providers that need network setup. */
+export async function createDeviceForTargetAsync(context: TargetContext): Promise<Device> {
+  if (context.kind !== "cloud") return createDevice(context);
+  const registered = cloudDeviceProvider;
+  if (!registered) {
+    throw new Error(
+      `Cloud device provider "${context.provider}" is not implemented yet (session ${context.sessionId})`,
+    );
+  }
+  if (registered.provider !== context.provider) {
+    throw new Error(
+      `Cloud device provider mismatch: context wants "${context.provider}", registry has "${registered.provider}"`,
+    );
+  }
+  return registered.create(context);
+}

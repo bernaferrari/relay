@@ -68,10 +68,11 @@ export function EmptyAppMap(props: {
             </span>
             <div class="grid gap-1.5">
               <h1 class="m-0 text-display/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)] text-balance">
-                Save the first screen
+                Map this app
               </h1>
               <p class="m-0 max-w-[38ch] text-body/[1.55] text-[var(--text-weak)]">
-                Choose a device, show it live, then save. Navigate from there to map the rest.
+                Show the live device, then start mapping. Relay taps through screens and files them
+                on the canvas.
               </p>
             </div>
             <Show
@@ -156,7 +157,7 @@ export function EmptyAppMap(props: {
                     >
                       <Icon name="refresh" size={14} class="ui-refresh-spin" />
                     </Show>
-                    {props.creating ? "Saving…" : "Save first screen"}
+                    {props.creating ? "Saving…" : "Start mapping"}
                   </Button>
                 }
               >

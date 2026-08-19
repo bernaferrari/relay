@@ -5,6 +5,11 @@ import type {
   DiscoverySession,
   TargetProfile,
 } from "@relay/protocol";
+import {
+  buildDiscoveryJourney,
+  discoveryExploreOutcome,
+  inferDiscoveryBlockedReasons,
+} from "./discovery-journey.js";
 
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 16);
@@ -37,6 +42,7 @@ function finalized(items: Iterable<WorkingItem>, profileIds: string[]): Discover
 export function buildDiscoveryCoverage(
   anchor: DiscoverySession,
   sessions: DiscoverySession[],
+  at = Date.now(),
 ): DiscoveryCoverageReport {
   const related = sessions.filter((session) => session.name === anchor.name);
   const profiles = new Map<string, TargetProfile>();
@@ -84,9 +90,10 @@ export function buildDiscoveryCoverage(
       transitions.set(id, item);
     }
   }
+  const blockedReasons = inferDiscoveryBlockedReasons(anchor);
   return {
     mapName: anchor.name,
-    generatedAt: Date.now(),
+    generatedAt: at,
     sessionIds: related.map((session) => session.id).sort(),
     profiles: [...profiles.values()].sort((left, right) => left.name.localeCompare(right.name)),
     unprofiledSessionIds: related
@@ -95,5 +102,8 @@ export function buildDiscoveryCoverage(
       .sort(),
     screens: finalized(screens.values(), profileIds),
     transitions: finalized(transitions.values(), profileIds),
+    journey: buildDiscoveryJourney(anchor, at),
+    blockedReasons,
+    exploreOutcome: discoveryExploreOutcome(anchor, blockedReasons),
   };
 }

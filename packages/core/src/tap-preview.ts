@@ -69,6 +69,22 @@ function drawRect(
   }
 }
 
+function fillRect(
+  png: PNG,
+  rect: { x: number; y: number; width: number; height: number },
+  color: { r: number; g: number; b: number; a: number },
+): void {
+  const x0 = Math.max(0, Math.round(rect.x));
+  const y0 = Math.max(0, Math.round(rect.y));
+  const x1 = Math.min(png.width - 1, Math.round(rect.x + rect.width));
+  const y1 = Math.min(png.height - 1, Math.round(rect.y + rect.height));
+  for (let y = y0; y <= y1; y += 1) {
+    for (let x = x0; x <= x1; x += 1) {
+      mixPixel(png, x, y, color.r, color.g, color.b, color.a);
+    }
+  }
+}
+
 function drawRing(
   png: PNG,
   cx: number,
@@ -149,6 +165,40 @@ export function annotateTapPreview(
       b: 255,
       a: 240,
     });
+  }
+  return PNG.sync.write(png);
+}
+
+/** Paint every already-opened row so a later screenshot still shows where the crawl went. */
+export function annotateVisitedRows(
+  pngBytes: Buffer,
+  rows: Array<{ bounds: { x: number; y: number; width: number; height: number } }>,
+  logical?: { width: number; height: number },
+): Buffer {
+  if (!rows.length) return pngBytes;
+  const png = PNG.sync.read(pngBytes);
+  const wash = { r: 220, g: 28, b: 36, a: 78 };
+  const ink = { r: 255, g: 72, b: 64, a: 230 };
+  const thickness = Math.max(3, Math.round(Math.min(png.width, png.height) * 0.004));
+  for (const row of rows) {
+    if (row.bounds.width < 2 || row.bounds.height < 2) continue;
+    const topLeft = mapTapPreviewToPixels({ x: row.bounds.x, y: row.bounds.y }, png, logical);
+    const bottomRight = mapTapPreviewToPixels(
+      {
+        x: row.bounds.x + row.bounds.width,
+        y: row.bounds.y + row.bounds.height,
+      },
+      png,
+      logical,
+    );
+    const rect = {
+      x: topLeft.x,
+      y: topLeft.y,
+      width: Math.max(2, bottomRight.x - topLeft.x),
+      height: Math.max(2, bottomRight.y - topLeft.y),
+    };
+    fillRect(png, rect, wash);
+    drawRect(png, rect, thickness, ink);
   }
   return PNG.sync.write(png);
 }

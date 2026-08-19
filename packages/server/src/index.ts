@@ -31,7 +31,6 @@ import {
   getActiveJobs,
   getJob,
   interact,
-  previewInteract,
   IdempotencyConflict,
   listActionsWithTrace,
   listAndroidDevicesFast,
@@ -51,7 +50,6 @@ import {
   doctorFailureMessage,
   toJobReport,
   toJunitXml,
-  type InteractInput,
   type JobReport,
   listDeviceLeases,
   releaseDeviceLease,
@@ -128,6 +126,7 @@ import { handleSettingsRoute } from "./settings-routes.js";
 import { handleTargetRoute } from "./target-routes.js";
 import { handleControlPlaneRoute } from "./control-plane-routes.js";
 import { handleRecipeRoute } from "./recipe-routes.js";
+import { handleInteractionRoute } from "./interaction-routes.js";
 import {
   handleTargetRuntimeRoute,
   type TargetRuntimeRouteRuntime,
@@ -369,6 +368,16 @@ async function handleRequest(
       return;
     if (
       await handleSettingsRoute({
+        method,
+        pathname,
+        request: req,
+        response: res,
+        scope,
+      })
+    )
+      return;
+    if (
+      await handleInteractionRoute({
         method,
         pathname,
         request: req,
@@ -886,49 +895,6 @@ async function handleRequest(
           }),
       });
       json(res, 200, { controls: collected.controls, count: collected.controls.length });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/interact") {
-      const body = (await parseJsonBody(req)) as InteractInput & { serial?: string };
-      if (!body || typeof body !== "object" || !("kind" in body)) {
-        throw new HttpError(
-          400,
-          "body.kind required (identifier|label|point|ref|find|text-match|swipe|key|type|replace)",
-        );
-      }
-      const { serial, preview, ...input } = body as InteractInput & {
-        serial?: string;
-        preview?: unknown;
-      };
-      if (preview === true) {
-        assertTargetObservation(scope, serial);
-        const result = await previewInteract(input as InteractInput, { serial });
-        json(res, 200, {
-          ok: true,
-          preview: true,
-          mime: "image/png",
-          base64: result.base64,
-          bytes: result.bytes,
-          width: result.width,
-          height: result.height,
-          inspectable: result.inspectable,
-          ...(result.resolution ? { resolution: result.resolution } : {}),
-        });
-        return;
-      }
-      if (getActiveJob(serial)?.status === "running") {
-        throw new HttpError(
-          409,
-          "A job is running — pause or cancel it before interacting manually",
-        );
-      }
-      await assertTargetControl(scope, serial);
-      const result = await interact(input as InteractInput, { serial });
-      json(res, 200, {
-        ok: true,
-        ...(result.resolution ? { resolution: result.resolution } : {}),
-      });
       return;
     }
 

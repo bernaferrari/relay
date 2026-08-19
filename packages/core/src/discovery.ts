@@ -16,12 +16,15 @@ import type {
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import {
+  isExploreChromeLabel,
   isExploreChromeNode,
   isExploreStateChangingNode,
   isUnsafeExploreControlText,
 } from "./explore.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
-import { observeScreenIdentity } from "./screen-identity.js";
+import { observeLocaleStableIdentity, observeScreenIdentity } from "./screen-identity.js";
+import { grokHeaderAffordances } from "./discovery-semantic-tap.js";
+import { settingsScreenTitlesConflict } from "./app-map/settings-screen-titles.js";
 
 const DEFAULT_SCOPE: DiscoveryScope = {
   maxScreens: 50,
@@ -29,6 +32,9 @@ const DEFAULT_SCOPE: DiscoveryScope = {
   maxDurationMs: 15 * 60_000,
   allowSensitiveControls: false,
 };
+
+const EXPLORE_STRATEGIES = new Set(["surface", "journey", "hard-edges"]);
+const EXPLORE_MODES = new Set(["semantic", "model"]);
 
 function requiredText(value: unknown, label: string, maxLength: number): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`);
@@ -135,6 +141,18 @@ function normalizeScope(scope?: Partial<DiscoveryScope>): DiscoveryScope {
       throw new Error("invalid discovery scope");
     return next;
   };
+  const strategy = scope?.strategy;
+  if (strategy !== undefined && !EXPLORE_STRATEGIES.has(strategy)) {
+    throw new Error("invalid discovery explore strategy");
+  }
+  const mode = scope?.mode;
+  if (mode !== undefined && !EXPLORE_MODES.has(mode)) {
+    throw new Error("invalid discovery explore mode");
+  }
+  const maxDepth = scope?.maxDepth;
+  if (maxDepth !== undefined) {
+    bounded(maxDepth, 2, 12);
+  }
   return {
     maxScreens: bounded(scope?.maxScreens, DEFAULT_SCOPE.maxScreens, 500),
     maxTransitions: bounded(scope?.maxTransitions, DEFAULT_SCOPE.maxTransitions, 2_000),
@@ -147,6 +165,9 @@ function normalizeScope(scope?: Partial<DiscoveryScope>): DiscoveryScope {
         }
       : {}),
     allowSensitiveControls: scope?.allowSensitiveControls ?? false,
+    ...(strategy ? { strategy } : {}),
+    ...(mode ? { mode } : {}),
+    ...(maxDepth !== undefined ? { maxDepth } : {}),
   };
 }
 
@@ -167,25 +188,93 @@ function assertMutable(session: DiscoverySession): void {
   }
 }
 
-/** Stable screen identity from visible semantics; screenshots remain evidence, not source of truth. */
+/** Prefer locale-stable structure so the same Grok screen survives a language change. */
 export function fingerprintDiscoveryScreen(
   nodes: SnapshotNode[],
   _screenshotDigest?: string,
 ): string {
+  const localeStable = observeLocaleStableIdentity(nodes);
+  // Locale-stable identity needs a substantial identifier tree; a low threshold
+  // collapses distinct Settings/drawer pages that share a few chrome ids.
+  if (localeStable.nodes.length >= 12) return localeStable.fingerprint;
   return observeScreenIdentity(nodes).fingerprint;
 }
 
+/** True when ≥2 Grok Settings section rows are visible (hub list, not a child page). */
+export function looksLikeSettingsList(nodes: SnapshotNode[]): boolean {
+  const labels = new Set(
+    nodes.map((node) => node.label?.trim()).filter((label): label is string => Boolean(label)),
+  );
+  const rows = [...labels].filter((label) =>
+    /^(Appearance|Haptics|Widget|Usage|Advanced|Voice|Memory|Connectors|Skills|Customize Grok)$/i.test(
+      label,
+    ),
+  );
+  return rows.length >= 2;
+}
+
+/** Infer a stable screen title from the live tree (Settings hub vs child pages). */
+export function discoveryTitleFromNodes(nodes: SnapshotNode[]): string | undefined {
+  return titleFromNodes(nodes);
+}
+
 function titleFromNodes(nodes: SnapshotNode[]): string | undefined {
+  // A scrolled Settings list still shows several section rows — never title it
+  // after whichever row happens to sit near the top of the viewport.
+  if (looksLikeSettingsList(nodes)) return "Settings";
+
+  // Toolbar / collapsing title first — list rows below must not steal the page name
+  // (Settings list still contains an "Appearance" row after you leave Appearance).
   const bar = nodes.find(
     (node) =>
-      /collapsing_appbar|action_bar$/.test(node.identifier ?? "") && Boolean(node.label?.trim()),
+      /collapsing_appbar|action_bar$|toolbar|top_app_bar/i.test(node.identifier ?? "") &&
+      Boolean(node.label?.trim()) &&
+      !isExploreChromeLabel(node.label!.trim()),
   );
   if (bar?.label?.trim()) return bar.label.trim();
   const heading = nodes.find(
     (node) =>
       /header|heading/.test(`${node.role ?? ""} ${node.type ?? ""}`) && Boolean(node.label?.trim()),
   );
-  return heading?.label?.trim() || discoveryControls(nodes)[0]?.label;
+  if (heading?.label?.trim()) return heading.label.trim();
+
+  const named = nodes
+    .filter((node) => {
+      const label = node.label?.trim();
+      if (!label || label.length > 48) return false;
+      if (!node.rect || node.rect.y > 520) return false;
+      return /^(Settings|Appearance|Haptics|Widget|Usage|Advanced|Voice|Memory|Connectors|Skills|Projects|Automations|Pinned|Imagine|Build|Ask|Customize Grok|NSFW Preferences|Shared Conversations|Data Controls|Help & Support|Kids Mode|Data & Information|Voice Library)$/i.test(
+        label,
+      );
+    })
+    .sort((left, right) => (left.rect?.y ?? 0) - (right.rect?.y ?? 0));
+  if (named[0]?.label?.trim()) return named[0].label.trim();
+
+  // Prefer a short top-of-screen label over the generic app name.
+  const topLabel = nodes.find((node) => {
+    const label = node.label?.trim();
+    if (!label || label.length > 40 || label.length < 2) return false;
+    if (!node.rect || node.rect.y > 280) return false;
+    if (isExploreChromeNode(node) || isExploreChromeLabel(label)) return false;
+    if (/^(Ask|Imagine|Build|Grok|Back|Close)$/i.test(label)) return false;
+    return true;
+  });
+  if (topLabel?.label?.trim()) return topLabel.label.trim();
+  const selected = nodes.find(
+    (node) =>
+      node.selected === true &&
+      Boolean((node.label ?? "").trim()) &&
+      !isExploreChromeNode(node) &&
+      (node.label ?? "").trim().length < 40,
+  );
+  return selected?.label?.trim() || grokScreenTitle(nodes);
+}
+
+function grokScreenTitle(nodes: SnapshotNode[]): string | undefined {
+  if (nodes.some((node) => node.bundleId === "ai.x.grok" || node.bundleId === "ai.x.GrokApp")) {
+    return "Grok";
+  }
+  return undefined;
 }
 
 function unsafeControlText(value: string): boolean {
@@ -194,7 +283,7 @@ function unsafeControlText(value: string): boolean {
 }
 
 const LAYOUT_IDENTIFIER =
-  /(?:recycler_view|list_container|content_frame|action_bar|coordinator|framelayout|linearlayout|scrollview|content_parent|main_content)/i;
+  /(?:recycler_view|list_container|content_frame|action_bar|coordinator|framelayout|linearlayout|scrollview|content_parent|main_content|(?:^|\/)content$)/i;
 const GENERIC_IDENTIFIER = /:id\/(?:title|summary|icon|text[12])$/i;
 
 function discoveryTarget(node: SnapshotNode): DiscoveryControl["target"] | undefined {
@@ -222,10 +311,16 @@ export function discoveryControls(nodes: SnapshotNode[]): DiscoveryControl[] {
         (node.hittable || node.identifier || node.ref || Boolean((node.label ?? "").trim())),
     )
     .flatMap((node, index) => {
-      const label = (node.label ?? node.value ?? "").trim();
+      let label = (node.label ?? node.value ?? "").trim();
+      if (!label && node.identifier?.trim() && !LAYOUT_IDENTIFIER.test(node.identifier)) {
+        label = node.identifier.split(/[:/]/).pop() ?? node.identifier;
+      }
       if (!label || unsafeControlText(label)) return [];
-      if (/double tap to open/i.test(label)) return [];
-      if (node.identifier && label === node.identifier) return [];
+      if (label.length > 48 || /[.?!].*\s/.test(label)) return [];
+      if (/double tap to open|send_button|chat_text_input/i.test(label)) return [];
+      if (/^\d{1,2}:\d{2}$/.test(label)) return [];
+      if (/^(app language|preferred language)$/i.test(label)) return [];
+      if (node.identifier && (node.label ?? "").trim() && label === node.identifier) return [];
       if (
         /^(first name|last name|email|password|phone|edit your name|date of birth)$/i.test(label)
       ) {
@@ -249,10 +344,7 @@ export function discoveryControls(nodes: SnapshotNode[]): DiscoveryControl[] {
       ];
     });
 
-  // Top to bottom, then list rows over generic buttons. That is how a person
-  // walks a settings screen, and it keeps off-screen chrome from jumping the
-  // queue just because its label sorts first.
-  return controls
+  const ranked = controls
     .sort((left, right) => {
       const row = (control: DiscoveryControl) =>
         /cell|listitem|row|menuitem|preference/.test(control.role?.toLocaleLowerCase() ?? "")
@@ -265,8 +357,8 @@ export function discoveryControls(nodes: SnapshotNode[]): DiscoveryControl[] {
         left.control.id.localeCompare(right.control.id)
       );
     })
-    .map((item) => item.control)
-    .slice(0, 40);
+    .map((item) => item.control);
+  return [...grokHeaderAffordances(nodes), ...ranked].slice(0, 40);
 }
 
 function discoveryBelongsToProject(
@@ -404,6 +496,24 @@ export async function setDiscoveryStatus(
   return session;
 }
 
+/** Merge explore strategy / depth onto a session before start (optional). */
+export async function patchDiscoveryScope(
+  id: string,
+  patch: Partial<DiscoveryScope>,
+): Promise<DiscoverySession> {
+  const session = await readDiscoverySession(id);
+  if (!session) throw new Error("discovery session not found");
+  assertDiscoveryAccess(session);
+  if (session.status !== "draft" && session.status !== "paused" && session.status !== "running") {
+    throw new Error(`cannot patch discovery scope from ${session.status}`);
+  }
+  session.scope = normalizeScope({ ...session.scope, ...patch });
+  session.updatedAt = Date.now();
+  await writeSession(session);
+  emitDiscovery(session);
+  return session;
+}
+
 export async function recordObservedScreen(input: {
   sessionId: string;
   nodes: SnapshotNode[];
@@ -418,19 +528,46 @@ export async function recordObservedScreen(input: {
   assertDiscoveryAccess(session);
   assertMutable(session);
   const fingerprint = fingerprintDiscoveryScreen(input.nodes, input.screenshotDigest);
-  const existing = session.screens.find((screen) => screen.fingerprint === fingerprint);
+  const title = input.title?.trim() || titleFromNodes(input.nodes);
+  const existing =
+    session.screens.find((screen) => {
+      if (screen.fingerprint !== fingerprint) return false;
+      // Shared Settings chrome must not collapse Memory into Kids Mode / NSFW.
+      return !settingsScreenTitlesConflict(screen.title, title);
+    }) ??
+    // Hub lists drift fingerprint while scrolling/animating — keep one Settings/Appearance/etc.
+    (title &&
+    /^(Settings|Appearance|Haptics|Widget|Usage|Advanced|Voice|Memory|Connectors|Skills|Customize Grok)$/i.test(
+      title,
+    )
+      ? session.screens.find((screen) => screen.title?.trim() === title)
+      : undefined);
   if (existing) {
-    if (input.makeCurrent && session.currentScreenId !== existing.id) {
-      session.currentScreenId = existing.id;
-      session.updatedAt = Date.now();
-      await writeSession(session);
-      emitDiscovery(session);
+    // Keep the first title once set — re-observe / scroll must not rename the hub.
+    if (title && !existing.title?.trim()) existing.title = title;
+    if (existing.fingerprint !== fingerprint) {
+      existing.identity = {
+        schemaVersion: 1,
+        fingerprint: existing.fingerprint,
+        aliases: [...new Set([...(existing.identity?.aliases ?? []), fingerprint])],
+      };
     }
+    if (input.screenshotPath) {
+      const destination = screenAssetPath(session.id, existing.id);
+      await mkdir(join(discoveryRoot(), session.id, "screens"), { recursive: true });
+      await copyFile(input.screenshotPath, destination);
+      existing.screenshotPath = `screens/${existing.id}.png`;
+      existing.capturedAt = Date.now();
+      session.updatedAt = existing.capturedAt;
+    }
+    existing.controls = discoveryControls(input.nodes);
+    if (input.makeCurrent) session.currentScreenId = existing.id;
+    await writeSession(session);
+    emitDiscovery(session);
     return { session, screen: existing, isNew: false };
   }
   if (session.screens.length >= session.scope.maxScreens)
     throw new Error("discovery screen budget is exhausted");
-  const title = input.title?.trim() || titleFromNodes(input.nodes);
   const screen: ObservedScreen = {
     id: `screen-${randomUUID()}`,
     fingerprint,
@@ -542,6 +679,26 @@ export async function recordObservedTransition(
   await writeSession(session);
   emitDiscovery(session);
   return transition;
+}
+
+export async function writeDiscoveryScreenAsset(
+  sessionId: string,
+  screenId: string,
+  png: Buffer,
+): Promise<void> {
+  const session = await readDiscoverySession(sessionId);
+  if (!session) throw new Error("discovery session not found");
+  const screen = session.screens.find((item) => item.id === screenId);
+  if (!screen) throw new Error("discovery screen not found");
+  const destination = screenAssetPath(sessionId, screenId);
+  await mkdir(join(discoveryRoot(), session.id, "screens"), { recursive: true });
+  await writeFile(destination, png);
+  screen.screenshotPath = `screens/${screen.id}.png`;
+  screen.capturedAt = Date.now();
+  session.currentScreenId = screenId;
+  session.updatedAt = screen.capturedAt;
+  await writeSession(session);
+  emitDiscovery(session);
 }
 
 export async function readDiscoveryScreenAsset(

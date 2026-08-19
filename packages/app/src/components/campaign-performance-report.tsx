@@ -14,14 +14,14 @@ export function CampaignPerformanceReportView(props: { report: CampaignPerforman
     >
       <section class="grid gap-2.5" aria-label="Campaign performance">
         <header>
-          <strong class="block text-[13px] font-semibold text-text-strong">Performance</strong>
-          <span class="mt-0.5 block text-[10.5px]/[1.4] text-text-weaker">
+          <strong class="block text-body font-semibold text-text-strong">Performance</strong>
+          <span class="mt-0.5 block text-caption/[1.4] text-text-weaker">
             Exact check timing and avoidable work from this run.
           </span>
         </header>
-        <dl class="m-0 grid grid-cols-2 gap-2 rounded-xl border border-border-weak-base bg-surface-base px-3.5 py-3 text-[10.5px] sm:grid-cols-4">
+        <dl class="m-0 grid grid-cols-2 gap-2 rounded-xl border border-border-weak-base bg-surface-base px-3.5 py-3 text-caption sm:grid-cols-4">
           <div>
-            <dt class="m-0 text-[10px] text-text-weaker">Total</dt>
+            <dt class="m-0 text-micro text-text-weaker">Total</dt>
             <dd class="m-0 font-mono tabular-nums text-text-strong">
               {hasTiming()
                 ? formatReviewTime(props.report.totalDurationMs ?? props.report.coverageDurationMs)
@@ -29,7 +29,7 @@ export function CampaignPerformanceReportView(props: { report: CampaignPerforman
             </dd>
           </div>
           <div>
-            <dt class="m-0 text-[10px] text-text-weaker">Coverage</dt>
+            <dt class="m-0 text-micro text-text-weaker">Coverage</dt>
             <dd class="m-0 font-mono tabular-nums text-text-strong">
               {props.report.coverageDurationMs
                 ? formatReviewTime(props.report.coverageDurationMs)
@@ -37,13 +37,13 @@ export function CampaignPerformanceReportView(props: { report: CampaignPerforman
             </dd>
           </div>
           <div>
-            <dt class="m-0 text-[10px] text-text-weaker">Cache</dt>
+            <dt class="m-0 text-micro text-text-weaker">Cache</dt>
             <dd class="m-0 font-mono tabular-nums text-text-strong">
               {props.report.cacheHits} hit · {props.report.cacheBypassed} fresh
             </dd>
           </div>
           <div>
-            <dt class="m-0 text-[10px] text-text-weaker">Viewports</dt>
+            <dt class="m-0 text-micro text-text-weaker">Viewports</dt>
             <dd class="m-0 font-mono tabular-nums text-text-strong">
               {props.report.viewportCount}
             </dd>
@@ -53,7 +53,7 @@ export function CampaignPerformanceReportView(props: { report: CampaignPerforman
           <ol class="m-0 grid list-none gap-1 p-0" aria-label="Slowest checks">
             <For each={props.report.slowest}>
               {(check, index) => (
-                <li class="flex items-center justify-between gap-2 rounded-lg bg-surface-base px-3 py-2 text-[10.5px]">
+                <li class="flex items-center justify-between gap-2 rounded-lg bg-surface-base px-3 py-2 text-caption">
                   <span class="min-w-0 truncate text-text-strong">
                     {index() + 1}. {check.title}
                   </span>
@@ -70,10 +70,10 @@ export function CampaignPerformanceReportView(props: { report: CampaignPerforman
             <For each={props.report.recommendations}>
               {(item) => (
                 <li class="rounded-lg border border-border-weak-base bg-background-base px-3 py-2">
-                  <strong class="block text-[11px] font-medium text-text-strong">
+                  <strong class="block text-caption font-medium text-text-strong">
                     {item.title}
                   </strong>
-                  <p class="m-0 mt-0.5 text-[10.5px]/[1.45] text-text-weak">{item.detail}</p>
+                  <p class="m-0 mt-0.5 text-caption/[1.45] text-text-weak">{item.detail}</p>
                 </li>
               )}
             </For>

@@ -1,11 +1,23 @@
 import type { TargetProfile } from "./target-contract.js";
 
+/** -shaped explore crawl strategies (local-first here/do/ground loop). */
+export type DiscoveryExploreStrategy = "surface" | "journey" | "hard-edges";
+
+/** How the explorer picks the next option: semantic heuristics, or a stub model planner. */
+export type DiscoveryExploreMode = "semantic" | "model";
+
 export type DiscoveryScope = {
   maxScreens: number;
   maxTransitions: number;
   maxDurationMs: number;
   allowedOrigins?: string[];
   allowSensitiveControls?: boolean;
+  /** Explore strategy when discovery.start runs the server-owned crawl. */
+  strategy?: DiscoveryExploreStrategy;
+  /** Option picker mode for explore (model stays stub/heuristic until a real planner lands). */
+  mode?: DiscoveryExploreMode;
+  /** Max navigation depth from the seed screen; strategy supplies a default when omitted. */
+  maxDepth?: number;
 };
 
 export type DiscoveryStatus = "draft" | "running" | "paused" | "complete" | "stopped";
@@ -96,16 +108,6 @@ export type DiscoveryCoverageItem = {
   sessionIds: string[];
 };
 
-export type DiscoveryCoverageReport = {
-  mapName: string;
-  generatedAt: number;
-  sessionIds: string[];
-  profiles: TargetProfile[];
-  unprofiledSessionIds: string[];
-  screens: DiscoveryCoverageItem[];
-  transitions: DiscoveryCoverageItem[];
-};
-
 export type ObservedTransition = {
   id: string;
   fromScreenId: string;
@@ -124,6 +126,57 @@ export type ObservedTransition = {
   capturedAt: number;
   changedScreen: boolean;
   decision?: DiscoveryDecisionProvenance;
+};
+
+/** One step on the ordered discovery path timeline (Atlas journey). */
+export type DiscoveryJourneyStep = {
+  index: number;
+  transitionId: string;
+  kind: ObservedTransition["kind"];
+  label?: string;
+  fromScreenId: string;
+  toScreenId?: string;
+  fromTitle?: string;
+  toTitle?: string;
+  changedScreen: boolean;
+  capturedAt: number;
+  /** Relative screenshot path on the destination (or source if unchanged). */
+  screenshotPath?: string;
+  /** HTTP asset path when served: /discovery/:sessionId/screens/:screenId */
+  screenshotScreenId?: string;
+};
+
+export type DiscoveryJourney = {
+  sessionId: string;
+  mapName: string;
+  generatedAt: number;
+  status: DiscoveryStatus;
+  stepCount: number;
+  steps: DiscoveryJourneyStep[];
+};
+
+export type DiscoveryBlockedReason = {
+  code: "left-app" | "auth" | "budget" | "cancelled" | "incomplete" | "error";
+  message: string;
+  evidence?: string;
+};
+
+export type DiscoveryExploreOutcome = "complete" | "partial" | "blocked" | "running" | "draft";
+
+export type DiscoveryCoverageReport = {
+  mapName: string;
+  generatedAt: number;
+  sessionIds: string[];
+  profiles: TargetProfile[];
+  unprofiledSessionIds: string[];
+  screens: DiscoveryCoverageItem[];
+  transitions: DiscoveryCoverageItem[];
+  /** Ordered path for the anchor session (Atlas journey timeline). */
+  journey?: DiscoveryJourney;
+  /** Why explore stopped short when evidence exists on the anchor session. */
+  blockedReasons?: DiscoveryBlockedReason[];
+  /** -shaped explore completion for the anchor session. */
+  exploreOutcome?: DiscoveryExploreOutcome;
 };
 
 export type DiscoverySession = {
