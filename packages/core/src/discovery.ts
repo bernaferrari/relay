@@ -24,7 +24,14 @@ import {
 } from "./explore.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { observeLocaleStableIdentity, observeScreenIdentity } from "./screen-identity.js";
-import { grokHeaderAffordances } from "./discovery-semantic-tap.js";
+import { profileHeaderAffordances } from "./discovery-semantic-tap.js";
+import {
+  isDriftingHubTitle,
+  isProfileChromeTitle,
+  isProfilePageTitle,
+  isSettingsHubRow,
+  profileForBundleId,
+} from "./discovery-app-profiles.js";
 import { serializeSessionWrite } from "./discovery-session-writes.js";
 import { settingsScreenTitlesConflict } from "./app-map/settings-screen-titles.js";
 
@@ -201,7 +208,7 @@ function assertMutable(session: DiscoverySession): void {
   }
 }
 
-/** Prefer locale-stable structure so the same Grok screen survives a language change. */
+/** Prefer locale-stable structure so the same screen survives a language change. */
 export function fingerprintDiscoveryScreen(
   nodes: SnapshotNode[],
   _screenshotDigest?: string,
@@ -213,17 +220,12 @@ export function fingerprintDiscoveryScreen(
   return observeScreenIdentity(nodes).fingerprint;
 }
 
-/** True when ≥2 Grok Settings section rows are visible (hub list, not a child page). */
+/** True when ≥2 settings section rows are visible (hub list, not a child page). */
 export function looksLikeSettingsList(nodes: SnapshotNode[]): boolean {
   const labels = new Set(
     nodes.map((node) => node.label?.trim()).filter((label): label is string => Boolean(label)),
   );
-  const rows = [...labels].filter((label) =>
-    /^(Appearance|Haptics|Widget|Usage|Advanced|Voice|Memory|Connectors|Skills|Customize Grok)$/i.test(
-      label,
-    ),
-  );
-  return rows.length >= 2;
+  return [...labels].filter(isSettingsHubRow).length >= 2;
 }
 
 /** Infer a stable screen title from the live tree (Settings hub vs child pages). */
@@ -256,9 +258,7 @@ function titleFromNodes(nodes: SnapshotNode[]): string | undefined {
       const label = node.label?.trim();
       if (!label || label.length > 48) return false;
       if (!node.rect || node.rect.y > 520) return false;
-      return /^(Settings|Appearance|Haptics|Widget|Usage|Advanced|Voice|Memory|Connectors|Skills|Projects|Automations|Pinned|Imagine|Build|Ask|Customize Grok|NSFW Preferences|Shared Conversations|Data Controls|Help & Support|Kids Mode|Data & Information|Voice Library)$/i.test(
-        label,
-      );
+      return isProfilePageTitle(label);
     })
     .sort((left, right) => (left.rect?.y ?? 0) - (right.rect?.y ?? 0));
   if (named[0]?.label?.trim()) return named[0].label.trim();
@@ -269,7 +269,7 @@ function titleFromNodes(nodes: SnapshotNode[]): string | undefined {
     if (!label || label.length > 40 || label.length < 2) return false;
     if (!node.rect || node.rect.y > 280) return false;
     if (isExploreChromeNode(node) || isExploreChromeLabel(label)) return false;
-    if (/^(Ask|Imagine|Build|Grok|Back|Close)$/i.test(label)) return false;
+    if (isProfileChromeTitle(label)) return false;
     return true;
   });
   if (topLabel?.label?.trim()) return topLabel.label.trim();
@@ -280,12 +280,14 @@ function titleFromNodes(nodes: SnapshotNode[]): string | undefined {
       !isExploreChromeNode(node) &&
       (node.label ?? "").trim().length < 40,
   );
-  return selected?.label?.trim() || grokScreenTitle(nodes);
+  return selected?.label?.trim() || profileAppTitle(nodes);
 }
 
-function grokScreenTitle(nodes: SnapshotNode[]): string | undefined {
-  if (nodes.some((node) => node.bundleId === "ai.x.grok" || node.bundleId === "ai.x.GrokApp")) {
-    return "Grok";
+/** Last resort: the app's own name, when a profile claims the observed bundle. */
+function profileAppTitle(nodes: SnapshotNode[]): string | undefined {
+  for (const node of nodes) {
+    const profile = profileForBundleId(node.bundleId);
+    if (profile) return profile.appTitle;
   }
   return undefined;
 }
@@ -371,7 +373,7 @@ export function discoveryControls(nodes: SnapshotNode[]): DiscoveryControl[] {
       );
     })
     .map((item) => item.control);
-  return [...grokHeaderAffordances(nodes), ...ranked].slice(0, 40);
+  return [...profileHeaderAffordances(nodes), ...ranked].slice(0, 40);
 }
 
 function discoveryBelongsToProject(
@@ -577,11 +579,7 @@ export async function recordObservedScreen(input: {
         // Shared Settings chrome must not collapse Memory into Kids Mode / NSFW.
         return !settingsScreenTitlesConflict(screen.title, title);
       }) ??
-      // Hub lists drift fingerprint while scrolling/animating — keep one Settings/Appearance/etc.
-      (title &&
-      /^(Settings|Appearance|Haptics|Widget|Usage|Advanced|Voice|Memory|Connectors|Skills|Customize Grok)$/i.test(
-        title,
-      )
+      (title && isDriftingHubTitle(title)
         ? session.screens.find((screen) => screen.title?.trim() === title)
         : undefined);
     if (existing) {

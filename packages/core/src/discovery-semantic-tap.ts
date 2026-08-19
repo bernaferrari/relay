@@ -1,5 +1,6 @@
 import type { DiscoveryControl } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
+import { DISCOVERY_APP_PROFILES, type DiscoveryAppProfile } from "./discovery-app-profiles.js";
 import { isExploreChromeNode } from "./explore.js";
 
 function center(rect: { x: number; y: number; width: number; height: number }): {
@@ -28,16 +29,32 @@ function area(rect: { width: number; height: number }): number {
   return Math.max(1, rect.width) * Math.max(1, rect.height);
 }
 
-/** Grok's unlabeled header icons, found relative to Ask/Imagine so LTR/RTL and
- * display-size changes still resolve the same chrome. */
-export function grokHeaderAffordances(nodes: SnapshotNode[]): DiscoveryControl[] {
-  const ask = nodes.find((node) => node.label?.trim() === "Ask" && node.rect);
-  const imagine = nodes.find((node) => node.label?.trim() === "Imagine" && node.rect);
+/**
+ * Unlabeled header icons, found relative to a profile's tab anchors so LTR/RTL
+ * and display-size changes still resolve the same chrome.
+ *
+ * The anchors come from the profile rather than from this function, and a
+ * profile whose anchors are absent contributes nothing — that is what keeps one
+ * app's header chrome from being proposed on another app's screen.
+ */
+export function profileHeaderAffordances(nodes: SnapshotNode[]): DiscoveryControl[] {
+  return DISCOVERY_APP_PROFILES.flatMap((profile) => headerAffordances(nodes, profile));
+}
+
+function headerAffordances(
+  nodes: SnapshotNode[],
+  profile: DiscoveryAppProfile,
+): DiscoveryControl[] {
+  const header = profile.header;
+  if (!header) return [];
+  const [leadAnchor, secondAnchor] = header.tabAnchors;
+  if (!leadAnchor || !secondAnchor) return [];
+  const ask = nodes.find((node) => node.label?.trim() === leadAnchor && node.rect);
+  const imagine = nodes.find((node) => node.label?.trim() === secondAnchor && node.rect);
   if (!ask?.rect || !imagine?.rect) return [];
-  const tabs = nodes.filter((node) => {
-    const label = node.label?.trim();
-    return (label === "Ask" || label === "Imagine" || label === "Build") && node.rect;
-  });
+  const tabs = nodes.filter(
+    (node) => node.rect && header.tabAnchors.includes(node.label?.trim() ?? ""),
+  );
   if (!tabs.length) return [];
   const tabMinX = Math.min(...tabs.map((tab) => tab.rect!.x));
   const tabMaxX = Math.max(...tabs.map((tab) => tab.rect!.x + tab.rect!.width));
@@ -68,25 +85,27 @@ export function grokHeaderAffordances(nodes: SnapshotNode[]): DiscoveryControl[]
   const extras: DiscoveryControl[] = [];
   // Prefer the leftmost unlabeled header hit target; fall back to a point in the
   // chrome gutter so CLI summaries that only expose Ask's center still open the drawer.
+  const leading = header.leadingAffordance;
+  const trailing = header.trailingAffordance;
   if (menu?.rect) {
     extras.push({
-      id: "grok-menu",
-      label: "Menu",
+      id: `${profile.id}-menu`,
+      label: leading,
       // Point only — Android often shares a generic id across header chrome.
-      target: { point: center(menu.rect), label: "Menu" },
+      target: { point: center(menu.rect), label: leading },
     });
   } else if (ltr) {
     extras.push({
-      id: "grok-menu",
-      label: "Menu",
-      target: { point: { x: 72, y: Math.round(bandY) }, label: "Menu" },
+      id: `${profile.id}-menu`,
+      label: leading,
+      target: { point: { x: 72, y: Math.round(bandY) }, label: leading },
     });
   }
   if (priv?.rect) {
     extras.push({
-      id: "grok-private",
-      label: "Private",
-      target: { point: center(priv.rect), label: "Private" },
+      id: `${profile.id}-private`,
+      label: trailing,
+      target: { point: center(priv.rect), label: trailing },
     });
   }
   return extras;
@@ -118,7 +137,7 @@ export function semanticTargetAtPoint(
     const label = (hit.label ?? hit.value ?? "").trim();
     if (label && label.length < 80) return { label };
   }
-  const chrome = grokHeaderAffordances(nodes);
+  const chrome = profileHeaderAffordances(nodes);
   for (const item of chrome) {
     const tip = item.target.point;
     if (!tip) continue;

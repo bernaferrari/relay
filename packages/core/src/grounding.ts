@@ -4,7 +4,7 @@
  */
 import { z } from "zod";
 import type { SnapshotNode } from "./device.js";
-import { grokHeaderAffordances } from "./discovery-semantic-tap.js";
+import { profileHeaderAffordances } from "./discovery-semantic-tap.js";
 import { captureScreenshot, captureSnapshot } from "./workspace-capture.js";
 import { interact, type InteractInput } from "./workspace-interact.js";
 
@@ -224,7 +224,7 @@ export function groundingCandidates(nodes: SnapshotNode[]): GroundingCandidate[]
       reason: "a11y",
     });
   }
-  for (const item of grokHeaderAffordances(nodes)) {
+  for (const item of profileHeaderAffordances(nodes)) {
     push({
       label: item.label,
       ...(item.target.identifier ? { identifier: item.target.identifier } : {}),
@@ -264,7 +264,7 @@ function matchUniqueA11y(nodes: SnapshotNode[], query: string): InteractInput | 
 function matchHeuristic(nodes: SnapshotNode[], query: string): InteractInput | undefined {
   const needle = query.trim().toLowerCase();
   if (!needle) return undefined;
-  const match = grokHeaderAffordances(nodes).find(
+  const match = profileHeaderAffordances(nodes).find(
     (item) => item.label.trim().toLowerCase() === needle,
   );
   if (!match) return undefined;

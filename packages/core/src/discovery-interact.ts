@@ -1,7 +1,7 @@
 import type { SnapshotNode } from "./device.js";
 import { describeTargetUi } from "./explore.js";
 import { landDiscoveryOnAppMap } from "./discovery-land.js";
-import { grokHeaderAffordances, semanticTargetAtPoint } from "./discovery-semantic-tap.js";
+import { profileHeaderAffordances, semanticTargetAtPoint } from "./discovery-semantic-tap.js";
 import {
   captureFullSurfaceEvidence,
   paintVisitedRows,
@@ -118,7 +118,7 @@ async function resolveLiveInteraction(
     interaction.kind === "label" &&
     (interaction.label === "Menu" || interaction.label === "Private")
   ) {
-    const match = grokHeaderAffordances(nodes).find((item) => item.label === interaction.label);
+    const match = profileHeaderAffordances(nodes).find((item) => item.label === interaction.label);
     if (match?.target.identifier) {
       return {
         interaction: { kind: "identifier", identifier: match.target.identifier },
@@ -138,7 +138,7 @@ async function resolveLiveInteraction(
     const menuish =
       semantic?.label === "Menu" ||
       semantic?.label === "Private" ||
-      grokHeaderAffordances(nodes).some((item) => {
+      profileHeaderAffordances(nodes).some((item) => {
         const tip = item.target.point;
         return tip && Math.hypot(tip.x - interaction.x, tip.y - interaction.y) <= 36;
       });

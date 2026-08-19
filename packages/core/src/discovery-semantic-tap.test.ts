@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { grokHeaderAffordances, semanticTargetAtPoint } from "./discovery-semantic-tap.js";
+import { profileHeaderAffordances, semanticTargetAtPoint } from "./discovery-semantic-tap.js";
 
 test("Grok header icons follow Ask/Imagine even when the bar is reversed", () => {
-  const ltr = grokHeaderAffordances([
+  const ltr = profileHeaderAffordances([
     {
       label: "Ask",
       visibleToUser: true,
@@ -22,7 +22,7 @@ test("Grok header icons follow Ask/Imagine even when the bar is reversed", () =>
   assert.equal(ltr[0]?.label, "Menu");
   assert.equal(ltr[1]?.label, "Private");
 
-  const rtl = grokHeaderAffordances([
+  const rtl = profileHeaderAffordances([
     {
       label: "Imagine",
       visibleToUser: true,
@@ -41,6 +41,25 @@ test("Grok header icons follow Ask/Imagine even when the bar is reversed", () =>
   // Ask is to the right of Imagine → reversed bar; Menu sits outside Ask's side.
   assert.equal(rtl[0]?.label, "Menu");
   assert.ok((rtl[0]?.target.point?.x ?? 0) > 400);
+});
+
+test("an app without a profile's tab anchors is offered no header chrome", () => {
+  const other = profileHeaderAffordances([
+    {
+      label: "Inbox",
+      visibleToUser: true,
+      hittable: true,
+      rect: { x: 400, y: 140, width: 80, height: 40 },
+    },
+    {
+      label: "Archive",
+      visibleToUser: true,
+      hittable: true,
+      rect: { x: 520, y: 140, width: 100, height: 40 },
+    },
+    { hittable: true, visibleToUser: true, rect: { x: 40, y: 140, width: 72, height: 72 } },
+  ]);
+  assert.deepEqual(other, []);
 });
 
 test("point taps record identifiers instead of raw pixels when available", () => {
