@@ -4,6 +4,7 @@ import type {
   DiscoveryControl,
   DiscoveryCoverageReport,
   DiscoveryDecisionProvenance,
+  DiscoveryJourney,
   DiscoveryScope,
   DiscoverySession,
 } from "@relay/protocol";
@@ -18,6 +19,7 @@ import {
   createDiscoverySession,
   discoveryScreenUrl as buildDiscoveryScreenUrl,
   getDiscoveryCoverage,
+  getDiscoveryJourney,
   getDiscoverySuggestion,
   listDiscoverySessions,
   renameDiscoverySession,
@@ -127,6 +129,10 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
     return getDiscoveryCoverage(deps.request, id);
   }
 
+  async function loadDiscoveryJourney(id: string): Promise<DiscoveryJourney> {
+    return getDiscoveryJourney(deps.request, id);
+  }
+
   async function approveDiscoverySuggestion(input: {
     sessionId: string;
     control: DiscoveryControl;
@@ -154,6 +160,7 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
     promoteDiscoveryPath: promoteDiscoveryPathRemote,
     discoverySuggestion,
     loadDiscoveryCoverage,
+    loadDiscoveryJourney,
     approveDiscoverySuggestion,
     backtrackDiscovery,
   };

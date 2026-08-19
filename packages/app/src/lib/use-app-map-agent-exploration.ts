@@ -4,6 +4,7 @@ import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { agentTargetQueues, buildAgentWorkers } from "./app-map-agent-plan";
 import { deriveAppMapAreas } from "./app-map-browse";
+import { useDiscoveryJourney } from "./use-discovery-journey";
 import {
   AGENT_MODELS,
   type AgentState,
@@ -72,6 +73,16 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
       .sort((left, right) => right.createdAt - left.createdAt);
   });
   const proposalCount = createMemo(() => liveProposals().length);
+
+  /** The worker worth watching: the live one, else the last that got a session. */
+  const focusedWorker = createMemo(() => {
+    const withSession = workers().filter((worker) => worker.sessionId);
+    return withSession.find((worker) => worker.status === "running") ?? withSession.at(-1);
+  });
+  const journeyView = useDiscoveryJourney(
+    () => focusedWorker()?.sessionId,
+    () => state() === "running",
+  );
 
   function updateWorker(id: string, patch: Partial<AgentWorker>): void {
     setWorkers((current) =>
@@ -258,6 +269,9 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
     workerCount,
     proposalCount,
     liveProposals,
+    journey: journeyView.journey,
+    exploreRun: journeyView.run,
+    journeyLabel: () => focusedWorker()?.targetName,
     setGoal,
     setMinutes,
     setStrategy,

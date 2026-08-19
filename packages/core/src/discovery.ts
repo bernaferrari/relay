@@ -25,6 +25,7 @@ import {
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { observeLocaleStableIdentity, observeScreenIdentity } from "./screen-identity.js";
 import { grokHeaderAffordances } from "./discovery-semantic-tap.js";
+import { serializeSessionWrite } from "./discovery-session-writes.js";
 import { settingsScreenTitlesConflict } from "./app-map/settings-screen-titles.js";
 
 const DEFAULT_SCOPE: DiscoveryScope = {
@@ -455,16 +456,18 @@ export async function readDiscoverySession(
 
 /** Rename a saved map without changing its captured evidence or run state. */
 export async function renameDiscoverySession(id: string, name: string): Promise<DiscoverySession> {
-  const session = await readDiscoverySession(id);
-  if (!session) throw new Error("Discovery map not found");
-  assertDiscoveryAccess(session);
-  const nextName = name.trim();
-  if (!nextName) throw new Error("Map name is required");
-  if (nextName.length > 120) throw new Error("Map name is too long");
-  const renamed = { ...session, name: nextName, updatedAt: Date.now() };
-  await writeSession(renamed);
-  emitDiscovery(renamed);
-  return renamed;
+  return serializeSessionWrite(id, async () => {
+    const session = await readDiscoverySession(id);
+    if (!session) throw new Error("Discovery map not found");
+    assertDiscoveryAccess(session);
+    const nextName = name.trim();
+    if (!nextName) throw new Error("Map name is required");
+    if (nextName.length > 120) throw new Error("Map name is too long");
+    const renamed = { ...session, name: nextName, updatedAt: Date.now() };
+    await writeSession(renamed);
+    emitDiscovery(renamed);
+    return renamed;
+  });
 }
 
 export async function listDiscoverySessions(filter?: {
@@ -488,24 +491,26 @@ export async function setDiscoveryStatus(
   id: string,
   status: DiscoveryStatus,
 ): Promise<DiscoverySession> {
-  const session = await readDiscoverySession(id);
-  if (!session) throw new Error("discovery session not found");
-  assertDiscoveryAccess(session);
-  const allowed: Record<DiscoveryStatus, DiscoveryStatus[]> = {
-    draft: ["running", "stopped"],
-    running: ["paused", "complete", "stopped"],
-    paused: ["running", "complete", "stopped"],
-    complete: [],
-    stopped: [],
-  };
-  if (session.status !== status && !allowed[session.status].includes(status)) {
-    throw new Error(`discovery session cannot move from ${session.status} to ${status}`);
-  }
-  session.status = status;
-  session.updatedAt = Date.now();
-  await writeSession(session);
-  emitDiscovery(session);
-  return session;
+  return serializeSessionWrite(id, async () => {
+    const session = await readDiscoverySession(id);
+    if (!session) throw new Error("discovery session not found");
+    assertDiscoveryAccess(session);
+    const allowed: Record<DiscoveryStatus, DiscoveryStatus[]> = {
+      draft: ["running", "stopped"],
+      running: ["paused", "complete", "stopped"],
+      paused: ["running", "complete", "stopped"],
+      complete: [],
+      stopped: [],
+    };
+    if (session.status !== status && !allowed[session.status].includes(status)) {
+      throw new Error(`discovery session cannot move from ${session.status} to ${status}`);
+    }
+    session.status = status;
+    session.updatedAt = Date.now();
+    await writeSession(session);
+    emitDiscovery(session);
+    return session;
+  });
 }
 
 /** Merge explore strategy / depth onto a session before start (optional). */
@@ -513,17 +518,19 @@ export async function patchDiscoveryScope(
   id: string,
   patch: Partial<DiscoveryScope>,
 ): Promise<DiscoverySession> {
-  const session = await readDiscoverySession(id);
-  if (!session) throw new Error("discovery session not found");
-  assertDiscoveryAccess(session);
-  if (session.status !== "draft" && session.status !== "paused" && session.status !== "running") {
-    throw new Error(`cannot patch discovery scope from ${session.status}`);
-  }
-  session.scope = normalizeScope({ ...session.scope, ...patch });
-  session.updatedAt = Date.now();
-  await writeSession(session);
-  emitDiscovery(session);
-  return session;
+  return serializeSessionWrite(id, async () => {
+    const session = await readDiscoverySession(id);
+    if (!session) throw new Error("discovery session not found");
+    assertDiscoveryAccess(session);
+    if (session.status !== "draft" && session.status !== "paused" && session.status !== "running") {
+      throw new Error(`cannot patch discovery scope from ${session.status}`);
+    }
+    session.scope = normalizeScope({ ...session.scope, ...patch });
+    session.updatedAt = Date.now();
+    await writeSession(session);
+    emitDiscovery(session);
+    return session;
+  });
 }
 
 /**
@@ -536,14 +543,16 @@ export async function writeDiscoveryExploreRun(
   id: string,
   run: DiscoveryExploreRun,
 ): Promise<DiscoverySession | undefined> {
-  const session = await readDiscoverySession(id);
-  if (!session) return undefined;
-  assertDiscoveryAccess(session);
-  session.explore = { ...run, updatedAt: Date.now() };
-  session.updatedAt = session.explore.updatedAt;
-  await writeSession(session);
-  emitDiscovery(session);
-  return session;
+  return serializeSessionWrite(id, async () => {
+    const session = await readDiscoverySession(id);
+    if (!session) return undefined;
+    assertDiscoveryAccess(session);
+    session.explore = { ...run, updatedAt: Date.now() };
+    session.updatedAt = session.explore.updatedAt;
+    await writeSession(session);
+    emitDiscovery(session);
+    return session;
+  });
 }
 
 export async function recordObservedScreen(input: {
@@ -555,72 +564,74 @@ export async function recordObservedScreen(input: {
   snapshotDigest?: string;
   makeCurrent?: boolean;
 }): Promise<{ session: DiscoverySession; screen: ObservedScreen; isNew: boolean }> {
-  const session = await readDiscoverySession(input.sessionId);
-  if (!session) throw new Error("discovery session not found");
-  assertDiscoveryAccess(session);
-  assertMutable(session);
-  const fingerprint = fingerprintDiscoveryScreen(input.nodes, input.screenshotDigest);
-  const title = input.title?.trim() || titleFromNodes(input.nodes);
-  const existing =
-    session.screens.find((screen) => {
-      if (screen.fingerprint !== fingerprint) return false;
-      // Shared Settings chrome must not collapse Memory into Kids Mode / NSFW.
-      return !settingsScreenTitlesConflict(screen.title, title);
-    }) ??
-    // Hub lists drift fingerprint while scrolling/animating — keep one Settings/Appearance/etc.
-    (title &&
-    /^(Settings|Appearance|Haptics|Widget|Usage|Advanced|Voice|Memory|Connectors|Skills|Customize Grok)$/i.test(
-      title,
-    )
-      ? session.screens.find((screen) => screen.title?.trim() === title)
-      : undefined);
-  if (existing) {
-    // Keep the first title once set — re-observe / scroll must not rename the hub.
-    if (title && !existing.title?.trim()) existing.title = title;
-    if (existing.fingerprint !== fingerprint) {
-      existing.identity = {
-        schemaVersion: 1,
-        fingerprint: existing.fingerprint,
-        aliases: [...new Set([...(existing.identity?.aliases ?? []), fingerprint])],
-      };
+  return serializeSessionWrite(input.sessionId, async () => {
+    const session = await readDiscoverySession(input.sessionId);
+    if (!session) throw new Error("discovery session not found");
+    assertDiscoveryAccess(session);
+    assertMutable(session);
+    const fingerprint = fingerprintDiscoveryScreen(input.nodes, input.screenshotDigest);
+    const title = input.title?.trim() || titleFromNodes(input.nodes);
+    const existing =
+      session.screens.find((screen) => {
+        if (screen.fingerprint !== fingerprint) return false;
+        // Shared Settings chrome must not collapse Memory into Kids Mode / NSFW.
+        return !settingsScreenTitlesConflict(screen.title, title);
+      }) ??
+      // Hub lists drift fingerprint while scrolling/animating — keep one Settings/Appearance/etc.
+      (title &&
+      /^(Settings|Appearance|Haptics|Widget|Usage|Advanced|Voice|Memory|Connectors|Skills|Customize Grok)$/i.test(
+        title,
+      )
+        ? session.screens.find((screen) => screen.title?.trim() === title)
+        : undefined);
+    if (existing) {
+      // Keep the first title once set — re-observe / scroll must not rename the hub.
+      if (title && !existing.title?.trim()) existing.title = title;
+      if (existing.fingerprint !== fingerprint) {
+        existing.identity = {
+          schemaVersion: 1,
+          fingerprint: existing.fingerprint,
+          aliases: [...new Set([...(existing.identity?.aliases ?? []), fingerprint])],
+        };
+      }
+      if (input.screenshotPath) {
+        const destination = screenAssetPath(session.id, existing.id);
+        await mkdir(join(discoveryRoot(), session.id, "screens"), { recursive: true });
+        await copyFile(input.screenshotPath, destination);
+        existing.screenshotPath = `screens/${existing.id}.png`;
+        existing.capturedAt = Date.now();
+        session.updatedAt = existing.capturedAt;
+      }
+      existing.controls = discoveryControls(input.nodes);
+      if (input.makeCurrent) session.currentScreenId = existing.id;
+      await writeSession(session);
+      emitDiscovery(session);
+      return { session, screen: existing, isNew: false };
     }
+    if (session.screens.length >= session.scope.maxScreens)
+      throw new Error("discovery screen budget is exhausted");
+    const screen: ObservedScreen = {
+      id: `screen-${randomUUID()}`,
+      fingerprint,
+      identity: { schemaVersion: 1, fingerprint },
+      ...(title ? { title } : {}),
+      capturedAt: Date.now(),
+      ...(input.snapshotDigest ? { snapshotDigest: input.snapshotDigest } : {}),
+      controls: discoveryControls(input.nodes),
+    };
     if (input.screenshotPath) {
-      const destination = screenAssetPath(session.id, existing.id);
+      const destination = screenAssetPath(session.id, screen.id);
       await mkdir(join(discoveryRoot(), session.id, "screens"), { recursive: true });
       await copyFile(input.screenshotPath, destination);
-      existing.screenshotPath = `screens/${existing.id}.png`;
-      existing.capturedAt = Date.now();
-      session.updatedAt = existing.capturedAt;
+      screen.screenshotPath = `screens/${screen.id}.png`;
     }
-    existing.controls = discoveryControls(input.nodes);
-    if (input.makeCurrent) session.currentScreenId = existing.id;
+    session.screens.push(screen);
+    if (input.makeCurrent) session.currentScreenId = screen.id;
+    session.updatedAt = screen.capturedAt;
     await writeSession(session);
     emitDiscovery(session);
-    return { session, screen: existing, isNew: false };
-  }
-  if (session.screens.length >= session.scope.maxScreens)
-    throw new Error("discovery screen budget is exhausted");
-  const screen: ObservedScreen = {
-    id: `screen-${randomUUID()}`,
-    fingerprint,
-    identity: { schemaVersion: 1, fingerprint },
-    ...(title ? { title } : {}),
-    capturedAt: Date.now(),
-    ...(input.snapshotDigest ? { snapshotDigest: input.snapshotDigest } : {}),
-    controls: discoveryControls(input.nodes),
-  };
-  if (input.screenshotPath) {
-    const destination = screenAssetPath(session.id, screen.id);
-    await mkdir(join(discoveryRoot(), session.id, "screens"), { recursive: true });
-    await copyFile(input.screenshotPath, destination);
-    screen.screenshotPath = `screens/${screen.id}.png`;
-  }
-  session.screens.push(screen);
-  if (input.makeCurrent) session.currentScreenId = screen.id;
-  session.updatedAt = screen.capturedAt;
-  await writeSession(session);
-  emitDiscovery(session);
-  return { session, screen, isNew: true };
+    return { session, screen, isNew: true };
+  });
 }
 
 export async function replaceDiscoveryScreenControls(
@@ -628,16 +639,18 @@ export async function replaceDiscoveryScreenControls(
   screenId: string,
   controls: DiscoveryControl[],
 ): Promise<DiscoverySession> {
-  const session = await readDiscoverySession(sessionId);
-  if (!session) throw new Error("discovery session not found");
-  assertDiscoveryAccess(session);
-  const screen = session.screens.find((item) => item.id === screenId);
-  if (!screen) throw new Error("discovery screen not found");
-  screen.controls = controls;
-  session.updatedAt = Date.now();
-  await writeSession(session);
-  emitDiscovery(session);
-  return session;
+  return serializeSessionWrite(sessionId, async () => {
+    const session = await readDiscoverySession(sessionId);
+    if (!session) throw new Error("discovery session not found");
+    assertDiscoveryAccess(session);
+    const screen = session.screens.find((item) => item.id === screenId);
+    if (!screen) throw new Error("discovery screen not found");
+    screen.controls = controls;
+    session.updatedAt = Date.now();
+    await writeSession(session);
+    emitDiscovery(session);
+    return session;
+  });
 }
 
 export function suggestDiscoveryControl(
@@ -676,41 +689,43 @@ export function isSensitiveDiscoveryAction(
 export async function recordObservedTransition(
   input: Omit<ObservedTransition, "id" | "capturedAt"> & { sessionId: string },
 ): Promise<ObservedTransition> {
-  const session = await readDiscoverySession(input.sessionId);
-  if (!session) throw new Error("discovery session not found");
-  assertDiscoveryAccess(session);
-  assertMutable(session);
-  if (!session.scope.allowSensitiveControls && isSensitiveDiscoveryAction(input)) {
-    throw new Error("discovery policy blocks sensitive controls");
-  }
-  if (!session.screens.some((screen) => screen.id === input.fromScreenId)) {
-    throw new Error("transition source screen was not observed");
-  }
-  if (input.toScreenId && !session.screens.some((screen) => screen.id === input.toScreenId)) {
-    throw new Error("transition destination screen was not observed");
-  }
-  if (session.transitions.length >= session.scope.maxTransitions) {
-    throw new Error("discovery transition budget is exhausted");
-  }
-  const transition: ObservedTransition = {
-    id: `transition-${randomUUID()}`,
-    fromScreenId: input.fromScreenId,
-    ...(input.toScreenId ? { toScreenId: input.toScreenId } : {}),
-    kind: input.kind,
-    ...(input.label?.trim() ? { label: input.label.trim() } : {}),
-    ...(input.target ? { target: input.target } : {}),
-    ...(input.text !== undefined ? { text: input.text } : {}),
-    ...(input.direction ? { direction: input.direction } : {}),
-    ...(input.decision ? { decision: normalizeDecision(input.decision) } : {}),
-    capturedAt: Date.now(),
-    changedScreen: input.changedScreen,
-  };
-  session.transitions.push(transition);
-  session.currentScreenId = input.toScreenId ?? input.fromScreenId;
-  session.updatedAt = transition.capturedAt;
-  await writeSession(session);
-  emitDiscovery(session);
-  return transition;
+  return serializeSessionWrite(input.sessionId, async () => {
+    const session = await readDiscoverySession(input.sessionId);
+    if (!session) throw new Error("discovery session not found");
+    assertDiscoveryAccess(session);
+    assertMutable(session);
+    if (!session.scope.allowSensitiveControls && isSensitiveDiscoveryAction(input)) {
+      throw new Error("discovery policy blocks sensitive controls");
+    }
+    if (!session.screens.some((screen) => screen.id === input.fromScreenId)) {
+      throw new Error("transition source screen was not observed");
+    }
+    if (input.toScreenId && !session.screens.some((screen) => screen.id === input.toScreenId)) {
+      throw new Error("transition destination screen was not observed");
+    }
+    if (session.transitions.length >= session.scope.maxTransitions) {
+      throw new Error("discovery transition budget is exhausted");
+    }
+    const transition: ObservedTransition = {
+      id: `transition-${randomUUID()}`,
+      fromScreenId: input.fromScreenId,
+      ...(input.toScreenId ? { toScreenId: input.toScreenId } : {}),
+      kind: input.kind,
+      ...(input.label?.trim() ? { label: input.label.trim() } : {}),
+      ...(input.target ? { target: input.target } : {}),
+      ...(input.text !== undefined ? { text: input.text } : {}),
+      ...(input.direction ? { direction: input.direction } : {}),
+      ...(input.decision ? { decision: normalizeDecision(input.decision) } : {}),
+      capturedAt: Date.now(),
+      changedScreen: input.changedScreen,
+    };
+    session.transitions.push(transition);
+    session.currentScreenId = input.toScreenId ?? input.fromScreenId;
+    session.updatedAt = transition.capturedAt;
+    await writeSession(session);
+    emitDiscovery(session);
+    return transition;
+  });
 }
 
 export async function writeDiscoveryScreenAsset(
@@ -718,19 +733,21 @@ export async function writeDiscoveryScreenAsset(
   screenId: string,
   png: Buffer,
 ): Promise<void> {
-  const session = await readDiscoverySession(sessionId);
-  if (!session) throw new Error("discovery session not found");
-  const screen = session.screens.find((item) => item.id === screenId);
-  if (!screen) throw new Error("discovery screen not found");
-  const destination = screenAssetPath(sessionId, screenId);
-  await mkdir(join(discoveryRoot(), session.id, "screens"), { recursive: true });
-  await writeFile(destination, png);
-  screen.screenshotPath = `screens/${screen.id}.png`;
-  screen.capturedAt = Date.now();
-  session.currentScreenId = screenId;
-  session.updatedAt = screen.capturedAt;
-  await writeSession(session);
-  emitDiscovery(session);
+  return serializeSessionWrite(sessionId, async () => {
+    const session = await readDiscoverySession(sessionId);
+    if (!session) throw new Error("discovery session not found");
+    const screen = session.screens.find((item) => item.id === screenId);
+    if (!screen) throw new Error("discovery screen not found");
+    const destination = screenAssetPath(sessionId, screenId);
+    await mkdir(join(discoveryRoot(), session.id, "screens"), { recursive: true });
+    await writeFile(destination, png);
+    screen.screenshotPath = `screens/${screen.id}.png`;
+    screen.capturedAt = Date.now();
+    session.currentScreenId = screenId;
+    session.updatedAt = screen.capturedAt;
+    await writeSession(session);
+    emitDiscovery(session);
+  });
 }
 
 export async function readDiscoveryScreenAsset(

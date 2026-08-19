@@ -3,6 +3,7 @@ import type {
   DiscoveryControl,
   DiscoveryCoverageReport,
   DiscoveryDecisionProvenance,
+  DiscoveryJourney,
   DiscoveryScope,
   DiscoverySession,
 } from "@relay/protocol";
@@ -127,6 +128,16 @@ export async function getDiscoveryCoverage(
     `/discovery/${encodeURIComponent(id)}/coverage`,
   );
   return data.coverage;
+}
+
+export async function getDiscoveryJourney(
+  request: ServerRequest,
+  id: string,
+): Promise<DiscoveryJourney> {
+  const data = await request<{ journey: DiscoveryJourney }>(
+    `/discovery/${encodeURIComponent(id)}/journey`,
+  );
+  return data.journey;
 }
 
 export async function approveDiscoverySuggestion(

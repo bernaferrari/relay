@@ -3,6 +3,7 @@ import type { AppMapAgentExploration } from "../lib/use-app-map-agent-exploratio
 import { Button } from "@relay/ui/button";
 import { AppMapAgentProgress } from "./app-map-agent-progress";
 import { AppMapAgentSetup } from "./app-map-agent-setup";
+import { AppMapJourneyTimeline } from "./app-map-journey-timeline";
 import { Icon } from "./icon";
 
 export function AppMapAgentPanel(props: {
@@ -85,6 +86,15 @@ export function AppMapAgentPanel(props: {
             onTargetIds={exploration.setTargetIds}
             onModelIds={exploration.setModelIds}
           />
+        </Show>
+        <Show when={(exploration.journey()?.stepCount ?? 0) > 0}>
+          <div class="mt-5">
+            <AppMapJourneyTimeline
+              journey={exploration.journey()}
+              run={exploration.exploreRun()}
+              label={exploration.journeyLabel()}
+            />
+          </div>
         </Show>
         <Show when={exploration.liveProposals()[0]}>
           {(proposal) => (
