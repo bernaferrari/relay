@@ -20,6 +20,12 @@ export type Lane = {
    */
   readonly triggers: readonly string[];
   readonly gates: readonly CheckId[];
+  /**
+   * Repo-relative files of the local composite actions this job's steps use, transitively,
+   * plus the workflow file itself: the lane's own machinery. Editing one of these changes what
+   * the lane does, so the lane cannot claim to be unaffected by it (`scripts/gate/routing.ts`).
+   */
+  readonly uses: readonly string[];
   readonly verbatim: readonly string[];
   readonly paths: readonly string[];
   readonly pathsIgnore: readonly string[];
@@ -88,6 +94,46 @@ function declaredGates(
   return gates;
 }
 
+// Every file of every local composite action the steps use, transitively, as repo-relative
+// paths. Same walk `declaredGates` performs, kept separate because it answers a different
+// question: not "which gate does this lane declare" but "which files ARE this lane".
+//
+// The unit is the action's DIRECTORY, not its `action.yml`. A composite action's descriptor is
+// only its entry point: `setup-fixture-app/action.yml` runs
+// `bash "$GITHUB_ACTION_PATH/fetch-artifact.sh"`, and that script in turn runs its siblings
+// `resolve-artifact-name.sh` and `trusted-artifact.mjs` — references that exist only inside
+// shell, one level past anything YAML parsing can see. Collecting the directory needs no shell
+// model and cannot miss a file however deep the chain goes; the cost is coarseness, which is
+// harmless here because a file inside an action's own directory belongs to that action.
+function localActionFiles(
+  steps: readonly RawStep[],
+  root: string,
+  chain: readonly string[] = [],
+): string[] {
+  const files: string[] = [];
+  for (const step of steps) {
+    const action = readLocalAction(step.uses, root);
+    if (!action || !step.uses || chain.includes(step.uses)) continue;
+    const dir = step.uses.slice(2);
+    files.push(
+      ...filesUnder(path.join(root, dir)).map((file) => path.posix.join(dir, file)),
+      ...localActionFiles(action.runs?.steps ?? [], root, [...chain, step.uses]),
+    );
+  }
+  return files;
+}
+
+/** Every file under `dir`, recursively, as paths relative to it. */
+function filesUnder(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir, { withFileTypes: true, recursive: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) =>
+      path.posix.join(path.relative(dir, entry.parentPath).split(path.sep).join('/'), entry.name),
+    );
+}
+
 function triggerPaths(on: Record<string, { paths?: string[]; 'paths-ignore'?: string[] }>) {
   const pr = on.pull_request ?? {};
   return { paths: pr.paths ?? [], pathsIgnore: pr['paths-ignore'] ?? [] };
@@ -111,6 +157,7 @@ function workflowLanes(
     qualifying,
     triggers: Object.keys(on),
     gates: [...new Set(declaredGates(job.steps ?? [], root))],
+    uses: [...new Set([`.github/workflows/${file}`, ...localActionFiles(job.steps ?? [], root)])],
     verbatim: (job.steps ?? []).flatMap((step) =>
       typeof step.run === 'string' ? verbatimScripts(step.run, scripts) : [],
     ),
