@@ -456,7 +456,7 @@ export function RunsWorkspace(props: {
                       {historyExpanded() ? "Latest only" : `All ${rows().length}`}
                     </button>
                   </Show>
-                  <span class="font-mono text-micro text-text-weaker">
+                  <span class="font-mono text-micro tabular-nums text-text-weaker">
                     {visibleRows().length}{" "}
                     {historyExpanded()
                       ? "runs"
@@ -861,7 +861,7 @@ export function RunsWorkspace(props: {
                   <Show when={job().evidence}>
                     {(manifest) => (
                       <section class="mt-3 rounded-xl border border-border-weak-base p-3">
-                        <strong class="text-caption font-semibold text-text-strong">
+                        <strong class="text-caption font-semibold tabular-nums text-text-strong">
                           Evidence completeness
                         </strong>
                         <div class="mt-2 flex flex-wrap gap-1.5">

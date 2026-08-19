@@ -88,8 +88,10 @@ export function LocaleSweepCompare(props: {
               <VerdictChip verdict={props.verdict} />
             </h2>
             <p class="mt-0.5 truncate text-caption text-[var(--text-weak)]">
-              {props.localeLabel} compared against {props.baselineLocale} · {props.position} of{" "}
-              {props.total}
+              {props.localeLabel} compared against {props.baselineLocale} ·{" "}
+              <span class="tabular-nums">
+                {props.position} of {props.total}
+              </span>
             </p>
           </div>
           <Button variant="ghost" size="sm" aria-label="Close compare" onClick={props.onClose}>

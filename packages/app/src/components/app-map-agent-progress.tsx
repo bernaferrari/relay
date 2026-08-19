@@ -36,7 +36,9 @@ export function AppMapAgentProgress(props: {
                 : "Exploring"}
           </span>
           <span class="text-micro text-[var(--text-weak)] tabular-nums">
-            {complete()}/{props.workers.length} targets
+            <span class="tabular-nums">
+              {complete()}/{props.workers.length} targets
+            </span>
           </span>
         </div>
         <div>

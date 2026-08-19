@@ -9,6 +9,7 @@ import {
   onMount,
 } from "solid-js";
 import { Button } from "@relay/ui/button";
+import { EmptyState } from "./empty-state";
 import type { LocaleRunAnalysisReport } from "@relay/protocol";
 import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import type {
@@ -267,7 +268,9 @@ export function RunMatrixReview(props: {
             </select>
           </label>
           <span class="shrink-0 text-micro tabular-nums text-[var(--text-weak)]">
-            {selectedCaptureIndex() + 1}/{props.review.captureLabels.length}
+            <span class="tabular-nums">
+              {selectedCaptureIndex() + 1}/{props.review.captureLabels.length}
+            </span>
           </span>
           <label class="ml-auto flex h-8 min-w-[190px] flex-1 items-center gap-2 rounded-lg bg-[var(--surface-base)] px-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:shadow-[inset_0_0_0_1px_var(--border-strong-base)] sm:max-w-[280px]">
             <Icon name="search" size={12} class="text-[var(--text-weak)]" />
@@ -372,16 +375,13 @@ export function RunMatrixReview(props: {
           </div>
         </Show>
         <Show when={props.review.captureLabels.length === 0}>
-          <div class="grid min-h-48 place-items-center rounded-xl border border-dashed border-[var(--border-weak-base)] text-center">
-            <div>
-              <strong class="block text-caption text-[var(--text-strong)]">
-                No screenshots requested
-              </strong>
-              <p class="m-0 mt-1 text-micro text-[var(--text-weak)]">
-                This matrix still records pass, failure, timing, and diagnostic evidence.
-              </p>
-            </div>
-          </div>
+          <EmptyState
+            appearance="quiet"
+            size="sm"
+            class="min-h-48 rounded-xl border border-dashed border-[var(--border-weak-base)]"
+            title="No screenshots requested"
+            description="This matrix still records pass, failure, timing, and diagnostic evidence."
+          />
         </Show>
         <Show when={pagedRows().length < visibleRows().length}>
           <div class="grid place-items-center pt-4">
@@ -517,7 +517,9 @@ export function RunMatrixScreenshotDialog(props: {
               <Icon name="chevron-left" size={14} />
             </Button>
             <span class="min-w-16 text-center text-caption tabular-nums text-[var(--text-weak)]">
-              {props.position} / {props.total}
+              <span class="tabular-nums">
+                {props.position} / {props.total}
+              </span>
             </span>
             <Button
               variant="ghost"

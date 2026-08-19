@@ -92,7 +92,9 @@ export function CampaignRecoveryIntervention(props: {
       <Show when={props.intervention.attempts.length > 0}>
         <details class="group rounded-lg border border-border-weak-base bg-surface-base">
           <summary class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3 text-caption font-medium text-text-base focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
-            Attempted selectors · {props.intervention.attempts.length}
+            <span class="tabular-nums">
+              Attempted selectors · {props.intervention.attempts.length}
+            </span>
             <Icon
               name="chevron-down"
               size={12}

@@ -11,6 +11,7 @@ import {
   corpusReview,
   corpusScreenUrl,
   corpusStateLabel,
+  localeGridColumns,
   sortCorpusSessions,
 } from "./corpus-review";
 
@@ -318,4 +319,10 @@ test("the live sweep sorts first, then the most recently touched", () => {
     ordered.map((item) => item.id),
     ["live", "recent", "old"],
   );
+});
+
+test("sparse locale grids stay card-sized while dense reviews fill the pane", () => {
+  assert.match(localeGridColumns(1), /320px/);
+  assert.match(localeGridColumns(3), /280px/);
+  assert.match(localeGridColumns(40), /1fr/);
 });

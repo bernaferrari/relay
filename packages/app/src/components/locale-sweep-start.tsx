@@ -155,7 +155,9 @@ export function LocaleSweepStart(props: {
             <span class="text-caption font-semibold text-[var(--text-weak)]">
               Languages
               <span class="ml-1.5 tabular-nums text-[var(--text-weaker)]">
-                {locales().length}/{profile()?.options.length ?? 0}
+                <span class="tabular-nums">
+                  {locales().length}/{profile()?.options.length ?? 0}
+                </span>
               </span>
             </span>
             <button

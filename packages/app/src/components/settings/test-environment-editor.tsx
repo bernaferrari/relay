@@ -86,7 +86,7 @@ function ExactDeviceSelector(props: {
           </span>
         </div>
         <span class="shrink-0 text-micro tabular-nums text-text-weak">
-          {props.selectedIds.length} selected
+          <span class="tabular-nums">{props.selectedIds.length} selected</span>
         </span>
       </div>
       <div class="overflow-hidden rounded-lg border border-border-weak-base bg-background-base">
@@ -370,7 +370,9 @@ export function TestEnvironmentEditor(props: {
               </p>
             </div>
             <span class="shrink-0 text-micro tabular-nums text-text-weak">
-              {draft().additional.length} {draft().additional.length === 1 ? "rule" : "rules"}
+              <span class="tabular-nums">
+                {draft().additional.length} {draft().additional.length === 1 ? "rule" : "rules"}
+              </span>
             </span>
           </div>
           <For each={draft().additional}>

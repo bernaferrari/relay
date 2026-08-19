@@ -90,6 +90,13 @@ export type CorpusReview = {
   known: number;
 };
 
+/** Sparse reviews stay card-sized; dense forty-locale reviews fill the pane. */
+export function localeGridColumns(count: number): string {
+  if (count <= 1) return "minmax(min(100%, 240px), 320px)";
+  if (count <= 3) return "repeat(auto-fit, minmax(min(100%, 200px), 280px))";
+  return "repeat(auto-fill, minmax(min(100%, 176px), 1fr))";
+}
+
 const sweepingStatuses = new Set<CorpusSession["status"]>(["draft", "running", "paused"]);
 
 function cellKey(canonicalKey: string, locale: string): string {

@@ -277,7 +277,7 @@ function CheckDetail(props: {
                 <label class="grid gap-1.5 text-caption font-medium text-text-strong">
                   Why this is correct
                   <textarea
-                    class="min-h-20 resize-y rounded-lg border border-border-weak-base bg-surface-base px-3 py-2 text-[16px]/[1.45] font-normal text-text-base focus-visible:border-border-strong-focus focus-visible:outline-none"
+                    class="min-h-20 resize-y rounded-lg border border-border-weak-base bg-surface-base px-3 py-2 text-body/[1.45] font-normal text-text-base focus-visible:border-border-strong-focus focus-visible:outline-none"
                     value={repairReason()}
                     onInput={(event) => setRepairReason(event.currentTarget.value)}
                     placeholder="Explain what changed and why this repair should be reviewed."

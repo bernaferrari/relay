@@ -7,6 +7,7 @@ import {
   evidenceChannelNote,
 } from "../lib/run-evidence-presentation";
 import { Icon, type IconName } from "./icon";
+import { EmptyState } from "./empty-state";
 
 export function EvidenceList(props: {
   items: { kind: string; capturedAt: number; data: unknown }[];
@@ -16,11 +17,7 @@ export function EvidenceList(props: {
     <div class="grid gap-2.5">
       <For
         each={props.items}
-        fallback={
-          <div class="rounded-xl border border-dashed border-[var(--border-weak-base)] px-3 py-4 text-center text-caption text-[var(--text-weak)]">
-            {props.empty}
-          </div>
-        }
+        fallback={<EmptyState appearance="quiet" size="sm" title={props.empty} />}
       >
         {(item) => {
           const summary = () => evidenceSummary(item.data);

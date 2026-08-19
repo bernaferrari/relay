@@ -19,6 +19,7 @@ import {
   corpusReview,
   corpusScreenUrl,
   corpusStateLabel,
+  localeGridColumns,
   sortCorpusSessions,
   tallyCorpusVerdicts,
 } from "../lib/corpus-review";
@@ -455,8 +456,11 @@ export function LocaleSweepReview(props: { suggestedName?: string }) {
             {/* Portrait captures make narrow cells, so the grid packs more of
                 them per row than a landscape frame allowed. */}
             <div
-              class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,176px),1fr))] gap-3"
-              style={{ "--locale-cell-aspect": mediaAspectStyle(cellRatio()) }}
+              class="grid justify-start gap-3"
+              style={{
+                "--locale-cell-aspect": mediaAspectStyle(cellRatio()),
+                "grid-template-columns": localeGridColumns(visibleCells().length),
+              }}
             >
               <For each={visibleCells()}>
                 {(cell) => (

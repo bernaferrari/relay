@@ -26,6 +26,8 @@ export type EmptyStateProps = {
   size?: "sm" | "md" | "lg";
   /** Left-aligned document empty vs centered. */
   align?: "start" | "center";
+  /** Quiet panel/rail treatment without a card-sized visual anchor. */
+  appearance?: "default" | "quiet";
   class?: string;
   children?: JSX.Element;
 };
@@ -37,21 +39,24 @@ export type EmptyStateProps = {
 export function EmptyState(props: EmptyStateProps) {
   const size = () => props.size ?? "md";
   const align = () => props.align ?? "center";
+  const quiet = () => props.appearance === "quiet";
   return (
     <div
       class={cn(
         "flex flex-col",
         align() === "start" ? "items-start text-left" : "items-center text-center",
-        size() === "sm"
-          ? "gap-1.5 px-3 py-5"
-          : size() === "lg"
-            ? "gap-2 px-6 py-10"
-            : "gap-1.5 px-4 py-8",
+        quiet()
+          ? "gap-1 px-3 py-5"
+          : size() === "sm"
+            ? "gap-1.5 px-3 py-5"
+            : size() === "lg"
+              ? "gap-2 px-6 py-10"
+              : "gap-1.5 px-4 py-8",
         props.class,
       )}
       role="status"
     >
-      <Show when={props.icon}>
+      <Show when={quiet() ? undefined : props.icon}>
         {(icon) => (
           <span
             class={cn(
@@ -70,11 +75,13 @@ export function EmptyState(props: EmptyStateProps) {
         <p
           class={cn(
             "m-0 tracking-tight text-text-strong",
-            size() === "sm"
+            quiet()
               ? "text-caption font-medium"
-              : size() === "lg"
-                ? "text-title font-semibold tracking-[-0.02em]"
-                : "text-body font-medium",
+              : size() === "sm"
+                ? "text-caption font-medium"
+                : size() === "lg"
+                  ? "text-title font-semibold tracking-[-0.02em]"
+                  : "text-body font-medium",
           )}
         >
           {props.title}
@@ -86,7 +93,7 @@ export function EmptyState(props: EmptyStateProps) {
           <p
             class={cn(
               "m-0 text-pretty text-text-base",
-              size() === "sm" ? "max-w-[260px] text-caption" : "max-w-[300px] text-body",
+              quiet() || size() === "sm" ? "max-w-[260px] text-caption" : "max-w-[300px] text-body",
             )}
           >
             {props.description}

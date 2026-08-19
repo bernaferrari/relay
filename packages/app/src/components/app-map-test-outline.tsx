@@ -15,6 +15,7 @@ import {
   type ScenarioStepOutlineItem,
 } from "../lib/app-map-test-editor-tree";
 import { Icon } from "./icon";
+import { EmptyState } from "./empty-state";
 import { StepKindMenu, StepRow, type StepDropTarget } from "./app-map-test-step-row";
 
 /**
@@ -217,20 +218,20 @@ export function AppMapTestOutline(props: {
             </For>
           </ol>
           <Show when={query() && !visible().length}>
-            <div class="px-3 py-8 text-center">
-              <p class="m-0 text-caption font-medium text-text-strong">No matching steps</p>
-              <p class="mt-1 text-caption/[1.45] text-text-weak">
-                Search an intent, a step type, or a mapped path name.
-              </p>
-            </div>
+            <EmptyState
+              appearance="quiet"
+              size="sm"
+              title="No matching steps"
+              description="Search an intent, a step type, or a mapped path name."
+            />
           </Show>
           <Show when={!props.test.steps.length}>
-            <div class="px-3 py-8 text-center">
-              <p class="m-0 text-caption font-medium text-text-strong">Add the first step</p>
-              <p class="mt-1 text-caption/[1.45] text-text-weak">
-                New steps are not connected yet, so nothing vague can run.
-              </p>
-            </div>
+            <EmptyState
+              appearance="quiet"
+              size="sm"
+              title="Add the first step"
+              description="New steps are not connected yet, so nothing vague can run."
+            />
           </Show>
         </div>
       </Show>

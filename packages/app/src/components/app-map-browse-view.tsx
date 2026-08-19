@@ -156,7 +156,7 @@ export function AppMapBrowseView(props: {
             <h2 class="text-title/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
               {props.mode === "screens" ? "Screens" : "Coverage"}
             </h2>
-            <p class="mt-0.5 max-w-[680px] text-caption/[1.45] text-[var(--text-weak)]">
+            <p class="mt-0.5 max-w-[680px] text-caption/[1.45] tabular-nums text-[var(--text-weak)]">
               {locales()
                 ? "Every mapped screen, replayed in every language and compared against the baseline."
                 : props.mode === "screens"
@@ -532,7 +532,7 @@ function CoverageTable(props: {
           )}
         </For>
         <Show when={props.rows.length > visibleRows().length}>
-          <p class="px-4 py-3 text-center text-micro text-[var(--text-weak)]">
+          <p class="px-4 py-3 text-center text-micro tabular-nums text-[var(--text-weak)]">
             Showing the newest {visibleRows().length} of {props.rows.length} results. Narrow the
             list with search or filters.
           </p>

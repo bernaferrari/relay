@@ -171,7 +171,9 @@ export function ExecutionTimeline(props: {
                   {selected()?.title ?? "No step selected"}
                 </strong>
                 <small class="shrink-0 font-mono text-micro tabular-nums text-[var(--text-weak)]">
-                  Step {props.moments.length ? safeIndex() + 1 : 0} of {props.moments.length}
+                  <span class="tabular-nums">
+                    Step {props.moments.length ? safeIndex() + 1 : 0} of {props.moments.length}
+                  </span>
                 </small>
               </div>
               <div class="h-1 overflow-hidden rounded-full bg-[var(--surface-base-hover)]">
@@ -330,7 +332,7 @@ export function ExecutionTimeline(props: {
 
           <span class="shrink-0 font-mono text-micro tabular-nums text-[var(--text-weak)]">
             {formatReviewTime(props.elapsedMs ?? 0)} /{" "}
-            {formatReviewTime(props.totalDurationMs ?? 0)}
+            <span class="tabular-nums">{formatReviewTime(props.totalDurationMs ?? 0)}</span>
           </span>
         </div>
       </Show>
