@@ -80,6 +80,19 @@ export function positionsAfterCanvasEdit(
   return { ...resolveCoincidentPositions(shown), ...moved };
 }
 
+/** Persist the renderer's deterministic stack repair through the caller's
+ * canonical document boundary. Returns false when the document is already
+ * truthful, which also prevents projection refresh loops. */
+export function persistCoincidentPositionRepair(
+  positions: Readonly<Record<string, CanvasPoint>>,
+  persist: (repaired: Readonly<Record<string, CanvasPoint>>) => void,
+): boolean {
+  const repaired = resolveCoincidentPositions(positions);
+  if (repaired === positions) return false;
+  persist(repaired);
+  return true;
+}
+
 function samePoint(left: CanvasPoint, right: CanvasPoint): boolean {
   return (
     Math.abs(left.x - right.x) < COINCIDENT_EPSILON &&

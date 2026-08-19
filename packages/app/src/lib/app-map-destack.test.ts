@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { positionsAfterCanvasEdit, resolveCoincidentPositions } from "./app-map-destack";
+import {
+  persistCoincidentPositionRepair,
+  positionsAfterCanvasEdit,
+  resolveCoincidentPositions,
+} from "./app-map-destack";
 import {
   CARD_PITCH_Y,
   SCREEN_CARD_HEIGHT,
@@ -135,4 +139,20 @@ test("the first edit commits the journey so the rest of a crawl cannot snap back
 
   assert.deepEqual(written.settings, shown.settings);
   assert.deepEqual(written.appearance, { x: 700, y: 300 });
+});
+
+test("a hidden exact stack is persisted once through the canonical boundary", () => {
+  const stacked = { first: { x: 0, y: 0 }, second: { x: 0, y: 0 } };
+  const writes: Array<Readonly<Record<string, { x: number; y: number }>>> = [];
+  assert.equal(
+    persistCoincidentPositionRepair(stacked, (value) => writes.push(value)),
+    true,
+  );
+  assert.equal(writes.length, 1);
+  assert.notDeepEqual(writes[0], stacked);
+  assert.equal(
+    persistCoincidentPositionRepair(writes[0]!, (value) => writes.push(value)),
+    false,
+  );
+  assert.equal(writes.length, 1);
 });

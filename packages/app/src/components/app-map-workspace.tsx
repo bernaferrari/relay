@@ -53,6 +53,7 @@ import {
 } from "../lib/app-map-workspace-helpers";
 import { createAppMapCanvasHistory } from "../lib/app-map-canvas-history";
 import { useAppMapDocumentProjection } from "../lib/use-app-map-document-projection";
+import { appMapProjectionNormalizer } from "../lib/app-map-projection-normalization";
 import { useAppMapGraphEdits } from "../lib/use-app-map-graph-edits";
 import { useAppMapTransitionReplay } from "../lib/use-app-map-transition-replay";
 import { useAppMapPresence } from "../lib/use-app-map-presence";
@@ -268,6 +269,7 @@ export function AppMapWorkspace(props: {
       canvasHistory.clear();
     },
     onCanonicalProjectionChange: canvasHistory.clear,
+    normalizeProjection: appMapProjectionNormalizer(persistMetadata, graph),
   });
 
   createEffect(() => {
@@ -397,8 +399,6 @@ export function AppMapWorkspace(props: {
     const appMapId = loadedAppMapId();
     if (!appMapId || appMapLoadState().status !== "ready" || initiallyFittedAppMapId === appMapId)
       return;
-    // Fit an existing map once when it opens. A blank map is also marked as
-    // handled so its first capture does not yank the camera away from the user.
     initiallyFittedAppMapId = appMapId;
     if (hasCanvasContent()) requestAnimationFrame(openAtReadableScale);
   });

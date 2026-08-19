@@ -23,6 +23,7 @@ export function useAppMapDocumentProjection(options: {
   setCanvasState: Setter<AppMapCanvasState>;
   onDocumentReset: () => void;
   onCanonicalProjectionChange: () => void;
+  normalizeProjection?: (projection: AppMapCanvasState) => AppMapCanvasState;
 }) {
   const server = useServer();
   const [loadedAppMapId, setLoadedAppMapId] = createSignal<string | null>(null);
@@ -48,7 +49,8 @@ export function useAppMapDocumentProjection(options: {
       .loadAppMap(appMapId)
       .then((appMap) => {
         if (server.selectedAppMapId() !== appMapId) return;
-        options.setCanvasState(mergeAppMapProjection(EMPTY_APP_MAP_CANVAS_STATE, appMap));
+        const projection = mergeAppMapProjection(EMPTY_APP_MAP_CANVAS_STATE, appMap);
+        options.setCanvasState(options.normalizeProjection?.(projection) ?? projection);
         setLoadedAppMapId(appMapId);
         setLoadState({ status: "ready", appMapId });
         void server.refreshRuns(appMapId);
@@ -68,7 +70,8 @@ export function useAppMapDocumentProjection(options: {
     if (appliedCanonicalRevision === revisionKey) return;
     appliedCanonicalRevision = revisionKey;
     const current = options.canvasState();
-    const value = mergeAppMapProjection(current, appMap);
+    const projection = mergeAppMapProjection(current, appMap);
+    const value = options.normalizeProjection?.(projection) ?? projection;
     if (canvasProjectionUnchanged(value, current)) return;
     options.onCanonicalProjectionChange();
     options.setCanvasState(value);
