@@ -67,6 +67,27 @@ export type ScrollSurveyOptions = {
   initialCapture?: ScrollSurveyCapture;
 };
 
+export function scrollSurveyGesture(
+  platform: "android" | "ios",
+  bounds: { width: number; height: number },
+  direction: "down" | "up",
+) {
+  // Android turns a fast half-screen swipe into a fling; Settings physically
+  // skipped 1857px after the old 1170px gesture, leaving only two overlapping
+  // anchors. A slow quarter-screen drag keeps enough old content visible to
+  // prove the seam. XCTest does not share Android's fling behavior.
+  const lower = platform === "android" ? 0.68 : 0.78;
+  const upper = platform === "android" ? 0.42 : 0.28;
+  const fromY = bounds.height * (direction === "down" ? lower : upper);
+  const toY = bounds.height * (direction === "down" ? upper : lower);
+  return {
+    kind: "swipe" as const,
+    from: { x: bounds.width * 0.5, y: fromY },
+    to: { x: bounds.width * 0.5, y: toY },
+    durationMs: platform === "android" ? 800 : 360,
+  };
+}
+
 type Seam = { shiftY: number; confidence: number };
 
 type Composition = {
@@ -581,26 +602,10 @@ export async function captureScrollableSurveyForTarget(input: {
         return { screenshot, snapshot };
       },
       scrollDown: async () => {
-        await interact(
-          {
-            kind: "swipe",
-            from: { x: bounds.width * 0.5, y: bounds.height * 0.78 },
-            to: { x: bounds.width * 0.5, y: bounds.height * 0.28 },
-            durationMs: 360,
-          },
-          { serial: input.serial },
-        );
+        await interact(scrollSurveyGesture(platform, bounds, "down"), { serial: input.serial });
       },
       scrollUp: async () => {
-        await interact(
-          {
-            kind: "swipe",
-            from: { x: bounds.width * 0.5, y: bounds.height * 0.28 },
-            to: { x: bounds.width * 0.5, y: bounds.height * 0.78 },
-            durationMs: 360,
-          },
-          { serial: input.serial },
-        );
+        await interact(scrollSurveyGesture(platform, bounds, "up"), { serial: input.serial });
       },
       settle,
     },
@@ -651,6 +656,8 @@ export async function captureScrollableSurvey(
   }
   let restored = true;
   let owedMovements = 0;
+  let attemptedScroll = false;
+  let lastPostAttemptCapture: ScrollSurveyCapture | undefined;
   let restorationStarted = false;
   const restoreOnce = async () => {
     if (restorationStarted) return;
@@ -683,6 +690,7 @@ export async function captureScrollableSurvey(
   try {
     for (let index = 0; index < maxScrolls; index += 1) {
       try {
+        attemptedScroll = true;
         await driver.scrollDown();
         // The target may have moved as soon as the driver resolves. From this
         // point every exit owes exactly one inverse movement.
@@ -700,6 +708,7 @@ export async function captureScrollableSurvey(
       let next: Awaited<ReturnType<ScrollSurveyDriver["capture"]>>;
       try {
         next = await driver.capture();
+        lastPostAttemptCapture = next;
       } catch {
         decision = {
           status: "stopped",
@@ -802,9 +811,12 @@ export async function captureScrollableSurvey(
       diagnosticFrames,
     );
   }
-  if (owedMovements > 0) {
+  if (attemptedScroll) {
     try {
-      const proved = await driver.capture();
+      const proved =
+        owedMovements > 0 || !lastPostAttemptCapture
+          ? await driver.capture()
+          : lastPostAttemptCapture;
       if (!startViewportMatches(first, proved)) {
         return result(
           frames,

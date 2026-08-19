@@ -4,6 +4,7 @@ import { PNG } from "pngjs";
 import {
   captureScrollableSurvey,
   composeScrollSurveyFrames,
+  scrollSurveyGesture,
   verticalScrollSeam,
 } from "./scrollable-survey.js";
 import type { SnapshotPayload } from "./workspace-capture.js";
@@ -28,6 +29,22 @@ test("finds a vertical overlap and detects an unchanged terminal viewport", () =
   const seam = verticalScrollSeam(image(0), image(40));
   assert.ok(seam);
   assert.ok(Math.abs(seam!.shiftY - 40) <= 2);
+});
+
+test("uses a reversible overlap-heavy Android survey drag without changing iOS", () => {
+  const bounds = { width: 1080, height: 2340 };
+  const androidDown = scrollSurveyGesture("android", bounds, "down");
+  const androidUp = scrollSurveyGesture("android", bounds, "up");
+  assert.equal(androidDown.durationMs, 800);
+  assert.ok(androidDown.from.y - androidDown.to.y <= bounds.height * 0.27);
+  assert.deepEqual(androidUp.from, androidDown.to);
+  assert.deepEqual(androidUp.to, androidDown.from);
+  assert.equal(androidUp.durationMs, androidDown.durationMs);
+
+  const iosDown = scrollSurveyGesture("ios", bounds, "down");
+  assert.equal(iosDown.from.y, bounds.height * 0.78);
+  assert.equal(iosDown.to.y, bounds.height * 0.28);
+  assert.equal(iosDown.durationMs, 360);
 });
 
 test("treats sticky-header shimmer as an unmoved viewport instead of an unknown seam", () => {
