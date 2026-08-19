@@ -25,6 +25,7 @@ import {
   readAppMap,
   readVisualBaselineFrame,
   readPersistedRun,
+  replayPersistedRunOffline,
   rebuildRunCatalog,
   reconcileCampaignCheckRepair,
   runArtifactFile,
@@ -669,6 +670,14 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     const run = await readPersistedRun(storyMatch.id!);
     assertRunAccess(scope, run);
     json(response, 200, { story: buildRunStory(run) });
+    return true;
+  }
+
+  const offlineReplayMatch = matchPath(pathname, "/runs/:id/replay-offline");
+  if (method === "GET" && offlineReplayMatch) {
+    const run = await readPersistedRun(offlineReplayMatch.id!);
+    assertRunAccess(scope, run);
+    json(response, 200, { report: replayPersistedRunOffline(run) });
     return true;
   }
 

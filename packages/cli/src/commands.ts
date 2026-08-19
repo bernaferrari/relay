@@ -627,6 +627,11 @@ function runResource(command: string, suffix: string, summary: string): CliResou
 
 export const cliResourceDescriptors: readonly CliResourceDescriptor[] = [
   runResource("run get", "", "Get a persisted run and its evidence"),
+  runResource(
+    "run replay-offline",
+    "/replay-offline",
+    "Diagnose a persisted run from frozen evidence without a device",
+  ),
   runResource("run story", "/story", "Get a shareable run story from existing artifacts"),
   {
     resourceId: "run.evidence",

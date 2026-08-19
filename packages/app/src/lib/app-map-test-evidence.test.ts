@@ -16,6 +16,14 @@ const plan: AppMapCompiledTest = {
   appMapRevision: 7,
   test: { id: "checkout", name: "Checkout", kind: "scenario", intentSchemaVersion: 1 },
   rootRecipeId: "app-map:shop:test:checkout:root:r7",
+  performance: {
+    executableOperations: 0,
+    moduleCalls: 0,
+    operationCounts: {},
+    screenshotCount: 0,
+    destinationProofCount: 0,
+  },
+  startup: { mode: "cold" },
   recipes: {},
   stepProvenance: [
     {

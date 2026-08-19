@@ -436,6 +436,14 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
       intentSchemaVersion: 1,
     },
     rootRecipeId,
+    performance: {
+      executableOperations: 1,
+      moduleCalls: 0,
+      operationCounts: { script: 1 },
+      screenshotCount: 0,
+      destinationProofCount: 0,
+    },
+    startup: { mode: "cold" },
     recipes: {
       [rootRecipeId]: {
         id: rootRecipeId,

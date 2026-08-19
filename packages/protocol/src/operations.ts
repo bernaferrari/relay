@@ -483,6 +483,10 @@ type SpecificOperationMap = {
   "job.resume": { input: { jobId: string }; output: { job: OperationRecord } };
   "run.list": { input: { limit?: number; appMapId?: string }; output: { runs: RunSummaryDto[] } };
   "run.get": { input: { runId: string }; output: { run: OperationRecord } };
+  "run.replay.offline": {
+    input: { runId: string };
+    output: { report: OperationRecord };
+  };
   "run.review": {
     input: { runId: string; action: "approve" | "reject"; note?: string };
     output: { run: OperationRecord; review: RunReview };
@@ -2374,6 +2378,10 @@ export const operationDefinitions = [
     output: runsParser,
   }),
   query("run.get", "Get Run", "/runs/:runId", {
+    category: "evidence",
+    input: runIdInputParser,
+  }),
+  query("run.replay.offline", "Replay Run Offline", "/runs/:runId/replay-offline", {
     category: "evidence",
     input: runIdInputParser,
   }),

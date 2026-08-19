@@ -636,6 +636,7 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
     })
     .strict(),
   "run.repair.list": z.object({ limit: z.number().int().min(1).max(500).optional() }).strict(),
+  "run.replay.offline": z.object({ runId: identifier("Persisted run identifier") }).strict(),
   "run.repair.get": z
     .object({ runId: identifier("Source run identifier"), checkId: identifier("Failed check id") })
     .strict(),

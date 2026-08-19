@@ -208,6 +208,7 @@ const observeOperations = [
   "job.get",
   "run.list",
   "run.get",
+  "run.replay.offline",
   "run.evidence.get",
   "job.locale-matrix.analysis",
 ] as const satisfies readonly OperationId[];
@@ -284,6 +285,7 @@ const testOperations = [
   "job.pause",
   "job.resume",
   "run.get",
+  "run.replay.offline",
   "run.evidence.get",
   "run.story.get",
   "app-map.test.from-intent",
@@ -325,6 +327,7 @@ const runOperations = [
   "job.locale-matrix.analysis",
   "run.list",
   "run.get",
+  "run.replay.offline",
   "run.evidence.get",
   "run.story.get",
   "run.repair.list",
@@ -380,6 +383,7 @@ const localeOperations = [
   "job.cancel",
   "run.list",
   "run.get",
+  "run.replay.offline",
 ] as const satisfies readonly OperationId[];
 
 const reviewOperations = [
@@ -407,6 +411,7 @@ const reviewOperations = [
   "job.get",
   "run.list",
   "run.get",
+  "run.replay.offline",
   "run.evidence.get",
   "run.repair.list",
   "run.repair.get",

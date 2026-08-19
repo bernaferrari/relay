@@ -13,6 +13,11 @@ export const runEvidenceCommandDescriptors: readonly CliOperationDescriptor[] = 
     reason: "Exposed through the read-only `relay run get` resource command.",
   },
   {
+    operationId: "run.replay.offline",
+    exclusion: "internal",
+    reason: "Exposed through the read-only `relay run replay-offline` resource command.",
+  },
+  {
     operationId: "run.evidence.get",
     exclusion: "internal",
     reason: "Exposed through the read-only `relay run evidence` resource command.",
