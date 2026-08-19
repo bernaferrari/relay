@@ -56,7 +56,7 @@ export async function captureFullSurfaceEvidence(
 ): Promise<{ pngPath: string; nodes: SnapshotNode[] } | undefined> {
   if (!shouldCaptureFullSurface(title, labels) && labels.length < 10) return undefined;
   try {
-    const survey = await captureScrollableSurveyForTarget({ serial, maxScrolls: 6 });
+    const survey = await captureScrollableSurveyForTarget({ serial, maxScrolls: 12 });
     if (!survey.stitched?.base64 || survey.mergedNodes.length < 2) return undefined;
     const folder = await mkdtemp(join(tmpdir(), "relay-surface-"));
     const pngPath = join(folder, "full.png");

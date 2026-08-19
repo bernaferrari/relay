@@ -218,7 +218,7 @@ export function compileAppMapScenarioTest(
       surfaceId: binding.surfaceId,
       baselineCaptureId: binding.baselineCaptureId,
       reason: binding.reason,
-      maxScrolls: Math.max(1, Math.min(6, baseline.viewports.length + 1)),
+      maxScrolls: Math.max(1, Math.min(12, baseline.viewports.length + 1)),
       ...(forceRecaptureSurfaceScreenIds.has(screenId) ? { forceRecapture: true } : {}),
       baseline: {
         ...(baseline.composite

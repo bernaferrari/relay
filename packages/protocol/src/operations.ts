@@ -897,9 +897,9 @@ const targetScrollSurveyInputParser = objectParser<OperationInput<"target.scroll
       (typeof input.maxScrolls !== "number" ||
         !Number.isInteger(input.maxScrolls) ||
         input.maxScrolls < 1 ||
-        input.maxScrolls > 6)
+        input.maxScrolls > 12)
     ) {
-      fail("scroll survey maxScrolls", "must be an integer between 1 and 6");
+      fail("scroll survey maxScrolls", "must be an integer between 1 and 12");
     }
   },
 );

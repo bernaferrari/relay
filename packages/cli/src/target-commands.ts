@@ -83,7 +83,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       inputHelp: [
         {
           name: "maxScrolls",
-          type: "integer (1-6)",
+          type: "integer (1-12)",
           description: "Maximum downward scrolls; defaults to 4",
         },
       ],

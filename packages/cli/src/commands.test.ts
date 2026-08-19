@@ -199,7 +199,7 @@ test("device survey exposes the canonical scroll-survey operation and bounded in
   assert.ok(descriptor && !("exclusion" in descriptor));
   const help = descriptor.paths.find((candidate) => candidate.command === "device survey");
   assert.equal(help?.inputHelp?.[0]?.name, "maxScrolls");
-  assert.match(help?.inputHelp?.[0]?.type ?? "", /1-6/u);
+  assert.match(help?.inputHelp?.[0]?.type ?? "", /1-12/u);
   assert.match(help?.note ?? "", /exclusive lease/u);
 });
 

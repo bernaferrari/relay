@@ -620,7 +620,7 @@ export async function captureScrollableSurvey(
   driver: ScrollSurveyDriver,
   options: ScrollSurveyOptions = {},
 ): Promise<ScrollSurveyResult> {
-  const maxScrolls = Math.max(1, Math.min(6, options.maxScrolls ?? 4));
+  const maxScrolls = Math.max(1, Math.min(12, options.maxScrolls ?? 4));
   const first = options.initialCapture ?? (await driver.capture());
   const initial: ScrollSurveyFrame = {
     index: 0,

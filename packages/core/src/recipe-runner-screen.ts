@@ -197,7 +197,14 @@ export async function runExpectScreenStep(
     const semanticMatch = (step.observations ?? []).some(
       (observation) => compareScreenIdentity(observed, observation).decision === "match",
     );
-    const resilientMatch = resilientScreenIdentityMatch(observed, step.observations ?? [], ctx.job);
+    const resilientMatch = resilientScreenIdentityMatch(
+      observed,
+      step.observations ?? [],
+      ctx.job,
+      {
+        screenTitle: step.screenTitle,
+      },
+    );
     const handoffShellMatch =
       Boolean(step.expectedApp) &&
       foregroundApplicationBundle(nodes) === step.expectedApp &&

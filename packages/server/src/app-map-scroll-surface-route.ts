@@ -92,9 +92,9 @@ export async function handleAppMapScrollSurfaceRoute(input: {
   }
   if (
     body.maxScrolls !== undefined &&
-    (!Number.isInteger(body.maxScrolls) || body.maxScrolls < 1 || body.maxScrolls > 6)
+    (!Number.isInteger(body.maxScrolls) || body.maxScrolls < 1 || body.maxScrolls > 12)
   ) {
-    throw new HttpError(400, "maxScrolls must be an integer between 1 and 6");
+    throw new HttpError(400, "maxScrolls must be an integer between 1 and 12");
   }
   const current = await readAppMap(input.scope.projectId, appMapId);
   if (!current) throw new HttpError(404, `App Map ${appMapId} not found`);

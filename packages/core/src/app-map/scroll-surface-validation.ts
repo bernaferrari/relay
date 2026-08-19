@@ -92,9 +92,9 @@ export function assertLogicalScrollSurface(
   if (
     !Array.isArray(surface.viewports) ||
     surface.viewports.length === 0 ||
-    surface.viewports.length > 7
+    surface.viewports.length > 13
   ) {
-    appMapFail("invalid-map", `${label}.viewports must contain between 1 and 7 items`);
+    appMapFail("invalid-map", `${label}.viewports must contain between 1 and 13 items`);
   }
   let previousOffset = -1;
   surface.viewports.forEach((viewport, index) => {

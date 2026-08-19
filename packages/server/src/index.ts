@@ -666,9 +666,9 @@ async function handleRequest(
         (typeof body.maxScrolls !== "number" ||
           !Number.isInteger(body.maxScrolls) ||
           body.maxScrolls < 1 ||
-          body.maxScrolls > 6)
+          body.maxScrolls > 12)
       ) {
-        throw new HttpError(400, "maxScrolls must be an integer between 1 and 6");
+        throw new HttpError(400, "maxScrolls must be an integer between 1 and 12");
       }
       await assertTargetControl(scope, serial);
       const survey = await captureScrollableSurveyForTarget({

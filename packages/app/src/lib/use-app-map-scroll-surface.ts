@@ -106,7 +106,7 @@ export function useAppMapScrollSurface(input: {
           targetId: selected.targetProfile.targetId,
         },
         leaseId,
-        maxScrolls: 6,
+        maxScrolls: 12,
       });
       await server.refreshAppMaps();
     } catch (cause) {

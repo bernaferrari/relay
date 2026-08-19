@@ -600,9 +600,9 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
       (typeof input.maxScrolls !== "number" ||
         !Number.isInteger(input.maxScrolls) ||
         input.maxScrolls < 1 ||
-        input.maxScrolls > 6)
+        input.maxScrolls > 12)
     ) {
-      fail("App Map scroll surface capture maxScrolls", "must be an integer between 1 and 6");
+      fail("App Map scroll surface capture maxScrolls", "must be an integer between 1 and 12");
     }
   });
 

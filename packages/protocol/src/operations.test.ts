@@ -415,7 +415,7 @@ test("scroll survey has one strict target-operation contract", () => {
     { serial: "" },
     { serial: "   " },
     { serial: "ipad-1", maxScrolls: 0 },
-    { serial: "ipad-1", maxScrolls: 7 },
+    { serial: "ipad-1", maxScrolls: 13 },
     { serial: "ipad-1", maxScrolls: 1.5 },
     { serial: "ipad-1", maxScrolls: "4" },
   ]) {
@@ -478,7 +478,7 @@ test("durable scroll surfaces target exactly one App Map Screen Variant", () => 
     () => definition.input.parse({ ...input, target: { ...input.target, kind: "browser" } }),
     /Android or iOS device/u,
   );
-  assert.throws(() => definition.input.parse({ ...input, maxScrolls: 7 }), /between 1 and 6/u);
+  assert.throws(() => definition.input.parse({ ...input, maxScrolls: 13 }), /between 1 and 12/u);
 
   const regenerate = operationDefinition("app-map.scroll-surface.regenerate");
   assert.equal(regenerate.lease, "none");

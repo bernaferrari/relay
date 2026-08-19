@@ -276,7 +276,7 @@ export async function materializeLogicalScrollSurfaceImport(input: {
     imported.capturePolicy?.captureMode !== "full-surface" ||
     !Array.isArray(imported.viewports) ||
     imported.viewports.length < 2 ||
-    imported.viewports.length > 7
+    imported.viewports.length > 13
   ) {
     appMapFail("invalid-map", "Logical surface import metadata is invalid");
   }

@@ -72,10 +72,14 @@ function resilientScreenIdentityMatch(
   observed: ReturnType<typeof observeScreenIdentity>,
   observations: NonNullable<Extract<RecipeStep, { kind: "expect-screen" }>["observations"]>,
   job?: TestJob,
-  options: { allowDynamicShell?: boolean } = {},
+  options: { allowDynamicShell?: boolean; screenTitle?: string } = {},
 ): boolean {
   const localized = isLocalizedRecipeJob(job);
   const structureSignature = localeNeutralStructureSignature(observed);
+  const normalizedTitle = options.screenTitle?.trim().toLocaleLowerCase();
+  const observedLabels = new Set(
+    observed.nodes.flatMap((node) => (node.label ? [node.label.trim().toLocaleLowerCase()] : [])),
+  );
   return observations.some((observation) => {
     const comparison = compareScreenIdentity(observed, observation);
     const stableIdentifiers = comparison.signals.find(
@@ -103,8 +107,24 @@ function resilientScreenIdentityMatch(
       expectedIdentifiers.size <= 5 &&
       observedIdentifiers.size === expectedIdentifiers.size &&
       sharedIdentifiers.length === expectedIdentifiers.size;
+    const expectedLabels = new Set(
+      observation.nodes.flatMap((node) =>
+        node.label ? [node.label.trim().toLocaleLowerCase()] : [],
+      ),
+    );
+    // Some Compose lists expose no product-owned identifiers at all. Their
+    // rows are user data, so count and copy legitimately churn between runs.
+    // A reviewed page title plus a second exact descriptive shell label is a
+    // much stronger invariant than the row bag and remains fail-closed for a
+    // child page that merely shares app chrome. One title alone never matches.
+    const stableSemanticShell =
+      Boolean(normalizedTitle && expectedLabels.has(normalizedTitle)) &&
+      observedLabels.has(normalizedTitle!) &&
+      [...expectedLabels].some(
+        (label) => label !== normalizedTitle && label.length >= 24 && observedLabels.has(label),
+      );
     return (
-      (options.allowDynamicShell !== false && stableApplicationShell) ||
+      (options.allowDynamicShell !== false && (stableApplicationShell || stableSemanticShell)) ||
       (localized && (stableIdentifiers ?? 0) >= 0.98 && (structure ?? 0) >= 0.95) ||
       (localized &&
         structureSignature !== undefined &&

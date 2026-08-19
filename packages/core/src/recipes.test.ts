@@ -348,8 +348,8 @@ describe("validateRecipeSteps", () => {
     assert.equal(describeRecipeStep(step), "Capture full surface · Settings");
     assert.deepEqual(glyphsForStep(step), ["swipe", "shot", "store"]);
     assert.throws(
-      () => validateRecipeSteps([{ ...step, maxScrolls: 7 }]),
-      /maxScrolls must be an integer from 1 to 6/,
+      () => validateRecipeSteps([{ ...step, maxScrolls: 13 }]),
+      /maxScrolls must be an integer from 1 to 12/,
     );
     assert.throws(
       () => validateRecipeSteps([{ ...step, forceRecapture: "yes" }]),

@@ -3273,6 +3273,85 @@ describe("runRecipeStep expect-screen", () => {
     assert.deepEqual(lines, ["screen: reached Menu"]);
   });
 
+  it("accepts a Compose user-data list from its reviewed semantic shell", async () => {
+    const approved = observeScreenIdentity([
+      { role: "text", label: "Shared Conversations", depth: 11 },
+      {
+        role: "text",
+        label: "Shared links can be viewed by anyone with the link.",
+        depth: 10,
+      },
+      ...Array.from({ length: 12 }, (_, index) => ({
+        role: "text",
+        label: `Old shared conversation ${index}`,
+        depth: 11,
+      })),
+    ]);
+    const current = [
+      { role: "text", label: "Shared Conversations", depth: 11 },
+      {
+        role: "text",
+        label: "Shared links can be viewed by anyone with the link.",
+        depth: 10,
+      },
+      ...Array.from({ length: 7 }, (_, index) => ({
+        role: "text",
+        label: `Entirely different shared conversation ${index}`,
+        depth: 11,
+      })),
+    ];
+    const lines: string[] = [];
+
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes: current }) }),
+      {
+        kind: "expect-screen",
+        screenId: "shared",
+        screenTitle: "Shared Conversations",
+        fingerprint: "a".repeat(64),
+        observations: [approved],
+      },
+      { log: (line) => lines.push(line) },
+    );
+
+    assert.deepEqual(lines, ["screen: reached Shared Conversations"]);
+  });
+
+  it("does not accept a dynamic Compose list from its title alone", async () => {
+    const approved = observeScreenIdentity([
+      { role: "text", label: "Shared Conversations", depth: 11 },
+      {
+        role: "text",
+        label: "Shared links can be viewed by anyone with the link.",
+        depth: 10,
+      },
+    ]);
+
+    await assert.rejects(
+      runRecipeStep(
+        stubDevice({
+          snapshot: () =>
+            Promise.resolve({
+              nodes: [
+                { role: "text", label: "Shared Conversations", depth: 11 },
+                { role: "text", label: "A different child-page explanation.", depth: 10 },
+              ],
+            }),
+        }),
+        {
+          kind: "expect-screen",
+          screenId: "shared",
+          screenTitle: "Shared Conversations",
+          fingerprint: "a".repeat(64),
+          observations: [approved],
+          timeoutMs: 1,
+        },
+        { ...noLog, observeVisualFingerprint: () => Promise.resolve("c".repeat(64)) },
+      ),
+      /not “Shared Conversations”/,
+    );
+  });
+
   it("accepts a reflowed handoff shell only under its explicit foreground package", async () => {
     const shell = [
       { role: "view", identifier: "settings.action_bar", depth: 9, bundleId: "settings.app" },

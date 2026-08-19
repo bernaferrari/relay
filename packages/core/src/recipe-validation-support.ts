@@ -392,9 +392,9 @@ function parseCaptureSurfaceStep(
     (!isNumber(raw.maxScrolls) ||
       !Number.isInteger(raw.maxScrolls) ||
       raw.maxScrolls < 1 ||
-      raw.maxScrolls > 6)
+      raw.maxScrolls > 12)
   ) {
-    throw stepErr(index, "capture-surface.maxScrolls must be an integer from 1 to 6");
+    throw stepErr(index, "capture-surface.maxScrolls must be an integer from 1 to 12");
   }
   if (raw.forceRecapture !== undefined && typeof raw.forceRecapture !== "boolean") {
     throw stepErr(index, "capture-surface.forceRecapture must be a boolean");

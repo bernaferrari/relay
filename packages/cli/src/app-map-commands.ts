@@ -232,7 +232,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
         {
           name: "maxScrolls",
-          type: "integer (1-6)",
+          type: "integer (1-12)",
           description: "Maximum downward scrolls; defaults to 4",
         },
       ],
