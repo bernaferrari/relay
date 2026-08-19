@@ -123,6 +123,9 @@ export function patchScreen(
   if (input.patch.identity === null) delete screen.identity;
   else if (input.patch.identity !== undefined)
     screen.identity = structuredClone(input.patch.identity);
+  if (input.patch.evidenceSurface === null) delete screen.evidenceSurface;
+  else if (input.patch.evidenceSurface !== undefined)
+    screen.evidenceSurface = input.patch.evidenceSurface;
   if (input.patch.position === null) delete screen.position;
   else if (input.patch.position !== undefined)
     screen.position = structuredClone(input.patch.position);

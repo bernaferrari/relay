@@ -1096,7 +1096,12 @@ test("updates screen fields and normalized variants, including explicit field re
     input,
     "home",
     {
-      patch: { title: "Dashboard", description: "Primary state", identity: null },
+      patch: {
+        title: "Dashboard",
+        description: "Primary state",
+        identity: null,
+        evidenceSurface: "preview",
+      },
       removeVariantIds: ["variant-home"],
       upsertVariants: [tablet],
     },
@@ -1109,6 +1114,15 @@ test("updates screen fields and normalized variants, including explicit field re
   assert.equal(next.screens.home?.title, "Dashboard");
   assert.equal(next.screens.home?.description, "Primary state");
   assert.equal(next.screens.home?.identity, undefined);
+  assert.equal(next.screens.home?.evidenceSurface, "preview");
+
+  const cleared = updateAppMapScreen(
+    next,
+    "home",
+    { patch: { evidenceSurface: null } },
+    context(next, "event-clear-evidence-surface"),
+  );
+  assert.equal(cleared.screens.home?.evidenceSurface, undefined);
 });
 
 test("updating a variant preserves durable preview, baseline, and prior evidence", () => {
