@@ -1,8 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test } from 'vitest';
+import { assertThrowsAppError } from '../../__tests__/test-utils/index.ts';
 import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 import { appendAppLogMarker, clearAppLogFiles, getAppLogPathMetadata } from '../app-log.ts';
+
+// Pinned as a literal on purpose — see the note in src/utils/__tests__/verified-file.test.ts.
+const NOT_REGULAR_FILE_HINT =
+  'agent-device only reads and writes regular files at this path. Remove the symbolic link or special file there and retry.';
 
 test('marker and clear operations keep app-log file ownership in the daemon', () => {
   const root = mkdtempForTestSync('agent-device-app-log-files-');
@@ -37,11 +42,14 @@ test.each(['metadata', 'mark', 'clear'] as const)(
     // whose identity check reports the path as simply not a regular file.
     const expectedMessage =
       operation === 'mark' ? /must not be a symbolic link/ : /must be a regular file/;
-    expect(() => {
-      if (operation === 'metadata') getAppLogPathMetadata(outPath);
-      else if (operation === 'mark') appendAppLogMarker(outPath, 'checkpoint');
-      else clearAppLogFiles(outPath);
-    }).toThrow(expectedMessage);
+    assertThrowsAppError(
+      () => {
+        if (operation === 'metadata') getAppLogPathMetadata(outPath);
+        else if (operation === 'mark') appendAppLogMarker(outPath, 'checkpoint');
+        else clearAppLogFiles(outPath);
+      },
+      { code: 'COMMAND_FAILED', message: expectedMessage, hint: NOT_REGULAR_FILE_HINT },
+    );
     expect(fs.readFileSync(outsidePath, 'utf8')).toBe('outside');
     expect(fs.lstatSync(outPath).isSymbolicLink()).toBe(true);
   },

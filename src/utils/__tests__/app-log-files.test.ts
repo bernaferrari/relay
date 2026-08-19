@@ -1,8 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test } from 'vitest';
+import { assertThrowsAppError } from '../../__tests__/test-utils/index.ts';
 import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 import { ensureAppLogPath, rotateAppLogIfNeeded } from '../app-log-files.ts';
+
+// Pinned as a literal on purpose — see the note in verified-file.test.ts.
+const NOT_REGULAR_FILE_HINT =
+  'agent-device only reads and writes regular files at this path. Remove the symbolic link or special file there and retry.';
 
 test('rotateAppLogIfNeeded rotates files and discards the oldest generation', () => {
   const root = mkdtempForTestSync('agent-device-app-log-rotate-');
@@ -39,9 +44,11 @@ test('rotation rejects a final app.log symlink without touching its target', () 
   fs.writeFileSync(outsidePath, 'outside');
   fs.symlinkSync(outsidePath, outPath);
 
-  expect(() => rotateAppLogIfNeeded(outPath, { maxBytes: 1, maxRotatedFiles: 1 })).toThrow(
-    'symbolic link',
-  );
+  assertThrowsAppError(() => rotateAppLogIfNeeded(outPath, { maxBytes: 1, maxRotatedFiles: 1 }), {
+    code: 'COMMAND_FAILED',
+    message: /must not be a symbolic link/,
+    hint: NOT_REGULAR_FILE_HINT,
+  });
   expect(fs.readFileSync(outsidePath, 'utf8')).toBe('outside');
   expect(fs.lstatSync(outPath).isSymbolicLink()).toBe(true);
 });
