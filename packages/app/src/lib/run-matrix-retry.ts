@@ -7,7 +7,7 @@ type RetryActions = {
     combineId: string;
     selected: Record<string, string[]>;
     title: string;
-  }) => Promise<string | null>;
+  }) => Promise<string | { jobId: string | null; campaignId?: string } | null>;
   retryFrozen: (jobId: string) => Promise<void>;
 };
 

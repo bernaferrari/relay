@@ -41,6 +41,10 @@ import {
   type CorpusOperationId,
 } from "./corpus-operation-definitions.js";
 import { createDiscoveryOperationDefinitions } from "./discovery-operation-definitions.js";
+import {
+  combineOperationDefinitions,
+  type CombineOperationId,
+} from "./combine-operation-definitions.js";
 import { createOperationBuilders } from "./operation-builders.js";
 import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import {
@@ -710,9 +714,7 @@ type GenericOperationId =
   | "job.locale-matrix.export"
   | "job.locale-matrix.analysis"
   | "job.locale-matrix.infer"
-  | "job.combine.start"
-  | "job.combine.export"
-  | "job.combine.infer"
+  | CombineOperationId
   | "job.retry"
   | "run.replay"
   | "job.active.cancel"
@@ -2317,23 +2319,7 @@ export const operationDefinitions = [
     "/jobs/locale-matrix/infer",
     { category: "execution" },
   ),
-  command("job.combine.start", "Run state combinations × tests", "POST", "/jobs/combine", {
-    category: "execution",
-    progress: true,
-    cancellable: true,
-    lease: "exclusive",
-    targetCapabilities: ["tap", "snapshot", "screenshot", "launch"],
-  }),
-  query("job.combine.export", "Export a Combine pack", "/jobs/combine/:batchId/export", {
-    category: "execution",
-  }),
-  command(
-    "job.combine.infer",
-    "Infer variable rows from taught live-screen rows",
-    "POST",
-    "/jobs/combine/infer",
-    { category: "execution" },
-  ),
+  ...combineOperationDefinitions,
   command(
     "job.compatibility-matrix.start",
     "Run compatibility matrix",

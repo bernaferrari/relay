@@ -105,10 +105,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
     const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
     const [recipesLoaded, setRecipesLoaded] = createSignal(false);
-    // Reopen the last App Map like a document editor. Hardware selection and
-    // the live-device panel remain separate state, so resuming the canvas does
-    // not imply that a recording has started.
-    // App Maps and recipes are independent selections — never cross-assign ids.
+    // Reopen the last App Map without implying hardware control or recording.
+    // App Maps and recipes remain independent selections.
     const [selectedAppMapId, setSelectedAppMapIdState] = createSignal<string | null>(null);
     function setSelectedAppMapId(id: string | null): void {
       setSelectedAppMapIdState(id);
@@ -920,6 +918,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       inferLocaleOptionsFromDevice,
       inferVariableFromDevice,
       runPathAcrossVariables,
+      combineCampaign,
       saveVariable,
       removeVariable,
       saveTest,
@@ -1102,6 +1101,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       inferLocaleOptionsFromDevice,
       inferVariableFromDevice,
       runPathAcrossVariables,
+      combineCampaign,
       saveVariable,
       removeVariable,
       saveTest,

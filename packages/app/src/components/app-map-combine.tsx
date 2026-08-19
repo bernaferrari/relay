@@ -1,9 +1,10 @@
-import { Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type {
   AppMapCapturePolicy,
   AppMapCombinePreflight,
   AppMapVariable,
   CaseExpansionStrategy,
+  CombineCampaign,
 } from "@relay/protocol";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
@@ -32,8 +33,11 @@ import {
 import { AppMapStateSetEditor } from "./app-map-state-set-editor";
 import { Icon } from "./icon";
 import { useAppMapCombineSectionFocus } from "../lib/use-app-map-combine-section-focus";
+import { AppMapCombineCampaign } from "./app-map-combine-campaign";
 
 const [MAX_DEVICE_WORLDS, MAX_PREVIEW_WORLDS] = [250, 40];
+const campaignStorageKey = (appMapId: string, combineId: string) =>
+  `relay:combine-campaign:${appMapId}:${combineId}`;
 export function AppMapCombine(props: {
   onClose: () => void;
   onOpenDevice: () => void;
@@ -52,6 +56,10 @@ export function AppMapCombine(props: {
   const [busy, setBusy] = createSignal(false);
   const [savingOnly, setSavingOnly] = createSignal(false);
   const [preflight, setPreflight] = createSignal<AppMapCombinePreflight>();
+  const [campaign, setCampaign] = createSignal<CombineCampaign>();
+  const [campaignId, setCampaignId] = createSignal<string>();
+  const [pilotJobId, setPilotJobId] = createSignal<string>();
+  const [campaignReviewed, setCampaignReviewed] = createSignal(false);
   let initializedFor = "";
 
   const map = createMemo(() => server.selectedAppMap());
@@ -73,6 +81,30 @@ export function AppMapCombine(props: {
   const selectedTests = createMemo(() => {
     const chosen = new Set(selectedTestKeys());
     return candidates().filter((candidate) => chosen.has(candidateKey(candidate)));
+  });
+  createEffect(() => {
+    const id = campaignId();
+    if (!id) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      try {
+        const next = await server.combineCampaign.get(id);
+        if (disposed) return;
+        setCampaign(next);
+        setPilotJobId(next.cases.find((item) => item.phase === "pilot")?.jobId);
+        if (next.status === "pilot-running" || next.status === "running") {
+          timer = setTimeout(() => void refresh(), 1_000);
+        }
+      } catch {
+        // The selected campaign remains visible; explicit actions surface errors.
+      }
+    };
+    void refresh();
+    onCleanup(() => {
+      disposed = true;
+      if (timer) clearTimeout(timer);
+    });
   });
   const variableBeingEdited = createMemo(() => {
     const id = editingVariableId();
@@ -185,6 +217,13 @@ export function AppMapCombine(props: {
       ),
     );
     setStrategy(existing?.strategy ?? "cartesian");
+    if (existing && typeof localStorage !== "undefined") {
+      setCampaignId(localStorage.getItem(campaignStorageKey(current.id, existing.id)) || undefined);
+    } else {
+      setCampaignId();
+      setCampaign();
+      setPilotJobId();
+    }
   }
 
   createEffect(initialize);
@@ -430,14 +469,29 @@ export function AppMapCombine(props: {
           toast(checked.blockers[0]?.message ?? "This combine is not ready", "warning");
           return;
         }
-        await server.runPathAcrossVariables({
+        const started = await server.runPathAcrossVariables({
           appMapId: currentMap.id,
           combineId: persisted.id,
           variableIds: persisted.variableIds,
           selected: persisted.selected,
           strategy: strategy(),
           title: headline(),
+          executionMode: projection().cellCount > 1 ? "pilot" : "all",
         });
+        if (started?.campaignId) {
+          setCampaignId(started.campaignId);
+          if (typeof localStorage !== "undefined") {
+            localStorage.setItem(
+              campaignStorageKey(currentMap.id, persisted.id),
+              started.campaignId,
+            );
+          }
+          setPilotJobId(started.jobId ?? undefined);
+          setCampaignReviewed(false);
+          setCampaign(await server.combineCampaign.get(started.campaignId));
+          window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
+          return;
+        }
       }
       props.onClose();
       window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
@@ -527,6 +581,51 @@ export function AppMapCombine(props: {
             <Show when={preflight()}>
               {(value) => <AppMapCombinePreflightSummary preflight={value()} />}
             </Show>
+            <Show when={campaign()}>
+              {(value) => (
+                <AppMapCombineCampaign
+                  campaign={value()}
+                  reviewed={campaignReviewed()}
+                  busy={busy()}
+                  onReviewed={setCampaignReviewed}
+                  onOpenPilot={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("relay:open-run-history", {
+                        detail: { jobId: pilotJobId() },
+                      }),
+                    )
+                  }
+                  onResume={() => {
+                    const id = campaignId();
+                    if (!id || busy()) return;
+                    setBusy(true);
+                    void server.combineCampaign
+                      .resume(id, campaignReviewed())
+                      .then((next) => {
+                        setCampaign(next);
+                        toast("Running untouched campaign cases", "success");
+                        window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
+                      })
+                      .catch((error) =>
+                        toast(humanError(error, "Could not resume campaign"), "error"),
+                      )
+                      .finally(() => setBusy(false));
+                  }}
+                  onCancel={() => {
+                    const id = campaignId();
+                    if (!id || busy()) return;
+                    setBusy(true);
+                    void server.combineCampaign
+                      .cancel(id)
+                      .then(setCampaign)
+                      .catch((error) =>
+                        toast(humanError(error, "Could not stop campaign"), "error"),
+                      )
+                      .finally(() => setBusy(false));
+                  }}
+                />
+              )}
+            </Show>
           </div>
         </Show>
       </div>
@@ -544,6 +643,7 @@ export function AppMapCombine(props: {
           onDelete={deleteCombine}
           onSave={() => void saveCombine()}
           onRun={() => void runCombine()}
+          pilot={projection().cellCount > 1}
         />
       </Show>
     </section>

@@ -494,6 +494,7 @@ export function AppMapCombineFooter(props: {
   onDelete: () => void;
   onSave: () => void;
   onRun: () => void;
+  pilot?: boolean;
 }) {
   return (
     <footer class="flex items-center justify-between gap-3 border-t border-[var(--border-weak-base)] px-4 py-3">
@@ -533,9 +534,11 @@ export function AppMapCombineFooter(props: {
           <Icon name="play" size={12} />
           {props.busy && !props.savingOnly
             ? "Starting…"
-            : props.cellCount
-              ? `Run ${props.cellCount} ${props.cellCount === 1 ? "check" : "checks"}`
-              : "Run Combine"}
+            : props.pilot
+              ? "Run pilot"
+              : props.cellCount
+                ? `Run ${props.cellCount} ${props.cellCount === 1 ? "check" : "checks"}`
+                : "Run Combine"}
         </Button>
       </div>
     </footer>

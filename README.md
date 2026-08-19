@@ -97,7 +97,8 @@ The manual workflow does not require an agent:
 3. Teach Relay how to enter the language list, choose example rows, and return to the test start.
    Android app locales can be discovered dynamically when the app exposes them.
 4. Select the values, tests, and screenshot policy.
-5. Inspect the exact expansion. Run one cell to prove the setup, then run the whole Combine.
+5. Inspect the exact expansion. **Run pilot** proves one case while every other case stays untouched.
+   If it passes, resume the same campaign; if it drifts, repair or review that exact check first.
 6. Review Results by logical screen, with Variable values grouped together.
 
 Treat long surfaces selectively. Opt stable, product-owned pages into full-surface capture when the
@@ -108,10 +109,11 @@ A language row
 that opens Android or iOS Settings is a reversible app handoff: verify the expected system package,
 capture that destination once, and return. It is not a list Relay should scroll or traverse.
 
-For a 40-locale set, keep the improvement loop small: compile once, pilot one representative
-locale, run the selected locale matrix, inspect failed cells by authored step, repair the Test or
-Connection once, then rerun only the affected locale values. Passing evidence remains useful unless
-the edit invalidates it.
+For a 40-locale set, keep the improvement loop small: compile once, pilot one representative locale,
+inspect failed checks by authored step, repair the Test or Connection once, then resume only untouched
+cases. The durable campaign retains its original evidence and revision lineage. If Variable rows move
+or disappear after the pilot, resume fails closed instead of running a different locale under an old
+case index. Passing evidence remains useful unless the edit invalidates it.
 
 The expansion strategy is explicit:
 

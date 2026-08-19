@@ -42,9 +42,10 @@ collection has always been `variables`, and the UI and CLI now say the same word
 extraction, manual checkpoint, module, decision, loop, and constrained-script steps bind to reviewed
 App Map entities or remain explicitly unresolved. `scenario` is the only Test contract. Connections
 and Flows may satisfy navigation bindings, but neither is an alternate Test document or conversion
-source. **Combine** is every selected Variable value × those Tests (one
-visible grid, one job), matching the `combines` collection it is stored in. Case stacks
-remain typed **test data** expansion (emails, plans), not modes.
+source. **Combine** is every selected Variable value × those Tests, matching the `combines`
+collection it is stored in. Execution is a durable campaign: one pilot case, untouched pending cases,
+then an explicit reviewed resume that recompiles current App Map truth without discarding lineage.
+Case stacks remain typed **test data** expansion (emails, plans), not modes.
 
 **Recipes are compiled executable IR**, not a second authoring surface. A recipe is the
 target-neutral, step-oriented contract the runner executes: reusable modules, YAML import/export,

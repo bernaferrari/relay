@@ -3,6 +3,7 @@ import type {
   AppMapCombinePreflight,
   AppMapTest,
   AppMapScenarioTestEdit,
+  CombineCampaign,
   LocaleRunAnalysisReport,
   LocaleRunPackManifest,
   MatrixExpansion,
@@ -281,6 +282,7 @@ export async function enqueueOptionMatrix(
     strategy?: "zip" | "cartesian" | "pairwise";
     title?: string;
     projectId: string;
+    executionMode?: "all" | "pilot";
   },
 ): Promise<{
   batch: {
@@ -293,6 +295,7 @@ export async function enqueueOptionMatrix(
   };
   jobs: JobInfo[];
   matrix: { id: string };
+  campaign?: CombineCampaign;
 }> {
   const target =
     input.targetKind === "browser"
@@ -312,9 +315,42 @@ export async function enqueueOptionMatrix(
       strategy: input.strategy,
       title: input.title,
       projectId: input.projectId,
+      executionMode: input.executionMode,
       ...target,
     }),
   });
+}
+
+export async function getCombineCampaignRemote(
+  request: ServerRequest,
+  batchId: string,
+): Promise<CombineCampaign> {
+  const result = await request<{ campaign: CombineCampaign }>(
+    `/jobs/combine/${encodeURIComponent(batchId)}/campaign`,
+  );
+  return result.campaign;
+}
+
+export async function resumeCombineCampaignRemote(
+  request: ServerRequest,
+  batchId: string,
+  reviewed = false,
+): Promise<{ campaign: CombineCampaign; jobs: JobInfo[] }> {
+  return request(`/jobs/combine/${encodeURIComponent(batchId)}/resume`, {
+    method: "POST",
+    body: JSON.stringify({ reviewed }),
+  });
+}
+
+export async function cancelCombineCampaignRemote(
+  request: ServerRequest,
+  batchId: string,
+): Promise<CombineCampaign> {
+  const result = await request<{ campaign: CombineCampaign }>(
+    `/jobs/combine/${encodeURIComponent(batchId)}/cancel`,
+    { method: "POST", body: "{}" },
+  );
+  return result.campaign;
 }
 
 export async function saveTestRemote(

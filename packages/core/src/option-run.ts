@@ -662,6 +662,16 @@ export async function startOptionRecipeRun(input: {
   projectId?: string;
   ownerId?: string;
   seed?: number;
+  /** Reuse one durable campaign identity when scheduling later untouched cases. */
+  batchId?: string;
+  /** Schedule only these matrix indexes. Omitted means every case. */
+  caseIndexes?: number[];
+  /**
+   * Fail closed if a resumed case no longer resolves to the values reviewed
+   * when the campaign was created. This prevents option reordering from
+   * silently running the wrong locale under an old case index.
+   */
+  expectedCaseValues?: Record<number, Record<string, string>>;
 }): Promise<{
   id: string;
   recipeId: string;
@@ -681,7 +691,7 @@ export async function startOptionRecipeRun(input: {
   const body = input.compiledBody ?? (recipeId ? await readRecipe(recipeId) : undefined);
   if (!body) throw new Error("compiled path or recipe is required");
 
-  const batchId = randomUUID();
+  const batchId = input.batchId?.trim() || randomUUID();
   const request = { ...input.request, ...(input.map ? { map: input.map } : {}) };
   for (const set of request.sets) {
     assertOptionSandwichReady(set, request.map, undefined, {
@@ -712,48 +722,61 @@ export async function startOptionRecipeRun(input: {
   const title = input.title?.trim() || `${body.title} · across`;
   const safeMatrix = redactRunMatrix(matrix, []);
 
-  const jobs = matrix.cases.map((item) => {
-    const world = item.name || `world-${item.index + 1}`;
-    const enqueue: EnqueueJobInput = {
-      recipe: root.id,
-      title: `${title} · ${world}`,
-      serial: input.targetKind === "browser" ? undefined : targetId,
-      platform: input.platform,
-      targetKind: input.targetKind ?? "device",
-      browserTargetId: input.browserTargetId,
-      targetProfile: input.targetProfile,
-      variables: item.values,
-      recipeSnapshot: root,
-      recipeGraph,
-      batchId,
-      caseIndex: item.index,
-      caseCount: matrix.cases.length,
-      projectId,
-      ownerId,
-      artifacts: [
-        {
-          kind: "frozen-inputs",
-          capturedAt: matrix.createdAt,
-          data: {
-            matrixId: matrix.id,
-            ...(input.map?.id ? { appMapId: input.map.id } : {}),
-            ...(request.combineId?.trim() ? { combineId: request.combineId.trim() } : {}),
-            optionRunBatchId: batchId,
-            seed: matrix.seed,
-            caseIndex: item.index,
-            caseCount: matrix.cases.length,
-            world,
-            values: safeMatrix.cases[item.index]?.values ?? item.values,
-            kind: "combine",
-            ...(expectedScreenshotsPerWorld !== undefined
-              ? { expectedScreenshots: expectedScreenshotsPerWorld }
-              : {}),
+  const requestedIndexes = input.caseIndexes
+    ? new Set(input.caseIndexes.map((index) => Math.floor(index)))
+    : undefined;
+  if (requestedIndexes) {
+    for (const index of requestedIndexes) {
+      if (index < 0 || index >= matrix.cases.length) {
+        throw new Error(`Combine case index ${index} is out of range`);
+      }
+    }
+  }
+  assertRequestedCaseValues(matrix, requestedIndexes, input.expectedCaseValues);
+  const jobs = matrix.cases
+    .filter((item) => !requestedIndexes || requestedIndexes.has(item.index))
+    .map((item) => {
+      const world = item.name || `world-${item.index + 1}`;
+      const enqueue: EnqueueJobInput = {
+        recipe: root.id,
+        title: `${title} · ${world}`,
+        serial: input.targetKind === "browser" ? undefined : targetId,
+        platform: input.platform,
+        targetKind: input.targetKind ?? "device",
+        browserTargetId: input.browserTargetId,
+        targetProfile: input.targetProfile,
+        variables: item.values,
+        recipeSnapshot: root,
+        recipeGraph,
+        batchId,
+        caseIndex: item.index,
+        caseCount: matrix.cases.length,
+        projectId,
+        ownerId,
+        artifacts: [
+          {
+            kind: "frozen-inputs",
+            capturedAt: matrix.createdAt,
+            data: {
+              matrixId: matrix.id,
+              ...(input.map?.id ? { appMapId: input.map.id } : {}),
+              ...(request.combineId?.trim() ? { combineId: request.combineId.trim() } : {}),
+              optionRunBatchId: batchId,
+              seed: matrix.seed,
+              caseIndex: item.index,
+              caseCount: matrix.cases.length,
+              world,
+              values: safeMatrix.cases[item.index]?.values ?? item.values,
+              kind: "combine",
+              ...(expectedScreenshotsPerWorld !== undefined
+                ? { expectedScreenshots: expectedScreenshotsPerWorld }
+                : {}),
+            },
           },
-        },
-      ],
-    };
-    return enqueueJob(enqueue);
-  });
+        ],
+      };
+      return enqueueJob(enqueue);
+    });
 
   return {
     id: batchId,
@@ -772,6 +795,25 @@ export async function startOptionRecipeRun(input: {
         }
       : {}),
   };
+}
+
+export function assertRequestedCaseValues(
+  matrix: PreparedRunMatrix,
+  requestedIndexes: ReadonlySet<number> | undefined,
+  expectedByIndex: Record<number, Record<string, string>> | undefined,
+): void {
+  if (!expectedByIndex) return;
+  for (const [rawIndex, expectedValues] of Object.entries(expectedByIndex)) {
+    const index = Number(rawIndex);
+    if (!requestedIndexes?.has(index)) continue;
+    const current = matrix.cases[index];
+    if (!current) throw new Error(`Combine case index ${index} is out of range`);
+    for (const [setId, expectedValue] of Object.entries(expectedValues)) {
+      if (current.values[setId] !== expectedValue) {
+        throw new Error(`Combine case ${index + 1} changed since the pilot; start a new campaign`);
+      }
+    }
+  }
 }
 
 export function variableFromLocaleScope(input: {

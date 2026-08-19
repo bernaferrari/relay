@@ -360,12 +360,47 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           type: "zip | cartesian | pairwise",
           description: "Value coverage strategy",
         },
+        {
+          name: "executionMode",
+          type: "pilot | all",
+          description:
+            "Pilot runs one representative case and persists the rest for reviewed resume",
+        },
       ],
       behavior: "job-start-watch",
     }),
     path("run-matrix run", ["appMapId", "combineId"], undefined, {
       summary: "Alias of combine run",
       behavior: "job-start-watch",
+    }),
+  ),
+  mapped(
+    "job.combine.campaign.get",
+    path("combine campaign get", ["batchId"], undefined, {
+      summary: "Inspect pilot, pending cases, problems, and resume state",
+      argumentHelp: [{ name: "batchId", type: "string", description: "Combine campaign ID" }],
+    }),
+  ),
+  mapped(
+    "job.combine.campaign.resume",
+    path("combine campaign resume", ["batchId"], undefined, {
+      summary: "Resume only untouched cases from current App Map truth",
+      argumentHelp: [{ name: "batchId", type: "string", description: "Combine campaign ID" }],
+      inputHelp: [
+        {
+          name: "reviewed",
+          type: "boolean",
+          description: "Required after a pilot problem has been reviewed or repaired",
+        },
+      ],
+      behavior: "job-start-watch",
+    }),
+  ),
+  mapped(
+    "job.combine.campaign.cancel",
+    path("combine campaign cancel", ["batchId"], undefined, {
+      summary: "Cancel active work and leave untouched cases unscheduled",
+      argumentHelp: [{ name: "batchId", type: "string", description: "Combine campaign ID" }],
     }),
   ),
   mapped(

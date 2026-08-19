@@ -182,6 +182,9 @@ test("every profile advertises only prompts whose required tools it exposes", as
     "lease.list",
     "lease.create",
     "job.combine.start",
+    "job.combine.campaign.get",
+    "job.combine.campaign.resume",
+    "job.combine.campaign.cancel",
     "job.list",
     "job.get",
     "job.retry",
@@ -451,7 +454,8 @@ test("matrix prompt keeps authoring, preflight, execution, retry, and export on 
     assert.match(text, /Variables and graph-native scenario Tests/);
     assert.match(text, /relay_app_map_combine_preflight/);
     assert.match(text, /retry only problem cells/i);
-    assert.match(text, /Pilot one representative cell first/);
+    assert.match(text, /executionMode pilot/);
+    assert.match(text, /resume untouched locales/);
     assert.match(text, /App Language destinations that open OS Settings/);
     assert.match(text, /portable screenshot report/);
     assert.match(text, /absent from the canvas/);

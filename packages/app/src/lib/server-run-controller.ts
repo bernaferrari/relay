@@ -22,6 +22,9 @@ import {
   saveCombineRemote,
   preflightCombineRemote,
   removeCombineRemote,
+  getCombineCampaignRemote,
+  resumeCombineCampaignRemote,
+  cancelCombineCampaignRemote,
   buildLocaleMatrixInput,
   enqueueMatrix,
   enqueueRecipe,
@@ -261,7 +264,8 @@ export function createServerRunController(deps: RunControllerDependencies) {
     selected?: Record<string, string[]>;
     strategy?: "zip" | "cartesian" | "pairwise";
     title?: string;
-  }): Promise<string | null> {
+    executionMode?: "all" | "pilot";
+  }): Promise<{ jobId: string | null; campaignId?: string } | null> {
     if (deps.health() !== "online") {
       toast("Relay isn’t connected — can’t run yet", "warning");
       return null;
@@ -289,6 +293,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
         strategy: input.strategy,
         title: input.title,
         projectId: deps.projectId(),
+        executionMode: input.executionMode,
       });
       for (const job of data.jobs.toReversed()) deps.rememberJob(job);
       if (data.jobs[0]) {
@@ -297,13 +302,18 @@ export function createServerRunController(deps: RunControllerDependencies) {
       }
       const worlds = data.batch.worlds.length;
       toast(
-        worlds <= 1
-          ? `Running ${data.batch.title}`
-          : `Running ${data.batch.title} · ${worlds} runs`,
+        data.campaign
+          ? `Pilot started · ${worlds - 1} untouched ${worlds - 1 === 1 ? "case" : "cases"} held`
+          : worlds <= 1
+            ? `Running ${data.batch.title}`
+            : `Running ${data.batch.title} · ${worlds} runs`,
         "success",
       );
       void deps.refreshJobs();
-      return data.jobs[0]?.id ?? null;
+      return {
+        jobId: data.jobs[0]?.id ?? null,
+        ...(data.campaign ? { campaignId: data.campaign.id } : {}),
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const readable = humanError(error, "Could not run this path across your Variables");
@@ -340,6 +350,24 @@ export function createServerRunController(deps: RunControllerDependencies) {
 
   async function removeCombine(input: Parameters<typeof removeCombineRemote>[1]) {
     return removeCombineRemote(deps.request, input);
+  }
+
+  async function getCombineCampaign(batchId: string) {
+    return getCombineCampaignRemote(deps.request, batchId);
+  }
+
+  async function resumeCombineCampaign(batchId: string, reviewed = false) {
+    const result = await resumeCombineCampaignRemote(deps.request, batchId, reviewed);
+    for (const job of result.jobs.toReversed()) deps.rememberJob(job);
+    if (result.jobs[0]) deps.setSelectedJobId(result.jobs[0].id);
+    void deps.refreshJobs();
+    return result.campaign;
+  }
+
+  async function cancelCombineCampaign(batchId: string) {
+    const campaign = await cancelCombineCampaignRemote(deps.request, batchId);
+    void deps.refreshJobs();
+    return campaign;
   }
 
   async function runRecipeAcrossLocales(
@@ -510,6 +538,11 @@ export function createServerRunController(deps: RunControllerDependencies) {
     saveCombine,
     preflightCombine,
     removeCombine,
+    combineCampaign: {
+      get: getCombineCampaign,
+      resume: resumeCombineCampaign,
+      cancel: cancelCombineCampaign,
+    },
     runRecipeAcrossLocales,
     runAppMapConnection,
     runAppMapFlow,

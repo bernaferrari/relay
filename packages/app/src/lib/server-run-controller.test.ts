@@ -52,13 +52,13 @@ test("single-Test execution remembers and selects the exact queued compiler root
     rememberJob: (job) => remembered.push(job),
   });
 
-  const id = await controller.runPathAcrossVariables({
+  const result = await controller.runPathAcrossVariables({
     appMapId: "shop",
     testId: "checkout",
     title: "Checkout",
   });
 
-  assert.equal(id, "job-1");
+  assert.deepEqual(result, { jobId: "job-1" });
   assert.equal(selectedJob, "job-1");
   assert.equal(selectedAction, rootRecipeId);
   assert.deepEqual(

@@ -27,7 +27,7 @@ export const grandfatheredSourceLimits = Object.freeze({
   "packages/core/src/recipe-runner.ts": 919,
   "packages/core/src/recipe-validation.ts": 1048,
   "packages/core/src/session.ts": 943,
-  "packages/protocol/src/operations.ts": 2498,
+  "packages/protocol/src/operations.ts": 2484,
   "packages/server/src/app-map-routes.ts": 1050,
   "packages/server/src/index.ts": 1190,
 });

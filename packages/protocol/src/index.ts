@@ -13,6 +13,7 @@ export * from "./case-expansion.js";
 export * from "./execution-summary.js";
 export * from "./run-review.js";
 export * from "./campaign-repair.js";
+export * from "./combine-campaign.js";
 export * from "./navigation-proof.js";
 export * from "./run-share.js";
 export * from "./visual-verification.js";

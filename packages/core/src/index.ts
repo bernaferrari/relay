@@ -21,6 +21,7 @@ export * from "./doctor.js";
 export * from "./control.js";
 export * from "./retry.js";
 export * from "./collaboration.js";
+export * from "./combine-campaign.js";
 export * from "./presence.js";
 export * from "./generation.js";
 export * from "./evaluation.js";

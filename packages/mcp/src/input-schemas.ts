@@ -771,6 +771,8 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       seed: z.number().int().optional(),
       sets: z.array(unknownRecord).optional(),
       capture: testCapturePolicy.optional(),
+      executionMode: z.enum(["pilot", "all"]).optional(),
+      pilotCaseIndex: z.number().int().nonnegative().optional(),
     })
     .strict()
     .superRefine((input, context) => {
@@ -817,6 +819,18 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
         });
       }
     }),
+  "job.combine.campaign.get": z
+    .object({ batchId: identifier("Combine campaign identifier") })
+    .strict(),
+  "job.combine.campaign.resume": z
+    .object({
+      batchId: identifier("Combine campaign identifier"),
+      reviewed: z.boolean().optional(),
+    })
+    .strict(),
+  "job.combine.campaign.cancel": z
+    .object({ batchId: identifier("Combine campaign identifier") })
+    .strict(),
   "job.start": z
     .object({ action: identifier("Action or App Map identifier"), serial: z.string().optional() })
     .catchall(z.unknown()),

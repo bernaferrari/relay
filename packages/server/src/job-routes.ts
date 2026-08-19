@@ -36,6 +36,7 @@ import {
   startOptionRecipeRun,
   compileAppMapTest,
   compileAppMapCombine,
+  createCombineCampaign,
   resolveJobDevicePlatform,
   stabilizeOptionIds,
   summarizeJob,
@@ -48,6 +49,7 @@ import { assertJobAccess, assertTargetControl } from "./access-control.js";
 import { enqueueCompatibilityBatch } from "./compatibility-jobs.js";
 import { HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
+import { handleCombineCampaignRoute } from "./combine-campaign-routes.js";
 
 export type JobRouteContext = {
   method: string;
@@ -332,6 +334,8 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       projectId?: string;
       sets?: OptionRunSet[];
       capture?: AppMapCapturePolicy;
+      executionMode?: "all" | "pilot";
+      pilotCaseIndex?: number;
     };
     if (!body.appMapId?.trim()) {
       throw new HttpError(400, "appMapId is required");
@@ -431,6 +435,10 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         });
         return true;
       }
+      if (body.executionMode === "pilot" && !combine) {
+        throw new HttpError(400, "Pilot mode requires a saved Combine");
+      }
+      const pilotCaseIndex = Math.max(0, Math.floor(body.pilotCaseIndex ?? 0));
       const batch = await startOptionRecipeRun({
         recipeId: compiledBody?.id ?? "combine",
         compiledBody,
@@ -453,7 +461,57 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         seed: body.seed,
         projectId: scope.projectId,
         ownerId: currentOperationContext()!.actorId,
+        ...(body.executionMode === "pilot" ? { caseIndexes: [pilotCaseIndex] } : {}),
       });
+      let campaign;
+      if (body.executionMode === "pilot" && combine) {
+        const pilotJob = batch.jobs[0];
+        if (!pilotJob) throw new HttpError(400, `Pilot case ${pilotCaseIndex} is out of range`);
+        const variableKeys = new Set(sets.map((set) => set.id));
+        const cases = batch.matrix.cases.map((item) => ({
+          index: item.index,
+          world: item.name || `world-${item.index + 1}`,
+          values: Object.fromEntries(
+            Object.entries(item.values).filter(([key]) => variableKeys.has(key)),
+          ),
+          phase: item.index === pilotCaseIndex ? ("pilot" as const) : ("coverage" as const),
+          status: item.index === pilotCaseIndex ? ("queued" as const) : ("pending" as const),
+          ...(item.index === pilotCaseIndex ? { jobId: pilotJob.id } : {}),
+        }));
+        const at = Date.now();
+        campaign = {
+          schemaVersion: 1 as const,
+          id: batch.id,
+          projectId: scope.projectId,
+          ownerId: currentOperationContext()!.actorId,
+          appMapId: map.id,
+          combineId: combine.id,
+          sourceRevision: map.revision,
+          latestRevision: map.revision,
+          target: body.browserTargetId
+            ? { kind: "browser" as const, id: targetId, platform: "browser" as const }
+            : { kind: "device" as const, id: targetId, platform: platform! },
+          status: "pilot-running" as const,
+          createdAt: at,
+          updatedAt: at,
+          cases,
+          lineage: [
+            {
+              kind: "created" as const,
+              at,
+              appMapRevision: map.revision,
+              actorId: currentOperationContext()!.actorId,
+            },
+          ],
+          execution: {
+            selected: body.selected ?? combine.selected,
+            strategy: body.strategy ?? combine.strategy,
+            seed: batch.matrix.seed,
+            title: body.title?.trim() || combine.name,
+          },
+        };
+        await createCombineCampaign(campaign);
+      }
       json(res, 202, {
         batch: {
           id: batch.id,
@@ -471,6 +529,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         },
         matrix: batch.matrix,
         jobs: batch.jobs.map((job) => summarizeJob(job)),
+        ...(campaign ? { campaign } : {}),
       });
     } catch (error) {
       if (error instanceof AppMapCompileError) throw new HttpError(409, error.message);
@@ -478,6 +537,8 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     }
     return true;
   }
+
+  if (await handleCombineCampaignRoute(context)) return true;
 
   const optionExportMatch = matchPath(pathname, "/jobs/combine/:batchId/export");
   if (method === "GET" && optionExportMatch) {

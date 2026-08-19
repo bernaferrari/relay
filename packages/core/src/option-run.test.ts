@@ -11,6 +11,7 @@ import {
   prepareOptionRunMatrix,
   optimizeSequentialAppLocaleRestore,
   expectedRecipeScreenshotCount,
+  assertRequestedCaseValues,
   type OptionRunSet,
 } from "./option-run.js";
 import { preflightAppMapCombine } from "./app-map-combine-preflight.js";
@@ -83,6 +84,19 @@ test("two option sets cartesian expand to four worlds", async () => {
     .map((item) => `${item.values.languages}+${item.values.locations}`)
     .sort();
   assert.deepEqual(keys, ["de+nyc", "de+sf", "en+nyc", "en+sf"]);
+});
+
+test("campaign resume refuses an index whose reviewed locale value moved", async () => {
+  const matrix = await prepareOptionRunMatrix({ sets: [languages], strategy: "cartesian" }, 42);
+  const reviewed = matrix.cases[0]!.values.languages!;
+  const changed = reviewed === "en" ? "de" : "en";
+  assert.doesNotThrow(() =>
+    assertRequestedCaseValues(matrix, new Set([0]), { 0: { languages: reviewed } }),
+  );
+  assert.throws(
+    () => assertRequestedCaseValues(matrix, new Set([0]), { 0: { languages: changed } }),
+    /case 1 changed since the pilot/,
+  );
 });
 
 test("zip pairs option sets of equal length", async () => {
