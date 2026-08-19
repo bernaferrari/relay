@@ -7,6 +7,7 @@ import { persistLogicalScrollSurface } from "./logical-scroll-surface.js";
 import { listPersistedRuns } from "./runs.js";
 import {
   findReusableSurfaceComparison,
+  surfaceComparisonNeedsRecapture,
   surfaceComparisonCacheIdentity,
   surfaceComparisonCacheKey,
   type SurfaceComparisonCacheProvenance,
@@ -374,6 +375,18 @@ export async function runCaptureSurfaceStep(
         ...(cacheKey ? { key: cacheKey } : {}),
         ...(cacheIdentity ? { identity: cacheIdentity } : {}),
       };
+  if (!step.forceRecapture) {
+    const data = surfaceComparisonNeedsRecapture({ step, cache: { ...cache, status: "miss" } });
+    job.artifacts.push({
+      kind: "logical-scroll-surface-needs-recapture",
+      capturedAt: evaluatedAt,
+      data,
+    });
+    ctx.log(
+      `surface: ${step.screenTitle} · fresh evidence needed · rerun with forceRecapture for ${step.screenId}`,
+    );
+    return;
+  }
   const verified = currentVerifiedScreen(ctx.runtime);
   const screenshot = verified?.screenId === step.screenId ? verified.screenshot : undefined;
   const nodes = verified?.screenId === step.screenId ? verified.nodes : undefined;

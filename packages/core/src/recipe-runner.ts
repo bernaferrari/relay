@@ -216,7 +216,7 @@ async function runRequiredRecipeStep(
       try {
         await runCaptureSurfaceStep(step, ctx);
       } finally {
-        invalidateVerifiedScreen(ctx);
+        if (step.forceRecapture === true) invalidateVerifiedScreen(ctx);
       }
       break;
     }

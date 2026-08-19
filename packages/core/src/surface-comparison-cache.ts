@@ -77,6 +77,40 @@ export type ReusableSurfaceComparison = {
   provenance: SurfaceComparisonCacheProvenance & { status: "hit" };
 };
 
+export type SurfaceComparisonNeedsRecapture = {
+  schemaVersion: 1;
+  status: "needs-recapture";
+  screenId: string;
+  screenTitle: string;
+  variantId: string;
+  surfaceId: string;
+  baselineCaptureId: string;
+  reason: string;
+  cache: SurfaceComparisonCacheProvenance & { status: "miss" };
+  nextAction: {
+    kind: "force-recapture";
+    screenId: string;
+  };
+};
+
+export function surfaceComparisonNeedsRecapture(input: {
+  step: CaptureSurfaceStep;
+  cache: SurfaceComparisonCacheProvenance & { status: "miss" };
+}): SurfaceComparisonNeedsRecapture {
+  return {
+    schemaVersion: 1,
+    status: "needs-recapture",
+    screenId: input.step.screenId,
+    screenTitle: input.step.screenTitle,
+    variantId: input.step.variantId,
+    surfaceId: input.step.surfaceId,
+    baselineCaptureId: input.step.baselineCaptureId,
+    reason: input.cache.reason ?? "Fresh device evidence is required.",
+    cache: structuredClone(input.cache),
+    nextAction: { kind: "force-recapture", screenId: input.step.screenId },
+  };
+}
+
 function firstNonEmpty(values: Array<string | undefined>): string | undefined {
   return values.map((value) => value?.trim()).find(Boolean);
 }
@@ -205,8 +239,10 @@ function sameIdentity(
   return Boolean(left && surfaceComparisonCacheKey(left) === surfaceComparisonCacheKey(right));
 }
 
-/** Find newest successful immutable evidence with the exact cache identity.
- * Results without cache identity (including legacy artifacts) fail closed. */
+/** Find the newest complete immutable evidence with the exact cache identity.
+ * A later failure or cancellation does not corrupt an already completed,
+ * content-addressed surface artifact. Results without cache identity
+ * (including legacy artifacts) still fail closed. */
 export function findReusableSurfaceComparison(input: {
   identity: SurfaceComparisonCacheIdentity;
   runs: ReadonlyArray<
@@ -247,7 +283,6 @@ export function findReusableSurfaceComparison(input: {
   for (const candidate of candidates) {
     if (
       candidate.artifact.kind !== "logical-scroll-surface-result" ||
-      (candidate.status !== "ok" && candidate.status !== "healed") ||
       !isCompleteResult(candidate.artifact.data) ||
       !sameIdentity(cacheIdentityFromResult(candidate.artifact.data), input.identity)
     ) {

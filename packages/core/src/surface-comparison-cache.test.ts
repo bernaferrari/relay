@@ -6,6 +6,7 @@ import {
   findReusableSurfaceComparison,
   surfaceComparisonCacheIdentity,
   surfaceComparisonCacheKey,
+  surfaceComparisonNeedsRecapture,
 } from "./surface-comparison-cache.js";
 
 const step: Extract<RecipeStep, { kind: "capture-surface" }> = {
@@ -167,7 +168,36 @@ test("unknown locale or app build fails closed", () => {
   );
 });
 
-test("incomplete, failed, and legacy-provenance results are never reused", () => {
+test("an ordinary cache miss becomes an explicit non-mutating recapture request", () => {
+  const data = surfaceComparisonNeedsRecapture({
+    step,
+    cache: {
+      schemaVersion: 1,
+      status: "miss",
+      evaluatedAt: 200,
+      reason: "Exact target, locale, and app build facts are required for reuse.",
+    },
+  });
+  assert.deepEqual(data, {
+    schemaVersion: 1,
+    status: "needs-recapture",
+    screenId: "preferences",
+    screenTitle: "Preferences",
+    variantId: "preferences-tablet-en",
+    surfaceId: "preferences-surface",
+    baselineCaptureId: "baseline-1",
+    reason: "Exact target, locale, and app build facts are required for reuse.",
+    cache: {
+      schemaVersion: 1,
+      status: "miss",
+      evaluatedAt: 200,
+      reason: "Exact target, locale, and app build facts are required for reuse.",
+    },
+    nextAction: { kind: "force-recapture", screenId: "preferences" },
+  });
+});
+
+test("incomplete and legacy-provenance results are never reused", () => {
   const identity = surfaceComparisonCacheIdentity(job(), step)!;
   const complete = result(identity);
   const incomplete = structuredClone(complete);
@@ -175,7 +205,6 @@ test("incomplete, failed, and legacy-provenance results are never reused", () =>
   const { cache: _cache, ...legacyData } = structuredClone(complete).data;
   const legacy = { ...complete, data: legacyData };
   for (const [status, artifact] of [
-    ["error", complete],
     ["ok", incomplete],
     ["ok", legacy],
   ] as const) {
@@ -187,6 +216,19 @@ test("incomplete, failed, and legacy-provenance results are never reused", () =>
       }),
       null,
     );
+  }
+});
+
+test("a later run failure does not poison an independently completed surface artifact", () => {
+  const identity = surfaceComparisonCacheIdentity(job(), step)!;
+  for (const status of ["error", "cancelled"] as const) {
+    const reused = findReusableSurfaceComparison({
+      identity,
+      runs: [{ id: `run-${status}`, status, writtenAt: 100, artifacts: [result(identity)] }],
+      at: 200,
+    });
+    assert.equal(reused?.data.capture.captureId, "capture-live-1");
+    assert.equal(reused?.provenance.sourceRunId, `run-${status}`);
   }
 });
 
