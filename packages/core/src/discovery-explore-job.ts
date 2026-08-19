@@ -360,7 +360,8 @@ export function setExploreRuntimeForTests(runtime: Partial<ExploreRuntime> | und
   exploreRuntime = runtime ? { ...liveExploreRuntime, ...runtime } : liveExploreRuntime;
 }
 
-async function exploreBack(sessionId: string): Promise<DiscoveryHere> {
+/** Native Back can resolve before the destination has committed its tree. */
+async function exploreBack(sessionId: string, expectedScreenId: string): Promise<DiscoveryHere> {
   const result = await exploreRuntime.act({
     sessionId,
     interaction: { kind: "key", key: "back" },
@@ -371,7 +372,9 @@ async function exploreBack(sessionId: string): Promise<DiscoveryHere> {
       selectedControlId: "back",
     },
   });
-  return result.here;
+  if (result.here.screen.id === expectedScreenId) return result.here;
+  await delay(550);
+  return exploreRuntime.here(sessionId);
 }
 
 async function runExploreJob(sessionId: string): Promise<void> {
@@ -422,7 +425,7 @@ async function runExploreJob(sessionId: string): Promise<void> {
         if (stack.length) {
           const parent = stack[stack.length - 1]!;
           try {
-            here = await exploreBack(sessionId);
+            here = await exploreBack(sessionId, parent.screenId);
           } catch (error) {
             await updateExploreCursor(
               sessionId,
@@ -581,7 +584,7 @@ async function runExploreJob(sessionId: string): Promise<void> {
       if (stack.length - 1 >= maxDepth) {
         const parent = stack[stack.length - 1]!;
         try {
-          here = await exploreBack(sessionId);
+          here = await exploreBack(sessionId, parent.screenId);
         } catch (error) {
           await updateExploreCursor(
             sessionId,

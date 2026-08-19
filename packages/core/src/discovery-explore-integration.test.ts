@@ -37,6 +37,8 @@ type FakeDeviceOptions = {
   otherApp?: string;
   /** Adversarial device behavior: Back lands somewhere other than its reviewed parent. */
   backLandsOn?: string;
+  /** Back commits after its command response, as native navigation often does. */
+  delayedBack?: boolean;
   /** Controls that cannot be uniquely grounded must become durable Problems. */
   groundingFailsFor?: string;
 };
@@ -51,6 +53,7 @@ function fakeDevice(options: FakeDeviceOptions) {
   const history: string[] = [];
   let current = options.screens[0]!.id;
   let foregroundApp = originApp;
+  let pendingBack: string | undefined;
 
   const taps: string[] = [];
   const backs: string[] = [];
@@ -88,12 +91,20 @@ function fakeDevice(options: FakeDeviceOptions) {
   };
 
   const runtime: Partial<ExploreRuntime> = {
-    here: async () => here(),
+    here: async () => {
+      if (pendingBack) {
+        current = pendingBack;
+        pendingBack = undefined;
+      }
+      return here();
+    },
     act: async (input) => {
       const before = current;
       if (input.interaction?.kind === "key" && input.interaction.key === "back") {
         backs.push(before);
-        current = options.backLandsOn ?? history.pop() ?? current;
+        const destination = options.backLandsOn ?? history.pop() ?? current;
+        if (options.delayedBack) pendingBack = destination;
+        else current = destination;
       } else {
         const label = input.controlId?.replace(`control-${before}-`, "");
         const target = label ? byId.get(before)?.edges[label] : undefined;
@@ -201,6 +212,27 @@ test("explore stops descending at maxDepth and walks back out", async () => {
       assert.equal(run.navigationCursor.screenId, "screen-home");
     }
     assert.equal((await readDiscoverySession(created.id))?.status, "complete");
+  });
+});
+
+test("explore waits for a native Back destination before declaring drift", async () => {
+  await withWorkspace("relay-explore-delayed-back-", async () => {
+    const device = fakeDevice({
+      screens: [
+        { id: "settings", edges: { Appearance: "appearance" } },
+        { id: "appearance", edges: {} },
+      ],
+      delayedBack: true,
+    });
+    setExploreRuntimeForTests(device.runtime);
+
+    const created = await session("explore-delayed-back");
+    await startDiscoveryExplore(created.id, { strategy: "surface", maxDepth: 1 });
+    await waitDiscoveryExploreForTests(created.id);
+
+    assert.equal((await readDiscoverySession(created.id))?.status, "complete");
+    assert.equal((await loadDiscoveryExploreRun(created.id))?.stopReason?.code, "complete");
+    assert.deepEqual(device.backs, ["appearance"]);
   });
 });
 
