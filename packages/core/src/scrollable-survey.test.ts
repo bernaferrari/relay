@@ -63,8 +63,12 @@ function superGrokTerminalFrame(phase: number, capturedAt: number) {
     ["Smarter answers in Expert mode", 821, 53],
     ["Grok Imagine, with image & video", 983, 53],
     ["Fastest responses to complex questions", 1202, 110],
+    ["Lightning-fast replies even during peak times", 1312, 110],
     ["Enhanced productivity", 1478, 53],
+    ["Powerful Tasks, Projects, and intelligent file analysis", 1531, 110],
     ["Early access", 1697, 53],
+    ["Be first to try every new feature", 1750, 53],
+    ["Why is the universe so big?", 1966, 3],
     ["Close", 159, 68],
     ["Manage your billing", 2061, 53],
   ] as const;
@@ -104,6 +108,41 @@ function superGrokTerminalFrame(phase: number, capturedAt: number) {
   };
 }
 
+function superGrokScrolledFrame(phase: number, capturedAt: number) {
+  const frame = superGrokTerminalFrame(phase, capturedAt);
+  const shifts = new Map([
+    ["Fastest responses to complex questions", 1173],
+    ["Lightning-fast replies even during peak times", 1173],
+    ["Enhanced productivity", 1173],
+    ["Powerful Tasks, Projects, and intelligent file analysis", 1173],
+    ["Early access", 1173],
+    ["Be first to try every new feature", 1173],
+    ["Why is the universe so big?", 1150],
+  ]);
+  frame.snapshot = {
+    ...frame.snapshot,
+    screenIdentity: { fingerprint: "supergrok-bottom", nodes: [], volatileSignals: [] },
+    nodes: frame.snapshot.nodes
+      .filter(
+        (node) =>
+          ![
+            "Super Grok",
+            "Your subscription includes:",
+            "World's smartest models",
+            "Smarter answers in Expert mode",
+            "Grok Imagine, with image & video",
+          ].includes(node.label ?? ""),
+      )
+      .map((node) => {
+        const shift = shifts.get(node.label ?? "");
+        return shift && node.rect
+          ? { ...node, rect: { ...node.rect, y: node.rect.y - shift } }
+          : node;
+      }),
+  };
+  return frame;
+}
+
 test("completes a one-viewport SuperGrok surface when semantics prove the scroll did not move", async () => {
   const frames = [superGrokTerminalFrame(0, 1), superGrokTerminalFrame(1, 2)];
   assert.equal(
@@ -136,15 +175,47 @@ test("completes a one-viewport SuperGrok surface when semantics prove the scroll
   assert.ok(survey.mergedNodes.some((node) => node.label === "Manage your billing"));
 });
 
+test("captures the exact SuperGrok 1173px semantic shift before its dynamic terminal viewport", async () => {
+  let page = 0;
+  let captureCount = 0;
+  let inverseScrolls = 0;
+  const survey = await captureScrollableSurvey({
+    capture: async () =>
+      page === 0
+        ? superGrokTerminalFrame(captureCount++ % 2, captureCount)
+        : superGrokScrolledFrame(captureCount++ % 2, captureCount),
+    scrollDown: async () => {
+      page = 1;
+    },
+    scrollUp: async () => {
+      inverseScrolls += 1;
+      page = 0;
+    },
+    settle: async () => {},
+  });
+
+  assert.equal(survey.status, "completed");
+  assert.equal(survey.reason, "end-of-content");
+  assert.equal(survey.frames.length, 2);
+  assert.equal(survey.frames[1]?.offsetY, 1173);
+  assert.equal(survey.frames[1]?.appendedHeight, 1173);
+  assert.deepEqual(survey.diagnosticFrames, []);
+  assert.equal(inverseScrolls, 1);
+  assert.equal(survey.restoredStartViewport, true);
+  assert.equal(survey.stitched?.height, 3513);
+});
+
 test("keeps an uncertain moved SuperGrok viewport stopped instead of calling it terminal", async () => {
   const frames = [superGrokTerminalFrame(0, 1), superGrokTerminalFrame(1, 2)];
   frames[1]!.snapshot = {
     ...frames[1]!.snapshot,
-    nodes: frames[1]!.snapshot.nodes.map((node) =>
-      node.rect && node.label && node.label !== "Close"
-        ? { ...node, rect: { ...node.rect, y: node.rect.y - 180 } }
-        : node,
-    ),
+    nodes: frames[1]!.snapshot.nodes.map((node, index) => {
+      if (!node.rect || !node.label || ["Close", "Manage your billing"].includes(node.label)) {
+        return node;
+      }
+      const shift = 120 + (index % 3) * 170;
+      return { ...node, rect: { ...node.rect, y: node.rect.y - shift } };
+    }),
   };
   let captureIndex = 0;
   let inverseScrolls = 0;
@@ -160,6 +231,9 @@ test("keeps an uncertain moved SuperGrok viewport stopped instead of calling it 
   assert.equal(survey.status, "stopped");
   assert.equal(survey.reason, "seam-ambiguous");
   assert.equal(survey.frames.length, 1);
+  assert.equal(survey.diagnosticFrames.length, 1);
+  assert.equal(survey.diagnosticFrames[0]?.appendedHeight, 0);
+  assert.equal(survey.stitched, undefined);
   assert.equal(inverseScrolls, 1);
 });
 

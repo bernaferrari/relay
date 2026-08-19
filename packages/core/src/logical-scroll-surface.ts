@@ -114,6 +114,34 @@ export async function persistLogicalScrollSurface(input: {
       },
     });
   }
+  const diagnosticViewports: LogicalScrollSurface["viewports"] = [];
+  for (const frame of input.survey.diagnosticFrames) {
+    const screenshot = await persistAuthoringEvidence({
+      kind: "screenshot",
+      capturedAt: frame.screenshot.capturedAt,
+      data: Buffer.from(frame.screenshot.base64, "base64"),
+      mime: "image/png",
+    });
+    const accessibilityTree = await persistAuthoringEvidence({
+      kind: "snapshot",
+      capturedAt: frame.snapshot.capturedAt,
+      data: JSON.stringify(frame.snapshot),
+      mime: "application/json",
+    });
+    diagnosticViewports.push({
+      index: frame.index,
+      offsetY: frame.offsetY,
+      appendedHeight: 0,
+      capturedAt: frame.screenshot.capturedAt,
+      width: frame.screenshot.width,
+      height: frame.screenshot.height,
+      screenshot: { ...evidenceReference(screenshot, "image/png"), mime: "image/png" },
+      accessibilityTree: {
+        ...evidenceReference(accessibilityTree, "application/json"),
+        mime: "application/json",
+      },
+    });
+  }
 
   const capturedAt = viewports[0]?.capturedAt ?? Date.now();
   const mergedTreeEvidence = await persistAuthoringEvidence({
@@ -150,6 +178,7 @@ export async function persistLogicalScrollSurface(input: {
 
   const rawEvidence = [
     ...viewports.flatMap((viewport) => [viewport.screenshot, viewport.accessibilityTree]),
+    ...diagnosticViewports.flatMap((viewport) => [viewport.screenshot, viewport.accessibilityTree]),
     ...(composite ? [composite] : []),
     mergedTree,
   ];
@@ -169,6 +198,7 @@ export async function persistLogicalScrollSurface(input: {
     message: input.survey.message,
     restoredStartViewport: input.survey.restoredStartViewport,
     viewports,
+    ...(diagnosticViewports.length > 0 ? { diagnosticViewports } : {}),
     ...(composite ? { composite } : {}),
     mergedTree,
     semanticIndex: compileScrollSurfaceSemanticIndex({
@@ -200,6 +230,10 @@ export async function persistLogicalScrollSurface(input: {
 function surfaceEvidence(surface: LogicalScrollSurface): ScrollSurfaceEvidence[] {
   return [
     ...surface.viewports.flatMap((viewport) => [viewport.screenshot, viewport.accessibilityTree]),
+    ...(surface.diagnosticViewports ?? []).flatMap((viewport) => [
+      viewport.screenshot,
+      viewport.accessibilityTree,
+    ]),
     ...(surface.composite ? [surface.composite] : []),
     surface.mergedTree,
     surface.manifest,
@@ -380,7 +414,11 @@ export async function regenerateLogicalScrollSurface(input: {
   surface: LogicalScrollSurface;
   targetProfile: TargetProfile;
 }): Promise<LogicalScrollSurface> {
-  if (input.surface.reason === "seam-ambiguous" && !input.surface.composite) {
+  if (
+    input.surface.reason === "seam-ambiguous" &&
+    !input.surface.composite &&
+    !input.surface.diagnosticViewports?.length
+  ) {
     const rawEvidence = input.surface.viewports.flatMap((viewport) => [
       viewport.screenshot,
       viewport.accessibilityTree,

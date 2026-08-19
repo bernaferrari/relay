@@ -421,6 +421,7 @@ test("scroll survey has one strict target-operation contract", () => {
         appendedHeight: 0,
       },
     ],
+    diagnosticFrames: [],
     mergedNodes: [],
     restoredStartViewport: true,
     message: "Accessibility is unavailable; no scroll survey was started.",

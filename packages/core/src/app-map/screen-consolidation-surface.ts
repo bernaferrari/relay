@@ -5,6 +5,10 @@ import type { AppMap } from "./model.js";
 export function logicalSurfaceEvidence(surface: LogicalScrollSurface) {
   return [
     ...surface.viewports.flatMap((viewport) => [viewport.screenshot, viewport.accessibilityTree]),
+    ...(surface.diagnosticViewports ?? []).flatMap((viewport) => [
+      viewport.screenshot,
+      viewport.accessibilityTree,
+    ]),
     surface.mergedTree,
     surface.manifest,
   ];

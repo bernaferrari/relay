@@ -64,6 +64,7 @@ function survey(): ScrollSurveyResult {
     status: "stopped",
     reason: "limit-reached",
     frames: [frame(0, 0, png(10)), frame(1, 2, png(40))],
+    diagnosticFrames: [{ ...frame(2, 2, png(70)), appendedHeight: 0 }],
     stitched: { base64: png(80), width: 4, height: 6, mime: "image/png" },
     mergedNodes: [
       { label: "Row 0", type: "StaticText", rect: { x: 0, y: 0, width: 4, height: 2 } },
@@ -136,6 +137,7 @@ function regenerableSurvey(): ScrollSurveyResult {
     status: "completed",
     reason: "end-of-content",
     frames: [frame(0, 0), frame(1, 40)],
+    diagnosticFrames: [],
     // Deliberately stale derived artifacts. Regeneration must ignore them.
     stitched: { base64: png(91), width: 4, height: 4, mime: "image/png" },
     mergedNodes: [{ label: "Stale node", type: "StaticText" }],
@@ -213,6 +215,7 @@ test("persists every raw viewport and attaches only durable evidence URIs", asyn
       },
     });
     assert.equal(surface.viewports.length, 2);
+    assert.equal(surface.diagnosticViewports?.length, 1);
     assert.equal(surface.composite?.height, 6);
     assert.equal(surface.mergedTree.nodeCount, 2);
     assert.deepEqual(surface.semanticIndex?.anchors, [
@@ -240,6 +243,7 @@ test("persists every raw viewport and attaches only durable evidence URIs", asyn
     assert.equal(parsedManifest.kind, "relay.logical-scroll-surface");
     assert.equal(parsedManifest.targetProfile.id, "ipad-ja");
     assert.equal(parsedManifest.surface.viewports.length, 2);
+    assert.equal(parsedManifest.surface.diagnosticViewports.length, 1);
     assert.deepEqual(parsedManifest.surface.semanticIndex, surface.semanticIndex);
 
     const attached = attachAppMapScrollSurface(
@@ -258,6 +262,7 @@ test("persists every raw viewport and attaches only durable evidence URIs", asyn
     assert.equal(variant.scrollCapturePolicy?.captureMode, "full-surface");
     assert.ok(variant.evidenceUris?.includes(surface.manifest.uri));
     assert.ok(variant.evidenceUris?.includes(surface.viewports[1]!.screenshot.uri));
+    assert.ok(variant.evidenceUris?.includes(surface.diagnosticViewports![0]!.screenshot.uri));
     assert.doesNotMatch(JSON.stringify(attached), /"base64"/u);
     assert.equal(attached.activity["capture-full-settings"]?.subject.id, "settings");
     attached.tests!["settings-surface"] = {

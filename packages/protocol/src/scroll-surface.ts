@@ -101,6 +101,9 @@ export type LogicalScrollSurface = {
   message: string;
   restoredStartViewport: boolean;
   viewports: ScrollSurfaceViewport[];
+  /** Captured but rejected candidates retained for repair diagnostics. They
+   * are never part of the composite, merged tree, or semantic index. */
+  diagnosticViewports?: ScrollSurfaceViewport[];
   composite?: ScrollSurfaceEvidence & {
     mime: "image/png";
     width: number;

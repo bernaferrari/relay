@@ -36,6 +36,9 @@ export type ScrollSurveyResult = {
   status: "completed" | "stopped";
   reason: ScrollSurveyStopReason;
   frames: ScrollSurveyFrame[];
+  /** Captured candidates rejected from the logical surface. These remain raw,
+   * decomposable evidence and never contribute to the composite or tree. */
+  diagnosticFrames: ScrollSurveyFrame[];
   /** A composite preview only. Original frames remain authoritative evidence. */
   stitched?: { base64: string; width: number; height: number; mime: "image/png" };
   /** Leaf semantics translated into the stitched document coordinate space. */
@@ -114,38 +117,69 @@ function semanticNodeKey(node: SnapshotNode): string | undefined {
   return label || value ? `${role}:text:${label}:${value}` : undefined;
 }
 
+function uniqueSemanticPositions(snapshot: SnapshotPayload) {
+  const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
+  const duplicates = new Set<string>();
+  for (const node of snapshot.nodes) {
+    const role = normalizedSemanticPart(node.role ?? node.type);
+    const identifier = normalizedSemanticPart(node.identifier);
+    const label = normalizedSemanticPart(node.label);
+    const value = normalizedSemanticPart(node.value);
+    const semanticKey = identifier
+      ? `${role}:id:${identifier}`
+      : label || value
+        ? `${role}:text:${label}:${value}`
+        : undefined;
+    const key =
+      node.rect && node.visibleToUser !== false && !isSystemSemantic(node)
+        ? semanticKey
+        : undefined;
+    if (!key) continue;
+    if (positions.has(key)) duplicates.add(key);
+    else positions.set(key, node.rect!);
+  }
+  for (const key of duplicates) positions.delete(key);
+  return positions;
+}
+
 function semanticScrollShift(
   previous: SnapshotPayload,
   current: SnapshotPayload,
-): { shiftY: number; support: number } | undefined {
-  const currentByKey = new Map<string, SnapshotNode>();
-  const duplicateKeys = new Set<string>();
-  for (const node of current.nodes) {
-    const key = node.rect && node.visibleToUser !== false ? semanticNodeKey(node) : undefined;
-    if (!key) continue;
-    if (currentByKey.has(key)) duplicateKeys.add(key);
-    else currentByKey.set(key, node);
-  }
-  const shifts = new Map<number, number>();
-  const matchedKeys = new Set<string>();
-  for (const node of previous.nodes) {
-    const key = node.rect && node.visibleToUser !== false ? semanticNodeKey(node) : undefined;
-    if (!key || duplicateKeys.has(key) || matchedKeys.has(key)) continue;
-    const match = currentByKey.get(key);
-    if (!match?.rect) continue;
-    matchedKeys.add(key);
-    const shift = Math.round(node.rect!.y - match.rect.y);
+): { shiftY: number; support: number; confidence: number } | undefined {
+  const before = uniqueSemanticPositions(previous);
+  const after = uniqueSemanticPositions(current);
+  const candidates: Array<{ shiftY: number; previousY: number }> = [];
+  for (const [key, left] of before) {
+    const right = after.get(key);
+    if (!right) continue;
+    const shift = Math.round(left.y - right.y);
     if (
       shift < 12 ||
       shift > Math.min(previous.bounds?.height ?? 0, current.bounds?.height ?? 0) * 0.85
     )
       continue;
-    shifts.set(shift, (shifts.get(shift) ?? 0) + 1);
+    candidates.push({ shiftY: shift, previousY: left.y });
   }
-  const best = [...shifts.entries()].sort(
-    ([leftShift, left], [rightShift, right]) => right - left || leftShift - rightShift,
+  const clusters = candidates.map((candidate) => {
+    const members = candidates.filter((other) => Math.abs(other.shiftY - candidate.shiftY) <= 4);
+    const sorted = members.map(({ shiftY }) => shiftY).sort((left, right) => left - right);
+    return {
+      shiftY: sorted[Math.floor(sorted.length / 2)]!,
+      members,
+    };
+  });
+  const best = clusters.sort(
+    (left, right) => right.members.length - left.members.length || left.shiftY - right.shiftY,
   )[0];
-  return best && best[1] >= 3 ? { shiftY: best[0], support: best[1] } : undefined;
+  if (!best) return undefined;
+  const support = best.members.length;
+  const confidence = support / Math.max(1, candidates.length);
+  const verticalSpan =
+    Math.max(...best.members.map(({ previousY }) => previousY)) -
+    Math.min(...best.members.map(({ previousY }) => previousY));
+  return support >= 3 && confidence >= 0.7 && verticalSpan >= 80
+    ? { shiftY: best.shiftY, support, confidence }
+    : undefined;
 }
 
 /** Prove that a completed scroll gesture did not move the content even when
@@ -156,23 +190,8 @@ function semanticViewportIsStationary(
   previous: SnapshotPayload,
   current: SnapshotPayload,
 ): boolean {
-  const uniquePositions = (snapshot: SnapshotPayload) => {
-    const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
-    const duplicates = new Set<string>();
-    for (const node of snapshot.nodes) {
-      const key =
-        node.rect && node.visibleToUser !== false && !isSystemSemantic(node)
-          ? semanticNodeKey(node)
-          : undefined;
-      if (!key) continue;
-      if (positions.has(key)) duplicates.add(key);
-      else positions.set(key, node.rect!);
-    }
-    for (const key of duplicates) positions.delete(key);
-    return positions;
-  };
-  const before = uniquePositions(previous);
-  const after = uniquePositions(current);
+  const before = uniqueSemanticPositions(previous);
+  const after = uniqueSemanticPositions(current);
   const deltas: Array<{ x: number; y: number; width: number; height: number }> = [];
   for (const [key, left] of before) {
     const right = after.get(key);
@@ -192,9 +211,8 @@ function semanticViewportIsStationary(
   return support >= 3 && coverage >= 0.7 && stationary / support >= 0.9;
 }
 
-/** Pixel agreement remains mandatory. Accessibility translation only selects
- * the meaningful body alignment when a sparse/dark screenshot admits a false
- * visual minimum. */
+/** Accessibility geometry can prove a seam when several unique anchors move
+ * by one strongly agreed translation. Otherwise pixels remain mandatory. */
 export function verticalScrollSeam(
   previous: Buffer,
   current: Buffer,
@@ -212,21 +230,16 @@ export function verticalScrollSeam(
   if (left.width !== right.width || left.height !== right.height || left.height < 120)
     return undefined;
   const unchanged = sampleDifference(left, right, 0);
+  const semantic =
+    previousSnapshot && currentSnapshot
+      ? semanticScrollShift(previousSnapshot, currentSnapshot)
+      : undefined;
+  if (semantic) return { shiftY: semantic.shiftY, confidence: semantic.confidence };
   // Status-bar clocks are cropped, but sticky headers and Compose shimmer still
   // live in the sampled band. A mean per-channel delta under 8/255 is bounce or
   // chrome noise, not a new viewport — treating it as motion made Settings
   // inverse-swipe off the page when the first fling rubber-banded.
   if (unchanged < 8) return { shiftY: 0, confidence: 1 };
-  const semantic =
-    previousSnapshot && currentSnapshot
-      ? semanticScrollShift(previousSnapshot, currentSnapshot)
-      : undefined;
-  if (semantic) {
-    const score = sampleDifference(left, right, semantic.shiftY);
-    const confidence = Math.max(0, Math.min(1, 1 - score / 32));
-    if (confidence >= 0.7) return { shiftY: semantic.shiftY, confidence };
-    return undefined;
-  }
   const minimum = Math.max(24, Math.round(left.height * 0.07));
   const maximum = Math.floor(left.height * 0.82);
   const stride = Math.max(8, Math.round(left.height * 0.009));
@@ -279,7 +292,13 @@ function normalizedSemanticPart(value?: string): string {
 
 function isSystemSemantic(node: SnapshotNode): boolean {
   const role = normalizedSemanticPart(node.role ?? node.type);
-  return /status.?bar|keyboard|input.?method|system.?window/u.test(role);
+  const bundleId = normalizedSemanticPart(node.bundleId);
+  const identifier = normalizedSemanticPart(node.identifier);
+  return (
+    bundleId === "com.android.systemui" ||
+    identifier.startsWith("com.android.systemui:id/") ||
+    /status.?bar|keyboard|input.?method|system.?window/u.test(role)
+  );
 }
 
 function structuralAnchors(snapshot: SnapshotPayload): Set<string> {
@@ -363,7 +382,9 @@ function startViewportMatches(start: ScrollSurveyCapture, restored: ScrollSurvey
     start.snapshot,
     restored.snapshot,
   );
-  return Boolean(seam && seam.shiftY === 0);
+  return Boolean(
+    (seam && seam.shiftY === 0) || semanticViewportIsStationary(start.snapshot, restored.snapshot),
+  );
 }
 
 function bottomSystemChromeTop(frame: ScrollSurveyFrame): number | undefined {
@@ -512,14 +533,16 @@ function result(
   reason: ScrollSurveyStopReason,
   message: string,
   restoredStartViewport: boolean,
+  diagnosticFrames: ScrollSurveyFrame[] = [],
 ): ScrollSurveyResult {
   const composition = composeScrollSurveyFrames(frames);
   const composedFrames = composition?.frames ?? frames;
-  const stitched = composition?.stitched;
+  const stitched = reason === "seam-ambiguous" ? undefined : composition?.stitched;
   return {
     status,
     reason,
     frames: composedFrames,
+    diagnosticFrames,
     ...(stitched ? { stitched } : {}),
     mergedNodes: composition?.mergedNodes ?? mergedSurveyNodes(frames),
     restoredStartViewport,
@@ -607,6 +630,7 @@ export async function captureScrollableSurvey(
     appendedHeight: 0,
   };
   const frames = [initial];
+  const diagnosticFrames: ScrollSurveyFrame[] = [];
   if (!first.snapshot.inspectable) {
     return result(
       frames,
@@ -684,7 +708,9 @@ export async function captureScrollableSurvey(
         };
         break;
       }
+      const previous = frames.at(-1)!;
       if (!sameSurveySurface(first.snapshot, next.snapshot)) {
+        diagnosticFrames.push(candidateFrame(next, frames.length, previous.offsetY));
         decision = {
           status: "stopped",
           reason: "screen-changed",
@@ -693,10 +719,10 @@ export async function captureScrollableSurvey(
         };
         break;
       }
-      const previous = frames.at(-1)!;
       const width = next.screenshot.width ?? 0;
       const height = next.screenshot.height ?? 0;
       if (width !== previous.screenshot.width || height !== previous.screenshot.height) {
+        diagnosticFrames.push(candidateFrame(next, frames.length, previous.offsetY));
         decision = {
           status: "stopped",
           reason: "dimension-changed",
@@ -724,6 +750,7 @@ export async function captureScrollableSurvey(
           };
           break;
         }
+        diagnosticFrames.push(candidateFrame(next, frames.length, previous.offsetY));
         decision = {
           status: "stopped",
           reason: "seam-ambiguous",
@@ -772,6 +799,7 @@ export async function captureScrollableSurvey(
       "restore-failed",
       "Relay stopped safely, but could not restore every captured scroll movement.",
       false,
+      diagnosticFrames,
     );
   }
   if (owedMovements > 0) {
@@ -784,6 +812,7 @@ export async function captureScrollableSurvey(
           decision.reason,
           `${decision.message} Starting viewport was not proven after restore.`,
           false,
+          diagnosticFrames,
         );
       }
     } catch {
@@ -793,8 +822,28 @@ export async function captureScrollableSurvey(
         decision.reason,
         `${decision.message} Starting viewport could not be recaptured after restore.`,
         false,
+        diagnosticFrames,
       );
     }
   }
-  return result(frames, decision.status, decision.reason, decision.message, true);
+  return result(frames, decision.status, decision.reason, decision.message, true, diagnosticFrames);
+}
+
+function candidateFrame(
+  capture: ScrollSurveyCapture,
+  index: number,
+  offsetY: number,
+): ScrollSurveyFrame {
+  return {
+    index,
+    offsetY,
+    appendedHeight: 0,
+    screenshot: {
+      base64: capture.screenshot.base64,
+      width: capture.screenshot.width ?? 0,
+      height: capture.screenshot.height ?? 0,
+      capturedAt: capture.screenshot.capturedAt,
+    },
+    snapshot: capture.snapshot,
+  };
 }

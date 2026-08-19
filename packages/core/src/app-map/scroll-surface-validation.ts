@@ -119,6 +119,36 @@ export function assertLogicalScrollSurface(
       `${label}.viewports[${index}].accessibilityTree`,
     );
   });
+  if (surface.diagnosticViewports !== undefined) {
+    if (!Array.isArray(surface.diagnosticViewports) || surface.diagnosticViewports.length > 6) {
+      appMapFail("invalid-map", `${label}.diagnosticViewports must contain at most 6 items`);
+    }
+    surface.diagnosticViewports.forEach((viewport, index) => {
+      objectValue(viewport, `${label}.diagnosticViewports[${index}]`);
+      safeInteger(viewport.index, `${label}.diagnosticViewports[${index}].index`);
+      safeInteger(viewport.offsetY, `${label}.diagnosticViewports[${index}].offsetY`);
+      safeInteger(viewport.appendedHeight, `${label}.diagnosticViewports[${index}].appendedHeight`);
+      if (viewport.appendedHeight !== 0) {
+        appMapFail(
+          "invalid-map",
+          `${label}.diagnosticViewports[${index}].appendedHeight must be zero`,
+        );
+      }
+      finiteTimestamp(viewport.capturedAt, `${label}.diagnosticViewports[${index}].capturedAt`);
+      assertPositiveInteger(viewport.width, `${label}.diagnosticViewports[${index}].width`);
+      assertPositiveInteger(viewport.height, `${label}.diagnosticViewports[${index}].height`);
+      assertEvidence(
+        viewport.screenshot,
+        "image/png",
+        `${label}.diagnosticViewports[${index}].screenshot`,
+      );
+      assertEvidence(
+        viewport.accessibilityTree,
+        "application/json",
+        `${label}.diagnosticViewports[${index}].accessibilityTree`,
+      );
+    });
+  }
   if (surface.composite) {
     assertEvidence(surface.composite, "image/png", `${label}.composite`);
     assertPositiveInteger(surface.composite.width, `${label}.composite.width`);

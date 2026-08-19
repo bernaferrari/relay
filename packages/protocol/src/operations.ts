@@ -373,6 +373,18 @@ type SpecificOperationMap = {
         snapshot: ScrollSurveySnapshotDto;
         appendedHeight: number;
       }>;
+      diagnosticFrames: Array<{
+        index: number;
+        offsetY: number;
+        screenshot: {
+          base64: string;
+          width: number;
+          height: number;
+          capturedAt: number;
+        };
+        snapshot: ScrollSurveySnapshotDto;
+        appendedHeight: number;
+      }>;
       stitched?: {
         base64: string;
         width: number;
@@ -913,6 +925,26 @@ const targetScrollSurveyOutputParser = objectParser<
     number(screenshot.height, `scroll survey frame ${index} screenshot height`);
     number(screenshot.capturedAt, `scroll survey frame ${index} screenshot capturedAt`);
     assertScrollSurveySnapshot(frame.snapshot, `scroll survey frame ${index} snapshot`);
+  });
+  if (!Array.isArray(input.diagnosticFrames)) {
+    fail("scroll survey diagnosticFrames", "must be an array");
+  }
+  input.diagnosticFrames.forEach((value, index) => {
+    const frame = record(value, `scroll survey diagnostic frame ${index}`);
+    if (!Number.isInteger(number(frame.index, `scroll survey diagnostic frame ${index} index`))) {
+      fail(`scroll survey diagnostic frame ${index} index`, "must be an integer");
+    }
+    number(frame.offsetY, `scroll survey diagnostic frame ${index} offsetY`);
+    number(frame.appendedHeight, `scroll survey diagnostic frame ${index} appendedHeight`);
+    const screenshot = record(
+      frame.screenshot,
+      `scroll survey diagnostic frame ${index} screenshot`,
+    );
+    string(screenshot.base64, `scroll survey diagnostic frame ${index} screenshot base64`);
+    number(screenshot.width, `scroll survey diagnostic frame ${index} screenshot width`);
+    number(screenshot.height, `scroll survey diagnostic frame ${index} screenshot height`);
+    number(screenshot.capturedAt, `scroll survey diagnostic frame ${index} screenshot capturedAt`);
+    assertScrollSurveySnapshot(frame.snapshot, `scroll survey diagnostic frame ${index} snapshot`);
   });
   if (input.stitched !== undefined) {
     const stitched = record(input.stitched, "scroll survey stitched preview");
