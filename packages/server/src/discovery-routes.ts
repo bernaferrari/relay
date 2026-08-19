@@ -138,7 +138,7 @@ export async function handleDiscoveryRoute(input: DiscoveryRouteInput): Promise<
   }
 
   const discoveryHereMatch = matchPath(pathname, "/discovery/:id/here");
-  if (method === "GET" && discoveryHereMatch) {
+  if (method === "POST" && discoveryHereMatch) {
     const session = await loadScopedSession(discoveryHereMatch.id!, scope);
     await assertTargetControl(scope, session.targetId);
     if (session.status !== "running" && session.status !== "draft") {

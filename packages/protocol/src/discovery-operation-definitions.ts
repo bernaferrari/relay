@@ -63,11 +63,20 @@ export function createDiscoveryOperationDefinitions(
         lease: "exclusive",
       },
     ),
-    query("discovery.here", "Current Discovery screen and options", "/discovery/:sessionId/here", {
-      category: "discovery",
-      targetCapabilities: ["snapshot", "screenshot"],
-      lease: "shared",
-    }),
+    // Not a query: here captures a live screen, records it, replaces the
+    // screen's controls, and lands it on the App Map. Declaring it read-only
+    // would tell an MCP client a mutation is safe to call.
+    command(
+      "discovery.here",
+      "Refresh the current Discovery screen and options",
+      "POST",
+      "/discovery/:sessionId/here",
+      {
+        category: "discovery",
+        targetCapabilities: ["snapshot", "screenshot"],
+        lease: "shared",
+      },
+    ),
     command("discovery.do", "Act on a Discovery option", "POST", "/discovery/:sessionId/do", {
       category: "discovery",
       targetCapabilities: ["tap"],

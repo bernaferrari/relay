@@ -8,6 +8,7 @@ import type {
   DiscoveryDecisionProvenance,
   DiscoveryScope,
   DiscoveryControl,
+  DiscoveryExploreRun,
   DiscoverySession,
   DiscoveryStatus,
   ObservedScreen,
@@ -132,6 +133,17 @@ function screenAssetPath(sessionId: string, screenId: string): string {
 
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+/**
+ * Identity of a discovery control is its target, nothing else.
+ *
+ * The opened-flag key is `${screenId}:${JSON.stringify(target)}`, so anything
+ * positional here (a snapshot array index, say) makes the same row report a
+ * different id on the next snapshot and the explore loop re-opens it forever.
+ */
+export function discoveryControlId(target: DiscoveryControl["target"]): string {
+  return digest(JSON.stringify(target)).slice(0, 16);
 }
 
 function normalizeScope(scope?: Partial<DiscoveryScope>): DiscoveryScope {
@@ -310,7 +322,7 @@ export function discoveryControls(nodes: SnapshotNode[]): DiscoveryControl[] {
         !isExploreStateChangingNode(node) &&
         (node.hittable || node.identifier || node.ref || Boolean((node.label ?? "").trim())),
     )
-    .flatMap((node, index) => {
+    .flatMap((node) => {
       let label = (node.label ?? node.value ?? "").trim();
       if (!label && node.identifier?.trim() && !LAYOUT_IDENTIFIER.test(node.identifier)) {
         label = node.identifier.split(/[:/]/).pop() ?? node.identifier;
@@ -334,7 +346,7 @@ export function discoveryControls(nodes: SnapshotNode[]): DiscoveryControl[] {
       return [
         {
           control: {
-            id: `${index}-${digest(key).slice(0, 8)}`,
+            id: discoveryControlId(target),
             label,
             role: node.role ?? node.type,
             target,
@@ -509,6 +521,26 @@ export async function patchDiscoveryScope(
   }
   session.scope = normalizeScope({ ...session.scope, ...patch });
   session.updatedAt = Date.now();
+  await writeSession(session);
+  emitDiscovery(session);
+  return session;
+}
+
+/**
+ * Persist the explore crawl record so it survives a process restart.
+ *
+ * Deliberately tolerant of a terminal session status: the crawl that just
+ * stopped is exactly the one whose stop reason has to be written down.
+ */
+export async function writeDiscoveryExploreRun(
+  id: string,
+  run: DiscoveryExploreRun,
+): Promise<DiscoverySession | undefined> {
+  const session = await readDiscoverySession(id);
+  if (!session) return undefined;
+  assertDiscoveryAccess(session);
+  session.explore = { ...run, updatedAt: Date.now() };
+  session.updatedAt = session.explore.updatedAt;
   await writeSession(session);
   emitDiscovery(session);
   return session;

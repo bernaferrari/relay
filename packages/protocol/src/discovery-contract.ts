@@ -6,6 +6,30 @@ export type DiscoveryExploreStrategy = "surface" | "journey" | "hard-edges";
 /** How the explorer picks the next option: semantic heuristics, or a stub model planner. */
 export type DiscoveryExploreMode = "semantic" | "model";
 
+export type DiscoveryExploreStopCode = "complete" | "cancelled" | "budget" | "left_app" | "error";
+
+export type DiscoveryExploreStopReason = {
+  code: DiscoveryExploreStopCode;
+  message: string;
+  at: number;
+};
+
+/**
+ * What one server-owned explore crawl chose and how it ended.
+ *
+ * Persisted on the session so a `tsx watch` reload — or any other process
+ * restart — does not silently turn a finished crawl back into an unknown one.
+ */
+export type DiscoveryExploreRun = {
+  strategy: DiscoveryExploreStrategy;
+  mode: DiscoveryExploreMode;
+  maxDepth: number;
+  stopReason?: DiscoveryExploreStopReason;
+  softRecoveries: number;
+  startedAt: number;
+  updatedAt: number;
+};
+
 export type DiscoveryScope = {
   maxScreens: number;
   maxTransitions: number;
@@ -194,6 +218,8 @@ export type DiscoverySession = {
   updatedAt: number;
   /** Last screen observed on the connected target. Older maps may omit this. */
   currentScreenId?: string;
+  /** Last explore crawl on this session. Absent when only humans have driven it. */
+  explore?: DiscoveryExploreRun;
   screens: ObservedScreen[];
   transitions: ObservedTransition[];
 };

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   createDiscoverySession,
+  discoveryControlId,
   discoveryControls,
   discoveryTitleFromNodes,
   fingerprintDiscoveryScreen,
@@ -20,6 +21,7 @@ import {
   suggestDiscoveryControl,
 } from "./discovery.js";
 import type { SnapshotNode } from "./device.js";
+import type { DiscoveryControl } from "@relay/protocol";
 import {
   resetDiscoveryExploreJobsForTests,
   startDiscoveryExplore,
@@ -397,6 +399,37 @@ test("discovery prioritizes semantic navigation rows and skips toggles", () => {
     ["Appearance", "Advanced", "Help"],
   );
   assert.deepEqual(controls[0]?.target, { identifier: "settings-appearance" });
+});
+
+test("a control keeps its id when the row moves within the snapshot", () => {
+  const appearance = {
+    role: "listitem",
+    label: "Appearance",
+    identifier: "settings-appearance",
+    visibleToUser: true,
+    hittable: true,
+  };
+  const haptics = {
+    role: "listitem",
+    label: "Haptics",
+    identifier: "settings-haptics",
+    visibleToUser: true,
+    hittable: true,
+  };
+
+  const first = discoveryControls([appearance, haptics]);
+  const scrolled = discoveryControls([{ role: "button", label: "Help" }, haptics, appearance]);
+  const idOf = (controls: DiscoveryControl[], label: string) =>
+    controls.find((control) => control.label === label)?.id;
+
+  assert.equal(idOf(first, "Appearance"), idOf(scrolled, "Appearance"));
+  assert.equal(idOf(first, "Haptics"), idOf(scrolled, "Haptics"));
+  // The id is the target digest, so the opened-flag key and the id agree.
+  assert.equal(
+    idOf(first, "Appearance"),
+    discoveryControlId({ identifier: "settings-appearance" }),
+  );
+  assert.notEqual(idOf(first, "Appearance"), idOf(first, "Haptics"));
 });
 
 test("discovery adds Grok header Menu and Private point taps", () => {

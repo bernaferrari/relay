@@ -85,6 +85,14 @@ test("marks every query as read-only and inherently idempotent", () => {
   }
 });
 
+test("device-writing discovery operations are never advertised as read-only", () => {
+  // here captures a screen, replaces controls, and lands on the App Map, so an
+  // agent must not be told it is a safe observation.
+  for (const operationId of ["discovery.here", "discovery.do", "discovery.capture"] as const) {
+    assert.equal(tool(operationId).annotations.readOnlyHint, false, operationId);
+  }
+});
+
 test("marks delete and dangerous operations as destructive and confirmation-required", () => {
   const deleted = tool("target.delete");
   assert.equal(deleted.annotations.readOnlyHint, false);

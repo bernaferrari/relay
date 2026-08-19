@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { Device } from "./device.js";
 import {
   createDeviceForTarget,
+  createDeviceForTargetAsync,
   getCloudDeviceProvider,
+  getLocalDeviceProvider,
   setCloudDeviceProvider,
+  setLocalDeviceProvider,
 } from "./device-factory.js";
 import {
   isCloudTarget,
@@ -57,4 +61,26 @@ test("createDeviceForTarget stubs cloud until a provider is registered", () => {
       }),
     /not implemented yet/,
   );
+});
+
+test("a registered local provider replaces the agent-device client for kind device", async () => {
+  const fake = { marker: "fake-device" } as unknown as Device;
+  const seen: string[] = [];
+  setLocalDeviceProvider({
+    kind: "device",
+    create(context) {
+      seen.push(context.serial);
+      return fake;
+    },
+  });
+  try {
+    const context = { kind: "device", platform: "android", serial: "fake-serial" } as const;
+    assert.equal(getLocalDeviceProvider()?.kind, "device");
+    assert.equal(createDeviceForTarget(context), fake);
+    assert.equal(await createDeviceForTargetAsync(context), fake);
+    assert.deepEqual(seen, ["fake-serial", "fake-serial"]);
+  } finally {
+    setLocalDeviceProvider(undefined);
+  }
+  assert.equal(getLocalDeviceProvider(), undefined);
 });

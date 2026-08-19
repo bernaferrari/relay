@@ -6,10 +6,17 @@
 import type {
   DiscoveryControl,
   DiscoveryExploreMode,
+  DiscoveryExploreRun,
+  DiscoveryExploreStopReason,
   DiscoveryExploreStrategy,
   DiscoverySession,
 } from "@relay/protocol";
-import { patchDiscoveryScope, readDiscoverySession, setDiscoveryStatus } from "./discovery.js";
+import {
+  patchDiscoveryScope,
+  readDiscoverySession,
+  setDiscoveryStatus,
+  writeDiscoveryExploreRun,
+} from "./discovery.js";
 import {
   runDiscoveryDo,
   runDiscoveryHere,
@@ -23,22 +30,6 @@ import { currentOperationContext, runWithOperationContext } from "./operation-co
 import { runWithTargetContext } from "./target-context.js";
 import { devicePlatformForSerial, type InteractInput } from "./workspace.js";
 
-export type DiscoveryExploreStopCode = "complete" | "cancelled" | "budget" | "left_app" | "error";
-
-export type DiscoveryExploreStopReason = {
-  code: DiscoveryExploreStopCode;
-  message: string;
-  at: number;
-};
-
-export type DiscoveryExploreOutcome = {
-  strategy: DiscoveryExploreStrategy;
-  mode: DiscoveryExploreMode;
-  maxDepth: number;
-  stopReason?: DiscoveryExploreStopReason;
-  softRecoveries: number;
-};
-
 export type StartDiscoveryExploreOptions = {
   strategy?: DiscoveryExploreStrategy;
   mode?: DiscoveryExploreMode;
@@ -48,11 +39,11 @@ export type StartDiscoveryExploreOptions = {
 type ActiveExploreJob = {
   cancel: boolean;
   promise?: Promise<void>;
-  outcome: DiscoveryExploreOutcome;
+  outcome: DiscoveryExploreRun;
 };
 
 const activeExploreJobs = new Map<string, ActiveExploreJob>();
-const exploreOutcomes = new Map<string, DiscoveryExploreOutcome>();
+const exploreOutcomes = new Map<string, DiscoveryExploreRun>();
 
 const SURFACE_DEPTH = 2;
 const JOURNEY_DEPTH = 6;
@@ -183,10 +174,29 @@ export function pickNextExploreOption(
   return ranked[0] ?? null;
 }
 
-export function readDiscoveryExploreOutcome(
-  sessionId: string,
-): DiscoveryExploreOutcome | undefined {
+/** In-process view of the crawl. Empty after a restart — use {@link loadDiscoveryExploreRun}. */
+export function readDiscoveryExploreOutcome(sessionId: string): DiscoveryExploreRun | undefined {
   return exploreOutcomes.get(sessionId) ?? activeExploreJobs.get(sessionId)?.outcome;
+}
+
+/** Crawl record for a session, preferring live memory and falling back to disk. */
+export async function loadDiscoveryExploreRun(
+  sessionId: string,
+): Promise<DiscoveryExploreRun | undefined> {
+  const live = readDiscoveryExploreOutcome(sessionId);
+  if (live) return live;
+  return (await readDiscoverySession(sessionId))?.explore;
+}
+
+/** Cache the crawl record in memory and write it through to the session file. */
+async function rememberExploreRun(sessionId: string, run: DiscoveryExploreRun): Promise<void> {
+  exploreOutcomes.set(sessionId, run);
+  try {
+    await writeDiscoveryExploreRun(sessionId, run);
+  } catch (error) {
+    // A crawl must not fail because its bookkeeping could not be persisted.
+    console.error(`discovery explore ${sessionId} outcome persist failed`, error);
+  }
 }
 
 async function finishExplore(
@@ -201,13 +211,12 @@ async function finishExplore(
     if (job.outcome.stopReason?.code !== "cancelled") {
       job.outcome = { ...job.outcome, stopReason };
     }
-    exploreOutcomes.set(sessionId, job.outcome);
+    await rememberExploreRun(sessionId, job.outcome);
   } else {
-    const prior = exploreOutcomes.get(sessionId);
-    if (prior?.stopReason?.code === "cancelled") {
-      /* keep */
-    } else if (prior) {
-      exploreOutcomes.set(sessionId, { ...prior, stopReason });
+    const prior = await loadDiscoveryExploreRun(sessionId);
+    // A cancel already recorded on this session is the final word.
+    if (prior && prior.stopReason?.code !== "cancelled") {
+      await rememberExploreRun(sessionId, { ...prior, stopReason });
     }
   }
   const latest = await readDiscoverySession(sessionId);
@@ -239,22 +248,19 @@ export async function softRecoverOriginApp(input: {
   originApp?: string;
   softRecoveries: number;
   maxSoftRecoveries?: number;
+  runtime?: Pick<ExploreRuntime, "foreground" | "returnToApp">;
 }): Promise<"ok" | "recovered" | "left_app"> {
-  const foreground = (await describeTargetUi(input.serial)).foregroundApp ?? undefined;
+  const runtime = input.runtime ?? liveExploreRuntime;
   const decision = decideSoftRecover({
-    foregroundApp: foreground,
+    foregroundApp: await runtime.foreground(input.serial),
     originApp: input.originApp,
     softRecoveries: input.softRecoveries,
     maxSoftRecoveries: input.maxSoftRecoveries,
   });
   if (decision === "ok") return "ok";
   if (decision === "left_app") return "left_app";
-  const platform = (await devicePlatformForSerial(input.serial)) ?? "android";
-  await runWithTargetContext({ kind: "device", platform, serial: input.serial }, async () => {
-    await openApp(createDevice(), input.originApp!, { relaunch: false });
-  });
-  const back = (await describeTargetUi(input.serial)).foregroundApp;
-  return back === input.originApp ? "recovered" : "left_app";
+  await runtime.returnToApp(input.serial, input.originApp!);
+  return (await runtime.foreground(input.serial)) === input.originApp ? "recovered" : "left_app";
 }
 
 async function resolveInteraction(input: {
@@ -308,8 +314,41 @@ async function resolveInteraction(input: {
   }
 }
 
+/**
+ * Everything the crawl needs from a device, in one place.
+ *
+ * The loop below is the only crawl in Relay, so it has to be testable without
+ * a phone. Tests swap this seam for an in-memory device and exercise the real
+ * depth cap, back walk, and left-app stop rather than a copy of them.
+ */
+export type ExploreRuntime = {
+  here: typeof runDiscoveryHere;
+  act: typeof runDiscoveryDo;
+  foreground: (serial: string) => Promise<string | undefined>;
+  returnToApp: (serial: string, app: string) => Promise<void>;
+};
+
+export const liveExploreRuntime: ExploreRuntime = {
+  here: runDiscoveryHere,
+  act: runDiscoveryDo,
+  foreground: async (serial) => (await describeTargetUi(serial)).foregroundApp ?? undefined,
+  returnToApp: async (serial, app) => {
+    const platform = (await devicePlatformForSerial(serial)) ?? "android";
+    await runWithTargetContext({ kind: "device", platform, serial }, async () => {
+      await openApp(createDevice(), app, { relaunch: false });
+    });
+  },
+};
+
+let exploreRuntime: ExploreRuntime = liveExploreRuntime;
+
+/** Swap the device seam. Tests only — production always uses the live runtime. */
+export function setExploreRuntimeForTests(runtime: Partial<ExploreRuntime> | undefined): void {
+  exploreRuntime = runtime ? { ...liveExploreRuntime, ...runtime } : liveExploreRuntime;
+}
+
 async function exploreBack(sessionId: string): Promise<DiscoveryHere> {
-  const result = await runDiscoveryDo({
+  const result = await exploreRuntime.act({
     sessionId,
     interaction: { kind: "key", key: "back" },
     decision: {
@@ -326,6 +365,7 @@ async function runExploreJob(sessionId: string): Promise<void> {
   const job = activeExploreJobs.get(sessionId);
   if (!job) return;
   const { strategy, mode, maxDepth } = job.outcome;
+  const runtime = exploreRuntime;
 
   // Yield so start→cancel wiring can stop before the first device snapshot.
   await delay(0);
@@ -342,10 +382,9 @@ async function runExploreJob(sessionId: string): Promise<void> {
     if (!session) return;
 
     // Seed: here lands the live screen on the App Map.
-    let here = await runDiscoveryHere(sessionId);
+    let here = await runtime.here(sessionId);
     session = (await readDiscoverySession(sessionId))!;
-    const originApp =
-      here.foregroundApp ?? (await describeTargetUi(session.targetId)).foregroundApp;
+    const originApp = here.foregroundApp ?? (await runtime.foreground(session.targetId));
     const deadline = session.createdAt + session.scope.maxDurationMs;
     const explored = new Set<string>();
     const stack: Frame[] = [
@@ -384,7 +423,7 @@ async function runExploreJob(sessionId: string): Promise<void> {
       // Refresh options from the live here when the frame's screen matches.
       if (here.screen.id !== frame.screenId) {
         try {
-          here = await runDiscoveryHere(sessionId);
+          here = await runtime.here(sessionId);
         } catch (error) {
           console.error(`discovery explore ${sessionId} here failed`, error);
           await finishExplore(sessionId, "stopped", {
@@ -434,7 +473,7 @@ async function runExploreJob(sessionId: string): Promise<void> {
       try {
         // Always act via do (verify + fresh here + land). Prefer grounded interaction
         // for ambiguous labels; otherwise controlId keeps provenance on the option.
-        result = await runDiscoveryDo({
+        result = await runtime.act({
           sessionId,
           ...(needsExploreGrounding(next) ? { interaction } : { controlId: next.id, interaction }),
           decision: {
@@ -455,11 +494,13 @@ async function runExploreJob(sessionId: string): Promise<void> {
         serial: session.targetId,
         originApp,
         softRecoveries: job.outcome.softRecoveries,
+        runtime,
       });
       if (leave === "recovered") {
-        job.outcome.softRecoveries += 1;
+        job.outcome = { ...job.outcome, softRecoveries: job.outcome.softRecoveries + 1 };
+        await rememberExploreRun(sessionId, job.outcome);
         try {
-          here = await runDiscoveryHere(sessionId);
+          here = await runtime.here(sessionId);
         } catch {
           /* continue with prior here */
         }
@@ -527,7 +568,7 @@ async function runExploreJob(sessionId: string): Promise<void> {
     });
   } finally {
     const jobStill = activeExploreJobs.get(sessionId);
-    if (jobStill) exploreOutcomes.set(sessionId, jobStill.outcome);
+    if (jobStill) await rememberExploreRun(sessionId, jobStill.outcome);
     activeExploreJobs.delete(sessionId);
   }
 }
@@ -564,13 +605,16 @@ export async function startDiscoveryExplore(
     session = await patchDiscoveryScope(id, { strategy, mode, maxDepth });
   }
 
-  const outcome: DiscoveryExploreOutcome = {
+  const startedAt = Date.now();
+  const outcome: DiscoveryExploreRun = {
     strategy,
     mode,
     maxDepth,
     softRecoveries: 0,
+    startedAt,
+    updatedAt: startedAt,
   };
-  exploreOutcomes.set(id, outcome);
+  await rememberExploreRun(id, outcome);
 
   const running = interrupted ? session : await setDiscoveryStatus(id, "running");
   activeExploreJobs.set(id, { cancel: false, outcome });
@@ -590,16 +634,16 @@ export async function cancelDiscoveryExplore(id: string): Promise<DiscoverySessi
   if (!session) throw new Error("discovery session not found");
   if (session.status === "running" || session.status === "paused") {
     const stopped = await setDiscoveryStatus(id, "stopped");
-    const prior = exploreOutcomes.get(id) ?? active?.outcome;
+    const prior = (await loadDiscoveryExploreRun(id)) ?? active?.outcome;
     if (prior) {
-      exploreOutcomes.set(id, {
+      const cancelledRun: DiscoveryExploreRun = {
         ...prior,
-        stopReason: {
-          code: "cancelled",
-          message: "Explore cancelled",
-          at: Date.now(),
-        },
-      });
+        stopReason: { code: "cancelled", message: "Explore cancelled", at: Date.now() },
+      };
+      // The still-running crawl will finish with its own device error moments
+      // from now. Stamp cancel onto the live job so finishExplore keeps it.
+      if (active) active.outcome = cancelledRun;
+      await rememberExploreRun(id, cancelledRun);
     }
     return stopped;
   }
@@ -609,6 +653,7 @@ export async function cancelDiscoveryExplore(id: string): Promise<DiscoverySessi
 export function resetDiscoveryExploreJobsForTests(): void {
   activeExploreJobs.clear();
   exploreOutcomes.clear();
+  exploreRuntime = liveExploreRuntime;
 }
 
 /** Drain a background explore job (tests only). */

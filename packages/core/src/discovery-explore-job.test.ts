@@ -10,6 +10,7 @@ import {
   decideSoftRecover,
   defaultExploreDepth,
   isHardEdgeLabel,
+  loadDiscoveryExploreRun,
   needsExploreGrounding,
   pickNextExploreOption,
   readDiscoveryExploreOutcome,
@@ -263,6 +264,16 @@ test("startDiscoveryExplore applies strategy options onto a mapped session", asy
     assert.equal(readDiscoveryExploreOutcome(session.id)?.stopReason?.code, "cancelled");
     // Give the yielded job a tick to observe cancel without touching a device.
     await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // A tsx watch restart drops every in-memory map; the session file must not.
+    resetDiscoveryExploreJobsForTests();
+    assert.equal(readDiscoveryExploreOutcome(session.id), undefined);
+    const restarted = await loadDiscoveryExploreRun(session.id);
+    assert.equal(restarted?.strategy, "hard-edges");
+    assert.equal(restarted?.mode, "model");
+    assert.equal(restarted?.maxDepth, 3);
+    assert.equal(restarted?.softRecoveries, 0);
+    assert.equal(restarted?.stopReason?.code, "cancelled");
   } finally {
     resetDiscoveryExploreJobsForTests();
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
