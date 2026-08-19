@@ -3,6 +3,7 @@ import type { AppMap, CaseExpansionStrategy, CaseStack } from "@relay/protocol";
 import type { CanvasConnection } from "./app-map-connection-draft";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
+import { humanError } from "./human-error";
 
 export function useAppMapCaseStack(options: {
   activeAppMap: () => AppMap | undefined;
@@ -61,7 +62,7 @@ export function useAppMapCaseStack(options: {
         "success",
       );
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not add these cases"), "error");
     } finally {
       setCaseStackBusy(false);
     }
@@ -82,7 +83,7 @@ export function useAppMapCaseStack(options: {
       await server.refreshAppMaps();
       toast(`Applied ${map.caseStacks[caseStackId]!.name}`, "success");
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not apply these cases"), "error");
     } finally {
       setCaseStackBusy(false);
     }
@@ -103,7 +104,7 @@ export function useAppMapCaseStack(options: {
       await server.refreshAppMaps();
       toast("Removed cases from this connection", "success");
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not remove these cases"), "error");
     } finally {
       setCaseStackBusy(false);
     }

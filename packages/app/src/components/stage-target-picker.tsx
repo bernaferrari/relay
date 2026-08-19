@@ -83,7 +83,7 @@ export function StageTargetPicker(props: {
           </span>
           <button
             type="button"
-            class="grid size-11 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96]"
+            class="grid size-11 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-hover ease-out-strong hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96]"
             aria-label="Close target picker"
             onClick={props.onClose}
           >
@@ -95,7 +95,7 @@ export function StageTargetPicker(props: {
           <div class="mx-2.5 flex min-h-11 items-center justify-between rounded-lg bg-[var(--surface-base)] px-1">
             <button
               type="button"
-              class="inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 text-micro font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
+              class="inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 text-micro font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-hover ease-out-strong hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
               disabled={props.picker().index <= 0}
               onClick={() => props.onRetarget(props.picker().index - 1)}
             >
@@ -106,7 +106,7 @@ export function StageTargetPicker(props: {
             </span>
             <button
               type="button"
-              class="inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 text-micro font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
+              class="inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 text-micro font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-hover ease-out-strong hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
               disabled={props.picker().index >= props.ancestryLength - 1}
               onClick={() => props.onRetarget(props.picker().index + 1)}
             >
@@ -125,7 +125,7 @@ export function StageTargetPicker(props: {
                   aria-pressed={selected()}
                   class={cn(
                     "grid min-h-11 w-full grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 text-left",
-                    "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--surface-base-hover)] active:scale-[0.985]",
+                    "transition-[background-color,box-shadow,transform] duration-hover ease-out-strong hover:bg-[var(--surface-base-hover)] active:scale-[0.985]",
                     selected() &&
                       "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_28%,transparent)]",
                   )}
@@ -168,7 +168,7 @@ export function StageTargetPicker(props: {
                 type="button"
                 class={cn(
                   "grid min-h-11 w-full grid-cols-[26px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 text-left",
-                  "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--surface-base-hover)] active:scale-[0.985]",
+                  "transition-[background-color,box-shadow,transform] duration-hover ease-out-strong hover:bg-[var(--surface-base-hover)] active:scale-[0.985]",
                   props.strategyId === "point" &&
                     "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_28%,transparent)]",
                 )}

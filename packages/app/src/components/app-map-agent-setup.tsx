@@ -44,7 +44,7 @@ export function AppMapAgentSetup(props: {
       <label class="grid gap-1.5">
         <span class="text-micro font-semibold text-[var(--text-base)]">Goal</span>
         <textarea
-          class="min-h-24 resize-y rounded-xl border border-[var(--border-strong-base)] bg-[var(--surface-base)] px-3 py-2.5 text-body/[1.5] text-[var(--text-strong)] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--text-interactive-base)] focus:bg-[var(--background-base)] focus:shadow-[0_0_0_3px_var(--product-accent-soft)]"
+          class="min-h-24 resize-y rounded-xl border border-[var(--border-strong-base)] bg-[var(--surface-base)] px-3 py-2.5 text-body/[1.5] text-[var(--text-strong)] outline-none transition-[border-color,background-color,box-shadow] duration-hover placeholder:text-[var(--text-weak)] focus:border-[var(--text-interactive-base)] focus:bg-[var(--background-base)] focus:shadow-[0_0_0_3px_var(--product-accent-soft)]"
           value={props.goal}
           placeholder="Map onboarding and find every safe path into settings"
           onInput={(event) => props.onGoal(event.currentTarget.value)}
@@ -67,7 +67,7 @@ export function AppMapAgentSetup(props: {
                 <button
                   type="button"
                   class={cn(
-                    "grid min-h-14 content-center rounded-lg px-2 text-left transition-[background-color,color,box-shadow] duration-150",
+                    "grid min-h-14 content-center rounded-lg px-2 text-left transition-[background-color,color,box-shadow] duration-hover",
                     props.strategy === option[0] &&
                       "bg-[var(--background-base)] shadow-[0_1px_4px_rgb(0_0_0/12%)]",
                   )}
@@ -93,7 +93,7 @@ export function AppMapAgentSetup(props: {
               <button
                 type="button"
                 class={cn(
-                  "min-h-11 rounded-lg text-caption font-medium text-[var(--text-base)] transition-[background-color,color,box-shadow] duration-150",
+                  "min-h-11 rounded-lg text-caption font-medium text-[var(--text-base)] transition-[background-color,color,box-shadow] duration-hover",
                   props.minutes === value &&
                     "bg-[var(--background-base)] text-[var(--text-strong)] shadow-[0_1px_4px_rgb(0_0_0/12%)]",
                 )}
@@ -110,7 +110,7 @@ export function AppMapAgentSetup(props: {
       <Show when={props.selectedTargetCount === 0}>
         <button
           type="button"
-          class="group flex min-h-14 items-center gap-3 rounded-xl bg-[var(--product-accent-soft)] px-3 text-left shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_20%,transparent)] transition-colors duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_78%,var(--surface-base-hover))]"
+          class="group flex min-h-14 items-center gap-3 rounded-xl bg-[var(--product-accent-soft)] px-3 text-left shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_20%,transparent)] transition-colors duration-hover hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_78%,var(--surface-base-hover))]"
           onClick={props.onOpenTargets}
         >
           <span class="grid size-9 shrink-0 place-items-center rounded-xl bg-[var(--background-base)] text-[var(--text-interactive-base)] shadow-[0_1px_4px_rgb(0_0_0/10%)]">
@@ -139,7 +139,7 @@ export function AppMapAgentSetup(props: {
           <Icon
             name="chevron-down"
             size={13}
-            class="text-[var(--text-weak)] transition-transform duration-150 group-open:rotate-180"
+            class="text-[var(--text-weak)] transition-transform duration-hover group-open:rotate-180"
           />
         </summary>
         <div class="grid gap-4 px-1 pb-2 pt-2">
@@ -162,7 +162,7 @@ export function AppMapAgentSetup(props: {
                   return (
                     <label
                       class={cn(
-                        "flex min-h-11 items-center gap-2.5 rounded-xl px-2.5 transition-colors duration-150",
+                        "flex min-h-11 items-center gap-2.5 rounded-xl px-2.5 transition-colors duration-hover",
                         enabled()
                           ? "cursor-pointer hover:bg-[var(--background-base)]"
                           : "cursor-not-allowed opacity-50",
@@ -201,7 +201,7 @@ export function AppMapAgentSetup(props: {
                     <button
                       type="button"
                       class={cn(
-                        "min-h-11 rounded-full px-3 text-micro font-medium transition-[background-color,color,box-shadow] duration-150",
+                        "min-h-11 rounded-full px-3 text-micro font-medium transition-[background-color,color,box-shadow] duration-hover",
                         selected()
                           ? "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_22%,transparent)]"
                           : "bg-[var(--background-base)] text-[var(--text-base)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] hover:text-[var(--text-strong)]",

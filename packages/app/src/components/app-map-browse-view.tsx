@@ -5,6 +5,14 @@ import type { PersistedRun } from "../context/server";
 import { cn } from "../lib/cn";
 import { appMapIdForJob } from "../lib/run-presentation";
 import { variantScrollSurface } from "../lib/app-map-workspace-media";
+import { screenDirectory } from "../lib/app-map-screen-directory";
+import {
+  dominantMediaRatio,
+  mediaAspectStyle,
+  screenGridColumnWidth,
+} from "../lib/app-map-screen-media-aspect";
+import { humanizeTitle } from "../lib/humanize-identifier";
+import { plural } from "../lib/plural";
 import {
   browseOutcomeLabel,
   deriveAppMapAreas,
@@ -13,9 +21,18 @@ import {
 import { Icon } from "./icon";
 import { EmptyState } from "./empty-state";
 import { AppMapScreenTile, type AppMapScreenState } from "./app-map-screen-tile";
+import { LocaleSweepReview } from "./locale-sweep-review";
 import type { ScreenshotOrientationEvidence } from "./oriented-screenshot";
 
 export type AppMapBrowseMode = "screens" | "coverage";
+
+/**
+ * Coverage answers "what ran, and how it went". A path run and a locale sweep
+ * are both answers to it, and they are read so differently — one row per run
+ * against one cell per language — that they get a lane each rather than one
+ * table that suits neither.
+ */
+type CoverageLane = "runs" | "locales";
 
 export function AppMapBrowseView(props: {
   mode: AppMapBrowseMode;
@@ -29,6 +46,10 @@ export function AppMapBrowseView(props: {
   stateForScreen: (screenId: string) => AppMapScreenState | undefined;
   onOpenScreen: (screenId: string) => void;
   onOpenRun: (runId: string) => void;
+  /** Coverage with nothing in it is one step from having something, and that
+   * step is on the canvas. Without it the empty state names an action the
+   * person then has to go and find. */
+  onOpenMap: () => void;
   onToggleDevice: () => void;
   onCaptureScreen: () => void;
   onOpenAgent: () => void;
@@ -43,8 +64,26 @@ export function AppMapBrowseView(props: {
   const [screenPlatform, setScreenPlatform] = createSignal<"all" | "android" | "ios" | "browser">(
     "all",
   );
+  const [coverageLane, setCoverageLane] = createSignal<CoverageLane>("runs");
+  const locales = () => props.mode === "coverage" && coverageLane() === "locales";
   const areas = createMemo(() => deriveAppMapAreas(props.appMap));
+  const directory = createMemo(() =>
+    screenDirectory(props.appMap, (id) => humanizeTitle(props.appMap.screens[id]?.title ?? "")),
+  );
   const explicitGroupCount = () => Object.keys(props.appMap.groups).length;
+  /** One silhouette for every tile in the grid, so the screenshots fill their
+   * frames without a row losing its shared baseline. */
+  const mediaRatio = createMemo(() =>
+    dominantMediaRatio(
+      Object.keys(props.appMap.screens).map(
+        (id) => props.orientationEvidenceForScreen(id)?.logicalViewport,
+      ),
+    ),
+  );
+  const gridStyle = () => ({
+    "--screen-media-aspect": mediaAspectStyle(mediaRatio()),
+    "--screen-tile-width": `${screenGridColumnWidth(mediaRatio())}px`,
+  });
   const filteredAreas = createMemo(() => {
     const needle = query().trim().toLocaleLowerCase();
     return areas()
@@ -102,27 +141,27 @@ export function AppMapBrowseView(props: {
   return (
     <div
       class={cn(
-        "absolute inset-0 min-h-0 overflow-y-auto overscroll-contain bg-[var(--map-canvas)] pt-[64px] pb-20 transition-[padding] duration-150",
+        "absolute inset-0 min-h-0 overflow-y-auto overscroll-contain bg-[var(--map-canvas)] pt-7 pb-20 transition-[padding] duration-hover",
         props.deviceOpen && "pr-[calc(var(--app-map-device-panel-width)+32px)] max-[900px]:pr-0",
       )}
     >
       <div
         class={cn(
-          "w-full px-[clamp(18px,3vw,40px)]",
+          "flex min-h-full w-full flex-col px-[clamp(18px,3vw,40px)]",
           props.deviceOpen ? "mr-auto max-w-none" : "mx-auto max-w-[1440px]",
         )}
       >
         <header class="mb-3 flex items-center justify-between gap-4 max-[720px]:items-start max-[720px]:flex-col">
           <div class="min-w-0">
             <h2 class="text-title/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
-              {props.mode === "screens" ? "Screens" : "Results"}
+              {props.mode === "screens" ? "Screens" : "Coverage"}
             </h2>
             <p class="mt-0.5 max-w-[680px] text-caption/[1.45] text-[var(--text-weak)]">
-              {props.mode === "screens"
-                ? explicitGroupCount()
-                  ? `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} · ${explicitGroupCount()} ${explicitGroupCount() === 1 ? "group" : "groups"} · ${Object.keys(props.appMap.connections).length} ${Object.keys(props.appMap.connections).length === 1 ? "journey edge" : "journey edges"}`
-                  : `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} · ${Object.keys(props.appMap.connections).length} ${Object.keys(props.appMap.connections).length === 1 ? "journey edge" : "journey edges"} on this map`
-                : `${rows().length} ${rows().length === 1 ? "run" : "runs"} on this map`}
+              {locales()
+                ? "Every mapped screen, replayed in every language and compared against the baseline."
+                : props.mode === "screens"
+                  ? screensSummary(props.appMap, explicitGroupCount())
+                  : `${rows().length} ${rows().length === 1 ? "run" : "runs"} on this map`}
             </p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
@@ -136,10 +175,43 @@ export function AppMapBrowseView(props: {
                 <Icon name="scan" size={12} /> Map with AI
               </Button>
             </Show>
+            <Show when={props.mode === "coverage"}>
+              <div
+                class="flex h-9 items-center rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-0.5"
+                role="tablist"
+                aria-label="Coverage"
+              >
+                <For
+                  each={
+                    [
+                      ["runs", "Runs"],
+                      ["locales", "Languages"],
+                    ] as ReadonlyArray<readonly [CoverageLane, string]>
+                  }
+                >
+                  {([lane, label]) => (
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={coverageLane() === lane}
+                      class={cn(
+                        "inline-flex min-h-8 items-center rounded-md px-2.5 text-caption font-medium transition-[background-color,color,box-shadow] duration-hover focus-visible:outline-2 focus-visible:outline-[var(--border-strong-focus)]",
+                        coverageLane() === lane
+                          ? "bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-sm"
+                          : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
+                      )}
+                      onClick={() => setCoverageLane(lane)}
+                    >
+                      {label}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
           </div>
         </header>
 
-        <Show when={props.mode === "screens" || rows().length > 0}>
+        <Show when={!locales() && (props.mode === "screens" || rows().length > 0)}>
           <div class="mb-4 flex min-h-11 w-full items-center gap-1.5 rounded-xl border border-[var(--border-weak-base)] bg-[var(--background-base)] p-1 max-[680px]:flex-wrap">
             <label class="group/search relative min-w-[180px] flex-1 rounded-lg transition-colors focus-within:bg-[var(--surface-base)]">
               <span class="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-[var(--text-weak)] transition-colors group-focus-within/search:text-[var(--text-interactive-base)]">
@@ -147,7 +219,7 @@ export function AppMapBrowseView(props: {
               </span>
               <span class="sr-only">Search {props.mode}</span>
               <input
-                class="h-9 w-full rounded-lg border-0 bg-transparent pr-3 pl-9 text-body text-[var(--text-strong)] outline-none transition-colors duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base)]"
+                class="h-9 w-full rounded-lg border-0 bg-transparent pr-3 pl-9 text-body text-[var(--text-strong)] outline-none transition-colors duration-hover placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base)]"
                 value={query()}
                 placeholder={props.mode === "screens" ? "Search screens" : "Search runs"}
                 onInput={(event) => setQuery(event.currentTarget.value)}
@@ -199,16 +271,24 @@ export function AppMapBrowseView(props: {
         <Show
           when={props.mode === "screens"}
           fallback={
-            <CoverageTable
-              rows={filteredRows()}
-              hasAnyRuns={rows().length > 0}
-              filtersActive={coverageFiltersActive()}
-              onClearFilters={clearCoverageFilters}
-              onOpenRun={props.onOpenRun}
-            />
+            <Show
+              when={locales()}
+              fallback={
+                <CoverageTable
+                  rows={filteredRows()}
+                  hasAnyRuns={rows().length > 0}
+                  filtersActive={coverageFiltersActive()}
+                  onClearFilters={clearCoverageFilters}
+                  onOpenRun={props.onOpenRun}
+                  onOpenMap={props.onOpenMap}
+                />
+              }
+            >
+              <LocaleSweepReview suggestedName={`${props.appMap.name} · languages`} />
+            </Show>
           }
         >
-          <div class="grid items-start gap-y-9">
+          <div class="flex flex-1 flex-col gap-y-9">
             <For
               each={visibleAreas()}
               fallback={
@@ -257,10 +337,14 @@ export function AppMapBrowseView(props: {
                       </span>
                     </header>
                   </Show>
-                  <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,210px),1fr))] items-start gap-5">
+                  <div
+                    class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,var(--screen-tile-width,210px)),1fr))] items-start gap-x-4 gap-y-6"
+                    style={gridStyle()}
+                  >
                     <For each={area.screenIds}>
                       {(screenId) => {
                         const screen = () => props.appMap.screens[screenId]!;
+                        const entry = () => directory()[screenId];
                         return (
                           <AppMapScreenTile
                             screen={screen()}
@@ -268,8 +352,9 @@ export function AppMapBrowseView(props: {
                             orientationEvidence={props.orientationEvidenceForScreen(screenId)}
                             scrollSurface={variantScrollSurface(props.appMap, screenId)}
                             state={props.stateForScreen(screenId)}
-                            incoming={incomingCount(props.appMap, screenId)}
-                            outgoing={outgoingCount(props.appMap, screenId)}
+                            incoming={entry()?.incoming ?? 0}
+                            outgoing={entry()?.outgoing ?? 0}
+                            {...(entry()?.qualifier ? { qualifier: entry()!.qualifier } : {})}
                             isStart={Object.values(props.appMap.flows).some(
                               (flow) => flow.startScreenId === screenId,
                             )}
@@ -288,6 +373,18 @@ export function AppMapBrowseView(props: {
       </div>
     </div>
   );
+}
+
+/** "Journey edge" was the internal name for a connection, and DESIGN_SYSTEM
+ * bans Journey from the chrome. A person reading the map calls the arrows
+ * connections, so the header does too. */
+function screensSummary(appMap: AppMap, groupCount: number): string {
+  const parts = [
+    plural(Object.keys(appMap.screens).length, "screen"),
+    ...(groupCount ? [plural(groupCount, "group")] : []),
+    plural(Object.keys(appMap.connections).length, "connection"),
+  ];
+  return groupCount ? parts.join(" · ") : `${parts.join(" · ")} on this map`;
 }
 
 type CoverageRow = {
@@ -368,23 +465,25 @@ function CoverageTable(props: {
   filtersActive: boolean;
   onClearFilters: () => void;
   onOpenRun: (runId: string) => void;
+  onOpenMap: () => void;
 }) {
   const visibleRows = () => props.rows.slice(0, 200);
+  const filtered = () => props.hasAnyRuns && props.filtersActive;
 
   return (
     <Show
       when={props.rows.length}
       fallback={
         <BrowseEmpty
-          icon={props.hasAnyRuns ? "search" : "clock"}
+          icon={props.hasAnyRuns ? "search" : "map"}
           title={props.hasAnyRuns ? "No runs match these filters" : "No runs yet"}
           body={
             props.hasAnyRuns
               ? "Try broader filters or clear the search."
-              : "Run a path from the map to see its screenshots and result here."
+              : "Run a path from the map. Its screenshots, steps, and result land here."
           }
-          actionLabel={props.hasAnyRuns && props.filtersActive ? "Clear filters" : undefined}
-          onAction={props.hasAnyRuns && props.filtersActive ? props.onClearFilters : undefined}
+          actionLabel={filtered() ? "Clear filters" : "Open the map"}
+          onAction={filtered() ? props.onClearFilters : props.onOpenMap}
         />
       }
     >
@@ -400,7 +499,7 @@ function CoverageTable(props: {
           {(row) => (
             <button
               type="button"
-              class="grid min-h-14 w-full grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] items-center gap-4 border-b border-[var(--border-weak-base)] px-4 text-left text-caption outline-none transition-colors duration-150 last:border-b-0 hover:bg-[var(--surface-base)] focus-visible:bg-[var(--product-accent-soft)] max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden"
+              class="grid min-h-14 w-full grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] items-center gap-4 border-b border-[var(--border-weak-base)] px-4 text-left text-caption outline-none transition-colors duration-hover last:border-b-0 hover:bg-[var(--surface-base)] focus-visible:bg-[var(--product-accent-soft)] max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden"
               onClick={() => props.onOpenRun(row.id)}
             >
               <span class="min-w-0">
@@ -453,7 +552,7 @@ function FilterSelect(props: {
     <label class="relative shrink-0">
       <span class="sr-only">{props.label}</span>
       <select
-        class="h-9 min-w-[124px] appearance-none rounded-lg border-0 bg-transparent pr-8 pl-3 text-body font-medium text-[var(--text-base)] outline-none transition-colors duration-150 hover:bg-[var(--surface-base)] focus:bg-[var(--surface-base)]"
+        class="h-9 min-w-[124px] appearance-none rounded-lg border-0 bg-transparent pr-8 pl-3 text-body font-medium text-[var(--text-base)] outline-none transition-colors duration-hover hover:bg-[var(--surface-base)] focus:bg-[var(--surface-base)]"
         value={props.value}
         onChange={(event) => props.onChange(event.currentTarget.value)}
       >
@@ -469,37 +568,33 @@ function FilterSelect(props: {
 }
 
 function BrowseEmpty(props: {
-  icon: "search" | "play" | "clock";
+  icon: "search" | "map";
   title: string;
   body: string;
   actionLabel?: string;
   onAction?: () => void;
 }) {
   return (
-    <section class="grid min-h-56 place-items-center px-6">
+    // The void keeps the surface the filled state has — the same panel the
+    // Coverage table and the Screens grid sit on — so a map with nothing in it
+    // reads as an empty shelf and not as a page that failed to load. It grows
+    // to the bottom of the page so the panel has one edge against the canvas
+    // instead of floating in it, and the floor keeps short panes from jumping
+    // when a filter is cleared.
+    <section class="grid min-h-[320px] flex-1 place-items-center rounded-2xl bg-[var(--background-base)] px-6 py-10 shadow-[0_0_0_1px_var(--border-weak-base)]">
       <EmptyState
-        size="md"
+        size="lg"
         icon={props.icon}
         title={props.title}
         description={props.body}
         actionLabel={props.actionLabel}
         onAction={props.onAction}
+        // The workspace chrome already carries a filled primary ("Record
+        // path"), so this one recedes rather than competing with it.
+        actionVariant="secondary"
       />
     </section>
   );
-}
-
-function incomingCount(appMap: AppMap, screenId: string): number {
-  return Object.values(appMap.connections).filter(
-    (connection) =>
-      connection.destination.kind === "screen" && connection.destination.screenId === screenId,
-  ).length;
-}
-
-function outgoingCount(appMap: AppMap, screenId: string): number {
-  return Object.values(appMap.connections).filter(
-    (connection) => connection.fromScreenId === screenId,
-  ).length;
 }
 
 function screenTargetNames(appMap: AppMap, screen: Screen): string[] {

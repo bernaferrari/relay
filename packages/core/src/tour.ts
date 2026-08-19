@@ -4,6 +4,7 @@
  */
 import type { DestinationEvidenceSurface } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
+import { isProfileAppTitle } from "./discovery-app-profiles.js";
 
 export type TourStop = {
   label: string;
@@ -18,10 +19,16 @@ export type TourScreenSignature = {
   labels: string[];
 };
 
-const HEADER = /^(app|grok|voice|general|other)$/i;
+const SECTION_HEADER = /^(app|voice|general|other)$/i;
+
+/** A structural section header, or the app's own name used as one. */
+function isSectionHeader(label: string): boolean {
+  return SECTION_HEADER.test(label) || isProfileAppTitle(label);
+}
+
 // Only discard bare editing/chrome commands. Product preferences can include
-// the same words (for example Grok's “Paste as File”), and treating those as
-// chrome silently removes real map destinations from a tour.
+// the same words (for example “Paste as File”), and treating those as chrome
+// silently removes real map destinations from a tour.
 const SKIP = /^(?:search(?:\s.*)?|close|back|done|cancel|dismiss|keyboard|undo|redo|paste)$/i;
 const LANGUAGE_ROW = /language|idioma|sprache|langue|lingua|língua|لغة|言語|语言|語言/i;
 
@@ -178,13 +185,13 @@ export function extractTourStops(
     // or more TextViews. Treat that ancestor as the cell so the title becomes
     // a stable tour stop and subtitles in the same row are ignored.
     const row = isNativeCell ? node : (closestHittableAncestor(node) ?? enclosingHittableRow(node));
-    // “Voice” and “Grok” may be either a section header or a real card title.
-    // The text alone cannot decide, so keep those only when Compose exposes a
-    // native/tappable row behind them. The remaining short labels (App,
-    // General, Other) are structural section headers even when a platform
+    // “Voice” and the app's own name may be either a section header or a real
+    // card title. The text alone cannot decide, so keep those only when Compose
+    // exposes a native/tappable row behind them. The remaining short labels
+    // (App, General, Other) are structural section headers even when a platform
     // exposes their container as a Cell.
-    const mayNameARow = /^(?:voice|grok)$/i.test(label);
-    if (HEADER.test(label) && label.length <= 12 && (!mayNameARow || (!isNativeCell && !row))) {
+    const mayNameARow = /^voice$/i.test(label) || isProfileAppTitle(label);
+    if (isSectionHeader(label) && label.length <= 12 && (!mayNameARow || (!isNativeCell && !row))) {
       continue;
     }
     const rowRect = row?.rect ?? rect;

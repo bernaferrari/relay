@@ -1,7 +1,7 @@
 import type { AppMapCanvasState, CanvasFlow } from "@relay/protocol";
 import { createEffect, onCleanup, onMount, type Accessor } from "solid-js";
 import { toast } from "../context/toast";
-import type { AppMapWorkspaceView } from "../components/app-map-toolbar";
+import type { MapCanvasView } from "../components/map-mode-switch";
 import { compactCanvasPositions } from "./app-map-auto-layout";
 import { withCanvasGraph } from "./app-map-canvas-graph";
 import type { CanvasScreenRotation } from "./app-map-canvas-layout";
@@ -20,7 +20,7 @@ export function useAppMapWorkspaceShell(options: {
   setHistoryOpen: (open: boolean) => void;
   setCaptureOpen: (open: boolean) => void;
   selectedAppMapId: Accessor<string | null>;
-  setWorkspaceView: (view: AppMapWorkspaceView) => void;
+  setWorkspaceView: (view: MapCanvasView) => void;
   setSelectedNodeId: (id: string | null) => void;
   revealScreen: (screenId: string) => void;
 }) {

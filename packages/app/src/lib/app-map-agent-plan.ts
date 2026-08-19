@@ -35,6 +35,28 @@ export function buildAgentWorkers(
   }));
 }
 
+export type JourneyWorkerOption = {
+  id: string;
+  /** Short enough for a tab: the divided area, else the perspective. */
+  label: string;
+  /** The target, so two agents on the same area stay distinguishable. */
+  detail: string;
+  live: boolean;
+};
+
+/** Every crawl that reached a session, oldest first, so the panel can offer one
+ * journey per worker instead of only the one that happens to hold focus. */
+export function journeyWorkerOptions(workers: readonly AgentWorker[]): JourneyWorkerOption[] {
+  return workers
+    .filter((worker) => worker.sessionId)
+    .map((worker) => ({
+      id: worker.id,
+      label: worker.focus?.trim() || worker.model.shortLabel,
+      detail: worker.targetName,
+      live: worker.status === "running",
+    }));
+}
+
 /** Independent targets may run concurrently; each returned row is one target's
  * exclusive serial queue and must execute in order. */
 export function agentTargetQueues(workers: readonly AgentWorker[]): AgentWorker[][] {

@@ -467,7 +467,7 @@ export function createAppMapOperationDefinitions(
     ),
     command(
       "app-map.combine.preflight",
-      "Preview a run matrix without starting it",
+      "Preview a Combine without starting it",
       "POST",
       "/app-maps/:appMapId/combines/:combineId/preflight",
       {
@@ -478,12 +478,12 @@ export function createAppMapOperationDefinitions(
     ),
     command(
       "app-map.combine.save",
-      "Save a run matrix (state sets × tests)",
+      "Save a Combine (Variables × Tests)",
       "PUT",
       "/app-maps/:appMapId/combines/:combineId",
       {
         category: "authoring",
-        input: appMapMutationParser<"app-map.combine.save">("Run matrix save", "combine", [
+        input: appMapMutationParser<"app-map.combine.save">("Combine save", "combine", [
           "combineId",
         ]),
         output: appMapOutputParser,
@@ -491,12 +491,12 @@ export function createAppMapOperationDefinitions(
     ),
     command(
       "app-map.combine.remove",
-      "Remove a run matrix",
+      "Remove a Combine",
       "POST",
       "/app-maps/:appMapId/combines/:combineId/remove",
       {
         category: "authoring",
-        input: appMapMutationParser<"app-map.combine.remove">("Run matrix removal", undefined, [
+        input: appMapMutationParser<"app-map.combine.remove">("Combine removal", undefined, [
           "combineId",
         ]),
         output: appMapOutputParser,

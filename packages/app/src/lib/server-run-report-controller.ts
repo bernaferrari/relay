@@ -12,6 +12,7 @@ import type {
   VisualReviewDecision,
 } from "@relay/protocol";
 import { toast } from "../context/toast";
+import { humanError } from "./human-error";
 import type { JobInfo, PersistedRun, RunEvidenceQuery } from "./api-types";
 
 type Request = <T = unknown>(path: string, init?: RequestInit, timeoutMs?: number) => Promise<T>;
@@ -100,7 +101,7 @@ export function createServerRunReportController(input: {
     try {
       return (await input.runAction("run.visual.compare", { runId: id })).comparison;
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not compare this run's screenshots"), "error");
       return null;
     }
   }
@@ -121,7 +122,7 @@ export function createServerRunReportController(input: {
         })
       ).decision;
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not record this visual review"), "error");
       return null;
     }
   }
@@ -141,7 +142,7 @@ export function createServerRunReportController(input: {
       await loadRunDetail(id, true);
       return result.review;
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not record this review"), "error");
       return null;
     }
   }

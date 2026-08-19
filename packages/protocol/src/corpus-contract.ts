@@ -89,6 +89,19 @@ export type CorpusControl = {
     text?: string;
     point?: { x: number; y: number };
   };
+  /**
+   * Where the control sat when it was observed. Kept per locale so a review can
+   * see that a translated string had to fit the same box as the original.
+   */
+  rect?: { x: number; y: number; width: number; height: number };
+  /**
+   * Recorded so its copy can be compared, but never activated by an automatic
+   * crawl: app chrome, a way out of the screen, or a row a crawl must not
+   * exercise. Whether a crawl should tap a control and whether its text should
+   * be compared are separate questions; conflating them made the filter a
+   * function of the language on screen.
+   */
+  skipCrawl?: true;
 };
 
 /** One concrete screen observation inside a corpus, always bound to a locale. */
@@ -271,7 +284,9 @@ export type CorpusFindingCode =
   | "SCREEN_MISSING"
   | "POSSIBLE_LOCALE_NOT_APPLIED"
   | "CONTROL_MISSING"
-  | "POSSIBLE_UNTRANSLATED_TEXT";
+  | "POSSIBLE_UNTRANSLATED_TEXT"
+  /** Translated text that the control it landed in probably cannot show in full. */
+  | "POSSIBLE_TEXT_CLIPPED";
 
 export type CorpusFinding = {
   id: string;
@@ -286,6 +301,28 @@ export type CorpusFinding = {
   expected?: string;
   observed?: string;
   detail: string;
+};
+
+/**
+ * A finding somebody has already looked at and accepted.
+ *
+ * Keyed by the finding's own id, which the analyzer derives from the code, the
+ * screen, the locale and the control rather than from the sweep it was seen on.
+ * That is what lets a forty-language sweep stay quiet about a clipped label
+ * somebody accepted last week instead of reporting it as news.
+ */
+export type KnownLocaleFinding = {
+  id: string;
+  code: CorpusFindingCode;
+  canonicalKey: string;
+  screenLabel: string;
+  locale: string;
+  /** What the finding said when it was accepted, so the list reads as prose. */
+  detail: string;
+  stableKey?: string;
+  note?: string;
+  markedAt: number;
+  markedBy?: string;
 };
 
 /** A bounded, explainable localization review. This intentionally reports

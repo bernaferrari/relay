@@ -6,13 +6,17 @@
  */
 import type { RecipeStep, StepTarget } from "./api-types";
 import { targetValid } from "./step-target";
+import { identifierControlPhrase } from "./humanize-identifier";
 import { titleize, type TitledId } from "./job";
 
 function targetPhrase(t: StepTarget | undefined): string {
   if (!t) return "an element";
   if (t.label) return `"${t.label}"`;
   if (t.text) return `"${t.text}"`;
-  if (t.identifier) return `the ${t.identifier} element`;
+  // An identifier is a build-time handle, so show the words inside it and drop
+  // the raw token. Unquoted, because it is not text anyone can read on screen.
+  const named = identifierControlPhrase(t.identifier);
+  if (named) return named;
   // Refs and coordinates are runner internals — never surface them in copy.
   if (t.ref && t.point) return "the recorded control";
   if (t.ref) return "the recorded element";
@@ -55,7 +59,8 @@ function recordedTargetPhrase(step: Extract<RecipeStep, { kind: "tap" }>): strin
     ""
   ).trim();
   if (visibleName) return `"${visibleName}"`;
-  if (step.target.identifier) return `the ${step.target.identifier} element`;
+  const fromIdentifier = identifierControlPhrase(step.target.identifier);
+  if (fromIdentifier) return fromIdentifier;
   // Element references are useful to the runner but meaningless in the plan.
   if (step.target.ref && step.target.point) return "the recorded control";
   if (step.target.ref) return "the recorded element";

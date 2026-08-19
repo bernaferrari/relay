@@ -12,7 +12,7 @@ export function useAppMapCombineSectionFocus(options: {
     if (!sectionName || !scrollArea || options.editorOpen()) return;
     queueMicrotask(() => {
       const section = scrollArea?.querySelector<HTMLElement>(
-        `[data-matrix-section="${sectionName}"]`,
+        `[data-combine-section="${sectionName}"]`,
       );
       if (!section || !scrollArea) return;
       scrollArea.scrollTop = Math.max(0, section.offsetTop - 12);

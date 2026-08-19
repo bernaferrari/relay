@@ -259,7 +259,7 @@ export function createDevice(explicitContext?: TargetContext): Device {
     });
     device = {
       ...native,
-      ...bindNativeDeviceMutations(native, targetIdentity(context), getExecutingJobId()),
+      ...bindNativeDeviceMutations(native, targetIdentity(context)),
       observability: {
         ...native.observability,
         crashes: ({ action, since }) =>

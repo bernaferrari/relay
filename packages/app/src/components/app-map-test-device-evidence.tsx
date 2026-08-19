@@ -358,7 +358,7 @@ function ContextTab(props: {
       tabindex={props.selected ? 0 : -1}
       class={cn(
         "min-h-7 flex-1 rounded px-2 text-caption font-medium",
-        "transition-colors duration-150 motion-reduce:transition-none",
+        "transition-colors duration-hover motion-reduce:transition-none",
         "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-strong-focus",
         props.selected
           ? "bg-background-base text-text-strong shadow-[0_1px_2px_rgb(0_0_0/6%)]"

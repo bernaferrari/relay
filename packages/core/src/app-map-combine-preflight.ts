@@ -94,7 +94,7 @@ export async function preflightAppMapCombine(
   const variables = combine.variableIds.flatMap((id) => {
     const variable = map.variables[id];
     if (!variable) {
-      blockers.push(issue("missing-modifier", `Modifier “${id}” is no longer on this map.`));
+      blockers.push(issue("missing-variable", `Variable “${id}” is no longer on this map.`));
       return [];
     }
     return [variable];
@@ -108,9 +108,9 @@ export async function preflightAppMapCombine(
     return [test];
   });
   if (!combine.variableIds.length) {
-    blockers.push(issue("missing-modifier", "Choose at least one modifier."));
+    blockers.push(issue("missing-variable", "Choose at least one Variable."));
   }
-  if (!combine.testIds.length) blockers.push(issue("missing-test", "Choose at least one test."));
+  if (!combine.testIds.length) blockers.push(issue("missing-test", "Choose at least one Test."));
 
   const sets: OptionRunSet[] = variables.map((variable) => {
     const available = variable.options.map((option) => option.id);
@@ -200,7 +200,7 @@ export async function preflightAppMapCombine(
       blockers.push(
         issue(
           "compile-failed",
-          error instanceof Error ? error.message : "Relay could not compile this run matrix.",
+          error instanceof Error ? error.message : "Relay could not compile this Combine.",
         ),
       );
     }
@@ -216,16 +216,16 @@ export async function preflightAppMapCombine(
     );
   }
   const strategy = effectiveCombine.strategy ?? defaultOptionMatrixStrategy(variables.length);
-  const modifierNames = variables.map((variable) => variable.name);
+  const variableNames = variables.map((variable) => variable.name);
   const testNames = tests.map((test) => test.name);
   return {
     ok: blockers.length === 0,
     appMapId: map.id,
     combineId: combine.id,
     name: combine.name,
-    formula: `${modifierNames.join(" × ") || "Modifier"} × ${testNames.length > 1 ? `(${testNames.join(" + ")})` : testNames[0] || "Test"}`,
+    formula: `${variableNames.join(" × ") || "Variable"} × ${testNames.length > 1 ? `(${testNames.join(" + ")})` : testNames[0] || "Test"}`,
     strategy,
-    modifiers: variables.map((variable) => ({
+    variables: variables.map((variable) => ({
       id: variable.id,
       name: variable.name,
       selectedCount: selectedIds(

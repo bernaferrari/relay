@@ -16,7 +16,7 @@ export type RunBatchSummary = {
 
 function sharedBatchTitle(rows: JobInfo[]): string {
   const titles = rows.map((row) => row.title?.trim()).filter(Boolean) as string[];
-  if (!titles.length) return "Run matrix";
+  if (!titles.length) return "Combine";
   const segments = titles.map((title) => title.split(" · "));
   const shared: string[] = [];
   for (let index = 0; index < segments[0]!.length; index += 1) {

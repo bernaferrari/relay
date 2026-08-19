@@ -36,6 +36,10 @@ import {
 import { runShareOperationDefinitions, type RunShareOperationMap } from "./run-share.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
+import {
+  createCorpusOperationDefinitions,
+  type CorpusOperationId,
+} from "./corpus-operation-definitions.js";
 import { createDiscoveryOperationDefinitions } from "./discovery-operation-definitions.js";
 import { createOperationBuilders } from "./operation-builders.js";
 import type { AppMapOperationMap } from "./app-map-operation-map.js";
@@ -701,29 +705,14 @@ type GenericOperationId =
   | "discovery.promote"
   | "discovery.start"
   | "discovery.cancel"
-  | "corpus.list"
-  | "corpus.create"
-  | "corpus.get"
-  | "corpus.rename"
-  | "corpus.status.update"
-  | "corpus.start"
-  | "corpus.cancel"
-  | "corpus.coverage"
-  | "corpus.analysis"
-  | "corpus.export"
+  | CorpusOperationId
   | "job.locale-matrix.start"
   | "job.locale-matrix.export"
+  | "job.locale-matrix.analysis"
   | "job.locale-matrix.infer"
   | "job.combine.start"
   | "job.combine.export"
   | "job.combine.infer"
-  | "corpus.screen.get"
-  | "language-profile.list"
-  | "language-profile.scan"
-  | "language-profile.save"
-  | "switcher-profile.list"
-  | "switcher-profile.scan"
-  | "switcher-profile.save"
   | "job.retry"
   | "run.replay"
   | "job.active.cancel"
@@ -1661,6 +1650,8 @@ const { command, query } = createOperationBuilders<OperationId>(operationRecordP
 
 const discoveryOperationDefinitions = createDiscoveryOperationDefinitions(operationRecordParser);
 
+const corpusOperationDefinitions = createCorpusOperationDefinitions(operationRecordParser);
+
 const appMapOperationDefinitions = createAppMapOperationDefinitions(operationRecordParser, {
   boolean,
   emptyInputParser,
@@ -2253,68 +2244,7 @@ export const operationDefinitions = [
     idempotency: "inherent",
   }),
   ...discoveryOperationDefinitions,
-  query("corpus.list", "List corpus sessions", "/corpus", { category: "corpus" }),
-  command("corpus.create", "Create corpus session", "POST", "/corpus", {
-    category: "corpus",
-  }),
-  query("corpus.get", "Get corpus session", "/corpus/:sessionId", { category: "corpus" }),
-  command("corpus.rename", "Rename corpus session", "POST", "/corpus/:sessionId/name", {
-    category: "corpus",
-  }),
-  command("corpus.status.update", "Update corpus status", "POST", "/corpus/:sessionId/status", {
-    category: "corpus",
-  }),
-  command("corpus.start", "Start settings corpus crawl", "POST", "/corpus/:sessionId/start", {
-    category: "corpus",
-    targetCapabilities: ["tap", "snapshot", "screenshot", "launch"],
-    lease: "exclusive",
-    progress: true,
-    cancellable: true,
-  }),
-  command("corpus.cancel", "Cancel corpus crawl", "POST", "/corpus/:sessionId/cancel", {
-    category: "corpus",
-    confirmation: "confirm",
-    minimumRole: "runner",
-  }),
-  query("corpus.coverage", "Corpus locale coverage", "/corpus/:sessionId/coverage", {
-    category: "corpus",
-  }),
-  query("corpus.analysis", "Analyze corpus evidence", "/corpus/:sessionId/analysis", {
-    category: "corpus",
-  }),
-  query("corpus.export", "Export corpus pack", "/corpus/:sessionId/export", {
-    category: "corpus",
-  }),
-  query("corpus.screen.get", "Get corpus screenshot", "/corpus/:sessionId/screens/:screenId", {
-    category: "corpus",
-  }),
-
-  query("language-profile.list", "List language profiles", "/language-profiles", {
-    category: "corpus",
-  }),
-  query("switcher-profile.list", "List switcher profiles", "/switcher-profiles", {
-    category: "corpus",
-  }),
-  command("switcher-profile.scan", "Scan app switcher picker", "POST", "/switcher-profiles/scan", {
-    category: "corpus",
-    targetCapabilities: ["tap", "snapshot", "launch"],
-    lease: "exclusive",
-    progress: true,
-  }),
-  command("switcher-profile.save", "Save switcher profile", "POST", "/switcher-profiles", {
-    category: "corpus",
-  }),
-
-  command("language-profile.scan", "Scan app language picker", "POST", "/language-profiles/scan", {
-    category: "corpus",
-    targetCapabilities: ["tap", "snapshot", "launch"],
-    lease: "exclusive",
-    progress: true,
-  }),
-  command("language-profile.save", "Save language profile", "POST", "/language-profiles", {
-    category: "corpus",
-  }),
-
+  ...corpusOperationDefinitions,
   query("job.list", "List jobs", "/jobs", { category: "execution", output: jobsParser }),
   query("job.get", "Get job", "/jobs/:jobId", { category: "execution", input: jobIdInputParser }),
   command("job.start", "Start job", "POST", "/jobs", {
@@ -2377,14 +2307,15 @@ export const operationDefinitions = [
     "/jobs/locale-matrix/:batchId/export",
     { category: "execution" },
   ),
+  query("job.locale-matrix.analysis", "Locale findings", "/jobs/locale-matrix/:batchId/analysis", {
+    category: "execution",
+  }),
   command(
     "job.locale-matrix.infer",
     "Infer locale options from taught live-screen rows",
     "POST",
     "/jobs/locale-matrix/infer",
-    {
-      category: "execution",
-    },
+    { category: "execution" },
   ),
   command("job.combine.start", "Run state combinations × tests", "POST", "/jobs/combine", {
     category: "execution",
@@ -2393,22 +2324,15 @@ export const operationDefinitions = [
     lease: "exclusive",
     targetCapabilities: ["tap", "snapshot", "screenshot", "launch"],
   }),
-  query(
-    "job.combine.export",
-    "Export run-matrix screenshot pack",
-    "/jobs/combine/:batchId/export",
-    {
-      category: "execution",
-    },
-  ),
+  query("job.combine.export", "Export a Combine pack", "/jobs/combine/:batchId/export", {
+    category: "execution",
+  }),
   command(
     "job.combine.infer",
     "Infer variable rows from taught live-screen rows",
     "POST",
     "/jobs/combine/infer",
-    {
-      category: "execution",
-    },
+    { category: "execution" },
   ),
   command(
     "job.compatibility-matrix.start",

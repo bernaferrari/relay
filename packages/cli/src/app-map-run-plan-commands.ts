@@ -5,15 +5,15 @@ import {
 } from "./command-descriptors.js";
 import { graphTestCommandDescriptors } from "./test-commands.js";
 
-/** State sets, graph Tests, run matrices, and direct flow execution. */
+/** Variables, graph Tests, Combines, and direct flow execution. */
 export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor[] = [
   mapped(
     "app-map.variable.save",
-    path("state-set save", ["appMapId", "variableId"], undefined, {
-      summary: "Save a reusable device state set (language, account, theme, …)",
+    path("variable save", ["appMapId", "variableId"], undefined, {
+      summary: "Save a reusable Variable (language, account, theme, …)",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "variableId", type: "string", description: "Stable state set identifier" },
+        { name: "variableId", type: "string", description: "Stable Variable identifier" },
       ],
       inputHelp: [
         { name: "expectedRevision", type: "number", description: "Current App Map revision" },
@@ -24,7 +24,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
         },
       ],
       examples: [
-        `relay state-set save settings language --input '${JSON.stringify({
+        `relay variable save settings language --input '${JSON.stringify({
           expectedRevision: 4,
           variable: {
             name: "Language",
@@ -40,10 +40,10 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
           },
         })}'`,
       ],
-      note: "A state set changes one reusable dimension. A run matrix combines one or more state sets with one or more tests.",
+      note: "A Variable changes one reusable dimension. A Combine multiplies one or more Variables by one or more Tests.",
     }),
-    path("variable save", ["appMapId", "variableId"], undefined, {
-      summary: "Legacy alias of state-set save",
+    path("state-set save", ["appMapId", "variableId"], undefined, {
+      summary: "Alias of variable save",
     }),
     path("option-set save", ["appMapId", "variableId"], undefined, {
       summary: "Alias of variable save",
@@ -51,49 +51,55 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
   ),
   mapped(
     "app-map.variable.remove",
-    path("state-set remove", ["appMapId", "variableId"]),
     path("variable remove", ["appMapId", "variableId"]),
+    path("state-set remove", ["appMapId", "variableId"]),
     path("option-set remove", ["appMapId", "variableId"]),
   ),
   ...graphTestCommandDescriptors,
   mapped(
     "app-map.combine.preflight",
-    path("run-matrix preflight", ["appMapId", "combineId"], undefined, {
+    path("combine preflight", ["appMapId", "combineId"], undefined, {
       summary: "Preview expansion, evidence, duration, and blockers without starting",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "combineId", type: "string", description: "Saved run matrix" },
+        { name: "combineId", type: "string", description: "Saved Combine" },
       ],
       inputHelp: [
         { name: "serial", type: "string", description: "Optional connected device to verify" },
       ],
       examples: [
-        "relay run-matrix preflight grok-android language-x-settings",
-        'relay run-matrix preflight grok-android language-x-settings --input \'{"serial":"DEVICE"}\'',
+        "relay combine preflight grok-android language-x-settings",
+        'relay combine preflight grok-android language-x-settings --input \'{"serial":"DEVICE"}\'',
       ],
     }),
+    path("combine dry-run", ["appMapId", "combineId"], undefined, {
+      summary: "Alias of combine preflight",
+    }),
+    path("run-matrix preflight", ["appMapId", "combineId"], undefined, {
+      summary: "Alias of combine preflight",
+    }),
     path("run-matrix dry-run", ["appMapId", "combineId"], undefined, {
-      summary: "Alias of run-matrix preflight",
+      summary: "Alias of combine preflight",
     }),
   ),
   mapped(
     "app-map.combine.save",
-    path("run-matrix save", ["appMapId", "combineId"], undefined, {
-      summary: "Save selected state sets × selected tests",
+    path("combine save", ["appMapId", "combineId"], undefined, {
+      summary: "Save selected Variables × selected Tests",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "combineId", type: "string", description: "Stable run matrix identifier" },
+        { name: "combineId", type: "string", description: "Stable Combine identifier" },
       ],
       inputHelp: [
         { name: "expectedRevision", type: "number", description: "Current App Map revision" },
         {
           name: "combine",
           type: "object",
-          description: "Matrix name plus state-set ids and test ids",
+          description: "Combine name plus Variable ids and Test ids",
         },
       ],
       examples: [
-        `relay run-matrix save settings language-x-coverage --input '${JSON.stringify({
+        `relay combine save settings language-x-coverage --input '${JSON.stringify({
           expectedRevision: 5,
           combine: {
             name: "Language × Settings coverage",
@@ -103,17 +109,17 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
           },
         })}'`,
       ],
-      note: "Each cell applies one value from every state set, then runs every selected test.",
+      note: "Each cell applies one value from every Variable, then runs every selected Test.",
     }),
-    path("combine save", ["appMapId", "combineId"], undefined, {
-      summary: "Legacy alias of run-matrix save",
+    path("run-matrix save", ["appMapId", "combineId"], undefined, {
+      summary: "Alias of combine save",
     }),
     path("combo save", ["appMapId", "combineId"]),
   ),
   mapped(
     "app-map.combine.remove",
-    path("run-matrix remove", ["appMapId", "combineId"]),
     path("combine remove", ["appMapId", "combineId"]),
+    path("run-matrix remove", ["appMapId", "combineId"]),
     path("combo remove", ["appMapId", "combineId"]),
   ),
   mapped(

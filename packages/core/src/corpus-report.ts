@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   CorpusAnalysisReport,
+  CorpusControl,
   CorpusCoverageReport,
   CorpusFinding,
   CorpusScreen,
@@ -55,11 +56,60 @@ function normalizedCorpusLabel(value: string | undefined): string {
   return (value ?? "").normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase();
 }
 
+/**
+ * A single token that reads as code rather than as copy.
+ *
+ * Accessibility trees leak raw identifiers into the label slot — `RightButtonBar`
+ * on a Grok toolbar, `imagine.animateYourPhotos.cell` on a suggestion row. They
+ * are identical in every language because nobody ever wrote them for a reader,
+ * so a translation check reports each one once per locale: forty languages of a
+ * defect that does not exist, sitting on top of the ones that do.
+ *
+ * Only unspaced tokens qualify, and only by dotted path or by an internal case
+ * hump. Real copy is spaced or plainly cased; the words this does swallow —
+ * `iPhone`, `macOS` — are brand names no translator would have touched either.
+ */
+function identifierShapedLabel(label: string): boolean {
+  if (/\s/u.test(label)) return false;
+  return /^\p{L}[\p{L}\p{N}]*(?:\.[\p{L}\p{N}]+)+$/u.test(label) || /\p{Ll}\p{Lu}/u.test(label);
+}
+
 function meaningfulCorpusLabel(value: string | undefined): boolean {
   const label = (value ?? "").trim();
   if (label.length < 4 || !/\p{L}/u.test(label)) return false;
   if (/^(?:https?:\/\/|www\.|[\d\W_]+$)/iu.test(label)) return false;
-  return true;
+  return !identifierShapedLabel(label);
+}
+
+/**
+ * The keys this group can be compared on, decided over every locale in it
+ * rather than over the baseline's copy alone.
+ *
+ * `meaningfulCorpusLabel` reads one label at a time, and applying it only to the
+ * baseline made the comparable set a function of which language the sweep
+ * started in: "Ask" is three letters and "Chiedi" is six, so the same control
+ * was compared when the baseline was Italian and skipped when it was English.
+ *
+ * One locale's readable copy is enough, which is both order-independent and
+ * what the floor was built for: the labels it exists to swallow are raw
+ * identifiers, and those are identical in every language, so no locale ever
+ * reads one as copy.
+ */
+function comparableStableKeys(group: readonly CorpusScreen[]): Set<string> {
+  const observed = new Map<string, string[]>();
+  for (const screen of group) {
+    for (const [key, label] of Object.entries(screen.localizedLabels ?? {})) {
+      // A role+label key is locale-bound by construction: it cannot name the
+      // same control in two languages.
+      if (key.startsWith("label:")) continue;
+      observed.set(key, [...(observed.get(key) ?? []), label]);
+    }
+  }
+  const comparable = new Set<string>();
+  for (const [key, labels] of observed) {
+    if (labels.some(meaningfulCorpusLabel)) comparable.add(key);
+  }
+  return comparable;
 }
 
 function localeFamily(locale: string): string {
@@ -68,6 +118,77 @@ function localeFamily(locale: string): string {
 
 function corpusFindingId(parts: string[]): string {
   return digest(`relay-corpus-finding:v1:${parts.join("\u0000")}`).slice(0, 20);
+}
+
+/** The platform already gave up on the string: it ends in an ellipsis. */
+function looksTruncated(value: string): boolean {
+  return /(?:\u2026|\.{3})\s*$/u.test(value.trim());
+}
+
+/** How much more room the translation needs than the original copy. */
+function lengthGrowth(baseline: string, observed: string): number {
+  const from = baseline.trim().length;
+  if (from === 0) return 0;
+  return observed.trim().length / from;
+}
+
+type Box = NonNullable<CorpusControl["rect"]>;
+
+function boxesByStableKey(screen: CorpusScreen): Map<string, Box> {
+  const boxes = new Map<string, Box>();
+  for (const control of screen.controls ?? []) {
+    if (control.rect) boxes.set(control.stableKey, control.rect);
+  }
+  return boxes;
+}
+
+/**
+ * The control kept the same box across the two passes.
+ *
+ * Sub-pixel and single-point differences are layout noise, so a box only counts
+ * as "grew" once it gains real room for the extra characters.
+ */
+function sameBox(baseline: Box, observed: Box): boolean {
+  return (
+    Math.abs(observed.width - baseline.width) <= 1 &&
+    Math.abs(observed.height - baseline.height) <= 1
+  );
+}
+
+/**
+ * A translated string that probably does not fit.
+ *
+ * Two independent signals, because neither platform reports clipping directly:
+ * an accessibility label that already carries an ellipsis is the platform
+ * telling us it truncated, and a materially longer string inside an unchanged
+ * box is geometry telling us the same thing. Anything weaker stays unreported —
+ * a locale review that cries wolf is worse than one that says less.
+ */
+const CLIPPED_GROWTH_RATIO = 1.4;
+
+function clippedTextFinding(input: {
+  baselineLabel: string;
+  observedLabel: string;
+  baselineRect?: Box;
+  observedRect?: Box;
+}): { confidence: "high" | "medium"; detail: string } | undefined {
+  const { baselineLabel, observedLabel, baselineRect, observedRect } = input;
+  if (looksTruncated(observedLabel) && !looksTruncated(baselineLabel)) {
+    return {
+      confidence: "high",
+      detail: `“${observedLabel.trim()}” is cut off; “${baselineLabel.trim()}” fits.`,
+    };
+  }
+  if (!baselineRect || !observedRect || !sameBox(baselineRect, observedRect)) return undefined;
+  const growth = lengthGrowth(baselineLabel, observedLabel);
+  if (growth < CLIPPED_GROWTH_RATIO) return undefined;
+  return {
+    confidence: "medium",
+    detail:
+      `“${observedLabel.trim()}” is ${Math.round((growth - 1) * 100)}% longer than ` +
+      `“${baselineLabel.trim()}” but was given the same ${Math.round(observedRect.width)}×` +
+      `${Math.round(observedRect.height)} box.`,
+  };
 }
 
 /** Explainable checks over locale-stable screen and control evidence. No model
@@ -96,6 +217,7 @@ export function analyzeCorpus(session: CorpusSession): CorpusAnalysisReport {
 
   for (const [canonicalKey, group] of groups) {
     const baseline = group.find((screen) => screen.locale === baselineLocale);
+    const comparableKeys = comparableStableKeys(group);
     const screenLabel =
       baseline?.title ??
       baseline?.path.at(-1) ??
@@ -128,8 +250,8 @@ export function analyzeCorpus(session: CorpusSession): CorpusAnalysisReport {
 
       const baselineLabels = baseline.localizedLabels ?? {};
       const currentLabels = current.localizedLabels ?? {};
-      const stableBaselineLabels = Object.entries(baselineLabels).filter(
-        ([key, label]) => !key.startsWith("label:") && meaningfulCorpusLabel(label),
+      const stableBaselineLabels = Object.entries(baselineLabels).filter(([key]) =>
+        comparableKeys.has(key),
       );
       const commonLabels = stableBaselineLabels.filter(([key]) => key in currentLabels);
       const unchangedLabels = commonLabels.filter(
@@ -159,6 +281,9 @@ export function analyzeCorpus(session: CorpusSession): CorpusAnalysisReport {
         });
         continue;
       }
+
+      const baselineBoxes = boxesByStableKey(baseline);
+      const currentBoxes = boxesByStableKey(current);
 
       for (const [stableKey, expected] of stableBaselineLabels) {
         const observed = currentLabels[stableKey];
@@ -190,6 +315,28 @@ export function analyzeCorpus(session: CorpusSession): CorpusAnalysisReport {
             expected,
             observed,
             detail: `“${observed}” is unchanged from ${baselineLocale} on ${screenLabel}.`,
+          });
+          continue;
+        }
+        const clipped = clippedTextFinding({
+          baselineLabel: expected,
+          observedLabel: observed,
+          ...(baselineBoxes.get(stableKey) ? { baselineRect: baselineBoxes.get(stableKey)! } : {}),
+          ...(currentBoxes.get(stableKey) ? { observedRect: currentBoxes.get(stableKey)! } : {}),
+        });
+        if (clipped) {
+          add({
+            code: "POSSIBLE_TEXT_CLIPPED",
+            severity: "warning",
+            confidence: clipped.confidence,
+            canonicalKey,
+            screenLabel,
+            locale,
+            baselineLocale,
+            stableKey,
+            expected,
+            observed,
+            detail: `${screenLabel}: ${clipped.detail}`,
           });
         }
       }

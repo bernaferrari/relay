@@ -1,7 +1,26 @@
+import { compareLayoutCost, layoutCost, type LayoutCost } from "./app-map-auto-layout-cost";
 import {
+  acyclicRankingEdges,
+  edgeKey,
+  orderLayers,
+  rankedLayers,
+  uniqueEdges,
+  type LayoutEdge,
+} from "./app-map-auto-layout-ranking";
+import {
+  groupColumns,
+  groupRows,
+  siblingLayoutGroups,
+  SHELF_ROW_GAP_ROWS,
+  type ShelfWidth,
+  type SiblingGroup,
+} from "./app-map-auto-layout-shelves";
+import {
+  CARD_PITCH_X,
+  CARD_PITCH_Y,
+  pointInDisplayedFrame,
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
-  pointInDisplayedFrame,
   type CanvasPoint,
   type CanvasScreenRotation,
 } from "./app-map-canvas-layout";
@@ -35,7 +54,6 @@ export type CompactCanvasLayoutOptions = Readonly<{
   sourceRotationFor?: (screenId: string) => CanvasScreenRotation | undefined;
 }>;
 
-type LayoutEdge = { from: string; to: string };
 type LayoutBlock = { id: string; screenIds: string[]; order: number };
 type ScreenLayoutEdge = LayoutEdge & {
   viewport: boolean;
@@ -48,11 +66,71 @@ type ScreenLayoutEdge = LayoutEdge & {
 };
 type OrderedScreenLayoutEdge = ScreenLayoutEdge & { sourceOrder: number };
 
-const CARD_GAP_X = 112;
-const CARD_GAP_Y = 48;
 const SIBLING_BRANCH_GAP_ROWS = 0.2;
 const VIEWPORT_CHAIN_GAP_ROWS = 0.3;
 const MAX_LOCAL_LAYOUT_PASSES = 2;
+/**
+ * How far one promotion may move siblings out of the order they were recorded
+ * in, when all it buys is straighter edges.
+ *
+ * One inversion is two siblings swapping places: the smallest disagreement an
+ * arrangement can have with the order somebody walked the app in, and worth a
+ * corner or two, because the pair still reads as the same list. Five is one
+ * parent's five children read almost backwards, and no amount of tidying edges
+ * is worth telling that story. A crossing is exempt — it is the one thing a
+ * reader cannot resolve by looking closer, so it may always be bought.
+ */
+const SIBLING_MOVEMENT_BUDGET = 1;
+/**
+ * How wide a shelf row grows before it wraps.
+ *
+ * Seven is roughly the reach of a journey: it keeps a fan from being the thing
+ * that sets the map's width while letting it wrap like text rather than stack
+ * like a ribbon. It is what every branch is arranged against, so that the
+ * arrangement a map gets does not depend on how its shelves happened to wrap.
+ */
+const DEFAULT_SHELF_COLUMNS = 7;
+/**
+ * The widths the settled arrangement is then re-flowed at, and the proportion
+ * the map is read in.
+ *
+ * One fixed wrap is wrong in both directions. It leaves a 41-screen crawl still
+ * taller than the pane it is read in, spending rows the pane was giving away
+ * for free; and it lets a five-screen map lie out in a single strip seven wide,
+ * so the map is now width-bound and reads smaller than the same five screens
+ * would three across. A per-shelf aspect target was tried and measured worse,
+ * because it makes each block square rather than making the map fit — a shelf
+ * is only ever read inside the map it belongs to. So the width is chosen for
+ * the whole map: the candidate that leaves the map closest to the shape of the
+ * pane. Only the pane's proportion is needed, never its size — fit is
+ * `min(paneW/w, paneH/h)`, so the arrangement minimizing `max(w / aspect, h)`
+ * arrives largest at any pane of that shape.
+ */
+const SHELF_COLUMN_CHOICES = [3, 4, 5, 6, DEFAULT_SHELF_COLUMNS, 8, 9, 10] as const;
+const READING_PANE_ASPECT = 2;
+/** Air between two roots. Nothing joins them, so the gap is the only thing
+ * saying so. */
+const ROOT_BAND_GAP_ROWS = 1;
+/** Air between the last journey and the band of screens that have no path yet. */
+const LOOSE_BAND_GAP_ROWS = 1.5;
+/** How wide the loose band grows before it wraps when the journeys are narrow. */
+const MIN_LOOSE_BAND_COLUMNS = 4;
+/**
+ * How tall a root may be and still share a band with another root: two rows of
+ * content and the gap between them.
+ *
+ * A root taller than that is a journey to be read down its own rows, and two of
+ * those side by side line their rows up with each other and read as one tree,
+ * which is exactly the thing this layout exists to prevent. Below it a root is a
+ * side path — a couple of screens the crawl reached from a state it never found
+ * a way back into — and a full-width band of its own is almost entirely empty
+ * canvas.
+ */
+const MAX_SIDE_PATH_ROWS = 2 + SIBLING_BRANCH_GAP_ROWS;
+/** Empty column between two side paths sharing a band. Packed flush, the last
+ * card of one and the first card of the next would sit exactly one parent→child
+ * gap apart and read as an edge nobody recorded. */
+const SIDE_PATH_GUTTER_COLUMNS = 1;
 const CANONICAL_LAYOUT_GRID = { spacing: DEFAULT_CANVAS_GRID_SPACING } as const;
 
 /**
@@ -62,7 +140,9 @@ const CANONICAL_LAYOUT_GRID = { spacing: DEFAULT_CANVAS_GRID_SPACING } as const;
  * graph is ranked. That keeps scroll captures together without creating a
  * second, incompatible layout. Back edges are excluded only from ranking, not
  * from the saved graph or renderer. A primary parent is then chosen for every
- * screen so siblings can be packed into contiguous, non-overlapping branches.
+ * screen so siblings can be packed into contiguous, non-overlapping branches,
+ * and a wide fan of screens that open nothing else is packed side by side
+ * instead of spending one row each.
  */
 export function compactCanvasPositions(
   graph: LayoutGraph,
@@ -301,18 +381,11 @@ function buildLayoutBlocks(
   return blocks;
 }
 
-function edgeKey(from: string, to: string): string {
-  return `${from}\u0000${to}`;
-}
-
-function uniqueEdges(edges: readonly LayoutEdge[]): LayoutEdge[] {
-  const seen = new Set<string>();
-  return edges.filter((edge) => {
-    const key = edgeKey(edge.from, edge.to);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+/** Whether an alternative arrangement stays inside what a straighter edge is
+ * allowed to pay for in recorded order. Removing a crossing has no budget. */
+function withinSiblingMovementBudget(alternative: LayoutCost, current: LayoutCost): boolean {
+  if (alternative.crossings < current.crossings) return true;
+  return alternative.siblingMovement - current.siblingMovement <= SIBLING_MOVEMENT_BUDGET;
 }
 
 /**
@@ -394,14 +467,24 @@ function layoutPrimaryForest(
     return entryDelta || (lane.get(left) ?? 0) - (lane.get(right) ?? 0);
   });
 
+  // A screen with no edge at all is not the head of a journey; it is a capture
+  // waiting for one. Knowing which blocks the graph actually joins lets the
+  // forest keep its vertical space for paths.
+  const linked = new Set(scoreEdges.flatMap((edge) => [edge.from, edge.to]));
+
   const initialChildren = cloneLayoutChildren(children);
   let selectedChildren = children;
-  let positions = layoutForestPositions({
-    roots,
-    blockById,
-    children: selectedChildren,
-    edgeSourceOffset,
-  });
+  const layoutAt = (childrenAt: ReadonlyMap<string, readonly string[]>, shelfColumns: number) =>
+    layoutForestPositions({
+      roots,
+      blockById,
+      children: childrenAt,
+      edgeSourceOffset,
+      linked,
+      entries,
+      shelfColumns,
+    });
+  let positions = layoutAt(selectedChildren, DEFAULT_SHELF_COLUMNS);
   let bestCost = layoutCost(positions, scoreEdges, initialChildren, selectedChildren);
 
   // Layout as a graph, not only a tree: a child whose branch is made primary
@@ -430,19 +513,17 @@ function layoutPrimaryForest(
       let candidateCost = bestCost;
       for (let index = 1; index < childIds.length; index += 1) {
         const alternative = moveChildToPrimarySlot(selectedChildren, parentId, index);
-        const alternativePositions = layoutForestPositions({
-          roots,
-          blockById,
-          children: alternative,
-          edgeSourceOffset,
-        });
+        const alternativePositions = layoutAt(alternative, DEFAULT_SHELF_COLUMNS);
         const alternativeCost = layoutCost(
           alternativePositions,
           scoreEdges,
           initialChildren,
           alternative,
         );
-        if (compareLayoutCost(alternativeCost, candidateCost) < 0) {
+        if (
+          withinSiblingMovementBudget(alternativeCost, candidateCost) &&
+          compareLayoutCost(alternativeCost, candidateCost) < 0
+        ) {
           candidateChildren = alternative;
           candidatePositions = alternativePositions;
           candidateCost = alternativeCost;
@@ -457,23 +538,63 @@ function layoutPrimaryForest(
     }
     if (!changed) break;
   }
-  return positions;
+  // Which branch owns which row is settled; how wide the shelves on those rows
+  // wrap is not. Choosing it here, against the arrangement that won, means a
+  // wider shelf can only re-flow rows into each other — it cannot hand the
+  // step above a cheaper route and quietly swap two siblings to reach it.
+  return SHELF_COLUMN_CHOICES.map((columns) => layoutAt(selectedChildren, columns)).reduce(
+    (best, candidate) =>
+      compareReadingShape(readingShape(candidate), readingShape(best)) < 0 ? candidate : best,
+  );
 }
-
-type LayoutCost = {
-  crossings: number;
-  bends: number;
-  routeDistance: number;
-  siblingMovement: number;
-};
 
 function layoutForestPositions(input: {
   roots: readonly string[];
   blockById: ReadonlyMap<string, LayoutBlock>;
   children: ReadonlyMap<string, readonly string[]>;
   edgeSourceOffset: ReadonlyMap<string, number>;
+  /** Blocks the graph joins to something. Everything else is a loose capture. */
+  linked: ReadonlySet<string>;
+  /** Declared flow starts. A journey somebody named begins the map however
+   * short it is, so it is never packed away as a side path. */
+  entries: readonly string[];
+  /** How wide a shelf row grows before it wraps, chosen for this whole map. */
+  shelfColumns: number;
 }): Record<string, CanvasPoint> {
-  const { roots, blockById, children, edgeSourceOffset } = input;
+  const { roots, blockById, children, edgeSourceOffset, shelfColumns } = input;
+  const columnsMemo = new Map<string, number>();
+  /**
+   * How far right a subtree reaches once it is placed: its own column, plus the
+   * widest thing hanging off it.
+   *
+   * This has to mirror `place` rather than count the longest chain. A subtree
+   * one row tall is not necessarily a chain — a screen that opens a handful of
+   * leaves packs them side by side on that same row — and a caller that reads
+   * this as a chain length reserves too few columns and lays the next side path
+   * on top of it.
+   */
+  const subtreeColumns = (id: string): number => {
+    const cached = columnsMemo.get(id);
+    if (cached !== undefined) return cached;
+    const ownCount = blockById.get(id)?.screenIds.length ?? 1;
+    const childrenBySource = layoutChildrenBySource(id, ownCount, children, edgeSourceOffset);
+    let reach = 0;
+    for (const childIds of childrenBySource) {
+      for (const group of groupsFor(childIds)) {
+        reach = Math.max(reach, groupColumns(group, subtreeColumns, shelfWidth));
+      }
+    }
+    const columns = 1 + reach;
+    columnsMemo.set(id, columns);
+    return columns;
+  };
+  const shelfWidth: ShelfWidth = (id) => {
+    if (subtreeRows(id) !== 1) return undefined;
+    const columns = subtreeColumns(id);
+    return columns <= shelfColumns ? columns : undefined;
+  };
+  const groupsFor = (childIds: readonly string[]): SiblingGroup[] =>
+    siblingLayoutGroups(childIds, shelfWidth, shelfColumns);
   const rowsMemo = new Map<string, number>();
   const subtreeRows = (id: string): number => {
     const cached = rowsMemo.get(id);
@@ -482,12 +603,9 @@ function layoutForestPositions(input: {
     const childrenBySource = layoutChildrenBySource(id, ownCount, children, edgeSourceOffset);
     let rows = 0;
     for (let sourceIndex = 0; sourceIndex < ownCount; sourceIndex += 1) {
-      const branchRows = (childrenBySource[sourceIndex] ?? []).reduce(
-        (sum, childId) => sum + subtreeRows(childId),
-        0,
-      );
-      const siblingCount = childrenBySource[sourceIndex]?.length ?? 0;
-      const siblingGaps = Math.max(0, siblingCount - 1) * SIBLING_BRANCH_GAP_ROWS;
+      const groups = groupsFor(childrenBySource[sourceIndex] ?? []);
+      const branchRows = groups.reduce((sum, group) => sum + groupRows(group, subtreeRows), 0);
+      const siblingGaps = Math.max(0, groups.length - 1) * SIBLING_BRANCH_GAP_ROWS;
       rows += Math.max(1, branchRows + siblingGaps);
       if (sourceIndex < ownCount - 1) rows += VIEWPORT_CHAIN_GAP_ROWS;
     }
@@ -496,8 +614,6 @@ function layoutForestPositions(input: {
   };
 
   const positions: Record<string, CanvasPoint> = {};
-  const pitchX = SCREEN_CARD_WIDTH + CARD_GAP_X;
-  const pitchY = SCREEN_CARD_HEIGHT + CARD_GAP_Y;
   const place = (id: string, depth: number, topRow: number) => {
     const block = blockById.get(id)!;
     const childrenBySource = layoutChildrenBySource(
@@ -509,27 +625,151 @@ function layoutForestPositions(input: {
     let sectionTop = topRow;
     block.screenIds.forEach((screenId, sourceIndex) => {
       positions[screenId] = {
-        x: depth * pitchX,
-        y: sectionTop * pitchY,
+        x: depth * CARD_PITCH_X,
+        y: sectionTop * CARD_PITCH_Y,
       };
       let childTop = sectionTop;
-      const sourceChildren = childrenBySource[sourceIndex] ?? [];
-      sourceChildren.forEach((childId, childIndex) => {
-        place(childId, depth + 1, childTop);
-        childTop += subtreeRows(childId);
-        if (childIndex < sourceChildren.length - 1) childTop += SIBLING_BRANCH_GAP_ROWS;
+      const groups = groupsFor(childrenBySource[sourceIndex] ?? []);
+      groups.forEach((group, groupIndex) => {
+        if (group.kind === "branch") place(group.id, depth + 1, childTop);
+        else {
+          group.rows.forEach((rowIds, rowIndex) => {
+            let column = 0;
+            for (const itemId of rowIds) {
+              place(itemId, depth + 1 + column, childTop + rowIndex * (1 + SHELF_ROW_GAP_ROWS));
+              column += shelfWidth(itemId) ?? 1;
+            }
+          });
+        }
+        childTop += groupRows(group, subtreeRows);
+        if (groupIndex < groups.length - 1) childTop += SIBLING_BRANCH_GAP_ROWS;
       });
       sectionTop = Math.max(sectionTop + 1, childTop);
       if (sourceIndex < block.screenIds.length - 1) sectionTop += VIEWPORT_CHAIN_GAP_ROWS;
     });
   };
+  // A crawl accepts every state it saw, including the ones it never found a way
+  // out of: a settings map is a journey plus a drift of Back and Screen frames
+  // with no edge at all. Giving each of those its own row turned a readable tree
+  // into a mostly empty ribbon several screens tall, so they wrap into a band
+  // under the journeys instead of extending the spine.
+  const journeys = roots.filter((id) => !isLooseCapture(id, blockById, input.linked));
+  const loose = roots.filter((id) => isLooseCapture(id, blockById, input.linked));
   let rootTop = 0;
-  roots.forEach((root, index) => {
-    if (index) rootTop += 1;
-    place(root, 0, rootTop);
-    rootTop += subtreeRows(root);
+  for (const [index, band] of rootBands(journeys, input.entries, {
+    subtreeRows,
+    subtreeColumns,
+  }).entries()) {
+    if (index) rootTop += ROOT_BAND_GAP_ROWS;
+    let column = 0;
+    for (const root of band.rootIds) {
+      place(root, column, rootTop);
+      column += subtreeColumns(root) + SIDE_PATH_GUTTER_COLUMNS;
+    }
+    rootTop += band.rows;
+  }
+  if (!loose.length) return positions;
+  const columns = Math.max(MIN_LOOSE_BAND_COLUMNS, occupiedColumns(positions));
+  const bandTop = journeys.length ? rootTop + LOOSE_BAND_GAP_ROWS : 0;
+  loose.forEach((id, index) => {
+    positions[blockById.get(id)!.screenIds[0]!] = {
+      x: (index % columns) * CARD_PITCH_X,
+      y: (bandTop + Math.floor(index / columns)) * CARD_PITCH_Y,
+    };
   });
   return positions;
+}
+
+/** One horizontal band of the forest: the roots laid out on it, and the height
+ * they reserve together. */
+type RootBand = { rootIds: readonly string[]; rows: number };
+
+/**
+ * Which roots share a band.
+ *
+ * Roots are siblings of nothing: no screen opens them, so unlike the children
+ * of a fan they carry no recorded order between them, only the order they were
+ * observed in. Giving each one a band of its own is what is left of the ribbon
+ * once a fan is packed — a crawl of one settings app reaches the same Settings
+ * state twice and leaves the second one holding two screens, and that pair then
+ * spends the full width of the map on two cards.
+ *
+ * So short roots are packed side by side under the taller ones, in observed
+ * order, the way a fan of terminal screens is packed into a shelf. Two rules
+ * keep it honest. Packing may never make the map wider than its widest journey
+ * already is, so a narrow map of short paths still reads as one column per path
+ * and nothing is pushed off-canvas. And a band leaves an empty column between
+ * two roots, because the graph joins nothing across that gap — the arrangement
+ * is filing, not a claim that the second path continues the first.
+ */
+function rootBands(
+  roots: readonly string[],
+  entries: readonly string[],
+  measure: { subtreeRows: (id: string) => number; subtreeColumns: (id: string) => number },
+): RootBand[] {
+  const bandFor = (id: string): RootBand => ({ rootIds: [id], rows: measure.subtreeRows(id) });
+  const isSidePath = (id: string) =>
+    !entries.includes(id) && measure.subtreeRows(id) <= MAX_SIDE_PATH_ROWS;
+  const budget = Math.max(0, ...roots.map(measure.subtreeColumns));
+  const bands: RootBand[] = [];
+  let packed: string[] = [];
+  let width = 0;
+  const flushPacked = () => {
+    if (packed.length) {
+      bands.push({ rootIds: packed, rows: Math.max(...packed.map(measure.subtreeRows)) });
+    }
+    packed = [];
+    width = 0;
+  };
+  for (const id of roots.filter(isSidePath)) {
+    const columns = measure.subtreeColumns(id);
+    if (packed.length && width + SIDE_PATH_GUTTER_COLUMNS + columns > budget) flushPacked();
+    width += (packed.length ? SIDE_PATH_GUTTER_COLUMNS : 0) + columns;
+    packed.push(id);
+  }
+  flushPacked();
+  // Nothing shared a band, so nothing was gained: leave every root exactly where
+  // the observed order put it rather than reordering a map for no reason.
+  if (!bands.some((band) => band.rootIds.length > 1)) return roots.map(bandFor);
+  return [...roots.filter((id) => !isSidePath(id)).map(bandFor), ...bands];
+}
+
+/** A single screen the graph never joins to anything, in either direction. A
+ * multi-screen viewport chain is a path even with no edges around it, so it
+ * keeps its own column. */
+function isLooseCapture(
+  id: string,
+  blockById: ReadonlyMap<string, LayoutBlock>,
+  linked: ReadonlySet<string>,
+): boolean {
+  return !linked.has(id) && (blockById.get(id)?.screenIds.length ?? 1) === 1;
+}
+
+/** What an arrangement costs a reader: how large it has to be drawn to fit a
+ * pane of the proportion it is read in, and the rows and columns it spends
+ * getting there. */
+type ReadingShape = { size: number; width: number; height: number };
+
+function readingShape(positions: Readonly<Record<string, CanvasPoint>>): ReadingShape {
+  const xs = Object.values(positions).map((point) => point.x);
+  const ys = Object.values(positions).map((point) => point.y);
+  if (!xs.length) return { size: 0, width: 0, height: 0 };
+  const width = Math.max(...xs) - Math.min(...xs) + SCREEN_CARD_WIDTH;
+  const height = Math.max(...ys) - Math.min(...ys) + SCREEN_CARD_HEIGHT;
+  return { size: Math.max(width / READING_PANE_ASPECT, height), width, height };
+}
+
+/** Size first, because it is the zoom the map arrives at. Then height, because
+ * once the fit is settled a shelf that wraps taller is spending rows the pane
+ * was giving away for free. Width last: of two arrangements that read the same,
+ * the narrower one is the tidier map. */
+function compareReadingShape(left: ReadingShape, right: ReadingShape): number {
+  return left.size - right.size || left.height - right.height || left.width - right.width;
+}
+
+function occupiedColumns(positions: Readonly<Record<string, CanvasPoint>>): number {
+  const xs = Object.values(positions).map((point) => point.x);
+  return xs.length ? Math.round(Math.max(...xs) / CARD_PITCH_X) + 1 : 0;
 }
 
 function cloneLayoutChildren(
@@ -551,128 +791,6 @@ function moveChildToPrimarySlot(
   return next;
 }
 
-function layoutCost(
-  positions: Readonly<Record<string, CanvasPoint>>,
-  edges: readonly LayoutEdge[],
-  originalChildren: ReadonlyMap<string, readonly string[]>,
-  children: ReadonlyMap<string, readonly string[]>,
-): LayoutCost {
-  const drawableEdges = edges.flatMap((edge) => {
-    const from = positions[edge.from];
-    const to = positions[edge.to];
-    return from && to ? [{ ...edge, points: orthogonalProxyRoute(from, to) }] : [];
-  });
-  let crossings = 0;
-  for (let left = 0; left < drawableEdges.length; left += 1) {
-    for (let right = left + 1; right < drawableEdges.length; right += 1) {
-      const first = drawableEdges[left]!;
-      const second = drawableEdges[right]!;
-      if (
-        first.from === second.from ||
-        first.from === second.to ||
-        first.to === second.from ||
-        first.to === second.to
-      ) {
-        continue;
-      }
-      let crossed = false;
-      for (let firstSegment = 1; firstSegment < first.points.length; firstSegment += 1) {
-        for (let secondSegment = 1; secondSegment < second.points.length; secondSegment += 1) {
-          if (
-            segmentsProperlyCross(
-              first.points[firstSegment - 1]!,
-              first.points[firstSegment]!,
-              second.points[secondSegment - 1]!,
-              second.points[secondSegment]!,
-            )
-          ) {
-            crossed = true;
-            break;
-          }
-        }
-        if (crossed) break;
-      }
-      if (crossed) crossings += 1;
-    }
-  }
-  const routeDistance = drawableEdges.reduce(
-    (total, edge) =>
-      total +
-      edge.points
-        .slice(1)
-        .reduce(
-          (distance, point, index) =>
-            distance +
-            Math.abs(point.x - edge.points[index]!.x) +
-            Math.abs(point.y - edge.points[index]!.y),
-          0,
-        ),
-    0,
-  );
-  const bends = drawableEdges.reduce(
-    (total, edge) => total + Math.max(0, edge.points.length - 2),
-    0,
-  );
-  let siblingMovement = 0;
-  for (const [parentId, childIds] of children) {
-    const original = originalChildren.get(parentId) ?? [];
-    const order = new Map(original.map((childId, index) => [childId, index]));
-    for (let left = 0; left < childIds.length; left += 1) {
-      for (let right = left + 1; right < childIds.length; right += 1) {
-        if ((order.get(childIds[left]!) ?? left) > (order.get(childIds[right]!) ?? right)) {
-          siblingMovement += 1;
-        }
-      }
-    }
-  }
-  return { crossings, bends, routeDistance, siblingMovement };
-}
-
-function compareLayoutCost(left: LayoutCost, right: LayoutCost): number {
-  return (
-    left.crossings - right.crossings ||
-    left.bends - right.bends ||
-    left.routeDistance - right.routeDistance ||
-    left.siblingMovement - right.siblingMovement
-  );
-}
-
-/** A deliberately small proxy for the editor's bent connector: screen edges
- * leave through their facing sides, take one shared corridor rail, then enter
- * the target. It lets auto-layout evaluate the graph as routed geometry
- * without importing renderer state or mutating any persisted position. */
-function orthogonalProxyRoute(from: CanvasPoint, to: CanvasPoint): CanvasPoint[] {
-  const sourceOnLeft = to.x >= from.x;
-  const start = {
-    x: from.x + (sourceOnLeft ? SCREEN_CARD_WIDTH : 0),
-    y: from.y + SCREEN_CARD_HEIGHT / 2,
-  };
-  const end = {
-    x: to.x + (sourceOnLeft ? 0 : SCREEN_CARD_WIDTH),
-    y: to.y + SCREEN_CARD_HEIGHT / 2,
-  };
-  if (start.y === end.y) return [start, end];
-  const railX = (start.x + end.x) / 2;
-  return [start, { x: railX, y: start.y }, { x: railX, y: end.y }, end];
-}
-
-function segmentsProperlyCross(
-  a: CanvasPoint,
-  b: CanvasPoint,
-  c: CanvasPoint,
-  d: CanvasPoint,
-): boolean {
-  const orientation = (first: CanvasPoint, second: CanvasPoint, third: CanvasPoint) =>
-    (second.x - first.x) * (third.y - first.y) - (second.y - first.y) * (third.x - first.x);
-  const abC = orientation(a, b, c);
-  const abD = orientation(a, b, d);
-  const cdA = orientation(c, d, a);
-  const cdB = orientation(c, d, b);
-  return (
-    ((abC > 0 && abD < 0) || (abC < 0 && abD > 0)) && ((cdA > 0 && cdB < 0) || (cdA < 0 && cdB > 0))
-  );
-}
-
 function layoutChildrenBySource(
   blockId: string,
   sourceCount: number,
@@ -688,110 +806,6 @@ function layoutChildrenBySource(
     grouped[sourceIndex]!.push(childId);
   }
   return grouped;
-}
-
-/** DFS back edges are the only edges removed from ranking. This turns cycles
- * into short return paths instead of inflating every node to the maximum rank. */
-function acyclicRankingEdges(
-  ids: readonly string[],
-  edges: readonly LayoutEdge[],
-  order: ReadonlyMap<string, number>,
-  entries: readonly string[],
-): LayoutEdge[] {
-  const outgoing = new Map<string, LayoutEdge[]>();
-  for (const edge of edges) outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge]);
-  for (const values of outgoing.values()) {
-    values.sort((left, right) => (order.get(left.to) ?? 0) - (order.get(right.to) ?? 0));
-  }
-  const state = new Map<string, "visiting" | "visited">();
-  const kept: LayoutEdge[] = [];
-  const visit = (id: string) => {
-    if (state.has(id)) return;
-    state.set(id, "visiting");
-    for (const edge of outgoing.get(id) ?? []) {
-      if (state.get(edge.to) === "visiting") continue;
-      kept.push(edge);
-      visit(edge.to);
-    }
-    state.set(id, "visited");
-  };
-  const roots = [...new Set([...entries, ...ids])];
-  roots.sort((left, right) => {
-    const entryDelta = Number(!entries.includes(left)) - Number(!entries.includes(right));
-    return entryDelta || (order.get(left) ?? 0) - (order.get(right) ?? 0);
-  });
-  roots.forEach(visit);
-  return uniqueEdges(kept);
-}
-
-function rankedLayers(
-  ids: readonly string[],
-  edges: readonly LayoutEdge[],
-  order: ReadonlyMap<string, number>,
-): string[][] {
-  const incoming = new Map(ids.map((id) => [id, 0]));
-  const outgoing = new Map<string, LayoutEdge[]>();
-  for (const edge of edges) {
-    incoming.set(edge.to, (incoming.get(edge.to) ?? 0) + 1);
-    outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge]);
-  }
-  const ready = ids.filter((id) => incoming.get(id) === 0);
-  ready.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
-  const rank = new Map(ids.map((id) => [id, 0]));
-  while (ready.length) {
-    const id = ready.shift()!;
-    for (const edge of outgoing.get(id) ?? []) {
-      rank.set(edge.to, Math.max(rank.get(edge.to) ?? 0, (rank.get(id) ?? 0) + 1));
-      incoming.set(edge.to, (incoming.get(edge.to) ?? 1) - 1);
-      if (incoming.get(edge.to) === 0) {
-        ready.push(edge.to);
-        ready.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
-      }
-    }
-  }
-  const layers: string[][] = [];
-  for (const id of ids) (layers[rank.get(id) ?? 0] ??= []).push(id);
-  for (const layer of layers) layer.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
-  return layers.filter((layer) => layer.length);
-}
-
-/** Alternating barycentric sweeps are the crossing-reduction phase of the
- * Sugiyama method. They preserve deterministic source order for ties. */
-function orderLayers(
-  input: readonly string[][],
-  edges: readonly LayoutEdge[],
-  order: ReadonlyMap<string, number>,
-): string[][] {
-  const layers = input.map((layer) => [...layer]);
-  const sortLayer = (layerIndex: number, incoming: boolean) => {
-    const positions = new Map<string, number>();
-    layers.forEach((layer) => layer.forEach((id, index) => positions.set(id, index)));
-    const neighbors = new Map<string, number[]>();
-    for (const edge of edges) {
-      const id = incoming ? edge.to : edge.from;
-      const neighbor = incoming ? edge.from : edge.to;
-      if (!layers[layerIndex]?.includes(id)) continue;
-      const position = positions.get(neighbor);
-      if (position !== undefined) neighbors.set(id, [...(neighbors.get(id) ?? []), position]);
-    }
-    layers[layerIndex]!.sort((left, right) => {
-      const leftValues = neighbors.get(left);
-      const rightValues = neighbors.get(right);
-      const barycenter = (values: number[] | undefined) =>
-        values?.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
-      const a = barycenter(leftValues);
-      const b = barycenter(rightValues);
-      if (a !== undefined && b !== undefined && a !== b) return a - b;
-      if (a !== undefined) return -1;
-      if (b !== undefined) return 1;
-      return (order.get(left) ?? 0) - (order.get(right) ?? 0);
-    });
-  };
-  for (let pass = 0; pass < 8; pass += 1) {
-    for (let rank = 1; rank < layers.length; rank += 1) sortLayer(rank, true);
-    for (let rank = layers.length - 2; rank >= 0; rank -= 1) sortLayer(rank, false);
-  }
-  return layers;
 }
 
 function isViewportTransition(label: string | undefined): boolean {

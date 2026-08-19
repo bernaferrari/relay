@@ -61,7 +61,7 @@ export function ConfirmDialogHost(): JSX.Element {
       {(active) => {
         return (
           <div
-            class={cn(modalScrim, "z-[160] flex items-center justify-center p-5")}
+            class={cn(modalScrim, "z-[var(--z-alert)] flex items-center justify-center p-5")}
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) close();
             }}

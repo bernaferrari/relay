@@ -184,7 +184,7 @@ export function DevicePicker(props: {
   });
 
   return (
-    <div class="relative z-[80]" data-device-picker>
+    <div class="relative z-[var(--z-shell-rail)]" data-device-picker>
       <Show
         when={props.onOpenLive}
         fallback={
@@ -192,7 +192,7 @@ export function DevicePicker(props: {
             ref={(element) => (trigger = element)}
             type="button"
             class={cn(
-              "relative inline-flex h-10 min-w-0 cursor-pointer items-center gap-2 rounded-xl px-3 text-caption font-medium text-[var(--text-base)] shadow-[var(--map-elevation-control)] transition-[background-color,color,transform] duration-150",
+              "relative inline-flex h-10 min-w-0 cursor-pointer items-center gap-2 rounded-xl px-3 text-caption font-medium text-[var(--text-base)] shadow-[var(--map-elevation-control)] transition-[background-color,color,transform] duration-hover",
               "bg-[var(--map-control-surface)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100",
               open() && "bg-[var(--surface-base-hover)] text-[var(--text-strong)]",
             )}
@@ -223,7 +223,7 @@ export function DevicePicker(props: {
               name="chevron-down"
               size={13}
               class={cn(
-                "text-[var(--text-weak)] transition-transform duration-150",
+                "text-[var(--text-weak)] transition-transform duration-hover",
                 open() && "rotate-180",
               )}
             />
@@ -240,7 +240,7 @@ export function DevicePicker(props: {
         >
           <button
             type="button"
-            class="inline-flex min-w-0 items-center gap-2 px-3 text-caption font-medium text-[var(--text-base)] transition-[background-color,color] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+            class="inline-flex min-w-0 items-center gap-2 px-3 text-caption font-medium text-[var(--text-base)] transition-[background-color,color] duration-hover hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
             aria-pressed={props.liveOpen}
             aria-label={
               activeTargetSet()
@@ -283,7 +283,7 @@ export function DevicePicker(props: {
           <button
             ref={(element) => (trigger = element)}
             type="button"
-            class="grid w-9 shrink-0 place-items-center border-l border-[var(--map-divider)] text-[var(--text-weak)] transition-[background-color,color] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+            class="grid w-9 shrink-0 place-items-center border-l border-[var(--map-divider)] text-[var(--text-weak)] transition-[background-color,color] duration-hover hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
             aria-label="Choose device"
             aria-haspopup="dialog"
             aria-controls="target-picker-dialog"
@@ -295,7 +295,7 @@ export function DevicePicker(props: {
               name="chevron-down"
               size={13}
               class={cn(
-                "transition-transform duration-150 motion-reduce:transition-none",
+                "transition-transform duration-hover motion-reduce:transition-none",
                 open() && "rotate-180",
               )}
             />
@@ -306,7 +306,7 @@ export function DevicePicker(props: {
         <div
           ref={(element) => (dialog = element)}
           id="target-picker-dialog"
-          class="ui-pop absolute top-[calc(100%+7px)] right-0 z-[90] flex max-h-[min(520px,calc(100vh-76px))] w-[286px] origin-top-right flex-col overflow-hidden rounded-xl bg-surface-raised-stronger-non-alpha text-[var(--text-strong)] shadow-[var(--map-elevation-panel)]"
+          class="ui-pop absolute top-[calc(100%+7px)] right-0 z-[var(--z-scrim)] flex max-h-[min(520px,calc(100vh-76px))] w-[286px] origin-top-right flex-col overflow-hidden rounded-xl bg-surface-raised-stronger-non-alpha text-[var(--text-strong)] shadow-[var(--map-elevation-panel)]"
           role="dialog"
           aria-labelledby="target-picker-title"
           onKeyDown={(event) => {
@@ -520,7 +520,7 @@ export function DevicePicker(props: {
                     name="chevron-down"
                     size={12}
                     class={cn(
-                      "transition-transform duration-150",
+                      "transition-transform duration-hover",
                       !virtualExpanded() && "-rotate-90",
                     )}
                   />

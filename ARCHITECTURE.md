@@ -35,15 +35,15 @@ own a second product workspace. Their output is projected onto the frozen App Ma
 and Target Result evidence. A language sweep is therefore a matrix run of a mapped test—not a
 separate crawl document, gallery, or authoring model.
 
-**Modifiers** on the App Map are lists (language, theme, location): teach 1–2 rows, infer the rest,
-optionally bind a recorded open/leave path. Inference never invents navigation. The protocol keeps
-the historical `variables` collection name for compatibility, but product surfaces use Modifier.
+**Variables** on the App Map are lists (language, theme, location): teach 1–2 rows, infer the rest,
+optionally bind a recorded open/leave path. Inference never invents navigation. The protocol
+collection has always been `variables`, and the UI and CLI now say the same word.
 **Tests** are graph-native intent documents with stable step IDs. Instruction, validation,
 extraction, manual checkpoint, module, decision, loop, and constrained-script steps bind to reviewed
 App Map entities or remain explicitly unresolved. `scenario` is the only Test contract. Connections
 and Flows may satisfy navigation bindings, but neither is an alternate Test document or conversion
-source. **Run matrix** is every selected modifier value × those Tests (one
-visible grid, one job). The protocol keeps the historical `combines` collection name. Case stacks
+source. **Combine** is every selected Variable value × those Tests (one
+visible grid, one job), matching the `combines` collection it is stored in. Case stacks
 remain typed **test data** expansion (emails, plans), not modes.
 
 **Recipes are compiled executable IR**, not a second authoring surface. A recipe is the
@@ -98,7 +98,7 @@ entities.
 
 The control plane persists in `.relay/control.sqlite` (WAL, `busy_timeout=5000`), following the same
 `node:sqlite` pattern as the run catalog and OpenCode’s local database: one row per project, build,
-pool, matrix, lease, modifier document, idempotency key, and App Map. Nested entities stay JSON
+pool, matrix, lease, Variable document, idempotency key, and App Map. Nested entities stay JSON
 inside that row; leases and catalog lists never rewrite other maps. Existing `collaboration.json`
 is imported once and renamed to `collaboration.json.migrated`. Schema changes use `PRAGMA user_version`.
 Resource events are written to `control_events` in the same transaction and published to the in-process
@@ -130,12 +130,12 @@ Take evidence. Review can trim, split, replace, replay, or rewrite the proposed 
 commits the reviewed Connection to the App Map and compiles its executable action projection.
 
 A Test run freezes the App Map and Test revision, compiled step provenance, selected targets,
-modifiers, target profiles, comparison regions, baseline provenance, and evidence policy before
+Variables, target profiles, comparison regions, baseline provenance, and evidence policy before
 enqueueing. Device groups execute independently per
 target and retain every Target Result; one target can never overwrite another. Destination mismatch
 is a failure even when the input action itself succeeded.
 
-Project modifiers are shareable, typed values (stored under the protocol's `variables` field).
+Project Variables are shareable, typed values (stored under the protocol's `variables` field).
 Private actor values remain outside the shared App Map
 and resolve at run time. Matrices can expand values, targets, builds, models, and variants without
 duplicating a Flow.

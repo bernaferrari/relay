@@ -18,6 +18,11 @@ import {
   type Device,
   type SnapshotNode,
 } from "./device.js";
+import {
+  hasProfileChromePrefix,
+  profileBackAffordances,
+  profileCloseAffordances,
+} from "./discovery-app-profiles.js";
 import { observeLocaleStableIdentity } from "./screen-identity.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { captureSnapshot, formatSnapshotTree, interact } from "./workspace.js";
@@ -53,15 +58,16 @@ export function isExploreChromeLabel(value: string, options?: ExploreChromeOptio
   const label = value.trim().toLocaleLowerCase();
   if (!label) return true;
   if (
-    /^(close|done|cancel|back|dismiss|dismiss popup|home|recents|recent apps|overview|navigate up|voice search|what are you looking for\??|more options|ask anything|launch gallery selector|open microsoft swiftkey toolbar|start dictation|voice typing|symbols and numbers|double tap for caps lock|grok-close|grok-arrow-left|search|search settings)$/i.test(
+    /^(close|done|cancel|back|dismiss|dismiss popup|home|recents|recent apps|overview|navigate up|voice search|what are you looking for\??|more options|ask anything|launch gallery selector|open microsoft swiftkey toolbar|start dictation|voice typing|symbols and numbers|double tap for caps lock|search|search settings)$/i.test(
       label,
     )
   ) {
     return true;
   }
   if (/^capital [a-z]$/i.test(label)) return true;
-  // Toolbar / brand affordances that leak into a11y trees.
-  if (/^grok[-_]/i.test(label)) return true;
+  // Toolbar / brand affordances that leak into a11y trees. Which words an app
+  // stamps on its own chrome is profile data, not a platform fact.
+  if (hasProfileChromePrefix(label)) return true;
   if (/^toolbar\./i.test(label)) return true;
   // Scrollbars and page indicators are not navigation.
   if (/scroll bar|scrollbar|vertical scroll|horizontal scroll|page indicator/i.test(label)) {
@@ -217,8 +223,8 @@ async function dismissTowardParentInContext(
   const device = options.device ?? createDevice();
   const parents = options.parentTitles ?? [];
 
-  // App-specific back chevrons before generic "Back".
-  for (const label of ["grok-arrow-left", "Back", "back"] as const) {
+  // A profile's own back chevron before the generic "Back".
+  for (const label of [...profileBackAffordances(), "Back", "back"]) {
     if (await tryPressLabel(device, label)) return "back";
   }
 
@@ -226,7 +232,7 @@ async function dismissTowardParentInContext(
     if (await tryPressLabel(device, title)) return "parent";
   }
 
-  for (const label of ["Close", "Done", "Cancel", "grok-close"] as const) {
+  for (const label of ["Close", "Done", "Cancel", ...profileCloseAffordances()]) {
     if (await tryPressLabel(device, label)) return "close";
   }
 
@@ -431,7 +437,8 @@ function looksLikeSheet(nodes: SnapshotNode[]): boolean {
   const labels = new Set(
     nodes.map((node) => (node.label ?? "").trim().toLocaleLowerCase()).filter(Boolean),
   );
-  if (labels.has("close") || labels.has("done") || labels.has("grok-close")) return true;
+  if (labels.has("close") || labels.has("done")) return true;
+  if (profileCloseAffordances().some((label) => labels.has(label.toLocaleLowerCase()))) return true;
   if (labels.has("dismiss popup")) return true;
   return nodes.some((node) => {
     const type = (node.type ?? "").toLocaleLowerCase();

@@ -9,8 +9,40 @@ const arbitraryType = /\btext-\[\d+(?:\.\d+)?px\]/g;
 const numberedType =
   /\btext-(?:8|9|10|11|12|13|14|15|16|18|20|24|28)(?:-(?:regular|medium|semibold|bold))?\b/g;
 const arbitraryRadius = /\brounded(?:-[a-z]+)?-\[\d+(?:\.\d+)?px\]/g;
-const bannedVocab =
-  /(['"`])(?:(?!\1)[^\n])*?\b(?:State set|Combine|Variable)\b(?:(?!\1)[^\n])*?\1|>\s*(?:State set|Combine|Variable)\b/g;
+/**
+ * Chrome vocabulary. AGENTS.md makes the product's three words authoritative —
+ * Variable, Test, Combine — and requires the UI to say what the CLI says
+ * (`relay variable save`, `relay combine run`). Variable and Combine are
+ * therefore sanctioned. "Modifier" was a euphemism for a Variable that never
+ * appeared in the model — the protocol type has always been AppMapVariable —
+ * so the chrome is what got renamed, along with the last few places the old
+ * word had leaked back into preflight output.
+ * "State set" and "run matrix" stay banned for the same reason: internal names
+ * for a Variable and a Combine that leaked into the interface. Bare "matrix" is
+ * allowed, because a compatibility matrix in Test environments is a different
+ * object that really is called that.
+ */
+const banned = String.raw`State set|[Mm]odifiers?|[Rr]un matri(?:x|ces)`;
+const bannedVocab = new RegExp(
+  String.raw`(['"\`])(?:(?!\1)[^\n])*?\b(?:${banned})\b(?:(?!\1)[^\n])*?\1|>\s*(?:${banned})\b`,
+  "g",
+);
+/**
+ * Raw thrown text in a toast. human-error.ts is the single funnel for
+ * person-facing failures, and it is what turns "Failed to fetch" into "Relay
+ * could not reach the server. Start it, then try again." Passing `error.message`
+ * straight to toast() bypasses it and shows the person a browser or driver
+ * string, so the pattern is banned rather than left to reviewer memory.
+ */
+const rawErrorToast = /toast\(\s*(?:[A-Za-z_$][\w$]*\.)?[^)]*?\berror\s*instanceof\s+Error\s*\?/g;
+/**
+ * The same leak one line apart: `const message = err instanceof Error ? …` and
+ * then `toast(message)` or `setError(message)`. Raw text is the right thing to
+ * hand appendLog, which is a diagnostic record, so only the two person-facing
+ * sinks are checked, and only when they read the raw binding directly.
+ */
+const rawErrorSink =
+  /const\s+(\w+)\s*=\s*\w+\s+instanceof\s+Error\s*\?[^;]*;(?:[^}]*?)\b(?:toast\(\1\s*,|setError\(\1\))/g;
 
 async function filesIn(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -54,10 +86,17 @@ for (const directory of ["components", "lib", "pages", "context", "styles"]) {
         );
       }
     }
+    for (const pattern of [rawErrorToast, rawErrorSink]) {
+      for (const match of source.matchAll(pattern)) {
+        violations.push(
+          `${file}:${source.slice(0, match.index).split("\n").length}: raw error text shown to a person (wrap it in humanError(error, "Could not …"); appendLog may keep the raw text)`,
+        );
+      }
+    }
     if (file.endsWith(".tsx")) {
       for (const match of source.matchAll(bannedVocab)) {
         violations.push(
-          `${file}:${source.slice(0, match.index).split("\n").length}: ${match[0]} (say Modifier / Run matrix)`,
+          `${file}:${source.slice(0, match.index).split("\n").length}: ${match[0]} (say Variable, Test or Combine — the words AGENTS.md and the CLI use)`,
         );
       }
     }
@@ -66,12 +105,12 @@ for (const directory of ["components", "lib", "pages", "context", "styles"]) {
 
 if (violations.length) {
   console.error(
-    "UI boundary violations: use classic semantic tokens (no --v2-* / retired classes), the documented type/radius scale, and Modifier / Run matrix in chrome.",
+    "UI boundary violations: use classic semantic tokens (no --v2-* / retired classes), the documented type/radius scale, the product's own three words (Variable, Test, Combine) in chrome, and humanError() for every failure a person reads.",
   );
   for (const violation of violations) console.error(`- ${violation}`);
   process.exitCode = 1;
 } else {
   console.log(
-    "UI boundary check passed: classic tokens, documented type/radius scale, Modifier / Run matrix chrome.",
+    "UI boundary check passed: classic tokens, documented type/radius scale, product vocabulary in chrome, person-facing error text.",
   );
 }

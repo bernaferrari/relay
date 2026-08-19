@@ -4,11 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import type { SnapshotNode } from "./device.js";
+import { extractSwitcherOptionsFromNodes, inferOptionId } from "./switcher-option-rows.js";
 import {
-  extractSwitcherOptionsFromNodes,
   getSwitcherProfile,
   corpusScopeFromSwitcherProfile,
-  inferOptionId,
   listSwitcherProfiles,
   mergeSwitcherOptions,
   saveSwitcherProfile,
@@ -34,6 +33,12 @@ test("inferOptionId covers language and non-language options", () => {
   assert.equal(inferOptionId("Staging"), "staging");
   assert.equal(inferOptionId("Dark mode", "Dark"), "dark");
   assert.equal(inferOptionId("Production"), "production");
+  assert.equal(inferOptionId("العربية", "Arabic"), "ar");
+  assert.equal(
+    inferOptionId("العربية (المملكة العربية السعودية)", "Arabic (Saudi Arabia)"),
+    "ar-SA",
+  );
+  assert.equal(inferOptionId("Čeština", "Czech"), "cs");
 });
 
 test("extractSwitcherOptionsFromNodes is kind-agnostic", () => {
@@ -160,6 +165,62 @@ test("extractSwitcherOptionsFromNodes prefers right-pane language cells", () => 
   const options = extractSwitcherOptionsFromNodes(nodes);
   assert.deepEqual(options.map((option) => option.id).sort(), ["en", "it", "pt-BR"]);
   assert.ok(options.every((option) => !/airplane/i.test(option.label)));
+});
+
+test("reads each language row's own gloss and identifier, not a neighbour's", () => {
+  // Shape observed on the physical iPad in Settings › Grok › Preferred Language:
+  // the cell carries the native name plus an English gloss in `value`, and the
+  // accessibility identifier sits on the title label child.
+  const row = (index: number, y: number, label: string, gloss: string): SnapshotNode[] => [
+    {
+      index,
+      parentIndex: 0,
+      type: "Cell",
+      label,
+      value: gloss,
+      enabled: true,
+      rect: { x: 396, y, width: 697, height: 58 },
+    },
+    {
+      index: index + 1,
+      parentIndex: index,
+      type: "StaticText",
+      label,
+      identifier: label,
+      enabled: true,
+      rect: { x: 412, y: y + 9, width: 665, height: 21 },
+    },
+    {
+      index: index + 2,
+      parentIndex: index,
+      type: "StaticText",
+      label: gloss,
+      enabled: true,
+      rect: { x: 412, y: y + 32, width: 200, height: 15 },
+    },
+  ];
+  const nodes: SnapshotNode[] = [
+    {
+      index: 0,
+      type: "Table",
+      label: "SUGGESTED LANGUAGES",
+      rect: { x: 376, y: 0, width: 737, height: 834 },
+    },
+    ...row(1, 184, "Bahasa Melayu", "Malay"),
+    ...row(4, 242, "Čeština", "Czech"),
+    ...row(7, 300, "Hrvatski", "Croatian"),
+    ...row(10, 358, "मराठी", "Marathi"),
+  ];
+  const options = extractSwitcherOptionsFromNodes(nodes);
+  assert.deepEqual(
+    options.map((option) => [option.label, option.id, option.identifier]),
+    [
+      ["Bahasa Melayu", "ms", "Bahasa Melayu"],
+      ["Čeština", "cs", "Čeština"],
+      ["Hrvatski", "hr", "Hrvatski"],
+      ["मराठी", "mr", "मराठी"],
+    ],
+  );
 });
 
 test("mergeSwitcherOptions unions scanned into seed without wipe", () => {

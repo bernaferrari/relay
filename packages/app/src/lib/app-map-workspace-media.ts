@@ -61,6 +61,44 @@ export function variantOrientationEvidence(
     : undefined;
 }
 
+export type ScreenMediaNode = { id: string; representativeStepIndex: number };
+
+/**
+ * One answer to "which picture belongs to this screen", for every surface that
+ * asks. The canvas frame, the Screens grid and the inspector each spelled the
+ * same three-step fallback out by hand, which is three places to forget the
+ * saved variant when the recording has no screenshot.
+ */
+export function screenMediaResolvers(input: {
+  server: EvidenceServer;
+  steps: () => Array<RecipeStep | undefined>;
+  nodeFor: (screenId: string) => ScreenMediaNode | undefined;
+  appMap: () => AppMap | undefined;
+  capturedUrls: () => Record<string, string>;
+}) {
+  const imageForNode = (node: ScreenMediaNode): string =>
+    screenshotUrl(input.server, input.steps()[node.representativeStepIndex]) ||
+    input.capturedUrls()[node.id] ||
+    variantScreenshotUrl(input.server, input.appMap(), node.id) ||
+    "";
+  const orientationForNode = (node: ScreenMediaNode) =>
+    screenshotOrientationEvidence(input.server, input.steps()[node.representativeStepIndex]) ||
+    variantOrientationEvidence(input.appMap(), node.id);
+  return {
+    imageForNode,
+    orientationForNode,
+    /** A screen the canvas has not filed yet can still have a live capture. */
+    imageForScreen: (screenId: string): string => {
+      const node = input.nodeFor(screenId);
+      return node ? imageForNode(node) : (input.capturedUrls()[screenId] ?? "");
+    },
+    orientationForScreen: (screenId: string) => {
+      const node = input.nodeFor(screenId);
+      return node ? orientationForNode(node) : undefined;
+    },
+  };
+}
+
 export function screenshotOrientationEvidence(
   server: EvidenceServer,
   step: RecipeStep | undefined,

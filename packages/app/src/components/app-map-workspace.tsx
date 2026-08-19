@@ -7,11 +7,9 @@ import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { type MapTreeNode } from "../lib/app-map-tree";
 import { canvasConnections, type CanvasConnection } from "../lib/app-map-connection-draft";
-import {
-  connectorAutoLanes,
-  connectorHasAutomaticSourceLane,
-  connectorPresentationWithAutoLane,
-} from "../lib/app-map-connector-lanes";
+import { useAppMapCanvasDirectory } from "../lib/use-app-map-canvas-directory";
+import { appMapCanvasGeometry } from "../lib/app-map-canvas-geometry";
+import { positionsAfterCanvasEdit } from "../lib/app-map-destack";
 import { connectionLabelMode } from "../lib/connection-presentation";
 import {
   buildCanvasGraphTree,
@@ -19,14 +17,7 @@ import {
   withCanvasGraph,
 } from "../lib/app-map-canvas-graph";
 import { EMPTY_APP_MAP_CANVAS_STATE } from "../lib/app-map-canvas-state";
-import {
-  canvasEdgeGeometry,
-  screenCardGeometry,
-  type CanvasPoint,
-  type CanvasScreenRotation,
-  type ScreenCardGeometry,
-  type CanvasViewport,
-} from "../lib/app-map-canvas-layout";
+import { type CanvasScreenRotation, type CanvasViewport } from "../lib/app-map-canvas-layout";
 import {
   canvasGridForScale,
   canvasGridPresentation,
@@ -37,8 +28,9 @@ import { projectAppMapRun } from "../lib/app-map-run-projection";
 import { AppMapEmptyState } from "./app-map-capture-review";
 import { ConnectionInspector, ScreenInspector } from "./app-map-canvas-primitives";
 import { AppMapDeviceCompanionMount } from "./app-map-device-companion-mount";
-import { AppMapOverviewToolbar, AppMapToolbar, type AppMapWorkspaceView } from "./app-map-toolbar";
-import { AppMapMinimap } from "./app-map-minimap";
+import { AppMapProposalPill } from "./app-map-toolbar";
+import type { MapCanvasView } from "./map-mode-switch";
+import { AppMapCanvasChrome } from "./app-map-canvas-chrome";
 import { AppMapBrowseView } from "./app-map-browse-view";
 import {
   connectionStepsFromActions,
@@ -65,12 +57,7 @@ import { useAppMapGraphEdits } from "../lib/use-app-map-graph-edits";
 import { useAppMapTransitionReplay } from "../lib/use-app-map-transition-replay";
 import { useAppMapPresence } from "../lib/use-app-map-presence";
 import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
-import {
-  screenshotOrientationEvidence,
-  screenshotUrl,
-  variantOrientationEvidence,
-  variantScreenshotUrl,
-} from "../lib/app-map-workspace-media";
+import { screenMediaResolvers } from "../lib/app-map-workspace-media";
 import { AppMapLoadFeedback } from "./app-map-load-feedback";
 import { connectionActionSummaries } from "../lib/connection-action-presentation";
 import { useAppMapCanvasGestures } from "./use-app-map-canvas-gestures";
@@ -89,6 +76,10 @@ import { useAppMapWorkspaceRun } from "../lib/use-app-map-workspace-run";
 type AppMapContextSurface = "agent" | "history" | "proposals" | null;
 
 export function AppMapWorkspace(props: {
+  /** Which of the shell's three canvas modes is showing. The shell owns it so
+   * the map has exactly one mode switcher instead of two stacked strips. */
+  view: MapCanvasView;
+  onView: (view: MapCanvasView) => void;
   onOpenTargets: () => void;
   onOpenActions: () => void;
   onOpenVariables: () => void;
@@ -101,7 +92,8 @@ export function AppMapWorkspace(props: {
   const recorder = useRecorder();
   const workbench = useWorkbench();
   const [canvasState, setCanvasState] = createSignal<AppMapCanvasState>(EMPTY_APP_MAP_CANVAS_STATE);
-  const [workspaceView, setWorkspaceView] = createSignal<AppMapWorkspaceView>("map");
+  const workspaceView = () => props.view;
+  const setWorkspaceView = (view: MapCanvasView) => props.onView(view);
   const [contextSurface, setContextSurface] = createSignal<AppMapContextSurface>(null);
   const graph = createMemo(() => ensureCanvasGraph(canvasState(), draft.steps()));
   const groups = () => canvasState().groups ?? [];
@@ -168,29 +160,26 @@ export function AppMapWorkspace(props: {
     activeAppMap,
     history: canvasHistory,
   });
-  const positions = () => canvasState().positions;
-  const positionFor = (node: MapTreeNode): CanvasPoint => positions()[node.id] ?? node;
-  const resolvedPositions = createMemo(() =>
-    Object.fromEntries(tree().nodes.map((node) => [node.id, positionFor(node)] as const)),
-  );
-  const orientationEvidenceForNode = (node: MapTreeNode) =>
-    screenshotOrientationEvidence(server, draft.steps()[node.representativeStepIndex]) ||
-    variantOrientationEvidence(activeAppMap(), node.id);
-  const geometryForNode = (node: MapTreeNode): ScreenCardGeometry =>
-    screenCardGeometry(orientationEvidenceForNode(node));
-  const screenGeometries = createMemo<Record<string, ScreenCardGeometry>>(() =>
-    Object.fromEntries(tree().nodes.map((node) => [node.id, geometryForNode(node)] as const)),
-  );
-  const autoConnectionLanes = createMemo(() =>
-    connectorAutoLanes(
-      connections(),
-      (screenId) => {
-        const node = tree().nodes.find((candidate) => candidate.id === screenId);
-        return node ? positionFor(node) : undefined;
-      },
-      (screenId) => screenGeometries()[screenId],
-    ),
-  );
+  const media = screenMediaResolvers({
+    server,
+    steps: () => draft.steps(),
+    nodeFor: (screenId) => tree().nodes.find((candidate) => candidate.id === screenId),
+    appMap: activeAppMap,
+    capturedUrls: capturedScreenUrls,
+  });
+  const {
+    positionFor,
+    resolvedPositions,
+    geometryForNode,
+    screenGeometries,
+    connectionGeometries,
+  } = appMapCanvasGeometry({
+    nodes: () => tree().nodes,
+    connections,
+    rotations: canvasScreenRotations,
+    savedPositions: () => canvasState().positions,
+    orientationFor: media.orientationForNode,
+  });
   const canvasGestures = useAppMapCanvasGestures({
     view,
     setView,
@@ -206,25 +195,7 @@ export function AppMapWorkspace(props: {
     selectedNodeIds,
     setSelectedNodeIds,
     setSelectedNodeId: setSelectedNodeIdValue,
-    connectionGeometries: () =>
-      connections().map((connection) => ({
-        id: connection.id,
-        geometry: canvasEdgeGeometry(
-          {
-            from: connection.fromScreenId,
-            to: connection.toScreenId,
-            kind: connection.kind,
-            sourceAnchor: connection.sourceAnchor,
-            sourceRotation: canvasScreenRotations()[connection.fromScreenId],
-            presentation: connectorPresentationWithAutoLane(connection, autoConnectionLanes()),
-            automaticSourceLane: connectorHasAutomaticSourceLane(connection, autoConnectionLanes()),
-          },
-          tree().nodes,
-          positionFor,
-          undefined,
-          geometryForNode,
-        ),
-      })),
+    connectionGeometries,
     setSelectedConnectionId,
     clearSecondarySelection: () => {
       setSelectedConnectionId(null);
@@ -262,6 +233,12 @@ export function AppMapWorkspace(props: {
     pendingProposals,
     Panels: ContextPanels,
   } = contextPanels;
+  // The revision history reads the canvas it annotates. Leaving for the Screens
+  // grid or Coverage table used to be the same click that closed it, and the
+  // mode switcher moving to the shell must not lose that.
+  createEffect(() => {
+    if (props.view !== "map") setHistoryOpen(false);
+  });
   const openLiveDevice = () => {
     if (!captureOpen()) server.resetLivePreview();
     openCapturePanel();
@@ -316,12 +293,15 @@ export function AppMapWorkspace(props: {
     setCaptureOpen(false);
   });
 
-  const titleFor = (node: MapTreeNode) =>
-    canvasState().screenTitles?.[node.id]?.trim() || node.title;
-  const titleForScreen = (screenId: string) => {
-    const node = tree().nodes.find((candidate) => candidate.id === screenId);
-    return node ? titleFor(node) : "Untitled screen";
-  };
+  const {
+    titleFor,
+    titleForScreen,
+    directory: canvasDirectory,
+  } = useAppMapCanvasDirectory({
+    nodes: () => tree().nodes,
+    connections,
+    screenTitles: () => canvasState().screenTitles,
+  });
   const hasCanvasContent = () => hasMap() || (canvasState().notes?.length ?? 0) > 0;
   const hereScreenTitle = createMemo(() => {
     const id = hereScreenId();
@@ -641,19 +621,13 @@ export function AppMapWorkspace(props: {
           onPointerUp={canvasGestures.finishPointer}
           onPointerCancel={canvasGestures.cancelPointer}
         >
-          <AppMapOverviewToolbar
-            screenCount={tree().nodes.length}
-            connectionCount={connections().length}
-            view={workspaceView()}
-            proposalCount={pendingProposals().length}
-            shiftForDevice={captureOpen() && Boolean(selectedDevice())}
-            wideDevice={deviceCompanionOrientation() === "landscape"}
-            onViewChange={(next) => {
-              setWorkspaceView(next);
-              setHistoryOpen(false);
-            }}
-            onOpenProposals={() => setProposalReviewOpen(true)}
-          />
+          <Show when={workspaceView() === "map"}>
+            <AppMapProposalPill
+              count={pendingProposals().length}
+              shiftForDevice={captureOpen() && Boolean(selectedDevice())}
+              onOpen={() => setProposalReviewOpen(true)}
+            />
+          </Show>
           <ContextPanels />
           <Show
             when={workspaceView() === "map"}
@@ -669,25 +643,8 @@ export function AppMapWorkspace(props: {
                       server.devices().find((target) => target.serial === targetId)?.name
                     }
                     deviceOpen={captureOpen()}
-                    imageForScreen={(screenId) => {
-                      const node = tree().nodes.find((candidate) => candidate.id === screenId);
-                      if (!node) return capturedScreenUrls()[screenId] ?? "";
-                      return (
-                        screenshotUrl(server, draft.steps()[node.representativeStepIndex]) ||
-                        capturedScreenUrls()[screenId] ||
-                        variantScreenshotUrl(server, appMap(), screenId) ||
-                        ""
-                      );
-                    }}
-                    orientationEvidenceForScreen={(screenId) => {
-                      const node = tree().nodes.find((candidate) => candidate.id === screenId);
-                      return node
-                        ? screenshotOrientationEvidence(
-                            server,
-                            draft.steps()[node.representativeStepIndex],
-                          ) || variantOrientationEvidence(appMap(), screenId)
-                        : undefined;
-                    }}
+                    imageForScreen={media.imageForScreen}
+                    orientationEvidenceForScreen={media.orientationForScreen}
                     stateForScreen={(screenId) => runProjection().screens[screenId]?.state}
                     onOpenScreen={(screenId) => {
                       setWorkspaceView("map");
@@ -700,6 +657,7 @@ export function AppMapWorkspace(props: {
                       server.setSelectedJobId(runId);
                       props.onOpenRun?.(runId);
                     }}
+                    onOpenMap={() => setWorkspaceView("map")}
                     onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openLiveDevice())}
                     onCaptureScreen={() =>
                       void captureCurrentScreen().finally(() => void agentExploration.start())
@@ -759,13 +717,9 @@ export function AppMapWorkspace(props: {
                   presenceGeometry={presenceGeometry()}
                   positionFor={positionFor}
                   titleFor={titleFor}
-                  imageFor={(node) =>
-                    screenshotUrl(server, draft.steps()[node.representativeStepIndex]) ||
-                    capturedScreenUrls()[node.id] ||
-                    variantScreenshotUrl(server, activeAppMap(), node.id) ||
-                    ""
-                  }
-                  orientationEvidenceFor={orientationEvidenceForNode}
+                  qualifierFor={(node) => canvasDirectory()[node.id]?.qualifier}
+                  imageFor={media.imageForNode}
+                  orientationEvidenceFor={media.orientationForNode}
                   onScreenRotationChange={(nodeId, rotation) =>
                     setCanvasScreenRotations((current) =>
                       current[nodeId] === rotation ? current : { ...current, [nodeId]: rotation },
@@ -865,18 +819,11 @@ export function AppMapWorkspace(props: {
                         const member = tree().nodes.find((candidate) => candidate.id === id);
                         if (!member) return [];
                         const position = positionFor(member);
-                        return [
-                          [
-                            id,
-                            snapCanvasPointToGrid(
-                              {
-                                x: position.x + direction.x * step,
-                                y: position.y + direction.y * step,
-                              },
-                              canvasGrid(),
-                            ),
-                          ] as const,
-                        ];
+                        const nudged = {
+                          x: position.x + direction.x * step,
+                          y: position.y + direction.y * step,
+                        };
+                        return [[id, snapCanvasPointToGrid(nudged, canvasGrid())] as const];
                       }),
                     );
                     if (!Object.keys(nextPositions).length) return;
@@ -887,7 +834,7 @@ export function AppMapWorkspace(props: {
                       withCanvasGraph(
                         {
                           ...canvasState(),
-                          positions: { ...canvasState().positions, ...nextPositions },
+                          positions: positionsAfterCanvasEdit(resolvedPositions(), nextPositions),
                         },
                         graph(),
                       ),
@@ -944,21 +891,11 @@ export function AppMapWorkspace(props: {
                       title={selectedNode() ? titleFor(selectedNode()!) : ""}
                       image={
                         selectedNode()
-                          ? screenshotUrl(
-                              server,
-                              draft.steps()[selectedNode()!.representativeStepIndex],
-                            ) ||
-                            capturedScreenUrls()[selectedNode()!.id] ||
-                            variantScreenshotUrl(server, activeAppMap(), selectedNode()!.id)
+                          ? media.imageForNode(selectedNode()!) || undefined
                           : undefined
                       }
                       orientationEvidence={
-                        selectedNode()
-                          ? screenshotOrientationEvidence(
-                              server,
-                              draft.steps()[selectedNode()!.representativeStepIndex],
-                            ) || variantOrientationEvidence(activeAppMap(), selectedNode()!.id)
-                          : undefined
+                        selectedNode() ? media.orientationForNode(selectedNode()!) : undefined
                       }
                       runState={
                         selectedNode()
@@ -1066,29 +1003,25 @@ export function AppMapWorkspace(props: {
                   )}
                 </Show>
               </Show>
-              <AppMapToolbar
+              <AppMapCanvasChrome
                 tool={canvasTool()}
                 deviceOpen={captureOpen()}
-                shiftForDevice={Boolean((captureOpen() && selectedDevice()) || agentOpen())}
+                shiftForSidePanel={Boolean((captureOpen() && selectedDevice()) || agentOpen())}
                 wideDevice={deviceCompanionOrientation() === "landscape"}
                 explorationState={agentExploration.state()}
                 explorationCount={agentExploration.workers().length}
-                onToolChange={setCanvasTool}
-                onAddNote={addNote}
-                onExplore={() => (closeCapturePanel(), setHistoryOpen(false), setAgentOpen(true))}
-                onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openLiveDevice())}
-              />
-              <AppMapMinimap
                 scale={view().scale}
-                groups={[]}
                 nodes={minimapNodes()}
                 edges={minimapEdges()}
                 bounds={bounds()}
                 viewport={minimapViewport()}
-                shiftForSidePanel={Boolean((captureOpen() && selectedDevice()) || agentOpen())}
-                wideDevice={deviceCompanionOrientation() === "landscape"}
+                onToolChange={setCanvasTool}
+                onAddNote={addNote}
+                onExplore={() => (closeCapturePanel(), setHistoryOpen(false), setAgentOpen(true))}
+                onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openLiveDevice())}
                 onZoomOut={() => zoom(-0.1)}
                 onZoomIn={() => zoom(0.1)}
+                onZoomTo={canvasPresentation.zoomTo}
                 onFit={fit}
                 onNavigate={canvasPresentation.navigateMinimap}
               />

@@ -3,7 +3,7 @@ import test from "node:test";
 import type { TestData } from "@relay/protocol";
 import { prepareRunMatrix } from "./run-matrix.js";
 
-test("run matrices freeze list and generated values before execution", async () => {
+test("combines freeze list and generated values before execution", async () => {
   const matrix = await prepareRunMatrix({
     repetitions: 3,
     seed: 42,

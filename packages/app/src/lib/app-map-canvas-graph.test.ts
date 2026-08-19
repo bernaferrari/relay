@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMapCanvasState, RecipeStep } from "@relay/protocol";
-import { SCREEN_CARD_HEIGHT } from "./app-map-canvas-layout";
+import { SCREEN_CARD_HEIGHT, SCREEN_CARD_WIDTH } from "./app-map-canvas-layout";
 
 // The canvas projection never becomes a second persisted graph.
 import {
@@ -117,7 +117,12 @@ test("default sibling screens never overlap", () => {
   );
   const siblings = buildCanvasGraphTree(profile.graph, []).nodes.filter((node) => node.depth === 1);
   assert.equal(siblings.length, 2);
-  assert.ok(Math.abs(siblings[0]!.y - siblings[1]!.y) >= SCREEN_CARD_HEIGHT);
+  // A pair of dead ends is packed side by side, so the clearance that matters
+  // is on whichever axis the layout chose to separate them along.
+  assert.ok(
+    Math.abs(siblings[0]!.y - siblings[1]!.y) >= SCREEN_CARD_HEIGHT ||
+      Math.abs(siblings[0]!.x - siblings[1]!.x) >= SCREEN_CARD_WIDTH,
+  );
 });
 
 test("a reviewed take creates an explicit start, destination screen, and transition", () => {

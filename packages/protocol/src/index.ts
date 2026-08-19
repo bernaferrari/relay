@@ -20,6 +20,7 @@ export * from "./target-summary.js";
 export * from "./target-contract.js";
 export * from "./discovery-contract.js";
 export * from "./corpus-contract.js";
+export * from "./locale-pack-contract.js";
 export * from "./app-map-canvas.js";
 import type { ResourceEventPayload } from "./coordination.js";
 import type { ServerConnection, TargetProfile, TargetSelector } from "./target-contract.js";

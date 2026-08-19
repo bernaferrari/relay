@@ -2,6 +2,7 @@ import { describeSnapshotChrome } from "@relay/protocol";
 import type { Device } from "./device.js";
 import { pressKey, pressLabel, scrollUp, sleep, snapshot, type SnapshotNode } from "./device.js";
 import { now } from "./events.js";
+import { recordFrameObservation } from "./frame-observation.js";
 import type { FreshDeviceObservation, RecipeStepContext } from "./recipe-runner-context.js";
 import {
   handoffShellIdentityMatch,
@@ -31,25 +32,50 @@ export async function captureRecipeScreenshot(
 ): Promise<void> {
   const verified = ctx.runtime?.verifiedScreen;
   const observation = ctx.runtime?.observation;
+  const nodes = observation?.nodes ?? verified?.nodes;
   const retained = observation?.screenshot ?? verified?.screenshot;
-  if (retained) {
-    await attachScreenshotPayload(
-      retained,
-      ctx.job?.id,
-      caption ?? `screenshot · ${new Date().toISOString()}`,
-    );
-    if (observation) observation.screenshot = retained;
-    if (verified) verified.screenshot = retained;
-    return;
-  }
-  const screenshot = await captureScreenshot({
-    jobId: ctx.job?.id,
-    caption,
-    device,
-    ...(observation?.nodes ? { semanticNodes: observation.nodes } : {}),
-  });
+  const screenshot = retained
+    ? await attachScreenshotPayload(
+        retained,
+        ctx.job?.id,
+        caption ?? `screenshot · ${new Date().toISOString()}`,
+      )
+    : await captureScreenshot({
+        jobId: ctx.job?.id,
+        caption,
+        device,
+        ...(nodes ? { semanticNodes: nodes } : {}),
+      });
   if (observation) observation.screenshot = screenshot;
   if (verified) verified.screenshot = screenshot;
+  // The tree that produced this frame is the only chance to read its text
+  // later: a matrix compares copy across locales long after the run.
+  //
+  // The smallest honest locale body is a launch and a screenshot, which never
+  // verifies a screen and so holds no tree. Reading one here is what separates
+  // a pack of forty unreadable rasters from a pack that can be compared. Only
+  // matrix cases pay for it, and a target that cannot answer still yields a
+  // frame — the observation is evidence, not a gate on the capture.
+  const readable = nodes?.length ? nodes : await frameNodes(device, ctx);
+  recordFrameObservation({
+    ...(ctx.job ? { job: ctx.job } : {}),
+    ...(screenshot.framePath ? { framePath: screenshot.framePath } : {}),
+    ...(caption ? { caption } : {}),
+    ...(readable ? { nodes: readable } : {}),
+    ...(screenshot.base64 ? { base64: screenshot.base64 } : {}),
+  });
+}
+
+async function frameNodes(
+  device: Device,
+  ctx: RecipeStepContext,
+): Promise<SnapshotNode[] | undefined> {
+  if (!ctx.job?.batchId) return undefined;
+  try {
+    return await snapshot(device);
+  } catch {
+    return undefined;
+  }
 }
 
 type ExpectScreenDependencies = {

@@ -14,6 +14,12 @@ export type EmptyStateProps = {
   icon?: IconName;
   actionLabel?: string;
   onAction?: () => void;
+  /**
+   * Empty states inside a workspace that already shows a filled primary in its
+   * chrome demote their action, so a view never presents two equally loud next
+   * steps. Standalone gates keep the primary.
+   */
+  actionVariant?: "primary" | "secondary";
   secondaryLabel?: string;
   onSecondary?: () => void;
   /** compact = list/panel; full = stage/gate; start = document left-aligned (default for panels) */
@@ -74,9 +80,12 @@ export function EmptyState(props: EmptyStateProps) {
           {props.title}
         </p>
         <Show when={props.description}>
+          {/* `pretty` keeps the last line from stranding a single word, which
+              on a three-line explanation is the difference between a designed
+              paragraph and a wrapped string. */}
           <p
             class={cn(
-              "m-0 text-text-base",
+              "m-0 text-pretty text-text-base",
               size() === "sm" ? "max-w-[260px] text-caption" : "max-w-[300px] text-body",
             )}
           >
@@ -103,7 +112,11 @@ export function EmptyState(props: EmptyStateProps) {
           )}
         >
           <Show when={props.actionLabel && props.onAction}>
-            <Button variant="primary" size="normal" onClick={() => props.onAction?.()}>
+            <Button
+              variant={props.actionVariant ?? "primary"}
+              size="normal"
+              onClick={() => props.onAction?.()}
+            >
               {props.actionLabel}
             </Button>
           </Show>

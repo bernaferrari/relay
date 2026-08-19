@@ -30,6 +30,7 @@ import {
 } from "./app-map-grid";
 import type { TakeDestination } from "./app-map-canvas-graph";
 import { mapGroupGeometry } from "./app-map-groups";
+import { humanizeTitle } from "./humanize-identifier";
 import { minimapPoint } from "./app-map-minimap";
 import {
   connectorAutoLanes,
@@ -611,6 +612,20 @@ export function takeReplayFromLatest(input: {
     };
   }
   return { takeId: input.takeId ?? null, state: "idle" };
+}
+
+/**
+ * The name a screen shows everywhere: canvas frame label, Screens grid,
+ * inspector, run and path descriptions. A recorded screen can be saved under
+ * the identifier of whatever was tapped to reach it, so `settings_button` was
+ * reaching the canvas as a title; humanizing here rather than at each call site
+ * is what keeps those surfaces from disagreeing about what a screen is called.
+ */
+export function resolveScreenTitle(
+  node: MapTreeNode,
+  screenTitles: Record<string, string> | undefined,
+): string {
+  return humanizeTitle(screenTitles?.[node.id]?.trim() || node.title);
 }
 
 export function captureContextLabel(input: {

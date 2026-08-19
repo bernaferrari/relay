@@ -12,7 +12,7 @@ import {
   withLocalePickerNav,
 } from "./server-run-remote";
 
-test("matrix and modifier removal use revision-checked App Map actions", async () => {
+test("Combine and Variable removal use revision-checked App Map actions", async () => {
   const calls: Array<{ path: string; init?: RequestInit }> = [];
   const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
     calls.push({ path, init });

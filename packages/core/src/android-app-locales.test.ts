@@ -18,6 +18,6 @@ test("reads the app-declared Android locales without product-specific seeds", ()
   );
 });
 
-test("an app without LocaleConfig remains a manual modifier", () => {
+test("an app without LocaleConfig remains a manual Variable", () => {
   assert.deepEqual(parseAndroidLocaleConfig({ manifest: "", resources: "", localeXml: "" }), []);
 });

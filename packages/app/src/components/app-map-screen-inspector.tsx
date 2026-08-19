@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import { panelEmptyNote, panelSectionLabel } from "../lib/ui";
 import type { AppMap, MapGroup } from "@relay/protocol";
 import { IconButton } from "@relay/ui/icon-button";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
@@ -143,10 +144,7 @@ export function ScreenInspector(props: {
             {(capture) => (
               <section class="grid gap-1.5 border-t border-[var(--border-weak-base)] px-3 py-2.5">
                 <Show when={(capture().variants?.length ?? 0) > 1}>
-                  <label
-                    for="scroll-surface-variant"
-                    class="text-micro font-medium text-[var(--text-base)]"
-                  >
+                  <label for="scroll-surface-variant" class={panelSectionLabel}>
                     Screen variant
                   </label>
                   <select
@@ -196,10 +194,7 @@ export function ScreenInspector(props: {
             {(flowSetup) => (
               <section class="grid gap-1.5 border-t border-[var(--border-weak-base)] px-3 py-2.5">
                 <div class="flex items-baseline justify-between gap-3">
-                  <label
-                    for="screen-flow-setup"
-                    class="text-micro font-medium text-[var(--text-base)]"
-                  >
+                  <label for="screen-flow-setup" class={panelSectionLabel}>
                     When a run starts
                   </label>
                 </div>
@@ -228,7 +223,7 @@ export function ScreenInspector(props: {
 
           <section class="grid gap-1 border-t border-[var(--border-weak-base)] px-2 py-2">
             <div class="flex min-h-6 items-center justify-between gap-3 px-1">
-              <span class="text-micro font-medium text-[var(--text-base)]">Paths</span>
+              <span class={panelSectionLabel}>Paths</span>
               <span class="font-mono text-micro tabular-nums text-[var(--text-weak)]">
                 {props.connections.length}
               </span>
@@ -236,8 +231,9 @@ export function ScreenInspector(props: {
             <Show
               when={props.connections.length}
               fallback={
-                <p class="m-0 rounded-lg bg-[var(--surface-base)] px-2.5 py-2 text-micro/[1.45] text-[var(--text-weak)]">
-                  No paths from this screen.
+                <p class={panelEmptyNote}>
+                  Nothing leads out of this screen yet. Record a step from here to add the first
+                  path.
                 </p>
               }
             >
@@ -247,7 +243,7 @@ export function ScreenInspector(props: {
                   return (
                     <button
                       type="button"
-                      class="flex min-h-10 items-center gap-2 rounded-lg px-2 text-left text-caption text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.99] motion-reduce:active:scale-100"
+                      class="flex min-h-10 items-center gap-2 rounded-lg px-2 text-left text-caption text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-hover hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.99] motion-reduce:active:scale-100"
                       aria-label={`Open path to ${targetTitle()}`}
                       onClick={() => props.onSelectConnection(connection)}
                     >
@@ -329,7 +325,7 @@ export function GroupInspector(props: {
             <div class="flex items-center">
               <button
                 type="button"
-                class="relative grid size-9 place-items-center rounded-lg text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
+                class="relative grid size-9 place-items-center rounded-lg text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-hover hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
                 aria-label={`Rename ${group().name}`}
                 title="Rename group · F2"
                 onClick={props.onRename}
@@ -338,7 +334,7 @@ export function GroupInspector(props: {
               </button>
               <button
                 type="button"
-                class="relative grid size-9 place-items-center rounded-lg text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
+                class="relative grid size-9 place-items-center rounded-lg text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-hover hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
                 aria-label="Close group details"
                 onClick={props.onClose}
               >

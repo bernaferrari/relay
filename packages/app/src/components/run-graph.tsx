@@ -343,7 +343,7 @@ function RunGraphNode(props: {
   return (
     <div
       class={cn(
-        "relative grid h-[400px] grid-rows-[34px_minmax(0,1fr)_36px] overflow-hidden rounded-3xl border shadow-[0_2px_10px_rgb(0_0_0/12%)] transition-[border-color,box-shadow] duration-150",
+        "relative grid h-[400px] grid-rows-[34px_minmax(0,1fr)_36px] overflow-hidden rounded-3xl border shadow-[0_2px_10px_rgb(0_0_0/12%)] transition-[border-color,box-shadow] duration-hover",
         "bg-surface-raised-stronger-non-alpha",
         "before:absolute before:top-0 before:right-5 before:left-5 before:h-px before:bg-[linear-gradient(90deg,transparent,var(--run-graph-node-accent),transparent)] before:opacity-70 before:content-['']",
         props.active &&

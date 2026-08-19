@@ -1,4 +1,5 @@
 import { toast } from "../context/toast";
+import { humanError } from "./human-error";
 import type {
   Frame,
   PersistedRun,
@@ -337,8 +338,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
       return survey;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not read this screen");
       deps.appendLog(message, "error");
-      toast(message, "error");
+      toast(readable, "error");
       return null;
     } finally {
       deps.setBusyCapture(false);
@@ -364,7 +366,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
       await deps.copyImage(data.base64, data.mime);
       toast("Screenshot copied", "success");
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not copy this screenshot"), "error");
     } finally {
       deps.setBusyCapture(false);
     }
@@ -533,8 +535,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not run this step on the device");
       deps.appendLog(message, "error");
-      toast(message, "error");
+      toast(readable, "error");
       return false;
     }
   }

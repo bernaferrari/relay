@@ -7,6 +7,7 @@ import {
   type ScreenCardGeometry,
   type CanvasViewport,
 } from "../lib/app-map-canvas-layout";
+import { positionsAfterCanvasEdit } from "../lib/app-map-destack";
 import {
   APP_MAP_MARQUEE_THRESHOLD,
   canvasSelectionRect,
@@ -202,21 +203,15 @@ export function useAppMapCanvasGestures(options: {
     setSnapGuides(snap.guides);
     options.setCanvasState((current) => ({
       ...current,
-      positions: {
-        ...current.positions,
-        ...Object.fromEntries(
+      positions: positionsAfterCanvasEdit(
+        options.positions(),
+        Object.fromEntries(
           drag.ids.map((id) => {
             const origin = drag.origins[id]!;
-            return [
-              id,
-              {
-                x: origin.x + snap.delta.x,
-                y: origin.y + snap.delta.y,
-              },
-            ];
+            return [id, { x: origin.x + snap.delta.x, y: origin.y + snap.delta.y }];
           }),
         ),
-      },
+      ),
     }));
   };
 

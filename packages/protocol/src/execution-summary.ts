@@ -84,12 +84,136 @@ function summarizeJob(value: unknown): unknown {
   };
 }
 
+/** How many findings a pack export hands a caller before it has to open the pack. */
+const MAX_SUMMARIZED_FINDINGS = 40;
+
+/**
+ * A pack export is the readable half of a matrix run, so its findings must
+ * survive the job projection instead of being dropped with the rest of the
+ * response. Each one keeps the frame it came from so a caller can look.
+ */
+function projectFinding(value: unknown, frame: unknown): unknown {
+  const finding = object(value);
+  if (!finding) return value;
+  return {
+    code: finding.code,
+    severity: finding.severity,
+    confidence: finding.confidence,
+    locale: finding.locale,
+    screenLabel: finding.screenLabel,
+    detail: finding.detail,
+    ...(typeof frame === "string" ? { frame } : {}),
+  };
+}
+
+/**
+ * A live analysis carries one entry per frame per case, which is a grid's worth
+ * of paths for a caller that asked what broke. Keep the verdicts and the counts
+ * that say how much could be read; the frames stay in the runs.
+ */
+function summarizeLocaleAnalysis(response: Record<string, unknown>): unknown {
+  const analysis = object(response.analysis);
+  if (!analysis) return response;
+  const findings = Array.isArray(analysis.findings) ? analysis.findings : [];
+  const cases = Array.isArray(response.cases) ? response.cases : [];
+  const framePaths = new Map<string, unknown>();
+  const summarized = cases.map((value) => {
+    const item = object(value);
+    const frames = Array.isArray(item?.frames) ? item.frames : [];
+    for (const entry of frames) {
+      const frame = object(entry);
+      if (frame)
+        framePaths.set(`${String(item?.locale)}\n${String(frame.canonicalKey)}`, frame.framePath);
+    }
+    return {
+      jobId: item?.jobId,
+      locale: item?.locale,
+      status: item?.status,
+      frameCount: frames.length,
+      inspectedFrames: frames.filter((entry) => object(entry)?.inspected === true).length,
+    };
+  });
+  return {
+    batchId: response.batchId,
+    locales: response.locales,
+    coverage: response.coverage,
+    cases: summarized,
+    analysis: {
+      baselineLocale: analysis.baselineLocale,
+      critical: analysis.critical,
+      warnings: analysis.warnings,
+      affectedScreens: analysis.affectedScreens,
+      findingCount: findings.length,
+      findings: findings
+        .slice(0, MAX_SUMMARIZED_FINDINGS)
+        .map((value) =>
+          projectFinding(
+            value,
+            framePaths.get(
+              `${String(object(value)?.locale)}\n${String(object(value)?.canonicalKey)}`,
+            ),
+          ),
+        ),
+    },
+  };
+}
+
+function summarizePackExport(response: Record<string, unknown>): unknown {
+  const manifest = object(response.manifest);
+  if (!manifest) return response;
+  const analysis = object(manifest.analysis);
+  const byCanonicalKey = object(manifest.byCanonicalKey);
+  const findings = Array.isArray(analysis?.findings) ? analysis.findings : [];
+  const cases = Array.isArray(manifest.cases) ? manifest.cases : [];
+  return {
+    ...(typeof response.rootDir === "string" ? { rootDir: response.rootDir } : {}),
+    ...(Array.isArray(response.jobIds) ? { jobIds: response.jobIds } : {}),
+    manifest: {
+      batchId: manifest.batchId,
+      title: manifest.title,
+      locales: manifest.locales,
+      generatedAt: manifest.generatedAt,
+      analysisCoverage: manifest.analysisCoverage,
+      cases: cases.map((value) => {
+        const item = object(value);
+        return {
+          locale: item?.locale,
+          status: item?.status,
+          frameCount: Array.isArray(item?.frames) ? item.frames.length : 0,
+          ...(typeof item?.expectedFrames === "number"
+            ? { expectedFrames: item.expectedFrames }
+            : {}),
+        };
+      }),
+      ...(analysis
+        ? {
+            analysis: {
+              baselineLocale: analysis.baselineLocale,
+              critical: analysis.critical,
+              warnings: analysis.warnings,
+              affectedScreens: analysis.affectedScreens,
+              findingCount: findings.length,
+              findings: findings.slice(0, MAX_SUMMARIZED_FINDINGS).map((value) => {
+                const finding = object(value);
+                if (!finding) return value;
+                const locales = object(byCanonicalKey?.[String(finding.canonicalKey)]);
+                return projectFinding(finding, locales?.[String(finding.locale)]);
+              }),
+            },
+          }
+        : {}),
+    },
+  };
+}
+
 /** Bounded command/MCP projection for execution jobs. Full traces remain in
  * run resources and TracePacks where they can be queried deliberately. */
 export function summarizeExecutionOperationResult(operationId: string, result: unknown): unknown {
   if (operationId !== "app-map.flow.run" && !operationId.startsWith("job.")) return result;
   const response = object(result);
   if (!response) return result;
+  if (operationId.endsWith(".export")) return summarizePackExport(response);
+  if (operationId.endsWith(".analysis")) return summarizeLocaleAnalysis(response);
   const job = response.job === undefined ? undefined : summarizeJob(response.job);
   const jobs = Array.isArray(response.jobs) ? response.jobs.map(summarizeJob) : undefined;
   const plan = object(response.plan);

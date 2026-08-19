@@ -13,12 +13,24 @@ import type {
   ProposalChange,
   ScreenVariant,
 } from "@relay/protocol";
+import { canvasSlotAllocator } from "./canvas-slots.js";
 import type { ProposedNavigationEdge } from "./navigation-observation.js";
 import {
+  isSettingsHubOrChildTitle,
   preferSettingsChildTitle,
-  SETTINGS_HUB_OR_CHILD_TITLES,
   settingsScreenTitlesConflict,
 } from "./settings-screen-titles.js";
+import { isProfileAppTitle, isProfileWeakTitle } from "../discovery-app-profiles.js";
+
+/** A title that cannot tell two screens apart, so it must not block a merge. */
+function isWeakScreenTitle(value: string): boolean {
+  return /^screen$/i.test(value) || isProfileWeakTitle(value);
+}
+
+/** A title no person would accept for a screen: chrome, brand, or a raw gesture. */
+function isUnusableScreenTitle(value: string): boolean {
+  return /^(screen|back|close|coordinate tap)$/i.test(value) || isProfileAppTitle(value);
+}
 
 function observedId(sessionId: string, kind: "screen" | "connection" | "variant", id: string) {
   return `observed:${sessionId}:${kind}:${id}`;
@@ -72,8 +84,8 @@ export function matchingScreenId(
       wanted &&
       existing &&
       wanted !== existing &&
-      !/^(grok|screen|ask)$/i.test(wanted) &&
-      !/^(grok|screen|ask)$/i.test(existing)
+      !isWeakScreenTitle(wanted) &&
+      !isWeakScreenTitle(existing)
     ) {
       return false;
     }
@@ -81,7 +93,7 @@ export function matchingScreenId(
   })?.id;
   if (byFingerprint) return byFingerprint;
   // List hubs change fingerprint as rows scroll into view — keep one screen per title.
-  if (wanted && SETTINGS_HUB_OR_CHILD_TITLES.test(wanted)) {
+  if (isSettingsHubOrChildTitle(wanted)) {
     return Object.values(map.screens).find((screen) => screen.title?.trim() === wanted)?.id;
   }
   return undefined;
@@ -96,16 +108,16 @@ function canonicalFingerprint(value: string): string {
 function humanTitle(screen: ObservedScreen, fallback: string): string {
   const title = screen.title?.trim();
   const fallbackTitle = fallback.trim();
-  const bad = /^(grok|screen|back|close|coordinate tap)$/i;
+  const bad = isUnusableScreenTitle;
   const preferred = preferSettingsChildTitle(title, fallbackTitle);
-  if (preferred && !bad.test(preferred) && !/^observed screen \d+$/i.test(preferred)) {
+  if (preferred && !bad(preferred) && !/^observed screen \d+$/i.test(preferred)) {
     return preferred;
   }
-  if (fallbackTitle && !bad.test(fallbackTitle) && (!title || bad.test(title))) {
+  if (fallbackTitle && !bad(fallbackTitle) && (!title || bad(title))) {
     return fallbackTitle;
   }
-  if (title && !/^observed screen \d+$/i.test(title) && !bad.test(title)) return title;
-  if (fallbackTitle && !bad.test(fallbackTitle)) return fallbackTitle;
+  if (title && !/^observed screen \d+$/i.test(title) && !bad(title)) return title;
+  if (fallbackTitle && !bad(fallbackTitle)) return fallbackTitle;
   return "Screen";
 }
 
@@ -148,6 +160,7 @@ export function discoveryLandChanges(input: {
     : new Set(session.screens.slice(0, 1).map((screen) => screen.id));
   const changes: AppMapBatchChange[] = [];
   const screenIds = new Map<string, string>();
+  const nextSlot = canvasSlotAllocator(map);
   const screens = session.screens.filter((screen) => referenced.has(screen.id));
   for (const screen of screens) {
     const fingerprint = canonicalFingerprint(screen.fingerprint);
@@ -167,10 +180,7 @@ export function discoveryLandChanges(input: {
           id: screenId,
           title,
           identity: { schemaVersion: 1, fingerprint },
-          position: {
-            x: 80 + (Object.keys(map.screens).length % 4) * 300,
-            y: 100 + Math.floor(Object.keys(map.screens).length / 4) * 420,
-          },
+          position: nextSlot(),
           variantIds: [],
           createdAt: screen.capturedAt,
           updatedAt: screen.capturedAt,
@@ -279,6 +289,7 @@ export function proposalFromDiscovery(input: {
 
   const screenIds = new Map<string, string>();
   const changes: ProposalChange[] = [];
+  const nextSlot = canvasSlotAllocator(map);
   const screens = session.screens.filter((screen) => referenced.has(screen.id));
   for (const [index, screen] of screens.entries()) {
     const title = humanTitle(screen, `Screen ${index + 1}`);
@@ -322,7 +333,7 @@ export function proposalFromDiscovery(input: {
           id: screenId,
           title,
           identity: screen.identity ?? { schemaVersion: 1, fingerprint: screen.fingerprint },
-          position: { x: 80 + (index % 4) * 300, y: 100 + Math.floor(index / 4) * 420 },
+          position: nextSlot(),
           variantIds: variant ? [variant.id] : [],
           createdAt: screen.capturedAt,
           updatedAt: screen.capturedAt,

@@ -677,8 +677,8 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
     .object({
       appMapId: identifier("App Map identifier"),
       testId: identifier("Test identifier to run once").optional(),
-      combineId: identifier("Saved run matrix identifier").optional(),
-      variableIds: z.array(identifier("State set identifier")).optional(),
+      combineId: identifier("Saved Combine identifier").optional(),
+      variableIds: z.array(identifier("Variable identifier")).optional(),
       selected: z.record(z.string(), z.array(z.string())).optional(),
       strategy: z.enum(["zip", "cartesian", "pairwise"]).optional(),
       serial: identifier("Connected device serial").optional(),

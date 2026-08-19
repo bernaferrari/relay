@@ -27,9 +27,9 @@ export function shellRootNavVar(open: boolean): Record<string, string> {
  * means one selection model and one place to look for anything nameable.
  */
 export const shellNav = cn(
-  "fixed top-0 bottom-0 left-0 z-[80] flex min-h-0 w-[var(--shell-nav-width)] flex-col overflow-hidden",
+  "fixed top-0 bottom-0 left-0 z-[var(--z-shell-rail)] flex min-h-0 w-[var(--shell-nav-width)] flex-col overflow-hidden",
   "border-r border-[var(--border-weak-base)] bg-[var(--background-base)]",
-  "shadow-[18px_0_56px_rgb(0_0_0/32%)] transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.65,0,0.35,1)]",
+  "shadow-[18px_0_56px_rgb(0_0_0/32%)] transition-[transform,opacity] duration-panel ease-drawer",
   "will-change-transform",
   // Inner content keeps its width during the collapse so text does not reflow.
   "[&>*]:w-[var(--shell-nav-width)]",
@@ -41,15 +41,28 @@ export const shellNavClosed =
 export const shellMain =
   "col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col bg-[var(--background-deep)]";
 
+/**
+ * Three columns with equally flexible sides, so the middle one is always at the
+ * window's centre no matter how wide either side gets. The mode switch lives
+ * there. It used to sit inside the trailing action cluster, which meant leaving
+ * Canvas for Test — where "Record path" and "Combine" are not offered — moved
+ * the switch 268px sideways, out from under the cursor that had just clicked it.
+ * A control used this often has to stay still.
+ */
 export const shellTopbar = cn(
-  "shell-drag relative z-[70] grid min-h-[54px] shrink-0 grid-cols-[auto_minmax(120px,1fr)_auto] items-center gap-3 overflow-visible border-b border-[var(--border-weak-base)]",
+  "shell-drag relative z-[var(--z-shell-header)] grid min-h-[54px] shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 overflow-visible border-b border-[var(--border-weak-base)]",
   "bg-[color-mix(in_srgb,var(--background-base)_78%,var(--background-deep))] px-4",
 );
 
-export const shellTopbarContext = "flex min-w-0 items-center gap-2";
+export const shellTopbarContext = "flex min-w-0 items-center gap-1.5";
+/** The map's name reads from the leading edge beside the library toggle, where
+ * a document title belongs, rather than floating in the gap left over between
+ * the two clusters either side of it. */
 export const shellTopbarTitle =
-  "pointer-events-auto flex min-w-0 max-w-full items-center justify-center overflow-hidden max-[720px]:hidden";
-export const shellTopbarActions = "flex shrink-0 items-center gap-2.5 max-[680px]:gap-1";
+  "pointer-events-auto flex min-w-0 items-center overflow-hidden max-[720px]:hidden";
+export const shellTopbarModes = "flex items-center justify-center";
+export const shellTopbarActions =
+  "flex shrink-0 items-center justify-end gap-2.5 max-[680px]:gap-1";
 
 export const shellBreadcrumb = cn(
   "flex min-w-0 items-center gap-1.5 text-body text-[var(--text-weak)]",
@@ -135,4 +148,4 @@ export const shellHealth =
 export const shellHealthOnline = "bg-[var(--icon-success-base)]";
 
 export const shellDragStrip =
-  "shell-drag-strip pointer-events-none fixed top-0 right-0 left-[var(--traffic-pad,0px)] z-[100] hidden h-3";
+  "shell-drag-strip pointer-events-none fixed top-0 right-0 left-[var(--traffic-pad,0px)] z-[var(--z-modal)] hidden h-3";

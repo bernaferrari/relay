@@ -52,7 +52,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
     <section class="mt-3 border-t border-[var(--border-weak-base)] pt-2">
       <button
         type="button"
-        class="group flex min-h-11 w-full items-center gap-2 rounded-lg px-1.5 text-left transition-colors duration-150 hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
+        class="group flex min-h-11 w-full items-center gap-2 rounded-lg px-1.5 text-left transition-colors duration-hover hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
         aria-expanded={open()}
         onClick={() => setOpen(!open())}
       >
@@ -63,7 +63,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
           <strong class="block text-micro font-medium text-[var(--text-strong)]">
             {props.stack
               ? `${countFor(props.stack).exact ? "" : "~"}${countFor(props.stack).count} runs`
-              : "Modifiers"}
+              : "Variables"}
           </strong>
           <span class="block truncate text-micro text-[var(--text-weak)]">
             {props.stack
@@ -148,7 +148,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                     <button
                       type="button"
                       class={cn(
-                        "flex min-h-9 items-center gap-2 rounded-lg px-2 text-left text-micro transition-colors duration-150 hover:bg-[var(--surface-base-hover)]",
+                        "flex min-h-9 items-center gap-2 rounded-lg px-2 text-left text-micro transition-colors duration-hover hover:bg-[var(--surface-base-hover)]",
                         selected() && "bg-[var(--product-accent-soft)]",
                       )}
                       aria-pressed={selected()}
@@ -218,7 +218,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                   props.onSave({
                     name:
                       props.stack?.name ??
-                      (variables.length === 1 ? variables[0]!.name : "Modifiers"),
+                      (variables.length === 1 ? variables[0]!.name : "Variables"),
                     dataIds: dataIds(),
                     strategy: strategy(),
                   });

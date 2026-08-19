@@ -10,6 +10,32 @@ export const SCREEN_CARD_WIDTH = 240;
 export const SCREEN_CARD_HEIGHT = 230;
 export const SCREEN_FRAME_TOP = 30;
 export const SCREEN_FRAME_HEIGHT = 200;
+/** The name band at the top of a card slot, above the air before the frame. */
+export const SCREEN_LABEL_HEIGHT = 24;
+/**
+ * Names are chrome, not artwork: they counter-scale so they stay readable while
+ * the frames they label shrink, the way a Figma frame name does. The cap lives
+ * with the geometry that has to reserve room for that growth so the renderer
+ * and the layout cannot drift apart.
+ */
+export const MAX_LABEL_COUNTER_SCALE = 2.4;
+/**
+ * How far a name can reach above its own slot at the most zoomed-out reading.
+ * It grows from its bottom edge, so only the extra height escapes the slot.
+ * Rows have to clear this band and not just the card: reserving the card alone
+ * let one frame's name paint inside another frame's card on a dense map.
+ */
+export const SCREEN_LABEL_BAND = Math.ceil(SCREEN_LABEL_HEIGHT * (MAX_LABEL_COUNTER_SCALE - 1));
+/**
+ * One whole step from one card slot to the next. A row's slot ends at its frame,
+ * but the name of the row below grows upward out of its own slot as the camera
+ * zooms out, so the vertical step has to clear the reserved name band as well as
+ * the card — reserving the card alone left the tidiest possible map still
+ * painting a name inside the frame above it at the fitted reading. Anything that
+ * moves a card by whole slots measures itself against these.
+ */
+export const CARD_PITCH_X = SCREEN_CARD_WIDTH + 112;
+export const CARD_PITCH_Y = SCREEN_CARD_HEIGHT + SCREEN_LABEL_BAND + 24;
 /** Keep very narrow phone previews legible without changing their media ratio. */
 export const SCREEN_FRAME_MIN_WIDTH = 112;
 export const MIN_CANVAS_SCALE = 0.3;
@@ -76,6 +102,27 @@ export function screenMediaBounds(
   const top = position.y + geometry.frameTop + (geometry.frameHeight - geometry.mediaHeight) / 2;
   const right = left + geometry.mediaWidth;
   const bottom = top + geometry.mediaHeight;
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    centerX: (left + right) / 2,
+    centerY: (top + bottom) / 2,
+  };
+}
+
+/**
+ * The world rectangle a screen's name paints, measured at the most zoomed-out
+ * reading so a band that looks airborne at 100% is not silently a whole card
+ * higher when the map is fitted. `lift` is the world distance the name has been
+ * moved off its usual place above the frame.
+ */
+export function screenLabelBounds(position: CanvasPoint, lift = 0): CanvasFrameBounds {
+  const bottom = position.y + SCREEN_LABEL_HEIGHT - lift;
+  const top = bottom - SCREEN_LABEL_HEIGHT * MAX_LABEL_COUNTER_SCALE;
+  const left = position.x;
+  const right = left + SCREEN_CARD_WIDTH;
   return {
     left,
     top,

@@ -14,6 +14,8 @@ import {
   type CanvasPoint,
 } from "../lib/app-map-canvas-layout";
 import { canvasEdgeIntersectsVisibleBounds } from "../lib/app-map-canvas-visibility";
+import { screenLabelRows } from "../lib/app-map-label-rows";
+import { humanizeTitle } from "../lib/humanize-identifier";
 import type { MapTreeNode } from "../lib/app-map-tree";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
 import {
@@ -22,6 +24,7 @@ import {
   connectorPresentationWithAutoLane,
 } from "../lib/app-map-connector-lanes";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
+import { edgeDashesRead } from "../lib/connection-presentation";
 import type { PresenceGeometry } from "./collaboration-presence";
 import { CollaborationPresence } from "./collaboration-presence";
 import { CanvasNoteCard, ScreenCard } from "./app-map-canvas-primitives";
@@ -47,6 +50,8 @@ export type AppMapCanvasSceneProps = {
   presenceGeometry: PresenceGeometry;
   positionFor: (node: MapTreeNode) => CanvasPoint;
   titleFor: (node: MapTreeNode) => string;
+  /** How this frame differs from another that carries the same name. */
+  qualifierFor: (node: MapTreeNode) => string | undefined;
   imageFor: (node: MapTreeNode) => string;
   orientationEvidenceFor: (node: MapTreeNode) => ScreenshotOrientationEvidence | undefined;
   isFlowStart: (node: MapTreeNode) => boolean;
@@ -92,26 +97,39 @@ function connectorHitWidthInScreenPixels(): number {
   return 32;
 }
 
+/**
+ * Three tiers, in this order: something demands attention, something is live,
+ * or the edge is simply drawn. A map that was authored but never replayed is
+ * the common case and must read as quiet structure — the old palette pushed
+ * every unrecorded edge to the same weight as a genuine failure.
+ */
 const connectionStrokeClass = (
   state: AppMapRunPresentationState | undefined,
   connection: CanvasConnection,
   selected: boolean,
+  viewportScale: number,
 ) =>
-  state === "failed"
-    ? "stroke-[var(--icon-critical-base)]"
+  state === "failed" || connection.review?.status === "failed"
+    ? "stroke-[var(--map-edge-attention)]"
     : state === "running"
-      ? "stroke-[var(--text-interactive-base)] [stroke-dasharray:7_4] motion-safe:animate-pulse"
+      ? "stroke-[var(--map-edge-selected)] [stroke-dasharray:7_4] motion-safe:animate-pulse"
       : state === "healed"
         ? "stroke-[var(--icon-warning-base)]"
         : selected
-          ? "stroke-[var(--text-interactive-base)]"
+          ? "stroke-[var(--map-edge-selected)]"
           : connection.state === "needs-recording"
-            ? "stroke-[var(--text-weak)] [stroke-dasharray:5_5]"
-            : connection.review?.status === "failed"
-              ? "stroke-[var(--icon-critical-base)]"
-              : connection.kind === "return"
-                ? "stroke-[var(--text-weak)] [stroke-dasharray:6_6]"
-                : "stroke-[color-mix(in_srgb,var(--text-base)_68%,transparent)]";
+            ? cn(
+                "stroke-[var(--map-edge-draft)]",
+                edgeDashesRead("draft", viewportScale) &&
+                  "[stroke-dasharray:var(--map-edge-dash-draft)]",
+              )
+            : connection.kind === "return"
+              ? cn(
+                  "stroke-[var(--map-edge-return)] [stroke-linecap:round]",
+                  edgeDashesRead("return", viewportScale) &&
+                    "[stroke-dasharray:var(--map-edge-dash-return)]",
+                )
+              : "stroke-[var(--map-edge-ready)]";
 
 export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
   const [screenRotations, setScreenRotations] = createSignal<Record<string, CanvasScreenRotation>>(
@@ -183,6 +201,16 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
     }),
   );
   const visibleNodeIds = createMemo(() => new Set(visibleNodes().map((node) => node.id)));
+  // Resolved across every node, not just the visible ones, so a name does not
+  // jump rows as the screen it collides with scrolls into view.
+  const labelRows = createMemo(() =>
+    screenLabelRows(
+      props.nodes.map((node) => {
+        const point = props.positionFor(node);
+        return { id: node.id, x: point.x, y: point.y };
+      }),
+    ),
+  );
   const effectivePresentation = (connection: CanvasConnection) => {
     const preview = connectionControlPreview();
     return preview?.connectionId === connection.id ? preview.presentation : connection.presentation;
@@ -347,7 +375,8 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               Math.max(strokeWidth() + 6, 10 / Math.max(props.viewportScale, 0.01));
             const hoveredHaloWidth = () =>
               Math.max(strokeWidth() + 4, 8 / Math.max(props.viewportScale, 0.01));
-            const strokeClass = () => connectionStrokeClass(runState(), connection, selected());
+            const strokeClass = () =>
+              connectionStrokeClass(runState(), connection, selected(), props.viewportScale);
             const connectionName = () => {
               const source = nodeFor(connection.fromScreenId);
               const target = nodeFor(connection.toScreenId);
@@ -457,7 +486,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             <button
               type="button"
               class={cn(
-                "group absolute z-[6] flex min-h-6 max-w-52 items-center gap-1 rounded-md bg-[color-mix(in_srgb,var(--map-canvas)_94%,transparent)] px-1.5 text-micro font-medium text-[var(--text-base)] backdrop-blur-[6px] transition-[background-color,box-shadow,color] duration-150 before:absolute before:-inset-1 before:rounded-lg hover:bg-[var(--background-base)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
+                "group absolute z-[6] flex min-h-6 max-w-52 items-center gap-1 rounded-md bg-[color-mix(in_srgb,var(--map-canvas)_94%,transparent)] px-1.5 text-micro font-medium text-[var(--text-base)] backdrop-blur-[6px] transition-[background-color,box-shadow,color] duration-hover before:absolute before:-inset-1 before:rounded-lg hover:bg-[var(--background-base)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
                 !showLabel() && "pointer-events-none opacity-0",
                 props.selectedConnectionId === connection.id &&
                   "bg-[var(--background-base)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]",
@@ -475,7 +504,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               }}
             >
               <span class="truncate">
-                {connection.label ||
+                {humanizeTitle(connection.label ?? "") ||
                   (connection.state === "needs-recording" ? "Record path" : "Open path")}
               </span>
               <Show when={count()}>
@@ -524,11 +553,13 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               node={node}
               isFlowStart={props.isFlowStart(node)}
               title={props.titleFor(node)}
+              qualifier={props.qualifierFor(node)}
               selected={selectedNodeIds().has(node.id)}
               showActions={props.selectedNodeIds.length === 1 && props.selectedNodeId === node.id}
               editing={props.renamingNodeId === node.id}
               runState={props.screenRunState(node.id)}
               here={props.hereScreenId === node.id}
+              labelRow={labelRows()[node.id] ?? 0}
               position={props.positionFor(node)}
               geometry={geometryForNode(node)}
               src={() => props.imageFor(node)}

@@ -94,7 +94,7 @@ details, and advanced configuration in a clearly labelled overflow menu or discl
 Prefer user language:
 
 - App Map (canvas), path or run (execution)—not recipe, suite, or Journey in chrome
-- **Modifier** (language/theme/account list), **Test** (what you run), **Run matrix** (modifiers × tests)—never “Combine”, “State set”, “Variable”, option set, work, or locale matrix in chrome
+- **Variable** (language/theme/account list), **Test** (what you run), **Combine** (Variables × Tests)—the three words AGENTS.md and the CLI use, so never “Modifier”, “State set”, option set, work, run matrix, or locale matrix in chrome
 - Run report, not immutable report
 - Target or device, not adapter instance
 - Saved with this run, not frozen observability payload

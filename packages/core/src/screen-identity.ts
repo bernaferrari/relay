@@ -7,6 +7,7 @@ import type {
   VolatileSemanticKind,
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
+import { SYSTEM_INPUT_IDENTIFIER, systemInputNodeIndexes } from "./snapshot-app-content.js";
 
 export type {
   NormalizedSemanticNode,
@@ -155,53 +156,6 @@ function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-const SYSTEM_INPUT_IDENTIFIER =
-  /^(?:systeminputassistantview|centerpageview|leftbuttonbar|assistant(?:paste:forevent:|undo|redo))$/iu;
-
-function systemInputIndexes(nodes: readonly SnapshotNode[]): Set<number> {
-  const indexed = new Map(
-    nodes.flatMap((node, offset) =>
-      node.index === undefined ? [] : [[node.index, { node, offset }] as const],
-    ),
-  );
-  const children = new Map<number, number[]>();
-  for (const node of nodes) {
-    if (node.index === undefined || node.parentIndex === undefined) continue;
-    const siblings = children.get(node.parentIndex) ?? [];
-    siblings.push(node.index);
-    children.set(node.parentIndex, siblings);
-  }
-  const roots = nodes.flatMap((node) =>
-    node.index !== undefined &&
-    (/^keyboard$/iu.test(node.type ?? node.role ?? "") ||
-      SYSTEM_INPUT_IDENTIFIER.test(node.identifier ?? ""))
-      ? [node.index]
-      : [],
-  );
-  const ignored = new Set<number>();
-  const visit = (index: number): void => {
-    if (ignored.has(index)) return;
-    ignored.add(index);
-    for (const child of children.get(index) ?? []) visit(child);
-  };
-  for (const root of roots) {
-    visit(root);
-    // XCTest wraps the Keyboard in an unlabeled/generic container. Exclude
-    // that wrapper only when the keyboard is its sole child.
-    const parentIndex = indexed.get(root)?.node.parentIndex;
-    const parent = parentIndex === undefined ? undefined : indexed.get(parentIndex)?.node;
-    if (
-      parentIndex !== undefined &&
-      parent &&
-      /^other$/iu.test(parent.type ?? parent.role ?? "") &&
-      (children.get(parentIndex)?.length ?? 0) === 1
-    ) {
-      ignored.add(parentIndex);
-    }
-  }
-  return ignored;
-}
-
 function withoutSystemInputObservation(
   observation: ScreenIdentityObservation,
 ): ScreenIdentityObservation {
@@ -317,7 +271,7 @@ export function observeVisualScreenFingerprint(png: Uint8Array): string | undefi
  * excluded: they are observations of a screen, not its identity.
  */
 export function observeScreenIdentity(nodes: readonly SnapshotNode[]): ScreenIdentityObservation {
-  const ignoredSystemInput = systemInputIndexes(nodes);
+  const ignoredSystemInput = systemInputNodeIndexes(nodes);
   const applicationNodes = nodes.filter(
     (node) =>
       node.bundleId !== "com.android.systemui" &&
@@ -421,7 +375,7 @@ export function stableLabelKey(value: string | undefined): string | undefined {
 export function observeLocaleStableIdentity(
   nodes: readonly SnapshotNode[],
 ): ScreenIdentityObservation {
-  const ignoredSystemInput = systemInputIndexes(nodes);
+  const ignoredSystemInput = systemInputNodeIndexes(nodes);
   const applicationNodes = nodes.filter(
     (node) =>
       node.bundleId !== "com.android.systemui" &&

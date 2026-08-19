@@ -3,6 +3,7 @@ import type { CanvasConnection } from "./app-map-connection-draft";
 import { updateConnectionWait as updateConnectionWaitActions } from "./connection-action-presentation";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
+import { humanError } from "./human-error";
 
 export function useAppMapConnectionBehaviors(options: {
   activeAppMap: () => AppMap | undefined;
@@ -38,7 +39,7 @@ export function useAppMapConnectionBehaviors(options: {
       options.onConnectionActionsChanged(connection.id);
       toast(confirmation, "success");
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not save this connection"), "error");
     }
   };
 
@@ -64,7 +65,7 @@ export function useAppMapConnectionBehaviors(options: {
       options.onConnectionActionsChanged(connection.id);
       toast(ms === 0 ? "Pause removed" : "Pause updated", "success");
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not update this pause"), "error");
     }
   };
 
@@ -133,7 +134,7 @@ export function useAppMapConnectionBehaviors(options: {
       await server.refreshAppMaps();
       toast(`Saved “${title}” for reuse on other paths`, "success");
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not save this for reuse"), "error");
     }
   };
 

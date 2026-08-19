@@ -5,11 +5,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   applyRecordedLocalePrelude,
-  artifactLocale,
   composeLocaleRunRecipes,
   defaultGrokLocaleScope,
-  evidenceFrameNames,
-  exportLocaleRunPack,
   inferLocaleOptionsFromTeach,
   localeLoopBodyFlowId,
   localeNavFromRecipeSteps,
@@ -20,12 +17,21 @@ import {
   startLocaleRecipeRun,
   type LocaleRunScope,
 } from "./locale-run.js";
+import { artifactLocale, evidenceFrameNames, exportLocaleRunPack } from "./locale-run-pack.js";
 import type { SnapshotNode } from "./device.js";
 import type { Recipe } from "./recipes.js";
 import type { AppMap, AppMapEntity, Connection, Screen } from "@relay/protocol";
 import { saveRecipe } from "./recipes.js";
-import { cancelJob, type TestJob } from "./session.js";
+import { cancelJob, waitForJobCompletion, type TestJob } from "./session.js";
 import { runWithOperationContext } from "./operation-context.js";
+
+/** Cancelling only requests a stop. The scheduled execution still writes its
+ * terminal run into the workspace, so a test that removes its temp directory
+ * before that drains races the write and fails with ENOTEMPTY. */
+async function cancelAndDrain(jobs: readonly TestJob[]): Promise<void> {
+  for (const job of jobs) cancelJob(job.id);
+  await Promise.all(jobs.map((job) => waitForJobCompletion(job.id)));
+}
 
 const body: Recipe = {
   id: "custom-settings-smoke",
@@ -66,6 +72,35 @@ test("matrix packs omit automatic setup frames and enforce authored evidence cou
   } as unknown as TestJob;
 
   assert.deepEqual([...evidenceFrameNames(job).names!], ["003.png", "004.png"]);
+});
+
+test("the frames the matrix wraps a body in are not the screen under test", () => {
+  // composeLocaleRunRecipes brackets the body with its own screenshots so a
+  // reviewer can see the language change land. "before body" is whatever surface
+  // the switch finished on — Apple's Settings on an iOS sweep — and "after body"
+  // is the authored screen again. Reading them as content compares the harness
+  // against itself and reports every real finding twice.
+  const job = {
+    id: "wrapped",
+    artifacts: [{ kind: "frozen-inputs", capturedAt: 1, data: { expectedScreenshots: 1 } }],
+    steps: [
+      {
+        frames: [
+          {
+            path: "frames/001.png",
+            caption: "before · Tap identifier PREFERRED_LANGUAGE",
+            capturedAt: 1,
+          },
+          { path: "frames/002.png", caption: "locale:pt-BR before body", capturedAt: 2 },
+          { path: "frames/003.png", caption: "ask-screen", capturedAt: 3 },
+          { path: "frames/004.png", caption: "locale:pt-BR after body", capturedAt: 4 },
+          { path: "frames/005.png", caption: "world before body", capturedAt: 5 },
+        ],
+      },
+    ],
+  } as unknown as TestJob;
+
+  assert.deepEqual([...evidenceFrameNames(job).names!], ["003.png"]);
 });
 
 test("run-matrix exports use the language value as the case folder", () => {
@@ -465,7 +500,7 @@ test("startLocaleRecipeRun freezes screenshot-each-locale steps and export copie
           scope,
         }),
     );
-    for (const job of batch.jobs) cancelJob(job.id);
+    await cancelAndDrain(batch.jobs);
     assert.equal(batch.jobs.length, 2);
     const captions = batch.jobs[0]!.recipeSnapshot?.steps.filter(
       (step) => step.kind === "screenshot",
@@ -495,9 +530,17 @@ test("startLocaleRecipeRun freezes screenshot-each-locale steps and export copie
     );
     assert.ok(pack.manifest.locales.includes("en"));
     assert.ok(pack.manifest.locales.includes("it"));
+    // Stub frames carry no tree, so both locales are present and unreadable.
+    assert.deepEqual(pack.manifest.analysis.findings, []);
+    assert.deepEqual(pack.manifest.analysisCoverage, { frames: 2, inspectedFrames: 0 });
+    assert.deepEqual(Object.keys(pack.manifest.byCanonicalKey["frame-001"] ?? {}).sort(), [
+      "en",
+      "it",
+    ]);
     const report = await readFile(join(pack.rootDir, "index.html"), "utf8");
     assert.match(report, /of 2 runs passed/);
     assert.match(report, /001-screen\.png/);
+    assert.match(report, /2 frames without a UI tree/);
   } finally {
     if (previous.workspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previous.workspace;
@@ -559,7 +602,7 @@ test("startLocaleRecipeRun accepts a compiled App Map body without a recipe stor
           },
         }),
     );
-    for (const job of batch.jobs) cancelJob(job.id);
+    await cancelAndDrain(batch.jobs);
     assert.equal(batch.jobs.length, 1);
     assert.equal(batch.bodyRecipeId, compiled.id);
     assert.ok(

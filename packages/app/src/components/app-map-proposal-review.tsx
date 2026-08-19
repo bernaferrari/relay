@@ -1,6 +1,8 @@
 import { For, Show, createSignal } from "solid-js";
 import type { AppMap, Proposal, ProposalChange, ScreenVariant } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
+import { cn } from "../lib/cn";
+import { panelSectionLabel } from "../lib/ui";
 import { Icon } from "./icon";
 
 function describeChange(change: ProposalChange): string {
@@ -257,7 +259,7 @@ export function AppMapProposalReview(props: {
                   </Show>
                   <Show when={feedbackId() === proposal.id}>
                     <div class="mt-3 grid gap-2">
-                      <label class="grid gap-1 text-micro font-medium text-[var(--text-base)]">
+                      <label class={cn("grid gap-1", panelSectionLabel)}>
                         What should the agent change?
                         <textarea
                           autofocus

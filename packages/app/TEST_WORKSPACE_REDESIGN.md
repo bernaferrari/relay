@@ -2,7 +2,7 @@
 
 Binding context: [DESIGN_SYSTEM.md](../../DESIGN_SYSTEM.md) (tokens, 4pt rhythm, quiet selection,
 progressive disclosure, motion, a11y gates) and [ARCHITECTURE.md](../../ARCHITECTURE.md) (App Map,
-Screens, Connections, Tests, Modifiers, Run matrix).
+Screens, Connections, Tests, Variables, Combine).
 
 ## 1. What this screen is actually for
 

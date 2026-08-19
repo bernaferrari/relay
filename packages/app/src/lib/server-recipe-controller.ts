@@ -1,4 +1,5 @@
 import type { Accessor } from "solid-js";
+import { humanError } from "./human-error";
 import type { RecipeInfo, RecipeParameter, RecipeStability, RecipeStep } from "./api-types";
 import {
   deleteRecipe,
@@ -41,8 +42,9 @@ export function createServerRecipeController(input: {
       return recipe;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not save this Test");
       input.appendLog(message, "error");
-      toast(message, "error");
+      toast(readable, "error");
       return null;
     }
   }
@@ -52,8 +54,9 @@ export function createServerRecipeController(input: {
       return await loadRecipeYamlRemote(input.request, id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not open this Test");
       input.appendLog(message, "error");
-      toast(message, "error");
+      toast(readable, "error");
       return null;
     }
   }
@@ -77,8 +80,9 @@ export function createServerRecipeController(input: {
       return recipe;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not import this Test");
       input.appendLog(message, "error");
-      toast(message, "error");
+      toast(readable, "error");
       return null;
     }
   }
@@ -105,8 +109,9 @@ export function createServerRecipeController(input: {
       toast("Test deleted", "success");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not delete this Test");
       input.appendLog(message, "error");
-      toast(message, "error");
+      toast(readable, "error");
     }
   }
 

@@ -126,7 +126,7 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
       record(input.job, "App Map flow run job");
       if (!Array.isArray(input.jobs)) fail("App Map flow run jobs", "must be an array");
       record(input.plan, "App Map flow run plan");
-      if (input.matrix !== undefined) record(input.matrix, "App Map flow run matrix");
+      if (input.matrix !== undefined) record(input.matrix, "App Map flow combine");
     },
   );
 
@@ -171,7 +171,7 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     record(input.job, "App Map connection run job");
     if (!Array.isArray(input.jobs)) fail("App Map connection run jobs", "must be an array");
     record(input.plan, "App Map connection run plan");
-    if (input.matrix !== undefined) record(input.matrix, "App Map connection run matrix");
+    if (input.matrix !== undefined) record(input.matrix, "App Map connection combine");
   });
 
   function appMapMutationParser<Id extends AppMapOperationId>(
@@ -434,23 +434,23 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
   );
   const appMapCombinePreflightInputParser = objectParser<
     AppMapOperationInput<"app-map.combine.preflight">
-  >("Run matrix preflight", (input) => {
-    string(input.appMapId, "Run matrix preflight appMapId");
-    string(input.combineId, "Run matrix preflight combineId");
-    if (input.serial !== undefined) string(input.serial, "Run matrix preflight serial");
-    if (input.selected !== undefined) record(input.selected, "Run matrix preflight selected");
+  >("Combine preflight", (input) => {
+    string(input.appMapId, "Combine preflight appMapId");
+    string(input.combineId, "Combine preflight combineId");
+    if (input.serial !== undefined) string(input.serial, "Combine preflight serial");
+    if (input.selected !== undefined) record(input.selected, "Combine preflight selected");
     if (
       input.strategy !== undefined &&
       input.strategy !== "zip" &&
       input.strategy !== "cartesian" &&
       input.strategy !== "pairwise"
     ) {
-      fail("Run matrix preflight strategy", "must be zip, cartesian, or pairwise");
+      fail("Combine preflight strategy", "must be zip, cartesian, or pairwise");
     }
   });
   const appMapCombinePreflightOutputParser = objectFieldParser<
     AppMapOperationOutput<"app-map.combine.preflight">
-  >("Run matrix preflight response", "preflight");
+  >("Combine preflight response", "preflight");
 
   const appMapScreenCaptureParser = objectParser<AppMapOperationInput<"app-map.screen.capture">>(
     "App Map screen capture",

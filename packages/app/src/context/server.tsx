@@ -13,6 +13,7 @@ import type {
 } from "@relay/protocol";
 import { usePlatform } from "./platform";
 import { toast } from "./toast";
+import { humanError } from "../lib/human-error";
 import { asArray, normalizeLocalBase } from "../lib/api";
 import { createServerCapture } from "../lib/server-capture";
 import {
@@ -536,9 +537,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           setLiveCaptureIssue(result.recovery.session.detail);
           return false;
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          setLiveCaptureIssue(message);
-          appendLog(message, "error");
+          setLiveCaptureIssue(humanError(error, "Could not reconnect to this device"));
+          appendLog(error instanceof Error ? error.message : String(error), "error");
           return false;
         }
       })();
@@ -578,7 +578,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         await refreshDevices();
         return true;
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = humanError(err, `Could not start ${device.name ?? "this device"}`);
         setError(message);
         toast(message, "error");
         return false;
@@ -682,7 +682,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           );
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = humanError(error, "Could not reserve this device");
         setControlIssue(message);
         setError(message);
       }
@@ -710,7 +710,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         setError(null);
         return true;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = humanError(error, "Could not take control of this device");
         setControlIssue(message);
         setError(message);
         return false;
@@ -932,7 +932,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       runAppMapFlow: runAppMapFlowRemote,
       runCompatibilityMatrix: runCompatibilityMatrixRemote,
       loadCompatibilityReport,
-      exportMatrixEvidence,
+      matrixEvidence,
       retrySelectedJob,
       replayRecordedRunFromHistory,
     } = createServerRunController({
@@ -1114,7 +1114,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       runAppMapFlowRemote,
       runCompatibilityMatrixRemote,
       loadCompatibilityReport,
-      exportMatrixEvidence,
+      matrixEvidence,
       saveRecipeRemote,
       loadRecipeYaml,
       importRecipeYaml,

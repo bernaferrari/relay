@@ -176,7 +176,7 @@ export function ExecutionTimeline(props: {
               </div>
               <div class="h-1 overflow-hidden rounded-full bg-[var(--surface-base-hover)]">
                 <div
-                  class="h-full w-full origin-left rounded-full bg-[var(--text-interactive-base)] transition-transform duration-150 ease-out"
+                  class="h-full w-full origin-left rounded-full bg-[var(--text-interactive-base)] transition-transform duration-hover ease-out"
                   style={{ transform: `scaleX(${overviewPercent() / 100})` }}
                 />
               </div>
@@ -210,7 +210,7 @@ export function ExecutionTimeline(props: {
         <div class="flex min-w-0 items-center gap-2">
           <button
             type="button"
-            class="grid size-9 shrink-0 place-items-center rounded-full bg-[var(--text-strong)] text-[var(--background-base)] shadow-[0_1px_2px_rgb(0_0_0/18%)] transition-[background-color,transform] duration-150 hover:bg-[var(--text-base)] active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+            class="grid size-9 shrink-0 place-items-center rounded-full bg-[var(--text-strong)] text-[var(--background-base)] shadow-[0_1px_2px_rgb(0_0_0/18%)] transition-[background-color,transform] duration-hover hover:bg-[var(--text-base)] active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
             aria-label={props.playing ? "Pause run playback" : "Play run playback"}
             aria-pressed={props.playing}
             onClick={() => props.onTogglePlayback?.()}
@@ -220,7 +220,7 @@ export function ExecutionTimeline(props: {
           <Show when={props.onCycleSpeed}>
             <button
               type="button"
-              class="grid h-9 min-w-9 shrink-0 place-items-center rounded-md px-1.5 font-mono text-micro font-semibold tabular-nums text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-surface-base-hover hover:text-text-strong active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus"
+              class="grid h-9 min-w-9 shrink-0 place-items-center rounded-md px-1.5 font-mono text-micro font-semibold tabular-nums text-[var(--text-base)] transition-[background-color,color,transform] duration-hover hover:bg-surface-base-hover hover:text-text-strong active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus"
               aria-label="Playback speed"
               onClick={() => props.onCycleSpeed?.()}
             >
@@ -260,7 +260,7 @@ export function ExecutionTimeline(props: {
                 centered bar so the track reads as one line, not a fat slab. */}
             <div class="pointer-events-none absolute top-1/2 left-0 h-1.5 w-full -translate-y-1/2 overflow-hidden rounded-full bg-[var(--surface-base)]">
               <div
-                class="h-full w-full origin-left rounded-full bg-[var(--text-interactive-base)] transition-transform duration-150 ease-linear"
+                class="h-full w-full origin-left rounded-full bg-[var(--text-interactive-base)] transition-transform duration-hover ease-linear"
                 style={{ transform: `scaleX(${fillPercent() / 100})` }}
               />
             </div>
@@ -323,7 +323,7 @@ export function ExecutionTimeline(props: {
             </For>
             {/* Thumb — only appears on hover/focus so the rail stays calm at rest. */}
             <div
-              class="pointer-events-none absolute top-1/2 z-[2] size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--text-strong)] opacity-0 shadow-[0_1px_4px_rgb(0_0_0/40%)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+              class="pointer-events-none absolute top-1/2 z-[2] size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--text-strong)] opacity-0 shadow-[0_1px_4px_rgb(0_0_0/40%)] transition-opacity duration-hover group-hover:opacity-100 group-focus-within:opacity-100"
               style={{ left: `${fillPercent()}%` }}
             />
           </div>

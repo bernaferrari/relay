@@ -48,7 +48,7 @@ export function RunBrowser(props: {
         </span>
         <span class="sr-only">Search runs</span>
         <input
-          class="h-8 w-full rounded-lg border border-transparent bg-[var(--surface-base)] pr-2.5 pl-8 text-body text-[var(--text-strong)] outline-none transition-[background-color,border-color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)] focus:bg-[var(--background-base)]"
+          class="h-8 w-full rounded-lg border border-transparent bg-[var(--surface-base)] pr-2.5 pl-8 text-body text-[var(--text-strong)] outline-none transition-[background-color,border-color] duration-hover placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)] focus:bg-[var(--background-base)]"
           value={query()}
           placeholder="Search runs"
           onInput={(event) => setQuery(event.currentTarget.value)}
@@ -63,7 +63,7 @@ export function RunBrowser(props: {
               <button
                 type="button"
                 class={cn(
-                  "mb-0.5 grid min-h-[58px] w-full grid-cols-[8px_minmax(0,1fr)] items-center gap-2 rounded-xl px-2.5 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-border-strong-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background-base",
+                  "mb-0.5 grid min-h-[58px] w-full grid-cols-[8px_minmax(0,1fr)] items-center gap-2 rounded-xl px-2.5 text-left outline-none transition-colors duration-hover focus-visible:ring-2 focus-visible:ring-border-strong-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background-base",
                   props.selectedId === job.id
                     ? "bg-[var(--surface-base-hover)]"
                     : "hover:bg-[var(--surface-base)]",

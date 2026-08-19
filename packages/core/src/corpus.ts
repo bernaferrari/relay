@@ -61,15 +61,12 @@ import {
 import { findWorkspaceRoot } from "./workspace-root.js";
 import {
   corpusControls,
+  crawlableCorpusControls,
   fingerprintCorpusScreen,
   titleFromNodes,
 } from "./corpus-screen-analysis.js";
 import { analyzeCorpus } from "./corpus-report.js";
-export {
-  corpusControls,
-  fingerprintCorpusScreen,
-  titleFromNodes,
-} from "./corpus-screen-analysis.js";
+export { corpusControls, crawlableCorpusControls, fingerprintCorpusScreen, titleFromNodes };
 export { analyzeCorpus, buildCorpusCoverage, formatCorpusExport } from "./corpus-report.js";
 
 const DEFAULT_SCOPE: CorpusScope = {
@@ -1128,14 +1125,14 @@ async function crawlLocale(input: {
 
   // Long settings lists only expose visible rows in one snapshot — scroll-merge
   // before DFS so off-screen cells enter the map plan.
-  let rootQueue = [...(root.screen.controls ?? [])];
+  let rootQueue = crawlableCorpusControls(root.screen.controls);
   try {
     const scrolled = await collectControlsWithScroll(device, serial, {
       allowSensitive: session.scope.allowSensitiveControls,
       maxScrolls: 5,
     });
-    if (scrolled.controls.length > rootQueue.length) {
-      rootQueue = scrolled.controls;
+    if (scrolled.controls.length > (root.screen.controls?.length ?? 0)) {
+      rootQueue = crawlableCorpusControls(scrolled.controls);
       // Keep the recorded root screen's control list in sync for exports.
       const live = session.screens.find((screen) => screen.id === root.screen.id);
       if (live) {
@@ -1288,14 +1285,14 @@ async function crawlLocale(input: {
 
     visitedKeys.add(after.screen.canonicalKey);
     if (frame.depth + 1 < session.scope.maxDepth) {
-      let childQueue = [...(after.screen.controls ?? [])];
+      let childQueue = crawlableCorpusControls(after.screen.controls);
       try {
         const scrolled = await collectControlsWithScroll(device, serial, {
           allowSensitive: session.scope.allowSensitiveControls,
           maxScrolls: 3,
         });
-        if (scrolled.controls.length > childQueue.length) {
-          childQueue = scrolled.controls;
+        if (scrolled.controls.length > (after.screen.controls?.length ?? 0)) {
+          childQueue = crawlableCorpusControls(scrolled.controls);
           const live = session.screens.find((screen) => screen.id === after.screen.id);
           if (live) {
             live.controls = scrolled.controls;

@@ -14,12 +14,12 @@
  */
 import { cn } from "./cn";
 
-export const easeOut = "ease-[cubic-bezier(0.23,1,0.32,1)]";
-export const easeHover = "ease-[cubic-bezier(0.25,0.1,0.25,1)]";
+export const easeOut = "ease-out-strong";
+export const easeHover = "ease-hover";
 
 export const tColor = cn(
   "transition-[background-color,color,border-color,opacity,box-shadow]",
-  "duration-150",
+  "duration-hover",
   easeHover,
 );
 
@@ -59,7 +59,7 @@ export const dividerY = "h-4 w-px shrink-0 bg-border-weak-base";
 
 /** List row — inset chip (rounded-md), quiet hover, active = base-active */
 export const listRow = cn(
-  "group/session relative w-full min-w-0 rounded-md transition-colors duration-100",
+  "group/session relative w-full min-w-0 rounded-md transition-colors duration-press",
   "hover:bg-surface-raised-base-hover",
   "[&:has(:focus-visible)]:bg-surface-raised-base-hover",
 );
@@ -68,7 +68,7 @@ export const listRowHoverOnly = "hover:bg-surface-raised-base-hover";
 
 /** Menu / switcher option — same wash discipline as list rows */
 export const menuOption = cn(
-  "rounded-md transition-colors duration-100",
+  "rounded-md transition-colors duration-press",
   "hover:bg-surface-raised-base-hover",
   "[&:has(:focus-visible)]:bg-surface-raised-base-hover",
 );
@@ -80,7 +80,7 @@ export const listRowExpanded = "bg-surface-raised-base-hover";
 export const chromeMenuItem = cn(
   "min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption",
   "text-[var(--text-base)]",
-  "transition-[background-color,color] duration-150 ease-out",
+  "transition-[background-color,color] duration-hover ease-out",
   "hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]",
   "focus-visible:bg-[var(--surface-base-hover)] focus-visible:text-[var(--text-strong)]",
   "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--border-focus)]",
@@ -95,7 +95,7 @@ export const chromeMenuItemDanger = cn(
 export const btnBar = cn(
   "inline-flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5",
   "text-left text-caption font-medium text-text-strong select-none",
-  "transition-[background-color,box-shadow,color,border-color] duration-150",
+  "transition-[background-color,box-shadow,color,border-color] duration-hover",
   easeOut,
   "disabled:cursor-not-allowed disabled:text-text-weak",
 );
@@ -138,7 +138,7 @@ export const propertySeg = cn(
 const propertySegBtnBase = cn(
   "inline-flex h-7 min-w-0 flex-1 items-center justify-center rounded-md px-2",
   "text-micro font-medium text-[var(--text-weak)] select-none",
-  "transition-[background-color,color,box-shadow,transform] duration-100 ease-out",
+  "transition-[background-color,color,box-shadow,transform] duration-press ease-out",
   "active:enabled:scale-[0.98]",
 );
 
@@ -163,7 +163,7 @@ export const fieldInput = cn(
   "h-8 min-w-0 w-full rounded-md bg-surface-raised-stronger-non-alpha px-2.5",
   "text-caption font-normal text-text-strong ring-1 ring-inset ring-border-weak-base",
   "placeholder:text-text-weak",
-  "transition-[box-shadow] duration-150",
+  "transition-[box-shadow] duration-hover",
   "focus:outline-none focus:ring-2 focus:ring-border-interactive-base/45",
 );
 
@@ -179,7 +179,7 @@ export const modalPanel = cn(
   "bg-surface-raised-stronger-non-alpha text-text-strong shadow-lg-border-base",
 );
 
-export const modalScrim = "ui-scrim fixed inset-0 z-[90]";
+export const modalScrim = "ui-scrim fixed inset-0 z-[var(--z-scrim)]";
 
 const stepIndexShell = cn(
   mono,
@@ -212,6 +212,25 @@ export const eyebrow = cn(
 );
 
 /**
+ * The small label above a group of properties inside an inspector or panel.
+ * Twelve files had each written this out by hand at 10px, which is below the
+ * size anything a person has to read repeatedly should be; one recipe at
+ * caption size keeps every inspector reading the same.
+ */
+export const panelSectionLabel = cn("text-caption font-medium text-text-base");
+
+/** A section label that also owns the field sitting under it. */
+export const panelFieldLabel = cn("grid gap-1.5", panelSectionLabel);
+
+/**
+ * A section that has nothing in it yet. Quiet, inset, and phrased as a state
+ * rather than an error — an unmapped screen is unfinished work, not a fault.
+ */
+export const panelEmptyNote = cn(
+  "m-0 rounded-lg bg-surface-base px-2.5 py-2 text-caption/[1.45] text-text-weak",
+);
+
+/**
  * One underline-tab grammar for every secondary tab strip in the product
  * (Steps/Inputs/YAML, the run report's Timeline/Overview/Checks/...). Pair
  * with `tabUnderlineActive` on the selected tab.
@@ -229,7 +248,7 @@ export const tabUnderlineActive = "text-text-strong after:scale-x-100";
 /** Compact 36×36 chrome icon with a 44×44 effective pointer target. */
 export const productIconButton = cn(
   "relative inline-grid size-9 shrink-0 place-items-center rounded-xl text-text-base select-none before:absolute before:-inset-1 before:content-['']",
-  "transition-[color,background-color,transform] duration-150",
+  "transition-[color,background-color,transform] duration-hover",
   "hover:enabled:bg-surface-base-hover hover:enabled:text-text-strong",
   "active:enabled:scale-[0.97]",
   "disabled:cursor-not-allowed disabled:opacity-35",

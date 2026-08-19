@@ -1,11 +1,18 @@
 import type { ScrollSurfaceCapturePolicy } from "@relay/protocol";
+import { hasProfileStableSurfaceTerm } from "./discovery-app-profiles.js";
 
 const dynamicContent =
   /\b(import|memory|feed|history|private|account|user|chat|message|conversation)\b/iu;
 const repetitiveCatalog =
   /\b(open[\s-]?source licenses?|software licenses?|acknowledgements?|credits|legal notices?)\b/iu;
-const stableProductContent =
-  /\b(settings|preferences|options|terms|privacy|subscription|billing|supergrok)\b/iu;
+const stableGenericContent =
+  /\b(settings|preferences|options|terms|privacy|subscription|billing)\b/iu;
+
+/** Product-owned surfaces: the generic nouns, plus whatever each app profile
+ * names as its own stable page. */
+function stableProductContent(value: string): boolean {
+  return stableGenericContent.test(value) || hasProfileStableSurfaceTerm(value);
+}
 
 /** Conservative authoring recommendation. Unknown or potentially private
  * content remains a representative viewport until a person explicitly opts
@@ -33,7 +40,7 @@ export function recommendScrollSurfaceCapturePolicy(input: {
       decidedAt: input.decidedAt,
     };
   }
-  if (stableProductContent.test(input.title)) {
+  if (stableProductContent(input.title)) {
     return {
       captureMode: "full-surface",
       source: "recommended",
@@ -58,7 +65,7 @@ export function recommendScrollSurfaceCapturePolicy(input: {
       decidedAt: input.decidedAt,
     };
   }
-  if (stableProductContent.test(labels)) {
+  if (stableProductContent(labels)) {
     return {
       captureMode: "full-surface",
       source: "recommended",

@@ -9,6 +9,10 @@ const verify = (...args: Parameters<typeof openAppAndVerifyForeground>): Promise
   runWithTargetContext({ kind: "device", platform: "android", serial: "foreground-app-test" }, () =>
     openAppAndVerifyForeground(...args),
   );
+const verifyOnIos = (...args: Parameters<typeof openAppAndVerifyForeground>): Promise<void> =>
+  runWithTargetContext({ kind: "device", platform: "ios", serial: "foreground-app-test" }, () =>
+    openAppAndVerifyForeground(...args),
+  );
 
 describe("openAppAndVerifyForeground", () => {
   it("continues after the requested app is verified", async () => {
@@ -55,6 +59,32 @@ describe("openAppAndVerifyForeground", () => {
       /expected com\.example\.app in foreground after 2 attempts; observed unavailable/,
     );
     assert.equal(launches, 2);
+  });
+
+  it("continues on iOS when no tree can say which app owns the screen", async () => {
+    // A live iPad answers a snapshot with labelled nodes and no bundle id, so
+    // "unavailable" there is missing evidence rather than a failed launch.
+    const logs: string[] = [];
+    let launches = 0;
+    await verifyOnIos(device, "ai.x.GrokApp", undefined, logs.push.bind(logs), {
+      open: async () => {
+        launches += 1;
+      },
+      observe: async () => ({ status: "unavailable" }),
+    });
+
+    assert.equal(launches, 2);
+    assert.match(logs.at(-1)!, /cannot say which app owns the screen/);
+  });
+
+  it("still fails on iOS when another app owns the screen", async () => {
+    await assert.rejects(
+      verifyOnIos(device, "ai.x.GrokApp", undefined, () => {}, {
+        open: async () => {},
+        observe: async () => ({ status: "mismatch", app: "com.apple.Preferences" }),
+      }),
+      /expected ai\.x\.GrokApp in foreground after 2 attempts; observed com\.apple\.Preferences/,
+    );
   });
 
   it("reports the final unrelated foreground app", async () => {

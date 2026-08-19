@@ -9,6 +9,9 @@ import {
   exportCorpusPack,
   formatCorpusExport,
   corpusScopeFromLanguageProfile,
+  forgetKnownLocaleFinding,
+  listKnownLocaleFindings,
+  markLocaleFindingKnown,
   listDevices,
   listCorpusSessions,
   listLanguageProfiles,
@@ -208,6 +211,8 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
       name?: string;
       maxScrolls?: number;
       save?: boolean;
+      entryPath?: unknown;
+      languagePath?: unknown;
     };
     if (!body.serial?.trim()) throw new HttpError(400, "serial is required");
     if (!body.app?.trim()) throw new HttpError(400, "app is required");
@@ -220,11 +225,48 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
         ...(body.name ? { name: body.name } : {}),
         ...(body.maxScrolls !== undefined ? { maxScrolls: body.maxScrolls } : {}),
         save: body.save !== false,
+        // A rescan exists to replace a path that no longer replays. Dropping
+        // these left the caller re-walking the stale path they came to fix.
+        ...(Array.isArray(body.entryPath) ? { entryPath: body.entryPath as never } : {}),
+        ...(Array.isArray(body.languagePath) ? { languagePath: body.languagePath as never } : {}),
       });
       json(response, 200, result);
     } catch (error) {
       throw new HttpError(400, error instanceof Error ? error.message : String(error));
     }
+    return true;
+  }
+
+  // Accepted locale findings are workspace-wide, not per sweep: the point is
+  // that the next sweep of the same screens inherits them.
+  if (pathname === "/locale-findings/known") {
+    if (method === "GET") {
+      json(response, 200, { findings: await listKnownLocaleFindings() });
+      return true;
+    }
+    if (method === "POST") {
+      const body = (await parseJsonBody(request)) as {
+        finding?: Parameters<typeof markLocaleFindingKnown>[0]["finding"];
+        note?: string;
+      };
+      if (!body.finding?.id) throw new HttpError(400, "finding is required");
+      try {
+        const known = await markLocaleFindingKnown({
+          finding: body.finding,
+          ...(body.note ? { note: body.note } : {}),
+          markedBy: scope.subject,
+        });
+        json(response, 200, { finding: known, findings: await listKnownLocaleFindings() });
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+      return true;
+    }
+  }
+
+  const forgetKnownMatch = matchPath(pathname, "/locale-findings/known/:findingId");
+  if (method === "DELETE" && forgetKnownMatch) {
+    json(response, 200, { findings: await forgetKnownLocaleFinding(forgetKnownMatch.findingId!) });
     return true;
   }
 

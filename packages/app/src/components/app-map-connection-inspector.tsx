@@ -13,7 +13,7 @@ function RemovePathButton(props: { onClick: () => void }) {
     <div class="mt-1 border-t border-[var(--border-weak-base)] pt-1">
       <button
         type="button"
-        class="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-micro font-medium text-[var(--icon-critical-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_8%,transparent)] active:scale-[0.98] motion-reduce:active:scale-100"
+        class="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-micro font-medium text-[var(--icon-critical-base)] transition-[background-color,transform] duration-hover hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_8%,transparent)] active:scale-[0.98] motion-reduce:active:scale-100"
         onClick={props.onClick}
       >
         <span class="grid size-6 shrink-0 place-items-center rounded-md bg-[color-mix(in_srgb,var(--icon-critical-base)_10%,transparent)]">
@@ -119,7 +119,7 @@ export function ConnectionInspector(props: {
         <section class="mt-3 border-t border-[var(--border-weak-base)] pt-2">
           <button
             type="button"
-            class="flex min-h-11 w-full items-center gap-2 rounded-lg px-1.5 text-left transition-colors duration-150 hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
+            class="flex min-h-11 w-full items-center gap-2 rounded-lg px-1.5 text-left transition-colors duration-hover hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
             aria-expanded={actionsOpen()}
             onClick={() => setActionsOpen((value) => !value)}
           >

@@ -1,14 +1,18 @@
 import { For, Show, type JSX } from "solid-js";
 import { cn } from "../lib/cn";
-import type { CanvasPoint, CanvasViewport } from "../lib/app-map-canvas-layout";
+import {
+  MAX_LABEL_COUNTER_SCALE,
+  type CanvasPoint,
+  type CanvasViewport,
+} from "../lib/app-map-canvas-layout";
 import type { CanvasSnapGuide } from "../lib/app-map-snapping";
-import type { AppMapWorkspaceView } from "./app-map-toolbar";
+import type { MapCanvasView } from "./map-mode-switch";
 import { canvasOwnsWheel, canvasWheelAction } from "./app-map-events";
 
 export function AppMapCanvasViewport(props: {
   children: JSX.Element;
   observe: (element: HTMLElement) => void;
-  workspaceView: AppMapWorkspaceView;
+  workspaceView: MapCanvasView;
   tool: "select" | "hand";
   hasContent: boolean;
   gridVisual: { screenSpacing: number; offset: CanvasPoint };
@@ -98,6 +102,14 @@ export function AppMapCanvasWorld(props: {
   marquee: { left: number; top: number; width: number; height: number } | null;
   snapGuides: readonly CanvasSnapGuide[];
 }) {
+  // Screen names are chrome, not artwork: they should stay readable while the
+  // frames they label shrink, the way a Figma frame name does. The cap is
+  // shared with the geometry that reserves the band this growth needs, so a
+  // deep zoom-out can neither turn labels into billboards nor push a name into
+  // the card above it.
+  const labelCounterScale = () =>
+    Math.min(MAX_LABEL_COUNTER_SCALE, Math.max(1, 1 / Math.max(props.view.scale, 0.05)));
+
   return (
     <div
       class="absolute top-0 left-0 origin-top-left will-change-transform"
@@ -105,6 +117,8 @@ export function AppMapCanvasWorld(props: {
         width: `${props.bounds.width}px`,
         height: `${props.bounds.height}px`,
         transform: `translate3d(${props.view.x}px, ${props.view.y}px, 0) scale(${props.view.scale})`,
+        "--app-map-scale": String(props.view.scale),
+        "--app-map-label-counter": String(labelCounterScale()),
       }}
     >
       <Show when={props.marquee}>

@@ -35,7 +35,7 @@ const segmentedControl = cn(
 
 const segmentedTab = cn(
   "min-h-8 flex-1 rounded-lg px-2 text-caption font-medium text-text-weak",
-  "transition-[background-color,color,box-shadow] duration-150",
+  "transition-[background-color,color,box-shadow] duration-hover",
   "hover:bg-surface-base-hover hover:text-text-base",
   "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
 );
@@ -407,14 +407,14 @@ function MapLibraryRow(props: {
   return (
     <div
       class={cn(
-        "group relative flex min-h-10 items-center gap-1 rounded-lg px-1 transition-colors duration-100",
+        "group relative flex min-h-10 items-center gap-1 rounded-lg px-1 transition-colors duration-press",
         props.selected ? "bg-surface-base-active" : "hover:bg-surface-raised-base-hover",
       )}
     >
       <button
         type="button"
         class={cn(
-          "grid min-w-0 flex-1 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-100",
+          "grid min-w-0 flex-1 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-press",
           props.selected ? "text-text-strong" : "text-text-weak group-hover:text-text-base",
           "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
         )}
@@ -445,7 +445,7 @@ function MapLibraryRow(props: {
       <button
         type="button"
         class={cn(
-          "grid size-7 shrink-0 place-items-center rounded-md text-text-weaker transition-[background-color,color,opacity] duration-100 hover:bg-[var(--background-base)] hover:text-[var(--icon-critical-base)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
+          "grid size-7 shrink-0 place-items-center rounded-md text-text-weaker transition-[background-color,color,opacity] duration-press hover:bg-[var(--background-base)] hover:text-[var(--icon-critical-base)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
           !props.selected && "invisible pointer-events-none",
         )}
         aria-label={`Delete ${displayTitle(props.appMap.name)}`}
@@ -533,7 +533,7 @@ function RunRow(props: { job: JobInfo; onOpen: (id: string) => void }) {
     <button
       type="button"
       class={cn(
-        "grid min-h-[38px] w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-lg px-2 text-left transition-colors duration-100",
+        "grid min-h-[38px] w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-lg px-2 text-left transition-colors duration-press",
         selected() ? "bg-surface-base-active" : "hover:bg-surface-raised-base-hover",
       )}
       aria-current={selected() ? "page" : undefined}

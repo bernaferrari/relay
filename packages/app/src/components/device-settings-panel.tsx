@@ -198,7 +198,7 @@ export function DeviceSettingsPanel() {
                             Check again
                           </Button>
                           <button
-                            class="text-caption font-medium text-text-weak transition-colors duration-150 hover:text-text-strong"
+                            class="text-caption font-medium text-text-weak transition-colors duration-hover hover:text-text-strong"
                             type="button"
                             onClick={() => setAppleAdvancedOpen((open) => !open)}
                           >
@@ -238,7 +238,7 @@ export function DeviceSettingsPanel() {
                             {appleSetupBusy() ? "Setting up…" : "Use this account"}
                           </Button>
                           <button
-                            class="text-caption font-medium text-text-weak transition-colors duration-150 hover:text-text-strong"
+                            class="text-caption font-medium text-text-weak transition-colors duration-hover hover:text-text-strong"
                             type="button"
                             onClick={() => setAppleAdvancedOpen((open) => !open)}
                           >
@@ -264,7 +264,7 @@ export function DeviceSettingsPanel() {
                   </div>
                   <div class="mt-2 flex justify-end">
                     <button
-                      class="min-h-8 shrink-0 rounded-lg px-2 text-caption font-medium text-text-weak transition-colors duration-150 hover:bg-surface-base-hover hover:text-text-strong"
+                      class="min-h-8 shrink-0 rounded-lg px-2 text-caption font-medium text-text-weak transition-colors duration-hover hover:bg-surface-base-hover hover:text-text-strong"
                       type="button"
                       onClick={() => setAppleAdvancedOpen((open) => !open)}
                     >

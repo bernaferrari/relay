@@ -347,7 +347,7 @@ export type VariableApply =
     }
   | {
       /** Android's first-party per-app locale API. This avoids brittle taps in
-       * a system language picker while keeping the modifier explicit. */
+       * a system language picker while keeping the Variable explicit. */
       kind: "appLocale";
       app: string;
     }
@@ -394,10 +394,10 @@ export type AppMapCombine = AppMapEntity & {
 
 export type AppMapCombinePreflightIssue = {
   code:
-    | "missing-modifier"
+    | "missing-variable"
     | "missing-test"
     | "empty-selection"
-    | "invalid-modifier"
+    | "invalid-variable"
     | "invalid-test"
     | "compile-failed"
     | "large-run"
@@ -415,7 +415,7 @@ export type AppMapCombinePreflight = {
   name: string;
   formula: string;
   strategy: CaseExpansionStrategy;
-  modifiers: Array<{
+  variables: Array<{
     id: string;
     name: string;
     selectedCount: number;

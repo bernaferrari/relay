@@ -220,6 +220,10 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("corpus.export", path("corpus export", ["sessionId"])),
   mapped("corpus.screen.get", path("corpus screen", ["sessionId", "screenId"])),
 
+  mapped("locale-finding.known.list", path("finding known list")),
+  mapped("locale-finding.known.add", path("finding known add")),
+  mapped("locale-finding.known.remove", path("finding known remove", ["findingId"])),
+
   mapped("language-profile.list", path("language-profile list")),
   mapped("language-profile.scan", path("language-profile scan")),
   mapped("language-profile.save", path("language-profile save")),
@@ -309,24 +313,24 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: [
         'relay job locale-matrix start --input \'{"appMapId":"<map>","flowId":"<flow>","serial":"<device>","locales":["en","pt-BR"]}\'',
       ],
-      note: "Prefer a saved graph-native Test in `relay run-matrix run`; use `relay test run` for one exact pass.",
+      note: "Prefer a saved graph-native Test in `relay combine run`; use `relay test run` for one exact pass.",
     }),
   ),
   mapped(
     "job.combine.start",
     path("job combine start", [], undefined, {
-      summary: "Run state combinations × tests",
+      summary: "Run every selected Variable value × every selected Test",
       examples: [
-        'relay run-matrix run grok-ios language-x-settings --input \'{"serial":"<device>"}\'',
+        'relay combine run grok-ios language-x-settings --input \'{"serial":"<device>"}\'',
       ],
-      note: "A run matrix applies one value from every selected state set, then runs every selected test. Prefer `relay test run` for one pass.",
+      note: "A Combine applies one value from every selected Variable, then runs every selected Test. Prefer `relay test run` for one pass.",
       behavior: "job-start-watch",
     }),
-    path("run-matrix run", ["appMapId", "combineId"], undefined, {
-      summary: "Run a saved state sets × tests matrix",
+    path("combine run", ["appMapId", "combineId"], undefined, {
+      summary: "Run a saved Combine (Variables × Tests)",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "combineId", type: "string", description: "Saved run matrix" },
+        { name: "combineId", type: "string", description: "Saved Combine" },
       ],
       inputHelp: [
         { name: "serial", type: "string", description: "Device serial" },
@@ -334,14 +338,18 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           name: "selected",
           type: "object",
           description:
-            'Optional value ids selected per state set, for example {"language":["it"]} to run Italian only',
+            'Optional value ids selected per Variable, for example {"language":["it"]} to run Italian only',
         },
         {
           name: "strategy",
           type: "zip | cartesian | pairwise",
-          description: "State coverage strategy",
+          description: "Value coverage strategy",
         },
       ],
+      behavior: "job-start-watch",
+    }),
+    path("run-matrix run", ["appMapId", "combineId"], undefined, {
+      summary: "Alias of combine run",
       behavior: "job-start-watch",
     }),
   ),
@@ -357,12 +365,15 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "job.combine.export",
+    path("combine export", ["batchId"], undefined, {
+      summary: "Export a Combine screenshot pack",
+      examples: ["relay combine export <batch-id>"],
+    }),
     path("run-matrix export", ["batchId"], undefined, {
-      summary: "Export a run matrix screenshot pack",
-      examples: ["relay run-matrix export <batch-id>"],
+      summary: "Alias of combine export",
     }),
     path("job combine export", ["batchId"], undefined, {
-      summary: "Export run-matrix screenshot pack",
+      summary: "Export a Combine screenshot pack",
     }),
     path("job option-matrix export", ["batchId"]),
   ),
@@ -380,6 +391,13 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     "job.locale-matrix.export",
     path("job locale-matrix export", ["batchId"], undefined, {
       summary: "Export locale-run screenshot pack",
+    }),
+  ),
+  mapped(
+    "job.locale-matrix.analysis",
+    path("job locale-matrix analysis", ["batchId"], undefined, {
+      summary: "Read locale findings for a batch",
+      note: "Same findings the pack carries, without writing one. Works while the sweep is still running.",
     }),
   ),
 

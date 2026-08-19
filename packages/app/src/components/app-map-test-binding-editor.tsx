@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js";
 import type { AppMap, AppMapScenarioTestStep } from "@relay/protocol";
 import { cn } from "../lib/cn";
+import { plural } from "../lib/plural";
 import { resolveScenarioBinding, scenarioBindingField } from "../lib/app-map-test-editor-model";
 import {
   testEditorHint,
@@ -170,7 +171,7 @@ function InstructionBinding(props: {
             <For each={Object.values(props.map.flows)}>
               {(flow) => (
                 <option value={flow.id} disabled={!flowReady(flow.connectionIds)}>
-                  {flow.name} · {flow.connectionIds.length} steps
+                  {flow.name} · {plural(flow.connectionIds.length, "step")}
                   {flowReady(flow.connectionIds) ? "" : " · needs review"}
                 </option>
               )}
@@ -247,7 +248,7 @@ function ConnectionRow(props: {
       class={cn(
         "flex min-h-11 items-center gap-2.5 px-2.5",
         "border-b border-border-weak-base last:border-b-0",
-        "transition-colors duration-150 motion-reduce:transition-none",
+        "transition-colors duration-hover motion-reduce:transition-none",
         props.disabled
           ? "cursor-not-allowed text-text-weaker"
           : "cursor-pointer hover:bg-surface-base-hover",

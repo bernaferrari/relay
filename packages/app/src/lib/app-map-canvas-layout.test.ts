@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { MapTreeNode } from "./app-map-tree";
+import { compactCanvasPositions } from "./app-map-auto-layout";
 import {
   connectorAutoLanes,
   connectorHasAutomaticSourceLane,
@@ -358,6 +359,75 @@ test("automatic connectors route around intervening screens without entering the
     pathEntersFrame(after.hitPoints, { left: 320, top: 33, right: 560, bottom: 207 }),
     false,
   );
+});
+
+test("a packed fan arrives from the corridor rails, not from its siblings' edges", () => {
+  // Terminal screens packed side by side share a row, so the connector into a
+  // later column has to reach it past the cards in front of it. If that arrival
+  // began at the card to its left, a wrapped fan would read as a chain of
+  // screens nobody recorded. The rails in the gaps are what keep the shape
+  // honest, so they are asserted on the real tidy geometry.
+  const fan = ["appearance", "memory", "haptics", "usage", "advanced", "widget", "skills"];
+  const ids = ["settings", ...fan, "import", "always-ask"];
+  const positions = compactCanvasPositions({
+    screens: ids.map((id) => ({ id })),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      ...fan.map((id, index) => ({
+        fromScreenId: "settings",
+        destination: { kind: "screen" as const, screenId: id },
+        sourceAnchor: { point: { x: 0.5, y: (index + 1) / (fan.length + 1) } },
+      })),
+      {
+        fromScreenId: "memory",
+        destination: { kind: "screen" as const, screenId: "import" },
+        sourceAnchor: { point: { x: 0.5, y: 0.5 } },
+      },
+      {
+        fromScreenId: "advanced",
+        destination: { kind: "screen" as const, screenId: "always-ask" },
+        sourceAnchor: { point: { x: 0.5, y: 0.5 } },
+      },
+    ],
+  });
+  const nodes = ids.map((id) => ({
+    ...start,
+    id,
+    screenKey: id,
+    title: id,
+    x: positions[id]!.x,
+    y: positions[id]!.y,
+  }));
+  const frameOf = (id: string) => screenFrameBounds(positions[id]!, screenCardGeometry());
+  const arrivalX = (from: string, to: string) => {
+    const geometry = canvasEdgeGeometry({ from, to, kind: "forward" }, nodes, (node) => node);
+    for (const other of ids) {
+      if (other === to || other === from) continue;
+      assert.equal(
+        pathEntersFrame(geometry.hitPoints, frameOf(other)),
+        false,
+        `the connector from ${from} into ${to} paints through ${other}`,
+      );
+    }
+    return geometry.hitPoints[geometry.hitPoints.length - 2]?.x ?? 0;
+  };
+
+  for (const item of fan) {
+    const arrival = arrivalX("settings", item);
+    const aheadOnRow = ids
+      .filter((other) => other !== item && positions[other]!.y === positions[item]!.y)
+      .filter((other) => positions[other]!.x < positions[item]!.x && other !== "settings");
+    for (const other of aheadOnRow) {
+      assert.ok(
+        arrival > frameOf(other).right,
+        `the arrival into ${item} must not start on the edge of ${other}`,
+      );
+    }
+  }
+  // A chain the shelf packs is the one case where leaving the card to the left
+  // is the truth, and it reads differently for exactly that reason.
+  assert.equal(arrivalX("memory", "import"), frameOf("memory").right);
+  assert.equal(arrivalX("advanced", "always-ask"), frameOf("advanced").right);
 });
 
 test("near-aligned singleton automatic routes stay direct unless a screen blocks them", () => {

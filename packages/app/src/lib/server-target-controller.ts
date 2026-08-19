@@ -1,4 +1,5 @@
 import type { Accessor, Setter } from "solid-js";
+import { humanError } from "./human-error";
 import type {
   CompatibilityMatrix,
   MatrixExpansion,
@@ -77,8 +78,9 @@ export function createServerTargetController(deps: TargetControllerDependencies)
       return await loadMatrixYaml(deps.request, id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not open this compatibility matrix");
       deps.appendLog(message, "error");
-      toast(message, "error");
+      toast(readable, "error");
       return null;
     }
   }
@@ -93,8 +95,9 @@ export function createServerTargetController(deps: TargetControllerDependencies)
       return matrix;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not import this compatibility matrix");
       deps.appendLog(message, "error");
-      toast(message, "error");
+      toast(readable, "error");
       return null;
     }
   }

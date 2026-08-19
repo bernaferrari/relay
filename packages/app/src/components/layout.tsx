@@ -2,12 +2,14 @@ import { type JSX, onMount, onCleanup, createEffect } from "solid-js";
 import { useServer } from "../context/server";
 import { useCommand, CommandPalette } from "../context/command";
 import { Toaster } from "../context/toast";
+import { TooltipLayer } from "./tooltip-layer";
 import { useTheme } from "@relay/ui/theme/context";
 import { usePlatform } from "../context/platform";
 import { ErrorBanner } from "./error-banner";
 import { cn } from "../lib/cn";
 import type { SettingsSection } from "../pages/settings";
 import { nextAccessibilityOverlayMode } from "../lib/accessibility-overlay-mode";
+import { plural } from "../lib/plural";
 
 export type AppView = "workspace" | "settings";
 
@@ -279,7 +281,7 @@ export function Layout(props: {
         {
           id: `app-map.${appMap.id}`,
           title: appMap.name,
-          subtitle: `${Object.keys(appMap.screens).length} screens · Map`,
+          subtitle: `${plural(Object.keys(appMap.screens).length, "screen")} · Map`,
           group: "Maps",
           run: () => server.setSelectedAppMapId(appMap.id),
         },
@@ -320,6 +322,7 @@ export function Layout(props: {
       </div>
       <CommandPalette />
       <Toaster />
+      <TooltipLayer />
     </div>
   );
 }

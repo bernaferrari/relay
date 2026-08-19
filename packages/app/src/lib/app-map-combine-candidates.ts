@@ -7,7 +7,9 @@ export function savedTestId(candidate: TestCandidate): string {
   return candidate.test.id;
 }
 
-export function matrixId(variableIds: string[], testIds: string[]): string {
+/** The `matrix-` prefix is a storage key, not chrome: saved combines already
+ * carry it, so renaming it would orphan them. */
+export function combineIdFor(variableIds: string[], testIds: string[]): string {
   const slug = [...variableIds, "to", ...testIds]
     .join("-")
     .toLocaleLowerCase()
@@ -17,7 +19,7 @@ export function matrixId(variableIds: string[], testIds: string[]): string {
   return `matrix-${slug || "run"}`;
 }
 
-/** Run matrices select saved graph Tests only. Map flows and groups are map
+/** Combines select saved graph Tests only. Map flows and groups are map
  * structure, never implicit Test-conversion candidates. */
 export function testCandidates(map: AppMap): TestCandidate[] {
   return Object.values(map.tests ?? {}).map((test) => ({

@@ -1,6 +1,5 @@
 import { For, Show, createEffect, createSignal, onCleanup, type JSX } from "solid-js";
 import type { AppMapTest } from "@relay/protocol";
-import { Button } from "@relay/ui/button";
 import { cn } from "../lib/cn";
 import { menuOption, popover, productIconButton } from "../lib/ui";
 import { testEditorInput } from "../lib/app-map-test-editor-styles";
@@ -203,7 +202,7 @@ export function TestSwitcher(props: {
           type="button"
           id="app-map-test-switcher"
           class={cn(
-            "flex min-h-9 min-w-0 items-center gap-1.5 rounded-md px-2 text-left transition-colors duration-150 motion-reduce:transition-none",
+            "flex min-h-9 min-w-0 items-center gap-1.5 rounded-md px-2 text-left transition-colors duration-hover motion-reduce:transition-none",
             "hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-strong-focus",
             open() && "bg-surface-base-active",
           )}
@@ -378,23 +377,19 @@ function stepLabel(test: AppMapTest): string {
   return `${count} ${count === 1 ? "step" : "steps"}`;
 }
 
-export function FirstTestEmpty(props: { creating: boolean; onCreate: () => void }) {
+/**
+ * This rail lists the steps of the Test being read, so with no Test open it has
+ * nothing to list and says so quietly. The invitation to make one belongs to the
+ * document pane beside it, which is the larger surface and the one a person is
+ * looking at — two hero cards side by side offering the same button read as a
+ * layout that had lost track of itself.
+ */
+export function StepsRailEmpty() {
   return (
     <div class="grid min-h-0 flex-1 place-items-center p-6 text-center">
-      <div class="max-w-[34ch]">
-        <span class="mx-auto grid size-10 place-items-center rounded-xl bg-surface-base text-text-weak">
-          <Icon name="command" size={18} />
-        </span>
-        <h2 class="mt-3 mb-0 text-title/[1.25] font-semibold text-text-strong">
-          Create the first Test
-        </h2>
-        <p class="mt-1.5 text-caption/[1.5] text-text-weak">
-          Write readable intent first, then bind each step to a reviewed path on this map.
-        </p>
-        <Button class="mt-4" disabled={props.creating} onClick={props.onCreate}>
-          {props.creating ? "Creating…" : "Create Test"}
-        </Button>
-      </div>
+      <p class="m-0 max-w-[28ch] text-caption/[1.5] text-text-weak">
+        Steps appear here once a Test is open.
+      </p>
     </div>
   );
 }

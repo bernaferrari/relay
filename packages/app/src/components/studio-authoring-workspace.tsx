@@ -1,6 +1,6 @@
 import { Show, Suspense, lazy } from "solid-js";
 import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
-import type { AuthoringSurface } from "./authoring-surface-switch";
+import type { MapCanvasView, MapMode } from "./map-mode-switch";
 import { WorkspaceSkeleton } from "./workspace-skeleton";
 
 const AppMapWorkspace = lazy(() =>
@@ -11,9 +11,9 @@ const AppMapTestWorkspace = lazy(() =>
 );
 
 export function StudioAuthoringWorkspace(props: {
-  surface: AuthoringSurface;
+  mode: MapMode;
   navigatorOpen: boolean;
-  onOpenSurface: (surface: AuthoringSurface) => void;
+  onMode: (mode: MapMode) => void;
   onOpenTargets: () => void;
   onOpenVariables: () => void;
   onOpenCombine: (combineId?: string, section?: CanvasCombineSection) => void;
@@ -21,13 +21,15 @@ export function StudioAuthoringWorkspace(props: {
 }) {
   return (
     <Show
-      when={props.surface === "test"}
+      when={props.mode === "test"}
       fallback={
         <Suspense fallback={<WorkspaceSkeleton label="map" />}>
           <AppMapWorkspace
             navigatorOpen={props.navigatorOpen}
+            view={props.mode as MapCanvasView}
+            onView={props.onMode}
             onOpenTargets={props.onOpenTargets}
-            onOpenActions={() => props.onOpenSurface("test")}
+            onOpenActions={() => props.onMode("test")}
             onOpenVariables={props.onOpenVariables}
             onOpenCombine={props.onOpenCombine}
             onOpenRun={props.onOpenRun}

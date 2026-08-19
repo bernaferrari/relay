@@ -50,7 +50,7 @@ export function AppMapLoadFeedback(props: {
         <Show when={props.status === "error"}>
           <button
             type="button"
-            class="canvas-tool-control inline-flex min-h-10 items-center gap-2 rounded-xl bg-[var(--product-accent-soft)] px-4 text-caption font-semibold text-[var(--text-interactive-base)] outline-none transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--background-base)]"
+            class="canvas-tool-control inline-flex min-h-10 items-center gap-2 rounded-xl bg-[var(--product-accent-soft)] px-4 text-caption font-semibold text-[var(--text-interactive-base)] outline-none transition-[background-color,transform] duration-hover hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--background-base)]"
             onClick={props.onRetry}
           >
             <Icon name="refresh" size={13} /> Try again

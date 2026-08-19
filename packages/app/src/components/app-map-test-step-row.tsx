@@ -322,7 +322,7 @@ export function StepKindMenu(props: {
       <summary
         class={cn(
           "flex min-h-11 cursor-pointer list-none items-center justify-center gap-1.5 rounded-md",
-          "transition-colors duration-150 motion-reduce:transition-none",
+          "transition-colors duration-hover motion-reduce:transition-none",
           "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-strong-focus",
           props.variant === "primary"
             ? "w-full border border-border-weak-base bg-background-base text-caption font-medium text-text-strong hover:bg-surface-base-hover"

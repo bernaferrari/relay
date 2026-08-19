@@ -131,7 +131,7 @@ test("non-map operation results remain untouched", () => {
   assert.equal(summarizeAppMapOperationResult("app-map.list", malformedCatalog), malformedCatalog);
 });
 
-test("App Map summaries expose complete modifier values and matrix evidence policy", () => {
+test("App Map summaries expose complete Variable values and Combine evidence policy", () => {
   const scope = {
     organizationId: "local",
     projectId: "project-1",

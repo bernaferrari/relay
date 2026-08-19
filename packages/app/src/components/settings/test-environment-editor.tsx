@@ -170,7 +170,7 @@ function ExactDeviceSelector(props: {
                     </div>
                     <For each={group.profiles}>
                       {(profile) => (
-                        <label class="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-md px-2 text-text-strong transition-colors duration-150 hover:bg-surface-raised-stronger-non-alpha has-[:checked]:bg-[var(--product-accent-soft)]">
+                        <label class="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-md px-2 text-text-strong transition-colors duration-hover hover:bg-surface-raised-stronger-non-alpha has-[:checked]:bg-[var(--product-accent-soft)]">
                           <input
                             type="checkbox"
                             checked={props.selectedIds.includes(profile.targetId)}
@@ -309,7 +309,7 @@ export function TestEnvironmentEditor(props: {
         <div class="grid grid-cols-2 gap-2 max-[760px]:grid-cols-1">
           <For each={environmentModes}>
             {(choice) => (
-              <label class="flex min-h-20 cursor-pointer items-start gap-3 rounded-lg border border-border-weak-base p-3 transition-[background-color,border-color] duration-150 hover:bg-surface-raised-stronger-non-alpha has-[:checked]:border-border-focus has-[:checked]:bg-[var(--product-accent-soft)] has-[:focus-visible]:border-border-focus has-[:focus-visible]:outline-none">
+              <label class="flex min-h-20 cursor-pointer items-start gap-3 rounded-lg border border-border-weak-base p-3 transition-[background-color,border-color] duration-hover hover:bg-surface-raised-stronger-non-alpha has-[:checked]:border-border-focus has-[:checked]:bg-[var(--product-accent-soft)] has-[:focus-visible]:border-border-focus has-[:focus-visible]:outline-none">
                 <input
                   class="sr-only"
                   type="radio"

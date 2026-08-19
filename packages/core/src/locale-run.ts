@@ -3,21 +3,18 @@
  *
  * One authored recipe is the loop body. Relay expands locales into frozen
  * matrix cases, prepends a language-switch prelude (entry → language picker →
- * select row), runs each case as a normal job, and can export a labeled pack.
+ * select row), and runs each case as a normal job. Exporting those runs as a
+ * pack lives in locale-run-pack.ts.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
 import type { ActionSpec, AppMap, RecipeStep, TargetProfile } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { resolveLanguageOptions, listLanguageProfilesSync } from "./language-profiles.js";
-import { extractSwitcherOptionsFromNodes } from "./switcher-profiles.js";
+import { extractSwitcherOptionsFromNodes } from "./switcher-option-rows.js";
 import { currentOperationContext } from "./operation-context.js";
 import { freezeRecipeGraph, readRecipe, type Recipe } from "./recipes.js";
 import { prepareRunMatrix, redactRunMatrix, type PreparedRunMatrix } from "./run-matrix.js";
-import { enqueueJob, listJobs, type EnqueueJobInput, type TestJob } from "./session.js";
-import { slugCorpusPathSegment } from "./screen-identity.js";
-import { findWorkspaceRoot } from "./workspace-root.js";
+import { enqueueJob, type EnqueueJobInput, type TestJob } from "./session.js";
 
 /** Matrix list values cannot be blank (zip strips empties). */
 const NONE = "-";
@@ -86,102 +83,6 @@ export type LocaleRunBatch = {
   jobs: TestJob[];
   composedRecipeId: string;
 };
-
-export type LocaleRunPackManifest = {
-  schemaVersion: 1;
-  batchId: string;
-  recipeId: string;
-  title: string;
-  generatedAt: number;
-  locales: string[];
-  cases: Array<{
-    locale: string;
-    jobId: string;
-    status: string;
-    name: string;
-    frames: string[];
-    expectedFrames?: number;
-  }>;
-};
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function portablePackHtml(manifest: LocaleRunPackManifest): string {
-  const passed = manifest.cases.filter((item) => item.status === "ok" || item.status === "healed");
-  const expected = manifest.cases.reduce((total, item) => total + (item.expectedFrames ?? 0), 0);
-  const captured = manifest.cases.reduce((total, item) => total + item.frames.length, 0);
-  const cards = manifest.cases
-    .map(
-      (item) => `<section class="case">
-  <header><div><strong>${escapeHtml(item.locale)}</strong><span>${escapeHtml(item.name)}</span></div><b data-status="${escapeHtml(item.status)}">${escapeHtml(item.status)}</b></header>
-  <div class="frames">${
-    item.frames.length
-      ? item.frames
-          .map(
-            (frame, index) =>
-              `<figure><img loading="lazy" src="${frame.split("/").map(encodeURIComponent).join("/")}" alt="${escapeHtml(item.locale)} screenshot ${index + 1}"><figcaption>${index + 1}</figcaption></figure>`,
-          )
-          .join("")
-      : '<p class="empty">No screenshots captured</p>'
-  }</div>
-</section>`,
-    )
-    .join("\n");
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(manifest.title)}</title>
-<style>:root{color-scheme:light dark;font:14px ui-sans-serif,system-ui,sans-serif;background:#f7f7f8;color:#18181b}*{box-sizing:border-box}body{margin:0}main{max-width:1440px;margin:auto;padding:32px}h1{font-size:24px;letter-spacing:-.03em;margin:0 0 6px}.summary{color:#64646c;margin:0 0 28px}.case{background:#fff;border:1px solid #dedee3;border-radius:14px;margin:0 0 16px;overflow:hidden}.case>header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border-bottom:1px solid #e8e8eb}.case header div{display:grid;gap:2px}.case header span{font-size:12px;color:#71717a}.case header b{font-size:11px;text-transform:capitalize}.case header b[data-status=error],.case header b[data-status=cancelled]{color:#c2410c}.frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;padding:10px}.frames figure{position:relative;margin:0;border-radius:9px;overflow:hidden;background:#eee;min-height:120px}.frames img{display:block;width:100%;height:240px;object-fit:contain}.frames figcaption{position:absolute;right:6px;bottom:6px;border-radius:99px;background:#000b;color:white;padding:3px 7px;font-size:10px}.empty{color:#71717a;padding:20px}@media(prefers-color-scheme:dark){:root{background:#171719;color:#f4f4f5}.case{background:#222225;border-color:#39393f}.case>header{border-color:#39393f}.case header span,.summary,.empty{color:#a1a1aa}.frames figure{background:#111}}</style></head>
-<body><main><h1>${escapeHtml(manifest.title)}</h1><p class="summary">${passed.length} of ${manifest.cases.length} runs passed · ${captured}${expected ? ` of ${expected}` : ""} screenshots · ${new Date(manifest.generatedAt).toISOString()}</p>${cards}</main></body></html>\n`;
-}
-
-function expectedEvidenceFrames(job: TestJob): number | undefined {
-  for (const artifact of job.artifacts ?? []) {
-    if (
-      artifact.kind !== "frozen-inputs" ||
-      !artifact.data ||
-      typeof artifact.data !== "object" ||
-      !("expectedScreenshots" in artifact.data)
-    )
-      continue;
-    const expected = artifact.data.expectedScreenshots;
-    if (typeof expected === "number" && Number.isInteger(expected) && expected >= 0) {
-      return expected;
-    }
-  }
-  return undefined;
-}
-
-/**
- * Matrix packs contain the screenshots authored by the test, not the automatic
- * before/after diagnostics captured around setup actions. The diagnostics stay
- * in the full run report. Failing closed keeps a nominal 7 × 10 pack from
- * silently shipping with fewer than 70 useful screenshots.
- */
-export function evidenceFrameNames(job: TestJob): {
-  names?: Set<string>;
-  expected?: number;
-} {
-  const expected = expectedEvidenceFrames(job);
-  if (expected === undefined) return {};
-  const names = new Set(
-    job.steps
-      .flatMap((step) => step.frames)
-      .filter((frame) => !/^(?:before|after) · /.test(frame.caption))
-      .map((frame) => basename(frame.path)),
-  );
-  if (names.size !== expected) {
-    throw new Error(
-      `run ${job.id} produced ${names.size} authored screenshot(s); expected ${expected}`,
-    );
-  }
-  return { names, expected };
-}
 
 function requiredText(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`);
@@ -896,114 +797,6 @@ export async function startLocaleRecipeRun(input: LocaleRunRequest): Promise<Loc
     jobs,
     composedRecipeId: root.id,
   };
-}
-
-function localeRunRoot(): string {
-  return join(
-    process.env.RELAY_WORKSPACE_ROOT?.trim() || findWorkspaceRoot(),
-    ".relay",
-    "locale-runs",
-  );
-}
-
-export function artifactLocale(job: TestJob): string {
-  const fromInputs = (job.resolvedInputs?.locale ?? job.resolvedInputs?.language)?.trim();
-  if (fromInputs) return fromInputs;
-  for (const artifact of job.artifacts ?? []) {
-    if (artifact.kind !== "frozen-inputs") continue;
-    if (!artifact.data || typeof artifact.data !== "object") continue;
-    const values =
-      "values" in artifact.data && artifact.data.values && typeof artifact.data.values === "object"
-        ? artifact.data.values
-        : undefined;
-    const locale =
-      ("locale" in artifact.data ? artifact.data.locale : undefined) ??
-      (values && "locale" in values ? values.locale : undefined) ??
-      (values && "language" in values ? values.language : undefined) ??
-      ("world" in artifact.data ? artifact.data.world : undefined);
-    if (typeof locale === "string" && locale.trim()) return locale.trim();
-  }
-  return `case-${(job.caseIndex ?? 0) + 1}`;
-}
-
-export async function exportLocaleRunPack(input: {
-  batchId: string;
-  jobs: TestJob[];
-  title?: string;
-  recipeId?: string;
-}): Promise<{ rootDir: string; manifest: LocaleRunPackManifest }> {
-  const batchId = requiredText(input.batchId, "batchId");
-  const rootDir = join(localeRunRoot(), batchId, "pack");
-  await mkdir(rootDir, { recursive: true });
-
-  const cases: LocaleRunPackManifest["cases"] = [];
-  for (const job of input.jobs) {
-    const locale = artifactLocale(job);
-    const localeDir = join(rootDir, slugCorpusPathSegment(locale));
-    await mkdir(localeDir, { recursive: true });
-    const frames: string[] = [];
-    const evidence = evidenceFrameNames(job);
-    if (job.runDir) {
-      try {
-        const frameDir = join(job.runDir, "frames");
-        const entries = (await readdir(frameDir))
-          .filter((name) => name.endsWith(".png") && (!evidence.names || evidence.names.has(name)))
-          .sort();
-        for (const [index, name] of entries.entries()) {
-          const destName = `${String(index + 1).padStart(3, "0")}-${name}`;
-          await copyFile(join(frameDir, name), join(localeDir, destName));
-          frames.push(`${slugCorpusPathSegment(locale)}/${destName}`);
-        }
-      } catch {
-        // frames optional
-      }
-    }
-    cases.push({
-      locale,
-      jobId: job.id,
-      status: job.status,
-      name: job.title ?? job.action,
-      frames,
-      ...(evidence.expected !== undefined ? { expectedFrames: evidence.expected } : {}),
-    });
-  }
-
-  const manifest: LocaleRunPackManifest = {
-    schemaVersion: 1,
-    batchId,
-    recipeId: input.recipeId ?? input.jobs[0]?.recipeId ?? "unknown",
-    title: input.title ?? input.jobs[0]?.title ?? "Locale run",
-    generatedAt: Date.now(),
-    locales: [...new Set(cases.map((item) => item.locale))],
-    cases,
-  };
-  await writeFile(join(rootDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-  await writeFile(join(rootDir, "index.html"), portablePackHtml(manifest), "utf8");
-  await writeFile(
-    join(rootDir, "README.md"),
-    [
-      `# ${manifest.title}`,
-      "",
-      `Batch: ${batchId}`,
-      `Locales: ${manifest.locales.join(", ")}`,
-      "",
-      "Open index.html for a portable visual report. Each folder is one matrix case; frames are ordered screenshots from that run.",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-  return { rootDir, manifest };
-}
-
-export async function exportLocaleRunPackFromBatchId(batchId: string): Promise<{
-  rootDir: string;
-  manifest: LocaleRunPackManifest;
-  jobs: TestJob[];
-}> {
-  const jobs = listJobs(500).filter((job) => job.batchId === batchId);
-  if (!jobs.length) throw new Error(`no jobs found for locale batch ${batchId}`);
-  const exported = await exportLocaleRunPack({ batchId, jobs });
-  return { ...exported, jobs };
 }
 
 export function defaultGrokLocaleScope(locales: string[]): LocaleRunScope {

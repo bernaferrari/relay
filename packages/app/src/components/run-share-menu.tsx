@@ -4,6 +4,7 @@ import type { RunShareSummary } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer, type JobInfo } from "../context/server";
 import { toast } from "../context/toast";
+import { humanError } from "../lib/human-error";
 import { Icon } from "./icon";
 
 function expiresLabel(value: number): string {
@@ -44,7 +45,7 @@ export function RunShareMenu(props: { run: JobInfo; batchRunCount: number }) {
       .listRunShares(props.run.id)
       .then(setShares)
       .catch((error: unknown) =>
-        toast(error instanceof Error ? error.message : String(error), "error"),
+        toast(humanError(error, "Could not load this run's share links"), "error"),
       );
     const close = (event: PointerEvent) => {
       const target = event.target as Node;
@@ -80,7 +81,7 @@ export function RunShareMenu(props: { run: JobInfo; batchRunCount: number }) {
       setShares((current) => [created.share, ...current]);
       await copy(url);
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not create a share link"), "error");
     } finally {
       setBusy(false);
     }
@@ -94,7 +95,7 @@ export function RunShareMenu(props: { run: JobInfo; batchRunCount: number }) {
       setShares((current) => current.map((item) => (item.id === updated.id ? updated : item)));
       toast("Share link revoked", "success");
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not revoke this share link"), "error");
     } finally {
       setBusy(false);
     }
@@ -119,7 +120,7 @@ export function RunShareMenu(props: { run: JobInfo; batchRunCount: number }) {
             ref={(element) => (menu = element)}
             role="dialog"
             aria-label="Share results"
-            class="fixed z-[100] grid w-[min(340px,calc(100vw-24px))] gap-4 overflow-y-auto rounded-xl border border-[var(--border-weak-base)] bg-[var(--background-base)] p-4 text-left shadow-[0_12px_36px_rgb(0_0_0/0.16)]"
+            class="fixed z-[var(--z-modal)] grid w-[min(340px,calc(100vw-24px))] gap-4 overflow-y-auto rounded-xl border border-[var(--border-weak-base)] bg-[var(--background-base)] p-4 text-left shadow-[0_12px_36px_rgb(0_0_0/0.16)]"
             style={{
               left: `${position().left}px`,
               top: `${position().top}px`,
@@ -189,7 +190,7 @@ export function RunShareMenu(props: { run: JobInfo; batchRunCount: number }) {
                     <div class="flex min-w-0 items-center gap-2 py-1.5 text-caption">
                       <span class="min-w-0 flex-1">
                         <strong class="block truncate font-medium text-text-base">
-                          {share.runCount > 1 ? `${share.runCount} matrix results` : "This result"}
+                          {share.runCount > 1 ? `${share.runCount} combine results` : "This result"}
                         </strong>
                         <span class="text-text-weaker">
                           {share.status === "active"

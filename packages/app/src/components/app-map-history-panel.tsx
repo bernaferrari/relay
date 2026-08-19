@@ -48,7 +48,7 @@ export function AppMapHistoryPanel(props: {
   const [view, setView] = createSignal<HistoryView>("changes");
   const activityRows = createMemo(() => collapseActivity(props.activity).slice(0, 40));
   const tabClass = (tab: HistoryView) =>
-    `relative flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 px-2 text-micro font-medium outline-none transition-colors duration-150 ${
+    `relative flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 px-2 text-micro font-medium outline-none transition-colors duration-hover ${
       view() === tab
         ? "text-[var(--text-strong)] after:absolute after:right-2 after:bottom-0 after:left-2 after:h-px after:bg-[var(--text-strong)]"
         : "text-[var(--text-weak)] hover:text-[var(--text-strong)]"
@@ -72,7 +72,7 @@ export function AppMapHistoryPanel(props: {
         </div>
         <button
           type="button"
-          class="relative grid size-9 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100 focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)]"
+          class="relative grid size-9 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-hover hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100 focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)]"
           aria-label="Close activity"
           onClick={props.onClose}
         >
@@ -189,7 +189,7 @@ export function AppMapHistoryPanel(props: {
                 {(entry) => (
                   <button
                     type="button"
-                    class="group flex min-h-12 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none transition-colors duration-150 hover:bg-[var(--surface-base-hover)] focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[var(--text-strong)]"
+                    class="group flex min-h-12 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none transition-colors duration-hover hover:bg-[var(--surface-base-hover)] focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[var(--text-strong)]"
                     aria-label={`Restore ${entry.title}`}
                     onClick={() => props.onRestore(entry.updatedAt)}
                   >

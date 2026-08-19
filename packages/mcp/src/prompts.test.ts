@@ -293,7 +293,7 @@ test("gets stable prompt snapshots with explicit Relay identities", async () => 
       expected: {
         description: relayMcpPrompts[3].description,
         firstLine:
-          "Plan a run matrix for “capture settings in every language” in App Map map-1, project project-a, using Target target-1.",
+          "Plan a Combine for “capture settings in every language” in App Map map-1, project project-a, using Target target-1.",
         headings: [
           "Safety contract:",
           "Observation and plan (no mutation):",
@@ -448,7 +448,7 @@ test("matrix prompt keeps authoring, preflight, execution, retry, and export on 
         },
       }),
     );
-    assert.match(text, /variables as modifiers/);
+    assert.match(text, /Variables and graph-native scenario Tests/);
     assert.match(text, /relay_app_map_combine_preflight/);
     assert.match(text, /retry only problem cells/i);
     assert.match(text, /Pilot one representative cell first/);

@@ -67,7 +67,7 @@ test("Combine sits next to the test's root screen", () => {
   assert.equal(cards.length, 1);
   assert.equal(cards[0]?.id, "language-x-tour");
   assert.equal(cards[0]?.name, "Language × Open every Settings row");
-  assert.deepEqual(cards[0]?.modifiers, [
+  assert.deepEqual(cards[0]?.variables, [
     { id: "language", name: "Language", values: ["English", "Italiano"] },
   ]);
   assert.deepEqual(cards[0]?.tests, ["Open every Settings row"]);
@@ -117,14 +117,14 @@ test("multiple state sets count worlds × tests instead of flattening their valu
   assert.match(cards[0]?.name ?? "", /Language × Theme/);
 });
 
-test("canvas preview uses the value subset saved with the matrix", () => {
+test("canvas preview uses the value subset saved with the Combine", () => {
   const selected = { ...combine, selected: { language: ["it"] } };
   const cards = canvasCombineCards({ ...map, combines: { [selected.id]: selected } }, () => ({
     position: { x: 0, y: 0 },
     title: "Settings",
   }));
 
-  assert.deepEqual(cards[0]?.modifiers[0]?.values, ["Italiano"]);
+  assert.deepEqual(cards[0]?.variables[0]?.values, ["Italiano"]);
   assert.equal(cards[0]?.cellCount, 1);
 });
 

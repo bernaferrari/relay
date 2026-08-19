@@ -3,87 +3,35 @@ import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 
 export type AppMapCanvasTool = "select" | "hand";
-export type AppMapWorkspaceView = "map" | "screens" | "coverage";
 
-export function AppMapOverviewToolbar(props: {
-  screenCount: number;
-  connectionCount: number;
-  view: AppMapWorkspaceView;
-  proposalCount: number;
+/**
+ * What used to be a permanent floating tab strip over the canvas. The modes it
+ * carried now live in the shell's one mode switcher, so all that is left is the
+ * transient invitation to review what an agent proposed — and it only appears
+ * when there is something to review.
+ */
+export function AppMapProposalPill(props: {
+  count: number;
   shiftForDevice: boolean;
-  wideDevice: boolean;
-  onOpenProposals: () => void;
-  onViewChange: (view: AppMapWorkspaceView) => void;
+  onOpen: () => void;
 }) {
-  // These name three views *of the canvas*, so none of them may reuse a word from the
-  // document switcher ("Test | Canvas") or from the Test workspace ("Live | Last run").
-  const views = [
-    ["map", "map", "Canvas"],
-    ["screens", "grid", "Screens"],
-    ["coverage", "check", "Coverage"],
-  ] as const;
-  const moveViewFocus = (event: KeyboardEvent, index: number) => {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const nextIndex =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? views.length - 1
-          : (index + (event.key === "ArrowRight" ? 1 : -1) + views.length) % views.length;
-    const next = views[nextIndex]![0];
-    props.onViewChange(next);
-    queueMicrotask(() =>
-      document.querySelector<HTMLButtonElement>(`[data-app-map-view="${next}"]`)?.focus(),
-    );
-  };
-
   return (
-    <header
-      class={cn(
-        "absolute top-3 left-1/2 z-20 flex min-h-10 items-center gap-0.5 rounded-xl bg-[color-mix(in_srgb,var(--background-base)_94%,transparent)] p-1 shadow-[var(--map-elevation-control)] backdrop-blur-[14px] transition-transform duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none max-[620px]:top-2",
-      )}
-      style={{
-        transform:
-          props.shiftForDevice && window.innerWidth > 900
-            ? "translateX(calc(-50% - var(--app-map-side-panel-reserve) / 2 + 8px))"
-            : "translateX(-50%)",
-      }}
-      aria-label={`${props.screenCount} ${props.screenCount === 1 ? "screen" : "screens"}, ${props.connectionCount} ${props.connectionCount === 1 ? "path" : "paths"}`}
-    >
-      <div class="flex items-center gap-0.5" role="tablist" aria-label="Canvas view">
-        {views.map(([id, icon, label], index) => (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={props.view === id}
-            tabindex={props.view === id ? 0 : -1}
-            data-app-map-view={id}
-            class={cn(
-              "relative inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-caption font-medium text-[var(--text-weak)] outline-none before:absolute before:-inset-1 before:content-[''] transition-[background-color,color,box-shadow] duration-150 hover:bg-[var(--surface-base)] hover:text-[var(--text-strong)] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--background-base)]",
-              props.view === id &&
-                "bg-[var(--background-base)] text-[var(--text-strong)] shadow-[0_1px_3px_rgb(0_0_0/12%),inset_0_0_0_1px_var(--border-weak-base)]",
-            )}
-            onClick={() => props.onViewChange(id)}
-            onKeyDown={(event) => moveViewFocus(event, index)}
-          >
-            <Icon name={icon} size={11} />
-            <span class="max-[620px]:hidden">{label}</span>
-          </button>
-        ))}
-      </div>
-      <Show when={props.proposalCount > 0}>
-        <span class="h-6 w-px bg-[var(--border-weak-base)]" aria-hidden="true" />
-        <button
-          type="button"
-          class="relative inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-[var(--product-accent-soft)] px-2.5 text-micro font-medium text-[var(--text-interactive-base)] before:absolute before:-inset-0.5 before:content-[''] hover:brightness-105"
-          onClick={props.onOpenProposals}
-        >
-          <Icon name="sparkle" size={11} />
-          {props.proposalCount} {props.proposalCount === 1 ? "proposal" : "proposals"}
-        </button>
-      </Show>
-    </header>
+    <Show when={props.count > 0}>
+      <button
+        type="button"
+        class="absolute top-3 left-1/2 z-20 inline-flex min-h-9 items-center gap-1.5 rounded-full bg-[color-mix(in_srgb,var(--background-base)_94%,transparent)] px-3 text-caption font-medium text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)] backdrop-blur-[14px] transition-[transform,filter] duration-panel ease-drawer hover:brightness-105 motion-reduce:transition-none max-[620px]:top-2"
+        style={{
+          transform:
+            props.shiftForDevice && window.innerWidth > 900
+              ? "translateX(calc(-50% - var(--app-map-side-panel-reserve) / 2 + 8px))"
+              : "translateX(-50%)",
+        }}
+        onClick={props.onOpen}
+      >
+        <Icon name="sparkle" size={12} />
+        {props.count} {props.count === 1 ? "proposal" : "proposals"} to review
+      </button>
+    </Show>
   );
 }
 
@@ -105,7 +53,7 @@ export function AppMapToolbar(props: {
   return (
     <div
       class={cn(
-        "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] left-1/2 z-20 flex items-center gap-0.5 rounded-xl bg-[color-mix(in_srgb,var(--background-base)_95%,transparent)] p-1 shadow-[var(--map-elevation-panel)] backdrop-blur-[16px] transition-transform duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
+        "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] left-1/2 z-20 flex items-center gap-0.5 rounded-xl bg-[color-mix(in_srgb,var(--background-base)_95%,transparent)] p-1 shadow-[var(--map-elevation-panel)] backdrop-blur-[16px] transition-transform duration-panel ease-drawer motion-reduce:transition-none",
       )}
       style={{
         transform:
@@ -119,31 +67,25 @@ export function AppMapToolbar(props: {
       <Show when={!blank()}>
         <button
           type="button"
-          class={cn(
-            mapControlButton,
-            props.tool === "select" &&
-              "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
-          )}
+          class={cn(mapControlButton, props.tool === "select" && mapControlButtonActive)}
           aria-label="Select tool"
           aria-pressed={props.tool === "select"}
           data-tip="Select and move · V"
           onClick={() => props.onToolChange("select")}
         >
           <Icon name="pointer" size={15} />
+          <span class={toolLabel}>Select</span>
         </button>
         <button
           type="button"
-          class={cn(
-            mapControlButton,
-            props.tool === "hand" &&
-              "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
-          )}
+          class={cn(mapControlButton, props.tool === "hand" && mapControlButtonActive)}
           aria-label="Hand tool"
           aria-pressed={props.tool === "hand"}
           data-tip="Pan canvas · H"
           onClick={() => props.onToolChange("hand")}
         >
           <Icon name="hand" size={15} />
+          <span class={toolLabel}>Hand</span>
         </button>
         <span class="mx-0.5 h-6 w-px bg-[var(--border-weak-base)]" aria-hidden="true" />
       </Show>
@@ -155,14 +97,14 @@ export function AppMapToolbar(props: {
         onClick={props.onAddNote}
       >
         <Icon name="edit" size={15} />
+        <span class={toolLabel}>Note</span>
       </button>
       <Show when={!blank()}>
         <button
           type="button"
           class={cn(
             mapControlButton,
-            props.explorationState === "running" &&
-              "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
+            props.explorationState === "running" && mapControlButtonActive,
           )}
           aria-label="Map with AI"
           aria-pressed={props.explorationState === "running"}
@@ -179,25 +121,35 @@ export function AppMapToolbar(props: {
               <i class="absolute -top-1 -right-1 size-1.5 rounded-full bg-[var(--icon-success-base)] motion-safe:animate-pulse" />
             </Show>
           </span>
+          <span class={toolLabel}>
+            {props.explorationState === "running" ? "Exploring" : "Map with AI"}
+          </span>
         </button>
       </Show>
       <span class="mx-0.5 h-6 w-px bg-[var(--border-weak-base)]" aria-hidden="true" />
       <button
         type="button"
-        class={cn(
-          mapControlButton,
-          props.deviceOpen && "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
-        )}
+        class={cn(mapControlButton, props.deviceOpen && mapControlButtonActive)}
         aria-label="Toggle live device"
         aria-pressed={props.deviceOpen}
         data-tip="Live device · D"
         onClick={props.onToggleDevice}
       >
         <Icon name="smartphone" size={15} />
+        <span class={toolLabel}>Device</span>
       </button>
     </div>
   );
 }
 
 const mapControlButton =
-  "canvas-tool-control relative grid h-10 min-w-10 place-items-center rounded-lg px-2 text-micro text-[var(--text-base)] outline-none before:absolute before:-inset-0.5 before:content-[''] transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--background-base)] disabled:cursor-not-allowed disabled:opacity-35";
+  "canvas-tool-control relative inline-flex h-10 min-w-10 items-center justify-center gap-1.5 rounded-lg px-2.5 text-caption font-medium text-[var(--text-base)] outline-none before:absolute before:-inset-0.5 before:content-[''] transition-[background-color,color,transform] duration-hover hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--background-base)] disabled:cursor-not-allowed disabled:opacity-35";
+
+const mapControlButtonActive =
+  "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]";
+
+/**
+ * A tool nobody can name is a tool nobody uses. The labels drop out only once
+ * the canvas is too narrow to spare the width, where the tooltip still answers.
+ */
+const toolLabel = "max-[1100px]:hidden";

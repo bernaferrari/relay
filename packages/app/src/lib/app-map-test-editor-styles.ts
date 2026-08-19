@@ -8,7 +8,7 @@ import { cn } from "./cn";
 export const testEditorInput = cn(
   "min-h-9 w-full rounded-md border border-border-weak-base bg-background-base px-2.5 py-1",
   "text-body text-text-strong outline-none",
-  "transition-[border-color,box-shadow] duration-150 motion-reduce:transition-none",
+  "transition-[border-color,box-shadow] duration-hover motion-reduce:transition-none",
   "placeholder:text-text-weaker",
   "hover:enabled:border-border-base",
   "focus-visible:border-border-focus focus-visible:ring-2 focus-visible:ring-surface-info-weak",
@@ -29,7 +29,7 @@ export const testEditorHint = "text-caption/[1.4] text-text-weak";
 
 /** Row inside a rail or list: full width, quiet hover, keyboard-visible focus. */
 export const testQuietRow = cn(
-  "w-full rounded-md text-left transition-colors duration-150 motion-reduce:transition-none",
+  "w-full rounded-md text-left transition-colors duration-hover motion-reduce:transition-none",
   "hover:bg-surface-base-hover",
   "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-strong-focus",
 );

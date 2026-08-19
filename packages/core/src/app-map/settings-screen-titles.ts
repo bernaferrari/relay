@@ -1,18 +1,26 @@
 /**
- * Named Grok Settings pages. Child sheets often keep a toolbar title of
- * "Settings", so Relay must prefer these labels over hub chrome when deciding
- * whether two observations are the same screen.
+ * Settings screen identity, in the words the app profiles supply.
+ *
+ * A child sheet often keeps the hub's toolbar title, so Relay has to prefer the
+ * page's own name when deciding whether two observations are the same screen.
+ * Which names those are is app knowledge and lives in `discovery-app-profiles`,
+ * not here: this module only owns the comparison.
  */
-export const SETTINGS_CHILD_TITLES =
-  /^(Appearance|Haptics|Widget|Usage|Advanced|Voice|Memory|Connectors|Skills|Customize Grok|NSFW Preferences|Shared Conversations|Data Controls|Help & Support|Kids Mode|Data & Information|Voice Library|Projects|Automations)$/i;
-
-export const SETTINGS_HUB_OR_CHILD_TITLES =
-  /^(Settings|Appearance|Haptics|Widget|Usage|Advanced|Voice|Memory|Connectors|Skills|Customize Grok|NSFW Preferences|Shared Conversations|Data Controls|Help & Support|Kids Mode)$/i;
+import {
+  isSettingsChildTitle as isProfileSettingsChildTitle,
+  isSettingsHubTitle,
+} from "../discovery-app-profiles.js";
 
 /** True for a distinct Settings child page title (not the Settings hub). */
 export function isSettingsChildTitle(title: string | undefined): boolean {
   const trimmed = title?.trim();
-  return Boolean(trimmed && SETTINGS_CHILD_TITLES.test(trimmed));
+  return Boolean(trimmed && !isSettingsHubTitle(trimmed) && isProfileSettingsChildTitle(trimmed));
+}
+
+/** True for the Settings hub itself or any of its named child pages. */
+export function isSettingsHubOrChildTitle(title: string | undefined): boolean {
+  const trimmed = title?.trim();
+  return Boolean(trimmed && (isSettingsHubTitle(trimmed) || isProfileSettingsChildTitle(trimmed)));
 }
 
 /**
@@ -26,8 +34,8 @@ export function settingsScreenTitlesConflict(
   const a = left?.trim();
   const b = right?.trim();
   if (!a || !b || a === b) return false;
-  const aHub = /^Settings$/i.test(a);
-  const bHub = /^Settings$/i.test(b);
+  const aHub = isSettingsHubTitle(a);
+  const bHub = isSettingsHubTitle(b);
   const aChild = isSettingsChildTitle(a);
   const bChild = isSettingsChildTitle(b);
   if ((aHub && bChild) || (bHub && aChild)) return true;
@@ -42,7 +50,7 @@ export function preferSettingsChildTitle(
 ): string | undefined {
   const title = observedTitle?.trim();
   const label = preferredLabel?.trim();
-  if (label && isSettingsChildTitle(label) && (!title || /^Settings$/i.test(title))) {
+  if (label && isSettingsChildTitle(label) && (!title || isSettingsHubTitle(title))) {
     return label;
   }
   return title || label || undefined;

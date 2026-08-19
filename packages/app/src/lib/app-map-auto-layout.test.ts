@@ -2,8 +2,27 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { compactCanvasPositions } from "./app-map-auto-layout";
 import { DEFAULT_CANVAS_GRID_SPACING } from "./app-map-grid";
+import {
+  CARD_PITCH_X,
+  SCREEN_CARD_HEIGHT,
+  SCREEN_CARD_WIDTH,
+  SCREEN_FRAME_TOP,
+  screenLabelBounds,
+} from "./app-map-screen-layout";
 
-test("lays out every screen once in a tall left-to-right topology", () => {
+/**
+ * A map reads the way text does: down the rows, and left to right along one.
+ *
+ * A fan the layout packs side by side still has to arrive in the order it was
+ * recorded, so "before" is the reading order rather than a smaller y. Order
+ * tests use this so that packing a fan cannot quietly reorder it.
+ */
+function readsBefore(first?: { x: number; y: number }, second?: { x: number; y: number }): boolean {
+  if (!first || !second) return false;
+  return first.y < second.y || (first.y === second.y && first.x < second.x);
+}
+
+test("lays out every screen once and packs a wide fan of terminal screens", () => {
   const screens = Array.from({ length: 43 }, (_, index) => ({ id: `screen-${index}` }));
   const transitions = screens.slice(1).map((screen, index) => ({
     fromScreenId: index < 14 ? "screen-0" : `screen-${index}`,
@@ -21,9 +40,20 @@ test("lays out every screen once in a tall left-to-right topology", () => {
     screens.length,
   );
   assert.equal(positions["screen-0"]?.x, 0);
+  // Thirteen of the fourteen branches open nothing else. One row each is what
+  // turned this shape — the real Grok Settings hub — into a ribbon.
+  const fan = Array.from({ length: 13 }, (_, index) => positions[`screen-${index + 1}`]!);
   assert.ok(
-    new Set(Object.values(positions).map(({ y }) => y)).size >= 14,
-    "wide branches should spend vertical space before horizontal space",
+    new Set(fan.map(({ y }) => y)).size <= 4,
+    "thirteen terminal screens must not spend thirteen rows",
+  );
+  assert.ok(
+    new Set(fan.map(({ x }) => x)).size > 1,
+    "a packed fan reads across columns, not down one",
+  );
+  assert.ok(
+    fan.every(({ x, y }) => x > positions["screen-0"]!.x && y >= positions["screen-0"]!.y),
+    "the fan stays inside its own band, past the screen that opens it",
   );
   const cards = Object.values(positions);
   for (let left = 0; left < cards.length; left += 1) {
@@ -36,6 +66,366 @@ test("lays out every screen once in a tall left-to-right topology", () => {
       );
     }
   }
+});
+
+test("wraps a wide fan of one-row branches in the order they were recorded", () => {
+  // The real Grok Settings hub: rows that open a single screen you come back
+  // from, mixed in with rows that open nothing at all.
+  const fan = ["appearance", "memory", "haptics", "usage", "advanced", "widget", "skills"];
+  const graph = {
+    screens: ["settings", "import", "always-ask", ...fan].map((id) => ({
+      id,
+    })),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      { id: "appearance", y: 0.1 },
+      { id: "memory", y: 0.2 },
+      { id: "haptics", y: 0.3 },
+      { id: "usage", y: 0.4 },
+      { id: "advanced", y: 0.5 },
+      { id: "widget", y: 0.6 },
+      { id: "skills", y: 0.7 },
+    ].map((row) => ({
+      fromScreenId: "settings",
+      destination: { kind: "screen", screenId: row.id },
+      sourceAnchor: { point: { x: 0.5, y: row.y } },
+    })),
+  };
+  graph.transitions.push(
+    {
+      fromScreenId: "memory",
+      destination: { kind: "screen", screenId: "import" },
+      sourceAnchor: { point: { x: 0.5, y: 0.5 } },
+    },
+    {
+      fromScreenId: "advanced",
+      destination: { kind: "screen", screenId: "always-ask" },
+      sourceAnchor: { point: { x: 0.5, y: 0.5 } },
+    },
+  );
+  const positions = compactCanvasPositions(graph);
+
+  assert.equal(
+    positions.appearance?.y,
+    positions.settings?.y,
+    "the first branch of the fan keeps the hub's row",
+  );
+  // A one-row chain belongs on the shelf and keeps its own reach: its
+  // continuation stays on its row, in the columns the shelf reserved for it.
+  assert.equal(positions.memory?.y, positions.import?.y);
+  assert.ok((positions.import?.x ?? 0) > (positions.memory?.x ?? 0));
+  assert.equal(positions.advanced?.y, positions["always-ask"]?.y);
+  assert.ok((positions["always-ask"]?.x ?? 0) > (positions.advanced?.x ?? 0));
+  assert.equal(
+    new Set(fan.map((id) => positions[id]!.y)).size,
+    2,
+    "seven one-row branches wrap into a block instead of seven rows",
+  );
+  for (let index = 1; index < fan.length; index += 1) {
+    assert.ok(
+      readsBefore(positions[fan[index - 1]!], positions[fan[index]!]),
+      `${fan[index - 1]} should still be read before ${fan[index]}`,
+    );
+  }
+  const cards = Object.values(positions);
+  for (let left = 0; left < cards.length; left += 1) {
+    for (let right = left + 1; right < cards.length; right += 1) {
+      const a = cards[left]!;
+      const b = cards[right]!;
+      assert.ok(
+        a.x + SCREEN_CARD_WIDTH <= b.x ||
+          b.x + SCREEN_CARD_WIDTH <= a.x ||
+          a.y + SCREEN_CARD_HEIGHT <= b.y ||
+          b.y + SCREEN_CARD_HEIGHT <= a.y,
+        "a wrapped shelf must not overlap the chains it packs",
+      );
+    }
+  }
+  for (const [id, point] of Object.entries(positions)) {
+    const band = screenLabelBounds(point);
+    for (const [otherId, card] of Object.entries(positions)) {
+      if (otherId === id) continue;
+      assert.ok(
+        !(
+          band.left < card.x + SCREEN_CARD_WIDTH &&
+          card.x < band.right &&
+          band.top < card.y + SCREEN_CARD_HEIGHT &&
+          card.y + SCREEN_FRAME_TOP < band.bottom
+        ),
+        `the name of ${id} paints inside the card of ${otherId}`,
+      );
+    }
+  }
+});
+
+test("packs a small fan side by side rather than spending a row on each", () => {
+  // Four screens that open nothing used to spend four rows, and a row costs
+  // four times what a column does on a canvas twice as wide as it is tall. They
+  // are packed into a block instead — wrapped to whichever width leaves the map
+  // nearest that proportion — and the block is read in the recorded order.
+  const ordered = ["appearance", "haptics", "usage", "widget"];
+  const positions = compactCanvasPositions({
+    screens: ["settings", ...ordered].map((id) => ({ id })),
+    flows: [{ screenId: "settings" }],
+    transitions: ordered.map((id, index) => ({
+      fromScreenId: "settings",
+      destination: { kind: "screen", screenId: id },
+      sourceAnchor: { point: { x: 0.5, y: (index + 1) / 5 } },
+    })),
+  });
+
+  assert.ok(
+    new Set(ordered.map((id) => positions[id]!.y)).size < ordered.length,
+    "four screens that open nothing should not spend a row each",
+  );
+  for (let index = 1; index < ordered.length; index += 1) {
+    assert.ok(
+      readsBefore(positions[ordered[index - 1]!], positions[ordered[index]!]),
+      `${ordered[index - 1]} should still be read before ${ordered[index]}`,
+    );
+  }
+});
+
+test("packs a fan of two dead ends side by side", () => {
+  const ordered = ["appearance", "haptics"];
+  const positions = compactCanvasPositions({
+    screens: ["settings", ...ordered].map((id) => ({ id })),
+    flows: [{ screenId: "settings" }],
+    transitions: ordered.map((id, index) => ({
+      fromScreenId: "settings",
+      destination: { kind: "screen", screenId: id },
+      sourceAnchor: { point: { x: 0.5, y: (index + 1) / 3 } },
+    })),
+  });
+
+  assert.equal(positions.settings?.y, positions.appearance?.y);
+  assert.equal(positions.appearance?.y, positions.haptics?.y);
+  assert.ok(readsBefore(positions.appearance, positions.haptics));
+});
+
+test("leaves a fan of two continuing journeys a row each", () => {
+  // Packing this pair would put both branches on the parent row, which is the
+  // one row the branch optimizer has to give away. A pair only packs when one
+  // of its sides opens nothing, so there was no promotion to lose.
+  const positions = compactCanvasPositions({
+    screens: ["settings", "usage", "usage-detail", "data-controls", "advanced"].map((id) => ({
+      id,
+    })),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "usage" } },
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "data-controls" } },
+      { fromScreenId: "usage", destination: { kind: "screen", screenId: "usage-detail" } },
+      { fromScreenId: "data-controls", destination: { kind: "screen", screenId: "advanced" } },
+    ],
+  });
+
+  assert.equal(positions.usage?.x, positions["data-controls"]?.x);
+  assert.notEqual(positions.usage?.y, positions["data-controls"]?.y);
+  assert.ok(readsBefore(positions.usage, positions["data-controls"]));
+});
+
+test("re-flows a shelf wider when the map is still taller than it is read", () => {
+  // Four sections, each opening a fan of terminal screens. At a fixed seven
+  // columns every fan wraps to two rows and the map ends up far taller than the
+  // pane it is read in, while the columns a wider shelf needs are columns that
+  // pane was giving away for free.
+  const fanOf = (hub: string) => Array.from({ length: 9 }, (_, index) => `${hub}-${index}`);
+  const hubs = ["appearance", "memory", "usage", "connectors"];
+  const positions = compactCanvasPositions({
+    screens: ["settings", ...hubs, ...hubs.flatMap(fanOf)].map((id) => ({ id })),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      ...hubs.map((hub) => ({
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: hub },
+      })),
+      ...hubs.flatMap((hub) =>
+        fanOf(hub).map((id) => ({
+          fromScreenId: hub,
+          destination: { kind: "screen", screenId: id },
+        })),
+      ),
+    ],
+  });
+
+  for (const hub of hubs) {
+    const fan = fanOf(hub).map((id) => positions[id]!);
+    assert.equal(new Set(fan.map(({ y }) => y)).size, 1, `${hub} opens nine on one row`);
+    for (let index = 1; index < fan.length; index += 1) {
+      assert.ok(readsBefore(fan[index - 1], fan[index]), "a re-flowed shelf keeps its order");
+    }
+  }
+});
+
+test("wraps a shelf narrower rather than lay a small map out in a strip", () => {
+  // A shelf wide enough to hold every screen makes a five-screen map a strip
+  // seven cards long and one deep, which is width-bound: it now reads smaller
+  // than the same five screens would three across.
+  const ordered = ["display", "sound", "storage", "battery", "apps", "about"];
+  const positions = compactCanvasPositions({
+    screens: ["settings", ...ordered].map((id) => ({ id })),
+    flows: [{ screenId: "settings" }],
+    transitions: ordered.map((id) => ({
+      fromScreenId: "settings",
+      destination: { kind: "screen", screenId: id },
+    })),
+  });
+
+  const columns = new Set(ordered.map((id) => positions[id]!.x)).size;
+  assert.ok(columns < ordered.length, `six terminal screens should not lie in one strip`);
+  for (let index = 1; index < ordered.length; index += 1) {
+    assert.ok(
+      readsBefore(positions[ordered[index - 1]!], positions[ordered[index]!]),
+      "a narrowed shelf keeps its order",
+    );
+  }
+});
+
+test("reserves the name band above every card on a dense map", () => {
+  // One hub with a wide fan-out, each branch continuing, is the shape of the
+  // real Grok Settings map: it is where rows are packed tightest.
+  const screens = Array.from({ length: 44 }, (_, index) => ({ id: `screen-${index}` }));
+  const transitions = screens.slice(1).map((screen, index) => ({
+    fromScreenId: index < 15 ? "screen-0" : `screen-${index - 14}`,
+    destination: { kind: "screen", screenId: screen.id },
+  }));
+  const positions = compactCanvasPositions({
+    screens,
+    flows: [{ screenId: "screen-0" }],
+    transitions,
+  });
+
+  for (const [id, label] of Object.entries(positions)) {
+    const band = screenLabelBounds(label);
+    for (const [otherId, card] of Object.entries(positions)) {
+      if (otherId === id) continue;
+      const overlapsFrame =
+        band.left < card.x + SCREEN_CARD_WIDTH &&
+        card.x < band.right &&
+        band.top < card.y + SCREEN_CARD_HEIGHT &&
+        card.y + SCREEN_FRAME_TOP < band.bottom;
+      assert.ok(!overlapsFrame, `the name of ${id} paints inside the card of ${otherId}`);
+    }
+  }
+});
+
+test("wraps screens with no path into a band instead of extending the spine", () => {
+  // The real Grok Settings crawl: one journey plus a drift of states it never
+  // found a way out of. One row each turned a readable tree into a ribbon.
+  const journey = ["settings", "appearance", "usage"].map((id) => ({ id }));
+  const loose = Array.from({ length: 9 }, (_, index) => ({ id: `orphan-${index}` }));
+  const positions = compactCanvasPositions({
+    screens: [...journey, ...loose],
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "appearance" } },
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "usage" } },
+    ],
+  });
+
+  const journeyBottom = Math.max(
+    ...journey.map((screen) => positions[screen.id]!.y + SCREEN_CARD_HEIGHT),
+  );
+  const band = loose.map((screen) => positions[screen.id]!);
+  for (const point of band) {
+    assert.ok(point.y > journeyBottom, "a loose capture must sit below the journeys, not beside");
+  }
+  assert.ok(
+    new Set(band.map((point) => point.x)).size >= 4,
+    "loose captures wrap across columns rather than stacking in one",
+  );
+  assert.ok(
+    new Set(band.map((point) => point.y)).size <= 3,
+    "nine unconnected screens must not spend nine rows",
+  );
+  const cards = Object.values(positions);
+  for (let left = 0; left < cards.length; left += 1) {
+    for (let right = left + 1; right < cards.length; right += 1) {
+      const a = cards[left]!;
+      const b = cards[right]!;
+      assert.ok(
+        a.x + SCREEN_CARD_WIDTH <= b.x ||
+          b.x + SCREEN_CARD_WIDTH <= a.x ||
+          a.y + SCREEN_CARD_HEIGHT <= b.y ||
+          b.y + SCREEN_CARD_HEIGHT <= a.y,
+        "the band overlaps the map",
+      );
+    }
+  }
+});
+
+test("packs short side paths into one band under the journey", () => {
+  // The rest of the real Grok Settings crawl: the journey, plus states it
+  // reached again and left holding two screens each. Nothing opens them, so a
+  // band of their own was a full map width spent on two cards.
+  const journey = ["hub", "a", "b", "c", "d", "e", "f", "g"];
+  const sides = ["side-a", "tail-a", "side-b", "tail-b"];
+  const positions = compactCanvasPositions({
+    screens: [...journey, ...sides].map((id) => ({ id })),
+    flows: [{ screenId: "hub" }],
+    transitions: [
+      { fromScreenId: "hub", destination: { kind: "screen", screenId: "a" } },
+      { fromScreenId: "a", destination: { kind: "screen", screenId: "b" } },
+      { fromScreenId: "b", destination: { kind: "screen", screenId: "c" } },
+      { fromScreenId: "c", destination: { kind: "screen", screenId: "d" } },
+      { fromScreenId: "hub", destination: { kind: "screen", screenId: "e" } },
+      { fromScreenId: "hub", destination: { kind: "screen", screenId: "f" } },
+      { fromScreenId: "hub", destination: { kind: "screen", screenId: "g" } },
+      { fromScreenId: "side-a", destination: { kind: "screen", screenId: "tail-a" } },
+      { fromScreenId: "side-b", destination: { kind: "screen", screenId: "tail-b" } },
+    ],
+  });
+
+  const journeyBottom = Math.max(...journey.map((id) => positions[id]!.y + SCREEN_CARD_HEIGHT));
+  for (const id of sides) {
+    assert.ok(positions[id]!.y > journeyBottom, "a side path belongs under the journey");
+  }
+  assert.equal(positions["side-a"]?.y, positions["side-b"]?.y, "both side paths share one band");
+  assert.ok(
+    positions["side-b"]!.x - positions["tail-a"]!.x > CARD_PITCH_X,
+    "an empty column keeps the second path from reading as a continuation of the first",
+  );
+  assert.ok(
+    Math.max(...sides.map((id) => positions[id]!.x)) <=
+      Math.max(...journey.map((id) => positions[id]!.x)),
+    "packing side paths must not make the map wider than its journey already is",
+  );
+  const cards = Object.values(positions);
+  for (let left = 0; left < cards.length; left += 1) {
+    for (let right = left + 1; right < cards.length; right += 1) {
+      const first = cards[left]!;
+      const second = cards[right]!;
+      assert.ok(
+        first.x + SCREEN_CARD_WIDTH <= second.x ||
+          second.x + SCREEN_CARD_WIDTH <= first.x ||
+          first.y + SCREEN_CARD_HEIGHT <= second.y ||
+          second.y + SCREEN_CARD_HEIGHT <= first.y,
+        "a packed band overlaps the map",
+      );
+    }
+  }
+});
+
+test("keeps an unconnected scroll chain whole rather than filing it as loose captures", () => {
+  const positions = compactCanvasPositions({
+    screens: ["settings", "settings-more", "stray"].map((id) => ({ id })),
+    flows: [],
+    transitions: [
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "settings-more" },
+        label: "Scroll",
+      },
+    ],
+  });
+
+  assert.equal(positions.settings?.x, positions["settings-more"]?.x);
+  assert.ok((positions["settings-more"]?.y ?? 0) > (positions.settings?.y ?? 0));
+  assert.ok(
+    (positions.stray?.y ?? 0) > (positions["settings-more"]?.y ?? 0),
+    "the lone capture belongs under the chain, not inside it",
+  );
 });
 
 test("auto-layout always places new cards on the fixed snap lattice", () => {
@@ -140,14 +530,14 @@ test("places each viewport state after the previous state's complete branch bloc
   const positions = compactCanvasPositions(graph);
 
   assert.equal(positions.settings?.y, positions.appearance?.y);
-  assert.ok((positions.haptics?.y ?? 0) > (positions.appearance?.y ?? 0));
-  assert.ok((positions.widget?.y ?? 0) > (positions.haptics?.y ?? 0));
+  assert.ok(readsBefore(positions.appearance, positions.haptics));
+  assert.ok(readsBefore(positions.haptics, positions.widget));
   assert.ok(
     (positions.more?.y ?? 0) > (positions.widget?.y ?? 0),
     "the next scroll state starts below the complete preceding branch",
   );
   assert.equal(positions.more?.y, positions.memory?.y);
-  assert.ok((positions.skills?.y ?? 0) > (positions.memory?.y ?? 0));
+  assert.ok(readsBefore(positions.memory, positions.skills));
 });
 
 test("breaks cycles for ranking without producing giant coordinates", () => {
@@ -322,6 +712,44 @@ test("never promotes a later recorded action above an earlier one to improve rou
   assert.ok((positions.usage?.y ?? 0) < (positions["data-controls"]?.y ?? 0));
 });
 
+test("will not read a fan backwards to straighten a cross-link", () => {
+  const graph = {
+    screens: [
+      "settings",
+      "account",
+      "appearance",
+      "usage",
+      "data-controls",
+      "help",
+      "advanced",
+      "usage-detail",
+      "end",
+    ].map((id) => ({ id })),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      // The same cross-link as the promotion above, but Data controls is now the
+      // fourth thing on the screen rather than the second. Promoting it would
+      // read four screens out of the order somebody opened them in.
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "account" } },
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "appearance" } },
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "usage" } },
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "data-controls" } },
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "help" } },
+      { fromScreenId: "usage", destination: { kind: "screen", screenId: "usage-detail" } },
+      { fromScreenId: "data-controls", destination: { kind: "screen", screenId: "help" } },
+      { fromScreenId: "data-controls", destination: { kind: "screen", screenId: "advanced" } },
+      { fromScreenId: "usage-detail", destination: { kind: "screen", screenId: "end" } },
+    ],
+  };
+
+  const positions = compactCanvasPositions(graph);
+
+  assert.ok(readsBefore(positions.account, positions.appearance));
+  assert.ok(readsBefore(positions.appearance, positions.usage));
+  assert.ok(readsBefore(positions.usage, positions["data-controls"]));
+  assert.ok(readsBefore(positions["data-controls"], positions.help));
+});
+
 test("preserves recorded sibling order while keeping each continuation on its branch row", () => {
   const graph = {
     // Deliberately scramble storage order. The path order is the user's UI order.
@@ -340,14 +768,14 @@ test("preserves recorded sibling order while keeping each continuation on its br
   };
   const positions = compactCanvasPositions(graph);
 
-  assert.ok((positions.data?.y ?? 0) < (positions.memory?.y ?? 0));
-  assert.ok((positions.memory?.y ?? 0) < (positions.customize?.y ?? 0));
+  assert.ok(readsBefore(positions.data, positions.memory));
+  assert.ok(readsBefore(positions.memory, positions.customize));
   assert.equal(positions.data?.y, positions.filter?.y);
   assert.equal(positions.memory?.y, positions.import?.y);
   assert.equal(positions.import?.y, positions.paste?.y);
   assert.ok(
-    (positions.memory?.y ?? 0) - (positions.data?.y ?? 0) > 278,
-    "separate branches should have a visible lane gap",
+    (positions.customize?.x ?? 0) > (positions.paste?.x ?? 0),
+    "a branch packed beside another starts past the whole reach of it",
   );
 });
 
@@ -376,8 +804,8 @@ test("uses captured source action order for a fan-out even when transitions were
 
   const positions = compactCanvasPositions(graph);
 
-  assert.ok((positions.top?.y ?? 0) < (positions.middle?.y ?? 0));
-  assert.ok((positions.middle?.y ?? 0) < (positions.bottom?.y ?? 0));
+  assert.ok(readsBefore(positions.top, positions.middle));
+  assert.ok(readsBefore(positions.middle, positions.bottom));
 });
 
 test("uses horizontal source-anchor order for top and bottom port fans", () => {
@@ -402,7 +830,7 @@ test("uses horizontal source-anchor order for top and bottom port fans", () => {
 
   const positions = compactCanvasPositions(graph);
 
-  assert.ok((positions["left-action"]?.y ?? 0) < (positions["right-action"]?.y ?? 0));
+  assert.ok(readsBefore(positions["left-action"], positions["right-action"]));
 });
 
 test("orders sibling targets by the captured control rect centre, not an arbitrary tap", () => {
@@ -441,8 +869,8 @@ test("orders sibling targets by the captured control rect centre, not an arbitra
 
   const positions = compactCanvasPositions(graph);
 
-  assert.ok((positions.top?.y ?? 0) < (positions.middle?.y ?? 0));
-  assert.ok((positions.middle?.y ?? 0) < (positions.bottom?.y ?? 0));
+  assert.ok(readsBefore(positions.top, positions.middle));
+  assert.ok(readsBefore(positions.middle, positions.bottom));
 });
 
 test("uses the source frame's displayed orientation when ordering an anchored fan", () => {
@@ -479,8 +907,8 @@ test("uses the source frame's displayed orientation when ordering an anchored fa
   });
 
   assert.ok(
-    (positions["displayed-top"]?.y ?? 0) < (positions["displayed-bottom"]?.y ?? 0),
-    "the displayed top action should stay above the displayed bottom action",
+    readsBefore(positions["displayed-top"], positions["displayed-bottom"]),
+    "the displayed top action should still be read before the displayed bottom action",
   );
 });
 
@@ -524,11 +952,21 @@ test("keeps Grok Settings iPad branches in the recorded control order", () => {
   const positions = compactCanvasPositions(graph);
   const ordered = ["usage", "appearance", "customize", "skills", "connectors"];
 
+  // Five screens that open nothing else wrap into a block rather than a column,
+  // so the recorded control order reads as one wrapped list: left to right, then
+  // down to the next row.
   for (let index = 1; index < ordered.length; index += 1) {
-    const previous = positions[ordered[index - 1]!]!.y;
-    const next = positions[ordered[index]!]!.y;
-    assert.ok(previous < next, `${ordered[index - 1]} should remain above ${ordered[index]}`);
+    const previous = positions[ordered[index - 1]!]!;
+    const next = positions[ordered[index]!]!;
+    assert.ok(
+      next.y > previous.y || (next.y === previous.y && next.x > previous.x),
+      `${ordered[index - 1]} should still be read before ${ordered[index]}`,
+    );
   }
+  assert.ok(
+    new Set(ordered.map((id) => positions[id]!.y)).size < ordered.length,
+    "the fan should not spend one row per screen",
+  );
   for (const point of Object.values(positions)) {
     assert.equal(point.x % DEFAULT_CANVAS_GRID_SPACING, 0);
     assert.equal(point.y % DEFAULT_CANVAS_GRID_SPACING, 0);
@@ -557,5 +995,5 @@ test("uses durable transition order for equal recorded source coordinates", () =
   const second = compactCanvasPositions(graph);
 
   assert.deepEqual(first, second);
-  assert.ok((first.first?.y ?? 0) < (first.second?.y ?? 0));
+  assert.ok(readsBefore(first.first, first.second));
 });

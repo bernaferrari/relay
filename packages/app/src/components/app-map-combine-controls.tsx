@@ -29,7 +29,7 @@ function candidateDescription(candidate: TestCandidate): string {
   return `${count} ${count === 1 ? "step" : "steps"} · graph Test`;
 }
 
-function modifierMethodLabel(variable: AppMapVariable): string {
+function variableMethodLabel(variable: AppMapVariable): string {
   if (variable.apply.kind === "appLocale") return "Android app language";
   if (variable.apply.kind === "toggle") return "toggle";
   const opensWithPath = Boolean(
@@ -54,7 +54,7 @@ export function AppMapCombineHeader(props: {
     <header class="flex items-start gap-3 border-b border-[var(--border-weak-base)] px-4 py-3.5">
       <div class="min-w-0 flex-1">
         <p class="m-0 text-micro font-semibold uppercase tracking-[0.06em] text-[var(--text-weaker)]">
-          Run matrix
+          Combine
         </p>
         <h2 class="m-0 mt-0.5 truncate text-title/[1.25] font-semibold tracking-[-0.02em] text-[var(--text-strong)]">
           {props.headline}
@@ -64,7 +64,7 @@ export function AppMapCombineHeader(props: {
       <button
         type="button"
         class="grid size-10 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
-        aria-label="Close run matrix"
+        aria-label="Close combine"
         onClick={props.onClose}
       >
         <Icon name="x" size={14} />
@@ -74,16 +74,16 @@ export function AppMapCombineHeader(props: {
 }
 
 export function AppMapCombineStrategy(props: {
-  modifierCount: number;
+  variableCount: number;
   strategy: CaseExpansionStrategy;
   onChange: (strategy: CaseExpansionStrategy) => void;
 }) {
   return (
-    <Show when={props.modifierCount > 1}>
+    <Show when={props.variableCount > 1}>
       <section class="grid gap-2" aria-labelledby="coverage-title">
         <div class={copyStack}>
           <h3 id="coverage-title" class={cn(copyTitle, "m-0 text-caption font-semibold")}>
-            2. Multiply modifiers
+            2. Multiply variables
           </h3>
           <p class={cn(copyDescription, "m-0 text-micro")}>
             Choose whether every value meets every other value.
@@ -92,7 +92,7 @@ export function AppMapCombineStrategy(props: {
         <div
           class={cn(
             "grid gap-1 rounded-xl bg-[var(--surface-base)] p-1",
-            props.modifierCount > 2 ? "grid-cols-3" : "grid-cols-2",
+            props.variableCount > 2 ? "grid-cols-3" : "grid-cols-2",
           )}
           role="radiogroup"
           aria-label="Value coverage"
@@ -107,7 +107,7 @@ export function AppMapCombineStrategy(props: {
             label="Match rows"
             onClick={() => props.onChange("zip")}
           />
-          <Show when={props.modifierCount > 2}>
+          <Show when={props.variableCount > 2}>
             <StrategyButton
               active={props.strategy === "pairwise"}
               label="Every pair"
@@ -135,8 +135,8 @@ export function AppMapCombinePlan(props: {
   projection: CombineProjection;
   busy: boolean;
   canRunOnDevice: boolean;
-  onCreateModifier: () => void;
-  onEditModifier: (id: string) => void;
+  onCreateVariable: () => void;
+  onEditVariable: (id: string) => void;
   onToggleVariable: (variable: AppMapVariable) => void;
   onToggleValues: (id?: string) => void;
   onValuesChange: (variableId: string, ids: string[]) => void;
@@ -149,21 +149,24 @@ export function AppMapCombinePlan(props: {
     <>
       <section
         class="grid scroll-mt-3 gap-2 outline-none"
-        aria-labelledby="matrix-states-title"
-        data-matrix-section="modifiers"
+        aria-labelledby="combine-variables-title"
+        data-combine-section="variables"
         tabIndex={-1}
       >
         <div class="flex min-h-8 items-center justify-between gap-2">
           <div class={copyStack}>
-            <h3 id="matrix-states-title" class={cn(copyTitle, "m-0 text-caption font-semibold")}>
-              1. Choose modifiers
+            <h3
+              id="combine-variables-title"
+              class={cn(copyTitle, "m-0 text-caption font-semibold")}
+            >
+              1. Choose Variables
             </h3>
             <p class={cn(copyDescription, "m-0 text-micro")}>
-              A modifier changes one thing, then returns to the test start.
+              A Variable changes one thing, then returns to the Test start.
             </p>
           </div>
-          <Button variant="ghost" size="sm" onClick={props.onCreateModifier}>
-            <Icon name="plus" size={12} /> New modifier
+          <Button variant="ghost" size="sm" onClick={props.onCreateVariable}>
+            <Icon name="plus" size={12} /> New Variable
           </Button>
         </div>
 
@@ -173,11 +176,11 @@ export function AppMapCombinePlan(props: {
             <button
               type="button"
               class="grid min-h-20 place-items-center rounded-xl border border-dashed border-[var(--border-strong-base)] px-4 text-center hover:bg-[var(--surface-base-hover)]"
-              onClick={props.onCreateModifier}
+              onClick={props.onCreateVariable}
             >
               <span class={cn(copyStack, "items-center")}>
                 <strong class={cn(copyTitle, "block text-caption")}>
-                  Create the first modifier
+                  Create the first Variable
                 </strong>
                 <span class={cn(copyDescription, "block text-micro")}>
                   Teach Relay a language, account, theme, model, or another list.
@@ -207,7 +210,7 @@ export function AppMapCombinePlan(props: {
                           </strong>
                           <span class={cn(copyDescription, "block text-micro tabular-nums")}>
                             {props.valuesFor(variable).length} of {variable.options.length} values ·{" "}
-                            {modifierMethodLabel(variable)}
+                            {variableMethodLabel(variable)}
                           </span>
                         </span>
                       </button>
@@ -228,9 +231,9 @@ export function AppMapCombinePlan(props: {
                         <button
                           type="button"
                           class="grid size-10 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
-                          aria-label={`Edit ${variable.name} modifier`}
+                          aria-label={`Edit ${variable.name} variable`}
                           data-tip={`Edit ${variable.name}`}
-                          onClick={() => props.onEditModifier(variable.id)}
+                          onClick={() => props.onEditVariable(variable.id)}
                         >
                           <Icon name="edit" size={12} />
                         </button>
@@ -252,7 +255,7 @@ export function AppMapCombinePlan(props: {
       </section>
 
       <AppMapCombineStrategy
-        modifierCount={props.selectedVariables.length}
+        variableCount={props.selectedVariables.length}
         strategy={props.strategy}
         onChange={props.onStrategyChange}
       />
@@ -260,13 +263,13 @@ export function AppMapCombinePlan(props: {
       <Show when={props.selectedVariables.length}>
         <section
           class="grid scroll-mt-3 gap-2 outline-none"
-          aria-labelledby="matrix-tests-title"
-          data-matrix-section="tests"
+          aria-labelledby="combine-tests-title"
+          data-combine-section="tests"
           tabIndex={-1}
         >
           <div class={copyStack}>
-            <h3 id="matrix-tests-title" class={cn(copyTitle, "m-0 text-caption font-semibold")}>
-              {props.selectedVariables.length > 1 ? "3" : "2"}. Choose tests
+            <h3 id="combine-tests-title" class={cn(copyTitle, "m-0 text-caption font-semibold")}>
+              {props.selectedVariables.length > 1 ? "3" : "2"}. Choose Tests
             </h3>
             <p class={cn(copyDescription, "m-0 text-micro")}>
               Choose one or more saved graph Tests.
@@ -350,17 +353,17 @@ export function AppMapCombinePlan(props: {
       <Show when={props.selectedVariables.length && props.selectedTests.length}>
         <section
           class="grid scroll-mt-3 gap-2 outline-none"
-          aria-labelledby="matrix-preview-title"
-          data-matrix-section="plan"
+          aria-labelledby="combine-plan-title"
+          data-combine-section="plan"
           tabIndex={-1}
         >
           <div class="flex items-end justify-between gap-2">
             <div class={copyStack}>
-              <h3 id="matrix-preview-title" class={cn(copyTitle, "m-0 text-caption font-semibold")}>
+              <h3 id="combine-plan-title" class={cn(copyTitle, "m-0 text-caption font-semibold")}>
                 Run plan
               </h3>
               <p class={cn(copyDescription, "m-0 text-micro")}>
-                Rows are modifier combinations. Columns are reusable tests.
+                Rows are Variable combinations. Columns are reusable Tests.
               </p>
             </div>
             <span class="shrink-0 text-micro tabular-nums text-[var(--text-weak)]">
@@ -386,7 +389,7 @@ export function AppMapCombinePlan(props: {
                 <thead class="sticky top-0 z-[2] bg-[var(--surface-raised-stronger-non-alpha)]">
                   <tr class="border-b border-[var(--border-weak-base)]">
                     <th class="sticky left-0 z-[3] min-w-40 bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-micro font-medium text-[var(--text-weak)]">
-                      Modifiers
+                      Variables
                     </th>
                     <For each={props.selectedTests}>
                       {(test) => (
@@ -506,8 +509,9 @@ export function AppMapCombineFooter(props: {
             <Icon name="trash" size={11} /> Delete
           </Button>
         </Show>
-        <span class="min-w-0 truncate text-micro text-[var(--text-weak)]">
-          {props.combinations} combinations × {props.testCount} tests
+        <span class="min-w-0 truncate text-micro tabular-nums text-[var(--text-weak)]">
+          {props.combinations} {props.combinations === 1 ? "combination" : "combinations"} ×{" "}
+          {props.testCount} {props.testCount === 1 ? "Test" : "Tests"}
         </span>
       </div>
       <div class="flex shrink-0 items-center gap-2">
@@ -522,7 +526,7 @@ export function AppMapCombineFooter(props: {
         <Button
           variant="primary"
           size="lg"
-          data-tip={props.canRunOnDevice ? undefined : "Connect a ready device to run this matrix"}
+          data-tip={props.canRunOnDevice ? undefined : "Connect a ready device to run this combine"}
           disabled={props.busy || Boolean(props.issue) || !props.canRunOnDevice}
           onClick={props.onRun}
         >
@@ -531,7 +535,7 @@ export function AppMapCombineFooter(props: {
             ? "Starting…"
             : props.cellCount
               ? `Run ${props.cellCount} ${props.cellCount === 1 ? "check" : "checks"}`
-              : "Run matrix"}
+              : "Run Combine"}
         </Button>
       </div>
     </footer>

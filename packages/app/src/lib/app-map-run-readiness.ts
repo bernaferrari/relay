@@ -153,13 +153,25 @@ export function appMapRunReadiness(input: {
   selection?: AppMapRunSelection;
 }): AppMapRunReadiness {
   const { graph, recipeSteps, selection = {} } = input;
-  if (!graph.flows[0]) {
+  // "No screens yet" and "screens but no recorded path" are different problems.
+  // Collapsing them told anyone holding a 44-screen map to save its first screen.
+  if (!graph.screens.length) {
     return {
       visible: true,
       ready: false,
       reason: "Save the first screen to start your map",
       next: "capture",
       label: "Save first screen",
+      transitionPath: null,
+    };
+  }
+  if (!graph.flows[0]) {
+    return {
+      visible: true,
+      ready: false,
+      reason: "This map has screens but no recorded path yet — record one to run it",
+      next: "record",
+      label: "Record path",
       transitionPath: null,
     };
   }

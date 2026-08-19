@@ -54,7 +54,7 @@ export function EvidenceList(props: {
                   <Icon
                     name="chevron-down"
                     size={11}
-                    class="transition-transform duration-150 group-open:rotate-180"
+                    class="transition-transform duration-hover group-open:rotate-180"
                   />
                 </summary>
                 <pre class="m-0 max-h-64 overflow-auto border-t border-[var(--border-weak-base)] bg-[var(--background-deep)] p-3 font-mono text-micro/[1.5] text-[var(--text-base)]">

@@ -228,7 +228,7 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     const appMap = await readAppMap(scope.projectId, comboPreflight.appMapId!);
     if (!appMap) throw new HttpError(404, `App Map ${comboPreflight.appMapId} not found`);
     const combine = appMap.combines[comboPreflight.combineId!];
-    if (!combine) throw new HttpError(404, `Run matrix ${comboPreflight.combineId} not found`);
+    if (!combine) throw new HttpError(404, `Combine  not found`);
     const preflight = await preflightAppMapCombine(appMap, combine, {
       ...(body.selected ? { selected: body.selected } : {}),
       ...(body.strategy ? { strategy: body.strategy } : {}),

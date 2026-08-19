@@ -1,5 +1,10 @@
 import type { Accessor } from "solid-js";
-import type { AppMapCapturePolicy, CompatibilityMatrix } from "@relay/protocol";
+import { humanError } from "./human-error";
+import type {
+  AppMapCapturePolicy,
+  CompatibilityMatrix,
+  LocaleRunAnalysisReport,
+} from "@relay/protocol";
 import { toast } from "../context/toast";
 import type { CompatibilityReport, DeviceInfo, JobInfo, LogLine, RecipeInfo } from "./api-types";
 import type { ServerRequest } from "./server-matrix-remote";
@@ -21,9 +26,11 @@ import {
   enqueueMatrix,
   enqueueRecipe,
   loadMatrixReport,
+  loadMatrixAnalysis,
   exportRunMatrixPack,
   replayRecordedRun,
   retryJob,
+  type ExportedPack,
 } from "./server-run-remote";
 import { privateValuesForRun } from "./private-variables";
 
@@ -89,9 +96,10 @@ export function createServerRunController(deps: RunControllerDependencies) {
       return job.id;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not run this connection");
       deps.appendLog(message, "error");
-      toast(message, "warning");
-      deps.setError(message);
+      toast(readable, "warning");
+      deps.setError(readable);
       return null;
     }
   }
@@ -136,9 +144,10 @@ export function createServerRunController(deps: RunControllerDependencies) {
       return job.id;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not run this path");
       deps.appendLog(message, "error");
-      toast(message, "warning");
-      deps.setError(message);
+      toast(readable, "warning");
+      deps.setError(readable);
       return null;
     }
   }
@@ -180,9 +189,10 @@ export function createServerRunController(deps: RunControllerDependencies) {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not run this Test");
       deps.appendLog(message, "error");
-      toast(message, "error");
-      deps.setError(message);
+      toast(readable, "error");
+      deps.setError(readable);
     }
   }
 
@@ -296,9 +306,10 @@ export function createServerRunController(deps: RunControllerDependencies) {
       return data.jobs[0]?.id ?? null;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not run this path across your Variables");
       deps.appendLog(message, "error");
-      toast(message, "error");
-      deps.setError(message);
+      toast(readable, "error");
+      deps.setError(readable);
       return null;
     }
   }
@@ -381,9 +392,10 @@ export function createServerRunController(deps: RunControllerDependencies) {
       void deps.refreshJobs();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not run this Test across locales");
       deps.appendLog(message, "error");
-      toast(message, "error");
-      deps.setError(message);
+      toast(readable, "error");
+      deps.setError(readable);
     }
   }
 
@@ -412,8 +424,9 @@ export function createServerRunController(deps: RunControllerDependencies) {
       await deps.refreshJobs();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not run this compatibility matrix");
       deps.appendLog(message, "error");
-      toast(message, "error");
+      toast(readable, "error");
     }
   }
 
@@ -427,10 +440,24 @@ export function createServerRunController(deps: RunControllerDependencies) {
     }
   }
 
-  async function exportMatrixEvidence(batchId: string): Promise<{ rootDir: string }> {
-    const exported = await exportRunMatrixPack(deps.request, batchId);
-    return { rootDir: exported.rootDir };
-  }
+  /**
+   * A batch's evidence: the pack folder a person opens, and the findings the
+   * grid needs before anyone has asked for a folder. A batch too old to still
+   * be in memory has no analysis, and a grid that cannot be judged is a quieter
+   * failure than a red toast.
+   */
+  const matrixEvidence = {
+    export: (batchId: string): Promise<ExportedPack> => exportRunMatrixPack(deps.request, batchId),
+    analyze: async (batchId: string): Promise<LocaleRunAnalysisReport | null> => {
+      try {
+        return await loadMatrixAnalysis(deps.request, batchId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/not found|no jobs/i.test(message)) deps.appendLog(message, "error");
+        return null;
+      }
+    },
+  };
 
   async function retrySelectedJob(jobId?: string): Promise<void> {
     const id = jobId ?? deps.selectedJobId();
@@ -464,9 +491,10 @@ export function createServerRunController(deps: RunControllerDependencies) {
       void deps.refreshJobs();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const readable = humanError(error, "Could not replay this run");
       deps.appendLog(message, "error");
-      toast(message, "warning");
-      deps.setError(message);
+      toast(readable, "warning");
+      deps.setError(readable);
     }
   }
 
@@ -487,7 +515,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
     runAppMapFlow,
     runCompatibilityMatrix,
     loadCompatibilityReport,
-    exportMatrixEvidence,
+    matrixEvidence,
     retrySelectedJob,
     replayRecordedRunFromHistory,
   };

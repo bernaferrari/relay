@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import type { JobInfo } from "../lib/api-types";
 import type { NavigationTransitionRepairEntry } from "../lib/navigation-transition-health";
+import { humanError } from "../lib/human-error";
 
 type RunCampaignRepairHost = {
   runAction: (operationId: string, input: unknown) => Promise<{ job?: { id?: unknown } }>;
@@ -27,7 +28,7 @@ export function createCampaignRepairActions(options: {
       await options.host.refreshJobs();
       options.toast("Retrying only this check", "success");
     } catch (error) {
-      options.toast(error instanceof Error ? error.message : String(error), "error");
+      options.toast(humanError(error, "Could not retry this check"), "error");
     } finally {
       setRepairingCheckId(undefined);
     }
@@ -56,7 +57,7 @@ export function createCampaignRepairActions(options: {
       await options.host.runAction(repair.operationId, repair.fixedInput);
       repairTestFromRun(job);
     } catch (error) {
-      options.toast(error instanceof Error ? error.message : String(error), "error");
+      options.toast(humanError(error, "Could not record this repair decision"), "error");
     }
   }
 

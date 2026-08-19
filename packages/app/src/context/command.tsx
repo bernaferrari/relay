@@ -366,7 +366,7 @@ export function CommandPalette(): JSX.Element {
   return (
     <Show when={cmd.open()}>
       <div
-        class="ui-scrim fixed inset-0 z-[100] flex items-start justify-center pt-[14vh] text-text-strong"
+        class="ui-scrim fixed inset-0 z-[var(--z-modal)] flex items-start justify-center pt-[14vh] text-text-strong"
         role="presentation"
         onClick={(e) => {
           if (e.target === e.currentTarget) cmd.setOpen(false);

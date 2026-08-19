@@ -1,6 +1,7 @@
 import type { AppMap, Flow } from "@relay/protocol";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
+import { humanError } from "./human-error";
 
 export function useAppMapFlowSetup(options: {
   activeAppMap: () => AppMap | undefined;
@@ -58,7 +59,7 @@ export function useAppMapFlowSetup(options: {
         "success",
       );
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not save this setup"), "error");
     }
   };
 

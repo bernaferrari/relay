@@ -8,12 +8,17 @@ import type { MapTreeNode } from "./app-map-tree";
 export { canvasEdgeArrowPath, canvasEdgeStartArrowPath } from "./app-map-canvas-arrows";
 import {
   MAX_CANVAS_SCALE,
+  MAX_LABEL_COUNTER_SCALE,
   MIN_CANVAS_SCALE,
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
   SCREEN_FRAME_HEIGHT,
   SCREEN_FRAME_MIN_WIDTH,
   SCREEN_FRAME_TOP,
+  SCREEN_LABEL_BAND,
+  SCREEN_LABEL_HEIGHT,
+  CARD_PITCH_X,
+  CARD_PITCH_Y,
   canvasBounds,
   clampCanvasScale,
   fitCanvasViewport,
@@ -21,6 +26,7 @@ import {
   openCanvasViewport,
   screenCardGeometry,
   screenFrameBounds,
+  screenLabelBounds,
   screenMediaBounds,
   type CanvasFrameBounds,
   type CanvasFrameGeometry,
@@ -43,12 +49,17 @@ import {
 
 export {
   MAX_CANVAS_SCALE,
+  MAX_LABEL_COUNTER_SCALE,
   MIN_CANVAS_SCALE,
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
   SCREEN_FRAME_HEIGHT,
   SCREEN_FRAME_MIN_WIDTH,
   SCREEN_FRAME_TOP,
+  SCREEN_LABEL_BAND,
+  SCREEN_LABEL_HEIGHT,
+  CARD_PITCH_X,
+  CARD_PITCH_Y,
   canvasBounds,
   clampCanvasScale,
   fitCanvasViewport,
@@ -56,6 +67,7 @@ export {
   openCanvasViewport,
   screenCardGeometry,
   screenFrameBounds,
+  screenLabelBounds,
   screenMediaBounds,
 };
 export type { CanvasFrameBounds, CanvasFrameGeometry, ScreenCardGeometry };

@@ -32,6 +32,36 @@ export function checkedTargetsLabel(
   return `Tried on ${targets.length} devices`;
 }
 
+/**
+ * The shortest mark in each `--map-edge-dash-*` token, in canvas units.
+ *
+ * Kept beside the rule that uses it rather than read back out of CSS, so a
+ * change to the tokens has to come here too.
+ */
+const EDGE_DASH_SHORTEST_MARK = { draft: 4, return: 2 } as const;
+
+/**
+ * Whether a dashed edge still paints as dashes at this zoom.
+ *
+ * A dash is only a dash while its marks cover about a screen pixel. Below that
+ * the pattern smears into a faint fuzz along the route — a fitted crawl is
+ * mostly draft edges, and they paint as dirty rails rather than dashed ones.
+ * An unbroken hairline is the better version of the same line there, because
+ * at a zoom where no label is legible the rail's whole job is to show which
+ * cards a corridor joins: which siblings a fan packed side by side were
+ * reached from, rather than from the card to their left. Draft and ready stay
+ * apart on colour, which has no minimum size.
+ *
+ * The two patterns stop resolving at different zooms because a return dash is
+ * the finer of the two.
+ */
+export function edgeDashesRead(
+  kind: keyof typeof EDGE_DASH_SHORTEST_MARK,
+  viewportScale: number,
+): boolean {
+  return EDGE_DASH_SHORTEST_MARK[kind] * viewportScale >= 1;
+}
+
 export function connectionStatusLabel(connection: CanvasConnection): string {
   if (connection.state === "needs-recording") return "Needs steps";
   if (connection.review?.status === "verified") return "Works";

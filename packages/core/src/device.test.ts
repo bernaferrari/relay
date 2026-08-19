@@ -439,6 +439,69 @@ test("named control resolver coalesces duplicate Compose nodes for one fixed-chr
   }
 });
 
+test("a settings row title presses its row when the whole iPad tree denies hittability", () => {
+  // Physical iPad Settings: every node reports hittable:false, and the row's
+  // accessibility identifier sits on a 37×21 title inside a 335×44 cell.
+  const application = {
+    index: 0,
+    type: "Application",
+    rect: { x: 0, y: 0, width: 1112, height: 834 },
+  };
+  const cell = {
+    index: 1,
+    parentIndex: 0,
+    type: "Cell",
+    label: "Grok",
+    enabled: true,
+    hittable: false,
+    rect: { x: 20, y: 585, width: 335, height: 44 },
+  };
+  const title = {
+    index: 2,
+    parentIndex: 1,
+    type: "StaticText",
+    identifier: "ai.x.GrokApp",
+    label: "Grok",
+    enabled: true,
+    hittable: false,
+    rect: { x: 80, y: 597, width: 37, height: 21 },
+  };
+
+  const outcome = resolveNamedControlOutcome([application, cell, title], {
+    identifier: "ai.x.GrokApp",
+  });
+
+  assert.equal(outcome.status, "resolved");
+  if (outcome.status === "resolved") {
+    assert.deepEqual(outcome.resolution.point, { x: 188, y: 607 });
+    assert.equal(outcome.resolution.activation, "snapshot-point");
+  }
+});
+
+test("a caption with no row of its own still refuses to become a tap", () => {
+  const application = {
+    index: 0,
+    type: "Application",
+    rect: { x: 0, y: 0, width: 1112, height: 834 },
+  };
+  const caption = {
+    index: 1,
+    parentIndex: 0,
+    type: "StaticText",
+    identifier: "status.carrier",
+    label: "Settings",
+    enabled: true,
+    hittable: false,
+    rect: { x: 4, y: 2, width: 60, height: 18 },
+  };
+
+  const outcome = resolveNamedControlOutcome([application, caption], {
+    identifier: "status.carrier",
+  });
+
+  assert.equal(outcome.status, "unhittable");
+});
+
 test("named control resolver preserves true different-location ambiguity", () => {
   const controls = [
     {

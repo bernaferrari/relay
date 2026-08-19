@@ -1,0 +1,26 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-ios-settings-shot
+name: Grok · Ask screen per language (iOS)
+description: >
+  The smallest honest body for a locale sweep on iOS: bring Grok forward after
+  the language change and capture the Ask screen. The screenshot step records the
+  accessibility tree alongside the pixels, so the locale analyzer has labels to
+  compare across languages without any in-app navigation that could fail for
+  reasons unrelated to translation.
+
+  Deliberately no taps. Grok's iPad tree reports every control as
+  hittable:false and repeats identifiers across a button and its own static
+  text, so an identifier tap resolves to no unique control. Until that is
+  taught as a real path on the map, a tap here would only ever measure Grok's
+  tree, not its translations.
+steps:
+  - kind: app
+    action: open
+    app: "ai.x.GrokApp"
+    relaunch: false
+    note: Launch rather than relaunch — terminate-then-launch reports the foreground as unavailable on this iPad.
+  - kind: sleep
+    ms: 2500
+  - kind: screenshot
+    caption: "ask-screen"

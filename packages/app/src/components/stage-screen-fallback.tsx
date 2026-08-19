@@ -133,7 +133,7 @@ export function StageScreenFallback(props: StageScreenFallbackProps) {
                           <Show when={!props.developerModeDisabled}>
                             <button
                               type="button"
-                              class="inline-flex min-h-11 min-w-[92px] items-center justify-center rounded-xl border border-[var(--phone-rim)] bg-[var(--phone-fill-strong)] px-4 text-caption font-semibold text-[var(--phone-fg)] shadow-[0_6px_18px_rgb(0_0_0/20%)] transition-[background-color,border-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--phone-fg)_22%,transparent)] active:scale-[0.96] motion-reduce:active:scale-100"
+                              class="inline-flex min-h-11 min-w-[92px] items-center justify-center rounded-xl border border-[var(--phone-rim)] bg-[var(--phone-fill-strong)] px-4 text-caption font-semibold text-[var(--phone-fg)] shadow-[0_6px_18px_rgb(0_0_0/20%)] transition-[background-color,border-color,transform] duration-hover hover:bg-[color-mix(in_srgb,var(--phone-fg)_22%,transparent)] active:scale-[0.96] motion-reduce:active:scale-100"
                               onClick={() => {
                                 if (props.hasIosSetupIssue) {
                                   window.dispatchEvent(
@@ -204,7 +204,7 @@ export function StageScreenFallback(props: StageScreenFallbackProps) {
                     </p>
                     <button
                       type="button"
-                      class="min-h-11 rounded-lg bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.97]"
+                      class="min-h-11 rounded-lg bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-hover hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.97]"
                       onClick={() => {
                         if (issue().kind === "setup") {
                           window.dispatchEvent(

@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import { panelSectionLabel } from "../lib/ui";
 import type { LogicalScrollSurface } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
@@ -54,9 +55,7 @@ export function LogicalScrollSurfaceViewer(props: {
           <div class="grid min-h-28 place-items-center rounded-xl border border-dashed border-[var(--border-strong-base)] bg-[var(--background-deep)] px-4 text-center">
             <div class="grid justify-items-center gap-1.5">
               <Icon name="camera" size={16} class="text-[var(--text-weaker)]" />
-              <strong class="text-micro font-medium text-[var(--text-base)]">
-                Preview unavailable
-              </strong>
+              <strong class={panelSectionLabel}>Preview unavailable</strong>
               <span class="max-w-[26ch] text-micro/[1.4] text-[var(--text-weak)]">
                 The source viewports below are intact and can regenerate it.
               </span>
@@ -99,7 +98,7 @@ export function LogicalScrollSurfaceViewer(props: {
         <Show when={props.onRegenerate}>
           <button
             type="button"
-            class="inline-flex min-h-10 shrink-0 touch-manipulation items-center gap-1.5 rounded-lg px-2 text-micro font-medium text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.96] disabled:cursor-not-allowed disabled:text-[var(--text-weaker)] motion-reduce:active:scale-100"
+            class="inline-flex min-h-10 shrink-0 touch-manipulation items-center gap-1.5 rounded-lg px-2 text-micro font-medium text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-hover hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.96] disabled:cursor-not-allowed disabled:text-[var(--text-weaker)] motion-reduce:active:scale-100"
             disabled={props.regenerating}
             aria-busy={props.regenerating}
             onClick={props.onRegenerate}
@@ -128,7 +127,7 @@ export function LogicalScrollSurfaceViewer(props: {
           <Icon
             name="chevron-right"
             size={11}
-            class="text-[var(--text-weaker)] transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none"
+            class="text-[var(--text-weaker)] transition-transform duration-hover group-open:rotate-90 motion-reduce:transition-none"
           />
         </summary>
         <div class="grid gap-2.5 border-t border-[var(--border-weak-base)] p-2.5">

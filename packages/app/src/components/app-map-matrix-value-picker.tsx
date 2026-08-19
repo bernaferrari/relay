@@ -5,7 +5,7 @@ import { combineValueLabel } from "../lib/app-map-combine-presentation";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 
-/** Searchable value selection for one matrix modifier. Keeping this out of
+/** Searchable value selection for one matrix Variable. Keeping this out of
  * AppMapCombine prevents a large locale set from turning the inspector into a
  * cloud of dozens of ambiguous chips. */
 export function AppMapMatrixValuePicker(props: {
@@ -70,7 +70,7 @@ export function AppMapMatrixValuePicker(props: {
         </span>
         <input
           type="search"
-          class="h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] pr-2.5 pl-8 text-body text-[var(--text-strong)] outline-none transition-[border-color,background-color] duration-150 placeholder:text-[var(--text-weaker)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)]"
+          class="h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] pr-2.5 pl-8 text-body text-[var(--text-strong)] outline-none transition-[border-color,background-color] duration-hover placeholder:text-[var(--text-weaker)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)]"
           value={query()}
           placeholder="Search available values"
           onInput={(event) => setQuery(event.currentTarget.value)}
@@ -87,7 +87,7 @@ export function AppMapMatrixValuePicker(props: {
               <button
                 type="button"
                 class={cn(
-                  "flex min-h-11 items-center gap-2 rounded-lg px-2 text-left transition-[background-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]",
+                  "flex min-h-11 items-center gap-2 rounded-lg px-2 text-left transition-[background-color,color] duration-hover focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]",
                   checked()
                     ? "bg-[var(--product-accent-soft)] text-[var(--text-strong)]"
                     : "text-[var(--text-base)] hover:bg-[var(--surface-base-hover)]",

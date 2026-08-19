@@ -27,16 +27,17 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
     path("flow list", ["appMapId"]),
     path("routine list", ["appMapId"]),
     path("proposal list", ["appMapId"]),
-    path("state-set list", ["appMapId"], undefined, {
-      summary: "List every saved modifier and its available values",
-      examples: ["relay state-set list grok-android"],
+    path("variable list", ["appMapId"], undefined, {
+      summary: "List every saved Variable and its available values",
+      examples: ["relay variable list grok-android"],
     }),
-    path("variable list", ["appMapId"]),
+    path("state-set list", ["appMapId"]),
     graphTestListPath,
-    path("run-matrix list", ["appMapId"], undefined, {
-      summary: "List saved modifier × test plans",
-      examples: ["relay run-matrix list grok-android"],
+    path("combine list", ["appMapId"], undefined, {
+      summary: "List saved Variable × Test plans",
+      examples: ["relay combine list grok-android"],
     }),
+    path("run-matrix list", ["appMapId"]),
   ),
   mapped(
     "app-map.create",

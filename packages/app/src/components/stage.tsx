@@ -955,7 +955,7 @@ export function DeviceStage(_props: {
                   <Show keyed when={!videoFailed() && liveVideoSrc()}>
                     {(src) => (
                       <div
-                        class="pointer-events-none absolute inset-0 z-[1] transition-opacity duration-150"
+                        class="pointer-events-none absolute inset-0 z-[1] transition-opacity duration-hover"
                         data-device-video-ready={videoReady() ? "true" : "false"}
                         style={{ opacity: videoReady() ? 1 : 0 }}
                       >
@@ -1368,7 +1368,7 @@ export function DeviceStage(_props: {
                     ref={(element) => {
                       gestureTrail = element;
                     }}
-                    class="pointer-events-none absolute inset-0 z-[6] opacity-0 transition-opacity duration-150 ease-out motion-reduce:transition-none"
+                    class="pointer-events-none absolute inset-0 z-[6] opacity-0 transition-opacity duration-hover ease-out motion-reduce:transition-none"
                     aria-hidden="true"
                   >
                     <svg

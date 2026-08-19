@@ -1,6 +1,6 @@
 import { CaseExpansionError, expandCaseIndexes, type CaseExpansionStrategy } from "@relay/protocol";
 
-/** User-facing projection for a run matrix: modifiers × tests. */
+/** User-facing projection for a combine: Variables × Tests. */
 export type CombineValue = {
   id: string;
   label: string;
@@ -57,8 +57,8 @@ export function combineHeadline(input: {
   const tests = (input.testNames ?? [input.testName ?? ""])
     .map((name) => name.trim())
     .filter(Boolean);
-  if (!variables.length && !tests.length) return "New run matrix";
-  if (!variables.length) return "New run matrix";
+  if (!variables.length && !tests.length) return "New Combine";
+  if (!variables.length) return "New Combine";
   if (!tests.length) return variables.join(" × ");
   const testGroup = tests.length > 1 ? `(${tests.join(" + ")})` : tests[0];
   return `${variables.join(" × ")} × ${testGroup}`;
@@ -72,7 +72,7 @@ export function combineSubhead(input: {
   hasTest: boolean;
   screenshotCount?: number;
 }): string {
-  if (!input.hasVariable) return "Choose a modifier such as language, account, or model.";
+  if (!input.hasVariable) return "Choose a Variable such as language, account, or model.";
   if (!input.hasTest) return "Choose one or more paths to test.";
   const worlds = input.worldCount ?? input.cellCount;
   const tests = input.testCount ?? 1;
@@ -111,7 +111,7 @@ export function projectCombine(
     );
   } catch (error) {
     const issue =
-      error instanceof CaseExpansionError ? error.message : "Could not build this run matrix.";
+      error instanceof CaseExpansionError ? error.message : "Could not build this combine.";
     return { worlds: [], totalWorlds: 0, cellCount: 0, truncated: false, issue };
   }
   const worlds: CombineWorld[] = [];

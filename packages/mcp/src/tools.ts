@@ -9,6 +9,7 @@ export const relayMcpProfiles = [
   "test",
   "run",
   "execute",
+  "locale",
   "review",
   "admin",
   "full",
@@ -106,6 +107,14 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     ' Only after TARGET_CONTROL_LEASE_REQUIRED. Pass poolId "local", deviceSerial, and confirm:true. Local trusted servers often mint a lease on first control.',
   "discovery.start":
     " Starts the server-owned explore job. Poll relay_discovery_get. Each identity-changing interact becomes one pending proposal. Do not self-approve.",
+  "corpus.start":
+    " Starts the multi-locale sweep: map the tree once in the map locale, then switch language and replay the same path plan per locale. Poll relay_corpus_get. Read findings with relay_corpus_analysis, not by diffing screenshots yourself.",
+  "corpus.analysis":
+    " Deterministic localization findings over the frozen screenshots and UI trees: missing screens, a language that never applied, missing or untranslated controls, and text that no longer fits its control. No model call.",
+  "job.locale-matrix.export":
+    " Writes the pack and returns its findings: the same codes as relay_corpus_analysis, each with the frame it came from. Read those before opening screenshots by hand.",
+  "job.locale-matrix.analysis":
+    " The same findings without writing a pack, keyed to the frame of each case. Use this to read a matrix or combine batch while it is still running; export only when a person needs the folder.",
 };
 
 function toolDescriptor(
@@ -180,6 +189,11 @@ const observeOperations = [
   "run.list",
   "run.get",
   "run.evidence.get",
+  "corpus.list",
+  "corpus.get",
+  "corpus.coverage",
+  "corpus.analysis",
+  "job.locale-matrix.analysis",
 ] as const satisfies readonly OperationId[];
 
 const mapOperations = [
@@ -287,6 +301,9 @@ const runOperations = [
   "job.resume",
   "job.combine.start",
   "job.combine.export",
+  "job.locale-matrix.start",
+  "job.locale-matrix.export",
+  "job.locale-matrix.analysis",
   "run.list",
   "run.get",
   "run.evidence.get",
@@ -294,6 +311,55 @@ const runOperations = [
   "run.repair.list",
   "run.repair.get",
   "run.repair.retry",
+] as const satisfies readonly OperationId[];
+
+/**
+ * Sweep one app's screens across languages and read what broke.
+ *
+ * The corpus verbs are the machine half of that goal, and until this profile
+ * existed they were only reachable from `full` — an agent asked to check forty
+ * locales had to take every tool in the product to get at eleven of them.
+ */
+const localeOperations = [
+  "system.health.get",
+  "system.doctor.get",
+  "target.devices.list",
+  "target.list",
+  "target.screenshot.capture",
+  "target.snapshot.capture",
+  "target.recover",
+  "lease.list",
+  "lease.create",
+  "app-map.list",
+  "app-map.get",
+  "workspace.variables.get",
+  "workspace.variables.update",
+  "corpus.list",
+  "corpus.create",
+  "corpus.get",
+  "corpus.rename",
+  "corpus.status.update",
+  "corpus.start",
+  "corpus.cancel",
+  "corpus.coverage",
+  "corpus.analysis",
+  "corpus.export",
+  "corpus.screen.get",
+  "language-profile.list",
+  "language-profile.scan",
+  "language-profile.save",
+  "switcher-profile.list",
+  "switcher-profile.scan",
+  "switcher-profile.save",
+  "job.locale-matrix.start",
+  "job.locale-matrix.export",
+  "job.locale-matrix.analysis",
+  "job.locale-matrix.infer",
+  "job.list",
+  "job.get",
+  "job.cancel",
+  "run.list",
+  "run.get",
 ] as const satisfies readonly OperationId[];
 
 const reviewOperations = [
@@ -328,6 +394,9 @@ const reviewOperations = [
   "run.visual-baseline.update",
   "run.visual.review",
   "run.pin.update",
+  "corpus.coverage",
+  "corpus.analysis",
+  "corpus.export",
 ] as const satisfies readonly OperationId[];
 
 const adminOperations = [
@@ -365,6 +434,7 @@ const profileOperations: Record<Exclude<RelayMcpProfile, "full">, ReadonlySet<Op
   test: new Set(testOperations),
   run: new Set(runOperations),
   execute: new Set(runOperations),
+  locale: new Set(localeOperations),
   review: new Set(reviewOperations),
   admin: new Set(adminOperations),
 };

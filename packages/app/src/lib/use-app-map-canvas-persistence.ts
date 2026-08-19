@@ -3,6 +3,7 @@ import type { Accessor, Setter } from "solid-js";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
+import { humanError } from "./human-error";
 import { ensureCanvasGraph, withCanvasGraph } from "./app-map-canvas-graph";
 import type { createAppMapCanvasHistory } from "./app-map-canvas-history";
 import {
@@ -84,7 +85,7 @@ export function useAppMapCanvasPersistence(options: {
             // Preserve local work when even the recovery read is offline.
           }
         }
-        toast(error instanceof Error ? error.message : "The map could not be saved", "warning");
+        toast(humanError(error, "The map could not be saved"), "warning");
       });
   }
 

@@ -123,6 +123,18 @@ export function useAppMapCanvasPresentation(options: {
       zoomViewportAtPoint(current, clampCanvasScale(current.scale + scaleDelta), anchor),
     );
   };
+  /** Jump to an exact zoom, holding the middle of the canvas still. */
+  const zoomTo = (scale: number) => {
+    const element = options.gestures.canvasElement();
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    options.setView((current) =>
+      zoomViewportAtPoint(current, clampCanvasScale(scale), {
+        x: rect.width / 2,
+        y: rect.height / 2,
+      }),
+    );
+  };
   const revealScreen = (screenId: string) => {
     const element = options.gestures.canvasElement();
     const node = options.nodes().find((candidate) => candidate.id === screenId);
@@ -165,6 +177,7 @@ export function useAppMapCanvasPresentation(options: {
     fit,
     openAtReadableScale,
     zoom,
+    zoomTo,
     revealScreen,
     visibleBounds,
     navigateMinimap,

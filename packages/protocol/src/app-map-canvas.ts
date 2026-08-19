@@ -4,6 +4,43 @@ import type { RecipeStep } from "./recipes.js";
 
 export type CanvasPosition = { x: number; y: number };
 
+/**
+ * Where an accepted crawl files a screen nobody has arranged yet.
+ *
+ * Both accept paths hand out slots from this fixed lattice in the order the
+ * states were observed. That is a filing order, not a layout: it is legible and
+ * never overlaps, but it reads as a contact sheet of phones rather than the
+ * paths between them. The writer and the reader have to agree about the exact
+ * geometry — the canvas recognises a map whose whole geometry is still this
+ * lattice and shows it as a journey instead — so the lattice lives here with
+ * the rest of the canvas contract rather than in either of them.
+ */
+export const CRAWL_FILING_LATTICE = {
+  origin: { x: 80, y: 100 },
+  columns: 4,
+  columnPitch: 300,
+  rowPitch: 420,
+} as const;
+
+export function crawlFilingSlot(index: number): CanvasPosition {
+  const { origin, columns, columnPitch, rowPitch } = CRAWL_FILING_LATTICE;
+  return {
+    x: origin.x + (index % columns) * columnPitch,
+    y: origin.y + Math.floor(index / columns) * rowPitch,
+  };
+}
+
+/** True for a point that is exactly where the crawl filed it. Sub-pixel drift
+ * is somebody's arrangement, so the comparison is deliberately exact. */
+export function isCrawlFilingSlot(point: CanvasPosition): boolean {
+  const { origin, columns, columnPitch, rowPitch } = CRAWL_FILING_LATTICE;
+  const column = (point.x - origin.x) / columnPitch;
+  const row = (point.y - origin.y) / rowPitch;
+  return (
+    Number.isInteger(column) && column >= 0 && column < columns && Number.isInteger(row) && row >= 0
+  );
+}
+
 /** A recorded interaction location projected into a screen preview. Values
  * are normalized to the captured viewport so the same evidence survives
  * responsive cards, zoom, and different canvas layouts. */

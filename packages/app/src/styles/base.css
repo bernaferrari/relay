@@ -16,7 +16,11 @@
     letter-spacing: var(--letter-spacing-normal, 0);
     font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    /* Geist ships a full variable weight range. Without this, a weight we fail
+       to load becomes a browser-fabricated bold instead of a visible bug. */
+    font-synthesis: none;
   }
 
   :root {
@@ -33,12 +37,19 @@
     outline: none;
   }
 
-  /* One designed keyboard focus ring instead of the UA default blue. */
-  button:focus-visible,
-  [role="button"]:focus-visible,
-  [role="tab"]:focus-visible,
+  /*
+   * One designed keyboard focus ring instead of the UA default blue, for the
+   * plain elements the product styles itself.
+   *
+   * Button, IconButton and Switch draw their own ring in @relay/ui, so they are
+   * named out here: applying both put an outline outside the component's
+   * two-layer box-shadow, which read as a double ring.
+   */
+  button:focus-visible:not([data-component="button"], [data-component="icon-button"]),
+  [role="button"]:focus-visible:not([data-component="button"], [data-component="icon-button"]),
+  [role="tab"]:focus-visible:not([data-component="button"], [data-component="icon-button"]),
   [role="option"]:focus-visible,
-  a:focus-visible,
+  a:focus-visible:not([data-component="button"]),
   input:focus-visible:not([data-focus-contained]),
   select:focus-visible:not([data-focus-contained]),
   textarea:focus-visible {

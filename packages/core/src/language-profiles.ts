@@ -6,11 +6,10 @@
  */
 import type { CorpusNavStep, CorpusScope } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
+import { extractSwitcherOptionsFromNodes, inferOptionId } from "./switcher-option-rows.js";
 import {
-  extractSwitcherOptionsFromNodes,
   getSwitcherProfile,
   corpusScopeFromSwitcherProfile,
-  inferOptionId,
   listSwitcherProfiles,
   listSwitcherProfilesSync,
   matrixScopeFromSwitcherProfile,

@@ -68,8 +68,8 @@ export const relayMcpPrompts = [
   },
   {
     name: relayMcpPromptNames.planRunMatrix,
-    title: "Plan this run matrix",
-    description: "Turn a testing goal into one reviewable modifier × test plan, then run it.",
+    title: "Plan this Combine",
+    description: "Turn a testing goal into one reviewable Variable × Test plan, then run it.",
     requiredOperationIds: [
       "target.screenshot.capture",
       "app-map.combine.save",
@@ -183,7 +183,7 @@ function registerMapPrompt(server: McpServer, scope: RelayPromptScope): void {
           "Observation phase (no mutation):",
           `1. Read ${relayMcpResourceUris.project}, ${relayMcpResourceUris.targets}, relay://app-maps/${appMapId}, and relay://targets/${targetId}/observation. Verify every returned identifier matches this request.`,
           `2. Use relay_target_screenshot_capture with the explicit Target identity to receive the current screen as native image/png. Use relay_target_snapshot_capture only for bounded structure supplied by Relay.`,
-          "3. Describe the current unique screen, known outgoing connections, uncertainty, and a smallest-next-step exploration plan. Do not claim a screen or connection exists until Relay evidence supports it. Author only screens, connections, state sets (lists like language), graph-native scenario Tests, and run matrices (state set × Test). Map flows are navigation evidence, never Tests or Test-conversion inputs. Do not invent a second recipe library.",
+          "3. Describe the current unique screen, known outgoing connections, uncertainty, and a smallest-next-step exploration plan. Do not claim a screen or connection exists until Relay evidence supports it. Author only screens, connections, Variables (lists like language), graph-native scenario Tests, and Combines (Variable × Test). Map flows are navigation evidence, never Tests or Test-conversion inputs. Do not invent a second recipe library.",
           "",
           "Bounded exploration and proposal:",
           `4. The user delegates at most ${actionBudget ?? 20} reversible Target interactions for this exploration. Check relay_lease_list and acquire only the required Target lease with relay_lease_create if needed. Do not take over or release another actor's lease.`,
@@ -288,7 +288,7 @@ function registerMatrixPrompt(server: McpServer, scope: RelayPromptScope): void 
         .object({
           projectId: projectSchema(scope.projectId),
           targetId: relayIdentifier.describe("Explicit Target ID used for preflight and execution"),
-          appMapId: relayIdentifier.describe("Explicit App Map containing modifiers and tests"),
+          appMapId: relayIdentifier.describe("Explicit App Map containing Variables and Tests"),
           goal: z.string().min(3).max(500).describe("Plain-language coverage goal"),
         })
         .strict(),
@@ -296,21 +296,21 @@ function registerMatrixPrompt(server: McpServer, scope: RelayPromptScope): void 
     ({ projectId, targetId, appMapId, goal }) =>
       prompt(
         [
-          `Plan a run matrix for “${goal}” in App Map ${appMapId}, project ${projectId}, using Target ${targetId}.`,
+          `Plan a Combine for “${goal}” in App Map ${appMapId}, project ${projectId}, using Target ${targetId}.`,
           "",
           sharedSafety(projectId),
           "",
           "Observation and plan (no mutation):",
           `1. Read ${relayMcpResourceUris.project}, relay://app-maps/${appMapId}, ${relayMcpResourceUris.targets}, and relay://targets/${targetId}/observation. Verify all identities match this request. Capture a native image/png with relay_target_screenshot_capture only if current Target state is needed.`,
-          "2. Reuse App Map variables as modifiers and graph-native scenario Tests as the work performed once. Explain the exact formula, selected values, coverage strategy, checks, screenshots, estimated duration, and any missing reviewed entry/exit actions. Connections and Flows are navigation evidence, never alternate Test formats. Never create a second recipe library.",
+          "2. Reuse App Map Variables and graph-native scenario Tests as the work performed once. Explain the exact formula, selected values, coverage strategy, checks, screenshots, estimated duration, and any missing reviewed entry/exit actions. Connections and Flows are navigation evidence, never alternate Test formats. Never create a second recipe library.",
           "3. Prefer cartesian coverage for every combination, zip only for intentionally paired rows, and pairwise only when the full product is too large. Evidence policy is per test: every screen, final screen, failures only, or none.",
           "   For long localized lists, preserve semantic row/connection bindings and complete recorded row order. Relay seeks live localized rows through overlapping viewports; never encode translated labels or fixed scroll distances as new tests.",
           "   Use full-surface capture only for stable product-owned pages whose below-fold content matters; preserve the source viewports and trees. Treat App Language destinations that open OS Settings as reversible handoffs: verify the expected package, capture once, and return instead of traversing the system list.",
-          "4. If the required modifier or test is absent, propose the smallest authoring work first. Otherwise propose one saved matrix ID and ask for explicit user confirmation before saving or running it.",
+          "4. If the required Variable or Test is absent, propose the smallest authoring work first. Otherwise propose one saved Combine ID and ask for explicit user confirmation before saving or running it.",
           "",
           "Save, preflight, and run (only after explicit confirmation):",
           "5. Re-read the App Map revision, save through relay_app_map_combine_save with that expected revision and an idempotency key, then call relay_app_map_combine_preflight. Stop and report blockers instead of weakening the requested coverage.",
-          "6. Verify or acquire the required Target lease without displacing another actor. Start the saved matrix with relay_job_combine_start only after preflight succeeds. Do not run an invented inline plan that is absent from the canvas.",
+          "6. Verify or acquire the required Target lease without displacing another actor. Start the saved Combine with relay_job_combine_start only after preflight succeeds. Do not run an invented inline plan that is absent from the canvas.",
           "7. Pilot one representative cell first. Follow progress by batch and report completed, active, failed, and missing-screenshot cells. Retry only problem cells. Use relay_job_retry only when replaying the unchanged frozen plan. After editing and compiling the Test, call relay_job_combine_start with the same combineId and only the failed selected locale values so Relay recompiles current truth; preserve passing evidence and never restart all locales unless the change invalidates them.",
           "8. Export the portable screenshot report with relay_job_combine_export when evidence is requested. Report the batch ID and exported artifact, never arbitrary filesystem contents.",
         ].join("\n"),

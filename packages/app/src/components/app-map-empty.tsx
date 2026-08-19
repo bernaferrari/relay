@@ -80,7 +80,7 @@ export function EmptyAppMap(props: {
               fallback={
                 <button
                   type="button"
-                  class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-150 hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
+                  class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-hover hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
                   onClick={props.onOpenTargets}
                 >
                   <Icon name="smartphone" size={14} />
@@ -90,7 +90,7 @@ export function EmptyAppMap(props: {
             >
               <button
                 type="button"
-                class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-150 hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
+                class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-hover hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
                 onClick={props.onToggleDevice}
               >
                 <Icon name="smartphone" size={14} />

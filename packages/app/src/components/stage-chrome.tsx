@@ -67,7 +67,7 @@ export function StageViewToggle(props: {
           <button
             type="button"
             class={cn(
-              "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-caption font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
+              "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-caption font-medium transition-[background-color,color,box-shadow,transform] duration-hover ease-out active:scale-[0.97]",
               props.stageView === "recorded"
                 ? "bg-[var(--surface-raised-base)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--border-strong-base)_72%,transparent)]"
                 : "text-[var(--text-weak)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-base)]",
@@ -81,7 +81,7 @@ export function StageViewToggle(props: {
           <button
             type="button"
             class={cn(
-              "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-caption font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
+              "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-caption font-medium transition-[background-color,color,box-shadow,transform] duration-hover ease-out active:scale-[0.97]",
               props.stageView === "live"
                 ? "bg-[var(--surface-raised-base)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--border-strong-base)_72%,transparent)]"
                 : "text-[var(--text-weak)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-base)]",
@@ -197,7 +197,7 @@ export function StageRecordingControls(props: {
               />
               <button
                 type="button"
-                class="grid size-9 shrink-0 place-items-center rounded-r-lg text-text-weak transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-text-strong active:scale-[0.97]"
+                class="grid size-9 shrink-0 place-items-center rounded-r-lg text-text-weak transition-[background-color,color,transform] duration-hover hover:bg-[var(--surface-base-hover)] hover:text-text-strong active:scale-[0.97]"
                 aria-label="Start a new recording task"
                 data-tip="Start a new task"
                 onClick={() => props.startNextRecordingGroup()}

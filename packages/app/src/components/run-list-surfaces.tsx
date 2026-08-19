@@ -43,7 +43,7 @@ export function RunStepList(props: {
               <button
                 type="button"
                 class={cn(
-                  "relative grid min-h-16 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-[background-color,transform] duration-150 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
+                  "relative grid min-h-16 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-[background-color,transform] duration-hover active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
                   active()
                     ? "bg-[color-mix(in_srgb,var(--text-interactive-base)_11%,var(--background-base))]"
                     : "hover:bg-[var(--surface-base)]",
@@ -163,7 +163,7 @@ export function RunRow(props: {
     <button
       type="button"
       class={cn(
-        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-caption/[1.35] text-text-weak shadow-[0_5px_16px_rgb(0_0_0/6%)] transition-[background-color,border-color] duration-150 last:mb-0 hover:border-[var(--border-strong-base)] hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
+        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-caption/[1.35] text-text-weak shadow-[0_5px_16px_rgb(0_0_0/6%)] transition-[background-color,border-color] duration-hover last:mb-0 hover:border-[var(--border-strong-base)] hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
         props.selected && "border-border-interactive-base bg-surface-base-active",
       )}
       aria-current={props.selected ? "true" : undefined}

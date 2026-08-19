@@ -2,6 +2,7 @@ import http from "node:http";
 import type { AppMapCapturePolicy } from "@relay/protocol";
 import {
   AppMapCompileError,
+  analyzeLocaleRunBatch,
   cancelActiveJob,
   cancelJob,
   compileAppMapFlow,
@@ -720,6 +721,16 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         manifest: exported.manifest,
         jobIds: exported.jobs.map((job) => job.id),
       });
+    } catch (error) {
+      throw new HttpError(404, error instanceof Error ? error.message : String(error));
+    }
+    return true;
+  }
+
+  const localeAnalysisMatch = matchPath(pathname, "/jobs/locale-matrix/:batchId/analysis");
+  if (method === "GET" && localeAnalysisMatch) {
+    try {
+      json(res, 200, await analyzeLocaleRunBatch(localeAnalysisMatch.batchId!));
     } catch (error) {
       throw new HttpError(404, error instanceof Error ? error.message : String(error));
     }

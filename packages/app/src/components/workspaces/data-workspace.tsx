@@ -3,6 +3,7 @@ import type { TestData } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer } from "../../context/server";
 import { toast } from "../../context/toast";
+import { humanError } from "../../lib/human-error";
 import { cn } from "../../lib/cn";
 import { Icon } from "../icon";
 import { DataSourceControl } from "../data-source-control";
@@ -87,9 +88,7 @@ export function DataWorkspace(props: {
         .then(() => {
           lastSavedSnapshot = snapshot;
         })
-        .catch((error: unknown) =>
-          toast(error instanceof Error ? error.message : String(error), "error"),
-        );
+        .catch((error: unknown) => toast(humanError(error, "Could not save this data"), "error"));
     }, 450);
   });
   onCleanup(() => clearTimeout(saveTimer));
@@ -122,7 +121,7 @@ export function DataWorkspace(props: {
       ...current,
       {
         id,
-        name: `modifier_${current.length + 1}`,
+        name: `variable_${current.length + 1}`,
         scope: "shared",
         mode: "Default",
         preview: "",
@@ -148,7 +147,7 @@ export function DataWorkspace(props: {
       >
         <div class="min-w-0">
           <Show when={!props.embedded}>
-            <span class={eyebrow}>Modifiers</span>
+            <span class={eyebrow}>Variables</span>
           </Show>
           <h2
             class={
@@ -157,11 +156,11 @@ export function DataWorkspace(props: {
                 : productPageTitle
             }
           >
-            Modifiers
+            Variables
           </h2>
           <Show when={!props.embedded}>
             <p class={productPageLead}>
-              Languages, accounts, models, and other lists a run can vary. A run matrix multiplies
+              Languages, accounts, models, and other lists a run can vary. A Combine multiplies
               selected values by the tests you choose.
             </p>
           </Show>
@@ -171,13 +170,13 @@ export function DataWorkspace(props: {
             Accounts
           </Button>
           <Button variant="primary" size="lg" onClick={addRow}>
-            <Icon name="plus" size={15} /> New modifier
+            <Icon name="plus" size={15} /> New variable
           </Button>
           <Show when={props.embedded && props.onClose}>
             <button
               type="button"
               class={productIconButton}
-              aria-label="Close modifiers"
+              aria-label="Close variables"
               onClick={() => props.onClose?.()}
             >
               <Icon name="x" size={14} />
@@ -194,7 +193,7 @@ export function DataWorkspace(props: {
       >
         <div class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger shadow-[0_1px_2px_rgb(0_0_0/4%)]">
           <div class="grid min-h-9 grid-cols-[minmax(0,1fr)_88px_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base bg-surface-weak px-3 text-micro/[1.25] font-semibold tracking-wide text-text-weaker uppercase max-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_18px]">
-            <span>Modifier</span>
+            <span>Variable</span>
             <span class="max-[900px]:hidden">Scope</span>
             <span class="max-[900px]:hidden">Source</span>
             <span>Preview</span>
@@ -252,14 +251,14 @@ export function DataWorkspace(props: {
                   <Icon name="grid" size={17} />
                 </span>
                 <strong class="mt-3 block text-body/[1.3] text-text-strong">
-                  Add a modifier only when a test needs it
+                  Add a variable only when a test needs it
                 </strong>
                 <p class="m-0 mt-1.5 text-caption/[1.5] text-text-weaker">
                   Use a list to cover plans or roles. Language and theme can drive a data run. Keep
                   logins private so each teammate can use their own account.
                 </p>
                 <Button variant="primary" size="lg" class="mt-4" onClick={addRow}>
-                  <Icon name="plus" size={14} /> Add a modifier
+                  <Icon name="plus" size={14} /> Add a variable
                 </Button>
               </div>
             </div>
@@ -273,7 +272,7 @@ export function DataWorkspace(props: {
             >
               <header class="flex min-h-16 items-center justify-between border-b border-border-weak-base px-4">
                 <div class="min-w-0">
-                  <span class={eyebrow}>Modifier</span>
+                  <span class={eyebrow}>Variable</span>
                   <strong class="mt-1 block truncate text-title/[1.25] text-text-base">
                     {row().name}
                   </strong>
@@ -281,7 +280,7 @@ export function DataWorkspace(props: {
                 <button
                   type="button"
                   class="grid size-10 place-items-center rounded-lg text-text-weaker hover:bg-surface-base-hover hover:text-text-base"
-                  aria-label="Close modifier editor"
+                  aria-label="Close variable editor"
                   onClick={() => setSelectedId(null)}
                 >
                   <Icon name="x" size={14} />
@@ -298,7 +297,7 @@ export function DataWorkspace(props: {
                         <button
                           type="button"
                           class={cn(
-                            "min-h-10 rounded-md px-2 text-caption font-medium text-text-weak transition-colors duration-150",
+                            "min-h-10 rounded-md px-2 text-caption font-medium text-text-weak transition-colors duration-hover",
                             row().scope === scope &&
                               "bg-background-stronger text-text-strong shadow-[0_1px_2px_rgb(0_0_0/8%)]",
                           )}
@@ -424,7 +423,7 @@ export function DataWorkspace(props: {
                   class="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-caption/[1.25] text-text-critical-base hover:bg-surface-critical-weak"
                   onClick={() => deleteRow(row().id)}
                 >
-                  <Icon name="trash" size={14} /> Delete modifier
+                  <Icon name="trash" size={14} /> Delete variable
                 </button>
                 <span class="text-micro/[1.25] text-text-weaker">
                   {draftIds().has(row().id)

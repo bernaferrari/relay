@@ -273,6 +273,7 @@ test("defines deterministic task profiles with a compact authoring default", () 
     "test",
     "run",
     "execute",
+    "locale",
     "review",
     "admin",
     "full",
@@ -408,8 +409,34 @@ test("publishes compact discovery metadata for every eligible operation", () => 
     role: "viewer",
     confirmation: "none",
     capabilities: ["screenshot"],
-    profiles: ["control", "map", "observe", "author", "test", "run", "execute", "review"],
+    profiles: ["control", "map", "observe", "author", "test", "run", "execute", "locale", "review"],
   });
+});
+
+test("the locale profile can run a language sweep and read what broke", () => {
+  const locale = new Set(relayMcpToolsForProfile("locale").map(({ operationId }) => operationId));
+  for (const operationId of [
+    "corpus.create",
+    "corpus.start",
+    "corpus.cancel",
+    "corpus.coverage",
+    "corpus.analysis",
+    "corpus.export",
+    "language-profile.scan",
+    "switcher-profile.scan",
+    "job.locale-matrix.start",
+    "target.screenshot.capture",
+  ] as const) {
+    assert.ok(locale.has(operationId), `locale profile is missing ${operationId}`);
+  }
+  // A sweep drives a real device; authoring the App Map is a different task.
+  assert.equal(locale.has("app-map.proposal.submit"), false);
+  assert.equal(locale.has("authoring.session.create"), false);
+
+  // Reading a finished sweep must stay available to the read-only profile.
+  const observe = new Set(relayMcpToolsForProfile("observe").map(({ operationId }) => operationId));
+  assert.ok(observe.has("corpus.analysis"));
+  assert.ok(observe.has("corpus.coverage"));
 });
 
 test("publishes exact graph Test and one-pass run schemas", () => {

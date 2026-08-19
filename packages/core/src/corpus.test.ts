@@ -13,6 +13,7 @@ import {
   exportCorpusPack,
   formatCorpusExport,
   corpusControls,
+  crawlableCorpusControls,
   listCorpusSessions,
   readCorpusSession,
   recordCorpusScreen,
@@ -142,13 +143,101 @@ test("corpusControls prefer identifier targets and filter sensitive rows", () =>
       hittable: true,
     },
   ]);
+  const crawlable = crawlableCorpusControls(controls);
   // Language switcher is out-of-band (switchToLocale); crawl must not open it.
-  assert.ok(!controls.some((control) => control.stableKey === "id:settings.language"));
-  assert.ok(controls.some((control) => control.stableKey === "id:settings.appearance"));
-  assert.ok(!controls.some((control) => /delete/i.test(control.label)));
+  assert.ok(!crawlable.some((control) => control.stableKey === "id:settings.language"));
+  assert.ok(crawlable.some((control) => control.stableKey === "id:settings.appearance"));
+  assert.ok(!crawlable.some((control) => /delete/i.test(control.label)));
+  // Both are still observed, so a locale sweep can compare their copy.
+  assert.ok(controls.some((control) => control.stableKey === "id:settings.language"));
+  assert.ok(controls.some((control) => control.stableKey === "id:settings.delete"));
 });
 
-test("corpusControls keep SwiftUI cells and drop sheet chrome", () => {
+test("chrome is filtered by identifier, so every locale is compared equally", () => {
+  // Measured on the physical iPad: the same Grok Ask screen reported four
+  // controls in English and ten in Italian, because the filter matched the
+  // visible label against English words. Comparison starts from the baseline's
+  // keys, so the six that only survived outside English were compared in no
+  // language at all.
+  const askScreen = (labels: {
+    search: string;
+    ask: string;
+    build: string;
+    sidebar: string;
+    attach: string;
+    speak: string;
+    model: string;
+  }): SnapshotNode[] =>
+    (
+      [
+        ["sidebar.search.field", labels.search, "TextField"],
+        ["navigation.tab.ask", labels.ask, "Button"],
+        ["navigation.tab.build", labels.build, "Button"],
+        ["sidebar.open.button", labels.sidebar, "Button"],
+        ["ask.toolbar.add.button", labels.attach, "Button"],
+        ["voice.speak.button", labels.speak, "Button"],
+        ["toolbar.model.selector.button", labels.model, "Button"],
+        // The app's own handle for an icon, spoken as the label.
+        ["sidebar.settings.button", "grok-gear", "Button"],
+      ] as const
+    ).map(([identifier, label, type], index) => ({
+      index,
+      type,
+      role: type.toLocaleLowerCase(),
+      identifier,
+      label,
+      hittable: true,
+      visibleToUser: true,
+    })) as unknown as SnapshotNode[];
+
+  const english = corpusControls(
+    askScreen({
+      search: "Search",
+      ask: "Ask",
+      build: "Build",
+      sidebar: "Open sidebar",
+      attach: "Attach",
+      speak: "Speak",
+      model: "Expert",
+    }),
+  );
+  const italian = corpusControls(
+    askScreen({
+      search: "Cerca",
+      ask: "Chiedi",
+      build: "Compilazione",
+      sidebar: "Apri la barra laterale",
+      attach: "Allega",
+      speak: "Parla",
+      model: "Esperto",
+    }),
+  );
+
+  assert.deepEqual(
+    english.map((control) => control.stableKey),
+    italian.map((control) => control.stableKey),
+  );
+  assert.deepEqual(
+    crawlableCorpusControls(english).map((control) => control.stableKey),
+    crawlableCorpusControls(italian).map((control) => control.stableKey),
+  );
+  // The tabs are destinations. They only looked like chrome because "Ask" and
+  // "Build" are also titles this app must not name a screen after.
+  assert.deepEqual(
+    crawlableCorpusControls(english).map((control) => control.stableKey),
+    ["id:navigation.tab.ask", "id:navigation.tab.build", "id:toolbar.model.selector.button"],
+  );
+  // Tapping a search field summons the keyboard, which is what made the sweep
+  // unreadable in the first place. It is observed, never opened.
+  const search = english.find((control) => control.stableKey === "id:sidebar.search.field");
+  assert.equal(search?.skipCrawl, true);
+  assert.equal(search?.label, "Search");
+  // "grok-gear" reads the same in all forty languages because nobody wrote it
+  // for a reader. Recording it would report one untranslated string per locale.
+  assert.ok(!english.some((control) => control.label === "grok-gear"));
+});
+
+test("corpusControls keep SwiftUI cells and keep sheet chrome out of the crawl", () => {
   const controls = corpusControls([
     {
       index: 0,
@@ -212,10 +301,19 @@ test("corpusControls keep SwiftUI cells and drop sheet chrome", () => {
     },
   ]);
   assert.deepEqual(
-    controls.map((control) => control.label),
+    crawlableCorpusControls(controls).map((control) => control.label),
     ["Appearance"],
   );
-  assert.equal(controls[0]?.target.ref, "e17");
+  assert.equal(crawlableCorpusControls(controls)[0]?.target.ref, "e17");
+  // Chrome with no identifier still falls back to the word list, and is still
+  // recorded: "Close" is copy, and a sweep that drops it cannot compare it.
+  assert.deepEqual(
+    controls.filter((control) => control.skipCrawl).map((control) => control.label),
+    ["Close", "Rate the App", "App Language, English"],
+  );
+  // A scroll bar, a switch's bare "0", and the app's own `grok-close` handle
+  // are not copy anyone translated.
+  assert.ok(!controls.some((control) => /scroll bar|Kids Mode|grok-/i.test(control.label)));
 });
 
 test("corpusControls expose toggles only for explicit recorded journeys", () => {
@@ -503,6 +601,68 @@ test("analyzeCorpus turns a locale crawl into an explainable review queue", asyn
   assert.ok(report.findings.every((finding) => finding.confidence !== undefined));
 });
 
+test("analyzeCorpus does not report a leaked identifier as untranslated copy", async () => {
+  // A physical Grok sweep hands back `RightButtonBar` and
+  // `imagine.animateYourPhotos.cell` in the label slot. They are identical in
+  // every language because nobody wrote them for a reader, and reporting them
+  // once per locale buries the real translation defects underneath.
+  await workspace();
+  const leaky = (translated: boolean): SnapshotNode[] => [
+    {
+      index: 0,
+      type: "Button",
+      role: "button",
+      label: "RightButtonBar",
+      identifier: "grok.toolbar.right",
+      visibleToUser: true,
+      hittable: true,
+    },
+    {
+      index: 1,
+      type: "Button",
+      role: "button",
+      label: "imagine.animateYourPhotos.cell",
+      identifier: "grok.suggestion.animate",
+      visibleToUser: true,
+      hittable: true,
+    },
+    {
+      index: 2,
+      type: "Button",
+      role: "button",
+      label: translated ? "Ocultar teclado" : "Hide keyboard",
+      identifier: "grok.keyboard.hide",
+      visibleToUser: true,
+      hittable: true,
+    },
+  ];
+  const session = await createCorpusSession({
+    name: "Leaked identifiers",
+    targetId: "ios",
+    scope: { locales: ["en", "pt-BR"], mapLocale: "en", maxDepth: 1 },
+  });
+  for (const [locale, translated] of [
+    ["en", false],
+    ["pt-BR", true],
+  ] as const) {
+    await recordCorpusScreen({
+      sessionId: session.id,
+      nodes: leaky(translated),
+      locale,
+      depth: 0,
+      path: [],
+      pathKeys: [],
+    });
+  }
+
+  const report = analyzeCorpus((await listCorpusSessions())[0]!);
+
+  assert.deepEqual(
+    report.findings.filter((finding) => finding.code === "POSSIBLE_UNTRANSLATED_TEXT"),
+    [],
+  );
+});
+
 test("analyzeCorpus detects when a requested locale was probably not applied", async () => {
   const root = await workspace();
   const screenshot = join(root, "unchanged.png");
@@ -711,4 +871,129 @@ test("normalizeScope defaults to map-once-replay and orders map locale first", a
     process.env.RELAY_WORKSPACE_ROOT = previous;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+/** One settings row whose label and box are both under the caller's control. */
+function rowNodes(label: string, width: number): SnapshotNode[] {
+  return [
+    {
+      index: 0,
+      type: "StaticText",
+      role: "header",
+      label: "Settings",
+      identifier: "settings.title",
+      visibleToUser: true,
+      hittable: false,
+    },
+    {
+      index: 1,
+      type: "Button",
+      role: "button",
+      label,
+      identifier: "settings.notifications",
+      visibleToUser: true,
+      hittable: true,
+      rect: { x: 0, y: 100, width, height: 44 },
+    },
+  ];
+}
+
+test("a translation that outgrows its unchanged box is reported as probably clipped", async () => {
+  await workspace();
+  const session = await createCorpusSession({
+    name: "Fit review",
+    targetId: "android",
+    scope: { locales: ["en", "de"], mapLocale: "en", maxDepth: 1 },
+  });
+  await recordCorpusScreen({
+    sessionId: session.id,
+    nodes: rowNodes("Notifications", 220),
+    locale: "en",
+    depth: 0,
+    path: [],
+    pathKeys: [],
+  });
+  await recordCorpusScreen({
+    sessionId: session.id,
+    nodes: rowNodes("Benachrichtigungseinstellungen", 220),
+    locale: "de",
+    depth: 0,
+    path: [],
+    pathKeys: [],
+  });
+
+  const report = analyzeCorpus((await listCorpusSessions())[0]!);
+  const finding = report.findings.find((item) => item.code === "POSSIBLE_TEXT_CLIPPED");
+  assert.equal(finding?.locale, "de");
+  assert.equal(finding?.confidence, "medium");
+  assert.equal(finding?.severity, "warning");
+  assert.equal(finding?.expected, "Notifications");
+  assert.match(finding?.detail ?? "", /same 220×44 box/u);
+});
+
+test("an ellipsis in the translated label is reported with high confidence", async () => {
+  await workspace();
+  const session = await createCorpusSession({
+    name: "Fit review",
+    targetId: "android",
+    scope: { locales: ["en", "de"], mapLocale: "en", maxDepth: 1 },
+  });
+  await recordCorpusScreen({
+    sessionId: session.id,
+    nodes: rowNodes("Notifications", 220),
+    locale: "en",
+    depth: 0,
+    path: [],
+    pathKeys: [],
+  });
+  await recordCorpusScreen({
+    sessionId: session.id,
+    nodes: rowNodes("Benachrichti\u2026", 220),
+    locale: "de",
+    depth: 0,
+    path: [],
+    pathKeys: [],
+  });
+
+  const report = analyzeCorpus((await listCorpusSessions())[0]!);
+  const finding = report.findings.find((item) => item.code === "POSSIBLE_TEXT_CLIPPED");
+  assert.equal(finding?.confidence, "high");
+  assert.match(finding?.detail ?? "", /is cut off/u);
+});
+
+test("a translation that was given more room is not reported as clipped", async () => {
+  await workspace();
+  const session = await createCorpusSession({
+    name: "Fit review",
+    targetId: "android",
+    scope: { locales: ["en", "de"], mapLocale: "en", maxDepth: 1 },
+  });
+  await recordCorpusScreen({
+    sessionId: session.id,
+    nodes: rowNodes("Notifications", 220),
+    locale: "en",
+    depth: 0,
+    path: [],
+    pathKeys: [],
+  });
+  await recordCorpusScreen({
+    sessionId: session.id,
+    nodes: rowNodes("Benachrichtigungseinstellungen", 420),
+    locale: "de",
+    depth: 0,
+    path: [],
+    pathKeys: [],
+  });
+
+  const report = analyzeCorpus((await listCorpusSessions())[0]!);
+  assert.equal(
+    report.findings.some((item) => item.code === "POSSIBLE_TEXT_CLIPPED"),
+    false,
+  );
+});
+
+test("controls carry the box they were observed in", () => {
+  const controls = corpusControls(rowNodes("Notifications", 220));
+  const row = controls.find((control) => control.stableKey.includes("settings.notifications"));
+  assert.deepEqual(row?.rect, { x: 0, y: 100, width: 220, height: 44 });
 });

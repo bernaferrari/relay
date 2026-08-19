@@ -118,6 +118,14 @@
   &:focus {
     outline: none;
   }
+
+  /* One ring for every variant, matching Button. Variants that tune their own
+     ring override this through their higher attribute specificity. */
+  &:focus-visible:not(:disabled) {
+    box-shadow:
+      0 0 0 2px var(--background-base),
+      0 0 0 4px var(--border-strong-focus);
+  }
 }
 
 [data-component="icon-button"].titlebar-icon {

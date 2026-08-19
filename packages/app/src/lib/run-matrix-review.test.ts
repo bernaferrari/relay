@@ -21,7 +21,7 @@ function job(input: Partial<JobInfo> & Pick<JobInfo, "id" | "status">): JobInfo 
   } as JobInfo;
 }
 
-test("projects one modifier row by screenshot column without exposing selector helpers", () => {
+test("projects one Variable row by screenshot column without exposing selector helpers", () => {
   const first = job({
     id: "en",
     status: "ok",
@@ -166,7 +166,7 @@ test("does not expand multi-dimensional failures into unintended combinations", 
   assert.equal(currentLocaleRetry(review), null);
 });
 
-test("filters problems and modifier values without mutating the review", () => {
+test("filters problems and Variable values without mutating the review", () => {
   const review = projectRunMatrix([
     job({
       id: "en",

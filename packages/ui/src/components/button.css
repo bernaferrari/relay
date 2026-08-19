@@ -224,6 +224,19 @@
   &:focus {
     outline: none;
   }
+
+  /*
+   * The design system owns the keyboard ring for every variant, so a consumer
+   * never has to add one. Ghost and danger previously indicated focus only by
+   * background tint, which disappears entirely on a tinted surface. Primary and
+   * secondary override this with their own tuned ring through variant
+   * specificity.
+   */
+  &:focus-visible:not(:disabled) {
+    box-shadow:
+      0 0 0 2px var(--background-base),
+      0 0 0 4px var(--border-strong-focus);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

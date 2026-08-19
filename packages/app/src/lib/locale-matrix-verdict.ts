@@ -1,0 +1,212 @@
+import type { CorpusFinding, CorpusFindingCode } from "@relay/protocol";
+import type { IconName } from "../components/icon";
+import type { RunMatrixCapture, RunMatrixRow } from "./run-matrix-review";
+
+/**
+ * Presentation vocabulary for one cell of a locale matrix.
+ *
+ * Relay had two locale paths that never met in the UI: `corpus.*` produces
+ * CorpusFinding codes such as POSSIBLE_TEXT_CLIPPED with nowhere to show them,
+ * and the Combine grid rendered screenshots that made no claim at all. Forty
+ * screenshots with no verdict still leaves a person comparing them by eye.
+ *
+ * This module is the seam, and it speaks the protocol's own vocabulary so that
+ * wiring analysis in is passing findings rather than translating them. It keeps
+ * the heuristics honest: `confidence: "medium"` findings are phrased as
+ * possibilities, because a layout heuristic cannot prove a translation wrong.
+ */
+export type LocaleCellVerdict =
+  | "pass"
+  | "not-applied"
+  | "clipped"
+  | "untranslated"
+  | "missing"
+  | "failed"
+  | "pending"
+  | "unanalyzed"
+  /** Everything this cell reported has already been looked at and accepted. */
+  | "known";
+
+/** Worst first. A cell shows one verdict, so it must be the one worth acting on. */
+const findingVerdicts: Record<CorpusFindingCode, LocaleCellVerdict> = {
+  POSSIBLE_LOCALE_NOT_APPLIED: "not-applied",
+  POSSIBLE_TEXT_CLIPPED: "clipped",
+  POSSIBLE_UNTRANSLATED_TEXT: "untranslated",
+  SCREEN_MISSING: "missing",
+  CONTROL_MISSING: "missing",
+};
+
+const verdictRank: Record<LocaleCellVerdict, number> = {
+  failed: 0,
+  "not-applied": 1,
+  clipped: 2,
+  untranslated: 3,
+  missing: 4,
+  pending: 5,
+  unanalyzed: 6,
+  pass: 7,
+  known: 8,
+};
+
+export type LocaleCellAnalysis = {
+  findings: readonly CorpusFinding[];
+  /** Locale each finding was compared against. Shown so a verdict is auditable. */
+  baselineLabel?: string;
+};
+
+export type LocaleCellInput = {
+  status: string;
+  capture: Pick<RunMatrixCapture, "frame"> | undefined;
+  /** Absent until analysis runs. Absent is not the same as clean. */
+  analysis?: LocaleCellAnalysis | undefined;
+};
+
+const activeStatuses = new Set(["queued", "running", "paused"]);
+const failedStatuses = new Set(["error", "cancelled"]);
+
+/**
+ * The one verdict a set of findings earns. Exported because the corpus path
+ * reaches its cells differently — a crawled screen per locale rather than a
+ * job's screenshot — and the two must not disagree about which finding wins.
+ */
+export function worstLocaleVerdict(
+  findings: readonly CorpusFinding[],
+): LocaleCellVerdict | undefined {
+  return findings
+    .map((finding) => findingVerdicts[finding.code])
+    .sort((left, right) => verdictRank[left] - verdictRank[right])[0];
+}
+
+export function localeCellVerdict(input: LocaleCellInput): LocaleCellVerdict {
+  if (failedStatuses.has(input.status)) return "failed";
+  if (activeStatuses.has(input.status)) return "pending";
+  if (!input.capture?.frame) return "missing";
+  const worst = worstLocaleVerdict(input.analysis?.findings ?? []);
+  if (worst) return worst;
+  // A screenshot nobody has inspected is not a pass. Saying so is what makes the
+  // grid trustworthy once analysis starts filling it in.
+  return input.analysis ? "pass" : "unanalyzed";
+}
+
+export type LocaleVerdictPresentation = {
+  verdict: LocaleCellVerdict;
+  label: string;
+  /** One-line explanation for tooltips and the legend. */
+  hint: string;
+  icon: IconName;
+  /** Drives ink and fill through one switch instead of per-call ternaries. */
+  tone: "pass" | "defect" | "warn" | "neutral" | "progress";
+};
+
+const presentations: Record<LocaleCellVerdict, Omit<LocaleVerdictPresentation, "verdict">> = {
+  pass: {
+    label: "Pass",
+    hint: "Compared against the baseline locale with nothing to report.",
+    icon: "check",
+    tone: "pass",
+  },
+  "not-applied": {
+    label: "Locale not applied",
+    hint: "This screen still looks like the baseline locale, so the switch may not have taken.",
+    icon: "alert",
+    tone: "defect",
+  },
+  clipped: {
+    label: "Clipped text",
+    hint: "Translated text is probably too long for the control holding it.",
+    icon: "alert",
+    tone: "defect",
+  },
+  untranslated: {
+    label: "Untranslated",
+    hint: "Text appears to have been left in the baseline language.",
+    icon: "info",
+    tone: "warn",
+  },
+  missing: {
+    label: "Missing",
+    hint: "A screen or control the baseline has never showed up here.",
+    icon: "camera",
+    tone: "warn",
+  },
+  failed: {
+    label: "Run failed",
+    hint: "This locale never reached the screen, so there is nothing to compare.",
+    icon: "slash",
+    tone: "defect",
+  },
+  pending: {
+    label: "Capturing",
+    hint: "This cell is still queued or on device.",
+    icon: "clock",
+    tone: "progress",
+  },
+  unanalyzed: {
+    label: "Not checked",
+    hint: "Captured, but no locale analysis has looked at it yet.",
+    icon: "circle",
+    tone: "neutral",
+  },
+  known: {
+    label: "Known",
+    hint: "Everything reported here has already been looked at and accepted.",
+    icon: "check",
+    tone: "neutral",
+  },
+};
+
+export function localeVerdictPresentation(verdict: LocaleCellVerdict): LocaleVerdictPresentation {
+  return { verdict, ...presentations[verdict] };
+}
+
+/** Legend and filter order: defect-first, so problems are reachable without
+ * scanning a forty-row grid. */
+export const localeVerdictOrder: readonly LocaleCellVerdict[] = [
+  "not-applied",
+  "clipped",
+  "untranslated",
+  "failed",
+  "missing",
+  "unanalyzed",
+  "pending",
+  "pass",
+  "known",
+];
+
+/**
+ * Heuristic findings are reported as possibilities, so the cell must not assert
+ * a defect the analysis only suspects. Every "POSSIBLE_" code arrives with a
+ * confidence, and medium confidence earns a hedge in the copy.
+ */
+export function localeFindingHeadline(finding: CorpusFinding): string {
+  const label = localeVerdictPresentation(findingVerdicts[finding.code]).label;
+  return finding.confidence === "medium" ? `Possible ${label.toLocaleLowerCase()}` : label;
+}
+
+export type LocaleVerdictTally = { verdict: LocaleCellVerdict; count: number };
+
+export function summarizeLocaleVerdicts(
+  rows: readonly RunMatrixRow[],
+  captureIndex: number,
+  analysisFor?: (row: RunMatrixRow, captureIndex: number) => LocaleCellAnalysis | undefined,
+): LocaleVerdictTally[] {
+  const counts = new Map<LocaleCellVerdict, number>();
+  for (const row of rows) {
+    const verdict = localeCellVerdict({
+      status: row.job.status,
+      capture: row.captures[captureIndex],
+      analysis: analysisFor?.(row, captureIndex),
+    });
+    counts.set(verdict, (counts.get(verdict) ?? 0) + 1);
+  }
+  return localeVerdictOrder.flatMap((verdict) => {
+    const count = counts.get(verdict) ?? 0;
+    return count ? [{ verdict, count }] : [];
+  });
+}
+
+export function localeCellDefectCount(tallies: readonly LocaleVerdictTally[]): number {
+  return tallies
+    .filter(({ verdict }) => localeVerdictPresentation(verdict).tone === "defect")
+    .reduce((total, { count }) => total + count, 0);
+}

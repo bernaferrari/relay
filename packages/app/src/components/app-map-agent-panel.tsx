@@ -24,7 +24,12 @@ export function AppMapAgentPanel(props: {
         panel = element;
         queueMicrotask(() => panel?.focus());
       }}
-      class="ui-panel-in absolute top-3 right-3 bottom-3 z-40 flex w-[min(376px,calc(100%-24px))] flex-col overflow-hidden rounded-2xl bg-[var(--background-base)] shadow-[var(--map-elevation-panel)]"
+      // The panel takes focus on open so Escape closes it and a screen reader
+      // lands inside. It is not a tab stop, so the user-agent ring it was
+      // painting around the whole drawer signalled nothing — it just read as a
+      // 376px-tall validation error. Keyboard focus stays visible on the real
+      // controls inside.
+      class="ui-panel-in absolute top-3 right-3 bottom-3 z-40 flex w-[min(376px,calc(100%-24px))] flex-col overflow-hidden rounded-2xl bg-[var(--background-base)] shadow-[var(--map-elevation-panel)] focus:outline-none"
       aria-label="Map with AI"
       tabindex={-1}
       data-app-map-native-scroll
@@ -87,12 +92,19 @@ export function AppMapAgentPanel(props: {
             onModelIds={exploration.setModelIds}
           />
         </Show>
-        <Show when={(exploration.journey()?.stepCount ?? 0) > 0}>
+        <Show
+          when={
+            (exploration.journey()?.stepCount ?? 0) > 0 || exploration.journeyWorkers().length > 1
+          }
+        >
           <div class="mt-5">
             <AppMapJourneyTimeline
               journey={exploration.journey()}
               run={exploration.exploreRun()}
               label={exploration.journeyLabel()}
+              workers={exploration.journeyWorkers()}
+              selectedWorkerId={exploration.journeyWorkerId()}
+              onSelectWorker={exploration.selectJourneyWorker}
             />
           </div>
         </Show>

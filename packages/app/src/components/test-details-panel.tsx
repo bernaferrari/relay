@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
-import { productIconButton, tabUnderline, tabUnderlineActive } from "../lib/ui";
+import { productIconButton, tabUnderline, tabUnderlineActive, panelSectionLabel } from "../lib/ui";
 import { shellAsideDrawer, shellSteps, shellStepsBody } from "../lib/shell-layout";
 import { Icon } from "./icon";
 
@@ -33,6 +33,21 @@ export function MapPropertiesPanel(props: {
     const map = selectedMap();
     setDescriptionDraft(map?.description ?? "");
     setDescriptionMessage(null);
+  });
+
+  /** What this map holds, in the same words the rest of the product uses. */
+  const mapSummary = createMemo(() => {
+    const map = selectedMap();
+    if (!map) return null;
+    const counts: Array<[number, string, string]> = [
+      [Object.keys(map.screens).length, "screen", "screens"],
+      [Object.keys(map.connections).length, "path", "paths"],
+      [Object.keys(map.tests).length, "test", "tests"],
+    ];
+    const parts = counts
+      .filter(([count]) => count > 0)
+      .map(([count, one, many]) => `${count} ${count === 1 ? one : many}`);
+    return parts.length ? parts.join(" · ") : null;
   });
 
   const saveDescription = async () => {
@@ -158,17 +173,31 @@ export function MapPropertiesPanel(props: {
       <div class={shellStepsBody} data-editor-tab={tab()}>
         <Show when={tab() === "properties"}>
           <div class="h-full overflow-y-auto divide-y divide-[var(--border-weak-base)]">
+            <section class="grid gap-1 p-4 pb-3.5">
+              <h2 class="m-0 truncate text-title font-semibold tracking-[-0.015em] text-[var(--text-strong)]">
+                {selectedMap()?.name ?? "Untitled map"}
+              </h2>
+              <Show
+                when={mapSummary()}
+                fallback={
+                  <p class="m-0 text-caption/[1.45] text-[var(--text-weak)]">
+                    Nothing mapped yet. Open a device and record a screen to start this map.
+                  </p>
+                }
+              >
+                {(summary) => (
+                  <p class="m-0 text-caption tabular-nums text-[var(--text-weak)]">{summary()}</p>
+                )}
+              </Show>
+            </section>
             <section class="p-4">
               <div class="grid gap-1.5">
-                <label
-                  for="app-map-description"
-                  class="text-micro font-medium text-[var(--text-base)]"
-                >
+                <label for="app-map-description" class={panelSectionLabel}>
                   Description
                 </label>
                 <textarea
                   id="app-map-description"
-                  class="min-h-[72px] w-full resize-none rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 py-2.5 text-caption/[1.45] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--border-strong-base)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
+                  class="min-h-[72px] w-full resize-none rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 py-2.5 text-caption/[1.45] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-hover placeholder:text-[var(--text-weak)] focus:border-[var(--border-strong-base)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
                   value={descriptionDraft()}
                   placeholder="What does this map cover?"
                   onInput={(event) => {
@@ -193,7 +222,7 @@ export function MapPropertiesPanel(props: {
             <section class="p-3">
               <button
                 type="button"
-                class="group flex min-h-12 w-full items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors duration-150 hover:bg-[var(--surface-base-hover)]"
+                class="group flex min-h-12 w-full items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors duration-hover hover:bg-[var(--surface-base-hover)]"
                 onClick={props.onOpenVariables}
               >
                 <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--text-interactive-base)_10%,var(--surface-base))] text-[var(--text-interactive-base)]">
@@ -201,7 +230,7 @@ export function MapPropertiesPanel(props: {
                 </span>
                 <span class="min-w-0 flex-1">
                   <strong class="block text-caption font-medium text-[var(--text-base)]">
-                    Modifiers
+                    Variables
                   </strong>
                   <small class="mt-0.5 block text-micro text-[var(--text-weak)]">
                     Languages, accounts, and other lists a run can vary
@@ -210,7 +239,7 @@ export function MapPropertiesPanel(props: {
                 <Icon
                   name="chevron-right"
                   size={13}
-                  class="shrink-0 text-[var(--text-weak)] transition-transform duration-150 group-hover:translate-x-0.5"
+                  class="shrink-0 text-[var(--text-weak)] transition-transform duration-hover group-hover:translate-x-0.5"
                 />
               </button>
             </section>

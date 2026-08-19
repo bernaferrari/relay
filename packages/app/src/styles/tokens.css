@@ -22,6 +22,17 @@
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-hover: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /*
+   * One motion ladder. Anything a person triggers dozens of times a day sits at
+   * --duration-press or --duration-hover; only panels and overlays may reach
+   * --duration-panel. Nothing in product UI goes past it.
+   */
+  --duration-press: 90ms;
+  --duration-hover: 140ms;
+  --duration-enter: 180ms;
+  --duration-panel: 240ms;
 
   --text-micro: 10px;
   --text-caption: 11px;
@@ -35,6 +46,25 @@
   --type-title: var(--text-title);
   --leading-tight-product: 1.25;
   --leading-body-product: 1.45;
+}
+
+/*
+ * Tailwind has no --duration-* theme namespace, so a bare `duration-hover`
+ * compiles to nothing and the transition silently disappears. Registering the
+ * ladder as real utilities is what lets components name the motion they want
+ * instead of restating milliseconds.
+ */
+@utility duration-press {
+  transition-duration: var(--duration-press);
+}
+@utility duration-hover {
+  transition-duration: var(--duration-hover);
+}
+@utility duration-enter {
+  transition-duration: var(--duration-enter);
+}
+@utility duration-panel {
+  transition-duration: var(--duration-panel);
 }
 
 /*
@@ -53,10 +83,49 @@
   --shell-nav-width: 262px;
   --background-deep: var(--background-weak);
   --product-accent-soft: color-mix(in srgb, var(--text-interactive-base) 12%, transparent);
-  --map-canvas: oklch(0.978 0.006 82);
-  --map-grid-dot: oklch(0.46 0.018 270 / 0.17);
-  --map-control-surface: oklch(0.996 0.003 82 / 0.94);
-  --map-divider: oklch(0.42 0.018 270 / 0.12);
+
+  /*
+   * Stacking ladder. Arbitrary z-[70] / z-[130] literals used to decide which
+   * surface won, so a new panel could silently cover the toast that explains it.
+   * Every product layer is named here and nowhere else; a component that needs
+   * a new rank adds a rung rather than inventing a number.
+   */
+  --z-canvas-chrome: 20; /* minimap, canvas toolbars, floating view switcher */
+  --z-canvas-panel: 40; /* canvas side panels and inspectors */
+  --z-shell-header: 70; /* shell header and the catcher that closes its menus */
+  --z-shell-rail: 80; /* left rail and the anchors menus hang from */
+  --z-popover: 90; /* menus anchored inside a rail or header stacking context */
+  --z-scrim: 90; /* modal scrim: covers the shell, never the dialog it dims */
+  --z-modal: 100; /* dialogs, command palette, desktop window strip */
+  --z-modal-nested: 120; /* dialogs that must outrank the desktop window strip */
+  --z-toast: 140; /* above dialogs: a save error may never hide behind one */
+  --z-alert: 150; /* blocking confirm, the only rung that outranks a toast */
+  --z-tooltip: 160; /* top, because it never blocks anything */
+
+  /*
+   * Canvas neutrals track the indigo brand hue rather than the old warm 82°.
+   * A warm canvas beside cool grey panels was the source of the muddy seam
+   * where the library met the map.
+   */
+  --map-canvas: oklch(0.977 0.004 280);
+  --map-grid-dot: oklch(0.46 0.018 280 / 0.16);
+  --map-control-surface: oklch(0.997 0.002 280 / 0.94);
+  --map-divider: oklch(0.42 0.018 280 / 0.12);
+
+  /*
+   * Connection language. A map that has been drawn but never replayed is not a
+   * failure, so "not recorded yet" must read as quiet, never as alarm red.
+   */
+  --map-edge-ready: color-mix(in srgb, var(--text-base) 62%, transparent);
+  --map-edge-draft: color-mix(in srgb, var(--text-weak) 46%, transparent);
+  --map-edge-return: color-mix(in srgb, var(--text-weak) 34%, transparent);
+  --map-edge-selected: var(--text-interactive-base);
+  --map-edge-attention: var(--icon-critical-base);
+  /* Canvas units, so these shrink with zoom. The shortest mark in each is
+     mirrored in EDGE_DASH_SHORTEST_MARK, which drops the pattern once it is
+     too small to read; change one and change the other. */
+  --map-edge-dash-draft: 4 5;
+  --map-edge-dash-return: 2 5;
   --map-elevation-control:
     0 0 0 1px oklch(0.3 0.02 270 / 0.07), 0 2px 5px oklch(0.25 0.02 270 / 0.05),
     0 9px 22px -14px oklch(0.2 0.02 270 / 0.12);
@@ -66,12 +135,15 @@
 }
 
 [data-color-scheme="dark"] {
-  --map-canvas: oklch(0.18 0.012 270);
-  --map-grid-dot: oklch(0.78 0.018 270 / 0.11);
-  --map-control-surface: oklch(0.225 0.012 270 / 0.96);
-  --map-divider: oklch(0.82 0.012 270 / 0.1);
-  --map-elevation-control: 0 0 0 1px oklch(0.92 0.01 270 / 0.09);
-  --map-elevation-panel: 0 0 0 1px oklch(0.92 0.01 270 / 0.11);
+  --map-canvas: oklch(0.18 0.012 280);
+  --map-grid-dot: oklch(0.78 0.018 280 / 0.11);
+  --map-control-surface: oklch(0.225 0.012 280 / 0.96);
+  --map-divider: oklch(0.82 0.012 280 / 0.1);
+  --map-elevation-control: 0 0 0 1px oklch(0.92 0.01 280 / 0.09);
+  --map-elevation-panel: 0 0 0 1px oklch(0.92 0.01 280 / 0.11);
+  --map-edge-ready: color-mix(in srgb, var(--text-base) 70%, transparent);
+  --map-edge-draft: color-mix(in srgb, var(--text-weak) 58%, transparent);
+  --map-edge-return: color-mix(in srgb, var(--text-weak) 42%, transparent);
 }
 
 /*

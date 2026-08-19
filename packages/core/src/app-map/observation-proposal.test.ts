@@ -213,6 +213,52 @@ test("crawl lands named draft screens without a navigation contract", () => {
   );
 });
 
+test("a second crawl files its screens beside the first crawl's, never on top", () => {
+  const map = emptyMap();
+  for (const change of discoveryLandChanges({
+    map,
+    session: session(),
+    transitionId: "open-cart",
+  })) {
+    if (change.kind === "screen.add") map.screens[change.input.screen.id] = change.input.screen;
+  }
+  const first = session();
+  const second = proposalFromDiscovery({
+    map,
+    session: {
+      ...first,
+      id: "second",
+      screens: first.screens.map((screen) => ({
+        ...screen,
+        fingerprint: `${screen.fingerprint}-2`,
+        title: `${screen.title} 2`,
+      })),
+    },
+    proposalId: "second-proposal",
+    at: 9,
+  });
+  const positions = [
+    ...Object.values(map.screens).map((screen) => screen.position!),
+    ...second.changes.flatMap((change) =>
+      change.kind === "screen.add" ? [change.input.screen.position!] : [],
+    ),
+  ];
+  assert.equal(positions.length, 4);
+  // Card plus the name band above it: a frame's title must not land inside
+  // another frame's card, which is what an index-derived slot allowed.
+  for (const [index, left] of positions.entries()) {
+    for (const right of positions.slice(index + 1)) {
+      assert.ok(
+        left.x + 240 <= right.x ||
+          right.x + 240 <= left.x ||
+          left.y + 230 <= right.y - 34 ||
+          right.y + 230 <= left.y - 34,
+        `slots ${JSON.stringify(left)} and ${JSON.stringify(right)} overlap`,
+      );
+    }
+  }
+});
+
 test("matchingScreenId keeps Memory, Kids Mode, and NSFW distinct under shared chrome", () => {
   const map = emptyMap();
   const scope = { organizationId: "org", projectId: "project", appMapId: "map" };

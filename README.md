@@ -25,17 +25,17 @@ Relay uses five user-facing concepts:
 | -------------- | ----------------------------------------------------- | -------------------------------------------- |
 | **Screen**     | A distinct product state                              | Settings, Appearance, Widget                 |
 | **Connection** | Recorded actions between two screens                  | Settings → tap Appearance → Appearance       |
-| **Modifier**   | A reusable way to change one dimension                | Language = English, Italian, Japanese        |
+| **Variable**   | A reusable way to change one dimension                | Language = English, Italian, Japanese        |
 | **Test**       | Ordered intent, checks, decisions, and reusable flows | Sign in, verify Home, extract the account ID |
-| **Run matrix** | Every selected modifier state × every selected test   | 40 languages × 10 screens = 400 screenshots  |
+| **Combine**    | Every selected Variable value × every selected Test   | 40 languages × 10 screens = 400 screenshots  |
 
 ```text
-Language modifier ─┐
-Theme modifier ────┼─ every selected state × Settings test ──> Results
-Account modifier ──┘
+Language Variable ─┐
+Theme Variable ────┼─ every selected value × Settings Test ──> Results
+Account Variable ──┘
 ```
 
-Modifiers are not magic labels. Each one stores how to apply a value and return to the test's start
+Variables are not magic labels. Each one stores how to apply a value and return to the test's start
 screen. Tests remain independent, so a new language or model can reuse every existing test without
 rerecording it. A graph-native Test can navigate reviewed connections, validate or extract UI,
 pause for a person, call a reusable module, branch, loop, or run a constrained script. Screenshot
@@ -93,12 +93,12 @@ overlay does not.
 The manual workflow does not require an agent:
 
 1. Create a Test and bind its steps to reviewed connections, observed UI, or reusable modules.
-2. Open **Run matrix** and create a modifier such as Language.
+2. Open **Combine** and create a Variable such as Language.
 3. Teach Relay how to enter the language list, choose example rows, and return to the test start.
    Android app locales can be discovered dynamically when the app exposes them.
 4. Select the values, tests, and screenshot policy.
-5. Inspect the exact expansion. Run one cell to prove the setup, then run the matrix.
-6. Review Results by logical screen, with modifier variants grouped together.
+5. Inspect the exact expansion. Run one cell to prove the setup, then run the whole Combine.
+6. Review Results by logical screen, with Variable values grouped together.
 
 Treat long surfaces selectively. Opt stable, product-owned pages into full-surface capture when the
 content below the fold matters; Relay retains the original viewport screenshots and trees and derives
@@ -117,7 +117,7 @@ The expansion strategy is explicit:
 
 - **Every combination** for a true Cartesian product.
 - **Match rows** when values pair by index.
-- **Every pair** to cover interactions across three or more modifiers with fewer device runs.
+- **Every pair** to cover interactions across three or more Variables with fewer device runs.
 
 Preflight uses the same compiler as execution and reports the exact states, checks, expected
 screenshots, duration estimate, and blockers before the device is touched.
@@ -163,7 +163,7 @@ the machine-readable operation registry at `GET /meta`.
 
 ## Results and evidence
 
-Runs preserve the selected map revision, target, modifier values, screenshot policy, actions,
+Runs preserve the selected map revision, target, Variable values, screenshot policy, actions,
 assertions, frames, UI trees, logs, network summaries, performance data, and failure provenance.
 Unsupported or denied channels remain visible instead of silently appearing successful.
 
@@ -181,7 +181,7 @@ an expiring, revocable, signed link. Public projections exclude selectors, logs,
 private inputs, and device identifiers.
 
 There is no separate screenshot-crawl project in the desktop app. The App Map remains the source of
-truth, the run matrix performs the multiplication, and screenshots plus accessibility trees appear
+truth, the Combine performs the multiplication, and screenshots plus accessibility trees appear
 as evidence on that map-bound run. Internal capture commands may collect the same artifacts for CLI
 automation, but they do not create another authoring model.
 

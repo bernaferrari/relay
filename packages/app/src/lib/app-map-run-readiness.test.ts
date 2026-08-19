@@ -87,6 +87,19 @@ test("a map without screens asks to save the first screen", () => {
   assert.match(result.reason, /start your map/);
 });
 
+test("a mapped graph with no recorded flow asks to record, not to save a first screen", () => {
+  const mappedButUnrecorded: CanvasGraph = {
+    schemaVersion: 1,
+    screens: [screen("start"), screen("a")],
+    transitions: [],
+    flows: [],
+  };
+  const result = appMapRunReadiness({ graph: mappedButUnrecorded, recipeSteps: [] });
+  assert.equal(result.next, "record");
+  assert.equal(result.label, "Record path");
+  assert.doesNotMatch(result.reason, /first screen/i);
+});
+
 test("empty graph asks to record a path", () => {
   const result = appMapRunReadiness({
     graph: graph([]),

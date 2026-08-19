@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap } from "@relay/protocol";
-import { matrixId, savedTestId, testCandidates } from "./app-map-combine-candidates";
+import { combineIdFor, savedTestId, testCandidates } from "./app-map-combine-candidates";
 
 function map(): AppMap {
   return {
@@ -19,7 +19,7 @@ function map(): AppMap {
   } as unknown as AppMap;
 }
 
-test("run matrices offer saved graph Tests only", () => {
+test("combines offer saved graph Tests only", () => {
   const candidates = testCandidates(map());
   assert.deepEqual(
     candidates.map((candidate) => `${candidate.source}:${candidate.id}`),
@@ -28,10 +28,10 @@ test("run matrices offer saved graph Tests only", () => {
   assert.deepEqual(candidates.map(savedTestId), ["smoke"]);
 });
 
-test("matrix IDs remain deterministic", () => {
+test("combine IDs remain deterministic and keep their storage prefix", () => {
   assert.equal(
-    matrixId(["Language", "Theme"], ["Smoke Test"]),
+    combineIdFor(["Language", "Theme"], ["Smoke Test"]),
     "matrix-language-theme-to-smoke-test",
   );
-  assert.equal(matrixId([], []), "matrix-to");
+  assert.equal(combineIdFor([], []), "matrix-to");
 });

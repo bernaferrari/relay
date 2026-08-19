@@ -1,5 +1,5 @@
 import { createAgentDeviceClient } from "agent-device";
-import { raceCancel } from "./control.js";
+import { getExecutingJobId, raceCancel } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
 import type { Device } from "./device.js";
 import { execFile } from "node:child_process";
@@ -8,13 +8,21 @@ import { promisify } from "node:util";
 type NativeDevice = ReturnType<typeof createAgentDeviceClient>;
 const execFileAsync = promisify(execFile);
 
-/** Bind every mutating SDK capability to the target's exclusive job lane. */
+/**
+ * Bind every mutating SDK capability to the target's exclusive job lane.
+ *
+ * The owning job is read per call, never captured here. One client is cached
+ * per target and outlives the job that happened to create it, so a bound id
+ * would attribute a later job's taps to an earlier one — or, when a manual
+ * interact built the client, to no job at all. Either way the next automated
+ * run is locked out of the device by its own reservation.
+ */
 export function bindNativeDeviceMutations(
   native: NativeDevice,
   targetId: string,
-  jobId: string | null,
 ): Pick<Device, "devices" | "apps" | "interactions" | "command" | "settings" | "recording"> {
-  const mutate = <T>(operation: () => Promise<T>) => runTargetMutation(targetId, jobId, operation);
+  const mutate = <T>(operation: () => Promise<T>) =>
+    runTargetMutation(targetId, getExecutingJobId(), operation);
   return {
     devices: { ...native.devices, boot: (options) => mutate(() => native.devices.boot(options)) },
     apps: {

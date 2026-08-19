@@ -70,7 +70,7 @@ export function looksLikeLanguagePicker(
  * the controls that are on the device right now. Keep its classification
  * separate from row extraction so the UI can say *why* an arbitrary picker
  * (most commonly Android's document picker) cannot become a Language
- * modifier.
+ * Variable.
  */
 export type VisibleListRead = {
   rows: Array<{ identifier?: string; label?: string; value?: string }>;
@@ -90,7 +90,7 @@ function looksLikeFilePicker(
 }
 
 /** Inspect the currently visible rows without pretending that Relay navigated
- * to them. Language modifiers require a real language picker; other modifier
+ * to them. Language Variables require a real language picker; other Variable
  * kinds may learn any visible list. */
 export function inspectVisibleList(
   nodes: Array<{ identifier?: string; label?: string; value?: string; hittable?: boolean }>,

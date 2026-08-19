@@ -2,6 +2,7 @@ import { For, Show, createEffect, createSignal, createUniqueId, type JSX } from 
 import type { AuthoringInteraction, StepTarget } from "@relay/protocol";
 import type { RecordingTakeAction } from "../context/recorder";
 import { cn } from "../lib/cn";
+import { panelFieldLabel as label } from "../lib/ui";
 import { STRATEGIES, type Strategy } from "../lib/step-target";
 import { Icon } from "./icon";
 
@@ -18,10 +19,9 @@ import {
 } from "./take-action-model";
 
 const field =
-  "h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 text-body text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-100 placeholder:text-[var(--text-weak)] focus-visible:border-[var(--text-interactive-base)] focus-visible:shadow-[0_0_0_2px_color-mix(in_srgb,var(--text-interactive-base)_14%,transparent)]";
-const label = "grid gap-1.5 text-micro font-medium text-[var(--text-base)]";
+  "h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 text-body text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-press placeholder:text-[var(--text-weak)] focus-visible:border-[var(--text-interactive-base)] focus-visible:shadow-[0_0_0_2px_color-mix(in_srgb,var(--text-interactive-base)_14%,transparent)]";
 const iconButton =
-  "grid size-11 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] transition-[background-color,color,transform] duration-100 hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-35";
+  "grid size-11 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] transition-[background-color,color,transform] duration-press hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-35";
 
 type BindingRow = { id: number; name: string; value: string };
 
@@ -596,7 +596,7 @@ export function TakeActionEditor(props: {
                 </For>
                 <button
                   type="button"
-                  class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-[var(--border-weak-base)] px-3 text-caption font-medium text-[var(--text-base)] transition-[background-color,color] duration-100 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                  class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-[var(--border-weak-base)] px-3 text-caption font-medium text-[var(--text-base)] transition-[background-color,color] duration-press hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                   disabled={props.pending}
                   onClick={() =>
                     setBindingRows((rows) => [
@@ -635,7 +635,7 @@ export function TakeActionEditor(props: {
       <div class="grid grid-cols-2 gap-2">
         <button
           type="button"
-          class="min-h-11 rounded-lg px-3 text-caption font-medium text-[var(--text-base)] transition-[background-color,color] duration-100 hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)]"
+          class="min-h-11 rounded-lg px-3 text-caption font-medium text-[var(--text-base)] transition-[background-color,color] duration-press hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)]"
           disabled={props.pending}
           onClick={props.onCancel}
         >
@@ -643,7 +643,7 @@ export function TakeActionEditor(props: {
         </button>
         <button
           type="submit"
-          class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+          class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-hover hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
           disabled={props.pending}
         >
           <Show when={props.pending} fallback={<Icon name="check" size={12} />}>

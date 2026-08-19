@@ -15,6 +15,7 @@ import {
 } from "../lib/app-map-test-layout";
 import { flattenScenarioSteps } from "../lib/app-map-test-editor-tree";
 import { createAppMapTestStepActions } from "../lib/use-app-map-test-step-actions";
+import { EmptyState } from "./empty-state";
 import { AppMapTestInspector } from "./app-map-test-inspector";
 import { AppMapTestOutline } from "./app-map-test-outline";
 import { AppMapTestUndo } from "./app-map-test-undo";
@@ -25,8 +26,8 @@ import { Icon } from "./icon";
 import { AppMapTestProposalReview } from "./app-map-test-proposal-review";
 import { createAppMapTestDocumentSession } from "./app-map-test-document-session";
 import {
-  FirstTestEmpty,
   RailStrip,
+  StepsRailEmpty,
   TestSwitcher,
   TestWorkspaceBar,
 } from "./app-map-test-workspace-chrome";
@@ -208,10 +209,7 @@ export function AppMapTestWorkspace(props: {
    */
   function StepsRail() {
     return (
-      <Show
-        when={draft()}
-        fallback={<FirstTestEmpty creating={creating()} onCreate={() => void createTest()} />}
-      >
+      <Show when={draft()} fallback={<StepsRailEmpty />}>
         {(test) => (
           <AppMapTestOutline
             map={appMap()!}
@@ -239,7 +237,19 @@ export function AppMapTestWorkspace(props: {
 
   function DeviceRail() {
     return (
-      <Show when={draft()}>
+      <Show
+        when={draft()}
+        fallback={
+          // Otherwise this column is a second unexplained void: the same grey as
+          // the rail beside it, with nothing in it and no label saying what it
+          // is waiting for.
+          <div class="grid min-h-full place-items-center p-6 text-center">
+            <p class="m-0 max-w-[28ch] text-caption/[1.5] text-text-weak">
+              Screenshots from this Test’s last run appear here.
+            </p>
+          </div>
+        }
+      >
         {(test) => (
           <AppMapTestDeviceEvidence
             appMap={appMap() ?? undefined}
@@ -402,7 +412,10 @@ export function AppMapTestWorkspace(props: {
               <div
                 id="test-save-error"
                 tabindex={-1}
-                class="m-3 flex items-start justify-between gap-3 rounded-md border border-border-critical-base bg-surface-critical-weak p-2.5 text-caption/[1.45] text-text-critical-base"
+                // Focused to announce, not to be tabbed to, so it keeps its own
+                // critical border rather than stacking a blue user-agent ring on
+                // top of a red alert.
+                class="m-3 flex items-start justify-between gap-3 rounded-md border border-border-critical-base bg-surface-critical-weak p-2.5 text-caption/[1.45] text-text-critical-base focus:outline-none"
                 role="alert"
               >
                 <span>
@@ -422,7 +435,29 @@ export function AppMapTestWorkspace(props: {
                 </Show>
               </div>
             </Show>
-            <Show when={draft()}>
+            <Show
+              when={draft()}
+              fallback={
+                // Without this the document pane is a blank white column between
+                // two rails — the surface that should say what the mode is for
+                // was the one surface saying nothing. It names what lands here
+                // and offers the same first step the rail does.
+                <div class="grid min-h-full place-items-center px-5 py-10">
+                  <EmptyState
+                    size="lg"
+                    icon="edit"
+                    title={tests().length ? "No Test open" : "No Tests yet"}
+                    description={
+                      tests().length
+                        ? "Pick one from the switcher to read its steps here, or start a new Test."
+                        : "A Test is what you run once — a path through this map, written as readable intent and bound to reviewed screens."
+                    }
+                    actionLabel={creating() ? "Creating…" : "Create Test"}
+                    onAction={() => void createTest()}
+                  />
+                </div>
+              }
+            >
               <div class="mx-auto grid w-full max-w-[640px] gap-4 px-5 py-4">
                 <AppMapTestInspector
                   map={appMap()!}

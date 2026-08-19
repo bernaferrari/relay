@@ -47,7 +47,7 @@ export function CoordinateConstraintPicker(props: {
         aria-checked={props.active}
         class={cn(
           "grid min-h-10 w-full grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left",
-          "transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.985]",
+          "transition-[background-color,border-color,transform] duration-hover ease-out active:scale-[0.985]",
           props.active
             ? "border-[color-mix(in_srgb,var(--text-interactive-base)_58%,transparent)] bg-[color-mix(in_srgb,var(--text-interactive-base)_11%,var(--surface-base))]"
             : "border-[var(--border-weak-base)] bg-[var(--surface-base)] hover:border-[var(--border-strong-base)] hover:bg-[var(--surface-base-hover)]",
@@ -154,7 +154,7 @@ export function CoordinatePinPicker(props: {
       <button
         ref={(element) => (trigger = element)}
         type="button"
-        class="grid h-8 w-full grid-cols-[minmax(0,1fr)_12px] items-center gap-1.5 rounded-md bg-[var(--surface-base)] px-2.5 text-left shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-[background-color,box-shadow] duration-100 ease-out hover:bg-[var(--surface-base-hover)] focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--text-base),0_0_0_2px_color-mix(in_srgb,var(--text-base)_10%,transparent)]"
+        class="grid h-8 w-full grid-cols-[minmax(0,1fr)_12px] items-center gap-1.5 rounded-md bg-[var(--surface-base)] px-2.5 text-left shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-[background-color,box-shadow] duration-press ease-out hover:bg-[var(--surface-base-hover)] focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--text-base),0_0_0_2px_color-mix(in_srgb,var(--text-base)_10%,transparent)]"
         aria-haspopup="dialog"
         aria-expanded={open()}
         onClick={() => {
@@ -174,7 +174,7 @@ export function CoordinatePinPicker(props: {
         <Portal>
           <div
             ref={(element) => (content = element)}
-            class="ui-pop fixed z-[100] rounded-xl bg-surface-raised-stronger-non-alpha p-2 shadow-[0_14px_30px_rgb(0_0_0/48%)]"
+            class="ui-pop fixed z-[var(--z-modal)] rounded-xl bg-surface-raised-stronger-non-alpha p-2 shadow-[0_14px_30px_rgb(0_0_0/48%)]"
             style={{
               left: `${position()?.left ?? 8}px`,
               top: `${position()?.top ?? 8}px`,
@@ -407,7 +407,7 @@ function ConstraintPad(props: {
                       role="radio"
                       class={cn(
                         "group grid min-h-0 min-w-0 cursor-pointer place-items-center rounded-md outline-none",
-                        "transition-[background-color,transform] duration-100 ease-out hover:bg-[color-mix(in_srgb,var(--text-base)_7%,transparent)] active:scale-90",
+                        "transition-[background-color,transform] duration-press ease-out hover:bg-[color-mix(in_srgb,var(--text-base)_7%,transparent)] active:scale-90",
                         "focus-visible:bg-[color-mix(in_srgb,var(--text-interactive-base)_12%,transparent)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--text-interactive-base)]",
                       )}
                       aria-label={`Pin to ${positionLabel().toLowerCase()}`}
@@ -418,7 +418,7 @@ function ConstraintPad(props: {
                       <i
                         class={cn(
                           "size-1.5 rounded-full border border-[color-mix(in_srgb,var(--text-base)_28%,transparent)] bg-[color-mix(in_srgb,var(--text-base)_58%,var(--background-deep))]",
-                          "transition-[background-color,border-color,box-shadow,transform] duration-100 group-hover:scale-125 group-hover:border-[color-mix(in_srgb,var(--text-base)_55%,transparent)] group-hover:bg-[var(--text-base)]",
+                          "transition-[background-color,border-color,box-shadow,transform] duration-press group-hover:scale-125 group-hover:border-[color-mix(in_srgb,var(--text-base)_55%,transparent)] group-hover:bg-[var(--text-base)]",
                           selected() &&
                             "scale-125 border-[color-mix(in_srgb,var(--text-interactive-base)_72%,white)] bg-[var(--text-interactive-base)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--text-interactive-base)_20%,transparent)] group-hover:bg-[var(--text-interactive-base)]",
                         )}

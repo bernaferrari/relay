@@ -95,18 +95,36 @@ function resolveSnapshotTarget(
   const nodesByIndex = new Map(
     nodes.flatMap((node) => (typeof node.index === "number" ? [[node.index, node] as const] : [])),
   );
-  const closestHittableAncestor = (node: SnapshotNode): SnapshotNode | undefined => {
+  const closestUsableAncestor = (
+    node: SnapshotNode,
+    requireHittable: boolean,
+  ): SnapshotNode | undefined => {
     let parentIndex = node.parentIndex;
     while (typeof parentIndex === "number") {
       const parent = nodesByIndex.get(parentIndex);
       if (!parent) return undefined;
-      if (parent.hittable && isUsableTapTarget(parent) && !isActivationContainer(parent)) {
+      if (
+        (parent.hittable || !requireHittable) &&
+        isUsableTapTarget(parent) &&
+        !isActivationContainer(parent)
+      ) {
         return parent;
       }
       parentIndex = parent.parentIndex;
     }
     return undefined;
   };
+  /**
+   * A settings row's title is a 37×21 label inside a 335×44 cell, and a
+   * physical iPad reports every node in that tree as hittable:false. Pressing
+   * the enclosing row is what a person does; requiring the ancestor to claim
+   * hittability leaves such a row with no semantic path at all and forces the
+   * caller back to a recorded coordinate. The title's own bounds still win
+   * whenever they are worth pressing.
+   */
+  const activationAncestor = (node: SnapshotNode): SnapshotNode | undefined =>
+    closestUsableAncestor(node, true) ??
+    (isUsableTapTarget(node) ? undefined : closestUsableAncestor(node, false));
   const explicitViewport =
     nodes.find((node) => (node.type ?? node.role)?.toLocaleLowerCase() === "application")?.rect ??
     nodes.find((node) => (node.type ?? node.role)?.toLocaleLowerCase() === "window")?.rect;
@@ -178,7 +196,7 @@ function resolveSnapshotTarget(
       ) {
         return false;
       }
-      if (!isUsableTapTarget(node)) return false;
+      if (!isUsableTapTarget(node) && !closestUsableAncestor(node, false)) return false;
       if (
         normalized.role &&
         (node.role ?? node.type ?? "").trim().toLocaleLowerCase() !== normalized.role
@@ -213,7 +231,7 @@ function resolveSnapshotTarget(
     })
     .map((node) => {
       const role = (node.role ?? node.type ?? "").toLocaleLowerCase();
-      const activationNode = closestHittableAncestor(node);
+      const activationNode = activationAncestor(node);
       const activationRect = activationNode?.rect ?? node.rect!;
       const point = center(activationRect);
       const isFixedChromeControl =

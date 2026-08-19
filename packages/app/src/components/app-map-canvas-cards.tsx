@@ -1,7 +1,9 @@
 import { Show, createEffect, createSignal, on, onCleanup } from "solid-js";
+import { panelSectionLabel } from "../lib/ui";
 import type { CanvasNote } from "@relay/protocol";
 import { IconButton } from "@relay/ui/icon-button";
 import type { MapTreeNode } from "../lib/app-map-tree";
+import { LABEL_ROW_PITCH } from "../lib/app-map-label-rows";
 import { cn } from "../lib/cn";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
 import type { CanvasInteractionAnchor, ScreenCardGeometry } from "../lib/app-map-canvas-layout";
@@ -19,6 +21,11 @@ import {
   type ScreenshotOrientationEvidence,
   type ScreenshotRotation,
 } from "./oriented-screenshot";
+
+/** Matches the screen card's own width, which is the horizontal pitch of the
+ * canvas grid. A name may overhang the phone frame it labels, but never its
+ * neighbour. */
+const SCREEN_CARD_LABEL_WIDTH = 240;
 
 /** Presentation-only canvas objects. They deliberately receive callbacks
  * instead of knowing about the graph document or recorder state. */
@@ -74,6 +81,8 @@ export function ScreenCard(props: {
   node: MapTreeNode;
   isFlowStart: boolean;
   title: string;
+  /** Only set when a sibling frame carries the same name. */
+  qualifier?: string;
   selected: boolean;
   editing: boolean;
   runState?: AppMapRunPresentationState;
@@ -98,6 +107,8 @@ export function ScreenCard(props: {
   onNudge: (direction: { x: number; y: number }, coarse: boolean) => void;
   /** Live device is on this mapped screen. Distinct from selected. */
   here?: boolean;
+  /** Rows to lift the name by when a neighbour already owns its usual place. */
+  labelRow?: number;
 }) {
   let titleInput: HTMLInputElement | undefined;
   const [imageFailed, setImageFailed] = createSignal(false);
@@ -120,7 +131,6 @@ export function ScreenCard(props: {
     !props.connectionOrigin &&
     !props.here &&
     screenCardStartMarkerVisible(props.title, props.isFlowStart);
-  const showsLeftStatus = () => !props.editing && (Boolean(props.here) || showsStart());
   const showsRunStatus = () => !props.editing && props.runState && props.runState !== "idle";
   const frameStateClass = () =>
     props.runState === "failed"
@@ -141,7 +151,7 @@ export function ScreenCard(props: {
       role="group"
       aria-roledescription="screen"
       tabIndex={0}
-      aria-label={`${props.title} screen${props.connectionOrigin ? ", origin of selected path" : props.here ? ", here" : ""}${props.selected ? ", selected" : ""}`}
+      aria-label={`${props.title} screen${props.qualifier ? `, ${props.qualifier}` : ""}${props.connectionOrigin ? ", origin of selected path" : props.here ? ", here" : ""}${props.selected ? ", selected" : ""}`}
       data-app-map-screen-id={props.node.id}
       data-app-map-here={props.here ? "true" : undefined}
       data-app-map-connection-origin={props.connectionOrigin ? "true" : undefined}
@@ -221,34 +231,72 @@ export function ScreenCard(props: {
         </div>
       </Show>
       <header
-        class="relative grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 px-0.5"
+        class="relative grid min-w-0 grid-cols-[minmax(auto,1fr)_auto_minmax(auto,1fr)] items-center gap-1.5 px-0.5"
         style={{
-          width: `${props.geometry.frameWidth}px`,
+          // Budget is one card pitch, not the narrow phone frame the label sits
+          // above, and it is divided by the counter scale so the on-screen width
+          // stays constant. Without the division, zooming out grows every name
+          // until neighbouring screens overwrite each other.
+          width: `calc(${SCREEN_CARD_LABEL_WIDTH}px / var(--app-map-label-counter, 1))`,
           "justify-self": "center",
+          // Grows away from the frame so the name never covers the screenshot.
+          // The lift is in world units — multiplying by the counter keeps it a
+          // constant on-screen distance at every zoom, like the name itself.
+          transform: props.labelRow
+            ? `translateY(calc(${-props.labelRow * LABEL_ROW_PITCH}px * var(--app-map-label-counter, 1))) scale(var(--app-map-label-counter, 1))`
+            : "scale(var(--app-map-label-counter, 1))",
+          "transform-origin": "center bottom",
         }}
         data-tip="Click to inspect · Enter opens details"
       >
+        {/* The side tracks above reserve exactly what a "Here" or run pill
+            needs and no more, so the name is centred over its frame whenever it
+            fits and borrows the empty side only when it would otherwise clip. A
+            flat budget cut "Shared Conversations · 2 of 5" down to
+            "Shared Con… 2 o…" on every screen that happened to be live. */}
         <Show
           when={props.editing}
           fallback={
-            <strong
-              class={cn(
-                "col-start-2 min-w-0 cursor-grab truncate text-center text-caption font-medium tracking-[-0.01em] text-[var(--text-strong)] active:cursor-grabbing",
-                showsLeftStatus() || showsRunStatus() ? "max-w-[148px]" : "max-w-[228px]",
-              )}
-              data-tip="Drag to move · Double-click to rename · F2"
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onSelect(event);
-              }}
-              onDblClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                props.onRename();
-              }}
-            >
-              {props.title}
-            </strong>
+            <span class="col-start-2 flex min-w-0 items-baseline justify-center gap-1">
+              <strong
+                class="min-w-0 cursor-grab truncate text-body font-medium tracking-[-0.01em] text-[var(--text-strong)] active:cursor-grabbing"
+                data-tip={`${props.title} · drag to move · double-click to rename`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  props.onSelect(event);
+                }}
+                onDblClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  props.onRename();
+                }}
+              >
+                {props.title}
+              </strong>
+              {/* Six frames called "Appearance" are six of the same object until
+                  each one says how it differs. Quiet enough that a map with no
+                  repeated names looks exactly as it did. It holds its ground
+                  against a long name — an ordinal that truncates to "2 o…" is
+                  the one piece of the label that cannot afford to be cut — but
+                  never takes more than its share of the line. */}
+              {/* Capped in characters, not in percent. A percentage resolved
+                  against this flex line, so the shorter the name the less the
+                  ordinal was allowed — "Ask · 1 of 6" lost its ordinal to
+                  "1 o…" while "Shared Conversations · 2 of 5" kept all of it,
+                  which is exactly backwards. Character units give "1 of 6" the
+                  same room whatever it sits next to, and still stop a long
+                  "from Shared Conversations" from taking the whole line. */}
+              <Show when={props.qualifier}>
+                {(qualifier) => (
+                  <span
+                    class="max-w-[14ch] shrink-0 truncate text-micro font-normal text-[var(--text-weak)]"
+                    data-tip={qualifier()}
+                  >
+                    {qualifier()}
+                  </span>
+                )}
+              </Show>
+            </span>
           }
         >
           <input
@@ -313,7 +361,7 @@ export function ScreenCard(props: {
           <div
             data-screen-frame
             class={cn(
-              "grid min-h-0 place-items-center overflow-hidden rounded-xl bg-[var(--background-base)] text-center transition-[box-shadow,transform] duration-150",
+              "grid min-h-0 place-items-center overflow-hidden rounded-xl bg-[var(--background-base)] text-center transition-[box-shadow,transform] duration-hover",
               frameStateClass(),
             )}
             style={{
@@ -321,11 +369,11 @@ export function ScreenCard(props: {
               "justify-self": "center",
             }}
           >
-            <div class="grid max-w-[168px] justify-items-center gap-2 text-[var(--text-weak)] transition-colors duration-150 group-hover/screen:text-[var(--text-base)]">
+            <div class="grid max-w-[168px] justify-items-center gap-2 text-[var(--text-weak)] transition-colors duration-hover group-hover/screen:text-[var(--text-base)]">
               <span class="grid size-8 place-items-center rounded-xl bg-[var(--surface-base-hover)]">
                 <Icon name="camera" size={14} />
               </span>
-              <span class="text-micro font-medium text-[var(--text-base)]">No screenshot</span>
+              <span class={panelSectionLabel}>No screenshot</span>
             </div>
           </div>
         }
@@ -334,7 +382,7 @@ export function ScreenCard(props: {
           <div
             data-screen-frame
             class={cn(
-              "min-h-0 overflow-hidden rounded-xl bg-[oklch(0.12_0.01_270)] transition-[box-shadow,transform] duration-150",
+              "min-h-0 overflow-hidden rounded-xl bg-[oklch(0.12_0.01_270)] transition-[box-shadow,transform] duration-hover",
               frameStateClass(),
             )}
             style={{

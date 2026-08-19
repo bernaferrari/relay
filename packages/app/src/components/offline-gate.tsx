@@ -1,7 +1,8 @@
-import { type JSX, createEffect, createSignal, onCleanup } from "solid-js";
+import { Show, type JSX, createEffect, createSignal, onCleanup } from "solid-js";
 import { useServer } from "../context/server";
 import { Button } from "@relay/ui/button";
 import { createGuardedRetry } from "../lib/offline-retry";
+import { Icon } from "./icon";
 import { OfflineGateSurface } from "./offline-gate-surface";
 import { focusFirstAndRestore } from "../lib/modal";
 
@@ -55,23 +56,21 @@ export function OfflineGate(props: {
       dialogRef={(element) => {
         dialog = element;
       }}
+      retryError={retryError()}
       retryControl={
-        <div class="grid justify-items-center gap-2">
-          <Button
-            variant="primary"
-            size="normal"
-            disabled={busy()}
-            aria-busy={busy()}
-            onClick={() => void retrySafely()}
-          >
-            {busy() ? "Checking…" : "Retry connection"}
-          </Button>
-          {retryError() ? (
-            <span class="text-caption text-text-critical-base" role="alert">
-              {retryError()}
-            </span>
-          ) : null}
-        </div>
+        <Button
+          variant="primary"
+          size="normal"
+          class="shrink-0"
+          disabled={busy()}
+          aria-busy={busy()}
+          onClick={() => void retrySafely()}
+        >
+          <Show when={busy()}>
+            <Icon name="refresh" size={13} class="ui-refresh-spin motion-reduce:opacity-70" />
+          </Show>
+          {busy() ? "Checking…" : "Retry connection"}
+        </Button>
       }
     >
       {props.children}

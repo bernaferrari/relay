@@ -126,17 +126,24 @@ test("screen and connection commands use granular App Map operations", () => {
   );
 });
 
-test("matrix authoring vocabulary exposes modifiers, tests, and saved matrices", () => {
-  for (const command of ["state-set list", "variable list", "test list", "run-matrix list"]) {
+test("authoring vocabulary exposes Variables, Tests, and saved Combines", () => {
+  for (const command of [
+    "variable list",
+    "state-set list",
+    "test list",
+    "combine list",
+    "run-matrix list",
+  ]) {
     const resolved = resolveCommand([...command.split(" "), "grok-android"]);
     assert.equal(resolved.operationId, "app-map.get", command);
     assert.deepEqual(resolved.input, { appMapId: "grok-android" }, command);
   }
-  assert.deepEqual(resolveCommand(["run-matrix", "preflight", "grok-android", "locale-x-tour"]), {
+  assert.deepEqual(resolveCommand(["combine", "preflight", "grok-android", "locale-x-tour"]), {
     operationId: "app-map.combine.preflight",
-    commandPath: "run-matrix preflight",
+    commandPath: "combine preflight",
     input: { appMapId: "grok-android", combineId: "locale-x-tour" },
   });
+  // The pre-rename spellings still resolve, so saved scripts keep working.
   assert.deepEqual(
     resolveCommand(["run-matrix", "dry-run", "grok-android", "locale-x-tour"], {
       serial: "pixel-9",
@@ -334,7 +341,7 @@ test("locale-matrix help leads with map and flow, not a library recipe", () => {
     (descriptor) => descriptor.operationId === "job.combine.start",
   );
   assert.ok(optionStart && !("exclusion" in optionStart));
-  assert.match(optionStart.paths[0]?.examples?.[0] ?? "", /run-matrix run|variableIds|combineId/);
+  assert.match(optionStart.paths[0]?.examples?.[0] ?? "", /combine run|variableIds|combineId/);
 });
 
 test("App Map vocabulary resolves to canonical granular operations", () => {
@@ -388,6 +395,11 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       ["test", "compile", "grok-ios", "checkout"],
       "app-map.test.compile",
       { appMapId: "grok-ios", testId: "checkout" },
+    ],
+    [
+      ["combine", "run", "grok-ios", "language-x-settings"],
+      "job.combine.start",
+      { appMapId: "grok-ios", combineId: "language-x-settings" },
     ],
     [
       ["run-matrix", "run", "grok-ios", "language-x-settings"],

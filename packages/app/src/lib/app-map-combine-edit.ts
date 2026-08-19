@@ -21,7 +21,7 @@ export function initialCombineDraft(
   };
 }
 
-/** Remove one modifier from a saved matrix without leaving a dangling value selection. */
+/** Remove one Variable from a saved matrix without leaving a dangling value selection. */
 export function combineWithoutVariable(
   combine: AppMapCombine,
   variableId: string,

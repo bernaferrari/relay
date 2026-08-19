@@ -1,5 +1,6 @@
 import type { ActionSpec, AppMap } from "@relay/protocol";
 import { softTruncate } from "./human-error";
+import { identifierControlPhrase } from "./humanize-identifier";
 import { sentenceForStep } from "./step-sentence";
 
 export type ConnectionActionSummary = {
@@ -19,7 +20,10 @@ function targetName(target: {
 }): string {
   if (target.label?.trim()) return `"${target.label.trim()}"`;
   if (target.text?.trim()) return `"${target.text.trim()}"`;
-  if (target.identifier?.trim()) return `the ${target.identifier.trim()} element`;
+  // Connection labels are the most-read copy on the canvas; a raw resource id
+  // there is the loudest jargon leak in the product.
+  const named = identifierControlPhrase(target.identifier);
+  if (named) return named;
   if (target.ref) return "the recorded element";
   if (target.point) return "the screen";
   return "the target";

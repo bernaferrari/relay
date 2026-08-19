@@ -3,6 +3,8 @@ import type {
   AppMapCombinePreflight,
   AppMapTest,
   AppMapScenarioTestEdit,
+  LocaleRunAnalysisReport,
+  LocaleRunPackManifest,
   MatrixExpansion,
 } from "@relay/protocol";
 import type { CompatibilityReport, JobInfo } from "./api-types";
@@ -468,18 +470,35 @@ export async function enqueueLocaleMatrix(
   });
 }
 
+export type ExportedPack = {
+  rootDir: string;
+  manifest: LocaleRunPackManifest;
+  jobIds: string[];
+};
+
 export async function exportLocaleMatrixPack(
   request: ServerRequest,
   batchId: string,
-): Promise<{ rootDir: string; manifest: unknown; jobIds: string[] }> {
+): Promise<ExportedPack> {
   return request(`/jobs/locale-matrix/${encodeURIComponent(batchId)}/export`);
 }
 
 export async function exportRunMatrixPack(
   request: ServerRequest,
   batchId: string,
-): Promise<{ rootDir: string; manifest: unknown; jobIds: string[] }> {
+): Promise<ExportedPack> {
   return request(`/jobs/combine/${encodeURIComponent(batchId)}/export`);
+}
+
+/**
+ * The findings for a batch without exporting it. The grid asks for these while
+ * the sweep is still running, so it must not write a pack to answer.
+ */
+export async function loadMatrixAnalysis(
+  request: ServerRequest,
+  batchId: string,
+): Promise<LocaleRunAnalysisReport> {
+  return request(`/jobs/locale-matrix/${encodeURIComponent(batchId)}/analysis`);
 }
 
 export async function loadMatrixReport(

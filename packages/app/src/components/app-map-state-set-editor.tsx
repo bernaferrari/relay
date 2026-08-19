@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
+import { panelSectionLabel } from "../lib/ui";
 import type { AppMapVariable, AppMapVariableKind } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
@@ -11,6 +12,7 @@ import {
 } from "../lib/app-map-locale-teach";
 import { suggestedAndroidAppPackage } from "../lib/app-map-android-package";
 import { cn } from "../lib/cn";
+import { plural } from "../lib/plural";
 import { Icon } from "./icon";
 
 const KINDS: Array<{ id: AppMapVariableKind; label: string }> = [
@@ -246,7 +248,7 @@ export function AppMapStateSetEditor(props: {
     setSaving(true);
     try {
       const now = Date.now();
-      const fallbackName = KINDS.find((item) => item.id === kind())?.label ?? "Modifier";
+      const fallbackName = KINDS.find((item) => item.id === kind())?.label ?? "Variable";
       const variable =
         sourceMode() === "device"
           ? (
@@ -321,28 +323,28 @@ export function AppMapStateSetEditor(props: {
       });
       await server.refreshAppMaps();
       toast(
-        `${props.variable ? "Updated" : "Created"} ${variable.name} with ${variable.options.length} values`,
+        `${props.variable ? "Updated" : "Created"} ${variable.name} with ${plural(variable.options.length, "value")}`,
         "success",
       );
       props.onSaved(props.variable?.id ?? variable.id);
     } catch (error) {
-      toast(humanError(error, "Could not save this modifier"), "error");
+      toast(humanError(error, "Could not save this variable"), "error");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <section class="grid w-full gap-3" aria-labelledby="modifier-editor-title">
+    <section class="grid w-full gap-3" aria-labelledby="variable-editor-title">
       <div>
         <h3
-          id="modifier-editor-title"
+          id="variable-editor-title"
           class="m-0 text-body font-semibold text-[var(--text-strong)]"
         >
-          {props.variable ? `Edit ${props.variable.name}` : "New modifier"}
+          {props.variable ? `Edit ${props.variable.name}` : "New variable"}
         </h3>
         <p class="m-0 mt-1 max-w-[52ch] text-caption/[1.45] text-[var(--text-weak)]">
-          A modifier changes one thing before a test—such as language, account, theme, or model.
+          A variable changes one thing before a test—such as language, account, theme, or model.
           Relay applies a value, returns to the test start, and repeats.
         </p>
       </div>
@@ -350,7 +352,7 @@ export function AppMapStateSetEditor(props: {
       <div
         class="grid grid-cols-3 gap-1 rounded-xl bg-[var(--surface-base)] p-1"
         role="tablist"
-        aria-label="How Relay learns modifier values"
+        aria-label="How Relay learns variable values"
       >
         <For
           each={[
@@ -383,17 +385,17 @@ export function AppMapStateSetEditor(props: {
       </div>
 
       <label class="grid gap-1.5">
-        <span class="text-micro font-medium text-[var(--text-base)]">Name</span>
+        <span class={panelSectionLabel}>Name</span>
         <input
           class="h-10 rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-body text-[var(--text-strong)] placeholder:text-[var(--text-weaker)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
           value={name()}
-          placeholder={KINDS.find((item) => item.id === kind())?.label ?? "Modifier"}
+          placeholder={KINDS.find((item) => item.id === kind())?.label ?? "Variable"}
           onInput={(event) => setName(event.currentTarget.value)}
         />
       </label>
 
       <label class="grid gap-1.5">
-        <span class="text-micro font-medium text-[var(--text-base)]">What changes?</span>
+        <span class={panelSectionLabel}>What changes?</span>
         <select
           class="h-10 rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-body text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
           value={kind()}
@@ -414,7 +416,7 @@ export function AppMapStateSetEditor(props: {
             when={sourceMode() === "android"}
             fallback={
               <label class="grid gap-1.5">
-                <span class="flex items-center justify-between gap-2 text-micro font-medium text-[var(--text-base)]">
+                <span class={cn("flex items-center justify-between gap-2", panelSectionLabel)}>
                   Labels Relay should tap
                   <span class="font-normal text-[var(--text-weak)]">One per line</span>
                 </span>
@@ -432,7 +434,7 @@ export function AppMapStateSetEditor(props: {
           >
             <div class="grid gap-2 rounded-xl bg-[var(--surface-base)] p-2.5">
               <label class="grid gap-1.5">
-                <span class="text-micro font-medium text-[var(--text-base)]">Android app</span>
+                <span class={panelSectionLabel}>Android app</span>
                 <input
                   class="h-10 rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-body"
                   value={androidPackage()}
@@ -457,7 +459,7 @@ export function AppMapStateSetEditor(props: {
                 {discoveringLocales() ? "Reading app languages…" : "Read supported languages"}
               </Button>
               <label class="grid gap-1.5">
-                <span class="flex items-center justify-between gap-2 text-micro font-medium text-[var(--text-base)]">
+                <span class={cn("flex items-center justify-between gap-2", panelSectionLabel)}>
                   App languages
                   <span class="font-normal text-[var(--text-weak)]">Locale | label</span>
                 </span>
@@ -491,7 +493,7 @@ export function AppMapStateSetEditor(props: {
               size="sm"
               onClick={() => {
                 toast(
-                  "Device panel opened. Navigate to the value list, then reopen Run matrix and read the visible list.",
+                  "Device panel opened. Navigate to the value list, then reopen Combine and read the visible list.",
                   "info",
                 );
                 props.onOpenDevice();
@@ -554,7 +556,7 @@ export function AppMapStateSetEditor(props: {
                     <button
                       type="button"
                       class={cn(
-                        "flex min-h-10 items-center gap-2 rounded-lg px-2.5 text-left transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]",
+                        "flex min-h-10 items-center gap-2 rounded-lg px-2.5 text-left transition-colors duration-hover focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]",
                         selected()
                           ? "bg-[var(--product-accent-soft)] text-[var(--text-strong)]"
                           : "text-[var(--text-base)] hover:bg-[var(--surface-base-hover)]",
@@ -641,7 +643,7 @@ export function AppMapStateSetEditor(props: {
             class="text-[var(--icon-critical-base)] hover:text-[var(--icon-critical-base)]"
             onClick={() => props.onDelete?.()}
           >
-            <Icon name="trash" size={12} /> Delete modifier
+            <Icon name="trash" size={12} /> Delete variable
           </Button>
         </Show>
         <div class="flex items-center gap-2">
@@ -653,7 +655,7 @@ export function AppMapStateSetEditor(props: {
             disabled={saving() || !canCreate()}
             onClick={() => void createSet()}
           >
-            {saving() ? "Saving…" : props.variable ? "Save modifier" : "Create modifier"}
+            {saving() ? "Saving…" : props.variable ? "Save variable" : "Create variable"}
           </Button>
         </div>
       </footer>

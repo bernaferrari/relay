@@ -7,7 +7,7 @@ import { describeTakeAction, moveActionIds } from "./take-action-model";
 /** Ordered Take actions — drag the grip to reorder; no up/down arrow clutter. */
 
 const iconButton =
-  "grid size-11 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] transition-[background-color,color,transform] duration-100 hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-30";
+  "grid size-11 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] transition-[background-color,color,transform] duration-press hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-30";
 
 type DropMarker = { actionId: string; place: "before" | "after" };
 
@@ -160,7 +160,7 @@ export function TakeActionList(props: {
               <li
                 ref={(element) => rowElements.set(action.id, element)}
                 class={cn(
-                  "relative overflow-hidden rounded-xl border transition-[background-color,border-color,box-shadow,opacity,transform] duration-100",
+                  "relative overflow-hidden rounded-xl border transition-[background-color,border-color,box-shadow,opacity,transform] duration-press",
                   selected()
                     ? "border-[color-mix(in_srgb,var(--text-interactive-base)_28%,var(--border-weak-base))] bg-[var(--product-accent-soft)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_7%,transparent)]"
                     : "border-transparent bg-[var(--surface-base)]",

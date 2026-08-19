@@ -17,7 +17,7 @@ const combine: AppMapCombine = {
   updatedAt: 1,
 };
 
-test("removing a modifier also removes its saved value subset", () => {
+test("removing a Variable also removes its saved value subset", () => {
   assert.deepEqual(combineWithoutVariable(combine, "language", 2), {
     ...combine,
     variableIds: ["theme"],

@@ -21,6 +21,7 @@ import {
 } from "./device.js";
 import { resolveNamedControlOutcome } from "./device-target-resolution.js";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
+import { TargetControlReservedError } from "./target-control.js";
 import { now } from "./events.js";
 import { describeTarget, type RecipeStep, type StepTarget } from "./recipes.js";
 import type { TestJob } from "./session.js";
@@ -550,13 +551,24 @@ async function tapTarget(
       };
     } catch (err) {
       if (isCancel(err)) throw err;
+      // Losing the device lane is not a locator problem. Folding it into
+      // "no strategy matched" sends the reader hunting for a selector that
+      // was never consulted.
+      if (err instanceof TargetControlReservedError) throw err;
       const msg = err instanceof Error ? err.message : String(err);
       if (i === attempts.length - 1) {
         const reason =
           target.point?.relativeTo && msg.startsWith("element-relative")
             ? msg
             : "no strategy matched";
-        throw new Error(`tap failed: ${reason} (${describeTarget(target)})`);
+        // Carry the last attempt's reason. "No strategy matched" on its own
+        // sends the reader looking for a selector problem even when the
+        // strategy never got as far as the tree.
+        throw new Error(
+          reason === msg
+            ? `tap failed: ${reason} (${describeTarget(target)})`
+            : `tap failed: ${reason} (${describeTarget(target)}); ${a.strategy}: ${msg}`,
+        );
       }
       log(`tap: ${a.strategy} failed (${msg}) — trying next`);
     }

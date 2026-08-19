@@ -162,7 +162,7 @@ export function SwipePathPreview(props: {
         type="button"
         class={cn(
           "pointer-events-auto absolute z-[2] grid size-6 touch-none cursor-grab -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full",
-          "transition-transform duration-100 ease-out hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/85",
+          "transition-transform duration-press ease-out hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/85",
           active() && "scale-110 cursor-grabbing",
         )}
         style={{ left: `${position().x}%`, top: `${position().y}%` }}
@@ -176,7 +176,7 @@ export function SwipePathPreview(props: {
       >
         <i
           class={cn(
-            "pointer-events-none grid size-4 place-items-center rounded-full bg-[var(--text-interactive-base)] transition-shadow duration-100 ease-out",
+            "pointer-events-none grid size-4 place-items-center rounded-full bg-[var(--text-interactive-base)] transition-shadow duration-press ease-out",
             isOrigin
               ? active()
                 ? "shadow-[inset_0_1px_2px_rgb(0_0_0/38%),inset_0_-1px_0_rgb(255_255_255/18%),0_1px_4px_rgb(0_0_0/60%),0_0_0_3px_color-mix(in_srgb,var(--text-interactive-base)_45%,transparent)]"

@@ -152,7 +152,7 @@ test("a test that owns screenshot evidence gets no generic before or after captu
   );
 });
 
-test("an Android app-language modifier uses stable locale ids instead of picker labels", () => {
+test("an Android app-language Variable uses stable locale ids instead of picker labels", () => {
   const { root } = composeOptionRunRecipes({
     body,
     request: {
@@ -222,7 +222,7 @@ test("a mapped suite cold-launches once then warms every generated setup", () =>
   assert.equal(source?.kind === "expect-screen" ? source.recovery : undefined, undefined);
 });
 
-test("a list modifier restores its saved row through the recorded sandwich", () => {
+test("a list Variable restores its saved row through the recorded sandwich", () => {
   const language: OptionRunSet = {
     id: "language",
     name: "Language",
@@ -501,7 +501,7 @@ test("an explicit empty selection never expands to every saved option", async ()
   );
 });
 
-test("run matrix preflight reports the exact device and screenshot expansion", async () => {
+test("combine preflight reports the exact device and screenshot expansion", async () => {
   const base = sandwichMap();
   for (const screen of Object.values(base.screens)) delete screen.identity;
   const variable = {
@@ -556,10 +556,10 @@ test("run matrix preflight reports the exact device and screenshot expansion", a
   assert.equal(preflight.deviceRuns, 2);
   assert.equal(preflight.checks, 2);
   assert.equal(preflight.expectedScreenshots, 2);
-  assert.equal(preflight.modifiers[0]?.selectedCount, 2);
+  assert.equal(preflight.variables[0]?.selectedCount, 2);
 });
 
-test("run matrix preflight previews the requested pilot selection", async () => {
+test("combine preflight previews the requested pilot selection", async () => {
   const base = sandwichMap();
   for (const screen of Object.values(base.screens)) delete screen.identity;
   const variable = {
@@ -605,10 +605,10 @@ test("run matrix preflight previews the requested pilot selection", async () => 
   });
   assert.equal(preflight.worlds, 1);
   assert.equal(preflight.deviceRuns, 1);
-  assert.equal(preflight.modifiers[0]?.selectedCount, 1);
+  assert.equal(preflight.variables[0]?.selectedCount, 1);
 });
 
-test("run matrix preflight blocks a deliberately empty modifier", async () => {
+test("combine preflight blocks a deliberately empty Variable", async () => {
   const base = sandwichMap();
   for (const screen of Object.values(base.screens)) delete screen.identity;
   const variable = {

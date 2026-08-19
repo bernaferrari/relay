@@ -67,7 +67,7 @@ export function DesktopUpdateDialog() {
   return (
     <Show when={visible()}>
       <div
-        class={cn(modalScrim, "z-[120] flex items-center justify-center px-5")}
+        class={cn(modalScrim, "z-[var(--z-modal-nested)] flex items-center justify-center px-5")}
         onClick={(event) => {
           if (event.target === event.currentTarget) void later();
         }}

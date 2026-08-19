@@ -11,6 +11,7 @@ import { cn } from "../lib/cn";
 import { fmtAgo, fmtDur } from "../lib/job";
 import { persistedAsJob } from "../lib/persisted-run";
 import { toast } from "../context/toast";
+import { humanError } from "../lib/human-error";
 import { nextRovingIndex } from "../lib/roving-focus";
 import { eyebrow, mono, productPage } from "../lib/ui";
 import { runFrameCanvasItems } from "../lib/frame-canvas-presentation";
@@ -49,7 +50,7 @@ import {
   projectRunMatrix,
   stepIndexForMatrixCapture,
 } from "../lib/run-matrix-review";
-import { matrixRetryToast, retryProblemMatrix } from "../lib/run-matrix-retry";
+import { useRunCombinePackActions } from "../lib/use-run-combine-pack-actions";
 
 export function RunsWorkspace(props: {
   onOpenMap: (id: string) => void;
@@ -271,7 +272,7 @@ export function RunsWorkspace(props: {
       setDurableVisualComparison(result.comparison);
       toast("Visual review areas updated", "success");
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
+      toast(humanError(error, "Could not update the visual review areas"), "error");
       const refreshed = await server.compareVisualRun(job.id);
       setDurableVisualComparison(refreshed);
     } finally {
@@ -305,36 +306,20 @@ export function RunsWorkspace(props: {
     selectRunStep(stepIndexForMatrixCapture(job, frameIndex));
     setTab("timeline");
   };
-  const retryProblemMatrixRuns = async () => {
-    const review = selectedMatrixReview();
-    if (!review) return;
-    const result = await retryProblemMatrix(review, {
-      runCurrent: server.runPathAcrossVariables,
-      retryFrozen: server.retrySelectedJob,
-    });
-    if (!result) return;
-    toast(matrixRetryToast(result), "success");
-  };
-  const exportSelectedMatrix = async () => {
-    const batchId = selectedMatrixReview()?.batchId;
-    if (!batchId || matrixExporting()) return;
-    setMatrixExporting(true);
-    try {
-      const exported = await server.exportMatrixEvidence(batchId);
-      await navigator.clipboard?.writeText(exported.rootDir);
-      toast("Screenshot pack exported · folder path copied", "success");
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
-    } finally {
-      setMatrixExporting(false);
-    }
-  };
-  const stopMatrixRuns = async () => {
-    const pending = selectedMatrixRows().filter((job) =>
-      ["queued", "running", "paused"].includes(job.status),
-    );
-    for (const job of pending) await server.cancelJob(job.id);
-  };
+  const {
+    retryProblems: retryProblemMatrixRuns,
+    exportPack: exportSelectedMatrix,
+    stopPending: stopMatrixRuns,
+  } = useRunCombinePackActions({
+    review: selectedMatrixReview,
+    rows: selectedMatrixRows,
+    exporting: matrixExporting,
+    setExporting: setMatrixExporting,
+    runPathAcrossVariables: server.runPathAcrossVariables,
+    retryFrozen: server.retrySelectedJob,
+    exportEvidence: (batchId) => server.matrixEvidence.export(batchId),
+    cancelJob: (id) => server.cancelJob(id),
+  });
   const reviewCounts = createMemo(() => (selected() ? runReviewCounts(selected()!) : null));
   const selectedRecipe = createMemo(() => {
     const job = selected();
@@ -450,7 +435,7 @@ export function RunsWorkspace(props: {
                       role="tab"
                       aria-selected={runFilter() === id}
                       class={cn(
-                        "min-h-7 rounded-md px-3 text-caption font-medium text-text-weaker transition-[background-color,color,transform] duration-150 active:scale-[0.97]",
+                        "min-h-7 rounded-md px-3 text-caption font-medium text-text-weaker transition-[background-color,color,transform] duration-hover active:scale-[0.97]",
                         runFilter() === id
                           ? "bg-surface-base-active text-text-strong"
                           : "hover:bg-surface-base-hover hover:text-text-base",
@@ -502,7 +487,7 @@ export function RunsWorkspace(props: {
                     size="lg"
                     icon="wave"
                     title="No runs yet"
-                    description="Run a path or matrix from an App Map. Screenshot evidence stays attached to the run that created it."
+                    description="Run a path or Combine from an App Map. Screenshot evidence stays attached to the run that created it."
                     actionLabel="Open maps"
                     onAction={props.onOpenTests}
                     class="py-14"
@@ -583,7 +568,7 @@ export function RunsWorkspace(props: {
                   <div class="flex shrink-0 items-center gap-0.5">
                     <button
                       type="button"
-                      class="grid size-8 place-items-center rounded-lg text-text-weaker transition-[background-color,color,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] focus-visible:outline-1 focus-visible:outline-border-strong-focus"
+                      class="grid size-8 place-items-center rounded-lg text-text-weaker transition-[background-color,color,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] focus-visible:outline-1 focus-visible:outline-border-strong-focus"
                       aria-label="Close report"
                       data-tip="Close report"
                       onClick={() => {
@@ -789,7 +774,7 @@ export function RunsWorkspace(props: {
                     aria-selected={tab() === id}
                     tabindex={tab() === id ? 0 : -1}
                     class={cn(
-                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
                       tab() === id &&
                         "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}
@@ -818,14 +803,14 @@ export function RunsWorkspace(props: {
                     aria-selected={tab() === "matrix"}
                     tabindex={tab() === "matrix" ? 0 : -1}
                     class={cn(
-                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
                       tab() === "matrix" &&
                         "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}
                     onClick={() => setTab("matrix")}
                     onKeyDown={onReportTabKeyDown}
                   >
-                    Matrix
+                    Combine
                     <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-micro/4 tabular-nums text-text-interactive-base">
                       {selectedMatrixRows().length}
                     </span>
@@ -840,7 +825,7 @@ export function RunsWorkspace(props: {
                     aria-selected={tab() === "compatibility"}
                     tabindex={tab() === "compatibility" ? 0 : -1}
                     class={cn(
-                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
                       tab() === "compatibility" &&
                         "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}

@@ -9,7 +9,7 @@ export type CanvasCombineCardModel = {
   name: string;
   position: { x: number; y: number };
   startsAt?: { screenId: string; title: string; position: { x: number; y: number } };
-  modifiers: Array<{ id: string; name: string; values: string[] }>;
+  variables: Array<{ id: string; name: string; values: string[] }>;
   tests: string[];
   cellCount: number;
   run?: {
@@ -23,7 +23,7 @@ export type CanvasCombineCardModel = {
   };
 };
 
-export type CanvasCombineSection = "modifiers" | "tests" | "plan";
+export type CanvasCombineSection = "variables" | "tests" | "plan";
 
 export const CANVAS_COMBINE_CARD_WIDTH = 300;
 export const CANVAS_COMBINE_CARD_HEIGHT = 160;
@@ -70,7 +70,7 @@ export function canvasCombineCards(
       .find((id) => id.trim());
     const rootScreen = rootScreenId ? screenFor(rootScreenId) : undefined;
     const anchor = rootScreen?.position;
-    const modifiers = variables.map((variable) => ({
+    const previewVariables = variables.map((variable) => ({
       id: variable.id,
       name: variable.name,
       values: selectedOptions(variable.options, combine.selected?.[variable.id])
@@ -125,7 +125,7 @@ export function canvasCombineCards(
             },
           }
         : {}),
-      modifiers,
+      variables: previewVariables,
       tests: testNames,
       cellCount: projection.cellCount,
       ...(runReview && newest

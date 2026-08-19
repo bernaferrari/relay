@@ -33,7 +33,7 @@ const tests: CombineTestColumn[] = [
   { id: "chat", name: "Send a message", kind: "scenario" },
 ];
 
-test("run matrix labels visible values and its group-to-group formula", () => {
+test("a combine labels visible values and its group-to-group formula", () => {
   assert.equal(combineValueLabel({ id: "it", label: "Italiano" }), "Italiano");
   assert.equal(combineValueLabel({ id: "pt", text: "Português" }), "Português");
   assert.equal(
@@ -46,10 +46,10 @@ test("run matrix labels visible values and its group-to-group formula", () => {
   );
 });
 
-test("a new matrix asks for the first visible decision", () => {
+test("a new combine asks for the first visible decision", () => {
   assert.equal(
     combineSubhead({ cellCount: 0, hasVariable: false, hasTest: false }),
-    "Choose a modifier such as language, account, or model.",
+    "Choose a Variable such as language, account, or model.",
   );
   assert.equal(
     combineSubhead({ cellCount: 0, hasVariable: true, hasTest: false }),

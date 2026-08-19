@@ -112,7 +112,7 @@ export function DevicePanelStatus(props: {
           <Show when={props.state.secondaryRetry}>
             <button
               type="button"
-              class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-caption font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
+              class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-caption font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-hover ease-out hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
               disabled={props.busy}
               onClick={props.onRetry}
             >
