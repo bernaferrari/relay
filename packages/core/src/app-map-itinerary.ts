@@ -47,48 +47,14 @@ type ReviewedReturnPlan =
       currentScreenId?: string;
     };
 
-function isReviewedInverseEdge(connection: Connection): boolean {
-  return isReviewedBackEdge(connection) || connection.return?.kind === "back";
-}
-
-function isReviewedBackEdge(connection: Connection): boolean {
-  let backCount = 0;
-  for (const action of connection.actions) {
-    if (action.kind === "back") {
-      backCount += 1;
-      continue;
-    }
-    if (action.kind === "wait" || action.kind === "assertion" || action.kind === "passive") {
-      continue;
-    }
-    if (action.kind === "recorded" || action.kind === "steps") {
-      for (const step of action.steps) {
-        if (step.kind === "key" && step.key === "back") {
-          backCount += 1;
-          continue;
-        }
-        if (
-          step.kind === "sleep" ||
-          step.kind === "wait-for" ||
-          step.kind === "expect" ||
-          step.kind === "expect-set" ||
-          step.kind === "expect-screen" ||
-          step.kind === "screenshot"
-        ) {
-          continue;
-        }
-        return false;
-      }
-      continue;
-    }
-    return false;
-  }
-  return backCount === 1;
-}
-
 /** Explicit ready connections are the canonical Figma-style inverse edge.
  * They stay independently replayable and visible in the graph data while the
- * planner embeds only a compact module reference in the next sibling. */
+ * planner embeds only a compact module reference in the next sibling. An
+ * inverse is a graph relationship, not a particular Android gesture: a
+ * reviewed modal dismissal may be OK or Cancel while a page commonly uses
+ * Back. The compiled connection proves both endpoints around the authored
+ * action, so guessing from the action shape would discard valid state-machine
+ * edges without adding safety. */
 type ScreenConnection = Connection & { destination: { kind: "screen"; screenId: string } };
 
 type AncestorInverse =
@@ -107,8 +73,7 @@ function explicitReviewedAncestorInverse(
       candidate.state === "ready" &&
       candidate.fromScreenId === currentScreenId &&
       candidate.destination.kind === "screen" &&
-      pathScreens.slice(targetIndex, currentIndex).includes(candidate.destination.screenId) &&
-      isReviewedInverseEdge(candidate),
+      pathScreens.slice(targetIndex, currentIndex).includes(candidate.destination.screenId),
   );
   if (candidates.length === 0) return { status: "absent" };
   if (candidates.length !== 1) return { status: "ambiguous" };

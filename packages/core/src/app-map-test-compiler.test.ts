@@ -1049,6 +1049,27 @@ test("Add to home returns through one source-proven inverse before opening Advan
     true,
   );
 
+  map.connections["return-from-add-home"]!.actions = [
+    {
+      id: "dismiss-add-home",
+      kind: "tap",
+      target: { label: "OK" },
+    },
+  ];
+  const semanticDismiss = compileAppMapTest(map, work);
+  assert.deepEqual(
+    semanticDismiss.graph[
+      `app-map:${map.id}:connection:return-from-add-home:r${map.revision}`
+    ]?.steps
+      .slice(0, 3)
+      .map((step) => [step.kind, step.id]),
+    [
+      ["expect-screen", "relay-source-return-from-add-home"],
+      ["tap", "relay-action-dismiss-add-home"],
+      ["expect-screen", "relay-destination-return-from-add-home"],
+    ],
+  );
+
   delete map.connections["return-from-add-home"];
   const embedded = compileAppMapTest(map, work);
   const embeddedSibling = Object.values(embedded.graph).find(
