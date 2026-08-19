@@ -74,6 +74,7 @@ import {
 } from "./session-job-support.js";
 import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import { isTargetUnavailableError } from "./target-unavailable.js";
+import { humanInterventionNeedsReproof } from "./job-intervention.js";
 import { captureAutomaticState } from "./session-automatic-evidence.js";
 import { appendStepLog, finishStep, observeStepActions, openStep } from "./session-trace-steps.js";
 export type { EnqueueJobInput, JobErrorCode, JobStatus, TestJob } from "./session-contract.js";
@@ -491,6 +492,9 @@ export function resumeJob(id: string): TestJob {
   if (!job) throw new Error(`Unknown job: ${id}`);
   if (job.status !== "paused") {
     throw new Error(`Cannot resume job in status ${job.status}`);
+  }
+  if (humanInterventionNeedsReproof(job)) {
+    throw new Error("Cannot resume after manual intervention until the target state is re-proven");
   }
   requestResume(id);
   job.status = "running";

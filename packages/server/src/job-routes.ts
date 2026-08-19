@@ -3,6 +3,7 @@ import type { AppMapCapturePolicy } from "@relay/protocol";
 import {
   AppMapCompileError,
   analyzeLocaleRunBatch,
+  captureSnapshot,
   cancelActiveJob,
   cancelJob,
   compileAppMapFlow,
@@ -14,6 +15,7 @@ import {
   getActiveJob,
   getActiveJobs,
   getJob,
+  humanInterventionNeedsReproof,
   listJobs,
   localeRunScopeFromLanguageProfile,
   localeRunScopeFromTeach,
@@ -32,6 +34,7 @@ import {
   retryJob,
   replayPersistedRun,
   readPersistedRun,
+  recordHumanInterventionReproof,
   startLocaleRecipeRun,
   startOptionRecipeRun,
   compileAppMapTest,
@@ -139,7 +142,40 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
 
   const resumeMatch = matchPath(pathname, "/jobs/:id/resume");
   if (method === "POST" && resumeMatch) {
-    assertJobAccess(scope, getJob(resumeMatch.id!));
+    const paused = getJob(resumeMatch.id!);
+    assertJobAccess(scope, paused);
+    if (humanInterventionNeedsReproof(paused)) {
+      const operation = currentOperationContext();
+      if (!operation) throw new HttpError(400, "Actor-aware operation context is required");
+      const targetId = paused.browserTargetId ?? paused.serial;
+      if (!targetId || paused.targetContext.kind !== "device") {
+        throw new HttpError(409, "The intervened target cannot be re-proven");
+      }
+      try {
+        const snapshot = await captureSnapshot({ serial: targetId, includeVisual: true });
+        recordHumanInterventionReproof(paused, operation, {
+          capturedAt: snapshot.capturedAt,
+          inspectable: snapshot.inspectable,
+          source: snapshot.source,
+          foregroundApp: snapshot.foregroundApp,
+          bindingState: snapshot.bindingState,
+          screenIdentity: snapshot.screenIdentity,
+          visualFingerprint: snapshot.visualFingerprint,
+          nodeCount: snapshot.nodes.length,
+        });
+      } catch (error) {
+        throw new HttpError(
+          409,
+          error instanceof Error ? error.message : "The intervened target could not be re-proven",
+          {
+            code: "TARGET_INTERVENTION_REPROOF_FAILED",
+            jobId: paused.id,
+            targetId,
+            recovery: "Observe the repaired target successfully before resuming this run.",
+          },
+        );
+      }
+    }
     const job = resumeJob(resumeMatch.id!);
     json(res, 200, { job });
     return true;

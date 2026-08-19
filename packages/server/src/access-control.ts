@@ -4,11 +4,15 @@ import {
   DEVICE_LEASE_TTL_MS,
   getActiveJob,
   getExecutingJobId,
+  operationOwnsHumanIntervention,
+  recordHumanInterventionAuthorization,
   leaseDevice,
   listDeviceLeases,
   now,
   renewDeviceLease,
   setOperationLease,
+  setOperationIntervention,
+  type OperationContext,
   type TestJob,
 } from "@relay/core";
 import type { DeviceLease } from "@relay/protocol";
@@ -47,6 +51,26 @@ function admitsQueuedRun(operationId: string): boolean {
   );
 }
 
+const HUMAN_INTERVENTION_OPERATIONS = new Set([
+  "target.interact",
+  "target.do",
+  "target.ui.back",
+  "target.ui.scrollCollect",
+  "target.touch",
+  "target.key",
+  "target.scroll",
+  "step.run",
+  "authoring.session.interact",
+  "app-map.teach",
+  "discovery.interact",
+]);
+
+export function humanInterventionControlGrant(job: TestJob, operation: OperationContext) {
+  return HUMAN_INTERVENTION_OPERATIONS.has(operation.operationId)
+    ? operationOwnsHumanIntervention(job, operation)
+    : undefined;
+}
+
 export async function assertTargetControl(
   scope: RequestContext,
   targetId?: string,
@@ -61,17 +85,31 @@ export async function assertTargetControl(
     getExecutingJobId() !== activeJob.id &&
     !admitsQueuedRun(operation.operationId)
   ) {
+    const ownedIntervention = humanInterventionControlGrant(activeJob, operation);
+    if (!ownedIntervention) {
+      recordAudit(scope, {
+        action: "target.control",
+        resource: "job",
+        target: targetId,
+        result: "deny",
+      });
+      throw new HttpError(409, "This target is reserved by an active automated run", {
+        code: "TARGET_CONTROL_RUN_RESERVED",
+        targetId,
+        jobId: activeJob.id,
+        recovery:
+          activeJob.status === "paused"
+            ? "Only the run's owning actor may teach or repair the target at its explicit intervention checkpoint."
+            : "Wait for the active run to request intervention, finish, or cancel it before sending manual input.",
+      });
+    }
+    setOperationIntervention(activeJob.id, ownedIntervention.requestCapturedAt);
+    recordHumanInterventionAuthorization(activeJob, operation, ownedIntervention.requestCapturedAt);
     recordAudit(scope, {
-      action: "target.control",
-      resource: "job",
+      action: "target.intervention",
+      resource: activeJob.id,
       target: targetId,
-      result: "deny",
-    });
-    throw new HttpError(409, "This target is reserved by an active automated run", {
-      code: "TARGET_CONTROL_RUN_RESERVED",
-      targetId,
-      jobId: activeJob.id,
-      recovery: "Wait for the active run to finish or cancel it before sending manual input.",
+      result: "allow",
     });
   }
   const leases = await listDeviceLeases(scope.projectId);

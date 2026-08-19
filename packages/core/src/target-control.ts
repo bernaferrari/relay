@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { KeyedSerialQueue } from "./coordination-store.js";
+import { currentOperationContext } from "./operation-context.js";
 
 export class TargetControlReservedError extends Error {
   readonly code = "TARGET_CONTROL_RESERVED" as const;
@@ -58,7 +59,8 @@ export function runTargetMutation<T>(
   if (heldTargets.getStore()?.has(targetId)) return operation();
   return mutations.run(targetId, async () => {
     const holders = occupancy.get(targetId);
-    if (holders && holders.size > 0 && (!executingJobId || !holders.has(executingJobId))) {
+    const authorityJobId = executingJobId ?? currentOperationContext()?.interventionJobId;
+    if (holders && holders.size > 0 && (!authorityJobId || !holders.has(authorityJobId))) {
       throw new TargetControlReservedError(targetId);
     }
     const held = new Set(heldTargets.getStore() ?? []);

@@ -8,6 +8,7 @@ export * from "./recipe-runner.js";
 export * from "./events.js";
 export * from "./activity-log.js";
 export * from "./operation-context.js";
+export * from "./job-intervention.js";
 export * from "./target-control.js";
 export * from "./coordination-store.js";
 export * from "./session.js";

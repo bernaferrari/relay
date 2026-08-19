@@ -1,7 +1,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { CommandIdentity } from "@relay/protocol";
 
-export type OperationContext = CommandIdentity & { leaseId?: string; leaseOwnerId?: string };
+export type OperationContext = CommandIdentity & {
+  leaseId?: string;
+  leaseOwnerId?: string;
+  /** Request-local authority to repair this actor's paused automated run. */
+  interventionJobId?: string;
+  interventionRequestedAt?: number;
+};
 
 const operationContexts = new AsyncLocalStorage<OperationContext>();
 
@@ -35,4 +41,10 @@ export function setOperationLease(leaseId: string, leaseOwnerId?: string): void 
   const context = requireOperationContext();
   context.leaseId = leaseId;
   if (leaseOwnerId) context.leaseOwnerId = leaseOwnerId;
+}
+
+export function setOperationIntervention(jobId: string, requestedAt: number): void {
+  const context = requireOperationContext();
+  context.interventionJobId = jobId;
+  context.interventionRequestedAt = requestedAt;
 }

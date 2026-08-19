@@ -5,6 +5,7 @@ import {
   runTargetMutation,
   TargetControlReservedError,
 } from "./target-control.js";
+import { runWithOperationContext, setOperationIntervention } from "./operation-context.js";
 
 test("target mutations serialize per target but not across targets", async () => {
   const order: string[] = [];
@@ -35,6 +36,37 @@ test("an automated run reservation rejects manual interleaving", async () => {
     release();
   }
   await runTargetMutation("ipad", null, async () => undefined);
+});
+
+test("an explicitly attributed intervention may enter only its reserved job lane", async () => {
+  const release = reserveTargetControl("ipad", "job-1");
+  const releaseOther = reserveTargetControl("other-target", "job-2");
+  try {
+    await runWithOperationContext(
+      {
+        schemaVersion: 1,
+        organizationId: "org",
+        projectId: "project",
+        actorId: "agent:runner",
+        actorKind: "agent",
+        operationId: "target.interact",
+        requestId: "request-1",
+        idempotencyKey: "request-1",
+        issuedAt: Date.now(),
+      },
+      async () => {
+        setOperationIntervention("job-1", 1);
+        await runTargetMutation("ipad", null, async () => undefined);
+        await assert.rejects(
+          runTargetMutation("other-target", null, async () => undefined),
+          TargetControlReservedError,
+        );
+      },
+    );
+  } finally {
+    release();
+    releaseOther();
+  }
 });
 
 test("queued jobs share occupancy so the next run still owns the target", async () => {

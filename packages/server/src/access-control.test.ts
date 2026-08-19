@@ -3,8 +3,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { currentOperationContext, leaseDevice, runWithOperationContext } from "@relay/core";
-import { assertTargetControl, localControlSessionOwner } from "./access-control.js";
+import {
+  currentOperationContext,
+  leaseDevice,
+  runWithOperationContext,
+  type TestJob,
+} from "@relay/core";
+import {
+  assertTargetControl,
+  humanInterventionControlGrant,
+  localControlSessionOwner,
+} from "./access-control.js";
 import { HttpError } from "./http.js";
 import type { RequestContext } from "./security.js";
 
@@ -113,4 +122,47 @@ test("target control failures provide safe, machine-actionable lease recovery", 
     else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("server grants only repair commands from the paused run's exact actor", () => {
+  const owner = {
+    id: "paused-job",
+    projectId: scope.projectId,
+    status: "paused",
+    operationContext: {
+      schemaVersion: 1,
+      organizationId: scope.organizationId,
+      projectId: scope.projectId,
+      actorId: "agent:runner",
+      actorKind: "agent",
+      operationId: "job.start",
+      requestId: "run-request",
+      idempotencyKey: "run-request",
+      issuedAt: 1,
+    },
+    waitingFor: {
+      kind: "human",
+      message: "Repair the target",
+      reason: "review",
+      resumeLabel: "Resume",
+      since: 10,
+    },
+    artifacts: [{ kind: "human-intervention-requested", capturedAt: 9, data: {} }],
+  } as TestJob;
+  const exactActor = {
+    ...owner.operationContext!,
+    operationId: "target.interact",
+    requestId: "repair-request",
+  };
+  assert.deepEqual(humanInterventionControlGrant(owner, exactActor), {
+    requestCapturedAt: 9,
+  });
+  assert.equal(
+    humanInterventionControlGrant(owner, { ...exactActor, actorId: "human:other" }),
+    undefined,
+  );
+  assert.equal(
+    humanInterventionControlGrant(owner, { ...exactActor, operationId: "job.matrix.start" }),
+    undefined,
+  );
 });
