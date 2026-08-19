@@ -354,6 +354,7 @@ export function commitAppMapScreenCapture(
   value: AppMap,
   input: AppMapScreenCaptureInput,
   context: AppMapMutationContext,
+  options: { createInitialFlow?: boolean } = {},
 ): AppMapScreenCaptureResult {
   const existing = findAppMapCaptureScreen(value, input);
   const screenId =
@@ -391,7 +392,7 @@ export function commitAppMapScreenCapture(
         ...(input.evidenceKindsById ? { evidenceKindsById: input.evidenceKindsById } : {}),
         at: context.at,
       });
-      if (Object.keys(map.flows).length === 0) {
+      if (options.createInitialFlow !== false && Object.keys(map.flows).length === 0) {
         const flowId = stableId("flow", `${map.id}:main`);
         map.flows[flowId] = {
           ...entityScope(map),

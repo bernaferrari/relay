@@ -506,7 +506,12 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       }
       const persistCapture = (mapRevision: number) =>
         applyMutation(scope, mapId, mapRevision, body.eventId, (map, context) => {
-          const result = commitAppMapScreenCapture(map, capture, context);
+          const result = commitAppMapScreenCapture(map, capture, context, {
+            // Teaching creates graph-native evidence and an edge. A runnable Flow
+            // is an explicit authoring decision; do not resurrect the old
+            // implicit “Main flow” after an operator removes all Flows.
+            createInitialFlow: false,
+          });
           capturedScreenId = result.screenId;
           capturedVariantId = result.variantId;
           created = result.created;

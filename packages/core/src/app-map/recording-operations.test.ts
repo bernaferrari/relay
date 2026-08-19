@@ -138,6 +138,23 @@ test("captures an entry screen without inventing a connection", () => {
   );
 });
 
+test("a taught screen preserves an intentionally flow-free graph", () => {
+  const result = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target: { kind: "device", platform: "android", targetId: "pixel" },
+      observation: observation("settings", beforeFingerprint, "evidence-settings"),
+      title: "Settings",
+    },
+    context("teach-settings"),
+    { createInitialFlow: false },
+  );
+
+  assert.equal(result.created, true);
+  assert.equal(Object.keys(result.appMap.screens).length, 1);
+  assert.equal(Object.keys(result.appMap.flows).length, 0);
+});
+
 test("captures an explicitly owned handoff as a reversible test surface", () => {
   const result = commitAppMapScreenCapture(
     mapFixture(),
