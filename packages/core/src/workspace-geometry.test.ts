@@ -158,6 +158,24 @@ test("turns portrait transport into upright landscape for landscape-left", () =>
   assert.deepEqual({ width: out.width, height: out.height }, { width: 3, height: 2 });
 });
 
+test("preserves same-aspect landscape pixels so accessibility and taps stay aligned", () => {
+  const source = new PNG({ width: 4, height: 2 });
+  source.data[0] = 255;
+  source.data[3] = 255;
+  const before = PNG.sync.write(source);
+
+  assert.ok(
+    before.equals(
+      normalizeScreenshotToBounds(before, { width: 1112, height: 834 }, "landscape-right"),
+    ),
+  );
+  assert.ok(
+    before.equals(
+      normalizeScreenshotToBounds(before, { width: 1112, height: 834 }, "landscape-left"),
+    ),
+  );
+});
+
 test("does not rotate when orientation is unknown and aspects already match", () => {
   const source = new PNG({ width: 4, height: 2 });
   const before = PNG.sync.write(source);

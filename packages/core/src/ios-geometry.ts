@@ -112,7 +112,7 @@ export function parseIosDisplayOrientation(raw: string | undefined | null): IosD
  * https://eorvain-app.medium.com/image-orientation-on-ios-abaf8321820b):
  *
  * - Portrait buffer + landscape interface → one 90° turn (direction from side)
- * - Landscape buffer + landscape interface → one 180° turn (status bar was bottom)
+ * - Landscape buffer + landscape interface → preserve pixels; raster and AX already agree
  * - Portrait interface → force portrait aspect only
  */
 export function normalizeScreenshotToBounds(
@@ -148,9 +148,11 @@ export function normalizeScreenshotToBounds(
     return rotatePng90Clockwise(bytes);
   }
 
-  // Same aspect, landscape, but still upside-down (status chrome at bottom).
+  // A same-aspect raster is already in the XCTest interaction coordinate space.
+  // Rotating it from interface orientation alone makes pixels and AX disagree:
+  // rot90 describes how the physical panel is held, not an encoded PNG transform.
   if (interfaceLandscape === true && pixelsLandscape) {
-    return rotatePng180(bytes);
+    return bytes;
   }
   if (orientation === "portrait-upside-down") {
     return rotatePng180(bytes);

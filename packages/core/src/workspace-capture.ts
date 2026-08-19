@@ -512,8 +512,8 @@ export async function captureScreenshot(opts?: {
     let semanticNodes: readonly SnapshotNode[] | undefined = opts?.semanticNodes;
     if (context.kind === "device" && context.platform === "ios" && context.serial) {
       // UIImage.pngData() drops imageOrientation. Bake from CoreDevice orientation:
-      // portrait transport + landscape interface → one 90°; same-aspect landscape →
-      // one 180°. Never stack both. Do not invent a landscape orientation when
+      // portrait transport + landscape interface → one 90°; same-aspect pixels stay
+      // in the AX coordinate space. Do not invent a landscape orientation when
       // the recovering XCTest session has no geometry: physical iPads often
       // already give us an upright portrait go-ios raster in that state.
       const geometry = iosSnapshotGeometryBySerial.get(context.serial);
