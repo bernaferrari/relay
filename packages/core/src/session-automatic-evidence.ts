@@ -7,6 +7,7 @@ import { inferIosSnapshotGeometry, normalizeScreenshotToBounds } from "./ios-geo
 import { captureIosPngViaGoIos } from "./ios-app-launch.js";
 import { visualEvidenceAllowed } from "./redaction.js";
 import type { RecipeRuntimeState } from "./recipe-runner-context.js";
+import { currentVerifiedScreen } from "./recipe-runner-context.js";
 import { ensureRunDir, writeFramePng } from "./runs.js";
 import type { TestJob } from "./session-contract.js";
 import type { TraceStep } from "./trace.js";
@@ -20,7 +21,7 @@ export async function captureAutomaticState(
   runtime?: RecipeRuntimeState,
 ): Promise<void> {
   if (process.env.RELAY_AUTO_VISUAL_EVIDENCE === "0" || !visualEvidenceAllowed()) return;
-  const observation = runtime?.observation ?? runtime?.verifiedScreen;
+  const observation = runtime?.observation ?? currentVerifiedScreen(runtime);
   let snapshotNodes = observation?.nodes;
   let observedAt = observation?.observedAt ?? now();
   try {
@@ -114,7 +115,8 @@ export async function captureAutomaticState(
       const current = runtime.observation ?? { observedAt };
       current.screenshot = screenshot;
       runtime.observation = current;
-      if (runtime.verifiedScreen) runtime.verifiedScreen.screenshot = screenshot;
+      const verified = currentVerifiedScreen(runtime);
+      if (verified) verified.screenshot = screenshot;
     }
   } catch (error) {
     log(

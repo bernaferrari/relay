@@ -38,6 +38,7 @@ import {
   sameTarget,
 } from "./recipe-target-match.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
+import { currentVerifiedScreen } from "./recipe-runner-context.js";
 
 function isLocalizedRecipeJob(job?: TestJob): boolean {
   const locale = (job?.resolvedInputs?.language ?? job?.resolvedInputs?.locale ?? "")
@@ -590,7 +591,7 @@ async function tapRecordedTarget(
   repetitions = 1,
   intervalMs = 90,
 ): Promise<void> {
-  const verifiedNodes = ctx.runtime?.verifiedScreen?.nodes;
+  const verifiedNodes = currentVerifiedScreen(ctx.runtime)?.nodes;
   const candidates = [
     input.target,
     ...(input.fallbackTargets ?? []),

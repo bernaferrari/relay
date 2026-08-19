@@ -22,6 +22,7 @@ it("recognizes right-to-left app locales for mirrored point fallbacks", () => {
 });
 import type { Device } from "./device.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
+import { currentVerifiedScreen, type VerifiedScreenCheckpoint } from "./recipe-runner-context.js";
 import type { TestJob } from "./session.js";
 import { registerEvaluationProvider } from "./evaluation.js";
 import { saveRecipe } from "./recipes.js";
@@ -89,6 +90,17 @@ function stubDevice(impl: {
 }
 
 const noLog = { log: () => {} };
+
+function provenNavigation(checkpoint: VerifiedScreenCheckpoint) {
+  return {
+    status: "proven" as const,
+    screenId: checkpoint.screenId,
+    proofToken: `test:${checkpoint.screenId}:${checkpoint.verifiedAt}`,
+    source: "screen-observation" as const,
+    updatedAt: checkpoint.verifiedAt,
+    checkpoint,
+  };
+}
 
 describe("runRecipeStep tap gestures", () => {
   it("does not tap a reused physical-iOS element reference", async () => {
@@ -1555,7 +1567,11 @@ describe("runRecipeStep campaign check policy", () => {
       logs.some((line) => line.includes("Warm path")),
       false,
     );
-    assert.equal(runtime.campaignItineraryTrusted, true);
+    assert.equal(
+      runtime.navigationCursor?.status,
+      "unknown",
+      "a recovery recipe without destination proof cannot make location trusted",
+    );
   });
 
   it("finalizes deferred checks without executing automatic recovery", async () => {
@@ -2581,12 +2597,16 @@ describe("runRecipeStep expect-screen", () => {
     const captured = screenshot("destination");
     resolveRaster(captured);
     await Promise.resolve();
-    assert.equal(Boolean(runtime.verifiedScreen), false, "the pair waits for both observations");
+    assert.equal(
+      Boolean(currentVerifiedScreen(runtime)),
+      false,
+      "the pair waits for both observations",
+    );
     resolveNodes({ nodes });
     await pending;
 
-    assert.equal(runtime.verifiedScreen?.screenshot, captured);
-    assert.equal(runtime.verifiedScreen?.nodes, nodes);
+    assert.equal(currentVerifiedScreen(runtime)?.screenshot, captured);
+    assert.equal(currentVerifiedScreen(runtime)?.nodes, nodes);
     assert.equal(captured.framePath, undefined, "ephemeral evidence is not attached early");
     assert.equal(captured.screenMatch?.matchedScreenId, "home");
   });
@@ -2634,7 +2654,7 @@ describe("runRecipeStep expect-screen", () => {
     assert.equal(snapshots, 3, "Back resolution takes its own fresh semantic snapshot");
     assert.equal(screenshots, 2);
     assert.equal(backs, 1);
-    assert.equal(runtime.verifiedScreen?.screenshot, rasters[1]);
+    assert.equal(currentVerifiedScreen(runtime)?.screenshot, rasters[1]);
     assert.equal(rasters[0]?.framePath, undefined);
   });
 
@@ -2667,7 +2687,8 @@ describe("runRecipeStep expect-screen", () => {
       /not “Home”/u,
     );
     assert.equal(runtime.observation, undefined);
-    assert.equal(runtime.verifiedScreen, undefined);
+    assert.equal(currentVerifiedScreen(runtime), undefined);
+    assert.equal(runtime.navigationCursor?.status, "unknown");
     assert.equal(discarded.framePath, undefined);
     assert.equal(discarded.jobId, undefined);
   });
@@ -2746,7 +2767,7 @@ describe("runRecipeStep expect-screen", () => {
         ),
     );
     assert.equal(
-      runtime.verifiedScreen?.screenshot?.screenMatch?.visualFingerprint,
+      currentVerifiedScreen(runtime)?.screenshot?.screenMatch?.visualFingerprint,
       visualFingerprint,
     );
   });
@@ -3122,7 +3143,8 @@ describe("runRecipeStep expect-screen", () => {
 
     assert.equal(snapshots, 1);
     assert.equal(presses, 1);
-    assert.equal(tapContext.runtime?.verifiedScreen, undefined);
+    assert.equal(currentVerifiedScreen(tapContext.runtime), undefined);
+    assert.equal(tapContext.runtime?.navigationCursor?.status, "unknown");
     assert.equal(tapContext.runtime?.observation, undefined);
   });
 
@@ -3172,13 +3194,13 @@ describe("runRecipeStep expect-screen", () => {
       log: () => {},
       job,
       runtime: {
-        verifiedScreen: {
+        navigationCursor: provenNavigation({
           screenId: "settings",
           screenTitle: "Settings",
           nodes: staleNodes,
           observedAt: 100,
           verifiedAt: 100,
-        },
+        }),
       },
     };
 
@@ -3220,13 +3242,13 @@ describe("runRecipeStep expect-screen", () => {
     const ctx: RecipeStepContext = {
       log: () => {},
       runtime: {
-        verifiedScreen: {
+        navigationCursor: provenNavigation({
           screenId: "usage",
           screenTitle: "Usage",
           nodes: visibleNodes,
           observedAt: 100,
           verifiedAt: 100,
-        },
+        }),
       },
     };
 

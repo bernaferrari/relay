@@ -13,6 +13,7 @@ import { observeScreenIdentity } from "./screen-identity.js";
 import { isCancel } from "./recipe-runner-support.js";
 import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
+import { markNavigationUnknown, proveNavigationDestination } from "./recipe-runner-context.js";
 
 async function captureCampaignFailureEvidence(
   device: Device,
@@ -246,7 +247,7 @@ export async function runCampaignCheck(
     recovery &&
     (recovery.transitionId
       ? transitionToConfirm?.connectionId === recovery.transitionId
-      : ctx.runtime?.campaignItineraryTrusted === false),
+      : ctx.runtime?.navigationCursor?.status === "unknown"),
   );
   if (ancestorNeedingConfirmation && !useCanonicalRecovery) {
     const finishedAt = now();
@@ -319,9 +320,12 @@ export async function runCampaignCheck(
       ctx.log(`check recovery: ${step.check.title} — one canonical path`);
     }
     await execute(useCanonicalRecovery ? recovery?.recipeId : undefined);
-    if (ctx.runtime) ctx.runtime.campaignItineraryTrusted = true;
   } catch (error) {
     primaryError = error;
+    markNavigationUnknown(
+      ctx,
+      error instanceof Error ? error.message : `Campaign check ${step.check.id} failed.`,
+    );
     if (!isCancel(error)) {
       const message = error instanceof Error ? error.message : String(error);
       await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message, "primary");
@@ -415,6 +419,15 @@ export async function runCampaignCheck(
         },
       });
     }
+    const terminal = transitionDependencies.at(-1)?.destination;
+    if (terminal?.kind === "screen") {
+      proveNavigationDestination(ctx, {
+        screenId: terminal.screenId,
+        source: "transition",
+        at: finishedAt,
+        token: `${ctx.job?.id ?? "local"}:${transitionDependencies.at(-1)!.connectionId}`,
+      });
+    }
     ctx.job?.artifacts.push({
       kind: "campaign-check-result",
       capturedAt: finishedAt,
@@ -441,10 +454,16 @@ export async function runCampaignCheck(
         ? primaryMessage
         : `Cleanup failed: ${cleanupMessage}`;
   const finishedAt = now();
-  if (ctx.runtime) {
-    // A successful cleanup proves its explicit terminal screen. Otherwise the
-    // current device state is unknown and no later warm path may trust it.
-    ctx.runtime.campaignItineraryTrusted = cleanupPassed;
+  // A successful cleanup proves its explicit terminal screen. Otherwise the
+  // current device state stays unknown and no later warm path may trust it.
+  if (cleanupPassed && step.check.cleanup) {
+    proveNavigationDestination(ctx, {
+      screenId: step.check.cleanup.terminalScreenId,
+      source: "cleanup",
+      at: finishedAt,
+    });
+  } else {
+    markNavigationUnknown(ctx, message);
   }
   if (cleanupError) {
     await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message, "cleanup");

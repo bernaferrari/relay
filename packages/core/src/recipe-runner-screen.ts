@@ -5,6 +5,11 @@ import { now } from "./events.js";
 import { recordFrameObservation } from "./frame-observation.js";
 import type { FreshDeviceObservation, RecipeStepContext } from "./recipe-runner-context.js";
 import {
+  currentVerifiedScreen,
+  markNavigationUnknown,
+  proveNavigationScreen,
+} from "./recipe-runner-context.js";
+import {
   handoffShellIdentityMatch,
   resilientScreenIdentityMatch,
 } from "./recipe-runner-support.js";
@@ -30,7 +35,7 @@ export async function captureRecipeScreenshot(
   caption: string | undefined,
   ctx: RecipeStepContext,
 ): Promise<void> {
-  const verified = ctx.runtime?.verifiedScreen;
+  const verified = currentVerifiedScreen(ctx.runtime);
   const observation = ctx.runtime?.observation;
   const nodes = observation?.nodes ?? verified?.nodes;
   const retained = observation?.screenshot ?? verified?.screenshot;
@@ -143,7 +148,7 @@ export async function runExpectScreenStep(
   const priorObservation = ctx.runtime?.observation;
   if (ctx.runtime) {
     ctx.runtime.observation = undefined;
-    ctx.runtime.verifiedScreen = undefined;
+    markNavigationUnknown(ctx, `Verifying destination ${step.screenTitle}.`);
   }
   const expected = new Set([step.fingerprint, ...(step.aliases ?? [])]);
   const recoveryMaxAttempts =
@@ -329,7 +334,7 @@ export async function runExpectScreenStep(
       ...(verifiedScreenshot ? { screenshot: verifiedScreenshot } : {}),
     };
     ctx.runtime.observation = checkpoint;
-    ctx.runtime.verifiedScreen = checkpoint;
+    proveNavigationScreen(ctx, checkpoint);
   }
   if (verifiedNodes && step.repairCheckpoint && ctx.job) {
     const proofScreenshot = await captureScreenshot({

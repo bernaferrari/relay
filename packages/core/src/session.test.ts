@@ -7,7 +7,7 @@ import { JobRegistry } from "./job-registry.js";
 import { leaseDevice } from "./collaboration.js";
 import { runWithOperationContext } from "./operation-context.js";
 import type { Device } from "./device.js";
-import type { RecipeRuntimeState } from "./recipe-runner-context.js";
+import type { RecipeRuntimeState, VerifiedScreenCheckpoint } from "./recipe-runner-context.js";
 import { captureAutomaticState, enqueueJob, waitForJobCompletion } from "./session.js";
 import type { TestJob } from "./session-contract.js";
 import { runWithTargetContext } from "./target-context.js";
@@ -112,20 +112,28 @@ test("automatic evidence reuses one verified tree and raster without device late
       },
     ];
     const raster = Buffer.from("one exact raster").toString("base64");
+    const checkpoint: VerifiedScreenCheckpoint = {
+      screenId: "source",
+      screenTitle: "Source",
+      nodes,
+      observedAt: 123,
+      verifiedAt: 123,
+      screenshot: {
+        capturedAt: 124,
+        mime: "image/png",
+        base64: raster,
+        path: join(root, "ephemeral.png"),
+        bytes: Buffer.byteLength(raster, "base64"),
+      },
+    };
     const runtime: RecipeRuntimeState = {
-      verifiedScreen: {
-        screenId: "source",
-        screenTitle: "Source",
-        nodes,
-        observedAt: 123,
-        verifiedAt: 123,
-        screenshot: {
-          capturedAt: 124,
-          mime: "image/png",
-          base64: raster,
-          path: join(root, "ephemeral.png"),
-          bytes: Buffer.byteLength(raster, "base64"),
-        },
+      navigationCursor: {
+        status: "proven",
+        screenId: checkpoint.screenId,
+        proofToken: "test:source:123",
+        source: "screen-observation",
+        updatedAt: checkpoint.verifiedAt,
+        checkpoint,
       },
     };
     const job = {

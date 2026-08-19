@@ -25,7 +25,11 @@ import {
 } from "./recipe-runner-support.js";
 import { screenIdentityMatches } from "./recipe-target-match.js";
 import type { RecipeStep } from "./recipes.js";
-import { invalidateVerifiedScreen, type RecipeStepContext } from "./recipe-runner-context.js";
+import {
+  currentVerifiedScreen,
+  invalidateVerifiedScreen,
+  type RecipeStepContext,
+} from "./recipe-runner-context.js";
 import { semanticTargetKey } from "./scroll-surface-semantic-index.js";
 
 function liveSemanticKeys(node: Awaited<ReturnType<typeof snapshot>>[number]): string[] {
@@ -186,8 +190,7 @@ export async function runRevealStep(
       const nudge = chromeNudge(nodes);
       if (nudge) {
         if (ctx.runtime) {
-          ctx.runtime.observation = undefined;
-          ctx.runtime.verifiedScreen = undefined;
+          invalidateVerifiedScreen(ctx);
         }
         if (nudge === "down") await scrollDown(device, 0.18);
         else await scrollUp(device, 0.18);
@@ -216,8 +219,7 @@ export async function runRevealStep(
       const direction =
         step.direction && step.direction !== "auto" ? step.direction : movement.direction;
       if (ctx.runtime) {
-        ctx.runtime.observation = undefined;
-        ctx.runtime.verifiedScreen = undefined;
+        invalidateVerifiedScreen(ctx);
       }
       if (direction === "down") await scrollDown(device, movement.amount);
       else await scrollUp(device, movement.amount);
@@ -261,8 +263,7 @@ export async function runRevealStep(
       const nextDirection = suggestedDirection ?? direction;
       const targetedAmount = suggestedDirection ? 0.18 : undefined;
       if (ctx.runtime) {
-        ctx.runtime.observation = undefined;
-        ctx.runtime.verifiedScreen = undefined;
+        invalidateVerifiedScreen(ctx);
       }
       if (nextDirection === "down") await scrollDown(device, targetedAmount);
       else await scrollUp(device, targetedAmount);
@@ -336,7 +337,7 @@ export async function runCaptureSurfaceStep(
         ...(cacheKey ? { key: cacheKey } : {}),
         ...(cacheIdentity ? { identity: cacheIdentity } : {}),
       };
-  const verified = ctx.runtime?.verifiedScreen;
+  const verified = currentVerifiedScreen(ctx.runtime);
   const screenshot = verified?.screenId === step.screenId ? verified.screenshot : undefined;
   const nodes = verified?.screenId === step.screenId ? verified.nodes : undefined;
   const bounds = nodes?.reduce(
