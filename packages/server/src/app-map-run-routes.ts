@@ -1,6 +1,7 @@
 import type http from "node:http";
 import {
   AppMapCompileError,
+  AppMapTestCompileError,
   RunMatrixError,
   buildTargetProfiles,
   compileAppMapConnection,
@@ -152,6 +153,18 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         forceRecaptureSurfaceScreenIds: body.surfaceCapture?.forceRecaptureScreenIds,
       });
     } catch (error) {
+      if (error instanceof AppMapTestCompileError) {
+        throw new HttpError(409, error.message, {
+          code: error.code,
+          testId: error.testId,
+          stepId: error.stepId,
+          diagnostics: error.diagnostics,
+          recovery:
+            error.code === "unresolved-navigation"
+              ? "Teach or author every missing reviewed return transition, then compile the Test again."
+              : "Open the Test editor and resolve its blocking compile diagnostics.",
+        });
+      }
       throw new HttpError(409, error instanceof Error ? error.message : String(error));
     }
     const plan = compiled.plan;

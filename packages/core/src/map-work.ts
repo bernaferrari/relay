@@ -7,6 +7,8 @@ import type {
 } from "@relay/protocol";
 import { compileAppMapScenarioTest } from "./app-map-test-compiler.js";
 import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
+export { AppMapTestCompileError } from "./app-map-test-compiler.js";
+export type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
 import type { Recipe } from "./recipes.js";
 
 /** Compile the only supported Test contract: graph-native scenario intent. */

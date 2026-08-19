@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapScenarioTest, Screen } from "@relay/protocol";
 import { compileAppMapTest } from "./map-work.js";
-import { AppMapTestCompileError } from "./app-map-test-compiler.js";
+import {
+  AppMapTestCompileError,
+  appMapTestReturnRepairEndpoints,
+} from "./app-map-test-compiler.js";
 
 const at = 1;
 const scope = { organizationId: "org", projectId: "project", appMapId: "checkout" };
@@ -174,6 +177,33 @@ function scenario(): AppMapScenarioTest {
     updatedAt: at,
   };
 }
+
+test("same-screen return checkpoints are benign preflight markers", () => {
+  assert.equal(
+    appMapTestReturnRepairEndpoints({
+      kind: "expect-screen",
+      screenId: "settings",
+      returnRequirement: {
+        connectionId: "settings-to-settings",
+        fromScreenId: "settings",
+        destinationScreenId: "settings",
+      },
+    }),
+    undefined,
+  );
+  assert.deepEqual(
+    appMapTestReturnRepairEndpoints({
+      kind: "expect-screen",
+      screenId: "settings",
+      returnRequirement: {
+        connectionId: "disable-kids-mode",
+        fromScreenId: "kids-enabled",
+        destinationScreenId: "kids-off",
+      },
+    }),
+    { sourceScreenId: "kids-off", destinationScreenId: "settings" },
+  );
+});
 
 test("scenario tests compile all eight intent kinds deterministically with provenance", () => {
   const current = fixture();
@@ -899,24 +929,37 @@ test("scenario siblings never invent system Back without a taught return", () =>
     updatedAt: at,
   };
 
-  const compiled = compileAppMapTest(map, work);
-  const secondPath = Object.values(compiled.graph).find(
-    (recipe) => recipe.title === "Checkout · Open second",
-  )!;
-  assert.equal(secondPath.steps[0]?.kind, "expect-screen");
-  assert.equal(
-    secondPath.steps[0]?.kind === "expect-screen"
-      ? secondPath.steps[0].returnRequirement?.connectionId
-      : undefined,
-    "open-first",
-  );
-  assert.equal(
-    secondPath.steps.some((step) => step.kind === "key" && step.key === "back"),
-    false,
-  );
-  assert.equal(
-    secondPath.steps[0]?.kind === "expect-screen" ? secondPath.steps[0].timeoutMs : 1,
-    0,
+  assert.throws(
+    () => compileAppMapTest(map, work),
+    (error: unknown) => {
+      assert.ok(error instanceof AppMapTestCompileError);
+      assert.equal(error.code, "unresolved-navigation");
+      assert.equal(error.stepId, "second");
+      assert.deepEqual(error.diagnostics, [
+        {
+          code: "unresolved-return",
+          severity: "blocker",
+          testId: "coverage",
+          testStepId: "second",
+          check: "Open second",
+          recipeId: `app-map:${map.id}:flow:relay-test-coverage-second:r${map.revision}`,
+          recipeStepId: "relay-return-required-open-first",
+          connectionId: "open-first",
+          sourceScreenId: "first",
+          destinationScreenId: "cart",
+          suggestion:
+            "Teach or author a reviewed return from first to cart, then compile the Test again.",
+          suggestedAction: {
+            kind: "teach-return",
+            appMapId: "checkout",
+            fromScreenId: "first",
+            destinationScreenId: "cart",
+            blockedConnectionId: "open-first",
+          },
+        },
+      ]);
+      return true;
+    },
   );
 });
 
@@ -1110,34 +1153,18 @@ test("Add to home returns through one source-proven inverse before opening Advan
   );
 
   delete map.connections["open-cart"]!.return;
-  const missing = compileAppMapTest(map, work);
-  const blockedSibling = Object.values(missing.graph).find(
-    (recipe) => recipe.title === "Checkout · Open Advanced",
-  )!;
-  assert.deepEqual(
-    blockedSibling.steps.slice(0, 4).map((step) => [step.kind, step.id]),
-    [
-      ["expect-screen", "relay-return-source-add-home"],
-      ["key", "relay-return-add-home"],
-      ["expect-screen", "relay-return-proof-add-home"],
-      ["expect-screen", "relay-return-required-open-cart"],
-    ],
-  );
-  assert.equal(
-    blockedSibling.steps[3]?.kind === "expect-screen"
-      ? blockedSibling.steps[3].screenId
-      : undefined,
-    "home",
-  );
-  assert.equal(
-    blockedSibling.steps[3]?.kind === "expect-screen"
-      ? blockedSibling.steps[3].returnRequirement?.connectionId
-      : undefined,
-    "open-cart",
-  );
-  assert.equal(
-    blockedSibling.steps.some((step) => step.kind === "tap" && step.target.label === "Advanced"),
-    true,
+  assert.throws(
+    () => compileAppMapTest(map, work),
+    (error: unknown) =>
+      error instanceof AppMapTestCompileError &&
+      error.code === "unresolved-navigation" &&
+      error.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.connectionId === "open-cart" &&
+          diagnostic.sourceScreenId === "cart" &&
+          diagnostic.destinationScreenId === "home" &&
+          diagnostic.testStepId === "privacy",
+      ),
   );
 });
 
@@ -1488,7 +1515,7 @@ test("scenario recovery treats vertical swipe observations as one logical scroll
   );
 });
 
-test("scenario recovery does not merge horizontal swipe destinations", () => {
+test("scenario recovery blocks a horizontal swipe destination without a reviewed return", () => {
   const map = fixture();
   map.screens["cart-page-two"] = {
     ...screen("cart-page-two"),
@@ -1550,13 +1577,18 @@ test("scenario recovery does not merge horizontal swipe destinations", () => {
     updatedAt: at,
   };
 
-  const compiled = compileAppMapTest(map, work);
-  const secondPath = Object.values(compiled.graph).find(
-    (recipe) => recipe.title === "Checkout · Open second",
-  )!;
-  const expectation = secondPath.steps[0];
-  assert.equal(expectation?.kind, "expect-screen");
-  assert.equal(expectation?.kind === "expect-screen" ? expectation.aliases : undefined, undefined);
+  assert.throws(
+    () => compileAppMapTest(map, work),
+    (error: unknown) =>
+      error instanceof AppMapTestCompileError &&
+      error.code === "unresolved-navigation" &&
+      error.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.connectionId === "page-cart" &&
+          diagnostic.sourceScreenId === "cart-page-two" &&
+          diagnostic.destinationScreenId === "cart",
+      ),
+  );
 });
 
 test("unresolved intent fails closed with a stable step-specific diagnostic", () => {

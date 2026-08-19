@@ -4,6 +4,7 @@ import type {
   AppMapCompiledTest,
   AppMapScenarioTest,
   AppMapScenarioTestStep,
+  AppMapTestCompileDiagnostic,
   AppMapTestStepProvenance,
   RecipeStep,
 } from "@relay/protocol";
@@ -23,7 +24,8 @@ export type AppMapTestCompileErrorCode =
   | "missing-reference"
   | "draft-connection"
   | "compiled-step-limit"
-  | "cold-coverage-effect";
+  | "cold-coverage-effect"
+  | "unresolved-navigation";
 
 export class AppMapTestCompileError extends Error {
   constructor(
@@ -31,6 +33,7 @@ export class AppMapTestCompileError extends Error {
     readonly testId: string,
     readonly stepId: string,
     message: string,
+    readonly diagnostics: readonly AppMapTestCompileDiagnostic[] = [],
   ) {
     super(message);
     this.name = "AppMapTestCompileError";
@@ -38,6 +41,22 @@ export class AppMapTestCompileError extends Error {
 }
 
 const MAX_COMPILED_STEPS = 4_096;
+
+type ReturnRequirementStep = Extract<RecipeStep, { kind: "expect-screen" }>;
+
+/** Resolve the actual repair direction represented by a runtime return marker.
+ * The marker's forward-edge origin is historical context; the expect-screen
+ * target is authoritative, including repeated-state paths. */
+export function appMapTestReturnRepairEndpoints(
+  step: ReturnRequirementStep,
+): { sourceScreenId: string; destinationScreenId: string } | undefined {
+  if (!step.returnRequirement) return undefined;
+  const sourceScreenId = step.returnRequirement.destinationScreenId;
+  const destinationScreenId = step.screenId;
+  return sourceScreenId === destinationScreenId
+    ? undefined
+    : { sourceScreenId, destinationScreenId };
+}
 
 export type AppMapTestCompileOptions = {
   /** Run-scoped cache bypass for selected full-surface Test bindings. */
@@ -94,6 +113,8 @@ export function compileAppMapScenarioTest(
   const graph: Record<string, Recipe> = {};
   const provenance: AppMapTestStepProvenance[] = [];
   const omittedSteps: NonNullable<AppMapCompiledTest["omittedSteps"]> = [];
+  const navigationDiagnostics: AppMapTestCompileDiagnostic[] = [];
+  const navigationDiagnosticKeys = new Set<string>();
   const scheduledLogicalSurfaces = new Set<string>();
   const forceRecaptureSurfaceScreenIds = new Set(options.forceRecaptureSurfaceScreenIds ?? []);
   for (const screenId of forceRecaptureSurfaceScreenIds) {
@@ -177,6 +198,43 @@ export function compileAppMapScenarioTest(
     for (const compiled of Object.values(recipes)) {
       graph[compiled.id] = asRecipe(map, compiled);
       for (const [stepIndex, recipeStep] of compiled.steps.entries()) {
+        if (recipeStep.kind === "expect-screen" && recipeStep.returnRequirement) {
+          const requirement = recipeStep.returnRequirement;
+          const repair = appMapTestReturnRepairEndpoints(recipeStep);
+          if (repair) {
+            // A returnRequirement describes the reviewed forward edge that left
+            // the current state. The actual requested return destination is the
+            // expectation's screen, which can be an earlier ancestor than that
+            // edge's immediate source (for example a repeated state in a check).
+            const { sourceScreenId, destinationScreenId } = repair;
+            const key = `${step.id}:${requirement.connectionId}:${sourceScreenId}:${destinationScreenId}`;
+            if (!navigationDiagnosticKeys.has(key)) {
+              navigationDiagnosticKeys.add(key);
+              const source = map.screens[sourceScreenId]?.title ?? sourceScreenId;
+              const destination = map.screens[destinationScreenId]?.title ?? destinationScreenId;
+              navigationDiagnostics.push({
+                code: "unresolved-return",
+                severity: "blocker",
+                testId: test.id,
+                testStepId: step.id,
+                check: step.intent,
+                recipeId: compiled.id,
+                recipeStepId: recipeStep.id ?? `${compiled.id}:${stepIndex + 1}`,
+                connectionId: requirement.connectionId,
+                sourceScreenId,
+                destinationScreenId,
+                suggestion: `Teach or author a reviewed return from ${source} to ${destination}, then compile the Test again.`,
+                suggestedAction: {
+                  kind: "teach-return",
+                  appMapId: map.id,
+                  fromScreenId: sourceScreenId,
+                  destinationScreenId,
+                  blockedConnectionId: requirement.connectionId,
+                },
+              });
+            }
+          }
+        }
         provenance.push({
           recipeId: compiled.id,
           stepIndex,
@@ -512,6 +570,16 @@ export function compileAppMapScenarioTest(
   };
 
   const rootRecipeId = compileSequence(test.steps, "root");
+  if (navigationDiagnostics.length) {
+    const first = navigationDiagnostics[0]!;
+    throw new AppMapTestCompileError(
+      "unresolved-navigation",
+      test.id,
+      first.testStepId,
+      `Test ${test.name} is not ready: ${navigationDiagnostics.length} reviewed return ${navigationDiagnostics.length === 1 ? "transition is" : "transitions are"} missing. ${first.suggestion}`,
+      navigationDiagnostics,
+    );
+  }
   const root = graph[rootRecipeId]!;
   const plan: AppMapCompiledTest = {
     schemaVersion: 1,

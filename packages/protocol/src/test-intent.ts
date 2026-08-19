@@ -241,6 +241,30 @@ export type AppMapTestStepProvenance = {
   referencedEntityIds: string[];
 };
 
+/** A blocking graph defect found while compiling a Test. These diagnostics are
+ * intentionally stable across the app, CLI, and MCP surfaces so an author or
+ * agent can repair the exact transition instead of discovering it mid-run. */
+export type AppMapTestCompileDiagnostic = {
+  code: "unresolved-return";
+  severity: "blocker";
+  testId: string;
+  testStepId: string;
+  check: string;
+  recipeId: string;
+  recipeStepId: string;
+  connectionId: string;
+  sourceScreenId: string;
+  destinationScreenId: string;
+  suggestion: string;
+  suggestedAction: {
+    kind: "teach-return";
+    appMapId: string;
+    fromScreenId: string;
+    destinationScreenId: string;
+    blockedConnectionId: string;
+  };
+};
+
 export type AppMapCompiledTest = {
   schemaVersion: 1;
   appMapId: string;
