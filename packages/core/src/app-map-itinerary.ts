@@ -198,14 +198,37 @@ function reviewedReturnPlan(
   let cursor = current;
   while (cursor > target) {
     const cursorScreenId = pathScreens[cursor];
-    const compiled = previousPlan.connections[cursor - 1];
-    if (!cursorScreenId || !compiled) {
+    if (!cursorScreenId) {
       return {
         status: "missing",
         steps,
         recipes,
-        connectionId: compiled?.connectionId,
-        currentScreenId: cursorScreenId ?? currentScreenId,
+        currentScreenId,
+      };
+    }
+    // Prefer the exact requested destination before considering broader
+    // ancestor jumps. A repeated state can have a forward edge back into its
+    // own path (Kids Off -> Enabled) and a reviewed edge to the next sibling
+    // origin (Kids Off -> Settings); only the latter satisfies this request.
+    const directTarget = explicitReviewedConnection(map, cursorScreenId, targetScreenId);
+    if (directTarget === null) {
+      return { status: "missing", steps, recipes, currentScreenId: cursorScreenId };
+    }
+    if (directTarget) {
+      const reviewed = compileReviewedConnection(map, directTarget);
+      Object.assign(recipes, reviewed.recipes);
+      steps.push(reviewed.step);
+      verifiedScreenId = targetScreenId;
+      cursor = target;
+      continue;
+    }
+    const compiled = previousPlan.connections[cursor - 1];
+    if (!compiled) {
+      return {
+        status: "missing",
+        steps,
+        recipes,
+        currentScreenId: cursorScreenId,
       };
     }
     const connection = map.connections[compiled.connectionId];

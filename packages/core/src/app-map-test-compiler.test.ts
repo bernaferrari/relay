@@ -1245,16 +1245,6 @@ test("a repeated terminal state uses its reviewed direct edge to the next siblin
     intentSchemaVersion: 1,
     steps: [
       {
-        id: "open-kids",
-        kind: "instruction",
-        intent: "Open Kids mode",
-        binding: {
-          status: "resolved",
-          kind: "connections",
-          connectionIds: ["open-kids-mode"],
-        },
-      },
-      {
         id: "exercise-kids",
         kind: "instruction",
         intent: "Enable, lock, cancel, then disable Kids mode",
@@ -1262,6 +1252,7 @@ test("a repeated terminal state uses its reviewed direct edge to the next siblin
           status: "resolved",
           kind: "connections",
           connectionIds: [
+            "open-kids-mode",
             "enable-kids-mode",
             "open-kids-pin",
             "cancel-kids-pin",
