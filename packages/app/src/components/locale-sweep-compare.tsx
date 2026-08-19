@@ -1,4 +1,4 @@
-import { For, Show, onCleanup, onMount } from "solid-js";
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { Button } from "@relay/ui/button";
 import type { CorpusFinding } from "@relay/protocol";
 import {
@@ -30,7 +30,10 @@ export function LocaleSweepCompare(props: {
   findings: readonly CorpusFinding[];
   /** Findings already accepted on this cell, kept visible so they can be undone. */
   known: readonly CorpusFinding[];
-  onMarkKnown: (finding: CorpusFinding) => void;
+  onMarkKnown: (
+    finding: CorpusFinding,
+    options: { scope: "locale" | "control"; note?: string },
+  ) => void;
   onRestoreKnown: (finding: CorpusFinding) => void;
   position: number;
   total: number;
@@ -130,7 +133,9 @@ export function LocaleSweepCompare(props: {
                   <FindingRow
                     finding={finding}
                     actionLabel="Mark as known"
-                    onAction={() => props.onMarkKnown(finding)}
+                    onAction={(options) =>
+                      props.onMarkKnown(finding, options ?? { scope: "locale" })
+                    }
                   />
                 )}
               </For>
@@ -188,8 +193,13 @@ function FindingRow(props: {
   finding: CorpusFinding;
   known?: boolean;
   actionLabel: string;
-  onAction: () => void;
+  onAction: (options?: { scope: "locale" | "control"; note?: string }) => void;
 }) {
+  const [reviewing, setReviewing] = createSignal(false);
+  const [scope, setScope] = createSignal<"locale" | "control">("locale");
+  const [note, setNote] = createSignal("");
+  const canApplyToControl = () =>
+    props.finding.code === "POSSIBLE_UNTRANSLATED_TEXT" && Boolean(props.finding.stableKey);
   return (
     <li
       class={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-[var(--radius-control)] px-2.5 py-1.5 ${
@@ -220,9 +230,68 @@ function FindingRow(props: {
           </span>
         </Show>
       </div>
-      <Button variant="ghost" size="sm" onClick={props.onAction}>
-        {props.actionLabel}
-      </Button>
+      <div class="flex flex-col items-end gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => (props.known ? props.onAction() : setReviewing((value) => !value))}
+        >
+          {props.actionLabel}
+        </Button>
+        <Show when={reviewing() && !props.known}>
+          <div class="grid w-[min(360px,70vw)] gap-2 rounded-lg bg-[var(--surface-raised-stronger-non-alpha)] p-2.5 shadow-[0_0_0_1px_var(--border-weak-base)]">
+            <fieldset class="grid gap-1.5">
+              <legend class="text-micro font-medium text-[var(--text-strong)]">
+                Hide this finding on
+              </legend>
+              <label class="flex min-h-8 items-center gap-2 text-caption text-[var(--text-base)]">
+                <input
+                  type="radio"
+                  name={`finding-scope-${props.finding.id}`}
+                  checked={scope() === "locale"}
+                  onChange={() => setScope("locale")}
+                />
+                This locale only
+              </label>
+              <Show when={canApplyToControl()}>
+                <label class="flex min-h-8 items-center gap-2 text-caption text-[var(--text-base)]">
+                  <input
+                    type="radio"
+                    name={`finding-scope-${props.finding.id}`}
+                    checked={scope() === "control"}
+                    onChange={() => setScope("control")}
+                  />
+                  This control in every locale
+                </label>
+              </Show>
+            </fieldset>
+            <Show when={scope() === "control"}>
+              <label class="grid gap-1 text-micro font-medium text-[var(--text-strong)]">
+                Reason
+                <input
+                  class="h-9 rounded-lg border border-[var(--border-weak-base)] bg-[var(--background-base)] px-2.5 text-caption font-normal outline-none focus-visible:ring-1 focus-visible:ring-[var(--border-focus)]"
+                  value={note()}
+                  placeholder="Why is this intentional everywhere?"
+                  onInput={(event) => setNote(event.currentTarget.value)}
+                />
+              </label>
+            </Show>
+            <div class="flex justify-end gap-1.5">
+              <Button variant="ghost" size="sm" onClick={() => setReviewing(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={scope() === "control" && !note().trim()}
+                onClick={() => props.onAction({ scope: scope(), note: note() })}
+              >
+                Mark as known
+              </Button>
+            </div>
+          </div>
+        </Show>
+      </div>
     </li>
   );
 }

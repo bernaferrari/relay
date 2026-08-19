@@ -71,9 +71,8 @@ export function createCorpusOperationDefinitions(
       category: "corpus",
     }),
 
-    // Accepted locale findings. Keyed by the finding's own id, which the
-    // analyzer derives from code, screen, locale and control — so the same
-    // clipped label stays accepted on the next sweep instead of arriving new.
+    // Accepted locale findings retain explicit locale/control scope. The server
+    // permits cross-locale scope only for stable untranslated controls.
     query("locale-finding.known.list", "List known locale findings", "/locale-findings/known", {
       category: "corpus",
     }),

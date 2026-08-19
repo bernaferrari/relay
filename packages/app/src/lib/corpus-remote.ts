@@ -100,11 +100,12 @@ export async function listKnownFindings(run: RunOperation): Promise<KnownLocaleF
 export async function markFindingKnown(
   run: RunOperation,
   finding: CorpusFinding,
-  note?: string,
+  options?: { note?: string; scope?: "locale" | "control" },
 ): Promise<KnownLocaleFinding[]> {
   const body = (await run("locale-finding.known.add", {
     finding,
-    ...(note?.trim() ? { note: note.trim() } : {}),
+    ...(options?.note?.trim() ? { note: options.note.trim() } : {}),
+    ...(options?.scope ? { scope: options.scope } : {}),
   })) as { findings?: KnownLocaleFinding[] };
   return body.findings ?? [];
 }

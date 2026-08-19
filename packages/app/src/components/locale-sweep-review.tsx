@@ -101,7 +101,7 @@ export function LocaleSweepReview(props: { suggestedName?: string }) {
     () => (server.health() === "online" ? "online" : null),
     () => listKnownFindings(server.runAction),
   );
-  const knownIds = createMemo(() => new Set((known.latest ?? []).map((item) => item.id)));
+  const knownFindings = createMemo(() => known.latest ?? []);
 
   const [detail, { refetch: refetchDetail }] = createResource(
     () => selectedId() || null,
@@ -131,7 +131,7 @@ export function LocaleSweepReview(props: { suggestedName?: string }) {
   // `latest` so a poll mid-sweep never blanks the grid a person is reading.
   const review = createMemo((): CorpusReview | null => {
     const parts = detail.latest;
-    return parts ? corpusReview({ ...parts, known: knownIds() }) : null;
+    return parts ? corpusReview({ ...parts, known: knownFindings() }) : null;
   });
 
   createEffect(() => {
@@ -198,9 +198,12 @@ export function LocaleSweepReview(props: { suggestedName?: string }) {
    * control rather than from the sweep, so the same clipped label stays
    * accepted the next time the crawl walks past it.
    */
-  async function accept(finding: CorpusFinding) {
+  async function accept(
+    finding: CorpusFinding,
+    options: { scope: "locale" | "control"; note?: string },
+  ) {
     try {
-      await markFindingKnown(server.runAction, finding);
+      await markFindingKnown(server.runAction, finding, options);
       await refetchKnown();
       toast(`“${finding.screenLabel}” in ${finding.locale} is known`, "success");
     } catch (error) {
@@ -522,7 +525,7 @@ export function LocaleSweepReview(props: { suggestedName?: string }) {
             verdict={cell().verdict}
             findings={cell().findings}
             known={cell().known}
-            onMarkKnown={(finding) => void accept(finding)}
+            onMarkKnown={(finding, options) => void accept(finding, options)}
             onRestoreKnown={(finding) => void restore(finding)}
             position={focusedIndex() + 1}
             total={visibleCells().length}

@@ -439,6 +439,32 @@ test("the locale profile can run a language sweep and read what broke", () => {
   assert.ok(observe.has("corpus.coverage"));
 });
 
+test("locale finding acceptance exposes safe cross-locale scope", () => {
+  const schema = tool("locale-finding.known.add").inputSchema;
+  const finding = {
+    id: "finding-1",
+    code: "POSSIBLE_UNTRANSLATED_TEXT" as const,
+    canonicalKey: "settings",
+    screenLabel: "Settings",
+    locale: "it",
+    detail: "Brand name matches the baseline",
+    stableKey: "structure:row[2]",
+  };
+  assert.deepEqual(schema.parse({ finding, scope: "control", note: "Brand remains English" }), {
+    finding,
+    scope: "control",
+    note: "Brand remains English",
+  });
+  assert.throws(() => schema.parse({ finding, scope: "control" }), /requires a reason/);
+  assert.throws(() =>
+    schema.parse({
+      finding: { ...finding, code: "POSSIBLE_TEXT_CLIPPED" },
+      scope: "control",
+      note: "Looks fine",
+    }),
+  );
+});
+
 test("publishes exact graph Test and one-pass run schemas", () => {
   const save = tool("app-map.test.save").inputSchema.parse({
     appMapId: "checkout",

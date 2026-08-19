@@ -24,6 +24,49 @@ export type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
 
 const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "system.audit.list": z.object({ limit: z.number().int().positive().optional() }).strict(),
+  "locale-finding.known.add": z
+    .object({
+      finding: z
+        .object({
+          id: z.string().min(1),
+          code: z.enum([
+            "SCREEN_MISSING",
+            "POSSIBLE_LOCALE_NOT_APPLIED",
+            "CONTROL_MISSING",
+            "POSSIBLE_UNTRANSLATED_TEXT",
+            "POSSIBLE_TEXT_CLIPPED",
+          ]),
+          canonicalKey: z.string().min(1),
+          screenLabel: z.string().min(1),
+          locale: z.string().min(1),
+          detail: z.string().min(1),
+          stableKey: z.string().min(1).optional(),
+        })
+        .passthrough(),
+      scope: z
+        .enum(["locale", "control"])
+        .optional()
+        .describe("Locale only by default; control applies across locales when safely supported"),
+      note: z.string().min(1).optional().describe("Required for control-wide acceptance"),
+    })
+    .strict()
+    .superRefine((input, context) => {
+      if (input.scope !== "control") return;
+      if (input.finding.code !== "POSSIBLE_UNTRANSLATED_TEXT" || !input.finding.stableKey) {
+        context.addIssue({
+          code: "custom",
+          message: "control scope requires a stable untranslated-text finding",
+          path: ["scope"],
+        });
+      }
+      if (!input.note?.trim()) {
+        context.addIssue({
+          code: "custom",
+          message: "control scope requires a reason",
+          path: ["note"],
+        });
+      }
+    }),
   "workspace.privacy.update": z.object({ enabled: z.boolean() }).strict(),
   "workspace.evidence.update": z
     .object({

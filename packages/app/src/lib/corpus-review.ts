@@ -2,10 +2,12 @@ import type {
   CorpusAnalysisReport,
   CorpusCoverageReport,
   CorpusFinding,
+  KnownLocaleFinding,
   CorpusProgress,
   CorpusScreen,
   CorpusSession,
 } from "@relay/protocol";
+import { knownLocaleFindingMatches } from "@relay/protocol";
 import {
   type LocaleCellVerdict,
   type LocaleVerdictTally,
@@ -118,11 +120,11 @@ export function corpusReview(input: {
   session: CorpusSession;
   coverage?: CorpusCoverageReport | null;
   analysis?: CorpusAnalysisReport | null;
-  /** Ids of findings already accepted, so a repeat sweep stays quiet about them. */
-  known?: ReadonlySet<string> | null;
+  /** Reviewed findings, including their explicit locale/control scope. */
+  known?: readonly KnownLocaleFinding[] | null;
 }): CorpusReview {
   const { session, coverage, analysis } = input;
-  const accepted = input.known ?? new Set<string>();
+  const accepted = input.known ?? [];
   const locales = session.scope.locales;
   const baselineLocale =
     analysis?.baselineLocale ??
@@ -161,8 +163,10 @@ export function corpusReview(input: {
       // so those findings are held back rather than shown as defects a person
       // would go looking for.
       const reported = screen || !sweeping ? found : [];
-      const known = reported.filter((finding) => accepted.has(finding.id));
-      const findings = reported.filter((finding) => !accepted.has(finding.id));
+      const isKnown = (finding: CorpusFinding) =>
+        accepted.some((item) => knownLocaleFindingMatches(finding, item));
+      const known = reported.filter(isKnown);
+      const findings = reported.filter((finding) => !isKnown(finding));
       // A cell whose every finding was accepted says so. Calling it a pass
       // would claim the analysis found nothing, which is not what happened.
       const settled: LocaleCellVerdict = known.length

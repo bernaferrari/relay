@@ -221,7 +221,17 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("corpus.screen.get", path("corpus screen", ["sessionId", "screenId"])),
 
   mapped("locale-finding.known.list", path("finding known list")),
-  mapped("locale-finding.known.add", path("finding known add")),
+  mapped(
+    "locale-finding.known.add",
+    path("finding known add", [], undefined, {
+      summary: "Accept a reviewed locale finding with explicit scope",
+      note: "Defaults to one locale. Cross-locale control acceptance is limited to stable untranslated controls and requires a note.",
+      examples: [
+        'relay finding known add --input \'{"finding":{...},"scope":"locale"}\'',
+        'relay finding known add --input \'{"finding":{...},"scope":"control","note":"Brand remains English"}\'',
+      ],
+    }),
+  ),
   mapped("locale-finding.known.remove", path("finding known remove", ["findingId"])),
 
   mapped("language-profile.list", path("language-profile list")),

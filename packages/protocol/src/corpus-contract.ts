@@ -317,6 +317,12 @@ export type KnownLocaleFinding = {
   canonicalKey: string;
   screenLabel: string;
   locale: string;
+  /**
+   * `locale` accepts only this language. `control` accepts the same stable
+   * untranslated control in every language. Older records omit this field and
+   * are deliberately interpreted as locale-scoped.
+   */
+  scope?: "locale" | "control";
   /** What the finding said when it was accepted, so the list reads as prose. */
   detail: string;
   stableKey?: string;
@@ -324,6 +330,21 @@ export type KnownLocaleFinding = {
   markedAt: number;
   markedBy?: string;
 };
+
+export function knownLocaleFindingMatches(
+  finding: CorpusFinding,
+  known: KnownLocaleFinding,
+): boolean {
+  if (finding.id === known.id) return true;
+  if ((known.scope ?? "locale") !== "control") return false;
+  return Boolean(
+    known.code === "POSSIBLE_UNTRANSLATED_TEXT" &&
+    finding.code === known.code &&
+    known.stableKey &&
+    finding.stableKey === known.stableKey &&
+    finding.canonicalKey === known.canonicalKey,
+  );
+}
 
 /** A bounded, explainable localization review. This intentionally reports
  * possible translation defects instead of pretending deterministic heuristics

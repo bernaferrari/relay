@@ -248,12 +248,14 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
       const body = (await parseJsonBody(request)) as {
         finding?: Parameters<typeof markLocaleFindingKnown>[0]["finding"];
         note?: string;
+        scope?: "locale" | "control";
       };
       if (!body.finding?.id) throw new HttpError(400, "finding is required");
       try {
         const known = await markLocaleFindingKnown({
           finding: body.finding,
           ...(body.note ? { note: body.note } : {}),
+          ...(body.scope ? { scope: body.scope } : {}),
           markedBy: scope.subject,
         });
         json(response, 200, { finding: known, findings: await listKnownLocaleFindings() });

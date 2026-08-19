@@ -5,6 +5,7 @@ import type {
   CorpusFinding,
   CorpusScreen,
   CorpusSession,
+  KnownLocaleFinding,
 } from "@relay/protocol";
 import {
   corpusReview,
@@ -92,6 +93,19 @@ function finding(input: Partial<CorpusFinding> & { locale: string }): CorpusFind
   };
 }
 
+function known(input: Partial<KnownLocaleFinding> = {}): KnownLocaleFinding {
+  return {
+    id: "f-pt-BR",
+    code: "POSSIBLE_TEXT_CLIPPED",
+    canonicalKey: "settings",
+    screenLabel: "Settings",
+    locale: "pt-BR",
+    detail: "Reviewed",
+    markedAt: 1,
+    ...input,
+  };
+}
+
 test("a screenshot nobody has analysed is not a pass", () => {
   const review = corpusReview({ session: session() });
   const cells = review.screens[0]!.cells;
@@ -148,7 +162,7 @@ test("a finding somebody accepted stops counting as a defect but stays readable"
   const review = corpusReview({
     session: session(),
     analysis: analysis([finding({ locale: "pt-BR" })]),
-    known: new Set(["f-pt-BR"]),
+    known: [known()],
   });
   const cell = review.screens[0]!.cells.find((item) => item.locale === "pt-BR")!;
   assert.equal(cell.verdict, "known");
@@ -168,12 +182,51 @@ test("an accepted finding does not hide a new one on the same cell", () => {
       finding({ locale: "pt-BR" }),
       finding({ locale: "pt-BR", id: "f-new", code: "POSSIBLE_LOCALE_NOT_APPLIED" }),
     ]),
-    known: new Set(["f-pt-BR"]),
+    known: [known()],
   });
   const cell = review.screens[0]!.cells.find((item) => item.locale === "pt-BR")!;
   assert.equal(cell.verdict, "not-applied");
   assert.equal(review.defects, 1);
   assert.equal(review.known, 1);
+});
+
+test("a stable untranslated control can be accepted across locales", () => {
+  const translated = finding({
+    id: "f-de-untranslated",
+    locale: "de",
+    code: "POSSIBLE_UNTRANSLATED_TEXT",
+    stableKey: "structure:row[0]",
+  });
+  const review = corpusReview({
+    session: session({
+      screens: [...session().screens, screen({ id: "s-de", locale: "de" })],
+    }),
+    analysis: analysis([translated]),
+    known: [
+      known({
+        id: "f-it-untranslated",
+        locale: "it",
+        code: "POSSIBLE_UNTRANSLATED_TEXT",
+        stableKey: "structure:row[0]",
+        scope: "control",
+        note: "Product name intentionally stays English",
+      }),
+    ],
+  });
+  assert.equal(review.screens[0]!.cells.find((cell) => cell.locale === "de")?.verdict, "known");
+});
+
+test("a geometry finding never inherits a control-wide acceptance", () => {
+  const review = corpusReview({
+    session: session({
+      screens: [...session().screens, screen({ id: "s-de", locale: "de" })],
+    }),
+    analysis: analysis([
+      finding({ id: "f-de-clipped", locale: "de", stableKey: "structure:row[0]" }),
+    ]),
+    known: [known({ scope: "control", stableKey: "structure:row[0]" })],
+  });
+  assert.equal(review.screens[0]!.cells.find((cell) => cell.locale === "de")?.verdict, "clipped");
 });
 
 test("a language the sweep never reached is missing once the sweep has stopped", () => {

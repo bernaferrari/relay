@@ -128,3 +128,37 @@ test("a finding without an id cannot be accepted", async () => {
     /finding id is required/,
   );
 });
+
+test("cross-locale acceptance requires an untranslated stable control and a reason", async () => {
+  await workspace();
+  const geometry = clipped(sweep("s"));
+  await assert.rejects(
+    () => markLocaleFindingKnown({ finding: geometry, scope: "control", note: "Expected" }),
+    /only an untranslated finding with a stable control/,
+  );
+  const untranslated = {
+    ...geometry,
+    code: "POSSIBLE_UNTRANSLATED_TEXT" as const,
+    stableKey: "structure:row[0]",
+  };
+  await assert.rejects(
+    () => markLocaleFindingKnown({ finding: untranslated, scope: "control" }),
+    /reason is required/,
+  );
+  const accepted = await markLocaleFindingKnown({
+    finding: untranslated,
+    scope: "control",
+    note: "Brand name remains English",
+  });
+  assert.equal(accepted.scope, "control");
+  assert.equal(accepted.note, "Brand name remains English");
+
+  await markLocaleFindingKnown({
+    finding: { ...untranslated, id: "same-control-in-it", locale: "it" },
+    scope: "control",
+    note: "Reviewed again",
+  });
+  const known = await listKnownLocaleFindings();
+  assert.equal(known.length, 1);
+  assert.equal(known[0]!.note, "Reviewed again");
+});

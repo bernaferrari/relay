@@ -8,13 +8,10 @@
  * as long as it exists. Forty languages of that is forty reasons to stop looking
  * at the grid.
  *
- * The store is deliberately the smallest thing that fixes it: a set of finding
- * ids, and the sentence the finding used when it was accepted so the list reads
- * as prose. Not an issue tracker — no assignee, no status beyond known or not,
- * nothing that has to be kept in step with anything else. Findings are keyed by
- * `CorpusFinding.id`, which the analyzer derives from the code, the screen, the
- * locale and the control rather than from the sweep, so acceptance survives the
- * next sweep of the same screens.
+ * The store is deliberately the smallest thing that fixes it: a reviewed
+ * finding plus an explicit acceptance scope. Layout findings stay bound to one
+ * locale; a stable untranslated control may be accepted across locales with a
+ * written reason. This keeps future sweeps quiet without hiding reflow defects.
  */
 import type { CorpusFinding, KnownLocaleFinding } from "@relay/protocol";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
@@ -51,11 +48,21 @@ export async function markLocaleFindingKnown(input: {
   >;
   note?: string;
   markedBy?: string;
+  scope?: "locale" | "control";
 }): Promise<KnownLocaleFinding> {
   const { finding } = input;
   if (!finding?.id?.trim()) throw new Error("finding id is required");
   const note = input.note?.trim();
   const markedBy = input.markedBy?.trim();
+  const scope = input.scope ?? "locale";
+  if (scope === "control") {
+    if (finding.code !== "POSSIBLE_UNTRANSLATED_TEXT" || !finding.stableKey) {
+      throw new Error(
+        "only an untranslated finding with a stable control can be accepted across locales",
+      );
+    }
+    if (!note) throw new Error("a reason is required when accepting a control across locales");
+  }
   const known: KnownLocaleFinding = {
     id: finding.id.trim(),
     code: finding.code,
@@ -63,6 +70,7 @@ export async function markLocaleFindingKnown(input: {
     screenLabel: finding.screenLabel,
     locale: finding.locale,
     detail: finding.detail,
+    scope,
     markedAt: Date.now(),
     ...(finding.stableKey ? { stableKey: finding.stableKey } : {}),
     ...(note ? { note } : {}),
@@ -71,7 +79,20 @@ export async function markLocaleFindingKnown(input: {
   const current = await listKnownLocaleFindings();
   await writeWorkspaceSetting(KNOWN_FINDINGS_FILE, {
     version: 1,
-    findings: [known, ...current.filter((item) => item.id !== known.id)],
+    findings: [
+      known,
+      ...current.filter(
+        (item) =>
+          item.id !== known.id &&
+          !(
+            scope === "control" &&
+            item.scope === "control" &&
+            item.code === known.code &&
+            item.canonicalKey === known.canonicalKey &&
+            item.stableKey === known.stableKey
+          ),
+      ),
+    ],
   } satisfies StoredKnownFindings);
   return known;
 }
