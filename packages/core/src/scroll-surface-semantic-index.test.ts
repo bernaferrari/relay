@@ -49,8 +49,8 @@ test("compiles unique semantic document order while excluding sticky chrome", ()
   });
 
   assert.deepEqual(index.anchors, [
-    { order: 0, documentY: 270, target: { identifier: "appearance" } },
-    { order: 1, documentY: 1_510, target: { identifier: "kids-mode" } },
+    { order: 0, documentY: 270, target: { identifier: "appearance" }, label: "Appearance" },
+    { order: 1, documentY: 1_510, target: { identifier: "kids-mode" }, label: "Kids Mode" },
   ]);
   assert.equal(index.documentHeight, 1_511);
   assert.equal(index.viewportHeight, 800);
@@ -85,7 +85,12 @@ test("prefers durable labels over ephemeral native references", () => {
   });
 
   assert.deepEqual(index.anchors, [
-    { order: 0, documentY: 930, target: { label: "Data Controls" } },
+    {
+      order: 0,
+      documentY: 930,
+      target: { label: "Data Controls" },
+      label: "Data Controls",
+    },
   ]);
 });
 
@@ -117,6 +122,11 @@ test("collapses viewport-overlap copies but rejects genuinely ambiguous rows", (
   });
 
   assert.deepEqual(index.anchors, [
-    { order: 0, documentY: 930, target: { label: "Data Controls" } },
+    {
+      order: 0,
+      documentY: 930,
+      target: { label: "Data Controls" },
+      label: "Data Controls",
+    },
   ]);
 });

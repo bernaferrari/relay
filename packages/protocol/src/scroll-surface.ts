@@ -45,6 +45,14 @@ export type ScrollSurfaceSemanticAnchor = {
   order: number;
   documentY: number;
   target: StepTarget;
+  /** Capture-time semantic hints. Geometry remains derived and the target is
+   * still authoritative, but exploration must not guess whether a row was a
+   * button, switch, or inert heading after the raw tree leaves memory. */
+  label?: string;
+  role?: string;
+  value?: string;
+  enabled?: boolean;
+  selected?: boolean;
 };
 
 export type ScrollSurfaceSemanticIndex = {

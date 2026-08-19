@@ -90,3 +90,4 @@ export * from "./app-map.js";
 export * from "./app-map-combine-preflight.js";
 export * from "./app-map-compiler.js";
 export * from "./app-map-run-history.js";
+export * from "./graph-exploration.js";

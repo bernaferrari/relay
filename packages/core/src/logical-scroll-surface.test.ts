@@ -216,8 +216,20 @@ test("persists every raw viewport and attaches only durable evidence URIs", asyn
     assert.equal(surface.composite?.height, 6);
     assert.equal(surface.mergedTree.nodeCount, 2);
     assert.deepEqual(surface.semanticIndex?.anchors, [
-      { order: 0, documentY: 1, target: { label: "Row 0" } },
-      { order: 1, documentY: 5, target: { label: "Row 1" } },
+      {
+        order: 0,
+        documentY: 1,
+        target: { label: "Row 0" },
+        label: "Row 0",
+        role: "statictext",
+      },
+      {
+        order: 1,
+        documentY: 5,
+        target: { label: "Row 1" },
+        label: "Row 1",
+        role: "statictext",
+      },
     ]);
     assert.match(surface.manifest.uri, /^relay-evidence:\/\/[a-f0-9]{64}$/u);
 

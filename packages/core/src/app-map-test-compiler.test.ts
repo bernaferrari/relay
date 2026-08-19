@@ -183,6 +183,8 @@ test("same-screen return checkpoints are benign preflight markers", () => {
     appMapTestReturnRepairEndpoints({
       kind: "expect-screen",
       screenId: "settings",
+      screenTitle: "Settings",
+      fingerprint: "a".repeat(64),
       returnRequirement: {
         connectionId: "settings-to-settings",
         fromScreenId: "settings",
@@ -195,6 +197,8 @@ test("same-screen return checkpoints are benign preflight markers", () => {
     appMapTestReturnRepairEndpoints({
       kind: "expect-screen",
       screenId: "settings",
+      screenTitle: "Settings",
+      fingerprint: "a".repeat(64),
       returnRequirement: {
         connectionId: "disable-kids-mode",
         fromScreenId: "kids-enabled",

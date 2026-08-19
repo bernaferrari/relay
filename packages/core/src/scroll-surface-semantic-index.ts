@@ -81,7 +81,18 @@ export function compileScrollSurfaceSemanticIndex(input: {
       if (!target || !key || stickyKeys.has(key)) return [];
       const role = normalized(node.role ?? node.type);
       if (/status.?bar|keyboard|input.?method|system.?window/u.test(role ?? "")) return [];
-      return [{ key, target, documentY: Math.round(node.rect.y + node.rect.height / 2) }];
+      return [
+        {
+          key,
+          target,
+          documentY: Math.round(node.rect.y + node.rect.height / 2),
+          ...(node.label?.trim() ? { label: node.label.trim() } : {}),
+          ...(role ? { role } : {}),
+          ...(node.value?.trim() ? { value: node.value.trim() } : {}),
+          ...(node.enabled === undefined ? {} : { enabled: node.enabled }),
+          ...(node.selected === undefined ? {} : { selected: node.selected }),
+        },
+      ];
     })
     .sort((left, right) => left.documentY - right.documentY || left.key.localeCompare(right.key));
   const positions = new Map<string, number[]>();
@@ -107,6 +118,11 @@ export function compileScrollSurfaceSemanticIndex(input: {
       order,
       documentY: candidate.documentY,
       target: candidate.target,
+      ...(candidate.label ? { label: candidate.label } : {}),
+      ...(candidate.role ? { role: candidate.role } : {}),
+      ...(candidate.value ? { value: candidate.value } : {}),
+      ...(candidate.enabled === undefined ? {} : { enabled: candidate.enabled }),
+      ...(candidate.selected === undefined ? {} : { selected: candidate.selected }),
     }));
   const viewportHeight = Math.max(1, input.frames[0]?.screenshot.height ?? 1);
   const capturedHeight = input.frames.reduce(

@@ -9,6 +9,7 @@ import {
   finiteTimestamp,
   identifier,
   objectValue,
+  optionalText,
   requiredText,
   safeInteger,
 } from "./validation-primitives.js";
@@ -166,6 +167,21 @@ export function assertLogicalScrollSurface(
         ].some((value) => typeof value === "string" && value.trim().length > 0)
       ) {
         appMapFail("invalid-map", `${label}.semanticIndex.anchors[${index}] needs a target`);
+      }
+      optionalText(anchor.label, `${label}.semanticIndex.anchors[${index}].label`, 512);
+      optionalText(anchor.role, `${label}.semanticIndex.anchors[${index}].role`, 160);
+      optionalText(anchor.value, `${label}.semanticIndex.anchors[${index}].value`, 512);
+      if (anchor.enabled !== undefined && typeof anchor.enabled !== "boolean") {
+        appMapFail(
+          "invalid-map",
+          `${label}.semanticIndex.anchors[${index}].enabled must be boolean`,
+        );
+      }
+      if (anchor.selected !== undefined && typeof anchor.selected !== "boolean") {
+        appMapFail(
+          "invalid-map",
+          `${label}.semanticIndex.anchors[${index}].selected must be boolean`,
+        );
       }
       previousY = anchor.documentY;
     });
