@@ -325,16 +325,12 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("job.matrix.start", path("job matrix start")),
   mapped("job.compatibility-matrix.start", path("job compatibility-matrix start")),
   mapped("job.soak.start", path("job soak start")),
-  mapped(
-    "job.locale-matrix.start",
-    path("job locale-matrix start", [], undefined, {
-      summary: "Compatibility command: run a reviewed Flow once per locale",
-      examples: [
-        'relay job locale-matrix start --input \'{"appMapId":"<map>","flowId":"<flow>","serial":"<device>","locales":["en","pt-BR"]}\'',
-      ],
-      note: "Prefer a saved graph-native Test in `relay combine run`; use `relay test run` for one exact pass.",
-    }),
-  ),
+  {
+    operationId: "job.locale-matrix.start",
+    exclusion: "internal",
+    reason:
+      "Flow-based locale matrices are legacy compatibility; use a saved Language Variable × graph Test Combine.",
+  },
   mapped(
     "job.combine.start",
     path("job combine start", [], undefined, {
@@ -396,16 +392,12 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
     path("job option-matrix export", ["batchId"]),
   ),
-  mapped(
-    "job.locale-matrix.infer",
-    path("job locale-matrix infer", [], undefined, {
-      summary: "Infer locale options from taught live-screen rows",
-      examples: [
-        'relay job locale-matrix infer --input \'{"appMapId":"<map>","flowId":"<flow>","examples":[{"locale":"en","identifier":"lang.en"}],"nodes":[]}\'',
-      ],
-      note: "Click or pass 1–2 taught rows. Pass appMapId so reviewed entry actions to the language list are reused.",
-    }),
-  ),
+  {
+    operationId: "job.locale-matrix.infer",
+    exclusion: "internal",
+    reason:
+      "Locale inference feeds the canonical Variable editor internally; it is not a second CLI authoring workflow.",
+  },
   mapped(
     "job.locale-matrix.export",
     path("job locale-matrix export", ["batchId"], undefined, {
@@ -414,9 +406,12 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "job.locale-matrix.analysis",
+    path("combine analyze", ["batchId"], undefined, {
+      summary: "Read locale findings from a Language × Test Combine",
+    }),
     path("job locale-matrix analysis", ["batchId"], undefined, {
-      summary: "Read locale findings for a batch",
-      note: "Same findings the pack carries, without writing one. Works while the sweep is still running.",
+      summary: "Compatibility alias of combine analyze",
+      note: "Reads the same durable findings without writing a pack.",
     }),
   ),
 

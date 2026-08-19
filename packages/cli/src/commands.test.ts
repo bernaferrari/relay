@@ -330,22 +330,20 @@ test("authoring interaction aliases construct explicit session inputs", () => {
   );
 });
 
-test("locale-matrix help leads with map and flow, not a library recipe", () => {
+test("legacy flow locale commands are internal and Combine is the public workflow", () => {
   const start = mappedCommandDescriptors.find(
     (descriptor) => descriptor.operationId === "job.locale-matrix.start",
   );
   const infer = mappedCommandDescriptors.find(
     (descriptor) => descriptor.operationId === "job.locale-matrix.infer",
   );
-  assert.ok(start && !("exclusion" in start));
-  assert.ok(infer && !("exclusion" in infer));
-  const startHelp = start.paths[0];
-  const inferHelp = infer.paths[0];
-  assert.match(startHelp?.examples?.[0] ?? "", /appMapId/);
-  assert.match(startHelp?.examples?.[0] ?? "", /flowId/);
-  assert.equal(/recipe/.test(startHelp?.examples?.[0] ?? ""), false);
-  assert.match(startHelp?.summary ?? "", /map path|locale/i);
-  assert.match(inferHelp?.examples?.[0] ?? "", /appMapId/);
+  assert.equal(start, undefined);
+  assert.equal(infer, undefined);
+  assert.throws(() => resolveCommand(["job", "locale-matrix", "start"]), /Invalid job command/);
+  assert.equal(
+    resolveCommand(["combine", "analyze", "batch-1"]).operationId,
+    "job.locale-matrix.analysis",
+  );
   const optionStart = mappedCommandDescriptors.find(
     (descriptor) => descriptor.operationId === "job.combine.start",
   );
