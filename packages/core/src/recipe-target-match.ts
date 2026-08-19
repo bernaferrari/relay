@@ -133,7 +133,8 @@ export function sameTarget(left: StepTarget, right: StepTarget): boolean {
     left.ref === right.ref &&
     left.label === right.label &&
     left.role === right.role &&
-    left.text === right.text
+    left.text === right.text &&
+    JSON.stringify(left.relation) === JSON.stringify(right.relation)
   );
 }
 

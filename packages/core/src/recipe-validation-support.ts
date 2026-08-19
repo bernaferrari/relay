@@ -429,7 +429,7 @@ function parseCaptureSurfaceStep(
 }
 
 function targetHasStrategy(t: StepTarget): boolean {
-  return Boolean(t.identifier || t.ref || t.label || t.text || t.point);
+  return Boolean(t.identifier || t.ref || t.label || t.text || t.relation || t.point);
 }
 
 function stepErr(index: number, why: string): Error {
@@ -458,6 +458,19 @@ function parseTarget(raw: unknown, index: number, field: string): StepTarget {
   if (raw.text !== undefined) {
     if (!isString(raw.text)) throw stepErr(index, `${field}.text must be a string`);
     t.text = raw.text;
+  }
+  if (raw.relation !== undefined) {
+    if (!isObject(raw.relation) || raw.relation.kind !== "following-row") {
+      throw stepErr(index, `${field}.relation.kind must be following-row`);
+    }
+    const anchor = parseTarget(raw.relation.anchor, index, `${field}.relation.anchor`);
+    if (anchor.point || anchor.relation) {
+      throw stepErr(index, `${field}.relation.anchor must be a non-relative semantic target`);
+    }
+    if (!anchor.identifier && !anchor.ref && !anchor.label && !anchor.text) {
+      throw stepErr(index, `${field}.relation.anchor must contain a semantic selector`);
+    }
+    t.relation = { kind: "following-row", anchor };
   }
   if (raw.point !== undefined) {
     t.point = parseStepPoint(raw.point, index, `${field}.point`);

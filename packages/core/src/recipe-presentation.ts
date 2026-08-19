@@ -5,6 +5,9 @@ import type { RecipeStep, StepTarget } from "@relay/protocol";
 import type { Glyph } from "./trace.js";
 
 export function describeTarget(t: StepTarget): string {
+  if (t.relation?.kind === "following-row") {
+    return `row after ${describeTarget(t.relation.anchor)}`;
+  }
   if (t.identifier) return `identifier ${t.identifier}`;
   if (t.ref) return `ref ${t.ref}`;
   if (t.label) return `${t.role ? `${t.role} ` : ""}label "${t.label}"`;

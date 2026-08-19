@@ -464,6 +464,30 @@ test("compiles directly authored structured steps without inventing a recording"
   );
 });
 
+test("compiles a stable following-row selector without a user value or viewport point", () => {
+  const map = fixture();
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "open-birth-year",
+      kind: "tap",
+      target: {
+        relation: { kind: "following-row", anchor: { label: "Birth Year" } },
+      },
+    },
+  ];
+
+  const plan = compileAppMapConnection(map, "open-home");
+  const tap = plan.recipes[plan.rootRecipeId]!.steps.find((step) => step.kind === "tap");
+  assert.deepEqual(tap, {
+    id: "relay-action-open-birth-year",
+    kind: "tap",
+    target: {
+      relation: { kind: "following-row", anchor: { label: "Birth Year" } },
+    },
+  });
+});
+
 test("runs explicit Flow setup before verifying the entry screen", () => {
   const map = fixture();
   map.routines["start-clean"] = {

@@ -56,8 +56,30 @@ export function assertTarget(value: StepTarget, label: string): void {
   optionalText(value.label, `${label}.label`);
   optionalText(value.role, `${label}.role`);
   optionalText(value.text, `${label}.text`);
+  if (value.relation) {
+    objectValue(value.relation, `${label}.relation`);
+    if (value.relation.kind !== "following-row") {
+      appMapFail("invalid-map", `${label}.relation.kind is unsupported`);
+    }
+    const anchor = objectValue(value.relation.anchor, `${label}.relation.anchor`);
+    optionalText(anchor.identifier as string | undefined, `${label}.relation.anchor.identifier`);
+    optionalText(anchor.ref as string | undefined, `${label}.relation.anchor.ref`);
+    optionalText(anchor.label as string | undefined, `${label}.relation.anchor.label`);
+    optionalText(anchor.role as string | undefined, `${label}.relation.anchor.role`);
+    optionalText(anchor.text as string | undefined, `${label}.relation.anchor.text`);
+    if (!anchor.identifier && !anchor.ref && !anchor.label && !anchor.text) {
+      appMapFail("invalid-map", `${label}.relation.anchor must contain a semantic selector`);
+    }
+  }
   if (value.point) assertPoint(value.point, `${label}.point`);
-  if (!value.identifier && !value.ref && !value.label && !value.text && !value.point) {
+  if (
+    !value.identifier &&
+    !value.ref &&
+    !value.label &&
+    !value.text &&
+    !value.relation &&
+    !value.point
+  ) {
     appMapFail("invalid-map", `${label} must contain a semantic or coordinate target`);
   }
 }

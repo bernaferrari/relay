@@ -44,6 +44,7 @@ export const pointAnchorTarget = z
     identifier: z.string().min(1).optional(),
     ref: z.string().min(1).optional(),
     label: z.string().min(1).optional(),
+    role: z.string().min(1).optional(),
     text: z.string().min(1).optional(),
   })
   .strict()
@@ -86,13 +87,21 @@ export const stepTarget = z
     ref: z.string().min(1).optional(),
     label: z.string().min(1).optional(),
     text: z.string().min(1).optional(),
+    relation: z
+      .object({
+        kind: z.literal("following-row"),
+        anchor: pointAnchorTarget,
+      })
+      .strict()
+      .optional()
+      .describe("Activate the unique actionable row immediately following a stable heading"),
     point: point.optional(),
   })
   .strict()
   .refine(
-    ({ identifier, ref, label, text: targetText, point: targetPoint }) =>
-      Boolean(identifier || ref || label || targetText || targetPoint),
-    "Target needs an identifier, ref, label, text, or point",
+    ({ identifier, ref, label, text: targetText, relation, point: targetPoint }) =>
+      Boolean(identifier || ref || label || targetText || relation || targetPoint),
+    "Target needs an identifier, ref, label, text, semantic relation, or point",
   )
   .describe("Semantic selector, accessibility reference, or point");
 

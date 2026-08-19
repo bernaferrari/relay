@@ -124,6 +124,9 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       }
       case "wait-for": {
         const target = parseTarget(raw.target, index, "target");
+        if (target.relation) {
+          throw stepErr(index, "wait-for target cannot use an activation-only semantic relation");
+        }
         // point-only targets can't be "waited for" (validation-time rejection)
         if (target.point && !target.identifier && !target.ref && !target.label && !target.text) {
           throw stepErr(
@@ -191,6 +194,9 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       }
       case "expect": {
         const target = parseTarget(raw.target, index, "target");
+        if (target.relation) {
+          throw stepErr(index, "expect target cannot use an activation-only semantic relation");
+        }
         // point-only targets can't be "expected" (validation-time rejection)
         if (target.point && !target.identifier && !target.ref && !target.label && !target.text) {
           throw stepErr(

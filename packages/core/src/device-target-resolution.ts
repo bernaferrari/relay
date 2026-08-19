@@ -1,4 +1,6 @@
+import type { StepTargetRelation } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
+import { relationAnchorMatches, resolveFollowingRow } from "./semantic-row-activation.js";
 
 export function center(rect: { x: number; y: number; width: number; height: number }): {
   x: number;
@@ -361,12 +363,13 @@ export type NamedControlTarget = {
   label?: string;
   role?: string;
   text?: string;
+  relation?: StepTargetRelation;
   point?: { x: number; y: number };
   /** Exact Android package allowed to replace the current foreground app. */
   expectedApp?: string;
 };
 
-export type NamedControlMethod = "identifier" | "label" | "text" | "point";
+export type NamedControlMethod = "identifier" | "label" | "text" | "relation" | "point";
 
 export type NamedControlResolution = {
   method: NamedControlMethod;
@@ -391,6 +394,91 @@ export type NamedControlResolutionFailure = {
 export type NamedControlResolutionOutcome =
   | { status: "resolved"; resolution: NamedControlResolution }
   | NamedControlResolutionFailure;
+
+/** Resolve a stable heading to the value/control row immediately after it.
+ * This models structure, not geometry: the anchor and row must be siblings,
+ * and that next sibling must contain one unique actionable location. */
+export function resolveFollowingRowControl(
+  nodes: SnapshotNode[],
+  relation: StepTargetRelation,
+): NamedControlResolutionOutcome {
+  const outcome = resolveFollowingRow(nodes, relation);
+  return outcome.status === "resolved"
+    ? {
+        status: "resolved",
+        resolution: {
+          method: "relation",
+          point: outcome.point,
+          bounds: outcome.bounds,
+          activation: "snapshot-point",
+        },
+      }
+    : { ...outcome, method: "relation" };
+}
+
+export type SemanticActivationPreflight =
+  | { status: "proven"; resolution: NamedControlResolution }
+  | { status: "blocked"; code: "absent" | "ambiguous" | "heading-only-noop"; detail: string };
+
+/** Pure offline selector check over a frozen raw accessibility tree. It uses
+ * the same resolver as the device path, so a repair can be validated without
+ * reconnecting hardware. */
+export function preflightSemanticActivation(
+  nodes: SnapshotNode[],
+  target: NamedControlTarget,
+): SemanticActivationPreflight {
+  if (target.relation) {
+    const related = resolveFollowingRowControl(nodes, target.relation);
+    return related.status === "resolved"
+      ? { status: "proven", resolution: related.resolution }
+      : {
+          status: "blocked",
+          code: related.status === "ambiguous" ? "ambiguous" : "absent",
+          detail: related.detail,
+        };
+  }
+  const outcome = resolveNamedControlOutcome(nodes, target);
+  if (outcome.status !== "resolved") {
+    return {
+      status: "blocked",
+      code: outcome.status === "ambiguous" ? "ambiguous" : "absent",
+      detail: outcome.detail,
+    };
+  }
+  const semantic = {
+    ...(target.identifier ? { identifier: target.identifier } : {}),
+    ...(target.label ? { label: target.label } : {}),
+    ...(target.role ? { role: target.role } : {}),
+    ...(target.text ? { text: target.text } : {}),
+  };
+  const matches = nodes.filter((node) =>
+    relationAnchorMatches(node, {
+      kind: "following-row",
+      anchor: semantic,
+    }),
+  );
+  const descriptiveOnly =
+    matches.length > 0 &&
+    matches.every((node) => {
+      const role = (node.role ?? node.type ?? "").toLocaleLowerCase();
+      return node.hittable !== true && /heading|header|statictext|textview/.test(role);
+    });
+  if (descriptiveOnly && outcome.resolution.activation !== "snapshot-point") {
+    const relation = resolveFollowingRowControl(nodes, {
+      kind: "following-row",
+      anchor: semantic,
+    });
+    if (relation.status === "resolved") {
+      return {
+        status: "blocked",
+        code: "heading-only-noop",
+        detail:
+          "selector resolves only to descriptive heading bounds; use a following-row semantic relation",
+      };
+    }
+  }
+  return { status: "proven", resolution: outcome.resolution };
+}
 
 export function explicitPointResolution(
   point: { x: number; y: number } | undefined,
@@ -417,7 +505,7 @@ export function resolveNamedControlOutcome(
 ): NamedControlResolutionOutcome {
   const failures: NamedControlResolutionFailure[] = [];
   const resolve = (
-    method: Exclude<NamedControlMethod, "point">,
+    method: "identifier" | "label" | "text",
     value: string | undefined,
   ): NamedControlResolution | undefined => {
     if (!value?.trim()) return undefined;
@@ -546,6 +634,11 @@ export function resolveNamedControlOutcome(
   if (byLabel) return { status: "resolved", resolution: byLabel };
   const byText = resolve("text", target.text);
   if (byText) return { status: "resolved", resolution: byText };
+  if (target.relation) {
+    const related = resolveFollowingRowControl(nodes, target.relation);
+    if (related.status === "resolved") return related;
+    failures.push(related);
+  }
   const point = explicitPointResolution(target.point);
   if (point) return { status: "resolved", resolution: point };
   return (

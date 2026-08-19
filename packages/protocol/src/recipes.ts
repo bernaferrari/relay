@@ -15,6 +15,15 @@ export type StepPointAnchorTarget = {
   text?: string;
 };
 
+/** A structural selector for controls whose stable accessibility name is
+ * published on a nearby heading rather than on the value-bearing row itself.
+ * The relationship is resolved from the current tree and never stores the
+ * user's value or a viewport coordinate. */
+export type StepTargetRelation = {
+  kind: "following-row";
+  anchor: StepPointAnchorTarget;
+};
+
 export type StepPoint = {
   /** Absolute coordinate in the recorded reference bounds. */
   x: number;
@@ -77,6 +86,9 @@ export type StepTarget = {
   /** Stable accessibility role used with a label to disambiguate headings from controls. */
   role?: string;
   text?: string;
+  /** Activate the unique actionable row immediately following this stable
+   * semantic anchor. Ambiguous/missing structure fails closed. */
+  relation?: StepTargetRelation;
   point?: StepPoint;
 };
 

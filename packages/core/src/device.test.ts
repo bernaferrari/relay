@@ -11,6 +11,7 @@ import {
   resolveSnapshotTargetPoint,
 } from "./device.js";
 import {
+  preflightSemanticActivation,
   resolveNamedControlOutcome,
   resolveSnapshotTargetRevealDirection,
 } from "./device-target-resolution.js";
@@ -476,6 +477,115 @@ test("a settings row title presses its row when the whole iPad tree denies hitta
     assert.deepEqual(outcome.resolution.point, { x: 188, y: 607 });
     assert.equal(outcome.resolution.activation, "snapshot-point");
   }
+});
+
+test("Edit Profile Birth Year resolves its stable heading to the following value row offline", () => {
+  // Frozen shape from persisted Relay40 run 90560436. The account-specific
+  // value (1994 here) is deliberately not part of the selector contract.
+  const nodes = [
+    {
+      index: 0,
+      type: "android.widget.FrameLayout",
+      rect: { x: 0, y: 0, width: 1080, height: 2340 },
+    },
+    {
+      index: 32,
+      parentIndex: 0,
+      type: "android.widget.ScrollView",
+      rect: { x: 0, y: 283, width: 1080, height: 1922 },
+    },
+    {
+      index: 43,
+      parentIndex: 32,
+      type: "android.widget.TextView",
+      label: "Birth Year",
+      value: "Birth Year",
+      enabled: true,
+      visibleToUser: true,
+      rect: { x: 79, y: 1110, width: 179, height: 49 },
+    },
+    {
+      index: 44,
+      parentIndex: 32,
+      type: "android.view.View",
+      enabled: true,
+      visibleToUser: true,
+      rect: { x: 45, y: 1193, width: 990, height: 136 },
+    },
+    {
+      index: 45,
+      parentIndex: 44,
+      type: "android.view.View",
+      enabled: true,
+      visibleToUser: true,
+      rect: { x: 45, y: 1193, width: 990, height: 136 },
+    },
+    {
+      index: 46,
+      parentIndex: 45,
+      type: "android.view.View",
+      enabled: true,
+      visibleToUser: true,
+      hittable: true,
+      rect: { x: 45, y: 1193, width: 990, height: 136 },
+    },
+    {
+      index: 47,
+      parentIndex: 46,
+      type: "android.widget.TextView",
+      label: "1994",
+      value: "1994",
+      enabled: true,
+      visibleToUser: true,
+      rect: { x: 192, y: 1235, width: 90, height: 53 },
+    },
+  ];
+
+  const unsafe = preflightSemanticActivation(nodes, { label: "Birth Year" });
+  assert.deepEqual(unsafe, {
+    status: "blocked",
+    code: "heading-only-noop",
+    detail:
+      "selector resolves only to descriptive heading bounds; use a following-row semantic relation",
+  });
+
+  const stable = preflightSemanticActivation(nodes, {
+    relation: { kind: "following-row", anchor: { label: "Birth Year" } },
+  });
+  assert.equal(stable.status, "proven");
+  if (stable.status === "proven") {
+    assert.equal(stable.resolution.method, "relation");
+    assert.deepEqual(stable.resolution.bounds, { x: 45, y: 1193, width: 990, height: 136 });
+    assert.deepEqual(stable.resolution.point, { x: 540, y: 1261 });
+  }
+});
+
+test("following-row relation fails closed when its heading is ambiguous", () => {
+  const nodes = [
+    {
+      index: 1,
+      parentIndex: 0,
+      type: "android.widget.TextView",
+      label: "Birth Year",
+      enabled: true,
+      visibleToUser: true,
+      rect: { x: 20, y: 100, width: 120, height: 40 },
+    },
+    {
+      index: 2,
+      parentIndex: 0,
+      type: "android.widget.TextView",
+      label: "Birth Year",
+      enabled: true,
+      visibleToUser: true,
+      rect: { x: 20, y: 500, width: 120, height: 40 },
+    },
+  ];
+  const result = preflightSemanticActivation(nodes, {
+    relation: { kind: "following-row", anchor: { label: "Birth Year" } },
+  });
+  assert.equal(result.status, "blocked");
+  if (result.status === "blocked") assert.equal(result.code, "ambiguous");
 });
 
 test("a caption with no row of its own still refuses to become a tap", () => {

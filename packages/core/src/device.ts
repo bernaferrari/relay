@@ -46,6 +46,8 @@ import type {
 } from "./device-target-resolution.js";
 export {
   center,
+  preflightSemanticActivation,
+  resolveFollowingRowControl,
   resolveNamedControl,
   resolveSnapshotTargetPoint,
 } from "./device-target-resolution.js";
@@ -53,6 +55,7 @@ export type {
   NamedControlMethod,
   NamedControlResolution,
   NamedControlTarget,
+  SemanticActivationPreflight,
   SnapshotTargetRegion,
 } from "./device-target-resolution.js";
 

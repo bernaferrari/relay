@@ -418,7 +418,9 @@ async function tapTarget(
     target.point && !target.point.relativeTo
       ? await resolvePointForDevice(device, target.point, mirrorPoints)
       : undefined;
-  const hasSemanticTarget = Boolean(target.identifier || target.label || target.text);
+  const hasSemanticTarget = Boolean(
+    target.identifier || target.label || target.text || target.relation,
+  );
   const allowNamedPointFallback =
     selectedPlatform() !== "android" ||
     !hasSemanticTarget ||
@@ -428,6 +430,7 @@ async function tapTarget(
     ...(target.label ? { label: target.label } : {}),
     ...(target.role ? { role: target.role } : {}),
     ...(target.text ? { text: target.text } : {}),
+    ...(target.relation ? { relation: target.relation } : {}),
     ...(literalPoint && allowNamedPointFallback ? { point: literalPoint } : {}),
     ...(expectedApp ? { expectedApp } : {}),
   };
@@ -440,7 +443,7 @@ async function tapTarget(
   if (
     !named &&
     selectedPlatform() === "android" &&
-    (target.identifier || target.label || target.text)
+    (target.identifier || target.label || target.text || target.relation)
   ) {
     // Compose can publish the destination shell before its actionable rows.
     // Wait for a few fresh accessibility generations; never convert absence
@@ -477,7 +480,7 @@ async function tapTarget(
   if (
     selectedPlatform() === "android" &&
     nodes.length > 0 &&
-    (target.identifier || target.label || target.text)
+    (target.identifier || target.label || target.text || target.relation)
   ) {
     const failure =
       namedOutcome.status === "resolved"
