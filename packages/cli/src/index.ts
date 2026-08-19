@@ -161,20 +161,24 @@ function assertOperationSucceeded(operationId: string, result: unknown): void {
     throw new CliError(
       failureMessage(error, `${operationId} did not complete successfully`),
       ExitCode.validation,
-      result,
+      summarizeResult(operationId, result),
     );
   }
   if ("job" in result && result.job && typeof result.job === "object" && "status" in result.job) {
     const status = result.job.status;
     if (status === "cancelled") {
-      throw new CliError("Operation cancelled", ExitCode.cancellation, result);
+      throw new CliError(
+        "Operation cancelled",
+        ExitCode.cancellation,
+        summarizeResult(operationId, result),
+      );
     }
     if (status === "error") {
       const error = "error" in result.job ? result.job.error : undefined;
       throw new CliError(
         failureMessage(error, `${operationId} failed`),
         ExitCode.validation,
-        result,
+        summarizeResult(operationId, result),
       );
     }
   }

@@ -1073,6 +1073,51 @@ test("failed watched jobs use a non-zero exit", async () => {
   assert.equal(JSON.parse(io.stdout()).error.message, "destination screen differed");
 });
 
+test("failed watched jobs emit a bounded summary with durable evidence pointers", async () => {
+  const io = capture();
+  const huge = "full accessibility evidence ".repeat(50_000);
+  const code = await runCli(["job", "watch", "failed-large", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      invoke: async () => ({
+        job: {
+          id: "failed-large",
+          status: "error",
+          error: "device 'pixel-1' not found",
+          runDir: "/workspace/runs/failed-large",
+          artifacts: [
+            {
+              kind: "campaign-check-result",
+              data: {
+                id: "privacy",
+                title: "Privacy",
+                status: "failed",
+                error: "screen differed",
+                startedAt: 1,
+                finishedAt: 2,
+              },
+            },
+            { kind: "campaign-check-evidence", data: { nodes: huge, screenshot: huge } },
+          ],
+        },
+      }),
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    pollIntervalMs: 0,
+    env: {},
+  });
+
+  const terminal = JSON.parse(io.stdout());
+  assert.equal(code, ExitCode.validation);
+  assert.ok(io.stdout().length < 20_000);
+  assert.equal(terminal.error.details.job.resources.run, "/runs/failed-large");
+  assert.deepEqual(terminal.error.details.job.resources.repairs, [
+    "/runs/failed-large/checks/privacy/repair",
+  ]);
+  assert.equal(io.stdout().includes("full accessibility evidence"), false);
+});
+
 test("unknown operations are usage errors without invoking a client", async () => {
   const io = capture();
   let created = false;

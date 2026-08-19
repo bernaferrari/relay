@@ -217,3 +217,52 @@ test("job.get retains bounded campaign outcomes and lineage", () => {
     },
   ]);
 });
+
+test("failed job summaries stay bounded and point to durable evidence and repairs", () => {
+  const huge = "diagnostic ".repeat(100_000);
+  const artifacts = Array.from({ length: 100 }, (_, index) => ({
+    kind: "campaign-check-result",
+    data: {
+      id: `check-${index}`,
+      title: `Check ${index}`,
+      status: index === 0 ? "interrupted" : "failed",
+      error: huge,
+      startedAt: index,
+      finishedAt: index + 1,
+    },
+  }));
+  const result = summarizeExecutionOperationResult("job.get", {
+    job: {
+      id: "failed-run",
+      status: "error",
+      error: huge,
+      runDir: "/workspace/runs/failed-run",
+      logs: Array.from({ length: 30 }, () => huge),
+      steps: Array.from({ length: 30 }, (_, index) => ({
+        id: `step-${index}`,
+        title: `Step ${index}`,
+        status: "error",
+        log: huge,
+      })),
+      artifacts,
+    },
+  }) as {
+    job?: {
+      error?: string;
+      checkCount?: number;
+      checks?: Array<{ status?: string }>;
+      failedSteps?: unknown[];
+      resources?: { run?: string; runDir?: string; repairs?: string[] };
+    };
+  };
+
+  assert.equal(result.job?.checkCount, 100);
+  assert.equal(result.job?.checks?.length, 40);
+  assert.equal(result.job?.checks?.[0]?.status, "interrupted");
+  assert.equal(result.job?.failedSteps?.length, 12);
+  assert.equal(result.job?.resources?.run, "/runs/failed-run");
+  assert.equal(result.job?.resources?.runDir, "/workspace/runs/failed-run");
+  assert.equal(result.job?.resources?.repairs?.length, 40);
+  assert.ok((result.job?.error?.length ?? 0) <= 4_000);
+  assert.ok(JSON.stringify(result).length < 75_000);
+});

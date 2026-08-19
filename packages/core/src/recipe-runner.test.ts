@@ -1637,6 +1637,131 @@ describe("runRecipeStep campaign check policy", () => {
     assert.equal(runtime.deferredCampaignChecks?.length, 0);
   });
 
+  it("halts campaign mutations when the target disappears and preserves prior outcomes", async () => {
+    const job = { id: "transport-boundary", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const logs: string[] = [];
+    let snapshotReads = 0;
+    let cleanupMutations = 0;
+    const device = stubDevice({
+      snapshot: async () => {
+        snapshotReads += 1;
+        return { nodes: [] };
+      },
+    });
+    const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph: {} };
+
+    await runCampaignCheck(
+      device,
+      { kind: "sleep", ms: 1, check: { id: "advanced", title: "Visit Advanced" } },
+      context,
+      async () => {
+        throw new Error("expect-screen: on unknown, not Settings");
+      },
+      { allowDefer: false },
+    );
+    const snapshotReadsBeforeDisconnect = snapshotReads;
+
+    await assert.rejects(
+      runCampaignCheck(
+        device,
+        {
+          kind: "sleep",
+          ms: 1,
+          check: {
+            id: "terms",
+            title: "Visit Terms of Use",
+            cleanup: {
+              recipeId: "return-settings",
+              terminalScreenId: "settings",
+              onCancel: "skip",
+            },
+          },
+        },
+        context,
+        async (recipeId) => {
+          if (recipeId === "return-settings") cleanupMutations += 1;
+          throw new Error(
+            "Command failed: adb -s pixel-1 exec-out screencap -p\n" +
+              "error: device 'pixel-1' not found\n",
+          );
+        },
+      ),
+      /device 'pixel-1' not found/u,
+    );
+
+    assert.equal(cleanupMutations, 0, "cleanup must not mutate a missing target");
+    assert.equal(
+      snapshotReads,
+      snapshotReadsBeforeDisconnect,
+      "disconnect evidence must not issue another target read",
+    );
+    assert.deepEqual(
+      job.artifacts
+        .filter((artifact) => artifact.kind === "campaign-check-result")
+        .map((artifact) => [
+          (artifact.data as { id: string }).id,
+          (artifact.data as { status: string }).status,
+        ]),
+      [
+        ["advanced", "failed"],
+        ["terms", "interrupted"],
+      ],
+    );
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "target-transport-failure" &&
+          (artifact.data as { stoppedMutations?: boolean }).stoppedMutations === true,
+      ),
+      true,
+    );
+    assert.equal(
+      logs.some((line) => line.includes("stopping the run")),
+      true,
+    );
+  });
+
+  it("halts when cleanup loses the target instead of starting another check", async () => {
+    const job = { id: "cleanup-transport-boundary", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    let primaryRan = false;
+    await assert.rejects(
+      runCampaignCheck(
+        stubDevice({}),
+        {
+          kind: "sleep",
+          ms: 1,
+          check: {
+            id: "kids-mode",
+            title: "Kids Mode",
+            cleanup: {
+              recipeId: "restore-off",
+              terminalScreenId: "settings",
+              onCancel: "skip",
+            },
+          },
+        },
+        { ...noLog, job, runtime, recipeGraph: {} },
+        async (recipeId) => {
+          if (!recipeId) {
+            primaryRan = true;
+            return;
+          }
+          throw new Error("device 'pixel-1' is offline");
+        },
+      ),
+      /offline/u,
+    );
+
+    assert.equal(primaryRan, true);
+    const interrupted = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result")
+      ?.data as { status?: string; phase?: string; interruption?: string };
+    assert.equal(interrupted.status, "interrupted");
+    assert.equal(interrupted.phase, "cleanup");
+    assert.equal(interrupted.interruption, "target-unavailable");
+  });
+
   it("blocks only a dependency group after its canonical recovery fails", async () => {
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};

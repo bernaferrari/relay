@@ -4,9 +4,23 @@ function object(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+const MAX_SUMMARIZED_CHECKS = 40;
+const MAX_SUMMARIZED_FAILED_STEPS = 12;
+const MAX_SUMMARY_TEXT = 2_000;
+
+function boundedText(value: unknown, max = MAX_SUMMARY_TEXT): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+}
+
+function resourceSegment(value: string): string {
+  return encodeURIComponent(value);
+}
+
 function summarizeJob(value: unknown): unknown {
   const job = object(value);
   if (!job || typeof job.id !== "string" || typeof job.status !== "string") return value;
+  const jobId = job.id;
   const steps = Array.isArray(job.steps) ? job.steps : undefined;
   const frames = Array.isArray(job.frames) ? job.frames : undefined;
   const artifacts = Array.isArray(job.artifacts) ? job.artifacts : undefined;
@@ -17,7 +31,10 @@ function summarizeJob(value: unknown): unknown {
       artifact?.kind !== "campaign-check-result" ||
       typeof data?.id !== "string" ||
       typeof data.title !== "string" ||
-      (data.status !== "passed" && data.status !== "failed" && data.status !== "blocked") ||
+      (data.status !== "passed" &&
+        data.status !== "failed" &&
+        data.status !== "blocked" &&
+        data.status !== "interrupted") ||
       typeof data.startedAt !== "number" ||
       typeof data.finishedAt !== "number"
     ) {
@@ -31,9 +48,9 @@ function summarizeJob(value: unknown): unknown {
         startedAt: data.startedAt,
         finishedAt: data.finishedAt,
         durationMs: Math.max(0, data.finishedAt - data.startedAt),
-        ...(typeof data.error === "string" ? { error: data.error } : {}),
-        ...(typeof data.dependencyReason === "string"
-          ? { dependencyReason: data.dependencyReason }
+        ...(boundedText(data.error, 512) ? { error: boundedText(data.error, 512) } : {}),
+        ...(boundedText(data.dependencyReason, 512)
+          ? { dependencyReason: boundedText(data.dependencyReason, 512) }
           : {}),
       },
     ];
@@ -60,27 +77,62 @@ function summarizeJob(value: unknown): unknown {
     "caseIndex",
     "caseCount",
   ] as const;
+  const optionalValues: Record<string, string | number> = {};
+  for (const key of optional) {
+    const value = job[key];
+    if (typeof value === "number") optionalValues[key] = value;
+    if (typeof value === "string") {
+      const bounded = boundedText(value, key === "error" ? 4_000 : 2_000);
+      if (bounded !== undefined) optionalValues[key] = bounded;
+    }
+  }
   return {
-    id: job.id,
+    id: jobId,
     status: job.status,
-    ...Object.fromEntries(
-      optional.flatMap((key) =>
-        typeof job[key] === "string" || typeof job[key] === "number" ? [[key, job[key]]] : [],
-      ),
-    ),
+    ...optionalValues,
     ...(steps
       ? {
           stepCount: steps.length,
           failedSteps: steps
             .map(object)
             .filter((step) => step?.status === "error")
-            .map((step) => ({ id: step!.id, title: step!.title, log: step!.log })),
+            .slice(0, MAX_SUMMARIZED_FAILED_STEPS)
+            .map((step) => ({
+              id: step!.id,
+              title: boundedText(step!.title, 300),
+              log: boundedText(step!.log, 1_000),
+            })),
         }
       : {}),
     ...(frames ? { frameCount: frames.length } : {}),
     ...(artifacts ? { artifactCount: artifacts.length } : {}),
-    ...(checks?.length ? { checks } : {}),
-    ...(logs.length ? { logs } : {}),
+    ...(checks?.length
+      ? {
+          checkCount: checks.length,
+          checks: checks.slice(0, MAX_SUMMARIZED_CHECKS),
+        }
+      : {}),
+    ...(logs.length ? { logs: logs.map((entry) => boundedText(entry, 512)) } : {}),
+    ...(typeof job.runDir === "string"
+      ? {
+          resources: {
+            job: `/jobs/${resourceSegment(jobId)}`,
+            run: `/runs/${resourceSegment(jobId)}`,
+            runDir: job.runDir,
+            ...(checks?.some((check) => check.status === "failed" || check.status === "blocked")
+              ? {
+                  repairs: checks
+                    .filter((check) => check.status === "failed" || check.status === "blocked")
+                    .slice(0, MAX_SUMMARIZED_CHECKS)
+                    .map(
+                      (check) =>
+                        `/runs/${resourceSegment(jobId)}/checks/${resourceSegment(String(check.id))}/repair`,
+                    ),
+                }
+              : {}),
+          },
+        }
+      : {}),
   };
 }
 

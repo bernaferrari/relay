@@ -1,6 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { formatJsonReport, toJobReport, toJunitXml, type JobReport } from "./report.js";
+import {
+  classifyJobError,
+  formatJsonReport,
+  toJobReport,
+  toJunitXml,
+  type JobReport,
+} from "./report.js";
 import type { TestJob } from "./session.js";
 
 function fakeJob(partial: Partial<TestJob> & Pick<TestJob, "status">): TestJob {
@@ -108,6 +114,15 @@ describe("toJobReport", () => {
     });
     assert.equal(approved.ok, true);
   });
+});
+
+it("classifies quoted ADB target loss as infrastructure", () => {
+  assert.equal(
+    classifyJobError(
+      "Command failed: adb -s pixel-1 exec-out screencap -p\nerror: device 'pixel-1' not found",
+    ),
+    "DEVICE_MISSING",
+  );
 });
 
 describe("toJunitXml", () => {

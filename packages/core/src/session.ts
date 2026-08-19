@@ -73,6 +73,7 @@ import {
   resolveSessionDeviceMeta,
 } from "./session-job-support.js";
 import type { EnqueueJobInput, TestJob } from "./session-contract.js";
+import { isTargetUnavailableError } from "./target-unavailable.js";
 import { captureAutomaticState } from "./session-automatic-evidence.js";
 import { appendStepLog, finishStep, observeStepActions, openStep } from "./session-trace-steps.js";
 export type { EnqueueJobInput, JobErrorCode, JobStatus, TestJob } from "./session-contract.js";
@@ -607,7 +608,9 @@ async function runRecipeSteps(
       finishStep(ts, "ok");
     } catch (err) {
       // A failure frame remains useful when passive-step evidence is suppressed.
-      await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
+      if (!isTargetUnavailableError(err)) {
+        await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
+      }
       finishStep(ts, "error", `✗ ${err instanceof Error ? err.message : String(err)}`);
       setCurrentStep(undefined);
       throw err;

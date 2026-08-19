@@ -193,7 +193,7 @@ export function formatJsonReport(reports: JobReport[]): string {
 export function classifyJobError(message: string): string {
   const m = message.toLowerCase();
   if (
-    /no devices?|device (not found|missing|offline)|not connected|unknown serial|no such device/.test(
+    /no devices?|device (?:['"][^'"]+['"] )?(not found|missing|offline|unauthorized|disconnected)|not connected|unknown serial|no such device/.test(
       m,
     )
   ) {

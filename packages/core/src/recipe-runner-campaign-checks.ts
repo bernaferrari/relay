@@ -14,6 +14,7 @@ import { isCancel } from "./recipe-runner-support.js";
 import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { markNavigationUnknown, proveNavigationDestination } from "./recipe-runner-context.js";
+import { isTargetUnavailableError } from "./target-unavailable.js";
 
 async function captureCampaignFailureEvidence(
   device: Device,
@@ -234,6 +235,48 @@ export async function runCampaignCheck(
   }
   let primaryError: unknown;
   let cleanupError: unknown;
+  let targetUnavailableError: unknown;
+  const recordTargetUnavailable = (error: unknown, phase: "primary" | "cleanup"): void => {
+    if (targetUnavailableError) return;
+    targetUnavailableError = error;
+    const capturedAt = now();
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.job?.artifacts.push({
+      kind: "target-transport-failure",
+      capturedAt,
+      data: {
+        schemaVersion: 1,
+        checkId: step.check.id,
+        checkTitle: step.check.title,
+        phase,
+        status: "target-unavailable",
+        error: message,
+        stoppedMutations: true,
+      },
+    });
+    ctx.job?.artifacts.push({
+      kind: "campaign-check-result",
+      capturedAt,
+      data: {
+        ...step.check,
+        status: "interrupted",
+        error: message,
+        interruption: "target-unavailable",
+        phase,
+        ...(phase === "cleanup" && primaryError
+          ? {
+              primaryError:
+                primaryError instanceof Error ? primaryError.message : String(primaryError),
+            }
+          : {}),
+        startedAt,
+        finishedAt: capturedAt,
+      },
+    });
+    ctx.log(
+      `target unavailable: ${step.check.title} — stopping the run without further device actions`,
+    );
+  };
   const transitionToConfirm = transitionDependencies.find(
     (dependency) => transitionProofs[dependency.connectionId]?.status === "needs-confirmation",
   );
@@ -331,13 +374,31 @@ export async function runCampaignCheck(
       ctx,
       error instanceof Error ? error.message : `Campaign check ${step.check.id} failed.`,
     );
-    if (!isCancel(error)) {
+    if (isTargetUnavailableError(error)) {
+      recordTargetUnavailable(error, "primary");
+    } else if (!isCancel(error)) {
       const message = error instanceof Error ? error.message : String(error);
       await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message, "primary");
     }
   } finally {
     const cleanup = step.check.cleanup;
-    if (cleanup) {
+    if (cleanup && targetUnavailableError) {
+      const capturedAt = now();
+      ctx.job?.artifacts.push({
+        kind: "campaign-check-cleanup",
+        capturedAt,
+        data: {
+          checkId: step.check.id,
+          recipeId: cleanup.recipeId,
+          terminalScreenId: cleanup.terminalScreenId,
+          status: "skipped",
+          reason: "The target disappeared; no further device mutations are safe.",
+          startedAt: capturedAt,
+          finishedAt: capturedAt,
+        },
+      });
+      ctx.log(`check cleanup skipped: ${step.check.title} — target unavailable`);
+    } else if (cleanup) {
       const cleanupStartedAt = now();
       if (primaryError && isCancel(primaryError)) {
         ctx.job?.artifacts.push({
@@ -375,6 +436,7 @@ export async function runCampaignCheck(
         } catch (error) {
           cleanupError = error;
           const finishedAt = now();
+          if (isTargetUnavailableError(error)) recordTargetUnavailable(error, "cleanup");
           ctx.job?.artifacts.push({
             kind: "campaign-check-cleanup",
             capturedAt: finishedAt,
@@ -382,20 +444,35 @@ export async function runCampaignCheck(
               checkId: step.check.id,
               recipeId: cleanup.recipeId,
               terminalScreenId: cleanup.terminalScreenId,
-              status: isCancel(error) ? "cancelled" : "failed",
+              status: isCancel(error)
+                ? "cancelled"
+                : isTargetUnavailableError(error)
+                  ? "interrupted"
+                  : "failed",
               error: error instanceof Error ? error.message : String(error),
               startedAt: cleanupStartedAt,
               finishedAt,
             },
           });
+          const cleanupStatus = isCancel(error)
+            ? "cancelled"
+            : isTargetUnavailableError(error)
+              ? "interrupted"
+              : "failed";
           ctx.log(
-            `check cleanup ${isCancel(error) ? "cancelled" : "failed"}: ${step.check.title} — ${error instanceof Error ? error.message : String(error)}`,
+            `check cleanup ${cleanupStatus}: ${step.check.title} — ${error instanceof Error ? error.message : String(error)}`,
           );
         }
       }
     }
   }
 
+  if (targetUnavailableError) {
+    // Preserve product outcomes collected before the disconnect. They remain
+    // independently repairable, while the job itself ends as infrastructure.
+    finalizeDeferredCampaignChecks(ctx);
+    throw targetUnavailableError;
+  }
   if (primaryError && isCancel(primaryError)) throw primaryError;
   if (cleanupError && isCancel(cleanupError)) throw cleanupError;
   if (!primaryError && !cleanupError) {
