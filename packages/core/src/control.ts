@@ -160,6 +160,14 @@ export async function raceCancel<T>(promise: Promise<T>, jobId?: string | null):
   const id = jobId ?? getExecutingJobId();
   if (!id) return promise;
   if (cancellationIsShielded(id)) return promise;
+  // A compensating check must not start cleanup while the cancelled mutation
+  // is still completing in the driver. Drain that already-dispatched bounded
+  // operation, then surface the still-pending cancellation at this boundary.
+  if (compensatingCleanupIsArmed(id)) {
+    const result = await promise;
+    throwIfCancelled(id);
+    return result;
+  }
   throwIfCancelled(id);
 
   let cleanup = () => {};

@@ -139,6 +139,31 @@ describe("job control", () => {
     assert.equal(compensatingCleanupIsArmed("kids"), false);
   });
 
+  it("drains an armed mutation before surfacing cancellation to cleanup", async () => {
+    let finishMutation!: (value: string) => void;
+    const mutation = new Promise<string>((resolve) => {
+      finishMutation = resolve;
+    });
+    armCompensatingCleanup("ordered-cleanup");
+    const raced = raceCancel(mutation, "ordered-cleanup");
+    requestCancel("ordered-cleanup");
+    let settled = false;
+    void raced.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await Promise.resolve();
+    assert.equal(settled, false, "cleanup cannot race an in-flight primary mutation");
+
+    finishMutation("mutated");
+    await assert.rejects(raced, JobCancelledError);
+    clearControl("ordered-cleanup");
+  });
+
   it("validates ownership before a checkpoint continues", async () => {
     let validations = 0;
     setControlValidator("owned", async () => {
