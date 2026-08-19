@@ -109,26 +109,25 @@ async function watchJob(
   }
 }
 
-function startedJobId(response: unknown): string {
+function startedJobIds(response: unknown): string[] {
   if (!response || typeof response !== "object") {
-    throw new Error("Malformed execution response: expected { job: { id: string } }");
+    throw new Error("Malformed execution response: expected one or more jobs");
   }
+  const ids: string[] = [];
   const direct = "job" in response ? response.job : undefined;
   if (direct && typeof direct === "object" && "id" in direct && typeof direct.id === "string") {
-    return direct.id;
+    ids.push(direct.id);
   }
   const jobs = "jobs" in response && Array.isArray(response.jobs) ? response.jobs : [];
-  const first = jobs[0];
-  if (
-    first &&
-    typeof first === "object" &&
-    first &&
-    "id" in first &&
-    typeof first.id === "string"
-  ) {
-    return first.id;
+  for (const job of jobs) {
+    if (!job || typeof job !== "object" || !("id" in job) || typeof job.id !== "string") {
+      throw new Error("Malformed execution response: every started job needs an id");
+    }
+    ids.push(job.id);
   }
-  throw new Error("Malformed execution response: expected { job: { id: string } }");
+  const unique = [...new Set(ids)];
+  if (unique.length) return unique;
+  throw new Error("Malformed execution response: expected one or more jobs");
 }
 
 function summarizeResult(operationId: string, result: unknown): unknown {
@@ -245,16 +244,31 @@ export async function runCli(
         output.progress(operationId, "invoking");
         const started = await invokeOperation(client, operationId, parsed.input, abort.signal);
         output.snapshot(operationId, summarizeResult(operationId, started));
-        const result = await watchJob(
-          client,
-          "job.get",
-          { jobId: startedJobId(started) },
-          abort.signal,
-          output,
-          dependencies.pollIntervalMs ?? 250,
+        const jobIds = startedJobIds(started);
+        const results: unknown[] = [];
+        for (const jobId of jobIds) {
+          results.push(
+            await watchJob(
+              client,
+              "job.get",
+              { jobId },
+              abort.signal,
+              output,
+              dependencies.pollIntervalMs ?? 250,
+            ),
+          );
+        }
+        for (const result of results) assertOperationSucceeded(operationId, result);
+        output.result(
+          operationId,
+          results.length === 1
+            ? summarizeResult("job.get", results[0])
+            : {
+                jobs: results.map((result) =>
+                  result && typeof result === "object" && "job" in result ? result.job : result,
+                ),
+              },
         );
-        assertOperationSucceeded(operationId, result);
-        output.result(operationId, summarizeResult("job.get", result));
       } else {
         output.progress(operationId, "invoking");
         const result = await invokeOperation(client, operationId, parsed.input, abort.signal);

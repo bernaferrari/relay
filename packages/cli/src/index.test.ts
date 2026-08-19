@@ -660,6 +660,88 @@ test("flow run starts once, then watches that execution job", async () => {
   assert.deepEqual(records.at(-1).result, { job: { id: "flow-job", status: "ok" } });
 });
 
+test("combine run waits for every locale case before succeeding", async () => {
+  const io = capture();
+  const polled: string[] = [];
+  const client: OperationInvoker = {
+    async invoke(operationId, input) {
+      if (operationId === "job.combine.start") {
+        return {
+          jobs: [
+            { id: "locale-it", status: "queued" },
+            { id: "locale-es", status: "queued" },
+            { id: "locale-ja", status: "queued" },
+          ],
+        };
+      }
+      const jobId = (input as { jobId: string }).jobId;
+      polled.push(jobId);
+      return { job: { id: jobId, status: "ok" } };
+    },
+    events: async () => {},
+  };
+
+  const code = await runCli(
+    ["combine", "run", "map", "languages", "--input", '{"serial":"phone"}', "--json"],
+    {
+      streams: io.streams,
+      createClient: () => client,
+      registerSignalHandlers: false,
+      pollIntervalMs: 0,
+      env: {},
+    },
+  );
+
+  assert.equal(code, ExitCode.success);
+  assert.deepEqual(polled, ["locale-it", "locale-es", "locale-ja"]);
+  assert.deepEqual(
+    JSON.parse(io.stdout()).result.jobs.map((job: { id: string }) => job.id),
+    polled,
+  );
+});
+
+test("combine run waits for later cases and fails when any locale fails", async () => {
+  const io = capture();
+  const polled: string[] = [];
+  const client: OperationInvoker = {
+    async invoke(operationId, input) {
+      if (operationId === "job.combine.start") {
+        return {
+          jobs: [
+            { id: "green", status: "queued" },
+            { id: "red", status: "queued" },
+          ],
+        };
+      }
+      const jobId = (input as { jobId: string }).jobId;
+      polled.push(jobId);
+      return {
+        job: {
+          id: jobId,
+          status: jobId === "red" ? "error" : "ok",
+          ...(jobId === "red" ? { error: "Japanese case failed" } : {}),
+        },
+      };
+    },
+    events: async () => {},
+  };
+
+  const code = await runCli(
+    ["combine", "run", "map", "languages", "--input", '{"serial":"phone"}', "--json"],
+    {
+      streams: io.streams,
+      createClient: () => client,
+      registerSignalHandlers: false,
+      pollIntervalMs: 0,
+      env: {},
+    },
+  );
+
+  assert.deepEqual(polled, ["green", "red"]);
+  assert.equal(code, ExitCode.validation);
+  assert.equal(JSON.parse(io.stdout()).error.message, "Japanese case failed");
+});
+
 test("run watch alias shares job polling behavior", async () => {
   const io = capture();
   let calls = 0;
