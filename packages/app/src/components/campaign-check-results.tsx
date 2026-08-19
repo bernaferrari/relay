@@ -1,4 +1,5 @@
-import { For, Show, createMemo } from "solid-js";
+import { For, Show, createMemo, createSignal } from "solid-js";
+import type { CampaignRepairAction, CampaignRepairTarget } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import {
   campaignCheckCounts,
@@ -56,7 +57,18 @@ function CheckDetail(props: {
   onRetryCheck?: (checkId: string) => void;
   onRepairTest?: (checkId: string) => void;
   retrying?: boolean;
+  repairTarget?: CampaignRepairTarget;
+  loadingRepair?: boolean;
+  proposingRepair?: boolean;
+  onLoadRepairOptions?: (checkId: string) => void;
+  onProposeRepair?: (action: CampaignRepairAction, reason: string) => void;
 }) {
+  const [repairReason, setRepairReason] = createSignal("");
+  const proposalActions = () =>
+    (props.repairTarget?.actions ?? []).filter(
+      (action) =>
+        action.mutation === "reviewed-proposal" && action.operationId === "run.repair.propose",
+    );
   const reasonLabel = () => (props.check.status === "blocked" ? "Dependency" : "Reason");
   const accessibilityDescription = () => {
     const observed = props.check.repair?.observed;
@@ -236,8 +248,65 @@ function CheckDetail(props: {
                     Repair Test
                   </button>
                 </Show>
+                <Show when={props.onLoadRepairOptions}>
+                  <button
+                    type="button"
+                    class="min-h-9 touch-manipulation rounded-lg px-3 text-caption font-medium text-text-interactive-base hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-wait disabled:opacity-60"
+                    disabled={props.loadingRepair}
+                    onClick={() => props.onLoadRepairOptions?.(props.check.id)}
+                  >
+                    {props.loadingRepair ? "Loading options…" : "Review repair options"}
+                  </button>
+                </Show>
               </div>
             </div>
+            <Show when={props.repairTarget?.source.checkId === props.check.id}>
+              <section
+                class="grid gap-3 rounded-xl border border-border-weak-base bg-background-base p-3"
+                aria-label="Reversible repair choices"
+              >
+                <div>
+                  <h4 class="m-0 text-caption font-semibold text-text-strong">
+                    Choose a reversible repair
+                  </h4>
+                  <p class="mt-1 text-micro/[1.45] text-text-weak">
+                    Relay will create a reviewable proposal. The approved state keeps its inverse so
+                    it can be reverted later.
+                  </p>
+                </div>
+                <label class="grid gap-1.5 text-caption font-medium text-text-strong">
+                  Why this is correct
+                  <textarea
+                    class="min-h-20 resize-y rounded-lg border border-border-weak-base bg-surface-base px-3 py-2 text-[16px]/[1.45] font-normal text-text-base focus-visible:border-border-strong-focus focus-visible:outline-none"
+                    value={repairReason()}
+                    onInput={(event) => setRepairReason(event.currentTarget.value)}
+                    placeholder="Explain what changed and why this repair should be reviewed."
+                  />
+                </label>
+                <div class="grid gap-2">
+                  <For each={proposalActions()}>
+                    {(action) => (
+                      <button
+                        type="button"
+                        class="grid min-h-11 touch-manipulation gap-0.5 rounded-lg border border-border-weak-base bg-surface-base px-3 py-2 text-left hover:border-border-strong-base hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-not-allowed disabled:opacity-55"
+                        disabled={
+                          !action.available || !repairReason().trim() || props.proposingRepair
+                        }
+                        title={action.available ? undefined : action.unavailableReason}
+                        onClick={() => props.onProposeRepair?.(action, repairReason())}
+                      >
+                        <span class="text-caption font-semibold text-text-strong">
+                          {action.label}
+                        </span>
+                        <span class="text-micro/[1.4] text-text-weak">
+                          {action.available ? action.description : action.unavailableReason}
+                        </span>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </section>
+            </Show>
           </section>
         )}
       </Show>
@@ -291,6 +360,11 @@ export function CampaignCheckResults(props: {
   onReviewNavigationRepair?: (repair: NavigationTransitionRepairEntry) => void;
   onResume?: (jobId: string) => void;
   retryingCheckId?: string;
+  repairTarget?: CampaignRepairTarget;
+  loadingRepairCheckId?: string;
+  proposingRepairCheckId?: string;
+  onLoadRepairOptions?: (checkId: string) => void;
+  onProposeRepair?: (action: CampaignRepairAction, reason: string) => void;
 }) {
   const checks = createMemo(() => campaignCheckResults(props.job));
   const counts = createMemo(() => campaignCheckCounts(checks()));
@@ -408,6 +482,11 @@ export function CampaignCheckResults(props: {
                         onRetryCheck={props.onRetryCheck}
                         onRepairTest={props.onRepairTest}
                         retrying={props.retryingCheckId === check.id}
+                        repairTarget={props.repairTarget}
+                        loadingRepair={props.loadingRepairCheckId === check.id}
+                        proposingRepair={props.proposingRepairCheckId === check.id}
+                        onLoadRepairOptions={props.onLoadRepairOptions}
+                        onProposeRepair={props.onProposeRepair}
                       />
                     </details>
                   );

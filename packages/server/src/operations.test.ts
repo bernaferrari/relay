@@ -33,6 +33,14 @@ test("dynamic canonical routes resolve to their registered operation", () => {
     "run.repair.retry",
   );
   assert.equal(
+    findOperationHandler("POST", "/runs/run-123/checks/usage/proposals")?.id,
+    "run.repair.propose",
+  );
+  assert.equal(
+    findOperationHandler("POST", "/app-maps/onboarding/proposals/repair-1/revert")?.id,
+    "app-map.proposal.revert",
+  );
+  assert.equal(
     findOperationHandler("POST", "/capture/scroll-survey")?.id,
     "target.scroll-survey.capture",
   );

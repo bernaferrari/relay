@@ -228,6 +228,21 @@ function assertSteps(
     if (step.capture !== undefined && typeof step.capture !== "boolean") {
       appMapFail("invalid-map", `${item}.capture must be a boolean`);
     }
+    if (step.execution !== undefined) {
+      const execution = objectValue(step.execution, `${item}.execution`);
+      allowedKeys(
+        execution,
+        ["status", "reason", "repairTargetId", "decidedBy", "decidedAt"],
+        `${item}.execution`,
+      );
+      if (execution.status !== "disabled") {
+        appMapFail("invalid-map", `${item}.execution.status must be disabled`);
+      }
+      requiredText(execution.reason, `${item}.execution.reason`);
+      identifier(execution.repairTargetId, `${item}.execution.repairTargetId`);
+      requiredText(execution.decidedBy, `${item}.execution.decidedBy`);
+      safeInteger(execution.decidedAt, `${item}.execution.decidedAt`);
+    }
     if (
       !(
         [
@@ -247,7 +262,7 @@ function assertSteps(
       step.kind === "decision" ? ["thenSteps", "elseSteps"] : step.kind === "loop" ? ["steps"] : [];
     allowedKeys(
       step,
-      ["id", "kind", "intent", "note", "capture", "cleanup", "binding", ...nested],
+      ["id", "kind", "intent", "note", "capture", "execution", "cleanup", "binding", ...nested],
       item,
     );
     assertBinding(step, item);

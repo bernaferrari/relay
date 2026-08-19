@@ -89,6 +89,54 @@ export function approveAppMapProposal(
         ...(reason ? { reason } : {}),
       };
       proposal.updatedAt = context.at;
+      if (proposal.repair) proposal.repair.approvedRevision = draft.revision + 1;
+    },
+  );
+}
+
+export function revertAppMapRepairProposal(
+  map: AppMap,
+  proposalId: string,
+  context: AppMapMutationContext,
+  reason?: string,
+): AppMap {
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "proposal.reverted",
+      subject: { kind: "proposal", id: proposalId },
+      summary: `Reverted repair proposal ${proposalId}`,
+    },
+    (draft) => {
+      const proposal = draft.proposals[proposalId];
+      if (!proposal) appMapFail("missing-reference", `Proposal ${proposalId} does not exist`);
+      if (proposal.status !== "approved" || !proposal.repair?.approvedRevision) {
+        appMapFail("proposal-state", `Proposal ${proposalId} is not an approved repair proposal`);
+      }
+      if (proposal.repair.reverted) {
+        appMapFail("proposal-state", `Proposal ${proposalId} was already reverted`);
+      }
+      const conflicts = proposalConflictsSince(
+        draft,
+        { changes: proposal.repair.inverseChanges },
+        proposal.repair.approvedRevision,
+      );
+      if (conflicts.conflict) {
+        appMapFail(
+          "revision-conflict",
+          `Repair proposal ${proposalId} cannot be reverted after newer changes to ${conflicts.subjects.join(", ")}`,
+        );
+      }
+      for (const change of proposal.repair.inverseChanges) {
+        applyProposalChange(draft, proposalId, change, context.at);
+      }
+      proposal.repair.reverted = {
+        actorId: context.actorId,
+        at: context.at,
+        ...(reason ? { reason } : {}),
+      };
+      proposal.updatedAt = context.at;
     },
   );
 }

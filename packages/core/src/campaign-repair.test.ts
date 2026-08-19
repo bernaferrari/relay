@@ -275,9 +275,10 @@ test("assembles one complete stable repair target without mutating source eviden
     [
       { kind: "continue-and-report", available: true, mutation: "none" },
       { kind: "retry-check", available: true, mutation: "new-run" },
-      { kind: "accept-current-proposal", available: false, mutation: "reviewed-proposal" },
+      { kind: "retarget-proposal", available: false, mutation: "reviewed-proposal" },
+      { kind: "accept-current-proposal", available: true, mutation: "reviewed-proposal" },
       { kind: "repair-test-proposal", available: true, mutation: "reviewed-proposal" },
-      { kind: "defer-check-proposal", available: false, mutation: "reviewed-proposal" },
+      { kind: "defer-check-proposal", available: true, mutation: "reviewed-proposal" },
     ],
   );
   assert.deepEqual(run, before, "building a repair target leaves the original run immutable");

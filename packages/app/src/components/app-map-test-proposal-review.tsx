@@ -91,6 +91,7 @@ export function AppMapTestProposalReview(props: {
   error?: string;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onRevert?: (id: string) => void;
   onClose: () => void;
 }) {
   return (
@@ -125,6 +126,35 @@ export function AppMapTestProposalReview(props: {
               <Show when={proposal.description}>
                 <p class="mt-1 text-caption/[1.5] text-text-weak">{proposal.description}</p>
               </Show>
+              <Show when={proposal.repair}>
+                {(repair) => (
+                  <dl class="mt-3 grid gap-1 rounded-lg bg-background-base p-2.5 text-micro/[1.45]">
+                    <div class="flex justify-between gap-3">
+                      <dt class="text-text-weaker">Repair</dt>
+                      <dd class="m-0 font-medium text-text-strong">
+                        {repair().kind === "retarget"
+                          ? "Use proven selector"
+                          : repair().kind === "accept-current"
+                            ? "Accept current identity"
+                            : "Disable with reason"}
+                      </dd>
+                    </div>
+                    <div class="flex justify-between gap-3">
+                      <dt class="text-text-weaker">Evidence</dt>
+                      <dd class="m-0 text-right text-text-base">
+                        {repair().sourceCheckIds.length} check
+                        {repair().sourceCheckIds.length === 1 ? "" : "s"} ·{" "}
+                        {repair().evidenceFramePaths.length} frame
+                        {repair().evidenceFramePaths.length === 1 ? "" : "s"}
+                      </dd>
+                    </div>
+                    <div class="flex justify-between gap-3">
+                      <dt class="text-text-weaker">Revert</dt>
+                      <dd class="m-0 text-right text-text-base">Frozen inverse retained</dd>
+                    </div>
+                  </dl>
+                )}
+              </Show>
               <div class="mt-3 grid gap-2">
                 <For
                   each={
@@ -158,24 +188,41 @@ export function AppMapTestProposalReview(props: {
                   )}
                 </For>
               </div>
-              <div class="mt-3 grid grid-cols-2 gap-2">
-                <Button
-                  variant="primary"
-                  size="lg"
-                  disabled={Boolean(props.busyId)}
-                  onClick={() => props.onApprove(proposal.id)}
-                >
-                  {props.busyId === proposal.id ? "Applying…" : "Approve changes"}
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  disabled={Boolean(props.busyId)}
-                  onClick={() => props.onReject(proposal.id)}
-                >
-                  Reject
-                </Button>
-              </div>
+              <Show
+                when={proposal.status === "pending"}
+                fallback={
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    class="mt-3 w-full"
+                    disabled={
+                      Boolean(props.busyId) || !proposal.repair || Boolean(proposal.repair.reverted)
+                    }
+                    onClick={() => props.onRevert?.(proposal.id)}
+                  >
+                    {props.busyId === proposal.id ? "Reverting…" : "Revert approved repair"}
+                  </Button>
+                }
+              >
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    disabled={Boolean(props.busyId)}
+                    onClick={() => props.onApprove(proposal.id)}
+                  >
+                    {props.busyId === proposal.id ? "Applying…" : "Approve changes"}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    disabled={Boolean(props.busyId)}
+                    onClick={() => props.onReject(proposal.id)}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </Show>
             </article>
           )}
         </For>

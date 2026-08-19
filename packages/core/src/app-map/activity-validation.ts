@@ -54,6 +54,7 @@ export function assertActivity(
     "proposal.submitted",
     "proposal.approved",
     "proposal.rejected",
+    "proposal.reverted",
   ];
   if (!eventTypes.includes(event.eventType))
     appMapFail("invalid-map", `${label}.eventType is unsupported`);

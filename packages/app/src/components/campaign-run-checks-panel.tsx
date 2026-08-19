@@ -14,9 +14,7 @@ export function CampaignRunChecksPanel(props: {
   const repair = createCampaignRepairActions({
     host: {
       runAction: (operationId, input) =>
-        server.runAction(operationId as never, input as never) as Promise<{
-          job?: { id?: unknown };
-        }>,
+        server.runAction(operationId as never, input as never) as Promise<unknown>,
       setSelectedJobId: server.setSelectedJobId,
       refreshJobs: server.refreshJobs,
     },
@@ -37,6 +35,15 @@ export function CampaignRunChecksPanel(props: {
       onReviewNavigationRepair={
         props.job.persisted ? (entry) => void repair.reviewRepair(props.job, entry) : undefined
       }
+      repairTarget={repair.repairTarget()}
+      loadingRepairCheckId={repair.loadingRepairCheckId()}
+      proposingRepairCheckId={repair.proposingRepairCheckId()}
+      onLoadRepairOptions={
+        props.job.persisted
+          ? (checkId) => void repair.loadRepairTarget(props.job.id, checkId)
+          : undefined
+      }
+      onProposeRepair={(action, reason) => void repair.proposeRepair(action, reason)}
       retryingCheckId={repair.repairingCheckId()}
     />
   );

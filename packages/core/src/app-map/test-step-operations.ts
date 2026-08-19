@@ -252,7 +252,7 @@ export function patchScenarioTestStep(
   assertScenarioTest(test, "test");
   const keys = Object.keys(patch);
   const unknown = keys.find(
-    (key) => !["intent", "note", "capture", "cleanup", "binding"].includes(key),
+    (key) => !["intent", "note", "capture", "execution", "cleanup", "binding"].includes(key),
   );
   if (unknown) {
     fail(
@@ -275,10 +275,16 @@ export function patchScenarioTestStep(
       const { note: _note, ...rest } = step;
       return rest;
     })();
-    if (patch.cleanup !== null) return withoutNote;
+    const withoutCleanup =
+      patch.cleanup !== null
+        ? withoutNote
+        : (Object.fromEntries(
+            Object.entries(withoutNote).filter(([key]) => key !== "cleanup"),
+          ) as typeof withoutNote);
+    if (patch.execution !== null) return withoutCleanup;
     return Object.fromEntries(
-      Object.entries(withoutNote).filter(([key]) => key !== "cleanup"),
-    ) as typeof withoutNote;
+      Object.entries(withoutCleanup).filter(([key]) => key !== "execution"),
+    ) as typeof withoutCleanup;
   })();
   const replacement = {
     ...base,
@@ -286,6 +292,9 @@ export function patchScenarioTestStep(
     ...(patch.binding !== undefined ? { binding: patch.binding } : {}),
     ...(patch.note !== undefined && patch.note !== null ? { note: patch.note } : {}),
     ...(patch.capture !== undefined ? { capture: patch.capture } : {}),
+    ...(patch.execution !== undefined && patch.execution !== null
+      ? { execution: structuredClone(patch.execution) }
+      : {}),
     ...(patch.cleanup !== undefined && patch.cleanup !== null
       ? { cleanup: structuredClone(patch.cleanup) }
       : {}),

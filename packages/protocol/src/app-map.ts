@@ -656,6 +656,7 @@ export type Proposal = AppMapEntity & {
   baseRevision: number;
   changes: ProposalChange[];
   decision?: ProposalDecision;
+  repair?: import("./campaign-repair.js").CampaignRepairProposalMetadata;
 };
 
 export type ActivitySubjectKind =
@@ -705,7 +706,8 @@ export type ActivityEvent = AppMapScope & {
     | "run.finished"
     | "proposal.submitted"
     | "proposal.approved"
-    | "proposal.rejected";
+    | "proposal.rejected"
+    | "proposal.reverted";
   subject: { kind: ActivitySubjectKind; id: string };
   /** Optional stable semantic subjects changed by this event. Whole-entity
    * writers omit this field; granular editors use it so independent fields can

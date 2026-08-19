@@ -69,6 +69,7 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.observations.propose",
       "app-map.proposal.approve",
       "app-map.proposal.reject",
+      "app-map.proposal.revert",
     ],
   );
 });
@@ -121,6 +122,20 @@ test("selective repair operations require one exact immutable run check", () => 
     "snapshot",
     "screenshot",
   ]);
+  assert.deepEqual(
+    operationDefinition("run.repair.propose").input.parse({
+      runId: "run-1",
+      checkId: "usage",
+      kind: "disable",
+      reason: "Not applicable to this campaign",
+    }),
+    {
+      runId: "run-1",
+      checkId: "usage",
+      kind: "disable",
+      reason: "Not applicable to this campaign",
+    },
+  );
 });
 
 test("map teach accepts a point tap without expectedRevision", () => {

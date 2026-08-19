@@ -548,4 +548,10 @@ export const appMapRoutineCommandDescriptors: readonly MappedOperationDescriptor
     }),
   ),
   mapped("app-map.proposal.reject", path("proposal reject", ["appMapId", "proposalId"])),
+  mapped(
+    "app-map.proposal.revert",
+    path("proposal revert", ["appMapId", "proposalId"], undefined, {
+      summary: "Revert an approved repair proposal from its frozen inverse",
+    }),
+  ),
 ];

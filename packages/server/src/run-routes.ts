@@ -10,8 +10,10 @@ import {
   buildSoakReport,
   compareEvidenceMetrics,
   campaignCheckRepairInput,
+  campaignRepairProposal,
   buildRunEvidence,
   createRunShare,
+  currentOperationContext,
   enqueueJob,
   extractEvidenceMetrics,
   listJobs,
@@ -30,6 +32,7 @@ import {
   runStorageHealth,
   setRunPinned,
   summarizeCampaignRepairTarget,
+  submitAppMapProposal,
   compareVisualBaseline,
   getVisualBaseline,
   getVisualComparisonPolicy,
@@ -42,7 +45,9 @@ import {
   VisualVerificationError,
   visualTargetKey,
 } from "@relay/core";
+import type { CampaignRepairTarget, OperationInput } from "@relay/protocol";
 import { assertTargetControl } from "./access-control.js";
+import { applyRebasableAppMapMutation } from "./app-map-route-mutations.js";
 import { recordAudit, resolveCommandActor, type RequestContext } from "./security.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
 
@@ -240,6 +245,70 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
       throw new HttpError(409, error instanceof Error ? error.message : String(error), {
         code: "CAMPAIGN_CHECK_REPAIR_UNAVAILABLE",
         recovery: "Inspect the repair target and propose a Test repair, or continue and report.",
+      });
+    }
+    return true;
+  }
+
+  const repairProposalMatch = matchPath(pathname, "/runs/:id/checks/:checkId/proposals");
+  if (method === "POST" && repairProposalMatch) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"run.repair.propose">,
+      "runId" | "checkId"
+    >;
+    const requestedTargets = [
+      { runId: repairProposalMatch.id!, checkId: repairProposalMatch.checkId! },
+      ...(body.equivalentTargets ?? []),
+    ];
+    const targets: CampaignRepairTarget[] = [];
+    for (const key of new Set(
+      requestedTargets.map((target) => `${target.runId}\u0000${target.checkId}`),
+    )) {
+      const [runId, checkId] = key.split("\u0000") as [string, string];
+      const sourceRun = await readPersistedRun(runId);
+      assertRunAccess(scope, sourceRun);
+      const repair = buildCampaignRepairTarget(sourceRun, checkId);
+      if (!repair) throw new HttpError(404, `Failed check ${checkId} not found in run ${runId}`);
+      targets.push(repair);
+    }
+    const primary = targets[0]!;
+    if (!primary.source.appMapId) {
+      throw new HttpError(409, "The failed check does not identify an App Map");
+    }
+    const operation = currentOperationContext();
+    if (!operation) throw new HttpError(500, "Operation context is unavailable");
+    const proposalId = `repair:${operation.requestId}`;
+    try {
+      const appMap = await applyRebasableAppMapMutation(
+        scope,
+        primary.source.appMapId,
+        undefined,
+        (map, context) =>
+          submitAppMapProposal(
+            map,
+            campaignRepairProposal({
+              map,
+              targets,
+              request: {
+                ...body,
+                runId: repairProposalMatch.id!,
+                checkId: repairProposalMatch.checkId!,
+              },
+              proposalId,
+              actorId: operation.actorId,
+              at: context.at,
+            }),
+            context,
+            { allowServerRepair: true },
+          ),
+      );
+      recordAudit(scope, { action: "run.repair.propose", resource: proposalId, result: "allow" });
+      json(response, 200, { repair: primary, appMap, proposalId });
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(409, error instanceof Error ? error.message : String(error), {
+        code: "CAMPAIGN_REPAIR_PROPOSAL_UNAVAILABLE",
+        recovery: "Reload the exact repair target and review its current document revision.",
       });
     }
     return true;

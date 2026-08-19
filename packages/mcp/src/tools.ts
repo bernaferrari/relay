@@ -274,6 +274,7 @@ const testOperations = [
   "run.repair.list",
   "run.repair.get",
   "run.repair.retry",
+  "run.repair.propose",
 ] as const satisfies readonly OperationId[];
 
 const runOperations = [
@@ -311,6 +312,7 @@ const runOperations = [
   "run.repair.list",
   "run.repair.get",
   "run.repair.retry",
+  "run.repair.propose",
 ] as const satisfies readonly OperationId[];
 
 /**
@@ -374,6 +376,7 @@ const reviewOperations = [
   "app-map.get",
   "app-map.proposal.approve",
   "app-map.proposal.reject",
+  "app-map.proposal.revert",
   "authoring.session.list",
   "authoring.session.get",
   "authoring.take.trim",
@@ -389,6 +392,7 @@ const reviewOperations = [
   "run.evidence.get",
   "run.repair.list",
   "run.repair.get",
+  "run.repair.propose",
   "run.review",
   "run.visual.compare",
   "run.visual-baseline.update",

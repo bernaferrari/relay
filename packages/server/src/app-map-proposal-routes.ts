@@ -1,4 +1,8 @@
-import { approveAppMapProposal, rejectAppMapProposal } from "@relay/core";
+import {
+  approveAppMapProposal,
+  rejectAppMapProposal,
+  revertAppMapRepairProposal,
+} from "@relay/core";
 import type { OperationInput } from "@relay/protocol";
 import { json, matchPath, parseJsonBody } from "./http.js";
 import type { AppMapRouteInput } from "./app-map-route-input.js";
@@ -34,6 +38,22 @@ export async function handleAppMapProposalRoute(input: AppMapRouteInput): Promis
         appMap,
       );
     }
+    json(response, 200, { appMap });
+    return true;
+  }
+  const proposalRevert = matchPath(pathname, "/app-maps/:appMapId/proposals/:proposalId/revert");
+  if (method === "POST" && proposalRevert) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.proposal.revert">,
+      "appMapId" | "proposalId"
+    >;
+    const appMap = await applyRebasableAppMapMutation(
+      scope,
+      proposalRevert.appMapId!,
+      body.eventId,
+      (map, context) =>
+        revertAppMapRepairProposal(map, proposalRevert.proposalId!, context, body.reason),
+    );
     json(response, 200, { appMap });
     return true;
   }

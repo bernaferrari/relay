@@ -74,3 +74,52 @@ test("Test proposal review shows semantic before and after values before approva
   dispose();
   document.body.replaceChildren();
 });
+
+test("approved repair keeps its evidence lineage and one explicit revert", () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const revert = vi.fn();
+  const repairProposal: Proposal = {
+    ...proposal,
+    status: "approved",
+    decision: { actorId: "human:reviewer", at: 2 },
+    repair: {
+      kind: "retarget",
+      testId: "checkout",
+      repairTargetIds: ["repair:run:submit"],
+      sourceRunIds: ["run"],
+      sourceCheckIds: ["submit"],
+      evidenceFramePaths: ["failure.png"],
+      equivalentDiffKey: "abc123",
+      inverseChanges: proposal.changes,
+      approvedRevision: 2,
+    },
+  };
+  const dispose = render(
+    () => (
+      <AppMapTestProposalReview
+        test={scenario}
+        proposals={[repairProposal]}
+        onApprove={() => undefined}
+        onReject={() => undefined}
+        onRevert={revert}
+        onClose={() => undefined}
+      />
+    ),
+    root,
+  );
+
+  expect(root.textContent).toContain("Use proven selector");
+  expect(root.textContent).toContain("1 check · 1 frame");
+  expect(root.textContent).toContain("Frozen inverse retained");
+  const button = [...root.querySelectorAll<HTMLButtonElement>("button")].find((item) =>
+    item.textContent?.includes("Revert approved repair"),
+  );
+  button?.click();
+  expect(revert).toHaveBeenCalledWith("proposal");
+  expect(root.textContent).not.toContain("Approve changes");
+
+  dispose();
+  document.body.replaceChildren();
+});

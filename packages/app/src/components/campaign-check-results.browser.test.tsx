@@ -1,6 +1,7 @@
 import { render } from "solid-js/web";
 import { expect, test, vi } from "vitest";
 import type { JobInfo } from "../lib/api-types";
+import type { CampaignRepairTarget } from "@relay/protocol";
 import { CampaignCheckResults } from "./campaign-check-results";
 
 test("renders partial campaign outcomes with exact evidence and no invented selective retry", () => {
@@ -263,6 +264,116 @@ test("renders one shared navigation edge from exact proof and circuit artifacts"
       fixedInput: { runId: "run-42", checkId: "usage" },
     }),
   );
+
+  dispose();
+  root.remove();
+});
+
+test("reviews evidence-backed repair branches without mutating the Test", async () => {
+  const root = document.createElement("div");
+  document.body.append(root);
+  const load = vi.fn();
+  const propose = vi.fn();
+  const job = {
+    id: "run-repair",
+    action: "settings-tour",
+    status: "error",
+    queuedAt: 100,
+    persisted: true,
+    logs: [],
+    artifacts: [
+      {
+        kind: "campaign-check-result",
+        capturedAt: 120,
+        data: { id: "privacy", title: "Privacy", status: "failed", error: "Old locator" },
+      },
+      {
+        kind: "campaign-check-evidence",
+        capturedAt: 120,
+        data: {
+          checkId: "privacy",
+          error: "Old locator",
+          screenIdentity: { fingerprint: "observed-privacy" },
+          accessibility: { available: true, nodeCount: 12 },
+          attempts: [],
+        },
+      },
+    ],
+    frames: [],
+  } as JobInfo;
+  const target = {
+    schemaVersion: 1,
+    id: "repair:run-repair:privacy",
+    status: "pending",
+    defaultAction: "continue-and-report",
+    source: {
+      runId: "run-repair",
+      runInputDigest: "digest",
+      checkId: "privacy",
+      checkTitle: "Privacy",
+      action: "settings-tour",
+      capturedAt: 120,
+      appMapId: "map",
+      appMapRevision: 9,
+      testId: "test",
+    },
+    expected: {},
+    observed: { error: "Old locator" },
+    evidence: { result: {}, frames: [] },
+    lineage: { sourceRunId: "run-repair", priorAttempts: [] },
+    actions: [
+      {
+        kind: "retarget-proposal",
+        label: "Use proven selector",
+        available: true,
+        mutation: "reviewed-proposal",
+        description: "Promote the selector that succeeded at runtime.",
+        operationId: "run.repair.propose",
+        fixedInput: { runId: "run-repair", checkId: "privacy", kind: "retarget" },
+        requiredInput: ["reason"],
+      },
+      {
+        kind: "accept-current-proposal",
+        label: "Accept current via proposal",
+        available: false,
+        mutation: "reviewed-proposal",
+        description: "Keep the observed identity.",
+        operationId: "run.repair.propose",
+        unavailableReason: "No semantic identity was preserved.",
+      },
+    ],
+  } satisfies CampaignRepairTarget;
+
+  const dispose = render(
+    () => (
+      <CampaignCheckResults
+        job={job}
+        repairTarget={target}
+        onLoadRepairOptions={load}
+        onProposeRepair={propose}
+      />
+    ),
+    root,
+  );
+
+  expect(root.textContent).toContain("Choose a reversible repair");
+  expect(root.textContent).toContain("The approved state keeps its inverse");
+  const useSelector = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Use proven selector"),
+  );
+  const unavailable = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Accept current via proposal"),
+  );
+  expect(useSelector?.disabled).toBe(true);
+  expect(unavailable?.disabled).toBe(true);
+  root.querySelector<HTMLTextAreaElement>("textarea")!.value = "Privacy now has a stable id";
+  root
+    .querySelector<HTMLTextAreaElement>("textarea")!
+    .dispatchEvent(new InputEvent("input", { bubbles: true }));
+  await Promise.resolve();
+  expect(useSelector?.disabled).toBe(false);
+  useSelector?.click();
+  expect(propose).toHaveBeenCalledWith(target.actions[0], "Privacy now has a stable id");
 
   dispose();
   root.remove();

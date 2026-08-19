@@ -1,4 +1,5 @@
 import { Show, createMemo } from "solid-js";
+import type { CampaignRepairAction, CampaignRepairTarget } from "@relay/protocol";
 import { useServer } from "../context/server";
 import type { JobInfo } from "../lib/api-types";
 import type { CampaignCheckResult } from "../lib/campaign-check-results";
@@ -23,6 +24,11 @@ export function RunChecksPanel(props: {
   onRetryCheck?: (checkId: string) => void;
   onRepairTest?: (checkId: string) => void;
   onReviewNavigationRepair?: (repair: NavigationTransitionRepairEntry) => void;
+  repairTarget?: CampaignRepairTarget;
+  loadingRepairCheckId?: string;
+  proposingRepairCheckId?: string;
+  onLoadRepairOptions?: (checkId: string) => void;
+  onProposeRepair?: (action: CampaignRepairAction, reason: string) => void;
   retryingCheckId?: string;
 }) {
   const server = useServer();
@@ -41,6 +47,11 @@ export function RunChecksPanel(props: {
         onRetryCheck={props.onRetryCheck}
         onRepairTest={props.onRepairTest}
         onReviewNavigationRepair={props.onReviewNavigationRepair}
+        repairTarget={props.repairTarget}
+        loadingRepairCheckId={props.loadingRepairCheckId}
+        proposingRepairCheckId={props.proposingRepairCheckId}
+        onLoadRepairOptions={props.onLoadRepairOptions}
+        onProposeRepair={props.onProposeRepair}
         onResume={(jobId) => void server.resumeJob(jobId)}
         retryingCheckId={props.retryingCheckId}
       />

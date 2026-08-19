@@ -448,6 +448,34 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "run.repair.propose",
+    path("repair propose", ["runId", "checkId"], undefined, {
+      summary: "Create a reversible review branch from one failed check",
+      inputHelp: [
+        {
+          name: "kind",
+          type: "retarget | accept-current | disable",
+          required: true,
+          description: "Reviewed document change; never mutates the source run",
+        },
+        { name: "reason", type: "string", required: true, description: "Audit reason" },
+        {
+          name: "selector",
+          type: "object",
+          description: "Exact successful runtime selector; required only for retarget",
+        },
+        {
+          name: "equivalentTargets",
+          type: "array",
+          description: "Same-diff run/check pairs reviewed together without merging their evidence",
+        },
+      ],
+      examples: [
+        'relay repair propose <run-id> <check-id> --input \'{"kind":"retarget","reason":"Reviewed current accessibility id","selector":{"identifier":"settings-row"}}\'',
+      ],
+    }),
+  ),
+  mapped(
     "run.replay",
     path("run replay", ["runId"], undefined, {
       summary: "Replay a persisted run's recorded device actions",

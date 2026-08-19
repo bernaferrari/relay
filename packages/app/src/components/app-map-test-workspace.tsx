@@ -88,7 +88,7 @@ export function AppMapTestWorkspace(props: {
     restoreDeletedTest,
     awaitPendingSaves,
   } = testDocument;
-  const { proposalBusyId, proposalError, decideProposal } = useAppMapProposalReview(
+  const { proposalBusyId, proposalError, decideProposal, revertProposal } = useAppMapProposalReview(
     () => appMap() ?? undefined,
   );
 
@@ -101,15 +101,24 @@ export function AppMapTestWorkspace(props: {
   const selectedItem = createMemo(() =>
     flattenScenarioSteps(draft()?.steps ?? []).find((item) => item.step.id === selectedStepId()),
   );
-  const pendingTestProposals = createMemo(() => {
+  const reviewableTestProposals = createMemo(() => {
     const id = selectedTestId();
     return Object.values(appMap()?.proposals ?? {})
       .filter(
         (proposal): proposal is Proposal =>
-          proposal.status === "pending" &&
-          proposal.changes.some((change) => change.kind === "test.edit" && change.testId === id),
+          (proposal.status === "pending" ||
+            (proposal.status === "approved" &&
+              Boolean(proposal.repair && !proposal.repair.reverted))) &&
+          (proposal.repair?.testId === id ||
+            proposal.changes.some((change) => change.kind === "test.edit" && change.testId === id)),
       )
       .sort((left, right) => left.createdAt - right.createdAt);
+  });
+  const repairReviewLabel = createMemo(() => {
+    const items = reviewableTestProposals();
+    const pending = items.filter((proposal) => proposal.status === "pending").length;
+    if (pending === items.length) return `${pending} proposed`;
+    return `${items.length} repair${items.length === 1 ? "" : "s"}`;
   });
   const selectedDevice = createMemo(() =>
     server.devices().find((device) => device.serial === server.selectedDevice()),
@@ -340,14 +349,14 @@ export function AppMapTestWorkspace(props: {
         }
       >
         <Show when={draft()}>
-          <Show when={pendingTestProposals().length > 0}>
+          <Show when={reviewableTestProposals().length > 0}>
             <Button
               variant="secondary"
               size="sm"
               class="shrink-0"
               onClick={() => setProposalReviewOpen(true)}
             >
-              <Icon name="sparkle" size={13} /> {pendingTestProposals().length} proposed
+              <Icon name="sparkle" size={13} /> {repairReviewLabel()}
             </Button>
           </Show>
           <AppMapTestRunControl
@@ -500,10 +509,10 @@ export function AppMapTestWorkspace(props: {
         </Show>
       </div>
 
-      <Show when={proposalReviewOpen() && draft() && pendingTestProposals().length > 0}>
+      <Show when={proposalReviewOpen() && draft() && reviewableTestProposals().length > 0}>
         <AppMapTestProposalReview
           test={draft()!}
-          proposals={pendingTestProposals()}
+          proposals={reviewableTestProposals()}
           busyId={proposalBusyId()}
           error={proposalError()}
           onApprove={(id) =>
@@ -512,6 +521,7 @@ export function AppMapTestWorkspace(props: {
           onReject={(id) =>
             void decideProposal(id, "reject").then((ok) => ok && setProposalReviewOpen(false))
           }
+          onRevert={(id) => void revertProposal(id)}
           onClose={() => setProposalReviewOpen(false)}
         />
       </Show>

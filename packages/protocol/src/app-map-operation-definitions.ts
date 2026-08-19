@@ -576,5 +576,19 @@ export function createAppMapOperationDefinitions(
         confirmation: "confirm",
       },
     ),
+    command(
+      "app-map.proposal.revert",
+      "Revert an approved repair proposal",
+      "POST",
+      "/app-maps/:appMapId/proposals/:proposalId/revert",
+      {
+        category: "authoring",
+        input: appMapMutationParser<"app-map.proposal.revert">("proposal revert", undefined, [
+          "proposalId",
+        ]),
+        output: appMapOutputParser,
+        confirmation: "confirm",
+      },
+    ),
   ];
 }

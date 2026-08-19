@@ -535,4 +535,14 @@ export type AppMapOperationMap = {
     };
     output: { appMap: AppMap };
   };
+  "app-map.proposal.revert": {
+    input: {
+      appMapId: string;
+      proposalId: string;
+      expectedRevision: number;
+      eventId?: string;
+      reason?: string;
+    };
+    output: { appMap: AppMap };
+  };
 };

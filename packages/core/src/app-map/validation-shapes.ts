@@ -36,6 +36,7 @@ import {
   assertIdentity,
 } from "./connection-navigation-validation.js";
 import { assertEntity } from "./entity-validation.js";
+import { assertProposalRepair } from "./proposal-repair-validation.js";
 import { assertScenarioTest } from "./test-intent-validation.js";
 import {
   assertLogicalScrollSurface,
@@ -58,6 +59,7 @@ export {
   requiredText,
   safeInteger,
 } from "./validation-primitives.js";
+
 export { assertActivity } from "./activity-validation.js";
 
 function assertObservation(value: ScreenIdentityObservation, label: string): void {
@@ -881,6 +883,9 @@ export function assertProposal(proposal: Proposal, scope: AppMapScope, label: st
   proposal.changes.forEach((change, index) =>
     assertProposalChange(change, scope, `${label}.changes[${index}]`),
   );
+  if (proposal.repair !== undefined) {
+    assertProposalRepair(proposal.repair, scope, `${label}.repair`, assertProposalChange);
+  }
   if (proposal.status === "pending" && proposal.decision !== undefined)
     appMapFail("proposal-state", `${label} is pending but already has a decision`);
   if (proposal.status !== "pending" && !proposal.decision)

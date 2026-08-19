@@ -93,6 +93,7 @@ export function compileAppMapScenarioTest(
   }
   const graph: Record<string, Recipe> = {};
   const provenance: AppMapTestStepProvenance[] = [];
+  const omittedSteps: NonNullable<AppMapCompiledTest["omittedSteps"]> = [];
   const scheduledLogicalSurfaces = new Set<string>();
   const forceRecaptureSurfaceScreenIds = new Set(options.forceRecaptureSurfaceScreenIds ?? []);
   for (const screenId of forceRecaptureSurfaceScreenIds) {
@@ -197,6 +198,15 @@ export function compileAppMapScenarioTest(
     let previousTerminalScreenId: string | undefined;
     let campaignSetupSteps: RecipeStep[] | undefined;
     for (const step of steps) {
+      if (step.execution?.status === "disabled") {
+        omittedSteps.push({
+          stepId: step.id,
+          intent: step.intent,
+          reason: step.execution.reason,
+          repairTargetId: step.execution.repairTargetId,
+        });
+        continue;
+      }
       if (step.binding.status === "unresolved") {
         fail("unresolved-step", test, step, `${step.intent}: ${step.binding.reason}`);
       }
@@ -526,6 +536,7 @@ export function compileAppMapScenarioTest(
       ]),
     ),
     stepProvenance: provenance,
+    ...(omittedSteps.length ? { omittedSteps } : {}),
   };
   return { root, graph, plan };
 }

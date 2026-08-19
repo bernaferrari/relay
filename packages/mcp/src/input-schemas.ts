@@ -12,6 +12,7 @@ import {
   open,
   point,
   sessionReference,
+  stepTarget,
   tapPoint,
   targetReference,
   text,
@@ -580,6 +581,44 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       expectedRevision: natural("Current App Map revision"),
       eventId: identifier("Optional idempotent activity event identifier").optional(),
       reason: z.string().optional(),
+    })
+    .strict(),
+  "app-map.proposal.revert": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      proposalId: identifier("Approved repair proposal identifier"),
+      expectedRevision: natural("Current App Map revision"),
+      eventId: identifier("Optional idempotent activity event identifier").optional(),
+      reason: text("Why the reviewed repair is being reverted").optional(),
+    })
+    .strict(),
+  "run.repair.list": z.object({ limit: z.number().int().min(1).max(500).optional() }).strict(),
+  "run.repair.get": z
+    .object({ runId: identifier("Source run identifier"), checkId: identifier("Failed check id") })
+    .strict(),
+  "run.repair.retry": z
+    .object({ runId: identifier("Source run identifier"), checkId: identifier("Failed check id") })
+    .strict(),
+  "run.repair.propose": z
+    .object({
+      runId: identifier("Source run identifier"),
+      checkId: identifier("Failed check id"),
+      kind: z.enum(["retarget", "accept-current", "disable"]),
+      reason: text("Required audit reason for this review branch"),
+      selector: stepTarget
+        .describe("Exact successful runtime selector; required only for retarget")
+        .optional(),
+      equivalentTargets: z
+        .array(
+          z
+            .object({
+              runId: identifier("Equivalent source run identifier"),
+              checkId: identifier("Equivalent failed check id"),
+            })
+            .strict(),
+        )
+        .max(100)
+        .optional(),
     })
     .strict(),
   "authoring.session.get": z.object(sessionReference).strict(),

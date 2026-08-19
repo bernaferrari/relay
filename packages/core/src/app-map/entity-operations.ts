@@ -449,9 +449,16 @@ export function submitAppMapProposal(
   map: AppMap,
   proposal: Proposal,
   context: AppMapMutationContext,
+  options: { allowServerRepair?: boolean } = {},
 ): AppMap {
   assertEntityScope(map, proposal);
   if (proposal.status !== "pending") appMapFail("proposal-state", "New proposals must be pending");
+  if (proposal.repair && !options.allowServerRepair) {
+    appMapFail(
+      "invalid-map",
+      "Repair proposal metadata must be derived by Relay from run evidence",
+    );
+  }
   if (proposal.baseRevision > map.revision) {
     appMapFail("revision-conflict", `Proposal references future revision ${proposal.baseRevision}`);
   }

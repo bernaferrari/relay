@@ -38,6 +38,16 @@ type TestStepBase = {
   note?: string;
   /** Capture one evidence frame after this authored step completes. */
   capture?: boolean;
+  /** A reviewed coverage decision. Disabled steps remain in the document and
+   * review history, but the compiler omits them from execution until a later
+   * proposal restores them. */
+  execution?: {
+    status: "disabled";
+    reason: string;
+    repairTargetId: string;
+    decidedBy: string;
+    decidedAt: number;
+  };
 };
 
 export type AppMapTestStepCleanup = {
@@ -180,6 +190,8 @@ export type AppMapTestStepPatch = {
   capture?: boolean;
   /** `null` removes the compensating Routine. */
   cleanup?: AppMapTestStepCleanup | null;
+  /** `null` restores normal execution. */
+  execution?: TestStepBase["execution"] | null;
   binding?: AppMapScenarioTestStep["binding"];
 };
 
@@ -253,4 +265,10 @@ export type AppMapCompiledTest = {
     }
   >;
   stepProvenance: AppMapTestStepProvenance[];
+  omittedSteps?: Array<{
+    stepId: string;
+    intent: string;
+    reason: string;
+    repairTargetId: string;
+  }>;
 };

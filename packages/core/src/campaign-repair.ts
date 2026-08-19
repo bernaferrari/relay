@@ -384,6 +384,8 @@ function actions(input: {
   appMapId?: string;
   appMapRevision?: number;
   testId?: string;
+  retargetSelector?: unknown;
+  acceptCurrentAvailable: boolean;
 }): CampaignRepairAction[] {
   const proposalAvailable = Boolean(
     input.appMapId && input.testId && input.appMapRevision !== undefined,
@@ -423,14 +425,46 @@ function actions(input: {
         : {}),
     },
     {
-      kind: "accept-current-proposal",
-      label: "Accept current via proposal",
-      available: false,
+      kind: "retarget-proposal",
+      label: "Use proven selector",
+      available: proposalAvailable && input.retargetSelector !== undefined,
       mutation: "reviewed-proposal",
       description:
-        "Accepting changed product behavior must be a reviewable baseline/map diff, never a direct run mutation.",
-      unavailableReason:
-        "Relay has not derived a reversible baseline diff from this evidence. Inspect it and create a reviewed proposal first.",
+        "Promote the exact selector that succeeded at runtime into a reversible connection proposal.",
+      operationId: "run.repair.propose",
+      fixedInput: {
+        runId: input.runId,
+        checkId: input.checkId,
+        kind: "retarget",
+        ...(input.retargetSelector !== undefined
+          ? { selector: structuredClone(input.retargetSelector) }
+          : {}),
+      },
+      requiredInput: ["reason"],
+      ...(!proposalAvailable || input.retargetSelector === undefined
+        ? { unavailableReason: "No successful replacement selector was preserved for this check." }
+        : {}),
+      proposalRequirements,
+    },
+    {
+      kind: "accept-current-proposal",
+      label: "Accept current via proposal",
+      available: proposalAvailable && input.acceptCurrentAvailable,
+      mutation: "reviewed-proposal",
+      description:
+        "Add the observed semantic identity as a reviewed alias without replacing the approved baseline.",
+      operationId: "run.repair.propose",
+      fixedInput: {
+        runId: input.runId,
+        checkId: input.checkId,
+        kind: "accept-current",
+      },
+      requiredInput: ["reason"],
+      ...(!proposalAvailable || !input.acceptCurrentAvailable
+        ? {
+            unavailableReason: "This check has no mapped Screen and observed semantic fingerprint.",
+          }
+        : {}),
       proposalRequirements,
     },
     {
@@ -451,12 +485,20 @@ function actions(input: {
     {
       kind: "defer-check-proposal",
       label: "Defer check via proposal",
-      available: false,
+      available: proposalAvailable,
       mutation: "reviewed-proposal",
       description:
         "Disabling coverage requires an explicit, reversible Test policy diff and review.",
-      unavailableReason:
-        "The Test contract has no reversible disabled-step policy yet; Relay will not silently remove the check.",
+      operationId: "run.repair.propose",
+      fixedInput: {
+        runId: input.runId,
+        checkId: input.checkId,
+        kind: "disable",
+      },
+      requiredInput: ["reason"],
+      ...(!proposalAvailable
+        ? { unavailableReason: "The source run does not identify a saved Test revision." }
+        : {}),
       proposalRequirements,
     },
   ];
@@ -510,6 +552,19 @@ export function buildCampaignRepairTarget(
       : expectedScreenId(
           checkpointPlan ? run.recipeGraph?.[checkpointPlan.executableRecipeId] : recipe,
         );
+  const resultStartedAt = number(result.data.startedAt) ?? 0;
+  const resultFinishedAt = number(result.data.finishedAt) ?? result.artifact.capturedAt;
+  const transitionId = checkpointPlan?.transitionId;
+  const navigationRepairArtifact = lastMatching(run.artifacts, (artifact) => {
+    if (artifact.kind !== "navigation-repair-proposal") return false;
+    if (artifact.capturedAt < resultStartedAt || artifact.capturedAt > resultFinishedAt)
+      return false;
+    const data = record(artifact.data);
+    return !transitionId || data?.connectionId === transitionId;
+  });
+  const navigationRepairData = record(navigationRepairArtifact?.data);
+  const beforeSelector = record(navigationRepairData?.beforeSelector);
+  const currentSelector = record(navigationRepairData?.currentSelector);
   return {
     schemaVersion: 1,
     id: repairTargetId(run.id, checkId),
@@ -548,6 +603,18 @@ export function buildCampaignRepairTarget(
       ...(failureData?.accessibility !== undefined
         ? { accessibility: structuredClone(failureData.accessibility) }
         : {}),
+      ...(text(navigationRepairData?.connectionId) && beforeSelector && currentSelector
+        ? {
+            navigationRepair: {
+              connectionId: text(navigationRepairData!.connectionId)!,
+              beforeSelector: structuredClone(beforeSelector),
+              currentSelector: structuredClone(currentSelector),
+              attempts: Array.isArray(navigationRepairData?.attempts)
+                ? structuredClone(navigationRepairData.attempts)
+                : [],
+            },
+          }
+        : {}),
     },
     evidence: {
       result: structuredClone(result.artifact),
@@ -563,6 +630,9 @@ export function buildCampaignRepairTarget(
       runId: run.id,
       checkId,
       retryAvailable,
+      retargetSelector: currentSelector,
+      acceptCurrentAvailable:
+        Boolean(repairScreenId) && Boolean(text(record(failureData?.screenIdentity)?.fingerprint)),
       ...identity,
     }),
   };

@@ -45,9 +45,33 @@ export function useAppMapProposalReview(activeAppMap: () => AppMap | undefined) 
     }
   };
 
+  const revertProposal = async (proposalId: string, reason?: string) => {
+    const appMap = activeAppMap();
+    if (!appMap || proposalBusyId()) return false;
+    setProposalBusyId(proposalId);
+    setProposalError();
+    try {
+      await server.runAction("app-map.proposal.revert", {
+        appMapId: appMap.id,
+        proposalId,
+        expectedRevision: appMap.revision,
+        ...(reason ? { reason } : {}),
+      });
+      await server.refreshAppMaps();
+      toast("Repair reverted from its frozen inverse", "success");
+      return true;
+    } catch (error) {
+      setProposalError(error instanceof Error ? error.message : String(error));
+      return false;
+    } finally {
+      setProposalBusyId();
+    }
+  };
+
   return {
     proposalBusyId,
     proposalError,
     decideProposal,
+    revertProposal,
   };
 }

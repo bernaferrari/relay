@@ -1,4 +1,9 @@
-import type { CampaignRepairTarget, CampaignRepairTargetSummary } from "./campaign-repair.js";
+import type {
+  CampaignRepairProposalInput,
+  CampaignRepairTarget,
+  CampaignRepairTargetSummary,
+} from "./campaign-repair.js";
+import type { AppMap } from "./app-map.js";
 import { createOperationBuilders } from "./operation-builders.js";
 import type { OperationRecord } from "./operation-contract.js";
 
@@ -14,6 +19,10 @@ export type CampaignRepairOperationMap = {
   "run.repair.retry": {
     input: { runId: string; checkId: string };
     output: { repair: CampaignRepairTarget; job: OperationRecord };
+  };
+  "run.repair.propose": {
+    input: CampaignRepairProposalInput;
+    output: { repair: CampaignRepairTarget; appMap: AppMap; proposalId: string };
   };
 };
 
@@ -70,6 +79,28 @@ const runRepairInputParser = objectParser<CampaignRepairOperationMap["run.repair
   },
 );
 
+const runRepairProposalInputParser = objectParser<
+  CampaignRepairOperationMap["run.repair.propose"]["input"]
+>("run repair proposal input", (input) => {
+  string(input.runId, "run repair proposal runId");
+  string(input.checkId, "run repair proposal checkId");
+  string(input.reason, "run repair proposal reason");
+  if (!(["retarget", "accept-current", "disable"] as unknown[]).includes(input.kind)) {
+    fail("run repair proposal kind", "must be retarget, accept-current, or disable");
+  }
+  if (input.kind === "retarget") record(input.selector, "run repair proposal selector");
+  if (input.equivalentTargets !== undefined) {
+    if (!Array.isArray(input.equivalentTargets) || input.equivalentTargets.length > 100) {
+      fail("run repair proposal equivalentTargets", "must be an array of at most 100 targets");
+    }
+    input.equivalentTargets.forEach((target, index) => {
+      const item = record(target, `run repair proposal equivalentTargets[${index}]`);
+      string(item.runId, `run repair proposal equivalentTargets[${index}].runId`);
+      string(item.checkId, `run repair proposal equivalentTargets[${index}].checkId`);
+    });
+  }
+});
+
 const runRepairListInputParser = objectParser<
   CampaignRepairOperationMap["run.repair.list"]["input"]
 >("run repair list input", (input) => {
@@ -124,6 +155,14 @@ const runRepairRetryOutputParser = objectParser<
   record(input.job, "run repair job");
 });
 
+const runRepairProposalOutputParser = objectParser<
+  CampaignRepairOperationMap["run.repair.propose"]["output"]
+>("run repair proposal response", (input) => {
+  assertRepairTarget(input.repair, "run repair");
+  record(input.appMap, "run repair proposal appMap");
+  string(input.proposalId, "run repair proposal proposalId");
+});
+
 export const runRepairOperationDefinitions = [
   query("run.repair.list", "List failed check repair targets", "/runs/repairs", {
     category: "evidence",
@@ -153,6 +192,17 @@ export const runRepairOperationDefinitions = [
       cancellable: true,
       lease: "exclusive",
       targetCapabilities: ["tap", "snapshot", "screenshot"],
+    },
+  ),
+  command(
+    "run.repair.propose",
+    "Propose a reversible failed-check repair",
+    "POST",
+    "/runs/:runId/checks/:checkId/proposals",
+    {
+      category: "authoring",
+      input: runRepairProposalInputParser,
+      output: runRepairProposalOutputParser,
     },
   ),
 ];

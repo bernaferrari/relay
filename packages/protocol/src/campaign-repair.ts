@@ -1,9 +1,40 @@
 export type CampaignRepairActionKind =
   | "continue-and-report"
   | "retry-check"
+  | "retarget-proposal"
   | "accept-current-proposal"
   | "repair-test-proposal"
   | "defer-check-proposal";
+
+export type CampaignRepairProposalKind = "retarget" | "accept-current" | "disable";
+
+export type CampaignRepairProposalInput = {
+  runId: string;
+  checkId: string;
+  kind: CampaignRepairProposalKind;
+  reason: string;
+  /** Required only for retarget. The server accepts this selector only when it
+   * exactly matches a successful runtime healing candidate from the source
+   * check; arbitrary client-authored locators are rejected. */
+  selector?: import("./recipes.js").StepTarget;
+  /** Optional same-diff failures to review as one branch. Every target keeps
+   * its own immutable evidence and must derive the same document mutation. */
+  equivalentTargets?: Array<{ runId: string; checkId: string }>;
+};
+
+/** Server-derived lineage and inverse for one reviewed repair branch. */
+export type CampaignRepairProposalMetadata = {
+  kind: CampaignRepairProposalKind;
+  testId: string;
+  repairTargetIds: string[];
+  sourceRunIds: string[];
+  sourceCheckIds: string[];
+  evidenceFramePaths: string[];
+  equivalentDiffKey: string;
+  inverseChanges: import("./app-map.js").ProposalChange[];
+  approvedRevision?: number;
+  reverted?: import("./app-map.js").ProposalDecision;
+};
 
 export type CampaignRepairAction = {
   kind: CampaignRepairActionKind;
@@ -57,6 +88,12 @@ export type CampaignRepairTarget = {
     screenIdentity?: unknown;
     chrome?: unknown;
     accessibility?: unknown;
+    navigationRepair?: {
+      connectionId: string;
+      beforeSelector: import("./recipes.js").StepTarget;
+      currentSelector: import("./recipes.js").StepTarget;
+      attempts: unknown[];
+    };
   };
   evidence: {
     result: unknown;
