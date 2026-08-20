@@ -7,6 +7,8 @@ const bearerCredential = /\bBearer\s+[^\s,;]+/gi;
 const namedCredential = /\b(?:token|password|secret|credential|authorization)\s*[:=]\s*[^\s,;]+/gi;
 const url = /https?:\/\/[^\s"']+/gi;
 const iosMutationOutcomeUnknownCode = "IOS_MUTATION_OUTCOME_UNKNOWN";
+const iosMutationOutcomeUnknownMessage =
+  "Review needed: Relay cannot confirm whether the iOS command reached the device. Capture the current screen before any explicit retry or repair.";
 
 export type RelayMcpRecoveryAction =
   | "fix-input"
@@ -29,7 +31,7 @@ export type RelayMcpRecoveryCommand = {
  * issuing another command, including route-specific proof from a picker scan.
  */
 export type RelayMcpIosReview = {
-  iosMutation: Record<string, unknown>;
+  iosMutation?: Record<string, unknown>;
   switcherScan?: Record<string, unknown>;
 };
 
@@ -38,6 +40,8 @@ export type RelayMcpStructuredError = {
   status?: number;
   code: string;
   message: string;
+  /** A physical iOS command may already have reached the device. Stop for review. */
+  terminal?: "review-needed";
   recovery: {
     action: RelayMcpRecoveryAction;
     retryable: boolean;
@@ -141,12 +145,11 @@ function recoveryActionFrom(value: unknown): RelayMcpStructuredError["recoveryAc
 }
 
 function iosReviewFrom(body: Record<string, unknown> | undefined): RelayMcpIosReview | undefined {
-  if (body?.code !== iosMutationOutcomeUnknownCode) return undefined;
-  const iosMutation = object(body.iosMutation);
-  if (!iosMutation) return undefined;
-  const switcherScan = object(body.switcherScan);
+  const iosMutation = object(body?.iosMutation);
+  const switcherScan = object(body?.switcherScan);
+  if (!iosMutation && !switcherScan) return undefined;
   return {
-    iosMutation,
+    ...(iosMutation ? { iosMutation } : {}),
     ...(switcherScan ? { switcherScan } : {}),
   };
 }
@@ -169,22 +172,33 @@ export function relayMcpError(operationId: OperationId, error: unknown): RelayMc
     (typeof suppliedCode === "string" && codePattern.test(suppliedCode))
       ? suppliedCode
       : defaultCode(error.status);
-  const message = sanitizeErrorText(body?.error ?? error.message, fallback);
+  // The terminal code is the authority. Diagnostic fields are best-effort:
+  // they can be missing or malformed after a transport/proxy failure, but that
+  // must never turn an already-issued physical command into a retryable 409.
+  const terminalIosMutationOutcomeUnknown = code === iosMutationOutcomeUnknownCode;
+  const message = terminalIosMutationOutcomeUnknown
+    ? iosMutationOutcomeUnknownMessage
+    : sanitizeErrorText(body?.error ?? error.message, fallback);
   const revision = currentRevision(body);
-  const iosReview = iosReviewFrom(body);
+  const iosReview = terminalIosMutationOutcomeUnknown ? iosReviewFrom(body) : undefined;
   // An unknown physical iOS mutation has already used its one native command.
   // It is categorically different from a stale revision conflict: telling an
   // agent to refresh-and-retry would invite a duplicate press or scroll.
-  const recovery = iosReview
+  const recovery = terminalIosMutationOutcomeUnknown
     ? { action: "none" as const, retryable: false }
     : suppliedRecovery(body?.recovery, recoveryFor(error.status, message));
-  const recoveryAction = recoveryActionFrom(body?.recoveryAction);
+  // A malformed terminal payload must not smuggle an executable retry action
+  // through the generic recoveryAction field either.
+  const recoveryAction = terminalIosMutationOutcomeUnknown
+    ? undefined
+    : recoveryActionFrom(body?.recoveryAction);
 
   return {
     operationId,
     status: error.status,
     code,
     message,
+    ...(terminalIosMutationOutcomeUnknown ? { terminal: "review-needed" as const } : {}),
     recovery,
     ...(recoveryAction ? { recoveryAction } : {}),
     ...(revision === undefined ? {} : { currentRevision: revision }),

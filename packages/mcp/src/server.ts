@@ -70,6 +70,7 @@ const relayToolOutputSchema = z
         status: z.number().int().optional(),
         code: z.string(),
         message: z.string(),
+        terminal: z.literal("review-needed").optional(),
         recovery: z.object({ action: z.string(), retryable: z.boolean() }).strict(),
         recoveryAction: z
           .object({
@@ -85,7 +86,7 @@ const relayToolOutputSchema = z
         currentRevision: z.number().int().nonnegative().optional(),
         iosReview: z
           .object({
-            iosMutation: z.record(z.string(), z.unknown()),
+            iosMutation: z.record(z.string(), z.unknown()).optional(),
             switcherScan: z.record(z.string(), z.unknown()).optional(),
           })
           .strict()
