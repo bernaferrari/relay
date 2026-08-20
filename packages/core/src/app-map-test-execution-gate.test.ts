@@ -178,6 +178,67 @@ test("rejects a typed queued Test whose executable root has been removed", () =>
   );
 });
 
+test("rejects a queued Test whose target profile loses the selected viewport identity", () => {
+  const { plan, recipeGraph, root, source } = fixture();
+  const scopedPlan = {
+    ...structuredClone(plan),
+    runtimeTargetProfile: {
+      id: "android-1-1080x2400",
+      targetId: "android-1",
+      platform: "android" as const,
+      viewport: { width: 1080, height: 2400 },
+    },
+  };
+  const preflight: OfflineTestPreflightReport = {
+    schemaVersion: 1,
+    mode: "offline-test-preflight",
+    appMapId: scopedPlan.appMapId,
+    appMapRevision: scopedPlan.appMapRevision,
+    testId: scopedPlan.test.id,
+    planDigest: digestAppMapTestExecutionValue(scopedPlan),
+    summary: {
+      recipes: 1,
+      checkedSelectors: 0,
+      resolvedSelectors: 0,
+      unknownCursorTransitions: 0,
+      reviewRequiredReturns: 0,
+      blockers: 0,
+      warnings: 0,
+    },
+    selectors: [],
+    cursorTimeline: [],
+    returns: [],
+    findings: [],
+  };
+  const intent = createAppMapTestExecutionIntent({
+    plan: scopedPlan,
+    recipeGraph,
+    preflight,
+  });
+  const scopedSource = {
+    ...source,
+    artifacts: [{ kind: "app-map-test-execution-intent", data: intent }],
+    recipeSnapshot: root,
+    targetProfile: {
+      id: "android-1-1080x2400",
+      targetId: "android-1",
+      source: "device" as const,
+      platform: "android" as const,
+      name: "Android 1",
+      viewport: { width: 1080, height: 2400 },
+      capabilities: [],
+      observedAt: 1,
+    },
+  };
+  assert.equal(assessAppMapTestExecutionSource(scopedSource).status, "valid");
+  const mismatched = structuredClone(scopedSource);
+  mismatched.targetProfile.viewport.height = 2399;
+  assert.deepEqual(assessAppMapTestExecutionSource(mismatched), {
+    status: "review-required",
+    reason: "The queued target profile no longer matches the selected frozen evidence profile.",
+  });
+});
+
 test("the canonical queue rejects an unscoped parser-valid historical Test", () => {
   const { plan, root, recipeGraph } = fixture();
   assert.throws(

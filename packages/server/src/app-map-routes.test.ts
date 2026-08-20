@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
 import {
+  createAppMapTestExecutionIntent,
   createDiscoverySession,
   enqueueJob,
   listDevices,
@@ -128,6 +129,7 @@ test("offline Test compilation previews a verified checkpoint without a device o
   process.env.RELAY_STATE_DIR = root;
   const offlineOnlyCalls = { listDevices: 0, assertTargetControl: 0, enqueueJob: 0 };
   let preflightOnly = true;
+  let failIntentConstruction = false;
   const server = await startServer({
     host: "127.0.0.1",
     port: 0,
@@ -141,6 +143,10 @@ test("offline Test compilation previews a verified checkpoint without a device o
         offlineOnlyCalls.assertTargetControl += 1;
         if (preflightOnly) throw new Error("blocked Test run tried to control a target");
         return assertTargetControl(scope, targetId);
+      },
+      createAppMapTestExecutionIntent(input) {
+        if (failIntentConstruction) throw new Error("injected frozen intent failure");
+        return createAppMapTestExecutionIntent(input);
       },
       enqueueJob(input) {
         offlineOnlyCalls.enqueueJob += 1;
@@ -494,6 +500,20 @@ test("offline Test compilation previews a verified checkpoint without a device o
       deviceSerial: "ipad-1",
       expiresAt: Date.now() + 60_000,
     });
+    const controlsBeforeIntentFailure = { ...offlineOnlyCalls };
+    failIntentConstruction = true;
+    await assert.rejects(
+      client.invoke("app-map.test.run", {
+        appMapId: "store",
+        testId: "settings-test",
+        expectedRevision: runRevision,
+        target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+        targetProfileId: "ipad-en",
+      }),
+      isRunError("TEST_OFFLINE_PREFLIGHT_BLOCKED"),
+    );
+    assert.deepEqual(offlineOnlyCalls, controlsBeforeIntentFailure);
+    failIntentConstruction = false;
     const queued = await client.invoke("app-map.test.run", {
       appMapId: "store",
       testId: "settings-test",
@@ -507,6 +527,12 @@ test("offline Test compilation previews a verified checkpoint without a device o
       platform: "ios",
     });
     const queuedJob = await client.invoke("job.get", { jobId: queued.job.id });
+    const queuedTargetProfile = queuedJob.job.targetProfile as
+      | { id?: unknown; targetId?: unknown; platform?: unknown }
+      | undefined;
+    assert.equal(queuedTargetProfile?.id, "ipad-en");
+    assert.equal(queuedTargetProfile?.targetId, "ipad-1");
+    assert.equal(queuedTargetProfile?.platform, "ios");
     const frozenArtifacts = queuedJob.job.artifacts as Array<{ kind: string; data?: unknown }>;
     const frozenPlan = frozenArtifacts.find((artifact) => artifact.kind === "app-map-test-plan");
     const frozenPreflight = frozenArtifacts.find(

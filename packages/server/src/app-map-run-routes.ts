@@ -49,12 +49,14 @@ type ObservedTarget = {
 export type AppMapTestRunRouteRuntime = {
   listDevices: typeof listDevices;
   assertTargetControl: typeof assertTargetControl;
+  createAppMapTestExecutionIntent: typeof createAppMapTestExecutionIntent;
   enqueueJob: typeof enqueueJob;
 };
 
 const defaultTestRunRuntime: AppMapTestRunRouteRuntime = {
   listDevices,
   assertTargetControl,
+  createAppMapTestExecutionIntent,
   enqueueJob,
 };
 
@@ -347,6 +349,32 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       );
     }
 
+    // Freeze and validate every executable byte before Relay asks the target
+    // controller for a lease. A malformed graph or intent is an offline
+    // review problem, never a reason to touch the selected target first.
+    const recipeGraph: Record<string, Recipe> = Object.fromEntries(
+      Object.values(compiled.graph).map((recipe) => [recipe.id, structuredClone(recipe)]),
+    );
+    const recipeSnapshot = recipeGraph[plan.rootRecipeId];
+    if (!recipeSnapshot) throw new HttpError(500, "Compiled Test has no root recipe");
+    const operation = currentOperationContext();
+    if (!operation) throw new HttpError(500, "App Map execution context is unavailable");
+    const queuedAt = Date.now();
+    let executionIntent;
+    try {
+      executionIntent = runtime.createAppMapTestExecutionIntent({ plan, recipeGraph, preflight });
+    } catch (error) {
+      throw new HttpError(
+        409,
+        "Offline Test execution intent is invalid; Relay did not control the target",
+        {
+          code: "TEST_OFFLINE_PREFLIGHT_BLOCKED",
+          detail: error instanceof Error ? error.message : String(error),
+          recovery: "Review the frozen Test plan and evidence, then start a new scoped Test run.",
+        },
+      );
+    }
+
     let observedDevices: Awaited<ReturnType<typeof listDevices>> | undefined;
     if (body.target.kind === "device") {
       const operation = currentOperationContext();
@@ -401,14 +429,6 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         }
       }
     }
-    await runtime.assertTargetControl(input.scope, targetId);
-    const recipeGraph: Record<string, Recipe> = Object.fromEntries(
-      Object.values(compiled.graph).map((recipe) => [recipe.id, structuredClone(recipe)]),
-    );
-    const recipeSnapshot = recipeGraph[plan.rootRecipeId];
-    if (!recipeSnapshot) throw new HttpError(500, "Compiled Test has no root recipe");
-    const operation = currentOperationContext();
-    if (!operation) throw new HttpError(500, "App Map execution context is unavailable");
     const observedTargetProfile = (
       await buildTargetProfiles({
         devices: observedDevices ?? (await runtime.listDevices().catch(() => [])),
@@ -425,14 +445,13 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       observedTargetProfile,
       target: body.target,
     });
+    await runtime.assertTargetControl(input.scope, targetId);
     const planIdentity = {
       appMapId: plan.appMapId,
       appMapRevision: plan.appMapRevision,
       testId: plan.test.id,
       rootRecipeId: plan.rootRecipeId,
     };
-    const queuedAt = Date.now();
-    const executionIntent = createAppMapTestExecutionIntent({ plan, recipeGraph, preflight });
     const job = runtime.enqueueJob({
       recipe: recipeSnapshot.id,
       title: recipeSnapshot.title,
