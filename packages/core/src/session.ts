@@ -1,5 +1,4 @@
 /** Test-run sessions with action traces, heal retries, and disk persistence. */
-import { randomUUID } from "node:crypto";
 import { now, publish } from "./events.js";
 import {
   createDevice,
@@ -8,12 +7,7 @@ import {
   resetDeviceClient,
   type Device,
 } from "./device.js";
-import {
-  inferDevicePlatformFromSerial,
-  runWithTargetContext,
-  targetIdentity,
-  type TargetContext,
-} from "./target-context.js";
+import { runWithTargetContext } from "./target-context.js";
 import type { Glyph, TraceFrameRef, TraceStep } from "./trace.js";
 import { persistRun, writeFramePng, ensureRunDir, type PersistedRun } from "./runs.js";
 import {
@@ -41,8 +35,7 @@ import {
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
 import type { RecipeRuntimeState } from "./recipe-runner-context.js";
 import { finalizeDeferredChecksForJob } from "./session-campaign-finalization.js";
-import { PRIVATE_INPUT, redactPrivateValue } from "./private-inputs.js";
-import { REDACTED } from "./redaction.js";
+import { redactPrivateValue } from "./private-inputs.js";
 import { classifyRunOutcome } from "./outcomes.js";
 import {
   initializeRunEvidence,
@@ -52,18 +45,9 @@ import {
 } from "./run-evidence.js";
 import { getBrowserDevice } from "./browser-target.js";
 import { preflightTarget, readTarget } from "./targets.js";
-import {
-  TargetWorkerScheduler,
-  defaultTargetWorkerAssignment,
-  type TargetWorkerStatus,
-} from "./target-worker.js";
-import {
-  currentOperationContext,
-  requireOperationContext,
-  runWithOperationContext,
-} from "./operation-context.js";
+import { TargetWorkerScheduler, type TargetWorkerStatus } from "./target-worker.js";
+import { requireOperationContext, runWithOperationContext } from "./operation-context.js";
 import { redactText, visualEvidenceAllowed } from "./redaction.js";
-import { getEvidenceCollectionPolicy } from "./evidence-policy.js";
 import { projectPersistedAppMapRun } from "./app-map-run-history.js";
 import { JobRegistry } from "./job-registry.js";
 import { reserveTargetControl, releaseTargetControl } from "./target-control.js";
@@ -78,9 +62,11 @@ import { isTargetUnavailableError } from "./target-unavailable.js";
 import { humanInterventionNeedsReproof } from "./job-intervention.js";
 import { captureAutomaticState } from "./session-automatic-evidence.js";
 import { appendStepLog, finishStep, observeStepActions, openStep } from "./session-trace-steps.js";
+import { createSessionJob, replayInputFromPersistedRun } from "./session-job-factory.js";
 export type { EnqueueJobInput, JobErrorCode, JobStatus, TestJob } from "./session-contract.js";
 export { summarizeJob } from "./session-summary.js";
 export { captureAutomaticState } from "./session-automatic-evidence.js";
+export { replayInputFromPersistedRun } from "./session-job-factory.js";
 
 const MAX_JOBS = 100;
 const jobRegistry = new JobRegistry<TestJob>(MAX_JOBS);
@@ -132,174 +118,17 @@ function setOutcome(job: TestJob): void {
   job.failureCategory = classified.failureCategory;
 }
 
-/**
- * Reconstruct the execution contract that was frozen with a completed run.
- *
- * A replay deliberately uses the recorded recipe graph instead of whatever a
- * map, test, or variable happens to look like today. That lets a person or an
- * agent answer “what exactly did we ask the device to do?” and repeat it
- * later, even after the server's in-memory job list has been restarted.
- *
- * Private inputs are never persisted, so this fails closed rather than
- * pretending a replay is equivalent while substituting redacted values.
- */
-export function replayInputFromPersistedRun(
-  run: Pick<
-    PersistedRun,
-    | "id"
-    | "action"
-    | "serial"
-    | "platform"
-    | "targetProfile"
-    | "title"
-    | "resolvedInputs"
-    | "recipeSnapshot"
-    | "recipeGraph"
-    | "projectId"
-    | "ownerId"
-  >,
-): EnqueueJobInput {
-  if (!run.recipeSnapshot || !run.recipeGraph) {
-    throw new Error("This run predates frozen replay data and cannot be replayed safely");
-  }
-  const unavailableInput = Object.entries(run.resolvedInputs).find(
-    ([, value]) => value === PRIVATE_INPUT || value === REDACTED,
-  );
-  if (unavailableInput) {
-    throw new Error(
-      `This run used a private value for “${unavailableInput[0]}”. Provide it again before replaying.`,
-    );
-  }
-  const platform =
-    run.platform === "android" || run.platform === "ios" || run.platform === "browser"
-      ? run.platform
-      : undefined;
-  const targetId = run.serial?.trim();
-  if (!targetId || !platform) {
-    throw new Error("This run has no reusable target identity and cannot be replayed safely");
-  }
-  return {
-    recipe: run.action,
-    ...(platform === "browser"
-      ? { targetKind: "browser" as const, browserTargetId: targetId }
-      : { targetKind: "device" as const, serial: targetId, platform }),
-    targetProfile: run.targetProfile,
-    title: `${run.title ?? run.action} · replay`,
-    variables: structuredClone(run.resolvedInputs),
-    recipeSnapshot: structuredClone(run.recipeSnapshot),
-    recipeGraph: structuredClone(run.recipeGraph),
-    projectId: run.projectId,
-    ownerId: run.ownerId,
-  };
-}
-
 /** Re-run an immutable persisted execution and preserve its source lineage. */
 export function replayPersistedRun(run: PersistedRun): TestJob {
   return enqueueJob({ ...replayInputFromPersistedRun(run), retryOf: run.id });
 }
 
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
-  const parent = input.retryOf ? jobRegistry.get(input.retryOf) : undefined;
-  const id = randomUUID();
-  const targetKind = input.targetKind ?? parent?.targetKind ?? "device";
-  const targetContext: TargetContext =
-    targetKind === "browser"
-      ? Object.freeze({
-          kind: "browser" as const,
-          platform: "browser" as const,
-          targetId:
-            input.browserTargetId?.trim() ||
-            (parent?.targetContext.kind === "browser" ? parent.targetContext.targetId : "") ||
-            input.serial?.trim() ||
-            "",
-        })
-      : Object.freeze({
-          kind: "device" as const,
-          platform:
-            input.platform ??
-            parent?.platform ??
-            inferDevicePlatformFromSerial(
-              input.serial?.trim() ||
-                (parent?.targetContext.kind === "device" ? parent.targetContext.serial : "") ||
-                "",
-            ) ??
-            ("android" as const),
-          serial:
-            input.serial?.trim() ||
-            (parent?.targetContext.kind === "device" ? parent.targetContext.serial : "") ||
-            "",
-        });
-  const targetId = targetIdentity(targetContext);
-  if (!targetId) throw new Error("Every Relay job requires an explicit target");
-  const operationContext = currentOperationContext() ?? parent?.operationContext;
-  const assignment = defaultTargetWorkerAssignment({
-    targetId,
-    platform: targetContext.platform,
-    workerId: input.workerId ?? parent?.workerId,
-    workerCapacity: input.workerCapacity ?? parent?.workerCapacity,
+  return createSessionJob(input, {
+    findJob: (id) => jobRegistry.get(id),
+    toTransport: jobForTransport,
+    attemptSeed,
   });
-  const baseJob = {
-    id,
-    projectId: input.projectId ?? parent?.projectId,
-    ownerId: input.ownerId ?? parent?.ownerId,
-    operationContext: operationContext
-      ? Object.freeze(structuredClone(operationContext))
-      : undefined,
-    targetContext,
-    serial: targetContext.kind === "device" ? targetContext.serial : undefined,
-    deviceName: parent?.deviceName,
-    platform: targetContext.kind === "device" ? targetContext.platform : ("android" as const),
-    targetKind,
-    browserTargetId: targetContext.kind === "browser" ? targetContext.targetId : undefined,
-    targetProfile: input.targetProfile ?? parent?.targetProfile,
-    workerId: assignment.workerId,
-    workerCapacity: assignment.capacity,
-    status: "queued" as const,
-    queuedAt: now(),
-    logs: [] as string[],
-    attempts: parent ? parent.attempts + 1 : attemptSeed,
-    retryOf: input.retryOf,
-    previousError: parent?.error ?? parent?.previousError,
-    steps: [] as TraceStep[],
-    frames: [] as TraceFrameRef[],
-    artifacts: [...(input.artifacts ?? [])] as {
-      kind: string;
-      capturedAt: number;
-      data: unknown;
-    }[],
-    batchId: input.batchId ?? parent?.batchId,
-    caseIndex: input.caseIndex ?? parent?.caseIndex,
-    caseCount: input.caseCount ?? parent?.caseCount,
-    resolvedInputs: Object.assign({}, parent?.resolvedInputs ?? input.variables),
-    sensitiveInputNames: [
-      ...new Set(parent?.sensitiveInputNames ?? input.sensitiveInputNames ?? []),
-    ].sort((left, right) => left.localeCompare(right)),
-    recipeSnapshot: structuredClone(input.recipeSnapshot ?? parent?.recipeSnapshot),
-    recipeGraph: structuredClone(input.recipeGraph ?? parent?.recipeGraph),
-    evidencePolicy: structuredClone(
-      input.evidencePolicy ?? parent?.evidencePolicy ?? getEvidenceCollectionPolicy(),
-    ),
-    options: {
-      prodAccountMatch: input.prodAccountMatch ?? parent?.options?.prodAccountMatch,
-    },
-  };
-
-  // `action` remains the report/event label; every execution itself is a frozen recipe.
-  const recipeId = input.recipe;
-  const job: TestJob = {
-    ...baseJob,
-    action: recipeId,
-    recipeId,
-    glyphs: ["ai", "wait"],
-    kind: "Replay",
-    tone: "acc",
-    title: input.title ?? recipeId,
-  };
-  Object.defineProperty(job, "toJSON", {
-    enumerable: false,
-    value: () => jobForTransport(job),
-  });
-  return job;
 }
 
 /** The runtime keeps private values only in memory for step resolution. Every

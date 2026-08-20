@@ -9,7 +9,6 @@ import {
   isNotFoundOrTimeout,
   readInput,
   resolvePointForDevice,
-  resolveRecipeStep,
   runtimeBoundsCache,
   runVariableScript,
   targetPresent,
@@ -61,7 +60,7 @@ import {
 } from "./control.js";
 import { publish, now } from "./events.js";
 import { runAction, isActionId } from "./actions.js";
-import { describeTarget, readRecipe, type RecipeStep } from "./recipes.js";
+import { describeTarget, type RecipeStep } from "./recipes.js";
 import { evaluateSemantic } from "./evaluation.js";
 import {
   nodeText,
@@ -72,6 +71,7 @@ import {
 import { runTourStep } from "./recipe-runner-tour.js";
 import { captureRecipeScreenshot, runExpectScreenStep } from "./recipe-runner-screen.js";
 import { runCampaignCheck } from "./recipe-runner-campaign-checks.js";
+import { runReusableRecipe } from "./recipe-runner-reusable.js";
 import {
   runCaptureSurfaceStep,
   runScrollOrRevealStep,
@@ -80,87 +80,6 @@ import {
 } from "./recipe-runner-extended-steps.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
-
-async function runReusableRecipe(
-  device: Device,
-  recipeId: string,
-  ctx: RecipeStepContext,
-  bindings?: Record<string, string>,
-): Promise<void> {
-  const stack = ctx.moduleStack ?? [];
-  if (stack.includes(recipeId))
-    throw new Error(`reusable test cycle: ${[...stack, recipeId].join(" → ")}`);
-  if (stack.length >= 12) throw new Error("reusable test nesting is limited to 12 levels");
-  const recipe = ctx.recipeGraph?.[recipeId] ?? (await readRecipe(recipeId));
-  if (!recipe) throw new Error(`reusable test not found: ${recipeId}`);
-  const current = ctx.job?.resolvedInputs;
-  const parameters = recipe.parameters ?? [];
-  const declared = new Set(parameters.map((parameter) => parameter.name));
-  for (const name of Object.keys(bindings ?? {})) {
-    if (!declared.has(name)) {
-      throw new Error(`reusable flow ${recipe.title} does not declare input ${name}`);
-    }
-  }
-
-  const touched = new Map<string, string | undefined>();
-  const resolved: Record<string, string> = {};
-  if (current) {
-    const overlay: Record<string, string> = { ...recipe.variables };
-    for (const parameter of parameters) {
-      const value =
-        bindings?.[parameter.name] ??
-        current[parameter.name] ??
-        parameter.default ??
-        recipe.variables?.[parameter.name];
-      if (value === undefined && parameter.required) {
-        throw new Error(`reusable flow ${recipe.title} requires input ${parameter.name}`);
-      }
-      if (value !== undefined) {
-        overlay[parameter.name] = value;
-        resolved[parameter.name] = value;
-      }
-    }
-    for (const [name, value] of Object.entries(overlay)) {
-      touched.set(name, current[name]);
-      current[name] = value;
-    }
-    if (parameters.length > 0) {
-      ctx.job?.artifacts.push({
-        kind: "reusable-flow-inputs",
-        capturedAt: now(),
-        data: {
-          recipeId: recipe.id,
-          title: recipe.title,
-          declared: parameters.map(({ name, required, default: defaultValue }) => ({
-            name,
-            ...(required ? { required: true } : {}),
-            ...(defaultValue !== undefined ? { default: defaultValue } : {}),
-          })),
-          bindings: bindings ?? {},
-          resolved,
-        },
-      });
-    }
-  }
-  ctx.log(
-    `↳ ${recipe.title} · ${recipe.steps.length} step(s)${parameters.length ? ` · ${Object.keys(resolved).length}/${parameters.length} inputs` : ""}`,
-  );
-  try {
-    for (const child of recipe.steps) {
-      await runRecipeStep(device, resolveRecipeStep(child, ctx.job?.resolvedInputs ?? {}), {
-        ...ctx,
-        moduleStack: [...stack, recipeId],
-      });
-    }
-  } finally {
-    if (current) {
-      for (const [name, previous] of touched) {
-        if (previous === undefined) delete current[name];
-        else current[name] = previous;
-      }
-    }
-  }
-}
 
 async function runRequiredRecipeStep(
   device: Device,
@@ -623,7 +542,7 @@ async function runRequiredRecipeStep(
       break;
     }
     case "module": {
-      await runReusableRecipe(device, step.recipeId, ctx, step.bindings);
+      await runReusableRecipe(device, step.recipeId, ctx, runRecipeStep, step.bindings);
       break;
     }
     case "branch": {
@@ -646,7 +565,7 @@ async function runRequiredRecipeStep(
       log(
         `branch: ${matched ? "matched" : "otherwise"}${recipeId ? ` → ${recipeId}` : " → continue"}`,
       );
-      if (recipeId) await runReusableRecipe(device, recipeId, ctx);
+      if (recipeId) await runReusableRecipe(device, recipeId, ctx, runRecipeStep);
       break;
     }
     case "repeat": {
@@ -654,7 +573,7 @@ async function runRequiredRecipeStep(
         await cooperativeCheckpoint(job?.id);
         if (job) job.resolvedInputs.iteration = String(iteration + 1);
         log(`repeat: ${iteration + 1}/${step.count}`);
-        await runReusableRecipe(device, step.recipeId, ctx);
+        await runReusableRecipe(device, step.recipeId, ctx, runRecipeStep);
       }
       job?.artifacts.push({
         kind: "loop",
