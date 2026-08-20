@@ -1,5 +1,4 @@
 import { test, expect, vi, beforeEach } from 'vitest';
-import { AppError } from '@agent-device/kernel/errors';
 import { attachRefs } from '@agent-device/kernel/snapshot';
 import { WEB_DESKTOP_DEVICE } from '../../../__tests__/test-utils/device-fixtures.ts';
 import {
@@ -58,6 +57,13 @@ vi.mock('../../../platforms/apple/core/runner/runner-client.ts', async (importOr
   };
 });
 
+import { elementTextRead } from '@agent-device/contracts/platform';
+import {
+  elementReadFixtureState,
+  getRuntimeBindings,
+  mockReadTextAtPoint,
+  resetGetRuntimeFixture,
+} from './interaction-get-runtime-fixture.ts';
 import { dispatchCommand } from '../../../core/dispatch.ts';
 const mockDispatch = vi.mocked(dispatchCommand);
 import {
@@ -75,6 +81,7 @@ beforeEach(() => {
   mockGetAndroidBlockingDialogFocus.mockResolvedValue(null);
   mockRunAppleRunnerCommand.mockReset();
   mockRunAppleRunnerCommand.mockResolvedValue({});
+  resetGetRuntimeFixture();
 });
 
 test('get text prefers underlying value for text surfaces and avoids recording giant ref labels', async () => {
@@ -111,6 +118,7 @@ test('get text prefers underlying value for text surfaces and avoids recording g
     sessionName,
     sessionStore,
     contextFromFlags,
+    ...getRuntimeBindings(),
   });
 
   expect(response).toBeTruthy();
@@ -145,10 +153,9 @@ test('get text uses backend read expansion when the resolved node has a rect', a
   };
   sessionStore.set(sessionName, session);
 
-  mockDispatch.mockResolvedValue({
-    action: 'read',
-    text: 'package com.example.app\nclass MainActivity {}',
-  });
+  mockReadTextAtPoint.mockResolvedValue(
+    elementTextRead('package com.example.app\nclass MainActivity {}'),
+  );
 
   const response = await handleInteractionCommands({
     req: {
@@ -161,28 +168,123 @@ test('get text uses backend read expansion when the resolved node has a rect', a
     sessionName,
     sessionStore,
     contextFromFlags,
+    ...getRuntimeBindings(),
   });
 
-  expect(mockDispatch).toHaveBeenCalledTimes(1);
-  expect(mockDispatch.mock.calls[0]?.[1]).toBe('read');
-  expect(mockDispatch.mock.calls[0]?.[2]).toEqual(['80', '80']);
+  // The live read now reaches the bound runtime operation, not the legacy `read` dispatch.
+  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(mockReadTextAtPoint).toHaveBeenCalledTimes(1);
+  expect(mockReadTextAtPoint.mock.calls[0]?.[0].point).toEqual({ x: 80, y: 80 });
   expect(response?.ok).toBe(true);
   if (response?.ok) {
     expect(response.data?.text).toBe('package com.example.app\nclass MainActivity {}');
   }
 });
 
-test('get text simple iOS id selector uses runner query without snapshot', async () => {
+test('get text answers from the captured tree when the bound owner advertises no live read', async () => {
   const sessionStore = makeSessionStore();
-  const sessionName = 'get-text-ios-direct-selector';
+  const sessionName = 'get-text-no-live-read';
+  const session = makeSession(sessionName);
+  session.snapshot = {
+    nodes: attachRefs([
+      {
+        index: 0,
+        depth: 0,
+        type: 'TextView',
+        label: 'Editor for MainActivity.kt',
+        value: 'preview only',
+        rect: { x: 20, y: 40, width: 120, height: 80 },
+      },
+    ]),
+    createdAt: Date.now(),
+    backend: 'xctest',
+  };
+  sessionStore.set(sessionName, session);
+  elementReadFixtureState.readTextAtPointAvailable = false;
+
+  const response = await handleInteractionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'get',
+      positionals: ['text', '@e1'],
+      flags: {},
+    },
+    sessionName,
+    sessionStore,
+    contextFromFlags,
+    ...getRuntimeBindings(),
+  });
+
+  // Preferred-operation absence is not a failure and not a fallback: the required capture path
+  // answers completely, and nothing reaches the legacy dispatcher.
+  expect(mockReadTextAtPoint).not.toHaveBeenCalled();
+  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(response?.ok).toBe(true);
+  if (response?.ok) {
+    expect(response.data?.text).toBe('preview only');
+  }
+});
+
+// ADR 0019 regression: `get` declares `device-runtime`, so an ELIGIBLE direct-iOS selector —
+// one the fast path would otherwise answer without a tree capture — must not reach the device
+// until the request has resolved, admitted, and bound. A refused admission means zero runner
+// queries, not a fast-path answer that skipped exact-owner facts entirely.
+test('an eligible direct iOS selector cannot operate before admission', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'get-text-direct-before-admission';
   sessionStore.set(sessionName, makeIosSession(sessionName, { appBundleId: 'com.example.app' }));
+  elementReadFixtureState.captureSnapshotAvailable = false;
   mockRunAppleRunnerCommand.mockResolvedValue({
     found: true,
     text: 'Ada Lovelace',
+    nodes: [{ index: 0, depth: 0, type: 'StaticText', label: 'Ada Lovelace' }],
+  });
+
+  const response = await handleInteractionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'get',
+      positionals: ['text', 'id=name'],
+      flags: {},
+    },
+    sessionName,
+    sessionStore,
+    contextFromFlags,
+    ...getRuntimeBindings(),
+  });
+
+  expect(response?.ok).toBe(false);
+  if (response && !response.ok) expect(response.error.code).toBe('UNSUPPORTED_OPERATION');
+  // The whole point: the fast path never ran.
+  expect(mockRunAppleRunnerCommand).not.toHaveBeenCalled();
+  expect(mockDispatch).not.toHaveBeenCalled();
+});
+
+// The direct-iOS shortcut is RETIRED (#1739): `get` declares `device-runtime`, so a simple
+// `id=` selector resolves through the bound capture like every other shape rather than through a
+// raw runner query R36 declares no operation for. The cost is real and accepted — this selector
+// no longer skips the tree capture.
+test('get text simple iOS id selector resolves through the bound capture, not a runner query', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'get-text-ios-direct-selector';
+  sessionStore.set(sessionName, makeIosSession(sessionName, { appBundleId: 'com.example.app' }));
+  mockDispatch.mockResolvedValue({
+    backend: 'xctest',
     nodes: [
       {
         index: 0,
         depth: 0,
+        type: 'Application',
+        rect: { x: 0, y: 0, width: 393, height: 852 },
+        enabled: true,
+        hittable: true,
+      },
+      {
+        index: 1,
+        depth: 1,
+        parentIndex: 0,
         type: 'TextField',
         label: 'Name',
         identifier: 'field-name',
@@ -205,32 +307,20 @@ test('get text simple iOS id selector uses runner query without snapshot', async
     sessionName,
     sessionStore,
     contextFromFlags,
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
-  expect(mockRunAppleRunnerCommand).toHaveBeenCalledWith(
-    expect.anything(),
-    {
-      command: 'querySelector',
-      selectorKey: 'id',
-      selectorValue: 'field-name',
-      appBundleId: 'com.example.app',
-    },
-    expect.anything(),
-  );
-  expect(mockDispatch).not.toHaveBeenCalledWith(
-    expect.anything(),
-    'snapshot',
-    expect.anything(),
-    expect.anything(),
-    expect.anything(),
-  );
   if (response?.ok) {
     expect(response.data?.text).toBe('Ada Lovelace');
     expect(response.data?.selector).toBe('id="field-name"');
   }
-  const recorded = sessionStore.get(sessionName)?.actions.at(-1);
-  expect(recorded?.result?.selectorChain).toEqual(['id="field-name"']);
+  // No querySelector: the retired bypass was the only caller on this path.
+  expect(mockRunAppleRunnerCommand).not.toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ command: 'querySelector' }),
+    expect.anything(),
+  );
 });
 
 test('get text iOS label selector uses snapshot disambiguation instead of runner query', async () => {
@@ -292,6 +382,7 @@ test('get text iOS label selector uses snapshot disambiguation instead of runner
     sessionName,
     sessionStore,
     contextFromFlags,
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
@@ -302,40 +393,6 @@ test('get text iOS label selector uses snapshot disambiguation instead of runner
     expect(response.data?.text).toBe('General');
     expect(response.data?.selector).toBe('label="General"');
   }
-});
-
-test('get text simple iOS id selector does not snapshot-fallback on ambiguous runner match', async () => {
-  const sessionStore = makeSessionStore();
-  const sessionName = 'get-text-ios-direct-selector-ambiguous';
-  sessionStore.set(sessionName, makeIosSession(sessionName, { appBundleId: 'com.example.app' }));
-  mockRunAppleRunnerCommand.mockRejectedValue(
-    new AppError('AMBIGUOUS_MATCH', 'selector matched multiple elements'),
-  );
-
-  const response = await handleInteractionCommands({
-    req: {
-      token: 't',
-      session: sessionName,
-      command: 'get',
-      positionals: ['text', 'id="field-name"'],
-      flags: {},
-    },
-    sessionName,
-    sessionStore,
-    contextFromFlags,
-  });
-
-  expect(response?.ok).toBe(false);
-  if (response?.ok === false) {
-    expect(response.error.code).toBe('AMBIGUOUS_MATCH');
-  }
-  expect(mockDispatch).not.toHaveBeenCalledWith(
-    expect.anything(),
-    'snapshot',
-    expect.anything(),
-    expect.anything(),
-    expect.anything(),
-  );
 });
 
 test('is visible preserves CLI snapshot flags during runtime snapshot capture', async () => {
@@ -382,6 +439,7 @@ test('is visible preserves CLI snapshot flags during runtime snapshot capture', 
     sessionName,
     sessionStore,
     contextFromFlags,
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
@@ -413,6 +471,7 @@ test('is visible reuses fresh cached iOS snapshots with rects', async () => {
     sessionName,
     sessionStore,
     contextFromFlags,
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
@@ -445,6 +504,7 @@ test('is visible recaptures web snapshots when cached nodes may lack rects', asy
     sessionName,
     sessionStore,
     contextFromFlags,
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
@@ -453,68 +513,14 @@ test('is visible recaptures web snapshots when cached nodes may lack rects', asy
   });
 });
 
-test('is selected simple iOS id selector uses runner query without snapshot', async () => {
-  const sessionStore = makeSessionStore();
-  const sessionName = 'is-selected-ios-direct-selector';
-  sessionStore.set(sessionName, makeIosSession(sessionName, { appBundleId: 'com.example.app' }));
-  mockRunAppleRunnerCommand.mockResolvedValue({
-    found: true,
-    text: 'Pickup',
-    nodes: [
-      {
-        index: 0,
-        depth: 0,
-        type: 'Button',
-        label: 'Pickup',
-        identifier: 'shipping-pickup',
-        selected: true,
-        rect: { x: 126, y: 555, width: 75, height: 38 },
-        enabled: true,
-        hittable: true,
-      },
-    ],
-  });
-
-  const response = await handleInteractionCommands({
-    req: {
-      token: 't',
-      session: sessionName,
-      command: 'is',
-      positionals: ['selected', 'id="shipping-pickup"'],
-      flags: {},
-    },
-    sessionName,
-    sessionStore,
-    contextFromFlags,
-  });
-
-  expect(response?.ok).toBe(true);
-  expect(mockRunAppleRunnerCommand).toHaveBeenCalledWith(
-    expect.anything(),
-    {
-      command: 'querySelector',
-      selectorKey: 'id',
-      selectorValue: 'shipping-pickup',
-      appBundleId: 'com.example.app',
-    },
-    expect.anything(),
-  );
-  expect(mockDispatch).not.toHaveBeenCalledWith(
-    expect.anything(),
-    'snapshot',
-    expect.anything(),
-    expect.anything(),
-    expect.anything(),
-  );
-  if (response?.ok) {
-    expect(response.data?.predicate).toBe('selected');
-    expect(response.data?.pass).toBe(true);
-  }
-  const recorded = sessionStore.get(sessionName)?.actions.at(-1);
-  expect(recorded?.result?.selectorChain).toEqual(['id="shipping-pickup"']);
-});
-
-test('is simple iOS selector returns false directly when runner predicate fails', async () => {
+// PIN CHANGED TWICE (#1739, R37). #557 asserted `ok: true` with `pass: false` and zero snapshots
+// here, from the direct-iOS shortcut. That broke `is`'s documented contract — it "exits non-zero
+// on failure" (website/docs/docs/commands.md) — and on device printed `Passed: is text` with exit
+// 0 for a failed assertion. The reversal made the shortcut answer only when the predicate held;
+// the shortcut is now retired outright, so the bound capture answers every predicate and this is
+// simply what `is` does. The assertion below is unchanged across both edits because it was always
+// about the OUTCOME, not about which path produced it.
+test('a failing is predicate is COMMAND_FAILED, never a zero-exit pass', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'is-selected-ios-direct-selector-false';
   sessionStore.set(sessionName, makeIosSession(sessionName, { appBundleId: 'com.example.app' }));
@@ -544,66 +550,16 @@ test('is simple iOS selector returns false directly when runner predicate fails'
     sessionName,
     sessionStore,
     contextFromFlags,
+    ...getRuntimeBindings(),
   });
 
-  expect(response?.ok).toBe(true);
-  expect(mockDispatch.mock.calls.filter((call) => call[1] === 'snapshot')).toHaveLength(0);
-  if (response?.ok) {
-    expect(response.data?.predicate).toBe('selected');
-    expect(response.data?.pass).toBe(false);
+  // The session snapshot has no `id=submit`, so the bound capture reports the typed selector
+  // failure. Nothing can report a failed assertion as a completed command.
+  expect(response?.ok).toBe(false);
+  expect(mockDispatch.mock.calls.filter((call) => call[1] === 'snapshot')).toHaveLength(1);
+  if (response?.ok === false) {
+    expect(response.error?.code).toBe('COMMAND_FAILED');
   }
-});
-
-test('is simple iOS selector falls back to snapshot while gesture stabilization is pending', async () => {
-  const sessionStore = makeSessionStore();
-  const sessionName = 'is-selected-ios-stabilizing';
-  const session = makeIosSession(sessionName, { appBundleId: 'com.example.app' });
-  session.postGestureStabilization = { action: 'swipe', positionals: [], markedAt: Date.now() };
-  sessionStore.set(sessionName, session);
-
-  mockDispatch.mockImplementation(async (_device, command) => {
-    if (command !== 'snapshot') throw new Error(`unexpected command: ${command}`);
-    return {
-      nodes: [
-        {
-          index: 0,
-          depth: 0,
-          type: 'Window',
-          rect: { x: 0, y: 0, width: 390, height: 844 },
-        },
-        {
-          index: 1,
-          depth: 1,
-          parentIndex: 0,
-          type: 'Button',
-          label: 'Pickup',
-          identifier: 'shipping-pickup',
-          selected: true,
-          rect: { x: 126, y: 555, width: 75, height: 38 },
-          enabled: true,
-          hittable: true,
-        },
-      ],
-      backend: 'xctest',
-    };
-  });
-
-  const response = await handleInteractionCommands({
-    req: {
-      token: 't',
-      session: sessionName,
-      command: 'is',
-      positionals: ['selected', 'id="shipping-pickup"'],
-      flags: {},
-    },
-    sessionName,
-    sessionStore,
-    contextFromFlags,
-  });
-
-  expect(response?.ok).toBe(true);
-  expect(mockRunAppleRunnerCommand).not.toHaveBeenCalled();
-  expect(mockDispatch.mock.calls.some((call) => call[1] === 'snapshot')).toBe(true);
 });
 
 test('is visible passes for list text that inherits viewport visibility from an ancestor', async () => {
@@ -646,6 +602,7 @@ test('is visible passes for list text that inherits viewport visibility from an 
     sessionName,
     sessionStore,
     contextFromFlags,
+    ...getRuntimeBindings(),
   });
 
   expect(response).toBeTruthy();
@@ -691,6 +648,7 @@ test('is visible fails for nodes outside the current viewport', async () => {
     sessionName,
     sessionStore,
     contextFromFlags,
+    ...getRuntimeBindings(),
   });
 
   expect(response).toBeTruthy();
@@ -729,6 +687,7 @@ test('is reports Android permission dialog blocker when app content assertion fa
     sessionName,
     sessionStore,
     contextFromFlags,
+    ...getRuntimeBindings(),
   });
 
   expect(response).toBeTruthy();

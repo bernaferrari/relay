@@ -25,7 +25,8 @@ import { retiredDispatchProjectionViolations } from './runtime-command-cutover-d
  * A row id is a report heading, so it must be unique across every stack that adds rows here.
  * `cutoverTableDefects` rejects a duplicate; lifecycle starts at R28 after the accepted
  * shutdown, install/deploy, and application-lifecycle allocations. Snapshot starts at R32;
- * diff follows at R33.
+ * diff follows at R33, viewport at R34, get at R36, and is at R37. R35 stays reserved for
+ * find, whose cutover is deferred behind the Wave 5 `focus`/`type` surfaces.
  */
 export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
   {
@@ -505,6 +506,85 @@ export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
       },
     },
     extensions: [diffRetiredDispatchProjectionProof],
+  },
+  {
+    rule: 'R36 get-runtime-cutover',
+    command: 'get',
+    subject: 'element read',
+    tier: 'request-scoped',
+    execution: 'device-runtime',
+    // Two retirements. `get`'s own legacy admission was its capability bucket plus the static
+    // family command sets the matrix augments it with — the row's automatic admission columns
+    // reject the bucket and the `requireCommandSupported('get', …)` call. And the shared element
+    // read: both consumers of the selector backend's read (`get text` and read-only
+    // `find … get text`) now execute the bound `readTextAtPoint`, so the legacy `read` dispatch
+    // alias retires whole. Deleting its registry entry drops `'read'` from
+    // `DescriptorDispatchCommandName`, which makes a surviving `DISPATCH_HANDLERS.read` a COMPILE
+    // error rather than something this row has to police.
+    legacyRetirement: {
+      modulePaths: ['src/daemon/handlers/interaction-read-legacy-dispatch.ts'],
+      importPatterns: [/(?:^|\/)handlers\/interaction-read-legacy-dispatch(?:\.[cm]?[jt]s)?$/],
+      // `dispatchDirectIosSelectorGet` was `get`'s last route to the platform outside the seam:
+      // it reached `runAppleRunnerCommand` through a path this row declares no operation for.
+      // Admitting before a bypass is not executing through the seam, so the bypass is retired
+      // rather than ordered after admission. `queryDirectIosSelector` itself stays — the Wave 5
+      // offscreen-target probe still consumes it and it remains single-copy.
+      routeNames: ['handleReadCommand', 'dispatchDirectIosSelectorGet'],
+    },
+    runtimeTypeNames: ['ElementTextRuntimeOperations', 'SnapshotRuntimeOperations'],
+    operations: {
+      names: ['captureSnapshot', 'captureSnapshotWithoutActiveApp', 'readTextAtPoint'],
+    },
+    singularExecution: {
+      routes: ['dispatchGetViaRuntime'],
+      operations: ['captureSnapshot', 'captureSnapshotWithoutActiveApp', 'readTextAtPoint'],
+      // `get` executes through the shared selector seam, so the capture owners are the SAME
+      // selectors `snapshot`/`diff` count; only the preferred element read is this unit's own.
+      // With the direct-iOS bypass retired these names are now the ONLY routes from
+      // `dispatchGetViaRuntime` to the platform, so the claim states what the code does.
+      operationOwners: {
+        captureSnapshot: ['selectActiveAppSnapshot'],
+        captureSnapshotWithoutActiveApp: ['selectSnapshotWithoutActiveApp'],
+        readTextAtPoint: ['bindElementRead'],
+      },
+    },
+  },
+  {
+    rule: 'R37 is-runtime-cutover',
+    command: 'is',
+    subject: 'element predicate',
+    tier: 'request-scoped',
+    execution: 'device-runtime',
+    // `is` retired no module, route, or dispatch projection — it had none. Its whole legacy
+    // admission was the capability bucket (rejected by this row's automatic descriptor column)
+    // plus membership in these two static sets, which is a DATA deletion. Naming the sets proves
+    // it from both sides: each must still be declared in production source and must no longer
+    // list `is`, so neither an invented name nor a skipped deletion can satisfy it.
+    legacyRetirement: {
+      staticCommandSets: ['HARMONYOS_SUPPORTED_COMMANDS', 'WEB_QUERY_COMMANDS'],
+    },
+    runtimeTypeNames: ['SnapshotRuntimeOperations'],
+    operations: { names: ['captureSnapshot', 'captureSnapshotWithoutActiveApp'] },
+    singularExecution: {
+      routes: ['dispatchIsViaRuntime'],
+      operations: ['captureSnapshot', 'captureSnapshotWithoutActiveApp'],
+      // `is` executes through the shared selector seam, so its capture owners are the SAME
+      // selectors `snapshot`/`diff`/`get` count. It declares no operation of its own: every
+      // predicate answers from the resolved tree, so `readTextAtPoint` stays R36's alone.
+      //
+      // Scope, stated so this is not read as absolute: the claim covers how a predicate is
+      // EXECUTED. Since the direct-iOS selector shortcut retired, the bound capture is the only
+      // thing that answers one. It does NOT claim the route makes no other device call — the
+      // Android foreground-blocker diagnostic still reaches adb through
+      // `platforms/android/app-lifecycle.ts`, on the FAILURE path only, where it can enrich an
+      // already-failed response's message but can never produce or change a verdict. That edge
+      // is pre-existing, co-owned with `wait`, and recorded as Wave 6 denominator work; R22's
+      // `appState` is its declared replacement.
+      operationOwners: {
+        captureSnapshot: ['selectActiveAppSnapshot'],
+        captureSnapshotWithoutActiveApp: ['selectSnapshotWithoutActiveApp'],
+      },
+    },
   },
   {
     rule: 'R34 viewport-runtime-cutover',

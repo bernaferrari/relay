@@ -84,6 +84,7 @@ function createAdmissionFacts(
       deployMaterializedApp: cell(options.sourceAvailable),
       sendPushNotification: cell(options.pushAvailable),
       networkDump: cell(options.networkAvailable),
+      readTextAtPoint: unavailable,
       screenRecordingStart: unavailable,
       screenRecordingReattach: unavailable,
       screenRecordingCleanup: unavailable,

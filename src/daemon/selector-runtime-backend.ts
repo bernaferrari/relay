@@ -2,7 +2,7 @@ import type { AgentDeviceBackend, BackendSnapshotResult } from '../backend.ts';
 import { resolveTargetDevice } from '../core/dispatch.ts';
 import { createAgentDevice } from '../runtime.ts';
 import { isMacOs, isApplePlatform, publicPlatformString } from '@agent-device/kernel/device';
-import { noActiveSessionError, requireCommandSupported } from './handlers/response.ts';
+import { noActiveSessionError } from './handlers/response.ts';
 import type { SnapshotState, SnapshotNode } from '@agent-device/kernel/snapshot';
 import { findNodeByLabel } from '../core/snapshot-node-lookup.ts';
 import { runAppleRunnerCommand } from '../platforms/apple/core/runner/runner-client.ts';
@@ -17,6 +17,12 @@ import type { ContextFromFlags } from './handlers/interaction-common.ts';
 import { SessionStore } from './session-store.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from './types.ts';
 import { createSelectorCaptureRuntime } from './selector-capture-runtime.ts';
+import {
+  resolveBoundSelectorCapture,
+  type BoundSelectorOperations,
+  type SelectorCaptureCommand,
+} from './selector-capture-binding.ts';
+import type { BindDeviceRuntime, InspectDeviceRuntimeFacts } from './request-runtime-binding.ts';
 import { isActiveProviderDevice } from '../provider-device-runtime.ts';
 import { getRequestSignal } from '../request/cancel.ts';
 import { snapshotOptionsToFlags } from '../backend-snapshot-options.ts';
@@ -31,12 +37,25 @@ export type SelectorRuntimeParams = {
   // sessionless routes disclose from here because no session record stores the capture.
   consumedSnapshot?: { state?: SnapshotState };
   signal?: AbortSignal;
+  inspectFacts?: InspectDeviceRuntimeFacts;
+  bindDevice?: BindDeviceRuntime;
 };
 
-type SelectorRuntimeDeviceParams = SelectorRuntimeParams & {
+export type SelectorRuntimeDeviceParams = SelectorRuntimeParams & {
   session: SessionState | undefined;
   device: SessionState['device'];
+  /** The request-bound operations this runtime executes through. Absent for selector
+   * commands still on legacy admission, until their own ADR 0019 unit lands. */
+  bound?: BoundSelectorOperations;
 };
+
+type ResolvedSelectorRuntime =
+  | { ok: true; runtime: ReturnType<typeof createSelectorRuntimeForDevice> }
+  | { ok: false; response: DaemonResponse };
+
+type ResolvedSelectorDevice =
+  | { ok: true; session: SessionState | undefined; device: SessionState['device'] }
+  | { ok: false; response: DaemonResponse };
 
 type AppleRunnerFindTextTarget = {
   device: SessionState['device'];
@@ -62,37 +81,67 @@ export function createSelectorRuntimeForDevice(params: SelectorRuntimeDevicePara
   });
 }
 
-export async function createSelectorRuntime(
+/** The session/device a selector command runs against, before any admission decides. */
+async function resolveSelectorRuntimeDevice(
   params: SelectorRuntimeParams,
-  options: { requireSession: boolean; capability: 'find' | 'get' | 'is' },
-): Promise<
-  | { ok: true; runtime: ReturnType<typeof createSelectorRuntimeForDevice> }
-  | { ok: false; response: DaemonResponse }
-> {
+  requireSession: boolean,
+): Promise<ResolvedSelectorDevice> {
   params.consumedSnapshot ??= {};
   const session = params.sessionStore.get(params.sessionName);
-  if (!session && options.requireSession) {
-    return {
-      ok: false,
-      response: noActiveSessionError(),
-    };
-  }
+  if (!session && requireSession) return { ok: false, response: noActiveSessionError() };
   const device = session?.device ?? (await resolveTargetDevice(params.req.flags ?? {}));
   if (!session) await ensureDeviceReady(device);
-  const unsupported = requireCommandSupported(options.capability, device);
-  if (unsupported) return { ok: false, response: unsupported };
+  return { ok: true, session, device };
+}
+
+/**
+ * THE selector runtime: facts-first admission, exactly one binding, and a backend whose every
+ * capture goes through the bound operation. Since `is` (R37) there is no other one — the legacy
+ * capability-admitted `createSelectorRuntime` and its `requireCommandSupported` call were its
+ * last consumer and retired with it, so a selector command cannot reach the device on a
+ * capability bucket even by mistake.
+ *
+ * ADR 0019 §6: a `device-runtime` command reaches the device only after resolve -> admit ->
+ * bind, so THIS CALL COMES FIRST in its route — ahead of every shortcut, including the
+ * direct-iOS selector query that answers some targets without a capture. That query is a fast
+ * path *within* an admitted request, never a way around exact-owner facts or the one-binding
+ * invariant. `get` (R36) and `is` (R37) both order it this way.
+ */
+export async function createBoundSelectorRuntime(
+  params: SelectorRuntimeParams,
+  options: { requireSession: boolean; command: SelectorCaptureCommand },
+): Promise<ResolvedSelectorRuntime> {
+  const resolved = await resolveSelectorRuntimeDevice(params, options.requireSession);
+  if (!resolved.ok) return resolved;
+  const bound = await resolveBoundSelectorCapture({
+    command: options.command,
+    device: resolved.device,
+    session: resolved.session,
+    inspectFacts: params.inspectFacts,
+    bindDevice: params.bindDevice,
+  });
+  if (!bound.ok) return { ok: false, response: bound.response };
   return {
     ok: true,
     runtime: createSelectorRuntimeForDevice({
       ...params,
-      session,
-      device,
+      session: resolved.session,
+      device: resolved.device,
+      bound: bound.operations,
     }),
   };
 }
 
 function createSelectorBackend(params: SelectorRuntimeDeviceParams): AgentDeviceBackend {
+  // The bound operation is the ONLY element read. Both consumers of the shared backend read —
+  // `get text` and read-only `find … get text` — construct a bound backend, so there is no second
+  // read path to choose between and nothing reaches the retired `read` dispatch.
   const { req, session, device, logPath, sessionName, sessionStore } = params;
+  const resolveContextFromFlags: ContextFromFlags =
+    params.contextFromFlags ??
+    ((flags, appBundleId, traceLogPath) =>
+      contextFromFlags(logPath ?? '', flags, appBundleId, traceLogPath));
+  const readTextAtPoint = params.bound?.readText;
   const captureRuntime = createSelectorCaptureRuntime({
     device,
     session,
@@ -101,6 +150,7 @@ function createSelectorBackend(params: SelectorRuntimeDeviceParams): AgentDevice
     req,
     consumedSnapshot: params.consumedSnapshot,
     logPath,
+    capture: params.bound?.capture,
   });
   return {
     platform: publicPlatformString(device),
@@ -129,16 +179,14 @@ function createSelectorBackend(params: SelectorRuntimeDeviceParams): AgentDevice
     },
     readText: async (_context, node: SnapshotNode) => ({
       text: await readTextForNode({
+        readTextAtPoint,
         device,
         node,
         flags: req.flags,
         appBundleId: session?.appBundleId,
         traceOutPath: session?.trace?.outPath,
         surface: session?.surface,
-        contextFromFlags:
-          params.contextFromFlags ??
-          ((flags, appBundleId, traceLogPath) =>
-            contextFromFlags(logPath ?? '', flags, appBundleId, traceLogPath)),
+        contextFromFlags: resolveContextFromFlags,
       }),
     }),
     findText: async (context, text) => ({
