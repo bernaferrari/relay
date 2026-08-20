@@ -446,11 +446,20 @@ export function createServerCapture(deps: CaptureServerDeps) {
     }
   }
 
-  async function pollLiveSnapshot(): Promise<void> {
+  /**
+   * Live preview needs actionable geometry, whereas authoring/evidence needs
+   * the complete raw hierarchy. Keep that distinction at the transport
+   * boundary so physical iOS never pays for a full XCTest traversal just to
+   * redraw hover affordances.
+   */
+  async function pollLiveSnapshot(options?: { interactiveOnly?: boolean }): Promise<void> {
     if (!deps.collectAccessibility()) return;
     try {
       const serial = serialFor(deps);
-      const query = serial ? `?serial=${encodeURIComponent(serial)}` : "";
+      const queryParams = new URLSearchParams();
+      if (serial) queryParams.set("serial", serial);
+      if (options?.interactiveOnly) queryParams.set("interactiveOnly", "1");
+      const query = queryParams.size > 0 ? `?${queryParams}` : "";
       const data = await deps.request<NonNullable<SnapshotState> & { tree?: string }>(
         `/snapshot${query}`,
         undefined,

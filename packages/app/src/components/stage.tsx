@@ -257,7 +257,12 @@ export function DeviceStage(_props: {
     }
     snapInFlight = true;
     try {
-      await server.pollLiveSnapshot();
+      await server.pollLiveSnapshot({
+        // The live iPad stage only needs hittable geometry for hover, keyboard,
+        // and direct interaction. Raw trees are intentionally captured through
+        // the explicit Teach/Evidence paths instead.
+        interactiveOnly: targetIsPhysicalIos(currentDevice()),
+      });
     } finally {
       snapInFlight = false;
       if (snapQueued) {
