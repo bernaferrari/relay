@@ -21,6 +21,7 @@ export type ScrollSurveyStopReason =
   | "dimension-changed"
   | "scroll-failed"
   | "restore-failed"
+  | "start-viewport-unproven"
   | "limit-reached";
 
 export type ScrollSurveyFrame = {
@@ -73,6 +74,11 @@ export type ScrollSurveyOptions = {
    * only after proving that initialCapture is the logical document origin.
    * Arbitrary mid-page captures retain exact inverse restoration. */
   initialViewport?: "proven-document-origin";
+  /** Immutable first viewport from the compiled document. When present, the
+   * survey proves the live capture is at this origin before it makes even one
+   * scroll gesture. This prevents a changed/reflowed mid-page viewport from
+   * turning a full-page recapture into navigation churn. */
+  provenDocumentOrigin?: ScrollSurveyCapture;
 };
 
 export function scrollSurveyGesture(
@@ -606,6 +612,7 @@ export async function captureScrollableSurveyForTarget(input: {
   maxScrolls?: number;
   initialCapture?: ScrollSurveyCapture;
   initialViewport?: "proven-document-origin";
+  provenDocumentOrigin?: ScrollSurveyCapture;
 }): Promise<ScrollSurveyResult> {
   const platform = await devicePlatformForSerial(input.serial);
   if (platform !== "android" && platform !== "ios") {
@@ -641,6 +648,7 @@ export async function captureScrollableSurveyForTarget(input: {
       maxScrolls: input.maxScrolls,
       ...(input.initialCapture ? { initialCapture: input.initialCapture } : {}),
       ...(input.initialViewport ? { initialViewport: input.initialViewport } : {}),
+      ...(input.provenDocumentOrigin ? { provenDocumentOrigin: input.provenDocumentOrigin } : {}),
     },
   );
 }
@@ -665,6 +673,15 @@ export async function captureScrollableSurvey(
   };
   const frames = [initial];
   const diagnosticFrames: ScrollSurveyFrame[] = [];
+  if (options.provenDocumentOrigin && !startViewportMatches(options.provenDocumentOrigin, first)) {
+    return result(
+      frames,
+      "stopped",
+      "start-viewport-unproven",
+      "The live viewport differs from the frozen document origin; Relay did not scroll it.",
+      true,
+    );
+  }
   if (!first.snapshot.inspectable) {
     return result(
       frames,

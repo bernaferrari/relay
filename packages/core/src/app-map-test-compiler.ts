@@ -400,6 +400,9 @@ export function compileAppMapScenarioTest(
       maxScrolls: Math.max(1, Math.min(12, baseline.viewports.length + 1)),
       baselineTrust,
       ...(baselineTrustReason ? { baselineTrustReason } : {}),
+      ...(baselineTrust === "trusted" && baseline.viewports[0]
+        ? { documentOrigin: structuredClone(baseline.viewports[0]) }
+        : {}),
       ...(forceRecaptureSurfaceScreenIds.has(screenId) ? { forceRecapture: true } : {}),
       baseline: {
         ...(baseline.composite

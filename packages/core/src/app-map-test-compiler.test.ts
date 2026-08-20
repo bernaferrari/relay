@@ -559,6 +559,19 @@ test("full-surface bindings compile one executable capture after reaching the de
       reason: "Stable settings content should be captured completely.",
       maxScrolls: 2,
       baselineTrust: "trusted",
+      documentOrigin: {
+        index: 0,
+        offsetY: 0,
+        appendedHeight: 0,
+        capturedAt: at,
+        width: 100,
+        height: 200,
+        screenshot: { ...evidence("shot", "image/png"), mime: "image/png" },
+        accessibilityTree: {
+          ...evidence("tree", "application/json"),
+          mime: "application/json",
+        },
+      },
       baseline: { compositeWidth: 100, compositeHeight: 200, semanticNodeCount: 12 },
     },
   ]);

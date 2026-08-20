@@ -1,6 +1,6 @@
 /** Canonical recipe contract shared by persistence, execution, HTTP, and UI. */
 import type { DestinationEvidenceSurface, ScreenIdentityObservation } from "./app-map.js";
-import type { SemanticRevealPlan } from "./scroll-surface.js";
+import type { ScrollSurfaceViewport, SemanticRevealPlan } from "./scroll-surface.js";
 export type HorizontalCoordinateAnchor = "left" | "center" | "right";
 export type VerticalCoordinateAnchor = "top" | "center" | "bottom";
 
@@ -436,6 +436,11 @@ export type RecipeStep = RecipeStepMetadata &
          * useful raw evidence, never a silently trusted baseline. */
         baselineTrust?: "trusted" | "recapture-required";
         baselineTrustReason?: string;
+        /** Frozen first viewport of a completed logical surface. It is an
+         * execution guard, not a fallback: a fresh survey may use fast origin
+         * restoration only after the live first viewport matches this exact
+         * semantic/visual checkpoint. */
+        documentOrigin?: ScrollSurfaceViewport;
         baseline?: {
           compositeWidth?: number;
           compositeHeight?: number;

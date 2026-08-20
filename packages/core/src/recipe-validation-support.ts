@@ -5,6 +5,8 @@ import type {
   RecordedNodeEvidence,
   RecordedSelectorCandidate,
   RecordedStepEvidence,
+  ScrollSurfaceEvidence,
+  ScrollSurfaceViewport,
   StepPoint,
   StepTarget,
   VerticalCoordinateAnchor,
@@ -409,6 +411,69 @@ function parseCaptureSurfaceStep(
   if (raw.baselineTrustReason !== undefined && !isString(raw.baselineTrustReason)) {
     throw stepErr(index, "capture-surface.baselineTrustReason must be a string");
   }
+  const documentOrigin =
+    isObject(raw.documentOrigin) && !Array.isArray(raw.documentOrigin)
+      ? raw.documentOrigin
+      : undefined;
+  if (raw.documentOrigin !== undefined && !documentOrigin) {
+    throw stepErr(index, "capture-surface.documentOrigin must be an object");
+  }
+  const originEvidence = <Mime extends "image/png" | "application/json">(
+    value: unknown,
+    mime: Mime,
+  ): (ScrollSurfaceEvidence & { mime: Mime }) | undefined => {
+    if (!isObject(value) || Array.isArray(value)) return undefined;
+    return isString(value.id) &&
+      isString(value.uri) &&
+      isString(value.sha256) &&
+      isString(value.mime) &&
+      value.mime === mime &&
+      isNumber(value.bytes) &&
+      value.bytes >= 0
+      ? {
+          id: value.id,
+          uri: value.uri,
+          sha256: value.sha256,
+          mime,
+          bytes: value.bytes,
+        }
+      : undefined;
+  };
+  let parsedDocumentOrigin: ScrollSurfaceViewport | undefined;
+  if (documentOrigin) {
+    const screenshot = originEvidence(documentOrigin.screenshot, "image/png");
+    const accessibilityTree = originEvidence(documentOrigin.accessibilityTree, "application/json");
+    const numbers = [
+      documentOrigin.index,
+      documentOrigin.offsetY,
+      documentOrigin.appendedHeight,
+      documentOrigin.capturedAt,
+      documentOrigin.width,
+      documentOrigin.height,
+    ];
+    if (
+      !screenshot ||
+      !accessibilityTree ||
+      !numbers.every(isNumber) ||
+      documentOrigin.index !== 0 ||
+      documentOrigin.offsetY !== 0 ||
+      documentOrigin.appendedHeight !== 0 ||
+      (documentOrigin.width as number) <= 0 ||
+      (documentOrigin.height as number) <= 0
+    ) {
+      throw stepErr(index, "capture-surface.documentOrigin must be a complete first viewport");
+    }
+    parsedDocumentOrigin = {
+      index: 0,
+      offsetY: 0,
+      appendedHeight: 0,
+      capturedAt: documentOrigin.capturedAt as number,
+      width: documentOrigin.width as number,
+      height: documentOrigin.height as number,
+      screenshot,
+      accessibilityTree,
+    };
+  }
   const baseline =
     isObject(raw.baseline) && !Array.isArray(raw.baseline) ? raw.baseline : undefined;
   return {
@@ -426,6 +491,11 @@ function parseCaptureSurfaceStep(
       : {}),
     ...(isString(raw.baselineTrustReason) && raw.baselineTrustReason.trim()
       ? { baselineTrustReason: raw.baselineTrustReason.trim() }
+      : {}),
+    ...(parsedDocumentOrigin
+      ? {
+          documentOrigin: parsedDocumentOrigin,
+        }
       : {}),
     ...(baseline && isNumber(baseline.semanticNodeCount)
       ? {

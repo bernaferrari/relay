@@ -7,6 +7,10 @@ export type ScrollSurfaceStopReason =
   | "dimension-changed"
   | "scroll-failed"
   | "restore-failed"
+  /** A force-recapture began from a viewport that could not be proven to be
+   * the frozen document origin. Relay deliberately performs no survey scroll
+   * in this state; the captured frame is a repair input, not a baseline. */
+  | "start-viewport-unproven"
   | "limit-reached";
 
 /** Immutable content-addressed evidence. The bytes live in Relay's evidence

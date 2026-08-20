@@ -1,8 +1,18 @@
+import { createHash } from "node:crypto";
 import type { Device } from "./device.js";
-import { replaceText, scrollDown, scrollUp, sleep, snapshot, typeText } from "./device.js";
+import {
+  replaceText,
+  scrollDown,
+  scrollUp,
+  sleep,
+  snapshot,
+  type SnapshotNode,
+  typeText,
+} from "./device.js";
 import { cooperativeCheckpoint } from "./control.js";
 import { now } from "./events.js";
-import { captureScrollableSurveyForTarget } from "./scrollable-survey.js";
+import { captureScrollableSurveyForTarget, type ScrollSurveyCapture } from "./scrollable-survey.js";
+import { readAuthoringEvidence } from "./authoring-evidence.js";
 import { persistLogicalScrollSurface } from "./logical-scroll-surface.js";
 import { listPersistedRuns } from "./runs.js";
 import {
@@ -324,6 +334,73 @@ export async function runScrollOrRevealStep(
   return runRevealStep(device, step, ctx);
 }
 
+function evidenceBytesMatch(bytes: Buffer, evidence: { sha256: string; bytes: number }): boolean {
+  return (
+    bytes.byteLength === evidence.bytes &&
+    createHash("sha256").update(bytes).digest("hex") === evidence.sha256
+  );
+}
+
+function isSnapshotNode(value: unknown): value is SnapshotNode {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Rehydrate only the immutable first viewport frozen into a trusted compiled
+ * surface step. Missing or malformed evidence simply disables the fast path;
+ * it never gives the runner a reason to scroll by approximation. */
+async function frozenDocumentOrigin(
+  step: Extract<RecipeStep, { kind: "capture-surface" }>,
+  serial: string,
+): Promise<ScrollSurveyCapture | undefined> {
+  const origin = step.documentOrigin;
+  if (!origin) return undefined;
+  const [image, tree] = await Promise.all([
+    readAuthoringEvidence(origin.screenshot.sha256),
+    readAuthoringEvidence(origin.accessibilityTree.sha256),
+  ]);
+  if (
+    !image ||
+    !tree ||
+    !evidenceBytesMatch(image, origin.screenshot) ||
+    !evidenceBytesMatch(tree, origin.accessibilityTree)
+  ) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(tree.toString("utf8"));
+  } catch {
+    return undefined;
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    !Array.isArray((parsed as { nodes?: unknown }).nodes) ||
+    !(parsed as { nodes: unknown[] }).nodes.every(isSnapshotNode)
+  ) {
+    return undefined;
+  }
+  const nodes = (parsed as { nodes: SnapshotNode[] }).nodes;
+  return {
+    screenshot: {
+      base64: image.toString("base64"),
+      width: origin.width,
+      height: origin.height,
+      capturedAt: origin.capturedAt,
+    },
+    snapshot: {
+      serial,
+      capturedAt: origin.capturedAt,
+      nodes,
+      interactive: nodes.filter((node) => node.hittable === true),
+      bounds: { width: origin.width, height: origin.height },
+      inspectable: true,
+      source: "sdk",
+      screenIdentity: observeScreenIdentity(nodes),
+    },
+  };
+}
+
 export async function runCaptureSurfaceStep(
   step: Extract<RecipeStep, { kind: "capture-surface" }>,
   ctx: RecipeStepContext,
@@ -431,10 +508,22 @@ export async function runCaptureSurfaceStep(
           },
         }
       : undefined;
+  const documentOrigin = await frozenDocumentOrigin(step, job.serial);
+  if (step.documentOrigin && !documentOrigin) {
+    ctx.log(
+      `surface: ${step.screenTitle} · frozen document origin is unavailable; using exact inverse restoration only`,
+    );
+  }
   const survey = await captureScrollableSurveyForTarget({
     serial: job.serial,
     ...(step.maxScrolls === undefined ? {} : { maxScrolls: step.maxScrolls }),
     ...(initialCapture ? { initialCapture } : {}),
+    ...(documentOrigin
+      ? {
+          provenDocumentOrigin: documentOrigin,
+          initialViewport: "proven-document-origin" as const,
+        }
+      : {}),
   });
   const surface = await persistLogicalScrollSurface({
     survey,

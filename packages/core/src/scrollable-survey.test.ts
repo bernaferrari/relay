@@ -790,6 +790,39 @@ test("uses bounded fast restoration only for an explicitly proven document origi
   assert.equal(exactUp, 0);
 });
 
+test("refuses a forced survey before scrolling when the frozen document origin differs", async () => {
+  const pages = [image(0), image(40), image(80)];
+  let page = 1;
+  let down = 0;
+  let up = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => captured(pages[page]!, page),
+      scrollDown: async () => {
+        down += 1;
+        page = Math.min(2, page + 1);
+      },
+      scrollUp: async () => {
+        up += 1;
+        page = Math.max(0, page - 1);
+      },
+      settle: async () => {},
+    },
+    {
+      maxScrolls: 2,
+      initialViewport: "proven-document-origin",
+      provenDocumentOrigin: captured(pages[0]!, 0),
+    },
+  );
+
+  assert.equal(result.reason, "start-viewport-unproven");
+  assert.equal(result.frames.length, 1);
+  assert.equal(result.restoredStartViewport, true);
+  assert.equal(down, 0);
+  assert.equal(up, 0);
+  assert.equal(page, 1);
+});
+
 test("does not use fast restoration from an arbitrary starting viewport", async () => {
   const pages = [image(0), image(40), image(80)];
   let page = 1;
