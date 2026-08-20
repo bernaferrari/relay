@@ -3,6 +3,7 @@ import { resolveStepPoint } from "@relay/protocol";
 import type {
   AuthoringAction,
   AuthoringCommitDestination,
+  AuthoringEvidence,
   AuthoringObservation,
   AuthoringTarget,
   ConnectionSourceAnchor,
@@ -41,6 +42,7 @@ export type AppMapRecordingInput = {
   evidenceIds: string[];
   evidenceUrisById?: Record<string, string>;
   evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
+  evidenceById?: Record<string, AuthoringEvidence>;
 };
 
 export type AppMapRecordingResult = { appMap: AppMap; connectionId: string };
@@ -51,6 +53,7 @@ export type AppMapScreenCaptureInput = {
   observation: AuthoringObservation;
   evidenceUrisById?: Record<string, string>;
   evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
+  evidenceById?: Record<string, AuthoringEvidence>;
   title?: string;
   handoff?: NonNullable<Screen["handoff"]>;
   position?: { x: number; y: number };
@@ -212,6 +215,7 @@ function capturedVariant(input: {
   targetProfile?: TargetProfile;
   evidenceUrisById?: Record<string, string>;
   evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
+  evidenceById?: Record<string, AuthoringEvidence>;
   at: number;
 }): ScreenVariant | undefined {
   const { map, screen, observation, at } = input;
@@ -250,6 +254,22 @@ function capturedVariant(input: {
     const uri = input.evidenceUrisById?.[id];
     return uri ? [uri] : [];
   })[0];
+  const rawAccessibilityTree = observation.evidenceIds.flatMap((id) => {
+    if (input.evidenceKindsById?.[id] !== "snapshot") return [];
+    const uri = input.evidenceUrisById?.[id];
+    const sha256 = uri?.match(/^relay-evidence:\/\/([a-f0-9]{64})$/u)?.[1];
+    const evidence = input.evidenceById?.[id];
+    return uri &&
+      sha256 &&
+      evidence?.uri === uri &&
+      evidence.sha256 === sha256 &&
+      evidence.mime === "application/json" &&
+      typeof evidence.bytes === "number" &&
+      Number.isSafeInteger(evidence.bytes) &&
+      evidence.bytes > 0
+      ? [{ id, uri, sha256, mime: "application/json" as const, bytes: evidence.bytes }]
+      : [];
+  })[0];
   const semantics = semanticObservation(observation);
   const variant: ScreenVariant = {
     ...entityScope(map),
@@ -266,6 +286,9 @@ function capturedVariant(input: {
     ...(screenshotUri || existing?.screenshotUri
       ? { screenshotUri: screenshotUri ?? existing!.screenshotUri }
       : {}),
+    ...(rawAccessibilityTree || existing?.rawAccessibilityTree
+      ? { rawAccessibilityTree: rawAccessibilityTree ?? existing!.rawAccessibilityTree }
+      : {}),
     createdAt: existing?.createdAt ?? at,
     updatedAt: at,
     ...(existing?.baseline ? { baseline: structuredClone(existing.baseline) } : {}),
@@ -281,6 +304,7 @@ function observeScreen(input: {
   targetProfile?: TargetProfile;
   evidenceUrisById?: Record<string, string>;
   evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
+  evidenceById?: Record<string, AuthoringEvidence>;
   at: number;
 }): void {
   const { map, screen } = input;
@@ -316,6 +340,7 @@ export function reviewAppMapScreenCapture(
     ...(input.targetProfile ? { targetProfile: input.targetProfile } : {}),
     ...(input.evidenceUrisById ? { evidenceUrisById: input.evidenceUrisById } : {}),
     ...(input.evidenceKindsById ? { evidenceKindsById: input.evidenceKindsById } : {}),
+    ...(input.evidenceById ? { evidenceById: input.evidenceById } : {}),
     at: context.at,
   });
   if (!proposedVariant) return undefined;
@@ -390,6 +415,7 @@ export function commitAppMapScreenCapture(
         ...(input.targetProfile ? { targetProfile: input.targetProfile } : {}),
         ...(input.evidenceUrisById ? { evidenceUrisById: input.evidenceUrisById } : {}),
         ...(input.evidenceKindsById ? { evidenceKindsById: input.evidenceKindsById } : {}),
+        ...(input.evidenceById ? { evidenceById: input.evidenceById } : {}),
         at: context.at,
       });
       if (options.createInitialFlow !== false && Object.keys(map.flows).length === 0) {
@@ -742,6 +768,7 @@ export function commitAppMapRecording(
         target: input.target,
         evidenceUrisById: input.evidenceUrisById,
         evidenceKindsById: input.evidenceKindsById,
+        evidenceById: input.evidenceById,
         at: context.at,
       });
 
@@ -791,6 +818,7 @@ export function commitAppMapRecording(
           target: input.target,
           evidenceUrisById: input.evidenceUrisById,
           evidenceKindsById: input.evidenceKindsById,
+          evidenceById: input.evidenceById,
           at: context.at,
         });
         destination = { kind: "screen", screenId: screen.id };

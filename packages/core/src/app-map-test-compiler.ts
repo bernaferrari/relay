@@ -45,6 +45,24 @@ export class AppMapTestCompileError extends Error {
 
 const MAX_COMPILED_STEPS = 4_096;
 
+function frozenRawAccessibilityTrees(
+  map: AppMap,
+): NonNullable<AppMapCompiledTest["rawAccessibilityTreesByScreenId"]> {
+  const byScreenId: NonNullable<AppMapCompiledTest["rawAccessibilityTreesByScreenId"]> = {};
+  for (const variant of Object.values(map.screenVariants)) {
+    const trees = variant.rawAccessibilityTree ? [variant.rawAccessibilityTree] : [];
+    const latestSurface = [...(variant.scrollSurfaces ?? [])].sort(
+      (left, right) => right.capturedAt - left.capturedAt,
+    )[0];
+    if (latestSurface)
+      trees.push(...latestSurface.viewports.map((viewport) => viewport.accessibilityTree));
+    if (!trees.length) continue;
+    const unique = new Map(trees.map((tree) => [tree.sha256, structuredClone(tree)]));
+    byScreenId[variant.screenId] = [...unique.values()];
+  }
+  return byScreenId;
+}
+
 type ReturnRequirementStep = Extract<RecipeStep, { kind: "expect-screen" }>;
 
 /** Resolve the actual repair direction represented by a runtime return marker.
@@ -690,6 +708,7 @@ export function compileAppMapScenarioTest(
       intentSchemaVersion: test.intentSchemaVersion,
     },
     surfaceBindings: structuredClone(test.surfaceBindings ?? []),
+    rawAccessibilityTreesByScreenId: frozenRawAccessibilityTrees(map),
     rootRecipeId,
     recipes: Object.fromEntries(
       Object.values(graph).map((recipe) => [

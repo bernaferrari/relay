@@ -1345,6 +1345,7 @@ export class AuthoringSessionStore {
               evidenceIds: [...new Set(evidence.map((item) => item.id))],
               evidenceUrisById: Object.fromEntries(evidence.map((item) => [item.id, item.uri])),
               evidenceKindsById: Object.fromEntries(evidence.map((item) => [item.id, item.kind])),
+              evidenceById: Object.fromEntries(evidence.map((item) => [item.id, item])),
             },
             {
               expectedRevision: session.expectedAppMapRevision,

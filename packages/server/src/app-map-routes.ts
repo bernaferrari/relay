@@ -279,6 +279,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
         observation: take.before!,
         evidenceUrisById: Object.fromEntries(take.evidence.map((item) => [item.id, item.uri])),
         evidenceKindsById: Object.fromEntries(take.evidence.map((item) => [item.id, item.kind])),
+        evidenceById: Object.fromEntries(take.evidence.map((item) => [item.id, item])),
         ...(body.title?.trim() ? { title: body.title.trim() } : {}),
         ...(body.position ? { position: body.position } : {}),
       };

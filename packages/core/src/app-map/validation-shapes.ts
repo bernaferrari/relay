@@ -260,6 +260,26 @@ export function assertVariant(variant: ScreenVariant, scope: AppMapScope, label:
       appMapFail("invalid-map", `${label}.screenshotUri must be included in evidenceUris`);
     }
   }
+  if (variant.rawAccessibilityTree !== undefined) {
+    const raw = variant.rawAccessibilityTree;
+    identifier(raw.id, `${label}.rawAccessibilityTree.id`);
+    requiredText(raw.uri, `${label}.rawAccessibilityTree.uri`, 2_048);
+    if (!raw.uri.startsWith("relay-evidence://") || !/^[a-f0-9]{64}$/u.test(raw.sha256)) {
+      appMapFail("invalid-map", `${label}.rawAccessibilityTree must be immutable Relay evidence`);
+    }
+    if (raw.mime !== "application/json" || !Number.isSafeInteger(raw.bytes) || raw.bytes <= 0) {
+      appMapFail(
+        "invalid-map",
+        `${label}.rawAccessibilityTree must describe a non-empty JSON tree`,
+      );
+    }
+    if (raw.uri !== `relay-evidence://${raw.sha256}`) {
+      appMapFail("invalid-map", `${label}.rawAccessibilityTree.uri must match its sha256`);
+    }
+    if (!variant.evidenceIds.includes(raw.id) || !variant.evidenceUris?.includes(raw.uri)) {
+      appMapFail("invalid-map", `${label}.rawAccessibilityTree must belong to the variant`);
+    }
+  }
   if (variant.scrollSurfaces !== undefined) {
     if (!Array.isArray(variant.scrollSurfaces)) {
       appMapFail("invalid-map", `${label}.scrollSurfaces must be an array`);

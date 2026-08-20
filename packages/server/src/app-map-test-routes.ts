@@ -20,7 +20,7 @@ import {
   submitAppMapProposal,
 } from "@relay/core";
 import type { SnapshotNode } from "@relay/core";
-import type { AppMap, OperationInput } from "@relay/protocol";
+import type { AppMapCompiledTest, OperationInput } from "@relay/protocol";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
 import { applyAppMapMutation, applyRebasableAppMapMutation } from "./app-map-route-mutations.js";
@@ -43,18 +43,15 @@ function snapshotNodes(value: unknown): SnapshotNode[] | undefined {
 /** Read only raw snapshots that are already map-owned. The compiler has
  * frozen the map revision first; this adds geometry to the offline verdict
  * without taking a device snapshot or consulting a live screen. */
-async function rawPreflightEvidence(appMap: AppMap): Promise<{
+async function rawPreflightEvidence(plan: AppMapCompiledTest): Promise<{
   rawObservationsByScreenId: Record<string, SnapshotNode[][]>;
 }> {
   const rawObservationsByScreenId: Record<string, SnapshotNode[][]> = {};
-  for (const variant of Object.values(appMap.screenVariants)) {
-    const latestSurface = [...(variant.scrollSurfaces ?? [])].sort(
-      (left, right) => right.capturedAt - left.capturedAt,
-    )[0];
-    if (!latestSurface) continue;
+  for (const [screenId, rawTrees] of Object.entries(plan.rawAccessibilityTreesByScreenId ?? {})) {
+    if (!rawTrees.length) continue;
     const observations = await Promise.all(
-      latestSurface.viewports.map(async (viewport) => {
-        const bytes = await readAuthoringEvidence(viewport.accessibilityTree.sha256);
+      rawTrees.map(async (tree) => {
+        const bytes = await readAuthoringEvidence(tree.sha256);
         if (!bytes) return undefined;
         try {
           return snapshotNodes(JSON.parse(bytes.toString("utf8")));
@@ -66,7 +63,7 @@ async function rawPreflightEvidence(appMap: AppMap): Promise<{
     const resolved = observations.filter((nodes): nodes is SnapshotNode[] =>
       Boolean(nodes?.length),
     );
-    if (resolved.length) rawObservationsByScreenId[variant.screenId] = resolved;
+    if (resolved.length) rawObservationsByScreenId[screenId] = resolved;
   }
   return { rawObservationsByScreenId };
 }
@@ -124,7 +121,7 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     if (!test) throw new HttpError(404, `Test ${testCompile.testId} not found`);
     try {
       const plan = compileAppMapTest(appMap, test).plan;
-      const evidence = await rawPreflightEvidence(appMap);
+      const evidence = await rawPreflightEvidence(plan);
       json(response, 200, { plan, preflight: preflightCompiledAppMapTestOffline(plan, evidence) });
     } catch (error) {
       if (error instanceof AppMapTestCompileError) {

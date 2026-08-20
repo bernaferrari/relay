@@ -58,6 +58,7 @@ export function buildTeachScreenCapture(
     observation,
     evidenceUrisById: Object.fromEntries(take.evidence.map((item) => [item.id, item.uri])),
     evidenceKindsById: Object.fromEntries(take.evidence.map((item) => [item.id, item.kind])),
+    evidenceById: Object.fromEntries(take.evidence.map((item) => [item.id, item])),
     ...(body.title?.trim() ? { title: body.title.trim() } : {}),
     ...(body.handoff
       ? {

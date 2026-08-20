@@ -138,6 +138,39 @@ test("captures an entry screen without inventing a connection", () => {
   );
 });
 
+test("captures the immutable raw accessibility tree for offline selector proof", () => {
+  const snapshotSha = "2".repeat(64);
+  const result = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target: { kind: "device", platform: "android", targetId: "pixel" },
+      observation: observation("settings", beforeFingerprint, "settings-tree"),
+      evidenceUrisById: { "settings-tree": `relay-evidence://${snapshotSha}` },
+      evidenceKindsById: { "settings-tree": "snapshot" },
+      evidenceById: {
+        "settings-tree": {
+          id: "settings-tree",
+          kind: "snapshot",
+          capturedAt: 1,
+          uri: `relay-evidence://${snapshotSha}`,
+          mime: "application/json",
+          bytes: 128,
+          sha256: snapshotSha,
+        },
+      },
+    },
+    context("capture-settings-tree"),
+    { createInitialFlow: false },
+  );
+  assert.deepEqual(result.appMap.screenVariants[result.variantId]?.rawAccessibilityTree, {
+    id: "settings-tree",
+    uri: `relay-evidence://${snapshotSha}`,
+    sha256: snapshotSha,
+    mime: "application/json",
+    bytes: 128,
+  });
+});
+
 test("a taught screen preserves an intentionally flow-free graph", () => {
   const result = commitAppMapScreenCapture(
     mapFixture(),

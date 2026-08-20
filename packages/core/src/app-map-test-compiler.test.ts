@@ -247,6 +247,7 @@ test("scenario tests compile all eight intent kinds deterministically with prove
 
 test("compiled graph Tests retain a conservative logical-surface capture policy", () => {
   const current = fixture();
+  const rawTreeSha = "a".repeat(64);
   current.screens.cart!.variantIds = ["cart-en"];
   current.screenVariants["cart-en"] = {
     ...scope,
@@ -267,7 +268,15 @@ test("compiled graph Tests retain a conservative logical-surface capture policy"
       reason: "Account-specific content stays viewport-only.",
       decidedAt: at,
     },
-    evidenceIds: [],
+    evidenceIds: ["cart-tree"],
+    evidenceUris: [`relay-evidence://${rawTreeSha}`],
+    rawAccessibilityTree: {
+      id: "cart-tree",
+      uri: `relay-evidence://${rawTreeSha}`,
+      sha256: rawTreeSha,
+      mime: "application/json",
+      bytes: 42,
+    },
     createdAt: at,
     updatedAt: at,
   };
@@ -284,6 +293,11 @@ test("compiled graph Tests retain a conservative logical-surface capture policy"
   ];
   const compiled = compileAppMapTest(current, work);
   assert.deepEqual(compiled.plan.surfaceBindings, work.surfaceBindings);
+  assert.deepEqual(compiled.plan.rawAccessibilityTreesByScreenId, {
+    cart: [current.screenVariants["cart-en"]!.rawAccessibilityTree],
+  });
+  current.screenVariants["cart-en"]!.rawAccessibilityTree!.bytes = 999;
+  assert.equal(compiled.plan.rawAccessibilityTreesByScreenId!.cart![0]!.bytes, 42);
 });
 
 test("full-surface bindings compile one executable capture after reaching the destination", () => {

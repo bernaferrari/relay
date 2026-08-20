@@ -20,6 +20,13 @@ export type ScrollSurfaceEvidence = {
   bytes: number;
 };
 
+/** One immutable raw accessibility tree. This is shared by a normal Screen
+ * Variant and each viewport of a logical scroll surface, so offline planning
+ * can consume either without inventing a lossy second evidence format. */
+export type RawAccessibilityTreeEvidence = ScrollSurfaceEvidence & {
+  mime: "application/json";
+};
+
 export type ScrollSurfaceViewport = {
   index: number;
   offsetY: number;
@@ -28,7 +35,7 @@ export type ScrollSurfaceViewport = {
   width: number;
   height: number;
   screenshot: ScrollSurfaceEvidence & { mime: "image/png" };
-  accessibilityTree: ScrollSurfaceEvidence & { mime: "application/json" };
+  accessibilityTree: RawAccessibilityTreeEvidence;
 };
 
 export type ScrollSurfaceCapturePolicy = {

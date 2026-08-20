@@ -9,7 +9,11 @@ import type {
 } from "./connection-navigation.js";
 import type { TargetProfile } from "./target-contract.js";
 import type { ScreenConsolidationPreview } from "./screen-consolidation.js";
-import type { LogicalScrollSurface, ScrollSurfaceCapturePolicy } from "./scroll-surface.js";
+import type {
+  LogicalScrollSurface,
+  RawAccessibilityTreeEvidence,
+  ScrollSurfaceCapturePolicy,
+} from "./scroll-surface.js";
 export type {
   ConnectionNavigationContract,
   ConnectionNavigationTarget,
@@ -20,6 +24,7 @@ export type {
 export type {
   LogicalScrollSurface,
   LogicalScrollSurfaceImport,
+  RawAccessibilityTreeEvidence,
   ScrollSurfaceCapturePolicy,
   ScrollSurfaceEvidence,
   ScrollSurfaceSemanticAnchor,
@@ -155,6 +160,11 @@ export type ScreenVariant = AppMapEntity & {
    * remain separate from short stable identifiers so maps are both strict and
    * reopenable without renderer-owned blob URLs. */
   evidenceUris?: string[];
+  /** The immutable raw accessibility snapshot that produced `observation`.
+   * Unlike the normalized observation this retains hierarchy and bounds, so
+   * offline planning can prove row relations and duplicate labels without a
+   * connected target. Historical variants may legitimately omit it. */
+  rawAccessibilityTree?: RawAccessibilityTreeEvidence;
   /** The canonical visual preview. Evidence lists may also contain semantic
    * snapshots or video, so renderers must never guess from array order. */
   screenshotUri?: string;

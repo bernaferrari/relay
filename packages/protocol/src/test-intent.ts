@@ -1,6 +1,6 @@
 import type { AppMapCapturePolicy, AppMapEntity, AssertionSpec } from "./app-map.js";
 import type { HumanCheckpointReason, RecipeStep, StepTarget } from "./recipes.js";
-import type { ScrollSurfaceTestBinding } from "./scroll-surface.js";
+import type { RawAccessibilityTreeEvidence, ScrollSurfaceTestBinding } from "./scroll-surface.js";
 
 export const APP_MAP_TEST_INTENT_SCHEMA_VERSION = 1 as const;
 
@@ -271,6 +271,10 @@ export type AppMapCompiledTest = {
   appMapRevision: number;
   test: Pick<AppMapScenarioTest, "id" | "name" | "kind" | "intentSchemaVersion">;
   surfaceBindings?: ScrollSurfaceTestBinding[];
+  /** Content-addressed raw AX evidence frozen at compile time. This gives
+   * offline preflight the exact same source geometry that authored this plan;
+   * it must never re-read a newer mutable Variant instead. */
+  rawAccessibilityTreesByScreenId?: Record<string, RawAccessibilityTreeEvidence[]>;
   rootRecipeId: string;
   recipes: Record<
     string,
