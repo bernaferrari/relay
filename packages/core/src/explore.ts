@@ -27,6 +27,7 @@ import { observeLocaleStableIdentity } from "./screen-identity.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { captureSnapshot, formatSnapshotTree, interact } from "./workspace.js";
 import { devicePlatformForSerial } from "./workspace.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 
 /** Destructive / external rows agents and crawls should skip by default. */
 export function isUnsafeExploreControlText(value: string): boolean {
@@ -170,12 +171,14 @@ async function tryPressLabel(device: Device, label: string): Promise<boolean> {
     await pressLabel(device, label);
     await sleep(450, device);
     return true;
-  } catch {
+  } catch (error) {
+    rethrowIosMutationOutcomeUnknown(error);
     try {
       await findClick(device, label);
       await sleep(450, device);
       return true;
-    } catch {
+    } catch (fallbackError) {
+      rethrowIosMutationOutcomeUnknown(fallbackError);
       return false;
     }
   }
@@ -240,7 +243,8 @@ async function dismissTowardParentInContext(
     await pressKey(device, "back");
     await sleep(500, device);
     return "key";
-  } catch {
+  } catch (error) {
+    rethrowIosMutationOutcomeUnknown(error);
     await interact(
       {
         kind: "swipe",
@@ -348,7 +352,8 @@ async function scrollCollectControlsInContext<T extends { stableKey?: string; la
     try {
       await scrollDown(device, 0.55);
       completedScrolls += 1;
-    } catch {
+    } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       break;
     }
     await sleep(350, device);
@@ -367,7 +372,8 @@ async function scrollCollectControlsInContext<T extends { stableKey?: string; la
           { serial: options.serial },
         );
         await sleep(300, device);
-      } catch {
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
         /* ignore */
       }
       break;
@@ -387,7 +393,8 @@ async function scrollCollectControlsInContext<T extends { stableKey?: string; la
     try {
       await scrollUp(device, 0.55);
       await sleep(250, device);
-    } catch {
+    } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       break;
     }
   }

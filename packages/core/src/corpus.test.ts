@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -8,6 +8,7 @@ import type { SnapshotNode } from "./device.js";
 import {
   analyzeCorpus,
   buildCorpusCoverage,
+  corpusCrawlLoopsForTests,
   createCorpusReplaySession,
   createCorpusSession,
   exportCorpusPack,
@@ -18,9 +19,11 @@ import {
   readCorpusSession,
   recordCorpusScreen,
   resetCorpusCrawlsForTests,
+  setCorpusCrawlRuntimeForTests,
   setCorpusStatus,
   titleFromNodes,
 } from "./corpus.js";
+import { IosMutationOutcomeUnknownError, type Device } from "./device.js";
 import {
   corpusControlStableKey,
   observeLocaleStableIdentity,
@@ -104,6 +107,76 @@ function settingsNodes(language: "en" | "pt"): SnapshotNode[] {
       hittable: true,
     },
   ];
+}
+
+function corpusUnknownMutation(operation: "press" | "scroll" = "press") {
+  return new IosMutationOutcomeUnknownError(
+    {
+      sequence: 1,
+      operation,
+      nativeAttempts: 1,
+      outcome: "outcome-unknown",
+      retry: {
+        attempts: 0,
+        decision: "blocked",
+        reason: "native-command-outcome-unknown",
+      },
+      intervention: {
+        required: true,
+        action: "capture-current-screen-before-any-retry",
+      },
+      at: 1,
+    },
+    new Error("lost native acknowledgement"),
+  );
+}
+
+const queuedControlNodes: SnapshotNode[] = [
+  {
+    index: 0,
+    type: "StaticText",
+    role: "header",
+    label: "Settings",
+    identifier: "settings.title",
+    visibleToUser: true,
+    hittable: false,
+  },
+  {
+    index: 1,
+    type: "Button",
+    role: "button",
+    label: "First row",
+    identifier: "settings.first",
+    visibleToUser: true,
+    hittable: true,
+  },
+  {
+    index: 2,
+    type: "Button",
+    role: "button",
+    label: "Second row",
+    identifier: "settings.second",
+    visibleToUser: true,
+    hittable: true,
+  },
+];
+
+async function captureQueuedControlRoot(input: {
+  sessionId: string;
+  locale: string;
+  depth: number;
+  path: string[];
+  pathKeys: string[];
+}) {
+  return await recordCorpusScreen({
+    sessionId: input.sessionId,
+    nodes: queuedControlNodes,
+    locale: input.locale,
+    depth: input.depth,
+    path: input.path,
+    pathKeys: input.pathKeys,
+    makeCurrent: true,
+  });
 }
 
 test("locale-stable identity collapses translated settings screens", () => {
@@ -408,6 +481,138 @@ test("corpusControls use locale-independent structure when Compose omits identif
   assert.equal(english?.stableKey, italian?.stableKey);
   assert.equal(english?.label, "Usage");
   assert.equal(italian?.label, "Utilizzo");
+});
+
+test("an unknown iOS queued crawl control is terminal before the next queued row or backtrack", async () => {
+  await workspace();
+  const session = await createCorpusSession({
+    name: "Unknown queued control",
+    targetId: "ios-corpus-queued",
+    scope: { locales: ["en"], maxDepth: 2 },
+  });
+  const physical: string[] = [];
+  let backtracks = 0;
+  setCorpusCrawlRuntimeForTests({
+    captureCurrent: captureQueuedControlRoot,
+    collectControlsWithScroll: async () => ({ nodes: queuedControlNodes, controls: [] }),
+    interactCorpusControl: async ({ control }) => {
+      physical.push(control.label);
+      throw corpusUnknownMutation("press");
+    },
+    backtrack: async () => {
+      backtracks += 1;
+    },
+  });
+
+  await assert.rejects(
+    corpusCrawlLoopsForTests.crawlLocale({
+      session,
+      locale: "en",
+      serial: "ios-corpus-queued",
+      device: {} as Device,
+      recordPlan: [],
+    }),
+    IosMutationOutcomeUnknownError,
+  );
+
+  assert.deepEqual(physical, ["First row"]);
+  assert.equal(backtracks, 0);
+});
+
+test("an unknown iOS full-surface collection stops before crawl taps or inverse scroll recovery", async () => {
+  await workspace();
+  const session = await createCorpusSession({
+    name: "Unknown surface collection",
+    targetId: "ios-corpus-scroll",
+    scope: { locales: ["en"], maxDepth: 2 },
+  });
+  const physical: string[] = [];
+  setCorpusCrawlRuntimeForTests({
+    captureCurrent: captureQueuedControlRoot,
+    collectControlsWithScroll: async () => {
+      physical.push("scroll-down");
+      throw corpusUnknownMutation("scroll");
+    },
+    interactCorpusControl: async ({ control }) => {
+      physical.push(`tap:${control.label}`);
+      return control;
+    },
+    backtrack: async () => {
+      physical.push("backtrack");
+    },
+  });
+
+  await assert.rejects(
+    corpusCrawlLoopsForTests.crawlLocale({
+      session,
+      locale: "en",
+      serial: "ios-corpus-scroll",
+      device: {} as Device,
+      recordPlan: [],
+    }),
+    IosMutationOutcomeUnknownError,
+  );
+
+  assert.deepEqual(physical, ["scroll-down"]);
+});
+
+test("an unknown iOS map replay action is terminal before later plan actions", async () => {
+  await workspace();
+  const session = await createCorpusSession({
+    name: "Unknown replay action",
+    targetId: "ios-corpus-replay",
+    scope: { locales: ["en", "it"], mapLocale: "en", maxDepth: 2 },
+  });
+  const physical: string[] = [];
+  setCorpusCrawlRuntimeForTests({
+    captureCurrent: captureQueuedControlRoot,
+    collectControlsWithScroll: async () => ({ nodes: queuedControlNodes, controls: [] }),
+    interactCorpusControl: async ({ control }) => {
+      physical.push(control.label);
+      throw corpusUnknownMutation("press");
+    },
+    backtrack: async () => {
+      physical.push("backtrack");
+    },
+  });
+
+  await assert.rejects(
+    corpusCrawlLoopsForTests.replayLocalePlan({
+      session,
+      locale: "it",
+      serial: "ios-corpus-replay",
+      device: {} as Device,
+      plan: {
+        mappedLocale: "en",
+        mappedAt: 1,
+        actions: [
+          {
+            kind: "open",
+            stableKey: "id:settings.first",
+            label: "First row",
+            target: { identifier: "settings.first" },
+            depth: 0,
+            pathKeys: ["id:settings.first"],
+            path: ["First row"],
+            fromCanonicalKey: "settings",
+          },
+          {
+            kind: "open",
+            stableKey: "id:settings.second",
+            label: "Second row",
+            target: { identifier: "settings.second" },
+            depth: 0,
+            pathKeys: ["id:settings.second"],
+            path: ["Second row"],
+            fromCanonicalKey: "settings",
+          },
+        ],
+      },
+    }),
+    IosMutationOutcomeUnknownError,
+  );
+
+  assert.deepEqual(physical, ["First row"]);
 });
 
 test("corpusControls ignore Android system UI and collapse row subtitles into one action", () => {
@@ -721,6 +926,59 @@ test("an interrupted or stopped corpus is presented as resumable", async () => {
   await setCorpusStatus(session.id, "stopped");
   const resumed = await setCorpusStatus(session.id, "running");
   assert.equal(resumed.status, "running");
+});
+
+test("a terminal iOS repair freezes its reason and read-only evidence in the partial pack", async () => {
+  const root = await workspace();
+  const session = await createCorpusSession({
+    name: "Terminal repair pack",
+    targetId: "ios-terminal-pack",
+    scope: { locales: ["en"], maxDepth: 1 },
+  });
+  const repairDir = join(root, ".relay", "corpus", session.id, "repair");
+  await mkdir(repairDir, { recursive: true });
+  await writeFile(join(repairDir, "ios-mutation-1.png"), Buffer.from("terminal pixels"));
+  await writeFile(join(repairDir, "ios-mutation-1.accessibility.json"), '{"nodes":[]}');
+
+  const terminalSession = (await readCorpusSession(session.id))!;
+  terminalSession.status = "failed";
+  terminalSession.error = "Repair required — iOS press acknowledgement unknown";
+  terminalSession.terminal = {
+    code: "ios-mutation-outcome-unknown",
+    message: "The iOS press may already have reached the device.",
+    recordedAt: 1,
+    operation: "press",
+    nativeAttempts: 1,
+    nextAction: "capture-current-screen-before-any-retry",
+    evidence: {
+      corpusSessionId: session.id,
+      screenshotPath: "repair/ios-mutation-1.png",
+      accessibilityPath: "repair/ios-mutation-1.accessibility.json",
+    },
+  };
+  await writeFile(
+    join(root, ".relay", "corpus", `${session.id}.json`),
+    `${JSON.stringify(terminalSession, null, 2)}\n`,
+    "utf8",
+  );
+
+  const exported = await exportCorpusPack(session.id);
+  const manifest = JSON.parse(
+    await readFile(join(exported.rootDir, "manifest.json"), "utf8"),
+  ) as typeof exported.manifest;
+
+  assert.equal(manifest.execution.status, "failed");
+  assert.equal(manifest.execution.terminal?.code, "ios-mutation-outcome-unknown");
+  assert.equal(manifest.execution.terminal?.evidence.corpusSessionId, session.id);
+  assert.equal(existsSync(join(exported.rootDir, "repair", "ios-mutation-1.png")), true);
+  assert.equal(
+    existsSync(join(exported.rootDir, "repair", "ios-mutation-1.accessibility.json")),
+    true,
+  );
+  assert.match(
+    await readFile(join(exported.rootDir, "README.md"), "utf8"),
+    /Repair required[\s\S]*unknown outcome/iu,
+  );
 });
 
 test("corpus pack freezes execution provenance and verifies every screenshot", async () => {

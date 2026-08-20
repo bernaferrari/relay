@@ -10,7 +10,7 @@ import {
   scrollContentFitsViewport,
   scrollCollectControls,
 } from "./explore.js";
-import type { Device, SnapshotNode } from "./device.js";
+import { IosMutationOutcomeUnknownError, type Device, type SnapshotNode } from "./device.js";
 
 test("explore chrome filters sheet affordances and language switcher", () => {
   assert.equal(isExploreChromeLabel("Close"), true);
@@ -140,6 +140,77 @@ test("scrollCollect restores every viewport it traverses", async () => {
     collected.controls.map((control) => control.label),
     ["First", "Second"],
   );
+});
+
+test("an unknown iOS collection scroll is terminal before inverse-scroll cleanup", async () => {
+  const directions: string[] = [];
+  const device = {
+    interactions: {
+      scroll: (input: { direction: string }) => {
+        directions.push(input.direction);
+        return Promise.reject(new Error("lost native acknowledgement"));
+      },
+    },
+    command: { wait: () => Promise.resolve({}) },
+    capture: {
+      snapshot: () => Promise.resolve({ nodes: [{ type: "Button", label: "First" }] }),
+    },
+  } as unknown as Device;
+
+  await assert.rejects(
+    scrollCollectControls({
+      serial: "explore-scroll-unknown",
+      platform: "ios",
+      device,
+      maxScrolls: 2,
+      extract: (nodes) =>
+        nodes.map((node) => ({ label: node.label ?? "", stableKey: node.label ?? "" })),
+    }),
+    IosMutationOutcomeUnknownError,
+  );
+
+  assert.deepEqual(directions, ["down"]);
+});
+
+test("an unknown iOS dismiss press never falls through to another dismissal target", async () => {
+  const commands: string[] = [];
+  const device = {
+    interactions: {
+      find: (input: { action?: string }) => {
+        commands.push(input.action === "exists" ? "exists-back" : "find-fallback");
+        return Promise.resolve({});
+      },
+      press: () => {
+        commands.push("press-back");
+        return Promise.reject(new Error("lost native acknowledgement"));
+      },
+    },
+    command: {
+      back: () => {
+        commands.push("key-back");
+        return Promise.resolve({});
+      },
+      wait: () => Promise.resolve({}),
+    },
+    capture: {
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [{ type: "Button", label: "Back", hittable: true, visibleToUser: true }],
+        }),
+    },
+  } as unknown as Device;
+
+  await assert.rejects(
+    dismissTowardParent({
+      serial: "explore-dismiss-unknown",
+      platform: "ios",
+      device,
+      parentTitles: [],
+    }),
+    IosMutationOutcomeUnknownError,
+  );
+
+  assert.deepEqual(commands, ["exists-back", "press-back"]);
 });
 
 test("scrollCollect does not scroll an Android list whose final row is already visible", async () => {

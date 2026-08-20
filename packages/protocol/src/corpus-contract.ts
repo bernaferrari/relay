@@ -41,6 +41,32 @@ export type CorpusScope = {
 
 export type CorpusStatus = "draft" | "running" | "paused" | "complete" | "stopped" | "failed";
 
+/**
+ * A physical iOS command reached an ambiguous acknowledgement boundary.
+ *
+ * Corpus crawling is allowed to skip ordinary locator misses, but an iOS
+ * command with an unknown outcome is different: the device may already be on
+ * another screen.  Keep the exact command and the most recent read-only frame
+ * together so a person or agent can inspect it before explicitly resuming.
+ */
+export type CorpusTerminalRepair = {
+  code: "ios-mutation-outcome-unknown";
+  message: string;
+  recordedAt: number;
+  operation: string;
+  nativeAttempts: 1;
+  nextAction: "capture-current-screen-before-any-retry";
+  evidence: {
+    corpusSessionId: string;
+    /** Read-only frame captured after the ambiguous command, when available. */
+    lastCapturedScreenId?: string;
+    /** Relative, frozen raster under the corpus session and partial pack. */
+    screenshotPath?: string;
+    /** Relative normalized tree captured beside the terminal raster. */
+    accessibilityPath?: string;
+  };
+};
+
 export type CorpusNavStep =
   | {
       kind: "tap";
@@ -217,6 +243,8 @@ export type CorpusPackManifest = {
     app?: string;
     completedLocales: string[];
     mapPlan?: CorpusMapPlan;
+    /** Terminal repair context is preserved with the frozen partial pack. */
+    terminal?: CorpusTerminalRepair;
   };
   screens: Array<{
     id: string;
@@ -258,6 +286,8 @@ export type CorpusSession = {
   /** Relative directory under .relay/corpus/<id>/pack when exported. */
   packRoot?: string;
   error?: string;
+  /** A terminal, review-required iOS mutation outcome; never auto-retried. */
+  terminal?: CorpusTerminalRepair;
 };
 
 export type CorpusCoverageItem = {

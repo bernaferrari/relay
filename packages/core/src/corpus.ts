@@ -27,6 +27,7 @@ import type {
   CorpusTransition,
   CorpusScreen,
   TargetProfile,
+  CorpusTerminalRepair,
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import {
@@ -46,6 +47,10 @@ import {
 } from "./device.js";
 import { dismissTowardParent, scrollCollectControls } from "./explore.js";
 import { hardStopDeviceSession } from "./control.js";
+import {
+  IosMutationOutcomeUnknownError,
+  rethrowIosMutationOutcomeUnknown,
+} from "./ios-mutation-policy.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { publish } from "./events.js";
 import { currentOperationContext } from "./operation-context.js";
@@ -127,6 +132,13 @@ function screenAssetPath(sessionId: string, screenId: string): string {
 function screenAccessibilityAssetPath(sessionId: string, screenId: string): string {
   if (!/^screen-[A-Za-z0-9-]+$/.test(screenId)) throw new Error("invalid corpus screen id");
   return join(sessionDir(sessionId), "screens", `${screenId}.accessibility.json`);
+}
+
+function terminalEvidencePath(sessionId: string, name: string): string {
+  if (!/^[a-z0-9-]+\.(?:png|json)$/i.test(name)) {
+    throw new Error("invalid corpus terminal evidence name");
+  }
+  return join(sessionDir(sessionId), "repair", name);
 }
 
 function emitCorpus(session: CorpusSession, created = false): void {
@@ -786,6 +798,25 @@ export async function exportCorpusPack(sessionId: string): Promise<{
   const screens: CorpusPackManifest["screens"] = [];
   const byCanonicalKey: CorpusPackManifest["byCanonicalKey"] = {};
 
+  // A terminal iOS acknowledgement is actionable only when its review frame
+  // travels with the partial pack. Keep the logical pointer stable: it is
+  // relative to both the session directory and the exported pack.
+  for (const path of [
+    session.terminal?.evidence.screenshotPath,
+    session.terminal?.evidence.accessibilityPath,
+  ]) {
+    if (!path) continue;
+    try {
+      const source = join(sessionDir(session.id), path);
+      const destination = join(rootDir, path);
+      await mkdir(join(destination, ".."), { recursive: true });
+      await copyFile(source, destination);
+    } catch {
+      // The existing session is still useful if a best-effort read-only frame
+      // was unavailable. Do not turn a terminal repair into a second failure.
+    }
+  }
+
   for (const screen of session.screens) {
     if (!screen.screenshotPath) continue;
     const relative = packRelativePath(screen);
@@ -854,6 +885,7 @@ export async function exportCorpusPack(sessionId: string): Promise<{
       ...(session.scope.app ? { app: session.scope.app } : {}),
       completedLocales: [...(session.progress.completedLocales ?? [])],
       ...(session.mapPlan ? { mapPlan: session.mapPlan } : {}),
+      ...(session.terminal ? { terminal: structuredClone(session.terminal) } : {}),
     },
     screens,
     byCanonicalKey,
@@ -875,6 +907,15 @@ export async function exportCorpusPack(sessionId: string): Promise<{
       "`manifest.json` freezes execution provenance, SHA-256 digests, and groups the same logical screen across languages under `byCanonicalKey`.",
       `Findings: ${analysis.critical} critical · ${analysis.warnings} warnings across ${analysis.affectedScreens} screens.`,
       "`analysis.json` contains deterministic missing-screen, missing-control, unchanged-locale, and possible-untranslated-text findings.",
+      ...(session.terminal
+        ? [
+            "",
+            "## Repair required",
+            "",
+            session.terminal.message,
+            "This pack stopped after one iOS command with an unknown outcome. Review `manifest.json` and the `repair/` evidence before explicitly choosing a retry or repair.",
+          ]
+        : []),
       "",
     ].join("\n"),
     "utf8",
@@ -959,7 +1000,8 @@ async function runNavSteps(
       } else if (step.target.label) {
         try {
           await pressLabel(device, step.target.label);
-        } catch {
+        } catch (error) {
+          rethrowIosMutationOutcomeUnknown(error);
           await pressMatchingText(device, step.target.label);
         }
       } else if (step.target.point) {
@@ -969,6 +1011,7 @@ async function runNavSteps(
         );
       }
     } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       if (!softIdentifier) throw error;
     }
     await sleep(500, device);
@@ -1047,6 +1090,74 @@ async function captureCurrent(input: {
   }
 }
 
+/**
+ * An unknown iOS mutation is a terminal repair boundary, but read-only pixels
+ * and a normalized tree are still safe and make that boundary useful away from
+ * the attached device. Keep them outside normal screen traversal: the current
+ * destination is deliberately not guessed after an ambiguous command.
+ */
+async function captureCorpusTerminalEvidence(
+  session: CorpusSession,
+  serial: string,
+): Promise<CorpusTerminalRepair["evidence"]> {
+  const capturedAt = Date.now();
+  const name = `ios-mutation-${capturedAt}`;
+  const evidence: CorpusTerminalRepair["evidence"] = {
+    corpusSessionId: session.id,
+    ...(session.currentScreenId ? { lastCapturedScreenId: session.currentScreenId } : {}),
+  };
+
+  try {
+    await mkdir(join(sessionDir(session.id), "repair"), { recursive: true });
+    const screenshot = await captureScreenshot({
+      serial,
+      ephemeral: true,
+      includeScreenMatch: false,
+    });
+    try {
+      const screenshotPath = `repair/${name}.png`;
+      await copyFile(screenshot.path, terminalEvidencePath(session.id, `${name}.png`));
+      evidence.screenshotPath = screenshotPath;
+    } finally {
+      await cleanupScreenshot(screenshot.path);
+    }
+  } catch {
+    // The command ambiguity is primary. A disconnected/locked target must not
+    // hide it just because pixels were unavailable afterward.
+  }
+
+  try {
+    const snapshot = await captureSnapshot({ serial });
+    const accessibilityPath = `repair/${name}.accessibility.json`;
+    await writeFile(
+      terminalEvidencePath(session.id, `${name}.accessibility.json`),
+      `${JSON.stringify(snapshot, null, 2)}\n`,
+      "utf8",
+    );
+    evidence.accessibilityPath = accessibilityPath;
+  } catch {
+    // iOS snapshots are intentionally bounded and may be pixels-only. The
+    // raster above plus the last durable corpus frame remain useful evidence.
+  }
+
+  return evidence;
+}
+
+function terminalRepairFromIosMutation(
+  error: IosMutationOutcomeUnknownError,
+  evidence: CorpusTerminalRepair["evidence"],
+): CorpusTerminalRepair {
+  return {
+    code: "ios-mutation-outcome-unknown",
+    message: error.message,
+    recordedAt: Date.now(),
+    operation: error.iosMutation.operation,
+    nativeAttempts: error.iosMutation.nativeAttempts,
+    nextAction: "capture-current-screen-before-any-retry",
+    evidence,
+  };
+}
+
 function isCancelled(sessionId: string): boolean {
   return activeCorpusCrawls.get(sessionId)?.cancel === true;
 }
@@ -1063,11 +1174,13 @@ async function backtrack(serial: string, device: Device, app?: string): Promise<
         await openApp(device, app, { relaunch: false });
         await sleep(700, device);
       }
-    } catch {
+    } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       try {
         await openApp(device, app, { relaunch: false });
         await sleep(700, device);
-      } catch {
+      } catch (recoveryError) {
+        rethrowIosMutationOutcomeUnknown(recoveryError);
         /* keep going */
       }
     }
@@ -1090,6 +1203,34 @@ async function collectControlsWithScroll(
   return { nodes: result.nodes, controls: result.controls };
 }
 
+/**
+ * The corpus loop has one device-facing seam so its terminal policy can be
+ * regression-tested with an in-memory iPad. Production always uses the live
+ * functions below; this is intentionally not a second crawler implementation.
+ */
+export type CorpusCrawlRuntime = {
+  captureCurrent: typeof captureCurrent;
+  collectControlsWithScroll: typeof collectControlsWithScroll;
+  interactCorpusControl: typeof interactCorpusControl;
+  backtrack: typeof backtrack;
+};
+
+const liveCorpusCrawlRuntime: CorpusCrawlRuntime = {
+  captureCurrent,
+  collectControlsWithScroll,
+  interactCorpusControl,
+  backtrack,
+};
+
+let corpusCrawlRuntime: CorpusCrawlRuntime = liveCorpusCrawlRuntime;
+
+/** Test seam for the one production corpus loop; no device command is faked in production. */
+export function setCorpusCrawlRuntimeForTests(
+  runtime: Partial<CorpusCrawlRuntime> | undefined,
+): void {
+  corpusCrawlRuntime = runtime ? { ...liveCorpusCrawlRuntime, ...runtime } : liveCorpusCrawlRuntime;
+}
+
 async function crawlLocale(input: {
   session: CorpusSession;
   locale: string;
@@ -1100,6 +1241,7 @@ async function crawlLocale(input: {
 }): Promise<CorpusSession> {
   let session = input.session;
   const { locale, serial, device } = input;
+  const runtime = corpusCrawlRuntime;
   const app = session.scope.app;
   const visitedKeys = new Set(
     session.screens
@@ -1112,7 +1254,7 @@ async function crawlLocale(input: {
       .map((transition) => `${transition.fromScreenId}:${transition.stableKey}`),
   );
 
-  const root = await captureCurrent({
+  const root = await runtime.captureCurrent({
     sessionId: session.id,
     serial,
     locale,
@@ -1127,7 +1269,7 @@ async function crawlLocale(input: {
   // before DFS so off-screen cells enter the map plan.
   let rootQueue = crawlableCorpusControls(root.screen.controls);
   try {
-    const scrolled = await collectControlsWithScroll(device, serial, {
+    const scrolled = await runtime.collectControlsWithScroll(device, serial, {
       allowSensitive: session.scope.allowSensitiveControls,
       maxScrolls: 5,
     });
@@ -1144,7 +1286,8 @@ async function crawlLocale(input: {
         await writeSession(session);
       }
     }
-  } catch {
+  } catch (error) {
+    rethrowIosMutationOutcomeUnknown(error);
     /* keep single-snapshot queue */
   }
 
@@ -1184,7 +1327,7 @@ async function crawlLocale(input: {
             fromCanonicalKey: frame.canonicalKey,
           });
         }
-        await backtrack(serial, device, app);
+        await runtime.backtrack(serial, device, app);
         await updateProgress(session, {
           phase: input.recordPlan ? "mapping" : "crawling",
           locale,
@@ -1213,7 +1356,7 @@ async function crawlLocale(input: {
     const beforeKey = frame.canonicalKey;
     let liveControl = control;
     try {
-      liveControl = await interactCorpusControl({
+      liveControl = await runtime.interactCorpusControl({
         device,
         serial,
         control,
@@ -1221,6 +1364,7 @@ async function crawlLocale(input: {
       });
       await sleep(550, device);
     } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       await updateProgress(session, {
         phase: input.recordPlan ? "mapping" : "crawling",
         locale,
@@ -1231,7 +1375,7 @@ async function crawlLocale(input: {
 
     const nextPath = [...frame.path, liveControl.label];
     const nextPathKeys = [...frame.pathKeys, control.stableKey];
-    const after = await captureCurrent({
+    const after = await runtime.captureCurrent({
       sessionId: session.id,
       serial,
       locale,
@@ -1278,7 +1422,7 @@ async function crawlLocale(input: {
             fromCanonicalKey: after.screen.canonicalKey,
           });
         }
-        await backtrack(serial, device, app);
+        await runtime.backtrack(serial, device, app);
       }
       continue;
     }
@@ -1287,7 +1431,7 @@ async function crawlLocale(input: {
     if (frame.depth + 1 < session.scope.maxDepth) {
       let childQueue = crawlableCorpusControls(after.screen.controls);
       try {
-        const scrolled = await collectControlsWithScroll(device, serial, {
+        const scrolled = await runtime.collectControlsWithScroll(device, serial, {
           allowSensitive: session.scope.allowSensitiveControls,
           maxScrolls: 3,
         });
@@ -1303,7 +1447,8 @@ async function crawlLocale(input: {
             await writeSession(session);
           }
         }
-      } catch {
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
         /* keep single-snapshot queue */
       }
       stack.push({
@@ -1322,7 +1467,7 @@ async function crawlLocale(input: {
           fromCanonicalKey: after.screen.canonicalKey,
         });
       }
-      await backtrack(serial, device, app);
+      await runtime.backtrack(serial, device, app);
     }
   }
 
@@ -1342,6 +1487,7 @@ async function replayLocalePlan(input: {
 }): Promise<CorpusSession> {
   let session = input.session;
   const { locale, serial, device, plan } = input;
+  const runtime = corpusCrawlRuntime;
 
   await updateProgress(session, {
     phase: "replaying",
@@ -1355,7 +1501,7 @@ async function replayLocalePlan(input: {
   let pathKeys: string[] = [];
   let depth = 0;
 
-  const root = await captureCurrent({
+  const root = await runtime.captureCurrent({
     sessionId: session.id,
     serial,
     locale,
@@ -1373,11 +1519,11 @@ async function replayLocalePlan(input: {
     }
 
     if (action.kind === "back") {
-      await backtrack(serial, device, session.scope.app);
+      await runtime.backtrack(serial, device, session.scope.app);
       depth = Math.max(0, action.depth - 1);
       path = path.slice(0, -1);
       pathKeys = pathKeys.slice(0, -1);
-      const after = await captureCurrent({
+      const after = await runtime.captureCurrent({
         sessionId: session.id,
         serial,
         locale,
@@ -1428,7 +1574,7 @@ async function replayLocalePlan(input: {
     const beforeId = currentScreenId;
     let liveControl = control;
     try {
-      liveControl = await interactCorpusControl({
+      liveControl = await runtime.interactCorpusControl({
         device,
         serial,
         control,
@@ -1436,6 +1582,7 @@ async function replayLocalePlan(input: {
       });
       await sleep(550, device);
     } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       await updateProgress(session, {
         phase: "replaying",
         locale,
@@ -1451,7 +1598,7 @@ async function replayLocalePlan(input: {
     pathKeys = action.pathKeys;
     depth = action.depth + 1;
 
-    const after = await captureCurrent({
+    const after = await runtime.captureCurrent({
       sessionId: session.id,
       serial,
       locale,
@@ -1630,6 +1777,7 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
         try {
           await openApp(device, app, { relaunch: false });
         } catch (error) {
+          rethrowIosMutationOutcomeUnknown(error);
           const message = error instanceof Error ? error.message : String(error);
           if (
             /already in use by session|CoreDevice\.ActionError|Failed to list iOS apps/i.test(
@@ -1648,6 +1796,7 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
             try {
               await openApp(device, app, { relaunch: false });
             } catch (reclaimError) {
+              rethrowIosMutationOutcomeUnknown(reclaimError);
               const reclaimMessage =
                 reclaimError instanceof Error ? reclaimError.message : String(reclaimError);
               await updateProgress(session, {
@@ -1659,6 +1808,7 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
             try {
               await openApp(device, app, { relaunch: true });
             } catch (retryError) {
+              rethrowIosMutationOutcomeUnknown(retryError);
               const retryMessage =
                 retryError instanceof Error ? retryError.message : String(retryError);
               if (
@@ -1809,10 +1959,35 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
       await writeSession(session);
       emitCorpus(session);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const mutationUnknown = error instanceof IosMutationOutcomeUnknownError;
+      let message = error instanceof Error ? error.message : String(error);
       session = (await readCorpusSession(sessionId)) ?? session;
       if (!session) return;
-      if (platform === "android" && session.scope.app && session.scope.mapLocale) {
+
+      if (mutationUnknown) {
+        // This is deliberately the only work after an ambiguous physical
+        // command: two bounded, read-only observations. Do not restore a
+        // locale, reopen the app, backtrack, or continue queued corpus work.
+        const evidence = await captureCorpusTerminalEvidence(session, serial);
+        session = (await readCorpusSession(sessionId)) ?? session;
+        session.terminal = terminalRepairFromIosMutation(error, evidence);
+        const pointer = [
+          `corpus:${session.terminal.evidence.corpusSessionId}`,
+          session.terminal.evidence.screenshotPath,
+          session.terminal.evidence.accessibilityPath,
+          session.terminal.evidence.lastCapturedScreenId,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        message = `Repair required — ${error.message}${pointer ? ` Evidence: ${pointer}` : ""}`;
+      }
+
+      if (
+        !mutationUnknown &&
+        platform === "android" &&
+        session.scope.app &&
+        session.scope.mapLocale
+      ) {
         try {
           await setAndroidAppLocale(session.scope.app, session.scope.mapLocale);
           await openApp(device, session.scope.app, { relaunch: true });
@@ -1832,6 +2007,11 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
         updatedAt: Date.now(),
       };
       session.updatedAt = session.progress.updatedAt;
+
+      // Write the terminal outcome before exporting so a partial pack is a
+      // self-contained repair package instead of a stale "running" manifest.
+      await writeSession(session);
+      emitCorpus(session);
       try {
         await exportCorpusPack(sessionId);
         session = (await readCorpusSession(sessionId)) ?? session;
@@ -1864,6 +2044,10 @@ export async function startCorpusSession(id: string): Promise<CorpusSession> {
   activeCorpusCrawls.set(id, { cancel: false });
   session.status = "running";
   session.error = undefined;
+  // Resuming a failed corpus is an explicit user/agent choice. The frozen
+  // partial pack remains on disk, but a newly requested run starts with a new
+  // terminal boundary rather than presenting an old one as current.
+  session.terminal = undefined;
   const completedLocales = session.mapPlan
     ? session.scope.locales.filter((locale) => corpusLocaleIsComplete(session, locale))
     : [];
@@ -1939,4 +2123,11 @@ export async function cancelCorpusSession(id: string): Promise<CorpusSession> {
 /** Test helper — clear in-memory crawl registry between tests. */
 export function resetCorpusCrawlsForTests(): void {
   activeCorpusCrawls.clear();
+  corpusCrawlRuntime = liveCorpusCrawlRuntime;
 }
+
+/** Exposes the shipped crawl/replay loops to focused in-memory regression tests. */
+export const corpusCrawlLoopsForTests = {
+  crawlLocale,
+  replayLocalePlan,
+};
