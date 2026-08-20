@@ -30,6 +30,7 @@ export function AppMapCombineProfilePicker(props: {
   const [active, setActive] = createSignal(0);
   let trigger: HTMLButtonElement | undefined;
   let search: HTMLInputElement | undefined;
+  let listbox: HTMLDivElement | undefined;
 
   const status = createMemo(() =>
     cellBindingStatus({ profiles: props.profiles, binding: props.binding }),
@@ -78,7 +79,7 @@ export function AppMapCombineProfilePicker(props: {
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
     });
-    queueMicrotask(() => search?.focus());
+    queueMicrotask(() => (search ?? listbox)?.focus());
   });
 
   function choose(id: string): void {
@@ -95,6 +96,19 @@ export function AppMapCombineProfilePicker(props: {
     document
       .getElementById(`${listId()}-${optionIds()[next]}`)
       ?.scrollIntoView({ block: "nearest" });
+  }
+
+  function handleListKey(key: string): boolean {
+    if (key === "ArrowDown" || key === "ArrowUp" || key === "Home" || key === "End") {
+      move(key);
+      return true;
+    }
+    if (key === "Enter") {
+      const id = optionIds()[active()];
+      if (id) choose(id);
+      return Boolean(id);
+    }
+    return false;
   }
 
   return (
@@ -122,7 +136,10 @@ export function AppMapCombineProfilePicker(props: {
         disabled={props.busy || !props.profiles.length}
         onClick={() => setOpen((value) => !value)}
         onKeyDown={(event) => {
-          if (open()) return;
+          if (open()) {
+            if (handleListKey(event.key)) event.preventDefault();
+            return;
+          }
           props.onGridKeyDown?.(event);
         }}
       >
@@ -133,27 +150,16 @@ export function AppMapCombineProfilePicker(props: {
       </button>
       <Show when={open()}>
         <div
+          ref={(element) => {
+            listbox = element;
+          }}
           id={listId()}
           class={cn(popover, "absolute top-[calc(100%+4px)] left-0 z-30 w-[min(280px,70vw)] p-0")}
           role="listbox"
+          tabIndex={-1}
           aria-label={`Saved runtime profiles for ${props.testName} in ${props.worldLabel}`}
           onKeyDown={(event) => {
-            if (
-              event.key === "ArrowDown" ||
-              event.key === "ArrowUp" ||
-              event.key === "Home" ||
-              event.key === "End"
-            ) {
-              event.preventDefault();
-              move(event.key);
-            }
-            if (event.key === "Enter") {
-              const id = optionIds()[active()];
-              if (id) {
-                event.preventDefault();
-                choose(id);
-              }
-            }
+            if (handleListKey(event.key)) event.preventDefault();
           }}
         >
           <Show when={props.profiles.length >= SEARCH_THRESHOLD}>

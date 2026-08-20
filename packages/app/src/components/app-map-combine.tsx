@@ -448,7 +448,7 @@ export function AppMapCombine(props: {
 
   async function runCombine(input?: { worldIndex: number; test: TestCandidate }) {
     const currentMap = map();
-    if (!currentMap || runIssue()) {
+    if (!currentMap || (!input && runIssue())) {
       toast(runIssue() || "This combine is incomplete", "warning");
       return;
     }

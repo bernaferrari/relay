@@ -52,6 +52,8 @@ export function useFirstOperatorRun(actions: {
   const target = createMemo(() =>
     server.devices().find((device) => device.serial === server.selectedDevice()),
   );
+  const liveFrame = () => server.liveFrame();
+  const snapshot = () => server.snapshot();
   const targetStatus = createMemo(() =>
     firstTestTargetStatus({
       online: server.health() === "online",
@@ -60,6 +62,10 @@ export function useFirstOperatorRun(actions: {
         ...(target()?.platform === "ios" ? { appleSetup: server.appleDeviceSetup() } : {}),
         liveCaptureIssue: server.liveCaptureIssue(),
         recordingIssue: recorder.recordingIssue(),
+        requireLiveScreen: true,
+        liveScreenAvailable:
+          Boolean(liveFrame()?.base64) &&
+          (!liveFrame()?.serial || liveFrame()?.serial === target()?.serial),
       }),
       hasControl: Boolean(server.selectedLeaseId()),
       controlIssue: server.controlIssue(),
@@ -69,6 +75,15 @@ export function useFirstOperatorRun(actions: {
     deriveFirstOperatorRunState({
       target: targetStatus(),
       device: target(),
+      inspection: snapshot()
+        ? {
+            inspectable: snapshot()!.inspectable,
+            inspectionState: snapshot()!.inspectionState,
+            nodeCount: snapshot()!.nodes?.length,
+            source: snapshot()!.source,
+            inspectionError: snapshot()!.inspectionError,
+          }
+        : undefined,
       map: server.selectedAppMap() ?? undefined,
       runs: server.persistedRuns(),
     }),

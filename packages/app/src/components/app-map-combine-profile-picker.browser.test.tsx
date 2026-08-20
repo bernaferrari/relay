@@ -64,3 +64,22 @@ test("suggestions appear without persisting a profile the person did not choose"
   expect(view.onBind).toHaveBeenCalledWith("pixel-it");
   view.dispose();
 });
+
+test("with three profiles, ArrowDown then Enter binds only after Enter", () => {
+  const view = mount();
+  const trigger = view.root.querySelector<HTMLButtonElement>("[data-combine-profile-trigger]")!;
+  trigger.click();
+  const list = view.root.querySelector<HTMLElement>('[role="listbox"]')!;
+  expect(list).toBeTruthy();
+  expect(view.onBind).not.toHaveBeenCalled();
+  list.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
+  );
+  expect(view.onBind).not.toHaveBeenCalled();
+  list.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+  );
+  expect(view.onBind).toHaveBeenCalledTimes(1);
+  expect(view.onBind).toHaveBeenCalledWith("pixel-en");
+  view.dispose();
+});

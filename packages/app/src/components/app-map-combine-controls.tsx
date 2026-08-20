@@ -7,7 +7,7 @@ import type {
 } from "@relay/protocol";
 import { bindingForCell } from "../lib/app-map-combine-profiles";
 import type { CombineRuntimeProfileOption } from "../lib/app-map-combine-profiles";
-import { nextGridRovingIndex } from "../lib/roving-focus";
+import { clampRovingIndex, nextGridRovingIndex } from "../lib/roving-focus";
 import { Button } from "@relay/ui/button";
 import type { TestCandidate } from "../lib/app-map-combine-candidates";
 import type { CombineProjection } from "../lib/app-map-combine-presentation";
@@ -427,6 +427,7 @@ function CombinePlanGrid(props: {
   const [focusIndex, setFocusIndex] = createSignal(0);
   const columns = () => Math.max(1, props.tests.length);
   const cellCount = () => props.worlds.length * columns();
+  const tabStop = () => clampRovingIndex(focusIndex(), cellCount());
 
   function focusCell(index: number): void {
     const next = Math.max(0, Math.min(cellCount() - 1, index));
@@ -484,7 +485,7 @@ function CombinePlanGrid(props: {
                             binding={binding()}
                             device={props.device}
                             busy={props.busy}
-                            tabIndex={cellIndex() === focusIndex() ? 0 : -1}
+                            tabIndex={cellIndex() === tabStop() ? 0 : -1}
                             onBind={(targetProfileId) =>
                               props.onBindCell(test.id, values, targetProfileId)
                             }

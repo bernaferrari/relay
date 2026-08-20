@@ -27,12 +27,19 @@ export function nextGridRovingIndex(
   if (key === "End") return Math.min(count - 1, current - (current % columns) + columns - 1);
   const row = Math.floor(current / columns);
   const column = current % columns;
-  if (key === "ArrowRight") return current + 1 < count ? current + 1 : current;
-  if (key === "ArrowLeft") return current > 0 ? current - 1 : current;
+  const rowStart = row * columns;
+  const rowEnd = Math.min(count - 1, rowStart + columns - 1);
+  if (key === "ArrowRight") return current < rowEnd ? current + 1 : current;
+  if (key === "ArrowLeft") return current > rowStart ? current - 1 : current;
   if (key === "ArrowDown") {
     const next = (row + 1) * columns + column;
     return next < count ? next : current;
   }
   if (key === "ArrowUp") return row > 0 ? (row - 1) * columns + column : current;
   return null;
+}
+
+export function clampRovingIndex(current: number, count: number): number {
+  if (count <= 0) return 0;
+  return Math.max(0, Math.min(current, count - 1));
 }

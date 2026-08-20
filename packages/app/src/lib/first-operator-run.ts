@@ -1,7 +1,14 @@
-import type { AppMap, AppMapCombine } from "@relay/protocol";
+import {
+  CaseExpansionError,
+  expandCaseIndexes,
+  type AppMap,
+  type AppMapCombine,
+  type AppMapVariable,
+} from "@relay/protocol";
 import type { DeviceInfo, PersistedRun } from "./api-types";
 import { bindingForCell } from "./app-map-combine-profiles";
 import type { FirstTestTargetStatus } from "./onboarding";
+import { liveInspectionHint } from "./stage-presentation";
 
 export const FIRST_OPERATOR_RUN_STORAGE_KEY = "onboarding:first-operator-run:v1";
 
@@ -63,10 +70,50 @@ export function serializeFirstOperatorRunPreference(
   });
 }
 
-function combineHasUnboundCell(combine: AppMapCombine): boolean {
+function selectedVariableValues(combine: AppMapCombine, variable: AppMapVariable): string[] {
+  const available = variable.options.map((option) => option.id);
+  if (!Object.hasOwn(combine.selected ?? {}, variable.id)) return available;
+  const allowed = new Set(available);
+  return [...new Set((combine.selected?.[variable.id] ?? []).filter((id) => allowed.has(id)))];
+}
+
+/** Same worlds as the Combine grid and execution. A zip diagonal is not a
+ * cartesian product, and a mid-expansion cap would drop later variables. */
+function combineWorlds(
+  combine: AppMapCombine,
+  variables: Record<string, AppMapVariable> | undefined,
+): Record<string, string>[] | undefined {
+  const sets = combine.variableIds.map((id) => {
+    const variable = variables?.[id];
+    if (!variable) return undefined;
+    const values = selectedVariableValues(combine, variable);
+    return values.length ? values : undefined;
+  });
+  if (sets.some((set) => !set)) return undefined;
+  let rows: number[][];
+  try {
+    rows = expandCaseIndexes(
+      sets.map((set) => set!.length),
+      combine.strategy ?? "cartesian",
+    );
+  } catch (error) {
+    if (error instanceof CaseExpansionError) return undefined;
+    throw error;
+  }
+  return rows.map((indexes) =>
+    Object.fromEntries(
+      combine.variableIds.map((id, index) => [id, sets[index]![indexes[index]!]!]),
+    ),
+  );
+}
+
+function combineHasUnboundCell(
+  combine: AppMapCombine,
+  variables: Record<string, AppMapVariable> | undefined,
+): boolean {
   if (!combine.testIds.length || !combine.variableIds.length) return false;
-  const selected = combine.selected ?? {};
-  const worlds = cartesianPreview(combine.variableIds, selected);
+  const worlds = combineWorlds(combine, variables);
+  if (!worlds) return true;
   if (!worlds.length) return (combine.cellRuntimeProfiles ?? []).length === 0;
   for (const testId of combine.testIds) {
     for (const values of worlds) {
@@ -76,47 +123,72 @@ function combineHasUnboundCell(combine: AppMapCombine): boolean {
   return false;
 }
 
-function cartesianPreview(
-  variableIds: readonly string[],
-  selected: Record<string, string[]>,
-): Record<string, string>[] {
-  let worlds: Record<string, string>[] = [{}];
-  for (const variableId of variableIds) {
-    const values = selected[variableId] ?? [];
-    if (!values.length) return [];
-    worlds = worlds.flatMap((world) => values.map((value) => ({ ...world, [variableId]: value })));
-    if (worlds.length > 24) break;
-  }
-  return worlds;
+export type FirstOperatorInspection = {
+  inspectable?: boolean;
+  inspectionState?: string;
+  nodeCount?: number;
+  source?: string;
+  inspectionError?: string;
+};
+
+function artifactMatchesThisMap(
+  artifact: NonNullable<PersistedRun["artifacts"]>[number],
+  appMapId: string,
+): boolean {
+  if (!artifact.data || typeof artifact.data !== "object") return false;
+  const data = artifact.data as Record<string, unknown>;
+  if (data.appMapId !== appMapId) return false;
+  return artifact.kind === "app-map-test-plan" || artifact.kind === "frozen-inputs";
 }
 
 function runMatchesMap(run: PersistedRun, appMapId: string): boolean {
-  if (run.action.includes("combine") && run.title) return true;
-  return (run.artifacts ?? []).some((artifact) => {
-    if (!artifact.data || typeof artifact.data !== "object") return false;
-    const data = artifact.data as Record<string, unknown>;
-    return data.appMapId === appMapId;
-  });
+  return (run.artifacts ?? []).some((artifact) => artifactMatchesThisMap(artifact, appMapId));
 }
 
 function succeeded(run: PersistedRun): boolean {
   return run.status === "ok" || run.status === "healed";
 }
 
+function deviceHonesty(input: {
+  target: FirstTestTargetStatus;
+  device?: Pick<DeviceInfo, "name" | "serial" | "platform">;
+  inspection?: FirstOperatorInspection;
+}): { deviceLabel: string; deviceDetail: string } {
+  const pixelsOnly =
+    input.inspection?.inspectable === false || input.inspection?.source === "pixels-only";
+  if (input.target.kind === "ready" && pixelsOnly) {
+    const hint = liveInspectionHint({
+      inspectable: false,
+      inspectionState: input.inspection?.inspectionState,
+      nodeCount: input.inspection?.nodeCount,
+      inspectionError: input.inspection?.inspectionError,
+      platform: input.device?.platform,
+    });
+    return {
+      deviceLabel: hint?.title ?? "Pixels only",
+      deviceDetail: hint?.detail ?? "The picture works. Names are not available on this screen.",
+    };
+  }
+  if (input.target.kind === "ready") {
+    return { deviceLabel: input.target.title, deviceDetail: input.target.detail };
+  }
+  return {
+    deviceLabel: input.device?.name?.trim() || input.device?.serial || "No device",
+    deviceDetail: input.target.detail,
+  };
+}
+
 export function deriveFirstOperatorRunState(input: {
   target: FirstTestTargetStatus;
   device?: Pick<DeviceInfo, "name" | "serial" | "platform">;
+  inspection?: FirstOperatorInspection;
   map?: Pick<AppMap, "id" | "tests" | "variables" | "combines">;
   runs?: readonly PersistedRun[];
 }): FirstOperatorRunState {
-  const deviceLabel =
-    input.target.kind === "ready"
-      ? input.target.title
-      : input.device?.name?.trim() || input.device?.serial || "No device";
-  const deviceDetail = input.target.detail;
+  const { deviceLabel, deviceDetail } = deviceHonesty(input);
   const tests = Object.values(input.map?.tests ?? {});
   const combines = Object.values(input.map?.combines ?? {});
-  const unbound = combines.find(combineHasUnboundCell);
+  const unbound = combines.find((combine) => combineHasUnboundCell(combine, input.map?.variables));
   const hasTest = tests.length > 0;
   const hasVariable = Object.keys(input.map?.variables ?? {}).length > 0;
   const completed = (input.runs ?? []).find(

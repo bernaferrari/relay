@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nextGridRovingIndex, nextRovingIndex } from "./roving-focus";
+import { clampRovingIndex, nextGridRovingIndex, nextRovingIndex } from "./roving-focus";
 
 test("wraps vertical picker navigation", () => {
   assert.equal(nextRovingIndex("ArrowDown", 2, 3, "vertical"), 0);
@@ -21,4 +21,11 @@ test("grid arrows stay inside a Combine matrix instead of wrapping the page", ()
   assert.equal(nextGridRovingIndex("Home", 5, 3, 9), 3);
   assert.equal(nextGridRovingIndex("End", 3, 3, 9), 5);
   assert.equal(nextGridRovingIndex("ArrowRight", 8, 3, 9), 8);
+  assert.equal(nextGridRovingIndex("ArrowRight", 2, 3, 9), 2);
+  assert.equal(nextGridRovingIndex("ArrowLeft", 3, 3, 9), 3);
+});
+
+test("clamps the Combine tab stop when the matrix shrinks", () => {
+  assert.equal(clampRovingIndex(8, 2), 1);
+  assert.equal(clampRovingIndex(0, 0), 0);
 });
