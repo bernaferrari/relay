@@ -30,8 +30,10 @@ import {
 } from "./ios-live-preview-telemetry.js";
 import { encodeRelayJpegPacket, readMjpegJpegs } from "./ios-live-preview-packets.js";
 import {
-  resolveSafeIosPreviewProducer,
+  iosSafePreviewProducerProvenanceHeaders,
   safeIosPreviewProducerArgs,
+  verifySafeIosPreviewProducer,
+  type IosSafePreviewProducerProvenance,
 } from "./ios-preview-producer.js";
 import {
   IosPreviewOwnerRegistry,
@@ -277,6 +279,7 @@ class IosPreviewSource {
 type ActiveIosPreview = IosPreviewOwner & {
   serial: string;
   mode: StreamMode;
+  producer: IosSafePreviewProducerProvenance;
   child: ChildProcess;
   source: IosPreviewSource;
   stop: (reason?: IosPreviewStopReason) => Promise<boolean>;
@@ -563,6 +566,7 @@ export function readIosLivePreviewDiagnostics(
     targetFramesPerSecond: null,
     active: active === preview && previewStillLive(preview, observedAt),
     observedAt,
+    producer: preview.producer,
     source: {
       state: source.state,
       encoding: iosPreviewEncoding(source.contentType),
@@ -629,14 +633,14 @@ function scheduleIdleStop(preview: ActiveIosPreview): void {
 async function startInstrumentsMjpeg(bin: string, serial: string): Promise<ActiveIosPreview> {
   const startedAt = Date.now();
   // Fail before touching a tunnel or target if this machine has not built the
-  // reviewed producer. The missing-binary diagnosis is actionable and must
-  // never trigger an unsafe go-ios streaming fallback.
-  const producer = await resolveSafeIosPreviewProducer();
+  // reviewed producer. The bounded local `--version` proof is cached by file
+  // identity and must never trigger an unsafe go-ios streaming fallback.
+  const producer = await verifySafeIosPreviewProducer();
   const tunnelInfoArgs = await relayTunnelInfoArgs();
   await ensureGoIosTunnel(bin, tunnelInfoArgs);
   const tunnelReadyMs = Date.now() - startedAt;
   const logPath = join(tmpdir(), `relay-ios-preview-${serial.slice(0, 8)}.log`);
-  const child = spawn(producer, safeIosPreviewProducerArgs(serial, tunnelInfoArgs), {
+  const child = spawn(producer.path, safeIosPreviewProducerArgs(serial, tunnelInfoArgs), {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env },
   });
@@ -673,7 +677,14 @@ async function startInstrumentsMjpeg(bin: string, serial: string): Promise<Activ
     });
     return stopPromise;
   };
-  preview = { serial, mode: "instruments-mjpeg", child, source, stop };
+  preview = {
+    serial,
+    mode: "instruments-mjpeg",
+    producer: producer.provenance,
+    child,
+    source,
+    stop,
+  };
 
   child.once("exit", (code, signal) => {
     activePreviews.release(serial, preview);
@@ -701,7 +712,7 @@ async function startInstrumentsMjpeg(bin: string, serial: string): Promise<Activ
     await source.start(child.stdout as IosPreviewPipe);
     const diagnostics = source.diagnostics;
     console.log(
-      `[video] iOS source ready serial=${serial} mode=instruments-mjpeg producer=safe-sidecar tunnelReadyMs=${tunnelReadyMs} firstFrameMs=${(diagnostics.readyAt ?? Date.now()) - startedAt} startupMs=${Date.now() - startedAt} sourceEncoding=${iosPreviewEncoding(diagnostics.contentType)} targetFps=unadvertised`,
+      `[video] iOS source ready serial=${serial} mode=instruments-mjpeg producer=${producer.provenance.source} producerSafety=${producer.provenance.sourceSafety} producerVersion=${producer.provenance.observedVersion} tunnelReadyMs=${tunnelReadyMs} firstFrameMs=${(diagnostics.readyAt ?? Date.now()) - startedAt} startupMs=${Date.now() - startedAt} sourceEncoding=${iosPreviewEncoding(diagnostics.contentType)} targetFps=unadvertised`,
     );
     return preview;
   } catch (error) {
@@ -771,6 +782,7 @@ export async function streamIosGoIosMjpeg(res: http.ServerResponse, serial: stri
     Connection: "keep-alive",
     "X-Content-Type-Options": "nosniff",
     ...iosLivePreviewMetricHeaders(preview.mode, diagnostics),
+    ...iosSafePreviewProducerProvenanceHeaders(preview.producer),
   });
 
   const completion = defer<void>();

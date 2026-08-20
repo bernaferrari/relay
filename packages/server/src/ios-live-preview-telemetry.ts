@@ -10,6 +10,8 @@
  * A screenshot source is useful only while it keeps producing recent pixels.
  * This is a freshness bound, not a target-frame-rate promise.
  */
+import type { IosSafePreviewProducerProvenance } from "./ios-preview-producer.js";
+
 export const IOS_PREVIEW_STALE_AFTER_MS = 8_000;
 
 /** The small part of ServerResponse needed for bounded latest-frame fanout. */
@@ -326,6 +328,8 @@ export type IosLivePreviewDiagnostics = {
   targetFramesPerSecond: null;
   active: boolean;
   observedAt: number;
+  /** Version proof for the producer currently attached to the Relay source. */
+  producer?: IosSafePreviewProducerProvenance;
   source: {
     state: "not-running" | IosPreviewSourceState;
     encoding: "jpeg" | "annex-b" | "unknown";
