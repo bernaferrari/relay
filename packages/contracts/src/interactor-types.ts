@@ -232,6 +232,22 @@ export type Interactor = {
     point: Point,
     options?: { appBundleId?: string; surface?: SessionSurface; signal?: AbortSignal },
   ): Promise<string | undefined>;
+  /**
+   * Native text-presence reading, when the backend has one that does not require a tree capture.
+   * A `true` answer is authoritative; anything else means "not proven here" and the caller
+   * consults the canonical tree (see `FindTextResult`).
+   */
+  findText?(
+    text: string,
+    options?: { appBundleId?: string; signal?: AbortSignal },
+  ): Promise<{
+    found: boolean;
+  }>;
+  /** Native one-sided observation for a simple selector; false defers to canonical capture. */
+  findSelector?(
+    selector: Readonly<{ key: ElementSelectorKey; value: string }>,
+    options?: { appBundleId?: string; signal?: AbortSignal },
+  ): Promise<{ found: boolean }>;
   gestureViewport?(): Promise<Rect>;
   back(mode?: BackMode): Promise<void>;
   home(): Promise<void>;

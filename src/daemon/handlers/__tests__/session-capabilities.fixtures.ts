@@ -39,10 +39,18 @@ export const legacyCapabilityUses = [
 ];
 
 export function createCapabilitiesAdmissionRuntime(options: CapabilitiesAdmissionRuntimeOptions) {
-  const uses: Array<{ required: readonly string[]; preferred: readonly string[] }> = [];
+  const uses: Array<{
+    required: readonly string[];
+    preferred: readonly string[];
+    conditional?: readonly string[];
+  }> = [];
   const inspections: DeviceInfo[] = [];
   const bindDevice: BindDeviceRuntime = async (device, use) => {
-    uses.push({ required: [...use.required], preferred: [...use.preferred] });
+    uses.push({
+      required: [...use.required],
+      preferred: [...use.preferred],
+      ...(use.conditional === undefined ? {} : { conditional: [...use.conditional] }),
+    });
     return narrowDeviceBinding(createAdmissionBinding(device, options), use);
   };
   const inspectFacts: InspectDeviceRuntimeFacts = async (device) => {
@@ -78,6 +86,8 @@ function createAdmissionFacts(
         withoutActiveApp: unavailable,
       }),
       ...screenshotRuntimeOperationFacts({ capture: screenshotFact }),
+      findText: unavailable,
+      findSelector: unavailable,
       setViewport: unavailable,
       deployApp: cell(options.deployAvailable),
       materializeAppSource: cell(options.sourceAvailable),

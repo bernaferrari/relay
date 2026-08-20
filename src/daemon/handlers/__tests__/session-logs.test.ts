@@ -383,7 +383,11 @@ function createRuntimeHarness(options: { inspectAvailable?: boolean } = {}) {
       notes: [],
     }),
   };
-  const uses: Array<{ required: readonly string[]; preferred: readonly string[] }> = [];
+  const uses: Array<{
+    required: readonly string[];
+    preferred: readonly string[];
+    conditional?: readonly string[];
+  }> = [];
   const bind = vi.fn(
     async (device: DeviceInfo): Promise<DeviceBinding<PlatformRuntimeOperations>> => ({
       device,
@@ -436,14 +440,22 @@ function createRuntimeHarness(options: { inspectAvailable?: boolean } = {}) {
     }),
   );
   const bindDevice: BindDeviceRuntime = async (device, use) => {
-    uses.push(use);
+    uses.push({
+      required: use.required,
+      preferred: use.preferred,
+      ...(use.conditional === undefined ? {} : { conditional: use.conditional }),
+    });
     return narrowDeviceBinding(await bind(device), use);
   };
   return {
     bind,
     bindDevice,
     boundUses: () =>
-      uses.map((use) => ({ required: [...use.required], preferred: [...use.preferred] })),
+      uses.map((use) => ({
+        required: [...use.required],
+        preferred: [...use.preferred],
+        ...(use.conditional === undefined ? {} : { conditional: [...use.conditional] }),
+      })),
     resetUses: () => {
       uses.length = 0;
     },

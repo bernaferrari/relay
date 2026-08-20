@@ -1,0 +1,63 @@
+import type {
+  ElementTextRuntimeOperations,
+  FindSelectorInput,
+  FindSelectorRuntimeOperations,
+  FindTextInput,
+  FindTextRuntimeOperations,
+  ReadTextAtPointInput,
+} from '@agent-device/contracts/platform';
+
+export type BoundElementRead = ElementTextRuntimeOperations['readTextAtPoint'];
+export type BoundNativeTextRead = FindTextRuntimeOperations['findText'];
+export type BoundNativeSelectorRead = FindSelectorRuntimeOperations['findSelector'];
+
+type SelectorOperations = Readonly<{
+  readTextAtPoint?: BoundElementRead;
+  findText?: BoundNativeTextRead;
+  findSelector?: BoundNativeSelectorRead;
+}>;
+
+/** Projects the one preferred operation admitted for `get` and read-only `find`. */
+export function selectElementTextOperation(
+  runtime: Readonly<{
+    operations: Readonly<{ readTextAtPoint?: BoundElementRead }>;
+  }>,
+): Pick<SelectorOperations, 'readTextAtPoint'> {
+  const { readTextAtPoint } = runtime.operations;
+  const selected = readTextAtPoint ? { operations: { readTextAtPoint } } : undefined;
+  return Object.freeze({
+    ...(selected
+      ? {
+          readTextAtPoint: async (input: ReadTextAtPointInput) =>
+            await selected.operations.readTextAtPoint(input),
+        }
+      : {}),
+  });
+}
+
+/** Projects only the fact-conditional observations admitted for `wait`. */
+export function selectWaitObservationOperations(
+  runtime: Readonly<{
+    operations: Readonly<{
+      findText?: BoundNativeTextRead;
+      findSelector?: BoundNativeSelectorRead;
+    }>;
+  }>,
+): Pick<SelectorOperations, 'findText' | 'findSelector'> {
+  const { findText, findSelector } = runtime.operations;
+  const selectedText = findText ? { operations: { findText } } : undefined;
+  const selectedSelector = findSelector ? { operations: { findSelector } } : undefined;
+  return Object.freeze({
+    ...(selectedText
+      ? {
+          findText: async (input: FindTextInput) => await selectedText.operations.findText(input),
+        }
+      : {}),
+    ...(selectedSelector
+      ? {
+          findSelector: async (input: FindSelectorInput) =>
+            await selectedSelector.operations.findSelector(input),
+        }
+      : {}),
+  });
+}

@@ -135,7 +135,10 @@ async function withDirectSelectorScenario(
   );
 }
 
-test('Provider-backed direct iOS selector wait strips selectorChain from the public response', async () => {
+// `wait` asks the admitted Apple owner first for simple selector existence. A positive
+// owner observation avoids a sparse canonical tree; a miss still falls through to the
+// request-bound capture. The public response strips the internal `selectorChain` either way.
+test('Provider-backed iOS selector wait accepts the owner observation and strips selectorChain', async () => {
   const transcript = createProviderTranscript([
     {
       command: 'ios.runner.querySelector',
@@ -147,14 +150,48 @@ test('Provider-backed direct iOS selector wait strips selectorChain from the pub
         selectorValue: 'Continue',
         appBundleId: APP,
       },
-      result: { found: true, node: { label: 'Continue' } },
+      result: { found: true, nodes: [] },
     },
   ]);
 
   await withDirectSelectorScenario(transcript, async (daemon) => {
     const wait = await daemon.callCommand('wait', ['label="Continue"']);
     const data = assertRpcOk(wait);
-    assert.equal(data.kind, 'selector');
+    assert.equal(data.selector, 'label="Continue"');
+    assert.equal('selectorChain' in data, false);
+  });
+});
+
+test('Provider-backed iOS selector wait falls through to capture after an owner miss', async () => {
+  const transcript = createProviderTranscript([
+    {
+      command: 'ios.runner.querySelector',
+      deviceId: DEVICE_ID,
+      platform: 'apple',
+      request: {
+        command: 'querySelector',
+        selectorKey: 'label',
+        selectorValue: 'Continue',
+        appBundleId: APP,
+      },
+      result: { found: false, nodes: [] },
+    },
+    snapshotEntry([
+      APPLICATION_NODE,
+      {
+        index: 1,
+        parentIndex: 0,
+        type: 'Button',
+        label: 'Continue',
+        hittable: true,
+        rect: { x: 100, y: 300, width: 200, height: 44 },
+      },
+    ]),
+  ]);
+
+  await withDirectSelectorScenario(transcript, async (daemon) => {
+    const wait = await daemon.callCommand('wait', ['label="Continue"']);
+    const data = assertRpcOk(wait);
     assert.equal(data.selector, 'label="Continue"');
     assert.equal('selectorChain' in data, false);
   });

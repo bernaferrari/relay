@@ -3,6 +3,7 @@ import type {
   DeviceBinding,
   PlatformRuntimeOperations,
   RuntimeFacts,
+  SnapshotRuntimeHost,
 } from '@agent-device/contracts/platform';
 import type { AppleOS, DeviceInfo } from '@agent-device/kernel/device';
 import { createApplePlatformRuntime } from './runtime.ts';
@@ -138,6 +139,11 @@ function expectAppleSnapshotAvailability(
   // capture does; every other supported leaf advertises and binds it.
   expect(binding.facts.operations.readTextAtPoint.available).toBe(available);
   expect(binding.operations.readTextAtPoint).toBeTypeOf(available ? 'function' : 'undefined');
+  const nativeSelectorAvailable = available && device.appleOs !== 'macos';
+  expect(binding.facts.operations.findSelector.available).toBe(nativeSelectorAvailable);
+  expect(binding.operations.findSelector).toBeTypeOf(
+    nativeSelectorAvailable ? 'function' : 'undefined',
+  );
 }
 
 test.each(['frontmost-app', 'desktop', 'menubar'] as const)(
@@ -431,4 +437,44 @@ function expectLegacyLifecycleFactCell(
     (facts.device.kind === 'simulator' || facts.device.kind === 'device');
   expect(facts.operations.captureSnapshot.available).toBe(snapshotAvailable);
   expect(facts.operations.readTextAtPoint.available).toBe(snapshotAvailable);
+  expect(facts.operations.findSelector.available).toBe(
+    snapshotAvailable && facts.device.appleOs !== 'macos',
+  );
 }
+
+// The macOS non-app surface branch calls `captureSurface` directly instead of going through
+// `bindSnapshotInteractor`, so the shared composition does NOT cover it. If this branch drops the
+// per-capture signal, desktop-surface captures silently ignore a wait's poll deadline while every
+// other family honours it.
+test('the macOS surface branch composes the per-capture signal with the binding signal', async () => {
+  const host = platformRuntimeHostFixture();
+  const captureSurface = vi.fn<SnapshotRuntimeHost['captureSurface']>(async () => ({
+    backend: 'macos-helper' as const,
+    nodes: [],
+    truncated: false,
+  }));
+  const binding = await createApplePlatformRuntime({
+    ...host,
+    localInteractors: { resolve: vi.fn(async () => ({}) as never) },
+    snapshot: { captureSurface },
+  }).bind({
+    device: leaves.macos,
+    intent: { kind: 'ordinary' },
+    scope: {
+      signal: new AbortController().signal,
+      diagnostics: { emit: () => {} },
+      progress: { report: () => {} },
+    },
+  });
+
+  const poll = new AbortController();
+  await binding.operations.captureSnapshot?.({
+    options: { surface: 'desktop', appBundleId: 'com.example.app' },
+    signal: poll.signal,
+  });
+
+  const passed = captureSurface.mock.calls[0]?.[2] as AbortSignal;
+  expect(passed.aborted).toBe(false);
+  poll.abort(new DOMException('Wait deadline exceeded', 'TimeoutError'));
+  expect(passed.aborted).toBe(true);
+});

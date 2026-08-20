@@ -144,6 +144,8 @@ function readinessFacts(device: DeviceInfo): RuntimeFacts<PlatformRuntimeOperati
       ...screenshotRuntimeOperationFacts({
         capture: operationAvailability(device.kind !== 'simulator' || device.platform === 'apple'),
       }),
+      findText: unavailable,
+      findSelector: unavailable,
       setViewport: unavailable,
       readTextAtPoint: unavailable,
       deployApp: operationAvailability(deployment.deploy),

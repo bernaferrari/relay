@@ -1,8 +1,6 @@
 import {
   resolveSnapshotRuntimePlan,
   type CaptureSnapshotInput,
-  type ElementTextRuntimeOperations,
-  type ReadTextAtPointInput,
   type RuntimeOperationFact,
   type SelectorCaptureRuntimePlan,
   type SnapshotResult,
@@ -24,6 +22,13 @@ import {
 import { errorResponse } from './handlers/response.ts';
 import { resolveSnapshotScope } from './handlers/snapshot-capture.ts';
 import { resolveSessionDevice } from './handlers/snapshot-session.ts';
+import {
+  selectElementTextOperation,
+  selectWaitObservationOperations,
+  type BoundElementRead,
+  type BoundNativeSelectorRead,
+  type BoundNativeTextRead,
+} from './selector-operation-binding.ts';
 
 export type SnapshotRuntimeRouteParams = {
   req: DaemonRequest;
@@ -49,18 +54,20 @@ type ResolvedSnapshotCaptureRuntime =
 export type BoundSnapshotCapture = (input: CaptureSnapshotInput) => Promise<SnapshotResult>;
 
 /** The owner's live element read, when its facts advertise one. */
-export type BoundElementRead = ElementTextRuntimeOperations['readTextAtPoint'];
-
 export type AdmittedSnapshotCapture =
   | Readonly<{
       ok: true;
       capture: BoundSnapshotCapture;
       /**
-       * The owner's live element read, present only when the caller's plan declared it PREFERRED
+       * The owner's live element read, present only when the caller's plan declared it preferred
        * and the admitted owner advertised it. `snapshot`/`diff` plans declare no read, so this is
        * simply absent for them — the member is additive and they are unchanged.
        */
       readTextAtPoint?: BoundElementRead;
+      /** A fact-conditional native text observation, present when the owner advertises it. */
+      findText?: BoundNativeTextRead;
+      /** A fact-conditional one-sided simple-selector observation. */
+      findSelector?: BoundNativeSelectorRead;
     }>
   | Readonly<{ ok: false; response: DaemonResponse }>;
 
@@ -99,6 +106,8 @@ export async function admitAndBindSnapshotCapture(
     ok: true,
     capture: async (input: CaptureSnapshotInput) => await bound.captureSnapshot(input),
     ...(bound.readTextAtPoint ? { readTextAtPoint: bound.readTextAtPoint } : {}),
+    ...(bound.findText ? { findText: bound.findText } : {}),
+    ...(bound.findSelector ? { findSelector: bound.findSelector } : {}),
   });
 }
 
@@ -153,13 +162,15 @@ async function bindSnapshotCaptureRuntime(
   Readonly<{
     captureSnapshot(input: CaptureSnapshotInput): Promise<SnapshotResult>;
     readTextAtPoint?: BoundElementRead;
+    findText?: BoundNativeTextRead;
+    findSelector?: BoundNativeSelectorRead;
   }>
 > {
   const bind = requireRuntimeBinding(bindDevice);
   const { device, plan } = unwrapAdmittedRuntimePlan(admission);
   // One switch, one set of operation selectors. The selector arms reuse the SAME
   // `selectActiveAppSnapshot` / `selectSnapshotWithoutActiveApp` the snapshot arms use and only
-  // add the preferred element read; the discriminants differ solely so the compiler can narrow
+  // add selector operation projection; the discriminants differ solely so the compiler can narrow
   // `plan.use` per family. No parallel plan-to-operation dispatch is introduced.
   switch (plan.kind) {
     case 'active-app': {
@@ -167,8 +178,7 @@ async function bindSnapshotCaptureRuntime(
       return selectActiveAppSnapshot(runtime);
     }
     case 'selector-active-app': {
-      const runtime = await bind(device, plan.use);
-      return { ...selectActiveAppSnapshot(runtime), ...selectElementRead(runtime) };
+      return await bindActiveAppSelectorRuntime(bind, device, plan);
     }
     case 'custom-actions-active-app': {
       const runtime = await bind(device, plan.use);
@@ -179,8 +189,7 @@ async function bindSnapshotCaptureRuntime(
       return selectSnapshotWithoutActiveApp(runtime);
     }
     case 'selector-without-active-app': {
-      const runtime = await bind(device, plan.use);
-      return { ...selectSnapshotWithoutActiveApp(runtime), ...selectElementRead(runtime) };
+      return await bindSelectorRuntimeWithoutActiveApp(bind, device, plan);
     }
     case 'custom-actions-without-active-app': {
       const runtime = await bind(device, plan.use);
@@ -189,26 +198,68 @@ async function bindSnapshotCaptureRuntime(
   }
 }
 
-/**
- * Projects the preferred element read when the admitted owner advertised it. A projection whose
- * use never declared it simply has no such member, so this yields `{}` for `snapshot`/`diff`.
- */
-function selectElementRead(
-  runtime: Readonly<{ operations: Readonly<{ readTextAtPoint?: BoundElementRead }> }>,
-): Readonly<{ readTextAtPoint?: BoundElementRead }> {
-  const readTextAtPoint = runtime.operations.readTextAtPoint;
-  // Narrowed by CONSTRUCTION rather than by assertion: the projection below is only buildable
-  // from a non-undefined local, so presence is carried by the value that captured it.
-  return readTextAtPoint
-    ? { readTextAtPoint: bindElementRead({ operations: { readTextAtPoint } }) }
-    : {};
+type ActiveAppSelectorRuntimePlan = Extract<
+  SelectorCaptureRuntimePlan,
+  { kind: 'selector-active-app' }
+>;
+
+async function bindActiveAppSelectorRuntime(
+  bind: BindDeviceRuntime,
+  device: SessionState['device'],
+  plan: ActiveAppSelectorRuntimePlan,
+) {
+  switch (plan.intent) {
+    case 'capture-only': {
+      const runtime = await bind(device, plan.use);
+      return selectActiveAppSnapshot(runtime);
+    }
+    case 'element-text': {
+      const runtime = await bind(device, plan.use);
+      return {
+        ...selectActiveAppSnapshot(runtime),
+        ...selectElementTextOperation(runtime),
+      };
+    }
+    case 'wait-observation': {
+      const runtime = await bind(device, plan.use);
+      return {
+        ...selectActiveAppSnapshot(runtime),
+        ...selectWaitObservationOperations(runtime),
+      };
+    }
+  }
 }
 
-/** The one lexical owner of the narrowed `readTextAtPoint` call. */
-function bindElementRead(
-  runtime: Readonly<{ operations: Readonly<{ readTextAtPoint: BoundElementRead }> }>,
-): BoundElementRead {
-  return async (input: ReadTextAtPointInput) => await runtime.operations.readTextAtPoint(input);
+type SelectorRuntimePlanWithoutActiveApp = Extract<
+  SelectorCaptureRuntimePlan,
+  { kind: 'selector-without-active-app' }
+>;
+
+async function bindSelectorRuntimeWithoutActiveApp(
+  bind: BindDeviceRuntime,
+  device: SessionState['device'],
+  plan: SelectorRuntimePlanWithoutActiveApp,
+) {
+  switch (plan.intent) {
+    case 'capture-only': {
+      const runtime = await bind(device, plan.use);
+      return selectSnapshotWithoutActiveApp(runtime);
+    }
+    case 'element-text': {
+      const runtime = await bind(device, plan.use);
+      return {
+        ...selectSnapshotWithoutActiveApp(runtime),
+        ...selectElementTextOperation(runtime),
+      };
+    }
+    case 'wait-observation': {
+      const runtime = await bind(device, plan.use);
+      return {
+        ...selectSnapshotWithoutActiveApp(runtime),
+        ...selectWaitObservationOperations(runtime),
+      };
+    }
+  }
 }
 
 type BoundSnapshotOperation<Operation extends keyof SnapshotRuntimeOperations> = Readonly<{
