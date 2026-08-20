@@ -6,8 +6,14 @@ import type { SnapshotNode } from "./device.js";
 import { recommendScrollSurfaceCapturePolicy } from "./scroll-surface-policy.js";
 import { captureScrollableSurveyForTarget } from "./scrollable-survey.js";
 import { annotateVisitedRows } from "./tap-preview.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 
 export type DiscoveryVisitTarget = DiscoveryControl["target"];
+
+export type FullSurfaceEvidenceDependencies = {
+  /** Injectable only by hosts/tests; production uses the physical survey. */
+  captureSurvey?: typeof captureScrollableSurveyForTarget;
+};
 
 function targetMatchesNode(node: SnapshotNode, target: DiscoveryVisitTarget): boolean {
   if (target.identifier && node.identifier === target.identifier) return true;
@@ -53,16 +59,21 @@ export async function captureFullSurfaceEvidence(
   serial: string,
   title: string,
   labels: string[],
+  dependencies: FullSurfaceEvidenceDependencies = {},
 ): Promise<{ pngPath: string; nodes: SnapshotNode[] } | undefined> {
   if (!shouldCaptureFullSurface(title, labels) && labels.length < 10) return undefined;
   try {
-    const survey = await captureScrollableSurveyForTarget({ serial, maxScrolls: 12 });
+    const survey = await (dependencies.captureSurvey ?? captureScrollableSurveyForTarget)({
+      serial,
+      maxScrolls: 12,
+    });
     if (!survey.stitched?.base64 || survey.mergedNodes.length < 2) return undefined;
     const folder = await mkdtemp(join(tmpdir(), "relay-surface-"));
     const pngPath = join(folder, "full.png");
     await writeFile(pngPath, Buffer.from(survey.stitched.base64, "base64"));
     return { pngPath, nodes: survey.mergedNodes };
   } catch (error) {
+    rethrowIosMutationOutcomeUnknown(error);
     console.error("discovery full-surface capture failed", error);
     return undefined;
   }

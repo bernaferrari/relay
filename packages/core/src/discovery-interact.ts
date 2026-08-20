@@ -36,6 +36,7 @@ import type {
 } from "@relay/protocol";
 import { readFile, writeFile } from "node:fs/promises";
 import { isSettingsChildTitle } from "./app-map/settings-screen-titles.js";
+import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
 
 export function discoveryInteraction(input: InteractInput): {
   kind: "tap" | "type" | "scroll" | "back" | "manual";
@@ -225,6 +226,23 @@ export async function runDiscoveryCapture(
       makeCurrent: true,
     });
     return { screen: captured.screen, isNew: captured.isNew, snapshot };
+  } catch (error) {
+    if (error instanceof IosMutationOutcomeUnknownError) {
+      // The pre-survey PNG/tree were collected before the ambiguous scroll.
+      // Persist that proven viewport so the typed recovery response can point
+      // to concrete evidence without trying to restore or inspect by input.
+      try {
+        await recordObservedScreen({
+          sessionId: session.id,
+          nodes: snapshot.nodes,
+          screenshotPath: shot.path,
+          makeCurrent: true,
+        });
+      } catch (persistError) {
+        console.error("discovery full-surface pre-action evidence failed", persistError);
+      }
+    }
+    throw error;
   } finally {
     await cleanupScreenshot(shot.path);
   }

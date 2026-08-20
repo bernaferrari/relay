@@ -11,6 +11,10 @@ import type { SnapshotNode } from "./device.js";
 import { interact } from "./workspace-interact.js";
 import { devicePlatformForSerial } from "./workspace-devices.js";
 import { captureScreenshot, captureSnapshot, type SnapshotPayload } from "./workspace-capture.js";
+import {
+  IosMutationOutcomeUnknownError,
+  rethrowIosMutationOutcomeUnknown,
+} from "./ios-mutation-policy.js";
 
 import type {
   ScrollSurveyCapture,
@@ -29,6 +33,59 @@ export type {
   ScrollSurveyResult,
   ScrollSurveyStopReason,
 } from "./scrollable-survey-types.js";
+
+/**
+ * A scroll command may have moved an iOS viewport even when XCTest lost its
+ * acknowledgement. These raw frames are deliberately retained with the
+ * terminal error so a reviewer can inspect the last proven viewport without
+ * issuing a compensating scroll.
+ */
+export type ScrollSurveyOutcomeUnknownDiagnostic = {
+  schemaVersion: 1;
+  status: "interrupted";
+  reason: "ios-mutation-outcome-unknown";
+  message: string;
+  frames: ScrollSurveyFrame[];
+  diagnosticFrames: ScrollSurveyFrame[];
+  restoredStartViewport: false;
+  restoration: {
+    attempted: false;
+    reason: "iOS mutation outcome is unknown";
+  };
+};
+
+const outcomeUnknownDiagnostics = new WeakMap<object, ScrollSurveyOutcomeUnknownDiagnostic>();
+
+function attachScrollSurveyOutcomeUnknownDiagnostic(
+  error: unknown,
+  frames: ScrollSurveyFrame[],
+  diagnosticFrames: ScrollSurveyFrame[],
+): void {
+  if (!(error instanceof IosMutationOutcomeUnknownError)) return;
+  outcomeUnknownDiagnostics.set(error, {
+    schemaVersion: 1,
+    status: "interrupted",
+    reason: "ios-mutation-outcome-unknown",
+    message:
+      "An iOS scroll may already have moved the viewport. Relay retained the captured frames and did not attempt restoration.",
+    frames: structuredClone(frames),
+    diagnosticFrames: structuredClone(diagnosticFrames),
+    restoredStartViewport: false,
+    restoration: {
+      attempted: false,
+      reason: "iOS mutation outcome is unknown",
+    },
+  });
+}
+
+/** Returns raw, decomposable survey evidence attached to an uncertain iOS scroll. */
+export function scrollSurveyOutcomeUnknownDiagnostic(
+  error: unknown,
+): ScrollSurveyOutcomeUnknownDiagnostic | undefined {
+  if (!error || (typeof error !== "object" && typeof error !== "function")) return undefined;
+  const diagnostic = outcomeUnknownDiagnostics.get(error);
+  return diagnostic ? structuredClone(diagnostic) : undefined;
+}
 export function scrollSurveyGesture(
   platform: "android" | "ios",
   bounds: { width: number; height: number },
@@ -676,7 +733,8 @@ export async function captureScrollableSurvey(
             owedMovements = 0;
             return;
           }
-        } catch {
+        } catch (error) {
+          rethrowIosMutationOutcomeUnknown(error);
           restored = false;
           return;
         }
@@ -687,13 +745,15 @@ export async function captureScrollableSurvey(
     for (let index = 0; index < owedMovements; index += 1) {
       try {
         await driver.scrollUp();
-      } catch {
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
         restored = false;
         continue;
       }
       try {
         await driver.settle();
-      } catch {
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
         restored = false;
       }
     }
@@ -718,7 +778,8 @@ export async function captureScrollableSurvey(
         // point every exit owes exactly one inverse movement.
         owedMovements += 1;
         await driver.settle();
-      } catch {
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
         decision = {
           status: "stopped",
           reason: "scroll-failed",
@@ -731,7 +792,8 @@ export async function captureScrollableSurvey(
       try {
         next = await driver.capture();
         lastPostAttemptCapture = next;
-      } catch {
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
         decision = {
           status: "stopped",
           reason: "scroll-failed",
@@ -820,7 +882,16 @@ export async function captureScrollableSurvey(
   } catch (error) {
     unexpected = error;
   } finally {
-    await restoreOnce();
+    if (unexpected instanceof IosMutationOutcomeUnknownError) {
+      attachScrollSurveyOutcomeUnknownDiagnostic(unexpected, frames, diagnosticFrames);
+    } else {
+      try {
+        await restoreOnce();
+      } catch (error) {
+        attachScrollSurveyOutcomeUnknownDiagnostic(error, frames, diagnosticFrames);
+        throw error;
+      }
+    }
   }
   if (unexpected !== undefined) throw unexpected;
   if (!restored) {
@@ -850,7 +921,11 @@ export async function captureScrollableSurvey(
           diagnosticFrames,
         );
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof IosMutationOutcomeUnknownError) {
+        attachScrollSurveyOutcomeUnknownDiagnostic(error, frames, diagnosticFrames);
+        throw error;
+      }
       return result(
         frames,
         decision.status,

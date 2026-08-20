@@ -6,9 +6,30 @@ import {
   composeScrollSurveyFrames,
   scrollSurveyFastRestoreGesture,
   scrollSurveyGesture,
+  scrollSurveyOutcomeUnknownDiagnostic,
   verticalScrollSeam,
 } from "./scrollable-survey.js";
+import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
 import type { SnapshotPayload } from "./workspace-capture.js";
+
+function unknownIosScroll(): IosMutationOutcomeUnknownError {
+  return new IosMutationOutcomeUnknownError(
+    {
+      sequence: 1,
+      operation: "scroll",
+      nativeAttempts: 1,
+      outcome: "outcome-unknown",
+      retry: {
+        attempts: 0,
+        decision: "blocked",
+        reason: "native-command-outcome-unknown",
+      },
+      intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+      at: 1,
+    },
+    new Error("XCTest transport ended"),
+  );
+}
 
 function image(offset: number): Buffer {
   const png = new PNG({ width: 64, height: 160 });
@@ -680,6 +701,105 @@ test("does not restore a scrollDown call that never succeeded", async () => {
   assert.equal(result.reason, "scroll-failed");
   assert.equal(up, 0);
   assert.equal(result.restoredStartViewport, true);
+});
+
+test("stops an unknown iOS scroll without an inverse movement and retains the proven frame", async () => {
+  const movements: string[] = [];
+  let failure: unknown;
+
+  await assert.rejects(
+    captureScrollableSurvey({
+      capture: async () => captured(image(0), 1),
+      scrollDown: async () => {
+        movements.push("down");
+        throw unknownIosScroll();
+      },
+      scrollUp: async () => {
+        movements.push("up");
+      },
+      settle: async () => {},
+    }),
+    (error: unknown) => {
+      failure = error;
+      return error instanceof IosMutationOutcomeUnknownError;
+    },
+  );
+
+  assert.deepEqual(movements, ["down"]);
+  const diagnostic = scrollSurveyOutcomeUnknownDiagnostic(failure);
+  assert.equal(diagnostic?.status, "interrupted");
+  assert.equal(diagnostic?.restoration.attempted, false);
+  assert.equal(diagnostic?.frames.length, 1);
+  assert.equal(diagnostic?.frames[0]?.screenshot.capturedAt, 1);
+});
+
+test("stops an unknown iOS restoration fling without trying another restoration movement", async () => {
+  let page = 0;
+  const movements: string[] = [];
+  let failure: unknown;
+
+  await assert.rejects(
+    captureScrollableSurvey(
+      {
+        capture: async () => captured(image(page * 40), page),
+        scrollDown: async () => {
+          movements.push("down");
+          page = 1;
+        },
+        scrollUp: async () => {
+          movements.push("up");
+        },
+        scrollUpFast: async () => {
+          movements.push("fast-up");
+          throw unknownIosScroll();
+        },
+        settle: async () => {},
+      },
+      { maxScrolls: 1, initialViewport: "proven-document-origin" },
+    ),
+    (error: unknown) => {
+      failure = error;
+      return error instanceof IosMutationOutcomeUnknownError;
+    },
+  );
+
+  assert.deepEqual(movements, ["down", "fast-up"]);
+  const diagnostic = scrollSurveyOutcomeUnknownDiagnostic(failure);
+  assert.equal(diagnostic?.frames.length, 2);
+  assert.equal(diagnostic?.restoration.attempted, false);
+});
+
+test("stops an unknown iOS inverse scroll without dispatching the next restoration command", async () => {
+  let page = 0;
+  const movements: string[] = [];
+  let failure: unknown;
+
+  await assert.rejects(
+    captureScrollableSurvey(
+      {
+        capture: async () => captured(image(page * 40), page),
+        scrollDown: async () => {
+          movements.push("down");
+          page += 1;
+        },
+        scrollUp: async () => {
+          movements.push("up");
+          throw unknownIosScroll();
+        },
+        settle: async () => {},
+      },
+      { maxScrolls: 2 },
+    ),
+    (error: unknown) => {
+      failure = error;
+      return error instanceof IosMutationOutcomeUnknownError;
+    },
+  );
+
+  assert.deepEqual(movements, ["down", "down", "up"]);
+  const diagnostic = scrollSurveyOutcomeUnknownDiagnostic(failure);
+  assert.equal(diagnostic?.frames.length, 3);
+  assert.equal(diagnostic?.restoration.attempted, false);
 });
 
 test("reports restore failure while still attempting one up per successful down", async () => {
