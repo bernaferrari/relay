@@ -279,6 +279,12 @@ export function resolveRequestContext(
 export type AuditEvent = {
   at: number;
   subject: string;
+  /**
+   * The command actor when a route can distinguish it from the authenticated
+   * subject. This matters on the local host, where several Relay windows may
+   * share one trusted session but must remain individually attributable.
+   */
+  actorId?: string;
   organizationId: string;
   projectId: string;
   action: string;
@@ -299,6 +305,7 @@ export function recordAudit(
     organizationId: context.organizationId,
     projectId: context.projectId,
     ...event,
+    ...(event.actorId ? { actorId: redactText(event.actorId) } : {}),
     ...(event.target ? { target: redactText(event.target) } : {}),
   });
   if (auditEvents.length > 1_000) auditEvents.splice(0, auditEvents.length - 1_000);

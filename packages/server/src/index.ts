@@ -81,11 +81,7 @@ import { startScheduler } from "./scheduler.js";
 import { handleRunRoute } from "./run-routes.js";
 import { handlePublicRunShareRoute } from "./run-share-routes.js";
 import { handleJobRoute } from "./job-routes.js";
-import {
-  assertTargetControl,
-  assertTargetLease,
-  assertTargetObservation,
-} from "./access-control.js";
+import { assertTargetControl, assertTargetObservation } from "./access-control.js";
 import {
   CORS_HEADERS,
   HttpError,
@@ -130,7 +126,7 @@ import { handlePresenceRoute } from "./presence-routes.js";
 import { handleAppMapRunRoute } from "./app-map-run-routes.js";
 import { handleSettingsRoute } from "./settings-routes.js";
 import { handleTargetRoute } from "./target-routes.js";
-import { liveStreamOperationContext } from "./target-stream-context.js";
+import { livePreviewOperationContext } from "./target-stream-context.js";
 import { handleControlPlaneRoute } from "./control-plane-routes.js";
 import { handleRecipeRoute } from "./recipe-routes.js";
 import { handleInteractionRoute } from "./interaction-routes.js";
@@ -626,10 +622,21 @@ async function handleRequest(
     if (method === "GET" && pathname === "/device/stream") {
       const serial = url.searchParams.get("serial")?.trim();
       if (!serial) throw new HttpError(400, "serial is required");
-      const leaseId = url.searchParams.get("lease") ?? undefined;
-      const streamContext = await liveStreamOperationContext(req, scope, serial, leaseId);
+      if (url.searchParams.has("lease")) {
+        recordAudit(scope, {
+          action: "target.preview.open",
+          resource: "target",
+          target: serial,
+          result: "deny",
+        });
+        throw new HttpError(
+          400,
+          "lease is not accepted for a read-only live preview; remove it from the URL",
+        );
+      }
+      const streamContext = await livePreviewOperationContext(req, scope, serial);
       await runWithOperationContext(streamContext, async () => {
-        await assertTargetLease(scope, serial, streamContext.leaseId);
+        assertTargetObservation(scope, serial);
         await liveVideoStream(res, serial);
       });
       return;

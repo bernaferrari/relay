@@ -4,85 +4,65 @@ import type { ActorKind } from "@relay/protocol";
 import { HttpError } from "./http.js";
 import { recordAudit, resolveCommandActor, type RequestContext } from "./security.js";
 
-function actorKindForLeaseOwner(ownerId: string, scope: RequestContext): ActorKind {
-  if (!scope.localTrusted) {
-    return scope.tokenKind === "external" ? (scope.externalActorKind ?? "human") : "agent";
-  }
-  if (ownerId.startsWith("agent:")) return "agent";
-  if (ownerId.startsWith("system:")) return "system";
-  return "human";
-}
-
 /**
- * Attribute a live stream to a currently valid target lease before the route
- * commits its streaming response. Keeping this separate prevents the HTTP
- * entry point from owning both request dispatch and lease authorization.
+ * A preview is intentionally not an input lease. A current, organization- and
+ * project-scoped lease only proves that this attached target is being shared
+ * by the requesting project; it does not need to belong to the viewer and it
+ * is never returned to the browser or placed in a URL.
  */
-export async function liveStreamOperationContext(
+export async function livePreviewOperationContext(
   request: http.IncomingMessage,
   scope: RequestContext,
   targetId: string,
-  leaseId: string | undefined,
 ) {
   const at = now();
-  const leases = await listDeviceLeases(scope.projectId);
-  const requestedActorHeader = request.headers["x-relay-actor-id"];
-  let requestedActor: { actorId: string; actorKind: ActorKind } | undefined;
-  if (requestedActorHeader !== undefined || !leaseId) {
-    try {
-      requestedActor = resolveCommandActor(request.headers, scope);
-    } catch (error) {
-      throw new HttpError(403, error instanceof Error ? error.message : String(error));
-    }
-  }
-  const lease = leaseId
-    ? leases.find(
-        (candidate) =>
-          candidate.id === leaseId &&
-          candidate.deviceSerial === targetId &&
-          candidate.status === "leased" &&
-          candidate.expiresAt > at,
-      )
-    : leases.find(
-        (candidate) =>
-          candidate.deviceSerial === targetId &&
-          candidate.ownerId === requestedActor?.actorId &&
-          candidate.status === "leased" &&
-          candidate.expiresAt > at,
-      );
-  if (!leaseId && !lease) {
-    throw new HttpError(403, "A target lease is required for live streaming");
-  }
-  const attributable =
-    lease &&
-    (!requestedActorHeader || requestedActor?.actorId === lease.ownerId) &&
-    (scope.localTrusted || lease.ownerId === scope.subject);
-  if (!attributable) {
+  let actor: { actorId: string; actorKind: ActorKind };
+  try {
+    actor = resolveCommandActor(request.headers, scope);
+  } catch (error) {
     recordAudit(scope, {
-      action: "target.stream",
-      resource: "lease",
+      action: "target.preview.open",
+      resource: "target",
       target: targetId,
       result: "deny",
     });
-    throw new HttpError(403, "The live-stream target lease is unavailable");
+    throw new HttpError(403, error instanceof Error ? error.message : String(error));
+  }
+
+  const projectSharesTarget = (await listDeviceLeases(scope.projectId)).some(
+    (lease) =>
+      lease.organizationId === scope.organizationId &&
+      lease.deviceSerial === targetId &&
+      lease.status === "leased" &&
+      lease.expiresAt > at,
+  );
+  if (!projectSharesTarget) {
+    recordAudit(scope, {
+      action: "target.preview.open",
+      resource: "target",
+      target: targetId,
+      result: "deny",
+      actorId: actor.actorId,
+    });
+    throw new HttpError(403, "This target is not shared with the current project");
   }
   recordAudit(scope, {
-    action: "target.stream",
-    resource: "lease",
+    action: "target.preview.open",
+    resource: "target",
     target: targetId,
     result: "allow",
+    actorId: actor.actorId,
   });
   const requestId = crypto.randomUUID();
   return {
     schemaVersion: 1 as const,
-    actorId: lease.ownerId,
-    actorKind: requestedActor?.actorKind ?? actorKindForLeaseOwner(lease.ownerId, scope),
+    actorId: actor.actorId,
+    actorKind: actor.actorKind,
     organizationId: scope.organizationId,
     projectId: scope.projectId,
     operationId: "target.stream.open" as const,
     requestId,
     idempotencyKey: requestId,
     issuedAt: at,
-    leaseId: lease.id,
   };
 }
