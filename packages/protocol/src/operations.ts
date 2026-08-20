@@ -189,6 +189,13 @@ export type IosMutationAttemptDiagnosticDto = {
     required: boolean;
     action: "none" | "capture-current-screen-before-any-retry";
   };
+  /**
+   * Cancellation arrived after Relay began its one native attempt. This remains
+   * review-needed evidence, never permission to retry the command.
+   */
+  cancellation?: {
+    observedAfterAttemptStarted: true;
+  };
   at: number;
 };
 
@@ -1365,6 +1372,12 @@ function assertIosMutationAttemptDiagnostic(
     intervention.action !== "capture-current-screen-before-any-retry"
   ) {
     fail(`${label} intervention action`, "is unsupported");
+  }
+  if (diagnostic.cancellation !== undefined) {
+    const cancellation = record(diagnostic.cancellation, `${label} cancellation`);
+    if (cancellation.observedAfterAttemptStarted !== true) {
+      fail(`${label} cancellation observedAfterAttemptStarted`, "must be true");
+    }
   }
   number(diagnostic.at, `${label} at`);
 }

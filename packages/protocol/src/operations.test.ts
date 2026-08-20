@@ -758,6 +758,7 @@ test("standalone step output keeps an unknown iOS command as terminal review evi
       outcome: "outcome-unknown",
       retry: { attempts: 0, decision: "blocked", reason: "native-command-outcome-unknown" },
       intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+      cancellation: { observedAfterAttemptStarted: true },
       at: 1,
     },
     stepReview: {
@@ -779,6 +780,17 @@ test("standalone step output keeps an unknown iOS command as terminal review evi
         },
       }),
     /target screenshot/,
+  );
+  assert.throws(
+    () =>
+      definition.output.parse({
+        ...result,
+        iosMutation: {
+          ...result.iosMutation,
+          cancellation: { observedAfterAttemptStarted: false },
+        },
+      }),
+    /cancellation observedAfterAttemptStarted/,
   );
 });
 

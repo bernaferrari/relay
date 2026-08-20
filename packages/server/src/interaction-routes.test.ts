@@ -94,6 +94,33 @@ test("the interaction boundary preserves an iOS one-command intervention for app
   });
 });
 
+test("the interaction boundary preserves cancellation after an iOS attempt started", () => {
+  const error = new IosMutationOutcomeUnknownError(
+    {
+      sequence: 1,
+      operation: "press",
+      nativeAttempts: 1,
+      outcome: "outcome-unknown",
+      retry: {
+        attempts: 0,
+        decision: "blocked",
+        reason: "native-command-outcome-unknown",
+      },
+      intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+      cancellation: { observedAfterAttemptStarted: true },
+      at: 1,
+    },
+    new Error("cancelled after the native attempt started"),
+  );
+
+  const response = iosMutationOutcomeUnknownHttpError(error);
+  const body = response.body as {
+    iosMutation?: { cancellation?: { observedAfterAttemptStarted?: unknown } };
+  };
+
+  assert.equal(body.iosMutation?.cancellation?.observedAfterAttemptStarted, true);
+});
+
 test("the recovery payload retains full-surface frames without offering another movement", async () => {
   const response = iosMutationOutcomeUnknownHttpError(await fullSurfaceScrollFailure());
   const body = response.body as {

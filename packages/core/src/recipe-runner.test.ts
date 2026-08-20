@@ -1247,6 +1247,82 @@ describe("runRecipeStep campaign check policy", () => {
     assert.equal((cleanup?.data as { status?: string } | undefined)?.status, "skipped");
   });
 
+  it("never runs cancellation cleanup after an iOS command started before cancellation", async () => {
+    const presses: string[] = [];
+    const job = {
+      id: "campaign-ios-cancelled-after-dispatch",
+      artifacts: [],
+    } as unknown as TestJob;
+    const recipeGraph = {
+      primary: {
+        id: "primary",
+        title: "Primary",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "primary" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "Cleanup",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "cleanup" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const device = stubDevice({
+      press: (options) => {
+        const selector = String((options as { selector?: string }).selector);
+        presses.push(selector);
+        if (selector.includes("primary")) {
+          // The driver started the native command, then cancellation arrived
+          // before it could return a trustworthy result.
+          requestCancel(job.id);
+          return Promise.reject(new JobCancelledError("cancelled after primary dispatch"));
+        }
+        return Promise.resolve({});
+      },
+      snapshot: () => Promise.resolve({ nodes: [] }),
+    });
+
+    try {
+      await assert.rejects(
+        runWithJobControl(job.id, () =>
+          runIosRecipeStep(
+            device,
+            {
+              kind: "module",
+              recipeId: "primary",
+              check: {
+                id: "kids",
+                title: "Kids Mode",
+                cleanup: {
+                  recipeId: "cleanup",
+                  terminalScreenId: "kids-off",
+                  onCancel: "run-if-controllable",
+                },
+              },
+            },
+            { ...noLog, job, runtime: {}, recipeGraph },
+          ),
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof IosMutationOutcomeUnknownError);
+          assert.equal(error.iosMutation.operation, "press");
+          assert.equal(error.iosMutation.cancellation?.observedAfterAttemptStarted, true);
+          return true;
+        },
+      );
+    } finally {
+      clearControl(job.id);
+    }
+
+    assert.deepEqual(presses, ['id="primary"']);
+    const cleanup = job.artifacts.find((artifact) => artifact.kind === "campaign-check-cleanup");
+    assert.equal((cleanup?.data as { status?: string } | undefined)?.status, "skipped");
+  });
+
   it("does not defer or continue after an unknown iOS cleanup mutation", async () => {
     const presses: string[] = [];
     const job = { id: "campaign-ios-cleanup-unknown", artifacts: [] } as unknown as TestJob;

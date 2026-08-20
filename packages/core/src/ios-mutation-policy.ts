@@ -50,6 +50,13 @@ export type IosMutationAttemptDiagnostic = {
     required: boolean;
     action: "none" | "capture-current-screen-before-any-retry";
   };
+  /**
+   * Cancellation was observed only after Relay began the one native attempt.
+   * It is evidence, not proof that XCTest did not receive the command.
+   */
+  cancellation?: {
+    observedAfterAttemptStarted: true;
+  };
   at: number;
 };
 
@@ -131,6 +138,7 @@ function mutationDiagnostic(
   serial: string,
   operation: IosMutationOperation,
   outcome: IosMutationAttemptDiagnostic["outcome"],
+  cancelledAfterAttemptStarted = false,
 ): IosMutationAttemptDiagnostic {
   const selectorMiss = outcome === "selector-miss";
   const unknown = outcome === "outcome-unknown";
@@ -152,8 +160,15 @@ function mutationDiagnostic(
       required: unknown,
       action: unknown ? "capture-current-screen-before-any-retry" : "none",
     },
+    ...(cancelledAfterAttemptStarted
+      ? { cancellation: { observedAfterAttemptStarted: true as const } }
+      : {}),
     at: Date.now(),
   };
+}
+
+function isJobCancellation(error: unknown): boolean {
+  return error instanceof Error && error.name === "JobCancelledError";
 }
 
 /**
@@ -183,13 +198,11 @@ export async function runIosMutationOnce<T>(
       serial,
       operation,
       iosSelectorWasNotDispatched(error) ? "selector-miss" : "outcome-unknown",
+      isJobCancellation(error),
     );
     iosMutationSequences.set(serial, diagnostic.sequence);
     iosMutationAttemptDiagnostics.set(serial, diagnostic);
     attachIosMutationDiagnostic(error, diagnostic);
-    // Preserve cancellation semantics for the job controller, while still
-    // recording that an already-dispatched command has an unknown outcome.
-    if (error instanceof Error && error.name === "JobCancelledError") throw error;
     if (diagnostic.outcome === "selector-miss") throw error;
     throw new IosMutationOutcomeUnknownError(diagnostic, error);
   }
