@@ -102,6 +102,19 @@ test("hard-stops malformed typed and parser-valid historical Test artifacts with
   };
   assert.equal(assessAppMapTestExecutionSource(malformed).status, "review-required");
 
+  const malformedArray = {
+    ...source,
+    artifacts: [
+      null,
+      { kind: "app-map-test-execution-intent", data: { schemaVersion: 1 } },
+    ] as unknown as typeof source.artifacts,
+  };
+  assert.deepEqual(assessAppMapTestExecutionSource(malformedArray), {
+    status: "review-required",
+    reason: "The Test execution intent is malformed or internally inconsistent.",
+  });
+  assert.throws(() => requireScopedAppMapTestExecutionSource(malformedArray), /needs review/u);
+
   const nonDigestible = structuredClone(source);
   const nonDigestibleIntent = nonDigestible.artifacts[0]!.data as {
     plan: { surfaceBindings?: unknown };

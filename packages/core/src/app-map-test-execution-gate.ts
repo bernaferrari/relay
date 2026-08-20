@@ -53,6 +53,18 @@ function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+/** The persisted artifact array is untrusted at retry/replay boundaries. Keep
+ * the catch path structural too: a malformed sibling must not turn a typed
+ * Test intent into an uncaught server error. */
+function artifactHasKind(value: unknown, kind: string): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as { kind?: unknown }).kind === kind
+  );
+}
+
 function sameViewport(
   left: { width: number; height: number } | undefined,
   right: { width: number; height: number } | undefined,
@@ -135,7 +147,9 @@ export function assessAppMapTestExecutionSource(
   } catch {
     const claimsIntent =
       Array.isArray(source.artifacts) &&
-      source.artifacts.some((artifact) => artifact.kind === appMapTestExecutionIntentArtifactKind);
+      source.artifacts.some((artifact) =>
+        artifactHasKind(artifact, appMapTestExecutionIntentArtifactKind),
+      );
     return claimsIntent
       ? {
           status: "review-required",

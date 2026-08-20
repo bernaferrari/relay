@@ -235,7 +235,7 @@ async function assertReviewRequired(response: Response): Promise<void> {
   assert.match(body.error ?? "", /needs review/i);
 }
 
-test("legacy parser-valid Test retries, replay, resume, and repair stop before target control", async () => {
+test("legacy and malformed typed Test retries, replay, resume, and repair stop before target control", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-test-intent-routes-"));
   const previousRuns = process.env.RELAY_RUNS_DIR;
   const previousState = process.env.RELAY_STATE_DIR;
@@ -317,6 +317,21 @@ test("legacy parser-valid Test retries, replay, resume, and repair stop before t
       await fetch(`${base}/runs/legacy-run/checks/missing/retry`, {
         method: "POST",
         headers: headers("run.repair.retry"),
+        body: "{}",
+      }),
+    );
+    retrySource.artifacts = [
+      null,
+      {
+        kind: "app-map-test-execution-intent",
+        capturedAt: 1,
+        data: { schemaVersion: 1 },
+      },
+    ] as unknown as typeof retrySource.artifacts;
+    await assertReviewRequired(
+      await fetch(`${base}/jobs/legacy-job/retry`, {
+        method: "POST",
+        headers: headers("job.retry"),
         body: "{}",
       }),
     );
