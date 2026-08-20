@@ -300,6 +300,7 @@ const scrollSurveyReasons = new Set<ScrollSurveyStopReasonDto>([
   "dimension-changed",
   "scroll-failed",
   "restore-failed",
+  "start-viewport-unproven",
   "limit-reached",
 ]);
 

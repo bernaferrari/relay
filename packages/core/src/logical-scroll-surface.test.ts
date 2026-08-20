@@ -142,6 +142,7 @@ function regenerableSurvey(): ScrollSurveyResult {
     stitched: { base64: png(91), width: 4, height: 4, mime: "image/png" },
     mergedNodes: [{ label: "Stale node", type: "StaticText" }],
     restoredStartViewport: true,
+    documentOriginProven: true,
     message: "Fixture contains stale derived views.",
   };
 }
@@ -299,6 +300,37 @@ test("persists every raw viewport and attaches only durable evidence URIs", asyn
   }
 });
 
+test("does not mint an origin proof from a stopped or unrestored survey", async () => {
+  const state = await mkdtemp(join(tmpdir(), "relay-scroll-surface-unproven-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = state;
+  try {
+    const unproven = {
+      ...regenerableSurvey(),
+      status: "stopped" as const,
+      reason: "seam-ambiguous" as const,
+      restoredStartViewport: false,
+      documentOriginProven: true as const,
+    };
+    const surface = await persistLogicalScrollSurface({
+      survey: unproven,
+      targetProfile: regenerationProfile,
+      surfaceId: logicalScrollSurfaceId("settings", "settings-ja"),
+      capturePolicy: {
+        captureMode: "full-surface",
+        source: "explicit",
+        reason: "Stopped fixture must never create a document-origin proof.",
+        decidedAt: 100,
+      },
+    });
+    assert.equal(surface.documentOriginProof, undefined);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(state, { recursive: true, force: true });
+  }
+});
+
 test("rejects attaching a surface to another target/locale variant", async () => {
   const state = await mkdtemp(join(tmpdir(), "relay-scroll-surface-scope-"));
   const previous = process.env.RELAY_STATE_DIR;
@@ -361,6 +393,14 @@ test("regenerates derived views deterministically while retaining all raw captur
         decidedAt: 100,
       },
     });
+    assert.deepEqual(initial.documentOriginProof, {
+      schemaVersion: 1,
+      method: "frozen-origin-match",
+      firstViewport: {
+        screenshotSha256: initial.viewports[0]!.screenshot.sha256,
+        accessibilityTreeSha256: initial.viewports[0]!.accessibilityTree.sha256,
+      },
+    });
     const rawIdentity = (surface: typeof initial) =>
       surface.viewports.map((viewport) => ({
         screenshot: viewport.screenshot,
@@ -372,6 +412,7 @@ test("regenerates derived views deterministically while retaining all raw captur
     });
     assert.equal(regenerated.id, initial.id);
     assert.equal(regenerated.captureId, initial.captureId);
+    assert.deepEqual(regenerated.documentOriginProof, initial.documentOriginProof);
     assert.deepEqual(rawIdentity(regenerated), rawIdentity(initial));
     assert.equal(regenerated.viewports[1]?.offsetY, 40);
     assert.equal(regenerated.viewports[1]?.appendedHeight, 40);
@@ -423,6 +464,57 @@ test("regenerates derived views deterministically while retaining all raw captur
       replaced.screenVariants["settings-ja"]!.evidenceIds.includes(regenerated.manifest.id),
     );
     assert.ok(!replaced.screenVariants["settings-ja"]!.evidenceIds.includes(initial.manifest.id));
+    assert.doesNotThrow(() => validateAppMap(replaced));
+
+    // A legacy capture may be valid raw evidence, but a derived-only rebuild
+    // must never be able to add an otherwise self-consistent origin proof to
+    // it while retaining its old capture identity.
+    const legacy = structuredClone(initial);
+    delete legacy.documentOriginProof;
+    const attachedLegacy = attachAppMapScrollSurface(
+      (() => {
+        const fixture = mapFixture();
+        fixture.screenVariants["settings-ja"]!.targetProfile = regenerationProfile;
+        return fixture;
+      })(),
+      { screenId: "settings", variantId: "settings-ja", surface: legacy },
+      {
+        expectedRevision: 0,
+        eventId: "legacy-capture",
+        actorId: "human:designer",
+        actorKind: "human",
+        at: 220,
+      },
+    );
+    const forgedProof = structuredClone(legacy);
+    forgedProof.documentOriginProof = structuredClone(initial.documentOriginProof!);
+    assert.throws(
+      () =>
+        replaceAppMapScrollSurfaceDerived(
+          attachedLegacy,
+          { screenId: "settings", variantId: "settings-ja", surface: forgedProof },
+          {
+            expectedRevision: 1,
+            eventId: "forge-origin-proof",
+            actorId: "human:designer",
+            actorKind: "human",
+            at: 230,
+          },
+        ),
+      /cannot replace immutable capture identity or provenance/u,
+    );
+    const forgedOriginProof = structuredClone(replaced);
+    forgedOriginProof.screenVariants["settings-ja"]!.scrollSurfaces![0]!.documentOriginProof = {
+      ...regenerated.documentOriginProof!,
+      firstViewport: {
+        ...regenerated.documentOriginProof!.firstViewport,
+        screenshotSha256: "f".repeat(64),
+      },
+    };
+    assert.throws(
+      () => validateAppMap(forgedOriginProof),
+      /must bind the first raw viewport evidence/u,
+    );
   } finally {
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;

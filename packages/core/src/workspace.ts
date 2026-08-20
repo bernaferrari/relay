@@ -55,6 +55,7 @@ export {
   captureScrollableSurveyForTarget,
   verticalScrollSeam,
   type ScrollSurveyFrame,
+  type ValidatedFrozenDocumentOrigin,
   type ScrollSurveyOptions,
   type ScrollSurveyResult,
   type ScrollSurveyStopReason,

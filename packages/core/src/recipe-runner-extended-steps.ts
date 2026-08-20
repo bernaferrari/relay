@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { PNG } from "pngjs";
 import type { Device } from "./device.js";
 import {
   replaceText,
@@ -11,7 +12,10 @@ import {
 } from "./device.js";
 import { cooperativeCheckpoint } from "./control.js";
 import { now } from "./events.js";
-import { captureScrollableSurveyForTarget, type ScrollSurveyCapture } from "./scrollable-survey.js";
+import {
+  captureScrollableSurveyForTarget,
+  type ValidatedFrozenDocumentOrigin,
+} from "./scrollable-survey.js";
 import { readAuthoringEvidence } from "./authoring-evidence.js";
 import { persistLogicalScrollSurface } from "./logical-scroll-surface.js";
 import { listPersistedRuns } from "./runs.js";
@@ -345,15 +349,107 @@ function isSnapshotNode(value: unknown): value is SnapshotNode {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Rehydrate only the immutable first viewport frozen into a trusted compiled
- * surface step. Missing or malformed evidence simply disables the fast path;
- * it never gives the runner a reason to scroll by approximation. */
-async function frozenDocumentOrigin(
+function frozenScreenshotMatchesViewport(
+  image: Buffer,
+  origin: Extract<RecipeStep, { kind: "capture-surface" }>["documentOrigin"],
+): boolean {
+  if (!origin) return false;
+  try {
+    const decoded = PNG.sync.read(image);
+    return decoded.width === origin.width && decoded.height === origin.height;
+  } catch {
+    return false;
+  }
+}
+
+function frozenDocumentOriginGeometryIsValid(
+  origin: Extract<RecipeStep, { kind: "capture-surface" }>["documentOrigin"],
+): boolean {
+  return Boolean(
+    origin &&
+    origin.index === 0 &&
+    origin.offsetY === 0 &&
+    origin.appendedHeight === 0 &&
+    Number.isSafeInteger(origin.capturedAt) &&
+    Number.isSafeInteger(origin.width) &&
+    Number.isSafeInteger(origin.height) &&
+    origin.width > 0 &&
+    origin.height > 0,
+  );
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function evidenceSha256(value: unknown): string | undefined {
+  const sha256 = objectRecord(value)?.sha256;
+  return typeof sha256 === "string" && /^[a-f0-9]{64}$/u.test(sha256) ? sha256 : undefined;
+}
+
+function frozenDocumentOriginProofIsValid(
+  step: Extract<RecipeStep, { kind: "capture-surface" }>,
+): boolean {
+  // RecipeStep is normally parser-validated, but this execution boundary is
+  // also callable from persisted/manual JS. Treat every malformed nested
+  // shape as unavailable proof rather than letting a property read throw.
+  const origin = objectRecord(step.documentOrigin);
+  const proof = objectRecord(step.documentOriginProof);
+  const firstViewport = objectRecord(proof?.firstViewport);
+  const screenshotSha256 = evidenceSha256(origin?.screenshot);
+  const accessibilityTreeSha256 = evidenceSha256(origin?.accessibilityTree);
+  return Boolean(
+    origin &&
+    proof &&
+    firstViewport &&
+    screenshotSha256 &&
+    accessibilityTreeSha256 &&
+    proof.schemaVersion === 1 &&
+    proof.method === "frozen-origin-match" &&
+    firstViewport.screenshotSha256 === screenshotSha256 &&
+    firstViewport.accessibilityTreeSha256 === accessibilityTreeSha256,
+  );
+}
+
+function isFrozenInspectableSnapshot(
+  value: unknown,
+): value is { nodes: SnapshotNode[]; foregroundApp?: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    (value as { inspectable?: unknown }).inspectable === true &&
+    Array.isArray((value as { nodes?: unknown }).nodes) &&
+    (value as { nodes: unknown[] }).nodes.every(isSnapshotNode) &&
+    ((value as { foregroundApp?: unknown }).foregroundApp === undefined ||
+      typeof (value as { foregroundApp?: unknown }).foregroundApp === "string")
+  );
+}
+
+/** Rehydrate an immutable, content-addressed first viewport for the one
+ * bounded Android restore path. This is intentionally exported for offline
+ * contract tests; it never reads a device or changes an App Map. Missing or
+ * malformed evidence simply disables the fast path; it never gives the runner
+ * a reason to scroll by approximation. */
+export async function loadFrozenDocumentOriginForCaptureSurface(
   step: Extract<RecipeStep, { kind: "capture-surface" }>,
   serial: string,
-): Promise<ScrollSurveyCapture | undefined> {
+): Promise<ValidatedFrozenDocumentOrigin | undefined> {
   const origin = step.documentOrigin;
-  if (!origin) return undefined;
+  // A hand-authored or degraded step must not turn its title/first frame into
+  // a permission to fling. The compiler only emits this pair for a trusted,
+  // completed baseline; repeat the guard at the execution boundary because
+  // recipes can also enter through persisted/manual input.
+  if (
+    !origin ||
+    step.baselineTrust !== "trusted" ||
+    !frozenDocumentOriginGeometryIsValid(origin) ||
+    !frozenDocumentOriginProofIsValid(step)
+  ) {
+    return undefined;
+  }
   const [image, tree] = await Promise.all([
     readAuthoringEvidence(origin.screenshot.sha256),
     readAuthoringEvidence(origin.accessibilityTree.sha256),
@@ -362,7 +458,8 @@ async function frozenDocumentOrigin(
     !image ||
     !tree ||
     !evidenceBytesMatch(image, origin.screenshot) ||
-    !evidenceBytesMatch(tree, origin.accessibilityTree)
+    !evidenceBytesMatch(tree, origin.accessibilityTree) ||
+    !frozenScreenshotMatchesViewport(image, origin)
   ) {
     return undefined;
   }
@@ -372,15 +469,11 @@ async function frozenDocumentOrigin(
   } catch {
     return undefined;
   }
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    !Array.isArray((parsed as { nodes?: unknown }).nodes) ||
-    !(parsed as { nodes: unknown[] }).nodes.every(isSnapshotNode)
-  ) {
-    return undefined;
-  }
-  const nodes = (parsed as { nodes: SnapshotNode[] }).nodes;
+  if (!isFrozenInspectableSnapshot(parsed)) return undefined;
+  const nodes = parsed.nodes;
+  // This is deliberately the only production cast to the opaque capability:
+  // every preceding guard validates the trusted step, proof-to-evidence
+  // binding, CAS bytes, decoded PNG geometry, and inspectable AX document.
   return {
     screenshot: {
       base64: image.toString("base64"),
@@ -396,8 +489,32 @@ async function frozenDocumentOrigin(
       bounds: { width: origin.width, height: origin.height },
       inspectable: true,
       source: "sdk",
+      ...(parsed.foregroundApp?.trim() ? { foregroundApp: parsed.foregroundApp } : {}),
       screenIdentity: observeScreenIdentity(nodes),
     },
+  } as ValidatedFrozenDocumentOrigin;
+}
+
+/** Freeze runtime comparison policy before a capture begins. A compiled
+ * trusted baseline is no longer trustworthy when its required frozen-origin
+ * evidence cannot be rehydrated; leaving that distinction as a log line
+ * allowed a later exact-inverse survey to report a false match. */
+export function captureSurfaceBaselineDisposition(
+  step: Extract<RecipeStep, { kind: "capture-surface" }>,
+  frozenDocumentOrigin: ValidatedFrozenDocumentOrigin | undefined,
+): { requiresRecapture: boolean; reason?: string } {
+  const frozenOriginUnavailable = step.baselineTrust === "trusted" && !frozenDocumentOrigin;
+  if (frozenOriginUnavailable) {
+    return {
+      requiresRecapture: true,
+      reason: step.documentOrigin
+        ? "The frozen document-origin evidence is unavailable or invalid, so this comparison must be recaptured and reviewed."
+        : "A trusted baseline lacks frozen document-origin evidence, so this comparison must be recaptured and reviewed.",
+    };
+  }
+  return {
+    requiresRecapture: step.baselineTrust === "recapture-required",
+    ...(step.baselineTrustReason ? { reason: step.baselineTrustReason } : {}),
   };
 }
 
@@ -411,7 +528,14 @@ export async function runCaptureSurfaceStep(
   }
   await ensureAndroidSurfaceRuntimeFacts(job);
   const evaluatedAt = now();
-  const baselineRequiresRecapture = step.baselineTrust === "recapture-required";
+  const documentOrigin = await loadFrozenDocumentOriginForCaptureSurface(step, job.serial);
+  const baselineDisposition = captureSurfaceBaselineDisposition(step, documentOrigin);
+  const baselineRequiresRecapture = baselineDisposition.requiresRecapture;
+  if (step.baselineTrust === "trusted" && !documentOrigin) {
+    ctx.log(
+      `surface: ${step.screenTitle} · frozen document origin is unavailable or absent; using exact inverse restoration only and requiring recapture review`,
+    );
+  }
   const cacheIdentity = surfaceComparisonCacheIdentity(job, step);
   const cacheKey = cacheIdentity ? surfaceComparisonCacheKey(cacheIdentity) : undefined;
   if (!step.forceRecapture && !baselineRequiresRecapture && cacheIdentity) {
@@ -462,7 +586,7 @@ export async function runCaptureSurfaceStep(
         ...(baselineRequiresRecapture
           ? {
               reason:
-                step.baselineTrustReason ??
+                baselineDisposition.reason ??
                 "The frozen logical-surface baseline is incomplete and must be recaptured before comparison.",
             }
           : {}),
@@ -508,20 +632,13 @@ export async function runCaptureSurfaceStep(
           },
         }
       : undefined;
-  const documentOrigin = await frozenDocumentOrigin(step, job.serial);
-  if (step.documentOrigin && !documentOrigin) {
-    ctx.log(
-      `surface: ${step.screenTitle} · frozen document origin is unavailable; using exact inverse restoration only`,
-    );
-  }
   const survey = await captureScrollableSurveyForTarget({
     serial: job.serial,
     ...(step.maxScrolls === undefined ? {} : { maxScrolls: step.maxScrolls }),
     ...(initialCapture ? { initialCapture } : {}),
     ...(documentOrigin
       ? {
-          provenDocumentOrigin: documentOrigin,
-          initialViewport: "proven-document-origin" as const,
+          frozenDocumentOrigin: documentOrigin,
         }
       : {}),
   });
@@ -587,7 +704,7 @@ export async function runCaptureSurfaceStep(
               status: "proposed",
               action: "propose-recapture",
               reason: baselineRequiresRecapture
-                ? (step.baselineTrustReason ??
+                ? (baselineDisposition.reason ??
                   "The frozen logical-surface baseline is incomplete and needs review.")
                 : surface.status === "completed"
                   ? "Logical surface differs materially from its frozen baseline."
@@ -601,6 +718,10 @@ export async function runCaptureSurfaceStep(
     // here looked like a campaign stop and unproved every later Settings child.
     ctx.log(
       `surface: ${step.screenTitle} · restore not proven — ${survey.message} Coverage continues from the current viewport.`,
+    );
+  } else if (survey.reason === "start-viewport-unproven") {
+    ctx.log(
+      `surface: ${step.screenTitle} · frozen origin did not match · exact inverse restoration was proven; captured segment needs review before it can become a baseline.`,
     );
   }
   ctx.log(

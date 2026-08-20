@@ -8,6 +8,8 @@ import {
   scrollSurveyGesture,
   scrollSurveyOutcomeUnknownDiagnostic,
   verticalScrollSeam,
+  type ScrollSurveyCapture,
+  type ValidatedFrozenDocumentOrigin,
 } from "./scrollable-survey.js";
 import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
 import type { SnapshotPayload } from "./workspace-capture.js";
@@ -124,18 +126,23 @@ function superGrokTerminalFrame(phase: number, capturedAt: number) {
         type: "android.widget.FrameLayout",
         rect: { x: 0, y: 0, width, height },
         visibleToUser: true,
+        index: 0,
       },
       {
         type: "android.widget.ScrollView",
         rect: { x: 45, y: 0, width: 990, height: 1969 },
         visibleToUser: true,
+        index: 1,
+        parentIndex: 0,
       },
-      ...labels.map(([label, y, nodeHeight]) => ({
+      ...labels.map(([label, y, nodeHeight], index) => ({
         label,
         value: label,
         type: "android.widget.TextView",
         rect: { x: 90, y, width: 900, height: nodeHeight },
         visibleToUser: true,
+        index: index + 2,
+        parentIndex: 1,
       })),
     ],
     interactive: [],
@@ -274,10 +281,15 @@ test("keeps an uncertain moved SuperGrok viewport stopped instead of calling it 
   assert.equal(survey.status, "stopped");
   assert.equal(survey.reason, "seam-ambiguous");
   assert.equal(survey.frames.length, 1);
-  assert.equal(survey.diagnosticFrames.length, 1);
+  assert.equal(
+    survey.diagnosticFrames.length,
+    2,
+    "keep both the rejected forward viewport and failed final restoration proof",
+  );
   assert.equal(survey.diagnosticFrames[0]?.appendedHeight, 0);
   assert.equal(survey.stitched, undefined);
   assert.equal(inverseScrolls, 1);
+  assert.equal(survey.restoredStartViewport, false);
 });
 
 function androidScrollableFrame(shiftY: number, capturedAt: number) {
@@ -301,8 +313,26 @@ function androidScrollableFrame(shiftY: number, capturedAt: number) {
   paint(0, 95, 35, 35, 35); // fixed status bar
   paint(95, bodyTop, 45, 45, 45); // sticky product header
   const nodes: SnapshotPayload["nodes"] = [
-    { identifier: "app-root", type: "Application", rect: { x: 0, y: 0, width, height } },
-    { label: "Data Controls", type: "Toolbar", rect: { x: 40, y: 150, width: 500, height: 60 } },
+    {
+      identifier: "app-root",
+      type: "Application",
+      rect: { x: 0, y: 0, width, height },
+      index: 0,
+    },
+    {
+      identifier: "data-list",
+      type: "ScrollView",
+      rect: { x: 0, y: bodyTop, width, height: navigationTop - bodyTop },
+      index: 1,
+      parentIndex: 0,
+    },
+    {
+      label: "Data Controls",
+      type: "Toolbar",
+      rect: { x: 40, y: 150, width: 500, height: 60 },
+      index: 2,
+      parentIndex: 0,
+    },
   ];
   for (let index = 0; index < 12; index += 1) {
     const documentY = 330 + index * 190;
@@ -313,6 +343,8 @@ function androidScrollableFrame(shiftY: number, capturedAt: number) {
       label: `Product row ${index}`,
       type: "TextView",
       rect: { x: 45, y: viewportY, width: 760, height: 70 },
+      index: index + 3,
+      parentIndex: 1,
     });
   }
   paint(navigationTop, height, 8, 8, 8);
@@ -321,16 +353,22 @@ function androidScrollableFrame(shiftY: number, capturedAt: number) {
       label: "Back",
       type: "ImageView",
       rect: { x: 100, y: navigationTop, width: 150, height: 135 },
+      index: 20,
+      parentIndex: 0,
     },
     {
       label: "Home",
       type: "ImageView",
       rect: { x: 465, y: navigationTop, width: 150, height: 135 },
+      index: 21,
+      parentIndex: 0,
     },
     {
       label: "Recents",
       type: "ImageView",
       rect: { x: 820, y: navigationTop, width: 150, height: 135 },
+      index: 22,
+      parentIndex: 0,
     },
   );
   const bytes = PNG.sync.write(png);
@@ -436,6 +474,80 @@ function captured(png: Buffer, capturedAt: number, anchor = "toolbar") {
   };
 }
 
+/** Test fixtures model an origin already admitted by the production evidence
+ * loader. Deliberately keep this assertion local: product code cannot pass a
+ * plain viewport into the fast-restoration capability. */
+function validatedFrozenOriginForTest(capture: ScrollSurveyCapture): ValidatedFrozenDocumentOrigin {
+  return capture as ValidatedFrozenDocumentOrigin;
+}
+
+/** A deterministic product-shaped surface rather than a generic scroll
+ * fixture. It models the long Voice Library and Settings lists without
+ * touching a saved App Map or a physical device. */
+function productSurfaceCapture(
+  title: "Voice Library" | "Settings",
+  page: number,
+  capturedAt = page,
+) {
+  const identifier = title === "Voice Library" ? "voice-library" : "settings";
+  const offset = page * 40;
+  const nodes = [
+    {
+      identifier: "grok-root",
+      type: "Application",
+      rect: { x: 0, y: 0, width: 64, height: 160 },
+      visibleToUser: true,
+      index: 0,
+    },
+    {
+      identifier: `${identifier}-list`,
+      type: "ScrollView",
+      rect: { x: 0, y: 20, width: 64, height: 140 },
+      visibleToUser: true,
+      index: 1,
+      parentIndex: 0,
+    },
+    {
+      identifier: `${identifier}-title`,
+      label: title,
+      type: "Toolbar",
+      rect: { x: 0, y: 0, width: 64, height: 20 },
+      visibleToUser: true,
+      index: 2,
+      parentIndex: 0,
+    },
+    ...Array.from({ length: 8 }, (_, index) => ({
+      label:
+        title === "Voice Library"
+          ? `Voice ${index + page}`
+          : ["Account", "Privacy", "Haptics", "Advanced"][index % 4],
+      type: "TextView",
+      rect: { x: 4, y: 28 + index * 14 - offset, width: 56, height: 10 },
+      visibleToUser: true,
+      index: index + 3,
+      parentIndex: 1,
+    })),
+  ];
+  return {
+    screenshot: {
+      base64: image(offset).toString("base64"),
+      width: 64,
+      height: 160,
+      capturedAt,
+    },
+    snapshot: {
+      capturedAt,
+      foregroundApp: "ai.x.GrokApp",
+      nodes,
+      interactive: [],
+      bounds: { width: 64, height: 160 },
+      inspectable: true,
+      source: "sdk" as const,
+      screenIdentity: { fingerprint: identifier, nodes: [], volatileSignals: [] },
+    },
+  };
+}
+
 test("restores actual movement without inverting a confirmed terminal no-op", async () => {
   const startingPage = 2;
   const terminalPage = 3;
@@ -472,20 +584,29 @@ test("restores after a screen change on the first captured movement", async () =
   let captureIndex = 0;
   let successfulDown = 0;
   let up = 0;
-  const result = await captureScrollableSurvey({
-    capture: async () =>
-      captureIndex++ === 0 ? captured(image(0), 0) : captured(image(40), 1, "other-screen"),
-    scrollDown: async () => {
-      successfulDown += 1;
+  let fastUp = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () =>
+        captureIndex++ === 0 ? captured(image(0), 0) : captured(image(40), 1, "other-screen"),
+      scrollDown: async () => {
+        successfulDown += 1;
+      },
+      scrollUp: async () => {
+        up += 1;
+      },
+      scrollUpFast: async () => {
+        fastUp += 1;
+      },
+      settle: async () => {},
     },
-    scrollUp: async () => {
-      up += 1;
-    },
-    settle: async () => {},
-  });
+    { frozenDocumentOrigin: validatedFrozenOriginForTest(captured(image(0), 0)) },
+  );
   assert.equal(result.reason, "screen-changed");
   assert.equal(up, successfulDown);
+  assert.equal(fastUp, 0, "an unproved screen change must never receive an origin fling");
   assert.equal(result.restoredStartViewport, false);
+  assert.equal(result.documentOriginProven, undefined);
 });
 
 test("keeps a scrollable surface when its identifier-less header shifts but semantics overlap", async () => {
@@ -617,30 +738,39 @@ test("restores after an ambiguous seam", async () => {
   let captureIndex = 0;
   let successfulDown = 0;
   let up = 0;
-  const result = await captureScrollableSurvey({
-    capture: async () =>
-      captureIndex++ === 0
-        ? captured(image(0), 0)
-        : {
-            ...captured(image(40), 1),
-            screenshot: {
-              base64: Buffer.from("not-png").toString("base64"),
-              width: 64,
-              height: 160,
-              capturedAt: 1,
+  let fastUp = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () =>
+        captureIndex++ === 0
+          ? captured(image(0), 0)
+          : {
+              ...captured(image(40), 1),
+              screenshot: {
+                base64: Buffer.from("not-png").toString("base64"),
+                width: 64,
+                height: 160,
+                capturedAt: 1,
+              },
             },
-          },
-    scrollDown: async () => {
-      successfulDown += 1;
+      scrollDown: async () => {
+        successfulDown += 1;
+      },
+      scrollUp: async () => {
+        up += 1;
+      },
+      scrollUpFast: async () => {
+        fastUp += 1;
+      },
+      settle: async () => {},
     },
-    scrollUp: async () => {
-      up += 1;
-    },
-    settle: async () => {},
-  });
+    { frozenDocumentOrigin: validatedFrozenOriginForTest(captured(image(0), 0)) },
+  );
   assert.equal(result.reason, "seam-ambiguous");
   assert.equal(up, successfulDown);
+  assert.equal(fastUp, 0);
   assert.equal(result.restoredStartViewport, false);
+  assert.equal(result.documentOriginProven, undefined);
 });
 
 test("restores after capture failure", async () => {
@@ -733,7 +863,7 @@ test("stops an unknown iOS scroll without an inverse movement and retains the pr
   assert.equal(diagnostic?.frames[0]?.screenshot.capturedAt, 1);
 });
 
-test("stops an unknown iOS restoration fling without trying another restoration movement", async () => {
+test("stops an unknown guarded origin restore without trying another restoration movement", async () => {
   let page = 0;
   const movements: string[] = [];
   let failure: unknown;
@@ -755,7 +885,10 @@ test("stops an unknown iOS restoration fling without trying another restoration 
         },
         settle: async () => {},
       },
-      { maxScrolls: 1, initialViewport: "proven-document-origin" },
+      {
+        maxScrolls: 1,
+        frozenDocumentOrigin: validatedFrozenOriginForTest(captured(image(0), 0)),
+      },
     ),
     (error: unknown) => {
       failure = error;
@@ -879,14 +1012,13 @@ test("restores every movement when the configured limit is reached", async () =>
   assert.equal(result.restoredStartViewport, true);
 });
 
-test("uses bounded fast restoration only for an explicitly proven document origin", async () => {
-  const pages = [image(0), image(40), image(80), image(120)];
+test("uses bounded Android restoration only after a frozen Voice Library origin is proven", async () => {
   let page = 0;
   let exactUp = 0;
   let fastUp = 0;
   const result = await captureScrollableSurvey(
     {
-      capture: async () => captured(pages[page]!, page),
+      capture: async () => productSurfaceCapture("Voice Library", page),
       scrollDown: async () => {
         page = Math.min(3, page + 1);
       },
@@ -900,7 +1032,10 @@ test("uses bounded fast restoration only for an explicitly proven document origi
       },
       settle: async () => {},
     },
-    { maxScrolls: 3, initialViewport: "proven-document-origin" },
+    {
+      maxScrolls: 3,
+      frozenDocumentOrigin: validatedFrozenOriginForTest(productSurfaceCapture("Voice Library", 0)),
+    },
   );
 
   assert.equal(result.reason, "limit-reached");
@@ -910,37 +1045,187 @@ test("uses bounded fast restoration only for an explicitly proven document origi
   assert.equal(exactUp, 0);
 });
 
-test("refuses a forced survey before scrolling when the frozen document origin differs", async () => {
-  const pages = [image(0), image(40), image(80)];
+test("refreshes a frozen Voice Library origin instead of trusting a stale checkpoint", async () => {
   let page = 1;
-  let down = 0;
-  let up = 0;
+  let freshCaptures = 0;
+  let exactUp = 0;
+  let fastUp = 0;
+  const staleCheckpoint = productSurfaceCapture("Voice Library", 0, 9);
   const result = await captureScrollableSurvey(
     {
-      capture: async () => captured(pages[page]!, page),
+      capture: async () => {
+        freshCaptures += 1;
+        return productSurfaceCapture("Voice Library", page, 100 + freshCaptures);
+      },
+      scrollDown: async () => {
+        page = Math.min(2, page + 1);
+      },
+      scrollUp: async () => {
+        exactUp += 1;
+        page = Math.max(1, page - 1);
+      },
+      scrollUpFast: async () => {
+        fastUp += 1;
+        page = 0;
+      },
+      settle: async () => {},
+    },
+    {
+      maxScrolls: 1,
+      initialCapture: staleCheckpoint,
+      frozenDocumentOrigin: validatedFrozenOriginForTest(productSurfaceCapture("Voice Library", 0)),
+    },
+  );
+
+  assert.equal(result.frames[0]?.screenshot.capturedAt, 101);
+  assert.ok(freshCaptures >= 3, "fresh first, scrolled, and terminal proof captures are required");
+  assert.equal(fastUp, 0);
+  assert.equal(exactUp, 1);
+  assert.equal(page, 1);
+  assert.equal(result.documentOriginProven, undefined);
+  assert.match(result.message, /exact inverse restoration/u);
+});
+
+test("keeps a mid-page Settings capture exact-inverse and review-only", async () => {
+  let page = 1;
+  let down = 0;
+  let exactUp = 0;
+  let fastUp = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => productSurfaceCapture("Settings", page),
       scrollDown: async () => {
         down += 1;
         page = Math.min(2, page + 1);
       },
       scrollUp: async () => {
-        up += 1;
-        page = Math.max(0, page - 1);
+        exactUp += 1;
+        page = Math.max(1, page - 1);
+      },
+      scrollUpFast: async () => {
+        fastUp += 1;
+        page = 0;
       },
       settle: async () => {},
     },
     {
       maxScrolls: 2,
-      initialViewport: "proven-document-origin",
-      provenDocumentOrigin: captured(pages[0]!, 0),
+      frozenDocumentOrigin: validatedFrozenOriginForTest(productSurfaceCapture("Settings", 0)),
     },
   );
 
   assert.equal(result.reason, "start-viewport-unproven");
-  assert.equal(result.frames.length, 1);
+  assert.equal(result.frames.length, 2);
   assert.equal(result.restoredStartViewport, true);
-  assert.equal(down, 0);
-  assert.equal(up, 0);
+  assert.equal(down, 2);
+  assert.equal(exactUp, 1);
+  assert.equal(fastUp, 0);
   assert.equal(page, 1);
+  assert.equal(result.documentOriginProven, undefined);
+  assert.match(result.message, /exact inverse restoration/u);
+});
+
+test("uses exact inverse restoration when a proven Settings origin has no Android fast capability", async () => {
+  let page = 0;
+  let exactUp = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => productSurfaceCapture("Settings", page),
+      scrollDown: async () => {
+        page = Math.min(1, page + 1);
+      },
+      scrollUp: async () => {
+        exactUp += 1;
+        page = 0;
+      },
+      settle: async () => {},
+    },
+    {
+      maxScrolls: 2,
+      frozenDocumentOrigin: validatedFrozenOriginForTest(productSurfaceCapture("Settings", 0)),
+    },
+  );
+
+  assert.equal(result.reason, "end-of-content");
+  assert.equal(result.restoredStartViewport, true);
+  assert.equal(page, 0);
+  assert.equal(exactUp, 1);
+  assert.equal(result.documentOriginProven, true);
+});
+
+test("retains rejected Voice Library restoration frames and never hides a blind fallback", async () => {
+  let page = 0;
+  let exactUp = 0;
+  let fastUp = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => productSurfaceCapture("Voice Library", page),
+      scrollDown: async () => {
+        page = Math.min(3, page + 1);
+      },
+      scrollUp: async () => {
+        exactUp += 1;
+        page = Math.max(0, page - 1);
+      },
+      scrollUpFast: async () => {
+        fastUp += 1;
+        // The transport settled but never changed the viewport. Relay may
+        // report the failure, but it must not secretly send exact inverse
+        // gestures afterwards because their outcome would be ambiguous.
+      },
+      settle: async () => {},
+    },
+    {
+      maxScrolls: 3,
+      frozenDocumentOrigin: validatedFrozenOriginForTest(productSurfaceCapture("Voice Library", 0)),
+    },
+  );
+
+  assert.equal(result.reason, "restore-failed");
+  assert.equal(result.restoredStartViewport, false);
+  assert.equal(fastUp, 3);
+  assert.equal(exactUp, 0);
+  assert.equal(result.diagnosticFrames.length, 3);
+  assert.ok(
+    result.diagnosticFrames.every((frame) => frame.snapshot.foregroundApp === "ai.x.GrokApp"),
+  );
+  assert.match(result.message, /rejected restoration viewports were retained/u);
+});
+
+test("never fast-restores after a forward gesture throws with an unknown movement", async () => {
+  let page = 0;
+  let down = 0;
+  let exactUp = 0;
+  let fastUp = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => productSurfaceCapture("Voice Library", page),
+      scrollDown: async () => {
+        down += 1;
+        page = Math.min(2, page + 1);
+        if (down === 2) throw new Error("transport lost after moving");
+      },
+      scrollUp: async () => {
+        exactUp += 1;
+        page = Math.max(0, page - 1);
+      },
+      scrollUpFast: async () => {
+        fastUp += 1;
+        page = 0;
+      },
+      settle: async () => {},
+    },
+    {
+      maxScrolls: 2,
+      frozenDocumentOrigin: validatedFrozenOriginForTest(productSurfaceCapture("Voice Library", 0)),
+    },
+  );
+
+  assert.equal(result.reason, "scroll-failed");
+  assert.equal(fastUp, 0);
+  assert.equal(exactUp, 1);
+  assert.equal(result.restoredStartViewport, false);
+  assert.equal(result.documentOriginProven, undefined);
 });
 
 test("does not use fast restoration from an arbitrary starting viewport", async () => {

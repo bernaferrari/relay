@@ -569,6 +569,10 @@ test("scroll survey has one strict target-operation contract", () => {
     message: "Accessibility is unavailable; no scroll survey was started.",
   };
   assert.deepEqual(definition.output.parse(validOutput), validOutput);
+  assert.deepEqual(definition.output.parse({ ...validOutput, reason: "start-viewport-unproven" }), {
+    ...validOutput,
+    reason: "start-viewport-unproven",
+  });
   assert.throws(
     () => definition.output.parse({ ...validOutput, reason: "unknown" }),
     /scroll survey reason/u,

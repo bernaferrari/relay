@@ -23,6 +23,7 @@ const reasons = new Set([
   "dimension-changed",
   "scroll-failed",
   "restore-failed",
+  "start-viewport-unproven",
   "limit-reached",
 ]);
 
@@ -119,6 +120,35 @@ export function assertLogicalScrollSurface(
       `${label}.viewports[${index}].accessibilityTree`,
     );
   });
+  if (surface.documentOriginProof !== undefined) {
+    const proof = objectValue(surface.documentOriginProof, `${label}.documentOriginProof`);
+    if (proof.schemaVersion !== 1 || proof.method !== "frozen-origin-match") {
+      appMapFail("invalid-map", `${label}.documentOriginProof is unsupported`);
+    }
+    const firstViewport = surface.viewports[0]!;
+    const first = objectValue(proof.firstViewport, `${label}.documentOriginProof.firstViewport`);
+    if (
+      typeof first.screenshotSha256 !== "string" ||
+      typeof first.accessibilityTreeSha256 !== "string" ||
+      first.screenshotSha256 !== firstViewport.screenshot.sha256 ||
+      first.accessibilityTreeSha256 !== firstViewport.accessibilityTree.sha256
+    ) {
+      appMapFail(
+        "invalid-map",
+        `${label}.documentOriginProof must bind the first raw viewport evidence`,
+      );
+    }
+    if (
+      surface.status !== "completed" ||
+      surface.reason !== "end-of-content" ||
+      !surface.restoredStartViewport
+    ) {
+      appMapFail(
+        "invalid-map",
+        `${label}.documentOriginProof requires a completed, restored surface`,
+      );
+    }
+  }
   if (surface.diagnosticViewports !== undefined) {
     if (!Array.isArray(surface.diagnosticViewports) || surface.diagnosticViewports.length > 6) {
       appMapFail("invalid-map", `${label}.diagnosticViewports must contain at most 6 items`);

@@ -68,10 +68,79 @@ export function semanticNodeKey(node: SnapshotNode): string | undefined {
   return label || value ? `${role}:text:${label}:${value}` : undefined;
 }
 
-function uniqueSemanticPositions(snapshot: SnapshotPayload) {
+function isViewportContentSemantic(node: SnapshotNode): boolean {
+  const role = normalizedSemanticPart(node.role ?? node.type);
+  // Fixed shells can be perfectly stationary while a list underneath moves.
+  // They are useful to recognize the same surface, but never enough to prove
+  // that an arbitrary viewport returned to its original document position.
+  return !/application|scroll|list|table|collection|web.?view|toolbar|navigation|tab.?bar|status.?bar|frame.?layout|linear.?layout|relative.?layout|constraint.?layout|view.?group|android\.view\.view|compose.?view|recycler.?view|window|container|root/u.test(
+    role,
+  );
+}
+
+function isScrollContainer(node: SnapshotNode): boolean {
+  const role = normalizedSemanticPart(node.role ?? node.type);
+  return /scroll|list|table|collection|web.?view|recycler.?view/u.test(role);
+}
+
+/**
+ * Fixed chrome can use the same rich semantic labels as list content (for
+ * example Android navigation buttons). A semantic no-motion proof therefore
+ * needs more than labels spread across the viewport: every supporting node
+ * must be a known descendant of an explicit scroll container. If the provider
+ * omitted or corrupted hierarchy indices, this deliberately returns no
+ * candidates rather than guessing from rectangles.
+ */
+function scrollableContentIndexes(snapshot: SnapshotPayload): Set<number> | undefined {
+  const indexed = new Map<number, SnapshotNode>();
+  for (const node of snapshot.nodes) {
+    const index = node.index;
+    if (
+      typeof index !== "number" ||
+      !Number.isSafeInteger(index) ||
+      index < 0 ||
+      indexed.has(index)
+    ) {
+      return undefined;
+    }
+    indexed.set(index, node);
+  }
+  const scrollContainers = new Set(
+    [...indexed.entries()].filter(([, node]) => isScrollContainer(node)).map(([index]) => index),
+  );
+  if (!scrollContainers.size) return undefined;
+  const content = new Set<number>();
+  for (const [index, node] of indexed) {
+    if (!isViewportContentSemantic(node)) continue;
+    let parentIndex = node.parentIndex;
+    const visited = new Set<number>();
+    while (typeof parentIndex === "number" && !visited.has(parentIndex)) {
+      if (!Number.isSafeInteger(parentIndex)) break;
+      if (scrollContainers.has(parentIndex)) {
+        content.add(index);
+        break;
+      }
+      visited.add(parentIndex);
+      parentIndex = indexed.get(parentIndex)?.parentIndex;
+    }
+  }
+  return content;
+}
+
+function uniqueSemanticPositions(snapshot: SnapshotPayload, contentOnly = false) {
   const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
   const duplicates = new Set<string>();
+  const scrollableContent = contentOnly ? scrollableContentIndexes(snapshot) : undefined;
+  if (contentOnly && !scrollableContent) return positions;
   for (const node of snapshot.nodes) {
+    if (
+      contentOnly &&
+      (!isViewportContentSemantic(node) ||
+        node.index === undefined ||
+        !scrollableContent!.has(node.index))
+    ) {
+      continue;
+    }
     const role = normalizedSemanticPart(node.role ?? node.type);
     const identifier = normalizedSemanticPart(node.identifier);
     const label = normalizedSemanticPart(node.label);
@@ -135,9 +204,15 @@ export function semanticViewportIsStationary(
   previous: SnapshotPayload,
   current: SnapshotPayload,
 ): boolean {
-  const before = uniqueSemanticPositions(previous);
-  const after = uniqueSemanticPositions(current);
-  const deltas: Array<{ x: number; y: number; width: number; height: number }> = [];
+  const before = uniqueSemanticPositions(previous, true);
+  const after = uniqueSemanticPositions(current, true);
+  const deltas: Array<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    positionY: number;
+  }> = [];
   for (const [key, left] of before) {
     const right = after.get(key);
     if (!right) continue;
@@ -146,14 +221,25 @@ export function semanticViewportIsStationary(
       y: Math.abs(left.y - right.y),
       width: Math.abs(left.width - right.width),
       height: Math.abs(left.height - right.height),
+      positionY: left.y,
     });
   }
   const support = deltas.length;
   const coverage = support / Math.max(1, Math.min(before.size, after.size));
   const stationary = deltas.filter(
     (delta) => delta.x <= 4 && delta.y <= 4 && delta.width <= 4 && delta.height <= 4,
-  ).length;
-  return support >= 3 && coverage >= 0.7 && stationary / support >= 0.9;
+  );
+  const verticalSpan =
+    stationary.length > 0
+      ? Math.max(...stationary.map((delta) => delta.positionY)) -
+        Math.min(...stationary.map((delta) => delta.positionY))
+      : 0;
+  // Three adjacent header buttons can otherwise masquerade as a stationary
+  // list. A no-motion fallback needs semantic evidence distributed through
+  // the viewport, not merely a fixed control cluster.
+  return (
+    support >= 3 && coverage >= 0.7 && stationary.length / support >= 0.9 && verticalSpan >= 48
+  );
 }
 
 /** Accessibility geometry can prove a seam when several unique anchors move

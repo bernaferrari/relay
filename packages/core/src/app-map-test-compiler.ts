@@ -7,7 +7,10 @@ import type {
   AppMapScenarioTestStep,
   AppMapTestCompileDiagnostic,
   AppMapTestStepProvenance,
+  LogicalScrollSurface,
   RecipeStep,
+  ScrollSurfaceEvidence,
+  ScrollSurfaceViewport,
 } from "@relay/protocol";
 import { assertScenarioTest } from "./app-map/test-intent-validation.js";
 import {
@@ -81,6 +84,53 @@ function sourceVariant(variant: AppMap["screenVariants"][string]) {
     platform: variant.targetProfile.platform,
     ...(variant.targetProfile.viewport ? { viewport: { ...variant.targetProfile.viewport } } : {}),
   };
+}
+
+function frozenEvidenceIsComplete(
+  evidence: ScrollSurfaceEvidence | undefined,
+  mime: ScrollSurfaceEvidence["mime"],
+): boolean {
+  return Boolean(
+    evidence &&
+    typeof evidence.id === "string" &&
+    evidence.id.trim() &&
+    evidence.mime === mime &&
+    Number.isSafeInteger(evidence.bytes) &&
+    evidence.bytes >= 0 &&
+    typeof evidence.sha256 === "string" &&
+    /^[a-f0-9]{64}$/u.test(evidence.sha256) &&
+    evidence.uri === `relay-evidence://${evidence.sha256}`,
+  );
+}
+
+/** Only a complete first, zero-offset raw PNG/tree pair can authorize the
+ * runner's bounded Android origin restore. This defensive runtime check keeps
+ * a stale/imported/mid-page surface on the exact-inverse path even when an
+ * unvalidated map reached this compiler. */
+function frozenDocumentOrigin(surface: LogicalScrollSurface): ScrollSurfaceViewport | undefined {
+  const origin = surface.viewports[0];
+  const proof = surface.documentOriginProof;
+  if (
+    !origin ||
+    !proof ||
+    proof.schemaVersion !== 1 ||
+    proof.method !== "frozen-origin-match" ||
+    proof.firstViewport.screenshotSha256 !== origin.screenshot.sha256 ||
+    proof.firstViewport.accessibilityTreeSha256 !== origin.accessibilityTree.sha256 ||
+    origin.index !== 0 ||
+    origin.offsetY !== 0 ||
+    origin.appendedHeight !== 0 ||
+    !Number.isSafeInteger(origin.capturedAt) ||
+    !Number.isSafeInteger(origin.width) ||
+    !Number.isSafeInteger(origin.height) ||
+    origin.width <= 0 ||
+    origin.height <= 0 ||
+    !frozenEvidenceIsComplete(origin.screenshot, "image/png") ||
+    !frozenEvidenceIsComplete(origin.accessibilityTree, "application/json")
+  ) {
+    return undefined;
+  }
+  return origin;
 }
 
 function frozenRawAccessibilitySources(
@@ -321,17 +371,22 @@ export function compileAppMapScenarioTest(
         surface.id === binding.surfaceId && surface.captureId === binding.baselineCaptureId,
     );
     if (!baseline) return undefined;
-    const baselineTrust =
+    const baselineCompletedAndRestored =
       baseline.status === "completed" &&
       baseline.reason === "end-of-content" &&
       baseline.restoredStartViewport &&
-      Boolean(baseline.composite)
-        ? "trusted"
-        : "recapture-required";
+      Boolean(baseline.composite);
+    const documentOrigin = baselineCompletedAndRestored
+      ? frozenDocumentOrigin(baseline)
+      : undefined;
+    const baselineTrust =
+      baselineCompletedAndRestored && documentOrigin ? "trusted" : "recapture-required";
     const baselineTrustReason =
       baselineTrust === "trusted"
         ? undefined
-        : `Baseline capture is ${baseline.status}/${baseline.reason}${baseline.restoredStartViewport ? "" : " and its starting viewport was not restored"}.`;
+        : baselineCompletedAndRestored
+          ? "Baseline does not retain an independently proven frozen first viewport, so exact inverse restoration is required."
+          : `Baseline capture is ${baseline.status}/${baseline.reason}${baseline.restoredStartViewport ? "" : " and its starting viewport was not restored"}.`;
     if (schedule) scheduledLogicalSurfaces.add(screenId);
     return {
       kind: "capture-surface",
@@ -344,8 +399,9 @@ export function compileAppMapScenarioTest(
       maxScrolls: Math.max(1, Math.min(12, baseline.viewports.length + 1)),
       baselineTrust,
       ...(baselineTrustReason ? { baselineTrustReason } : {}),
-      ...(baselineTrust === "trusted" && baseline.viewports[0]
-        ? { documentOrigin: structuredClone(baseline.viewports[0]) }
+      ...(documentOrigin ? { documentOrigin: structuredClone(documentOrigin) } : {}),
+      ...(documentOrigin && baseline.documentOriginProof
+        ? { documentOriginProof: structuredClone(baseline.documentOriginProof) }
         : {}),
       ...(forceRecaptureSurfaceScreenIds.has(screenId) ? { forceRecapture: true } : {}),
       baseline: {

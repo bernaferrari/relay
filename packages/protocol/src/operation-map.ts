@@ -263,6 +263,7 @@ export type ScrollSurveyStopReasonDto =
   | "dimension-changed"
   | "scroll-failed"
   | "restore-failed"
+  | "start-viewport-unproven"
   | "limit-reached";
 
 export type DeviceLeaseDto = {

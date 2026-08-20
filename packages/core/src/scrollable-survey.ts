@@ -30,6 +30,7 @@ import type {
   ScrollSurveyOptions,
   ScrollSurveyResult,
   ScrollSurveyStopReason,
+  ValidatedFrozenDocumentOrigin,
 } from "./scrollable-survey-types.js";
 
 export type {
@@ -39,6 +40,7 @@ export type {
   ScrollSurveyOptions,
   ScrollSurveyResult,
   ScrollSurveyStopReason,
+  ValidatedFrozenDocumentOrigin,
 } from "./scrollable-survey-types.js";
 export { verticalScrollSeam } from "./scrollable-survey-seams.js";
 
@@ -119,10 +121,9 @@ export function scrollSurveyGesture(
  * overlap-heavy capture drag: collection needs a small, seam-friendly move;
  * returning to a proven document origin benefits from distance. */
 export function scrollSurveyFastRestoreGesture(
-  platform: "android" | "ios",
+  platform: "android",
   bounds: { width: number; height: number },
 ) {
-  if (platform !== "android") return scrollSurveyGesture(platform, bounds, "up");
   return {
     kind: "swipe" as const,
     from: { x: bounds.width * 0.5, y: bounds.height * 0.86 },
@@ -394,6 +395,7 @@ function result(
   message: string,
   restoredStartViewport: boolean,
   diagnosticFrames: ScrollSurveyFrame[] = [],
+  documentOriginProven = false,
 ): ScrollSurveyResult {
   const composition = composeScrollSurveyFrames(frames);
   const composedFrames = composition?.frames ?? frames;
@@ -406,6 +408,7 @@ function result(
     ...(stitched ? { stitched } : {}),
     mergedNodes: composition?.mergedNodes ?? mergedSurveyNodes(frames),
     restoredStartViewport,
+    ...(documentOriginProven ? { documentOriginProven: true as const } : {}),
     message,
   };
 }
@@ -420,8 +423,7 @@ export async function captureScrollableSurveyForTarget(input: {
   serial: string;
   maxScrolls?: number;
   initialCapture?: ScrollSurveyCapture;
-  initialViewport?: "proven-document-origin";
-  provenDocumentOrigin?: ScrollSurveyCapture;
+  frozenDocumentOrigin?: ValidatedFrozenDocumentOrigin;
 }): Promise<ScrollSurveyResult> {
   const platform = await devicePlatformForSerial(input.serial);
   if (platform !== "android" && platform !== "ios") {
@@ -448,16 +450,21 @@ export async function captureScrollableSurveyForTarget(input: {
       scrollUp: async () => {
         await interact(scrollSurveyGesture(platform, bounds, "up"), { serial: input.serial });
       },
-      scrollUpFast: async () => {
-        await interact(scrollSurveyFastRestoreGesture(platform, bounds), { serial: input.serial });
-      },
+      ...(platform === "android"
+        ? {
+            scrollUpFast: async () => {
+              await interact(scrollSurveyFastRestoreGesture("android", bounds), {
+                serial: input.serial,
+              });
+            },
+          }
+        : {}),
       settle,
     },
     {
       maxScrolls: input.maxScrolls,
       ...(input.initialCapture ? { initialCapture: input.initialCapture } : {}),
-      ...(input.initialViewport ? { initialViewport: input.initialViewport } : {}),
-      ...(input.provenDocumentOrigin ? { provenDocumentOrigin: input.provenDocumentOrigin } : {}),
+      ...(input.frozenDocumentOrigin ? { frozenDocumentOrigin: input.frozenDocumentOrigin } : {}),
     },
   );
 }
@@ -467,7 +474,13 @@ export async function captureScrollableSurvey(
   options: ScrollSurveyOptions = {},
 ): Promise<ScrollSurveyResult> {
   const maxScrolls = Math.max(1, Math.min(12, options.maxScrolls ?? 4));
-  const first = options.initialCapture ?? (await driver.capture());
+  // A cached expect-screen checkpoint can show the correct screen while the
+  // physical list has since moved. It remains useful evidence for ordinary
+  // collection, but cannot be used to authorize a high-distance origin
+  // restore: ask the device for one fresh PNG/tree pair first.
+  const first = options.frozenDocumentOrigin
+    ? await driver.capture()
+    : (options.initialCapture ?? (await driver.capture()));
   const initial: ScrollSurveyFrame = {
     index: 0,
     offsetY: 0,
@@ -482,15 +495,20 @@ export async function captureScrollableSurvey(
   };
   const frames = [initial];
   const diagnosticFrames: ScrollSurveyFrame[] = [];
-  if (options.provenDocumentOrigin && !startViewportMatches(options.provenDocumentOrigin, first)) {
-    return result(
-      frames,
-      "stopped",
-      "start-viewport-unproven",
-      "The live viewport differs from the frozen document origin; Relay did not scroll it.",
-      true,
-    );
-  }
+  const frozenOriginMatched = options.frozenDocumentOrigin
+    ? startViewportMatches(options.frozenDocumentOrigin, first)
+    : undefined;
+  // A fast restore is allowed only after this same live first frame proved the
+  // immutable origin. At the terminal proof, require both identities again:
+  // matching the run's first frame alone must not paper over a weak/non-
+  // transitive semantic match to the frozen document origin.
+  const startingViewportMatches = (candidate: ScrollSurveyCapture): boolean =>
+    startViewportMatches(first, candidate) &&
+    (frozenOriginMatched !== true ||
+      Boolean(
+        options.frozenDocumentOrigin &&
+        startViewportMatches(options.frozenDocumentOrigin, candidate),
+      ));
   if (!first.snapshot.inspectable) {
     return result(
       frames,
@@ -511,18 +529,27 @@ export async function captureScrollableSurvey(
   }
   let restored = true;
   let owedMovements = 0;
+  // Fast restoration is only safe after every outstanding down gesture was
+  // accepted as a positive, same-surface seam. An uncertain handoff or seam
+  // may still receive an exact inverse attempt, but never an origin fling.
+  let acceptedScrollMovements = 0;
+  let fastRestoreEligible = true;
   let attemptedScroll = false;
   let lastPostAttemptCapture: ScrollSurveyCapture | undefined;
   let provedRestoration: ScrollSurveyCapture | undefined;
   let restorationStarted = false;
+  let restorationFailure: string | undefined;
+  const rejectedRestorationFrames: ScrollSurveyFrame[] = [];
   const restoreOnce = async () => {
     if (restorationStarted) return;
     restorationStarted = true;
-    if (owedMovements > 0 && options.initialViewport === "proven-document-origin") {
-      if (!driver.scrollUpFast) {
-        restored = false;
-        return;
-      }
+    if (
+      owedMovements > 0 &&
+      owedMovements === acceptedScrollMovements &&
+      fastRestoreEligible &&
+      frozenOriginMatched === true &&
+      driver.scrollUpFast
+    ) {
       // Three strong Android flings cover the current longest surveyed
       // product surfaces while remaining bounded. Each is followed by an
       // exact origin proof, so a changed layout can never silently look
@@ -532,24 +559,40 @@ export async function captureScrollableSurvey(
           await driver.scrollUpFast();
           await driver.settle();
           const candidate = await driver.capture();
-          if (startViewportMatches(first, candidate)) {
+          if (startingViewportMatches(candidate)) {
             provedRestoration = candidate;
             owedMovements = 0;
             return;
           }
+          // The candidate is real raw evidence, but it must never become a
+          // composited viewport or an implicit new starting position.
+          rejectedRestorationFrames.push(
+            candidateFrame(
+              candidate,
+              frames.length + diagnosticFrames.length + rejectedRestorationFrames.length,
+              frames.at(-1)?.offsetY ?? 0,
+            ),
+          );
         } catch (error) {
           rethrowIosMutationOutcomeUnknown(error);
           restored = false;
+          diagnosticFrames.push(...rejectedRestorationFrames);
+          restorationFailure =
+            "The bounded Android origin restore could not be observed after a restoration gesture.";
           return;
         }
       }
       restored = false;
+      diagnosticFrames.push(...rejectedRestorationFrames);
+      restorationFailure =
+        "The bounded Android origin restore did not reproduce the exact starting viewport after three attempts; rejected restoration viewports were retained for review.";
       return;
     }
     for (let index = 0; index < owedMovements; index += 1) {
       try {
         await driver.scrollUp();
       } catch (error) {
+        fastRestoreEligible = false;
         rethrowIosMutationOutcomeUnknown(error);
         restored = false;
         continue;
@@ -557,6 +600,7 @@ export async function captureScrollableSurvey(
       try {
         await driver.settle();
       } catch (error) {
+        fastRestoreEligible = false;
         rethrowIosMutationOutcomeUnknown(error);
         restored = false;
       }
@@ -584,6 +628,7 @@ export async function captureScrollableSurvey(
         owedMovements += 1;
         await driver.settle();
       } catch (error) {
+        fastRestoreEligible = false;
         rethrowIosMutationOutcomeUnknown(error);
         decision = {
           status: "stopped",
@@ -598,6 +643,7 @@ export async function captureScrollableSurvey(
         next = await driver.capture();
         lastPostAttemptCapture = next;
       } catch (error) {
+        fastRestoreEligible = false;
         rethrowIosMutationOutcomeUnknown(error);
         decision = {
           status: "stopped",
@@ -608,6 +654,7 @@ export async function captureScrollableSurvey(
       }
       const previous = frames.at(-1)!;
       if (!sameSurveySurface(first.snapshot, next.snapshot)) {
+        fastRestoreEligible = false;
         diagnosticFrames.push(candidateFrame(next, frames.length, previous.offsetY));
         decision = {
           status: "stopped",
@@ -620,6 +667,7 @@ export async function captureScrollableSurvey(
       const width = next.screenshot.width ?? 0;
       const height = next.screenshot.height ?? 0;
       if (width !== previous.screenshot.width || height !== previous.screenshot.height) {
+        fastRestoreEligible = false;
         diagnosticFrames.push(candidateFrame(next, frames.length, previous.offsetY));
         decision = {
           status: "stopped",
@@ -648,6 +696,7 @@ export async function captureScrollableSurvey(
           };
           break;
         }
+        fastRestoreEligible = false;
         diagnosticFrames.push(candidateFrame(next, frames.length, previous.offsetY));
         decision = {
           status: "stopped",
@@ -683,6 +732,7 @@ export async function captureScrollableSurvey(
         snapshot: next.snapshot,
         appendedHeight: seam.shiftY,
       });
+      acceptedScrollMovements += 1;
     }
   } catch (error) {
     unexpected = error;
@@ -706,7 +756,8 @@ export async function captureScrollableSurvey(
       frames,
       "stopped",
       "restore-failed",
-      "Relay stopped safely, but could not restore every captured scroll movement.",
+      restorationFailure ??
+        "Relay stopped safely, but could not restore every captured scroll movement.",
       false,
       diagnosticFrames,
     );
@@ -718,7 +769,14 @@ export async function captureScrollableSurvey(
         : owedMovements > 0 || !lastPostAttemptCapture
           ? await driver.capture()
           : lastPostAttemptCapture;
-      if (!startViewportMatches(first, proved)) {
+      if (!startingViewportMatches(proved)) {
+        diagnosticFrames.push(
+          candidateFrame(
+            proved,
+            frames.length + diagnosticFrames.length,
+            frames.at(-1)?.offsetY ?? 0,
+          ),
+        );
         return result(
           frames,
           decision.status,
@@ -743,7 +801,32 @@ export async function captureScrollableSurvey(
       );
     }
   }
-  return result(frames, decision.status, decision.reason, decision.message, true, diagnosticFrames);
+  const originWarning =
+    frozenOriginMatched === false
+      ? " The live viewport did not match the frozen document origin, so Relay used exact inverse restoration and retained this capture only as review evidence."
+      : "";
+  if (frozenOriginMatched === false && decision.status === "completed") {
+    return result(
+      frames,
+      "stopped",
+      "start-viewport-unproven",
+      `${decision.message}${originWarning}`,
+      true,
+      diagnosticFrames,
+    );
+  }
+  return result(
+    frames,
+    decision.status,
+    decision.reason,
+    `${decision.message}${originWarning}`,
+    true,
+    diagnosticFrames,
+    frozenOriginMatched === true &&
+      attemptedScroll &&
+      decision.status === "completed" &&
+      decision.reason === "end-of-content",
+  );
 }
 
 function candidateFrame(

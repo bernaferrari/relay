@@ -1,6 +1,10 @@
 /** Canonical recipe contract shared by persistence, execution, HTTP, and UI. */
 import type { DestinationEvidenceSurface, ScreenIdentityObservation } from "./app-map.js";
-import type { ScrollSurfaceViewport, SemanticRevealPlan } from "./scroll-surface.js";
+import type {
+  ScrollSurfaceDocumentOriginProof,
+  ScrollSurfaceViewport,
+  SemanticRevealPlan,
+} from "./scroll-surface.js";
 export type HorizontalCoordinateAnchor = "left" | "center" | "right";
 export type VerticalCoordinateAnchor = "top" | "center" | "bottom";
 
@@ -441,6 +445,10 @@ export type RecipeStep = RecipeStepMetadata &
          * restoration only after the live first viewport matches this exact
          * semantic/visual checkpoint. */
         documentOrigin?: ScrollSurfaceViewport;
+        /** Evidence-bound provenance required alongside documentOrigin. It
+         * is copied only from a validated logical surface; geometry by itself
+         * can never enable bounded Android origin restoration. */
+        documentOriginProof?: ScrollSurfaceDocumentOriginProof;
         baseline?: {
           compositeWidth?: number;
           compositeHeight?: number;

@@ -5,6 +5,7 @@ import type {
   LogicalScrollSurface,
   LogicalScrollSurfaceImport,
   ScrollSurfaceCapturePolicy,
+  ScrollSurfaceDocumentOriginProof,
   ScrollSurfaceEvidence,
   TargetProfile,
 } from "@relay/protocol";
@@ -54,6 +55,7 @@ function stableCaptureId(input: {
   targetProfileId: string;
   capturedAt: number;
   evidence: ScrollSurfaceEvidence[];
+  documentOriginProof?: ScrollSurfaceDocumentOriginProof;
 }): string {
   const digest = createHash("sha256")
     .update(
@@ -61,6 +63,7 @@ function stableCaptureId(input: {
         targetProfileId: input.targetProfileId,
         capturedAt: input.capturedAt,
         evidence: input.evidence.map((item) => item.sha256),
+        documentOriginProof: input.documentOriginProof,
       }),
     )
     .digest("hex");
@@ -182,6 +185,26 @@ export async function persistLogicalScrollSurface(input: {
     ...(composite ? [composite] : []),
     mergedTree,
   ];
+  const firstViewport = viewports[0];
+  // The survey can set this only after its fresh first capture and terminal
+  // restoration both matched a prior frozen origin. Bind it to the two raw
+  // CAS objects so a later map edit cannot transplant the attestation onto a
+  // normalized-but-mid-page first viewport.
+  const documentOriginProof: ScrollSurfaceDocumentOriginProof | undefined =
+    input.survey.documentOriginProven &&
+    input.survey.status === "completed" &&
+    input.survey.reason === "end-of-content" &&
+    input.survey.restoredStartViewport &&
+    firstViewport
+      ? {
+          schemaVersion: 1,
+          method: "frozen-origin-match",
+          firstViewport: {
+            screenshotSha256: firstViewport.screenshot.sha256,
+            accessibilityTreeSha256: firstViewport.accessibilityTree.sha256,
+          },
+        }
+      : undefined;
   const surface: SurfaceWithoutManifest = {
     schemaVersion: 1,
     id: input.surfaceId,
@@ -189,6 +212,7 @@ export async function persistLogicalScrollSurface(input: {
       targetProfileId: input.targetProfile.id,
       capturedAt,
       evidence: rawEvidence,
+      ...(documentOriginProof ? { documentOriginProof } : {}),
     }),
     targetProfileId: input.targetProfile.id,
     capturePolicy: structuredClone(input.capturePolicy),
@@ -197,6 +221,7 @@ export async function persistLogicalScrollSurface(input: {
     reason: input.survey.reason,
     message: input.survey.message,
     restoredStartViewport: input.survey.restoredStartViewport,
+    ...(documentOriginProof ? { documentOriginProof } : {}),
     viewports,
     ...(diagnosticViewports.length > 0 ? { diagnosticViewports } : {}),
     ...(composite ? { composite } : {}),
@@ -612,21 +637,42 @@ export function replaceAppMapScrollSurfaceDerived(
         appMapFail("missing-reference", `Scroll capture ${input.surface.captureId} does not exist`);
       }
       const existing = variant.scrollSurfaces![index]!;
-      const rawIdentity = (surface: LogicalScrollSurface) =>
-        surface.viewports.map((viewport) => ({
-          index: viewport.index,
-          capturedAt: viewport.capturedAt,
-          width: viewport.width,
-          height: viewport.height,
-          screenshot: viewport.screenshot,
-          accessibilityTree: viewport.accessibilityTree,
-        }));
+      const rawViewportIdentity = (viewport: LogicalScrollSurface["viewports"][number]) => ({
+        index: viewport.index,
+        capturedAt: viewport.capturedAt,
+        width: viewport.width,
+        height: viewport.height,
+        screenshot: viewport.screenshot,
+        accessibilityTree: viewport.accessibilityTree,
+      });
+      // A derived regeneration can change only composite/tree/manifest and
+      // geometry computed from the same raw frames. Its terminal outcome,
+      // capture policy, diagnostic evidence, and origin proof are immutable
+      // provenance: allowing any of those to change would let a legacy raw
+      // capture acquire a trusted top-of-document attestation.
+      const immutableCaptureIdentity = (surface: LogicalScrollSurface) => ({
+        schemaVersion: surface.schemaVersion,
+        id: surface.id,
+        captureId: surface.captureId,
+        targetProfileId: surface.targetProfileId,
+        capturePolicy: surface.capturePolicy,
+        capturedAt: surface.capturedAt,
+        status: surface.status,
+        reason: surface.reason,
+        message: surface.message,
+        restoredStartViewport: surface.restoredStartViewport,
+        documentOriginProof: surface.documentOriginProof,
+        viewports: surface.viewports.map(rawViewportIdentity),
+        diagnosticViewports: surface.diagnosticViewports?.map(rawViewportIdentity),
+      });
       if (
-        existing.id !== input.surface.id ||
-        existing.captureId !== input.surface.captureId ||
-        JSON.stringify(rawIdentity(existing)) !== JSON.stringify(rawIdentity(input.surface))
+        JSON.stringify(immutableCaptureIdentity(existing)) !==
+        JSON.stringify(immutableCaptureIdentity(input.surface))
       ) {
-        appMapFail("scope-mismatch", `Regeneration cannot replace logical or raw capture identity`);
+        appMapFail(
+          "scope-mismatch",
+          `Regeneration cannot replace immutable capture identity or provenance`,
+        );
       }
       const oldDerived = derivedSurfaceEvidence(existing);
       variant.scrollSurfaces![index] = structuredClone(input.surface);

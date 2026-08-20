@@ -332,6 +332,37 @@ describe("validateRecipeSteps", () => {
   });
 
   it("validates executable logical-surface captures", () => {
+    const digest = "a".repeat(64);
+    const documentOrigin = {
+      index: 0,
+      offsetY: 0,
+      appendedHeight: 0,
+      capturedAt: 123,
+      width: 1080,
+      height: 2340,
+      screenshot: {
+        id: "settings-origin-png",
+        uri: `relay-evidence://${digest}`,
+        sha256: digest,
+        mime: "image/png" as const,
+        bytes: 42,
+      },
+      accessibilityTree: {
+        id: "settings-origin-tree",
+        uri: `relay-evidence://${digest}`,
+        sha256: digest,
+        mime: "application/json" as const,
+        bytes: 42,
+      },
+    };
+    const documentOriginProof = {
+      schemaVersion: 1 as const,
+      method: "frozen-origin-match" as const,
+      firstViewport: {
+        screenshotSha256: digest,
+        accessibilityTreeSha256: digest,
+      },
+    };
     const step = {
       kind: "capture-surface" as const,
       screenId: "settings",
@@ -354,6 +385,38 @@ describe("validateRecipeSteps", () => {
     assert.throws(
       () => validateRecipeSteps([{ ...step, forceRecapture: "yes" }]),
       /forceRecapture must be a boolean/,
+    );
+    assert.deepEqual(
+      validateRecipeSteps([
+        { ...step, baselineTrust: "trusted", documentOrigin, documentOriginProof },
+      ]),
+      [{ ...step, baselineTrust: "trusted", documentOrigin, documentOriginProof }],
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ ...step, baselineTrust: "trusted", documentOrigin }]),
+      /documentOriginProof must bind the frozen first viewport evidence/,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          { ...step, baselineTrust: "recapture-required", documentOrigin, documentOriginProof },
+        ]),
+      /documentOrigin requires a trusted baseline/,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            ...step,
+            baselineTrust: "trusted",
+            documentOrigin: {
+              ...documentOrigin,
+              screenshot: { ...documentOrigin.screenshot, uri: "relay-evidence://not-the-hash" },
+            },
+            documentOriginProof,
+          },
+        ]),
+      /documentOrigin must be a complete first viewport/,
     );
   });
 

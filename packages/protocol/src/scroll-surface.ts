@@ -8,8 +8,8 @@ export type ScrollSurfaceStopReason =
   | "scroll-failed"
   | "restore-failed"
   /** A force-recapture began from a viewport that could not be proven to be
-   * the frozen document origin. Relay deliberately performs no survey scroll
-   * in this state; the captured frame is a repair input, not a baseline. */
+   * the frozen document origin. Relay uses exact inverse restoration instead
+   * of an origin fling; retained frames are repair input, not a baseline. */
   | "start-viewport-unproven"
   | "limit-reached";
 
@@ -50,6 +50,20 @@ export type ScrollSurfaceViewport = {
   height: number;
   screenshot: ScrollSurfaceEvidence & { mime: "image/png" };
   accessibilityTree: RawAccessibilityTreeEvidence;
+};
+
+/** Explicit provenance for a physical first viewport, bound to its immutable
+ * raw evidence. Zero stitch geometry alone is not evidence that a viewport
+ * was at the top of the underlying document. */
+export type ScrollSurfaceDocumentOriginProof = {
+  schemaVersion: 1;
+  /** Relay emits this only after the live first and terminal viewports both
+   * matched an earlier frozen document-origin checkpoint. */
+  method: "frozen-origin-match";
+  firstViewport: {
+    screenshotSha256: string;
+    accessibilityTreeSha256: string;
+  };
 };
 
 export type ScrollSurfaceCapturePolicy = {
@@ -121,6 +135,10 @@ export type LogicalScrollSurface = {
   reason: ScrollSurfaceStopReason;
   message: string;
   restoredStartViewport: boolean;
+  /** Optional because legacy/imported captures lack a genuine document-top
+   * attestation. Those captures remain usable raw evidence but cannot enable
+   * bounded origin restoration. */
+  documentOriginProof?: ScrollSurfaceDocumentOriginProof;
   viewports: ScrollSurfaceViewport[];
   /** Captured but rejected candidates retained for repair diagnostics. They
    * are never part of the composite, merged tree, or semantic index. */

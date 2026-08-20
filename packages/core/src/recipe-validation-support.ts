@@ -2,6 +2,7 @@ import type {
   RecipeParameter,
   RecipeStep,
   RecordedStepEvidence,
+  ScrollSurfaceDocumentOriginProof,
   ScrollSurfaceEvidence,
   ScrollSurfaceViewport,
   StepTarget,
@@ -411,17 +412,28 @@ function parseCaptureSurfaceStep(
   if (raw.documentOrigin !== undefined && !documentOrigin) {
     throw stepErr(index, "capture-surface.documentOrigin must be an object");
   }
+  const documentOriginProof =
+    isObject(raw.documentOriginProof) && !Array.isArray(raw.documentOriginProof)
+      ? raw.documentOriginProof
+      : undefined;
+  if (raw.documentOriginProof !== undefined && !documentOriginProof) {
+    throw stepErr(index, "capture-surface.documentOriginProof must be an object");
+  }
   const originEvidence = <Mime extends "image/png" | "application/json">(
     value: unknown,
     mime: Mime,
   ): (ScrollSurfaceEvidence & { mime: Mime }) | undefined => {
     if (!isObject(value) || Array.isArray(value)) return undefined;
     return isString(value.id) &&
+      value.id.trim().length > 0 &&
       isString(value.uri) &&
       isString(value.sha256) &&
+      /^[a-f0-9]{64}$/u.test(value.sha256) &&
+      value.uri === `relay-evidence://${value.sha256}` &&
       isString(value.mime) &&
       value.mime === mime &&
       isNumber(value.bytes) &&
+      Number.isSafeInteger(value.bytes) &&
       value.bytes >= 0
       ? {
           id: value.id,
@@ -433,6 +445,7 @@ function parseCaptureSurfaceStep(
       : undefined;
   };
   let parsedDocumentOrigin: ScrollSurfaceViewport | undefined;
+  let parsedDocumentOriginProof: ScrollSurfaceDocumentOriginProof | undefined;
   if (documentOrigin) {
     const screenshot = originEvidence(documentOrigin.screenshot, "image/png");
     const accessibilityTree = originEvidence(documentOrigin.accessibilityTree, "application/json");
@@ -447,7 +460,7 @@ function parseCaptureSurfaceStep(
     if (
       !screenshot ||
       !accessibilityTree ||
-      !numbers.every(isNumber) ||
+      !numbers.every((value) => isNumber(value) && Number.isSafeInteger(value)) ||
       documentOrigin.index !== 0 ||
       documentOrigin.offsetY !== 0 ||
       documentOrigin.appendedHeight !== 0 ||
@@ -455,6 +468,25 @@ function parseCaptureSurfaceStep(
       (documentOrigin.height as number) <= 0
     ) {
       throw stepErr(index, "capture-surface.documentOrigin must be a complete first viewport");
+    }
+    if (raw.baselineTrust !== "trusted") {
+      throw stepErr(index, "capture-surface.documentOrigin requires a trusted baseline");
+    }
+    const firstViewport = documentOriginProof?.firstViewport;
+    if (
+      !documentOriginProof ||
+      documentOriginProof.schemaVersion !== 1 ||
+      documentOriginProof.method !== "frozen-origin-match" ||
+      !isObject(firstViewport) ||
+      !isString(firstViewport.screenshotSha256) ||
+      !isString(firstViewport.accessibilityTreeSha256) ||
+      firstViewport.screenshotSha256 !== screenshot.sha256 ||
+      firstViewport.accessibilityTreeSha256 !== accessibilityTree.sha256
+    ) {
+      throw stepErr(
+        index,
+        "capture-surface.documentOriginProof must bind the frozen first viewport evidence",
+      );
     }
     parsedDocumentOrigin = {
       index: 0,
@@ -466,6 +498,16 @@ function parseCaptureSurfaceStep(
       screenshot,
       accessibilityTree,
     };
+    parsedDocumentOriginProof = {
+      schemaVersion: 1,
+      method: "frozen-origin-match",
+      firstViewport: {
+        screenshotSha256: screenshot.sha256,
+        accessibilityTreeSha256: accessibilityTree.sha256,
+      },
+    };
+  } else if (documentOriginProof) {
+    throw stepErr(index, "capture-surface.documentOriginProof requires documentOrigin");
   }
   const baseline =
     isObject(raw.baseline) && !Array.isArray(raw.baseline) ? raw.baseline : undefined;
@@ -490,6 +532,7 @@ function parseCaptureSurfaceStep(
           documentOrigin: parsedDocumentOrigin,
         }
       : {}),
+    ...(parsedDocumentOriginProof ? { documentOriginProof: parsedDocumentOriginProof } : {}),
     ...(baseline && isNumber(baseline.semanticNodeCount)
       ? {
           baseline: {

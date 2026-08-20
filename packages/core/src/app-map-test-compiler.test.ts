@@ -593,6 +593,14 @@ test("full-surface bindings compile one executable capture after reaching the de
         reason: "end-of-content",
         message: "Reached the end of the cart.",
         restoredStartViewport: true,
+        documentOriginProof: {
+          schemaVersion: 1,
+          method: "frozen-origin-match",
+          firstViewport: {
+            screenshotSha256: digest,
+            accessibilityTreeSha256: digest,
+          },
+        },
         viewports: [
           {
             index: 0,
@@ -673,6 +681,14 @@ test("full-surface bindings compile one executable capture after reaching the de
           mime: "application/json",
         },
       },
+      documentOriginProof: {
+        schemaVersion: 1,
+        method: "frozen-origin-match",
+        firstViewport: {
+          screenshotSha256: digest,
+          accessibilityTreeSha256: digest,
+        },
+      },
       baseline: { compositeWidth: 100, compositeHeight: 200, semanticNodeCount: 12 },
     },
   ]);
@@ -708,6 +724,7 @@ test("full-surface bindings compile one executable capture after reaching the de
   provisionalBaseline.status = "stopped";
   provisionalBaseline.reason = "seam-ambiguous";
   provisionalBaseline.restoredStartViewport = false;
+  delete provisionalBaseline.documentOriginProof;
   delete provisionalBaseline.composite;
   const provisionalCapture = Object.values(compileAppMapTest(provisionalMap, work).graph)
     .flatMap((recipe) => recipe.steps)
@@ -726,6 +743,32 @@ test("full-surface bindings compile one executable capture after reaching the de
       "Baseline capture is stopped/seam-ambiguous and its starting viewport was not restored.",
     baseline: { semanticNodeCount: 12 },
   });
+  const midPageBaselineMap = structuredClone(current);
+  // This can occur on an imported/older surface even though the ordinary map
+  // shape is still parseable. It is a first raw frame, not a document origin,
+  // and therefore must never grant the fast-origin capability.
+  midPageBaselineMap.screenVariants["cart-en"]!.scrollSurfaces![0]!.viewports[0]!.appendedHeight =
+    40;
+  const midPageCapture = Object.values(compileAppMapTest(midPageBaselineMap, work).graph)
+    .flatMap((recipe) => recipe.steps)
+    .find((step) => step.kind === "capture-surface");
+  assert.equal(midPageCapture?.kind, "capture-surface");
+  if (midPageCapture?.kind === "capture-surface") {
+    assert.equal(midPageCapture.baselineTrust, "recapture-required");
+    assert.equal(midPageCapture.documentOrigin, undefined);
+    assert.match(midPageCapture.baselineTrustReason ?? "", /proven frozen first viewport/u);
+  }
+  const legacyBaselineMap = structuredClone(current);
+  delete legacyBaselineMap.screenVariants["cart-en"]!.scrollSurfaces![0]!.documentOriginProof;
+  const legacyCapture = Object.values(compileAppMapTest(legacyBaselineMap, work).graph)
+    .flatMap((recipe) => recipe.steps)
+    .find((step) => step.kind === "capture-surface");
+  assert.equal(legacyCapture?.kind, "capture-surface");
+  if (legacyCapture?.kind === "capture-surface") {
+    assert.equal(legacyCapture.baselineTrust, "recapture-required");
+    assert.equal(legacyCapture.documentOrigin, undefined);
+    assert.match(legacyCapture.baselineTrustReason ?? "", /proven frozen first viewport/u);
+  }
   assert.throws(
     () =>
       compileAppMapTest(current, work, {
