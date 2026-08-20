@@ -352,7 +352,11 @@ export function AppMapTestWorkspace(props: {
             tests={tests()}
             selectedTestId={selectedTestId()}
             name={draft()?.name ?? ""}
-            busy={saveState() !== "saved"}
+            busy={
+              saveState() !== "saved" ||
+              testRun.preflightBusy() ||
+              testRun.launchState() === "preparing"
+            }
             creating={creating()}
             onSelect={selectTest}
             onRename={(name) => {

@@ -46,6 +46,70 @@ export function suggestedAppMapTestRuntimeProfileId(
   return candidates.length === 1 ? candidates[0]?.id : undefined;
 }
 
+export type AppMapTestRuntimeProfileScope = {
+  status:
+    | "no-saved-profiles"
+    | "selected"
+    | "selection-required"
+    | "no-compatible-profile"
+    | "selected-profile-incompatible";
+  selectedProfileId?: string;
+  selectedProfile?: TargetProfile;
+  compatibleProfiles: TargetProfile[];
+};
+
+/** Resolve evidence scope from immutable saved facts only. A lone iPad
+ * profile is still not an iPad profile for an Android run; callers can show
+ * that fact rather than treating an empty suggestion as permission to run. */
+export function appMapTestRuntimeProfileScope(input: {
+  profiles: readonly TargetProfile[];
+  device: Pick<DeviceInfo, "serial" | "platform"> | undefined;
+  requestedProfileId?: string;
+}): AppMapTestRuntimeProfileScope {
+  const profiles = input.profiles.map((profile) => structuredClone(profile));
+  if (!profiles.length) return { status: "no-saved-profiles", compatibleProfiles: [] };
+  const compatibleProfiles = input.device?.platform
+    ? profiles.filter((profile) => appMapTestRuntimeProfileMatchesDevice(profile, input.device))
+    : profiles;
+  const requested = input.requestedProfileId?.trim();
+  const selectedProfile = requested
+    ? profiles.find((profile) => profile.id === requested)
+    : undefined;
+  if (selectedProfile) {
+    if (
+      input.device?.platform &&
+      !appMapTestRuntimeProfileMatchesDevice(selectedProfile, input.device)
+    ) {
+      return {
+        status: "selected-profile-incompatible",
+        selectedProfileId: selectedProfile.id,
+        selectedProfile,
+        compatibleProfiles,
+      };
+    }
+    return {
+      status: "selected",
+      selectedProfileId: selectedProfile.id,
+      selectedProfile,
+      compatibleProfiles,
+    };
+  }
+  if (input.device?.platform && !compatibleProfiles.length) {
+    return { status: "no-compatible-profile", compatibleProfiles };
+  }
+  const suggested = suggestedAppMapTestRuntimeProfileId(profiles, input.device);
+  if (suggested) {
+    const profile = profiles.find((candidate) => candidate.id === suggested)!;
+    return {
+      status: "selected",
+      selectedProfileId: profile.id,
+      selectedProfile: profile,
+      compatibleProfiles,
+    };
+  }
+  return { status: "selection-required", compatibleProfiles };
+}
+
 export function appMapTestRuntimeProfileLabel(profile: Pick<TargetProfile, "id" | "name">): string {
   return `${profile.name} · ${profile.id}`;
 }

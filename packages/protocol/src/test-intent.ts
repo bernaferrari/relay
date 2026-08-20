@@ -337,6 +337,24 @@ export type AppMapCompiledRawAccessibilityVariant = {
   viewport?: { width: number; height: number };
 };
 
+/** The immutable runtime identity ledger for a compiled Test. This is global
+ * to the Test rather than a property of one screen: a selector on an
+ * English-only screen must still require a choice when the Test also contains
+ * a Portuguese target profile. Viewport is part of identity because stable
+ * selector reuse is only safe at an exact captured shape. */
+export type AppMapCompiledRawAccessibilityTargetProfile = Pick<
+  TargetProfile,
+  "id" | "targetId" | "platform" | "viewport"
+>;
+
+/** The saved target/profile binding selected for one queued Test. It is
+ * frozen into run-only artifacts after server-side target validation; it
+ * never changes the App Map or tries to infer locale from rendered copy. */
+export type AppMapCompiledRuntimeTargetProfile = Pick<
+  TargetProfile,
+  "id" | "targetId" | "platform" | "viewport"
+>;
+
 /** One immutable raw AX blob with the exact App Map Variant that supplied it.
  *
  * The tree digest alone is intentionally not a selector-equivalence claim: a
@@ -371,6 +389,9 @@ export type AppMapCompiledTest = {
   appMapId: string;
   appMapRevision: number;
   test: Pick<AppMapScenarioTest, "id" | "name" | "kind" | "intentSchemaVersion">;
+  /** Present only on a queued run after Relay bound the selected saved profile
+   * to the requested control target and preflighted this exact frozen plan. */
+  runtimeTargetProfile?: AppMapCompiledRuntimeTargetProfile;
   surfaceBindings?: ScrollSurfaceTestBinding[];
   /** Content-addressed raw AX evidence frozen at compile time, with its
    * source Variant/profile retained beside every blob. This gives offline
@@ -382,6 +403,11 @@ export type AppMapCompiledTest = {
    * selector-equivalence claim: offline review uses it to name an exact
    * recapture or retarget when the chosen runtime profile has no evidence. */
   rawAccessibilityVariantsByScreenId?: Record<string, AppMapCompiledRawAccessibilityVariant[]>;
+  /** Global frozen target/profile ledger for the entire compiled Test. It is
+   * deliberately independent of raw-tree availability and per-screen
+   * Variants, so a missing locale capture cannot silently default to another
+   * screen's locale. */
+  rawAccessibilityTargetProfiles?: AppMapCompiledRawAccessibilityTargetProfile[];
   /** Legacy compiled-plan shape. New compiles emit `rawAccessibilitySourcesByScreenId`;
    * readers keep this only so an already-frozen historical plan can request a
    * clear recapture rather than becoming unreadable. */
@@ -536,6 +562,12 @@ export type OfflineTestPreflightRawVariantCandidate = {
  * clients can distinguish a missing selected capture from a bad selector. */
 export type OfflineTestPreflightRawVariantScope = {
   selectedTargetProfileId?: string;
+  /** Present when the compiled Test provided its global frozen profile ledger.
+   * This makes the selected runtime shape inspectable even if this individual
+   * screen has no Variant for it yet. */
+  selectedTargetProfile?: AppMapCompiledRawAccessibilityTargetProfile;
+  /** All global saved target/profile identities available to this Test. */
+  targetProfileCandidates?: AppMapCompiledRawAccessibilityTargetProfile[];
   selectedVariant?: AppMapCompiledRawAccessibilityVariant;
   candidates: OfflineTestPreflightRawVariantCandidate[];
 };

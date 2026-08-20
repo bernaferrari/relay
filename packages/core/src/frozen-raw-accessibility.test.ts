@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import type {
   AppMapCompiledRawAccessibilitySource,
+  AppMapCompiledRawAccessibilityTargetProfile,
   AppMapCompiledTest,
   RawAccessibilityTreeEvidence,
   StepTarget,
@@ -155,10 +156,14 @@ function boundSource(
 function scopedSelectorPlan(input: {
   sources: AppMapCompiledRawAccessibilitySource[];
   variants: AppMapCompiledRawAccessibilitySource["variant"][];
+  targetProfiles?: AppMapCompiledRawAccessibilityTargetProfile[];
   target: StepTarget;
 }): AppMapCompiledTest {
   const compiled = sourcePlan({ profile: input.sources });
   compiled.rawAccessibilityVariantsByScreenId = { profile: structuredClone(input.variants) };
+  if (input.targetProfiles) {
+    compiled.rawAccessibilityTargetProfiles = structuredClone(input.targetProfiles);
+  }
   compiled.recipes.root!.steps[1] = {
     kind: "tap",
     id: "scoped-selector",
@@ -346,6 +351,87 @@ test("requires a profile choice when a known locale Variant still lacks raw evid
   assert.equal(report.findings[0]?.code, "raw-evidence-variant-selection-required");
 });
 
+test("uses the compiled Test-wide profile ledger when this screen only has English evidence", async () => {
+  const english = rawTree("profile-global-en-only-voice", buttonTree({ label: "Voice" }));
+  const compiled = scopedSelectorPlan({
+    sources: [boundSource(english, englishProfileVariant, 10)],
+    variants: [englishProfileVariant],
+    targetProfiles: [
+      {
+        id: englishProfileVariant.targetProfileId,
+        targetId: englishProfileVariant.targetId,
+        platform: englishProfileVariant.platform,
+        viewport: englishProfileVariant.viewport,
+      },
+      {
+        id: portugueseProfileVariant.targetProfileId,
+        targetId: portugueseProfileVariant.targetId,
+        platform: portugueseProfileVariant.platform,
+        viewport: portugueseProfileVariant.viewport,
+      },
+    ],
+    target: { label: "Voice" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) => (sha256 === english.reference.sha256 ? english.bytes : null),
+  });
+
+  const unselected = preflightCompiledAppMapTestOffline(compiled, evidence);
+  assert.equal(unselected.selectors[0]?.status, "variant-selection-required");
+  assert.deepEqual(
+    unselected.selectors[0]?.rawVariantScope?.targetProfileCandidates?.map((profile) => profile.id),
+    ["ipad-en-US", "ipad-pt-BR"],
+  );
+  assert.equal(unselected.findings[0]?.code, "raw-evidence-variant-selection-required");
+
+  const selectedPortuguese = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: portugueseProfileVariant.targetProfileId,
+  });
+  assert.equal(selectedPortuguese.selectors[0]?.status, "variant-incompatible");
+  assert.equal(selectedPortuguese.selectors[0]?.rawVariantScope?.selectedVariant, undefined);
+  assert.deepEqual(selectedPortuguese.selectors[0]?.rawVariantScope?.selectedTargetProfile, {
+    id: "ipad-pt-BR",
+    targetId: "ipad-1",
+    platform: "ios",
+    viewport: { width: 834, height: 1112 },
+  });
+  assert.equal(selectedPortuguese.findings[0]?.code, "raw-evidence-variant-recapture-required");
+  assert.match(selectedPortuguese.findings[0]?.message ?? "", /ipad-pt-BR/u);
+});
+
+test("prioritizes a global profile choice over a generic unavailable-tree repair", async () => {
+  const english = rawTree("profile-global-unavailable", buttonTree({ label: "Voice" }));
+  const compiled = scopedSelectorPlan({
+    sources: [boundSource(english, englishProfileVariant, 10)],
+    variants: [englishProfileVariant],
+    targetProfiles: [
+      {
+        id: englishProfileVariant.targetProfileId,
+        targetId: englishProfileVariant.targetId,
+        platform: englishProfileVariant.platform,
+        viewport: englishProfileVariant.viewport,
+      },
+      {
+        id: portugueseProfileVariant.targetProfileId,
+        targetId: portugueseProfileVariant.targetId,
+        platform: portugueseProfileVariant.platform,
+        viewport: portugueseProfileVariant.viewport,
+      },
+    ],
+    target: { label: "Voice" },
+  });
+  const report = preflightCompiledAppMapTestOffline(
+    compiled,
+    await loadFrozenRawAccessibilityEvidence(compiled, { readEvidence: async () => null }),
+  );
+
+  assert.equal(report.selectors[0]?.status, "variant-selection-required");
+  assert.deepEqual(
+    report.findings.map((finding) => finding.code),
+    ["raw-evidence-variant-selection-required"],
+  );
+});
+
 test("requires a profile choice before requesting a raw capture for two known Variants", async () => {
   const compiled = scopedSelectorPlan({
     sources: [],
@@ -473,6 +559,47 @@ test("does not reuse an identifier across a different runtime viewport", async (
     )?.reason,
     "target-platform-or-viewport-mismatch",
   );
+});
+
+test("rejects conflicting viewport identities that reuse one profile ID", async () => {
+  const conflictingEnglish = {
+    ...englishProfileVariant,
+    viewport: { width: 820, height: 1112 },
+  };
+  const english = rawTree(
+    "profile-en-conflicting-viewport",
+    buttonTree({ identifier: "settings.voice", label: "Voice" }),
+  );
+  const compiled = scopedSelectorPlan({
+    sources: [boundSource(english, englishProfileVariant, 10)],
+    variants: [englishProfileVariant, conflictingEnglish],
+    targetProfiles: [
+      {
+        id: englishProfileVariant.targetProfileId,
+        targetId: englishProfileVariant.targetId,
+        platform: englishProfileVariant.platform,
+        viewport: englishProfileVariant.viewport,
+      },
+      {
+        id: conflictingEnglish.targetProfileId,
+        targetId: conflictingEnglish.targetId,
+        platform: conflictingEnglish.platform,
+        viewport: conflictingEnglish.viewport,
+      },
+    ],
+    target: { identifier: "settings.voice" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) => (sha256 === english.reference.sha256 ? english.bytes : null),
+  });
+
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: englishProfileVariant.targetProfileId,
+  });
+  assert.equal(report.selectors[0]?.status, "variant-incompatible");
+  assert.equal(report.selectors[0]?.resolution, undefined);
+  assert.equal(report.findings[0]?.code, "raw-evidence-variant-recapture-required");
+  assert.match(report.selectors[0]?.detail ?? "", /one frozen target identity/u);
 });
 
 test("does not turn a failed cross-locale identifier into a label fallback", async () => {

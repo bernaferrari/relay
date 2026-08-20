@@ -95,7 +95,7 @@ import { handleAppMapRoute } from "./app-map-routes.js";
 import { handleDiscoveryRoute } from "./discovery-routes.js";
 import { handleCorpusRoute } from "./corpus-routes.js";
 import { handlePresenceRoute } from "./presence-routes.js";
-import { handleAppMapRunRoute } from "./app-map-run-routes.js";
+import { handleAppMapRunRoute, type AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
 import { handleSettingsRoute } from "./settings-routes.js";
 import { handleTargetRoute } from "./target-routes.js";
 import { handleManualTargetRoute } from "./manual-target-routes.js";
@@ -123,6 +123,8 @@ export type StartServerOptions = {
   /** Test seam for target observation without starting a device daemon. */
   captureTargetScreenshot?: typeof captureScreenshot;
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>;
+  /** Test seam for proving blocked Test runs do not touch a target or queue work. */
+  appMapTestRunRuntime?: Partial<AppMapTestRunRouteRuntime>;
   /** Test seam for standalone-step execution without a physical target. */
   stepRunRuntime?: Partial<StepRunRouteRuntime>;
 };
@@ -160,6 +162,7 @@ async function handleRequest(
   liveVideoStream = streamTargetVideo,
   captureTargetScreenshot = captureScreenshot,
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>,
+  appMapTestRunRuntime?: Partial<AppMapTestRunRouteRuntime>,
   stepRunRuntime?: Partial<StepRunRouteRuntime>,
 ): Promise<void> {
   const method = req.method ?? "GET";
@@ -223,7 +226,16 @@ async function handleRequest(
     const operation = bindOperationRequest(req, res, method, pathname, url, scope);
     if (await handleActivityRoute({ method, pathname, url, response: res, scope })) return;
     if (operation) await recordOperationActivity({ operation, pathname, scope, response: res });
-    if (await handleAppMapRunRoute({ method, pathname, request: req, response: res, scope }))
+    if (
+      await handleAppMapRunRoute({
+        method,
+        pathname,
+        request: req,
+        response: res,
+        scope,
+        runtime: appMapTestRunRuntime,
+      })
+    )
       return;
     if (await handleAppMapRoute({ method, pathname, request: req, response: res, scope })) return;
     if (
@@ -733,6 +745,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
       opts.liveVideoStream,
       opts.captureTargetScreenshot,
       opts.targetRuntime,
+      opts.appMapTestRunRuntime,
       opts.stepRunRuntime,
     );
   });

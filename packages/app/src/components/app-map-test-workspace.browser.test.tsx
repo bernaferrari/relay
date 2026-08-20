@@ -403,6 +403,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   document.body.replaceChildren();
   const root = document.createElement("div");
   document.body.append(root);
+  const restoreWidth = observeWidth(320);
   const scenario: AppMapScenarioTest = {
     kind: "scenario",
     id: "checkout-run",
@@ -497,6 +498,12 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   const [jobs, setJobs] = createSignal<JobInfo[]>([]);
   const calls: string[] = [];
   const opened: string[] = [];
+  let releaseEnglishCompile!: () => void;
+  const englishCompileGate = new Promise<void>((resolve) => (releaseEnglishCompile = resolve));
+  let englishCompileStarted!: () => void;
+  const waitingForEnglishCompile = new Promise<void>(
+    (resolve) => (englishCompileStarted = resolve),
+  );
   let finishRun!: () => void;
   const runGate = new Promise<void>((resolve) => (finishRun = resolve));
   let runInput: Record<string, unknown> | undefined;
@@ -523,6 +530,10 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
       calls.push(id);
       if (id === "app-map.test.compile") {
         compileInputs.push(input);
+        if (input.targetProfileId === "ipad-en-US") {
+          englishCompileStarted();
+          await englishCompileGate;
+        }
         return {
           plan,
           preflight: {
@@ -603,7 +614,35 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   await settle();
   expect(root.textContent).toContain("Ready to run");
   const runtimeProfile = root.querySelector<HTMLSelectElement>("[data-test-runtime-profile]")!;
+  expect(root.querySelector<HTMLElement>("[data-test-workspace-bar]")?.className).toContain(
+    "flex-wrap",
+  );
+  expect(runtimeProfile.closest("label")?.className).toContain("min-h-11");
   expect(runtimeProfile.value).toBe("");
+  const offlineCheck = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Check offline"),
+  )!;
+  runtimeProfile.value = "ipad-en-US";
+  runtimeProfile.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle();
+  offlineCheck.click();
+  await waitingForEnglishCompile;
+  expect(runtimeProfile.disabled).toBe(true);
+  // A UI control is disabled while checking, but an external selection change
+  // must still invalidate the stale English intent before its response lands.
+  runtimeProfile.value = "ipad-pt-BR";
+  runtimeProfile.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle();
+  releaseEnglishCompile();
+  await settle();
+  expect(compileInputs).toEqual([
+    { appMapId: "checkout", testId: "checkout-run", targetProfileId: "ipad-en-US" },
+  ]);
+  expect(root.textContent).not.toContain("Offline check passed");
+  expect(root.textContent).not.toContain("Plan compiled-bef");
+  calls.length = 0;
+  compileInputs.length = 0;
+
   runtimeProfile.value = "ipad-pt-BR";
   runtimeProfile.dispatchEvent(new Event("change", { bubbles: true }));
   await settle();
@@ -614,9 +653,6 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
       /Run test|Preparing run|Cancel queued run|Open result/.test(button.textContent ?? ""),
     )!;
   expect(primary().textContent).toContain("Run test");
-  const offlineCheck = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-    button.textContent?.includes("Check offline"),
-  )!;
   offlineCheck.click();
   await settle();
   expect(compileInputs).toEqual([
@@ -649,6 +685,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
     testId: "checkout-run",
     expectedRevision: 1,
     target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+    targetProfileId: "ipad-pt-BR",
     startup: { mode: "cold" },
   });
   expect(primary().textContent).toContain("Cancel queued run");
@@ -662,6 +699,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   expect(opened).toEqual(["job-exact"]);
 
   dispose();
+  restoreWidth();
   document.body.replaceChildren();
 });
 

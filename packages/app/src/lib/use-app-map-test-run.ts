@@ -1,4 +1,4 @@
-import { createMemo, createSignal, type Accessor } from "solid-js";
+import { createEffect, createMemo, createSignal, type Accessor } from "solid-js";
 import type {
   AppMap,
   AppMapCompiledTest,
@@ -7,15 +7,20 @@ import type {
   OfflineTestPreflightReport,
 } from "@relay/protocol";
 import type { DeviceInfo, JobInfo } from "./api-types";
-import { isActiveTestRun, type TestRunLaunchState } from "../components/app-map-test-run-control";
+import { isActiveTestRun, type TestRunLaunchState } from "./app-map-test-run-state";
 import { fullSurfaceScreenIds } from "./app-map-test-editor-model";
 import { coldAppMapTestStartup, sameAppMapTestStartup } from "./app-map-test-startup-policy";
 import {
+  appMapTestRuntimeProfileScope,
   appMapTestRuntimeProfileLabel,
-  appMapTestRuntimeProfileMatchesDevice,
   appMapTestRuntimeProfiles,
-  suggestedAppMapTestRuntimeProfileId,
 } from "./app-map-test-runtime-profile";
+import {
+  appMapTestCompileInput,
+  createAppMapTestRunIntent,
+  sameAppMapTestRunIntent,
+  type AppMapTestRunIntent,
+} from "./app-map-test-run-intent";
 
 type SaveState = "saved" | "saving" | "error";
 
@@ -43,6 +48,7 @@ export function createAppMapTestRun(options: {
     target:
       | { kind: "browser"; platform: "browser"; targetId: string }
       | { kind: "device"; platform: "android" | "ios"; targetId: string };
+    targetProfileId?: string;
     surfaceCapture?: { forceRecaptureScreenIds: string[] };
     startup: AppMapTestStartup;
   }) => Promise<{
@@ -66,38 +72,38 @@ export function createAppMapTestRun(options: {
   const [launchState, setLaunchState] = createSignal<TestRunLaunchState>("idle");
   const [error, setError] = createSignal("");
   const [mismatched, setMismatched] = createSignal(false);
-  const [freshEvidence, setFreshEvidence] = createSignal(false);
+  const [freshEvidence, setFreshEvidenceState] = createSignal(false);
   const [startup, setStartupState] = createSignal<AppMapTestStartup>(coldAppMapTestStartup);
   const [targetProfileId, setTargetProfileIdState] = createSignal<string>();
   const [preflight, setPreflight] = createSignal<OfflineTestPreflightReport>();
   const [preflightBusy, setPreflightBusy] = createSignal(false);
+  let runGeneration = 0;
+  let preflightRequest = 0;
+  let runContextKey: string | undefined;
   const fullSurfaceIds = createMemo(() => {
     const test = options.draft();
     return test ? fullSurfaceScreenIds(test) : [];
   });
   const targetProfiles = createMemo(() => appMapTestRuntimeProfiles(options.appMap()));
-  /** A single saved target/profile needs no extra interaction; multiple locale
-   * profiles deliberately remain unselected until a person or agent chooses. */
-  const selectedTargetProfileId = createMemo(() => {
-    const selected = targetProfileId();
-    return targetProfiles().some((profile) => profile.id === selected)
-      ? selected
-      : suggestedAppMapTestRuntimeProfileId(targetProfiles(), options.selectedDevice());
-  });
-  const selectedTargetProfile = createMemo(() =>
-    targetProfiles().find((profile) => profile.id === selectedTargetProfileId()),
+  const targetProfileScope = createMemo(() =>
+    appMapTestRuntimeProfileScope({
+      profiles: targetProfiles(),
+      device: options.selectedDevice(),
+      requestedProfileId: targetProfileId(),
+    }),
   );
+  const selectedTargetProfileId = createMemo(() => targetProfileScope().selectedProfileId);
   const targetProfileOptions = createMemo(() =>
     targetProfiles().map((profile) => ({
       id: profile.id,
       label: appMapTestRuntimeProfileLabel(profile),
     })),
   );
-  const targetProfileMatchesSelectedDevice = createMemo(() => {
-    const profile = selectedTargetProfile();
-    const device = options.selectedDevice();
-    return !profile || !device || appMapTestRuntimeProfileMatchesDevice(profile, device);
-  });
+  const targetProfileMatchesSelectedDevice = createMemo(
+    () =>
+      targetProfileScope().status === "no-saved-profiles" ||
+      targetProfileScope().status === "selected",
+  );
   const requiresTargetProfileSelection = createMemo(() =>
     Boolean(
       preflight()?.findings.some(
@@ -109,6 +115,61 @@ export function createAppMapTestRun(options: {
     const id = jobId();
     return id ? options.jobs().find((candidate) => candidate.id === id) : undefined;
   });
+
+  function currentRunIntent(chosenStartup = startup()): AppMapTestRunIntent | undefined {
+    const map = options.appMap();
+    const test = options.draft();
+    if (!map || !test) return undefined;
+    return createAppMapTestRunIntent({
+      generation: runGeneration,
+      appMap: map,
+      test,
+      device: options.selectedDevice(),
+      targetProfileId: selectedTargetProfileId(),
+      freshSurfaceScreenIds: freshEvidence() ? fullSurfaceIds() : undefined,
+      startup: chosenStartup,
+    });
+  }
+
+  function runContext(): string {
+    const map = options.appMap();
+    const test = options.draft();
+    const device = options.selectedDevice();
+    return JSON.stringify({
+      map: map && [map.id, map.revision],
+      test: test && [test.id, test.updatedAt],
+      device: device && [device.serial, device.platform],
+      targetProfileId: selectedTargetProfileId(),
+      startup: startup(),
+      freshEvidence: freshEvidence(),
+    });
+  }
+
+  function invalidateRunContext(): void {
+    runGeneration += 1;
+    setPlan();
+    setPreflight();
+    setError("");
+    if (launchState() === "preparing") setLaunchState("idle");
+  }
+
+  function syncRunContext(): void {
+    const next = runContext();
+    if (runContextKey === undefined) {
+      runContextKey = next;
+      return;
+    }
+    if (runContextKey === next) return;
+    runContextKey = next;
+    invalidateRunContext();
+  }
+
+  createEffect(syncRunContext);
+
+  function isCurrentRunIntent(intent: AppMapTestRunIntent): boolean {
+    const current = currentRunIntent(intent.startup);
+    return Boolean(current && sameAppMapTestRunIntent(intent, current));
+  }
 
   function forget(): void {
     setJobId();
@@ -124,9 +185,7 @@ export function createAppMapTestRun(options: {
   function setStartup(next: AppMapTestStartup): void {
     if (sameAppMapTestStartup(startup(), next)) return;
     setStartupState(next);
-    setPlan();
-    setPreflight();
-    setError("");
+    syncRunContext();
   }
 
   /** Selecting a profile only scopes the next offline proof. It never edits a
@@ -138,9 +197,13 @@ export function createAppMapTestRun(options: {
     }
     if (targetProfileId() === profileId) return;
     setTargetProfileIdState(profileId);
-    setPlan();
-    setPreflight();
-    setError("");
+    syncRunContext();
+  }
+
+  function setFreshEvidence(next: boolean): void {
+    if (freshEvidence() === next) return;
+    setFreshEvidenceState(next);
+    syncRunContext();
   }
 
   const blockedReason = createMemo(() => {
@@ -158,6 +221,15 @@ export function createAppMapTestRun(options: {
     const device = options.selectedDevice();
     if (!device) return "Choose a target before running this Test.";
     if (!device.platform) return "Refresh the selected target before running this Test.";
+    if (targetProfileScope().status === "no-compatible-profile") {
+      return "No saved evidence profile matches this target. Capture one for the selected target before running.";
+    }
+    if (targetProfileScope().status === "selected-profile-incompatible") {
+      return "The selected evidence profile belongs to a different target. Choose a profile captured for this target.";
+    }
+    if (targetProfileScope().status === "selection-required") {
+      return "Choose a runtime evidence profile for the selected target before running this Test.";
+    }
     if (!targetProfileMatchesSelectedDevice()) {
       return "Choose a runtime evidence profile for the selected target before running this Test.";
     }
@@ -165,45 +237,42 @@ export function createAppMapTestRun(options: {
   });
 
   async function run(): Promise<void> {
-    const map = options.appMap();
-    const test = options.draft();
-    const device = options.selectedDevice();
-    if (!map || !test || !device || blockedReason() || isActiveTestRun(job())) return;
-    const chosenStartup = startup();
+    const intent = currentRunIntent();
+    if (!intent?.target || blockedReason() || isActiveTestRun(job())) return;
     setLaunchState("preparing");
     setError("");
     setMismatched(false);
     setJobId();
     try {
-      const compiled = await checkOffline(chosenStartup);
+      const compiled = await checkOffline(intent);
       if (!compiled) {
-        setLaunchState("idle");
+        if (isCurrentRunIntent(intent)) setLaunchState("idle");
         return;
       }
       if (compiled.preflight.summary.blockers) {
-        setLaunchState("idle");
+        if (isCurrentRunIntent(intent)) setLaunchState("idle");
         return;
       }
-      const target =
-        device.platform === "browser"
-          ? ({ kind: "browser", platform: "browser", targetId: device.serial } as const)
-          : ({ kind: "device", platform: device.platform!, targetId: device.serial } as const);
       const result = await options.compileAndRun({
-        appMapId: map.id,
-        testId: test.id,
-        expectedRevision: map.revision,
-        target,
-        ...(freshEvidence() && fullSurfaceIds().length
-          ? { surfaceCapture: { forceRecaptureScreenIds: fullSurfaceIds() } }
-          : {}),
-        startup: chosenStartup,
+        appMapId: intent.appMapId,
+        testId: intent.testId,
+        expectedRevision: intent.expectedRevision,
+        target: intent.target,
+        ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
+        ...(intent.surfaceCapture ? { surfaceCapture: intent.surfaceCapture } : {}),
+        startup: intent.startup,
       });
+      if (!isCurrentRunIntent(intent)) {
+        await options.cancelJob(result.job.id).catch(() => undefined);
+        await options.refreshJobs();
+        return;
+      }
       setPlan(result.plan);
       setJobId(result.job.id);
       await options.refreshJobs();
       setLaunchState("idle");
       const queued = options.jobs().find((candidate) => candidate.id === result.job.id);
-      if (!sameAppMapTestStartup(result.plan.startup, chosenStartup)) {
+      if (!sameAppMapTestStartup(result.plan.startup, intent.startup)) {
         setMismatched(true);
         setError("Relay returned a plan with a different startup policy. Review this queued run.");
         setLaunchState("error");
@@ -213,6 +282,7 @@ export function createAppMapTestRun(options: {
         setLaunchState("error");
       }
     } catch (failure) {
+      if (!isCurrentRunIntent(intent)) return;
       setError(failure instanceof Error ? failure.message : String(failure));
       setLaunchState("error");
     }
@@ -222,27 +292,24 @@ export function createAppMapTestRun(options: {
    * touching a device. This is the normal way to make authoring improvements
    * while hardware is unavailable. */
   async function checkOffline(
-    chosenStartup = startup(),
+    suppliedIntent?: AppMapTestRunIntent,
   ): Promise<{ plan: AppMapCompiledTest; preflight: OfflineTestPreflightReport } | undefined> {
-    const map = options.appMap();
-    const test = options.draft();
-    if (!map || !test || options.saveState() === "saving") return undefined;
+    const intent = suppliedIntent ?? currentRunIntent();
+    if (!intent || options.saveState() === "saving") return undefined;
+    const request = ++preflightRequest;
     setPreflightBusy(true);
     setError("");
     try {
       await options.awaitPendingSaves();
-      const currentMap = options.appMap();
-      const currentTest = options.draft();
-      if (!currentMap || !currentTest) return undefined;
-      const compiled = await options.compile({
-        appMapId: currentMap.id,
-        testId: currentTest.id,
-        ...(chosenStartup.mode === "verified-checkpoint"
-          ? { entryCheckpointScreenId: chosenStartup.screenId }
-          : {}),
-        ...(selectedTargetProfileId() ? { targetProfileId: selectedTargetProfileId() } : {}),
-      });
-      if (!sameAppMapTestStartup(compiled.plan.startup, chosenStartup)) {
+      if (!isCurrentRunIntent(intent)) return undefined;
+      const compiled = await options.compile(appMapTestCompileInput(intent));
+      if (!isCurrentRunIntent(intent)) return undefined;
+      if (
+        compiled.plan.appMapId !== intent.appMapId ||
+        compiled.plan.test.id !== intent.testId ||
+        compiled.plan.appMapRevision !== intent.expectedRevision ||
+        !sameAppMapTestStartup(compiled.plan.startup, intent.startup)
+      ) {
         setError("Relay compiled a different startup policy. It was not run.");
         return undefined;
       }
@@ -250,10 +317,11 @@ export function createAppMapTestRun(options: {
       setPreflight(compiled.preflight);
       return compiled;
     } catch (failure) {
+      if (!isCurrentRunIntent(intent)) return undefined;
       setError(failure instanceof Error ? failure.message : String(failure));
       return undefined;
     } finally {
-      setPreflightBusy(false);
+      if (request === preflightRequest) setPreflightBusy(false);
     }
   }
 
@@ -293,14 +361,13 @@ export function createAppMapTestRun(options: {
     clearPlan: () => setPlan(),
     /** A queued edit means the compiled plan no longer describes the draft. */
     onDraftEdited(): void {
-      setPlan();
-      setPreflight();
+      invalidateRunContext();
       if (!isActiveTestRun(job())) forget();
     },
     /** Switching Test or map starts a clean run slate. */
     reset(): void {
-      setPlan();
       setStartupState(coldAppMapTestStartup);
+      invalidateRunContext();
       forget();
     },
     consumeResult(): string | undefined {

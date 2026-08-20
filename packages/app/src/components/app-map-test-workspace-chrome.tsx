@@ -39,7 +39,10 @@ export function TestWorkspaceBar(props: {
   children: JSX.Element;
 }) {
   return (
-    <header class="flex min-h-11 items-center gap-2 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-2">
+    <header
+      class="flex min-h-11 flex-wrap items-center gap-2 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-2"
+      data-test-workspace-bar
+    >
       <RailToggle rail="steps" open={props.railOpen.steps} onToggle={props.onToggleRail} />
       <div class="flex min-w-0 flex-1 items-center gap-2">
         {props.switcher}
@@ -49,7 +52,7 @@ export function TestWorkspaceBar(props: {
           </span>
         </Show>
       </div>
-      <div class="flex shrink-0 items-center gap-2" aria-live="polite">
+      <div class="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2" aria-live="polite">
         <span class="flex min-w-0 items-center gap-1.5 max-[720px]:hidden">
           <span
             class={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[props.statusTone])}
@@ -170,6 +173,9 @@ export function TestSwitcher(props: {
     document.addEventListener("mousedown", dismiss);
     onCleanup(() => document.removeEventListener("mousedown", dismiss));
   });
+  createEffect(() => {
+    if (props.busy && open()) close(false);
+  });
 
   return (
     <div class="relative flex min-w-0 items-center gap-1" ref={(element) => (container = element)}>
@@ -209,7 +215,10 @@ export function TestSwitcher(props: {
           aria-haspopup="listbox"
           aria-expanded={open()}
           aria-controls="app-map-test-switcher-menu"
-          onClick={() => setOpen((value) => !value)}
+          disabled={props.busy}
+          onClick={() => {
+            if (!props.busy) setOpen((value) => !value);
+          }}
         >
           <span class="truncate text-caption font-medium text-text-strong">
             {props.name || "Choose a Test"}
@@ -277,7 +286,7 @@ export function TestSwitcher(props: {
                     "justify-between",
                     test.id === props.selectedTestId && "bg-surface-base-active text-text-strong",
                   )}
-                  disabled={props.busy && test.id !== props.selectedTestId}
+                  disabled={props.busy}
                   onClick={() => {
                     props.onSelect(test.id);
                     close();
@@ -295,7 +304,7 @@ export function TestSwitcher(props: {
             <button
               type="button"
               class={cn(menuItem, "text-text-interactive-base")}
-              disabled={props.creating}
+              disabled={props.busy || props.creating}
               onClick={() => {
                 close(false);
                 props.onCreate();

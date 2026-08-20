@@ -6,6 +6,8 @@ import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
 import {
   createDiscoverySession,
+  enqueueJob,
+  listDevices,
   materializeLogicalScrollSurfaceImport,
   mutateStoredAppMap,
   persistAuthoringEvidence,
@@ -16,6 +18,7 @@ import {
   setDiscoveryStatus,
 } from "@relay/core";
 import { startServer } from "./index.js";
+import { assertTargetControl } from "./access-control.js";
 import { explicitTargetAvailability } from "./app-map-run-routes.js";
 import {
   findEquivalentTeachConnection,
@@ -77,7 +80,29 @@ test("offline Test compilation previews a verified checkpoint without a device o
   const root = await mkdtemp(join(tmpdir(), "relay-test-checkpoint-compile-"));
   const previous = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
-  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  const offlineOnlyCalls = { listDevices: 0, assertTargetControl: 0, enqueueJob: 0 };
+  let preflightOnly = true;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    appMapTestRunRuntime: {
+      async listDevices() {
+        offlineOnlyCalls.listDevices += 1;
+        if (preflightOnly) throw new Error("blocked Test run tried to discover a device");
+        return listDevices();
+      },
+      async assertTargetControl(scope, targetId) {
+        offlineOnlyCalls.assertTargetControl += 1;
+        if (preflightOnly) throw new Error("blocked Test run tried to control a target");
+        return assertTargetControl(scope, targetId);
+      },
+      enqueueJob(input) {
+        offlineOnlyCalls.enqueueJob += 1;
+        if (preflightOnly) throw new Error("blocked Test run tried to enqueue work");
+        return enqueueJob(input);
+      },
+    },
+  });
   try {
     const client = new RelayClient({
       url: `http://127.0.0.1:${server.port}`,
@@ -161,7 +186,37 @@ test("offline Test compilation previews a verified checkpoint without a device o
         createdAt: homeTree.capturedAt,
         updatedAt: homeTree.capturedAt,
       };
-      next.screens.home!.variantIds = ["home-ios-en"];
+      next.screenVariants["home-ios-pt"] = {
+        ...next.screenVariants["home-ios-en"]!,
+        id: "home-ios-pt",
+        targetProfile: {
+          ...next.screenVariants["home-ios-en"]!.targetProfile,
+          id: "ipad-pt",
+          name: "iPad · Portuguese",
+        },
+        rawAccessibilityTree: undefined,
+        evidenceIds: [],
+        evidenceUris: [],
+      };
+      // The expected destination is part of the same frozen Test proof. Keep
+      // a separately-bound source for it so the positive run exercises the
+      // profile-scoped path rather than failing for unrelated missing evidence.
+      next.screenVariants["settings-ios-en"] = {
+        ...next.screenVariants["home-ios-en"]!,
+        id: "settings-ios-en",
+        screenId: "settings",
+        observation: {
+          fingerprint: "b".repeat(64),
+          nodes: [{ role: "heading", label: "Settings" }],
+          volatileSignals: [],
+        },
+        rawAccessibilityTree: {
+          ...rawTree,
+          observationId: "settings-observation",
+        },
+      };
+      next.screens.home!.variantIds = ["home-ios-en", "home-ios-pt"];
+      next.screens.settings!.variantIds = ["settings-ios-en"];
       next.revision += 1;
       next.updatedAt = Math.max(next.updatedAt + 1, homeTree.capturedAt);
       return next;
@@ -226,13 +281,8 @@ test("offline Test compilation previews a verified checkpoint without a device o
       capturedAt: 10,
     });
     assert.equal(frozenHome?.tree.sha256, homeTree.sha256);
-    assert.equal(offline.preflight.selectors[0]?.status, "resolved");
-    assert.deepEqual(offline.preflight.selectors[0]?.resolution?.provenance?.variant, {
-      id: "home-ios-en",
-      targetProfileId: "ipad-en",
-      targetId: "ipad-1",
-      platform: "ios",
-    });
+    assert.equal(offline.preflight.selectors[0]?.status, "variant-selection-required");
+    assert.equal(offline.preflight.findings[0]?.code, "raw-evidence-variant-selection-required");
 
     const scoped = await client.invoke("app-map.test.compile", {
       appMapId: "store",
@@ -241,6 +291,15 @@ test("offline Test compilation previews a verified checkpoint without a device o
     });
     assert.deepEqual(scoped.preflight.selectors[0]?.rawVariantScope, {
       selectedTargetProfileId: "ipad-en",
+      selectedTargetProfile: {
+        id: "ipad-en",
+        targetId: "ipad-1",
+        platform: "ios",
+      },
+      targetProfileCandidates: [
+        { id: "ipad-en", targetId: "ipad-1", platform: "ios" },
+        { id: "ipad-pt", targetId: "ipad-1", platform: "ios" },
+      ],
       selectedVariant: {
         id: "home-ios-en",
         targetProfileId: "ipad-en",
@@ -259,8 +318,117 @@ test("offline Test compilation previews a verified checkpoint without a device o
           compatibility: "selected-variant",
           reason: "selected-runtime-variant",
         },
+        {
+          variant: {
+            id: "home-ios-pt",
+            targetProfileId: "ipad-pt",
+            targetId: "ipad-1",
+            platform: "ios",
+          },
+          sourceCount: 0,
+          compatibility: "incompatible",
+          reason: "no-raw-source",
+        },
       ],
     });
+
+    const jobsBeforeBlockedRun = await client.invoke("job.list", { limit: 100 });
+    const isRunError = (code: string) => (error: unknown) =>
+      error instanceof ApiError &&
+      error.status === 409 &&
+      (error.body as { code?: unknown }).code === code;
+    await assert.rejects(
+      client.invoke("app-map.test.run", {
+        appMapId: "store",
+        testId: "settings-test",
+        expectedRevision: saved.appMap.revision,
+        target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+      }),
+      isRunError("TEST_OFFLINE_PREFLIGHT_BLOCKED"),
+    );
+    await assert.rejects(
+      client.invoke("app-map.test.run", {
+        appMapId: "store",
+        testId: "settings-test",
+        expectedRevision: saved.appMap.revision,
+        target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+        targetProfileId: "ipad-pt",
+      }),
+      isRunError("TEST_OFFLINE_PREFLIGHT_BLOCKED"),
+    );
+    await assert.rejects(
+      client.invoke("app-map.test.run", {
+        appMapId: "store",
+        testId: "settings-test",
+        expectedRevision: saved.appMap.revision,
+        target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+        targetProfileId: "missing-profile",
+      }),
+      isRunError("TARGET_PROFILE_NOT_SAVED"),
+    );
+    await assert.rejects(
+      client.invoke("app-map.test.run", {
+        appMapId: "store",
+        testId: "settings-test",
+        expectedRevision: saved.appMap.revision,
+        target: { kind: "device", platform: "android", targetId: "pixel-1" },
+      }),
+      isRunError("TARGET_PROFILE_TARGET_MISMATCH"),
+    );
+    await assert.rejects(
+      client.invoke("app-map.test.run", {
+        appMapId: "store",
+        testId: "settings-test",
+        expectedRevision: saved.appMap.revision,
+        target: { kind: "device", platform: "android", targetId: "pixel-1" },
+        targetProfileId: "ipad-en",
+      }),
+      isRunError("TARGET_PROFILE_TARGET_MISMATCH"),
+    );
+    const jobsAfterBlockedRun = await client.invoke("job.list", { limit: 100 });
+    assert.equal(jobsAfterBlockedRun.jobs.length, jobsBeforeBlockedRun.jobs.length);
+    assert.deepEqual(offlineOnlyCalls, {
+      listDevices: 0,
+      assertTargetControl: 0,
+      enqueueJob: 0,
+    });
+    preflightOnly = false;
+
+    const lease = await client.invoke("lease.create", {
+      poolId: "local",
+      deviceSerial: "ipad-1",
+      expiresAt: Date.now() + 60_000,
+    });
+    const queued = await client.invoke("app-map.test.run", {
+      appMapId: "store",
+      testId: "settings-test",
+      expectedRevision: saved.appMap.revision,
+      target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+      targetProfileId: "ipad-en",
+    });
+    assert.deepEqual(queued.plan.runtimeTargetProfile, {
+      id: "ipad-en",
+      targetId: "ipad-1",
+      platform: "ios",
+    });
+    const queuedJob = await client.invoke("job.get", { jobId: queued.job.id });
+    const frozenArtifacts = queuedJob.job.artifacts as Array<{ kind: string; data?: unknown }>;
+    const frozenPlan = frozenArtifacts.find((artifact) => artifact.kind === "app-map-test-plan");
+    const frozenPreflight = frozenArtifacts.find(
+      (artifact) => artifact.kind === "app-map-test-preflight",
+    );
+    assert.ok(frozenPlan);
+    assert.ok(frozenPreflight);
+    const frozenPlanData = frozenPlan.data as { runtimeTargetProfile?: unknown };
+    const frozenPreflightData = frozenPreflight.data as {
+      runtimeTargetProfile?: unknown;
+      report?: { planDigest?: unknown };
+    };
+    assert.deepEqual(frozenPlanData.runtimeTargetProfile, queued.plan.runtimeTargetProfile);
+    assert.deepEqual(frozenPreflightData.runtimeTargetProfile, queued.plan.runtimeTargetProfile);
+    assert.equal(typeof frozenPreflightData.report?.planDigest, "string");
+    await client.invoke("job.cancel", { jobId: queued.job.id });
+    await client.invoke("lease.release", { leaseId: lease.lease.id });
 
     const unchanged = await client.invoke("app-map.get", { appMapId: "store" });
     assert.equal(unchanged.appMap.revision, saved.appMap.revision);

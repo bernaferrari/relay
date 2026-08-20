@@ -1,9 +1,14 @@
 import type {
   AppMap,
   AppMapCompiledRawAccessibilitySource,
+  AppMapCompiledRawAccessibilityTargetProfile,
   AppMapCompiledRawAccessibilityVariant,
   AppMapCompiledTest,
 } from "@relay/protocol";
+
+function viewportKey(viewport: { width: number; height: number } | undefined): string {
+  return viewport ? `${viewport.width}x${viewport.height}` : "";
+}
 
 function rawSourceKey(source: AppMapCompiledRawAccessibilitySource): string {
   const origin =
@@ -39,6 +44,49 @@ function sourceVariant(
     platform: variant.targetProfile.platform,
     ...(variant.targetProfile.viewport ? { viewport: { ...variant.targetProfile.viewport } } : {}),
   };
+}
+
+function sourceTargetProfile(
+  variant: AppMap["screenVariants"][string],
+): AppMapCompiledRawAccessibilityTargetProfile {
+  return {
+    id: variant.targetProfile.id,
+    targetId: variant.targetProfile.targetId,
+    platform: variant.targetProfile.platform,
+    ...(variant.targetProfile.viewport ? { viewport: { ...variant.targetProfile.viewport } } : {}),
+  };
+}
+
+/** Freeze every distinct saved target/profile identity for the whole Test.
+ * The key includes viewport: a corrupted map that reuses an ID at two shapes
+ * stays visibly ambiguous instead of permitting cross-shape selector reuse. */
+export function frozenRawAccessibilityTargetProfiles(
+  map: AppMap,
+): NonNullable<AppMapCompiledTest["rawAccessibilityTargetProfiles"]> {
+  const profiles = new Map<string, AppMapCompiledRawAccessibilityTargetProfile>();
+  for (const variant of Object.values(map.screenVariants).sort((left, right) =>
+    left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+  )) {
+    const profile = sourceTargetProfile(variant);
+    const key = [
+      profile.id,
+      profile.targetId,
+      profile.platform,
+      viewportKey(profile.viewport),
+    ].join("\u0000");
+    if (!profiles.has(key)) profiles.set(key, profile);
+  }
+  return [...profiles.values()]
+    .sort((left, right) => {
+      const leftKey = [left.id, left.targetId, left.platform, viewportKey(left.viewport)].join(
+        "\u0000",
+      );
+      const rightKey = [right.id, right.targetId, right.platform, viewportKey(right.viewport)].join(
+        "\u0000",
+      );
+      return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+    })
+    .map((profile) => structuredClone(profile));
 }
 
 /** Freeze every target/locale identity separately from its raw tree. A

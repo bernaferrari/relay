@@ -155,6 +155,12 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
           description: "Explicit device or browser target",
         },
         {
+          name: "targetProfileId",
+          type: "string",
+          description:
+            "Optional saved runtime evidence profile. Relay binds it to the selected target and preflights the exact queued plan.",
+        },
+        {
           name: "surfaceCapture",
           type: "object",
           description:
@@ -169,6 +175,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
       ],
       examples: [
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
+        'relay test run grok-ios settings-tour --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"},"targetProfileId":"ipad-pt-BR"}\'',
         'relay test run grok-ios settings-tour --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"},"startup":{"mode":"verified-checkpoint","screenId":"settings"}}\'',
         'relay test run grok relay-40 --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"android","targetId":"DEVICE"},"surfaceCapture":{"forceRecaptureScreenIds":["voice"]}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"browser","platform":"browser","targetId":"checkout-web"}}\'',

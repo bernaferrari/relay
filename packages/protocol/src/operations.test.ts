@@ -279,6 +279,7 @@ test("graph Test runs require an exact revision and explicit target", () => {
   assert.deepEqual(operationDefinition("app-map.test.run").input.parse(input), input);
   const freshSurfaceInput = {
     ...input,
+    targetProfileId: "pixel-en",
     surfaceCapture: { forceRecaptureScreenIds: ["voice"] },
   };
   assert.deepEqual(

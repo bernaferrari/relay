@@ -1,4 +1,5 @@
 import type {
+  AppMapCompiledRawAccessibilityTargetProfile,
   AppMapCompiledRawAccessibilityVariant,
   AppMapCompiledTest,
   NormalizedSemanticNode,
@@ -24,7 +25,9 @@ import {
   type OfflineTestPreflightRawSource,
 } from "./offline-test-preflight-raw.js";
 import {
+  rawTargetProfileScopeBlocksRecapture,
   rawVariantLabel,
+  rawVariantScopeLabels,
   scopeRawSourcesToRuntimeVariant,
 } from "./offline-test-preflight-variant-scope.js";
 import {
@@ -44,10 +47,6 @@ export type {
   OfflineTestPreflightEvidence,
   OfflineTestPreflightRawSource,
 } from "./offline-test-preflight-raw.js";
-
-/** Read-only runtime scope for an offline preflight. It is never inferred from
- * translated copy: callers select the same target profile that a later run
- * would use, and the frozen plan maps that profile to each screen Variant. */
 export type OfflineTestPreflightOptions = {
   targetProfileId?: string;
 };
@@ -67,13 +66,9 @@ function digest(value: unknown): string {
     .update(JSON.stringify(stableValue(value)))
     .digest("hex");
 }
-
 type SelectorAssessment = {
   selector: OfflineTestPreflightSelector;
   findings: OfflineTestPreflightFinding[];
-  /** The caller collapses this to one screen-level repair finding and upgrades
-   * it to a blocker. Keeping it outside `findings` prevents 40 steps from
-   * producing 40 copies of the same recapture instruction. */
   rawEvidenceRecapture?: {
     status: OfflineTestPreflightRawEvidenceStatus;
     sources: OfflineTestPreflightEvidenceSource[];
@@ -92,6 +87,7 @@ function selectorAssessment(input: {
   rawEvidenceStatus?: OfflineTestPreflightRawEvidenceStatus;
   rawEvidenceDeclared?: boolean;
   rawVariants?: readonly AppMapCompiledRawAccessibilityVariant[];
+  rawTargetProfiles?: readonly AppMapCompiledRawAccessibilityTargetProfile[];
   selectedTargetProfileId?: string;
 }): SelectorAssessment {
   const {
@@ -105,6 +101,7 @@ function selectorAssessment(input: {
     rawEvidenceStatus,
     rawEvidenceDeclared = false,
     rawVariants,
+    rawTargetProfiles,
     selectedTargetProfileId,
   } = input;
   const target = step.target;
@@ -189,6 +186,7 @@ function selectorAssessment(input: {
       sources: availableRawSources,
       target,
       ...(rawVariants ? { variants: rawVariants } : {}),
+      ...(rawTargetProfiles ? { targetProfiles: rawTargetProfiles } : {}),
       ...(selectedTargetProfileId ? { selectedTargetProfileId } : {}),
     });
     const allAttempts = availableRawSources.map((source) => ({
@@ -220,7 +218,9 @@ function selectorAssessment(input: {
         selected.id === sourceVariant.id &&
         selected.targetProfileId === sourceVariant.targetProfileId &&
         selected.targetId === sourceVariant.targetId &&
-        selected.platform === sourceVariant.platform,
+        selected.platform === sourceVariant.platform &&
+        selected.viewport?.width === sourceVariant.viewport?.width &&
+        selected.viewport?.height === sourceVariant.viewport?.height,
       );
     };
     const usesStableCrossVariantMethod = (
@@ -237,9 +237,7 @@ function selectorAssessment(input: {
     ): boolean =>
       variantScope.compatibleSources.includes(source) &&
       usesStableCrossVariantMethod(source, attempt);
-    const candidateLabels = (variantScope.scope?.candidates ?? [])
-      .map((candidate) => rawVariantLabel(candidate.variant))
-      .join(", ");
+    const candidateLabels = rawVariantScopeLabels(variantScope.scope);
     if (variantScope.state === "selection-required") {
       const detail = `Raw evidence spans multiple target/locale variants (${candidateLabels || "unknown variants"}). Select a runtime target profile before Relay can prove this selector; it will not infer locale from visible text.`;
       return {
@@ -266,7 +264,7 @@ function selectorAssessment(input: {
       };
     }
     if (variantScope.state === "selection-missing") {
-      const detail = `The selected runtime target profile ${selectedTargetProfileId} has no frozen Variant for this screen. Retarget preflight to ${candidateLabels || "a captured variant"} or capture the selected profile.`;
+      const detail = `Selected runtime target profile ${selectedTargetProfileId} does not resolve to one frozen target identity for this screen. Retarget preflight to ${candidateLabels || "a captured variant"}, or repair or recapture the selected profile.`;
       return {
         selector: {
           ...selectorBase,
@@ -285,7 +283,7 @@ function selectorAssessment(input: {
             ...(step.id ? { recipeStepId: step.id } : {}),
             ...(screenId ? { screenId } : {}),
             ...(rawSourcesMetadata.length ? { evidence: rawSourcesMetadata } : {}),
-            message: `${description} has no frozen Variant for selected target profile ${selectedTargetProfileId}; retarget preflight or capture that profile before relying on offline raw evidence.`,
+            message: `${description} cannot resolve selected target profile ${selectedTargetProfileId} to one frozen target identity; retarget preflight, or repair or recapture that profile before relying on offline raw evidence.`,
           },
         ],
       };
@@ -388,10 +386,6 @@ function selectorAssessment(input: {
     };
   }
 
-  // Once a compiled plan declares raw evidence for its source screen, an
-  // unavailable tree invalidates every raw selector proof on that screen.
-  // Historical plans that never declared raw evidence retain their flattened
-  // warnings, but a declared source may never silently downgrade to one.
   const flattenedMatches = observations.flatMap((observation) =>
     matchesTarget(observation.nodes, target),
   );
@@ -409,15 +403,14 @@ function selectorAssessment(input: {
       sources: rawSources,
       target,
       ...(rawVariants ? { variants: rawVariants } : {}),
+      ...(rawTargetProfiles ? { targetProfiles: rawTargetProfiles } : {}),
       ...(selectedTargetProfileId ? { selectedTargetProfileId } : {}),
     });
     const unavailableVariantScopeFields = unavailableVariantScope.scope
       ? { rawVariantScope: structuredClone(unavailableVariantScope.scope) }
       : {};
     if (unavailableVariantScope.state === "selection-required") {
-      const candidates = (unavailableVariantScope.scope?.candidates ?? [])
-        .map((candidate) => rawVariantLabel(candidate.variant))
-        .join(", ");
+      const candidates = rawVariantScopeLabels(unavailableVariantScope.scope);
       return {
         selector: {
           ...selectorBase,
@@ -440,16 +433,14 @@ function selectorAssessment(input: {
       };
     }
     if (unavailableVariantScope.state === "selection-missing") {
-      const candidates = (unavailableVariantScope.scope?.candidates ?? [])
-        .map((candidate) => rawVariantLabel(candidate.variant))
-        .join(", ");
+      const candidates = rawVariantScopeLabels(unavailableVariantScope.scope);
       return {
         selector: {
           ...selectorBase,
           status: "variant-incompatible",
           evidence: rawEvidence,
           ...unavailableVariantScopeFields,
-          detail: `The selected runtime target profile ${selectedTargetProfileId} has no frozen Variant for this screen. Retarget preflight to ${candidates || "a captured variant"} or capture the selected profile.`,
+          detail: `Selected runtime target profile ${selectedTargetProfileId} does not resolve to one frozen target identity for this screen. Retarget preflight to ${candidates || "a captured variant"}, or repair or recapture the selected profile.`,
         },
         findings: [
           {
@@ -459,7 +450,7 @@ function selectorAssessment(input: {
             ...(step.id ? { recipeStepId: step.id } : {}),
             ...(screenId ? { screenId } : {}),
             ...(rawSourcesMetadata.length ? { evidence: rawSourcesMetadata } : {}),
-            message: `${description} has no frozen Variant for selected target profile ${selectedTargetProfileId}; retarget preflight or capture that profile before relying on offline raw evidence.`,
+            message: `${description} cannot resolve selected target profile ${selectedTargetProfileId} to one frozen target identity; retarget preflight, or repair or recapture that profile before relying on offline raw evidence.`,
           },
         ],
       };
@@ -714,7 +705,14 @@ export function preflightCompiledAppMapTestOffline(
         // requirement. A stable entry/exit control still reaches
         // selectorAssessment below and will request exactly one recapture if
         // its own source tree is unavailable.
-        if (rawEvidenceStatus && !isDynamicSharedConversations(step.screenTitle)) {
+        if (
+          rawEvidenceStatus &&
+          !isDynamicSharedConversations(step.screenTitle) &&
+          !rawTargetProfileScopeBlocksRecapture(
+            plan.rawAccessibilityTargetProfiles,
+            options.targetProfileId,
+          )
+        ) {
           recordRawEvidenceRecapture({
             screenId: sourceScreenId,
             screenTitle: step.screenTitle,
@@ -790,6 +788,9 @@ export function preflightCompiledAppMapTestOffline(
           ...(sourceRawSources.length ? { rawSources: sourceRawSources } : {}),
           ...(sourceScreenId && plan.rawAccessibilityVariantsByScreenId?.[sourceScreenId]
             ? { rawVariants: plan.rawAccessibilityVariantsByScreenId[sourceScreenId] }
+            : {}),
+          ...(plan.rawAccessibilityTargetProfiles
+            ? { rawTargetProfiles: plan.rawAccessibilityTargetProfiles }
             : {}),
           ...(options.targetProfileId ? { selectedTargetProfileId: options.targetProfileId } : {}),
           ...(sourceScreenId && evidence.rawEvidenceReferencesByScreenId?.[sourceScreenId]

@@ -2,14 +2,17 @@ import { For } from "solid-js";
 import type { AppMapTestStartup } from "@relay/protocol";
 import type { JobInfo } from "../lib/api-types";
 import {
+  isActiveTestRun,
+  isFinishedTestRun,
+  type TestRunLaunchState,
+} from "../lib/app-map-test-run-state";
+import {
   appMapTestStartupCopy,
   coldAppMapTestStartup,
   type AppMapTestCheckpointOption,
 } from "../lib/app-map-test-startup-policy";
 import { Button } from "@relay/ui/button";
 import { Icon } from "./icon";
-
-export type TestRunLaunchState = "idle" | "preparing" | "canceling" | "error";
 
 export type TestRunControlProps = {
   launchState: TestRunLaunchState;
@@ -37,16 +40,11 @@ export type TestRunControlProps = {
   onTargetProfileChange?: (targetProfileId: string | undefined) => void;
 };
 
-const activeStatuses = new Set<JobInfo["status"]>(["queued", "running", "paused"]);
-const terminalStatuses = new Set<JobInfo["status"]>(["ok", "error", "healed", "cancelled"]);
-
-export function isActiveTestRun(job: JobInfo | undefined): boolean {
-  return Boolean(job && activeStatuses.has(job.status));
-}
-
-export function isFinishedTestRun(job: JobInfo | undefined): boolean {
-  return Boolean(job && terminalStatuses.has(job.status));
-}
+export {
+  isActiveTestRun,
+  isFinishedTestRun,
+  type TestRunLaunchState,
+} from "../lib/app-map-test-run-state";
 
 export function AppMapTestRunControl(props: TestRunControlProps) {
   const active = () => isActiveTestRun(props.job);
@@ -58,7 +56,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
   const canChooseStartup = () => Boolean(props.onStartupChange && checkpointOptions().length);
   const targetProfileOptions = () => props.targetProfileOptions ?? [];
   const canChooseTargetProfile = () =>
-    Boolean(props.onTargetProfileChange && targetProfileOptions().length > 1);
+    Boolean(props.onTargetProfileChange && targetProfileOptions().length);
   const startupValue = () => {
     const selected = startup();
     return selected.mode === "verified-checkpoint" ? `checkpoint:${selected.screenId}` : "cold";
@@ -110,7 +108,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
   // One row, so the primary action can live in the single workspace bar instead of
   // the status strip the old screen stacked under it.
   return (
-    <div class="flex min-w-0 flex-wrap items-center gap-2">
+    <div class="flex min-w-0 flex-wrap items-center gap-2" data-test-run-actions>
       {props.onCheckOffline ? (
         <Button
           size="sm"
@@ -130,7 +128,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
             type="checkbox"
             class="size-3.5 accent-icon-interactive-base"
             checked={Boolean(props.freshEvidence)}
-            disabled={busy() || active()}
+            disabled={busy() || active() || props.checkingOffline}
             onChange={(event) => props.onFreshEvidenceChange?.(event.currentTarget.checked)}
           />
           Capture fresh evidence
@@ -138,7 +136,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
       ) : null}
       {canChooseTargetProfile() ? (
         <label
-          class="flex min-h-9 shrink-0 items-center gap-1 rounded-md border border-border-weak-base bg-surface-base px-2 text-caption text-text-base"
+          class="flex min-h-11 min-w-0 items-center gap-1 rounded-md border border-border-weak-base bg-surface-base px-2 text-caption text-text-base"
           title="Scope the next offline proof to one saved target profile. This does not change the Test or device."
         >
           <span class="text-text-weak">Evidence</span>
@@ -148,7 +146,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
             aria-label="Runtime target profile for offline evidence"
             class="min-w-0 max-w-52 cursor-pointer bg-transparent text-base font-medium text-text-base outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
             value={props.targetProfileId ?? ""}
-            disabled={busy() || active() || finished()}
+            disabled={busy() || active() || finished() || props.checkingOffline}
             onChange={selectTargetProfile}
           >
             <option value="">Choose profile…</option>
@@ -161,7 +159,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
       {props.startup ? (
         canChooseStartup() ? (
           <label
-            class="flex min-h-9 shrink-0 items-center gap-1 rounded-md border border-border-weak-base bg-surface-base px-2 text-caption text-text-base"
+            class="flex min-h-11 min-w-0 items-center gap-1 rounded-md border border-border-weak-base bg-surface-base px-2 text-caption text-text-base"
             title={startupCopy().detail}
           >
             <span class="text-text-weak">Start</span>
@@ -170,7 +168,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
               data-test-startup-policy
               class="min-w-0 max-w-40 cursor-pointer bg-transparent text-caption font-medium text-text-base outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
               value={startupValue()}
-              disabled={busy() || active() || finished()}
+              disabled={busy() || active() || finished() || props.checkingOffline}
               onChange={selectStartup}
             >
               <option value="cold">Cold baseline</option>

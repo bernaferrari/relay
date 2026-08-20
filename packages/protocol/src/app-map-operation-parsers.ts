@@ -297,6 +297,9 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
       ) {
         fail("Test run target", "kind and platform do not describe the same target");
       }
+      if (input.targetProfileId !== undefined) {
+        string(input.targetProfileId, "Test run targetProfileId");
+      }
       if (input.surfaceCapture !== undefined) {
         const policy = record(input.surfaceCapture, "Test run surfaceCapture");
         const screenIds = policy.forceRecaptureScreenIds;

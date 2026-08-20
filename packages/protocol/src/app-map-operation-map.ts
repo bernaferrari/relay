@@ -451,6 +451,9 @@ export type AppMapOperationMap = {
       testId: string;
       expectedRevision: number;
       target: AuthoringTarget;
+      /** Optional explicit saved profile scope. Relay binds it to this exact
+       * target before control, then preflights the same frozen plan it queues. */
+      targetProfileId?: string;
       /** Run-scoped evidence policy. Only the selected full-surface bindings
        * bypass the exact comparison cache; the saved Test remains unchanged. */
       surfaceCapture?: {

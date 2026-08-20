@@ -4,6 +4,7 @@ import type { AppMap } from "@relay/protocol";
 import {
   appMapTestRuntimeProfileMatchesDevice,
   appMapTestRuntimeProfiles,
+  appMapTestRuntimeProfileScope,
   suggestedAppMapTestRuntimeProfileId,
 } from "./app-map-test-runtime-profile.js";
 
@@ -142,4 +143,26 @@ test("selects the only exact runtime profile and never a profile from another de
     }),
     undefined,
   );
+});
+
+test("makes a lone profile from another target an explicit blocked scope", () => {
+  const profiles = appMapTestRuntimeProfiles(map()).filter(
+    (profile) => profile.id === "ipad-pt-BR",
+  );
+  const scope = appMapTestRuntimeProfileScope({
+    profiles,
+    device: { serial: "android-1", platform: "android" },
+  });
+
+  assert.equal(scope.status, "no-compatible-profile");
+  assert.equal(scope.selectedProfileId, undefined);
+  assert.deepEqual(scope.compatibleProfiles, []);
+
+  const incompatibleSelection = appMapTestRuntimeProfileScope({
+    profiles,
+    device: { serial: "android-1", platform: "android" },
+    requestedProfileId: "ipad-pt-BR",
+  });
+  assert.equal(incompatibleSelection.status, "selected-profile-incompatible");
+  assert.equal(incompatibleSelection.selectedProfileId, "ipad-pt-BR");
 });

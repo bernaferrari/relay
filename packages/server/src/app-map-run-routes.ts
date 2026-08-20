@@ -12,7 +12,9 @@ import {
   listDevices,
   listDeviceLeases,
   listTargets,
+  loadFrozenRawAccessibilityEvidence,
   prepareCaseStackMatrix,
+  preflightCompiledAppMapTestOffline,
   readAppMap,
   readProjectVariables,
   referencedRuntimeInputs,
@@ -21,7 +23,7 @@ import {
   sensitiveInputNames,
   type Recipe,
 } from "@relay/core";
-import type { OperationInput } from "@relay/protocol";
+import type { AppMap, AppMapCompiledRuntimeTargetProfile, OperationInput } from "@relay/protocol";
 import { assertTargetControl, targetLeaseBelongsToCaller } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
@@ -33,6 +35,120 @@ type ObservedTarget = {
   developerMode?: "enabled" | "disabled";
   developerServicesAvailable?: boolean;
 };
+
+/** Small host seam for proving that a blocked Test run is entirely offline.
+ * Normal callers use the production runtime; tests can make any device or
+ * enqueue call fail loudly if preflight ordering regresses. */
+export type AppMapTestRunRouteRuntime = {
+  listDevices: typeof listDevices;
+  assertTargetControl: typeof assertTargetControl;
+  enqueueJob: typeof enqueueJob;
+};
+
+const defaultTestRunRuntime: AppMapTestRunRouteRuntime = {
+  listDevices,
+  assertTargetControl,
+  enqueueJob,
+};
+
+/** Resolve a run's profile from the saved App Map before it can touch a
+ * target. A profile ID is an evidence identity, not a display-label hint: all
+ * matching saved copies must bind to this exact target/platform. */
+export function frozenTestRunTargetProfile(input: {
+  map: AppMap;
+  targetProfileId: string;
+  target: Pick<OperationInput<"app-map.test.run">["target"], "targetId" | "platform">;
+}): AppMapCompiledRuntimeTargetProfile {
+  const targetProfileId = input.targetProfileId.trim();
+  const profiles = Object.values(input.map.screenVariants)
+    .map((variant) => variant.targetProfile)
+    .filter((profile) => profile.id === targetProfileId);
+  if (!profiles.length) {
+    throw new HttpError(409, `Target profile ${targetProfileId} is not saved in this App Map`, {
+      code: "TARGET_PROFILE_NOT_SAVED",
+      targetProfileId,
+      recovery:
+        "Choose a saved evidence profile for this App Map before running the Test on a target.",
+    });
+  }
+  const mismatched = profiles.filter(
+    (profile) =>
+      profile.targetId !== input.target.targetId || profile.platform !== input.target.platform,
+  );
+  if (mismatched.length) {
+    const candidates = [
+      ...new Set(profiles.map((profile) => `${profile.platform}:${profile.targetId}`)),
+    ]
+      .sort()
+      .join(", ");
+    throw new HttpError(
+      409,
+      `Target profile ${targetProfileId} does not bind to ${input.target.platform}:${input.target.targetId}`,
+      {
+        code: "TARGET_PROFILE_TARGET_MISMATCH",
+        targetProfileId,
+        target: { targetId: input.target.targetId, platform: input.target.platform },
+        savedTargets: candidates,
+        recovery:
+          "Choose the target recorded by this evidence profile, or choose a profile captured for the selected target.",
+      },
+    );
+  }
+  const identity = (profile: (typeof profiles)[number]) =>
+    [
+      profile.id,
+      profile.targetId,
+      profile.platform,
+      profile.viewport ? `${profile.viewport.width}x${profile.viewport.height}` : "",
+    ].join("\u0000");
+  if (new Set(profiles.map(identity)).size !== 1) {
+    throw new HttpError(409, `Target profile ${targetProfileId} has conflicting saved identities`, {
+      code: "TARGET_PROFILE_AMBIGUOUS",
+      targetProfileId,
+      recovery:
+        "Repair or recapture the conflicting saved evidence profile before using it to scope a Test run.",
+    });
+  }
+  const profile = profiles[0]!;
+  return {
+    id: profile.id,
+    targetId: profile.targetId,
+    platform: profile.platform,
+    ...(profile.viewport ? { viewport: structuredClone(profile.viewport) } : {}),
+  };
+}
+
+function assertFrozenEvidenceTargetCompatibility(input: {
+  target: Pick<OperationInput<"app-map.test.run">["target"], "targetId" | "platform">;
+  profiles: AppMapCompiledRuntimeTargetProfile[] | undefined;
+}): void {
+  const profiles = input.profiles ?? [];
+  if (!profiles.length) return;
+  if (
+    profiles.some(
+      (profile) =>
+        profile.targetId === input.target.targetId && profile.platform === input.target.platform,
+    )
+  ) {
+    return;
+  }
+  const savedTargets = [
+    ...new Set(profiles.map((profile) => `${profile.platform}:${profile.targetId}`)),
+  ]
+    .sort()
+    .join(", ");
+  throw new HttpError(
+    409,
+    `No frozen evidence profile binds to ${input.target.platform}:${input.target.targetId}`,
+    {
+      code: "TARGET_PROFILE_TARGET_MISMATCH",
+      target: input.target,
+      savedTargets,
+      recovery:
+        "Choose a target captured by this App Map, or capture a saved evidence profile for the selected target before running.",
+    },
+  );
+}
 
 /**
  * Return the actionable state for an explicit device serial. This helper is
@@ -64,10 +180,12 @@ export type AppMapRunRouteContext = {
   request: http.IncomingMessage;
   response: http.ServerResponse;
   scope: RequestContext;
+  runtime?: Partial<AppMapTestRunRouteRuntime>;
 };
 
 export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promise<boolean> {
   if (input.method !== "POST") return false;
+  const runtime = { ...defaultTestRunRuntime, ...input.runtime };
   const testMatch = matchPath(input.pathname, "/app-maps/:appMapId/tests/:testId/run");
   if (testMatch) {
     const body = (await parseJsonBody(input.request)) as Omit<
@@ -91,6 +209,64 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     if (!test) throw new HttpError(404, `Test ${testMatch.testId} not found`);
 
     const targetId = body.target.targetId.trim();
+    const requestedTarget = { targetId, platform: body.target.platform };
+    const targetProfileId = body.targetProfileId?.trim() || undefined;
+    const runtimeTargetProfile = targetProfileId
+      ? frozenTestRunTargetProfile({ map, targetProfileId, target: requestedTarget })
+      : undefined;
+    let compiled;
+    try {
+      compiled = compileAppMapTest(map, test, {
+        forceRecaptureSurfaceScreenIds: body.surfaceCapture?.forceRecaptureScreenIds,
+        entryCheckpointScreenId:
+          body.startup?.mode === "verified-checkpoint" ? body.startup.screenId : undefined,
+      });
+    } catch (error) {
+      if (error instanceof AppMapTestCompileError) {
+        throw new HttpError(409, error.message, {
+          code: error.code,
+          testId: error.testId,
+          stepId: error.stepId,
+          diagnostics: error.diagnostics,
+          recovery:
+            error.code === "unresolved-navigation"
+              ? "Teach or author every missing reviewed return transition, then compile the Test again."
+              : "Open the Test editor and resolve its blocking compile diagnostics.",
+        });
+      }
+      throw new HttpError(409, error instanceof Error ? error.message : String(error));
+    }
+    const plan = {
+      ...compiled.plan,
+      ...(runtimeTargetProfile
+        ? { runtimeTargetProfile: structuredClone(runtimeTargetProfile) }
+        : {}),
+    };
+    if (!runtimeTargetProfile) {
+      assertFrozenEvidenceTargetCompatibility({
+        target: requestedTarget,
+        profiles: plan.rawAccessibilityTargetProfiles,
+      });
+    }
+    const preflight = preflightCompiledAppMapTestOffline(
+      plan,
+      await loadFrozenRawAccessibilityEvidence(plan),
+      targetProfileId ? { targetProfileId } : {},
+    );
+    if (preflight.summary.blockers) {
+      throw new HttpError(
+        409,
+        "Offline Test preflight is blocked; Relay did not control the target",
+        {
+          code: "TEST_OFFLINE_PREFLIGHT_BLOCKED",
+          ...(runtimeTargetProfile ? { runtimeTargetProfile } : {}),
+          preflight,
+          recovery:
+            "Review the frozen evidence findings, select or recapture the required profile, then retry this exact Test revision.",
+        },
+      );
+    }
+
     let observedDevices: Awaited<ReturnType<typeof listDevices>> | undefined;
     if (body.target.kind === "device") {
       const operation = currentOperationContext();
@@ -105,7 +281,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         : false;
       if (!activeLease) {
         try {
-          observedDevices = await listDevices();
+          observedDevices = await runtime.listDevices();
         } catch (error) {
           throw new HttpError(503, "Relay cannot verify the selected device", {
             code: "TARGET_DISCOVERY_UNAVAILABLE",
@@ -145,31 +321,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         }
       }
     }
-    await assertTargetControl(input.scope, targetId);
-
-    let compiled;
-    try {
-      compiled = compileAppMapTest(map, test, {
-        forceRecaptureSurfaceScreenIds: body.surfaceCapture?.forceRecaptureScreenIds,
-        entryCheckpointScreenId:
-          body.startup?.mode === "verified-checkpoint" ? body.startup.screenId : undefined,
-      });
-    } catch (error) {
-      if (error instanceof AppMapTestCompileError) {
-        throw new HttpError(409, error.message, {
-          code: error.code,
-          testId: error.testId,
-          stepId: error.stepId,
-          diagnostics: error.diagnostics,
-          recovery:
-            error.code === "unresolved-navigation"
-              ? "Teach or author every missing reviewed return transition, then compile the Test again."
-              : "Open the Test editor and resolve its blocking compile diagnostics.",
-        });
-      }
-      throw new HttpError(409, error instanceof Error ? error.message : String(error));
-    }
-    const plan = compiled.plan;
+    await runtime.assertTargetControl(input.scope, targetId);
     const recipeGraph: Record<string, Recipe> = Object.fromEntries(
       Object.values(compiled.graph).map((recipe) => [recipe.id, structuredClone(recipe)]),
     );
@@ -179,7 +331,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     if (!operation) throw new HttpError(500, "App Map execution context is unavailable");
     const targetProfile = (
       await buildTargetProfiles({
-        devices: observedDevices ?? (await listDevices().catch(() => [])),
+        devices: observedDevices ?? (await runtime.listDevices().catch(() => [])),
         targets: await listTargets(),
       })
     ).find((profile) => profile.targetId === targetId);
@@ -189,7 +341,8 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       testId: plan.test.id,
       rootRecipeId: plan.rootRecipeId,
     };
-    const job = enqueueJob({
+    const queuedAt = Date.now();
+    const job = runtime.enqueueJob({
       recipe: recipeSnapshot.id,
       title: recipeSnapshot.title,
       recipeSnapshot,
@@ -202,8 +355,19 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       artifacts: [
         {
           kind: "app-map-test-plan",
-          capturedAt: Date.now(),
+          capturedAt: queuedAt,
           data: plan,
+        },
+        {
+          kind: "app-map-test-preflight",
+          capturedAt: queuedAt,
+          data: {
+            schemaVersion: 1,
+            ...(runtimeTargetProfile
+              ? { runtimeTargetProfile: structuredClone(runtimeTargetProfile) }
+              : {}),
+            report: structuredClone(preflight),
+          },
         },
       ],
       projectId: input.scope.projectId,

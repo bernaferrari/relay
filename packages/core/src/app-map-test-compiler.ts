@@ -23,6 +23,7 @@ import { validateAppMap } from "./app-map.js";
 import { frozenDocumentOrigin } from "./app-map-scroll-surface-baseline.js";
 import {
   frozenRawAccessibilitySources,
+  frozenRawAccessibilityTargetProfiles,
   frozenRawAccessibilityVariants,
 } from "./app-map-test-raw-accessibility.js";
 import { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
@@ -709,6 +710,7 @@ export function compileAppMapScenarioTest(
     surfaceBindings: structuredClone(test.surfaceBindings ?? []),
     rawAccessibilitySourcesByScreenId: frozenRawAccessibilitySources(map),
     rawAccessibilityVariantsByScreenId: frozenRawAccessibilityVariants(map),
+    rawAccessibilityTargetProfiles: frozenRawAccessibilityTargetProfiles(map),
     executionSchedule: proposeAppMapTestExecutionSchedule(map, rootRecipeId, graph),
     rootRecipeId,
     recipes: Object.fromEntries(
