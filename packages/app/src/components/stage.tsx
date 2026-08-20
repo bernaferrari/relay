@@ -41,9 +41,10 @@ import { SwipePathPreview } from "./swipe-path-preview";
 import { StepPlaybackPreview } from "./step-playback-preview";
 import { phoneScreen } from "../lib/ui";
 import { CoordinateTapPreview, DevicePanelStatus } from "./device-stage-previews";
-import { StageViewToggle, StageRecordingControls, StageInspectionHint } from "./stage-chrome";
+import { StageViewToggle, StageRecordingControls } from "./stage-chrome";
 import { StageScreenFallback } from "./stage-screen-fallback";
 import { StageTargetPicker } from "./stage-target-picker";
+import { IosStageRuntimeStatus, iosStageRuntimeStatus } from "./ios-stage-runtime-status";
 import {
   useDeviceStageRecordedEvidence,
   type DeviceStageView,
@@ -670,22 +671,19 @@ export function DeviceStage(_props: {
       openXcodeAvailable: Boolean(platform.openXcode),
     }),
   );
-  const controlHint = createMemo(() => {
-    const issue = server.controlIssue();
-    // A viewer can receive a healthy go-ios/MJPEG surface without owning the
-    // exclusive input lease. Do not hide that truthful view-only state merely
-    // because there is no PNG fallback mounted underneath the video.
-    if (stageView() !== "live" || !livePixelsAvailable() || !issue) return null;
-    const canTakeControl = server.canTakeControlOfSelectedDevice();
-    return {
-      title: canTakeControl ? "View only" : "Control unavailable",
-      detail:
-        canTakeControl && /another active controller/i.test(issue)
-          ? "Another controller has exclusive access. Taking control will interrupt it."
-          : humanError(issue),
-      actionLabel: canTakeControl ? "Take control" : "Reconnect",
-      canTakeControl,
-    };
+  const showIosRuntimeStatus = () =>
+    stageView() === "live" && targetIsPhysicalIos(currentDevice()) && livePixelsAvailable();
+  const iosRuntimeStatus = createMemo(() => {
+    if (!showIosRuntimeStatus()) return undefined;
+    const controlIssue = server.controlIssue();
+    return iosStageRuntimeStatus({
+      pixelsAvailable: livePixelsAvailable(),
+      semanticPlane: iosSemanticPlane() ?? iosLiveSemanticPlane({}),
+      controlActive: liveControlActive(),
+      controlIssue: controlIssue ? humanError(controlIssue) : undefined,
+      canTakeControl: server.canTakeControlOfSelectedDevice(),
+      inspectionHint: inspectionHint(),
+    });
   });
   const retryInspection = async () => {
     if (inspectionRecovering()) return;
@@ -868,10 +866,23 @@ export function DeviceStage(_props: {
                 PHONE_SHELL,
                 "relative z-[2] shrink-0",
                 frameRatio() >= 0.65
-                  ? "h-auto w-[min(440px,calc(100%-40px))]"
+                  ? cn(
+                      "h-auto w-[min(440px,calc(100%-40px))]",
+                      iosRuntimeStatus() && "max-h-[calc(100%-192px)]",
+                    )
                   : embeddedRecordingControls()
-                    ? "h-[min(790px,calc(100%-32px))] w-auto max-w-[min(440px,calc(100%-40px))]"
-                    : "h-[min(760px,calc(100%-148px))] w-auto max-w-[min(440px,calc(100%-40px))]",
+                    ? cn(
+                        "w-auto max-w-[min(440px,calc(100%-40px))]",
+                        iosRuntimeStatus()
+                          ? "h-[min(760px,calc(100%-76px))]"
+                          : "h-[min(790px,calc(100%-32px))]",
+                      )
+                    : cn(
+                        "w-auto max-w-[min(440px,calc(100%-40px))]",
+                        iosRuntimeStatus()
+                          ? "h-[min(760px,calc(100%-192px))]"
+                          : "h-[min(760px,calc(100%-148px))]",
+                      ),
               )}
               style={{ "aspect-ratio": frameAspect() }}
             >
@@ -1154,52 +1165,6 @@ export function DeviceStage(_props: {
                   {stepPlayback() && playbackBounds() && (
                     <StepPlaybackPreview step={stepPlayback()!.step} bounds={playbackBounds()!} />
                   )}
-                  <Show
-                    when={controlHint()}
-                    fallback={
-                      <Show when={inspectionHint()}>
-                        {(hint) => (
-                          <StageInspectionHint
-                            title={hint().title}
-                            detail={hint().detail}
-                            actionLabel={hint().actionLabel}
-                            actionVariant={hint().action === "open-xcode" ? "primary" : "secondary"}
-                            busy={inspectionRecovering()}
-                            onAction={() => {
-                              if (!hint().actionLabel) return;
-                              if (hint().action === "open-xcode") {
-                                void platform.openXcode?.();
-                                return;
-                              }
-                              if (hint().action === "refresh-labels") {
-                                void tickLiveSnapshot();
-                                return;
-                              }
-                              void retryInspection();
-                            }}
-                          />
-                        )}
-                      </Show>
-                    }
-                  >
-                    {(hint) => (
-                      <StageInspectionHint
-                        title={hint().title}
-                        detail={hint().detail}
-                        actionLabel={hint().actionLabel}
-                        busyLabel={hint().canTakeControl ? "Taking control…" : "Reconnecting…"}
-                        actionVariant={hint().canTakeControl ? "primary" : "secondary"}
-                        busy={
-                          hint().canTakeControl
-                            ? server.takingControlOfSelectedDevice()
-                            : panelRetrying()
-                        }
-                        onAction={() => {
-                          void (hint().canTakeControl ? takeControl() : retryScreenPreview());
-                        }}
-                      />
-                    )}
-                  </Show>
                   <Show when={server.accessibilityMode() === "always" && !picker()}>
                     <div
                       class="pointer-events-none absolute inset-0 z-[3] overflow-hidden rounded-3xl"
@@ -1333,6 +1298,40 @@ export function DeviceStage(_props: {
             />
           )}
         </Show>
+      </Show>
+
+      <Show when={iosRuntimeStatus()}>
+        {(status) => (
+          <IosStageRuntimeStatus
+            status={status()}
+            busyForAction={(action) =>
+              action.kind === "take-control"
+                ? server.takingControlOfSelectedDevice()
+                : action.kind === "reconnect" && action.source === "control"
+                  ? panelRetrying()
+                  : action.kind === "reconnect" && action.source === "labels"
+                    ? inspectionRecovering()
+                    : false
+            }
+            onAction={(action) => {
+              switch (action.kind) {
+                case "take-control":
+                  void takeControl();
+                  break;
+                case "open-xcode":
+                  void platform.openXcode?.();
+                  break;
+                case "refresh-labels":
+                  void tickLiveSnapshot();
+                  break;
+                case "reconnect":
+                  if (action.source === "control") void retryDevicePanel();
+                  else void retryInspection();
+                  break;
+              }
+            }}
+          />
+        )}
       </Show>
 
       <Show when={picker() && liveControlActive() && (pickerNode() || rec.recording())}>
