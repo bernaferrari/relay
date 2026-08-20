@@ -158,7 +158,7 @@ async function recoverTargetRuntimeReserved(
   return runWithTargetContext(target.context, async () => {
     let device = target.device;
     const foreign = foreignSessionNameFromError(cause);
-    const killed = await killStaleIosTestRunners(serial).catch(() => [] as string[]);
+    let killed: string[] = [];
     let remounted = false;
 
     const inspect = async () => {
@@ -191,7 +191,11 @@ async function recoverTargetRuntimeReserved(
     };
     const repair = async (sessionError: unknown) => {
       const named = foreignSessionNameFromError(sessionError) ?? foreign;
-      await killStaleIosTestRunners(serial).catch(() => []);
+      // Reconnect commonly runs while the current XCTest runner is perfectly
+      // healthy. Killing it before the first minimal AX proof turns every
+      // reconnect into a costly cold start. Only clean up after that proof
+      // fails (or when an explicit foreign session/hard cause requested it).
+      killed = await killStaleIosTestRunners(serial).catch(() => []);
       remounted = await remountIosDeveloperDiskImage(serial).catch(() => false);
       iosRunnerPreparations.delete(serial);
       iosRunnerFailures.delete(serial);
