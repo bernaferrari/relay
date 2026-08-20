@@ -12,6 +12,7 @@ import { getExecutingJobId, hardStopDeviceSession } from "./control.js";
 import {
   IosDeviceAttentionError,
   IosRunnerSetupError,
+  IosXCTestSessionUnavailableError,
   diagnoseIosRunnerError,
   prepareIosRunner,
 } from "./ios-device-adapter.js";
@@ -163,9 +164,29 @@ async function recoverTargetRuntimeReserved(
     const inspect = async () => {
       await ensureIosRunnerPrepared(device, serial);
       try {
-        return await restoreIosAppSession(device, serial);
-      } catch {
-        return { app: "pixels", fallback: true };
+        const restored = await restoreIosAppSession(device, serial);
+        // Preparing the runner only proves that Xcode accepted setup. It does
+        // not prove the signed XCTest process can return accessibility nodes.
+        // Reconnect is an explicit operation, so it must make that distinction
+        // before declaring control ready. Keep this deliberately small: live
+        // interaction needs hittable geometry, not a raw evidence traversal.
+        const nodes = await withSession(device, () => snapshot(device, { interactiveOnly: true }));
+        if (nodes.length === 0) {
+          throw new IosXCTestSessionUnavailableError(
+            "Reconnect prepared the XCTest runner, but it returned no interactive accessibility nodes.",
+          );
+        }
+        return restored;
+      } catch (error) {
+        // Launch/pixel capture may remain available, but that is explicitly
+        // not semantic control. Preserve the inspection failure so the
+        // recovery result can be unavailable instead of falsely "ready".
+        if (error instanceof IosXCTestSessionUnavailableError) throw error;
+        throw new IosXCTestSessionUnavailableError(
+          error instanceof Error
+            ? error.message
+            : "Reconnect could not prove an interactive iOS accessibility session.",
+        );
       }
     };
     const repair = async (sessionError: unknown) => {

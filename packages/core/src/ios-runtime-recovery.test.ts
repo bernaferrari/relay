@@ -98,6 +98,33 @@ test("repairs only after session inspection fails, then confirms the runner", as
   assert.equal(result.session.status, "restored");
 });
 
+test("does not report iOS control ready when preparation has no accessibility proof", async () => {
+  let repairs = 0;
+  const result = await recoverIosRuntimeSession(
+    "ipad",
+    async () => {
+      throw new Error("runner prepared but returned no interactive accessibility nodes");
+    },
+    async () => {
+      repairs += 1;
+      return {
+        serial: "ipad",
+        recovered: true,
+        ready: true,
+        actions: [],
+        summary: "runner prepared",
+      };
+    },
+    async () => "XCTest did not return an accessibility tree.",
+  );
+
+  assert.equal(repairs, 1);
+  assert.equal(result.ready, false);
+  assert.equal(result.session.status, "unavailable");
+  assert.match(result.summary, /runner prepared/i);
+  assert.match(result.session.detail, /accessibility tree/i);
+});
+
 const coreDevice =
   "/Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/XPCServices/CoreDeviceService.xpc/Contents/MacOS/CoreDeviceService";
 
