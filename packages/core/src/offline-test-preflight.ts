@@ -17,6 +17,10 @@ export type { OfflineTestPreflightFinding, OfflineTestPreflightReport };
  * reads current App Map state by itself. */
 export type OfflineTestPreflightEvidence = {
   rawObservationsByScreenId?: Readonly<Record<string, ReadonlyArray<ReadonlyArray<SnapshotNode>>>>;
+  /** A frozen tree reference existed but cannot be used now, or the frozen
+   * Variant predates raw-tree capture. This is a recapture request, never a
+   * reason to guess from flattened semantics. */
+  rawEvidenceStatusByScreenId?: Readonly<Record<string, "missing" | "unreadable">>;
 };
 
 function digest(value: unknown): string {
@@ -211,6 +215,7 @@ export function preflightCompiledAppMapTestOffline(
   evidence: OfflineTestPreflightEvidence = {},
 ): OfflineTestPreflightReport {
   const findings: OfflineTestPreflightFinding[] = [];
+  const rawEvidenceFindingKeys = new Set<string>();
   let checkedSelectors = 0;
   for (const recipe of Object.values(plan.recipes)) {
     let observations: Array<{ nodes: NormalizedSemanticNode[] }> = [];
@@ -219,6 +224,21 @@ export function preflightCompiledAppMapTestOffline(
       if (step.kind === "expect-screen") {
         observations = step.observations ?? [];
         sourceScreenId = step.screenId;
+        const rawEvidenceStatus = evidence.rawEvidenceStatusByScreenId?.[sourceScreenId];
+        if (rawEvidenceStatus && !rawEvidenceFindingKeys.has(sourceScreenId)) {
+          rawEvidenceFindingKeys.add(sourceScreenId);
+          findings.push({
+            severity: "warning",
+            code: "raw-evidence-recapture-required",
+            recipeId: recipe.id,
+            ...(step.id ? { recipeStepId: step.id } : {}),
+            screenId: sourceScreenId,
+            message:
+              rawEvidenceStatus === "missing"
+                ? `${step.screenTitle} has no immutable raw accessibility tree; recapture this screen before relying on offline geometry.`
+                : `${step.screenTitle}'s frozen raw accessibility tree is unavailable or corrupt; recapture this screen before relying on offline geometry.`,
+          });
+        }
         if (step.returnRequirement) {
           findings.push({
             severity: "blocker",

@@ -322,6 +322,7 @@ export type OfflineTestPreflightFinding = {
     | "selector-absent"
     | "selector-ambiguous"
     | "selector-needs-raw-tree"
+    | "raw-evidence-recapture-required"
     | "point-only-selector"
     | "source-observation-missing"
     | "surface-recapture-required";

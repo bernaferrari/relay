@@ -220,6 +220,43 @@ test("offline preflight proves a following-row target from immutable raw evidenc
   assert.deepEqual(report.findings, []);
 });
 
+test("offline preflight requests one recapture for a missing or unreadable raw source tree", () => {
+  const compiled = plan([
+    {
+      kind: "expect-screen",
+      id: "profile-source",
+      screenId: "profile",
+      screenTitle: "Profile",
+      fingerprint: "profile",
+    },
+    { kind: "tap", id: "birth-year", target: { label: "Birth Year" } },
+    {
+      kind: "expect-screen",
+      id: "profile-again",
+      screenId: "profile",
+      screenTitle: "Profile",
+      fingerprint: "profile",
+    },
+  ]);
+  const report = preflightCompiledAppMapTestOffline(compiled, {
+    rawEvidenceStatusByScreenId: { profile: "unreadable" },
+  });
+  assert.deepEqual(
+    report.findings.filter((finding) => finding.code === "raw-evidence-recapture-required"),
+    [
+      {
+        severity: "warning",
+        code: "raw-evidence-recapture-required",
+        recipeId: "root",
+        recipeStepId: "profile-source",
+        screenId: "profile",
+        message:
+          "Profile's frozen raw accessibility tree is unavailable or corrupt; recapture this screen before relying on offline geometry.",
+      },
+    ],
+  );
+});
+
 test("offline preflight blocks an ambiguous raw selector instead of trusting its flat summary", () => {
   const report = preflightCompiledAppMapTestOffline(
     plan([

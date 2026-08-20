@@ -56,7 +56,6 @@ function frozenRawAccessibilityTrees(
     )[0];
     if (latestSurface)
       trees.push(...latestSurface.viewports.map((viewport) => viewport.accessibilityTree));
-    if (!trees.length) continue;
     const unique = new Map(trees.map((tree) => [tree.sha256, structuredClone(tree)]));
     byScreenId[variant.screenId] = [...unique.values()];
   }

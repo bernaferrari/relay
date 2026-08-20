@@ -45,10 +45,15 @@ function snapshotNodes(value: unknown): SnapshotNode[] | undefined {
  * without taking a device snapshot or consulting a live screen. */
 async function rawPreflightEvidence(plan: AppMapCompiledTest): Promise<{
   rawObservationsByScreenId: Record<string, SnapshotNode[][]>;
+  rawEvidenceStatusByScreenId: Record<string, "missing" | "unreadable">;
 }> {
   const rawObservationsByScreenId: Record<string, SnapshotNode[][]> = {};
+  const rawEvidenceStatusByScreenId: Record<string, "missing" | "unreadable"> = {};
   for (const [screenId, rawTrees] of Object.entries(plan.rawAccessibilityTreesByScreenId ?? {})) {
-    if (!rawTrees.length) continue;
+    if (!rawTrees.length) {
+      rawEvidenceStatusByScreenId[screenId] = "missing";
+      continue;
+    }
     const observations = await Promise.all(
       rawTrees.map(async (tree) => {
         const bytes = await readAuthoringEvidence(tree.sha256);
@@ -64,8 +69,9 @@ async function rawPreflightEvidence(plan: AppMapCompiledTest): Promise<{
       Boolean(nodes?.length),
     );
     if (resolved.length) rawObservationsByScreenId[screenId] = resolved;
+    else rawEvidenceStatusByScreenId[screenId] = "unreadable";
   }
-  return { rawObservationsByScreenId };
+  return { rawObservationsByScreenId, rawEvidenceStatusByScreenId };
 }
 
 export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promise<boolean> {
