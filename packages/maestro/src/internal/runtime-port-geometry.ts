@@ -19,11 +19,8 @@ import type {
 } from './program-ir.ts';
 import { operationContext } from './runtime-port-context.ts';
 import { resolveMaestroTarget } from './runtime-port-observation.ts';
-import {
-  filterVisibleMaestroMatches,
-  matchesMaestroTypedSelector,
-  type MaestroPlatform,
-} from './runtime-target-policy.ts';
+import { filterVisibleMaestroMatches, type MaestroPlatform } from './runtime-target-policy.ts';
+import { selectMaestroSnapshotMatches } from './runtime-target-ranking.ts';
 import type {
   MaestroRuntimeOperations,
   MaestroSinglePointerGestureInput,
@@ -87,9 +84,7 @@ function selectMaestroScrollableViewport(
   const candidateByIndex = new Map(
     candidates.map((candidate) => [candidate.node.index, candidate]),
   );
-  for (const target of snapshot.nodes.filter((node) =>
-    matchesMaestroTypedSelector(node, selector),
-  )) {
+  for (const target of selectMaestroSnapshotMatches(snapshot, selector)) {
     const container = findScrollContainer(target, byIndex);
     const candidate = container ? candidateByIndex.get(container.index) : undefined;
     if (candidate) return candidate.viewport;
