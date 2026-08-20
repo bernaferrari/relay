@@ -399,6 +399,16 @@ function parseCaptureSurfaceStep(
   if (raw.forceRecapture !== undefined && typeof raw.forceRecapture !== "boolean") {
     throw stepErr(index, "capture-surface.forceRecapture must be a boolean");
   }
+  if (
+    raw.baselineTrust !== undefined &&
+    raw.baselineTrust !== "trusted" &&
+    raw.baselineTrust !== "recapture-required"
+  ) {
+    throw stepErr(index, "capture-surface.baselineTrust must be trusted or recapture-required");
+  }
+  if (raw.baselineTrustReason !== undefined && !isString(raw.baselineTrustReason)) {
+    throw stepErr(index, "capture-surface.baselineTrustReason must be a string");
+  }
   const baseline =
     isObject(raw.baseline) && !Array.isArray(raw.baseline) ? raw.baseline : undefined;
   return {
@@ -411,6 +421,12 @@ function parseCaptureSurfaceStep(
     reason: raw.reason.trim(),
     ...(isNumber(raw.maxScrolls) ? { maxScrolls: raw.maxScrolls } : {}),
     ...(raw.forceRecapture === true ? { forceRecapture: true } : {}),
+    ...(raw.baselineTrust === "trusted" || raw.baselineTrust === "recapture-required"
+      ? { baselineTrust: raw.baselineTrust }
+      : {}),
+    ...(isString(raw.baselineTrustReason) && raw.baselineTrustReason.trim()
+      ? { baselineTrustReason: raw.baselineTrustReason.trim() }
+      : {}),
     ...(baseline && isNumber(baseline.semanticNodeCount)
       ? {
           baseline: {

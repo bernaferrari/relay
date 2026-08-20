@@ -399,6 +399,7 @@ test("full-surface bindings compile one executable capture after reaching the de
       baselineCaptureId: "cart-baseline",
       reason: "Stable settings content should be captured completely.",
       maxScrolls: 2,
+      baselineTrust: "trusted",
       baseline: { compositeWidth: 100, compositeHeight: 200, semanticNodeCount: 12 },
     },
   ]);
@@ -429,6 +430,29 @@ test("full-surface bindings compile one executable capture after reaching the de
       .some((step) => step.kind === "capture-surface" && step.forceRecapture),
     false,
   );
+  const provisionalMap = structuredClone(current);
+  const provisionalBaseline = provisionalMap.screenVariants["cart-en"]!.scrollSurfaces![0]!;
+  provisionalBaseline.status = "stopped";
+  provisionalBaseline.reason = "seam-ambiguous";
+  provisionalBaseline.restoredStartViewport = false;
+  delete provisionalBaseline.composite;
+  const provisionalCapture = Object.values(compileAppMapTest(provisionalMap, work).graph)
+    .flatMap((recipe) => recipe.steps)
+    .find((step) => step.kind === "capture-surface");
+  assert.deepEqual(provisionalCapture, {
+    kind: "capture-surface",
+    screenId: "cart",
+    screenTitle: "cart",
+    variantId: "cart-en",
+    surfaceId: "cart-surface",
+    baselineCaptureId: "cart-baseline",
+    reason: "Stable settings content should be captured completely.",
+    maxScrolls: 2,
+    baselineTrust: "recapture-required",
+    baselineTrustReason:
+      "Baseline capture is stopped/seam-ambiguous and its starting viewport was not restored.",
+    baseline: { semanticNodeCount: 12 },
+  });
   assert.throws(
     () =>
       compileAppMapTest(current, work, {

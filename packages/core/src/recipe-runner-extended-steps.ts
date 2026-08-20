@@ -334,9 +334,10 @@ export async function runCaptureSurfaceStep(
   }
   await ensureAndroidSurfaceRuntimeFacts(job);
   const evaluatedAt = now();
+  const baselineRequiresRecapture = step.baselineTrust === "recapture-required";
   const cacheIdentity = surfaceComparisonCacheIdentity(job, step);
   const cacheKey = cacheIdentity ? surfaceComparisonCacheKey(cacheIdentity) : undefined;
-  if (!step.forceRecapture && cacheIdentity) {
+  if (!step.forceRecapture && !baselineRequiresRecapture && cacheIdentity) {
     const cached = findReusableSurfaceComparison({
       identity: cacheIdentity,
       runs: await listPersistedRuns(200),
@@ -376,7 +377,20 @@ export async function runCaptureSurfaceStep(
         ...(cacheIdentity ? { identity: cacheIdentity } : {}),
       };
   if (!step.forceRecapture) {
-    const data = surfaceComparisonNeedsRecapture({ step, cache: { ...cache, status: "miss" } });
+    const data = surfaceComparisonNeedsRecapture({
+      step,
+      cache: {
+        ...cache,
+        status: "miss",
+        ...(baselineRequiresRecapture
+          ? {
+              reason:
+                step.baselineTrustReason ??
+                "The frozen logical-surface baseline is incomplete and must be recaptured before comparison.",
+            }
+          : {}),
+      },
+    });
     job.artifacts.push({
       kind: "logical-scroll-surface-needs-recapture",
       capturedAt: evaluatedAt,
@@ -442,13 +456,15 @@ export async function runCaptureSurfaceStep(
     ? surface.mergedTree.nodeCount / baseline.semanticNodeCount
     : undefined;
   const visualMatches =
+    !baselineRequiresRecapture &&
     surface.status === "completed" &&
     Boolean(surface.composite) &&
     (baseline?.compositeWidth === undefined ||
       surface.composite?.width === baseline.compositeWidth) &&
     (heightRatio === undefined || (heightRatio >= 0.7 && heightRatio <= 1.3));
   const semanticMatches =
-    semanticRatio === undefined || (semanticRatio >= 0.65 && semanticRatio <= 1.35);
+    !baselineRequiresRecapture &&
+    (semanticRatio === undefined || (semanticRatio >= 0.65 && semanticRatio <= 1.35));
   const matches = visualMatches && semanticMatches;
   job.artifacts.push({
     kind: "logical-scroll-surface-result",
@@ -462,7 +478,7 @@ export async function runCaptureSurfaceStep(
       baselineCaptureId: step.baselineCaptureId,
       capture: surface,
       comparison: {
-        policy: "visual-and-semantic",
+        policy: baselineRequiresRecapture ? "recapture-required" : "visual-and-semantic",
         matches,
         visualMatches,
         semanticMatches,
@@ -481,8 +497,10 @@ export async function runCaptureSurfaceStep(
           : {
               status: "proposed",
               action: "propose-recapture",
-              reason:
-                surface.status === "completed"
+              reason: baselineRequiresRecapture
+                ? (step.baselineTrustReason ??
+                  "The frozen logical-surface baseline is incomplete and needs review.")
+                : surface.status === "completed"
                   ? "Logical surface differs materially from its frozen baseline."
                   : surface.message,
             },

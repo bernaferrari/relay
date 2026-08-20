@@ -209,6 +209,17 @@ export function compileAppMapScenarioTest(
         surface.id === binding.surfaceId && surface.captureId === binding.baselineCaptureId,
     );
     if (!baseline) return undefined;
+    const baselineTrust =
+      baseline.status === "completed" &&
+      baseline.reason === "end-of-content" &&
+      baseline.restoredStartViewport &&
+      Boolean(baseline.composite)
+        ? "trusted"
+        : "recapture-required";
+    const baselineTrustReason =
+      baselineTrust === "trusted"
+        ? undefined
+        : `Baseline capture is ${baseline.status}/${baseline.reason}${baseline.restoredStartViewport ? "" : " and its starting viewport was not restored"}.`;
     if (schedule) scheduledLogicalSurfaces.add(screenId);
     return {
       kind: "capture-surface",
@@ -219,6 +230,8 @@ export function compileAppMapScenarioTest(
       baselineCaptureId: binding.baselineCaptureId,
       reason: binding.reason,
       maxScrolls: Math.max(1, Math.min(12, baseline.viewports.length + 1)),
+      baselineTrust,
+      ...(baselineTrustReason ? { baselineTrustReason } : {}),
       ...(forceRecaptureSurfaceScreenIds.has(screenId) ? { forceRecapture: true } : {}),
       baseline: {
         ...(baseline.composite

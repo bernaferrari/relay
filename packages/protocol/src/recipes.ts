@@ -431,6 +431,11 @@ export type RecipeStep = RecipeStepMetadata &
          * Authoring recaptures and investigations can therefore always obtain
          * fresh device evidence. */
         forceRecapture?: boolean;
+        /** The compiler freezes whether the selected baseline is safe to use
+         * for comparison. A stopped, seam-ambiguous, or unrestored capture is
+         * useful raw evidence, never a silently trusted baseline. */
+        baselineTrust?: "trusted" | "recapture-required";
+        baselineTrustReason?: string;
         baseline?: {
           compositeWidth?: number;
           compositeHeight?: number;
