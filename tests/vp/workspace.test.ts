@@ -19,7 +19,9 @@ describe("Relay workspace verification", () => {
     expect(root.scripts?.verify).toContain("pnpm typecheck");
     expect(root.scripts?.verify).toContain("pnpm run test:packages");
     expect(root.scripts?.verify).toContain("vp test");
-    expect(root.scripts?.test).toBe("pnpm run test:packages && vp test");
+    expect(root.scripts?.test).toBe(
+      "pnpm run ios-preview:test && pnpm run test:packages && vp test",
+    );
   });
 
   it("discovers package tests recursively instead of listing files", async () => {
