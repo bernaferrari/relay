@@ -1,5 +1,6 @@
 import { Show, Suspense, lazy } from "solid-js";
 import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
+import { FirstTestChecklist, useFirstTestOnboarding } from "./first-test-onboarding";
 import type { MapCanvasView, MapMode } from "./map-mode-switch";
 import { WorkspaceSkeleton } from "./workspace-skeleton";
 
@@ -18,28 +19,62 @@ export function StudioAuthoringWorkspace(props: {
   onOpenVariables: () => void;
   onOpenCombine: (combineId?: string, section?: CanvasCombineSection) => void;
   onOpenRun: (id: string) => void;
+  onImportYaml: (yaml: string) => Promise<void> | void;
+  onExportYaml: () => void;
 }) {
+  const onboarding = useFirstTestOnboarding({
+    onOpenTargets: props.onOpenTargets,
+    onShowLiveDevice: () => window.dispatchEvent(new CustomEvent("relay:open-device-panel")),
+    onSaveStartScreen: () => window.dispatchEvent(new CustomEvent("relay:capture-screen")),
+    onRecord: () => {
+      props.onMode("map");
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("relay:record-path")));
+      });
+    },
+    onImportYaml: props.onImportYaml,
+    onOpenTest: () => props.onMode("test"),
+    onOpenRun: props.onOpenRun,
+    onExportYaml: props.onExportYaml,
+  });
+
   return (
-    <Show
-      when={props.mode === "test"}
-      fallback={
-        <Suspense fallback={<WorkspaceSkeleton label="map" />}>
-          <AppMapWorkspace
-            navigatorOpen={props.navigatorOpen}
-            view={props.mode as MapCanvasView}
-            onView={props.onMode}
-            onOpenTargets={props.onOpenTargets}
-            onOpenActions={() => props.onMode("test")}
-            onOpenVariables={props.onOpenVariables}
-            onOpenCombine={props.onOpenCombine}
-            onOpenRun={props.onOpenRun}
-          />
+    <div class="relative flex min-h-0 min-w-0 flex-1">
+      <Show
+        when={props.mode === "test"}
+        fallback={
+          <Suspense fallback={<WorkspaceSkeleton label="map" />}>
+            <AppMapWorkspace
+              navigatorOpen={props.navigatorOpen}
+              view={props.mode as MapCanvasView}
+              onView={props.onMode}
+              onOpenTargets={props.onOpenTargets}
+              onOpenActions={() => props.onMode("test")}
+              onOpenVariables={props.onOpenVariables}
+              onOpenCombine={props.onOpenCombine}
+              onOpenRun={props.onOpenRun}
+            />
+          </Suspense>
+        }
+      >
+        <Suspense fallback={<WorkspaceSkeleton label="test editor" />}>
+          <AppMapTestWorkspace onOpenRun={props.onOpenRun} />
         </Suspense>
-      }
-    >
-      <Suspense fallback={<WorkspaceSkeleton label="test editor" />}>
-        <AppMapTestWorkspace onOpenRun={props.onOpenRun} />
-      </Suspense>
-    </Show>
+      </Show>
+      <Show when={onboarding.visible()}>
+        <aside class="absolute bottom-4 left-4 z-30 max-h-[calc(100%-2rem)] max-w-[calc(100%-2rem)] overflow-y-auto max-[760px]:right-2 max-[760px]:bottom-2 max-[760px]:left-2 max-[760px]:max-w-none">
+          <FirstTestChecklist {...onboarding.checklistProps()} />
+        </aside>
+      </Show>
+      <Show when={onboarding.canReopen()}>
+        <button
+          type="button"
+          class="absolute bottom-4 left-4 z-30 min-h-10 rounded-xl border border-[var(--map-divider)] bg-[var(--map-control-surface)] px-3 text-caption font-medium text-[var(--text-strong)] shadow-[var(--map-elevation-control)] transition-colors hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] max-[760px]:bottom-2 max-[760px]:left-2"
+          onClick={onboarding.reopen}
+        >
+          First useful test
+        </button>
+      </Show>
+    </div>
   );
 }

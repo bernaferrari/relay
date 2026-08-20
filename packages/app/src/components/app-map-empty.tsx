@@ -9,6 +9,7 @@ import {
   appMapDeviceStatus,
 } from "./device-status-label";
 import { DeviceCompanionStage, type DeviceCompanionOrientation } from "./device-companion-stage";
+import { FirstTestChecklist, useFirstTestOnboarding } from "./first-test-onboarding";
 import { Icon } from "./icon";
 import { presentTarget } from "../lib/target-presentation";
 
@@ -22,6 +23,8 @@ export function EmptyAppMap(props: {
   onToggleDevice: () => void;
   onCaptureFirstScreen: () => void;
   onOpenTargets: () => void;
+  onImportYaml: (yaml: string) => Promise<void> | void;
+  onExportYaml: () => void;
   creating?: boolean;
 }) {
   const server = useServer();
@@ -52,6 +55,18 @@ export function EmptyAppMap(props: {
       controlIssue: server.controlIssue(),
       controlTakeoverAvailable: server.canTakeControlOfSelectedDevice(),
     });
+  const onboarding = useFirstTestOnboarding({
+    onOpenTargets: props.onOpenTargets,
+    onShowLiveDevice: props.onToggleDevice,
+    onSaveStartScreen: props.onCaptureFirstScreen,
+    // A blank canvas cannot own a Test; these become reachable only after the
+    // capture succeeds and Studio swaps in the authored workspace.
+    onRecord: props.onToggleDevice,
+    onImportYaml: props.onImportYaml,
+    onOpenTest: () => undefined,
+    onOpenRun: () => undefined,
+    onExportYaml: props.onExportYaml,
+  });
 
   return (
     <section
@@ -61,47 +76,65 @@ export function EmptyAppMap(props: {
       <div class="pointer-events-none absolute inset-0 app-map-grid" aria-hidden="true" />
 
       <Show when={!props.deviceOpen}>
-        <div class="pointer-events-none absolute inset-0 grid place-items-center px-8 text-center">
-          <div class="grid max-w-[420px] justify-items-center gap-3">
-            <span class="grid size-12 place-items-center rounded-2xl bg-[var(--map-control-surface)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]">
-              <Icon name="smartphone" size={20} />
-            </span>
-            <div class="grid gap-1.5">
-              <h1 class="m-0 text-display/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)] text-balance">
-                Map this app
-              </h1>
-              <p class="m-0 max-w-[38ch] text-body/[1.55] text-[var(--text-weak)]">
-                Show the live device, then start mapping. Relay taps through screens and files them
-                on the canvas.
-              </p>
-            </div>
-            <Show
-              when={device()}
-              fallback={
-                <button
-                  type="button"
-                  class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-hover hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
-                  onClick={props.onOpenTargets}
+        <Show
+          when={onboarding.visible()}
+          fallback={
+            <div class="pointer-events-none absolute inset-0 grid place-items-center px-8 text-center">
+              <div class="grid max-w-[420px] justify-items-center gap-3">
+                <span class="grid size-12 place-items-center rounded-2xl bg-[var(--map-control-surface)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]">
+                  <Icon name="smartphone" size={20} />
+                </span>
+                <div class="grid gap-1.5">
+                  <h1 class="m-0 text-display/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)] text-balance">
+                    Map this app
+                  </h1>
+                  <p class="m-0 max-w-[38ch] text-body/[1.55] text-[var(--text-weak)]">
+                    Show the live device, then start mapping. Relay taps through screens and files
+                    them on the canvas.
+                  </p>
+                </div>
+                <Show
+                  when={device()}
+                  fallback={
+                    <button
+                      type="button"
+                      class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-hover hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
+                      onClick={props.onOpenTargets}
+                    >
+                      <Icon name="smartphone" size={14} />
+                      Choose device
+                    </button>
+                  }
                 >
-                  <Icon name="smartphone" size={14} />
-                  Choose device
-                </button>
-              }
-            >
-              <button
-                type="button"
-                class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-hover hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
-                onClick={props.onToggleDevice}
-              >
-                <Icon name="smartphone" size={14} />
-                Show live device
-                <kbd class="rounded-md bg-[rgb(255_255_255/18%)] px-1.5 py-0.5 font-mono text-micro font-medium">
-                  D
-                </kbd>
-              </button>
-            </Show>
+                  <button
+                    type="button"
+                    class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-hover hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
+                    onClick={props.onToggleDevice}
+                  >
+                    <Icon name="smartphone" size={14} />
+                    Show live device
+                    <kbd class="rounded-md bg-[rgb(255_255_255/18%)] px-1.5 py-0.5 font-mono text-micro font-medium">
+                      D
+                    </kbd>
+                  </button>
+                </Show>
+                <Show when={onboarding.canReopen()}>
+                  <button
+                    type="button"
+                    class="pointer-events-auto text-caption font-medium text-[var(--text-interactive-base)] underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]"
+                    onClick={onboarding.reopen}
+                  >
+                    Open first useful test guide
+                  </button>
+                </Show>
+              </div>
+            </div>
+          }
+        >
+          <div class="absolute inset-0 grid place-items-center p-4">
+            <FirstTestChecklist {...onboarding.checklistProps()} />
           </div>
-        </div>
+        </Show>
       </Show>
 
       <Show when={props.deviceOpen}>

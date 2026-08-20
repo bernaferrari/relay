@@ -1,54 +1,40 @@
 # Relay
 
-Relay maps real products and replays meaningful tests across web, Android, and iOS—without needing
-their source code.
+Relay is a local-first application mapping and verification tool for browser, Android, and iOS
+products. It can work without an application's source code: connect a running target, map the
+screens and transitions that matter, then replay reviewed tests with durable evidence.
 
-Connect a target, capture the screens and connections a person already knows, and Relay turns them
-into an executable
-**App Map**. The same map can then answer questions such as:
-
-- Does every Settings screen render in all 40 languages?
-- Do low, medium, and high reasoning modes all complete the same conversation test?
-- Does a checkout still work on every supported device and app build?
-- Which screen changed, what action reached it, and what evidence proves the result?
-
-Relay is local-first and pre-release. The desktop app, CLI, TUI, and MCP adapter all use the same
-project-scoped operation API and evidence store. Mobile control is built on
-[agent-device](https://oss.callstack.com/agent-device/docs/quick-start); browser control uses a
-Relay-owned Playwright profile.
-
-## The product model
-
-Relay uses five user-facing concepts:
-
-| Concept        | Meaning                                               | Example                                      |
-| -------------- | ----------------------------------------------------- | -------------------------------------------- |
-| **Screen**     | A distinct product state                              | Settings, Appearance, Widget                 |
-| **Connection** | Recorded actions between two screens                  | Settings → tap Appearance → Appearance       |
-| **Variable**   | A reusable way to change one dimension                | Language = English, Italian, Japanese        |
-| **Test**       | Ordered intent, checks, decisions, and reusable flows | Sign in, verify Home, extract the account ID |
-| **Combine**    | Every selected Variable value × every selected Test   | 40 languages × 10 screens = 400 screenshots  |
+Its core loop is deliberately small:
 
 ```text
-Language Variable ─┐
-Theme Variable ────┼─ every selected value × Settings Test ──> Results
-Account Variable ──┘
+Connect a target → map screens and connections → author a Test → run a pilot → inspect evidence
 ```
 
-Variables are not magic labels. Each one stores how to apply a value and return to the test's start
-screen. Tests remain independent, so a new language or model can reuse every existing test without
-rerecording it. A graph-native Test can navigate reviewed connections, validate or extract UI,
-pause for a person, call a reusable module, branch, loop, or run a constrained script. Screenshot
-policy belongs to each test: every screen, selected checkpoints, final screen, failures only, or
-none. Tests have one authoring contract: a graph-native `scenario` with stable step IDs. Create or
-propose semantic edits, compile them against the current App Map revision, run that exact revision,
-inspect its immutable results, then repair the failed authored step and compile again. Recorded
-Connections and Flows remain reusable navigation evidence; they are not alternate Test formats.
+Once that loop is trustworthy, **Variables** and **Combine** let a team apply it across languages,
+themes, accounts, devices, builds, or other selected states—without turning every case into a
+separate test. A run preserves the map revision, actions, checks, screenshots, UI trees, logs, and
+failure provenance used to produce it.
 
-## Start the desktop app
+Relay is pre-release software. It is a strong fit for local and self-managed device workflows; it
+is not a Relay-managed cloud device farm or a turnkey enterprise SaaS product.
 
-Requirements: Node.js 24 or newer, `pnpm`, and `vp` (Vite+). Android work also needs `adb`; physical
-iOS control needs the local Apple developer tooling used by agent-device.
+## Who Relay is for
+
+| Good fit today                                                                  | Why                                                                                                               |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Mobile QA, SDET, and platform teams with attached devices or a local device lab | Map real product behavior, replay reviewed paths, and retain evidence instead of relying on ad-hoc manual checks. |
+| Product and engineering teams verifying web, Android, or iOS builds             | Run a focused regression or a state matrix against the targets they already control.                              |
+| Teams using coding agents around real devices                                   | The desktop app, CLI, TUI, and MCP adapter call the same project-scoped operations, leases, and evidence store.   |
+| Privacy-sensitive or local-first teams                                          | The normal desktop path runs a loopback Relay service and keeps the control plane and evidence in the project.    |
+
+Relay is not yet the right choice for a team that needs to upload a build to a managed cloud, rent a
+device fleet, or buy organization-wide SSO, quotas, and published service-level objectives.
+
+## Start locally
+
+Relay's fastest path is the desktop app. You need Node.js 24 or newer, `pnpm`, and Vite+ (`vp`).
+Android work also needs `adb`; physical iOS control needs the local Apple developer tooling used by
+[agent-device](https://oss.callstack.com/agent-device/docs/quick-start).
 
 ```bash
 vp install
@@ -56,229 +42,103 @@ pnpm doctor
 pnpm dev:desktop
 ```
 
-The Electron app starts its own loopback Relay service. For browser-only UI development, run the
-service and app separately:
+The Electron app starts one loopback Relay service for the project. No hosted Relay account or cloud
+provider is involved in that path.
+
+With a target connected, the first useful workflow is:
+
+1. In **Device**, select the connected browser, Android, or iOS target and save the first useful screen.
+2. Record one meaningful transition, remove accidental inputs in Take review, and replay it.
+3. Add the reviewed Connection to the **App Map**.
+4. In **Tests**, add intent and checks bound to reviewed Connections or saved Flows.
+5. Run one pilot and inspect the exact screenshots, UI trees, actions, and assertions before expanding coverage.
+
+Relay fails unresolved steps and changed destinations visibly rather than silently guessing a new
+route. See [Product flows](./docs/PRODUCT_FLOWS.md) for the complete authoring path.
+
+## What it does
+
+| Capability                | What it gives you                                                                                                                                                       |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **App Map**               | A visual, revisioned record of observed Screens and reviewed Connections. Recorded Takes can be trimmed, replayed, and approved before they become navigation evidence. |
+| **Graph-native Tests**    | Intent, checks, extraction, manual checkpoints, decisions, loops, reusable modules, and constrained scripts—all bound to the App Map or explicitly marked unresolved.   |
+| **Variables and Combine** | Reuse a Test across selected language, theme, account, build, device, or model values. Preview the expansion, run one pilot, then resume only untouched cases.          |
+| **Targets**               | A Relay-owned Playwright profile for browsers plus Android and iOS adapters. Target capabilities and unsupported actions are reported explicitly.                       |
+| **Evidence and reports**  | Immutable run artifacts, screenshot and UI-tree evidence, logs, failure provenance, visual baselines, and expiring/revocable redacted report links.                     |
+| **People and agents**     | Desktop, CLI, TUI, and MCP use the same operation registry. Device control requires a server-managed lease; observation can be shared.                                  |
+
+The product model has five terms: a **Screen** is a product state; a **Connection** is a reviewed
+transition; a **Variable** changes one reusable dimension; a **Test** states what should happen; and
+a **Combine** runs selected Variables × Tests. This keeps recordings useful as navigation evidence
+without making them a second test format.
+
+## Local, self-managed, and hosted boundaries
+
+| Available now                                                                                                                                                        | Not shipped as a Relay service                                                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Desktop and CLI workflows against targets you attach, emulate, or otherwise operate.                                                                                 | A Relay-managed cloud-device provider, device rental, or managed fleet scheduler.                                        |
+| Project-scoped local storage, immutable evidence, access roles for configured service tokens, and authenticated remote serving when you operate the server yourself. | Hosted multi-tenant control/data planes, multi-node stores, fleet shards, quotas, or published service-level objectives. |
+| Expiring, revocable, redacted evidence sharing.                                                                                                                      | SSO/OIDC, managed group-to-role provisioning, and enterprise encryption-policy management.                               |
+
+Remote serving is self-managed: non-loopback HTTP requires a bearer token and evidence redaction.
+It should not be read as an offer of a hosted Relay cloud. For the evidence behind these boundaries,
+see [Enterprise readiness](./docs/ENTERPRISE_READINESS.md).
+
+## CLI and automation
+
+The desktop app is the easiest starting point. For scripts, CI, terminal users, or agents, start a
+Relay service deliberately and call the same project-scoped API through the canonical CLI entry:
+
+```bash
+pnpm ensure:serve
+pnpm relay device list --json
+pnpm relay map list --json
+pnpm relay test compile <map-id> <test-id> --json
+```
+
+The CLI does not silently start another server. Use `pnpm relay --help` or family help such as
+`pnpm relay test --help` to discover the verified command vocabulary. JSON results are written to
+stdout; waits and diagnostics are written to stderr. The [MCP adapter](./packages/mcp/README.md)
+exposes the same registered operations to capable agents.
+
+## Evidence, privacy, and control
+
+Every consequential operation is attributed. A run freezes the selected App Map and Test revision,
+target, Variables, evidence policy, actions, assertions, frames, UI trees, logs, and failures.
+Finalized artifacts are immutable. Network bodies, audio probes, and crash diagnostics stay off
+until a user enables them; redaction is applied before persistence and transport.
+
+Local desktop requests are trusted administrators. Remote service tokens receive one configured
+project role (`viewer`, `author`, `runner`, or `admin`). A visible server-owned lease protects device
+input so two people or agents cannot silently drive the same target.
+
+## Develop and verify
+
+For browser-only UI development, run the service and product app separately:
 
 ```bash
 pnpm ensure:serve
 pnpm dev:app
 ```
 
-If setup behaves unexpectedly, run `vp env doctor`. Relay never starts a hidden second service from
-the CLI.
-
-## Map an Android app
-
-1. Enable USB debugging, connect the phone, and approve the computer on the device.
-2. Open **Device** and choose the connected Android target.
-3. Navigate to the first useful screen and choose **Save screen** in the device panel.
-4. Select the saved screen, choose **Record connection**, and perform one meaningful transition.
-5. Stop recording. Remove accidental actions in Take review, choose the destination, and replay the
-   proposed Connection.
-6. Choose **Add to map** only when the replay reaches the intended screen.
-7. Open **Tests**, add readable intent steps, and bind navigation to the reviewed connections or a
-   saved flow. Relay shows unresolved steps before anything can run.
-
-An empty recording is discarded instead of asking to save. System confirmation controls such as a
-recorder's own **Done** button are not authored as app actions. Relay prefers accessibility identity,
-then visible text, then a verified point. Android's bundled UiAutomation helper owns the single
-automation slot and can inspect windows even when a launcher accessibility service is also enabled.
-
-The live device panel supports four accessibility-overlay policies: always, on hover, hidden while
-retaining semantic data, or fully disabled. Disabling collection reduces data; merely hiding the
-overlay does not.
-
-## Run the same test across many states
-
-The manual workflow does not require an agent:
-
-1. Create a Test and bind its steps to reviewed connections, observed UI, or reusable modules.
-2. Open **Combine** and create a Variable such as Language.
-3. Teach Relay how to enter the language list, choose example rows, and return to the test start.
-   Android app locales can be discovered dynamically when the app exposes them.
-4. Select the values, tests, and screenshot policy.
-5. Inspect the exact expansion. **Run pilot** proves one case while every other case stays untouched.
-   If it passes, resume the same campaign; if it drifts, repair or review that exact check first.
-6. Review Results by logical screen, with Variable values grouped together.
-
-Treat long surfaces selectively. Opt stable, product-owned pages into full-surface capture when the
-content below the fold matters; Relay retains the original viewport screenshots and trees and derives
-a merged surface for review. Keep dynamic or user-generated content viewport-only. Repeated content
-that adds no new coverage, such as a uniform license list, also needs only a representative viewport.
-A language row
-that opens Android or iOS Settings is a reversible app handoff: verify the expected system package,
-capture that destination once, and return. It is not a list Relay should scroll or traverse.
-
-For a 40-locale set, keep the improvement loop small: compile once, pilot one representative locale,
-inspect failed checks by authored step, repair the Test or Connection once, then resume only untouched
-cases. The durable campaign retains its original evidence and revision lineage. If Variable rows move
-or disappear after the pilot, resume fails closed instead of running a different locale under an old
-case index. Passing evidence remains useful unless the edit invalidates it.
-
-The expansion strategy is explicit:
-
-- **Every combination** for a true Cartesian product.
-- **Match rows** when values pair by index.
-- **Every pair** to cover interactions across three or more Variables with fewer device runs.
-
-Preflight uses the same compiler as execution and reports the exact states, checks, expected
-screenshots, duration estimate, and blockers before the device is touched.
-
-## CLI
-
-The root `relay` script is the canonical repository entry point:
+Run the normal quality gates with:
 
 ```bash
-pnpm relay --help
-pnpm relay device list --json
-pnpm relay map list --json
-pnpm relay test compile <map-id> <test-id> --json
-pnpm relay test run <map-id> <test-id> \
-  --input '{"expectedRevision":42,"target":{"kind":"device","platform":"android","targetId":"<device-serial>"}}' --ndjson
-pnpm relay run-matrix preflight <map-id> <matrix-id> \
-  --input '{"serial":"<device-serial>"}' --json
-pnpm relay run-matrix run <map-id> <matrix-id> \
-  --input '{"serial":"<device-serial>"}' --ndjson
-pnpm relay run-matrix export <batch-id>
-```
-
-Useful device commands:
-
-```bash
-pnpm relay lease create <serial> --actor human:terminal
-pnpm relay device screenshot <serial> --file current.png
-pnpm relay device screenshot <serial> --mark 320,640 --file tap-preview.png
-pnpm relay device interact <serial> --preview --file target-preview.png \
-  --input '{"kind":"label","label":"Settings"}'
-pnpm relay device interact <serial> \
-  --actor human:terminal --input '{"kind":"label","label":"Settings"}'
-pnpm relay device recover <serial>
-```
-
-`--preview` never performs the input. JSON results remain on stdout; waits and diagnostics remain on
-stderr. `--ndjson` emits progress events followed by one terminal result. For a server on another
-machine, use `--credential-source env:RELAY_AUTH_TOKEN` so secrets do not appear in process
-arguments.
-
-For the full command vocabulary, use family help such as `pnpm relay run-matrix --help` or inspect
-the machine-readable operation registry at `GET /meta`.
-
-## Results and evidence
-
-Runs preserve the selected map revision, target, Variable values, screenshot policy, actions,
-assertions, frames, UI trees, logs, network summaries, performance data, and failure provenance.
-Unsupported or denied channels remain visible instead of silently appearing successful.
-
-```text
-runs/<iso>_<action>_<device>_<id8>/
-  run.json
-  evidence.json
-  log.txt
-  frames/001.png …
-```
-
-Large matrices are reviewed screen-first: a 7 × 10 run appears as ten logical screen sections with
-seven variants in each, rather than a flat wall of 70 unrelated images. Reports can be shared with
-an expiring, revocable, signed link. Public projections exclude selectors, logs, request bodies,
-private inputs, and device identifiers.
-
-There is no separate screenshot-crawl project in the desktop app. The App Map remains the source of
-truth, the Combine performs the multiplication, and screenshots plus accessibility trees appear
-as evidence on that map-bound run. Internal capture commands may collect the same artifacts for CLI
-automation, but they do not create another authoring model.
-
-```bash
-pnpm relay run share create <run-id> \
-  --input '{"expiresInHours":24,"includeBatch":true}' --json
-pnpm relay run share list <run-id> --json
-pnpm relay run share revoke <run-id> <share-id> --json
-```
-
-Three higher-risk collectors stay off until explicitly enabled in **Settings → Privacy & evidence**:
-network bodies, audio probes, and crash diagnostics. Redaction is a separate workspace policy and
-applies before persistence and transport; finalized run artifacts are immutable.
-
-## Architecture
-
-```text
-desktop · app · CLI · TUI · MCP
-              │
-       authenticated client
-              │
-   server · operations · SSE · leases
-              │
-     protocol → core domain
-              │
- browser · Android · iOS adapters
-```
-
-| Package           | Responsibility                                                     |
-| ----------------- | ------------------------------------------------------------------ |
-| `@relay/protocol` | Canonical operations, schemas, actors, resources, and events       |
-| `@relay/core`     | App Maps, authoring, execution, evidence, and target adapters      |
-| `@relay/server`   | Project-scoped HTTP/SSE, operation dispatch, leases, and artifacts |
-| `@relay/client`   | Validated HTTP operations and reconnecting event stream            |
-| `@relay/cli`      | Server-first interface for people, scripts, CI, and agents         |
-| `@relay/mcp`      | Capability-scoped MCP adapter with native PNG observations         |
-| `@relay/tui`      | Terminal workspace                                                 |
-| `@relay/ui`       | Host-independent Solid design system                               |
-| `@relay/app`      | Host-independent product UI                                        |
-| `@relay/desktop`  | Sandboxed Electron host                                            |
-
-Domain behavior stays in `core` and is reached through the registered operation boundary. The
-renderer never imports Electron, and `@relay/ui` has no host knowledge. See
-[ARCHITECTURE.md](./ARCHITECTURE.md) for concurrency, evidence, security, and target invariants.
-
-## Develop and verify
-
-```bash
-vp install
 vp check
 vp test
 pnpm run verify
 ```
 
-`pnpm run verify` runs formatting/lint checks, the source-size ratchet, type checks, package tests,
-UI-boundary checks, and app/desktop production builds. Hardware smoke tests are deliberately
-separate:
+`pnpm run verify` includes formatting, linting, type checks, tests, UI-boundary checks, source-size
+ratchets, and production app/desktop builds. Hardware golden checks are separate because real
+hardware is not universally available:
 
 ```bash
 pnpm test:golden          # skips cleanly when no supported target is available
 pnpm test:golden:require  # fails unless the real-device path succeeds
 ```
 
-To inspect the exact Electron renderer rather than a browser approximation:
-
-```bash
-pnpm dev:desktop
-pnpm inspect:desktop
-```
-
-The inspector writes a screenshot and a JSON report containing console errors, layout overflow,
-and accessible controls.
-
-## Security and collaboration
-
-- Local desktop requests are trusted administrators; remote service tokens receive one explicit
-  project role: `viewer`, `author`, `runner`, or `admin`.
-- Non-loopback HTTP requires both a bearer token and evidence redaction.
-- Trusted same-project local clients share one server-managed control lease; active jobs serialize
-  mutation. Remote actors remain exclusive. Observation is shareable.
-- Consequential operations append a payload-safe, attributed Activity event.
-- Activity export includes canonical NDJSON records and a SHA-256 integrity manifest.
-- Agent proposals cannot silently replace approved maps or visual baselines.
-
-```bash
-export RELAY_URL=http://127.0.0.1:8787
-export RELAY_ORGANIZATION_ID=local
-export RELAY_PROJECT_ID=default
-export RELAY_ACTOR_ID=human:terminal
-
-pnpm relay activity export --json > relay-activity.json
-```
-
-For remote serving, configure a long random `RELAY_AUTH_TOKEN`, `RELAY_AUTH_ROLE`, and allowed
-project IDs. Keep the default loopback binding for ordinary desktop development.
+If setup behaves unexpectedly, run `vp env doctor`.
 
 ## More documentation
 
@@ -289,6 +149,5 @@ project IDs. Keep the default loopback binding for ordinary desktop development.
 - [Enterprise readiness](./docs/ENTERPRISE_READINESS.md)
 - [MCP adapter](./packages/mcp/README.md)
 
-Relay intentionally does not ship enterprise-shaped placeholder UI. A capability is considered
-real only when its lifecycle, permissions, failure states, persistence, and evidence are implemented
-and tested.
+Relay does not add enterprise-shaped placeholder UI. A capability is considered real only when its
+lifecycle, permissions, failure states, persistence, and evidence are implemented and tested.

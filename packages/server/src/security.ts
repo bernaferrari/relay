@@ -7,6 +7,13 @@ import {
   type ActorKind,
   type ProjectRole,
 } from "@relay/protocol";
+import {
+  isVerifiedExternalIdentity,
+  verifyExternalBearerToken,
+  type ExternalIdentityActorKind,
+  type ExternalIdentityVerifier,
+  type VerifiedExternalIdentity,
+} from "./external-identity.js";
 
 const MIN_TOKEN_LENGTH = 24;
 
@@ -20,14 +27,18 @@ export function isLoopbackHost(host: string): boolean {
   );
 }
 
-export function assertSafeBinding(host: string, token?: string): void {
+export function assertSafeBinding(
+  host: string,
+  token?: string,
+  externalIdentityVerifier?: ExternalIdentityVerifier,
+): void {
   if (isLoopbackHost(host)) return;
-  if (!token) {
+  if (!token && !externalIdentityVerifier) {
     throw new Error(
-      `Refusing to bind ${host} without authentication. Pass --token or set RELAY_AUTH_TOKEN.`,
+      `Refusing to bind ${host} without authentication. Pass --token, set RELAY_AUTH_TOKEN, or install a verified external identity verifier.`,
     );
   }
-  if (token.length < MIN_TOKEN_LENGTH) {
+  if (token && token.length < MIN_TOKEN_LENGTH) {
     throw new Error(
       `Server authentication tokens must be at least ${MIN_TOKEN_LENGTH} characters.`,
     );
@@ -44,6 +55,53 @@ export function authorizationMatches(
   const supplied = Buffer.from(header.slice(prefix.length), "utf8");
   const expected = Buffer.from(token, "utf8");
   return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
+
+function bearerCredential(header: string | undefined): string | undefined {
+  const prefix = "Bearer ";
+  if (!header?.startsWith(prefix)) return undefined;
+  const credential = header.slice(prefix.length);
+  return credential || undefined;
+}
+
+export type RequestAuthentication =
+  | { kind: "local" }
+  | { kind: "service" }
+  | { kind: "external"; identity: VerifiedExternalIdentity };
+
+/**
+ * Authenticate before resolving project scope. External bearer credentials are
+ * opaque to Relay and accepted only through a runtime-branded verifier result;
+ * decoded JWT claims and verifier errors both fail closed.
+ */
+export async function authenticateRequest(
+  header: string | undefined,
+  options: {
+    token?: string;
+    externalIdentityVerifier?: ExternalIdentityVerifier;
+    localTrusted: boolean;
+    now?: number;
+  },
+): Promise<RequestAuthentication | undefined> {
+  if (options.token && authorizationMatches(header, options.token)) return { kind: "service" };
+
+  const credential = bearerCredential(header);
+  if (options.externalIdentityVerifier && credential) {
+    const identity = await verifyExternalBearerToken(
+      options.externalIdentityVerifier,
+      credential,
+      options.now,
+    );
+    if (identity) return { kind: "external", identity };
+  }
+
+  // Preserve ordinary loopback behavior. Once a static token is configured it
+  // remains mandatory there as before; an external verifier alone does not
+  // remove the desktop's local-trust path when no credential is supplied.
+  if (!options.token && options.localTrusted && (!options.externalIdentityVerifier || !header)) {
+    return { kind: "local" };
+  }
+  return undefined;
 }
 
 /**
@@ -85,9 +143,11 @@ export type RequestContext = {
   organizationId: string;
   projectId: string;
   allowedProjects: string[];
-  tokenKind: "local" | "service";
+  tokenKind: "local" | "service" | "external";
   localTrusted: boolean;
   role: ProjectRole;
+  /** Only external identities can derive a non-agent remote actor kind. */
+  externalActorKind?: ExternalIdentityActorKind;
 };
 
 const REMOTE_ACTOR_KIND: ActorKind = "agent";
@@ -102,13 +162,17 @@ export function resolveCommandActor(
   const requestedId = header(headers, "x-relay-actor-id");
   const requestedKind = header(headers, "x-relay-actor-kind");
   if (!context.localTrusted) {
+    const actorKind =
+      context.tokenKind === "external" ? (context.externalActorKind ?? "human") : REMOTE_ACTOR_KIND;
     if (requestedId && requestedId !== context.subject) {
-      throw new Error("Authenticated actorId must match the service subject");
+      throw new Error("Authenticated actorId must match the authenticated subject");
     }
-    if (requestedKind && requestedKind !== REMOTE_ACTOR_KIND) {
-      throw new Error("Authenticated service actors must use actorKind agent");
+    if (requestedKind && requestedKind !== actorKind) {
+      throw new Error(
+        `Authenticated ${context.tokenKind === "external" ? "external" : "service"} actors must use actorKind ${actorKind}`,
+      );
     }
-    return { actorId: context.subject, actorKind: REMOTE_ACTOR_KIND };
+    return { actorId: context.subject, actorKind };
   }
 
   const actorId = requestedId ?? context.subject;
@@ -135,11 +199,51 @@ function configuredProjectRole(): ProjectRole {
   return value as ProjectRole;
 }
 
-/** Minimal configuration-backed scope model until a product identity provider is selected. */
+function resolveExternalRequestContext(
+  headers: IncomingHttpHeaders,
+  identity: VerifiedExternalIdentity,
+): RequestContext {
+  if (!isVerifiedExternalIdentity(identity)) {
+    throw new Error("External identity verifier returned an untrusted identity");
+  }
+  const requestedOrganization = header(headers, "x-organization-id") ?? identity.organizationId;
+  if (requestedOrganization !== identity.organizationId) {
+    throw new Error("External identity is not authorized for the requested organization");
+  }
+  const allowedProjects = Object.keys(identity.projectRoles);
+  const requestedProject =
+    header(headers, "x-project-id") ??
+    (allowedProjects.length === 1 ? allowedProjects[0] : undefined);
+  if (!requestedProject || !Object.hasOwn(identity.projectRoles, requestedProject)) {
+    throw new Error("External identity is not authorized for the requested project");
+  }
+  const role = identity.projectRoles[requestedProject];
+  if (!role) throw new Error("External identity has no role for the requested project");
+  return {
+    subject: identity.subject,
+    organizationId: identity.organizationId,
+    projectId: requestedProject,
+    allowedProjects,
+    tokenKind: "external",
+    localTrusted: false,
+    role,
+    externalActorKind: identity.actorKind,
+  };
+}
+
+/** Resolve local, static-service, or already verified external identity scope. */
 export function resolveRequestContext(
   headers: IncomingHttpHeaders,
-  options: { authenticated: boolean; localTrusted: boolean },
+  options: {
+    authenticated: boolean;
+    localTrusted: boolean;
+    externalIdentity?: VerifiedExternalIdentity;
+  },
 ): RequestContext {
+  if (options.externalIdentity) {
+    if (!options.authenticated) throw new Error("External identity must be authenticated");
+    return resolveExternalRequestContext(headers, options.externalIdentity);
+  }
   if (options.localTrusted && !options.authenticated) {
     return {
       subject: "local-user",

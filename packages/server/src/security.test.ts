@@ -140,7 +140,7 @@ describe("server security", () => {
           { "x-relay-actor-id": "human:admin", "x-relay-actor-kind": "human" },
           context,
         ),
-      /must match the service subject/,
+      /must match the authenticated subject/,
     );
     assert.throws(
       () => resolveCommandActor({ "x-relay-actor-kind": "system" }, context),

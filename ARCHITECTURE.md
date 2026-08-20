@@ -175,7 +175,9 @@ silently appearing successful.
 3. `@relay/ui` has no host or domain knowledge.
 4. Electron uses context isolation, a sandboxed renderer, no Node integration, and a narrow CSP-bound
    preload API.
-5. Local HTTP uses scoped identity. Non-loopback serving requires authentication and redaction.
+5. Local HTTP uses scoped identity. Non-loopback serving requires authentication and redaction;
+   external bearer credentials are accepted only through an explicit, server-side verified-identity
+   [bridge](./docs/EXTERNAL_IDENTITY.md).
 6. YAML App Map and recipe import/export, plus run artifacts, are deterministic open projections—not
    hidden alternate sources of truth.
 7. A partial or failed operation remains inspectable and never silently rewrites approved behavior.

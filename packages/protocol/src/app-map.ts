@@ -891,18 +891,4 @@ export type SerializedAppMap = Omit<
   activity: ActivityEvent[];
 };
 
-export type AppMapErrorCode =
-  | "invalid-map"
-  | "scope-mismatch"
-  | "revision-conflict"
-  | "duplicate-id"
-  | "missing-reference"
-  | "in-use"
-  | "proposal-state";
-
-/**
- * Keep the common agent/terminal view of a map useful and bounded. The full
- * App Map—including semantic trees and artifact URIs—remains available from
- * the HTTP resource and UI client; command surfaces normally need topology.
- */
-export { summarizeAppMapOperationResult } from "./app-map-summary.js";
+export type { AppMapErrorCode } from "./app-map-error-code.js";

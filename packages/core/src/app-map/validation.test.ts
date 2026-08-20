@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMap, Connection } from "@relay/protocol";
+import type { AppMap, AppMapVariable, Connection } from "@relay/protocol";
 import { validateAppMap } from "./validation.js";
-import { assertConnection } from "./validation-shapes.js";
+import { assertAppMapVariable, assertConnection } from "./validation-shapes.js";
 
 function emptyMap(): AppMap {
   return {
@@ -38,6 +38,43 @@ test("normalizes the additive groups collection for pre-release local maps", () 
 
   assert.deepEqual(map.groups, {});
   assert.equal(map.name, "Settings demo");
+});
+
+test("keeps variable navigation validation available from validation-shapes", () => {
+  const scope = { organizationId: "org-1", projectId: "project-1", appMapId: "map-1" };
+  const variable: AppMapVariable = {
+    ...scope,
+    id: "language",
+    name: "Language",
+    kind: "language",
+    apply: {
+      kind: "list",
+      entryPath: [{ kind: "tap", target: { identifier: "settings.language" } }],
+      pickerPath: [{ kind: "scroll", direction: "down" }],
+      exitPath: [{ kind: "back" }],
+    },
+    options: [
+      { id: "en", label: "English" },
+      { id: "pt-BR", label: "Português (Brasil)" },
+    ],
+    restoreId: "en",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  assert.doesNotThrow(() => assertAppMapVariable(variable, scope, "variable"));
+  assert.throws(
+    () =>
+      assertAppMapVariable(
+        {
+          ...variable,
+          apply: { kind: "list", pickerPath: [{ kind: "tap", target: {} }] },
+        },
+        scope,
+        "variable",
+      ),
+    /variable\.apply\.pickerPath\[0\]\.target needs identifier, label, or text/u,
+  );
 });
 
 test("connector presentation accepts explicit arrowheads at either endpoint", () => {

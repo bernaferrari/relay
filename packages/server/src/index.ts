@@ -10,14 +10,21 @@ import {
   allowedBrowserOrigin,
   isLocalWorkspacePath,
   assertSafeBinding,
-  authorizationMatches,
+  authenticateRequest,
   isLoopbackHost,
   listAuditEvents,
   recordAudit,
-  resolveCommandActor,
   resolveRequestContext,
   type RequestContext,
 } from "./security.js";
+import type { ExternalIdentityVerifier } from "./external-identity.js";
+export {
+  verifiedExternalIdentity,
+  type ExternalIdentityInput,
+  type ExternalIdentityVerifier,
+  type ExternalIdentityVerificationRequest,
+  type VerifiedExternalIdentity,
+} from "./external-identity.js";
 import {
   captureScreenshot,
   captureScrollableSurveyForTarget,
@@ -51,7 +58,6 @@ import {
   toJobReport,
   toJunitXml,
   type JobReport,
-  listDeviceLeases,
   releaseDeviceLease,
   listTargets,
   loadEvidenceCollectionPolicy,
@@ -124,6 +130,7 @@ import { handlePresenceRoute } from "./presence-routes.js";
 import { handleAppMapRunRoute } from "./app-map-run-routes.js";
 import { handleSettingsRoute } from "./settings-routes.js";
 import { handleTargetRoute } from "./target-routes.js";
+import { liveStreamOperationContext } from "./target-stream-context.js";
 import { handleControlPlaneRoute } from "./control-plane-routes.js";
 import { handleRecipeRoute } from "./recipe-routes.js";
 import { handleInteractionRoute } from "./interaction-routes.js";
@@ -132,12 +139,16 @@ import {
   type TargetRuntimeRouteRuntime,
 } from "./target-runtime-routes.js";
 import { createReadStream } from "node:fs";
-import type { ActorKind } from "@relay/protocol";
 
 export type StartServerOptions = {
   port?: number;
   host?: string;
   token?: string;
+  /**
+   * Optional trusted bridge for externally verified bearer credentials. Relay
+   * does not decode JWTs itself; see external-identity.ts for the contract.
+   */
+  externalIdentityVerifier?: ExternalIdentityVerifier;
   authoringRuntime?: AuthoringRuntime;
   /** Test seam for the host-owned Android stream transport. */
   liveVideoStream?: (response: http.ServerResponse, serial: string) => Promise<void>;
@@ -168,86 +179,11 @@ const serverStartedAt = Date.now();
 let lastKnownDeviceCount: number | null = null;
 const PRODUCT_VERSION = "0.1.0";
 
-function actorKindForLeaseOwner(ownerId: string, scope: RequestContext): ActorKind {
-  if (!scope.localTrusted) return "agent";
-  if (ownerId.startsWith("agent:")) return "agent";
-  if (ownerId.startsWith("system:")) return "system";
-  return "human";
-}
-
-async function liveStreamOperationContext(
-  request: http.IncomingMessage,
-  scope: RequestContext,
-  targetId: string,
-  leaseId: string | undefined,
-) {
-  const at = now();
-  const leases = await listDeviceLeases(scope.projectId);
-  const requestedActorHeader = request.headers["x-relay-actor-id"];
-  let requestedActor: { actorId: string; actorKind: ActorKind } | undefined;
-  if (requestedActorHeader !== undefined || !leaseId) {
-    try {
-      requestedActor = resolveCommandActor(request.headers, scope);
-    } catch (error) {
-      throw new HttpError(403, error instanceof Error ? error.message : String(error));
-    }
-  }
-  const lease = leaseId
-    ? leases.find(
-        (candidate) =>
-          candidate.id === leaseId &&
-          candidate.deviceSerial === targetId &&
-          candidate.status === "leased" &&
-          candidate.expiresAt > at,
-      )
-    : leases.find(
-        (candidate) =>
-          candidate.deviceSerial === targetId &&
-          candidate.ownerId === requestedActor?.actorId &&
-          candidate.status === "leased" &&
-          candidate.expiresAt > at,
-      );
-  if (!leaseId && !lease) {
-    throw new HttpError(403, "A target lease is required for live streaming");
-  }
-  const attributable =
-    lease &&
-    (!requestedActorHeader || requestedActor?.actorId === lease.ownerId) &&
-    (scope.localTrusted || lease.ownerId === scope.subject);
-  if (!attributable) {
-    recordAudit(scope, {
-      action: "target.stream",
-      resource: "lease",
-      target: targetId,
-      result: "deny",
-    });
-    throw new HttpError(403, "The live-stream target lease is unavailable");
-  }
-  recordAudit(scope, {
-    action: "target.stream",
-    resource: "lease",
-    target: targetId,
-    result: "allow",
-  });
-  const requestId = crypto.randomUUID();
-  return {
-    schemaVersion: 1 as const,
-    actorId: lease.ownerId,
-    actorKind: requestedActor?.actorKind ?? actorKindForLeaseOwner(lease.ownerId, scope),
-    organizationId: scope.organizationId,
-    projectId: scope.projectId,
-    operationId: "target.stream.open" as const,
-    requestId,
-    idempotencyKey: requestId,
-    issuedAt: at,
-    leaseId: lease.id,
-  };
-}
-
 async function handleRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   token?: string,
+  externalIdentityVerifier?: ExternalIdentityVerifier,
   localTrusted = true,
   sse = createSseHub(CORS_HEADERS),
   authoringRuntime?: AuthoringRuntime,
@@ -282,7 +218,12 @@ async function handleRequest(
   // but expose only the redacted public projection handled by this route.
   if (await handlePublicRunShareRoute({ method, pathname, response: res })) return;
 
-  if (!authorizationMatches(req.headers.authorization, token)) {
+  const authentication = await authenticateRequest(req.headers.authorization, {
+    token,
+    externalIdentityVerifier,
+    localTrusted,
+  });
+  if (!authentication) {
     res.setHeader("WWW-Authenticate", 'Bearer realm="relay"');
     json(res, 401, { error: "Authentication required" });
     return;
@@ -293,8 +234,11 @@ async function handleRequest(
     let scope: RequestContext;
     try {
       scope = resolveRequestContext(req.headers, {
-        authenticated: Boolean(token),
+        authenticated: authentication.kind !== "local",
         localTrusted,
+        ...(authentication.kind === "external"
+          ? { externalIdentity: authentication.identity }
+          : {}),
       });
     } catch (error) {
       json(res, 403, { error: error instanceof Error ? error.message : String(error) });
@@ -1074,6 +1018,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   const host = opts.host ?? "127.0.0.1";
   const preferredPort = opts.port ?? 8787;
   const token = opts.token ?? process.env.RELAY_AUTH_TOKEN;
+  const externalIdentityVerifier = opts.externalIdentityVerifier;
   const redaction = await loadRedactionPolicy();
   await loadEvidenceCollectionPolicy();
   for (const recoveryScope of await authoringSessions.recoveryScopes()) {
@@ -1112,7 +1057,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   await recoverCollaborationState();
   await reconcilePersistedAppMapRuns();
   await pruneIosVideoTakes();
-  assertSafeBinding(host, token);
+  assertSafeBinding(host, token, externalIdentityVerifier);
   if (!isLoopbackHost(host) && !redaction.enabled) {
     throw new Error("Refusing a non-local binding while evidence redaction is disabled");
   }
@@ -1122,6 +1067,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
       req,
       res,
       token,
+      externalIdentityVerifier,
       isLoopbackHost(host),
       sse,
       opts.authoringRuntime,

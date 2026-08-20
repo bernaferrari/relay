@@ -72,9 +72,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     new URLSearchParams(window.location.search).has("run") ? "runs" : "tests",
   );
   // Opening Relay should show the map, the way opening Figma shows the canvas.
-  // Defaulting to the Test mode meant a 44-screen map first painted as three
-  // empty panes behind a "Create the first Test" card. openTest() still moves
-  // there explicitly when someone picks a saved Test.
+  // openTest() still moves to Test mode explicitly when someone picks a saved Test.
+  // This keeps an empty Test editor from hiding an otherwise useful canvas.
   const [mapMode, setMapMode] = createSignal<MapMode>("map");
   const authoringMap = () => mapMode() !== "test";
   // The App Map is the only authoring surface. Device remains one click away.
@@ -106,12 +105,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     server.selectedAppMapId();
     setActiveTargetSetId();
   });
-  // Opening Relay should feel like reopening a design file, not entering a
-  // creation wizard. The provider restores the persisted id during startup;
-  // this reactive fallback closes the small renderer race where recipes can
-  // become visible before that asynchronous restore has selected a canvas.
-  // It also gives browser-only sessions (with empty storage) the most recent
-  // authored map immediately.
+  // Restore a persisted canvas before recipes paint, including browser sessions
+  // with empty storage, so opening Relay feels like reopening a design file.
+  // The selected id remains the source of truth; this only closes a startup race.
   let restoredInitialMap = false;
   createEffect(() => {
     if (restoredInitialMap) return;
@@ -928,6 +924,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                         onToggleDevice={toggleDevicePanel}
                         onOpenTargets={() => props.onOpenSettings("targets")}
                         onCaptureFirstScreen={() => void captureFirstScreenFromBlankMap()}
+                        onImportYaml={importTestYaml}
+                        onExportYaml={() => void exportSelected()}
                       />
                     </Suspense>
                   }
@@ -944,6 +942,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                         server.setSelectedJobId(id);
                         setArea("runs");
                       }}
+                      onImportYaml={importTestYaml}
+                      onExportYaml={() => void exportSelected()}
                     />
                   </div>
                   <Show when={settingsOpen()}>
