@@ -8,8 +8,10 @@ import {
   iosVisualVerificationDiagnostic,
   interact,
   previewInteract,
+  scrollSurveyOutcomeUnknownDiagnostic,
   type InteractInput,
   type InteractResult,
+  type ScrollSurveyOutcomeUnknownDiagnostic,
 } from "@relay/core";
 import { assertTargetControl, assertTargetObservation } from "./access-control.js";
 import { HttpError, json, parseJsonBody } from "./http.js";
@@ -67,6 +69,8 @@ export type IosMutationOutcomeUnknownPayload = Readonly<Record<string, unknown>>
   iosMutation: IosMutationOutcomeUnknownError["iosMutation"];
   iosSessionLifecycle?: unknown;
   iosVisualVerification?: unknown;
+  /** Raw pre-ambiguity full-surface frames, when the failed command was a survey scroll. */
+  scrollSurvey?: ScrollSurveyOutcomeUnknownDiagnostic;
 };
 
 /**
@@ -84,12 +88,14 @@ export function iosMutationOutcomeUnknownPayload(
     }
   ).iosSessionLifecycle;
   const visualVerification = iosVisualVerificationDiagnostic(error);
+  const scrollSurvey = scrollSurveyOutcomeUnknownDiagnostic(error);
   return {
     ...details,
     code: "IOS_MUTATION_OUTCOME_UNKNOWN",
     iosMutation: error.iosMutation,
     ...(lifecycle ? { iosSessionLifecycle: lifecycle } : {}),
     ...(visualVerification ? { iosVisualVerification: visualVerification } : {}),
+    ...(scrollSurvey ? { scrollSurvey } : {}),
   };
 }
 

@@ -3,6 +3,7 @@ import {
   attachAppMapScrollSurface,
   captureScrollableSurveyForTarget,
   getActiveJob,
+  IosMutationOutcomeUnknownError,
   logicalScrollSurfaceId,
   persistLogicalScrollSurface,
   readAppMap,
@@ -17,6 +18,7 @@ import {
   resolveScrollSurfaceRegenerationSelection,
 } from "./app-map-scroll-surface-support.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
+import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import type { RequestContext } from "./security.js";
 
 export async function handleAppMapScrollSurfaceRoute(input: {
@@ -112,10 +114,18 @@ export async function handleAppMapScrollSurfaceRoute(input: {
     );
   }
   await assertTargetLease(input.scope, body.target.targetId, body.leaseId);
-  const survey = await captureScrollableSurveyForTarget({
-    serial: body.target.targetId,
-    ...(body.maxScrolls !== undefined ? { maxScrolls: body.maxScrolls } : {}),
-  });
+  let survey: Awaited<ReturnType<typeof captureScrollableSurveyForTarget>>;
+  try {
+    survey = await captureScrollableSurveyForTarget({
+      serial: body.target.targetId,
+      ...(body.maxScrolls !== undefined ? { maxScrolls: body.maxScrolls } : {}),
+    });
+  } catch (error) {
+    if (error instanceof IosMutationOutcomeUnknownError) {
+      throw iosMutationOutcomeUnknownHttpError(error);
+    }
+    throw error;
+  }
   const scrollSurface = await persistLogicalScrollSurface({
     survey,
     targetProfile: variant.targetProfile,

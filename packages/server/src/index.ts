@@ -38,6 +38,7 @@ import {
   getJob,
   interact,
   IdempotencyConflict,
+  IosMutationOutcomeUnknownError,
   listActionsWithTrace,
   listAndroidDevicesFast,
   listDevices,
@@ -127,7 +128,10 @@ import { handleTargetRoute } from "./target-routes.js";
 import { livePreviewOperationContext } from "./target-stream-context.js";
 import { handleControlPlaneRoute } from "./control-plane-routes.js";
 import { handleRecipeRoute } from "./recipe-routes.js";
-import { handleInteractionRoute } from "./interaction-routes.js";
+import {
+  handleInteractionRoute,
+  iosMutationOutcomeUnknownHttpError,
+} from "./interaction-routes.js";
 import { handleStepRunRoute, type StepRunRouteRuntime } from "./step-run-route.js";
 import {
   handleTargetRuntimeRoute,
@@ -624,10 +628,18 @@ async function handleRequest(
         throw new HttpError(400, "maxScrolls must be an integer between 1 and 12");
       }
       await assertTargetControl(scope, serial);
-      const survey = await captureScrollableSurveyForTarget({
-        serial,
-        ...(body.maxScrolls !== undefined ? { maxScrolls: body.maxScrolls } : {}),
-      });
+      let survey: Awaited<ReturnType<typeof captureScrollableSurveyForTarget>>;
+      try {
+        survey = await captureScrollableSurveyForTarget({
+          serial,
+          ...(body.maxScrolls !== undefined ? { maxScrolls: body.maxScrolls } : {}),
+        });
+      } catch (error) {
+        if (error instanceof IosMutationOutcomeUnknownError) {
+          throw iosMutationOutcomeUnknownHttpError(error);
+        }
+        throw error;
+      }
       json(res, 200, survey);
       return;
     }
