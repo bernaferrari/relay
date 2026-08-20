@@ -15,5 +15,13 @@ extension RunnerTests {
       XCTAssertNil(activeRecording)
     }
   }
+
+  func testScreenRecorderClampsNonMonotonicFrameTimestamps() {
+    let recorder = ScreenRecorder(outputPath: "", fps: 30)
+
+    XCTAssertEqual(recorder.allocateTimestampForTesting(100), 100)
+    // The helper records each returned value as an accepted frame.
+    XCTAssertEqual(recorder.allocateTimestampForTesting(0), 101)
+  }
 #endif
 }
