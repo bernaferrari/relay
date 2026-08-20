@@ -79,6 +79,53 @@ function fixture(): {
   return { plan, recipeGraph, preflight };
 }
 
+function campaignFixture(input: {
+  frozenRecipeIds: string[];
+  coldRecipeId?: string;
+}): ReturnType<typeof fixture> {
+  const current = fixture();
+  const rootId = current.plan.rootRecipeId;
+  const checkedStep: Recipe["steps"][number] = {
+    kind: "module",
+    recipeId: "primary",
+    check: {
+      id: "settings",
+      title: "Settings",
+      recovery: {
+        groupId: "settings-origin",
+        recipeId: "warm-recovery",
+        ...(input.coldRecipeId ? { coldRecipeId: input.coldRecipeId } : {}),
+      },
+      cleanup: {
+        recipeId: "restore-settings",
+        terminalScreenId: "settings",
+        onCancel: "skip",
+      },
+    },
+  };
+  current.recipeGraph[rootId]!.steps = [checkedStep];
+  current.plan.recipes[rootId]!.steps = [structuredClone(checkedStep)];
+  for (const id of input.frozenRecipeIds) {
+    const recipe: Recipe = {
+      id,
+      title: id,
+      source: "custom",
+      steps: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    current.recipeGraph[id] = recipe;
+    current.plan.recipes[id] = {
+      id,
+      title: id,
+      parameters: [],
+      steps: [],
+    };
+  }
+  current.preflight.planDigest = digestAppMapTestExecutionValue(current.plan);
+  return current;
+}
+
 test("freezes one parser-validated Test execution intent", () => {
   const intent = createAppMapTestExecutionIntent(fixture());
   assert.deepEqual(intent.sourcePlan, {
@@ -155,4 +202,24 @@ test("rejects a Test graph that could fall through to a mutable or cyclic recipe
     () => createAppMapTestExecutionIntent(cyclic),
     /inconsistent App Map Test execution intent/u,
   );
+});
+
+test("closes executable campaign cleanup and recovery recipes without freezing proposed cold repair", () => {
+  const missingCleanup = campaignFixture({ frozenRecipeIds: ["primary", "warm-recovery"] });
+  assert.throws(
+    () => createAppMapTestExecutionIntent(missingCleanup),
+    /inconsistent App Map Test execution intent/u,
+  );
+
+  const missingRecovery = campaignFixture({ frozenRecipeIds: ["primary", "restore-settings"] });
+  assert.throws(
+    () => createAppMapTestExecutionIntent(missingRecovery),
+    /inconsistent App Map Test execution intent/u,
+  );
+
+  const proposalOnlyColdRecovery = campaignFixture({
+    frozenRecipeIds: ["primary", "warm-recovery", "restore-settings"],
+    coldRecipeId: "proposed-cold-repair-not-executable",
+  });
+  assert.doesNotThrow(() => createAppMapTestExecutionIntent(proposalOnlyColdRecovery));
 });

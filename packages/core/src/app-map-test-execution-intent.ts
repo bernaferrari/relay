@@ -116,11 +116,20 @@ export function parseCanonicalAppMapTestRecipe(
 }
 
 function referencedFrozenRecipeIds(step: RecipeStep): string[] {
-  if (step.kind === "module" || step.kind === "repeat") return [step.recipeId];
-  if (step.kind === "branch") {
-    return [step.thenRecipeId, ...(step.elseRecipeId ? [step.elseRecipeId] : [])];
-  }
-  return [];
+  const nested =
+    step.kind === "module" || step.kind === "repeat"
+      ? [step.recipeId]
+      : step.kind === "branch"
+        ? [step.thenRecipeId, ...(step.elseRecipeId ? [step.elseRecipeId] : [])]
+        : [];
+  // Campaign cleanup and warm recovery pass through the same reusable-recipe
+  // runner as an explicit module. They must therefore be frozen too; only a
+  // proposed cold recovery remains review metadata and is never executable.
+  return [
+    ...nested,
+    ...(step.check?.cleanup ? [step.check.cleanup.recipeId] : []),
+    ...(step.check?.recovery ? [step.check.recovery.recipeId] : []),
+  ];
 }
 
 /** A Test graph must be self-contained. Otherwise `runReusableRecipe` would
