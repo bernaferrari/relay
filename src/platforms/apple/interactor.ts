@@ -19,6 +19,7 @@ import {
 } from './core/runner/runner-provider.ts';
 import { toAppleTvRemoteButton } from '@agent-device/contracts/interaction';
 import { DEVICE_ROTATIONS, type DeviceRotation } from '@agent-device/contracts/device';
+import { normalizeSnapshotScope } from '@agent-device/contracts/snapshot';
 import { withDiagnosticTimer } from '../../utils/diagnostics.ts';
 import { isMacOs, isTvOsDevice, type DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
@@ -183,7 +184,8 @@ async function captureAppleRunnerSnapshot(
     ),
   );
   const nodes = result.nodes ?? [];
-  if (nodes.length === 0 && device.kind === 'simulator') {
+  const isValidEmptyScope = acceptsEmptyScopedSnapshot(options, result.quality);
+  if (nodes.length === 0 && device.kind === 'simulator' && !isValidEmptyScope) {
     throw new AppError('COMMAND_FAILED', 'XCTest snapshot returned 0 nodes on iOS simulator.');
   }
   return {
@@ -194,6 +196,17 @@ async function captureAppleRunnerSnapshot(
     // Legacy runners without a quality verdict still surface their message text.
     ...(!result.quality && result.message ? { warnings: [result.message] } : {}),
   };
+}
+
+function acceptsEmptyScopedSnapshot(
+  options: SnapshotOptions | undefined,
+  quality: SnapshotQualityVerdict | undefined,
+): boolean {
+  return (
+    normalizeSnapshotScope(options?.scope) !== null &&
+    quality !== undefined &&
+    quality.state !== 'sparse'
+  );
 }
 
 function mergeRunnerCallSignal(
