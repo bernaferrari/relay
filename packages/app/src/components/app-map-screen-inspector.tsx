@@ -10,6 +10,7 @@ import { useAppMapScrollSurface } from "../lib/use-app-map-scroll-surface";
 import { Icon } from "./icon";
 import { OrientedScreenshot, type ScreenshotOrientationEvidence } from "./oriented-screenshot";
 import { LogicalScrollSurfaceViewer } from "./logical-scroll-surface-viewer";
+import { ReviewedDocumentOriginControl } from "./reviewed-document-origin-control";
 import { ScrollSurfaceCaptureAction } from "./scroll-surface-capture-action";
 
 export function ScreenInspector(props: {
@@ -38,6 +39,22 @@ export function ScreenInspector(props: {
     activeAppMap: () => props.appMap,
     screenId: () => props.node?.id,
   });
+  const reviewedOrigin = () => {
+    const appMap = props.appMap;
+    const screenId = props.node?.id;
+    const variant = scrollSurface.variant();
+    const surface = scrollSurface.surface();
+    if (
+      !appMap ||
+      !screenId ||
+      !variant ||
+      !surface ||
+      variant.targetProfile.platform !== "android"
+    ) {
+      return undefined;
+    }
+    return { appMap, screenId, variant, surface };
+  };
   return (
     <Show when={props.node}>
       {(_node) => (
@@ -188,6 +205,18 @@ export function ScreenInspector(props: {
               regenerating={scrollSurface.regenerateProps().busy}
               onRegenerate={scrollSurface.regenerateProps().onRegenerate}
             />
+          </Show>
+
+          <Show when={reviewedOrigin()}>
+            {(origin) => (
+              <ReviewedDocumentOriginControl
+                appMap={origin().appMap}
+                screenId={origin().screenId}
+                variant={origin().variant}
+                surface={origin().surface}
+                evidenceUrl={scrollSurface.evidenceUrl}
+              />
+            )}
           </Show>
 
           <Show when={props.flowSetup}>
