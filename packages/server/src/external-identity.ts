@@ -69,11 +69,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+/** Keep external IDs safe for headers, logs, and filesystem-adjacent stores
+ * without a control-character regex that tooling cannot inspect clearly. */
+function hasAsciiControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
 function scopeId(value: unknown, label: string, maxLength: number): string {
   if (typeof value !== "string" || value.length === 0 || value.length > maxLength) {
     throw new Error(`${label} must be a non-empty string no longer than ${maxLength} characters`);
   }
-  if (value.trim() !== value || /[\u0000-\u001F\u007F]/.test(value)) {
+  if (value.trim() !== value || hasAsciiControlCharacter(value)) {
     throw new Error(`${label} cannot contain leading/trailing whitespace or control characters`);
   }
   return value;

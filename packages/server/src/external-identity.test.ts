@@ -60,6 +60,16 @@ test("external identities require a branded verifier result and an unexpired, va
       }),
     /project role/,
   );
+  assert.throws(
+    () =>
+      verifiedExternalIdentity({
+        subject: "user:\u0001ada",
+        organizationId: "acme",
+        projectRoles: { mobile: "viewer" },
+        expiresAt: now + 60_000,
+      }),
+    /control characters/,
+  );
 });
 
 test("external scope is verifier-owned while static and loopback authentication stay unchanged", async () => {

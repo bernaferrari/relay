@@ -14,7 +14,7 @@ import {
   type MappedOperationDescriptor,
 } from "./command-descriptors.js";
 import { UsageError } from "./errors.js";
-import { cliResourceDescriptors, type CliResourceDescriptor } from "./resource-commands.js";
+import { cliResourceDescriptors } from "./resource-commands.js";
 import { runEvidenceCommandDescriptors } from "./run-share-commands.js";
 import { targetCommandDescriptors } from "./target-commands.js";
 
