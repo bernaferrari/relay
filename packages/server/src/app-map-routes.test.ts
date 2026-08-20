@@ -106,9 +106,69 @@ test("offline Test compilation previews a verified checkpoint without a device o
         identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
       },
     });
+    const homeTree = await persistAuthoringEvidence({
+      kind: "snapshot",
+      capturedAt: 10,
+      mime: "application/json",
+      data: JSON.stringify({
+        nodes: [
+          {
+            index: 0,
+            type: "Button",
+            label: "Settings",
+            enabled: true,
+            visibleToUser: true,
+            hittable: true,
+            rect: { x: 40, y: 80, width: 300, height: 80 },
+          },
+        ],
+      }),
+    });
+    await mutateStoredAppMap("mobile", "store", (current) => {
+      const next = structuredClone(current);
+      const rawTree = {
+        id: homeTree.id,
+        uri: homeTree.uri,
+        sha256: homeTree.sha256!,
+        mime: "application/json" as const,
+        bytes: homeTree.bytes!,
+        observationId: "home-observation",
+        capturedAt: homeTree.capturedAt,
+      };
+      next.screenVariants["home-ios-en"] = {
+        id: "home-ios-en",
+        organizationId: next.organizationId,
+        projectId: next.projectId,
+        appMapId: next.id,
+        screenId: "home",
+        targetProfile: {
+          id: "ipad-en",
+          targetId: "ipad-1",
+          source: "device",
+          platform: "ios",
+          name: "iPad · English",
+          capabilities: ["snapshot", "screenshot"],
+          observedAt: homeTree.capturedAt,
+        },
+        observation: {
+          fingerprint: "a".repeat(64),
+          nodes: [{ role: "button", label: "Settings", hittable: true }],
+          volatileSignals: [],
+        },
+        evidenceIds: [homeTree.id],
+        evidenceUris: [homeTree.uri],
+        rawAccessibilityTree: rawTree,
+        createdAt: homeTree.capturedAt,
+        updatedAt: homeTree.capturedAt,
+      };
+      next.screens.home!.variantIds = ["home-ios-en"];
+      next.revision += 1;
+      next.updatedAt = Math.max(next.updatedAt + 1, homeTree.capturedAt);
+      return next;
+    });
     await client.invoke("app-map.connection.create", {
       appMapId: "store",
-      expectedRevision: 2,
+      expectedRevision: 3,
       connection: {
         id: "open-settings",
         fromScreenId: "home",
@@ -120,7 +180,7 @@ test("offline Test compilation previews a verified checkpoint without a device o
     const saved = await client.invoke("app-map.test.save", {
       appMapId: "store",
       testId: "settings-test",
-      expectedRevision: 3,
+      expectedRevision: 4,
       test: {
         name: "Settings",
         kind: "scenario",
@@ -148,6 +208,31 @@ test("offline Test compilation previews a verified checkpoint without a device o
     assert.deepEqual(preview.plan.startup, { mode: "verified-checkpoint", screenId: "settings" });
     assert.equal(preview.plan.appMapRevision, saved.appMap.revision);
     assert.equal(preview.preflight.mode, "offline-test-preflight");
+
+    const offline = await client.invoke("app-map.test.compile", {
+      appMapId: "store",
+      testId: "settings-test",
+    });
+    const frozenHome = offline.plan.rawAccessibilitySourcesByScreenId?.home?.[0];
+    assert.deepEqual(frozenHome?.variant, {
+      id: "home-ios-en",
+      targetProfileId: "ipad-en",
+      targetId: "ipad-1",
+      platform: "ios",
+    });
+    assert.deepEqual(frozenHome?.origin, {
+      kind: "screen-variant",
+      observationId: "home-observation",
+      capturedAt: 10,
+    });
+    assert.equal(frozenHome?.tree.sha256, homeTree.sha256);
+    assert.equal(offline.preflight.selectors[0]?.status, "resolved");
+    assert.deepEqual(offline.preflight.selectors[0]?.resolution?.provenance?.variant, {
+      id: "home-ios-en",
+      targetProfileId: "ipad-en",
+      targetId: "ipad-1",
+      platform: "ios",
+    });
 
     const unchanged = await client.invoke("app-map.get", { appMapId: "store" });
     assert.equal(unchanged.appMap.revision, saved.appMap.revision);

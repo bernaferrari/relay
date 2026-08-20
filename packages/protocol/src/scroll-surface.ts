@@ -31,6 +31,16 @@ export type RawAccessibilityTreeEvidence = ScrollSurfaceEvidence & {
   mime: "application/json";
 };
 
+/** The raw tree attached directly to an ordinary Screen Variant. The evidence
+ * reference is the immutable authority; the optional observation facts bind a
+ * newly-written reference to the exact normalized observation it accompanied.
+ * Older maps predate those facts and remain readable, but must not be silently
+ * upgraded or assumed to describe a newer observation. */
+export type ScreenVariantRawAccessibilityTree = RawAccessibilityTreeEvidence & {
+  observationId?: string;
+  capturedAt?: number;
+};
+
 export type ScrollSurfaceViewport = {
   index: number;
   offsetY: number;

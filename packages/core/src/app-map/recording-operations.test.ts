@@ -168,7 +168,50 @@ test("captures the immutable raw accessibility tree for offline selector proof",
     sha256: snapshotSha,
     mime: "application/json",
     bytes: 128,
+    observationId: "settings",
+    capturedAt: 1,
   });
+});
+
+test("does not carry a raw tree into a newer observation that has no snapshot", () => {
+  const snapshotSha = "3".repeat(64);
+  const first = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target: { kind: "device", platform: "android", targetId: "pixel" },
+      observation: observation("settings-first", beforeFingerprint, "settings-tree"),
+      evidenceUrisById: { "settings-tree": `relay-evidence://${snapshotSha}` },
+      evidenceKindsById: { "settings-tree": "snapshot" },
+      evidenceById: {
+        "settings-tree": {
+          id: "settings-tree",
+          kind: "snapshot",
+          capturedAt: 2,
+          uri: `relay-evidence://${snapshotSha}`,
+          mime: "application/json",
+          bytes: 128,
+          sha256: snapshotSha,
+        },
+      },
+    },
+    context("capture-settings-tree"),
+    { createInitialFlow: false },
+  );
+  const second = commitAppMapScreenCapture(
+    first.appMap,
+    {
+      target: { kind: "device", platform: "android", targetId: "pixel" },
+      observation: observation("settings-second", beforeFingerprint, "settings-pixels"),
+      evidenceUrisById: { "settings-pixels": `relay-evidence://${"4".repeat(64)}` },
+      evidenceKindsById: { "settings-pixels": "screenshot" },
+    },
+    context("recapture-without-tree", first.appMap.revision, 20),
+    { createInitialFlow: false },
+  );
+
+  const variant = second.appMap.screenVariants[second.variantId]!;
+  assert.equal(variant.rawAccessibilityTree, undefined);
+  assert.deepEqual(variant.evidenceIds, ["settings-tree", "settings-pixels"]);
 });
 
 test("a taught screen preserves an intentionally flow-free graph", () => {

@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import type { AppMapCompiledTest, RawAccessibilityTreeEvidence } from "@relay/protocol";
+import type {
+  AppMapCompiledRawAccessibilitySource,
+  AppMapCompiledTest,
+  RawAccessibilityTreeEvidence,
+} from "@relay/protocol";
 import { loadFrozenRawAccessibilityEvidence } from "./frozen-raw-accessibility.js";
 import { preflightCompiledAppMapTestOffline } from "./offline-test-preflight.js";
 
 function plan(
   rawAccessibilityTreesByScreenId: NonNullable<
     AppMapCompiledTest["rawAccessibilityTreesByScreenId"]
-  >,
+  > = {},
 ): AppMapCompiledTest {
   return {
     schemaVersion: 1,
@@ -52,6 +56,17 @@ function plan(
       destinationProofCount: 0,
     },
     startup: { mode: "cold" },
+  };
+}
+
+function sourcePlan(
+  rawAccessibilitySourcesByScreenId: NonNullable<
+    AppMapCompiledTest["rawAccessibilitySourcesByScreenId"]
+  >,
+): AppMapCompiledTest {
+  return {
+    ...plan(),
+    rawAccessibilitySourcesByScreenId,
   };
 }
 
@@ -121,7 +136,23 @@ const reflowedBirthYearTree = {
 
 test("loads a translated/reflowed raw tree with immutable source provenance", async () => {
   const tree = rawTree("profile-pt-tree", reflowedBirthYearTree);
-  const compiled = plan({ profile: [tree.reference] });
+  const source: AppMapCompiledRawAccessibilitySource = {
+    screenId: "profile",
+    variant: {
+      id: "profile-pt",
+      targetProfileId: "ipad-pt-BR",
+      targetId: "ipad-1",
+      platform: "ios",
+      viewport: { width: 834, height: 1112 },
+    },
+    origin: {
+      kind: "screen-variant",
+      observationId: "observation-profile-pt",
+      capturedAt: 10,
+    },
+    tree: tree.reference,
+  };
+  const compiled = sourcePlan({ profile: [source] });
 
   const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
     readEvidence: async (sha256) => (sha256 === tree.reference.sha256 ? tree.bytes : null),
@@ -139,6 +170,8 @@ test("loads a translated/reflowed raw tree with immutable source provenance", as
       reference: tree.reference.uri,
       evidenceId: "profile-pt-tree",
       sha256: tree.reference.sha256,
+      variant: source.variant,
+      origin: source.origin,
     },
   });
   assert.deepEqual(selector.evidence.sources, [selector.resolution?.provenance]);
@@ -223,6 +256,36 @@ test("turns a frozen evidence read error into a compact recapture blocker", asyn
       reference: tree.reference.uri,
       evidenceId: tree.reference.id,
       sha256: tree.reference.sha256,
+    },
+  ]);
+});
+
+test("treats a valid legacy raw reference as one observation-binding recapture", async () => {
+  const tree = rawTree("profile-legacy-tree", reflowedBirthYearTree);
+  const compiled = plan({ profile: [tree.reference] });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) => (sha256 === tree.reference.sha256 ? tree.bytes : null),
+  });
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence);
+
+  assert.equal(evidence.rawEvidenceStatusByScreenId?.profile, "unbound");
+  assert.equal(report.selectors[0]?.status, "raw-evidence-unavailable");
+  assert.deepEqual(report.findings, [
+    {
+      severity: "blocker",
+      code: "raw-evidence-recapture-required",
+      recipeId: "root",
+      recipeStepId: "birth-year",
+      screenId: "profile",
+      message:
+        "Edit Profile's frozen raw accessibility tree is not bound to its current observation; recapture this screen before relying on offline geometry.",
+      evidence: [
+        {
+          reference: tree.reference.uri,
+          evidenceId: tree.reference.id,
+          sha256: tree.reference.sha256,
+        },
+      ],
     },
   ]);
 });

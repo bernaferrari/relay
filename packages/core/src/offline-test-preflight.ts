@@ -20,6 +20,7 @@ import {
   rawSourcesForScreen,
   uniqueEvidenceSources,
   type OfflineTestPreflightEvidence,
+  type OfflineTestPreflightRawEvidenceStatus,
   type OfflineTestPreflightRawSource,
 } from "./offline-test-preflight-raw.js";
 
@@ -171,7 +172,7 @@ type SelectorAssessment = {
    * it to a blocker. Keeping it outside `findings` prevents 40 steps from
    * producing 40 copies of the same recapture instruction. */
   rawEvidenceRecapture?: {
-    status: "missing" | "unreadable";
+    status: OfflineTestPreflightRawEvidenceStatus;
     sources: OfflineTestPreflightEvidenceSource[];
   };
 };
@@ -200,7 +201,7 @@ function selectorAssessment(input: {
   observations: readonly { nodes: NormalizedSemanticNode[] }[];
   rawSources?: readonly OfflineTestPreflightRawSource[];
   rawEvidenceReferences?: readonly string[];
-  rawEvidenceStatus?: "missing" | "unreadable";
+  rawEvidenceStatus?: OfflineTestPreflightRawEvidenceStatus;
   rawEvidenceDeclared?: boolean;
 }): SelectorAssessment {
   const {
@@ -324,7 +325,7 @@ function selectorAssessment(input: {
               ? { activation: proven.attempt.resolution.activation }
               : {}),
             snapshotBounds: { ...proven.attempt.resolution.bounds },
-            provenance: { ...proven.source.source },
+            provenance: structuredClone(proven.source.source),
           },
         },
         findings: [],
@@ -381,7 +382,9 @@ function selectorAssessment(input: {
     const detail =
       unavailableRawEvidence === "missing"
         ? "No immutable raw accessibility tree is available for this selector."
-        : "The immutable raw accessibility tree failed its byte, hash, or JSON integrity check.";
+        : unavailableRawEvidence === "unreadable"
+          ? "The immutable raw accessibility tree failed its byte, hash, or JSON integrity check."
+          : "The immutable raw accessibility tree is not bound to this Variant's current observation.";
     return {
       selector: {
         ...selectorBase,
@@ -551,7 +554,7 @@ export function preflightCompiledAppMapTestOffline(
     screenTitle: string;
     recipeId: string;
     recipeStepId?: string;
-    status: "missing" | "unreadable";
+    status: OfflineTestPreflightRawEvidenceStatus;
     severity: "warning" | "blocker";
     sources: OfflineTestPreflightEvidenceSource[];
     /** A selector gives the most useful repair location; an expect-screen
@@ -561,7 +564,9 @@ export function preflightCompiledAppMapTestOffline(
     const message =
       input.status === "missing"
         ? `${input.screenTitle} has no immutable raw accessibility tree; recapture this screen before relying on offline geometry.`
-        : `${input.screenTitle}'s frozen raw accessibility tree is unavailable or corrupt; recapture this screen before relying on offline geometry.`;
+        : input.status === "unreadable"
+          ? `${input.screenTitle}'s frozen raw accessibility tree is unavailable or corrupt; recapture this screen before relying on offline geometry.`
+          : `${input.screenTitle}'s frozen raw accessibility tree is not bound to its current observation; recapture this screen before relying on offline geometry.`;
     const finding: OfflineTestPreflightFinding = {
       severity: input.severity,
       code: "raw-evidence-recapture-required",
@@ -609,7 +614,11 @@ export function preflightCompiledAppMapTestOffline(
         sourceScreenId = step.screenId;
         sourceScreenTitle = step.screenTitle;
         const rawEvidenceStatus = evidence.rawEvidenceStatusByScreenId?.[sourceScreenId];
-        if (rawEvidenceStatus) {
+        // Dynamic Shared Conversations content has no ordinary raw-baseline
+        // requirement. A stable entry/exit control still reaches
+        // selectorAssessment below and will request exactly one recapture if
+        // its own source tree is unavailable.
+        if (rawEvidenceStatus && !isDynamicSharedConversations(step.screenTitle)) {
           recordRawEvidenceRecapture({
             screenId: sourceScreenId,
             screenTitle: step.screenTitle,

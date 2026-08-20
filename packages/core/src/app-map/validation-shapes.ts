@@ -275,6 +275,17 @@ export function assertVariant(variant: ScreenVariant, scope: AppMapScope, label:
     if (!variant.evidenceIds.includes(raw.id) || !variant.evidenceUris?.includes(raw.uri)) {
       appMapFail("invalid-map", `${label}.rawAccessibilityTree must belong to the variant`);
     }
+    const hasObservationBinding = raw.observationId !== undefined;
+    const hasCapturedAt = raw.capturedAt !== undefined;
+    if (hasObservationBinding !== hasCapturedAt) {
+      appMapFail(
+        "invalid-map",
+        `${label}.rawAccessibilityTree observation provenance must include both observationId and capturedAt`,
+      );
+    }
+    if (hasObservationBinding)
+      identifier(raw.observationId, `${label}.rawAccessibilityTree.observationId`);
+    if (hasCapturedAt) finiteTimestamp(raw.capturedAt, `${label}.rawAccessibilityTree.capturedAt`);
   }
   if (variant.scrollSurfaces !== undefined) {
     if (!Array.isArray(variant.scrollSurfaces)) {

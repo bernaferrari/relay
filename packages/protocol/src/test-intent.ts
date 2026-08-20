@@ -1,6 +1,7 @@
 import type { AppMapCapturePolicy, AppMapEntity, AssertionSpec } from "./app-map.js";
 import type { HumanCheckpointReason, RecipeStep, StepTarget } from "./recipes.js";
 import type { RawAccessibilityTreeEvidence, ScrollSurfaceTestBinding } from "./scroll-surface.js";
+import type { TargetProfile } from "./target-contract.js";
 
 export const APP_MAP_TEST_INTENT_SCHEMA_VERSION = 1 as const;
 
@@ -323,15 +324,57 @@ export type AppMapTestStartup =
   | { mode: "cold" }
   | { mode: "verified-checkpoint"; screenId: string };
 
+/** One immutable raw AX blob with the exact App Map Variant that supplied it.
+ *
+ * The tree digest alone is intentionally not a selector-equivalence claim: a
+ * single CAS blob can legitimately be attached to multiple profiles or locale
+ * variants. Keeping that source identity in the compiled Test lets offline
+ * review name the precise capture and gives later compatibility checks enough
+ * information to fail closed instead of blessing a translated selector from a
+ * different Variant. */
+export type AppMapCompiledRawAccessibilitySource = {
+  screenId: string;
+  variant: {
+    id: string;
+    /** This is the explicit target/locale source key. Relay never infers a
+     * locale from visible text. */
+    targetProfileId: string;
+    targetId: string;
+    platform: TargetProfile["platform"];
+    viewport?: { width: number; height: number };
+  };
+  origin:
+    | {
+        kind: "screen-variant";
+        /** Present for new ordinary captures; absence identifies a historical
+         * raw reference whose observation binding was never recorded. */
+        observationId?: string;
+        capturedAt?: number;
+      }
+    | {
+        kind: "scroll-surface-viewport";
+        surfaceId: string;
+        captureId: string;
+        viewportIndex: number;
+        capturedAt: number;
+      };
+  tree: RawAccessibilityTreeEvidence;
+};
+
 export type AppMapCompiledTest = {
   schemaVersion: 1;
   appMapId: string;
   appMapRevision: number;
   test: Pick<AppMapScenarioTest, "id" | "name" | "kind" | "intentSchemaVersion">;
   surfaceBindings?: ScrollSurfaceTestBinding[];
-  /** Content-addressed raw AX evidence frozen at compile time. This gives
-   * offline preflight the exact same source geometry that authored this plan;
-   * it must never re-read a newer mutable Variant instead. */
+  /** Content-addressed raw AX evidence frozen at compile time, with its
+   * source Variant/profile retained beside every blob. This gives offline
+   * preflight the exact same geometry that authored this plan; it must never
+   * re-read a newer mutable Variant instead. */
+  rawAccessibilitySourcesByScreenId?: Record<string, AppMapCompiledRawAccessibilitySource[]>;
+  /** Legacy compiled-plan shape. New compiles emit `rawAccessibilitySourcesByScreenId`;
+   * readers keep this only so an already-frozen historical plan can request a
+   * clear recapture rather than becoming unreadable. */
   rawAccessibilityTreesByScreenId?: Record<string, RawAccessibilityTreeEvidence[]>;
   /** A device-free proposed order. It never changes the saved Test or grants
    * the runtime permission to cross a cleanup, handoff, or unknown-state
@@ -414,6 +457,11 @@ export type OfflineTestPreflightEvidenceSource = {
   reference: string;
   evidenceId?: string;
   sha256?: string;
+  /** Present for source-aware compiled plans. These facts identify the exact
+   * target/locale Variant that supplied the blob; they are diagnostic facts,
+   * never an implicit selector-equivalence rule. */
+  variant?: AppMapCompiledRawAccessibilitySource["variant"];
+  origin?: AppMapCompiledRawAccessibilitySource["origin"];
 };
 
 /** A bounded, read-only fragment of a raw accessibility tree. It deliberately

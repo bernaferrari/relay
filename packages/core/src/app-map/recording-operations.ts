@@ -267,7 +267,17 @@ function capturedVariant(input: {
       typeof evidence.bytes === "number" &&
       Number.isSafeInteger(evidence.bytes) &&
       evidence.bytes > 0
-      ? [{ id, uri, sha256, mime: "application/json" as const, bytes: evidence.bytes }]
+      ? [
+          {
+            id,
+            uri,
+            sha256,
+            mime: "application/json" as const,
+            bytes: evidence.bytes,
+            observationId: observation.id,
+            capturedAt: evidence.capturedAt,
+          },
+        ]
       : [];
   })[0];
   const semantics = semanticObservation(observation);
@@ -286,9 +296,11 @@ function capturedVariant(input: {
     ...(screenshotUri || existing?.screenshotUri
       ? { screenshotUri: screenshotUri ?? existing!.screenshotUri }
       : {}),
-    ...(rawAccessibilityTree || existing?.rawAccessibilityTree
-      ? { rawAccessibilityTree: rawAccessibilityTree ?? existing!.rawAccessibilityTree }
-      : {}),
+    // A raw tree proves geometry only for the observation captured with it.
+    // Keeping an old tree when a new observation arrived without a snapshot
+    // would let offline preflight prove a stale dialog/row. Omit it instead:
+    // validation then asks for one explicit recapture rather than guessing.
+    ...(rawAccessibilityTree ? { rawAccessibilityTree } : {}),
     createdAt: existing?.createdAt ?? at,
     updatedAt: at,
     ...(existing?.baseline ? { baseline: structuredClone(existing.baseline) } : {}),

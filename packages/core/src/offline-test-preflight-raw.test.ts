@@ -378,3 +378,25 @@ test("Shared Conversations excludes changing content but continues to prove its 
   assert.equal(report.selectors[1]?.status, "resolved");
   assert.deepEqual(report.findings, []);
 });
+
+test("Shared Conversations does not request raw recapture for intentionally excluded content alone", () => {
+  const compiled = plan({
+    screenId: "shared",
+    screenTitle: "Shared Conversations",
+    steps: [
+      {
+        kind: "expect",
+        id: "dynamic-row",
+        target: { label: "A user-generated shared conversation" },
+        condition: "visible",
+      },
+    ],
+  });
+  const report = preflightCompiledAppMapTestOffline(compiled, {
+    rawEvidenceStatusByScreenId: { shared: "missing" },
+  });
+
+  assert.equal(report.selectors[0]?.status, "excluded-dynamic-content");
+  assert.equal(report.summary.blockers, 0);
+  assert.deepEqual(report.findings, []);
+});

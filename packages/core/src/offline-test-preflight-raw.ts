@@ -14,23 +14,58 @@ export type OfflineTestPreflightRawSource = {
   nodes?: ReadonlyArray<SnapshotNode>;
 };
 
+/** Why a frozen source cannot safely prove a current selector offline. */
+export type OfflineTestPreflightRawEvidenceStatus = "missing" | "unreadable" | "unbound";
+
 /** Device-free inputs to preflight. Canonical sources keep bytes, identity, and
  * parsed nodes together; the parallel fields remain only for legacy callers. */
 export type OfflineTestPreflightEvidence = {
   rawSourcesByScreenId?: Readonly<Record<string, ReadonlyArray<OfflineTestPreflightRawSource>>>;
   rawObservationsByScreenId?: Readonly<Record<string, ReadonlyArray<ReadonlyArray<SnapshotNode>>>>;
   rawEvidenceReferencesByScreenId?: Readonly<Record<string, ReadonlyArray<string>>>;
-  rawEvidenceStatusByScreenId?: Readonly<Record<string, "missing" | "unreadable">>;
+  rawEvidenceStatusByScreenId?: Readonly<Record<string, OfflineTestPreflightRawEvidenceStatus>>;
 };
 
 const RAW_CANDIDATE_LIMIT = 12;
+
+function sourceOriginKey(source: OfflineTestPreflightEvidenceSource): string {
+  if (!source.origin) return "";
+  return source.origin.kind === "screen-variant"
+    ? [source.origin.kind, source.origin.observationId ?? "", source.origin.capturedAt ?? ""].join(
+        "\u0000",
+      )
+    : [
+        source.origin.kind,
+        source.origin.surfaceId,
+        source.origin.captureId,
+        source.origin.viewportIndex,
+        source.origin.capturedAt,
+      ].join("\u0000");
+}
+
+/** A CAS URI does not identify a selector source by itself: that same tree
+ * may be frozen for two target/locale variants. Keep the source facts in both
+ * deterministic ordering and de-duplication so a future compatibility pass
+ * can never lose the distinction. */
+function evidenceSourceKey(source: OfflineTestPreflightEvidenceSource): string {
+  return [
+    source.reference,
+    source.evidenceId ?? "",
+    source.sha256 ?? "",
+    source.variant?.id ?? "",
+    source.variant?.targetProfileId ?? "",
+    source.variant?.targetId ?? "",
+    source.variant?.platform ?? "",
+    sourceOriginKey(source),
+  ].join("\u0000");
+}
 
 function compareEvidenceSources(
   left: OfflineTestPreflightEvidenceSource,
   right: OfflineTestPreflightEvidenceSource,
 ): number {
-  const leftKey = [left.reference, left.evidenceId ?? "", left.sha256 ?? ""].join("\u0000");
-  const rightKey = [right.reference, right.evidenceId ?? "", right.sha256 ?? ""].join("\u0000");
+  const leftKey = evidenceSourceKey(left);
+  const rightKey = evidenceSourceKey(right);
   return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
 }
 
@@ -48,12 +83,12 @@ export function uniqueEvidenceSources(
     .filter((source) => source.reference.trim())
     .sort(compareEvidenceSources)
     .filter((source) => {
-      const key = [source.reference, source.evidenceId ?? "", source.sha256 ?? ""].join("\u0000");
+      const key = evidenceSourceKey(source);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     })
-    .map((source) => ({ ...source }));
+    .map((source) => structuredClone(source));
 }
 
 export function rawSourcesForScreen(
@@ -66,7 +101,7 @@ export function rawSourcesForScreen(
     return [...explicit]
       .sort((left, right) => compareEvidenceSources(left.source, right.source))
       .map((source) => ({
-        source: { ...source.source },
+        source: structuredClone(source.source),
         ...(source.nodes ? { nodes: [...source.nodes] } : {}),
       }));
   }
@@ -179,7 +214,7 @@ function rawCandidatesForSource(input: {
   const owner = input.resolution ? rawOwnerAtBounds(nodes, input.resolution.bounds) : undefined;
   if (input.target.relation) {
     const anchors = matches.map(([node, treeOrder]) => ({
-      source: { ...input.source.source },
+      source: structuredClone(input.source.source),
       relation: "relation-anchor" as const,
       node: rawNodeSummary(node, treeOrder),
     }));
@@ -187,7 +222,7 @@ function rawCandidatesForSource(input: {
     return [
       ...anchors,
       {
-        source: { ...input.source.source },
+        source: structuredClone(input.source.source),
         relation: "following-row" as const,
         node: rawNodeSummary(nodes[owner.treeOrder] ?? {}, owner.treeOrder),
         owner,
@@ -198,7 +233,7 @@ function rawCandidatesForSource(input: {
     ...(owner
       ? [
           {
-            source: { ...input.source.source },
+            source: structuredClone(input.source.source),
             relation: "activation-owner" as const,
             node: rawNodeSummary(nodes[owner.treeOrder] ?? {}, owner.treeOrder),
             owner,
@@ -206,7 +241,7 @@ function rawCandidatesForSource(input: {
         ]
       : []),
     ...matches.map(([node, treeOrder]) => ({
-      source: { ...input.source.source },
+      source: structuredClone(input.source.source),
       relation: "match" as const,
       node: rawNodeSummary(node, treeOrder),
     })),
@@ -250,8 +285,7 @@ export function rawCandidateLedger(input: {
       (candidate, index, candidates) =>
         candidates.findIndex(
           (other) =>
-            other.source.reference === candidate.source.reference &&
-            other.source.evidenceId === candidate.source.evidenceId &&
+            evidenceSourceKey(other.source) === evidenceSourceKey(candidate.source) &&
             other.relation === candidate.relation &&
             other.node.treeOrder === candidate.node.treeOrder,
         ) === index,

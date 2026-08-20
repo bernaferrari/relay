@@ -1,9 +1,15 @@
 import { createHash } from "node:crypto";
-import type { AppMapCompiledTest, RawAccessibilityTreeEvidence } from "@relay/protocol";
+import type {
+  AppMapCompiledRawAccessibilitySource,
+  AppMapCompiledTest,
+  OfflineTestPreflightEvidenceSource,
+  RawAccessibilityTreeEvidence,
+} from "@relay/protocol";
 import { readAuthoringEvidence } from "./authoring-evidence.js";
 import type { SnapshotNode } from "./device.js";
 import type {
   OfflineTestPreflightEvidence,
+  OfflineTestPreflightRawEvidenceStatus,
   OfflineTestPreflightRawSource,
 } from "./offline-test-preflight-raw.js";
 
@@ -47,19 +53,37 @@ function compareReference(
   return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
 }
 
-function source(reference: RawAccessibilityTreeEvidence): OfflineTestPreflightRawSource["source"] {
+function source(
+  reference: RawAccessibilityTreeEvidence,
+  provenance?: Pick<AppMapCompiledRawAccessibilitySource, "variant" | "origin">,
+): OfflineTestPreflightRawSource["source"] {
   return {
     reference: reference.uri,
     evidenceId: reference.id,
     sha256: reference.sha256,
+    ...(provenance
+      ? {
+          variant: {
+            id: provenance.variant.id,
+            targetProfileId: provenance.variant.targetProfileId,
+            targetId: provenance.variant.targetId,
+            platform: provenance.variant.platform,
+            ...(provenance.variant.viewport
+              ? { viewport: { ...provenance.variant.viewport } }
+              : {}),
+          },
+          origin: structuredClone(provenance.origin),
+        }
+      : {}),
   };
 }
 
 async function readSource(
   reference: RawAccessibilityTreeEvidence,
+  sourceMetadata: OfflineTestPreflightEvidenceSource,
   readEvidence: ReadEvidence,
 ): Promise<OfflineTestPreflightRawSource> {
-  const result: OfflineTestPreflightRawSource = { source: source(reference) };
+  const result: OfflineTestPreflightRawSource = { source: structuredClone(sourceMetadata) };
   if (!isRawReference(reference)) return result;
   let bytes: Buffer | null;
   try {
@@ -82,6 +106,84 @@ async function readSource(
   }
 }
 
+function compareSource(
+  left: AppMapCompiledRawAccessibilitySource,
+  right: AppMapCompiledRawAccessibilitySource,
+): number {
+  const originKey = (source: AppMapCompiledRawAccessibilitySource): string =>
+    source.origin.kind === "screen-variant"
+      ? [
+          source.origin.kind,
+          source.origin.observationId ?? "",
+          source.origin.capturedAt ?? "",
+        ].join("\u0000")
+      : [
+          source.origin.kind,
+          source.origin.surfaceId,
+          source.origin.captureId,
+          source.origin.viewportIndex,
+          source.origin.capturedAt,
+        ].join("\u0000");
+  const key = (source: AppMapCompiledRawAccessibilitySource): string =>
+    [
+      source.screenId,
+      source.variant.id,
+      source.variant.targetProfileId,
+      source.variant.targetId,
+      source.variant.platform,
+      originKey(source),
+      source.tree.uri,
+      source.tree.id,
+      source.tree.sha256,
+    ].join("\u0000");
+  const leftKey = key(left);
+  const rightKey = key(right);
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+}
+
+type FrozenSource = {
+  tree: RawAccessibilityTreeEvidence;
+  source: OfflineTestPreflightEvidenceSource;
+  observationBound: boolean;
+};
+
+/** Read the new source-aware ledger when present. Already-frozen plans using
+ * the old tree-only ledger remain readable, but carry no variant provenance
+ * and therefore cannot accidentally claim a new compatibility guarantee. */
+function frozenSourcesByScreen(plan: AppMapCompiledTest): Record<string, FrozenSource[]> {
+  if (plan.rawAccessibilitySourcesByScreenId !== undefined) {
+    return Object.fromEntries(
+      Object.entries(plan.rawAccessibilitySourcesByScreenId)
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+        .map(([screenId, sources]) => [
+          screenId,
+          [...sources].sort(compareSource).map((item) => ({
+            tree: structuredClone(item.tree),
+            source: source(item.tree, item),
+            observationBound:
+              item.origin.kind !== "screen-variant" ||
+              (Boolean(item.origin.observationId) && item.origin.capturedAt !== undefined),
+          })),
+        ]),
+    );
+  }
+  return Object.fromEntries(
+    Object.entries(plan.rawAccessibilityTreesByScreenId ?? {})
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([screenId, trees]) => [
+        screenId,
+        [...trees].sort(compareReference).map((tree) => ({
+          tree: structuredClone(tree),
+          source: source(tree),
+          // Legacy compiled plans do not say which normalized observation
+          // their tree accompanied. They remain readable enough to produce
+          // an exact, safe recapture request, never a selector pass.
+          observationBound: false,
+        })),
+      ]),
+  );
+}
+
 /**
  * Materialize only the content-addressed trees already frozen into a compiled
  * Test. This is deliberately a read-only integrity boundary: it neither looks
@@ -98,22 +200,23 @@ export async function loadFrozenRawAccessibilityEvidence(
   const readEvidence = options.readEvidence ?? readAuthoringEvidence;
   const rawSourcesByScreenId: Record<string, OfflineTestPreflightRawSource[]> = {};
   const rawEvidenceReferencesByScreenId: Record<string, string[]> = {};
-  const rawEvidenceStatusByScreenId: Record<string, "missing" | "unreadable"> = {};
-  for (const [screenId, rawTrees] of Object.entries(
-    plan.rawAccessibilityTreesByScreenId ?? {},
-  ).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))) {
-    const trees = [...rawTrees].sort(compareReference);
-    if (!trees.length) {
+  const rawEvidenceStatusByScreenId: Record<string, OfflineTestPreflightRawEvidenceStatus> = {};
+  for (const [screenId, frozenSources] of Object.entries(frozenSourcesByScreen(plan))) {
+    if (!frozenSources.length) {
       rawEvidenceStatusByScreenId[screenId] = "missing";
       continue;
     }
-    const sources = await Promise.all(trees.map((tree) => readSource(tree, readEvidence)));
-    rawSourcesByScreenId[screenId] = sources;
-    rawEvidenceReferencesByScreenId[screenId] = [...new Set(trees.map((tree) => tree.uri))].sort(
-      (left, right) => (left < right ? -1 : left > right ? 1 : 0),
+    const sources = await Promise.all(
+      frozenSources.map((item) => readSource(item.tree, item.source, readEvidence)),
     );
-    if (sources.some((item) => !item.nodes?.length)) {
+    rawSourcesByScreenId[screenId] = sources;
+    rawEvidenceReferencesByScreenId[screenId] = [
+      ...new Set(frozenSources.map((item) => item.tree.uri)),
+    ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    if (sources.some((item) => !item.nodes?.length))
       rawEvidenceStatusByScreenId[screenId] = "unreadable";
+    else if (frozenSources.some((item) => !item.observationBound)) {
+      rawEvidenceStatusByScreenId[screenId] = "unbound";
     }
   }
   return {

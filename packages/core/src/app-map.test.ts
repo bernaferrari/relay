@@ -1165,6 +1165,46 @@ test("updating a variant preserves durable preview, baseline, and prior evidence
   assert.deepEqual(updated.baseline, existing.baseline);
 });
 
+test("refreshing a reviewed Variant observation clears an unpaired raw tree", () => {
+  const input = mapFixture();
+  const existing = input.screenVariants["variant-home"]!;
+  const rawTreeSha = "c".repeat(64);
+  existing.evidenceIds.push("home-tree-before");
+  existing.evidenceUris?.push(`relay-evidence://${rawTreeSha}`);
+  existing.rawAccessibilityTree = {
+    id: "home-tree-before",
+    uri: `relay-evidence://${rawTreeSha}`,
+    sha256: rawTreeSha,
+    mime: "application/json",
+    bytes: 64,
+    observationId: "home-observation-before",
+    capturedAt: at,
+  };
+  existing.observation = {
+    fingerprint,
+    nodes: [{ role: "StaticText", label: "Home before" }],
+    volatileSignals: [],
+  };
+
+  const refreshed = structuredClone(existing);
+  refreshed.observation = {
+    fingerprint: "b".repeat(64),
+    nodes: [{ role: "StaticText", label: "Home after" }],
+    volatileSignals: [],
+  };
+  delete refreshed.rawAccessibilityTree;
+
+  const next = updateAppMapScreen(
+    input,
+    "home",
+    { patch: {}, upsertVariants: [refreshed] },
+    context(input, "event-refresh-variant-without-tree"),
+  );
+
+  assert.equal(next.screenVariants["variant-home"]?.rawAccessibilityTree, undefined);
+  assert.deepEqual(next.screenVariants["variant-home"]?.observation, refreshed.observation);
+});
+
 test("screen removal is safe and explains connections, flows, assertions, and proposals that block it", () => {
   const connected = mapFixture();
   expectError(

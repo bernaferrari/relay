@@ -95,6 +95,14 @@ export function patchScreen(
           ...(variant.screenshotUri === undefined && existing.screenshotUri
             ? { screenshotUri: existing.screenshotUri }
             : {}),
+          // A replacement normalized observation without its matching raw
+          // snapshot is an explicit evidence gap, not permission to reuse
+          // the old tree's geometry. Keep ordinary partial patches intact,
+          // but make an observation refresh recapture-required until a fresh
+          // immutable tree is supplied.
+          ...(variant.observation !== undefined && variant.rawAccessibilityTree === undefined
+            ? { rawAccessibilityTree: undefined }
+            : {}),
           ...(variant.baseline === undefined && existing.baseline
             ? { baseline: structuredClone(existing.baseline) }
             : {}),

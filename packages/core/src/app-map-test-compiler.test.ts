@@ -454,11 +454,15 @@ test("compiled graph Tests retain a conservative logical-surface capture policy"
       sha256: rawTreeSha,
       mime: "application/json",
       bytes: 42,
+      observationId: "observe-cart-en",
+      capturedAt: 10,
     },
     createdAt: at,
     updatedAt: at,
   };
-  const rawTreeShaPt = "b".repeat(64);
+  // Deliberately share one CAS blob: immutable bytes alone cannot decide that
+  // English and Portuguese source variants are selector-equivalent.
+  const rawTreeShaPt = rawTreeSha;
   current.screenVariants["cart-pt"] = {
     ...current.screenVariants["cart-en"]!,
     id: "cart-pt",
@@ -474,7 +478,9 @@ test("compiled graph Tests retain a conservative logical-surface capture policy"
       uri: `relay-evidence://${rawTreeShaPt}`,
       sha256: rawTreeShaPt,
       mime: "application/json",
-      bytes: 43,
+      bytes: 42,
+      observationId: "observe-cart-pt",
+      capturedAt: 11,
     },
   };
   // Deliberately store the variants in the opposite insertion order as their
@@ -499,15 +505,45 @@ test("compiled graph Tests retain a conservative logical-surface capture policy"
   ];
   const compiled = compileAppMapTest(current, work);
   assert.deepEqual(compiled.plan.surfaceBindings, work.surfaceBindings);
-  assert.deepEqual(compiled.plan.rawAccessibilityTreesByScreenId, {
+  assert.deepEqual(compiled.plan.rawAccessibilitySourcesByScreenId, {
     cart: [
-      current.screenVariants["cart-en"]!.rawAccessibilityTree,
-      current.screenVariants["cart-pt"]!.rawAccessibilityTree,
+      {
+        screenId: "cart",
+        variant: {
+          id: "cart-en",
+          targetProfileId: "iphone-en",
+          targetId: "iphone-1",
+          platform: "ios",
+        },
+        origin: {
+          kind: "screen-variant",
+          observationId: "observe-cart-en",
+          capturedAt: 10,
+        },
+        tree: current.screenVariants["cart-en"]!.rawAccessibilityTree,
+      },
+      {
+        screenId: "cart",
+        variant: {
+          id: "cart-pt",
+          targetProfileId: "iphone-pt",
+          targetId: "iphone-1",
+          platform: "ios",
+        },
+        origin: {
+          kind: "screen-variant",
+          observationId: "observe-cart-pt",
+          capturedAt: 11,
+        },
+        tree: current.screenVariants["cart-pt"]!.rawAccessibilityTree,
+      },
     ],
     home: [],
   });
   current.screenVariants["cart-en"]!.rawAccessibilityTree!.bytes = 999;
-  assert.equal(compiled.plan.rawAccessibilityTreesByScreenId!.cart![0]!.bytes, 42);
+  const frozenCartSource = compiled.plan.rawAccessibilitySourcesByScreenId?.cart?.[0];
+  assert.equal(frozenCartSource?.tree?.bytes, 42);
+  assert.equal(compiled.plan.rawAccessibilityTreesByScreenId, undefined);
 });
 
 test("full-surface bindings compile one executable capture after reaching the destination", () => {
