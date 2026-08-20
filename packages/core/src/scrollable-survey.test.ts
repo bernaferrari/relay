@@ -4,6 +4,7 @@ import { PNG } from "pngjs";
 import {
   captureScrollableSurvey,
   composeScrollSurveyFrames,
+  scrollSurveyFastRestoreGesture,
   scrollSurveyGesture,
   verticalScrollSeam,
 } from "./scrollable-survey.js";
@@ -45,6 +46,10 @@ test("uses a reversible overlap-heavy Android survey drag without changing iOS",
   assert.equal(iosDown.from.y, bounds.height * 0.78);
   assert.equal(iosDown.to.y, bounds.height * 0.28);
   assert.equal(iosDown.durationMs, 360);
+
+  const fastRestore = scrollSurveyFastRestoreGesture("android", bounds);
+  assert.equal(fastRestore.durationMs, 180);
+  assert.ok(fastRestore.from.y - fastRestore.to.y >= bounds.height * 0.7);
 });
 
 test("treats sticky-header shimmer as an unmoved viewport instead of an unknown seam", () => {
@@ -752,6 +757,68 @@ test("restores every movement when the configured limit is reached", async () =>
   assert.equal(result.frames.length, 3);
   assert.equal(up, successfulDown);
   assert.equal(result.restoredStartViewport, true);
+});
+
+test("uses bounded fast restoration only for an explicitly proven document origin", async () => {
+  const pages = [image(0), image(40), image(80), image(120)];
+  let page = 0;
+  let exactUp = 0;
+  let fastUp = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => captured(pages[page]!, page),
+      scrollDown: async () => {
+        page = Math.min(3, page + 1);
+      },
+      scrollUp: async () => {
+        exactUp += 1;
+        page = Math.max(0, page - 1);
+      },
+      scrollUpFast: async () => {
+        fastUp += 1;
+        page = Math.max(0, page - 2);
+      },
+      settle: async () => {},
+    },
+    { maxScrolls: 3, initialViewport: "proven-document-origin" },
+  );
+
+  assert.equal(result.reason, "limit-reached");
+  assert.equal(result.restoredStartViewport, true);
+  assert.equal(page, 0);
+  assert.equal(fastUp, 2);
+  assert.equal(exactUp, 0);
+});
+
+test("does not use fast restoration from an arbitrary starting viewport", async () => {
+  const pages = [image(0), image(40), image(80)];
+  let page = 1;
+  let exactUp = 0;
+  let fastUp = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => captured(pages[page]!, page),
+      scrollDown: async () => {
+        page = Math.min(2, page + 1);
+      },
+      scrollUp: async () => {
+        exactUp += 1;
+        page = Math.max(1, page - 1);
+      },
+      scrollUpFast: async () => {
+        fastUp += 1;
+        page = 0;
+      },
+      settle: async () => {},
+    },
+    { maxScrolls: 1 },
+  );
+
+  assert.equal(result.reason, "limit-reached");
+  assert.equal(result.restoredStartViewport, true);
+  assert.equal(page, 1);
+  assert.equal(exactUp, 1);
+  assert.equal(fastUp, 0);
 });
 
 test("does not claim restoration when inverse swipes leave a scrolled viewport", async () => {

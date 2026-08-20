@@ -54,6 +54,10 @@ export type ScrollSurveyDriver = {
   }>;
   scrollDown(): Promise<void>;
   scrollUp(): Promise<void>;
+  /** A bounded, high-distance upward gesture. This is safe only when the
+   * caller has already proven the starting viewport is the document origin;
+   * captureScrollableSurvey always verifies that origin after every attempt. */
+  scrollUpFast?(): Promise<void>;
   settle(): Promise<void>;
 };
 
@@ -65,6 +69,10 @@ export type ScrollSurveyOptions = {
    * freshness; captureScrollableSurvey still applies every normal anchor,
    * seam, screen-boundary, and restoration check. */
   initialCapture?: ScrollSurveyCapture;
+  /** Do not infer this from a title or screen identity. Callers may opt in
+   * only after proving that initialCapture is the logical document origin.
+   * Arbitrary mid-page captures retain exact inverse restoration. */
+  initialViewport?: "proven-document-origin";
 };
 
 export function scrollSurveyGesture(
@@ -85,6 +93,22 @@ export function scrollSurveyGesture(
     from: { x: bounds.width * 0.5, y: fromY },
     to: { x: bounds.width * 0.5, y: toY },
     durationMs: platform === "android" ? 800 : 360,
+  };
+}
+
+/** A single Android restoration fling. It is intentionally separate from the
+ * overlap-heavy capture drag: collection needs a small, seam-friendly move;
+ * returning to a proven document origin benefits from distance. */
+export function scrollSurveyFastRestoreGesture(
+  platform: "android" | "ios",
+  bounds: { width: number; height: number },
+) {
+  if (platform !== "android") return scrollSurveyGesture(platform, bounds, "up");
+  return {
+    kind: "swipe" as const,
+    from: { x: bounds.width * 0.5, y: bounds.height * 0.86 },
+    to: { x: bounds.width * 0.5, y: bounds.height * 0.14 },
+    durationMs: 180,
   };
 }
 
@@ -581,6 +605,7 @@ export async function captureScrollableSurveyForTarget(input: {
   serial: string;
   maxScrolls?: number;
   initialCapture?: ScrollSurveyCapture;
+  initialViewport?: "proven-document-origin";
 }): Promise<ScrollSurveyResult> {
   const platform = await devicePlatformForSerial(input.serial);
   if (platform !== "android" && platform !== "ios") {
@@ -607,11 +632,15 @@ export async function captureScrollableSurveyForTarget(input: {
       scrollUp: async () => {
         await interact(scrollSurveyGesture(platform, bounds, "up"), { serial: input.serial });
       },
+      scrollUpFast: async () => {
+        await interact(scrollSurveyFastRestoreGesture(platform, bounds), { serial: input.serial });
+      },
       settle,
     },
     {
       maxScrolls: input.maxScrolls,
       ...(input.initialCapture ? { initialCapture: input.initialCapture } : {}),
+      ...(input.initialViewport ? { initialViewport: input.initialViewport } : {}),
     },
   );
 }
@@ -658,10 +687,38 @@ export async function captureScrollableSurvey(
   let owedMovements = 0;
   let attemptedScroll = false;
   let lastPostAttemptCapture: ScrollSurveyCapture | undefined;
+  let provedRestoration: ScrollSurveyCapture | undefined;
   let restorationStarted = false;
   const restoreOnce = async () => {
     if (restorationStarted) return;
     restorationStarted = true;
+    if (owedMovements > 0 && options.initialViewport === "proven-document-origin") {
+      if (!driver.scrollUpFast) {
+        restored = false;
+        return;
+      }
+      // Three strong Android flings cover the current longest surveyed
+      // product surfaces while remaining bounded. Each is followed by an
+      // exact origin proof, so a changed layout can never silently look
+      // restored just because a gesture settled.
+      for (let index = 0; index < 3; index += 1) {
+        try {
+          await driver.scrollUpFast();
+          await driver.settle();
+          const candidate = await driver.capture();
+          if (startViewportMatches(first, candidate)) {
+            provedRestoration = candidate;
+            owedMovements = 0;
+            return;
+          }
+        } catch {
+          restored = false;
+          return;
+        }
+      }
+      restored = false;
+      return;
+    }
     for (let index = 0; index < owedMovements; index += 1) {
       try {
         await driver.scrollUp();
@@ -813,8 +870,9 @@ export async function captureScrollableSurvey(
   }
   if (attemptedScroll) {
     try {
-      const proved =
-        owedMovements > 0 || !lastPostAttemptCapture
+      const proved = provedRestoration
+        ? provedRestoration
+        : owedMovements > 0 || !lastPostAttemptCapture
           ? await driver.capture()
           : lastPostAttemptCapture;
       if (!startViewportMatches(first, proved)) {
