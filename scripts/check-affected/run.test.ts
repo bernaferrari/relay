@@ -136,7 +136,16 @@ test('runChecks passes the selector change set to Vitest related', async () => {
   assert.equal(code, 0);
   assert.deepEqual(
     executed.find((command) => command.includes('related')),
-    ['pnpm', 'exec', 'vitest', 'related', '--run', '--passWithNoTests', ...changedFiles],
+    [
+      'pnpm',
+      'exec',
+      'vitest',
+      'related',
+      '--run',
+      '--passWithNoTests',
+      `--maxWorkers=${DEFAULT_VITEST_MAX_WORKERS}`,
+      ...changedFiles,
+    ],
   );
 });
 
@@ -171,7 +180,7 @@ test('runChecks skips GitHub-authoritative checks and passes when locals succeed
   }
 });
 
-test('runChecks combines related tests with lightweight changed-line coverage', async () => {
+test('runChecks leaves coverage to CI and runs capped related tests once', async () => {
   const executed: string[][] = [];
   const execute: CommandExecutor = async (command) => {
     executed.push(command);
@@ -184,13 +193,15 @@ test('runChecks combines related tests with lightweight changed-line coverage', 
   assert.equal(code, 0);
   const related = executed.filter((command) => command.includes('related'));
   assert.equal(related.length, 1);
-  assert.ok(related[0]?.includes('--coverage'));
-  assert.ok(related[0]?.includes('--coverage.reporter=lcov'));
+  assert.ok(
+    !related[0]?.includes('--coverage'),
+    'coverage instrumentation stays GitHub-authoritative; the local run must not add it',
+  );
   assert.ok(related[0]?.includes(`--maxWorkers=${DEFAULT_VITEST_MAX_WORKERS}`));
   assert.ok(
     executed.findIndex((command) => command.includes('test:integration:node')) <
       executed.findIndex((command) => command.includes('related')),
-    'process-lifecycle integration must run before high-parallelism affected coverage',
+    'process-lifecycle integration must run before the related-project workload',
   );
   assert.equal(
     executed.some((command) => command.includes('test:coverage')),
@@ -199,13 +210,16 @@ test('runChecks combines related tests with lightweight changed-line coverage', 
   assert.equal(
     executed.some((command) => command.includes('check:unit')),
     false,
+    'related tests cover the selected unit graph without repeating the full suite',
   );
   assert.equal(
     executed.some((command) => command.includes('test:integration:provider')),
     false,
+    'related tests cover the selected provider graph without repeating the full suite',
   );
   assert.equal(
     executed.some((command) => command.includes('check:coverage-changed')),
-    true,
+    false,
+    'the coverage gate is GitHub-authoritative and must not run locally',
   );
 });
