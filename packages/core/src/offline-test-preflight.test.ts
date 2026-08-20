@@ -34,7 +34,7 @@ const observation = {
   volatileSignals: [],
 };
 
-test("offline preflight blocks absent and ambiguous selectors before a device run", () => {
+test("offline preflight blocks absent selectors but keeps flattened-tree ambiguity reviewable", () => {
   const report = preflightCompiledAppMapTestOffline(
     plan([
       {
@@ -50,11 +50,97 @@ test("offline preflight blocks absent and ambiguous selectors before a device ru
     ]),
   );
   assert.equal(report.summary.checkedSelectors, 3);
-  assert.equal(report.summary.blockers, 2);
+  assert.equal(report.summary.blockers, 1);
+  assert.equal(report.summary.warnings, 1);
   assert.deepEqual(
     report.findings.map((finding) => finding.code),
     ["selector-absent", "selector-ambiguous"],
   );
+});
+
+test("offline preflight follows the runtime identifier-to-label fallback", () => {
+  const report = preflightCompiledAppMapTestOffline(
+    plan([
+      {
+        kind: "expect-screen",
+        screenId: "settings",
+        screenTitle: "Settings",
+        fingerprint: "settings",
+        observations: [
+          {
+            ...observation,
+            nodes: [{ role: "button", label: "Settings", hittable: true }],
+          },
+        ],
+      },
+      {
+        kind: "tap",
+        id: "settings",
+        target: { identifier: "settings_button", label: "Settings", role: "button" },
+      },
+    ]),
+  );
+  assert.deepEqual(report.findings, []);
+});
+
+test("offline preflight leaves an absent reviewed coordinate for live confirmation", () => {
+  const report = preflightCompiledAppMapTestOffline(
+    plan([
+      {
+        kind: "expect-screen",
+        screenId: "home",
+        screenTitle: "Home",
+        fingerprint: "home",
+        observations: [observation],
+      },
+      {
+        kind: "tap",
+        id: "navigation",
+        target: {
+          label: "Navigation",
+          point: { x: 44, y: 200, fallbackPolicy: "reviewed" },
+        },
+      },
+    ]),
+  );
+  assert.deepEqual(
+    report.findings.map((finding) => [finding.severity, finding.code]),
+    [["warning", "selector-absent"]],
+  );
+});
+
+test("offline preflight uses a frozen full-surface index for a reveal and its tap", () => {
+  const report = preflightCompiledAppMapTestOffline(
+    plan([
+      {
+        kind: "reveal",
+        id: "reveal-supergrok",
+        target: { label: "SuperGrok" },
+        navigation: [
+          {
+            schemaVersion: 1,
+            surfaceId: "settings",
+            captureId: "capture",
+            documentHeight: 2_000,
+            viewportHeight: 800,
+            targetOrder: 0,
+            targetDocumentY: 400,
+            anchors: [
+              {
+                order: 0,
+                documentY: 400,
+                target: { label: "SuperGrok" },
+                label: "SuperGrok",
+                role: "button",
+              },
+            ],
+          },
+        ],
+      },
+      { kind: "tap", id: "tap-supergrok", target: { label: "SuperGrok" } },
+    ]),
+  );
+  assert.deepEqual(report.findings, []);
 });
 
 test("offline preflight keeps a following-row repair and incomplete surface honest", () => {

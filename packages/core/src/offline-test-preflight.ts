@@ -41,24 +41,46 @@ function candidate(node: NormalizedSemanticNode) {
   };
 }
 
+function observationsFromNavigation(
+  navigation: Extract<RecipeStep, { kind: "reveal" }>["navigation"],
+): Array<{ nodes: NormalizedSemanticNode[] }> {
+  return (navigation ?? []).map((plan) => ({
+    nodes: plan.anchors.map((anchor) => ({
+      role: anchor.role ?? "unknown",
+      ...(anchor.target.identifier ? { identifier: anchor.target.identifier } : {}),
+      ...((anchor.label ?? anchor.target.label)
+        ? { label: anchor.label ?? anchor.target.label }
+        : {}),
+      ...(anchor.value ? { value: anchor.value } : {}),
+      ...(anchor.enabled !== undefined ? { enabled: anchor.enabled } : {}),
+    })),
+  }));
+}
+
 function matchesTarget(nodes: readonly NormalizedSemanticNode[], target: StepTarget) {
   const semantic = target.relation?.anchor ?? target;
+  const role = normalize(semantic.role);
+  const candidates = nodes.filter((node) => !role || normalize(node.role) === role);
+  // Runtime resolution intentionally tries durable identifiers first, then
+  // visible copy. Requiring every authored hint to match simultaneously makes
+  // an identifier refresh look like a broken control even when its reviewed
+  // label fallback is present.
+  const strategies: Array<(node: NormalizedSemanticNode) => boolean> = [];
   const identifier = normalize(semantic.identifier);
   const label = normalize(semantic.label);
   const text = normalize(semantic.text);
-  const role = normalize(semantic.role);
-  return nodes.filter((node) => {
-    if (role && normalize(node.role) !== role) return false;
-    if (identifier && normalize(node.identifier) !== identifier) return false;
-    if (label && normalize(node.label) !== label) return false;
-    if (
-      text &&
-      ![node.label, node.value, node.identifier].some((value) => normalize(value)?.includes(text))
-    ) {
-      return false;
-    }
-    return Boolean(identifier || label || text);
-  });
+  if (identifier) strategies.push((node) => normalize(node.identifier) === identifier);
+  if (label) strategies.push((node) => normalize(node.label) === label);
+  if (text) {
+    strategies.push((node) =>
+      [node.label, node.value, node.identifier].some((value) => normalize(value)?.includes(text)),
+    );
+  }
+  for (const strategy of strategies) {
+    const matches = candidates.filter(strategy);
+    if (matches.length) return matches;
+  }
+  return [];
 }
 
 function selectorFinding(input: {
@@ -103,14 +125,16 @@ function selectorFinding(input: {
   // omits geometry and parentage, so two identical rows are still ambiguous
   // offline; collapsing them would turn an unsafe activation into a fake pass.
   const matches = observations.flatMap((observation) => matchesTarget(observation.nodes, target));
+  const hasReviewedFallback =
+    target.point?.fallbackPolicy === "reviewed" || Boolean(target.point?.relativeTo);
   if (!matches.length) {
     return [
       {
-        severity: "blocker",
+        severity: hasReviewedFallback ? "warning" : "blocker",
         code: "selector-absent",
         recipeId,
         ...(step.id ? { recipeStepId: step.id } : {}),
-        message: `${description} is absent from every frozen source accessibility observation.`,
+        message: `${description} is absent from every frozen source accessibility observation${hasReviewedFallback ? "; a reviewed fallback needs live confirmation" : ""}.`,
       },
     ];
   }
@@ -129,11 +153,15 @@ function selectorFinding(input: {
   if (matches.length > 1) {
     return [
       {
-        severity: target.point ? "warning" : "blocker",
+        // The normalized evidence deliberately drops bounds and parentage. It
+        // can flag repeated copy, but it cannot prove that two copies are two
+        // independently tappable rows (Compose frequently emits a heading and
+        // a row). Raw-tree geometry is required before this becomes a block.
+        severity: "warning",
         code: "selector-ambiguous",
         recipeId,
         ...(step.id ? { recipeStepId: step.id } : {}),
-        message: `${description} matches ${matches.length} frozen semantic candidates${target.point ? "; a reviewed point fallback exists" : ""}.`,
+        message: `${description} matches ${matches.length} frozen semantic candidates and needs raw-tree geometry to distinguish them${hasReviewedFallback ? "; a reviewed fallback also exists" : ""}.`,
         candidates: matches.slice(0, 5).map(candidate),
       },
     ];
@@ -174,7 +202,13 @@ export function preflightCompiledAppMapTestOffline(
         step.kind === "wait-for"
       ) {
         checkedSelectors += 1;
-        findings.push(...selectorFinding({ recipeId: recipe.id, step, observations }));
+        const navigationObservations =
+          step.kind === "reveal" ? observationsFromNavigation(step.navigation) : [];
+        const sourceObservations = observations.length ? observations : navigationObservations;
+        findings.push(
+          ...selectorFinding({ recipeId: recipe.id, step, observations: sourceObservations }),
+        );
+        if (navigationObservations.length) observations = navigationObservations;
         continue;
       }
       if (step.kind === "capture-surface" && step.baselineTrust === "recapture-required") {
@@ -191,6 +225,17 @@ export function preflightCompiledAppMapTestOffline(
       }
     }
   }
+  const compactFindings = findings.filter(
+    (finding, index) =>
+      findings.findIndex(
+        (other) =>
+          other.severity === finding.severity &&
+          other.code === finding.code &&
+          other.recipeStepId === finding.recipeStepId &&
+          other.screenId === finding.screenId &&
+          other.message === finding.message,
+      ) === index,
+  );
   return {
     schemaVersion: 1,
     mode: "offline-test-preflight",
@@ -201,9 +246,9 @@ export function preflightCompiledAppMapTestOffline(
     summary: {
       recipes: Object.keys(plan.recipes).length,
       checkedSelectors,
-      blockers: findings.filter((finding) => finding.severity === "blocker").length,
-      warnings: findings.filter((finding) => finding.severity === "warning").length,
+      blockers: compactFindings.filter((finding) => finding.severity === "blocker").length,
+      warnings: compactFindings.filter((finding) => finding.severity === "warning").length,
     },
-    findings,
+    findings: compactFindings,
   };
 }
