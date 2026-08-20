@@ -6,6 +6,8 @@ import {
   rankMaestroCandidates,
   rankVisibleMaestroMatches,
   selectMaestroSnapshotMatch,
+  usableRect,
+  type MaestroRankedCandidates,
 } from './runtime-target-ranking.ts';
 import { pointInsideRect, stripUndefined } from './shared.ts';
 import { isMaestroNodeVisible } from './snapshot-policy.ts';
@@ -52,38 +54,43 @@ export function resolveMaestroTargetFromSnapshot(
     presentation?: MaestroInteractivePresentation;
   } = {},
 ): MaestroTargetResolution {
-  const presentedNodes = options.presentation
-    ? createPresentedNodeLookup(options.presentation)
-    : undefined;
-  const candidates = presentedNodes
-    ? rankPresentedMaestroCandidates(snapshot, query, platform, presentedNodes)
+  const presentedNodes =
+    platform === 'ios' && options.presentation
+      ? createPresentedNodeLookup(options.presentation)
+      : undefined;
+  const { matches, ranked, parentMatched } = presentedNodes
+    ? rankPresentedMaestroCandidates(snapshot, query, presentedNodes)
     : rankMaestroCandidates(snapshot, query.selector, platform, query.childOf);
-  if (!candidates.parentMatched) {
+  if (!parentMatched) {
     return {
       ok: false,
       message: 'Maestro childOf parent did not match.',
-      evidence: buildMaestroTargetEvidence(query, candidates.matches, [], undefined),
+      evidence: buildMaestroTargetEvidence(query, matches, [], undefined),
     };
   }
-  const { matches, ranked: rankedMatches } = candidates;
-  const target = selectMaestroSnapshotMatch(rankedMatches, query.index);
-  const evidence = buildMaestroTargetEvidence(query, matches, rankedMatches, target?.node);
-  if (!target) {
-    return failedTargetResolution(query, matches, rankedMatches, evidence);
-  }
+  const target = presentedNodes
+    ? selectMaestroCandidate(ranked, query.index)
+    : selectMaestroSnapshotMatch(ranked, query.index)?.node;
+  const evidence = buildMaestroTargetEvidence(query, matches, ranked, target);
+  if (!target) return failedTargetResolution(query, matches, ranked, evidence);
+
   const presentedTarget = presentedNodes
-    ? selectMaestroSnapshotMatch(presentedNodes.forSource(target.node), undefined)
+    ? selectMaestroSnapshotMatch(presentedNodes.visibleForSource(target), undefined)
     : null;
-  const rect =
-    options.interactiveBounds === true ? (presentedTarget?.rect ?? target.rect) : target.rect;
+  const semanticRect = usableRect(target);
+  const rect = options.interactiveBounds
+    ? (presentedTarget?.rect ?? semanticRect)
+    : (semanticRect ?? presentedTarget?.rect);
+  if (!rect) return failedTargetResolution(query, matches, ranked, evidence);
+
   return {
     ok: true,
-    node: target.node,
+    node: target,
     rect,
-    matches: rankedMatches.length,
+    matches: ranked.length,
     dispatchCandidates:
-      platform === 'ios' && query.allowAtomicSelectorDispatch && !query.childOf && presentedNodes
-        ? countInteractionDispatchCandidates(target, rankedMatches, presentedTarget)
+      presentedNodes && query.allowAtomicSelectorDispatch && !query.childOf
+        ? countInteractionDispatchCandidates(semanticRect, ranked, presentedTarget)
         : 0,
     evidence,
   };
@@ -91,9 +98,10 @@ export function resolveMaestroTargetFromSnapshot(
 
 function createPresentedNodeLookup(presentation: MaestroInteractivePresentation): {
   isVisible: (node: SnapshotNode) => boolean;
-  forSource: (node: SnapshotNode) => SnapshotNode[];
+  visibleForSource: (node: SnapshotNode) => SnapshotNode[];
 } {
   const presentedByIndex = buildSnapshotNodeMap(presentation.snapshot.nodes);
+  const visibleBySourceIndex = new Map<number, SnapshotNode[]>();
   const forSource = (semanticNode: SnapshotNode): SnapshotNode[] => {
     return (presentation.presentedIndexesBySourceIndex.get(semanticNode.index) ?? []).flatMap(
       (presentedIndex) => {
@@ -102,28 +110,37 @@ function createPresentedNodeLookup(presentation: MaestroInteractivePresentation)
       },
     );
   };
-  return {
-    forSource,
-    isVisible: (node) =>
-      forSource(node).some((presentedNode) =>
-        isMaestroNodeVisible(presentedNode, presentation.snapshot.nodes, 'ios'),
-      ),
+  const visibleForSource = (node: SnapshotNode): SnapshotNode[] => {
+    const cached = visibleBySourceIndex.get(node.index);
+    if (cached) return cached;
+    const visible = forSource(node).filter((presentedNode) =>
+      isMaestroNodeVisible(presentedNode, presentation.snapshot.nodes, 'ios'),
+    );
+    visibleBySourceIndex.set(node.index, visible);
+    return visible;
   };
+  return { visibleForSource, isVisible: (node) => visibleForSource(node).length > 0 };
 }
 
 function rankPresentedMaestroCandidates(
   snapshot: SnapshotState,
   query: MaestroTargetQuery,
-  platform: MaestroPlatform,
   presentedNodes: ReturnType<typeof createPresentedNodeLookup>,
-) {
+): MaestroRankedCandidates {
   const scoped = matchMaestroCandidates(snapshot, query.selector, query.childOf);
   const visible = scoped.matches.filter(presentedNodes.isVisible);
   return {
     ...scoped,
     visible,
-    ranked: rankVisibleMaestroMatches(snapshot.nodes, visible, query.selector, platform),
+    ranked: rankVisibleMaestroMatches(snapshot.nodes, visible, query.selector, 'ios'),
   };
+}
+
+function selectMaestroCandidate(
+  matches: SnapshotNode[],
+  index: number | undefined,
+): SnapshotNode | undefined {
+  return index === undefined ? matches[0] : matches[index];
 }
 
 function failedTargetResolution(
@@ -144,14 +161,15 @@ function failedTargetResolution(
 }
 
 function countInteractionDispatchCandidates(
-  target: { node: SnapshotNode; rect: Rect },
+  semanticRect: Rect | undefined,
   rankedCandidates: SnapshotNode[],
   presentedTarget: { node: SnapshotNode; rect: Rect } | null,
 ): number {
   if (rankedCandidates.length !== 1) return rankedCandidates.length;
-  return presentedTarget &&
+  return semanticRect &&
+    presentedTarget &&
     presentedTarget.node.hittable !== false &&
-    haveSameTapPoint(presentedTarget.rect, target.rect)
+    haveSameTapPoint(presentedTarget.rect, semanticRect)
     ? 1
     : 0;
 }
