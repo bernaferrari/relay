@@ -12,6 +12,58 @@ import {
   type IosLivePreviewBackend,
 } from "@relay/core";
 import { CORS_HEADERS, HttpError } from "./http.js";
+import {
+  IOS_PREVIEW_STALE_AFTER_MS,
+  IosLatestFrameFanout,
+  iosLivePreviewMetricHeaders,
+  iosPreviewEncoding,
+  iosPreviewFrameAgeMs,
+  iosPreviewFrameIsFresh,
+  iosPreviewObservedFramesPerSecond,
+  iosPreviewObservedMetric,
+  type IosFrameSubscription,
+  type IosLivePreviewDiagnostics,
+  type IosPreviewSourceDiagnostics,
+  type IosPreviewSourceState,
+} from "./ios-live-preview-telemetry.js";
+import {
+  encodeRelayAnnexBPacket,
+  encodeRelayJpegPacket,
+  readMjpegJpegs,
+} from "./ios-live-preview-packets.js";
+import {
+  IosPreviewOwnerRegistry,
+  type IosPreviewOwner,
+  type IosPreviewStopReason,
+} from "./ios-live-preview-owner-registry.js";
+
+export {
+  IOS_PREVIEW_STALE_AFTER_MS,
+  IosLatestFrameFanout,
+  iosLivePreviewMetricHeaders,
+  iosPreviewEncoding,
+  iosPreviewFrameAgeMs,
+  iosPreviewFrameIsFresh,
+  iosPreviewObservedFramesPerSecond,
+  iosPreviewObservedMetric,
+  type IosFrameDeliveryDiagnostics,
+  type IosFrameFanoutDiagnostics,
+  type IosFrameSink,
+  type IosFrameSubscription,
+  type IosLivePreviewDiagnostics,
+  type IosPreviewSourceDiagnostics,
+  type IosPreviewSourceState,
+} from "./ios-live-preview-telemetry.js";
+export {
+  encodeRelayAnnexBPacket,
+  encodeRelayJpegPacket,
+  readMjpegJpegs,
+} from "./ios-live-preview-packets.js";
+export {
+  IosPreviewOwnerRegistry,
+  type IosPreviewOwner,
+  type IosPreviewStopReason,
+} from "./ios-live-preview-owner-registry.js";
 
 function defer<T>(): {
   promise: Promise<T>;
@@ -35,7 +87,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-const PACKET_HEADER_BYTES = 16;
 const DEFAULT_MJPEG_BASE_PORT = 3333;
 const GO_IOS_TUNNEL_COMMAND_TIMEOUT_MS = 2_000;
 const GO_IOS_TUNNEL_READY_TIMEOUT_MS = 12_000;
@@ -43,217 +94,15 @@ const GO_IOS_STREAM_START_TIMEOUT_MS = 12_000;
 const GO_IOS_UPSTREAM_CONNECT_TIMEOUT_MS = 1_500;
 const GO_IOS_START_POLL_MS = 200;
 const GO_IOS_PROCESS_STOP_TIMEOUT_MS = 2_000;
-const IOS_PREVIEW_STALE_AFTER_MS = 8_000;
 const IOS_PREVIEW_RESTART_COOLDOWN_MS = 2_000;
 const IOS_PREVIEW_IDLE_STOP_MS = 15_000;
 const MAX_GO_IOS_COMMAND_OUTPUT_CHARS = 16_000;
-const MAX_MJPEG_FRAME_BYTES = 16 * 1024 * 1024;
-const MAX_MJPEG_BUFFER_BYTES = MAX_MJPEG_FRAME_BYTES + 256 * 1024;
 
 type StreamMode = "instruments-mjpeg";
-type IosPreviewStopReason = "idle" | "stale" | "startup-failed" | "upstream-ended" | "shutdown";
 
-/** The small part of ServerResponse needed for bounded latest-frame fanout. */
-export type IosFrameSink = {
-  write: (chunk: Uint8Array) => boolean;
-  once: (event: "drain", listener: () => void) => unknown;
-  off?: (event: "drain", listener: () => void) => unknown;
-  destroyed?: boolean;
-  writableEnded?: boolean;
-};
-
-export type IosFrameFanoutDiagnostics = {
-  subscribers: number;
-  publishedFrames: number;
-  writtenFrames: number;
-  droppedFrames: number;
-};
-
-type IosFrameSubscriber = {
-  sink: IosFrameSink;
-  blocked: boolean;
-  pending?: Buffer;
-  onDrain: () => void;
-};
-
-/**
- * Fan a single device source out to Relay clients without allowing one slow
- * HTTP response to queue the capture behind old frames. Node owns at most its
- * current buffered write; Relay retains only the newest frame after that.
- */
-export class IosLatestFrameFanout {
-  readonly #subscribers = new Map<symbol, IosFrameSubscriber>();
-  #latestPacket: Buffer | undefined;
-  #publishedFrames = 0;
-  #writtenFrames = 0;
-  #droppedFrames = 0;
-
-  get subscriberCount(): number {
-    return this.#subscribers.size;
-  }
-
-  get diagnostics(): IosFrameFanoutDiagnostics {
-    return {
-      subscribers: this.subscriberCount,
-      publishedFrames: this.#publishedFrames,
-      writtenFrames: this.#writtenFrames,
-      droppedFrames: this.#droppedFrames,
-    };
-  }
-
-  subscribe(sink: IosFrameSink): () => void {
-    const token = Symbol("ios-preview-subscriber");
-    const subscriber: IosFrameSubscriber = {
-      sink,
-      blocked: false,
-      onDrain: () => this.#flush(token),
-    };
-    this.#subscribers.set(token, subscriber);
-    if (this.#latestPacket) this.#offer(token, subscriber, this.#latestPacket);
-    return () => this.#remove(token, subscriber);
-  }
-
-  /** Packet ownership remains with the source and it must not mutate it after publishing. */
-  publish(packet: Buffer): void {
-    this.#latestPacket = packet;
-    this.#publishedFrames += 1;
-    for (const [token, subscriber] of this.#subscribers) {
-      this.#offer(token, subscriber, packet);
-    }
-  }
-
-  #offer(token: symbol, subscriber: IosFrameSubscriber, packet: Buffer): void {
-    if (this.#subscribers.get(token) !== subscriber) return;
-    if (subscriber.sink.destroyed || subscriber.sink.writableEnded) {
-      this.#remove(token, subscriber);
-      return;
-    }
-    if (subscriber.blocked) {
-      if (subscriber.pending) this.#droppedFrames += 1;
-      subscriber.pending = packet;
-      return;
-    }
-    try {
-      const writable = subscriber.sink.write(packet);
-      this.#writtenFrames += 1;
-      if (!writable) {
-        subscriber.blocked = true;
-        subscriber.sink.once("drain", subscriber.onDrain);
-      }
-    } catch {
-      this.#remove(token, subscriber);
-    }
-  }
-
-  #flush(token: symbol): void {
-    const subscriber = this.#subscribers.get(token);
-    if (!subscriber) return;
-    subscriber.blocked = false;
-    const pending = subscriber.pending;
-    subscriber.pending = undefined;
-    if (pending) this.#offer(token, subscriber, pending);
-  }
-
-  #remove(token: symbol, subscriber: IosFrameSubscriber): void {
-    if (this.#subscribers.get(token) !== subscriber) return;
-    this.#subscribers.delete(token);
-    subscriber.pending = undefined;
-    subscriber.sink.off?.("drain", subscriber.onDrain);
-  }
-}
-
-export type IosPreviewOwner = {
-  stop: (reason?: IosPreviewStopReason) => Promise<boolean>;
-};
-
-/**
- * A singleflight registry keeps refreshes and multiple Relay windows from
- * starting concurrent go-ios processes for the same physical target.
- */
-export class IosPreviewOwnerRegistry<T extends IosPreviewOwner> {
-  readonly #active = new Map<string, T>();
-  readonly #starting = new Map<string, Promise<T>>();
-
-  async acquire(
-    serial: string,
-    isLive: (owner: T) => boolean,
-    start: () => Promise<T>,
-  ): Promise<T> {
-    const existing = this.#active.get(serial);
-    if (existing) {
-      if (isLive(existing)) return existing;
-      const stopped = await existing.stop("stale");
-      if (!stopped) {
-        throw new HttpError(
-          503,
-          "The previous iOS preview is still stopping; retry once it exits.",
-        );
-      }
-    }
-
-    const pending = this.#starting.get(serial);
-    if (pending) return pending;
-
-    const created = Promise.resolve()
-      .then(start)
-      .then((owner) => {
-        if (!isLive(owner)) {
-          void owner.stop("startup-failed");
-          throw new HttpError(502, "iOS preview ended before its first frame arrived.");
-        }
-        this.#active.set(serial, owner);
-        return owner;
-      });
-    this.#starting.set(serial, created);
-    void created.then(
-      () => {
-        if (this.#starting.get(serial) === created) this.#starting.delete(serial);
-      },
-      () => {
-        if (this.#starting.get(serial) === created) this.#starting.delete(serial);
-      },
-    );
-    return created;
-  }
-
-  release(serial: string, owner: T): boolean {
-    if (this.#active.get(serial) !== owner) return false;
-    this.#active.delete(serial);
-    return true;
-  }
-
-  values(): readonly T[] {
-    return [...this.#active.values()];
-  }
-
-  get count(): number {
-    return this.#active.size;
-  }
-}
-
-export function iosPreviewFrameIsFresh(
-  lastFrameAt: number | undefined,
-  now = Date.now(),
-  staleAfterMs = IOS_PREVIEW_STALE_AFTER_MS,
-): boolean {
-  return lastFrameAt !== undefined && now - lastFrameAt >= 0 && now - lastFrameAt <= staleAfterMs;
-}
-
-type IosPreviewSourceState = "starting" | "streaming" | "stopped" | "failed";
 type IosPreviewSourceEnd = {
   state: Extract<IosPreviewSourceState, "stopped" | "failed">;
   error?: Error;
-};
-
-type IosPreviewSourceDiagnostics = {
-  state: IosPreviewSourceState;
-  startedAt: number;
-  readyAt?: number;
-  lastFrameAt?: number;
-  frames: number;
-  bytes: number;
-  contentType?: string;
-  fanout: IosFrameFanoutDiagnostics;
 };
 
 /** One go-ios HTTP consumer per target. It remains fast even when viewers are slow. */
@@ -274,6 +123,16 @@ class IosPreviewSource {
   #staleTimer: ReturnType<typeof setInterval> | undefined;
 
   get diagnostics(): IosPreviewSourceDiagnostics {
+    return this.diagnosticsAt();
+  }
+
+  diagnosticsAt(now = Date.now()): IosPreviewSourceDiagnostics {
+    const frameAgeMs = iosPreviewFrameAgeMs(this.#lastFrameAt, now);
+    const observedFramesPerSecond = iosPreviewObservedFramesPerSecond(
+      this.#frames,
+      this.#readyAt,
+      this.#lastFrameAt,
+    );
     return {
       state: this.#state,
       startedAt: this.#startedAt,
@@ -281,6 +140,10 @@ class IosPreviewSource {
       ...(this.#lastFrameAt === undefined ? {} : { lastFrameAt: this.#lastFrameAt }),
       frames: this.#frames,
       bytes: this.#bytes,
+      ...(observedFramesPerSecond === undefined ? {} : { observedFramesPerSecond }),
+      ...(frameAgeMs === undefined ? {} : { frameAgeMs }),
+      stale: !this.isFresh(now),
+      staleAfterMs: IOS_PREVIEW_STALE_AFTER_MS,
       ...(this.#contentType ? { contentType: this.#contentType } : {}),
       fanout: this.fanout.diagnostics,
     };
@@ -704,8 +567,69 @@ async function openMjpegUpstreamWhenReady(
   );
 }
 
-function previewStillLive(preview: ActiveIosPreview): boolean {
-  return preview.child.exitCode === null && preview.source.isFresh();
+function previewStillLive(preview: ActiveIosPreview, now = Date.now()): boolean {
+  return preview.child.exitCode === null && preview.source.isFresh(now);
+}
+
+/**
+ * Read the current iOS relay state without starting, stopping, probing, or
+ * otherwise touching the device. The projection is deliberately metadata
+ * only, so an agent can distinguish a slow source from a slow viewer without
+ * acquiring the exclusive input lease or receiving another consumer's data.
+ */
+export function readIosLivePreviewDiagnostics(
+  serial: string,
+  observedAt = Date.now(),
+): IosLivePreviewDiagnostics {
+  const active = activePreviews.get(serial);
+  const preview = active ?? stoppingPreviews.get(serial);
+  if (!preview) {
+    return {
+      provider: "go-ios-instruments-screenshot",
+      deliveryStrategy: "latest-frame",
+      targetFramesPerSecond: null,
+      active: false,
+      observedAt,
+      source: {
+        state: "not-running",
+        encoding: "unknown",
+        observedFrames: 0,
+        bytes: 0,
+        stale: true,
+        staleAfterMs: IOS_PREVIEW_STALE_AFTER_MS,
+      },
+      relay: {
+        subscribers: 0,
+        publishedFrames: 0,
+        offeredFrames: 0,
+        writtenFrames: 0,
+        droppedFrames: 0,
+        pendingFrames: 0,
+      },
+    };
+  }
+
+  const source = preview.source.diagnosticsAt(observedAt);
+  return {
+    provider: "go-ios-instruments-screenshot",
+    deliveryStrategy: "latest-frame",
+    targetFramesPerSecond: null,
+    active: active === preview && previewStillLive(preview, observedAt),
+    observedAt,
+    source: {
+      state: source.state,
+      encoding: iosPreviewEncoding(source.contentType),
+      observedFrames: source.frames,
+      bytes: source.bytes,
+      ...(source.observedFramesPerSecond === undefined
+        ? {}
+        : { observedFramesPerSecond: source.observedFramesPerSecond }),
+      ...(source.frameAgeMs === undefined ? {} : { frameAgeMs: source.frameAgeMs }),
+      stale: source.stale,
+      staleAfterMs: source.staleAfterMs,
+    },
+    relay: source.fanout,
+  };
 }
 
 async function awaitStoppingPreview(serial: string): Promise<void> {
@@ -787,7 +711,7 @@ async function startInstrumentsMjpeg(bin: string, serial: string): Promise<Activ
     void stopPromise.then((exited) => {
       const diagnostics = source.diagnostics;
       console.log(
-        `[video] iOS source stopped serial=${serial} mode=instruments-mjpeg reason=${reason} exited=${exited} frames=${diagnostics.frames} bytes=${diagnostics.bytes} droppedFrames=${diagnostics.fanout.droppedFrames} durationMs=${Date.now() - startedAt}`,
+        `[video] iOS source stopped serial=${serial} mode=instruments-mjpeg reason=${reason} exited=${exited} observedFrames=${diagnostics.frames} observedSourceFps=${iosPreviewObservedMetric(diagnostics.observedFramesPerSecond)} frameAgeMs=${iosPreviewObservedMetric(diagnostics.frameAgeMs)} stale=${diagnostics.stale} bytes=${diagnostics.bytes} relayWrittenFrames=${diagnostics.fanout.writtenFrames} relayDroppedFrames=${diagnostics.fanout.droppedFrames} durationMs=${Date.now() - startedAt}`,
       );
     });
     return stopPromise;
@@ -818,7 +742,7 @@ async function startInstrumentsMjpeg(bin: string, serial: string): Promise<Activ
     await source.start(`http://127.0.0.1:${port}/`, child, logPath);
     const diagnostics = source.diagnostics;
     console.log(
-      `[video] iOS source ready serial=${serial} mode=instruments-mjpeg port=${port} tunnelReadyMs=${tunnelReadyMs} firstFrameMs=${(diagnostics.readyAt ?? Date.now()) - startedAt} startupMs=${Date.now() - startedAt} upstreamType=${diagnostics.contentType ?? "unknown"}`,
+      `[video] iOS source ready serial=${serial} mode=instruments-mjpeg port=${port} tunnelReadyMs=${tunnelReadyMs} firstFrameMs=${(diagnostics.readyAt ?? Date.now()) - startedAt} startupMs=${Date.now() - startedAt} sourceEncoding=${iosPreviewEncoding(diagnostics.contentType)} targetFps=unadvertised`,
     );
     return preview;
   } catch (error) {
@@ -846,89 +770,6 @@ async function ensureIosPreview(
     failedPreviews.delete(serial);
     return preview;
   });
-}
-
-/** Encode one JPEG as Relay framed packet (kind 2). */
-export function encodeRelayJpegPacket(jpeg: Uint8Array, ptsNs = 0n): Buffer {
-  const header = Buffer.allocUnsafe(PACKET_HEADER_BYTES);
-  header.writeUInt8(2, 0);
-  header.writeUInt8(1, 1);
-  header.writeUInt16BE(0, 2);
-  header.writeBigUInt64BE(ptsNs, 4);
-  header.writeUInt32BE(jpeg.byteLength, 12);
-  return Buffer.concat([header, Buffer.from(jpeg)]);
-}
-
-/** Encode raw H.264 access unit / annex-B chunk (kind 3). Client may ignore if undecodable. */
-export function encodeRelayAnnexBPacket(data: Uint8Array, ptsNs = 0n, keyframe = false): Buffer {
-  const header = Buffer.allocUnsafe(PACKET_HEADER_BYTES);
-  header.writeUInt8(3, 0);
-  header.writeUInt8(keyframe ? 1 : 0, 1);
-  header.writeUInt16BE(0, 2);
-  header.writeBigUInt64BE(ptsNs, 4);
-  header.writeUInt32BE(data.byteLength, 12);
-  return Buffer.concat([header, Buffer.from(data)]);
-}
-
-function assertMjpegBufferLimit(buffer: Buffer): void {
-  if (buffer.byteLength > MAX_MJPEG_BUFFER_BYTES) {
-    throw new Error(
-      `MJPEG parser buffer exceeded ${MAX_MJPEG_BUFFER_BYTES} bytes without a complete frame`,
-    );
-  }
-}
-
-export async function* readMjpegJpegs(
-  body: AsyncIterable<Buffer>,
-): AsyncGenerator<Buffer, void, void> {
-  let buffer = Buffer.alloc(0);
-  const boundaryMarkers = [
-    Buffer.from("--BoundaryString"),
-    Buffer.from("--ffmpeg"),
-    Buffer.from("--frame"),
-  ];
-  for await (const chunk of body) {
-    buffer = Buffer.concat([buffer, chunk]);
-    assertMjpegBufferLimit(buffer);
-    while (true) {
-      const headerSep = buffer.indexOf("\r\n\r\n");
-      if (headerSep < 0) break;
-      const header = buffer.subarray(0, headerSep).toString("latin1");
-      const lengthMatch = /Content-Length:\s*(\d+)/i.exec(header);
-      if (!lengthMatch) {
-        // Some servers use multipart without Content-Length: scan SOI/EOI.
-        const soi = buffer.indexOf(Buffer.from([0xff, 0xd8]), headerSep + 4);
-        if (soi < 0) {
-          buffer = buffer.subarray(Math.max(0, buffer.length - 1));
-          break;
-        }
-        const eoi = buffer.indexOf(Buffer.from([0xff, 0xd9]), soi + 2);
-        if (eoi < 0) break;
-        const jpeg = Buffer.from(buffer.subarray(soi, eoi + 2));
-        buffer = buffer.subarray(eoi + 2);
-        yield jpeg;
-        continue;
-      }
-      const length = Number(lengthMatch[1]);
-      if (!Number.isSafeInteger(length) || length <= 0 || length > MAX_MJPEG_FRAME_BYTES) {
-        throw new Error(`MJPEG frame has invalid Content-Length ${lengthMatch[1]}`);
-      }
-      const start = headerSep + 4;
-      const end = start + length;
-      if (buffer.length < end) break;
-      const jpeg = Buffer.from(buffer.subarray(start, end));
-      buffer = buffer.subarray(end);
-      if (buffer.subarray(0, 2).equals(Buffer.from("\r\n"))) buffer = buffer.subarray(2);
-      for (const marker of boundaryMarkers) {
-        if (buffer.subarray(0, marker.length).equals(marker)) {
-          const nl = buffer.indexOf("\n");
-          buffer = nl >= 0 ? buffer.subarray(nl + 1) : Buffer.alloc(0);
-          break;
-        }
-      }
-      if (jpeg.length > 2 && jpeg[0] === 0xff && jpeg[1] === 0xd8) yield jpeg;
-    }
-  }
 }
 
 /**
@@ -970,34 +811,31 @@ export async function streamIosGoIosMjpeg(res: http.ServerResponse, serial: stri
     "Cache-Control": "no-store, no-cache, must-revalidate",
     Connection: "keep-alive",
     "X-Content-Type-Options": "nosniff",
-    "X-Relay-Ios-Preview": preview.mode,
-    "X-Relay-Ios-Upstream-Type": (diagnostics.contentType ?? "").slice(0, 80),
-    "X-Relay-Ios-Source-Startup-Ms": String(
-      (diagnostics.readyAt ?? Date.now()) - diagnostics.startedAt,
-    ),
+    ...iosLivePreviewMetricHeaders(preview.mode, diagnostics),
   });
 
   const completion = defer<void>();
   const clientAttachedAt = Date.now();
   let closed = false;
-  let releaseFrameSink: () => void = () => undefined;
+  let frameSubscription: IosFrameSubscription | undefined;
   let removeSourceEndListener: () => void = () => undefined;
   const finish = (reason: "client-closed" | "source-ended") => {
     if (closed) return;
     closed = true;
     res.off("close", onClose);
-    releaseFrameSink();
+    frameSubscription?.release();
     removeSourceEndListener();
     if (preview.source.fanout.subscriberCount === 0 && previewStillLive(preview)) {
       scheduleIdleStop(preview);
     }
+    const delivery = frameSubscription?.diagnostics;
     console.log(
-      `[video] iOS client detached serial=${serial} mode=${preview.mode} reason=${reason} clientDurationMs=${Date.now() - clientAttachedAt} subscribers=${preview.source.fanout.subscriberCount}`,
+      `[video] iOS client detached serial=${serial} mode=${preview.mode} reason=${reason} clientDurationMs=${Date.now() - clientAttachedAt} subscribers=${preview.source.fanout.subscriberCount} relayWrittenFrames=${delivery?.writtenFrames ?? 0} relayDroppedFrames=${delivery?.droppedFrames ?? 0} relayPendingFrames=${delivery?.pendingFrames ?? 0} relayWriteFps=${iosPreviewObservedMetric(delivery?.writtenFramesPerSecond)} relayDropRate=${iosPreviewObservedMetric(delivery?.dropRate)}`,
     );
     completion.resolve();
   };
   const onClose = () => finish("client-closed");
-  releaseFrameSink = preview.source.fanout.subscribe(res);
+  frameSubscription = preview.source.fanout.subscribeWithDiagnostics(res);
   removeSourceEndListener = preview.source.onEnded(() => {
     if (!res.destroyed && !res.writableEnded) res.end();
     finish("source-ended");

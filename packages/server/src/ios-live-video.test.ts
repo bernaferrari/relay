@@ -6,10 +6,15 @@ import {
   encodeRelayJpegPacket,
   IosLatestFrameFanout,
   IosPreviewOwnerRegistry,
+  iosLivePreviewMetricHeaders,
+  iosPreviewFrameAgeMs,
   iosPreviewFrameIsFresh,
+  iosPreviewObservedFramesPerSecond,
   readMjpegJpegs,
+  readIosLivePreviewDiagnostics,
   type IosFrameSink,
   type IosPreviewOwner,
+  type IosPreviewSourceDiagnostics,
 } from "./ios-live-video.js";
 
 class FakeFrameSink extends EventEmitter implements IosFrameSink {
@@ -65,27 +70,62 @@ test("parses go-ios style mjpeg parts", async () => {
 });
 
 test("drops stale frames for a slow Relay client instead of queueing the device source", () => {
-  const fanout = new IosLatestFrameFanout();
+  let at = 1_000;
+  const fanout = new IosLatestFrameFanout({ now: () => at });
   const sink = new FakeFrameSink(false, true);
-  const release = fanout.subscribe(sink);
+  const subscription = fanout.subscribeWithDiagnostics(sink);
 
   fanout.publish(Buffer.from([1]));
+  at = 1_500;
   fanout.publish(Buffer.from([2]));
+  at = 2_000;
   fanout.publish(Buffer.from([3]));
 
   assert.deepEqual(sink.writes, [Buffer.from([1])]);
   assert.deepEqual(fanout.diagnostics, {
     subscribers: 1,
     publishedFrames: 3,
+    offeredFrames: 3,
     writtenFrames: 1,
     droppedFrames: 1,
+    pendingFrames: 1,
+    dropRate: 0.5,
+  });
+  assert.deepEqual(subscription.diagnostics, {
+    attachedAt: 1_000,
+    offeredFrames: 3,
+    writtenFrames: 1,
+    droppedFrames: 1,
+    pendingFrames: 1,
+    dropRate: 0.5,
   });
 
+  at = 3_000;
   sink.emit("drain");
   assert.deepEqual(sink.writes, [Buffer.from([1]), Buffer.from([3])]);
-  release();
+  assert.deepEqual(subscription.diagnostics, {
+    attachedAt: 1_000,
+    offeredFrames: 3,
+    writtenFrames: 2,
+    droppedFrames: 1,
+    pendingFrames: 0,
+    writtenFramesPerSecond: 0.5,
+    dropRate: 1 / 3,
+  });
+  at = 3_250;
+  subscription.release();
   fanout.publish(Buffer.from([4]));
   assert.equal(fanout.subscriberCount, 0);
+  assert.deepEqual(subscription.diagnostics, {
+    attachedAt: 1_000,
+    releasedAt: 3_250,
+    offeredFrames: 3,
+    writtenFrames: 2,
+    droppedFrames: 1,
+    pendingFrames: 0,
+    writtenFramesPerSecond: 0.5,
+    dropRate: 1 / 3,
+  });
 });
 
 test("shares one in-flight iOS preview start and cannot release its replacement", async () => {
@@ -142,6 +182,76 @@ test("requires a recent observed frame before considering an iOS source live", (
   assert.equal(iosPreviewFrameIsFresh(2_000, 10_000, 8_000), true);
   assert.equal(iosPreviewFrameIsFresh(1_999, 10_000, 8_000), false);
   assert.equal(iosPreviewFrameIsFresh(10_001, 10_000, 8_000), false);
+});
+
+test("reports observed source timing without inventing a target FPS", () => {
+  assert.equal(iosPreviewObservedFramesPerSecond(1, 1_000, 1_000), undefined);
+  assert.equal(iosPreviewObservedFramesPerSecond(3, 1_000, 2_000), 2);
+  assert.equal(iosPreviewObservedFramesPerSecond(3, 2_000, 1_000), undefined);
+  assert.equal(iosPreviewFrameAgeMs(undefined, 2_000), undefined);
+  assert.equal(iosPreviewFrameAgeMs(1_000, 1_750), 750);
+  assert.equal(iosPreviewFrameAgeMs(2_000, 1_750), 0);
+});
+
+test("emits safe stream-start metrics that separate observation from a target rate", () => {
+  const diagnostics: IosPreviewSourceDiagnostics = {
+    state: "streaming",
+    startedAt: 1_000,
+    readyAt: 1_250,
+    lastFrameAt: 2_000,
+    frames: 4,
+    bytes: 123,
+    observedFramesPerSecond: 3,
+    frameAgeMs: 45,
+    stale: false,
+    staleAfterMs: 8_000,
+    contentType: "multipart/x-mixed-replace; boundary=frame",
+    fanout: {
+      subscribers: 1,
+      publishedFrames: 4,
+      offeredFrames: 4,
+      writtenFrames: 4,
+      droppedFrames: 0,
+      pendingFrames: 0,
+      writtenFramesPerSecond: 3,
+      dropRate: 0,
+    },
+  };
+
+  const headers = iosLivePreviewMetricHeaders("instruments-mjpeg", diagnostics);
+  assert.equal(headers["X-Relay-Ios-Observed-Source-Fps"], "3");
+  assert.equal(headers["X-Relay-Ios-Source-Frame-Age-Ms"], "45");
+  assert.equal(headers["X-Relay-Ios-Source-Stale"], "false");
+  assert.equal(headers["X-Relay-Ios-Source-Stale-After-Ms"], "8000");
+  assert.equal(headers["X-Relay-Ios-Target-Fps"], "unadvertised");
+  assert.equal(headers["X-Relay-Ios-Delivery-Strategy"], "latest-frame");
+});
+
+test("returns a metadata-only inactive iOS relay diagnostic without starting a source", () => {
+  const diagnostics = readIosLivePreviewDiagnostics("not-running", 42_000);
+  assert.deepEqual(diagnostics, {
+    provider: "go-ios-instruments-screenshot",
+    deliveryStrategy: "latest-frame",
+    targetFramesPerSecond: null,
+    active: false,
+    observedAt: 42_000,
+    source: {
+      state: "not-running",
+      encoding: "unknown",
+      observedFrames: 0,
+      bytes: 0,
+      stale: true,
+      staleAfterMs: 8_000,
+    },
+    relay: {
+      subscribers: 0,
+      publishedFrames: 0,
+      offeredFrames: 0,
+      writtenFrames: 0,
+      droppedFrames: 0,
+      pendingFrames: 0,
+    },
+  });
 });
 
 test("rejects absurd MJPEG Content-Length values before buffering a frame", async () => {
