@@ -26,6 +26,7 @@ export * from "./discovery-contract.js";
 export * from "./corpus-contract.js";
 export * from "./locale-pack-contract.js";
 export * from "./app-map-canvas.js";
+export * from "./ios-mutation-terminality-contract.js";
 import type { ResourceEventPayload } from "./coordination.js";
 import type { ServerConnection, TargetProfile, TargetSelector } from "./target-contract.js";
 export type { RunReview } from "./run-review.js";
