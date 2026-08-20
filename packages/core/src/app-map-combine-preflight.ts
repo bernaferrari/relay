@@ -5,6 +5,7 @@ import type {
   AppMapCombinePreflightIssue,
   RecipeStep,
 } from "@relay/protocol";
+import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
 import { compileAppMapCombine, compileAppMapTest } from "./map-work.js";
 import {
   assertOptionSandwichReady,
@@ -83,6 +84,7 @@ export async function preflightAppMapCombine(
     selected?: Record<string, string[]>;
     strategy?: "zip" | "cartesian" | "pairwise";
   } = {},
+  compileOptions: AppMapTestCompileOptions = {},
 ): Promise<AppMapCombinePreflight> {
   const effectiveCombine: AppMapCombine = {
     ...combine,
@@ -131,10 +133,14 @@ export async function preflightAppMapCombine(
 
   const testPreflights = tests.map((test) => {
     try {
-      const compiled = compileAppMapTest(map, {
-        ...test,
-        ...(combine.captures?.[test.id] ? { capture: combine.captures[test.id] } : {}),
-      });
+      const compiled = compileAppMapTest(
+        map,
+        {
+          ...test,
+          ...(combine.captures?.[test.id] ? { capture: combine.captures[test.id] } : {}),
+        },
+        compileOptions,
+      );
       const expectedScreenshots = expectedRecipeScreenshotCount(compiled.root, compiled.graph);
       return {
         id: test.id,
@@ -167,7 +173,7 @@ export async function preflightAppMapCombine(
         map,
       });
       worlds = matrix.cases.length;
-      const compiled = compileAppMapCombine(map, effectiveCombine);
+      const compiled = compileAppMapCombine(map, effectiveCombine, compileOptions);
       const composed = composeOptionRunRecipes({
         body: compiled.root,
         bodyGraph: compiled.graph,

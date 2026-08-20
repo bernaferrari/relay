@@ -87,6 +87,7 @@ export * from "./screen-identity.js";
 export * from "./visual-rows.js";
 export * from "./authoring-evidence.js";
 export * from "./logical-scroll-surface.js";
+export * from "./reviewed-document-origin.js";
 export * from "./scroll-surface-policy.js";
 export * from "./scrollable-survey.js";
 export * from "./authoring-sessions.js";

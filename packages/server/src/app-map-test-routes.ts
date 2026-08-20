@@ -2,6 +2,7 @@ import type http from "node:http";
 import {
   AppMapDomainError,
   AppMapTestStepOperationError,
+  activeReviewedDocumentOriginsForAppMap,
   AppMapTestCompileError,
   loadFrozenRawAccessibilityEvidence,
   compileAppMapTest,
@@ -87,11 +88,11 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
       const search = new URL(request.url ?? pathname, "http://relay.local").searchParams;
       const entryCheckpointScreenId = search.get("entryCheckpointScreenId");
       const targetProfileId = search.get("targetProfileId")?.trim() || undefined;
-      const plan = compileAppMapTest(
-        appMap,
-        test,
-        entryCheckpointScreenId ? { entryCheckpointScreenId } : {},
-      ).plan;
+      const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(appMap);
+      const plan = compileAppMapTest(appMap, test, {
+        ...(entryCheckpointScreenId ? { entryCheckpointScreenId } : {}),
+        reviewedDocumentOrigins,
+      }).plan;
       const evidence = await loadFrozenRawAccessibilityEvidence(plan);
       json(response, 200, {
         plan,
@@ -260,10 +261,16 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     if (!appMap) throw new HttpError(404, `App Map ${comboPreflight.appMapId} not found`);
     const combine = appMap.combines[comboPreflight.combineId!];
     if (!combine) throw new HttpError(404, `Combine  not found`);
-    const preflight = await preflightAppMapCombine(appMap, combine, {
-      ...(body.selected ? { selected: body.selected } : {}),
-      ...(body.strategy ? { strategy: body.strategy } : {}),
-    });
+    const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(appMap);
+    const preflight = await preflightAppMapCombine(
+      appMap,
+      combine,
+      {
+        ...(body.selected ? { selected: body.selected } : {}),
+        ...(body.strategy ? { strategy: body.strategy } : {}),
+      },
+      { reviewedDocumentOrigins },
+    );
     const serial = body.serial?.trim();
     if (serial) {
       const devices = await listDevices().catch(() => []);

@@ -1,4 +1,5 @@
 import type { AppMap } from "./app-map.js";
+import { createAppMapReviewedOriginParsers } from "./app-map-reviewed-origin-parsers.js";
 import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import type { OperationRecord, RuntimeParser } from "./operation-contract.js";
 
@@ -26,6 +27,7 @@ export type AppMapParserDependencies = {
 
 export function createAppMapOperationParsers(dependencies: AppMapParserDependencies) {
   const { boolean, fail, number, objectFieldParser, objectParser, record, string } = dependencies;
+  const reviewedOriginParsers = createAppMapReviewedOriginParsers(dependencies);
   const appMapRefParser = objectParser<{ appMapId: string }>("App Map reference", (input) => {
     string(input.appMapId, "App Map id");
   });
@@ -835,6 +837,7 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     appMapScrollSurfaceCaptureParser,
     appMapScrollSurfaceRegenerateOutputParser,
     appMapScrollSurfaceRegenerateParser,
+    ...reviewedOriginParsers,
     appMapTeachOutputParser,
     appMapTeachParser,
     appMapTestCompileInputParser,

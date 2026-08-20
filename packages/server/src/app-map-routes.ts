@@ -46,6 +46,7 @@ import {
 import { handleAppMapTestRoute } from "./app-map-test-routes.js";
 import { handleAppMapProposalRoute } from "./app-map-proposal-routes.js";
 import { handleAppMapScrollSurfaceRoute } from "./app-map-scroll-surface-route.js";
+import { handleAppMapReviewedOriginRoute } from "./app-map-reviewed-origin-route.js";
 import { handleAppMapCaptureRoute } from "./app-map-capture-routes.js";
 
 export {
@@ -58,6 +59,7 @@ export {
 export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
 
+  if (await handleAppMapReviewedOriginRoute(input)) return true;
   if (await handleAppMapScrollSurfaceRoute(input)) return true;
 
   if (method === "GET" && pathname === "/app-maps") {

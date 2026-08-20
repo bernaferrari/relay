@@ -27,6 +27,11 @@ import type {
 import type { OperationRecord } from "./operation-contract.js";
 import type { RunReview } from "./run-review.js";
 import type {
+  ReviewedDocumentOriginInspection,
+  ReviewedDocumentOriginLedger,
+  ReviewedDocumentOriginProjection,
+} from "./reviewed-document-origin.js";
+import type {
   AppMapCompiledTest,
   AppMapScenarioTestEdit,
   AppMapTestStartup,
@@ -153,6 +158,48 @@ export type AppMapOperationMap = {
       screen: Screen;
       variant: ScreenVariant;
       scrollSurface: LogicalScrollSurface;
+    };
+  };
+  "app-map.scroll-surface.reviewed-origin.inspect": {
+    input: {
+      appMapId: string;
+      screenId: string;
+      variantId: string;
+      captureId: string;
+    };
+    output: { inspection: ReviewedDocumentOriginInspection };
+  };
+  "app-map.scroll-surface.reviewed-origin.review": {
+    input: {
+      appMapId: string;
+      screenId: string;
+      variantId: string;
+      captureId: string;
+      expectedRevision: number;
+      reason: string;
+      assertion: string;
+    };
+    output: {
+      projection: ReviewedDocumentOriginProjection;
+      ledger: ReviewedDocumentOriginLedger;
+      alreadyActive: boolean;
+    };
+  };
+  "app-map.scroll-surface.reviewed-origin.revoke": {
+    input: {
+      appMapId: string;
+      screenId: string;
+      variantId: string;
+      captureId: string;
+      projectionId: string;
+      expectedRevision: number;
+      reason: string;
+      assertion: string;
+    };
+    output: {
+      projection: ReviewedDocumentOriginProjection;
+      ledger: ReviewedDocumentOriginLedger;
+      alreadyRevoked: boolean;
     };
   };
   "app-map.teach": {

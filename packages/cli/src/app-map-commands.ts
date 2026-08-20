@@ -272,6 +272,101 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
     ),
   ),
   mapped(
+    "app-map.scroll-surface.reviewed-origin.inspect",
+    path("screen origin inspect", ["appMapId", "screenId", "variantId", "captureId"], undefined, {
+      summary: "Inspect the immutable review and revocation lineage for one scroll origin",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "screenId", type: "string", description: "Logical screen identifier" },
+        { name: "variantId", type: "string", description: "Target/locale-specific variant" },
+        { name: "captureId", type: "string", description: "Immutable scroll capture" },
+      ],
+      examples: [
+        "relay screen origin inspect grok settings settings-en scroll-surface-capture --json",
+      ],
+      note: "Reads only persisted evidence, the reviewed-origin projection, and its local lifecycle ledger. It never connects to or controls a device.",
+    }),
+  ),
+  mapped(
+    "app-map.scroll-surface.reviewed-origin.review",
+    path("screen origin review", ["appMapId", "screenId", "variantId", "captureId"], undefined, {
+      summary: "Deliberately approve a verified Android document-top origin",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "screenId", type: "string", description: "Logical screen identifier" },
+        { name: "variantId", type: "string", description: "Android target/locale variant" },
+        { name: "captureId", type: "string", description: "Immutable scroll capture to review" },
+      ],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current App Map revision",
+        },
+        {
+          name: "reason",
+          type: "string",
+          required: true,
+          description: "Why the first raw viewport is known to be document top",
+        },
+        {
+          name: "assertion",
+          type: "string",
+          required: true,
+          description: "Reviewer’s explicit top-of-document assertion",
+        },
+      ],
+      examples: [
+        'relay screen origin review grok settings settings-en scroll-surface-capture --input \'{"expectedRevision":13,"reason":"Reviewed frozen first frame","assertion":"The raw PNG and accessibility tree show the document at its top boundary."}\'',
+      ],
+      note: "Creates a local, signed review overlay bound to this exact map revision/digest and raw PNG/tree pair. It does not capture, launch, scroll, or lease a device.",
+    }),
+  ),
+  mapped(
+    "app-map.scroll-surface.reviewed-origin.revoke",
+    path(
+      "screen origin revoke",
+      ["appMapId", "screenId", "variantId", "captureId", "projectionId"],
+      undefined,
+      {
+        summary: "Revoke one reviewed Android document-top origin",
+        argumentHelp: [
+          { name: "appMapId", type: "string", description: "App Map identifier" },
+          { name: "screenId", type: "string", description: "Logical screen identifier" },
+          { name: "variantId", type: "string", description: "Target/locale-specific variant" },
+          { name: "captureId", type: "string", description: "Immutable scroll capture" },
+          {
+            name: "projectionId",
+            type: "string",
+            description: "Reviewed-origin projection from inspect",
+          },
+        ],
+        inputHelp: [
+          {
+            name: "expectedRevision",
+            type: "number",
+            required: true,
+            description: "Current App Map revision",
+          },
+          {
+            name: "reason",
+            type: "string",
+            required: true,
+            description: "Why this approval must stop being usable",
+          },
+          {
+            name: "assertion",
+            type: "string",
+            required: true,
+            description: "Reviewer’s explicit revocation assertion",
+          },
+        ],
+        note: "Revocation is durable and blocks already-compiled recipes at runtime. It never deletes the approval evidence or controls a device.",
+      },
+    ),
+  ),
+  mapped(
     "app-map.teach",
     path("map teach", ["appMapId"], undefined, {
       summary: "Perform one tap or swipe, capture the destination, and connect it",

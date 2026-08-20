@@ -5,6 +5,7 @@ import type {
   ScrollSurfaceViewport,
   SemanticRevealPlan,
 } from "./scroll-surface.js";
+import type { ReviewedDocumentOriginExecutionReference } from "./reviewed-document-origin.js";
 export type HorizontalCoordinateAnchor = "left" | "center" | "right";
 export type VerticalCoordinateAnchor = "top" | "center" | "bottom";
 
@@ -449,6 +450,11 @@ export type RecipeStep = RecipeStepMetadata &
          * is copied only from a validated logical surface; geometry by itself
          * can never enable bounded Android origin restoration. */
         documentOriginProof?: ScrollSurfaceDocumentOriginProof;
+        /** A server-reviewed Android origin overlay for legacy/imported raw
+         * evidence. It is intentionally distinct from capture provenance;
+         * execution reopens its local projection and lifecycle ledger, so a
+         * revocation blocks even this already-compiled recipe. */
+        reviewedDocumentOrigin?: ReviewedDocumentOriginExecutionReference;
         baseline?: {
           compositeWidth?: number;
           compositeHeight?: number;

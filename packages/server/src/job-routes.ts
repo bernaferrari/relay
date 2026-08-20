@@ -2,6 +2,7 @@ import http from "node:http";
 import type { AppMapCapturePolicy } from "@relay/protocol";
 import {
   AppMapCompileError,
+  activeReviewedDocumentOriginsForAppMap,
   captureSnapshot,
   cancelActiveJob,
   cancelJob,
@@ -428,19 +429,21 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
           };
         });
     try {
+      const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);
       let compiledBody: Recipe | undefined;
       let compiledGraph: Record<string, Recipe> = {};
       if (combine) {
-        const compiled = compileAppMapCombine(map, combine);
+        const compiled = compileAppMapCombine(map, combine, { reviewedDocumentOrigins });
         compiledBody = compiled.root;
         compiledGraph = compiled.graph;
       } else if (body.testId?.trim()) {
         const work = map.tests?.[body.testId.trim()];
         if (!work) throw new HttpError(404, `Test ${body.testId} not found`);
-        const compiled = compileAppMapTest(map, {
-          ...work,
-          ...(body.capture ? { capture: body.capture } : {}),
-        });
+        const compiled = compileAppMapTest(
+          map,
+          { ...work, ...(body.capture ? { capture: body.capture } : {}) },
+          { reviewedDocumentOrigins },
+        );
         compiledBody = compiled.root;
         compiledGraph = compiled.graph;
       }

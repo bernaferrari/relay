@@ -1,5 +1,6 @@
 import {
   cancelJob,
+  activeReviewedDocumentOriginsForAppMap,
   compileAppMapCombine,
   currentOperationContext,
   getJob,
@@ -76,7 +77,8 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         screenshotEach: set.screenshotEach,
       };
     });
-    const compiled = compileAppMapCombine(map, combine);
+    const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);
+    const compiled = compileAppMapCombine(map, combine, { reviewedDocumentOrigins });
     const batch = await startOptionRecipeRun({
       recipeId: compiled.root.id,
       compiledBody: compiled.root,

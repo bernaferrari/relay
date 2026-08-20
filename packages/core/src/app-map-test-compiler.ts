@@ -7,6 +7,7 @@ import type {
   AppMapTestCompileDiagnostic,
   AppMapTestStepProvenance,
   RecipeStep,
+  ReviewedDocumentOriginProjection,
 } from "@relay/protocol";
 import { assertScenarioTest } from "./app-map/test-intent-validation.js";
 import {
@@ -20,7 +21,7 @@ import {
 } from "./app-map-itinerary.js";
 import { frozenColdCoverageEffects } from "./campaign-recovery-effects.js";
 import { validateAppMap } from "./app-map.js";
-import { frozenDocumentOrigin } from "./app-map-scroll-surface-baseline.js";
+import { scrollSurfaceDocumentOriginPlan } from "./app-map-scroll-surface-baseline.js";
 import {
   frozenRawAccessibilitySources,
   frozenRawAccessibilityTargetProfiles,
@@ -77,6 +78,9 @@ export type AppMapTestCompileOptions = {
    * The compiled plan begins with a fresh exact screen proof and fails closed
    * on mismatch; it never silently relaunches. */
   entryCheckpointScreenId?: string;
+  /** Server-only, locally verified reviewed-origin sidecars. Without this
+   * optional input pure/offline compilation remains exact-inverse. */
+  reviewedDocumentOrigins?: readonly ReviewedDocumentOriginProjection[];
 };
 
 function fail(
@@ -204,9 +208,9 @@ export function compileAppMapScenarioTest(
   };
   const captureLogicalSurface = (
     screenId: string,
-    options: { schedule?: boolean } = { schedule: true },
+    captureOptions: { schedule?: boolean } = { schedule: true },
   ): RecipeStep | undefined => {
-    const schedule = options.schedule !== false;
+    const schedule = captureOptions.schedule !== false;
     if (schedule && scheduledLogicalSurfaces.has(screenId)) return undefined;
     const binding = test.surfaceBindings?.find(
       (candidate) => candidate.screenId === screenId && candidate.captureMode === "full-surface",
@@ -223,9 +227,16 @@ export function compileAppMapScenarioTest(
       baseline.reason === "end-of-content" &&
       baseline.restoredStartViewport &&
       Boolean(baseline.composite);
-    const documentOrigin = baselineCompletedAndRestored
-      ? frozenDocumentOrigin(baseline)
+    const originPlan = baselineCompletedAndRestored
+      ? scrollSurfaceDocumentOriginPlan({
+          appMap: map,
+          screenId,
+          variantId: binding.variantId,
+          surface: baseline,
+          reviewedDocumentOrigins: options.reviewedDocumentOrigins,
+        })
       : undefined;
+    const documentOrigin = originPlan?.documentOrigin;
     const baselineTrust =
       baselineCompletedAndRestored && documentOrigin ? "trusted" : "recapture-required";
     const baselineTrustReason =
@@ -247,8 +258,11 @@ export function compileAppMapScenarioTest(
       baselineTrust,
       ...(baselineTrustReason ? { baselineTrustReason } : {}),
       ...(documentOrigin ? { documentOrigin: structuredClone(documentOrigin) } : {}),
-      ...(documentOrigin && baseline.documentOriginProof
-        ? { documentOriginProof: structuredClone(baseline.documentOriginProof) }
+      ...(originPlan?.documentOriginProof
+        ? { documentOriginProof: originPlan.documentOriginProof }
+        : {}),
+      ...(originPlan?.reviewedDocumentOrigin
+        ? { reviewedDocumentOrigin: originPlan.reviewedDocumentOrigin }
         : {}),
       ...(forceRecaptureSurfaceScreenIds.has(screenId) ? { forceRecapture: true } : {}),
       baseline: {

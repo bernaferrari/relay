@@ -25,6 +25,7 @@ export function compileAppMapTest(
 export function compileAppMapCombine(
   map: AppMap,
   combine: AppMapCombine,
+  options: AppMapTestCompileOptions = {},
 ): { root: Recipe; graph: Record<string, Recipe> } {
   if (!combine.testIds.length) throw new Error("Combination needs at least one test");
   const graph: Record<string, Recipe> = {};
@@ -32,10 +33,14 @@ export function compileAppMapCombine(
   for (const testId of combine.testIds) {
     const test = map.tests?.[testId];
     if (!test) throw new Error(`Test ${testId} is missing`);
-    const compiled = compileAppMapTest(map, {
-      ...test,
-      ...(combine.captures?.[testId] ? { capture: combine.captures[testId] } : {}),
-    });
+    const compiled = compileAppMapTest(
+      map,
+      {
+        ...test,
+        ...(combine.captures?.[testId] ? { capture: combine.captures[testId] } : {}),
+      },
+      options,
+    );
     Object.assign(graph, compiled.graph);
     modules.push({
       id: `relay-check-${testId}`,

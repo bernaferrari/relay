@@ -9,6 +9,8 @@ import type {
   DeviceLease,
   DevicePool,
   Project,
+  ReviewedDocumentOriginLedger,
+  ReviewedDocumentOriginProjection,
   Revisioned,
   TestData,
 } from "@relay/protocol";
@@ -22,7 +24,7 @@ import {
 } from "./collaboration-json.js";
 
 export const CONTROL_DB_NAME = "control.sqlite";
-export const CONTROL_SCHEMA_VERSION = 2;
+export const CONTROL_SCHEMA_VERSION = 3;
 export const JSON_MIGRATED_META = "json_migrated";
 export const RECOVERED_FROM_BACKUP_META = "recovered_from_json_backup";
 export const REPAIRED_ON_MIGRATE_META = "repaired_on_migrate";
@@ -121,6 +123,34 @@ export function applyControlSchema(db: DatabaseSync): void {
     );
     CREATE INDEX IF NOT EXISTS app_maps_project_updated
       ON app_maps(project_id, updated_at DESC);
+    CREATE TABLE IF NOT EXISTS app_map_reviewed_origin_scopes (
+      map_key TEXT PRIMARY KEY,
+      map_epoch TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS reviewed_document_origin_projections (
+      id TEXT PRIMARY KEY,
+      map_key TEXT NOT NULL,
+      map_epoch TEXT NOT NULL,
+      screen_id TEXT NOT NULL,
+      variant_id TEXT NOT NULL,
+      surface_id TEXT NOT NULL,
+      capture_id TEXT NOT NULL,
+      document TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS reviewed_document_origin_projections_map_capture
+      ON reviewed_document_origin_projections(map_key, screen_id, variant_id, capture_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS reviewed_document_origin_ledger (
+      projection_id TEXT PRIMARY KEY,
+      map_key TEXT NOT NULL,
+      map_epoch TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'revoked')),
+      document TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS reviewed_document_origin_ledger_map_status
+      ON reviewed_document_origin_ledger(map_key, map_epoch, status);
   `);
   migrateControlSchema(db);
 }
@@ -152,6 +182,10 @@ function migrateControlSchema(db: DatabaseSync): void {
         ON control_events(project_id, seq);
     `);
     db.exec("PRAGMA user_version = 2");
+    version = 2;
+  }
+  if (version < 3) {
+    db.exec("PRAGMA user_version = 3");
   }
 }
 
@@ -346,6 +380,129 @@ export function upsertAppMapRow(
 
 export function upsertHealthyAppMap(db: DatabaseSync, key: string, appMap: AppMap): void {
   upsertAppMapRow(db, key, JSON.stringify(appMap), "ok", undefined, appMap.updatedAt);
+}
+
+export function reviewedDocumentOriginMapEpoch(
+  db: DatabaseSync,
+  mapKey: string,
+): string | undefined {
+  const row = db
+    .prepare("SELECT map_epoch FROM app_map_reviewed_origin_scopes WHERE map_key = ?")
+    .get(mapKey) as { map_epoch?: string } | undefined;
+  return row?.map_epoch;
+}
+
+export function ensureReviewedDocumentOriginMapEpoch(
+  db: DatabaseSync,
+  mapKey: string,
+  mapEpoch: string,
+  updatedAt: number,
+): string {
+  db.prepare(
+    `INSERT INTO app_map_reviewed_origin_scopes(map_key, map_epoch, updated_at)
+     VALUES(?, ?, ?) ON CONFLICT(map_key) DO NOTHING`,
+  ).run(mapKey, mapEpoch, updatedAt);
+  const current = reviewedDocumentOriginMapEpoch(db, mapKey);
+  if (!current) throw new Error("Reviewed document-origin map scope was not persisted");
+  return current;
+}
+
+export function rotateReviewedDocumentOriginMapEpoch(
+  db: DatabaseSync,
+  mapKey: string,
+  mapEpoch: string,
+  updatedAt: number,
+): void {
+  db.prepare(
+    `INSERT INTO app_map_reviewed_origin_scopes(map_key, map_epoch, updated_at)
+     VALUES(?, ?, ?) ON CONFLICT(map_key) DO UPDATE SET
+       map_epoch = excluded.map_epoch,
+       updated_at = excluded.updated_at`,
+  ).run(mapKey, mapEpoch, updatedAt);
+}
+
+export function reviewedDocumentOriginProjections(
+  db: DatabaseSync,
+  mapKey: string,
+): ReviewedDocumentOriginProjection[] {
+  const rows = db
+    .prepare(
+      `SELECT document FROM reviewed_document_origin_projections
+       WHERE map_key = ? ORDER BY created_at DESC, id DESC`,
+    )
+    .all(mapKey) as Array<{ document?: string }>;
+  return rows
+    .map((row) => parseRowDocument<ReviewedDocumentOriginProjection>(row))
+    .filter((value): value is ReviewedDocumentOriginProjection => value !== undefined);
+}
+
+export function reviewedDocumentOriginProjection(
+  db: DatabaseSync,
+  projectionId: string,
+): ReviewedDocumentOriginProjection | undefined {
+  return parseRowDocument<ReviewedDocumentOriginProjection>(
+    db
+      .prepare("SELECT document FROM reviewed_document_origin_projections WHERE id = ?")
+      .get(projectionId) as { document?: string } | undefined,
+  );
+}
+
+export function insertReviewedDocumentOriginProjection(
+  db: DatabaseSync,
+  mapKey: string,
+  projection: ReviewedDocumentOriginProjection,
+): void {
+  db.prepare(
+    `INSERT INTO reviewed_document_origin_projections(
+      id, map_key, map_epoch, screen_id, variant_id, surface_id, capture_id, document, created_at
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    projection.id,
+    mapKey,
+    projection.binding.mapEpoch,
+    projection.binding.screenId,
+    projection.binding.variantId,
+    projection.binding.surfaceId,
+    projection.binding.captureId,
+    JSON.stringify(projection),
+    projection.approval.at,
+  );
+}
+
+export function reviewedDocumentOriginLedger(
+  db: DatabaseSync,
+  projectionId: string,
+): ReviewedDocumentOriginLedger | undefined {
+  return parseRowDocument<ReviewedDocumentOriginLedger>(
+    db
+      .prepare("SELECT document FROM reviewed_document_origin_ledger WHERE projection_id = ?")
+      .get(projectionId) as { document?: string } | undefined,
+  );
+}
+
+export function upsertReviewedDocumentOriginLedger(
+  db: DatabaseSync,
+  mapKey: string,
+  mapEpoch: string,
+  ledger: ReviewedDocumentOriginLedger,
+): void {
+  db.prepare(
+    `INSERT INTO reviewed_document_origin_ledger(
+      projection_id, map_key, map_epoch, status, document, updated_at
+    ) VALUES(?, ?, ?, ?, ?, ?) ON CONFLICT(projection_id) DO UPDATE SET
+      map_key = excluded.map_key,
+      map_epoch = excluded.map_epoch,
+      status = excluded.status,
+      document = excluded.document,
+      updated_at = excluded.updated_at`,
+  ).run(
+    ledger.projectionId,
+    mapKey,
+    mapEpoch,
+    ledger.status,
+    JSON.stringify(ledger),
+    ledger.revocation?.at ?? ledger.activatedAt ?? ledger.createdAt,
+  );
 }
 
 function importState(db: DatabaseSync, state: CollaborationState): void {

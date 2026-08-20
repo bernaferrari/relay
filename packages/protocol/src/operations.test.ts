@@ -35,6 +35,9 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.screen.capture",
       "app-map.scroll-surface.capture",
       "app-map.scroll-surface.regenerate",
+      "app-map.scroll-surface.reviewed-origin.inspect",
+      "app-map.scroll-surface.reviewed-origin.review",
+      "app-map.scroll-surface.reviewed-origin.revoke",
       "app-map.teach",
       "app-map.screen.update",
       "app-map.screen.remove",
@@ -88,6 +91,18 @@ test("project roles form one explicit least-privilege hierarchy", () => {
 test("operation roles keep viewing, authoring, execution, and administration distinct", () => {
   assert.equal(operationDefinition("system.health.get").minimumRole, "viewer");
   assert.equal(operationDefinition("app-map.update").minimumRole, "author");
+  assert.equal(
+    operationDefinition("app-map.scroll-surface.reviewed-origin.inspect").minimumRole,
+    "viewer",
+  );
+  assert.equal(
+    operationDefinition("app-map.scroll-surface.reviewed-origin.review").minimumRole,
+    "author",
+  );
+  assert.equal(
+    operationDefinition("app-map.scroll-surface.reviewed-origin.revoke").minimumRole,
+    "author",
+  );
   assert.equal(operationDefinition("corpus.create").minimumRole, "author");
   assert.equal(operationDefinition("job.start").minimumRole, "runner");
   assert.equal(operationDefinition("run.repair.get").minimumRole, "viewer");
@@ -626,6 +641,40 @@ test("durable scroll surfaces target exactly one App Map Screen Variant", () => 
     expectedRevision: 13,
   };
   assert.deepEqual(regenerate.input.parse(regenerationInput), regenerationInput);
+
+  const inspection = operationDefinition("app-map.scroll-surface.reviewed-origin.inspect");
+  assert.equal(inspection.lease, "none");
+  assert.deepEqual(inspection.targetCapabilities, []);
+  const scope = {
+    appMapId: "map-1",
+    screenId: "settings",
+    variantId: "settings-ja",
+    captureId: "capture-1",
+  };
+  assert.deepEqual(inspection.input.parse(scope), scope);
+
+  const review = operationDefinition("app-map.scroll-surface.reviewed-origin.review");
+  assert.equal(review.lease, "none");
+  assert.deepEqual(review.targetCapabilities, []);
+  const decision = {
+    ...scope,
+    expectedRevision: 13,
+    reason: "Reviewed immutable first viewport.",
+    assertion: "The saved PNG and accessibility tree show document top.",
+  };
+  assert.deepEqual(review.input.parse(decision), decision);
+  assert.throws(
+    () => review.input.parse({ ...decision, assertion: "x".repeat(4_001) }),
+    /assertion/u,
+  );
+
+  const revoke = operationDefinition("app-map.scroll-surface.reviewed-origin.revoke");
+  assert.equal(revoke.lease, "none");
+  assert.deepEqual(revoke.targetCapabilities, []);
+  assert.deepEqual(revoke.input.parse({ ...decision, projectionId: "reviewed-origin-1" }), {
+    ...decision,
+    projectionId: "reviewed-origin-1",
+  });
 });
 
 test("runtime parsers reject malformed input and output", () => {

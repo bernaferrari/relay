@@ -2,6 +2,7 @@ import type {
   RecipeParameter,
   RecipeStep,
   RecordedStepEvidence,
+  ReviewedDocumentOriginExecutionReference,
   ScrollSurfaceDocumentOriginProof,
   ScrollSurfaceEvidence,
   ScrollSurfaceViewport,
@@ -9,6 +10,7 @@ import type {
 } from "@relay/protocol";
 import { parseCampaignCheck } from "./recipe-validation-campaign.js";
 import { parseRecordedEvidence } from "./recipe-validation-evidence.js";
+import { parseReviewedDocumentOriginExecutionReference } from "./recipe-validation-reviewed-origin.js";
 import {
   MAX_WAIT_MS,
   isNumber,
@@ -419,6 +421,13 @@ function parseCaptureSurfaceStep(
   if (raw.documentOriginProof !== undefined && !documentOriginProof) {
     throw stepErr(index, "capture-surface.documentOriginProof must be an object");
   }
+  const reviewedDocumentOrigin =
+    isObject(raw.reviewedDocumentOrigin) && !Array.isArray(raw.reviewedDocumentOrigin)
+      ? raw.reviewedDocumentOrigin
+      : undefined;
+  if (raw.reviewedDocumentOrigin !== undefined && !reviewedDocumentOrigin) {
+    throw stepErr(index, "capture-surface.reviewedDocumentOrigin must be an object");
+  }
   const originEvidence = <Mime extends "image/png" | "application/json">(
     value: unknown,
     mime: Mime,
@@ -446,13 +455,10 @@ function parseCaptureSurfaceStep(
   };
   let parsedDocumentOrigin: ScrollSurfaceViewport | undefined;
   let parsedDocumentOriginProof: ScrollSurfaceDocumentOriginProof | undefined;
+  let parsedReviewedDocumentOrigin: ReviewedDocumentOriginExecutionReference | undefined;
   if (documentOrigin) {
     const screenshot = originEvidence(documentOrigin.screenshot, "image/png");
     const accessibilityTree = originEvidence(documentOrigin.accessibilityTree, "application/json");
-    const attestation = originEvidence(documentOriginProof?.attestation, "application/json");
-    const authorization = isObject(documentOriginProof?.authorization)
-      ? documentOriginProof.authorization
-      : undefined;
     const numbers = [
       documentOrigin.index,
       documentOrigin.offsetY,
@@ -476,22 +482,32 @@ function parseCaptureSurfaceStep(
     if (raw.baselineTrust !== "trusted") {
       throw stepErr(index, "capture-surface.documentOrigin requires a trusted baseline");
     }
+    if (documentOriginProof && reviewedDocumentOrigin) {
+      throw stepErr(
+        index,
+        "capture-surface accepts either native or reviewed document-origin provenance",
+      );
+    }
     const firstViewport = documentOriginProof?.firstViewport;
+    const attestation = originEvidence(documentOriginProof?.attestation, "application/json");
+    const authorization = isObject(documentOriginProof?.authorization)
+      ? documentOriginProof.authorization
+      : undefined;
     if (
-      !documentOriginProof ||
-      !attestation ||
-      !authorization ||
-      documentOriginProof.schemaVersion !== 1 ||
-      documentOriginProof.method !== "frozen-origin-match" ||
-      authorization.schemaVersion !== 1 ||
-      authorization.issuer !== "relay-local-capture" ||
-      !isString(authorization.signature) ||
-      !/^[A-Za-z0-9_-]{43}$/u.test(authorization.signature) ||
-      !isObject(firstViewport) ||
-      !isString(firstViewport.screenshotSha256) ||
-      !isString(firstViewport.accessibilityTreeSha256) ||
-      firstViewport.screenshotSha256 !== screenshot.sha256 ||
-      firstViewport.accessibilityTreeSha256 !== accessibilityTree.sha256
+      documentOriginProof &&
+      (!attestation ||
+        !authorization ||
+        documentOriginProof.schemaVersion !== 1 ||
+        documentOriginProof.method !== "frozen-origin-match" ||
+        authorization.schemaVersion !== 1 ||
+        authorization.issuer !== "relay-local-capture" ||
+        !isString(authorization.signature) ||
+        !/^[A-Za-z0-9_-]{43}$/u.test(authorization.signature) ||
+        !isObject(firstViewport) ||
+        !isString(firstViewport.screenshotSha256) ||
+        !isString(firstViewport.accessibilityTreeSha256) ||
+        firstViewport.screenshotSha256 !== screenshot.sha256 ||
+        firstViewport.accessibilityTreeSha256 !== accessibilityTree.sha256)
     ) {
       throw stepErr(
         index,
@@ -508,22 +524,50 @@ function parseCaptureSurfaceStep(
       screenshot,
       accessibilityTree,
     };
-    parsedDocumentOriginProof = {
-      schemaVersion: 1,
-      method: "frozen-origin-match",
-      firstViewport: {
-        screenshotSha256: screenshot.sha256,
-        accessibilityTreeSha256: accessibilityTree.sha256,
-      },
-      attestation,
-      authorization: {
+    if (documentOriginProof && attestation && authorization) {
+      parsedDocumentOriginProof = {
         schemaVersion: 1,
-        issuer: "relay-local-capture",
-        signature: authorization.signature,
-      },
-    };
-  } else if (documentOriginProof) {
-    throw stepErr(index, "capture-surface.documentOriginProof requires documentOrigin");
+        method: "frozen-origin-match",
+        firstViewport: {
+          screenshotSha256: screenshot.sha256,
+          accessibilityTreeSha256: accessibilityTree.sha256,
+        },
+        attestation,
+        authorization: {
+          schemaVersion: 1,
+          issuer: "relay-local-capture",
+          signature: authorization.signature as string,
+        },
+      };
+    } else if (reviewedDocumentOrigin) {
+      parsedReviewedDocumentOrigin = parseReviewedDocumentOriginExecutionReference(
+        reviewedDocumentOrigin,
+        index,
+        {
+          index: 0,
+          offsetY: 0,
+          appendedHeight: 0,
+          capturedAt: documentOrigin.capturedAt as number,
+          width: documentOrigin.width as number,
+          height: documentOrigin.height as number,
+          screenshot,
+          accessibilityTree,
+        },
+        {
+          screenId: raw.screenId.trim(),
+          variantId: raw.variantId.trim(),
+          surfaceId: raw.surfaceId.trim(),
+          captureId: raw.baselineCaptureId.trim(),
+        },
+      );
+    } else {
+      throw stepErr(
+        index,
+        "capture-surface.documentOriginProof must bind the frozen first viewport evidence",
+      );
+    }
+  } else if (documentOriginProof || reviewedDocumentOrigin) {
+    throw stepErr(index, "capture-surface document-origin provenance requires documentOrigin");
   }
   const baseline =
     isObject(raw.baseline) && !Array.isArray(raw.baseline) ? raw.baseline : undefined;
@@ -549,6 +593,9 @@ function parseCaptureSurfaceStep(
         }
       : {}),
     ...(parsedDocumentOriginProof ? { documentOriginProof: parsedDocumentOriginProof } : {}),
+    ...(parsedReviewedDocumentOrigin
+      ? { reviewedDocumentOrigin: parsedReviewedDocumentOrigin }
+      : {}),
     ...(baseline && isNumber(baseline.semanticNodeCount)
       ? {
           baseline: {

@@ -8,6 +8,7 @@ export * from "./app-map.js";
 export { summarizeAppMapOperationResult } from "./app-map-summary.js";
 export type { DegradedAppMapRef } from "./app-map-operation-map.js";
 export * from "./scroll-surface.js";
+export * from "./reviewed-document-origin.js";
 export * from "./screen-consolidation.js";
 export * from "./test-intent.js";
 export * from "./case-expansion.js";

@@ -270,6 +270,51 @@ test("screen regenerate-scroll rebuilds derived views without device input", () 
   );
 });
 
+test("screen origin review commands are evidence-only and do not request a lease", () => {
+  const scope = ["map-1", "settings", "settings-ja", "capture-1"];
+  assert.deepEqual(resolveCommand(["screen", "origin", "inspect", ...scope]), {
+    operationId: "app-map.scroll-surface.reviewed-origin.inspect",
+    commandPath: "screen origin inspect",
+    input: {
+      appMapId: "map-1",
+      screenId: "settings",
+      variantId: "settings-ja",
+      captureId: "capture-1",
+    },
+  });
+  const decision = {
+    expectedRevision: 13,
+    reason: "Reviewed immutable first viewport.",
+    assertion: "The saved PNG and accessibility tree show document top.",
+  };
+  assert.deepEqual(resolveCommand(["screen", "origin", "review", ...scope], decision), {
+    operationId: "app-map.scroll-surface.reviewed-origin.review",
+    commandPath: "screen origin review",
+    input: {
+      appMapId: "map-1",
+      screenId: "settings",
+      variantId: "settings-ja",
+      captureId: "capture-1",
+      ...decision,
+    },
+  });
+  assert.deepEqual(
+    resolveCommand(["screen", "origin", "revoke", ...scope, "reviewed-origin-1"], decision),
+    {
+      operationId: "app-map.scroll-surface.reviewed-origin.revoke",
+      commandPath: "screen origin revoke",
+      input: {
+        appMapId: "map-1",
+        screenId: "settings",
+        variantId: "settings-ja",
+        captureId: "capture-1",
+        projectionId: "reviewed-origin-1",
+        ...decision,
+      },
+    },
+  );
+});
+
 test("persisted run replay has one friendly watched command", () => {
   assert.deepEqual(resolveCommand(["run", "replay", "run-1"]), {
     operationId: "run.replay",

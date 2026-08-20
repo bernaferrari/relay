@@ -2,6 +2,7 @@ import type http from "node:http";
 import {
   AppMapCompileError,
   AppMapTestCompileError,
+  activeReviewedDocumentOriginsForAppMap,
   RunMatrixError,
   buildTargetProfiles,
   compileAppMapConnection,
@@ -239,10 +240,12 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       : undefined;
     let compiled;
     try {
+      const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);
       compiled = compileAppMapTest(map, test, {
         forceRecaptureSurfaceScreenIds: body.surfaceCapture?.forceRecaptureScreenIds,
         entryCheckpointScreenId:
           body.startup?.mode === "verified-checkpoint" ? body.startup.screenId : undefined,
+        reviewedDocumentOrigins,
       });
     } catch (error) {
       if (error instanceof AppMapTestCompileError) {

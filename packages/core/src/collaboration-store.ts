@@ -6,6 +6,8 @@ import type {
   DeviceLease,
   DevicePool,
   Project,
+  ReviewedDocumentOriginLedger,
+  ReviewedDocumentOriginProjection,
   Revisioned,
   TestData,
 } from "@relay/protocol";
@@ -15,19 +17,27 @@ import { findWorkspaceRoot } from "./workspace-root.js";
 import { join } from "node:path";
 import {
   controlDatabasePath,
+  ensureReviewedDocumentOriginMapEpoch,
   ensureControlDatabase,
   listControlEventRows,
   metaDelete,
   metaGet,
+  insertReviewedDocumentOriginProjection,
   parseRowDocument,
   RECOVERED_FROM_BACKUP_META,
   REPAIRED_ON_MIGRATE_META,
   seedDefaultProject,
+  reviewedDocumentOriginLedger,
+  reviewedDocumentOriginMapEpoch,
+  reviewedDocumentOriginProjection,
+  reviewedDocumentOriginProjections,
+  rotateReviewedDocumentOriginMapEpoch,
   upsertAppMapRow,
   upsertBuildRow,
   upsertHealthyAppMap,
   upsertIdempotencyRow,
   upsertLeaseRow,
+  upsertReviewedDocumentOriginLedger,
   upsertMatrixRow,
   upsertPoolRow,
   upsertProjectRow,
@@ -92,6 +102,23 @@ export type ControlStore = {
   seedDefaultProject(): void;
   degradedMaps(): DegradedAppMap[];
   takeMigrationFlags(): { recoveredFromBackup: boolean; repaired: boolean };
+  reviewedDocumentOriginMapEpoch(mapKey: string): string | undefined;
+  ensureReviewedDocumentOriginMapEpoch(mapKey: string, mapEpoch: string, at: number): string;
+  rotateReviewedDocumentOriginMapEpoch(mapKey: string, mapEpoch: string, at: number): void;
+  reviewedDocumentOriginProjections(mapKey: string): ReviewedDocumentOriginProjection[];
+  reviewedDocumentOriginProjection(
+    projectionId: string,
+  ): ReviewedDocumentOriginProjection | undefined;
+  insertReviewedDocumentOriginProjection(
+    mapKey: string,
+    projection: ReviewedDocumentOriginProjection,
+  ): void;
+  reviewedDocumentOriginLedger(projectionId: string): ReviewedDocumentOriginLedger | undefined;
+  upsertReviewedDocumentOriginLedger(
+    mapKey: string,
+    mapEpoch: string,
+    ledger: ReviewedDocumentOriginLedger,
+  ): void;
 };
 
 function createStore(db: DatabaseSync): ControlStore {
@@ -300,6 +327,30 @@ function createStore(db: DatabaseSync): ControlStore {
       if (recoveredFromBackup) metaDelete(db, RECOVERED_FROM_BACKUP_META);
       if (repaired) metaDelete(db, REPAIRED_ON_MIGRATE_META);
       return { recoveredFromBackup, repaired };
+    },
+    reviewedDocumentOriginMapEpoch(mapKey) {
+      return reviewedDocumentOriginMapEpoch(db, mapKey);
+    },
+    ensureReviewedDocumentOriginMapEpoch(mapKey, mapEpoch, at) {
+      return ensureReviewedDocumentOriginMapEpoch(db, mapKey, mapEpoch, at);
+    },
+    rotateReviewedDocumentOriginMapEpoch(mapKey, mapEpoch, at) {
+      rotateReviewedDocumentOriginMapEpoch(db, mapKey, mapEpoch, at);
+    },
+    reviewedDocumentOriginProjections(mapKey) {
+      return reviewedDocumentOriginProjections(db, mapKey);
+    },
+    reviewedDocumentOriginProjection(projectionId) {
+      return reviewedDocumentOriginProjection(db, projectionId);
+    },
+    insertReviewedDocumentOriginProjection(mapKey, projection) {
+      insertReviewedDocumentOriginProjection(db, mapKey, projection);
+    },
+    reviewedDocumentOriginLedger(projectionId) {
+      return reviewedDocumentOriginLedger(db, projectionId);
+    },
+    upsertReviewedDocumentOriginLedger(mapKey, mapEpoch, ledger) {
+      upsertReviewedDocumentOriginLedger(db, mapKey, mapEpoch, ledger);
     },
   };
 }

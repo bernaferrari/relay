@@ -11,6 +11,7 @@ import {
   type Revisioned,
   type TestData,
 } from "@relay/protocol";
+import { randomUUID } from "node:crypto";
 import { now, publish } from "./events.js";
 import { APP_MAP_SCHEMA_VERSION, validateAppMap } from "./app-map.js";
 import { rescopeAppMap } from "./app-map-yaml.js";
@@ -555,6 +556,9 @@ export async function createAppMap(input: {
       updatedAt: at,
     });
     store.upsertAppMap(key, appMap);
+    // A local map incarnation is never serialized with the portable App Map.
+    // Recreating an id must not let an old reviewed-origin sidecar revive.
+    store.rotateReviewedDocumentOriginMapEpoch(key, randomUUID(), at);
     if (replayKey) store.upsertIdempotency(replayKey, fingerprint);
     emit({
       type: "resource.created",
@@ -597,6 +601,9 @@ export async function importAppMap(input: {
       appMapId,
     });
     store.upsertAppMap(key, appMap);
+    // Import/replace/copy are all new local map incarnations even when the
+    // portable YAML happens to have identical ids, revision, and raw hashes.
+    store.rotateReviewedDocumentOriginMapEpoch(key, randomUUID(), now());
     emit({
       type: existing ? "resource.updated" : "resource.created",
       at: now(),
@@ -679,6 +686,7 @@ export async function duplicateAppMap(input: {
       updatedAt: at,
     });
     store.upsertAppMap(key, appMap);
+    store.rotateReviewedDocumentOriginMapEpoch(key, randomUUID(), at);
     emit({
       type: "resource.created",
       at,
