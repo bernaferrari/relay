@@ -46,7 +46,10 @@ import {
 } from "@relay/core";
 import { assertJobAccess, assertTargetControl } from "./access-control.js";
 import { requireAppMapCombineRuntimeProfileContract } from "./app-map-combine-runtime-contract.js";
-import { requireScopedAppMapTestExecution } from "./app-map-test-execution-guard.js";
+import {
+  appMapTestExecutionReviewHttpError,
+  requireScopedAppMapTestExecution,
+} from "./app-map-test-execution-guard.js";
 import { enqueueCompatibilityBatch } from "./compatibility-jobs.js";
 import { HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
@@ -198,8 +201,14 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         );
       }
     }
-    const job = await runtime.resumeJob(resumeMatch.id!);
-    json(res, 200, { job });
+    try {
+      const job = await runtime.resumeJob(resumeMatch.id!);
+      json(res, 200, { job });
+    } catch (error) {
+      const reviewError = appMapTestExecutionReviewHttpError(error);
+      if (reviewError) throw reviewError;
+      throw error;
+    }
     return true;
   }
 

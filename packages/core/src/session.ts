@@ -64,6 +64,7 @@ import { captureAutomaticState } from "./session-automatic-evidence.js";
 import { appendStepLog, finishStep, observeStepActions, openStep } from "./session-trace-steps.js";
 import { createSessionJob, replayInputFromPersistedRun } from "./session-job-factory.js";
 import {
+  AppMapTestExecutionReviewRequiredError,
   appMapTestExecutionSourceFromJob,
   appMapTestExecutionSourceFromRun,
   requireScopedAppMapTestExecutionSource,
@@ -367,7 +368,7 @@ export async function resumeJob(id: string): Promise<TestJob> {
     appMapTestExecutionSourceFromJob(job),
   );
   if (executionIntent.status === "review-required") {
-    throw new Error(`App Map Test execution needs review: ${executionIntent.reason}`);
+    throw new AppMapTestExecutionReviewRequiredError(executionIntent.reason);
   }
   if (job.status !== "paused") {
     throw new Error(`Cannot resume job in status ${job.status}`);

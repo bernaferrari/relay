@@ -36,6 +36,16 @@ export type AppMapTestExecutionIntentAssessment =
   | { status: "review-required"; reason: string }
   | { status: "valid"; intent: AppMapTestExecutionIntent };
 
+/** A typed cross-boundary signal: retries, resumes, and replays must turn
+ * this into the same review-needed response rather than treating a stale
+ * offline proof as an internal server error. */
+export class AppMapTestExecutionReviewRequiredError extends Error {
+  constructor(readonly reason: string) {
+    super(`App Map Test execution needs review: ${reason}`);
+    this.name = "AppMapTestExecutionReviewRequiredError";
+  }
+}
+
 /** A synchronous queue boundary. It deliberately proves only immutable
  * structure; HTTP routes and the executor perform the asynchronous frozen-raw
  * preflight before they may obtain target control. */
@@ -44,7 +54,7 @@ export function requireScopedAppMapTestExecutionSource(
 ): AppMapTestExecutionIntent | undefined {
   const assessment = assessAppMapTestExecutionSource(source);
   if (assessment.status === "review-required") {
-    throw new Error(`App Map Test execution needs review: ${assessment.reason}`);
+    throw new AppMapTestExecutionReviewRequiredError(assessment.reason);
   }
   return assessment.status === "valid" ? assessment.intent : undefined;
 }
@@ -63,6 +73,18 @@ function artifactHasKind(value: unknown, kind: string): boolean {
     !Array.isArray(value) &&
     (value as { kind?: unknown }).kind === kind
   );
+}
+
+/** The catch path receives arbitrary persisted array members, so it must use
+ * the same formal plan parser as the ordinary path. A recipe label alone can
+ * never classify a historical execution as an App Map Test. */
+function artifactHasCanonicalTestPlan(value: unknown): boolean {
+  if (!artifactHasKind(value, "app-map-test-plan")) return false;
+  try {
+    return parseCanonicalAppMapTestPlan((value as { data?: unknown }).data) !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 function sameViewport(
@@ -145,17 +167,22 @@ export function assessAppMapTestExecutionSource(
   try {
     return assessAppMapTestExecutionSourceValue(source);
   } catch {
-    const claimsIntent =
-      Array.isArray(source.artifacts) &&
-      source.artifacts.some((artifact) =>
-        artifactHasKind(artifact, appMapTestExecutionIntentArtifactKind),
-      );
-    return claimsIntent
-      ? {
-          status: "review-required",
-          reason: "The Test execution intent is malformed or internally inconsistent.",
-        }
-      : { status: "not-app-map-test" };
+    const artifacts = Array.isArray(source.artifacts) ? source.artifacts : [];
+    if (
+      artifacts.some((artifact) => artifactHasKind(artifact, appMapTestExecutionIntentArtifactKind))
+    ) {
+      return {
+        status: "review-required",
+        reason: "The Test execution intent is malformed or internally inconsistent.",
+      };
+    }
+    if (artifacts.some(artifactHasCanonicalTestPlan)) {
+      return {
+        status: "review-required",
+        reason: "This historical App Map Test has no scoped execution intent.",
+      };
+    }
+    return { status: "not-app-map-test" };
   }
 }
 

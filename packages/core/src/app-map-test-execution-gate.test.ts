@@ -96,6 +96,22 @@ test("hard-stops malformed typed and parser-valid historical Test artifacts with
   assert.equal(assessAppMapTestExecutionSource(historical).status, "review-required");
   assert.throws(() => requireScopedAppMapTestExecutionSource(historical), /needs review/u);
 
+  const malformedHistoricalArray = {
+    ...source,
+    artifacts: [
+      null,
+      { kind: "app-map-test-plan", data: plan },
+    ] as unknown as typeof source.artifacts,
+  };
+  assert.deepEqual(assessAppMapTestExecutionSource(malformedHistoricalArray), {
+    status: "review-required",
+    reason: "This historical App Map Test has no scoped execution intent.",
+  });
+  assert.throws(
+    () => requireScopedAppMapTestExecutionSource(malformedHistoricalArray),
+    /needs review/u,
+  );
+
   const malformed = {
     ...source,
     artifacts: [{ kind: "app-map-test-execution-intent", data: { schemaVersion: 1 } }],
@@ -252,7 +268,7 @@ test("rejects a queued Test whose target profile loses the selected viewport ide
   });
 });
 
-test("the canonical queue rejects an unscoped parser-valid historical Test", () => {
+test("the canonical queue rejects an unscoped historical Test even after a malformed sibling", () => {
   const { plan, root, recipeGraph } = fixture();
   assert.throws(
     () =>
@@ -275,7 +291,10 @@ test("the canonical queue rejects an unscoped parser-valid historical Test", () 
             platform: "android",
             recipeSnapshot: root,
             recipeGraph,
-            artifacts: [{ kind: "app-map-test-plan", capturedAt: 1, data: plan }],
+            artifacts: [
+              null,
+              { kind: "app-map-test-plan", capturedAt: 1, data: plan },
+            ] as unknown as { kind: string; capturedAt: number; data: unknown }[],
           }),
       ),
     /needs review/u,
