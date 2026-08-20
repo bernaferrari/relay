@@ -25,19 +25,28 @@ import {
   resetCorpusCrawlsForTests,
   setCorpusCrawlRuntimeForTests,
 } from "./corpus.js";
+import { postLoginNotifications } from "./grok.js";
 import { runRecipeStep } from "./recipe-runner.js";
 import { captureScrollableSurvey } from "./scrollable-survey.js";
 import { scanSwitcherPicker } from "./switcher-profiles.js";
 import { runWithTargetContext } from "./target-context.js";
 
 const ios = (serial: string) => ({ kind: "device" as const, platform: "ios" as const, serial });
+const iosCloud = (sessionId: string) => ({
+  kind: "cloud" as const,
+  provider: "test",
+  sessionId,
+  platform: "ios" as const,
+});
 const roots: string[] = [];
+let corpusRoot: string | undefined;
 
 afterEach(async () => {
   setLocalDeviceProvider(undefined);
   resetDeviceClients();
   resetCorpusCrawlsForTests();
   delete process.env.RELAY_WORKSPACE_ROOT;
+  corpusRoot = undefined;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -187,6 +196,46 @@ function surveyCapture() {
   };
 }
 
+function grokNotificationDevice(
+  nativeDispatches: string[],
+  outcome: "unknown" | "ordinary",
+): Device {
+  const labels = [button("Enable notifications"), button("Allow")];
+  return {
+    capture: { snapshot: async () => ({ nodes: labels }) },
+    interactions: {
+      press: async (input: { selector?: string }) => {
+        nativeDispatches.push(input.selector === 'label="Allow"' ? "allow" : "enable-notifications");
+        if (input.selector === 'label="Enable notifications"') {
+          if (outcome === "unknown") throw unknownIosMutation("press");
+          throw new Error("semantic label unavailable");
+        }
+      },
+      find: async (input: { query?: string; action?: string }) => {
+        if (input.action === "exists") {
+          if (input.query === "Enable notifications" || input.query === "Allow") return {};
+          throw new Error("element not found");
+        }
+        if (input.action === "click") {
+          nativeDispatches.push("find-click");
+          return {};
+        }
+        throw new Error("element not found");
+      },
+    },
+    command: { wait: async () => undefined },
+  } as unknown as Device;
+}
+
+async function runGrokNotificationSurface(
+  nativeDispatches: string[],
+  outcome: "unknown" | "ordinary",
+): Promise<void> {
+  await runWithTargetContext(iosCloud(`grok-notifications-${outcome}`), () =>
+    postLoginNotifications(grokNotificationDevice(nativeDispatches, outcome), 100),
+  );
+}
+
 function switcherPickerNodes(): SnapshotNode[] {
   return [
     {
@@ -273,8 +322,13 @@ const corpusNodes: SnapshotNode[] = [
 ];
 
 async function corpusWorkspace(): Promise<void> {
+  if (corpusRoot) {
+    process.env.RELAY_WORKSPACE_ROOT = corpusRoot;
+    return;
+  }
   const root = await mkdtemp(join(tmpdir(), "relay-terminality-corpus-"));
   roots.push(root);
+  corpusRoot = root;
   process.env.RELAY_WORKSPACE_ROOT = root;
 }
 
@@ -409,6 +463,25 @@ test("registered public recovery boundaries preserve iOS exact-once terminality"
                 { log: () => undefined, job: { artifacts: [] } as never },
               ),
             ),
+          );
+        },
+      },
+    },
+    {
+      id: "core.grok.notification-fallback",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        return await terminalTrace(nativeDispatches, () =>
+          runGrokNotificationSurface(nativeDispatches, "unknown"),
+        );
+      },
+      recovery: {
+        expectedStatus: "recovered",
+        expectedNativeDispatches: 3,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          return await ordinaryTrace(nativeDispatches, "recovered", () =>
+            runGrokNotificationSurface(nativeDispatches, "ordinary"),
           );
         },
       },

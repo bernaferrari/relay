@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { IosMutationOutcomeUnknownError } from "@relay/core";
+import {
+  defineIosMutationTerminalityRegistry,
+  verifyIosMutationTerminalityRegistry,
+} from "@relay/protocol";
 import { startServer } from "./index.js";
 
 function headers(): Record<string, string> {
@@ -55,6 +59,83 @@ function unknownIosStepError(): IosMutationOutcomeUnknownError {
     },
   });
   return error;
+}
+
+async function runTerminalityStepRoute(
+  outcome: "unknown" | "ordinary",
+): Promise<{
+  nativeDispatches: string[];
+  status: "terminal" | "handled";
+  error?: unknown;
+}> {
+  const root = await mkdtemp(join(tmpdir(), "relay-step-run-terminality-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const nativeDispatches: string[] = [];
+  const unknown = unknownIosStepError();
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    stepRunRuntime: {
+      assertTargetControl: async () => ({
+        id: "lease-terminality",
+        projectId: "step-run-project",
+        poolId: "local",
+        deviceSerial: "ipad-1",
+        ownerId: "agent:step-run-test",
+        status: "leased",
+        leasedAt: 1,
+        expiresAt: Date.now() + 60_000,
+      }),
+      listDevices: async () => [
+        {
+          id: "ipad-1",
+          serial: "ipad-1",
+          name: "iPad",
+          kind: "iPad",
+          booted: true,
+          platform: "ios",
+        },
+      ],
+      devicePlatformForSerial: async () => "ios",
+      executeStep: async () => {
+        nativeDispatches.push("execute-step");
+        if (outcome === "unknown") throw unknown;
+        throw new Error("known step validation failure");
+      },
+    },
+  });
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/step/run`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ serial: "ipad-1", step: { kind: "sleep", ms: 1 } }),
+    });
+    if (outcome === "unknown") {
+      const body = (await response.json()) as { terminal?: string; code?: string };
+      return {
+        nativeDispatches,
+        status:
+          response.status === 200 &&
+          body.terminal === "review-needed" &&
+          body.code === "IOS_MUTATION_OUTCOME_UNKNOWN"
+            ? "terminal"
+            : "handled",
+        error: unknown,
+      };
+    }
+    const body = (await response.json()) as { ok?: boolean; terminal?: string };
+    return {
+      nativeDispatches,
+      status: response.status === 200 && body.ok === false && body.terminal === undefined ? "handled" : "terminal",
+    };
+  } finally {
+    await server.close();
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 test("standalone iOS step preserves one-command review evidence without retry or capture", async () => {
@@ -159,4 +240,22 @@ test("standalone iOS step preserves one-command review evidence without retry or
     else process.env.RELAY_STATE_DIR = previousState;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("the registered standalone-step transport preserves terminality without erasing ordinary errors", async () => {
+  const registry = defineIosMutationTerminalityRegistry([
+    {
+      id: "server.step-run.standalone-step",
+      unknown: async () => await runTerminalityStepRoute("unknown"),
+      recovery: {
+        expectedStatus: "handled",
+        expectedNativeDispatches: 1,
+        run: async () => await runTerminalityStepRoute("ordinary"),
+      },
+    },
+  ]);
+
+  await verifyIosMutationTerminalityRegistry(registry, {
+    isOutcomeUnknown: (error) => error instanceof IosMutationOutcomeUnknownError,
+  });
 });

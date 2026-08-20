@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  defineIosMutationTerminalityRegistry,
+  verifyIosMutationTerminalityRegistry,
+} from "@relay/protocol";
+import {
   dispatchWithSafePointFallback,
   interactionSucceeded,
   iosInteractionFailure,
@@ -186,4 +190,76 @@ test("an unproven platform never authorizes a physical point fallback", async ()
 
   assert.equal(calls, 1);
   assert.equal(result, failed);
+});
+
+test("the registered renderer fallback boundary stops one unknown request but retains selector rescue", async () => {
+  type RendererOutcome =
+    | { status: "failed"; iosFailure: ReturnType<typeof selectorMissFailure> }
+    | { status: "succeeded"; iosFailure?: undefined };
+  const registry = defineIosMutationTerminalityRegistry([
+    {
+      id: "app.renderer.safe-point-fallback",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        const error = unknownIosOutcome();
+        let terminal: unknown;
+        try {
+          await dispatchWithSafePointFallback({
+            platform: "ios",
+            kind: "label",
+            hasPoint: true,
+            attempt: async () => {
+              nativeDispatches.push("semantic-request");
+              throw error;
+            },
+            pointFallback: async () => {
+              nativeDispatches.push("point-request");
+              return { status: "succeeded" as const };
+            },
+          });
+        } catch (caught) {
+          terminal = caught;
+        }
+        return { nativeDispatches, status: "terminal" as const, error: terminal };
+      },
+      recovery: {
+        expectedStatus: "recovered",
+        expectedNativeDispatches: 2,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          const failed: RendererOutcome = {
+            status: "failed",
+            iosFailure: selectorMissFailure(),
+          };
+          const result = await dispatchWithSafePointFallback<RendererOutcome>({
+            platform: "ios",
+            kind: "label",
+            hasPoint: true,
+            attempt: async () => {
+              nativeDispatches.push("semantic-request");
+              return failed;
+            },
+            failedResult: (outcome) => outcome.status === "failed",
+            failureForResult: (outcome) => outcome.iosFailure,
+            pointFallback: async () => {
+              nativeDispatches.push("point-request");
+              return { status: "succeeded" as const, iosFailure: undefined };
+            },
+          });
+          if (!interactionSucceeded(result)) {
+            return {
+              nativeDispatches,
+              status: "recovered" as const,
+              error: new Error("selector miss did not keep renderer point rescue"),
+            };
+          }
+          return { nativeDispatches, status: "recovered" as const };
+        },
+      },
+    },
+  ]);
+
+  await verifyIosMutationTerminalityRegistry(registry, {
+    isOutcomeUnknown: (error) => iosInteractionFailure(error)?.code === "IOS_MUTATION_OUTCOME_UNKNOWN",
+  });
 });
