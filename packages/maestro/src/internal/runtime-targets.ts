@@ -1,9 +1,14 @@
 import type { Rect, SnapshotNode, SnapshotState } from '@agent-device/kernel/snapshot';
 import type { MaestroSelector } from './program-ir.ts';
 import type { MaestroPlatform } from './runtime-target-policy.ts';
-import { rankMaestroCandidates, selectMaestroSnapshotMatch } from './runtime-target-ranking.ts';
+import {
+  matchMaestroCandidates,
+  rankMaestroCandidates,
+  rankVisibleMaestroMatches,
+  selectMaestroSnapshotMatch,
+} from './runtime-target-ranking.ts';
 import { pointInsideRect, stripUndefined } from './shared.ts';
-import { isDescendantOfSnapshotNode } from './snapshot-policy.ts';
+import { isMaestroNodeVisible } from './snapshot-policy.ts';
 import { buildSnapshotNodeMap } from '@agent-device/contracts/snapshot';
 
 export type MaestroTargetQuery = {
@@ -22,8 +27,9 @@ export type MaestroTargetEvidence = {
   ref?: string;
 };
 
-type MaestroInteractionProjection = {
+type MaestroInteractivePresentation = {
   snapshot: SnapshotState;
+  presentedIndexesBySourceIndex: ReadonlyMap<number, number[]>;
   sourceIndexes: ReadonlyMap<number, number>;
 };
 
@@ -44,10 +50,15 @@ export function resolveMaestroTargetFromSnapshot(
   platform: MaestroPlatform,
   options: {
     interactiveBounds?: boolean;
-    interaction?: MaestroInteractionProjection;
+    presentation?: MaestroInteractivePresentation;
   } = {},
 ): MaestroTargetResolution {
-  const candidates = rankMaestroCandidates(snapshot, query.selector, platform, query.childOf);
+  const presentedNodes = options.presentation
+    ? createPresentedNodeLookup(options.presentation)
+    : undefined;
+  const candidates = presentedNodes
+    ? rankPresentedMaestroCandidates(snapshot, query, platform, presentedNodes)
+    : rankMaestroCandidates(snapshot, query.selector, platform, query.childOf);
   if (!candidates.parentMatched) {
     return {
       ok: false,
@@ -61,49 +72,58 @@ export function resolveMaestroTargetFromSnapshot(
   if (!target) {
     return failedTargetResolution(query, matches, rankedMatches, evidence);
   }
-  const interactionCandidates = resolveInteractionCandidates(target.node, query, platform, options);
-  const interactionTarget = interactionCandidates
-    ? selectMaestroSnapshotMatch(interactionCandidates.mapped, undefined)
-    : undefined;
+  const presentedTarget = presentedNodes
+    ? selectMaestroSnapshotMatch(presentedNodes.forSource(target.node), undefined)
+    : null;
   const rect =
-    options.interactiveBounds === true ? (interactionTarget?.rect ?? target.rect) : target.rect;
+    options.interactiveBounds === true ? (presentedTarget?.rect ?? target.rect) : target.rect;
   return {
     ok: true,
     node: target.node,
     rect,
     matches: rankedMatches.length,
     dispatchCandidates:
-      platform === 'ios' && query.allowAtomicSelectorDispatch && !query.childOf
-        ? countInteractionDispatchCandidates(target, interactionCandidates)
+      platform === 'ios' && query.allowAtomicSelectorDispatch && !query.childOf && presentedNodes
+        ? countInteractionDispatchCandidates(target, rankedMatches, presentedTarget)
         : 0,
     evidence,
   };
 }
 
-function resolveInteractionCandidates(
-  canonicalTarget: SnapshotNode,
+function createPresentedNodeLookup(presentation: MaestroInteractivePresentation): {
+  isVisible: (node: SnapshotNode) => boolean;
+  forSource: (node: SnapshotNode) => SnapshotNode[];
+} {
+  const presentedByIndex = buildSnapshotNodeMap(presentation.snapshot.nodes);
+  const forSource = (semanticNode: SnapshotNode): SnapshotNode[] => {
+    return (presentation.presentedIndexesBySourceIndex.get(semanticNode.index) ?? []).flatMap(
+      (presentedIndex) => {
+        const node = presentedByIndex.get(presentedIndex);
+        return node ? [node] : [];
+      },
+    );
+  };
+  return {
+    forSource,
+    isVisible: (node) =>
+      forSource(node).some((presentedNode) =>
+        isMaestroNodeVisible(presentedNode, presentation.snapshot.nodes, 'ios'),
+      ),
+  };
+}
+
+function rankPresentedMaestroCandidates(
+  snapshot: SnapshotState,
   query: MaestroTargetQuery,
   platform: MaestroPlatform,
-  options: {
-    interaction?: MaestroInteractionProjection;
-  },
-): { all: SnapshotNode[]; mapped: SnapshotNode[] } | undefined {
-  const interaction = options.interaction;
-  if (!interaction) return undefined;
-  const { snapshot, sourceIndexes } = interaction;
-  const sourceIndex = sourceIndexes.get(canonicalTarget.index);
-  if (sourceIndex === undefined) return undefined;
-  const byIndex = buildSnapshotNodeMap(snapshot.nodes);
-  const source = byIndex.get(sourceIndex);
-  if (!source) return undefined;
-  const all = rankMaestroCandidates(snapshot, query.selector, platform, query.childOf).ranked;
+  presentedNodes: ReturnType<typeof createPresentedNodeLookup>,
+) {
+  const scoped = matchMaestroCandidates(snapshot, query.selector, query.childOf);
+  const visible = scoped.matches.filter(presentedNodes.isVisible);
   return {
-    all,
-    mapped: all.filter(
-      (candidate) =>
-        candidate.index === source.index ||
-        isDescendantOfSnapshotNode(snapshot.nodes, candidate, source, byIndex),
-    ),
+    ...scoped,
+    visible,
+    ranked: rankVisibleMaestroMatches(snapshot.nodes, visible, query.selector, platform),
   };
 }
 
@@ -126,14 +146,13 @@ function failedTargetResolution(
 
 function countInteractionDispatchCandidates(
   target: { node: SnapshotNode; rect: Rect },
-  interactionCandidates: { all: SnapshotNode[]; mapped: SnapshotNode[] } | undefined,
+  rankedCandidates: SnapshotNode[],
+  presentedTarget: { node: SnapshotNode; rect: Rect } | null,
 ): number {
-  if (!interactionCandidates) return 0;
-  if (interactionCandidates.all.length !== 1) return interactionCandidates.all.length;
-  const interactionTarget = selectMaestroSnapshotMatch(interactionCandidates.mapped, undefined);
-  return interactionTarget &&
-    interactionTarget.node.hittable !== false &&
-    haveSameTapPoint(interactionTarget.rect, target.rect)
+  if (rankedCandidates.length !== 1) return rankedCandidates.length;
+  return presentedTarget &&
+    presentedTarget.node.hittable !== false &&
+    haveSameTapPoint(presentedTarget.rect, target.rect)
     ? 1
     : 0;
 }
