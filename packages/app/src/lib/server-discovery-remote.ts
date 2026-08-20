@@ -8,7 +8,109 @@ import type {
   DiscoverySession,
 } from "@relay/protocol";
 import type { RecipeInfo } from "./api-types";
+import {
+  iosInteractionFailure,
+  iosMutationOutcomeUnknownIntervention,
+  type IosInteractionFailure,
+  type IosMutationOutcomeUnknownIntervention,
+} from "./ios-interaction-safety";
 import type { ServerRequest } from "./server-matrix-remote";
+
+type UnknownRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): UnknownRecord | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as UnknownRecord)
+    : undefined;
+}
+
+export type DiscoveryInteractionReview = {
+  /** The session and last pre-action observation are durable evidence. They
+   * never assert that the unknown command did or did not change the device. */
+  sessionId: string;
+  sessionHref: string;
+  lastProvenScreen?: {
+    id: string;
+    capturedAt: number;
+    screenshotHref?: string;
+  };
+  /** An explicit observation request to make before considering any retry. */
+  captureCurrent: { method: "POST"; href: string };
+};
+
+export type DiscoveryUnknownIosOutcome = {
+  status: "ios-outcome-unknown";
+  iosFailure: IosInteractionFailure;
+  intervention: IosMutationOutcomeUnknownIntervention;
+  review: DiscoveryInteractionReview;
+};
+
+export type DiscoveryApprovalOutcome = { status: "succeeded" } | DiscoveryUnknownIosOutcome;
+
+export type DiscoveryBacktrackOutcome =
+  | { status: "succeeded"; changedScreen: boolean }
+  | DiscoveryUnknownIosOutcome;
+
+function fallbackDiscoveryReview(sessionId: string): DiscoveryInteractionReview {
+  const sessionHref = `/discovery/${encodeURIComponent(sessionId)}`;
+  return {
+    sessionId,
+    sessionHref,
+    captureCurrent: { method: "POST", href: `${sessionHref}/capture` },
+  };
+}
+
+/** Read only a reviewed Discovery pointer from an error. A fallback still
+ * offers a safe fresh-capture action when talking to an older server. */
+function discoveryReviewFromError(error: unknown, sessionId: string): DiscoveryInteractionReview {
+  const fallback = fallbackDiscoveryReview(sessionId);
+  const raw = asRecord(asRecord(asRecord(error)?.body)?.discoveryReview);
+  if (!raw || raw.sessionId !== sessionId || raw.sessionHref !== fallback.sessionHref) {
+    return fallback;
+  }
+  const captureCurrent = asRecord(raw.captureCurrent);
+  if (captureCurrent?.method !== "POST" || captureCurrent.href !== fallback.captureCurrent.href) {
+    return fallback;
+  }
+  const lastProven = asRecord(raw.lastProvenScreen);
+  return {
+    ...fallback,
+    ...(lastProven && typeof lastProven.id === "string" && typeof lastProven.capturedAt === "number"
+      ? {
+          lastProvenScreen: {
+            id: lastProven.id,
+            capturedAt: lastProven.capturedAt,
+            ...(typeof lastProven.screenshotHref === "string"
+              ? { screenshotHref: lastProven.screenshotHref }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+function unknownIosOutcome(
+  error: unknown,
+  sessionId: string,
+  label: string,
+): DiscoveryUnknownIosOutcome | undefined {
+  const baseIntervention = iosMutationOutcomeUnknownIntervention(error, label);
+  const iosFailure = iosInteractionFailure(error);
+  if (!baseIntervention || !iosFailure) return undefined;
+  return {
+    status: "ios-outcome-unknown",
+    iosFailure,
+    // Discovery's pre-action screen is durable, but the current pixels have
+    // not been recaptured. Keep the shared exact-once intervention while
+    // making that evidence boundary explicit to callers.
+    intervention: {
+      ...baseIntervention,
+      detail:
+        "Relay sent one iOS command and did not retry it. Review the last proven screen, then capture the current screen before any next action.",
+    },
+    review: discoveryReviewFromError(error, sessionId),
+  };
+}
 
 export function listDiscoverySessions(
   request: ServerRequest,
@@ -147,7 +249,7 @@ export async function approveDiscoverySuggestion(
     control: DiscoveryControl;
     decision?: DiscoveryDecisionProvenance;
   },
-): Promise<void> {
+): Promise<DiscoveryApprovalOutcome> {
   const target = input.control.target;
   const action = target.identifier
     ? { kind: "identifier", identifier: target.identifier }
@@ -161,20 +263,33 @@ export async function approveDiscoverySuggestion(
             ? { kind: "point", x: target.point.x, y: target.point.y }
             : null;
   if (!action) throw new Error("suggestion has no executable target");
-  await request(`/discovery/${encodeURIComponent(input.sessionId)}/interact`, {
-    method: "POST",
-    body: JSON.stringify({ ...action, ...(input.decision ? { decision: input.decision } : {}) }),
-  });
+  try {
+    await request(`/discovery/${encodeURIComponent(input.sessionId)}/interact`, {
+      method: "POST",
+      body: JSON.stringify({ ...action, ...(input.decision ? { decision: input.decision } : {}) }),
+    });
+    return { status: "succeeded" };
+  } catch (error) {
+    const outcome = unknownIosOutcome(error, input.sessionId, `approve ${input.control.label}`);
+    if (outcome) return outcome;
+    throw error;
+  }
 }
 
 /** Return to the previous screen while autonomous exploration backtracks. */
 export async function backtrackDiscovery(
   request: ServerRequest,
   sessionId: string,
-): Promise<boolean> {
-  const data = await request<{ transition: { changedScreen: boolean } }>(
-    `/discovery/${encodeURIComponent(sessionId)}/interact`,
-    { method: "POST", body: JSON.stringify({ kind: "back" }) },
-  );
-  return data.transition.changedScreen;
+): Promise<DiscoveryBacktrackOutcome> {
+  try {
+    const data = await request<{ transition: { changedScreen: boolean } }>(
+      `/discovery/${encodeURIComponent(sessionId)}/interact`,
+      { method: "POST", body: JSON.stringify({ kind: "back" }) },
+    );
+    return { status: "succeeded", changedScreen: data.transition.changedScreen };
+  } catch (error) {
+    const outcome = unknownIosOutcome(error, sessionId, "backtrack");
+    if (outcome) return outcome;
+    throw error;
+  }
 }

@@ -60,6 +60,9 @@ function assertNoRunningJob(serial?: string): void {
  * A retry is an explicit follow-up after fresh pixels, never an HTTP retry. */
 export function iosMutationOutcomeUnknownHttpError(
   error: IosMutationOutcomeUnknownError,
+  /** Route-specific, reviewed context (for example a Discovery review
+   * pointer). Canonical mutation facts below always win over this extension. */
+  details?: Readonly<Record<string, unknown>>,
 ): HttpError {
   const lifecycle = (
     error as IosMutationOutcomeUnknownError & {
@@ -68,6 +71,7 @@ export function iosMutationOutcomeUnknownHttpError(
   ).iosSessionLifecycle;
   const visualVerification = iosVisualVerificationDiagnostic(error);
   return new HttpError(409, error.message, {
+    ...details,
     code: "IOS_MUTATION_OUTCOME_UNKNOWN",
     iosMutation: error.iosMutation,
     ...(lifecycle ? { iosSessionLifecycle: lifecycle } : {}),

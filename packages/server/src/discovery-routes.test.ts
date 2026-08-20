@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
+import { IosMutationOutcomeUnknownError } from "@relay/core";
 import type { DiscoverySession } from "@relay/protocol";
-import { handleDiscoveryRoute } from "./discovery-routes.js";
+import { discoveryInteractionHttpError, handleDiscoveryRoute } from "./discovery-routes.js";
 import { HttpError } from "./http.js";
 import { startServer } from "./index.js";
 import type { RequestContext } from "./security.js";
@@ -86,6 +87,57 @@ function operationHeaders(operationId: string): Record<string, string> {
     "idempotency-key": crypto.randomUUID(),
   };
 }
+
+test("Discovery interaction errors retain the one-command iOS diagnostic and durable review pointer", () => {
+  const error = new IosMutationOutcomeUnknownError(
+    {
+      sequence: 1,
+      operation: "back",
+      nativeAttempts: 1,
+      outcome: "outcome-unknown",
+      retry: {
+        attempts: 0,
+        decision: "blocked",
+        reason: "native-command-outcome-unknown",
+      },
+      intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+      at: 1,
+    },
+    new Error("connection reset"),
+  );
+  const response = discoveryInteractionHttpError(error, {
+    id: "map / one",
+    currentScreenId: "screen / before",
+    screens: [
+      {
+        id: "screen / before",
+        fingerprint: "settings",
+        capturedAt: 123,
+        screenshotPath: "/durable/screen-before.png",
+      },
+    ],
+  });
+
+  assert.ok(response instanceof HttpError);
+  assert.equal(response.status, 409);
+  assert.deepEqual(response.body, {
+    discoveryReview: {
+      sessionId: "map / one",
+      sessionHref: "/discovery/map%20%2F%20one",
+      lastProvenScreen: {
+        id: "screen / before",
+        capturedAt: 123,
+        screenshotHref: "/discovery/map%20%2F%20one/screens/screen%20%2F%20before",
+      },
+      captureCurrent: {
+        method: "POST",
+        href: "/discovery/map%20%2F%20one/capture",
+      },
+    },
+    code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+    iosMutation: error.iosMutation,
+  });
+});
 
 test("discovery routes list create and read sessions", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-discovery-routes-"));

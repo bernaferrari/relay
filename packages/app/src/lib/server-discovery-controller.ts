@@ -26,6 +26,8 @@ import {
   promoteDiscoveryPath,
   setDiscoveryStatus,
   startDiscoveryExplore,
+  type DiscoveryApprovalOutcome,
+  type DiscoveryBacktrackOutcome,
 } from "./server-discovery-remote";
 
 type DiscoveryControllerDependencies = {
@@ -137,15 +139,27 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
     sessionId: string;
     control: DiscoveryControl;
     decision?: DiscoveryDecisionProvenance;
-  }): Promise<void> {
-    await approveDiscoverySuggestionRemote(deps.request, input);
+  }): Promise<DiscoveryApprovalOutcome> {
+    const outcome = await approveDiscoverySuggestionRemote(deps.request, input);
+    if (outcome.status === "ios-outcome-unknown") {
+      // The returned review pointer is sufficient even if a background list
+      // refresh is unavailable. Do not let a read failure hide the explicit
+      // one-command stop or tempt a caller to send the action again.
+      void refreshDiscoverySessions().catch(() => undefined);
+      return outcome;
+    }
     await refreshDiscoverySessions();
+    return outcome;
   }
 
-  async function backtrackDiscovery(id: string): Promise<boolean> {
-    const changed = await backtrackDiscoveryRemote(deps.request, id);
+  async function backtrackDiscovery(id: string): Promise<DiscoveryBacktrackOutcome> {
+    const outcome = await backtrackDiscoveryRemote(deps.request, id);
+    if (outcome.status === "ios-outcome-unknown") {
+      void refreshDiscoverySessions().catch(() => undefined);
+      return outcome;
+    }
     await refreshDiscoverySessions();
-    return changed;
+    return outcome;
   }
 
   return {

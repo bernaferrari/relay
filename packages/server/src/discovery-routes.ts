@@ -6,6 +6,7 @@ import {
   cancelDiscoveryExplore,
   createDiscoverySession,
   formatDiscoveryExport,
+  IosMutationOutcomeUnknownError,
   listDevices,
   listDiscoverySessions,
   listTargets,
@@ -26,10 +27,12 @@ import type {
   DiscoveryAgentContext,
   DiscoveryDecisionProvenance,
   DiscoveryScope,
+  DiscoverySession,
   DiscoveryStatus,
 } from "@relay/protocol";
 import { assertTargetControl } from "./access-control.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, text } from "./http.js";
+import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import type { RequestContext } from "./security.js";
 
 type DiscoveryRouteInput = {
@@ -49,6 +52,80 @@ async function loadScopedSession(id: string, scope: RequestContext) {
   const session = await readDiscoverySession(id, projectFilter(scope));
   if (!session) throw new HttpError(404, "Discovery session not found");
   return session;
+}
+
+/**
+ * A Discovery interaction captures its pre-action screen before it sends a
+ * physical command. If iOS cannot prove that command's outcome, that existing
+ * observation is the only state we can honestly call proven. Do not turn it
+ * into a claim about the current device; instead give callers an explicit,
+ * reviewable capture action before they choose any follow-up.
+ */
+export function discoveryOutcomeUnknownReview(
+  session: Pick<DiscoverySession, "id" | "currentScreenId" | "screens">,
+): {
+  sessionId: string;
+  sessionHref: string;
+  lastProvenScreen?: {
+    id: string;
+    capturedAt: number;
+    screenshotHref?: string;
+  };
+  captureCurrent: { method: "POST"; href: string };
+} {
+  const sessionHref = `/discovery/${encodeURIComponent(session.id)}`;
+  const current = session.currentScreenId
+    ? session.screens.find((screen) => screen.id === session.currentScreenId)
+    : undefined;
+  return {
+    sessionId: session.id,
+    sessionHref,
+    ...(current
+      ? {
+          lastProvenScreen: {
+            id: current.id,
+            capturedAt: current.capturedAt,
+            ...(current.screenshotPath
+              ? {
+                  screenshotHref: `${sessionHref}/screens/${encodeURIComponent(current.id)}`,
+                }
+              : {}),
+          },
+        }
+      : {}),
+    // This is deliberately a pointer, not an implicit request from an error
+    // handler. Fresh pixels are evidence for a person/agent to review before
+    // deciding whether any new action is safe.
+    captureCurrent: { method: "POST", href: `${sessionHref}/capture` },
+  };
+}
+
+/** Keep Discovery's policy errors intact while giving an uncertain iOS action
+ * the same canonical one-command diagnostic used by /interact. */
+export function discoveryInteractionHttpError(
+  error: unknown,
+  session: Pick<DiscoverySession, "id" | "currentScreenId" | "screens">,
+): HttpError {
+  if (error instanceof IosMutationOutcomeUnknownError) {
+    return iosMutationOutcomeUnknownHttpError(error, {
+      discoveryReview: discoveryOutcomeUnknownReview(session),
+    });
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if (/blocks sensitive/.test(message)) return new HttpError(403, message);
+  return new HttpError(409, message);
+}
+
+async function latestSessionForOutcomeReview(
+  session: DiscoverySession,
+  scope: RequestContext,
+): Promise<DiscoverySession> {
+  // runDiscoveryInteract may have persisted the before screen after the route
+  // loaded its session. Re-read only after the stopped one-command outcome so
+  // review points at that durable evidence, never at a guessed after state.
+  return (
+    (await readDiscoverySession(session.id, projectFilter(scope)).catch(() => undefined)) ?? session
+  );
 }
 
 export async function handleDiscoveryRoute(input: DiscoveryRouteInput): Promise<boolean> {
@@ -178,9 +255,11 @@ export async function handleDiscoveryRoute(input: DiscoveryRouteInput): Promise<
       });
       json(response, 201, result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (/blocks sensitive/.test(message)) throw new HttpError(403, message);
-      throw new HttpError(409, message);
+      const reviewSession =
+        error instanceof IosMutationOutcomeUnknownError
+          ? await latestSessionForOutcomeReview(session, scope)
+          : session;
+      throw discoveryInteractionHttpError(error, reviewSession);
     }
     return true;
   }
@@ -242,9 +321,11 @@ export async function handleDiscoveryRoute(input: DiscoveryRouteInput): Promise<
         after: result.after,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (/blocks sensitive/.test(message)) throw new HttpError(403, message);
-      throw new HttpError(409, message);
+      const reviewSession =
+        error instanceof IosMutationOutcomeUnknownError
+          ? await latestSessionForOutcomeReview(session, scope)
+          : session;
+      throw discoveryInteractionHttpError(error, reviewSession);
     }
     return true;
   }
