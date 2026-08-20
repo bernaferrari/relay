@@ -480,6 +480,21 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
     refreshJobs: async () => ({ ok: true }),
     runAction: async (id: string, input: Record<string, unknown>) => {
       calls.push(id);
+      if (id === "app-map.test.compile") {
+        return {
+          plan,
+          preflight: {
+            schemaVersion: 1,
+            mode: "offline-test-preflight",
+            appMapId: "checkout",
+            appMapRevision: 1,
+            testId: scenario.id,
+            planDigest: "compiled-before-device",
+            summary: { recipes: 1, checkedSelectors: 0, blockers: 0, warnings: 0 },
+            findings: [],
+          },
+        };
+      }
       runInput = input;
       await runGate;
       setJobs([
@@ -520,6 +535,12 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
       /Run test|Preparing run|Cancel queued run|Open result/.test(button.textContent ?? ""),
     )!;
   expect(primary().textContent).toContain("Run test");
+  const offlineCheck = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Check offline"),
+  )!;
+  offlineCheck.click();
+  await settle();
+  expect(root.textContent).toContain("Offline check passed");
   primary().click();
   await settle();
 
@@ -528,7 +549,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   finishRun();
   await settle();
 
-  expect(calls).toEqual(["app-map.test.run"]);
+  expect(calls).toEqual(["app-map.test.compile", "app-map.test.compile", "app-map.test.run"]);
   expect(runInput).toEqual({
     appMapId: "checkout",
     testId: "checkout-run",
@@ -544,6 +565,108 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   expect(primary().textContent).toContain("Open result");
   primary().click();
   expect(opened).toEqual(["job-exact"]);
+
+  dispose();
+  document.body.replaceChildren();
+});
+
+test("offline preflight blocks device control but leaves an inspectable repair report", async () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const scenario: AppMapScenarioTest = {
+    kind: "scenario",
+    id: "checkout-preflight",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    name: "Checkout preflight",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        kind: "script",
+        id: "prepare-cart",
+        intent: "Prepare cart",
+        binding: { status: "resolved", kind: "script", source: "return true" },
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const map = fixture();
+  map.tests[scenario.id] = scenario;
+  const calls: string[] = [];
+  serverMock.current = {
+    selectedAppMap: () => map,
+    isOffline: () => false,
+    health: () => "online",
+    devices: () => [],
+    selectedDevice: () => null,
+    liveFrame: () => null,
+    liveCaptureIssue: () => null,
+    appleDeviceSetup: () => null,
+    jobs: () => [],
+    persistedRuns: () => [],
+    pollLiveFrame: async () => undefined,
+    loadRunDetail: async () => undefined,
+    frameUrlForPersisted: () => "",
+    refreshAppMaps: async () => undefined,
+    refreshJobs: async () => undefined,
+    saveTest: async () => ({ appMap: { revision: 1 } }),
+    editTest: async () => ({ appMap: { revision: 1 } }),
+    runAction: async (id: string) => {
+      calls.push(id);
+      return {
+        plan: {
+          schemaVersion: 1,
+          appMapId: "checkout",
+          appMapRevision: 1,
+          test: { id: scenario.id, name: scenario.name, kind: "scenario", intentSchemaVersion: 1 },
+          rootRecipeId: "root",
+          recipes: {},
+          stepProvenance: [],
+          performance: {
+            executableOperations: 0,
+            moduleCalls: 0,
+            operationCounts: {},
+            screenshotCount: 0,
+            destinationProofCount: 0,
+          },
+          startup: { mode: "cold" },
+        },
+        preflight: {
+          schemaVersion: 1,
+          mode: "offline-test-preflight",
+          appMapId: "checkout",
+          appMapRevision: 1,
+          testId: scenario.id,
+          planDigest: "blocked-before-device",
+          summary: { recipes: 1, checkedSelectors: 1, blockers: 1, warnings: 0 },
+          findings: [
+            {
+              severity: "blocker",
+              code: "selector-absent",
+              recipeId: "root",
+              message: "Cloud filter is absent from every frozen source accessibility observation.",
+            },
+          ],
+        },
+      };
+    },
+    cancelJob: async () => undefined,
+  };
+
+  const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
+  await settle();
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent?.includes("Check offline"))!
+    .click();
+  await settle();
+
+  expect(calls).toEqual(["app-map.test.compile"]);
+  expect(root.textContent).toContain("1 offline issue blocks device control");
+  expect(root.textContent).toContain("Cloud filter is absent");
+  expect(root.textContent).not.toContain("Run test");
 
   dispose();
   document.body.replaceChildren();

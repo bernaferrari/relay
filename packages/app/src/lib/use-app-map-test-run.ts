@@ -1,5 +1,10 @@
 import { createMemo, createSignal, type Accessor } from "solid-js";
-import type { AppMap, AppMapCompiledTest, AppMapScenarioTest } from "@relay/protocol";
+import type {
+  AppMap,
+  AppMapCompiledTest,
+  AppMapScenarioTest,
+  OfflineTestPreflightReport,
+} from "@relay/protocol";
 import type { DeviceInfo, JobInfo } from "./api-types";
 import { isActiveTestRun, type TestRunLaunchState } from "../components/app-map-test-run-control";
 import { fullSurfaceScreenIds } from "./app-map-test-editor-model";
@@ -36,6 +41,10 @@ export function createAppMapTestRun(options: {
     planIdentity: { rootRecipeId: string };
     job: { id: string };
   }>;
+  compile: (input: { appMapId: string; testId: string }) => Promise<{
+    plan: AppMapCompiledTest;
+    preflight: OfflineTestPreflightReport;
+  }>;
   awaitPendingSaves: () => Promise<void>;
 }) {
   const [plan, setPlan] = createSignal<AppMapCompiledTest>();
@@ -44,6 +53,8 @@ export function createAppMapTestRun(options: {
   const [error, setError] = createSignal("");
   const [mismatched, setMismatched] = createSignal(false);
   const [freshEvidence, setFreshEvidence] = createSignal(false);
+  const [preflight, setPreflight] = createSignal<OfflineTestPreflightReport>();
+  const [preflightBusy, setPreflightBusy] = createSignal(false);
   const fullSurfaceIds = createMemo(() => {
     const test = options.draft();
     return test ? fullSurfaceScreenIds(test) : [];
@@ -58,6 +69,7 @@ export function createAppMapTestRun(options: {
     setLaunchState("idle");
     setError("");
     setMismatched(false);
+    setPreflight();
   }
 
   const blockedReason = createMemo(() => {
@@ -67,6 +79,10 @@ export function createAppMapTestRun(options: {
     const count = options.blockerCount();
     if (count) {
       return `Resolve ${count} authoring ${count === 1 ? "issue" : "issues"} before running.`;
+    }
+    const offlineBlockers = preflight()?.summary.blockers ?? 0;
+    if (offlineBlockers) {
+      return `Review ${offlineBlockers} offline ${offlineBlockers === 1 ? "issue" : "issues"} before Relay controls the device.`;
     }
     const device = options.selectedDevice();
     if (!device) return "Choose a target before running this Test.";
@@ -84,7 +100,15 @@ export function createAppMapTestRun(options: {
     setMismatched(false);
     setJobId();
     try {
-      await options.awaitPendingSaves();
+      const compiled = await checkOffline();
+      if (!compiled) {
+        setLaunchState("idle");
+        return;
+      }
+      if (compiled.preflight.summary.blockers) {
+        setLaunchState("idle");
+        return;
+      }
       const target =
         device.platform === "browser"
           ? ({ kind: "browser", platform: "browser", targetId: device.serial } as const)
@@ -114,6 +138,34 @@ export function createAppMapTestRun(options: {
     }
   }
 
+  /** Compile against frozen evidence without allocating a target lease or
+   * touching a device. This is the normal way to make authoring improvements
+   * while hardware is unavailable. */
+  async function checkOffline(): Promise<
+    { plan: AppMapCompiledTest; preflight: OfflineTestPreflightReport } | undefined
+  > {
+    const map = options.appMap();
+    const test = options.draft();
+    if (!map || !test || options.saveState() === "saving") return undefined;
+    setPreflightBusy(true);
+    setError("");
+    try {
+      await options.awaitPendingSaves();
+      const currentMap = options.appMap();
+      const currentTest = options.draft();
+      if (!currentMap || !currentTest) return undefined;
+      const compiled = await options.compile({ appMapId: currentMap.id, testId: currentTest.id });
+      setPlan(compiled.plan);
+      setPreflight(compiled.preflight);
+      return compiled;
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+      return undefined;
+    } finally {
+      setPreflightBusy(false);
+    }
+  }
+
   async function cancel(): Promise<void> {
     const id = jobId();
     if (!id || !isActiveTestRun(job()) || launchState() === "canceling") return;
@@ -125,6 +177,9 @@ export function createAppMapTestRun(options: {
 
   return {
     plan,
+    preflight,
+    preflightBlockers: () => preflight()?.summary.blockers ?? 0,
+    preflightBusy,
     job,
     jobId,
     launchState,
@@ -134,12 +189,14 @@ export function createAppMapTestRun(options: {
     setFreshEvidence,
     freshEvidenceAvailable: () => fullSurfaceIds().length > 0,
     run,
+    checkOffline,
     cancel,
     /** A canonical reload invalidates the compiled plan but keeps run history. */
     clearPlan: () => setPlan(),
     /** A queued edit means the compiled plan no longer describes the draft. */
     onDraftEdited(): void {
       setPlan();
+      setPreflight();
       if (!isActiveTestRun(job())) forget();
     },
     /** Switching Test or map starts a clean run slate. */

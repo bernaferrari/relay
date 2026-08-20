@@ -14,6 +14,8 @@ export type TestRunControlProps = {
   onRun: () => void;
   onCancel: () => void;
   onOpenResult: () => void;
+  onCheckOffline?: () => void;
+  checkingOffline?: boolean;
   freshEvidenceAvailable?: boolean;
   freshEvidence?: boolean;
   onFreshEvidenceChange?: (value: boolean) => void;
@@ -67,6 +69,19 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
   // the status strip the old screen stacked under it.
   return (
     <div class="flex min-w-0 items-center gap-2">
+      {props.onCheckOffline ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          class="shrink-0"
+          disabled={busy() || active() || props.checkingOffline}
+          aria-busy={props.checkingOffline}
+          onClick={props.onCheckOffline}
+        >
+          <Icon name="check" size={13} />
+          {props.checkingOffline ? "Checking…" : "Check offline"}
+        </Button>
+      ) : null}
       {props.freshEvidenceAvailable ? (
         <label class="flex min-h-9 shrink-0 items-center gap-1.5 text-caption text-text-base">
           <input

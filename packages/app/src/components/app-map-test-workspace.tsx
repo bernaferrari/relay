@@ -24,6 +24,7 @@ import { AppMapTestRunControl } from "./app-map-test-run-control";
 import { createAppMapTestRun } from "../lib/use-app-map-test-run";
 import { Icon } from "./icon";
 import { AppMapTestProposalReview } from "./app-map-test-proposal-review";
+import { AppMapTestPreflight } from "./app-map-test-preflight";
 import { createAppMapTestDocumentSession } from "./app-map-test-document-session";
 import {
   RailStrip,
@@ -39,6 +40,7 @@ export function AppMapTestWorkspace(props: {
 }) {
   const server = useServer();
   const [proposalReviewOpen, setProposalReviewOpen] = createSignal(false);
+  const [preflightOpen, setPreflightOpen] = createSignal(false);
   /** `undefined` means "follow the layout default for this width". */
   const [railOverride, setRailOverride] = createSignal<Partial<Record<TestRailKind, boolean>>>({});
   const workspace = useElementWidth();
@@ -134,6 +136,7 @@ export function AppMapTestWorkspace(props: {
     refreshJobs: () => server.refreshJobs(),
     cancelJob: (id) => server.cancelJob(id),
     compileAndRun: (input) => server.runAction("app-map.test.run", input),
+    compile: (input) => server.runAction("app-map.test.compile", input),
     awaitPendingSaves,
   });
   const testRun = run;
@@ -200,6 +203,11 @@ export function AppMapTestWorkspace(props: {
       queueMicrotask(() => document.getElementById("app-map-test-switcher")?.focus());
       return;
     }
+    if (testRun.preflightBlockers()) {
+      setPreflightOpen(true);
+      queueMicrotask(() => document.getElementById("test-offline-preflight")?.focus());
+      return;
+    }
     if (!selectedDevice()) window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
   }
 
@@ -208,6 +216,7 @@ export function AppMapTestWorkspace(props: {
     if (saveState() === "error") return retryAvailable() ? "Retry save" : "Review save error";
     if (blockers().length)
       return `Fix ${blockers().length} ${blockers().length === 1 ? "issue" : "issues"}`;
+    if (testRun.preflightBlockers()) return "Review offline checks";
     if (!selectedDevice()) return "Choose target";
     return undefined;
   });
@@ -375,6 +384,8 @@ export function AppMapTestWorkspace(props: {
               const id = testRun.consumeResult();
               if (id) props.onOpenRun?.(id);
             }}
+            onCheckOffline={() => void testRun.checkOffline()}
+            checkingOffline={testRun.preflightBusy()}
           />
         </Show>
       </TestWorkspaceBar>
@@ -443,6 +454,17 @@ export function AppMapTestWorkspace(props: {
                   </Button>
                 </Show>
               </div>
+            </Show>
+            <Show when={testRun.preflight()}>
+              {(report) => (
+                <div class="mx-auto w-full max-w-[640px] px-5 pt-4">
+                  <AppMapTestPreflight
+                    report={report()}
+                    open={preflightOpen() || report().summary.blockers > 0}
+                    onToggle={() => setPreflightOpen((open) => !open)}
+                  />
+                </div>
+              )}
             </Show>
             <Show
               when={draft()}
