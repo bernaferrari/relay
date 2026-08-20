@@ -48,20 +48,6 @@ const execFileAsync = promisify(execFile);
 
 export const IOS_SIDECAR_LAUNCH_TIMEOUT_MS = 10_000;
 export const IOS_COREDEVICE_PROBE_TIMEOUT_MS = 5_000;
-export const IOS_SESSION_PRIME_TIMEOUT_MS = 5_000;
-
-/** Bind agent-device's XCTest session after a sidecar launch. Must not block forever. */
-export async function primeIosAgentSession(
-  open: () => Promise<unknown>,
-  timeoutMs = IOS_SESSION_PRIME_TIMEOUT_MS,
-): Promise<void> {
-  await Promise.race([
-    open(),
-    new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("iOS session prime timed out")), timeoutMs);
-    }),
-  ]);
-}
 
 export type CommandResult = { exitCode: number; stdout: string; stderr: string };
 
@@ -70,6 +56,65 @@ export type CommandRunner = (
   args: readonly string[],
   timeoutMs: number,
 ) => Promise<CommandResult>;
+
+type IosAppLaunchBackend = "devicectl" | "go-ios";
+
+/**
+ * A local CLI compatibility failure that is proven to have happened before
+ * either launch backend could ask the device to activate an app. This is the
+ * only error `launchIosAppOutsideXctest` may use to select its other backend.
+ */
+class IosAppLaunchPreDispatchError extends Error {
+  readonly backend: IosAppLaunchBackend;
+  readonly cause: unknown;
+
+  constructor(backend: IosAppLaunchBackend, cause: unknown) {
+    const detail = errorMessage(cause);
+    super(`${backend} could not dispatch an iOS app launch locally: ${detail}`);
+    this.name = "IosAppLaunchPreDispatchError";
+    this.backend = backend;
+    this.cause = cause;
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function commandFailure(result: CommandResult, fallback: string): Error {
+  return new Error((result.stderr || result.stdout || fallback).trim());
+}
+
+/**
+ * Be deliberately narrow: this is output from the local xcrun/devicectl
+ * command parser, not a device or transport result. A missing device,
+ * connection error, timeout, or any launch-service failure stays ambiguous.
+ */
+function devicectlWasLocallyUnavailable(message: string): boolean {
+  return (
+    /unable to find utility\s+["']?devicectl\b/i.test(message) ||
+    /(?:spawn|exec)\s+xcrun\b.*\b(?:ENOENT|EACCES)\b/i.test(message) ||
+    /xcode-select:\s*error:.*(?:active developer path|developer directory)/i.test(message) ||
+    /(?:unknown|unrecognized)\s+(?:command|subcommand)\b.*\bdevicectl\b/i.test(message)
+  );
+}
+
+function preDispatchDevicectlError(error: unknown): Error {
+  return devicectlWasLocallyUnavailable(errorMessage(error))
+    ? new IosAppLaunchPreDispatchError("devicectl", error)
+    : error instanceof Error
+      ? error
+      : new Error(String(error));
+}
+
+/** `--terminate-existing` is rejected by a local CLI parser before launch. */
+function devicectlRejectedTerminateExisting(result: CommandResult): boolean {
+  if (result.exitCode === 0) return false;
+  const text = `${result.stdout}\n${result.stderr}`;
+  return /(?:(?:unrecognized|unknown)\s+option|unexpected argument)[^\n]*?(?:--)?terminate-existing/i.test(
+    text,
+  );
+}
 
 const BUNDLE_ALIASES: Record<string, string> = {
   grok: "ai.x.GrokApp",
@@ -254,21 +299,30 @@ export async function launchIosAppViaDevicectl(
     ...(input.relaunch === false ? [] : ["--terminate-existing"]),
     bundleId,
   ];
-  let result = await run("xcrun", args, timeoutMs);
-  const text = `${result.stdout}\n${result.stderr}`;
-  if (
-    result.exitCode !== 0 &&
-    /unrecognized|unknown option|unexpected argument.*terminate/i.test(text)
-  ) {
-    result = await run(
-      "xcrun",
-      ["devicectl", "device", "process", "launch", "--device", serial, bundleId],
-      timeoutMs,
-    );
+  const runDevicectl = async (command: readonly string[]): Promise<CommandResult> => {
+    try {
+      return await run("xcrun", command, timeoutMs);
+    } catch (error) {
+      throw preDispatchDevicectlError(error);
+    }
+  };
+  let result = await runDevicectl(args);
+  if (input.relaunch !== false && devicectlRejectedTerminateExisting(result)) {
+    // This exact parser rejection proves the first command never reached the
+    // device. Retrying without the unsupported flag is still one launch.
+    result = await runDevicectl([
+      "devicectl",
+      "device",
+      "process",
+      "launch",
+      "--device",
+      serial,
+      bundleId,
+    ]);
   }
   if (result.exitCode === 0) return { bundleId, method: "devicectl" };
-  throw new Error(
-    `${result.stderr || result.stdout || `devicectl launch exited ${result.exitCode}`}`.trim(),
+  throw preDispatchDevicectlError(
+    commandFailure(result, `devicectl launch exited ${result.exitCode}`),
   );
 }
 
@@ -354,13 +408,10 @@ export async function launchIosAppViaGoIos(
   const run = input.run ?? defaultCommandRunner;
   const timeoutMs = input.timeoutMs ?? IOS_SIDECAR_LAUNCH_TIMEOUT_MS;
   const bin = input.bin ?? (await resolveGoIosBinary());
-  const attempt = () => runGoIos(bin, ["launch", bundleId, "--udid", serial], timeoutMs, run);
-  let result = await attempt();
-  const text = `${result.stdout}\n${result.stderr}`;
-  if (result.exitCode !== 0 && /tunnel|ios17|rsd/i.test(text)) {
-    await ensureGoIosTunnel({ bin, run });
-    result = await attempt();
-  }
+  // A non-zero launch response can arrive after the app process was told to
+  // activate. Do not turn broad tunnel/RSD wording into a second launch; the
+  // caller must capture and review the current screen before an explicit retry.
+  const result = await runGoIos(bin, ["launch", bundleId, "--udid", serial], timeoutMs, run);
   if (result.exitCode === 0) return { bundleId, method: "go-ios" };
   throw new Error(
     (result.stderr || result.stdout || `go-ios launch exited ${result.exitCode}`).trim(),
@@ -620,10 +671,13 @@ export async function launchIosAppOutsideXctest(
   try {
     return await launchIosAppViaDevicectl(serial, app, input);
   } catch (devicectlError) {
-    try {
-      return await launchIosAppViaGoIos(serial, app, input);
-    } catch {
-      throw devicectlError;
-    }
+    // A timeout or transport failure may have launched (or terminated) the
+    // app already. Only a local, parser-level incompatibility can safely try
+    // the alternate backend.
+    if (!(devicectlError instanceof IosAppLaunchPreDispatchError)) throw devicectlError;
+    // Tunnel preparation is observation/setup, not an app activation. Do it
+    // before the one go-ios launch rather than retrying after a failed launch.
+    await ensureGoIosTunnel({ bin: input.bin, run: input.run });
+    return await launchIosAppViaGoIos(serial, app, input);
   }
 }

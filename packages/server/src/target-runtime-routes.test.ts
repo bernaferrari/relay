@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { IosMutationOutcomeUnknownError } from "@relay/core";
 import { startServer } from "./index.js";
 
 function headers(operationId: string): Record<string, string> {
@@ -266,6 +267,78 @@ test("launch tells agents to recover when Apple CoreDevice cannot list apps", as
     assert.equal(body.recoveryAction?.operationId, "target.recover");
     assert.deepEqual(body.recoveryAction?.cli?.argv?.slice(0, 3), ["device", "recover", "ipad-1"]);
     assert.match(body.recoveryAction?.cli?.argv?.join(" ") ?? "", /reason":"control/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("an ambiguous iOS app launch is returned as review evidence, never recovery", async () => {
+  const unknown = new IosMutationOutcomeUnknownError(
+    {
+      sequence: 1,
+      operation: "app-open",
+      nativeAttempts: 1,
+      outcome: "outcome-unknown",
+      retry: {
+        attempts: 0,
+        decision: "blocked",
+        reason: "native-command-outcome-unknown",
+      },
+      intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+      at: 1,
+    },
+    new Error("xcrun timed out after 10000ms"),
+  );
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      listDevices: async () => [
+        {
+          id: "ipad",
+          serial: "ipad-1",
+          name: "iPad",
+          platform: "ios",
+          kind: "iPad Pro",
+          booted: true,
+        },
+      ],
+      assertTargetControl: async () => ({
+        id: "lease",
+        projectId: "runtime-project",
+        poolId: "tablets",
+        deviceSerial: "ipad-1",
+        ownerId: "human:runtime-test",
+        status: "leased",
+        leasedAt: 1,
+        expiresAt: Date.now() + 60_000,
+      }),
+      launchApp: async () => {
+        throw unknown;
+      },
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/app/launch`, {
+      method: "POST",
+      headers: headers("target.app.launch"),
+      body: JSON.stringify({ serial: "ipad-1", app: "ai.x.GrokApp" }),
+    });
+    assert.equal(response.status, 409);
+    const body = (await response.json()) as {
+      code?: string;
+      iosMutation?: {
+        operation?: string;
+        nativeAttempts?: number;
+        retry?: { decision?: string };
+      };
+      recoveryAction?: unknown;
+    };
+    assert.equal(body.code, "IOS_MUTATION_OUTCOME_UNKNOWN");
+    assert.equal(body.iosMutation?.operation, "app-open");
+    assert.equal(body.iosMutation?.nativeAttempts, 1);
+    assert.equal(body.iosMutation?.retry?.decision, "blocked");
+    assert.equal(body.recoveryAction, undefined);
   } finally {
     await server.close();
   }

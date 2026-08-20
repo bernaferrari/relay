@@ -8,6 +8,7 @@ import {
   iosVisualVerificationDiagnostic,
   launchIosAppOutsideXctest,
   launchIosAppViaDevicectl,
+  launchIosAppViaGoIos,
   probeIosCoreDevice,
   resolveIosLaunchBundleId,
   type CommandResult,
@@ -15,6 +16,7 @@ import {
   verifyIosScreenChanged,
 } from "./ios-app-launch.js";
 import { readAuthoringEvidence } from "./authoring-evidence.js";
+import { IosMutationOutcomeUnknownError, runIosMutationOnce } from "./ios-mutation-policy.js";
 
 function runner(
   script: (file: string, args: readonly string[]) => CommandResult | Error,
@@ -84,18 +86,129 @@ test("devicectl launch is a short xcrun process launch, not XCTest", async () =>
   assert.ok(calls[0]?.includes("--terminate-existing"));
 });
 
-test("when devicectl times out, launch falls through to go-ios", async () => {
+test("an uncertain devicectl launch never falls through to go-ios", async () => {
+  const calls: string[][] = [];
+  await assert.rejects(
+    runIosMutationOnce("udid-1", "app-open", () =>
+      launchIosAppOutsideXctest("udid-1", "Grok", {
+        bin: "ios",
+        run: runner((file, args) => {
+          calls.push([file, ...args]);
+          if (file === "xcrun") throw new Error("xcrun timed out after 10000ms");
+          return { exitCode: 0, stdout: "launched", stderr: "" };
+        }),
+      }),
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof IosMutationOutcomeUnknownError);
+      assert.equal(error.iosMutation.operation, "app-open");
+      assert.equal(error.iosMutation.nativeAttempts, 1);
+      assert.equal(error.iosMutation.outcome, "outcome-unknown");
+      assert.equal(error.iosMutation.retry.decision, "blocked");
+      assert.equal(error.iosMutation.intervention.required, true);
+      return true;
+    },
+  );
+  assert.deepEqual(
+    calls.map(([file]) => file),
+    ["xcrun"],
+  );
+  assert.equal(
+    calls.some(([file]) => file === "ios"),
+    false,
+  );
+});
+
+test("a proven unsupported devicectl launch option retries only before dispatch", async () => {
+  const calls: string[][] = [];
+  const launched = await launchIosAppOutsideXctest("udid-1", "Grok", {
+    run: runner((file, args) => {
+      calls.push([file, ...args]);
+      if (args.includes("--terminate-existing")) {
+        return { exitCode: 64, stdout: "", stderr: "unrecognized option '--terminate-existing'" };
+      }
+      return { exitCode: 0, stdout: "launched", stderr: "" };
+    }),
+  });
+
+  assert.equal(launched.method, "devicectl");
+  assert.equal(launched.bundleId, "ai.x.GrokApp");
+  assert.equal(calls.length, 2);
+  assert.ok(calls[0]?.includes("--terminate-existing"));
+  assert.equal(calls[1]?.includes("--terminate-existing"), false);
+  assert.ok(calls.every(([file]) => file === "xcrun"));
+});
+
+test("a real launch after an option-only retry still stops on an unknown outcome", async () => {
+  const calls: string[][] = [];
+  await assert.rejects(
+    runIosMutationOnce("udid-option-timeout", "app-open", () =>
+      launchIosAppOutsideXctest("udid-option-timeout", "Grok", {
+        bin: "ios",
+        run: runner((file, args) => {
+          calls.push([file, ...args]);
+          if (args.includes("--terminate-existing")) {
+            return {
+              exitCode: 64,
+              stdout: "",
+              stderr: "unrecognized option '--terminate-existing'",
+            };
+          }
+          if (file === "xcrun") throw new Error("xcrun timed out after 10000ms");
+          return { exitCode: 0, stdout: "launched", stderr: "" };
+        }),
+      }),
+    ),
+    IosMutationOutcomeUnknownError,
+  );
+  assert.deepEqual(
+    calls.map(([file]) => file),
+    ["xcrun", "xcrun"],
+  );
+});
+
+test("only a proven local devicectl incompatibility may select go-ios", async () => {
+  const calls: string[][] = [];
   const launched = await launchIosAppOutsideXctest("udid-1", "Grok", {
     bin: "ios",
     run: runner((file, args) => {
-      if (file === "xcrun") throw new Error("xcrun timed out after 10000ms");
-      if (args[0] === "tunnel") return { exitCode: 0, stdout: '{"udid":"udid-1"}', stderr: "" };
+      calls.push([file, ...args]);
+      if (file === "xcrun") {
+        return {
+          exitCode: 72,
+          stdout: "",
+          stderr: 'xcrun: error: unable to find utility "devicectl", not a developer tool',
+        };
+      }
+      if (args[0] === "tunnel" && args[1] === "ls") {
+        return { exitCode: 0, stdout: '{"udid":"udid-1"}', stderr: "" };
+      }
       if (args[0] === "launch") return { exitCode: 0, stdout: "launched", stderr: "" };
       return { exitCode: 1, stdout: "", stderr: "unexpected" };
     }),
   });
+
   assert.equal(launched.method, "go-ios");
-  assert.equal(launched.bundleId, "ai.x.GrokApp");
+  assert.equal(calls.filter(([file]) => file === "xcrun").length, 1);
+  assert.equal(calls.filter(([file, command]) => file === "ios" && command === "launch").length, 1);
+});
+
+test("a failed go-ios launch is one dispatch even when it mentions a tunnel", async () => {
+  const calls: string[][] = [];
+  await assert.rejects(
+    launchIosAppViaGoIos("udid-1", "Grok", {
+      bin: "ios",
+      run: runner((file, args) => {
+        calls.push([file, ...args]);
+        return { exitCode: 1, stdout: "", stderr: "tunnel connection reset" };
+      }),
+    }),
+    /tunnel connection reset/i,
+  );
+  assert.deepEqual(
+    calls.map(([file, command]) => [file, command]),
+    [["ios", "launch"]],
+  );
 });
 
 test("DDI remount is go-ios image unmount then image auto", async () => {
@@ -439,16 +552,6 @@ test("a reviewer can retain a changed iOS transition without keeping its tempora
       await rm(directory, { recursive: true, force: true });
     }
   });
-});
-
-test("session prime fails fast instead of waiting on XCTest forever", async () => {
-  const { primeIosAgentSession } = await import("./ios-app-launch.js");
-  const started = Date.now();
-  await assert.rejects(
-    primeIosAgentSession(() => new Promise(() => undefined), 30),
-    /session prime timed out/,
-  );
-  assert.ok(Date.now() - started < 500);
 });
 
 test("go-ios screenshot is a pixel capture without XCTest", async () => {

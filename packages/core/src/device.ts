@@ -50,7 +50,7 @@ export {
 export { selectedPlatform } from "./target-context.js";
 export * from "./android-app-build.js";
 import { captureNativeCrashEvidence, type CrashEvidenceResult } from "./crash-evidence.js";
-import { launchIosAppOutsideXctest, primeIosAgentSession } from "./ios-app-launch.js";
+import { openPhysicalIosApp } from "./ios-app-open.js";
 import {
   center,
   explicitPointResolution,
@@ -425,20 +425,12 @@ export async function openApp(
 ): Promise<void> {
   const context = currentTargetContext();
   if (context.kind === "device" && context.platform === "ios") {
-    const launched = await mutateCurrentTarget(() =>
-      launchIosAppOutsideXctest(context.serial, app, {
-        relaunch: opts?.relaunch ?? true,
-      }),
-    );
-    await rememberTargetApplication(launched.bundleId);
-    await primeIosAgentSession(() =>
-      device.apps.open({
-        ...base(),
-        app: launched.bundleId,
-        relaunch: false,
-        noRecord: true,
-      } as never),
-    ).catch(() => undefined);
+    await openPhysicalIosApp({
+      context,
+      app,
+      relaunch: opts?.relaunch ?? true,
+      rememberApplication: rememberTargetApplication,
+    });
     return;
   }
   const opened = await controlledMutation("app-open", () =>

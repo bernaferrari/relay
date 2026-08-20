@@ -1,6 +1,7 @@
 import type http from "node:http";
 import {
   installRegisteredBuild,
+  IosMutationOutcomeUnknownError,
   appendActivity,
   launchRegisteredBuild,
   createDevice,
@@ -19,6 +20,7 @@ import {
 } from "@relay/core";
 import { assertTargetControl } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
+import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import type { RequestContext } from "./security.js";
 
 export type TargetRuntimeRouteRuntime = {
@@ -109,6 +111,12 @@ export async function handleTargetRuntimeRoute(context: {
     try {
       await runtime.launchApp({ serial, platform: device.platform, app, relaunch });
     } catch (error) {
+      // An iOS launch acknowledgement can be lost after the process was told
+      // to activate. This is a review boundary, not a reason to recover and
+      // issue another launch behind the caller's back.
+      if (error instanceof IosMutationOutcomeUnknownError) {
+        throw iosMutationOutcomeUnknownHttpError(error);
+      }
       const message = error instanceof Error ? error.message : String(error);
       if (
         device.platform === "ios" &&
