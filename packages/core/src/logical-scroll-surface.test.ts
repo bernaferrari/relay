@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -418,6 +418,40 @@ test("does not mint an origin proof from a stopped or unrestored survey", async 
       undefined,
       "a runtime marker is bound to immutable first raw evidence, not a mutable result object",
     );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(state, { recursive: true, force: true });
+  }
+});
+
+test("persists a completed survey when the optional local origin authority is unavailable", async () => {
+  const state = await mkdtemp(join(tmpdir(), "relay-scroll-surface-authority-unavailable-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = state;
+  try {
+    // The evidence store can still write beneath state, but the signer cannot
+    // read or create its secret at a path occupied by a directory.
+    await mkdir(join(state, ".document-origin-attestation-authority"));
+    const surface = await persistLogicalScrollSurface({
+      survey: await provenRegenerableSurvey(),
+      targetProfile: regenerationProfile,
+      surfaceId: logicalScrollSurfaceId("settings", "settings-authority-unavailable"),
+      capturePolicy: {
+        captureMode: "full-surface",
+        source: "explicit",
+        reason: "A signer outage must not discard raw full-surface evidence.",
+        decidedAt: 103,
+      },
+    });
+
+    assert.equal(surface.status, "completed");
+    assert.equal(surface.reason, "end-of-content");
+    assert.equal(surface.restoredStartViewport, true);
+    assert.equal(surface.documentOriginProof, undefined);
+    assert.equal(surface.viewports.length, 2);
+    assert.ok(await readAuthoringEvidence(surface.viewports[0]!.screenshot.sha256));
+    assert.ok(await readAuthoringEvidence(surface.manifest.sha256));
   } finally {
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;

@@ -129,13 +129,22 @@ async function persistDocumentOriginProof(input: {
     mime: "application/json",
   });
   if (!attestation.sha256) throw new Error("Document-origin attestation has no digest");
-  const authorization = await issueDocumentOriginAttestationAuthorization({
-    attestationSha256: attestation.sha256,
-    targetProfileId: input.targetProfile.id,
-    surfaceId: input.surfaceId,
-    firstViewport: issuance.firstViewport,
-    terminalViewport: issuance.terminalViewport,
-  });
+  let authorization: Awaited<ReturnType<typeof issueDocumentOriginAttestationAuthorization>>;
+  try {
+    authorization = await issueDocumentOriginAttestationAuthorization({
+      attestationSha256: attestation.sha256,
+      targetProfileId: input.targetProfile.id,
+      surfaceId: input.surfaceId,
+      firstViewport: issuance.firstViewport,
+      terminalViewport: issuance.terminalViewport,
+    });
+  } catch {
+    // HMAC issuance accelerates a later Android return; it is never required
+    // to preserve a completed raw survey. If the local authority directory is
+    // unavailable or corrupt, retain the normal immutable evidence and leave
+    // this capture exact-inverse/recapture-only rather than failing the run.
+    return undefined;
+  }
   return {
     schemaVersion: 1,
     method: "frozen-origin-match",
