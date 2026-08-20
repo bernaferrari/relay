@@ -7,12 +7,27 @@ import {
   type VideoFrameRenderer,
 } from "@yume-chan/scrcpy-decoder-webcodecs";
 import { relayPreviewPacketIsPaintable, relayVideoPacketStream } from "../lib/relay-video-stream";
+import {
+  inspectVisualFrame,
+  type VisualFrameDetectorState,
+  type VisualFrameSignal,
+  visualFrameSampleDue,
+} from "../lib/visual-frame-signal";
+
+export type DeviceVideoVisualSignal = VisualFrameSignal & {
+  /** Wall-clock time for proof/freshness presentation outside the decoder. */
+  observedAt: number;
+};
 
 export function DeviceVideoStream(props: {
   src: string;
   onReady: () => void;
   onFailure: () => void;
   onSize: (width: number, height: number) => void;
+  /** Initial and materially changed preview fingerprints, capped at 2.5Hz. */
+  onVisualFingerprint?: (signal: DeviceVideoVisualSignal) => void;
+  /** Material preview changes only; small animation/compression noise is ignored. */
+  onVisualChange?: (signal: DeviceVideoVisualSignal) => void;
 }) {
   let canvas: HTMLCanvasElement | undefined;
 
@@ -28,11 +43,73 @@ export function DeviceVideoStream(props: {
     let reportedReady = false;
     let decoder: WebCodecsVideoDecoder | undefined;
     let removeSizeListener: (() => void) | undefined;
+    let visualAnalysisFrame = 0;
+    let visualState: VisualFrameDetectorState = {};
+    // This stays deliberately tiny. It is allocated only when a consumer asks
+    // for freshness and read on the animation frame at a capped cadence,
+    // never once for every decoded device frame.
+    let analysisCanvas: HTMLCanvasElement | undefined;
+    let analysisContext: CanvasRenderingContext2D | null | undefined;
 
     const markReady = () => {
       if (reportedReady || disposed) return;
       reportedReady = true;
       readyFrame = requestAnimationFrame(props.onReady);
+    };
+
+    const notifyVisualSignal = (signal: VisualFrameSignal) => {
+      const observed = { ...signal, observedAt: Date.now() };
+      props.onVisualFingerprint?.(observed);
+      if (signal.previousFingerprint) props.onVisualChange?.(observed);
+    };
+
+    const scheduleVisualAnalysis = () => {
+      if ((!props.onVisualFingerprint && !props.onVisualChange) || visualAnalysisFrame || disposed)
+        return;
+      if (!visualFrameSampleDue(visualState, performance.now())) return;
+      visualAnalysisFrame = requestAnimationFrame(() => {
+        visualAnalysisFrame = 0;
+        const sampledAt = performance.now();
+        if (disposed || !canvas || !visualFrameSampleDue(visualState, sampledAt)) return;
+        try {
+          if (!analysisCanvas) {
+            analysisCanvas = document.createElement("canvas");
+            analysisCanvas.width = 24;
+            analysisCanvas.height = 24;
+            analysisContext = analysisCanvas.getContext("2d", { willReadFrequently: true });
+          }
+          if (!analysisContext) {
+            visualState = { ...visualState, lastSampledAt: sampledAt };
+            return;
+          }
+          // Sampling the final paint target makes this transport-agnostic:
+          // JPEG and H.264 both feed the same bounded signal. It also means
+          // a burst of decoded frames collapses to the newest visible frame.
+          analysisContext.drawImage(canvas, 0, 0, analysisCanvas.width, analysisCanvas.height);
+          const imageData = analysisContext.getImageData(
+            0,
+            0,
+            analysisCanvas.width,
+            analysisCanvas.height,
+          );
+          const result = inspectVisualFrame(
+            visualState,
+            {
+              width: imageData.width,
+              height: imageData.height,
+              data: imageData.data,
+            },
+            sampledAt,
+          );
+          visualState = result.state;
+          if (result.signal) notifyVisualSignal(result.signal);
+        } catch {
+          // A visual freshness hint must never take the video transport down.
+          // Canvas readback can fail transiently while a browser tears down a
+          // WebGL frame; the next bounded sample can still prove a change.
+          visualState = { ...visualState, lastSampledAt: sampledAt };
+        }
+      });
     };
 
     const drawJpeg = async (data: Uint8Array) => {
@@ -54,6 +131,7 @@ export function DeviceVideoStream(props: {
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("2d context unavailable");
         ctx.drawImage(image, 0, 0);
+        scheduleVisualAnalysis();
         markReady();
       } finally {
         image.close();
@@ -103,6 +181,7 @@ export function DeviceVideoStream(props: {
               continue;
             }
             await ensureH264Writer().write(packet);
+            scheduleVisualAnalysis();
           }
         } finally {
           await h264Writer?.close().catch(() => undefined);
@@ -120,6 +199,7 @@ export function DeviceVideoStream(props: {
       disposed = true;
       abort.abort();
       cancelAnimationFrame(readyFrame);
+      cancelAnimationFrame(visualAnalysisFrame);
       removeSizeListener?.();
       decoder?.dispose();
       const gl =
