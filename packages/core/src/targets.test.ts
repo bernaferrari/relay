@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { closeBrowserTarget, getBrowserDevice } from "./browser-target.js";
+import { pressLabel, pressRef, recordDeviceVideo, screenshot, typeText } from "./device.js";
+import { runWithTargetContext } from "./target-context.js";
 import { deleteTarget, listTargets, preflightTarget, saveBrowserTarget } from "./targets.js";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -82,7 +84,7 @@ test("managed browser targets preserve an explicit, path-safe id", async () => {
   }
 });
 
-test("managed browser adapter snapshots, types, clicks, screenshots, and preflights", async (t) => {
+test("managed browser adapter supports canonical snapshots, clicks, video, and screenshots", async (t) => {
   await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
   if (t.signal.aborted) return;
   const target = await saveBrowserTarget({
@@ -93,20 +95,25 @@ test("managed browser adapter snapshots, types, clicks, screenshots, and preflig
   });
   const preflight = await preflightTarget(target);
   assert.equal(preflight.ok, true);
-  const device = await getBrowserDevice(target.id);
-  const videoPath = join(root, "run.mp4");
-  const recording = await device.recording.record({ action: "start", path: videoPath });
-  assert(recording.started || recording.warning);
-  const snapshot = await device.capture.snapshot({ platform: "android" });
-  assert(snapshot.nodes?.some((node) => node.label === "Continue"));
-  const input = snapshot.nodes?.find((node) => node.label === "Message");
-  assert(input?.ref);
-  await device.interactions.press({ platform: "android", ref: input.ref });
-  await device.interactions.type({ platform: "android", text: "Hello Relay" });
-  const output = join(root, "shot.png");
-  await device.capture.screenshot({ path: output });
-  await access(output);
-  await device.interactions.press({ platform: "android", selector: 'label="Continue"' });
-  await device.recording.record({ action: "stop" });
-  if (recording.started) await access(join(root, "run.webm"));
+  await runWithTargetContext(
+    { kind: "browser", platform: "browser", targetId: target.id },
+    async () => {
+      const device = await getBrowserDevice(target.id);
+      const videoPath = join(root, "run.mp4");
+      const recording = await recordDeviceVideo(device, { action: "start", path: videoPath });
+      assert(recording.started || recording.warning);
+      const snapshot = await device.capture.snapshot({ platform: "android" });
+      assert(snapshot.nodes?.some((node) => node.label === "Continue"));
+      const input = snapshot.nodes?.find((node) => node.label === "Message");
+      assert(input?.ref);
+      await pressRef(device, input.ref);
+      await typeText(device, "Hello Relay");
+      await pressLabel(device, "Continue");
+      const output = join(root, "shot.png");
+      await screenshot(device, output);
+      await access(output);
+      await recordDeviceVideo(device, { action: "stop" });
+      if (recording.started) await access(join(root, "run.webm"));
+    },
+  );
 });

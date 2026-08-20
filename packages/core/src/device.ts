@@ -19,6 +19,14 @@ import {
 } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
 import { bindNativeDeviceMutations, clearAndroidTextWithAdb } from "./device-mutation-adapter.js";
+import {
+  nativeDevice,
+  type Device,
+  type DeviceTransport,
+  type SnapshotNode,
+} from "./device-capabilities.js";
+export { deviceTestDouble } from "./device-capabilities.js";
+export type { Device, SnapshotNode } from "./device-capabilities.js";
 import { withRetry } from "./retry.js";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
 import {
@@ -49,7 +57,7 @@ export {
 } from "./ios-snapshot-flight.js";
 export { selectedPlatform } from "./target-context.js";
 export * from "./android-app-build.js";
-import { captureNativeCrashEvidence, type CrashEvidenceResult } from "./crash-evidence.js";
+import { captureNativeCrashEvidence } from "./crash-evidence.js";
 import { openPhysicalIosApp } from "./ios-app-open.js";
 import {
   center,
@@ -83,132 +91,11 @@ export const PLATFORM = "android" as const;
 export const GROK_PACKAGE = "ai.x.grok";
 export const PLAY_PACKAGE = "com.android.vending";
 export const WORK_ACCOUNT_MATCH = process.env.WORK_ACCOUNT_MATCH?.trim() || "teachx.ai";
-
-type NativeDevice = ReturnType<typeof createAgentDeviceClient>;
-
-/** Canonical target-neutral capability surface consumed by core recipes. */
-export type Device = {
-  devices: {
-    list: (options?: Parameters<NativeDevice["devices"]["list"]>[0]) => Promise<
-      Array<{
-        id: string;
-        name: string;
-        platform: string;
-        target?: string;
-        kind?: string;
-        booted?: boolean;
-        identifiers?: { serial?: string; udid?: string };
-        android?: { serial: string };
-        ios?: { udid: string };
-      }>
-    >;
-    boot: (options?: Parameters<NativeDevice["devices"]["boot"]>[0]) => Promise<unknown>;
-  };
-  apps: {
-    open: (options: Parameters<NativeDevice["apps"]["open"]>[0]) => Promise<{
-      appName?: string;
-      appBundleId?: string;
-      appId?: string;
-    }>;
-    close: (options?: Parameters<NativeDevice["apps"]["close"]>[0]) => Promise<unknown>;
-  };
-  capture: {
-    snapshot: (
-      options?: Parameters<NativeDevice["capture"]["snapshot"]>[0],
-    ) => Promise<{ nodes?: SnapshotNode[] }>;
-    screenshot: (
-      options?: Parameters<NativeDevice["capture"]["screenshot"]>[0],
-    ) => Promise<{ path?: string; base64?: string }>;
-  };
-  interactions: {
-    press: (options: Parameters<NativeDevice["interactions"]["press"]>[0]) => Promise<unknown>;
-    longPress: (
-      options: Parameters<NativeDevice["interactions"]["longPress"]>[0],
-    ) => Promise<unknown>;
-    fill: (options: Parameters<NativeDevice["interactions"]["fill"]>[0]) => Promise<unknown>;
-    type: (options: Parameters<NativeDevice["interactions"]["type"]>[0]) => Promise<unknown>;
-    find: (options: Parameters<NativeDevice["interactions"]["find"]>[0]) => Promise<unknown>;
-    scroll: (options: Parameters<NativeDevice["interactions"]["scroll"]>[0]) => Promise<unknown>;
-    swipe: (options: Parameters<NativeDevice["interactions"]["swipe"]>[0]) => Promise<unknown>;
-    pan: (options: Parameters<NativeDevice["interactions"]["pan"]>[0]) => Promise<unknown>;
-  };
-  command: {
-    wait: (options: Parameters<NativeDevice["command"]["wait"]>[0]) => Promise<unknown>;
-    back: (options?: Parameters<NativeDevice["command"]["back"]>[0]) => Promise<unknown>;
-    home: (options?: Parameters<NativeDevice["command"]["home"]>[0]) => Promise<unknown>;
-    clipboard: (
-      options: Parameters<NativeDevice["command"]["clipboard"]>[0],
-    ) => Promise<
-      | { action: "read"; text: string }
-      | { action: "write"; textLength: number; message: string }
-      | { action: "paste" | "copy"; text: string; textLength: number; message: string }
-    >;
-    appState: (options?: Parameters<NativeDevice["command"]["appState"]>[0]) => Promise<
-      | {
-          platform: "ios" | "macos";
-          appName: string;
-          appBundleId?: string;
-          source: "session";
-          surface: string;
-          device_udid?: string;
-        }
-      | { platform: "android"; package: string; activity: string }
-    >;
-    keyboard: (options?: Parameters<NativeDevice["command"]["keyboard"]>[0]) => Promise<unknown>;
-    alert: (options: Parameters<NativeDevice["command"]["alert"]>[0]) => Promise<unknown>;
-    appSwitcher: (
-      options?: Parameters<NativeDevice["command"]["appSwitcher"]>[0],
-    ) => Promise<unknown>;
-    rotate: (options: Parameters<NativeDevice["command"]["rotate"]>[0]) => Promise<unknown>;
-    prepare: (options: Parameters<NativeDevice["command"]["prepare"]>[0]) => Promise<unknown>;
-  };
-  settings: {
-    update: (options: Parameters<NativeDevice["settings"]["update"]>[0]) => Promise<unknown>;
-  };
-  observability: {
-    perf: (options?: Parameters<NativeDevice["observability"]["perf"]>[0]) => Promise<unknown>;
-    logs: (options?: Parameters<NativeDevice["observability"]["logs"]>[0]) => Promise<unknown>;
-    network: (
-      options?: Parameters<NativeDevice["observability"]["network"]>[0],
-    ) => Promise<unknown>;
-    audio: (options?: Parameters<NativeDevice["observability"]["audio"]>[0]) => Promise<unknown>;
-    crashes: (options: { action: "start" | "dump"; since: number }) => Promise<CrashEvidenceResult>;
-  };
-  recording: {
-    record: (options: Parameters<NativeDevice["recording"]["record"]>[0]) => Promise<{
-      [key: string]: unknown;
-      started?: boolean;
-      stopped?: boolean;
-      warning?: string;
-      path?: string;
-    }>;
-  };
-};
 const execFileAsync = promisify(execFile);
-
-export type SnapshotNode = {
-  label?: string;
-  value?: string;
-  identifier?: string;
-  role?: string;
-  type?: string;
-  enabled?: boolean;
-  selected?: boolean;
-  focused?: boolean;
-  visibleToUser?: boolean;
-  hittable?: boolean;
-  rect?: { x: number; y: number; width: number; height: number };
-  ref?: string;
-  index?: number;
-  depth?: number;
-  parentIndex?: number;
-  /** Owning Android package when the provider exposes multi-window nodes. */
-  bundleId?: string;
-};
 
 // One client per explicit target preserves SDK session reuse without binding
 // unrelated concurrently executing targets to the same agent-device session.
-const devicesByTarget = new Map<string, Device>();
+const devicesByTarget = new Map<string, DeviceTransport>();
 const applicationsByTarget = new Map<string, string>();
 const TARGET_APPLICATIONS_FILE = "runtime/target-applications.json";
 let applicationsLoaded = false;
@@ -294,7 +181,7 @@ export function createDevice(explicitContext?: TargetContext): Device {
               })
             : captureNativeCrashEvidence(since),
       },
-    };
+    } as DeviceTransport;
     devicesByTarget.set(key, device);
   }
   return device;
@@ -434,7 +321,7 @@ export async function openApp(
     return;
   }
   const opened = await controlledMutation("app-open", () =>
-    device.apps.open({
+    nativeDevice(device).apps.open({
       ...base(),
       app,
       relaunch: opts?.relaunch ?? true,
@@ -444,8 +331,74 @@ export async function openApp(
   await sleep(2000, device);
 }
 
+/**
+ * Rebind an Android SDK session to the package that already owns the visible
+ * pixels. This is intentionally separate from `openApp`: evidence/AX repair
+ * must not inject its normal post-launch delay or an unrelated relaunch.
+ */
+export async function bindAndroidAppSession(
+  device: Device,
+  app: string,
+  serial?: string,
+): Promise<void> {
+  await controlledMutation("app-open", () =>
+    nativeDevice(device).apps.open({
+      platform: "android",
+      ...(serial ? { serial } : {}),
+      app,
+      relaunch: false,
+      noRecord: true,
+    } as never),
+  );
+}
+
+/**
+ * Simulator/emulator boot is a target operation, never a workflow primitive.
+ * Keep its raw SDK access inside the dispatcher so callers cannot acquire the
+ * native transport merely to start a device.
+ */
+export async function bootTarget(
+  device: Device,
+  options: Parameters<DeviceTransport["devices"]["boot"]>[0],
+): Promise<unknown> {
+  return await nativeDevice(device).devices.boot(options);
+}
+
+/** Runner setup is host-side preparation, not a user-input gesture. */
+export async function prepareDeviceRunner(
+  device: Device,
+  options: Parameters<DeviceTransport["command"]["prepare"]>[0],
+): Promise<unknown> {
+  return await nativeDevice(device).command.prepare(options);
+}
+
+export type DeviceRecordingOptions = Parameters<DeviceTransport["recording"]["record"]>[0];
+export type DeviceRecordingResult = {
+  [key: string]: unknown;
+  started?: boolean;
+  stopped?: boolean;
+  warning?: string;
+  path?: string;
+};
+
+/**
+ * Record an evidence take through the same exact-once mutation policy as every
+ * other physical iOS command. Android retains its explicit retry contract.
+ */
+export async function recordDeviceVideo(
+  device: Device,
+  options: DeviceRecordingOptions,
+  /** Physical iOS adapters pass their verified UDID instead of relying on ambient context. */
+  iosSerial?: string,
+): Promise<DeviceRecordingResult> {
+  const record = () => nativeDevice(device).recording.record(options);
+  return await (iosSerial
+    ? runIosMutationOnce(iosSerial, "video", record)
+    : controlledMutation("video", record));
+}
+
 export async function openUrl(device: Device, url: string): Promise<void> {
-  await controlledMutation("url-open", () => device.apps.open({ ...base(), url }));
+  await controlledMutation("url-open", () => nativeDevice(device).apps.open({ ...base(), url }));
   await sleep(2500, device);
 }
 
@@ -463,7 +416,7 @@ export async function pressLabel(
   const point = resolveSnapshotTargetPoint(await snapshot(device), { label });
   try {
     await controlledMutation("press", () =>
-      device.interactions.press({
+      nativeDevice(device).interactions.press({
         ...base(),
         selector: `label="${label.replaceAll('"', '\\"')}"`,
         ...iosNonHittablePressFields(point),
@@ -487,7 +440,7 @@ export async function pressIdentifier(
   const point = resolveSnapshotTargetPoint(await snapshot(device), { identifier });
   try {
     await controlledMutation("press", () =>
-      device.interactions.press({
+      nativeDevice(device).interactions.press({
         ...base(),
         selector: `id="${identifier.replaceAll('"', '\\"')}"`,
         ...iosNonHittablePressFields(point),
@@ -510,7 +463,7 @@ export async function pressPoint(
   repeated?: RepeatedPress,
 ): Promise<void> {
   await controlledMutation("press", () =>
-    device.interactions.press({
+    nativeDevice(device).interactions.press({
       ...base(),
       x,
       y,
@@ -532,7 +485,7 @@ export async function longPressTarget(
 ): Promise<void> {
   if (target.identifier) {
     await controlledMutation("long-press", () =>
-      device.interactions.longPress({
+      nativeDevice(device).interactions.longPress({
         ...base(),
         selector: `id="${target.identifier!.replaceAll('"', '\\"')}"`,
         durationMs,
@@ -540,7 +493,7 @@ export async function longPressTarget(
     );
   } else if (target.ref) {
     await controlledMutation("long-press", () =>
-      device.interactions.longPress({
+      nativeDevice(device).interactions.longPress({
         ...base(),
         ref: target.ref!.startsWith("@") ? target.ref! : `@${target.ref!}`,
         durationMs,
@@ -549,7 +502,7 @@ export async function longPressTarget(
   } else if (target.label) {
     const label = target.label;
     await controlledMutation("long-press", () =>
-      device.interactions.longPress({
+      nativeDevice(device).interactions.longPress({
         ...base(),
         selector: `label="${label.replaceAll('"', '\\"')}"`,
         durationMs,
@@ -558,7 +511,7 @@ export async function longPressTarget(
   } else if (target.text) {
     const text = target.text;
     await controlledMutation("long-press", () =>
-      device.interactions.longPress({
+      nativeDevice(device).interactions.longPress({
         ...base(),
         selector: `label*="${text.replaceAll('"', '\\"')}"`,
         durationMs,
@@ -566,7 +519,7 @@ export async function longPressTarget(
     );
   } else if (target.point) {
     await controlledMutation("long-press", () =>
-      device.interactions.longPress({
+      nativeDevice(device).interactions.longPress({
         ...base(),
         x: target.point!.x,
         y: target.point!.y,
@@ -581,7 +534,7 @@ export async function longPressTarget(
 export async function clipboardWrite(device: Device, text: string): Promise<void> {
   try {
     await controlledMutation("clipboard-write", () =>
-      device.command.clipboard({ ...base(), action: "write", text }),
+      nativeDevice(device).command.clipboard({ ...base(), action: "write", text }),
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -598,7 +551,9 @@ export async function clipboardWrite(device: Device, text: string): Promise<void
 
 export async function clipboardRead(device: Device): Promise<string> {
   try {
-    const result = await controlled(() => device.command.clipboard({ ...base(), action: "read" }));
+    const result = await controlled(() =>
+      nativeDevice(device).command.clipboard({ ...base(), action: "read" }),
+    );
     if (result.action !== "read") throw new Error("clipboard read returned an unexpected result");
     return result.text;
   } catch (error) {
@@ -648,7 +603,7 @@ export async function clipboardPaste(
 ): Promise<string> {
   try {
     const result = await controlledMutation("clipboard-paste", () =>
-      device.command.clipboard({
+      nativeDevice(device).command.clipboard({
         ...base(),
         action: "paste",
         text,
@@ -677,7 +632,7 @@ export async function clipboardCopy(
 ): Promise<string> {
   try {
     const result = await controlledMutation("clipboard-copy", () =>
-      device.command.clipboard({
+      nativeDevice(device).command.clipboard({
         ...base(),
         action: "copy",
         ...atomicClipboardSelector(target),
@@ -719,23 +674,29 @@ export async function clipboardCopy(
 
 export async function closeApp(device: Device, app?: string): Promise<void> {
   await controlledMutation("app-close", () =>
-    device.apps.close({ ...base(), ...(app ? { app } : {}) }),
+    nativeDevice(device).apps.close({ ...base(), ...(app ? { app } : {}) }),
   );
 }
 
 export async function openAppSwitcher(device: Device): Promise<void> {
-  await controlledMutation("app-switcher", () => device.command.appSwitcher({ ...base() }));
+  await controlledMutation("app-switcher", () =>
+    nativeDevice(device).command.appSwitcher({ ...base() }),
+  );
 }
 
 export async function rotateDevice(
   device: Device,
   orientation: "portrait" | "portrait-upside-down" | "landscape-left" | "landscape-right",
 ): Promise<void> {
-  await controlledMutation("rotate", () => device.command.rotate({ ...base(), orientation }));
+  await controlledMutation("rotate", () =>
+    nativeDevice(device).command.rotate({ ...base(), orientation }),
+  );
 }
 
 export async function keyboardAction(device: Device, action: "dismiss" | "enter"): Promise<void> {
-  await controlledMutation("keyboard", () => device.command.keyboard({ ...base(), action }));
+  await controlledMutation("keyboard", () =>
+    nativeDevice(device).command.keyboard({ ...base(), action }),
+  );
 }
 
 export async function alertAction(
@@ -744,7 +705,11 @@ export async function alertAction(
   timeoutMs?: number,
 ): Promise<unknown> {
   const op = () =>
-    device.command.alert({ ...base(), action, ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
+    nativeDevice(device).command.alert({
+      ...base(),
+      action,
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    });
   return await (action === "get" || action === "wait"
     ? controlled(op)
     : controlledMutation("alert", op));
@@ -752,9 +717,9 @@ export async function alertAction(
 
 export async function updateSetting(
   device: Device,
-  input: Parameters<Device["settings"]["update"]>[0],
+  input: Parameters<DeviceTransport["settings"]["update"]>[0],
 ): Promise<unknown> {
-  return await controlledMutation("settings", () => device.settings.update(input));
+  return await controlledMutation("settings", () => nativeDevice(device).settings.update(input));
 }
 
 export async function captureNetwork(
@@ -807,7 +772,7 @@ export async function swipeGesture(
   // swipe command is now a repeated preset gesture and intentionally has no
   // duration field.
   await controlledMutation("swipe", () =>
-    device.interactions.pan({
+    nativeDevice(device).interactions.pan({
       ...base(),
       x: from.x,
       y: from.y,
@@ -985,7 +950,10 @@ async function typeAndroidShellTextExactly(
       }
     }
     if (line) {
-      await device.interactions.type({ ...base(), text: escapeAndroidShellText(line) });
+      await nativeDevice(device).interactions.type({
+        ...base(),
+        text: escapeAndroidShellText(line),
+      });
     }
     if (index < lines.length - 1) {
       await mutateCurrentTarget(() =>
@@ -998,11 +966,11 @@ async function typeAndroidShellTextExactly(
 }
 
 export async function typeText(device: Device, text: string): Promise<void> {
-  if (selectedPlatform() === "android") {
+  if (currentTargetContext().kind !== "browser" && selectedPlatform() === "android") {
     // Test doubles and older agent-device clients may not expose clipboard
     // control. Keep their deterministic fallback while production Android
     // clients use paste so the IME cannot autocorrect or capitalize input.
-    if (typeof device.command.clipboard !== "function") {
+    if (typeof nativeDevice(device).command.clipboard !== "function") {
       const serial = targetIdentity();
       try {
         await controlled(() => mutateCurrentTarget(() => pasteAndroidTextWithAdb(text, serial)));
@@ -1010,7 +978,7 @@ export async function typeText(device: Device, text: string): Promise<void> {
         const message = error instanceof Error ? error.message : String(error);
         if (!isAndroidClipboardTransportFailure(message)) throw error;
         await controlled(() =>
-          device.interactions.type({ ...base(), text: escapeAndroidShellText(text) }),
+          nativeDevice(device).interactions.type({ ...base(), text: escapeAndroidShellText(text) }),
         );
       }
       return;
@@ -1020,14 +988,21 @@ export async function typeText(device: Device, text: string): Promise<void> {
       await controlled(() =>
         pasteAndroidText(text, {
           readClipboard: async () => {
-            const result = await device.command.clipboard({ ...base(), action: "read" });
+            const result = await nativeDevice(device).command.clipboard({
+              ...base(),
+              action: "read",
+            });
             if (result.action !== "read") {
               throw new Error("clipboard read returned an unexpected result");
             }
             return result.text;
           },
           writeClipboard: async (value) => {
-            await device.command.clipboard({ ...base(), action: "write", text: value });
+            await nativeDevice(device).command.clipboard({
+              ...base(),
+              action: "write",
+              text: value,
+            });
           },
           paste: async () => {
             await mutateCurrentTarget(() =>
@@ -1061,14 +1036,16 @@ export async function typeText(device: Device, text: string): Promise<void> {
     }
     return;
   }
-  await controlledMutation("type", () => device.interactions.type({ ...base(), text }));
+  await controlledMutation("type", () =>
+    nativeDevice(device).interactions.type({ ...base(), text }),
+  );
 }
 
 export async function pressKey(device: Device, key: "back" | "home"): Promise<void> {
   if (key === "back") {
-    await controlledMutation("back", () => device.command.back({ ...base() }));
+    await controlledMutation("back", () => nativeDevice(device).command.back({ ...base() }));
   } else {
-    await controlledMutation("home", () => device.command.home({ ...base() }));
+    await controlledMutation("home", () => nativeDevice(device).command.home({ ...base() }));
   }
 }
 
@@ -1079,7 +1056,7 @@ export async function pressRef(
 ): Promise<void> {
   const normalized = ref.startsWith("@") ? ref : `@${ref}`;
   await controlledMutation("press", () =>
-    device.interactions.press({ ...base(), ref: normalized, ...repeated }),
+    nativeDevice(device).interactions.press({ ...base(), ref: normalized, ...repeated }),
   );
 }
 
@@ -1090,7 +1067,7 @@ export async function pressText(
 ): Promise<void> {
   try {
     await controlledMutation("press", () =>
-      device.interactions.press({
+      nativeDevice(device).interactions.press({
         ...base(),
         selector: `label*="${text.replaceAll('"', '\\"')}"`,
         ...iosNonHittablePressFields(),
@@ -1134,7 +1111,7 @@ export async function replaceText(
   // then use the normal exact-text path for the new value.
   if (selectedPlatform() === "android") {
     await controlledMutation("press", () =>
-      device.interactions.press({ ...base(), ...interactionTarget }),
+      nativeDevice(device).interactions.press({ ...base(), ...interactionTarget }),
     );
     await clearAndroidFocusedText(targetIdentity());
     if (text.length > 0) await typeText(device, text);
@@ -1145,17 +1122,24 @@ export async function replaceText(
     fill: async (value) => {
       try {
         await controlledMutation("fill", () =>
-          device.interactions.fill({ ...base(), ...interactionTarget, text: value }),
+          nativeDevice(device).interactions.fill({ ...base(), ...interactionTarget, text: value }),
         );
       } catch (error) {
         const point = await iosSnapshotFallbackPoint(device, target, error);
         await controlledMutation("fill", () =>
-          device.interactions.fill({ ...base(), x: point.x, y: point.y, text: value }),
+          nativeDevice(device).interactions.fill({
+            ...base(),
+            x: point.x,
+            y: point.y,
+            text: value,
+          }),
         );
       }
     },
     type: async (value) => {
-      await controlledMutation("type", () => device.interactions.type({ ...base(), text: value }));
+      await controlledMutation("type", () =>
+        nativeDevice(device).interactions.type({ ...base(), text: value }),
+      );
     },
   });
 }
@@ -1199,7 +1183,7 @@ export async function findClick(
 ): Promise<void> {
   try {
     await controlledMutation("press", () =>
-      device.interactions.find({
+      nativeDevice(device).interactions.find({
         ...base(),
         query,
         action: "click",
@@ -1273,7 +1257,7 @@ export async function waitFor(
 
 export async function scrollDown(device: Device, amount = 0.5): Promise<void> {
   await controlledMutation("scroll", () =>
-    device.interactions.scroll({
+    nativeDevice(device).interactions.scroll({
       ...base(),
       direction: "down",
       amount,
@@ -1284,7 +1268,7 @@ export async function scrollDown(device: Device, amount = 0.5): Promise<void> {
 /** Scroll toward earlier content using the same SDK semantics as scrollDown. */
 export async function scrollUp(device: Device, amount = 0.5): Promise<void> {
   await controlledMutation("scroll", () =>
-    device.interactions.scroll({
+    nativeDevice(device).interactions.scroll({
       ...base(),
       direction: "up",
       amount,
@@ -1440,7 +1424,7 @@ export async function pressMatchingText(device: Device, match: string): Promise<
     resolveSnapshotTargetPoint(nodes, { label: match });
   try {
     await controlledMutation("press", () =>
-      device.interactions.press({
+      nativeDevice(device).interactions.press({
         ...base(),
         selector: `label*="${match.replaceAll('"', '\\"')}"`,
         ...iosNonHittablePressFields(point),

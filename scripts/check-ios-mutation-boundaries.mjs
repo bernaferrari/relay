@@ -13,13 +13,8 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  */
 export const rawDeviceMutationBoundaryPaths = new Set([
   "packages/core/src/device.ts",
+  "packages/core/src/device-capabilities.ts",
   "packages/core/src/device-mutation-adapter.ts",
-  "packages/core/src/ios-device-adapter.ts",
-  // These two are Android-only session/evidence bindings. They never own an
-  // iOS interaction and remain explicit exceptions until that binding moves
-  // behind a dedicated Android facade.
-  "packages/core/src/run-evidence.ts",
-  "packages/core/src/workspace-capture.ts",
 ]);
 
 const rawMutationCall =
@@ -27,6 +22,8 @@ const rawMutationCall =
 const rawFindCall = /\b(?:target\.)?device\.interactions\.find\s*\(\s*\{([\s\S]{0,600}?)\}\s*\)/gu;
 const rawClipboardCall =
   /\b(?:target\.)?device\.command\.clipboard\s*\(\s*\{([\s\S]{0,600}?)\}\s*\)/gu;
+const nativeCapabilityEscape =
+  /\b(?:bindNativeDeviceMutations|NativeDeviceMutations|DeviceTransport|nativeDevice|deviceTestDouble)\b/gu;
 
 function lineAt(source, index) {
   return source.slice(0, index).split("\n").length;
@@ -45,6 +42,15 @@ export function evaluateIosMutationBoundaries(entries) {
   for (const { path, source = "" } of entries) {
     if (!path.startsWith("packages/core/src/") || rawDeviceMutationBoundaryPaths.has(path)) {
       continue;
+    }
+    // The public `Device` type is intentionally read-only. Do not let a
+    // workflow recover the hidden SDK transport by importing an internal
+    // transport seam under a different local name.
+    for (const match of source.matchAll(nativeCapabilityEscape)) {
+      violations.push(
+        `${path}:${lineAt(source, match.index ?? 0)} accesses ${match[0]}; ` +
+          "workflow code receives the safe Device facade and must use packages/core/src/device.ts helpers.",
+      );
     }
     for (const match of source.matchAll(rawMutationCall)) {
       violations.push(

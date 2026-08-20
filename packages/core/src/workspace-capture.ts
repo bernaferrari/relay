@@ -8,6 +8,7 @@ import { PNG } from "pngjs";
 import type { TargetRuntimeReadiness } from "@relay/protocol";
 import {
   isIosAccessibilityQueryInFlightError,
+  bindAndroidAppSession,
   type DevicePlatform,
   base,
   snapshot,
@@ -312,13 +313,7 @@ async function snapshotForTarget(
       };
     }
     if (foregroundApp && treeApp && foregroundApp !== treeApp) {
-      await target.device.apps.open({
-        platform: "android",
-        serial: target.context.serial,
-        app: foregroundApp,
-        relaunch: false,
-        noRecord: true,
-      });
+      await bindAndroidAppSession(target.device, foregroundApp, target.context.serial);
       nodes = await snapshotThroughSdk(target.device, interactiveOnly, "snapshot");
       treeApp = androidSnapshotApplication(nodes);
       if (nodes.length > 0 && androidSnapshotMatchesForeground(nodes, foregroundApp)) {

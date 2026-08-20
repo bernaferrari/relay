@@ -305,7 +305,7 @@ function unsupported(capability: string): never {
 export async function getBrowserDevice(targetId: string): Promise<Device> {
   const session = await sessionFor(targetId);
   const identifiers = { serial: targetId, appPath: "managed-browser" };
-  const api: Device = {
+  const api = {
     devices: {
       list: async () => [
         {
@@ -340,7 +340,7 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         truncated: false,
         identifiers,
       }),
-      screenshot: async (input) => {
+      screenshot: async (input?: { path?: string }) => {
         const path = input?.path;
         if (path) await mkdir(dirname(path), { recursive: true });
         const buffer = await (await activePage(session)).screenshot({ path, fullPage: false });
@@ -421,7 +421,7 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         await page.mouse.wheel(0, y);
         return { ok: true };
       },
-      swipe: async (input) => {
+      swipe: async (input: { from: { x: number; y: number }; to: { x: number; y: number } }) => {
         const page = await activePage(session);
         await page.mouse.move(input.from.x, input.from.y);
         await page.mouse.down();
@@ -482,7 +482,7 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         package: "managed-browser",
         activity: (await activePage(session)).url(),
       }),
-      keyboard: async (input) => {
+      keyboard: async (input?: { action?: "dismiss" | "enter" }) => {
         await (
           await activePage(session)
         ).keyboard.press(input?.action === "enter" ? "Enter" : "Escape");
@@ -504,14 +504,14 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
           resources: performance.getEntriesByType("resource").length,
         }));
       },
-      logs: async (input) => {
+      logs: async (input?: Parameters<Device["observability"]["logs"]>[0]) => {
         if (input?.action === "start" || input?.action === "clear") {
           session.console = [];
           session.consoleDropped = 0;
         }
         return { entries: [...session.console], dropped: session.consoleDropped };
       },
-      network: async (input) => {
+      network: async (input?: Parameters<Device["observability"]["network"]>[0]) => {
         if (input?.action === "log") {
           session.network = [];
           session.networkDropped = 0;
@@ -522,7 +522,7 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         return { entries: [...session.network], dropped: session.networkDropped };
       },
       audio: async () => unsupported("browser audio probe"),
-      crashes: async (input) => {
+      crashes: async (input: Parameters<Device["observability"]["crashes"]>[0]) => {
         if (input.action === "start") {
           session.crashes = [];
           session.crashCapture = true;

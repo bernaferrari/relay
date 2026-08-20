@@ -12,8 +12,13 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { Device } from "./device.js";
-import { rethrowIosMutationOutcomeUnknown, runIosMutationOnce } from "./ios-mutation-policy.js";
+import {
+  prepareDeviceRunner,
+  recordDeviceVideo,
+  type Device,
+  type DeviceRecordingOptions,
+} from "./device.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -333,7 +338,7 @@ export async function diagnoseIosRunnerError(error: unknown, udid?: string): Pro
 export async function prepareIosRunner(device: Device, selection: { udid: string }): Promise<void> {
   try {
     await assertIosDeviceReadyForAutomation(selection.udid);
-    await device.command.prepare({
+    await prepareDeviceRunner(device, {
       platform: "ios",
       udid: selection.udid,
       action: "ios-runner",
@@ -355,9 +360,7 @@ export async function recordIosVideo(
   input: { udid: string; action: "start" | "stop"; path?: string },
 ): Promise<IosVideoCaptureResult> {
   try {
-    const result = await runIosMutationOnce(input.udid, "video", () =>
-      device.recording.record(iosRecordingOptions(input)),
-    );
+    const result = await recordDeviceVideo(device, iosRecordingOptions(input), input.udid);
     return {
       mode: "recorded-video",
       ...(valueFrom(result, "path") || input.path
@@ -366,9 +369,8 @@ export async function recordIosVideo(
       ...(valueFrom(result, "warning") ? { warning: valueFrom(result, "warning") } : {}),
     };
   } catch (error) {
-    // A completed native video command may have lost its acknowledgement.
-    // Preserve that terminal outcome instead of replacing it with a runner-log
-    // diagnosis that callers could interpret as safe to retry.
+    // `recordDeviceVideo` preserves an ambiguous completed iOS command as a
+    // terminal review-needed outcome. Do not relabel it as runner setup.
     rethrowIosMutationOutcomeUnknown(error);
     const diagnostic = await recentIosRunnerFailure(input.udid);
     throw normalizeIosRunnerError(diagnostic ? new Error(diagnostic) : error);
@@ -385,7 +387,7 @@ export function iosRecordingOptions(input: {
   udid: string;
   action: "start" | "stop";
   path?: string;
-}): Parameters<Device["recording"]["record"]>[0] {
+}): DeviceRecordingOptions {
   return {
     platform: "ios",
     udid: input.udid,
@@ -393,7 +395,7 @@ export function iosRecordingOptions(input: {
     ...(input.path ? { path: input.path } : {}),
     fps: 30,
     quality: "high",
-  } as Parameters<Device["recording"]["record"]>[0];
+  } as DeviceRecordingOptions;
 }
 
 /** Best-effort interface orientation from CoreDevice (for screenshot upright bake). */

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createDevice, type Device, type DevicePlatform } from "./device.js";
+import { bootTarget, createDevice, type Device, type DevicePlatform } from "./device.js";
 import { getExecutingJobId } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
 import { now, publish } from "./events.js";
@@ -470,7 +470,8 @@ function mergeAdbObservation(
 export async function bootDevice(serial: string, platform: DevicePlatform): Promise<void> {
   await runTargetMutation(serial, getExecutingJobId(), async () => {
     const client = createDevice({ kind: "device", platform, serial });
-    await client.devices.boot(
+    await bootTarget(
+      client,
       platform === "ios" ? { platform, udid: serial } : { platform, serial },
     );
   });

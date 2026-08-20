@@ -1,11 +1,19 @@
 import { createAgentDeviceClient } from "agent-device";
 import { getExecutingJobId, raceCancel } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
-import type { Device } from "./device.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 type NativeDevice = ReturnType<typeof createAgentDeviceClient>;
+/**
+ * The SDK's mutating transport surface. This type is intentionally exported
+ * only for the canonical dispatcher in `device.ts`; workflow code receives
+ * the smaller `Device` observation facade instead.
+ */
+export type NativeDeviceMutations = Pick<
+  NativeDevice,
+  "devices" | "apps" | "interactions" | "command" | "settings" | "recording"
+>;
 const execFileAsync = promisify(execFile);
 
 /**
@@ -20,7 +28,7 @@ const execFileAsync = promisify(execFile);
 export function bindNativeDeviceMutations(
   native: NativeDevice,
   targetId: string,
-): Pick<Device, "devices" | "apps" | "interactions" | "command" | "settings" | "recording"> {
+): NativeDeviceMutations {
   const mutate = <T>(operation: () => Promise<T>) =>
     runTargetMutation(targetId, getExecutingJobId(), operation);
   return {
@@ -53,7 +61,10 @@ export function bindNativeDeviceMutations(
       prepare: (options) => mutate(() => native.command.prepare(options)),
     },
     settings: { update: (options) => mutate(() => native.settings.update(options)) },
-    recording: { record: (options) => mutate(() => native.recording.record(options)) },
+    recording: {
+      ...native.recording,
+      record: (options) => mutate(() => native.recording.record(options)),
+    },
   };
 }
 

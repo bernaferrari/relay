@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { EvidenceChannel, EvidenceChannelRecord, EvidenceManifest } from "@relay/protocol";
-import { base, type Device } from "./device.js";
+import { base, bindAndroidAppSession, recordDeviceVideo, type Device } from "./device.js";
 import { now } from "./events.js";
 import { redactValue, visualEvidenceAllowed } from "./redaction.js";
 import { hasSensitiveEvidenceConsent } from "./evidence-policy.js";
@@ -248,14 +248,9 @@ async function primeAndroidEvidenceSession(
         appPackage = foreground;
       }
     }
-    if (appPackage && device.apps?.open) {
+    if (appPackage) {
       await withTimeout(
-        device.apps.open({
-          ...base(),
-          app: appPackage,
-          relaunch: false,
-          noRecord: true,
-        }),
+        bindAndroidAppSession(device, appPackage, job.serial),
         5_000,
         "Android app session",
       );
@@ -418,7 +413,7 @@ export async function startRunEvidence(
       const runDir = await ensureRunDir(job);
       const path = join(runDir, "video", "run.mp4");
       const result = await withTimeout(
-        device.recording.record({
+        recordDeviceVideo(device, {
           ...base(),
           action: "start",
           path,
@@ -431,7 +426,7 @@ export async function startRunEvidence(
         10_000,
         "video recorder start",
         async () => {
-          await device.recording.record({ ...base(), action: "stop" });
+          await recordDeviceVideo(device, { ...base(), action: "stop" });
         },
       );
       if (result && typeof result === "object" && "started" in result && result.started === false) {
@@ -487,7 +482,7 @@ async function stopVideoEvidence(
   if (!handle.recordingStarted) return;
   try {
     const result = await withTimeout(
-      device.recording.record({ ...base(), action: "stop" }),
+      recordDeviceVideo(device, { ...base(), action: "stop" }),
       VIDEO_RECORDER_STOP_TIMEOUT_MS,
       "video recorder stop",
     );
