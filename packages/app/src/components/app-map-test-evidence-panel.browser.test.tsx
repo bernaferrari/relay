@@ -171,6 +171,79 @@ test("nested provenance stays explicit when no nested runtime trace exists", () 
   document.body.replaceChildren();
 });
 
+test("compiled summary exposes the deterministic schedule proposal without implying it runs", () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const scheduledPlan: AppMapCompiledTest = {
+    ...plan,
+    executionSchedule: {
+      schemaVersion: 2,
+      mode: "review-required",
+      checks: [
+        {
+          checkId: "open-privacy",
+          recipeId: "privacy",
+          authoredIndex: 1,
+          proposedIndex: 0,
+          sourceScreenId: "settings",
+          semanticDocumentOrder: 0,
+          documentY: 180,
+          disposition: "scheduled",
+          reason: "reviewed-return-equivalence",
+          returnToSource: {
+            sourceScreenId: "settings",
+            terminalScreenId: "privacy",
+            kind: "back",
+            connectionIds: ["settings-to-privacy"],
+          },
+        },
+        {
+          checkId: "open-help",
+          recipeId: "help",
+          authoredIndex: 0,
+          proposedIndex: 1,
+          sourceScreenId: "settings",
+          disposition: "deferred",
+          reason: "unknown-cursor",
+        },
+      ],
+      deferredBranches: [
+        {
+          checkId: "open-help",
+          recipeId: "review-cold-help",
+          reason: "cold-reset-branch",
+        },
+      ],
+    },
+  };
+  const dispose = render(
+    () => (
+      <AppMapTestEvidencePanel
+        test={testFixture}
+        plan={scheduledPlan}
+        counts={{ frames: 0, events: 0, artifacts: 0 }}
+        provenance={scheduledPlan.stepProvenance}
+        detailError=""
+        devices={[]}
+        frameUrl={() => ""}
+      />
+    ),
+    root,
+  );
+
+  expect(root.textContent).toContain("Execution proposal");
+  expect(root.textContent).toContain("Review required");
+  expect(root.textContent).toContain("Reviewed return");
+  expect(root.textContent).toContain("Needs source proof");
+  expect(root.textContent).toContain("1 review-only recovery");
+  expect(root.textContent).toContain("Saved Test order stays unchanged.");
+  expect(root.querySelector("[data-app-map-schedule-check='open-privacy']")).not.toBeNull();
+
+  dispose();
+  document.body.replaceChildren();
+});
+
 test("latest result row opens the exact run with pointer or keyboard semantics", () => {
   document.body.replaceChildren();
   const root = document.createElement("div");

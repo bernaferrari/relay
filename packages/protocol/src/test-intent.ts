@@ -265,6 +265,56 @@ export type AppMapTestCompileDiagnostic = {
   };
 };
 
+/** Why the frozen graph scheduler kept, deferred, or reordered one check.
+ * These codes are part of the compiled-Test contract: the app, CLI, HTTP, and
+ * MCP all receive the same explanation without consulting a live target. */
+export type AppMapTestExecutionScheduleReason =
+  | "reviewed-return-equivalence"
+  | "authored-order"
+  | "cleanup-boundary"
+  | "external-handoff"
+  | "cold-reset-branch"
+  | "unknown-cursor"
+  | "prerequisite-boundary"
+  | "unknown-document-position"
+  | "conflicting-document-order"
+  | "missing-reviewed-return";
+
+/** The narrow proof that lets a scheduler treat a leaf as a sibling of other
+ * checks starting from the same screen. It intentionally names only reviewed
+ * inverse edges; a coordinate, title, or inferred Back gesture is never
+ * enough to establish this equivalence. */
+export type AppMapTestReviewedReturnEquivalence = {
+  sourceScreenId: string;
+  terminalScreenId: string;
+  kind: "back" | "connection";
+  connectionIds: string[];
+};
+
+export type AppMapTestExecutionScheduleCheck = {
+  checkId: string;
+  recipeId: string;
+  authoredIndex: number;
+  proposedIndex: number;
+  sourceScreenId?: string;
+  /** Stable ordinal from the frozen semantic surface. This is the scheduling
+   * key; documentY is retained only as an inspectable visual coordinate. */
+  semanticDocumentOrder?: number;
+  documentY?: number;
+  disposition: "scheduled" | "fixed" | "deferred";
+  reason: AppMapTestExecutionScheduleReason;
+  returnToSource?: AppMapTestReviewedReturnEquivalence;
+};
+
+/** A cold fallback is retained for SOS/review but never joins the normal
+ * schedule. Keeping it separate from the warm check prevents a proposed order
+ * from looking as if Relay may silently reset or relaunch a target. */
+export type AppMapTestDeferredScheduleBranch = {
+  checkId: string;
+  recipeId: string;
+  reason: "cold-reset-branch";
+};
+
 export type AppMapCompiledTest = {
   schemaVersion: 1;
   appMapId: string;
@@ -280,22 +330,11 @@ export type AppMapCompiledTest = {
    * boundary; it exists so humans and agents can review a faster route before
    * execution adopts it. */
   executionSchedule?: {
-    schemaVersion: 1;
+    schemaVersion: 2;
     mode: "authored" | "review-required";
-    checks: Array<{
-      checkId: string;
-      recipeId: string;
-      authoredIndex: number;
-      proposedIndex: number;
-      sourceScreenId?: string;
-      documentY?: number;
-      disposition: "scheduled" | "fixed";
-      reason?:
-        | "cleanup-boundary"
-        | "external-handoff"
-        | "prerequisite-boundary"
-        | "unknown-document-position";
-    }>;
+    checks: AppMapTestExecutionScheduleCheck[];
+    /** Review-only cold branches, sorted by their authored check order. */
+    deferredBranches: AppMapTestDeferredScheduleBranch[];
   };
   rootRecipeId: string;
   recipes: Record<

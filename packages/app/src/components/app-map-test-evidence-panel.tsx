@@ -1,5 +1,9 @@
 import { For, Show, createMemo } from "solid-js";
-import type { AppMapCompiledTest, AppMapScenarioTest } from "@relay/protocol";
+import type {
+  AppMapCompiledTest,
+  AppMapScenarioTest,
+  AppMapTestExecutionScheduleReason,
+} from "@relay/protocol";
 import {
   failureForTestRun,
   outcomeForTestStep,
@@ -19,6 +23,21 @@ import {
 } from "./app-map-test-context-primitives";
 
 type EvidenceCounts = { frames: number; events: number; artifacts: number };
+
+/** Keep the persisted scheduler codes terse and stable while making the
+ * read-only compile summary useful to a person reviewing a proposed route. */
+const scheduleReasonLabel: Record<AppMapTestExecutionScheduleReason, string> = {
+  "reviewed-return-equivalence": "Reviewed return",
+  "authored-order": "Authored order",
+  "cleanup-boundary": "Cleanup boundary",
+  "external-handoff": "External handoff",
+  "cold-reset-branch": "Review-only recovery",
+  "unknown-cursor": "Needs source proof",
+  "prerequisite-boundary": "Prerequisite boundary",
+  "unknown-document-position": "No semantic position",
+  "conflicting-document-order": "Conflicting semantic positions",
+  "missing-reviewed-return": "Needs reviewed return",
+};
 
 /** One disclosure grammar for the two low-frequency detail cards in this rail. */
 const evidenceSummary = cn(
@@ -139,6 +158,55 @@ function CompiledTestSummary(props: { plan: AppMapCompiledTest }) {
         <code class="mt-1.5 block overflow-x-auto rounded bg-background-deep p-1.5 font-mono text-micro/[1.45] text-text-weak">
           {props.plan.rootRecipeId}
         </code>
+        <Show when={props.plan.executionSchedule}>
+          {(schedule) => {
+            const checks = () => schedule().checks;
+            const deferredCheckCount = () =>
+              checks().filter((check) => check.disposition === "deferred").length;
+            const coldBranchCount = () => schedule().deferredBranches.length;
+            const coldBranchLabel = () => {
+              const count = coldBranchCount();
+              return count === 1 ? "1 review-only recovery" : `${count} review-only recoveries`;
+            };
+            return (
+              <section
+                class="mt-2.5 border-t border-border-weak-base pt-2.5"
+                aria-label="Execution proposal"
+              >
+                <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+                  <strong class="text-caption font-medium text-text-base">
+                    Execution proposal
+                  </strong>
+                  <span class="text-micro font-medium text-text-weak">
+                    {schedule().mode === "review-required" ? "Review required" : "Authored order"}
+                  </span>
+                </div>
+                <p class="mt-1 text-caption/[1.4] text-text-weak">
+                  {checks().length} {checks().length === 1 ? "check" : "checks"} ·{" "}
+                  {deferredCheckCount()} deferred
+                  {coldBranchCount() ? ` · ${coldBranchLabel()}` : ""}. Saved Test order stays
+                  unchanged.
+                </p>
+                <ol class="mt-2 grid gap-1" aria-label="Proposed check order">
+                  <For each={checks()}>
+                    {(check) => (
+                      <li
+                        data-app-map-schedule-check={check.checkId}
+                        class="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-baseline gap-x-1.5 rounded bg-surface-base px-1.5 py-1 text-micro/[1.35]"
+                      >
+                        <span class="tabular-nums text-text-weak">{check.proposedIndex + 1}</span>
+                        <span class="truncate text-text-base">{check.checkId}</span>
+                        <span class="text-right text-text-weak">
+                          {scheduleReasonLabel[check.reason]}
+                        </span>
+                      </li>
+                    )}
+                  </For>
+                </ol>
+              </section>
+            );
+          }}
+        </Show>
       </div>
     </details>
   );

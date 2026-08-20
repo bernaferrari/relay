@@ -203,8 +203,8 @@ test("proposes monotonic document order only inside a proven Settings segment", 
           documentHeight: 1_200,
           viewportHeight: 500,
           anchors: [
-            { order: 0, documentY: 800, target: { label: "Later" }, label: "Later" },
-            { order: 1, documentY: 200, target: { label: "Earlier" }, label: "Earlier" },
+            { order: 0, documentY: 200, target: { label: "Earlier" }, label: "Earlier" },
+            { order: 1, documentY: 800, target: { label: "Later" }, label: "Later" },
           ],
         },
       },
@@ -223,6 +223,14 @@ test("proposes monotonic document order only inside a proven Settings segment", 
         evidenceIds: [],
       },
     },
+    return: {
+      kind: "back",
+      expectedDestination: {
+        screenId: "home",
+        identity: screen("home").identity!,
+        evidenceIds: [],
+      },
+    },
   };
   current.connections.earlier = {
     ...current.connections["open-cart"]!,
@@ -232,6 +240,14 @@ test("proposes monotonic document order only inside a proven Settings segment", 
       expectedDestination: {
         screenId: "cart",
         identity: screen("cart").identity!,
+        evidenceIds: [],
+      },
+    },
+    return: {
+      kind: "back",
+      expectedDestination: {
+        screenId: "home",
+        identity: screen("home").identity!,
         evidenceIds: [],
       },
     },
@@ -290,7 +306,7 @@ test("proposes monotonic document order only inside a proven Settings segment", 
     },
   } as unknown as Record<string, import("./recipes.js").Recipe>;
   assert.deepEqual(proposeAppMapTestExecutionSchedule(current, "root", graph), {
-    schemaVersion: 1,
+    schemaVersion: 2,
     mode: "review-required",
     checks: [
       {
@@ -299,8 +315,16 @@ test("proposes monotonic document order only inside a proven Settings segment", 
         authoredIndex: 1,
         proposedIndex: 0,
         sourceScreenId: "home",
+        semanticDocumentOrder: 0,
         documentY: 200,
         disposition: "scheduled",
+        reason: "reviewed-return-equivalence",
+        returnToSource: {
+          sourceScreenId: "home",
+          terminalScreenId: "cart",
+          kind: "back",
+          connectionIds: ["earlier"],
+        },
       },
       {
         checkId: "later",
@@ -308,8 +332,16 @@ test("proposes monotonic document order only inside a proven Settings segment", 
         authoredIndex: 0,
         proposedIndex: 1,
         sourceScreenId: "home",
+        semanticDocumentOrder: 1,
         documentY: 800,
         disposition: "scheduled",
+        reason: "reviewed-return-equivalence",
+        returnToSource: {
+          sourceScreenId: "home",
+          terminalScreenId: "cart",
+          kind: "back",
+          connectionIds: ["later"],
+        },
       },
       {
         checkId: "cleanup",
@@ -321,6 +353,7 @@ test("proposes monotonic document order only inside a proven Settings segment", 
         reason: "cleanup-boundary",
       },
     ],
+    deferredBranches: [],
   });
 });
 
