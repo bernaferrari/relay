@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { TargetRuntimeReadiness } from "@relay/protocol";
+import {
+  defineIosMutationTerminalityRegistry,
+  verifyIosMutationTerminalityRegistry,
+  type TargetRuntimeReadiness,
+} from "@relay/protocol";
 import type { Device } from "./device.js";
 import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
 import {
@@ -238,4 +242,89 @@ test("an unknown iOS video start remains terminal with its repair evidence", asy
   assert.equal(diagnoses, 0);
   assert.deepEqual(fixture.operations, ["evidence"]);
   assert.equal(fixture.capabilities.length, 0);
+});
+
+test("the registered iOS evidence-video boundary preserves terminality without downgrading ordinary failures", async () => {
+  const registry = defineIosMutationTerminalityRegistry([
+    {
+      id: "core.evidence-video.capture",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        let diagnoses = 0;
+        const unknown = new IosMutationOutcomeUnknownError(
+          {
+            sequence: 8,
+            operation: "video",
+            nativeAttempts: 1,
+            outcome: "outcome-unknown",
+            retry: {
+              attempts: 0,
+              decision: "blocked",
+              reason: "native-command-outcome-unknown",
+            },
+            intervention: {
+              required: true,
+              action: "capture-current-screen-before-any-retry",
+            },
+            at: 43,
+          },
+          new Error("lost video-start acknowledgement"),
+        );
+        const fixture = runtime({
+          recordIosVideo: async () => {
+            nativeDispatches.push("record-video");
+            throw unknown;
+          },
+          diagnoseIosRunnerError: async () => {
+            diagnoses += 1;
+            return new Error("must not normalize an ambiguous video start");
+          },
+        });
+
+        try {
+          await captureIosEvidenceVideo(
+            { device: {} as Device, serial: "ipad-terminality", action: "start" },
+            fixture.runtime,
+          );
+          return { nativeDispatches, status: "handled" as const };
+        } catch (error) {
+          assert.equal(error, unknown);
+          assert.equal(diagnoses, 0);
+          assert.equal(fixture.capabilities.length, 0);
+          return { nativeDispatches, status: "terminal" as const, error };
+        }
+      },
+      recovery: {
+        expectedStatus: "handled",
+        expectedNativeDispatches: 1,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          const fixture = runtime({
+            recordIosVideo: async () => {
+              nativeDispatches.push("record-video");
+              throw new Error("No active XCTest session");
+            },
+          });
+
+          try {
+            await captureIosEvidenceVideo(
+              { device: {} as Device, serial: "ipad-terminality", action: "start" },
+              fixture.runtime,
+            );
+            return { nativeDispatches, status: "terminal" as const };
+          } catch (error) {
+            assert.ok(error instanceof IosEvidenceCaptureUnavailableError);
+            assert.equal(error.diagnostic.stage, "recording");
+            assert.equal(error.diagnostic.attempts, 1);
+            assert.equal(error.diagnostic.repairAttempted, false);
+            return { nativeDispatches, status: "handled" as const };
+          }
+        },
+      },
+    },
+  ]);
+
+  await verifyIosMutationTerminalityRegistry(registry, {
+    isOutcomeUnknown: (error) => error instanceof IosMutationOutcomeUnknownError,
+  });
 });
