@@ -5,11 +5,44 @@
  * a short `devicectl` call or go-ios (after the iOS 17+ tunnel).
  */
 import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
+import {
+  attachIosVisualVerificationDiagnostic,
+  canPersistIosVisualVerificationRepair,
+  iosVisualVerificationCaptureSummary,
+  iosVisualVerificationErrorMessage,
+  normalizeIosVisualVerificationInteraction,
+  persistIosVisualVerificationRepair,
+  removeIosVisualVerificationTemporary,
+} from "./ios-visual-repair.js";
+import type {
+  CapturedIosVisualRaster,
+  IosVisualVerificationDiagnostic,
+  IosVisualVerificationFailure,
+  IosVisualVerificationFailureStage,
+  IosVisualVerificationRepair,
+  IosVisualVerificationRepairPackage,
+  IosVisualVerificationResult,
+  IosVisualVerificationTiming,
+} from "./ios-visual-repair.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
+
+export {
+  iosVisualVerificationDiagnostic,
+  type IosVisualVerificationCapture,
+  type IosVisualVerificationDiagnostic,
+  type IosVisualVerificationFailure,
+  type IosVisualVerificationFailureStage,
+  type IosVisualVerificationInteraction,
+  type IosVisualVerificationRepair,
+  type IosVisualVerificationRepairPackage,
+  type IosVisualVerificationResult,
+  type IosVisualVerificationTiming,
+} from "./ios-visual-repair.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -381,23 +414,179 @@ export function pixelEvidenceFingerprint(bytes: Uint8Array): string {
 export async function verifyIosScreenChanged(
   serial: string,
   act: () => Promise<void>,
-  input: { run?: CommandRunner; bin?: string } = {},
-): Promise<void> {
+  input: {
+    run?: CommandRunner;
+    bin?: string;
+    /** Default is deliberately modest; this only waits for the one requested action. */
+    settleMs?: number;
+    /** Test-only isolation seam; ordinary callers use the system temp directory. */
+    temporaryDirectory?: string;
+    /** Opt in to a content-addressed repair package, never a temp-file reference. */
+    repair?: IosVisualVerificationRepair;
+  } = {},
+): Promise<IosVisualVerificationResult> {
   const bin = input.bin ?? (await resolveGoIosBinary());
   const run = input.run ?? defaultCommandRunner;
-  const beforePath = join(tmpdir(), `relay-tap-before-${process.pid}-${Date.now()}.png`);
-  const afterPath = join(tmpdir(), `relay-tap-after-${process.pid}-${Date.now()}.png`);
-  await captureIosPngViaGoIos(serial, beforePath, { bin, run, timeoutMs: 8_000 });
-  const beforeHash = pixelEvidenceFingerprint(await readFile(beforePath));
-  await act();
-  await new Promise((resolve) => setTimeout(resolve, 280));
-  await captureIosPngViaGoIos(serial, afterPath, { bin, run, timeoutMs: 8_000 });
-  const afterHash = pixelEvidenceFingerprint(await readFile(afterPath));
-  if (afterHash === beforeHash) {
-    throw new Error(
-      "Tap did not change the screen. The control may not be hittable there — tap the label, or pick another point.",
-    );
+  const temporaryDirectory = input.temporaryDirectory ?? tmpdir();
+  const captureId = randomUUID();
+  const beforePath = join(temporaryDirectory, `relay-tap-before-${process.pid}-${captureId}.png`);
+  const afterPath = join(temporaryDirectory, `relay-tap-after-${process.pid}-${captureId}.png`);
+  const requestedSettleMs = input.settleMs ?? 280;
+  const settleMs = Number.isFinite(requestedSettleMs)
+    ? Math.max(0, Math.min(10_000, Math.floor(requestedSettleMs)))
+    : 280;
+  const startedAt = Date.now();
+  const interaction = input.repair
+    ? normalizeIosVisualVerificationInteraction(input.repair.interaction)
+    : undefined;
+  let before: CapturedIosVisualRaster | undefined;
+  let after: CapturedIosVisualRaster | undefined;
+  let failure: { stage: IosVisualVerificationFailureStage; error: unknown } | undefined;
+  const failures: IosVisualVerificationFailure[] = [];
+  let actionStartedAt: number | undefined;
+  let actionFinishedAt: number | undefined;
+  let outcome: IosVisualVerificationDiagnostic["outcome"] = "incomplete";
+  let repair: IosVisualVerificationRepairPackage | undefined;
+  let repairError: string | undefined;
+  let cleanupErrors: string[] | undefined;
+  // Capture this before persistence and cleanup. It measures the device proof,
+  // rather than variable local file-system work afterwards, and is therefore
+  // the exact same interval recorded in the repair manifest.
+  let proofTiming: IosVisualVerificationTiming | undefined;
+
+  const recordFailure = (stage: IosVisualVerificationFailureStage, error: unknown) => {
+    if (!failure) failure = { stage, error };
+    failures.push({ stage, message: iosVisualVerificationErrorMessage(error), at: Date.now() });
+  };
+  const timing = (finishedAt: number): IosVisualVerificationTiming => ({
+    startedAt,
+    finishedAt,
+    settleMs,
+    ...(before ? { beforeCapturedAt: before.capturedAt } : {}),
+    ...(actionStartedAt !== undefined ? { actionStartedAt } : {}),
+    ...(actionFinishedAt !== undefined ? { actionFinishedAt } : {}),
+    ...(after ? { afterCapturedAt: after.capturedAt } : {}),
+  });
+  const capture = async (path: string): Promise<CapturedIosVisualRaster> => {
+    await captureIosPngViaGoIos(serial, path, { bin, run, timeoutMs: 8_000 });
+    const bytes = await readFile(path);
+    return { capturedAt: Date.now(), bytes };
+  };
+
+  try {
+    try {
+      before = await capture(beforePath);
+    } catch (error) {
+      recordFailure("before-capture", error);
+    }
+
+    if (before) {
+      try {
+        // This is exactly one caller-requested mutation. No retry, repair,
+        // relaunch, or reset belongs in visual verification.
+        actionStartedAt = Date.now();
+        await act();
+      } catch (error) {
+        recordFailure("action", error);
+      } finally {
+        actionFinishedAt = Date.now();
+      }
+
+      if (settleMs > 0) await new Promise((resolve) => setTimeout(resolve, settleMs));
+      try {
+        after = await capture(afterPath);
+      } catch (error) {
+        recordFailure("after-capture", error);
+      }
+
+      if (before && after) {
+        try {
+          before.fingerprint = pixelEvidenceFingerprint(before.bytes);
+          after.fingerprint = pixelEvidenceFingerprint(after.bytes);
+          if (!failure && after.fingerprint === before.fingerprint) {
+            recordFailure(
+              "fingerprint",
+              new Error(
+                "Tap did not change the screen. The control may not be hittable there — tap the label, or pick another point.",
+              ),
+            );
+          }
+        } catch (error) {
+          recordFailure("fingerprint", error);
+        }
+      }
+    }
+
+    outcome = failure ? (failure.stage === "fingerprint" ? "unchanged" : "incomplete") : "changed";
+  } finally {
+    const finishedAt = Date.now();
+    proofTiming = timing(finishedAt);
+    const shouldPersist = interaction && (input.repair?.retain === "always" || Boolean(failure));
+    if (shouldPersist && interaction && !canPersistIosVisualVerificationRepair()) {
+      repairError = "Visual evidence is disabled while redaction is enabled";
+    } else if (shouldPersist && interaction) {
+      try {
+        repair = await persistIosVisualVerificationRepair({
+          serial,
+          interaction,
+          timing: proofTiming,
+          outcome,
+          ...(failure
+            ? {
+                failure: {
+                  stage: failure.stage,
+                  message: iosVisualVerificationErrorMessage(failure.error),
+                  at: failures[0]?.at ?? finishedAt,
+                },
+              }
+            : {}),
+          ...(failures.length ? { failures } : {}),
+          ...(before ? { before } : {}),
+          ...(after ? { after } : {}),
+        });
+      } catch (error) {
+        // Evidence persistence must not turn an already-completed device
+        // action into a fictional input failure. The caller still gets the
+        // durable-store error in the diagnostic for a deliberate repair.
+        repairError = iosVisualVerificationErrorMessage(error);
+      }
+    }
+    const cleanup = await Promise.all([
+      removeIosVisualVerificationTemporary(beforePath),
+      removeIosVisualVerificationTemporary(afterPath),
+    ]);
+    cleanupErrors = cleanup.filter((error): error is string => Boolean(error));
+    if (cleanupErrors.length === 0) cleanupErrors = undefined;
   }
+
+  const finishedAt = Date.now();
+  const beforeSummary = iosVisualVerificationCaptureSummary(before);
+  const afterSummary = iosVisualVerificationCaptureSummary(after);
+  const diagnostic: IosVisualVerificationDiagnostic = {
+    serial,
+    timing: proofTiming ?? timing(finishedAt),
+    outcome,
+    ...(failure
+      ? {
+          failure: {
+            stage: failure.stage,
+            message: iosVisualVerificationErrorMessage(failure.error),
+            at: failures[0]?.at ?? finishedAt,
+          },
+        }
+      : {}),
+    ...(failures.length ? { failures } : {}),
+    ...(beforeSummary ? { before: beforeSummary } : {}),
+    ...(afterSummary ? { after: afterSummary } : {}),
+    ...(repair ? { repair } : {}),
+    ...(repairError ? { repairError } : {}),
+    ...(cleanupErrors ? { cleanupErrors } : {}),
+  };
+  if (failure) {
+    attachIosVisualVerificationDiagnostic(failure.error, diagnostic);
+    throw failure.error;
+  }
+  return diagnostic;
 }
 
 export async function captureIosPngViaGoIos(

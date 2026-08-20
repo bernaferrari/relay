@@ -99,6 +99,36 @@ export function canVerifyIosScreenChange(input: InteractInput): boolean {
   );
 }
 
+/**
+ * A visual verifier has no access to the caller's recipe/session context.
+ * Give it the resolved command verbatim so a failed iOS transition can retain
+ * an evidence package that an agent or person can replay without guessing.
+ */
+function iosVisualRepairFor(input: InteractInput) {
+  const label = (() => {
+    switch (input.kind) {
+      case "point":
+        return `Tap (${input.x}, ${input.y})`;
+      case "identifier":
+        return `Identifier “${input.identifier}”`;
+      case "label":
+        return `Label “${input.label}”`;
+      case "find":
+        return `Find “${input.query}”`;
+      case "text-match":
+        return `Text match “${input.match}”`;
+      default:
+        return `iOS ${input.kind} interaction`;
+    }
+  })();
+  return {
+    interaction: {
+      label,
+      input: structuredClone(input) as Record<string, unknown>,
+    },
+  };
+}
+
 function optionalInteractPoint(
   point?: InteractPoint,
 ): { point: InteractPoint } | Record<string, never> {
@@ -370,7 +400,13 @@ export async function interact(
       await withSession(
         target.device,
         () =>
-          verifyIosScreenChanged(context.serial, () => pressPoint(target.device, input.x, input.y)),
+          verifyIosScreenChanged(
+            context.serial,
+            () => pressPoint(target.device, input.x, input.y),
+            {
+              repair: iosVisualRepairFor(input),
+            },
+          ),
         "interaction",
       );
       return afterInput(
@@ -397,14 +433,18 @@ export async function interact(
       await withSession(
         target.device,
         () =>
-          verifyIosScreenChanged(context.serial, async () => {
-            result = await interactOnDevice(target.device, input);
-            if (!result.resolution) {
-              throw new Error(
-                "No unique control matched this iOS accessibility target. Use a visible point instead.",
-              );
-            }
-          }),
+          verifyIosScreenChanged(
+            context.serial,
+            async () => {
+              result = await interactOnDevice(target.device, input);
+              if (!result.resolution) {
+                throw new Error(
+                  "No unique control matched this iOS accessibility target. Use a visible point instead.",
+                );
+              }
+            },
+            { repair: iosVisualRepairFor(input) },
+          ),
         "interaction",
       );
       return afterInput(
