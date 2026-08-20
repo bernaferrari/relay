@@ -45,6 +45,7 @@ export async function* readMjpegJpegs(
   let buffer = Buffer.alloc(0);
   const boundaryMarkers = [
     Buffer.from("--BoundaryString"),
+    Buffer.from("--RelayFrame"),
     Buffer.from("--ffmpeg"),
     Buffer.from("--frame"),
   ];

@@ -279,8 +279,9 @@ export function DeviceSettingsPanel() {
                   <div class={copyStack}>
                     <span class={`${labelClass} ${copyTitle}`}>iOS live preview</span>
                     <p class={`m-0 text-caption ${copyDescription}`}>
-                      Live preview defaults to a go-ios video/MJPEG stream. Screenshots stay for
-                      evidence. Switch to PNG only if the stream is unavailable.
+                      Live preview uses Relay’s safe Instruments sidecar. It shows pixels only;
+                      XCTest remains the control path. Switch to PNG only if live preview is
+                      unavailable.
                     </p>
                   </div>
                   <select
@@ -309,9 +310,9 @@ export function DeviceSettingsPanel() {
                         .finally(() => setAppleSetupBusy(false));
                     }}
                   >
-                    <option value="go-ios-auto">Live stream (default)</option>
+                    <option value="go-ios-auto">Safe live stream (default)</option>
                     <option value="agent-device-png">PNG preview fallback</option>
-                    <option value="go-ios-mjpeg">go-ios Instruments MJPEG</option>
+                    <option value="go-ios-mjpeg">Safe Instruments MJPEG sidecar</option>
                   </select>
                 </div>
               </div>

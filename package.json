@@ -17,6 +17,8 @@
     "inspect:desktop": "pnpm --filter @relay/desktop inspect",
     "agent-device:install": "cd vendor/agent-device && pnpm install --frozen-lockfile --ignore-scripts",
     "agent-device:build": "node scripts/build-agent-device.mjs",
+    "ios-preview:build": "node scripts/build-ios-preview-producer.mjs",
+    "ios-preview:test": "cd packages/ios-preview-producer && go test -mod=readonly -race ./...",
     "check": "vp check",
     "fmt": "vp fmt",
     "lint": "vp lint",
@@ -24,14 +26,14 @@
     "pack": "vp pack",
     "prepare": "vp config",
     "doctor": "pnpm --filter @relay/cli exec tsx src/index.ts system doctor",
-    "test": "pnpm run test:packages && vp test",
+    "test": "pnpm run ios-preview:test && pnpm run test:packages && vp test",
     "test:packages": "pnpm -r --if-present run test",
     "test:golden": "node scripts/golden-device.mjs",
     "test:golden:require": "GOLDEN_REQUIRE_DEVICE=1 node scripts/golden-device.mjs",
     "test:architecture": "node --test scripts/check-source-budgets.test.mjs",
     "check:docs": "node scripts/check-docs.mjs",
     "check:architecture": "node scripts/check-source-budgets.mjs",
-    "verify": "vp check && pnpm run check:docs && pnpm run check:architecture && pnpm run test:architecture && pnpm typecheck && pnpm run test:packages && vp test && pnpm --filter @relay/app check:ui && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build"
+    "verify": "vp check && pnpm run check:docs && pnpm run check:architecture && pnpm run test:architecture && pnpm typecheck && pnpm run ios-preview:test && pnpm run test:packages && vp test && pnpm --filter @relay/app check:ui && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

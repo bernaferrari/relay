@@ -7,7 +7,7 @@ import {
   parseIosLivePreviewSettings,
 } from "./ios-live-preview.js";
 
-test("defaults to the go-ios live stream, with PNG as an explicit fallback", () => {
+test("defaults to the safe Instruments stream, with PNG as an explicit fallback", () => {
   assert.deepEqual(parseIosLivePreviewSettings(undefined), { backend: "go-ios-auto" });
   assert.equal(iosLivePreviewUsesStream("go-ios-auto"), true);
   assert.equal(iosLivePreviewUsesStream("agent-device-png"), false);
@@ -32,5 +32,5 @@ test("accepts go-ios backends and legacy aliases", () => {
   assert.equal(parseIosLivePreviewSettings({ backend: "go-ios-mjpeg" }).backend, "go-ios-mjpeg");
   assert.equal(parseIosLivePreviewSettings({ backend: "go-ios" }).backend, "go-ios-auto");
   assert.equal(parseIosLivePreviewSettings({ backend: "nope" }).backend, "go-ios-auto");
-  assert.match(iosLivePreviewLabel("go-ios-auto"), /MJPEG/i);
+  assert.match(iosLivePreviewLabel("go-ios-auto"), /safe/i);
 });

@@ -69,6 +69,24 @@ test("parses go-ios style mjpeg parts", async () => {
   assert.deepEqual(frames[0], jpeg);
 });
 
+test("parses the bounded Relay sidecar multipart packets", async () => {
+  const first = Buffer.from([0xff, 0xd8, 0x01, 0xd9]);
+  const second = Buffer.from([0xff, 0xd8, 0x02, 0xd9]);
+  const part = (jpeg: Buffer) =>
+    Buffer.concat([
+      Buffer.from("--RelayFrame\r\nContent-Type: image/jpeg\r\n"),
+      Buffer.from(`Content-Length: ${jpeg.length}\r\n\r\n`),
+      jpeg,
+      Buffer.from("\r\n"),
+    ]);
+  async function* chunks() {
+    yield Buffer.concat([part(first), part(second)]);
+  }
+  const frames: Buffer[] = [];
+  for await (const frame of readMjpegJpegs(chunks())) frames.push(frame);
+  assert.deepEqual(frames, [first, second]);
+});
+
 test("drops stale frames for a slow Relay client instead of queueing the device source", () => {
   let at = 1_000;
   const fanout = new IosLatestFrameFanout({ now: () => at });

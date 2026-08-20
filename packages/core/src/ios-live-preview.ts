@@ -2,7 +2,7 @@
  * Pluggable live-preview transports for physical Apple devices.
  *
  * Control (tap/AX/crawl) is agent-device XCTest. Preview:
- * - go-ios-auto / go-ios-mjpeg: Instruments screenshot MJPEG (default)
+ * - go-ios-auto / go-ios-mjpeg: Relay's safe Instruments MJPEG sidecar (default)
  * - agent-device-png: PNG polling fallback
  *
  * Android H.264/scrcpy is unchanged.
@@ -61,9 +61,9 @@ export function iosLivePreviewUiFormat(backend: IosLivePreviewBackend): "jpeg" |
 export function iosLivePreviewLabel(backend: IosLivePreviewBackend): string {
   switch (backend) {
     case "go-ios-auto":
-      return "go-ios live stream (Instruments MJPEG)";
+      return "Live preview (safe Instruments sidecar)";
     case "go-ios-mjpeg":
-      return "go-ios Instruments MJPEG";
+      return "Safe Instruments MJPEG sidecar";
     case "agent-device-png":
     default:
       return "PNG preview fallback (agent-device)";
@@ -73,9 +73,9 @@ export function iosLivePreviewLabel(backend: IosLivePreviewBackend): string {
 export function iosLivePreviewDescription(backend: IosLivePreviewBackend): string {
   switch (backend) {
     case "go-ios-auto":
-      return "Default live preview: go-ios Instruments MJPEG. Screenshots stay evidence-only. Taps use the XCTest runner.";
+      return "Default live preview: Relay's bounded Instruments sidecar. Preview stays pixel-only; taps use the XCTest runner.";
     case "go-ios-mjpeg":
-      return "go-ios Instruments screenshot service as MJPEG. Needs ios tunnel on iOS 17+.";
+      return "Relay's bounded Instruments sidecar. Build it once with pnpm ios-preview:build; it needs an iOS tunnel on iOS 17+.";
     case "agent-device-png":
     default:
       return "Explicit PNG polling through the XCTest runner. Use only when the live stream is unavailable.";
