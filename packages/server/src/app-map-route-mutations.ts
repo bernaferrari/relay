@@ -2,6 +2,7 @@ import {
   AppMapDomainError,
   connectionIdsFromProposal,
   currentOperationContext,
+  IosMutationOutcomeUnknownError,
   mutateStoredAppMap,
   now,
   proveConnectionOnDevice,
@@ -105,22 +106,43 @@ export async function applyRebasableAppMapMutation(
   }
 }
 
+export type ApprovedProposalProofResult = {
+  appMap: AppMap;
+  /**
+   * The proposal has already been approved, but this exact proof pass cannot
+   * safely continue. The caller must surface the one-command review package
+   * and must not attempt another connection in the proposal.
+   */
+  terminal?: {
+    connectionId: string;
+    error: IosMutationOutcomeUnknownError;
+  };
+};
+
 export async function proveApprovedProposal(
   scope: RequestContext,
   appMapId: string,
   proposalId: string,
   body: { eventId?: string; serial?: string; prove?: boolean },
   appMap: AppMap,
-): Promise<AppMap> {
+): Promise<ApprovedProposalProofResult> {
   const serial = body.serial?.trim();
-  if (!serial || body.prove === false) return appMap;
+  if (!serial || body.prove === false) return { appMap };
   await assertTargetControl(scope, serial);
   const proposal = appMap.proposals[proposalId];
   let next = appMap;
   for (const connectionId of proposal ? connectionIdsFromProposal(proposal) : []) {
     const connection = next.connections[connectionId];
     if (!connection?.navigation) continue;
-    const proof = await proveConnectionOnDevice({ serial, connection });
+    let proof;
+    try {
+      proof = await proveConnectionOnDevice({ serial, connection });
+    } catch (error) {
+      if (error instanceof IosMutationOutcomeUnknownError) {
+        return { appMap: next, terminal: { connectionId, error } };
+      }
+      throw error;
+    }
     if (!proof.proven) continue;
     next = await applyRebasableAppMapMutation(
       scope,
@@ -129,5 +151,5 @@ export async function proveApprovedProposal(
       (map, context) => updateAppMapConnection(map, connectionId, { state: "ready" }, context),
     );
   }
-  return next;
+  return { appMap: next };
 }

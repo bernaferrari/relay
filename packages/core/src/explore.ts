@@ -23,11 +23,11 @@ import {
   profileBackAffordances,
   profileCloseAffordances,
 } from "./discovery-app-profiles.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import { observeLocaleStableIdentity } from "./screen-identity.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { captureSnapshot, formatSnapshotTree, interact } from "./workspace.js";
 import { devicePlatformForSerial } from "./workspace.js";
-import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 
 /** Destructive / external rows agents and crawls should skip by default. */
 export function isUnsafeExploreControlText(value: string): boolean {
@@ -172,6 +172,9 @@ async function tryPressLabel(device: Device, label: string): Promise<boolean> {
     await sleep(450, device);
     return true;
   } catch (error) {
+    // A label press that may already have reached iOS is not a locator miss.
+    // In particular, do not let findClick turn one uncertain physical press
+    // into a second one just because it uses a different selector shape.
     rethrowIosMutationOutcomeUnknown(error);
     try {
       await findClick(device, label);
@@ -244,6 +247,9 @@ async function dismissTowardParentInContext(
     await sleep(500, device);
     return "key";
   } catch (error) {
+    // An uncertain native Back might already have left the screen. An edge
+    // swipe would be a second, unrelated navigation mutation, so surface the
+    // typed repair stop instead of attempting it.
     rethrowIosMutationOutcomeUnknown(error);
     await interact(
       {
@@ -353,6 +359,8 @@ async function scrollCollectControlsInContext<T extends { stableKey?: string; la
       await scrollDown(device, 0.55);
       completedScrolls += 1;
     } catch (error) {
+      // A failed iOS scroll can be an unknown completed scroll. Do not turn
+      // that ambiguity into later collection or inverse restoration gestures.
       rethrowIosMutationOutcomeUnknown(error);
       break;
     }
@@ -373,8 +381,10 @@ async function scrollCollectControlsInContext<T extends { stableKey?: string; la
         );
         await sleep(300, device);
       } catch (error) {
+        // The corrective swipe is a physical mutation too. If its delivery is
+        // uncertain, stop with the one-command diagnostic rather than quietly
+        // continuing from an unknown viewport.
         rethrowIosMutationOutcomeUnknown(error);
-        /* ignore */
       }
       break;
     }
@@ -394,6 +404,8 @@ async function scrollCollectControlsInContext<T extends { stableKey?: string; la
       await scrollUp(device, 0.55);
       await sleep(250, device);
     } catch (error) {
+      // Do not suppress an uncertain restore command. The caller needs to
+      // review current pixels before issuing any more navigation.
       rethrowIosMutationOutcomeUnknown(error);
       break;
     }

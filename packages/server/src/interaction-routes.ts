@@ -4,6 +4,7 @@ import {
   groundAndInteract,
   groundTarget,
   GroundingError,
+  connectionProofOutcomeUnknownDiagnostic,
   IosMutationOutcomeUnknownError,
   iosVisualVerificationDiagnostic,
   interact,
@@ -71,6 +72,8 @@ export type IosMutationOutcomeUnknownPayload = Readonly<Record<string, unknown>>
   iosVisualVerification?: unknown;
   /** Raw pre-ambiguity full-surface frames, when the failed command was a survey scroll. */
   scrollSurvey?: ScrollSurveyOutcomeUnknownDiagnostic;
+  /** Existing App Map source/destination proof, when the error came from Keep replay. */
+  connectionProof?: unknown;
 };
 
 /**
@@ -89,6 +92,7 @@ export function iosMutationOutcomeUnknownPayload(
   ).iosSessionLifecycle;
   const visualVerification = iosVisualVerificationDiagnostic(error);
   const scrollSurvey = scrollSurveyOutcomeUnknownDiagnostic(error);
+  const connectionProof = connectionProofOutcomeUnknownDiagnostic(error);
   return {
     ...details,
     code: "IOS_MUTATION_OUTCOME_UNKNOWN",
@@ -96,6 +100,7 @@ export function iosMutationOutcomeUnknownPayload(
     ...(lifecycle ? { iosSessionLifecycle: lifecycle } : {}),
     ...(visualVerification ? { iosVisualVerification: visualVerification } : {}),
     ...(scrollSurvey ? { scrollSurvey } : {}),
+    ...(connectionProof ? { connectionProof } : {}),
   };
 }
 

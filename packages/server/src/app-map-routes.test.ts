@@ -23,6 +23,7 @@ import {
   sourceAnchorForTeachInteraction,
   teachInteractionToAuthoringInteraction,
 } from "./app-map-routes.js";
+import { appMapProofOutcomeUnknownReview } from "./app-map-proposal-routes.js";
 
 test("explicit target preflight distinguishes disconnected and not-ready devices", () => {
   assert.equal(explicitTargetAvailability("phone-1", []), "missing");
@@ -49,6 +50,26 @@ test("explicit target preflight distinguishes disconnected and not-ready devices
       { serial: "ipad-1", booted: true, developerServicesAvailable: false },
     ]),
     "not-ready",
+  );
+});
+
+test("App Map proof stops give agents one explicit current-pixels review action", () => {
+  assert.deepEqual(
+    appMapProofOutcomeUnknownReview({
+      serial: "ipad / one",
+      appMapId: "grok settings",
+      proposalId: "repair / 1",
+      connectionId: "open-privacy",
+    }),
+    {
+      appMapHref: "/app-maps/grok%20settings",
+      proposalHref: "/app-maps/grok%20settings/proposals/repair%20%2F%201",
+      connectionId: "open-privacy",
+      captureCurrent: {
+        method: "GET",
+        href: "/screenshot?serial=ipad%20%2F%20one&ephemeral=1",
+      },
+    },
   );
 });
 

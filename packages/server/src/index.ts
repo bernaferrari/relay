@@ -37,8 +37,8 @@ import {
   getActiveJobs,
   getJob,
   interact,
-  IdempotencyConflict,
   IosMutationOutcomeUnknownError,
+  IdempotencyConflict,
   listActionsWithTrace,
   listAndroidDevicesFast,
   listDevices,
@@ -174,6 +174,19 @@ function collectReports(limit: number, scope?: RequestContext): JobReport[] {
     )
     .slice(0, limit)
     .map(toJobReport);
+}
+
+/** A manual navigation stop never retries by itself. Give every caller one
+ * explicit, read-only way to inspect the current pixels before deciding what
+ * to do next. */
+function manualNavigationOutcomeUnknownReview(serial: string) {
+  return {
+    serial,
+    captureCurrent: {
+      method: "GET" as const,
+      href: `/screenshot?serial=${encodeURIComponent(serial)}&ephemeral=1`,
+    },
+  };
 }
 
 const serverStartedAt = Date.now();
@@ -852,10 +865,20 @@ async function handleRequest(
       const serial = body.serial;
       if (!serial) throw new HttpError(400, "serial is required");
       await assertTargetControl(scope, serial);
-      const methodUsed = await dismissTowardParent({
-        serial,
-        parentTitles: body.parentTitles,
-      });
+      let methodUsed: Awaited<ReturnType<typeof dismissTowardParent>>;
+      try {
+        methodUsed = await dismissTowardParent({
+          serial,
+          parentTitles: body.parentTitles,
+        });
+      } catch (error) {
+        if (error instanceof IosMutationOutcomeUnknownError) {
+          throw iosMutationOutcomeUnknownHttpError(error, {
+            targetReview: manualNavigationOutcomeUnknownReview(serial),
+          });
+        }
+        throw error;
+      }
       json(res, 200, { method: methodUsed });
       return;
     }
@@ -869,14 +892,24 @@ async function handleRequest(
       const serial = body.serial;
       if (!serial) throw new HttpError(400, "serial is required");
       await assertTargetControl(scope, serial);
-      const collected = await scrollCollectControls({
-        serial,
-        maxScrolls: body.maxScrolls,
-        extract: (nodes) =>
-          exploreControls(nodes, {
-            allowSensitive: body.allowSensitive === true,
-          }),
-      });
+      let collected: Awaited<ReturnType<typeof scrollCollectControls>>;
+      try {
+        collected = await scrollCollectControls({
+          serial,
+          maxScrolls: body.maxScrolls,
+          extract: (nodes) =>
+            exploreControls(nodes, {
+              allowSensitive: body.allowSensitive === true,
+            }),
+        });
+      } catch (error) {
+        if (error instanceof IosMutationOutcomeUnknownError) {
+          throw iosMutationOutcomeUnknownHttpError(error, {
+            targetReview: manualNavigationOutcomeUnknownReview(serial),
+          });
+        }
+        throw error;
+      }
       json(res, 200, { controls: collected.controls, count: collected.controls.length });
       return;
     }

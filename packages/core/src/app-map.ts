@@ -62,7 +62,13 @@ export {
   proposalFromObservedEdge,
 } from "./app-map/observation-proposal.js";
 export { compileIntentWalk, type IntentWalkResult } from "./app-map/intent-walk.js";
-export { connectionIdsFromProposal, proveConnectionOnDevice } from "./app-map/keep-prove.js";
+export {
+  connectionIdsFromProposal,
+  connectionProofOutcomeUnknownDiagnostic,
+  proveConnectionOnDevice,
+  type ConnectionProofOutcomeUnknownDiagnostic,
+  type ConnectionProofRuntime,
+} from "./app-map/keep-prove.js";
 export {
   proposeNavigationFromObservation,
   type NavigationObservationAction,

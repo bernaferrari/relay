@@ -12,6 +12,25 @@ import {
 } from "./explore.js";
 import { IosMutationOutcomeUnknownError, type Device, type SnapshotNode } from "./device.js";
 
+function unknownIosMutation(operation: "press" | "scroll" | "back") {
+  return new IosMutationOutcomeUnknownError(
+    {
+      sequence: 1,
+      operation,
+      nativeAttempts: 1,
+      outcome: "outcome-unknown",
+      retry: {
+        attempts: 0,
+        decision: "blocked",
+        reason: "native-command-outcome-unknown",
+      },
+      intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+      at: 1,
+    },
+    new Error("connection reset"),
+  );
+}
+
 test("explore chrome filters sheet affordances and language switcher", () => {
   assert.equal(isExploreChromeLabel("Close"), true);
   assert.equal(isExploreChromeLabel("Home"), true);
@@ -101,6 +120,61 @@ test("dismissTowardParent and scrollCollect wrap target context themselves", asy
   assert.deepEqual(collected.controls, []);
 });
 
+test("dismissTowardParent does not turn an uncertain iOS label press into findClick", async () => {
+  let labelPresses = 0;
+  let fallbackFindClicks = 0;
+  const device = {
+    interactions: {
+      find: async (input: { action?: string }) => {
+        if (input.action === "click") fallbackFindClicks += 1;
+      },
+      press: async () => {
+        labelPresses += 1;
+        throw unknownIosMutation("press");
+      },
+    },
+    command: { wait: () => Promise.resolve({}) },
+    capture: { snapshot: () => Promise.resolve({ nodes: [] }) },
+  } as unknown as Device;
+
+  await assert.rejects(
+    dismissTowardParent({ serial: "ios-dismiss-label-unknown", platform: "ios", device }),
+    IosMutationOutcomeUnknownError,
+  );
+
+  assert.equal(labelPresses, 1);
+  assert.equal(fallbackFindClicks, 0, "findClick must not follow an uncertain physical press");
+});
+
+test("dismissTowardParent does not turn an uncertain iOS Back into an edge swipe", async () => {
+  let nativeBacks = 0;
+  const priorDelay = process.env.RELAY_RETRY_DELAY_MS;
+  process.env.RELAY_RETRY_DELAY_MS = "1";
+  const device = {
+    interactions: {
+      find: () => Promise.reject(new Error("missing")),
+    },
+    command: {
+      back: async () => {
+        nativeBacks += 1;
+        throw unknownIosMutation("back");
+      },
+    },
+  } as unknown as Device;
+
+  try {
+    await assert.rejects(
+      dismissTowardParent({ serial: "ios-dismiss-back-unknown", platform: "ios", device }),
+      IosMutationOutcomeUnknownError,
+    );
+  } finally {
+    if (priorDelay === undefined) delete process.env.RELAY_RETRY_DELAY_MS;
+    else process.env.RELAY_RETRY_DELAY_MS = priorDelay;
+  }
+
+  assert.equal(nativeBacks, 1);
+});
+
 test("scrollCollect restores every viewport it traverses", async () => {
   const directions: string[] = [];
   const snapshots = [
@@ -170,6 +244,35 @@ test("an unknown iOS collection scroll is terminal before inverse-scroll cleanup
   );
 
   assert.deepEqual(directions, ["down"]);
+});
+
+test("scrollCollect surfaces an uncertain iOS restoration scroll instead of continuing", async () => {
+  const directions: string[] = [];
+  const device = {
+    interactions: {
+      scroll: async (input: { direction: string }) => {
+        directions.push(input.direction);
+        if (input.direction === "up") throw unknownIosMutation("scroll");
+      },
+    },
+    command: { wait: () => Promise.resolve({}) },
+    capture: {
+      snapshot: () => Promise.resolve({ nodes: [{ type: "Button", label: "First" }] }),
+    },
+  } as unknown as Device;
+
+  await assert.rejects(
+    scrollCollectControls({
+      serial: "ios-scroll-restore-unknown",
+      platform: "ios",
+      device,
+      maxScrolls: 1,
+      extract: (nodes) => nodes.map((node) => ({ label: node.label ?? "" })),
+    }),
+    IosMutationOutcomeUnknownError,
+  );
+
+  assert.deepEqual(directions, ["down", "up"]);
 });
 
 test("an unknown iOS dismiss press never falls through to another dismissal target", async () => {
