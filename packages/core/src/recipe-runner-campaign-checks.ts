@@ -135,8 +135,12 @@ export async function runCampaignCheck(
     step.check.warmSourceScreenId !== undefined &&
     cursor.screenId !== step.check.warmSourceScreenId;
   const cursorUnproven = cursor !== undefined && cursor.status !== "proven";
+  // A source-confirming leaf may repair an unknown in-app cursor, but it can
+  // never cross an external handoff. The runner has no proof that the frozen
+  // in-app source recipe even owns the foreground application in that state.
+  const cursorIsExternalHandoff = cursor?.status === "external-handoff";
   const canonicalLeafIsSafe = independentlySourceProvenLeafRecipe(step.check, ctx);
-  if ((cursorUnproven || cursorMismatch) && !canonicalLeafIsSafe) {
+  if ((cursorUnproven || cursorMismatch) && (!canonicalLeafIsSafe || cursorIsExternalHandoff)) {
     const expected =
       step.check.warmSourceScreenId ??
       transitionDependencies[0]?.originScreenId ??

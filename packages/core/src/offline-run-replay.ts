@@ -94,7 +94,7 @@ export type OfflineRunReplayReport = {
   firstRootFailure?: {
     checkId: string;
     title: string;
-    kind: "action-no-op" | "transition-unproved" | "recorded-failure";
+    kind: "action-no-op" | "transition-unproved" | "unproved-pass" | "recorded-failure";
     error?: string;
     evidence: string[];
   };
@@ -427,13 +427,19 @@ export function replayPersistedRunOffline(run: PersistedRun): OfflineRunReplayRe
     const cursor = cursorFromArtifact(run, artifact, index);
     return cursor ? [cursor] : [];
   });
-  const verifiedByCheck = new Set(
-    run.artifacts.flatMap((artifact) => {
-      if (artifact.kind !== "campaign-transition-proof") return [];
-      const data = record(artifact.data);
-      return data?.status === "verified" && text(data.checkId) ? [text(data.checkId)!] : [];
-    }),
-  );
+  /** A recorded result is not proof by itself. Keep the artifact position so
+   * a stale or subsequently-written proof cannot retroactively bless a pass.
+   * The normal runner writes this exact proof before its check result. */
+  const verifiedProofIndexesByCheck = new Map<string, number[]>();
+  run.artifacts.forEach((artifact, artifactIndex) => {
+    if (artifact.kind !== "campaign-transition-proof") return;
+    const data = record(artifact.data);
+    const checkId = data?.status === "verified" ? text(data.checkId) : undefined;
+    if (!checkId) return;
+    const indexes = verifiedProofIndexesByCheck.get(checkId) ?? [];
+    indexes.push(artifactIndex);
+    verifiedProofIndexesByCheck.set(checkId, indexes);
+  });
 
   let lastProvenScreenId: string | undefined;
   let firstRoot: OfflineRunReplayReport["firstRootFailure"];
@@ -467,30 +473,36 @@ export function replayPersistedRunOffline(run: PersistedRun): OfflineRunReplayRe
     let replayStatus: OfflineReplayCheck["replayStatus"];
     let reason: string;
 
-    if (status === "passed") {
+    const hasExactTransitionProof = (verifiedProofIndexesByCheck.get(id) ?? []).some(
+      (proofIndex) => proofIndex < artifactIndex,
+    );
+    if (status === "passed" && hasExactTransitionProof) {
       replayStatus = "proved";
-      reason = verifiedByCheck.has(id)
-        ? "Recorded success is backed by a verified transition proof."
-        : "Recorded check passed; no contradictory offline evidence was captured.";
+      reason = "Recorded success is backed by a verified transition proof.";
     } else if (!firstRoot) {
       replayStatus = "root-failure";
       const resolvedSelector = attempts.attempts.some((attempt) => attempt.status === "resolved");
+      const unprovedPass = status === "passed";
       const actionNoOp =
         resolvedSelector &&
         Boolean(warmSourceScreenId) &&
         warmSourceScreenId === lastProvenScreenId &&
-        !verifiedByCheck.has(id);
-      reason = actionNoOp
-        ? "The selector resolved on the proven origin, but no destination transition was proved; the action was a no-op."
-        : "This is the first recorded failure while its origin was still independently provable.";
+        !hasExactTransitionProof;
+      reason = unprovedPass
+        ? "Recorded check passed without an earlier verified transition proof; offline replay refuses to promote that result."
+        : actionNoOp
+          ? "The selector resolved on the proven origin, but no destination transition was proved; the action was a no-op."
+          : "This is the first recorded failure while its origin was still independently provable.";
       firstRoot = {
         checkId: id,
         title,
-        kind: actionNoOp
-          ? "action-no-op"
-          : resolvedSelector
-            ? "transition-unproved"
-            : "recorded-failure",
+        kind: unprovedPass
+          ? "unproved-pass"
+          : actionNoOp
+            ? "action-no-op"
+            : resolvedSelector
+              ? "transition-unproved"
+              : "recorded-failure",
         ...(text(data.error) ? { error: text(data.error) } : {}),
         evidence,
       };
