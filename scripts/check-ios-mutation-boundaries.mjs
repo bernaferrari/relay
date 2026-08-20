@@ -24,8 +24,7 @@ export const rawDeviceMutationBoundaryPaths = new Set([
 
 const rawMutationCall =
   /\b(?:target\.)?device\.(?:devices\.boot|apps\.(?:open|close)|interactions\.(?:press|longPress|fill|type|scroll|swipe|pan)|command\.(?:back|home|keyboard|alert|appSwitcher|rotate|prepare)|settings\.update|recording\.record)\s*\(/gu;
-const rawFindCall =
-  /\b(?:target\.)?device\.interactions\.find\s*\(\s*\{([\s\S]{0,600}?)\}\s*\)/gu;
+const rawFindCall = /\b(?:target\.)?device\.interactions\.find\s*\(\s*\{([\s\S]{0,600}?)\}\s*\)/gu;
 const rawClipboardCall =
   /\b(?:target\.)?device\.command\.clipboard\s*\(\s*\{([\s\S]{0,600}?)\}\s*\)/gu;
 
