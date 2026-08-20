@@ -2,6 +2,7 @@ import type {
   AppMapCompiledTest,
   NormalizedSemanticNode,
   OfflineTestPreflightCursor,
+  OfflineTestPreflightEvidenceSource,
   OfflineTestPreflightFinding,
   OfflineTestPreflightReport,
   OfflineTestPreflightReturn,
@@ -12,22 +13,21 @@ import type {
 import { createHash } from "node:crypto";
 import { preflightSemanticActivation } from "./device-target-resolution.js";
 import type { SnapshotNode } from "./device.js";
+import {
+  rawCandidateLedger,
+  rawSourceMetadata,
+  rawSourceReferences,
+  rawSourcesForScreen,
+  uniqueEvidenceSources,
+  type OfflineTestPreflightEvidence,
+  type OfflineTestPreflightRawSource,
+} from "./offline-test-preflight-raw.js";
 
 export type { OfflineTestPreflightFinding, OfflineTestPreflightReport };
-
-/** Immutable raw accessibility snapshots keyed by the authored source screen.
- * The caller owns evidence loading; this module stays device-free and never
- * reads current App Map state by itself. */
-export type OfflineTestPreflightEvidence = {
-  rawObservationsByScreenId?: Readonly<Record<string, ReadonlyArray<ReadonlyArray<SnapshotNode>>>>;
-  /** Durable references for the supplied raw observations. Preflight never
-   * opens them; it only carries the frozen provenance into its report. */
-  rawEvidenceReferencesByScreenId?: Readonly<Record<string, ReadonlyArray<string>>>;
-  /** A frozen tree reference existed but cannot be used now, or the frozen
-   * Variant predates raw-tree capture. This is a recapture request, never a
-   * reason to guess from flattened semantics. */
-  rawEvidenceStatusByScreenId?: Readonly<Record<string, "missing" | "unreadable">>;
-};
+export type {
+  OfflineTestPreflightEvidence,
+  OfflineTestPreflightRawSource,
+} from "./offline-test-preflight-raw.js";
 
 function stableValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stableValue);
@@ -164,15 +164,56 @@ function matchesTarget(nodes: readonly NormalizedSemanticNode[], target: StepTar
   return [];
 }
 
+type SelectorAssessment = {
+  selector: OfflineTestPreflightSelector;
+  findings: OfflineTestPreflightFinding[];
+  /** The caller collapses this to one screen-level repair finding and upgrades
+   * it to a blocker. Keeping it outside `findings` prevents 40 steps from
+   * producing 40 copies of the same recapture instruction. */
+  rawEvidenceRecapture?: {
+    status: "missing" | "unreadable";
+    sources: OfflineTestPreflightEvidenceSource[];
+  };
+};
+
+function isDynamicSharedConversations(title: string | undefined): boolean {
+  return title?.trim().toLocaleLowerCase() === "shared conversations";
+}
+
+/** Shared Conversations is user-generated and deliberately not a visual or
+ * selector baseline. This only excludes passive assertions on its changing
+ * contents; entry/exit controls still go through normal frozen-tree proof. */
+function excludesDynamicContent(
+  title: string | undefined,
+  step: Extract<RecipeStep, { kind: "tap" | "reveal" | "expect" | "wait-for" }>,
+): boolean {
+  return (
+    isDynamicSharedConversations(title) && (step.kind === "expect" || step.kind === "wait-for")
+  );
+}
+
 function selectorAssessment(input: {
   recipeId: string;
   step: Extract<RecipeStep, { kind: "tap" | "reveal" | "expect" | "wait-for" }>;
   screenId?: string;
+  screenTitle?: string;
   observations: readonly { nodes: NormalizedSemanticNode[] }[];
-  rawObservations?: ReadonlyArray<ReadonlyArray<SnapshotNode>>;
+  rawSources?: readonly OfflineTestPreflightRawSource[];
   rawEvidenceReferences?: readonly string[];
-}): { selector: OfflineTestPreflightSelector; findings: OfflineTestPreflightFinding[] } {
-  const { recipeId, step, screenId, observations, rawObservations, rawEvidenceReferences } = input;
+  rawEvidenceStatus?: "missing" | "unreadable";
+  rawEvidenceDeclared?: boolean;
+}): SelectorAssessment {
+  const {
+    recipeId,
+    step,
+    screenId,
+    screenTitle,
+    observations,
+    rawSources = [],
+    rawEvidenceReferences,
+    rawEvidenceStatus,
+    rawEvidenceDeclared = false,
+  } = input;
   const target = step.target;
   const description = targetDescription(target);
   const hasReviewedFallback =
@@ -190,18 +231,35 @@ function selectorAssessment(input: {
   const normalizedReferences = uniqueReferences(
     screenId ? [`screen:${screenId}:observation`] : ["compiled:screen-observation"],
   );
-  const rawReferences = uniqueReferences(
-    rawEvidenceReferences?.length
-      ? rawEvidenceReferences
+  const rawSourcesMetadata = rawSourceMetadata(rawSources, rawEvidenceReferences ?? []);
+  const rawReferences =
+    rawSourceReferences(rawSourcesMetadata).length > 0
+      ? rawSourceReferences(rawSourcesMetadata)
       : screenId
         ? [`screen:${screenId}:raw-accessibility-tree`]
-        : ["compiled:raw-accessibility-tree"],
-  );
+        : ["compiled:raw-accessibility-tree"];
+  const rawEvidence = {
+    kind: "raw-accessibility-tree" as const,
+    references: rawReferences,
+    ...(rawSourcesMetadata.length ? { sources: rawSourcesMetadata } : {}),
+  };
   const revealReferences = uniqueReferences(
     (step.kind === "reveal" ? revealPositions(step) : [])?.map(
       (position) => `surface:${position.surfaceId}#capture:${position.captureId}`,
     ) ?? [],
   );
+  if (excludesDynamicContent(screenTitle, step)) {
+    return {
+      selector: {
+        ...selectorBase,
+        status: "excluded-dynamic-content",
+        evidence: { kind: "dynamic-content-policy", references: [] },
+        detail:
+          "Shared Conversations content is intentionally dynamic; only its reviewed shell and entry/exit controls are checked.",
+      },
+      findings: [],
+    };
+  }
   if (
     target.point &&
     !target.identifier &&
@@ -229,36 +287,55 @@ function selectorAssessment(input: {
       ],
     };
   }
-  if (rawObservations?.length) {
-    const attempts = rawObservations.map((nodes) =>
-      preflightSemanticActivation([...nodes], target),
+  const availableRawSources = rawSources.filter(
+    (source): source is OfflineTestPreflightRawSource & { nodes: ReadonlyArray<SnapshotNode> } =>
+      Boolean(source.nodes?.length),
+  );
+  if (!rawEvidenceStatus && availableRawSources.length) {
+    const attempts = availableRawSources.map((source) => ({
+      source,
+      attempt: preflightSemanticActivation([...source.nodes], target),
+    }));
+    const resolutions = new Map<
+      OfflineTestPreflightRawSource,
+      { bounds: { x: number; y: number; width: number; height: number } }
+    >(
+      attempts.flatMap(({ source, attempt }) =>
+        attempt.status === "proven" ? [[source, attempt.resolution] as const] : [],
+      ),
     );
-    const proven = attempts.find(
-      (attempt): attempt is Extract<typeof attempt, { status: "proven" }> =>
-        attempt.status === "proven",
-    );
-    if (proven) {
+    const rawLedger = rawCandidateLedger({
+      sources: availableRawSources,
+      target,
+      resolutions,
+    });
+    const proven = attempts.find((attempt) => attempt.attempt.status === "proven");
+    if (proven?.attempt.status === "proven") {
       return {
         selector: {
           ...selectorBase,
           status: "resolved",
-          evidence: {
-            kind: "raw-accessibility-tree",
-            references: rawReferences,
-          },
+          evidence: rawEvidence,
+          ...(rawLedger.candidates.length ? { rawCandidates: rawLedger.candidates } : {}),
+          ...(rawLedger.count ? { rawCandidateCount: rawLedger.count } : {}),
           resolution: {
-            method: proven.resolution.method,
-            ...(proven.resolution.activation ? { activation: proven.resolution.activation } : {}),
-            snapshotBounds: { ...proven.resolution.bounds },
+            method: proven.attempt.resolution.method,
+            ...(proven.attempt.resolution.activation
+              ? { activation: proven.attempt.resolution.activation }
+              : {}),
+            snapshotBounds: { ...proven.attempt.resolution.bounds },
+            provenance: { ...proven.source.source },
           },
         },
         findings: [],
       };
     }
-    const blockedAttempts = attempts.filter(
-      (attempt): attempt is Extract<typeof attempt, { status: "blocked" }> =>
-        attempt.status === "blocked",
-    );
+    const blockedAttempts = attempts
+      .map(({ attempt }) => attempt)
+      .filter(
+        (attempt): attempt is Extract<typeof attempt, { status: "blocked" }> =>
+          attempt.status === "blocked",
+      );
     const ambiguous = blockedAttempts.find((attempt) => attempt.code === "ambiguous");
     const headingOnly = blockedAttempts.find((attempt) => attempt.code === "heading-only-noop");
     const detail = ambiguous?.detail ?? headingOnly?.detail ?? blockedAttempts[0]?.detail;
@@ -266,7 +343,9 @@ function selectorAssessment(input: {
       selector: {
         ...selectorBase,
         status: ambiguous ? "ambiguous" : "absent",
-        evidence: { kind: "raw-accessibility-tree", references: rawReferences },
+        evidence: rawEvidence,
+        ...(rawLedger.candidates.length ? { rawCandidates: rawLedger.candidates } : {}),
+        ...(rawLedger.count ? { rawCandidateCount: rawLedger.count } : {}),
         detail,
       },
       findings: [
@@ -275,12 +354,48 @@ function selectorAssessment(input: {
           code: ambiguous ? "selector-ambiguous" : "selector-absent",
           recipeId,
           ...(step.id ? { recipeStepId: step.id } : {}),
+          ...(rawSourcesMetadata.length ? { evidence: rawSourcesMetadata } : {}),
           message: `${description} cannot be activated from frozen raw accessibility evidence${detail ? `: ${detail}` : ""}${hasReviewedFallback ? "; a reviewed fallback needs live confirmation" : ""}.`,
         },
       ],
     };
   }
 
+  // Once a compiled plan declares raw evidence for its source screen, an
+  // unavailable tree invalidates every raw selector proof on that screen.
+  // Historical plans that never declared raw evidence retain their flattened
+  // warnings, but a declared source may never silently downgrade to one.
+  const flattenedMatches = observations.flatMap((observation) =>
+    matchesTarget(observation.nodes, target),
+  );
+  const rawScreenWasDeclared =
+    rawEvidenceDeclared || rawSources.length > 0 || rawSourcesMetadata.length > 0;
+  const unavailableRawEvidence =
+    rawEvidenceStatus ??
+    (rawScreenWasDeclared && availableRawSources.length === 0
+      ? rawSources.length
+        ? "unreadable"
+        : "missing"
+      : undefined);
+  if (unavailableRawEvidence) {
+    const detail =
+      unavailableRawEvidence === "missing"
+        ? "No immutable raw accessibility tree is available for this selector."
+        : "The immutable raw accessibility tree failed its byte, hash, or JSON integrity check.";
+    return {
+      selector: {
+        ...selectorBase,
+        status: "raw-evidence-unavailable",
+        evidence: rawEvidence,
+        detail,
+      },
+      findings: [],
+      rawEvidenceRecapture: {
+        status: unavailableRawEvidence,
+        sources: rawSourcesMetadata,
+      },
+    };
+  }
   if (!observations.length) {
     return {
       selector: {
@@ -307,7 +422,7 @@ function selectorAssessment(input: {
   // Preserve every occurrence. The normalized identity projection deliberately
   // omits geometry and parentage, so two identical rows are still ambiguous
   // offline; collapsing them would turn an unsafe activation into a fake pass.
-  const matches = observations.flatMap((observation) => matchesTarget(observation.nodes, target));
+  const matches = flattenedMatches;
   if (!matches.length) {
     return {
       selector: {
@@ -430,7 +545,56 @@ export function preflightCompiledAppMapTestOffline(
   const selectors: OfflineTestPreflightSelector[] = [];
   const cursorTimeline: OfflineTestPreflightCursor[] = [];
   const returns: OfflineTestPreflightReturn[] = [];
-  const rawEvidenceFindingKeys = new Set<string>();
+  const rawEvidenceFindings = new Map<string, { index: number; selector: boolean }>();
+  const recordRawEvidenceRecapture = (input: {
+    screenId: string;
+    screenTitle: string;
+    recipeId: string;
+    recipeStepId?: string;
+    status: "missing" | "unreadable";
+    severity: "warning" | "blocker";
+    sources: OfflineTestPreflightEvidenceSource[];
+    /** A selector gives the most useful repair location; an expect-screen
+     * still establishes the blocker when no selector follows it. */
+    selector?: boolean;
+  }) => {
+    const message =
+      input.status === "missing"
+        ? `${input.screenTitle} has no immutable raw accessibility tree; recapture this screen before relying on offline geometry.`
+        : `${input.screenTitle}'s frozen raw accessibility tree is unavailable or corrupt; recapture this screen before relying on offline geometry.`;
+    const finding: OfflineTestPreflightFinding = {
+      severity: input.severity,
+      code: "raw-evidence-recapture-required",
+      recipeId: input.recipeId,
+      ...(input.recipeStepId ? { recipeStepId: input.recipeStepId } : {}),
+      screenId: input.screenId,
+      message,
+      ...(input.sources.length ? { evidence: uniqueEvidenceSources(input.sources) } : {}),
+    };
+    const existing = rawEvidenceFindings.get(input.screenId);
+    if (!existing) {
+      rawEvidenceFindings.set(input.screenId, {
+        index: findings.length,
+        selector: input.selector === true,
+      });
+      findings.push(finding);
+      return;
+    }
+    // A declared source cannot support offline selector proof without its raw
+    // tree. Upgrade one compact screen repair instead of adding a noisy row
+    // for every dependent step.
+    if (
+      input.severity === "blocker" &&
+      (findings[existing.index]?.severity !== "blocker" ||
+        (input.selector === true && !existing.selector))
+    ) {
+      findings[existing.index] = finding;
+      rawEvidenceFindings.set(input.screenId, {
+        index: existing.index,
+        selector: input.selector === true,
+      });
+    }
+  };
   let checkedSelectors = 0;
   const recipes = Object.entries(plan.recipes).sort(([left], [right]) =>
     left < right ? -1 : left > right ? 1 : 0,
@@ -438,23 +602,25 @@ export function preflightCompiledAppMapTestOffline(
   for (const [, recipe] of recipes) {
     let observations: Array<{ nodes: NormalizedSemanticNode[] }> = [];
     let sourceScreenId: string | undefined;
+    let sourceScreenTitle: string | undefined;
     for (const [stepIndex, step] of recipe.steps.entries()) {
       if (step.kind === "expect-screen") {
         observations = step.observations ?? [];
         sourceScreenId = step.screenId;
+        sourceScreenTitle = step.screenTitle;
         const rawEvidenceStatus = evidence.rawEvidenceStatusByScreenId?.[sourceScreenId];
-        if (rawEvidenceStatus && !rawEvidenceFindingKeys.has(sourceScreenId)) {
-          rawEvidenceFindingKeys.add(sourceScreenId);
-          findings.push({
-            severity: "warning",
-            code: "raw-evidence-recapture-required",
+        if (rawEvidenceStatus) {
+          recordRawEvidenceRecapture({
+            screenId: sourceScreenId,
+            screenTitle: step.screenTitle,
             recipeId: recipe.id,
             ...(step.id ? { recipeStepId: step.id } : {}),
-            screenId: sourceScreenId,
-            message:
-              rawEvidenceStatus === "missing"
-                ? `${step.screenTitle} has no immutable raw accessibility tree; recapture this screen before relying on offline geometry.`
-                : `${step.screenTitle}'s frozen raw accessibility tree is unavailable or corrupt; recapture this screen before relying on offline geometry.`,
+            status: rawEvidenceStatus,
+            severity: "blocker",
+            sources: rawSourceMetadata(
+              rawSourcesForScreen(evidence, sourceScreenId),
+              evidence.rawEvidenceReferencesByScreenId?.[sourceScreenId] ?? [],
+            ),
           });
         }
         if (step.returnRequirement) {
@@ -509,20 +675,42 @@ export function preflightCompiledAppMapTestOffline(
         const navigationObservations =
           step.kind === "reveal" ? observationsFromNavigation(step.navigation) : [];
         const sourceObservations = observations.length ? observations : navigationObservations;
+        const sourceRawSources = rawSourcesForScreen(evidence, sourceScreenId);
         const assessment = selectorAssessment({
           recipeId: recipe.id,
           step,
           ...(sourceScreenId ? { screenId: sourceScreenId } : {}),
+          ...(sourceScreenTitle ? { screenTitle: sourceScreenTitle } : {}),
           observations: sourceObservations,
-          ...(sourceScreenId && evidence.rawObservationsByScreenId?.[sourceScreenId]
-            ? { rawObservations: evidence.rawObservationsByScreenId[sourceScreenId] }
-            : {}),
+          ...(sourceRawSources.length ? { rawSources: sourceRawSources } : {}),
           ...(sourceScreenId && evidence.rawEvidenceReferencesByScreenId?.[sourceScreenId]
             ? { rawEvidenceReferences: evidence.rawEvidenceReferencesByScreenId[sourceScreenId] }
+            : {}),
+          ...(sourceScreenId && evidence.rawEvidenceStatusByScreenId?.[sourceScreenId]
+            ? { rawEvidenceStatus: evidence.rawEvidenceStatusByScreenId[sourceScreenId] }
+            : {}),
+          ...(sourceScreenId &&
+          (Object.hasOwn(evidence.rawSourcesByScreenId ?? {}, sourceScreenId) ||
+            Object.hasOwn(evidence.rawObservationsByScreenId ?? {}, sourceScreenId) ||
+            Object.hasOwn(evidence.rawEvidenceReferencesByScreenId ?? {}, sourceScreenId) ||
+            Object.hasOwn(evidence.rawEvidenceStatusByScreenId ?? {}, sourceScreenId))
+            ? { rawEvidenceDeclared: true }
             : {}),
         });
         selectors.push(assessment.selector);
         findings.push(...assessment.findings);
+        if (assessment.rawEvidenceRecapture && sourceScreenId) {
+          recordRawEvidenceRecapture({
+            screenId: sourceScreenId,
+            screenTitle: sourceScreenTitle ?? sourceScreenId,
+            recipeId: recipe.id,
+            ...(step.id ? { recipeStepId: step.id } : {}),
+            status: assessment.rawEvidenceRecapture.status,
+            severity: "blocker",
+            sources: assessment.rawEvidenceRecapture.sources,
+            selector: true,
+          });
+        }
         if (navigationObservations.length) observations = navigationObservations;
         if (step.kind === "tap") {
           cursorTimeline.push({
@@ -570,6 +758,9 @@ export function preflightCompiledAppMapTestOffline(
           other.message === finding.message,
       ) === index,
   );
+  const excludedDynamicSelectors = selectors.filter(
+    (selector) => selector.status === "excluded-dynamic-content",
+  ).length;
   return {
     schemaVersion: 1,
     mode: "offline-test-preflight",
@@ -581,6 +772,7 @@ export function preflightCompiledAppMapTestOffline(
       recipes: recipes.length,
       checkedSelectors,
       resolvedSelectors: selectors.filter((selector) => selector.status === "resolved").length,
+      ...(excludedDynamicSelectors ? { excludedDynamicSelectors } : {}),
       unknownCursorTransitions: cursorTimeline.filter((cursor) => cursor.state === "unknown")
         .length,
       reviewRequiredReturns: returns.length,

@@ -399,9 +399,53 @@ export type OfflineTestPreflightFinding = {
   recipeStepId?: string;
   screenId?: string;
   message: string;
+  /** The immutable source(s) that made this a repair rather than a guess. */
+  evidence?: OfflineTestPreflightEvidenceSource[];
   candidates?: Array<
     Pick<import("./app-map.js").NormalizedSemanticNode, "role" | "identifier" | "label" | "value">
   >;
+};
+
+/** A content-addressed raw accessibility source frozen into the compiled
+ * plan. `reference` is always the inspectable Relay evidence URI; the other
+ * fields let a human or an agent verify exactly which immutable blob supplied
+ * a selector decision without consulting the current map or device. */
+export type OfflineTestPreflightEvidenceSource = {
+  reference: string;
+  evidenceId?: string;
+  sha256?: string;
+};
+
+/** A bounded, read-only fragment of a raw accessibility tree. It deliberately
+ * preserves the facts that flattened semantic observations discard: bounds,
+ * parentage, and whether a node or its owner was actionable. */
+export type OfflineTestPreflightRawCandidate = {
+  source: OfflineTestPreflightEvidenceSource;
+  relation: "match" | "relation-anchor" | "following-row" | "activation-owner";
+  node: {
+    /** Position in the frozen raw tree when the platform omitted a native
+     * node index. */
+    treeOrder: number;
+    role?: string;
+    identifier?: string;
+    label?: string;
+    value?: string;
+    index?: number;
+    parentIndex?: number;
+    bounds?: { x: number; y: number; width: number; height: number };
+    hittable?: boolean;
+    enabled?: boolean;
+    visibleToUser?: boolean;
+  };
+  /** The unique owning row/control whose frozen bounds would receive the
+   * activation. This remains diagnostic evidence only. */
+  owner?: {
+    treeOrder: number;
+    index?: number;
+    parentIndex?: number;
+    bounds: { x: number; y: number; width: number; height: number };
+    hittable?: boolean;
+  };
 };
 
 /** A read-only selector decision from the frozen Test plan. Unlike a runtime
@@ -421,24 +465,40 @@ export type OfflineTestPreflightSelector = {
     | "absent"
     | "ambiguous"
     | "needs-raw-tree"
+    | "raw-evidence-unavailable"
+    | "excluded-dynamic-content"
     | "point-only"
     | "source-observation-missing";
   /** The immutable evidence plane that produced this decision. */
   evidence: {
-    kind: "raw-accessibility-tree" | "screen-observation" | "reveal-plan" | "none";
+    kind:
+      | "raw-accessibility-tree"
+      | "screen-observation"
+      | "reveal-plan"
+      | "dynamic-content-policy"
+      | "none";
     references: string[];
+    /** Present for raw evidence so a repair can open the exact frozen blob,
+     * not a later observation of the same screen. */
+    sources?: OfflineTestPreflightEvidenceSource[];
   };
   /** Bounded semantic candidates are review context, never an implicit
    * selector rewrite. */
   candidates?: Array<
     Pick<import("./app-map.js").NormalizedSemanticNode, "role" | "identifier" | "label" | "value">
   >;
+  /** Raw-tree candidates are intentionally separate from lossy normalized
+   * candidates so a heading and its owned Compose row remain distinguishable. */
+  rawCandidates?: OfflineTestPreflightRawCandidate[];
+  /** Full count before the compact raw-candidate cap was applied. */
+  rawCandidateCount?: number;
   /** A unique raw-tree match may identify the activation method and frozen
    * bounds. It remains read-only evidence, not an executable coordinate. */
   resolution?: {
     method: "identifier" | "label" | "text" | "relation" | "point";
     activation?: "snapshot-point";
     snapshotBounds: { x: number; y: number; width: number; height: number };
+    provenance?: OfflineTestPreflightEvidenceSource;
   };
   /** A reveal position comes only from an already-frozen logical surface; no
    * scroll offset is ever invented by preflight. */
@@ -488,6 +548,9 @@ export type OfflineTestPreflightReport = {
     recipes: number;
     checkedSelectors: number;
     resolvedSelectors: number;
+    /** Dynamic user-generated content that is intentionally not compared or
+     * selector-proven offline. Stable entry/exit controls remain checked. */
+    excludedDynamicSelectors?: number;
     unknownCursorTransitions: number;
     reviewRequiredReturns: number;
     blockers: number;

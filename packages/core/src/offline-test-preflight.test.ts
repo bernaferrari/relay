@@ -241,14 +241,16 @@ test("offline preflight requests one recapture for a missing or unreadable raw s
   const report = preflightCompiledAppMapTestOffline(compiled, {
     rawEvidenceStatusByScreenId: { profile: "unreadable" },
   });
+  assert.equal(report.selectors[0]?.status, "raw-evidence-unavailable");
+  assert.equal(report.summary.blockers, 1);
   assert.deepEqual(
     report.findings.filter((finding) => finding.code === "raw-evidence-recapture-required"),
     [
       {
-        severity: "warning",
+        severity: "blocker",
         code: "raw-evidence-recapture-required",
         recipeId: "root",
-        recipeStepId: "profile-source",
+        recipeStepId: "birth-year",
         screenId: "profile",
         message:
           "Profile's frozen raw accessibility tree is unavailable or corrupt; recapture this screen before relying on offline geometry.",

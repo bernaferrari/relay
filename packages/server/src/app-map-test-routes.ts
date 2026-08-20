@@ -3,7 +3,7 @@ import {
   AppMapDomainError,
   AppMapTestStepOperationError,
   AppMapTestCompileError,
-  readAuthoringEvidence,
+  loadFrozenRawAccessibilityEvidence,
   compileAppMapTest,
   compileIntentWalk,
   currentOperationContext,
@@ -19,8 +19,7 @@ import {
   saveAppMapTest,
   submitAppMapProposal,
 } from "@relay/core";
-import type { SnapshotNode } from "@relay/core";
-import type { AppMapCompiledTest, OperationInput } from "@relay/protocol";
+import type { OperationInput } from "@relay/protocol";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
 import { applyAppMapMutation, applyRebasableAppMapMutation } from "./app-map-route-mutations.js";
@@ -32,57 +31,6 @@ type AppMapTestRouteInput = {
   response: http.ServerResponse;
   scope: RequestContext;
 };
-
-function snapshotNodes(value: unknown): SnapshotNode[] | undefined {
-  if (!value || typeof value !== "object" || !Array.isArray((value as { nodes?: unknown }).nodes)) {
-    return undefined;
-  }
-  return (value as { nodes: SnapshotNode[] }).nodes;
-}
-
-/** Read only raw snapshots that are already map-owned. The compiler has
- * frozen the map revision first; this adds geometry to the offline verdict
- * without taking a device snapshot or consulting a live screen. */
-async function rawPreflightEvidence(plan: AppMapCompiledTest): Promise<{
-  rawObservationsByScreenId: Record<string, SnapshotNode[][]>;
-  rawEvidenceReferencesByScreenId: Record<string, string[]>;
-  rawEvidenceStatusByScreenId: Record<string, "missing" | "unreadable">;
-}> {
-  const rawObservationsByScreenId: Record<string, SnapshotNode[][]> = {};
-  const rawEvidenceReferencesByScreenId: Record<string, string[]> = {};
-  const rawEvidenceStatusByScreenId: Record<string, "missing" | "unreadable"> = {};
-  for (const [screenId, rawTrees] of Object.entries(plan.rawAccessibilityTreesByScreenId ?? {})) {
-    if (!rawTrees.length) {
-      rawEvidenceStatusByScreenId[screenId] = "missing";
-      continue;
-    }
-    const observations = await Promise.all(
-      rawTrees.map(async (tree) => {
-        const bytes = await readAuthoringEvidence(tree.sha256);
-        if (!bytes) return undefined;
-        try {
-          return snapshotNodes(JSON.parse(bytes.toString("utf8")));
-        } catch {
-          return undefined;
-        }
-      }),
-    );
-    const resolved = observations.filter((nodes): nodes is SnapshotNode[] =>
-      Boolean(nodes?.length),
-    );
-    if (resolved.length) {
-      rawObservationsByScreenId[screenId] = resolved;
-      rawEvidenceReferencesByScreenId[screenId] = [
-        ...new Set(rawTrees.map((tree) => tree.uri)),
-      ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-    } else rawEvidenceStatusByScreenId[screenId] = "unreadable";
-  }
-  return {
-    rawObservationsByScreenId,
-    rawEvidenceReferencesByScreenId,
-    rawEvidenceStatusByScreenId,
-  };
-}
 
 export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
@@ -145,7 +93,7 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
         test,
         entryCheckpointScreenId ? { entryCheckpointScreenId } : {},
       ).plan;
-      const evidence = await rawPreflightEvidence(plan);
+      const evidence = await loadFrozenRawAccessibilityEvidence(plan);
       json(response, 200, { plan, preflight: preflightCompiledAppMapTestOffline(plan, evidence) });
     } catch (error) {
       if (error instanceof AppMapTestCompileError) {

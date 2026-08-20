@@ -51,18 +51,41 @@ const MAX_COMPILED_STEPS = 4_096;
 function frozenRawAccessibilityTrees(
   map: AppMap,
 ): NonNullable<AppMapCompiledTest["rawAccessibilityTreesByScreenId"]> {
-  const byScreenId: NonNullable<AppMapCompiledTest["rawAccessibilityTreesByScreenId"]> = {};
-  for (const variant of Object.values(map.screenVariants)) {
+  type RawTree = NonNullable<AppMapCompiledTest["rawAccessibilityTreesByScreenId"]>[string][number];
+  const grouped = new Map<string, Map<string, RawTree>>(
+    Object.keys(map.screens)
+      .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+      .map((screenId) => [screenId, new Map<string, RawTree>()]),
+  );
+  for (const variant of Object.values(map.screenVariants).sort((left, right) =>
+    left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+  )) {
     const trees = variant.rawAccessibilityTree ? [variant.rawAccessibilityTree] : [];
     const latestSurface = [...(variant.scrollSurfaces ?? [])].sort(
-      (left, right) => right.capturedAt - left.capturedAt,
+      (left, right) => right.capturedAt - left.capturedAt || left.id.localeCompare(right.id),
     )[0];
     if (latestSurface)
       trees.push(...latestSurface.viewports.map((viewport) => viewport.accessibilityTree));
-    const unique = new Map(trees.map((tree) => [tree.sha256, structuredClone(tree)]));
-    byScreenId[variant.screenId] = [...unique.values()];
+    const screenTrees = grouped.get(variant.screenId) ?? new Map<string, RawTree>();
+    for (const tree of trees) {
+      // The CAS digest is the identity. Keeping the first deterministic
+      // occurrence avoids variant insertion order deciding a compiled plan.
+      if (!screenTrees.has(tree.sha256)) screenTrees.set(tree.sha256, structuredClone(tree));
+    }
+    grouped.set(variant.screenId, screenTrees);
   }
-  return byScreenId;
+  return Object.fromEntries(
+    [...grouped.entries()]
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([screenId, trees]) => [
+        screenId,
+        [...trees.values()].sort((left, right) => {
+          const leftKey = [left.uri, left.id, left.sha256].join("\u0000");
+          const rightKey = [right.uri, right.id, right.sha256].join("\u0000");
+          return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+        }),
+      ]),
+  );
 }
 
 type ReturnRequirementStep = Extract<RecipeStep, { kind: "expect-screen" }>;

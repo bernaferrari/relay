@@ -265,6 +265,11 @@ function resolveSnapshotTarget(
         point,
         bounds: activationRect,
         usesActivationAncestor: activationNode !== undefined,
+        isFixedChromeControl,
+        /** A plain text heading is allowed to lose to its owned row. Two
+         * independently activatable locations, however, are a real ambiguity
+         * when one lives in sticky chrome and the other in scroll content. */
+        independentlyActivatable: node.hittable === true || activationNode !== undefined,
         ...(!isFixedChromeControl && point.y < safeTop
           ? { revealDirection: "up" as const }
           : !isFixedChromeControl && point.y > safeBottom
@@ -283,6 +288,30 @@ function resolveSnapshotTarget(
     })
     .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined);
   if (candidates.length === 0) return undefined;
+
+  const activeLocations = candidates
+    .filter((candidate) => candidate.independentlyActivatable)
+    .filter(
+      (candidate, index, list) =>
+        list.findIndex(
+          (other) =>
+            Math.abs(other.point.x - candidate.point.x) <= 4 &&
+            Math.abs(other.point.y - candidate.point.y) <= 4,
+        ) === index,
+    );
+  // A label-only target cannot tell a persistent toolbar/footer control from a
+  // separately owned content row with the same copy. Ranking the chrome button
+  // above a Compose row would make the offline proof (and the live resolver)
+  // confidently press the wrong thing, so leave this as a repairable
+  // ambiguity. Identifier/ref paths remain deliberately unaffected.
+  if (
+    !normalized.identifier &&
+    !normalized.ref &&
+    activeLocations.some((candidate) => candidate.isFixedChromeControl) &&
+    activeLocations.some((candidate) => !candidate.isFixedChromeControl)
+  ) {
+    return undefined;
+  }
 
   const bestRank = Math.max(...candidates.map((candidate) => candidate.rank));
   const best = candidates.filter((candidate) => candidate.rank === bestRank);

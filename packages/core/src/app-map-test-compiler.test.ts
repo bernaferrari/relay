@@ -458,6 +458,34 @@ test("compiled graph Tests retain a conservative logical-surface capture policy"
     createdAt: at,
     updatedAt: at,
   };
+  const rawTreeShaPt = "b".repeat(64);
+  current.screenVariants["cart-pt"] = {
+    ...current.screenVariants["cart-en"]!,
+    id: "cart-pt",
+    targetProfile: {
+      ...current.screenVariants["cart-en"]!.targetProfile,
+      id: "iphone-pt",
+      name: "iPhone · Portuguese",
+    },
+    evidenceIds: ["cart-tree-pt"],
+    evidenceUris: [`relay-evidence://${rawTreeShaPt}`],
+    rawAccessibilityTree: {
+      id: "cart-tree-pt",
+      uri: `relay-evidence://${rawTreeShaPt}`,
+      sha256: rawTreeShaPt,
+      mime: "application/json",
+      bytes: 43,
+    },
+  };
+  // Deliberately store the variants in the opposite insertion order as their
+  // stable IDs. The frozen plan must not inherit mutable object order.
+  current.screenVariants = {
+    "cart-pt": current.screenVariants["cart-pt"]!,
+    "cart-en": current.screenVariants["cart-en"]!,
+  };
+  // Input order is deliberately reversed: a compiled test must retain every
+  // immutable variant tree but produce one deterministic source ledger.
+  current.screens.cart!.variantIds = ["cart-pt", "cart-en"];
   const work = scenario();
   work.surfaceBindings = [
     {
@@ -472,7 +500,11 @@ test("compiled graph Tests retain a conservative logical-surface capture policy"
   const compiled = compileAppMapTest(current, work);
   assert.deepEqual(compiled.plan.surfaceBindings, work.surfaceBindings);
   assert.deepEqual(compiled.plan.rawAccessibilityTreesByScreenId, {
-    cart: [current.screenVariants["cart-en"]!.rawAccessibilityTree],
+    cart: [
+      current.screenVariants["cart-en"]!.rawAccessibilityTree,
+      current.screenVariants["cart-pt"]!.rawAccessibilityTree,
+    ],
+    home: [],
   });
   current.screenVariants["cart-en"]!.rawAccessibilityTree!.bytes = 999;
   assert.equal(compiled.plan.rawAccessibilityTreesByScreenId!.cart![0]!.bytes, 42);
