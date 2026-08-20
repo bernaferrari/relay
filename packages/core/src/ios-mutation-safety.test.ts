@@ -4,6 +4,7 @@ import {
   IosMutationOutcomeUnknownError,
   lastIosMutationAttemptDiagnostic,
   pressNamedControl,
+  pressMatchingText,
   pressPoint,
   runIosMutationOnce,
   type Device,
@@ -137,6 +138,97 @@ test("a native selector miss is the reviewed exception that can use the current 
     },
     { platform: "ios", udid: serial, x: 140, y: 62 },
   ]);
+  assert.equal(lastIosMutationAttemptDiagnostic(serial)?.outcome, "completed");
+});
+
+test("an ambiguous fallback find never becomes a coordinate press", async () => {
+  const serial = "ios-matching-text-fallback-unknown";
+  const presses: Array<{ selector?: string; x?: number; y?: number }> = [];
+  const finds: Array<{ action?: string }> = [];
+  const device = {
+    capture: {
+      snapshot: async () => ({
+        nodes: [
+          {
+            type: "Button",
+            label: "Settings",
+            enabled: true,
+            hittable: true,
+            rect: { x: 20, y: 40, width: 240, height: 44 },
+          },
+        ],
+      }),
+    },
+    interactions: {
+      press: async (options: { selector?: string; x?: number; y?: number }) => {
+        presses.push(options);
+        if (options.selector) throw new Error("Selector did not match an element");
+      },
+      find: async (options: { action?: string }) => {
+        finds.push(options);
+        if (options.action === "click") throw new Error("connection reset");
+      },
+    },
+  } as unknown as Device;
+
+  await assert.rejects(
+    runWithTargetContext(ios(serial), () => pressMatchingText(device, "Settings")),
+    IosMutationOutcomeUnknownError,
+  );
+
+  assert.deepEqual(
+    presses.map(({ selector, x, y }) => ({ selector, x, y })),
+    [{ selector: 'label*="Settings"', x: undefined, y: undefined }],
+    "the safe initial selector miss must not be followed by a coordinate press after find becomes ambiguous",
+  );
+  assert.deepEqual(
+    finds.map(({ action }) => action),
+    ["exists", "click"],
+  );
+  assert.deepEqual(lastIosMutationAttemptDiagnostic(serial)?.retry, {
+    attempts: 0,
+    decision: "blocked",
+    reason: "native-command-outcome-unknown",
+  });
+});
+
+test("a proven pressMatchingText selector miss still resolves through its current point", async () => {
+  const serial = "ios-matching-text-selector-miss";
+  const presses: Array<{ selector?: string; x?: number; y?: number }> = [];
+  const device = {
+    capture: {
+      snapshot: async () => ({
+        nodes: [
+          {
+            type: "Button",
+            label: "Settings",
+            enabled: true,
+            hittable: true,
+            rect: { x: 20, y: 40, width: 240, height: 44 },
+          },
+        ],
+      }),
+    },
+    interactions: {
+      press: async (options: { selector?: string; x?: number; y?: number }) => {
+        presses.push(options);
+        if (options.selector) throw new Error("Selector did not match an element");
+      },
+      find: async () => {
+        throw new Error("element not found");
+      },
+    },
+  } as unknown as Device;
+
+  await runWithTargetContext(ios(serial), () => pressMatchingText(device, "Settings"));
+
+  assert.deepEqual(
+    presses.map(({ selector, x, y }) => ({ selector, x, y })),
+    [
+      { selector: 'label*="Settings"', x: undefined, y: undefined },
+      { selector: undefined, x: 140, y: 62 },
+    ],
+  );
   assert.equal(lastIosMutationAttemptDiagnostic(serial)?.outcome, "completed");
 });
 

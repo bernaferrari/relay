@@ -1468,6 +1468,13 @@ export async function pressMatchingText(device: Device, match: string): Promise<
       return;
     } catch (err) {
       if (err instanceof Error && err.name === "JobCancelledError") throw err;
+      // `findClick` may already have sent its own native iOS command. Only a
+      // selector rejection proven to be pre-dispatch may reach the older
+      // snapshot/point resolver below; an acknowledgement loss must stay a
+      // terminal review boundary rather than becoming a second coordinate tap.
+      if (selectedPlatform() === "ios" && !canUseIosSnapshotCoordinateFallback(err)) {
+        throw err;
+      }
     }
   }
 
