@@ -79,6 +79,25 @@ function fixtureResult(operationId: string): unknown {
     },
     "run.list": { runs: [{ id: "run-1", status: "passed" }] },
     "run.get": { run: { id: "run-1", status: "passed", artifacts: [] } },
+    "run.replay.offline": {
+      report: {
+        schemaVersion: 1,
+        mode: "offline-evidence-replay",
+        runId: "run-1",
+        sourceRunStatus: "error",
+        planDigest: "a".repeat(64),
+        summary: {
+          checks: 40,
+          proved: 38,
+          rootFailures: 1,
+          invalidCascades: 1,
+          independentFailures: 0,
+        },
+        cursorTimeline: [],
+        checks: [],
+        blockers: [],
+      },
+    },
     "run.evidence.get": { evidence: { runId: "run-1", logs: [], network: [] } },
     "run.repair.list": {
       repairs: [{ id: "run-1:usage", source: { runId: "run-1", checkId: "usage" } }],
@@ -226,6 +245,7 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
       [
         relayMcpResourceUris.run,
         relayMcpResourceUris.runEvidence,
+        relayMcpResourceUris.runOfflineReplay,
         relayMcpResourceUris.repair,
         relayMcpResourceUris.appMap,
         relayMcpResourceUris.tests,
@@ -352,12 +372,38 @@ test("reads the configured project and detail resources through Relay queries", 
       (JSON.parse(repair.text) as { data: { repair: { id: string } } }).data.repair.id,
       "run-1:usage",
     );
+    const offlineReplay = resourceContent(
+      await session.request("resources/read", { uri: "relay://runs/run-1/offline-replay" }),
+    );
+    assert.deepEqual(
+      (JSON.parse(offlineReplay.text) as { data: { report: { runId: string } } }).data,
+      {
+        report: {
+          schemaVersion: 1,
+          mode: "offline-evidence-replay",
+          runId: "run-1",
+          sourceRunStatus: "error",
+          planDigest: "a".repeat(64),
+          summary: {
+            checks: 40,
+            proved: 38,
+            rootFailures: 1,
+            invalidCascades: 1,
+            independentFailures: 0,
+          },
+          cursorTimeline: [],
+          checks: [],
+          blockers: [],
+        },
+      },
+    );
     assert.deepEqual(calls, [
       { operationId: "project.list", input: {} },
       { operationId: "app-map.get", input: { appMapId: "map-1" } },
       { operationId: "workspace.variables.get", input: {} },
       { operationId: "run.repair.list", input: {} },
       { operationId: "run.repair.get", input: { runId: "run-1", checkId: "usage" } },
+      { operationId: "run.replay.offline", input: { runId: "run-1" } },
     ]);
   } finally {
     await session.close();
@@ -420,6 +466,75 @@ test("bounds deterministic JSON with explicit truncation metadata", async () => 
     assert.equal(envelope.data, null);
     assert.equal(envelope.byteLimit, relayMcpResourceByteLimit);
     assert.ok(Number(envelope.originalBytes) > relayMcpResourceByteLimit);
+  } finally {
+    await session.close();
+  }
+});
+
+test("keeps a large offline replay causally actionable instead of dropping it at the MCP limit", async () => {
+  const hugeReport = {
+    report: {
+      schemaVersion: 1,
+      mode: "offline-evidence-replay",
+      runId: "run-1",
+      sourceRunStatus: "error",
+      planDigest: "a".repeat(64),
+      summary: {
+        checks: 80,
+        proved: 2,
+        rootFailures: 1,
+        invalidCascades: 77,
+        independentFailures: 0,
+      },
+      firstRootFailure: {
+        checkId: "birth-year",
+        title: "Visit Birth Year",
+        kind: "action-no-op",
+        error: "The selector resolved but the screen did not change.",
+      },
+      cursorTimeline: Array.from({ length: 80 }, (_, index) => ({
+        status: "unknown",
+        screenId: `screen-${index}`,
+        reason: "x".repeat(1_000),
+      })),
+      checks: Array.from({ length: 80 }, (_, index) => ({
+        id: `check-${index}`,
+        title: `Check ${index}`,
+        recordedStatus: "failed",
+        replayStatus: index === 2 ? "root-failure" : "invalid-cascade",
+        error: "x".repeat(1_000),
+        reason: "x".repeat(1_000),
+        selectorAttempts: [{ strategy: "label" }],
+        evidence: ["artifact"],
+      })),
+      blockers: [{ kind: "root-failure", checkIds: ["birth-year"], message: "x".repeat(1_000) }],
+    },
+  };
+  const session = await connectMcp(fixtureInvoker({ "run.replay.offline": hugeReport }));
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", { uri: "relay://runs/run-1/offline-replay" }),
+    );
+    assert.ok(Buffer.byteLength(content.text, "utf8") <= relayMcpResourceByteLimit);
+    const envelope = JSON.parse(content.text) as {
+      truncated: boolean;
+      data: {
+        report: {
+          evidenceTruncated: boolean;
+          summary: { invalidCascades: number };
+          firstRootFailure: { checkId: string };
+          checks: Array<{ selectorAttemptCount: number; evidenceCount: number }>;
+        };
+        resource: { uri: string };
+      };
+    };
+    assert.equal(envelope.truncated, true);
+    assert.equal(envelope.data.report.evidenceTruncated, true);
+    assert.equal(envelope.data.report.summary.invalidCascades, 77);
+    assert.equal(envelope.data.report.firstRootFailure.checkId, "birth-year");
+    assert.equal(envelope.data.report.checks[0]?.selectorAttemptCount, 1);
+    assert.equal(envelope.data.report.checks[0]?.evidenceCount, 1);
+    assert.equal(envelope.data.resource.uri, "relay://runs/run-1/offline-replay");
   } finally {
     await session.close();
   }

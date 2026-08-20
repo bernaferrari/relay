@@ -346,6 +346,7 @@ test("defines deterministic task profiles with a compact authoring default", () 
           "job.get",
           "job.cancel",
           "run.get",
+          "run.replay.offline",
           "run.evidence.get",
         ].includes(operationId),
       ),
@@ -358,6 +359,7 @@ test("defines deterministic task profiles with a compact authoring default", () 
       "job.get",
       "job.cancel",
       "run.get",
+      "run.replay.offline",
       "run.evidence.get",
     ],
   );

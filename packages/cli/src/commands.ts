@@ -606,9 +606,14 @@ function noResourceInput(input: Readonly<Record<string, unknown>>, path: string)
   if (Object.keys(input).length > 0) throw new UsageError(`${path} does not accept --input fields`);
 }
 
-function runResource(command: string, suffix: string, summary: string): CliResourceDescriptor {
+function runResource(
+  command: string,
+  suffix: string,
+  summary: string,
+  resourceId = command.replace(" ", "."),
+): CliResourceDescriptor {
   return {
-    resourceId: command.replace(" ", "."),
+    resourceId,
     label: summary,
     path: path(command, ["runId"], undefined, {
       summary,
@@ -631,6 +636,7 @@ export const cliResourceDescriptors: readonly CliResourceDescriptor[] = [
     "run replay-offline",
     "/replay-offline",
     "Diagnose a persisted run from frozen evidence without a device",
+    "run.replay.offline",
   ),
   runResource("run story", "/story", "Get a shareable run story from existing artifacts"),
   {

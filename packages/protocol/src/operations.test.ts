@@ -605,6 +605,39 @@ test("capability manifest is serializable and contains no parser functions", () 
   assert.equal(typeof roundTrip[0]?.input, "string");
 });
 
+test("offline run replay is a frozen-evidence response, not a live run job", () => {
+  const definition = operationDefinition("run.replay.offline");
+  assert.deepEqual(definition.input.parse({ runId: "run-1" }), { runId: "run-1" });
+  assert.doesNotThrow(() =>
+    definition.output.parse({
+      report: {
+        schemaVersion: 1,
+        mode: "offline-evidence-replay",
+        runId: "run-1",
+        sourceRunStatus: "error",
+        planDigest: "a".repeat(64),
+        summary: {
+          checks: 40,
+          proved: 38,
+          rootFailures: 1,
+          invalidCascades: 1,
+          independentFailures: 0,
+        },
+        cursorTimeline: [],
+        checks: [],
+        blockers: [],
+      },
+    }),
+  );
+  assert.throws(
+    () =>
+      definition.output.parse({
+        report: { schemaVersion: 1, mode: "live-replay", runId: "run-1" },
+      }),
+    /offline-evidence-replay/,
+  );
+});
+
 test("descriptor invariants catch duplicates and unsafe cancellation metadata", () => {
   const first = operationDefinitions[0]!;
   assert.throws(

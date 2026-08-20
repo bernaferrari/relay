@@ -13,6 +13,7 @@ import type { McpConfig } from "./config.js";
 import { invalidRelayMcpInput, relayMcpError, type RelayMcpStructuredError } from "./errors.js";
 import { registerRelayPrompts } from "./prompts.js";
 import { registerRelayResources, type RelayResourceScope } from "./resources.js";
+import { compactOfflineReplayToolResult } from "./offline-replay-result.js";
 import {
   defaultRelayMcpProfile,
   relayMcpToolsForProfile,
@@ -98,14 +99,17 @@ export function createRelayOperationInvoker(config: McpConfig): OperationInvoker
   };
 }
 
-function boundedResult(value: unknown): {
+function boundedResult(
+  value: unknown,
+  fallback?: unknown,
+): {
   text: string;
   structuredContent: { result: unknown };
 } {
   const text = JSON.stringify(value);
   if (text === undefined) return { text: "null", structuredContent: { result: null } };
   if (text.length <= relayMcpTextLimit) return { text, structuredContent: { result: value } };
-  const result = {
+  const result = fallback ?? {
     truncated: true,
     serializedCharacters: text.length,
     message: "Relay result omitted from text because it exceeds the MCP text limit.",
@@ -145,8 +149,8 @@ function localError(
   };
 }
 
-function normalResult(result: unknown): CallToolResult {
-  const bounded = boundedResult(result);
+function normalResult(result: unknown, fallback?: unknown): CallToolResult {
+  const bounded = boundedResult(result, fallback);
   return {
     content: [{ type: "text", text: bounded.text }],
     structuredContent: bounded.structuredContent,
@@ -275,17 +279,21 @@ async function invokeRelayTool(
 
   if (descriptor.operationId === "target.screenshot.capture") return screenshotResult(result);
   try {
-    return normalResult(
-      summarizeTargetOperationResult(
+    const summarized = summarizeTargetOperationResult(
+      descriptor.operationId,
+      summarizeExecutionOperationResult(
         descriptor.operationId,
-        summarizeExecutionOperationResult(
+        summarizeAppMapOperationResult(
           descriptor.operationId,
-          summarizeAppMapOperationResult(
-            descriptor.operationId,
-            summarizeAuthoringOperationResult(descriptor.operationId, result),
-          ),
+          summarizeAuthoringOperationResult(descriptor.operationId, result),
         ),
       ),
+    );
+    return normalResult(
+      summarized,
+      descriptor.operationId === "run.replay.offline"
+        ? compactOfflineReplayToolResult(summarized)
+        : undefined,
     );
   } catch {
     return errorResult(

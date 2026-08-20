@@ -9,6 +9,7 @@ import {
 } from "@modelcontextprotocol/server";
 import type { OperationId } from "@relay/protocol";
 import type { OperationInvoker } from "./server.js";
+import { compactOfflineReplayResource } from "./offline-replay-result.js";
 import {
   relayMcpExclusions,
   relayMcpOperationCatalog,
@@ -35,6 +36,7 @@ export const relayMcpResourceUris = {
   repairs: "relay://repairs",
   run: "relay://runs/{runId}",
   runEvidence: "relay://runs/{runId}/evidence",
+  runOfflineReplay: "relay://runs/{runId}/offline-replay",
   repair: "relay://runs/{runId}/checks/{checkId}/repair",
   authoringSessions: "relay://authoring-sessions",
   authoringSession: "relay://authoring-sessions/{sessionId}",
@@ -516,6 +518,35 @@ export function registerRelayResources(
           { signal: context.mcpReq.signal },
         );
         return readResult(uri, scope.projectId, "run-evidence", result);
+      } catch {
+        throw new ResourceNotFoundError(uri.href);
+      }
+    },
+  );
+  server.registerResource(
+    "run-offline-replay",
+    new ResourceTemplate(relayMcpResourceUris.runOfflineReplay, { list: undefined }),
+    {
+      title: "Relay Offline Run Replay",
+      description:
+        "A device-independent causal diagnosis reconstructed only from a persisted run's frozen plan and captured evidence.",
+      mimeType: relayMcpResourceMimeType,
+    },
+    async (uri, variables, context) => {
+      const runId = variable(variables, "runId", uri);
+      try {
+        const result = await invoker.invoke(
+          "run.replay.offline",
+          { runId },
+          { signal: context.mcpReq.signal },
+        );
+        return readResult(
+          uri,
+          scope.projectId,
+          "run-offline-replay",
+          result,
+          compactOfflineReplayResource(result),
+        );
       } catch {
         throw new ResourceNotFoundError(uri.href);
       }

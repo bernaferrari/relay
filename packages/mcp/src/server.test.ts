@@ -451,6 +451,58 @@ test("bounds normal text and errors without exposing truncated paths or credenti
   }
 });
 
+test("returns an actionable compact replay and a durable resource when an offline diagnosis is large", async () => {
+  const report = {
+    schemaVersion: 1,
+    mode: "offline-evidence-replay",
+    runId: "run-1",
+    sourceRunStatus: "error",
+    planDigest: "a".repeat(64),
+    summary: {
+      checks: 80,
+      proved: 2,
+      rootFailures: 1,
+      invalidCascades: 77,
+      independentFailures: 0,
+    },
+    firstRootFailure: { checkId: "birth-year", title: "Birth Year", kind: "action-no-op" },
+    cursorTimeline: [],
+    checks: Array.from({ length: 80 }, (_, index) => ({
+      id: `check-${index}`,
+      title: `Check ${index}`,
+      replayStatus: "invalid-cascade",
+      reason: "x".repeat(1_000),
+      selectorAttempts: [],
+      evidence: [],
+    })),
+    blockers: [],
+  };
+  const session = await connectMcp({
+    async invoke(operationId) {
+      assert.equal(operationId, "run.replay.offline");
+      return { report };
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_run_replay_offline",
+        arguments: { runId: "run-1" },
+      }),
+    );
+    const compact = result.structuredContent?.result as {
+      report: { evidenceTruncated: boolean; firstRootFailure: { checkId: string } };
+      resource: { uri: string };
+    };
+    assert.equal(compact.report.evidenceTruncated, true);
+    assert.equal(compact.report.firstRootFailure.checkId, "birth-year");
+    assert.equal(compact.resource.uri, "relay://runs/run-1/offline-replay");
+    assert.ok(String(result.content[0]?.text).length <= relayMcpTextLimit);
+  } finally {
+    await session.close();
+  }
+});
+
 test("returns screenshots as native PNG content without path or base64 metadata leaks", async () => {
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

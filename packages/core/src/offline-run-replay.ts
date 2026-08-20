@@ -89,7 +89,9 @@ function stableValue(value: unknown): unknown {
 }
 
 function digest(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(stableValue(value))).digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify(stableValue(value)))
+    .digest("hex");
 }
 
 function artifactPointer(run: PersistedRun, index: number): string {
@@ -100,7 +102,8 @@ function frozenPlan(run: PersistedRun): { artifact?: RunArtifact; index?: number
   const index = run.artifacts.findIndex(
     (artifact) => artifact.kind === "app-map-test-plan" || artifact.kind === "app-map-flow-plan",
   );
-  if (index >= 0) return { artifact: run.artifacts[index], index, data: run.artifacts[index]!.data };
+  if (index >= 0)
+    return { artifact: run.artifacts[index], index, data: run.artifacts[index]!.data };
   return { data: run.recipeSnapshot ?? null };
 }
 
@@ -142,7 +145,8 @@ function selectorAttempts(
       const attempt = record(raw);
       const attemptData = record(attempt?.data);
       if (!attempt || !attemptData) continue;
-      const failed = attempt.kind === "target-resolution-attempt" || attemptData.status === "failed";
+      const failed =
+        attempt.kind === "target-resolution-attempt" || attemptData.status === "failed";
       attempts.push({
         status: failed ? "failed" : "resolved",
         ...(text(attemptData.strategy) || text(attemptData.method)
@@ -236,7 +240,11 @@ export function replayPersistedRunOffline(run: PersistedRun): OfflineRunReplayRe
       firstRoot = {
         checkId: id,
         title,
-        kind: actionNoOp ? "action-no-op" : resolvedSelector ? "transition-unproved" : "recorded-failure",
+        kind: actionNoOp
+          ? "action-no-op"
+          : resolvedSelector
+            ? "transition-unproved"
+            : "recorded-failure",
         ...(text(data.error) ? { error: text(data.error) } : {}),
         evidence,
       };
@@ -245,7 +253,8 @@ export function replayPersistedRunOffline(run: PersistedRun): OfflineRunReplayRe
       reason = `Required origin ${warmSourceScreenId} was never proved; the last proven screen remained ${lastProvenScreenId ?? "unknown"}.`;
     } else {
       replayStatus = "independent-failure";
-      reason = "The required origin was independently proved, so this failure is not caused by the earlier root.";
+      reason =
+        "The required origin was independently proved, so this failure is not caused by the earlier root.";
     }
 
     checks.push({

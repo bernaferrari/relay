@@ -1042,6 +1042,35 @@ const runIdInputParser = objectParser<{ runId: string }>("run input", (input) =>
   string(input.runId, "run id");
 });
 
+const offlineRunReplayOutputParser = objectParser<OperationOutput<"run.replay.offline">>(
+  "offline run replay response",
+  (input) => {
+    const report = record(input.report, "offline run replay report");
+    if (report.schemaVersion !== 1) fail("offline run replay report schemaVersion", "must be 1");
+    if (report.mode !== "offline-evidence-replay") {
+      fail("offline run replay report mode", "must be offline-evidence-replay");
+    }
+    string(report.runId, "offline run replay report runId");
+    string(report.sourceRunStatus, "offline run replay report sourceRunStatus");
+    string(report.planDigest, "offline run replay report planDigest");
+    const summary = record(report.summary, "offline run replay report summary");
+    for (const key of [
+      "checks",
+      "proved",
+      "rootFailures",
+      "invalidCascades",
+      "independentFailures",
+    ]) {
+      number(summary[key], `offline run replay report summary ${key}`);
+    }
+    for (const key of ["cursorTimeline", "checks", "blockers"]) {
+      if (!Array.isArray(report[key])) {
+        fail(`offline run replay report ${key}`, "must be an array");
+      }
+    }
+  },
+);
+
 const runEvidenceInputParser = objectParser<OperationInput<"run.evidence.get">>(
   "run evidence input",
   (input) => {
@@ -2384,6 +2413,7 @@ export const operationDefinitions = [
   query("run.replay.offline", "Replay Run Offline", "/runs/:runId/replay-offline", {
     category: "evidence",
     input: runIdInputParser,
+    output: offlineRunReplayOutputParser,
   }),
   ...runRepairOperationDefinitions,
   command("run.review", "Review a deferred run check", "POST", "/runs/:runId/review", {

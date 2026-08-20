@@ -32,9 +32,7 @@ function relay40FailureFixture(): PersistedRun {
         status: "passed",
         startedAt: at,
         finishedAt: at + 2,
-        transitionDependencies: [
-          { destination: { kind: "screen", screenId: "settings" } },
-        ],
+        transitionDependencies: [{ destination: { kind: "screen", screenId: "settings" } }],
       },
     },
     {
@@ -57,9 +55,7 @@ function relay40FailureFixture(): PersistedRun {
         warmSourceScreenId: "settings",
         startedAt: at + 2,
         finishedAt: at + 5,
-        transitionDependencies: [
-          { destination: { kind: "screen", screenId: "edit-profile" } },
-        ],
+        transitionDependencies: [{ destination: { kind: "screen", screenId: "edit-profile" } }],
       },
     },
     {
@@ -98,9 +94,7 @@ function relay40FailureFixture(): PersistedRun {
         error: "expect-screen: on unknown, not Birth Year",
         startedAt: at + 5,
         finishedAt: at + 8,
-        transitionDependencies: [
-          { destination: { kind: "screen", screenId: "birth-year" } },
-        ],
+        transitionDependencies: [{ destination: { kind: "screen", screenId: "birth-year" } }],
       },
     },
   ];
@@ -165,8 +159,10 @@ test("offline replay finds the Birth Year no-op root and rejects its 33 cascades
     },
   );
   assert.equal(report.checks[2]?.selectorAttempts[0]?.status, "resolved");
-  assert.deepEqual(report.checks.slice(3).map((check) => check.replayStatus),
-    Array.from({ length: 33 }, () => "invalid-cascade"));
+  assert.deepEqual(
+    report.checks.slice(3).map((check) => check.replayStatus),
+    Array.from({ length: 33 }, () => "invalid-cascade"),
+  );
   assert.match(report.blockers[1]?.message ?? "", /33 later checks.*warm origins/i);
   assert.match(report.planDigest, /^[a-f0-9]{64}$/u);
   assert.equal(report.appMapRevision, 173);
