@@ -17,7 +17,7 @@ It provides pixels only. It never uses DeviceKit, WebDriverAgent, XCTest, or a
 control channel, and it does not advertise a target FPS. Relay measures the
 frames it actually observes.
 
-Build the sidecar once per machine before using live iOS preview. It requires
+Source checkouts can build the sidecar once per machine before using live iOS preview. It requires
 Go 1.26 or newer, matching its pinned `go-ios`
 `v1.2.2-0.20260805152531-ebec9a0b076c` dependency:
 
@@ -27,3 +27,13 @@ pnpm ios-preview:build
 
 The binary is local and ignored at `.relay/bin/relay-ios-preview`. Override it
 only deliberately with `RELAY_IOS_PREVIEW_PRODUCER_BIN`.
+
+Packaged Relay for macOS does not require that manual step. Each target-specific release build
+includes the reviewed Apple Silicon or Intel binary plus a manifest containing its byte checksum and
+the exact producer/go-module hashes. Relay validates the native binary for the host architecture
+before it starts the bundled server. A missing or changed packaged sidecar fails closed and asks the
+user to reinstall Relay; it never downloads, rebuilds, or falls back to `ios screenshot --stream`.
+
+The manifest's `buildSha256` is the deterministic pre-sign build checksum. macOS changes executable
+signature bytes while packaging, so the release gate and first-run preflight verify the final nested
+code signature and outer app seal instead of comparing signed bytes to that pre-sign checksum.

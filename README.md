@@ -45,6 +45,12 @@ pnpm dev:desktop
 The Electron app starts one loopback Relay service for the project. No hosted Relay account or cloud
 provider is involved in that path.
 
+Each packaged macOS build includes Relay's reviewed, pixel-only iOS preview sidecar for its target
+architecture (Apple Silicon or Intel). At startup Relay verifies the native binary and its
+source-provenance manifest before using it; a damaged install tells you to reinstall rather than
+downloading, building, or substituting another capture/control tool. Source checkouts can build the
+same pinned producer deliberately with `pnpm ios-preview:build` when live iOS preview is needed.
+
 With a target connected, the first useful workflow is:
 
 1. In **Device**, select the connected browser, Android, or iOS target and save the first useful screen.
@@ -130,8 +136,9 @@ pnpm run verify
 ```
 
 `pnpm run verify` includes formatting, linting, type checks, tests, UI-boundary checks, source-size
-ratchets, and production app/desktop builds. Hardware golden checks are separate because real
-hardware is not universally available:
+ratchets, production app/desktop builds, and a target-native, checksummed iOS preview sidecar.
+CI also builds and verifies both Apple Silicon and Intel sidecars.
+Hardware golden checks are separate because real hardware is not universally available:
 
 ```bash
 pnpm test:golden          # skips cleanly when no supported target is available

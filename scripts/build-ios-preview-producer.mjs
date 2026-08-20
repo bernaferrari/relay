@@ -7,10 +7,10 @@
  * fall back to go-ios's unsafe `screenshot --stream` implementation when this
  * binary is absent.
  */
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildReviewedIosPreviewBinary } from "./ios-preview-sidecar.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = join(root, "packages", "ios-preview-producer");
@@ -21,9 +21,5 @@ if (!existsSync(join(source, "go.mod"))) {
   throw new Error(`iOS preview producer source is missing: ${source}`);
 }
 
-mkdirSync(dirname(output), { recursive: true });
-execFileSync("go", ["build", "-mod=readonly", "-trimpath", "-buildvcs=false", "-o", output, "."], {
-  cwd: source,
-  stdio: "inherit",
-});
-process.stdout.write(`${JSON.stringify({ status: "built", output })}\n`);
+const artifact = await buildReviewedIosPreviewBinary({ root, source, output });
+process.stdout.write(`${JSON.stringify({ status: "built", output, artifact })}\n`);

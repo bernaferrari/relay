@@ -26,11 +26,23 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          cache-dependency-path: packages/ios-preview-producer/go.sum
+
       - name: Install
         run: pnpm install --frozen-lockfile
 
       - name: Verify
         run: pnpm run verify
+
+      - name: Verify packaged iOS preview sidecar provenance
+        run: |
+          for arch in arm64 x64; do
+            RELAY_IOS_PREVIEW_SIDECAR_ARCH="$arch" pnpm ios-preview:package
+            RELAY_IOS_PREVIEW_SIDECAR_ARCH="$arch" pnpm ios-preview:verify
+          done
 
       - name: Golden device path (skips without hardware)
         continue-on-error: true

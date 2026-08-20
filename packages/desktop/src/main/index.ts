@@ -3,6 +3,11 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  IOS_SAFE_PREVIEW_PRODUCER_ENV,
+  IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_PATH_ENV,
+  preflightBundledIosPreviewProducer,
+} from "./ios-preview-sidecar.js";
 import { registerIpcHandlers } from "./ipc.js";
 import { isCompatibleServer, waitForCompatibleServer } from "./server-readiness.js";
 import { DesktopUpdater } from "./updates.js";
@@ -37,6 +42,34 @@ if (process.platform === "win32") app.setAppUserModelId("com.relay.desktop");
 let serverUrl = process.env.RELAY_URL?.trim() || DEFAULT_SERVER_URL;
 let serverChild: ChildProcess | null = null;
 const updates = new DesktopUpdater();
+
+function packagedIosPreviewEnvironment(): NodeJS.ProcessEnv {
+  // An explicit override is intentionally left to the person who configured
+  // it. It always stays distinct from the desktop-owned packaged resource;
+  // Relay's server never substitutes go-ios's unsafe screenshot stream.
+  if (
+    !app.isPackaged ||
+    process.platform !== "darwin" ||
+    process.env[IOS_SAFE_PREVIEW_PRODUCER_ENV]?.trim()
+  ) {
+    return {};
+  }
+  const preflight = preflightBundledIosPreviewProducer({
+    resourcesPath: process.resourcesPath,
+    arch: process.arch,
+  });
+  if (!preflight.ready) {
+    console.error(`[desktop] ${preflight.reason}`);
+  }
+  // Keep the expected bundled location visible to the server even if the
+  // preflight fails. Its resulting diagnostic is then about this Relay install,
+  // not an unrelated source-checkout location. This is deliberately not the
+  // public override variable: a user-provided override must never acquire
+  // trusted packaged-resource semantics.
+  return {
+    [IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_PATH_ENV]: preflight.path,
+  };
+}
 
 async function isServerCompatible(url: string): Promise<boolean> {
   return await isCompatibleServer(url, serverProbeOptions());
@@ -114,6 +147,7 @@ async function ensureServer(): Promise<string> {
       ...(runner.cmd === process.execPath && process.versions.electron
         ? { ELECTRON_RUN_AS_NODE: "1" }
         : {}),
+      ...packagedIosPreviewEnvironment(),
     },
     detached: false,
   });

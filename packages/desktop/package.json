@@ -13,7 +13,7 @@
     "package": "node scripts/build.mjs && electron-builder --mac dir",
     "dist": "node scripts/build.mjs && electron-builder --mac dmg zip",
     "preview": "node scripts/build.mjs && electron .",
-    "test": "node --experimental-strip-types --test src/main/server-readiness.test.ts && node scripts/verify-server-bundle.mjs",
+    "test": "node --experimental-strip-types --test src/main/server-readiness.test.ts src/main/ios-preview-sidecar.test.ts && node scripts/verify-server-bundle.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -36,6 +36,8 @@
   "build": {
     "appId": "dev.relay.desktop",
     "productName": "Relay",
+    "beforePack": "./scripts/before-pack-ios-preview-sidecar.mjs",
+    "afterSign": "./scripts/after-sign-ios-preview-sidecar.mjs",
     "directories": {
       "output": "release"
     },
@@ -57,6 +59,10 @@
       {
         "from": "out/browsers.json",
         "to": "browsers.json"
+      },
+      {
+        "from": "out/ios-preview",
+        "to": "ios-preview"
       }
     ],
     "mac": {
@@ -64,6 +70,9 @@
       "icon": "resources/relay-icon.icns",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "binaries": [
+        "Contents/Resources/ios-preview/relay-ios-preview"
+      ],
       "target": [
         "dmg",
         "zip"

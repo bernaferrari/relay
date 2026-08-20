@@ -18,6 +18,8 @@
     "agent-device:install": "cd vendor/agent-device && pnpm install --frozen-lockfile --ignore-scripts",
     "agent-device:build": "node scripts/build-agent-device.mjs",
     "ios-preview:build": "node scripts/build-ios-preview-producer.mjs",
+    "ios-preview:package": "node scripts/build-ios-preview-sidecar.mjs",
+    "ios-preview:verify": "node scripts/verify-ios-preview-sidecar.mjs",
     "ios-preview:test": "cd packages/ios-preview-producer && go test -mod=readonly -race ./...",
     "check": "vp check",
     "fmt": "vp fmt",
@@ -33,7 +35,7 @@
     "test:architecture": "node --test scripts/check-source-budgets.test.mjs",
     "check:docs": "node scripts/check-docs.mjs",
     "check:architecture": "node scripts/check-source-budgets.mjs",
-    "verify": "vp check && pnpm run check:docs && pnpm run check:architecture && pnpm run test:architecture && pnpm typecheck && pnpm run ios-preview:test && pnpm run test:packages && vp test && pnpm --filter @relay/app check:ui && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build"
+    "verify": "vp check && pnpm run check:docs && pnpm run check:architecture && pnpm run test:architecture && pnpm typecheck && pnpm run ios-preview:test && pnpm run test:packages && vp test && pnpm --filter @relay/app check:ui && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build && pnpm run ios-preview:verify"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
