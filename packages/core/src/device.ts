@@ -28,6 +28,24 @@ import {
   targetSessionName,
   type TargetContext,
 } from "./target-context.js";
+import {
+  currentIosDeviceSerial,
+  iosSelectorWasNotDispatched,
+  runIosMutationOnce,
+  type IosMutationOperation,
+} from "./ios-mutation-policy.js";
+import {
+  IosSnapshotInFlightError,
+  resetIosSnapshotFlights,
+  snapshotIosSingleFlight,
+} from "./ios-snapshot-flight.js";
+export {
+  IosMutationOutcomeUnknownError,
+  lastIosMutationAttemptDiagnostic,
+  runIosMutationOnce,
+} from "./ios-mutation-policy.js";
+export type { IosMutationAttemptDiagnostic, IosMutationOperation } from "./ios-mutation-policy.js";
+export { IOS_SNAPSHOT_TIMEOUT_MS, IosSnapshotInFlightError } from "./ios-snapshot-flight.js";
 export { selectedPlatform } from "./target-context.js";
 export * from "./android-app-build.js";
 import { captureNativeCrashEvidence, type CrashEvidenceResult } from "./crash-evidence.js";
@@ -288,14 +306,14 @@ export function resetDeviceClient(context = currentTargetContext()): void {
     // old native snapshot cannot be cancelled by agent-device, but that repair
     // has stopped its XCTest session, so it is safe for the next client to
     // begin a fresh tree read.
-    iosSnapshotFlights.delete(`${context.platform}:${targetIdentity(context)}`);
+    resetIosSnapshotFlights(context);
   }
 }
 
 /** Drop cached SDK clients after host-level device configuration changes. */
 export function resetDeviceClients(): void {
   devicesByTarget.clear();
-  iosSnapshotFlights.clear();
+  resetIosSnapshotFlights();
 }
 
 export function base() {
@@ -324,7 +342,12 @@ function iosNonHittablePressFields(point?: { x: number; y: number }): Record<str
   };
 }
 
-/** Run a device promise under cancel race, pause checkpoints, and flake retries. */
+/**
+ * Retry an operation only when it is a read or a non-iOS mutation with an
+ * established idempotency contract. Physical iOS input must use
+ * {@link controlledMutation} so a lost acknowledgement never becomes a
+ * second tap, swipe, or text entry.
+ */
 async function controlled<T>(op: () => Promise<T>): Promise<T> {
   return withRetry(
     async () => {
@@ -337,6 +360,19 @@ async function controlled<T>(op: () => Promise<T>): Promise<T> {
       baseDelayMs: Number(process.env.RELAY_RETRY_DELAY_MS ?? 350),
     },
   );
+}
+
+/**
+ * Android retains its existing bounded transient retry behaviour. Only a
+ * connected iOS device takes the exact-once branch; cloud providers can opt
+ * into an explicit idempotency contract when they implement one.
+ */
+async function controlledMutation<T>(
+  operation: IosMutationOperation,
+  op: () => Promise<T>,
+): Promise<T> {
+  const serial = currentIosDeviceSerial();
+  return serial ? runIosMutationOnce(serial, operation, op) : controlled(op);
 }
 
 function mutateCurrentTarget<T>(operation: () => Promise<T>): Promise<T> {
@@ -354,101 +390,6 @@ export async function sleep(ms: number, device: Device = createDevice()): Promis
     left -= step;
   }
   await cooperativeCheckpoint();
-}
-
-export const IOS_SNAPSHOT_TIMEOUT_MS = 8_000;
-
-/**
- * The agent-device iOS snapshot RPC cannot be cancelled once XCTest has
- * started traversing the accessibility tree. A timeout therefore only stops
- * Relay from waiting; it does not stop the runner's work. Starting another
- * tree read at that point leaves the runner executing two UI queries and is
- * the common path to AGENT_DEVICE_RUNNER_BUSY.
- *
- * Keep exactly one native tree read per physical iOS device. Compatible
- * callers share its bounded result. If an interactive-only read is already
- * running, a later full tree request fails promptly instead of queueing a
- * second XCTest command behind a potentially wedged one. A deliberate session
- * reset clears the guard after the old runner has been stopped.
- */
-export class IosSnapshotInFlightError extends Error {
-  constructor() {
-    super(
-      "iOS accessibility is still reading the previous screen. Wait for it to settle or reconnect the iPad before requesting another full tree.",
-    );
-    this.name = "IosSnapshotInFlightError";
-  }
-}
-
-type IosSnapshotFlight = {
-  interactiveOnly: boolean;
-  timedOut: boolean;
-  result: Promise<SnapshotNode[]>;
-};
-
-const iosSnapshotFlights = new Map<string, IosSnapshotFlight>();
-
-function iosSnapshotKey(context: TargetContext): string | undefined {
-  return context.kind === "device" && context.platform === "ios"
-    ? `${context.platform}:${context.serial}`
-    : undefined;
-}
-
-function raceIosSnapshotTimeout<T>(operation: Promise<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(
-      () => reject(new Error("iOS snapshot timed out")),
-      IOS_SNAPSHOT_TIMEOUT_MS,
-    );
-    void operation.then(
-      (value) => {
-        clearTimeout(timeout);
-        resolve(value);
-      },
-      (error: unknown) => {
-        clearTimeout(timeout);
-        reject(error);
-      },
-    );
-  });
-}
-
-async function snapshotIosSingleFlight(
-  key: string,
-  interactiveOnly: boolean,
-  run: () => Promise<{ nodes?: SnapshotNode[] }>,
-): Promise<SnapshotNode[]> {
-  const existing = iosSnapshotFlights.get(key);
-  if (existing) {
-    if (existing.timedOut) throw new IosSnapshotInFlightError();
-    // A full tree is a safe superset of an interactive-only tree, so those
-    // callers can share work. The inverse is not safe: do not make a full
-    // request look complete after an interactive-only SDK response.
-    if (!existing.interactiveOnly || interactiveOnly) return await existing.result;
-    throw new IosSnapshotInFlightError();
-  }
-
-  let flight!: IosSnapshotFlight;
-  const native = Promise.resolve().then(run);
-  const result = raceIosSnapshotTimeout(native).then(
-    (value) => (value.nodes ?? []) as SnapshotNode[],
-  );
-  flight = { interactiveOnly, timedOut: false, result };
-  iosSnapshotFlights.set(key, flight);
-
-  // Retain the lock until the actual native request settles, not merely until
-  // the bounded caller result rejects. That is what prevents a timed-out
-  // request from being followed by a second overlapping XCTest traversal.
-  void native
-    .finally(() => {
-      if (iosSnapshotFlights.get(key) === flight) iosSnapshotFlights.delete(key);
-    })
-    .catch(() => undefined);
-  void result.catch(() => {
-    flight.timedOut = true;
-  });
-
-  return await result;
 }
 
 export async function snapshot(
@@ -471,8 +412,7 @@ export async function snapshot(
   // runner dies. Fail fast so expect-screen/tour can use pixels instead.
   if (context?.kind === "device" && context.platform === "ios") {
     try {
-      const key = iosSnapshotKey(context);
-      return await snapshotIosSingleFlight(key!, opts?.interactiveOnly ?? false, run);
+      return await snapshotIosSingleFlight(context, opts?.interactiveOnly ?? false, run);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (error instanceof IosSnapshotInFlightError) throw error;
@@ -509,7 +449,7 @@ export async function openApp(
     ).catch(() => undefined);
     return;
   }
-  const opened = await controlled(() =>
+  const opened = await controlledMutation("app-open", () =>
     device.apps.open({
       ...base(),
       app,
@@ -521,7 +461,7 @@ export async function openApp(
 }
 
 export async function openUrl(device: Device, url: string): Promise<void> {
-  await controlled(() => device.apps.open({ ...base(), url }));
+  await controlledMutation("url-open", () => device.apps.open({ ...base(), url }));
   await sleep(2500, device);
 }
 
@@ -538,7 +478,7 @@ export async function pressLabel(
 ): Promise<void> {
   const point = resolveSnapshotTargetPoint(await snapshot(device), { label });
   try {
-    await controlled(() =>
+    await controlledMutation("press", () =>
       device.interactions.press({
         ...base(),
         selector: `label="${label.replaceAll('"', '\\"')}"`,
@@ -547,7 +487,10 @@ export async function pressLabel(
       } as never),
     );
   } catch (error) {
-    const fallback = point ?? (await iosSnapshotFallbackPoint(device, { label }, error));
+    const fallback =
+      selectedPlatform() === "ios"
+        ? await iosSnapshotFallbackPoint(device, { label }, error, point)
+        : (point ?? (await iosSnapshotFallbackPoint(device, { label }, error)));
     await pressPoint(device, fallback.x, fallback.y, repeated);
   }
 }
@@ -559,7 +502,7 @@ export async function pressIdentifier(
 ): Promise<void> {
   const point = resolveSnapshotTargetPoint(await snapshot(device), { identifier });
   try {
-    await controlled(() =>
+    await controlledMutation("press", () =>
       device.interactions.press({
         ...base(),
         selector: `id="${identifier.replaceAll('"', '\\"')}"`,
@@ -568,7 +511,10 @@ export async function pressIdentifier(
       } as never),
     );
   } catch (error) {
-    const fallback = point ?? (await iosSnapshotFallbackPoint(device, { identifier }, error));
+    const fallback =
+      selectedPlatform() === "ios"
+        ? await iosSnapshotFallbackPoint(device, { identifier }, error, point)
+        : (point ?? (await iosSnapshotFallbackPoint(device, { identifier }, error)));
     await pressPoint(device, fallback.x, fallback.y, repeated);
   }
 }
@@ -579,7 +525,7 @@ export async function pressPoint(
   y: number,
   repeated?: RepeatedPress,
 ): Promise<void> {
-  await controlled(() =>
+  await controlledMutation("press", () =>
     device.interactions.press({
       ...base(),
       x,
@@ -601,7 +547,7 @@ export async function longPressTarget(
   durationMs = 700,
 ): Promise<void> {
   if (target.identifier) {
-    await controlled(() =>
+    await controlledMutation("long-press", () =>
       device.interactions.longPress({
         ...base(),
         selector: `id="${target.identifier!.replaceAll('"', '\\"')}"`,
@@ -609,7 +555,7 @@ export async function longPressTarget(
       }),
     );
   } else if (target.ref) {
-    await controlled(() =>
+    await controlledMutation("long-press", () =>
       device.interactions.longPress({
         ...base(),
         ref: target.ref!.startsWith("@") ? target.ref! : `@${target.ref!}`,
@@ -618,7 +564,7 @@ export async function longPressTarget(
     );
   } else if (target.label) {
     const label = target.label;
-    await controlled(() =>
+    await controlledMutation("long-press", () =>
       device.interactions.longPress({
         ...base(),
         selector: `label="${label.replaceAll('"', '\\"')}"`,
@@ -627,7 +573,7 @@ export async function longPressTarget(
     );
   } else if (target.text) {
     const text = target.text;
-    await controlled(() =>
+    await controlledMutation("long-press", () =>
       device.interactions.longPress({
         ...base(),
         selector: `label*="${text.replaceAll('"', '\\"')}"`,
@@ -635,7 +581,7 @@ export async function longPressTarget(
       }),
     );
   } else if (target.point) {
-    await controlled(() =>
+    await controlledMutation("long-press", () =>
       device.interactions.longPress({
         ...base(),
         x: target.point!.x,
@@ -650,7 +596,9 @@ export async function longPressTarget(
 
 export async function clipboardWrite(device: Device, text: string): Promise<void> {
   try {
-    await controlled(() => device.command.clipboard({ ...base(), action: "write", text }));
+    await controlledMutation("clipboard-write", () =>
+      device.command.clipboard({ ...base(), action: "write", text }),
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (selectedPlatform() !== "android" || !isAndroidClipboardTransportFailure(message)) {
@@ -715,7 +663,7 @@ export async function clipboardPaste(
   target: AtomicClipboardTarget & { ref?: string; point?: { x: number; y: number } },
 ): Promise<string> {
   try {
-    const result = await controlled(() =>
+    const result = await controlledMutation("clipboard-paste", () =>
       device.command.clipboard({
         ...base(),
         action: "paste",
@@ -744,7 +692,7 @@ export async function clipboardCopy(
   expectedText?: string,
 ): Promise<string> {
   try {
-    const result = await controlled(() =>
+    const result = await controlledMutation("clipboard-copy", () =>
       device.command.clipboard({
         ...base(),
         action: "copy",
@@ -786,22 +734,24 @@ export async function clipboardCopy(
 }
 
 export async function closeApp(device: Device, app?: string): Promise<void> {
-  await controlled(() => device.apps.close({ ...base(), ...(app ? { app } : {}) }));
+  await controlledMutation("app-close", () =>
+    device.apps.close({ ...base(), ...(app ? { app } : {}) }),
+  );
 }
 
 export async function openAppSwitcher(device: Device): Promise<void> {
-  await controlled(() => device.command.appSwitcher({ ...base() }));
+  await controlledMutation("app-switcher", () => device.command.appSwitcher({ ...base() }));
 }
 
 export async function rotateDevice(
   device: Device,
   orientation: "portrait" | "portrait-upside-down" | "landscape-left" | "landscape-right",
 ): Promise<void> {
-  await controlled(() => device.command.rotate({ ...base(), orientation }));
+  await controlledMutation("rotate", () => device.command.rotate({ ...base(), orientation }));
 }
 
 export async function keyboardAction(device: Device, action: "dismiss" | "enter"): Promise<void> {
-  await controlled(() => device.command.keyboard({ ...base(), action }));
+  await controlledMutation("keyboard", () => device.command.keyboard({ ...base(), action }));
 }
 
 export async function alertAction(
@@ -809,16 +759,18 @@ export async function alertAction(
   action: "get" | "accept" | "dismiss" | "wait",
   timeoutMs?: number,
 ): Promise<unknown> {
-  return await controlled(() =>
-    device.command.alert({ ...base(), action, ...(timeoutMs !== undefined ? { timeoutMs } : {}) }),
-  );
+  const op = () =>
+    device.command.alert({ ...base(), action, ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
+  return await (action === "get" || action === "wait"
+    ? controlled(op)
+    : controlledMutation("alert", op));
 }
 
 export async function updateSetting(
   device: Device,
   input: Parameters<Device["settings"]["update"]>[0],
 ): Promise<unknown> {
-  return await controlled(() => device.settings.update(input));
+  return await controlledMutation("settings", () => device.settings.update(input));
 }
 
 export async function captureNetwork(
@@ -870,7 +822,7 @@ export async function swipeGesture(
   // agent-device 0.20 models timed coordinate movement as a pan. Its raw
   // swipe command is now a repeated preset gesture and intentionally has no
   // duration field.
-  await controlled(() =>
+  await controlledMutation("swipe", () =>
     device.interactions.pan({
       ...base(),
       x: from.x,
@@ -1125,14 +1077,14 @@ export async function typeText(device: Device, text: string): Promise<void> {
     }
     return;
   }
-  await controlled(() => device.interactions.type({ ...base(), text }));
+  await controlledMutation("type", () => device.interactions.type({ ...base(), text }));
 }
 
 export async function pressKey(device: Device, key: "back" | "home"): Promise<void> {
   if (key === "back") {
-    await controlled(() => device.command.back({ ...base() }));
+    await controlledMutation("back", () => device.command.back({ ...base() }));
   } else {
-    await controlled(() => device.command.home({ ...base() }));
+    await controlledMutation("home", () => device.command.home({ ...base() }));
   }
 }
 
@@ -1142,7 +1094,9 @@ export async function pressRef(
   repeated?: RepeatedPress,
 ): Promise<void> {
   const normalized = ref.startsWith("@") ? ref : `@${ref}`;
-  await controlled(() => device.interactions.press({ ...base(), ref: normalized, ...repeated }));
+  await controlledMutation("press", () =>
+    device.interactions.press({ ...base(), ref: normalized, ...repeated }),
+  );
 }
 
 export async function pressText(
@@ -1151,7 +1105,7 @@ export async function pressText(
   repeated?: RepeatedPress,
 ): Promise<void> {
   try {
-    await controlled(() =>
+    await controlledMutation("press", () =>
       device.interactions.press({
         ...base(),
         selector: `label*="${text.replaceAll('"', '\\"')}"`,
@@ -1195,7 +1149,9 @@ export async function replaceText(
   // at the input boundary: focus the target, clear it with native key events,
   // then use the normal exact-text path for the new value.
   if (selectedPlatform() === "android") {
-    await controlled(() => device.interactions.press({ ...base(), ...interactionTarget }));
+    await controlledMutation("press", () =>
+      device.interactions.press({ ...base(), ...interactionTarget }),
+    );
     await clearAndroidFocusedText(targetIdentity());
     if (text.length > 0) await typeText(device, text);
     return;
@@ -1204,18 +1160,18 @@ export async function replaceText(
   await replaceTextValue(text, {
     fill: async (value) => {
       try {
-        await controlled(() =>
+        await controlledMutation("fill", () =>
           device.interactions.fill({ ...base(), ...interactionTarget, text: value }),
         );
       } catch (error) {
         const point = await iosSnapshotFallbackPoint(device, target, error);
-        await controlled(() =>
+        await controlledMutation("fill", () =>
           device.interactions.fill({ ...base(), x: point.x, y: point.y, text: value }),
         );
       }
     },
     type: async (value) => {
-      await controlled(() => device.interactions.type({ ...base(), text: value }));
+      await controlledMutation("type", () => device.interactions.type({ ...base(), text: value }));
     },
   });
 }
@@ -1258,7 +1214,7 @@ export async function findClick(
   opts?: { first?: boolean; last?: boolean },
 ): Promise<void> {
   try {
-    await controlled(() =>
+    await controlledMutation("press", () =>
       device.interactions.find({
         ...base(),
         query,
@@ -1332,7 +1288,7 @@ export async function waitFor(
 }
 
 export async function scrollDown(device: Device, amount = 0.5): Promise<void> {
-  await controlled(() =>
+  await controlledMutation("scroll", () =>
     device.interactions.scroll({
       ...base(),
       direction: "down",
@@ -1343,7 +1299,7 @@ export async function scrollDown(device: Device, amount = 0.5): Promise<void> {
 
 /** Scroll toward earlier content using the same SDK semantics as scrollDown. */
 export async function scrollUp(device: Device, amount = 0.5): Promise<void> {
-  await controlled(() =>
+  await controlledMutation("scroll", () =>
     device.interactions.scroll({
       ...base(),
       direction: "up",
@@ -1381,7 +1337,7 @@ export async function pressResolvedControl(
     try {
       await pressIdentifier(device, target.identifier, repeated);
     } catch (error) {
-      if (!semanticSelectorDidNotMatch(error)) throw error;
+      if (!canUseSemanticPointFallback(error)) throw error;
       await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
     }
     return resolution;
@@ -1390,7 +1346,7 @@ export async function pressResolvedControl(
     try {
       await pressLabel(device, target.label, repeated);
     } catch (error) {
-      if (!semanticSelectorDidNotMatch(error)) throw error;
+      if (!canUseSemanticPointFallback(error)) throw error;
       await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
     }
     return resolution;
@@ -1409,6 +1365,12 @@ function semanticSelectorDidNotMatch(error: unknown): boolean {
   return /\bno match\b|did not match|element not found|selector.*not.*element|(?:native\s+)?(?:label|identifier)(?:\s+selector)?\s+unavailable/i.test(
     message,
   );
+}
+
+function canUseSemanticPointFallback(error: unknown): boolean {
+  return selectedPlatform() === "ios"
+    ? iosSelectorWasNotDispatched(error)
+    : semanticSelectorDidNotMatch(error);
 }
 
 /** agent-device reports every Android package transition after a coordinate
@@ -1469,16 +1431,17 @@ export async function pressNamedControl(
 
 function canUseIosSnapshotCoordinateFallback(error: unknown): boolean {
   if (selectedPlatform() !== "ios") return false;
-  return semanticSelectorDidNotMatch(error);
+  return iosSelectorWasNotDispatched(error);
 }
 
 async function iosSnapshotFallbackPoint(
   device: Device,
   target: SemanticSnapshotTarget,
   error: unknown,
+  knownPoint?: { x: number; y: number },
 ): Promise<{ x: number; y: number }> {
   if (!canUseIosSnapshotCoordinateFallback(error)) throw error;
-  const point = resolveSnapshotTargetPoint(await snapshot(device), target);
+  const point = knownPoint ?? resolveSnapshotTargetPoint(await snapshot(device), target);
   if (!point) throw error;
   return point;
 }
@@ -1492,7 +1455,7 @@ export async function pressMatchingText(device: Device, match: string): Promise<
     resolveSnapshotTargetPoint(nodes, { text: match }) ??
     resolveSnapshotTargetPoint(nodes, { label: match });
   try {
-    await controlled(() =>
+    await controlledMutation("press", () =>
       device.interactions.press({
         ...base(),
         selector: `label*="${match.replaceAll('"', '\\"')}"`,
@@ -1502,6 +1465,9 @@ export async function pressMatchingText(device: Device, match: string): Promise<
     return;
   } catch (error) {
     if (error instanceof Error && error.name === "JobCancelledError") throw error;
+    if (selectedPlatform() === "ios" && !canUseIosSnapshotCoordinateFallback(error)) {
+      throw error;
+    }
   }
 
   if (await exists(device, match)) {

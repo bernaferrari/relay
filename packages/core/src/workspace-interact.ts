@@ -7,12 +7,15 @@ import {
   resolveNamedControl,
   type NamedControlResolution,
   pressMatchingText,
+  pressKey,
   pressPoint,
   pressRef,
   replaceText,
   swipeGesture,
   typeText,
   type Device,
+  lastIosMutationAttemptDiagnostic,
+  type IosMutationAttemptDiagnostic,
   type SnapshotNode,
 } from "./device.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
@@ -61,11 +64,24 @@ export type InteractInput =
 export type InteractResult = {
   resolution?: NamedControlResolution;
   iosSessionLifecycle?: IosSessionOperationDiagnostic;
+  /** One native iOS command is a user-visible fact, not an internal retry. */
+  iosMutation?: IosMutationAttemptDiagnostic;
 };
 
-function attachIosSessionLifecycle(result: InteractResult, serial: string): InteractResult {
+function attachIosSessionLifecycle(
+  result: InteractResult,
+  serial: string,
+  previousMutationSequence: number | null,
+): InteractResult {
   const lifecycle = lastIosSessionOperationDiagnostic(serial);
-  return { ...result, ...(lifecycle ? { iosSessionLifecycle: lifecycle } : {}) };
+  const mutation = lastIosMutationAttemptDiagnostic(serial);
+  return {
+    ...result,
+    ...(lifecycle ? { iosSessionLifecycle: lifecycle } : {}),
+    ...(mutation && mutation.sequence !== previousMutationSequence
+      ? { iosMutation: mutation }
+      : {}),
+  };
 }
 
 /**
@@ -289,7 +305,7 @@ export async function interactOnDevice(
 
 export async function interact(
   input: InteractInput,
-  opts?: { serial?: string; verifyIosScreenChange?: boolean },
+  opts?: { serial?: string; verifyIosScreenChange?: boolean; device?: Device },
 ): Promise<InteractResult> {
   if (input.kind === "swipe") {
     const validPoint = (point: unknown): point is InteractPoint => {
@@ -309,9 +325,13 @@ export async function interact(
       throw new Error("Swipe durationMs must be between 50 and 5000.");
     }
   }
-  const target = await resolveRuntimeTarget(opts?.serial);
+  const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
   return runWithTargetContext(target.context, async () => {
     const context = currentTargetContext();
+    const previousIosMutationSequence =
+      context.kind === "device" && context.platform === "ios"
+        ? (lastIosMutationAttemptDiagnostic(context.serial)?.sequence ?? null)
+        : null;
     // Pixels can update at preview rate. Accessibility geometry cannot: after
     // any committed input the last tree remains useful historical evidence,
     // but it must render stale until a deliberate snapshot proves the new UI.
@@ -363,6 +383,7 @@ export async function interact(
             },
           },
           context.serial,
+          previousIosMutationSequence,
         ),
       );
     }
@@ -386,7 +407,9 @@ export async function interact(
           }),
         "interaction",
       );
-      return afterInput(attachIosSessionLifecycle(result!, context.serial));
+      return afterInput(
+        attachIosSessionLifecycle(result!, context.serial, previousIosMutationSequence),
+      );
     }
     try {
       const result = await withSession(
@@ -404,6 +427,14 @@ export async function interact(
             case "type":
               await typeText(target.device, input.text);
               return {};
+            case "key":
+              if (input.key === "back" || input.key === "home") {
+                await pressKey(target.device, input.key);
+                return {};
+              }
+              throw new Error(
+                `iOS key ${input.key} needs an explicit keyboard action; use a semantic control or type text instead.`,
+              );
             case "replace":
               await replaceText(target.device, input.target, input.text);
               return {};
@@ -421,7 +452,7 @@ export async function interact(
       );
       const withLifecycle =
         context.kind === "device" && context.platform === "ios"
-          ? attachIosSessionLifecycle(result, context.serial)
+          ? attachIosSessionLifecycle(result, context.serial, previousIosMutationSequence)
           : result;
       return afterInput(withLifecycle);
     } catch (err) {

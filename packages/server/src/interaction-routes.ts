@@ -4,9 +4,11 @@ import {
   groundAndInteract,
   groundTarget,
   GroundingError,
+  IosMutationOutcomeUnknownError,
   interact,
   previewInteract,
   type InteractInput,
+  type InteractResult,
 } from "@relay/core";
 import { assertTargetControl, assertTargetObservation } from "./access-control.js";
 import { HttpError, json, parseJsonBody } from "./http.js";
@@ -53,6 +55,21 @@ function assertNoRunningJob(serial?: string): void {
   }
 }
 
+/** Preserve the exact device-command fact for both people and MCP callers.
+ * A retry is an explicit follow-up after fresh pixels, never an HTTP retry. */
+function iosMutationOutcomeUnknownHttpError(error: IosMutationOutcomeUnknownError): HttpError {
+  const lifecycle = (
+    error as IosMutationOutcomeUnknownError & {
+      iosSessionLifecycle?: unknown;
+    }
+  ).iosSessionLifecycle;
+  return new HttpError(409, error.message, {
+    code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+    iosMutation: error.iosMutation,
+    ...(lifecycle ? { iosSessionLifecycle: lifecycle } : {}),
+  });
+}
+
 export async function handleInteractionRoute(input: InteractionRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
 
@@ -92,11 +109,18 @@ export async function handleInteractionRoute(input: InteractionRouteInput): Prom
         ok: true,
         ...result.grounding,
         ...(result.interact.resolution ? { resolution: result.interact.resolution } : {}),
+        ...(result.interact.iosSessionLifecycle
+          ? { iosSessionLifecycle: result.interact.iosSessionLifecycle }
+          : {}),
+        ...(result.interact.iosMutation ? { iosMutation: result.interact.iosMutation } : {}),
       });
     } catch (error) {
       if (error instanceof GroundingError) {
         json(response, 404, error.toJSON());
         return true;
+      }
+      if (error instanceof IosMutationOutcomeUnknownError) {
+        throw iosMutationOutcomeUnknownHttpError(error);
       }
       throw error;
     }
@@ -134,10 +158,20 @@ export async function handleInteractionRoute(input: InteractionRouteInput): Prom
     }
     assertNoRunningJob(serial);
     await assertTargetControl(scope, serial);
-    const result = await interact(interaction, { serial });
+    let result: InteractResult;
+    try {
+      result = await interact(interaction, { serial });
+    } catch (error) {
+      if (error instanceof IosMutationOutcomeUnknownError) {
+        throw iosMutationOutcomeUnknownHttpError(error);
+      }
+      throw error;
+    }
     json(response, 200, {
       ok: true,
       ...(result.resolution ? { resolution: result.resolution } : {}),
+      ...(result.iosSessionLifecycle ? { iosSessionLifecycle: result.iosSessionLifecycle } : {}),
+      ...(result.iosMutation ? { iosMutation: result.iosMutation } : {}),
     });
     return true;
   }

@@ -14,6 +14,7 @@ import {
   resolveSnapshotTargetPoint,
   selectedPlatform,
   sleep,
+  scrollUp,
   base,
   longPressTarget,
   snapshot,
@@ -680,13 +681,6 @@ async function longPressRecordedTarget(
     }
   }
   throw new Error(`hold failed: ${failures.at(-1) ?? "no locator candidate matched"}`);
-}
-
-/** Scroll up — mirrors scrollDown but via the SDK's direction field. */
-async function scrollUp(device: Device, amount = 0.5): Promise<void> {
-  await cooperativeCheckpoint();
-  throwIfCancelled();
-  await raceCancel(device.interactions.scroll({ ...base(), direction: "up", amount }));
 }
 
 const MAX_WAIT_MS = 15 * 60 * 1000;

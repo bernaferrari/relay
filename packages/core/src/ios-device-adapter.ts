@@ -13,6 +13,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Device } from "./device.js";
+import { runIosMutationOnce } from "./ios-mutation-policy.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -354,7 +355,9 @@ export async function recordIosVideo(
   input: { udid: string; action: "start" | "stop"; path?: string },
 ): Promise<IosVideoCaptureResult> {
   try {
-    const result = await device.recording.record(iosRecordingOptions(input));
+    const result = await runIosMutationOnce(input.udid, "video", () =>
+      device.recording.record(iosRecordingOptions(input)),
+    );
     return {
       mode: "recorded-video",
       ...(valueFrom(result, "path") || input.path
