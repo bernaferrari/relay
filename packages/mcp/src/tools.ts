@@ -139,6 +139,12 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " The same findings without writing a pack, keyed to the frame of each case. Use this to read a matrix or combine batch while it is still running; export only when a person needs the folder.",
   "job.combine.start":
     " App Map Combine execution is fail-closed until every cell owns a frozen runtime profile and offline preflight. For one Test, use app-map.test.run with targetProfileId; do not retry this migration blocker.",
+  "app-map.scroll-surface.origin.inspect":
+    " Offline audit only: it reads the signed immutable first PNG/tree evidence and lifecycle; it never resolves, leases, or controls a target.",
+  "app-map.scroll-surface.origin.review":
+    " Offline authority decision only: inspect first, pass assertion reviewed-document-top and confirm:true. It never captures or controls a target.",
+  "app-map.scroll-surface.origin.revoke":
+    " Offline authority decision only: pass assertion revoke-reviewed-document-origin and confirm:true. Revocation is durable and blocks compiled recipes without controlling a target.",
 };
 
 function toolDescriptor(
@@ -206,6 +212,7 @@ const observeOperations = [
   "workspace.variables.get",
   "app-map.list",
   "app-map.get",
+  "app-map.scroll-surface.origin.inspect",
   "authoring.session.list",
   "authoring.session.get",
   "job.list",
@@ -229,6 +236,7 @@ const mapOperations = [
   "lease.create",
   "app-map.list",
   "app-map.get",
+  "app-map.scroll-surface.origin.inspect",
   "authoring.session.list",
   "authoring.session.get",
   "discovery.create",
@@ -400,6 +408,9 @@ const reviewOperations = [
   "lease.release",
   "app-map.list",
   "app-map.get",
+  "app-map.scroll-surface.origin.inspect",
+  "app-map.scroll-surface.origin.review",
+  "app-map.scroll-surface.origin.revoke",
   "app-map.proposal.approve",
   "app-map.proposal.reject",
   "app-map.proposal.revert",

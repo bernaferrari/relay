@@ -20,7 +20,7 @@ import {
 } from "@relay/core";
 import { startServer } from "./index.js";
 import { assertTargetControl } from "./access-control.js";
-import { explicitTargetAvailability } from "./app-map-run-routes.js";
+import { explicitTargetAvailability, queuedAppMapTestTargetProfile } from "./app-map-run-routes.js";
 import {
   findEquivalentTeachConnection,
   iosTeachObservationMatchesTitle,
@@ -54,6 +54,51 @@ test("explicit target preflight distinguishes disconnected and not-ready devices
       { serial: "ipad-1", booted: true, developerServicesAvailable: false },
     ]),
     "not-ready",
+  );
+});
+
+test("queued Tests preserve the exact viewport-suffixed saved runtime profile", () => {
+  const targetProfile = queuedAppMapTestTargetProfile({
+    runtimeTargetProfile: {
+      id: "device:pixel-9-1080x2400",
+      targetId: "pixel-9",
+      platform: "android",
+      viewport: { width: 1080, height: 2400 },
+    },
+    observedTargetProfile: {
+      id: "device:pixel-9",
+      targetId: "pixel-9",
+      source: "device",
+      platform: "android",
+      name: "Pixel 9",
+      capabilities: ["screenshot", "snapshot", "scroll"],
+      observedAt: 100,
+    },
+    target: { kind: "device", targetId: "pixel-9", platform: "android" },
+  });
+  assert.deepEqual(targetProfile, {
+    id: "device:pixel-9-1080x2400",
+    targetId: "pixel-9",
+    source: "device",
+    platform: "android",
+    name: "Pixel 9",
+    viewport: { width: 1080, height: 2400 },
+    capabilities: ["screenshot", "snapshot", "scroll"],
+    observedAt: 100,
+  });
+  assert.throws(
+    () =>
+      queuedAppMapTestTargetProfile({
+        runtimeTargetProfile: {
+          id: "device:pixel-9-1080x2400",
+          targetId: "pixel-9",
+          platform: "android",
+          viewport: { width: 1080, height: 2400 },
+        },
+        observedTargetProfile: undefined,
+        target: { kind: "device", targetId: "pixel-9", platform: "ios" },
+      }),
+    /does not bind/u,
   );
 });
 

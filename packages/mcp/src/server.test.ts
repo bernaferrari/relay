@@ -433,6 +433,53 @@ test("requires literal confirmation for confirmation-protected operations", asyn
   }
 });
 
+test("translates confirmed reviewed-origin MCP consent into the signed protocol confirmation", async () => {
+  const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
+  const session = await connectMcp(
+    {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        // The test only verifies the authority boundary; an incomplete result
+        // is intentionally allowed to fail the later presentation summary.
+        return {};
+      },
+    },
+    "review",
+  );
+  try {
+    await session.request("tools/call", {
+      name: "relay_app_map_scroll_surface_origin_review",
+      arguments: {
+        appMapId: "map-1",
+        screenId: "settings",
+        variantId: "settings-en",
+        captureId: "capture-1",
+        expectedRevision: 7,
+        reason: "Reviewed immutable first viewport.",
+        assertion: "reviewed-document-top",
+        confirm: true,
+      },
+    });
+    assert.deepEqual(calls, [
+      {
+        operationId: "app-map.scroll-surface.origin.review",
+        input: {
+          appMapId: "map-1",
+          screenId: "settings",
+          variantId: "settings-en",
+          captureId: "capture-1",
+          expectedRevision: 7,
+          reason: "Reviewed immutable first viewport.",
+          assertion: "reviewed-document-top",
+          confirmation: "confirm",
+        },
+      },
+    ]);
+  } finally {
+    await session.close();
+  }
+});
+
 test("profile selection exposes deterministic least-privilege tool sets", async () => {
   for (const profile of [
     "control",

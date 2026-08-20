@@ -3,22 +3,27 @@ import type {
   ActorIdentity,
   AppMap,
   LogicalScrollSurface,
+  ReviewedDocumentOriginActor,
+  ReviewedDocumentOriginApproval,
   ReviewedDocumentOriginBinding,
-  ReviewedDocumentOriginDecision,
   ReviewedDocumentOriginExecutionReference,
   ReviewedDocumentOriginInspection,
   ReviewedDocumentOriginLedger,
   ReviewedDocumentOriginProjection,
+  ReviewedDocumentOriginRevocation,
   ScrollSurfaceViewport,
+} from "@relay/protocol";
+import {
+  REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
+  REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
+  REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
 } from "@relay/protocol";
 import { persistAuthoringEvidence } from "./authoring-evidence.js";
 import { readAppMap } from "./collaboration.js";
 import { readControlStore, withControlStore } from "./collaboration-store.js";
 import { publish } from "./events.js";
 import {
-  issueReviewedDocumentOriginLedgerAuthorization,
   issueReviewedDocumentOriginProjectionAuthorization,
-  reviewedDocumentOriginLedgerAuthorizationIsValid,
   reviewedDocumentOriginProjectionAuthorizationIsValid,
 } from "./reviewed-document-origin-authority.js";
 import {
@@ -28,10 +33,17 @@ import {
   reviewedDocumentOriginApprovalPayload,
   reviewedDocumentOriginEvidenceIsComplete,
   reviewedDocumentOriginRawEvidenceIsValid,
-  reviewedDocumentOriginRevocationEvidenceIsValid as revocationEvidenceIsValid,
   reviewedDocumentOriginRevocationPayload,
   sameReviewedDocumentOriginEvidence,
 } from "./reviewed-document-origin-evidence.js";
+import {
+  issueReviewedDocumentOriginActivationLedger,
+  issueReviewedDocumentOriginRevocationLedger,
+  reviewedDocumentOriginLedgerHistory,
+  reviewedDocumentOriginLedgerHistoryIsActive,
+  reviewedDocumentOriginLedgerHistoryIsRevoked,
+  reviewedDocumentOriginRevocationTombstoneIsValid,
+} from "./reviewed-document-origin-ledger.js";
 
 export {
   reviewedDocumentOriginAppMapDigest,
@@ -116,6 +128,46 @@ function requireText(value: unknown, field: string, limit: number): string {
     throw new ReviewedDocumentOriginError("scope-mismatch", `${field} exceeds ${limit} characters`);
   }
   return text;
+}
+
+function manualActor(actor: ActorIdentity): ReviewedDocumentOriginActor {
+  if (actor.actorKind !== "human" && actor.actorKind !== "agent") {
+    throw new ReviewedDocumentOriginError(
+      "scope-mismatch",
+      "Only a human or deliberate agent can create or revoke reviewed-origin authority",
+    );
+  }
+  return { actorId: requireText(actor.actorId, "actor", 128), actorKind: actor.actorKind };
+}
+
+function reviewAssertion(value: unknown): typeof REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION {
+  if (value !== REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION) {
+    throw new ReviewedDocumentOriginError(
+      "scope-mismatch",
+      `review assertion must be exactly ${REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION}`,
+    );
+  }
+  return REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION;
+}
+
+function revokeAssertion(value: unknown): typeof REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION {
+  if (value !== REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION) {
+    throw new ReviewedDocumentOriginError(
+      "scope-mismatch",
+      `revoke assertion must be exactly ${REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION}`,
+    );
+  }
+  return REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION;
+}
+
+function manualConfirmation(value: unknown): typeof REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION {
+  if (value !== REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION) {
+    throw new ReviewedDocumentOriginError(
+      "scope-mismatch",
+      `reviewed-origin confirmation must be exactly ${REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION}`,
+    );
+  }
+  return REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION;
 }
 
 function selectSurface(
@@ -234,18 +286,28 @@ function bindingMatchesMap(
   }
 }
 
+type StoredLedgerEvents = {
+  events: ReviewedDocumentOriginLedger[];
+  revocationTombstone?: ReviewedDocumentOriginLedger;
+};
+
+/** Synchronous structural check for conflict detection inside the SQLite
+ * write transaction. Runtime authorization below also verifies every HMAC and
+ * immutable evidence blob before treating an active event as authority. */
 function activeLedgerFor(
   projection: ReviewedDocumentOriginProjection,
-  ledger: ReviewedDocumentOriginLedger | undefined,
-): ledger is ReviewedDocumentOriginLedger {
-  return Boolean(
-    ledger &&
-    ledger.schemaVersion === 1 &&
-    ledger.projectionId === projection.id &&
-    ledger.status === "active" &&
-    Number.isSafeInteger(ledger.createdAt) &&
-    Number.isSafeInteger(ledger.activatedAt),
-  );
+  stored: StoredLedgerEvents | undefined,
+): ReviewedDocumentOriginLedger | undefined {
+  const history = stored && reviewedDocumentOriginLedgerHistory(stored.events);
+  if (
+    !history ||
+    history.state !== "active" ||
+    stored.revocationTombstone ||
+    history.latest.projectionId !== projection.id
+  ) {
+    return undefined;
+  }
+  return history.latest;
 }
 
 async function currentMapForBinding(
@@ -263,18 +325,24 @@ async function exactStoredProjection(
   const state = await readControlStore((store) => ({
     mapEpoch: store.reviewedDocumentOriginMapEpoch(appMapKey(map.projectId, map.id)),
     projection: store.reviewedDocumentOriginProjection(projection.id),
-    ledger: store.reviewedDocumentOriginLedger(projection.id),
+    events: store.reviewedDocumentOriginLedgerEvents(projection.id),
+    revocationTombstone: store.reviewedDocumentOriginRevocationTombstone(projection.id),
   }));
+  const ledger = await reviewedDocumentOriginLedgerHistoryIsActive({
+    projection,
+    events: state.events,
+    revocationTombstone: state.revocationTombstone,
+  });
   if (
     !state.mapEpoch ||
     !state.projection ||
     !sameProjection(state.projection, projection) ||
     !bindingMatchesMap(map, projection.binding, state.mapEpoch) ||
-    !activeLedgerFor(projection, state.ledger)
+    !ledger
   ) {
     return undefined;
   }
-  return { map, mapEpoch: state.mapEpoch, ledger: state.ledger };
+  return { map, mapEpoch: state.mapEpoch, ledger };
 }
 
 async function projectionIsActiveAndUsable(
@@ -291,7 +359,6 @@ async function projectionIsActiveAndUsable(
     }
     return Boolean(
       (await reviewedDocumentOriginProjectionAuthorizationIsValid(projection)) &&
-      (await reviewedDocumentOriginLedgerAuthorizationIsValid(stored.ledger)) &&
       (await reviewedDocumentOriginApprovalEvidenceIsValid(projection)) &&
       (await reviewedDocumentOriginRawEvidenceIsValid(projection.binding)),
     );
@@ -302,14 +369,14 @@ async function projectionIsActiveAndUsable(
 
 function matchingCurrentProjection(
   projections: ReviewedDocumentOriginProjection[],
-  ledgers: Map<string, ReviewedDocumentOriginLedger | undefined>,
+  ledgers: Map<string, StoredLedgerEvents>,
   binding: ReviewedDocumentOriginBinding,
 ):
   | { projection: ReviewedDocumentOriginProjection; ledger: ReviewedDocumentOriginLedger }
   | undefined {
   for (const projection of projections) {
-    const ledger = ledgers.get(projection.id);
-    if (sameBinding(projection.binding, binding) && activeLedgerFor(projection, ledger)) {
+    const ledger = activeLedgerFor(projection, ledgers.get(projection.id));
+    if (sameBinding(projection.binding, binding) && ledger) {
       return { projection, ledger };
     }
   }
@@ -325,6 +392,7 @@ export async function reviewDocumentOrigin(input: {
   actor: ActorIdentity;
   reason: string;
   assertion: string;
+  confirmation: string;
   at?: number;
 }): Promise<{
   projection: ReviewedDocumentOriginProjection;
@@ -338,6 +406,13 @@ export async function reviewDocumentOrigin(input: {
     );
   }
   const at = input.at ?? Date.now();
+  const approvalBase: Omit<ReviewedDocumentOriginApproval, "evidence"> = {
+    actor: manualActor(input.actor),
+    reason: requireText(input.reason, "reason", 1_000),
+    assertion: reviewAssertion(input.assertion),
+    confirmation: manualConfirmation(input.confirmation),
+    at,
+  };
   const mapKey = appMapKey(input.appMap.projectId, input.appMap.id);
   const mapEpoch = await withControlStore((store) =>
     store.ensureReviewedDocumentOriginMapEpoch(mapKey, randomUUID(), at),
@@ -360,26 +435,27 @@ export async function reviewDocumentOrigin(input: {
   const existing = await readControlStore((store) => {
     const projections = store.reviewedDocumentOriginProjections(mapKey);
     const ledgers = new Map(
-      projections.map((item) => [item.id, store.reviewedDocumentOriginLedger(item.id)]),
+      projections.map((item) => [
+        item.id,
+        {
+          events: store.reviewedDocumentOriginLedgerEvents(item.id),
+          revocationTombstone: store.reviewedDocumentOriginRevocationTombstone(item.id),
+        },
+      ]),
     );
     return matchingCurrentProjection(projections, ledgers, binding);
   });
-  if (existing) return { ...existing, alreadyActive: true };
-
-  const actor: ActorIdentity = {
-    actorId: requireText(input.actor.actorId, "actor", 128),
-    actorKind: input.actor.actorKind,
-  };
-  if (!["human", "agent", "system"].includes(actor.actorKind)) {
-    throw new ReviewedDocumentOriginError("scope-mismatch", "actor kind is unsupported");
+  if (existing) {
+    if (await projectionIsActiveAndUsable(existing.projection, input.appMap)) {
+      return { ...existing, alreadyActive: true };
+    }
+    throw new ReviewedDocumentOriginError(
+      "scope-mismatch",
+      "The existing reviewed-origin lifecycle fails immutable authorization checks and cannot be reactivated",
+    );
   }
+
   const projectionId = `reviewed-origin-${randomUUID()}`;
-  const approvalBase = {
-    actor,
-    reason: requireText(input.reason, "reason", 1_000),
-    assertion: requireText(input.assertion, "assertion", 4_000),
-    at,
-  };
   const approvalEvidence = await persistAuthoringEvidence({
     kind: "snapshot",
     capturedAt: at,
@@ -410,18 +486,11 @@ export async function reviewDocumentOrigin(input: {
     ...unsignedProjection,
     authorization: await issueReviewedDocumentOriginProjectionAuthorization(unsignedProjection),
   };
-  const unsignedLedger = {
-    schemaVersion: 1 as const,
+  const { pending, active: ledger } = await issueReviewedDocumentOriginActivationLedger({
     projectionId,
-    status: "active" as const,
-    createdAt: at,
-    activatedAt: at,
-  };
-  const ledger: ReviewedDocumentOriginLedger = {
-    ...unsignedLedger,
-    authorization: await issueReviewedDocumentOriginLedgerAuthorization(unsignedLedger),
-  };
-  return withControlStore((store) => {
+    at,
+  });
+  const result = await withControlStore((store) => {
     const currentMap = store.appMap(mapKey);
     const currentEpoch = store.reviewedDocumentOriginMapEpoch(mapKey);
     if (
@@ -437,15 +506,32 @@ export async function reviewDocumentOrigin(input: {
     }
     const projections = store.reviewedDocumentOriginProjections(mapKey);
     const ledgers = new Map(
-      projections.map((item) => [item.id, store.reviewedDocumentOriginLedger(item.id)]),
+      projections.map((item) => [
+        item.id,
+        {
+          events: store.reviewedDocumentOriginLedgerEvents(item.id),
+          revocationTombstone: store.reviewedDocumentOriginRevocationTombstone(item.id),
+        },
+      ]),
     );
     const active = matchingCurrentProjection(projections, ledgers, binding);
     if (active) return { ...active, alreadyActive: true };
     store.insertReviewedDocumentOriginProjection(mapKey, projection);
-    store.upsertReviewedDocumentOriginLedger(mapKey, binding.mapEpoch, ledger);
+    store.appendReviewedDocumentOriginLedgerEvent(mapKey, binding.mapEpoch, pending);
+    store.appendReviewedDocumentOriginLedgerEvent(mapKey, binding.mapEpoch, ledger);
     publishReviewedOriginChange(currentMap, at);
     return { projection, ledger, alreadyActive: false };
   });
+  if (
+    result.alreadyActive &&
+    !(await projectionIsActiveAndUsable(result.projection, input.appMap))
+  ) {
+    throw new ReviewedDocumentOriginError(
+      "scope-mismatch",
+      "The existing reviewed-origin lifecycle fails immutable authorization checks and cannot be reactivated",
+    );
+  }
+  return result;
 }
 
 export async function revokeReviewedDocumentOrigin(input: {
@@ -458,6 +544,7 @@ export async function revokeReviewedDocumentOrigin(input: {
   actor: ActorIdentity;
   reason: string;
   assertion: string;
+  confirmation: string;
   at?: number;
 }): Promise<{
   projection: ReviewedDocumentOriginProjection;
@@ -473,10 +560,19 @@ export async function revokeReviewedDocumentOrigin(input: {
   // Resolve current user intent before reading an older projection. A removed
   // capture cannot be accidentally revoked through a mismatched path.
   selectSurface(input.appMap, input);
+  const at = input.at ?? Date.now();
+  const decisionBase: Omit<ReviewedDocumentOriginRevocation, "evidence"> = {
+    actor: manualActor(input.actor),
+    reason: requireText(input.reason, "reason", 1_000),
+    assertion: revokeAssertion(input.assertion),
+    confirmation: manualConfirmation(input.confirmation),
+    at,
+  };
   const mapKey = appMapKey(input.appMap.projectId, input.appMap.id);
   const existing = await readControlStore((store) => ({
     projection: store.reviewedDocumentOriginProjection(input.projectionId),
-    ledger: store.reviewedDocumentOriginLedger(input.projectionId),
+    events: store.reviewedDocumentOriginLedgerEvents(input.projectionId),
+    revocationTombstone: store.reviewedDocumentOriginRevocationTombstone(input.projectionId),
   }));
   if (
     !existing.projection ||
@@ -485,28 +581,39 @@ export async function revokeReviewedDocumentOrigin(input: {
     existing.projection.binding.screenId !== input.screenId ||
     existing.projection.binding.variantId !== input.variantId ||
     existing.projection.binding.captureId !== input.captureId ||
-    !existing.ledger
+    !existing.events.length
   ) {
     throw new ReviewedDocumentOriginError(
       "not-found",
       `Reviewed origin ${input.projectionId} not found`,
     );
   }
-  if (existing.ledger.status === "revoked") {
-    return { projection: existing.projection, ledger: existing.ledger, alreadyRevoked: true };
+  const history = reviewedDocumentOriginLedgerHistory(existing.events);
+  const alreadyRevoked = await reviewedDocumentOriginLedgerHistoryIsRevoked({
+    projection: existing.projection,
+    events: existing.events,
+    revocationTombstone: existing.revocationTombstone,
+  });
+  if (alreadyRevoked) {
+    return { projection: existing.projection, ledger: alreadyRevoked, alreadyRevoked: true };
   }
-  const at = input.at ?? Date.now();
-  const decisionBase = {
-    actor: {
-      actorId: requireText(input.actor.actorId, "actor", 128),
-      actorKind: input.actor.actorKind,
-    },
-    reason: requireText(input.reason, "reason", 1_000),
-    assertion: requireText(input.assertion, "assertion", 4_000),
-    at,
-  } satisfies Omit<ReviewedDocumentOriginDecision, "evidence">;
-  if (!["human", "agent", "system"].includes(decisionBase.actor.actorKind)) {
-    throw new ReviewedDocumentOriginError("scope-mismatch", "actor kind is unsupported");
+  const tombstone = await reviewedDocumentOriginRevocationTombstoneIsValid({
+    projection: existing.projection,
+    tombstone: existing.revocationTombstone,
+  });
+  if (tombstone) {
+    return { projection: existing.projection, ledger: tombstone, alreadyRevoked: true };
+  }
+  const activeLedger = await reviewedDocumentOriginLedgerHistoryIsActive({
+    projection: existing.projection,
+    events: existing.events,
+    revocationTombstone: existing.revocationTombstone,
+  });
+  if (!history || history.state !== "active" || !history.active || !activeLedger) {
+    throw new ReviewedDocumentOriginError(
+      "scope-mismatch",
+      "Reviewed origin does not have an active append-only lifecycle to revoke",
+    );
   }
   const revocationEvidence = await persistAuthoringEvidence({
     kind: "snapshot",
@@ -521,7 +628,7 @@ export async function revokeReviewedDocumentOrigin(input: {
   if (!revocationEvidence.sha256 || revocationEvidence.bytes === undefined) {
     throw new Error("Reviewed document-origin revocation evidence has no immutable digest");
   }
-  const revocation: ReviewedDocumentOriginDecision = {
+  const revocation: ReviewedDocumentOriginRevocation = {
     ...decisionBase,
     evidence: {
       id: revocationEvidence.id,
@@ -531,39 +638,38 @@ export async function revokeReviewedDocumentOrigin(input: {
       bytes: revocationEvidence.bytes,
     },
   };
-  const unsignedLedger = {
-    schemaVersion: 1 as const,
-    projectionId: existing.projection.id,
-    status: "revoked" as const,
-    createdAt: existing.ledger.createdAt,
-    ...(existing.ledger.activatedAt !== undefined
-      ? { activatedAt: existing.ledger.activatedAt }
-      : {}),
+  const ledger = await issueReviewedDocumentOriginRevocationLedger({
+    active: activeLedger,
     revocation,
-  };
-  const ledger: ReviewedDocumentOriginLedger = {
-    ...unsignedLedger,
-    authorization: await issueReviewedDocumentOriginLedgerAuthorization(unsignedLedger),
-  };
+  });
   return withControlStore((store) => {
     const currentMap = store.appMap(mapKey);
     const current = store.reviewedDocumentOriginProjection(input.projectionId);
-    const currentLedger = store.reviewedDocumentOriginLedger(input.projectionId);
+    const currentEpoch = store.reviewedDocumentOriginMapEpoch(mapKey);
+    const currentEvents = store.reviewedDocumentOriginLedgerEvents(input.projectionId);
+    const currentTombstone = store.reviewedDocumentOriginRevocationTombstone(input.projectionId);
+    const currentHistory = reviewedDocumentOriginLedgerHistory(currentEvents);
     if (
       !currentMap ||
       currentMap.revision !== input.expectedRevision ||
       !current ||
-      !currentLedger
+      !currentEpoch ||
+      !sameProjection(current, existing.projection!) ||
+      !bindingMatchesMap(currentMap, current.binding, currentEpoch) ||
+      currentEpoch !== current.binding.mapEpoch ||
+      currentTombstone ||
+      !currentHistory ||
+      currentHistory.state !== "active" ||
+      !currentHistory.active ||
+      currentHistory.active.authorization.signature !== activeLedger.authorization.signature
     ) {
       throw new ReviewedDocumentOriginError(
         "revision-conflict",
         "The App Map or reviewed origin changed while revocation was being recorded",
       );
     }
-    if (currentLedger.status === "revoked") {
-      return { projection: current, ledger: currentLedger, alreadyRevoked: true };
-    }
-    store.upsertReviewedDocumentOriginLedger(mapKey, current.binding.mapEpoch, ledger);
+    store.appendReviewedDocumentOriginLedgerEvent(mapKey, current.binding.mapEpoch, ledger);
+    store.insertReviewedDocumentOriginRevocationTombstone(mapKey, current.binding.mapEpoch, ledger);
     publishReviewedOriginChange(currentMap, at);
     return { projection: current, ledger, alreadyRevoked: false };
   });
@@ -594,7 +700,10 @@ export async function inspectReviewedDocumentOrigin(input: {
       ledgers: new Map(
         projections.map((projection) => [
           projection.id,
-          store.reviewedDocumentOriginLedger(projection.id),
+          {
+            events: store.reviewedDocumentOriginLedgerEvents(projection.id),
+            revocationTombstone: store.reviewedDocumentOriginRevocationTombstone(projection.id),
+          },
         ]),
       ),
     };
@@ -612,8 +721,16 @@ export async function inspectReviewedDocumentOrigin(input: {
         // Local audit rows can outlive a partial disk failure. Inspection
         // remains readable; only authorization needs to fail closed.
       }
-      const ledger = state.ledgers.get(projection.id);
-      return { projection, ...(ledger ? { ledger } : {}), currentBinding };
+      const stored = state.ledgers.get(projection.id);
+      const ledgerEvents = stored?.events ?? [];
+      const ledger = ledgerEvents.at(-1);
+      return {
+        projection,
+        ...(ledger ? { ledger } : {}),
+        ledgerEvents,
+        ...(stored?.revocationTombstone ? { revocationTombstone: stored.revocationTombstone } : {}),
+        currentBinding,
+      };
     }),
   };
 }
@@ -701,6 +818,12 @@ export async function reviewedDocumentOriginExecutionReferenceIsActive(input: {
     binding.variantId !== input.variantId ||
     binding.surfaceId !== input.surfaceId ||
     binding.captureId !== input.captureId ||
+    input.origin.index !== 0 ||
+    input.origin.offsetY !== 0 ||
+    input.origin.appendedHeight !== 0 ||
+    binding.firstViewport.index !== input.origin.index ||
+    binding.firstViewport.offsetY !== input.origin.offsetY ||
+    binding.firstViewport.appendedHeight !== input.origin.appendedHeight ||
     binding.firstViewport.capturedAt !== input.origin.capturedAt ||
     binding.firstViewport.width !== input.origin.width ||
     binding.firstViewport.height !== input.origin.height ||
@@ -726,9 +849,9 @@ export async function reviewedDocumentOriginRevocationEvidenceIsValid(input: {
   ledger: ReviewedDocumentOriginLedger;
 }): Promise<boolean> {
   return Boolean(
-    input.ledger.status === "revoked" &&
-    input.ledger.revocation &&
-    (await reviewedDocumentOriginLedgerAuthorizationIsValid(input.ledger)) &&
-    (await revocationEvidenceIsValid(input)),
+    await reviewedDocumentOriginRevocationTombstoneIsValid({
+      projection: input.projection,
+      tombstone: input.ledger,
+    }),
   );
 }

@@ -135,11 +135,62 @@ test("every friendly command path parses to its descriptor operation", () => {
   for (const descriptor of mappedCommandDescriptors) {
     for (const candidate of descriptor.paths) {
       const arguments_ = (candidate.arguments ?? []).map((key) => `${key}-value`);
-      const parsed = parseCli([...candidate.command.split(" "), ...arguments_], {});
+      const confirmed = [
+        "app-map.scroll-surface.origin.review",
+        "app-map.scroll-surface.origin.revoke",
+      ].includes(descriptor.operationId);
+      const parsed = parseCli(
+        [...candidate.command.split(" "), ...arguments_, ...(confirmed ? ["--confirm"] : [])],
+        {},
+      );
       assert.equal(parsed.command, "invoke", candidate.command);
       if (parsed.command !== "invoke") continue;
       assert.equal(parsed.operationId, descriptor.operationId, candidate.command);
     }
+  }
+});
+
+test("reviewed-origin commands require a CLI confirmation separate from their assertion", () => {
+  const input =
+    '{"expectedRevision":13,"reason":"Reviewed immutable first viewport.","assertion":"reviewed-document-top"}';
+  assert.throws(
+    () =>
+      parseCli(
+        [
+          "screen",
+          "origin",
+          "review",
+          "map-1",
+          "screen-1",
+          "variant-1",
+          "capture-1",
+          "--input",
+          input,
+        ],
+        {},
+      ),
+    /requires --confirm/u,
+  );
+  const parsed = parseCli(
+    [
+      "screen",
+      "origin",
+      "review",
+      "map-1",
+      "screen-1",
+      "variant-1",
+      "capture-1",
+      "--confirm",
+      "--input",
+      input,
+    ],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command === "invoke") {
+    assert.equal(parsed.operationId, "app-map.scroll-surface.origin.review");
+    assert.equal(parsed.input.assertion, "reviewed-document-top");
+    assert.equal(parsed.input.confirmation, "confirm");
   }
 });
 

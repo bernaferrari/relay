@@ -30,6 +30,8 @@ import {
 } from "./recipe-runner-support.js";
 import { screenIdentityMatches } from "./recipe-target-match.js";
 import type { RecipeStep } from "./recipes.js";
+import type { TestJob } from "./session-contract.js";
+import type { TargetProfile } from "@relay/protocol";
 import {
   currentVerifiedScreen,
   invalidateVerifiedScreen,
@@ -333,20 +335,49 @@ export {
   loadFrozenDocumentOriginForCaptureSurface,
 } from "./capture-surface-frozen-origin.js";
 
+/** Capture-surface fast restoration is profile-scoped. Reject a missing,
+ * generic, browser, or cross-device profile before any runtime fact probe can
+ * touch the device. The server preserves viewport-suffixed saved profile IDs
+ * in jobs; this guard prevents a manually constructed job from bypassing it. */
+export function frozenCaptureSurfaceTargetProfile(
+  job: Pick<TestJob, "serial" | "platform" | "targetKind" | "targetProfile">,
+): TargetProfile {
+  const serial = job.serial?.trim();
+  const profile = job.targetProfile;
+  const viewport = profile?.viewport;
+  if (
+    !serial ||
+    !profile ||
+    job.targetKind === "browser" ||
+    profile.source !== "device" ||
+    !profile.id.trim() ||
+    profile.targetId !== serial ||
+    profile.platform !== job.platform ||
+    (viewport &&
+      (!Number.isSafeInteger(viewport.width) ||
+        !Number.isSafeInteger(viewport.height) ||
+        viewport.width <= 0 ||
+        viewport.height <= 0))
+  ) {
+    throw new Error("capture-surface requires an exact frozen device target profile");
+  }
+  return profile;
+}
+
 export async function runCaptureSurfaceStep(
   step: Extract<RecipeStep, { kind: "capture-surface" }>,
   ctx: RecipeStepContext,
 ): Promise<void> {
   const job = ctx.job;
-  if (!job?.serial || !job.targetProfile) {
-    throw new Error("capture-surface requires a frozen device target profile");
-  }
+  if (!job) throw new Error("capture-surface requires a frozen device target profile");
+  const targetProfile = frozenCaptureSurfaceTargetProfile(job);
+  const serial = targetProfile.targetId;
   await ensureAndroidSurfaceRuntimeFacts(job);
   const evaluatedAt = now();
   const documentOrigin = await loadFrozenDocumentOriginForCaptureSurface(
     step,
-    job.serial,
-    job.targetProfile.id,
+    serial,
+    targetProfile.id,
   );
   const baselineDisposition = captureSurfaceBaselineDisposition(step, documentOrigin);
   const baselineRequiresRecapture = baselineDisposition.requiresRecapture;
@@ -439,7 +470,7 @@ export async function runCaptureSurfaceStep(
       ? {
           screenshot,
           snapshot: {
-            serial: job.serial,
+            serial,
             capturedAt: screenshot.capturedAt,
             nodes,
             interactive: nodes.filter((node) => node.hittable === true),
@@ -452,7 +483,7 @@ export async function runCaptureSurfaceStep(
         }
       : undefined;
   const survey = await captureScrollableSurveyForTarget({
-    serial: job.serial,
+    serial,
     ...(step.maxScrolls === undefined ? {} : { maxScrolls: step.maxScrolls }),
     ...(initialCapture ? { initialCapture } : {}),
     ...(documentOrigin
@@ -463,7 +494,7 @@ export async function runCaptureSurfaceStep(
   });
   const surface = await persistLogicalScrollSurface({
     survey,
-    targetProfile: job.targetProfile,
+    targetProfile,
     surfaceId: step.surfaceId,
     capturePolicy: {
       captureMode: "full-surface",

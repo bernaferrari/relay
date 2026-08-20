@@ -1,8 +1,10 @@
-import type {
-  ReviewedDocumentOriginExecutionReference,
-  ReviewedDocumentOriginProjection,
-  ScrollSurfaceEvidence,
-  ScrollSurfaceViewport,
+import {
+  REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
+  REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
+  type ReviewedDocumentOriginExecutionReference,
+  type ReviewedDocumentOriginProjection,
+  type ScrollSurfaceEvidence,
+  type ScrollSurfaceViewport,
 } from "@relay/protocol";
 import { isNumber, isObject, isString, stepErr } from "./recipe-validation-primitives.js";
 
@@ -112,9 +114,10 @@ export function parseReviewedDocumentOriginExecutionReference(
     screenshot.sha256 === origin.screenshot.sha256 &&
     accessibilityTree.sha256 === origin.accessibilityTree.sha256 &&
     requiredText(actor.actorId) &&
-    ["human", "agent", "system"].includes(actor.actorKind as string) &&
+    ["human", "agent"].includes(actor.actorKind as string) &&
     requiredText(approval.reason) &&
-    requiredText(approval.assertion) &&
+    approval.assertion === REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION &&
+    approval.confirmation === REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION &&
     isNumber(approval.at) &&
     Number.isSafeInteger(approval.at) &&
     approvalEvidence &&
@@ -172,10 +175,11 @@ export function parseReviewedDocumentOriginExecutionReference(
     approval: {
       actor: {
         actorId: actor.actorId as string,
-        actorKind: actor.actorKind as "human" | "agent" | "system",
+        actorKind: actor.actorKind as "human" | "agent",
       },
       reason: approval.reason as string,
-      assertion: approval.assertion as string,
+      assertion: approval.assertion as typeof REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
+      confirmation: REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
       at: approval.at as number,
       evidence: approvalEvidence,
     },

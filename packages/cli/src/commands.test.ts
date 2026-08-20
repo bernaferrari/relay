@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { operationDefinitions } from "@relay/protocol";
+import {
+  operationDefinitions,
+  REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
+  REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
+} from "@relay/protocol";
 import {
   cliOperationDescriptors,
   cliResourceDescriptors,
@@ -273,7 +277,7 @@ test("screen regenerate-scroll rebuilds derived views without device input", () 
 test("screen origin review commands are evidence-only and do not request a lease", () => {
   const scope = ["map-1", "settings", "settings-ja", "capture-1"];
   assert.deepEqual(resolveCommand(["screen", "origin", "inspect", ...scope]), {
-    operationId: "app-map.scroll-surface.reviewed-origin.inspect",
+    operationId: "app-map.scroll-surface.origin.inspect",
     commandPath: "screen origin inspect",
     input: {
       appMapId: "map-1",
@@ -285,10 +289,10 @@ test("screen origin review commands are evidence-only and do not request a lease
   const decision = {
     expectedRevision: 13,
     reason: "Reviewed immutable first viewport.",
-    assertion: "The saved PNG and accessibility tree show document top.",
+    assertion: REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
   };
   assert.deepEqual(resolveCommand(["screen", "origin", "review", ...scope], decision), {
-    operationId: "app-map.scroll-surface.reviewed-origin.review",
+    operationId: "app-map.scroll-surface.origin.review",
     commandPath: "screen origin review",
     input: {
       appMapId: "map-1",
@@ -298,10 +302,15 @@ test("screen origin review commands are evidence-only and do not request a lease
       ...decision,
     },
   });
+  const revocation = {
+    expectedRevision: 13,
+    reason: "Revoked immutable first viewport.",
+    assertion: REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
+  };
   assert.deepEqual(
-    resolveCommand(["screen", "origin", "revoke", ...scope, "reviewed-origin-1"], decision),
+    resolveCommand(["screen", "origin", "revoke", ...scope, "reviewed-origin-1"], revocation),
     {
-      operationId: "app-map.scroll-surface.reviewed-origin.revoke",
+      operationId: "app-map.scroll-surface.origin.revoke",
       commandPath: "screen origin revoke",
       input: {
         appMapId: "map-1",
@@ -309,7 +318,7 @@ test("screen origin review commands are evidence-only and do not request a lease
         variantId: "settings-ja",
         captureId: "capture-1",
         projectionId: "reviewed-origin-1",
-        ...decision,
+        ...revocation,
       },
     },
   );

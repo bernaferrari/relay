@@ -27,17 +27,19 @@ import {
   RECOVERED_FROM_BACKUP_META,
   REPAIRED_ON_MIGRATE_META,
   seedDefaultProject,
-  reviewedDocumentOriginLedger,
+  appendReviewedDocumentOriginLedgerEvent,
+  insertReviewedDocumentOriginRevocationTombstone,
+  reviewedDocumentOriginLedgerEvents,
   reviewedDocumentOriginMapEpoch,
   reviewedDocumentOriginProjection,
   reviewedDocumentOriginProjections,
+  reviewedDocumentOriginRevocationTombstone,
   rotateReviewedDocumentOriginMapEpoch,
   upsertAppMapRow,
   upsertBuildRow,
   upsertHealthyAppMap,
   upsertIdempotencyRow,
   upsertLeaseRow,
-  upsertReviewedDocumentOriginLedger,
   upsertMatrixRow,
   upsertPoolRow,
   upsertProjectRow,
@@ -113,8 +115,16 @@ export type ControlStore = {
     mapKey: string,
     projection: ReviewedDocumentOriginProjection,
   ): void;
-  reviewedDocumentOriginLedger(projectionId: string): ReviewedDocumentOriginLedger | undefined;
-  upsertReviewedDocumentOriginLedger(
+  reviewedDocumentOriginLedgerEvents(projectionId: string): ReviewedDocumentOriginLedger[];
+  reviewedDocumentOriginRevocationTombstone(
+    projectionId: string,
+  ): ReviewedDocumentOriginLedger | undefined;
+  appendReviewedDocumentOriginLedgerEvent(
+    mapKey: string,
+    mapEpoch: string,
+    ledger: ReviewedDocumentOriginLedger,
+  ): void;
+  insertReviewedDocumentOriginRevocationTombstone(
     mapKey: string,
     mapEpoch: string,
     ledger: ReviewedDocumentOriginLedger,
@@ -346,11 +356,17 @@ function createStore(db: DatabaseSync): ControlStore {
     insertReviewedDocumentOriginProjection(mapKey, projection) {
       insertReviewedDocumentOriginProjection(db, mapKey, projection);
     },
-    reviewedDocumentOriginLedger(projectionId) {
-      return reviewedDocumentOriginLedger(db, projectionId);
+    reviewedDocumentOriginLedgerEvents(projectionId) {
+      return reviewedDocumentOriginLedgerEvents(db, projectionId);
     },
-    upsertReviewedDocumentOriginLedger(mapKey, mapEpoch, ledger) {
-      upsertReviewedDocumentOriginLedger(db, mapKey, mapEpoch, ledger);
+    reviewedDocumentOriginRevocationTombstone(projectionId) {
+      return reviewedDocumentOriginRevocationTombstone(db, projectionId);
+    },
+    appendReviewedDocumentOriginLedgerEvent(mapKey, mapEpoch, ledger) {
+      appendReviewedDocumentOriginLedgerEvent(db, mapKey, mapEpoch, ledger);
+    },
+    insertReviewedDocumentOriginRevocationTombstone(mapKey, mapEpoch, ledger) {
+      insertReviewedDocumentOriginRevocationTombstone(db, mapKey, mapEpoch, ledger);
     },
   };
 }

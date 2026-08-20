@@ -87,7 +87,33 @@ const switchFlags = new Set([
   "--binary",
   "--force",
   "--preview",
+  "--confirm",
 ]);
+
+const reviewedOriginConfirmationOperations = new Set([
+  "app-map.scroll-surface.origin.review",
+  "app-map.scroll-surface.origin.revoke",
+]);
+
+function requireReviewedOriginConfirmation(operationId: string, confirmed: boolean): void {
+  if (reviewedOriginConfirmationOperations.has(operationId) && !confirmed) {
+    throw new UsageError(`${operationId} requires --confirm and its fixed assertion literal`);
+  }
+}
+
+/** The CLI's switch is intentionally not trusted as a presentation-only hint.
+ * Once explicitly supplied, carry the canonical confirmation into the signed
+ * server/core operation payload. */
+function confirmedReviewedOriginInput(
+  operationId: string,
+  input: Record<string, unknown>,
+  confirmed: boolean,
+): Record<string, unknown> {
+  requireReviewedOriginConfirmation(operationId, confirmed);
+  return reviewedOriginConfirmationOperations.has(operationId)
+    ? { ...input, confirmation: "confirm" }
+    : input;
+}
 
 function tokenize(argv: readonly string[]): ParsedTokens {
   const positionals: string[] = [];
@@ -276,6 +302,11 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (rawInput === undefined && inputFile === undefined) {
       throw new UsageError("operation invoke requires --input <json> or --input-file <path>");
     }
+    const input = confirmedReviewedOriginInput(
+      operationId,
+      readInput(tokens, env),
+      tokens.switches.has("--confirm"),
+    );
     return {
       config: {
         connection,
@@ -287,7 +318,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       },
       command: "invoke",
       operationId,
-      input: readInput(tokens, env),
+      input,
       ...(operationId === "target.screenshot.capture" ? { behavior: "screenshot" as const } : {}),
       screenshotOutput: screenshotOutput(
         tokens,
@@ -323,6 +354,11 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (!matched) throw new UsageError("--mark requires <x>,<y> in the same units as a tap");
   }
   const resolved = resolveCommand(tokens.positionals, input);
+  resolved.input = confirmedReviewedOriginInput(
+    resolved.operationId,
+    resolved.input,
+    tokens.switches.has("--confirm"),
+  );
   const preview = tokens.switches.has("--preview");
   if (mark) {
     if (resolved.operationId !== "target.screenshot.capture") {

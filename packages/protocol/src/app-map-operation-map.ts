@@ -26,10 +26,13 @@ import type {
 } from "./app-map.js";
 import type { OperationRecord } from "./operation-contract.js";
 import type { RunReview } from "./run-review.js";
-import type {
-  ReviewedDocumentOriginInspection,
-  ReviewedDocumentOriginLedger,
-  ReviewedDocumentOriginProjection,
+import {
+  REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
+  REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
+  REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
+  type ReviewedDocumentOriginInspection,
+  type ReviewedDocumentOriginLedger,
+  type ReviewedDocumentOriginProjection,
 } from "./reviewed-document-origin.js";
 import type {
   AppMapCompiledTest,
@@ -160,7 +163,7 @@ export type AppMapOperationMap = {
       scrollSurface: LogicalScrollSurface;
     };
   };
-  "app-map.scroll-surface.reviewed-origin.inspect": {
+  "app-map.scroll-surface.origin.inspect": {
     input: {
       appMapId: string;
       screenId: string;
@@ -169,7 +172,7 @@ export type AppMapOperationMap = {
     };
     output: { inspection: ReviewedDocumentOriginInspection };
   };
-  "app-map.scroll-surface.reviewed-origin.review": {
+  "app-map.scroll-surface.origin.review": {
     input: {
       appMapId: string;
       screenId: string;
@@ -177,7 +180,8 @@ export type AppMapOperationMap = {
       captureId: string;
       expectedRevision: number;
       reason: string;
-      assertion: string;
+      assertion: typeof REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION;
+      confirmation: typeof REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION;
     };
     output: {
       projection: ReviewedDocumentOriginProjection;
@@ -185,7 +189,7 @@ export type AppMapOperationMap = {
       alreadyActive: boolean;
     };
   };
-  "app-map.scroll-surface.reviewed-origin.revoke": {
+  "app-map.scroll-surface.origin.revoke": {
     input: {
       appMapId: string;
       screenId: string;
@@ -194,7 +198,8 @@ export type AppMapOperationMap = {
       projectionId: string;
       expectedRevision: number;
       reason: string;
-      assertion: string;
+      assertion: typeof REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION;
+      confirmation: typeof REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION;
     };
     output: {
       projection: ReviewedDocumentOriginProjection;

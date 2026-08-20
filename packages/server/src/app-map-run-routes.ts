@@ -25,7 +25,12 @@ import {
   sensitiveInputNames,
   type Recipe,
 } from "@relay/core";
-import type { AppMap, AppMapCompiledRuntimeTargetProfile, OperationInput } from "@relay/protocol";
+import type {
+  AppMap,
+  AppMapCompiledRuntimeTargetProfile,
+  OperationInput,
+  TargetProfile,
+} from "@relay/protocol";
 import { assertTargetControl, targetLeaseBelongsToCaller } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
@@ -117,6 +122,53 @@ export function frozenTestRunTargetProfile(input: {
     targetId: profile.targetId,
     platform: profile.platform,
     ...(profile.viewport ? { viewport: structuredClone(profile.viewport) } : {}),
+  };
+}
+
+/** The job must carry the exact saved evidence-profile identity, not the
+ * generic profile reconstructed from a connected device. In particular a
+ * viewport-suffixed Android profile is a distinct frozen-origin namespace. */
+export function queuedAppMapTestTargetProfile(input: {
+  runtimeTargetProfile: AppMapCompiledRuntimeTargetProfile | undefined;
+  observedTargetProfile: TargetProfile | undefined;
+  target: Pick<OperationInput<"app-map.test.run">["target"], "kind" | "targetId" | "platform">;
+}): TargetProfile | undefined {
+  const saved = input.runtimeTargetProfile;
+  if (!saved) return input.observedTargetProfile;
+  if (saved.targetId !== input.target.targetId || saved.platform !== input.target.platform) {
+    throw new HttpError(
+      409,
+      `Saved runtime profile ${saved.id} does not bind to ${input.target.platform}:${input.target.targetId}`,
+      {
+        code: "TARGET_PROFILE_TARGET_MISMATCH",
+        targetProfileId: saved.id,
+        target: { targetId: input.target.targetId, platform: input.target.platform },
+      },
+    );
+  }
+  const observed = input.observedTargetProfile;
+  if (observed && (observed.targetId !== saved.targetId || observed.platform !== saved.platform)) {
+    throw new HttpError(
+      409,
+      `Observed target profile does not match saved runtime profile ${saved.id}`,
+      {
+        code: "TARGET_PROFILE_TARGET_MISMATCH",
+        targetProfileId: saved.id,
+        observedTarget: { targetId: observed.targetId, platform: observed.platform },
+      },
+    );
+  }
+  return {
+    id: saved.id,
+    targetId: saved.targetId,
+    platform: saved.platform,
+    source: input.target.kind,
+    name: observed?.name ?? saved.targetId,
+    ...(observed?.model ? { model: observed.model } : {}),
+    ...(observed?.osVersion ? { osVersion: observed.osVersion } : {}),
+    ...(saved.viewport ? { viewport: structuredClone(saved.viewport) } : {}),
+    capabilities: observed ? [...observed.capabilities] : [],
+    observedAt: observed?.observedAt ?? Date.now(),
   };
 }
 
@@ -357,12 +409,22 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     if (!recipeSnapshot) throw new HttpError(500, "Compiled Test has no root recipe");
     const operation = currentOperationContext();
     if (!operation) throw new HttpError(500, "App Map execution context is unavailable");
-    const targetProfile = (
+    const observedTargetProfile = (
       await buildTargetProfiles({
         devices: observedDevices ?? (await runtime.listDevices().catch(() => [])),
         targets: await listTargets(),
       })
-    ).find((profile) => profile.targetId === targetId);
+    ).find(
+      (profile) =>
+        profile.targetId === targetId &&
+        profile.platform === body.target.platform &&
+        profile.source === body.target.kind,
+    );
+    const targetProfile = queuedAppMapTestTargetProfile({
+      runtimeTargetProfile,
+      observedTargetProfile,
+      target: body.target,
+    });
     const planIdentity = {
       appMapId: plan.appMapId,
       appMapRevision: plan.appMapRevision,

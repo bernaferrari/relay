@@ -161,9 +161,9 @@ export function createAppMapOperationDefinitions(
       },
     ),
     query(
-      "app-map.scroll-surface.reviewed-origin.inspect",
+      "app-map.scroll-surface.origin.inspect",
       "Inspect reviewed scroll-surface origin lineage",
-      "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/reviewed-origin",
+      "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/origin",
       {
         category: "authoring",
         input: appMapReviewedDocumentOriginInspectParser,
@@ -171,23 +171,25 @@ export function createAppMapOperationDefinitions(
       },
     ),
     command(
-      "app-map.scroll-surface.reviewed-origin.review",
+      "app-map.scroll-surface.origin.review",
       "Review and activate a scroll-surface origin",
       "POST",
-      "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/reviewed-origin/review",
+      "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/origin/review",
       {
         category: "authoring",
+        confirmation: "confirm",
         input: appMapReviewedDocumentOriginReviewParser,
         output: appMapReviewedDocumentOriginReviewOutputParser,
       },
     ),
     command(
-      "app-map.scroll-surface.reviewed-origin.revoke",
+      "app-map.scroll-surface.origin.revoke",
       "Revoke a reviewed scroll-surface origin",
       "POST",
-      "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/reviewed-origin/:projectionId/revoke",
+      "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/origin/:projectionId/revoke",
       {
         category: "authoring",
+        confirmation: "confirm",
         input: appMapReviewedDocumentOriginRevokeParser,
         output: appMapReviewedDocumentOriginRevokeOutputParser,
       },

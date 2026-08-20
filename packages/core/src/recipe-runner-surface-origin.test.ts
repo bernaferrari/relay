@@ -9,10 +9,54 @@ import { issueDocumentOriginAttestationAuthorization } from "./document-origin-a
 import type { RecipeStep } from "./recipes.js";
 import {
   captureSurfaceBaselineDisposition,
+  frozenCaptureSurfaceTargetProfile,
   loadFrozenDocumentOriginForCaptureSurface,
 } from "./recipe-runner-extended-steps.js";
 
 const targetProfileId = "android-profile";
+
+test("capture-surface requires the exact frozen device profile before runtime probes", () => {
+  const targetProfile = frozenCaptureSurfaceTargetProfile({
+    serial: "android-device",
+    platform: "android",
+    targetKind: "device",
+    targetProfile: {
+      id: "device:android-device-1080x2400",
+      targetId: "android-device",
+      source: "device",
+      platform: "android",
+      name: "Pixel",
+      viewport: { width: 1080, height: 2400 },
+      capabilities: [],
+      observedAt: 1,
+    },
+  });
+  assert.equal(targetProfile.id, "device:android-device-1080x2400");
+  assert.throws(
+    () =>
+      frozenCaptureSurfaceTargetProfile({
+        serial: "android-device",
+        platform: "android",
+        targetKind: "device",
+        targetProfile: {
+          ...targetProfile,
+          id: "device:android-device",
+          targetId: "other-device",
+        },
+      }),
+    /exact frozen device target profile/u,
+  );
+  assert.throws(
+    () =>
+      frozenCaptureSurfaceTargetProfile({
+        serial: "android-device",
+        platform: "android",
+        targetKind: "device",
+        targetProfile: undefined,
+      }),
+    /exact frozen device target profile/u,
+  );
+});
 
 function png(width: number, height: number): Buffer {
   const image = new PNG({ width, height });

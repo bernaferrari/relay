@@ -7,6 +7,7 @@ import {
   testCapturePolicy,
   testSemanticEdits,
 } from "./test-input-schemas.js";
+import { reviewedDocumentOriginInputSchemas } from "./reviewed-document-origin-input-schemas.js";
 import {
   authoringInteraction,
   authoringTarget,
@@ -29,6 +30,7 @@ export type RelayOperationInputSchema = z.ZodObject;
 export type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
 
 const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
+  ...reviewedDocumentOriginInputSchemas,
   "system.audit.list": z.object({ limit: z.number().int().positive().optional() }).strict(),
   "locale-finding.known.add": z
     .object({

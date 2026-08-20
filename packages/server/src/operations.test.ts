@@ -67,23 +67,23 @@ test("dynamic canonical routes resolve to their registered operation", () => {
   assert.equal(
     findOperationHandler(
       "GET",
-      "/app-maps/onboarding/screens/settings/variants/settings-ja/scroll-surfaces/capture-1/reviewed-origin",
+      "/app-maps/onboarding/screens/settings/variants/settings-ja/scroll-surfaces/capture-1/origin",
     )?.id,
-    "app-map.scroll-surface.reviewed-origin.inspect",
+    "app-map.scroll-surface.origin.inspect",
   );
   assert.equal(
     findOperationHandler(
       "POST",
-      "/app-maps/onboarding/screens/settings/variants/settings-ja/scroll-surfaces/capture-1/reviewed-origin/review",
+      "/app-maps/onboarding/screens/settings/variants/settings-ja/scroll-surfaces/capture-1/origin/review",
     )?.id,
-    "app-map.scroll-surface.reviewed-origin.review",
+    "app-map.scroll-surface.origin.review",
   );
   assert.equal(
     findOperationHandler(
       "POST",
-      "/app-maps/onboarding/screens/settings/variants/settings-ja/scroll-surfaces/capture-1/reviewed-origin/reviewed-origin-1/revoke",
+      "/app-maps/onboarding/screens/settings/variants/settings-ja/scroll-surfaces/capture-1/origin/reviewed-origin-1/revoke",
     )?.id,
-    "app-map.scroll-surface.reviewed-origin.revoke",
+    "app-map.scroll-surface.origin.revoke",
   );
   assert.equal(findOperationHandler("POST", "/app-maps/onboarding/teach")?.id, "app-map.teach");
   assert.equal(findOperationHandler("GET", "/events")?.id, "event.stream");

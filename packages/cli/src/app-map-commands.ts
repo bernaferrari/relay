@@ -272,7 +272,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
     ),
   ),
   mapped(
-    "app-map.scroll-surface.reviewed-origin.inspect",
+    "app-map.scroll-surface.origin.inspect",
     path("screen origin inspect", ["appMapId", "screenId", "variantId", "captureId"], undefined, {
       summary: "Inspect the immutable review and revocation lineage for one scroll origin",
       argumentHelp: [
@@ -288,7 +288,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
     }),
   ),
   mapped(
-    "app-map.scroll-surface.reviewed-origin.review",
+    "app-map.scroll-surface.origin.review",
     path("screen origin review", ["appMapId", "screenId", "variantId", "captureId"], undefined, {
       summary: "Deliberately approve a verified Android document-top origin",
       argumentHelp: [
@@ -312,19 +312,19 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
         {
           name: "assertion",
-          type: "string",
+          type: 'literal "reviewed-document-top"',
           required: true,
-          description: "Reviewer’s explicit top-of-document assertion",
+          description: "Fixed deliberate approval statement; arbitrary prose cannot authorize",
         },
       ],
       examples: [
-        'relay screen origin review grok settings settings-en scroll-surface-capture --input \'{"expectedRevision":13,"reason":"Reviewed frozen first frame","assertion":"The raw PNG and accessibility tree show the document at its top boundary."}\'',
+        'relay screen origin review grok settings settings-en scroll-surface-capture --confirm --input \'{"expectedRevision":13,"reason":"Reviewed frozen first frame","assertion":"reviewed-document-top"}\'',
       ],
-      note: "Creates a local, signed review overlay bound to this exact map revision/digest and raw PNG/tree pair. It does not capture, launch, scroll, or lease a device.",
+      note: "Requires an explicit confirmation and the fixed assertion reviewed-document-top. Creates a local, signed review overlay bound to this exact map revision/digest and raw PNG/tree pair. It does not capture, launch, scroll, or lease a device.",
     }),
   ),
   mapped(
-    "app-map.scroll-surface.reviewed-origin.revoke",
+    "app-map.scroll-surface.origin.revoke",
     path(
       "screen origin revoke",
       ["appMapId", "screenId", "variantId", "captureId", "projectionId"],
@@ -357,12 +357,16 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
           },
           {
             name: "assertion",
-            type: "string",
+            type: 'literal "revoke-reviewed-document-origin"',
             required: true,
-            description: "Reviewer’s explicit revocation assertion",
+            description:
+              "Fixed deliberate revocation statement; arbitrary prose cannot alter authority",
           },
         ],
-        note: "Revocation is durable and blocks already-compiled recipes at runtime. It never deletes the approval evidence or controls a device.",
+        examples: [
+          'relay screen origin revoke grok settings settings-en scroll-surface-capture reviewed-origin-1 --confirm --input \'{"expectedRevision":13,"reason":"Disable this origin","assertion":"revoke-reviewed-document-origin"}\'',
+        ],
+        note: "Requires an explicit confirmation and the fixed assertion revoke-reviewed-document-origin. Revocation is durable and blocks already-compiled recipes at runtime. It never deletes the approval evidence or controls a device.",
       },
     ),
   ),

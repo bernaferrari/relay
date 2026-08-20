@@ -2,6 +2,7 @@ import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import { RelayClient } from "@relay/client";
 import {
   operationDefinition,
+  REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
   summarizeAppMapOperationResult,
   summarizeAuthoringOperationResult,
   summarizeExecutionOperationResult,
@@ -42,6 +43,23 @@ export const relayMcpInstructions = [
 
 export const relayMcpTextLimit = 8_192;
 export const relayMcpErrorLimit = 1_024;
+
+const reviewedOriginConfirmationOperationIds = new Set<OperationId>([
+  "app-map.scroll-surface.origin.review",
+  "app-map.scroll-surface.origin.revoke",
+]);
+
+/** `confirm: true` is the MCP-facing consent affordance. For the two durable
+ * authority operations, turn it into the canonical signed protocol field only
+ * after the generic confirmation guard has accepted it. */
+function confirmedInput(
+  operationId: OperationId,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  return reviewedOriginConfirmationOperationIds.has(operationId)
+    ? { ...input, confirmation: REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION }
+    : input;
+}
 
 export type OperationInvokeOptions = {
   signal?: AbortSignal;
@@ -267,8 +285,10 @@ async function invokeRelayTool(
     );
   }
 
+  const operationInput = confirmedInput(descriptor.operationId, input);
+
   try {
-    operationDefinition(descriptor.operationId).input.parse(input);
+    operationDefinition(descriptor.operationId).input.parse(operationInput);
   } catch (error) {
     return errorResult(
       invalidRelayMcpInput(
@@ -280,7 +300,7 @@ async function invokeRelayTool(
 
   let result: unknown;
   try {
-    result = await invoker.invoke(descriptor.operationId, input, { signal });
+    result = await invoker.invoke(descriptor.operationId, operationInput, { signal });
   } catch (error) {
     return errorResult(relayMcpError(descriptor.operationId, error));
   }

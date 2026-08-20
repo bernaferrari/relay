@@ -1,6 +1,19 @@
 import type { ActorIdentity } from "./coordination.js";
 import type { ScrollSurfaceEvidence } from "./scroll-surface.js";
 
+/** Exact statements required for the two durable manual-authority decisions.
+ * They are protocol constants rather than UI copy: a free-form explanation is
+ * useful as a reason, but it cannot silently become authorization. */
+export const REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION = "reviewed-document-top" as const;
+export const REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION = "revoke-reviewed-document-origin" as const;
+export const REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION = "confirm" as const;
+
+/** Scheduler/recovery actors can operate Relay, but may not create or remove
+ * a manual reviewed-origin decision. */
+export type ReviewedDocumentOriginActor = Omit<ActorIdentity, "actorKind"> & {
+  actorKind: "human" | "agent";
+};
+
 /**
  * A server-owned authorization overlay for a legacy/imported full scroll
  * surface. It is deliberately separate from `LogicalScrollSurface`: raw
@@ -43,13 +56,24 @@ export type ReviewedDocumentOriginBinding = {
   };
 };
 
-export type ReviewedDocumentOriginDecision = {
-  actor: ActorIdentity;
+export type ReviewedDocumentOriginDecision<Assertion extends string = string> = {
+  actor: ReviewedDocumentOriginActor;
   reason: string;
-  assertion: string;
+  assertion: Assertion;
+  /** Deliberate confirmation is persisted with the signed decision rather
+   * than being an ephemeral client-only affordance. */
+  confirmation: typeof REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION;
   at: number;
   evidence: ReviewedDocumentOriginEvidence;
 };
+
+export type ReviewedDocumentOriginApproval = ReviewedDocumentOriginDecision<
+  typeof REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION
+>;
+
+export type ReviewedDocumentOriginRevocation = ReviewedDocumentOriginDecision<
+  typeof REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION
+>;
 
 /** Immutable server-written projection. The HMAC makes this non-authorable
  * metadata even though a recipe may retain a read-only copy for execution. */
@@ -57,7 +81,7 @@ export type ReviewedDocumentOriginProjection = {
   schemaVersion: 1;
   id: string;
   binding: ReviewedDocumentOriginBinding;
-  approval: ReviewedDocumentOriginDecision;
+  approval: ReviewedDocumentOriginApproval;
   authorization: {
     schemaVersion: 1;
     issuer: "relay-local-reviewed-origin";
@@ -70,10 +94,14 @@ export type ReviewedDocumentOriginProjection = {
 export type ReviewedDocumentOriginLedger = {
   schemaVersion: 1;
   projectionId: string;
+  /** Immutable event order within one local projection lineage. */
+  sequence: 1 | 2 | 3;
+  /** HMAC signature of the immediately preceding immutable lifecycle event. */
+  previousAuthorizationSignature?: string;
   status: "pending" | "active" | "revoked";
   createdAt: number;
   activatedAt?: number;
-  revocation?: ReviewedDocumentOriginDecision;
+  revocation?: ReviewedDocumentOriginRevocation;
   authorization: {
     schemaVersion: 1;
     issuer: "relay-local-reviewed-origin-ledger";
@@ -92,6 +120,11 @@ export type ReviewedDocumentOriginExecutionReference = {
 export type ReviewedDocumentOriginLineage = {
   projection: ReviewedDocumentOriginProjection;
   ledger?: ReviewedDocumentOriginLedger;
+  /** Append-only pending → active → revoked history, oldest first. */
+  ledgerEvents: ReviewedDocumentOriginLedger[];
+  /** Durable signed revocation record, retained independently so a stale
+   * active ledger prefix cannot quietly revive authority. */
+  revocationTombstone?: ReviewedDocumentOriginLedger;
   /** Whether this exact approval still describes the current stored App Map.
    * It can be false without losing the immutable audit trail. */
   currentBinding: boolean;

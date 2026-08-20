@@ -3,7 +3,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { AppMap, AppMapScenarioTest, TargetProfile } from "@relay/protocol";
+import {
+  REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
+  REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
+  REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
+  type AppMap,
+  type AppMapScenarioTest,
+  type TargetProfile,
+} from "@relay/protocol";
 import { PNG } from "pngjs";
 import { readAuthoringEvidence } from "./authoring-evidence.js";
 import { scrollSurfaceDocumentOriginPlan } from "./app-map-scroll-surface-baseline.js";
@@ -14,6 +21,7 @@ import {
   readAppMap,
   resetControlDatabaseCache,
 } from "./collaboration.js";
+import { controlDatabasePath, openControlDatabase } from "./collaboration-db.js";
 import {
   attachAppMapScrollSurface,
   persistLogicalScrollSurface,
@@ -228,7 +236,8 @@ function reviewInput(appMap: AppMap) {
     expectedRevision: appMap.revision,
     actor: { actorId: "human:reviewer", actorKind: "human" as const },
     reason: "The saved first frame was inspected as document top.",
-    assertion: "The immutable PNG and accessibility tree show the beginning of Settings.",
+    assertion: REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
+    confirmation: REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
     at: 1_000,
   };
 }
@@ -287,6 +296,7 @@ test("reviewed origin is an immutable sidecar that enables only exact legacy evi
 
     assert.equal(surface.documentOriginProof, undefined);
     assert.equal(approved.ledger.status, "active");
+    assert.equal(approved.ledger.sequence, 2);
     assert.equal(approved.projection.binding.appMapRevision, appMap.revision);
     assert.equal(approved.projection.binding.appMapId, appMap.id);
     assert.equal(approved.projection.binding.captureId, surface.captureId);
@@ -298,6 +308,13 @@ test("reviewed origin is an immutable sidecar that enables only exact legacy evi
     assert.equal(inspection.lineage.length, 1);
     assert.equal(inspection.lineage[0]?.currentBinding, true);
     assert.equal(inspection.lineage[0]?.ledger?.status, "active");
+    assert.deepEqual(
+      inspection.lineage[0]?.ledgerEvents.map(({ sequence, status }) => ({ sequence, status })),
+      [
+        { sequence: 1, status: "pending" },
+        { sequence: 2, status: "active" },
+      ],
+    );
     assert.deepEqual(await activeReviewedDocumentOriginsForAppMap(appMap), [approved.projection]);
 
     assert.equal(
@@ -389,6 +406,18 @@ test("reviewed origin is an immutable sidecar that enables only exact legacy evi
       }),
       false,
     );
+    assert.equal(
+      await reviewedDocumentOriginExecutionReferenceIsActive({
+        reference,
+        origin: { ...origin, offsetY: 1 },
+        targetProfileId: profile.id,
+        screenId: "settings",
+        variantId: "settings-en",
+        surfaceId: surface.id,
+        captureId: surface.captureId,
+      }),
+      false,
+    );
 
     const nativeSurface = structuredClone(surface);
     nativeSurface.documentOriginProof = {
@@ -419,10 +448,11 @@ test("reviewed origin is an immutable sidecar that enables only exact legacy evi
       ...input,
       projectionId: approved.projection.id,
       reason: "The prior review must no longer authorize restoration.",
-      assertion: "Stop using this exact origin until it is reviewed again.",
+      assertion: REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
       at: 2_000,
     });
     assert.equal(revoked.ledger.status, "revoked");
+    assert.equal(revoked.ledger.sequence, 3);
     assert.equal(await reviewedDocumentOriginRevocationEvidenceIsValid(revoked), true);
     assert.equal(
       await reviewedDocumentOriginExecutionReferenceIsActive({
@@ -437,6 +467,19 @@ test("reviewed origin is an immutable sidecar that enables only exact legacy evi
       false,
     );
     assert.deepEqual(await activeReviewedDocumentOriginsForAppMap(appMap), []);
+    const revokedInspection = await inspectReviewedDocumentOrigin(input);
+    assert.deepEqual(
+      revokedInspection.lineage[0]?.ledgerEvents.map(({ sequence, status }) => ({
+        sequence,
+        status,
+      })),
+      [
+        { sequence: 1, status: "pending" },
+        { sequence: 2, status: "active" },
+        { sequence: 3, status: "revoked" },
+      ],
+    );
+    assert.equal(revokedInspection.lineage[0]?.revocationTombstone?.sequence, 3);
   });
 });
 
@@ -524,5 +567,162 @@ test("runtime reopens CAS bytes instead of trusting a precompiled reviewed refer
       }),
       false,
     );
+  });
+});
+
+test("runtime and idempotent review fail closed when a signed lifecycle event is tampered", async () => {
+  await withStateRoot(async () => {
+    const appMap = await persistedLegacyMap();
+    const input = reviewInput(appMap);
+    const approved = await reviewDocumentOrigin(input);
+    const surface = appMap.screenVariants["settings-en"]!.scrollSurfaces![0]!;
+    const reference = reviewedDocumentOriginReferenceForSurface({
+      appMap,
+      screenId: "settings",
+      variantId: "settings-en",
+      surface,
+      projections: [approved.projection],
+    });
+    assert.ok(reference);
+
+    resetControlDatabaseCache();
+    const db = openControlDatabase(controlDatabasePath(process.env.RELAY_STATE_DIR!));
+    try {
+      const row = db
+        .prepare(
+          `SELECT document FROM reviewed_document_origin_ledger_events
+           WHERE projection_id = ? AND event_sequence = 2`,
+        )
+        .get(approved.projection.id) as { document: string };
+      const tampered = JSON.parse(row.document) as {
+        authorization: { signature: string };
+      };
+      tampered.authorization.signature = "x".repeat(43);
+      db.prepare(
+        `UPDATE reviewed_document_origin_ledger_events SET document = ?
+         WHERE projection_id = ? AND event_sequence = 2`,
+      ).run(JSON.stringify(tampered), approved.projection.id);
+    } finally {
+      db.close();
+    }
+
+    assert.deepEqual(await activeReviewedDocumentOriginsForAppMap(appMap), []);
+    assert.equal(
+      await reviewedDocumentOriginExecutionReferenceIsActive({
+        reference,
+        origin: surface.viewports[0]!,
+        targetProfileId: profile.id,
+        screenId: "settings",
+        variantId: "settings-en",
+        surfaceId: surface.id,
+        captureId: surface.captureId,
+      }),
+      false,
+    );
+    await assert.rejects(reviewDocumentOrigin(input), /fails immutable authorization checks/u);
+  });
+});
+
+test("manual reviewed-origin authority accepts deliberate agents but rejects system actors and unconfirmed prose", async () => {
+  await withStateRoot(async () => {
+    const appMap = await persistedLegacyMap();
+    const input = reviewInput(appMap);
+    const iosAppMap = structuredClone(appMap);
+    iosAppMap.screenVariants["settings-en"]!.targetProfile.platform = "ios";
+    await assert.rejects(reviewDocumentOrigin(reviewInput(iosAppMap)), /Android only/u);
+    await assert.rejects(
+      reviewDocumentOrigin({
+        ...input,
+        actor: { actorId: "system:recovery", actorKind: "system" },
+      }),
+      /Only a human or deliberate agent/u,
+    );
+    await assert.rejects(
+      reviewDocumentOrigin({ ...input, assertion: "I looked at the screenshot" }),
+      /review assertion must be exactly reviewed-document-top/u,
+    );
+    await assert.rejects(
+      reviewDocumentOrigin({ ...input, confirmation: "not-confirmed" }),
+      /confirmation must be exactly confirm/u,
+    );
+    const approved = await reviewDocumentOrigin({
+      ...input,
+      actor: { actorId: "agent:reviewer", actorKind: "agent" },
+    });
+    assert.equal(approved.projection.approval.actor.actorKind, "agent");
+    await assert.rejects(
+      revokeReviewedDocumentOrigin({
+        ...input,
+        projectionId: approved.projection.id,
+        actor: { actorId: "system:recovery", actorKind: "system" },
+        reason: "Automated cleanup is not manual authority.",
+        assertion: REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
+      }),
+      /Only a human or deliberate agent/u,
+    );
+    await assert.rejects(
+      revokeReviewedDocumentOrigin({
+        ...input,
+        projectionId: approved.projection.id,
+        reason: "This has been deliberately reconsidered.",
+        assertion: "please revoke it",
+      }),
+      /revoke assertion must be exactly revoke-reviewed-document-origin/u,
+    );
+  });
+});
+
+test("a durable revocation tombstone blocks a stale active ledger prefix", async () => {
+  await withStateRoot(async () => {
+    const appMap = await persistedLegacyMap();
+    const input = reviewInput(appMap);
+    const approved = await reviewDocumentOrigin(input);
+    const surface = appMap.screenVariants["settings-en"]!.scrollSurfaces![0]!;
+    const reference = reviewedDocumentOriginReferenceForSurface({
+      appMap,
+      screenId: "settings",
+      variantId: "settings-en",
+      surface,
+      projections: [approved.projection],
+    });
+    assert.ok(reference);
+    await revokeReviewedDocumentOrigin({
+      ...input,
+      projectionId: approved.projection.id,
+      reason: "Disable the reviewed origin before validating stale recovery.",
+      assertion: REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
+      at: 2_000,
+    });
+
+    // Simulate a stale restore which copied only the old pending/active prefix.
+    // The separate signed tombstone must still make every authority check fail.
+    resetControlDatabaseCache();
+    const db = openControlDatabase(controlDatabasePath(process.env.RELAY_STATE_DIR!));
+    try {
+      db.prepare(
+        "DELETE FROM reviewed_document_origin_ledger_events WHERE projection_id = ? AND event_sequence = 3",
+      ).run(approved.projection.id);
+    } finally {
+      db.close();
+    }
+    assert.deepEqual(await activeReviewedDocumentOriginsForAppMap(appMap), []);
+    assert.equal(
+      await reviewedDocumentOriginExecutionReferenceIsActive({
+        reference,
+        origin: surface.viewports[0]!,
+        targetProfileId: profile.id,
+        screenId: "settings",
+        variantId: "settings-en",
+        surfaceId: surface.id,
+        captureId: surface.captureId,
+      }),
+      false,
+    );
+    const inspection = await inspectReviewedDocumentOrigin(input);
+    assert.deepEqual(
+      inspection.lineage[0]?.ledgerEvents.map(({ sequence }) => sequence),
+      [1, 2],
+    );
+    assert.equal(inspection.lineage[0]?.revocationTombstone?.status, "revoked");
   });
 });

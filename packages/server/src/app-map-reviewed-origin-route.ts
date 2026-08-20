@@ -54,7 +54,7 @@ async function currentMap(scope: RequestContext, appMapId: string) {
 export async function handleAppMapReviewedOriginRoute(input: RouteInput): Promise<boolean> {
   const inspect = matchPath(
     input.pathname,
-    "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/reviewed-origin",
+    "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/origin",
   );
   if (input.method === "GET" && inspect) {
     try {
@@ -74,11 +74,11 @@ export async function handleAppMapReviewedOriginRoute(input: RouteInput): Promis
   }
   const review = matchPath(
     input.pathname,
-    "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/reviewed-origin/review",
+    "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/origin/review",
   );
   if (input.method === "POST" && review) {
     const body = (await parseJsonBody(input.request)) as Omit<
-      OperationInput<"app-map.scroll-surface.reviewed-origin.review">,
+      OperationInput<"app-map.scroll-surface.origin.review">,
       "appMapId" | "screenId" | "variantId" | "captureId"
     >;
     try {
@@ -92,6 +92,7 @@ export async function handleAppMapReviewedOriginRoute(input: RouteInput): Promis
         actor: commandActor(input),
         reason: body.reason,
         assertion: body.assertion,
+        confirmation: body.confirmation,
       });
       json(input.response, 200, result);
     } catch (error) {
@@ -101,11 +102,11 @@ export async function handleAppMapReviewedOriginRoute(input: RouteInput): Promis
   }
   const revoke = matchPath(
     input.pathname,
-    "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/reviewed-origin/:projectionId/revoke",
+    "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/origin/:projectionId/revoke",
   );
   if (input.method !== "POST" || !revoke) return false;
   const body = (await parseJsonBody(input.request)) as Omit<
-    OperationInput<"app-map.scroll-surface.reviewed-origin.revoke">,
+    OperationInput<"app-map.scroll-surface.origin.revoke">,
     "appMapId" | "screenId" | "variantId" | "captureId" | "projectionId"
   >;
   try {
@@ -120,6 +121,7 @@ export async function handleAppMapReviewedOriginRoute(input: RouteInput): Promis
       actor: commandActor(input),
       reason: body.reason,
       assertion: body.assertion,
+      confirmation: body.confirmation,
     });
     json(input.response, 200, result);
   } catch (error) {

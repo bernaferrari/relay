@@ -41,6 +41,10 @@ function canonicalLedger(ledger: Omit<ReviewedDocumentOriginLedger, "authorizati
     domain: "relay-reviewed-document-origin/ledger/v1",
     schemaVersion: ledger.schemaVersion,
     projectionId: ledger.projectionId,
+    sequence: ledger.sequence,
+    ...(ledger.previousAuthorizationSignature !== undefined
+      ? { previousAuthorizationSignature: ledger.previousAuthorizationSignature }
+      : {}),
     status: ledger.status,
     createdAt: ledger.createdAt,
     ...(ledger.activatedAt !== undefined ? { activatedAt: ledger.activatedAt } : {}),

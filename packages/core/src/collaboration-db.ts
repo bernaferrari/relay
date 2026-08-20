@@ -24,7 +24,7 @@ import {
 } from "./collaboration-json.js";
 
 export const CONTROL_DB_NAME = "control.sqlite";
-export const CONTROL_SCHEMA_VERSION = 3;
+export const CONTROL_SCHEMA_VERSION = 4;
 export const JSON_MIGRATED_META = "json_migrated";
 export const RECOVERED_FROM_BACKUP_META = "recovered_from_json_backup";
 export const REPAIRED_ON_MIGRATE_META = "repaired_on_migrate";
@@ -151,6 +151,29 @@ export function applyControlSchema(db: DatabaseSync): void {
     );
     CREATE INDEX IF NOT EXISTS reviewed_document_origin_ledger_map_status
       ON reviewed_document_origin_ledger(map_key, map_epoch, status);
+    /* v4 authority. The v3 single-row ledger remains only as an inert
+     * migration artifact: it is never read as authorization. */
+    CREATE TABLE IF NOT EXISTS reviewed_document_origin_ledger_events (
+      projection_id TEXT NOT NULL,
+      event_sequence INTEGER NOT NULL CHECK (event_sequence IN (1, 2, 3)),
+      map_key TEXT NOT NULL,
+      map_epoch TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'revoked')),
+      document TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (projection_id, event_sequence)
+    );
+    CREATE INDEX IF NOT EXISTS reviewed_document_origin_ledger_events_map_status
+      ON reviewed_document_origin_ledger_events(map_key, map_epoch, status, created_at DESC);
+    /* A separate insert-only tombstone makes a copied active prefix fail
+     * closed even if the final revoked event is accidentally rolled back. */
+    CREATE TABLE IF NOT EXISTS reviewed_document_origin_revocation_tombstones (
+      projection_id TEXT PRIMARY KEY,
+      map_key TEXT NOT NULL,
+      map_epoch TEXT NOT NULL,
+      document TEXT NOT NULL,
+      revoked_at INTEGER NOT NULL
+    );
   `);
   migrateControlSchema(db);
 }
@@ -186,6 +209,31 @@ function migrateControlSchema(db: DatabaseSync): void {
   }
   if (version < 3) {
     db.exec("PRAGMA user_version = 3");
+    version = 3;
+  }
+  if (version < 4) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS reviewed_document_origin_ledger_events (
+        projection_id TEXT NOT NULL,
+        event_sequence INTEGER NOT NULL CHECK (event_sequence IN (1, 2, 3)),
+        map_key TEXT NOT NULL,
+        map_epoch TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'revoked')),
+        document TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (projection_id, event_sequence)
+      );
+      CREATE INDEX IF NOT EXISTS reviewed_document_origin_ledger_events_map_status
+        ON reviewed_document_origin_ledger_events(map_key, map_epoch, status, created_at DESC);
+      CREATE TABLE IF NOT EXISTS reviewed_document_origin_revocation_tombstones (
+        projection_id TEXT PRIMARY KEY,
+        map_key TEXT NOT NULL,
+        map_epoch TEXT NOT NULL,
+        document TEXT NOT NULL,
+        revoked_at INTEGER NOT NULL
+      );
+      PRAGMA user_version = 4;
+    `);
   }
 }
 
@@ -469,39 +517,72 @@ export function insertReviewedDocumentOriginProjection(
   );
 }
 
-export function reviewedDocumentOriginLedger(
+export function reviewedDocumentOriginLedgerEvents(
   db: DatabaseSync,
   projectionId: string,
-): ReviewedDocumentOriginLedger | undefined {
-  return parseRowDocument<ReviewedDocumentOriginLedger>(
-    db
-      .prepare("SELECT document FROM reviewed_document_origin_ledger WHERE projection_id = ?")
-      .get(projectionId) as { document?: string } | undefined,
-  );
+): ReviewedDocumentOriginLedger[] {
+  const rows = db
+    .prepare(
+      `SELECT document FROM reviewed_document_origin_ledger_events
+       WHERE projection_id = ? ORDER BY event_sequence ASC`,
+    )
+    .all(projectionId) as Array<{ document?: string }>;
+  return rows
+    .map((row) => parseRowDocument<ReviewedDocumentOriginLedger>(row))
+    .filter((value): value is ReviewedDocumentOriginLedger => value !== undefined);
 }
 
-export function upsertReviewedDocumentOriginLedger(
+export function appendReviewedDocumentOriginLedgerEvent(
   db: DatabaseSync,
   mapKey: string,
   mapEpoch: string,
   ledger: ReviewedDocumentOriginLedger,
 ): void {
   db.prepare(
-    `INSERT INTO reviewed_document_origin_ledger(
-      projection_id, map_key, map_epoch, status, document, updated_at
-    ) VALUES(?, ?, ?, ?, ?, ?) ON CONFLICT(projection_id) DO UPDATE SET
-      map_key = excluded.map_key,
-      map_epoch = excluded.map_epoch,
-      status = excluded.status,
-      document = excluded.document,
-      updated_at = excluded.updated_at`,
+    `INSERT INTO reviewed_document_origin_ledger_events(
+      projection_id, event_sequence, map_key, map_epoch, status, document, created_at
+    ) VALUES(?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     ledger.projectionId,
+    ledger.sequence,
     mapKey,
     mapEpoch,
     ledger.status,
     JSON.stringify(ledger),
     ledger.revocation?.at ?? ledger.activatedAt ?? ledger.createdAt,
+  );
+}
+
+export function reviewedDocumentOriginRevocationTombstone(
+  db: DatabaseSync,
+  projectionId: string,
+): ReviewedDocumentOriginLedger | undefined {
+  return parseRowDocument<ReviewedDocumentOriginLedger>(
+    db
+      .prepare(
+        `SELECT document FROM reviewed_document_origin_revocation_tombstones
+         WHERE projection_id = ?`,
+      )
+      .get(projectionId) as { document?: string } | undefined,
+  );
+}
+
+export function insertReviewedDocumentOriginRevocationTombstone(
+  db: DatabaseSync,
+  mapKey: string,
+  mapEpoch: string,
+  ledger: ReviewedDocumentOriginLedger,
+): void {
+  db.prepare(
+    `INSERT INTO reviewed_document_origin_revocation_tombstones(
+      projection_id, map_key, map_epoch, document, revoked_at
+    ) VALUES(?, ?, ?, ?, ?)`,
+  ).run(
+    ledger.projectionId,
+    mapKey,
+    mapEpoch,
+    JSON.stringify(ledger),
+    ledger.revocation?.at ?? ledger.createdAt,
   );
 }
 

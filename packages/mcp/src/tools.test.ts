@@ -249,6 +249,94 @@ test("gives agents exact schemas for App Map metadata and Case Stacks", () => {
   );
 });
 
+test("exposes reviewed-origin authority only through exact offline contracts", () => {
+  const scope = {
+    appMapId: "settings",
+    screenId: "settings-screen",
+    variantId: "settings-android",
+    captureId: "settings-surface",
+  };
+  const inspect = tool("app-map.scroll-surface.origin.inspect");
+  assert.equal(inspect.annotations.readOnlyHint, true);
+  assert.equal(inspect.requiresConfirmation, false);
+  assert.deepEqual(inspect.inputSchema.parse(scope), scope);
+
+  const review = tool("app-map.scroll-surface.origin.review");
+  assert.equal(review.requiresConfirmation, true);
+  assert.match(review.description, /never captures or controls a target/u);
+  assert.deepEqual(
+    review.inputSchema.parse({
+      ...scope,
+      expectedRevision: 7,
+      reason: "The immutable first viewport was reviewed.",
+      assertion: "reviewed-document-top",
+      confirm: true,
+    }),
+    {
+      ...scope,
+      expectedRevision: 7,
+      reason: "The immutable first viewport was reviewed.",
+      assertion: "reviewed-document-top",
+      confirm: true,
+    },
+  );
+  assert.throws(() =>
+    review.inputSchema.parse({
+      ...scope,
+      expectedRevision: 7,
+      reason: "The immutable first viewport was reviewed.",
+      assertion: "a human looked at it",
+      confirm: true,
+    }),
+  );
+  assert.throws(() =>
+    review.inputSchema.parse({
+      ...scope,
+      expectedRevision: 7,
+      reason: "The immutable first viewport was reviewed.",
+      assertion: "reviewed-document-top",
+      confirm: true,
+      targetId: "must-not-be-accepted",
+    }),
+  );
+
+  const revoke = tool("app-map.scroll-surface.origin.revoke");
+  assert.equal(revoke.requiresConfirmation, true);
+  assert.throws(() =>
+    revoke.inputSchema.parse({
+      ...scope,
+      projectionId: "reviewed-origin-1",
+      expectedRevision: 7,
+      reason: "Disable this origin.",
+      assertion: "reviewed-document-top",
+      confirm: true,
+    }),
+  );
+  for (const profile of ["map", "author", "review"] as const) {
+    const operations = new Set(
+      relayMcpToolsForProfile(profile).map(({ operationId }) => operationId),
+    );
+    assert.ok(operations.has("app-map.scroll-surface.origin.inspect"), profile);
+  }
+  const reviewerOperations = new Set(
+    relayMcpToolsForProfile("review").map(({ operationId }) => operationId),
+  );
+  assert.ok(reviewerOperations.has("app-map.scroll-surface.origin.review"));
+  assert.ok(reviewerOperations.has("app-map.scroll-surface.origin.revoke"));
+  assert.equal(
+    relayMcpToolsForProfile("author").some(
+      ({ operationId }) => operationId === "app-map.scroll-surface.origin.review",
+    ),
+    false,
+  );
+  assert.equal(
+    relayMcpToolsForProfile("control").some(({ operationId }) =>
+      operationId.startsWith("app-map.scroll-surface.origin."),
+    ),
+    false,
+  );
+});
+
 test("gives run agents one revision-pinned graph Test operation", () => {
   const input = {
     appMapId: "checkout",

@@ -1,12 +1,16 @@
 /** Immutable evidence checks shared by review, compilation, and execution.
  * This module deliberately contains no control-store writes or device access. */
 import { createHash } from "node:crypto";
-import type {
-  AppMap,
-  ReviewedDocumentOriginBinding,
-  ReviewedDocumentOriginDecision,
-  ReviewedDocumentOriginProjection,
-  ScrollSurfaceEvidence,
+import {
+  REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
+  REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
+  REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
+  type AppMap,
+  type ReviewedDocumentOriginApproval,
+  type ReviewedDocumentOriginBinding,
+  type ReviewedDocumentOriginProjection,
+  type ReviewedDocumentOriginRevocation,
+  type ScrollSurfaceEvidence,
 } from "@relay/protocol";
 import { PNG } from "pngjs";
 import { readAuthoringEvidence } from "./authoring-evidence.js";
@@ -147,7 +151,7 @@ export async function reviewedDocumentOriginRawEvidenceIsValid(
 export function reviewedDocumentOriginApprovalPayload(projection: {
   id: string;
   binding: ReviewedDocumentOriginBinding;
-  approval: Omit<ReviewedDocumentOriginDecision, "evidence">;
+  approval: Omit<ReviewedDocumentOriginApproval, "evidence">;
 }): object {
   return {
     schemaVersion: 1,
@@ -157,13 +161,14 @@ export function reviewedDocumentOriginApprovalPayload(projection: {
     actor: projection.approval.actor,
     reason: projection.approval.reason,
     assertion: projection.approval.assertion,
+    confirmation: projection.approval.confirmation,
     approvedAt: projection.approval.at,
   };
 }
 
 export function reviewedDocumentOriginRevocationPayload(
   projection: ReviewedDocumentOriginProjection,
-  decision: Omit<ReviewedDocumentOriginDecision, "evidence">,
+  decision: Omit<ReviewedDocumentOriginRevocation, "evidence">,
 ): object {
   return {
     schemaVersion: 1,
@@ -173,6 +178,7 @@ export function reviewedDocumentOriginRevocationPayload(
     actor: decision.actor,
     reason: decision.reason,
     assertion: decision.assertion,
+    confirmation: decision.confirmation,
     revokedAt: decision.at,
   };
 }
@@ -194,9 +200,10 @@ export async function reviewedDocumentOriginApprovalEvidenceIsValid(
     !approval ||
     !approval.actor ||
     !nonEmptyText(approval.actor.actorId) ||
-    !["human", "agent", "system"].includes(approval.actor.actorKind) ||
+    !["human", "agent"].includes(approval.actor.actorKind) ||
     !nonEmptyText(approval.reason) ||
-    !nonEmptyText(approval.assertion) ||
+    approval.assertion !== REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION ||
+    approval.confirmation !== REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION ||
     !Number.isSafeInteger(approval.at) ||
     !reviewedDocumentOriginEvidenceIsComplete(approval.evidence, "application/json")
   ) {
@@ -215,6 +222,7 @@ export async function reviewedDocumentOriginApprovalEvidenceIsValid(
           actor: approval.actor,
           reason: approval.reason,
           assertion: approval.assertion,
+          confirmation: approval.confirmation,
           at: approval.at,
         },
       }),
@@ -224,7 +232,7 @@ export async function reviewedDocumentOriginApprovalEvidenceIsValid(
 
 export async function reviewedDocumentOriginRevocationEvidenceIsValid(input: {
   projection: ReviewedDocumentOriginProjection;
-  ledger: { status: string; revocation?: ReviewedDocumentOriginDecision };
+  ledger: { status: string; revocation?: ReviewedDocumentOriginRevocation };
 }): Promise<boolean> {
   const decision = input.ledger?.revocation;
   if (
@@ -232,9 +240,10 @@ export async function reviewedDocumentOriginRevocationEvidenceIsValid(input: {
     !decision ||
     !decision.actor ||
     !nonEmptyText(decision.actor.actorId) ||
-    !["human", "agent", "system"].includes(decision.actor.actorKind) ||
+    !["human", "agent"].includes(decision.actor.actorKind) ||
     !nonEmptyText(decision.reason) ||
-    !nonEmptyText(decision.assertion) ||
+    decision.assertion !== REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION ||
+    decision.confirmation !== REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION ||
     !Number.isSafeInteger(decision.at) ||
     !reviewedDocumentOriginEvidenceIsComplete(decision.evidence, "application/json")
   ) {
