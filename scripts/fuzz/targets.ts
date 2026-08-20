@@ -13,6 +13,7 @@ import { parseReplayScriptDetailed } from '@agent-device/ad-script';
 import { readCliBatchStepsJson } from '../../src/cli/batch-steps.ts';
 import { inspectMaestroFlow } from '@agent-device/maestro';
 import type { FuzzTarget } from './target-types.ts';
+import { acceptCase, makeValidationCheck, rejectCase } from './validation-case.ts';
 
 // argv is carried as one string so a case (and its corpus entry, artifact, and repro
 // command) stays a single copy-pasteable value. Splitting on spaces is deliberate: the
@@ -92,6 +93,49 @@ export const FUZZ_TARGETS: readonly FuzzTarget[] = [
     ],
   },
   {
+    // Expectation-carrying cases built from the CLI schema registry (#1781 B2): each case is a
+    // JSON envelope (validation-case.ts) whose argv tokenizes cleanly, so the planted violation
+    // surfaces in command validation and is asserted against its specific error code. `run`
+    // exists for the classic path only; `check` owns the judgment.
+    name: 'cli-validation',
+    description: 'parseArgs via schema-derived command lines with expected outcomes',
+    run: (input) => void runCliValidationPayload(JSON.parse(input).payload as string[]),
+    check: makeValidationCheck('cli-validation', (payload) =>
+      runCliValidationPayload(payload as string[]),
+    ),
+    seeds: [
+      acceptCase(['open', 'com.example.app']),
+      acceptCase(['click', 'text=Login', '--json']),
+      rejectCase(['devices', '--platform=bogus'], 'bad-enum-value'),
+      rejectCase(['snapshot', '--depth'], 'missing-flag-value'),
+      // Two command-validation rules whose entire input space is a handful of strings: `batch` is
+      // the only command with a step-source rule, and `backMode` the only flag key reachable
+      // through two tokens. Generating them re-executed ~15 payloads thousands of times a night
+      // for no added reach, so they are pinned here and run verbatim once per run, before any
+      // generated case. They are seed regressions, not generated reach — #1781's table says so.
+      rejectCase(['batch'], 'batch-step-source-none'),
+      rejectCase(['batch', '--steps=[]', '--steps-file=steps.json'], 'batch-step-source-both'),
+      rejectCase(['back', '--in-app', '--system'], 'conflicting-flag-tokens'),
+      rejectCase(['back', '--system', '--in-app'], 'conflicting-flag-tokens'),
+    ],
+  },
+  {
+    // Same contract for Maestro flows: shape-valid YAML with one planted violation, so the
+    // failure surfaces in the command-shape validation behind the YAML tokenizer.
+    name: 'maestro-validation',
+    description: 'inspectMaestroFlow via shape-derived flows with expected outcomes',
+    run: (input) => void inspectMaestroFlow(JSON.parse(input).payload as string, 'fuzz.yaml'),
+    check: makeValidationCheck(
+      'maestro-validation',
+      (payload) => void inspectMaestroFlow(payload as string, 'fuzz.yaml'),
+    ),
+    seeds: [
+      acceptCase('appId: com.example.app\n---\n- launchApp\n- tapOn: "Login"\n'),
+      rejectCase('appId: com.example.app\n---\n- clickOn: "Login"\n', 'unsupported-command'),
+      rejectCase('appId: com.example.app\n---\n- tapOn:\n bogusField: "x"\n', 'unsupported-field'),
+    ],
+  },
+  {
     name: 'maestro',
     description: 'parseMaestroProgram (Maestro compat)',
     run: (input) => void inspectMaestroFlow(input, 'fuzz.yaml'),
@@ -108,3 +152,7 @@ export const FUZZ_TARGETS: readonly FuzzTarget[] = [
     ],
   },
 ];
+
+function runCliValidationPayload(argv: readonly string[]): void {
+  void parseArgs([...argv], { strictFlags: true });
+}
