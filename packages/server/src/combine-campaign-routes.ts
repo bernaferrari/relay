@@ -12,6 +12,7 @@ import {
   type OptionRunSet,
 } from "@relay/core";
 import { assertTargetControl } from "./access-control.js";
+import { requireAppMapCombineRuntimeProfileContract } from "./app-map-combine-runtime-contract.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { JobRouteContext } from "./job-routes.js";
 
@@ -35,6 +36,10 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
     if (!existing || (!scope.localTrusted && existing.ownerId !== scope.subject)) {
       throw new HttpError(404, "Combine campaign not found");
     }
+    requireAppMapCombineRuntimeProfileContract({
+      appMapId: existing.appMapId,
+      combineId: existing.combineId,
+    });
     await assertTargetControl(scope, existing.target.id);
     const projected = await projectCombineCampaign(existing);
     if (projected.status === "pilot-running" || projected.status === "running") {

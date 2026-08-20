@@ -1,5 +1,66 @@
 import * as z from "zod/v4";
-import { identifier, natural, stepTarget, text } from "./input-schema-primitives.js";
+import {
+  authoringTarget,
+  identifier,
+  natural,
+  stepTarget,
+  text,
+} from "./input-schema-primitives.js";
+
+const forceRecaptureScreenIds = z
+  .array(identifier("Full-surface screen identifier to recapture"))
+  .min(1)
+  .max(50)
+  .superRefine((screenIds, context) => {
+    if (new Set(screenIds).size === screenIds.length) return;
+    context.addIssue({
+      code: "custom",
+      message: "forceRecaptureScreenIds must not repeat a screen identifier",
+    });
+  });
+
+/** The offline preview and the queued run share one evidence-scope vocabulary.
+ * Keeping it here makes the MCP contract as strict as the protocol contract,
+ * rather than silently dropping a selected profile at the transport boundary. */
+export const appMapTestRunInputSchema = z
+  .object({
+    appMapId: identifier("App Map identifier"),
+    testId: identifier("Graph-native Test identifier"),
+    expectedRevision: natural("Exact saved App Map revision to run"),
+    target: authoringTarget.describe("Explicit device or managed browser target"),
+    targetProfileId: identifier("Saved runtime evidence profile to bind before control").optional(),
+    surfaceCapture: z
+      .object({ forceRecaptureScreenIds })
+      .strict()
+      .optional()
+      .describe("Run-only full-surface recapture policy"),
+    startup: z
+      .discriminatedUnion("mode", [
+        z.object({ mode: z.literal("cold") }).strict(),
+        z
+          .object({
+            mode: z.literal("verified-checkpoint"),
+            screenId: identifier("Mapped screen identifier to prove before the suffix runs"),
+          })
+          .strict(),
+      ])
+      .optional()
+      .describe(
+        "Explicit startup policy. A checkpoint mismatch stops for review; it never falls back to a cold relaunch.",
+      ),
+  })
+  .strict();
+
+export const appMapTestCompileInputSchema = z
+  .object({
+    appMapId: identifier("App Map identifier"),
+    testId: identifier("Graph-native Test identifier"),
+    entryCheckpointScreenId: identifier(
+      "Optional mapped screen identifier to compile as a verified live checkpoint",
+    ).optional(),
+    targetProfileId: identifier("Saved runtime evidence profile to scope offline proof").optional(),
+  })
+  .strict();
 
 const testStepPlacement = z.union([
   z

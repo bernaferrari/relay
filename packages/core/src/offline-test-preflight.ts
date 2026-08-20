@@ -25,7 +25,6 @@ import {
   type OfflineTestPreflightRawSource,
 } from "./offline-test-preflight-raw.js";
 import {
-  rawTargetProfileScopeBlocksRecapture,
   rawVariantLabel,
   rawVariantScopeLabels,
   scopeRawSourcesToRuntimeVariant,
@@ -640,8 +639,7 @@ export function preflightCompiledAppMapTestOffline(
     severity: "warning" | "blocker";
     sources: OfflineTestPreflightEvidenceSource[];
     variantScope?: OfflineTestPreflightSelector["rawVariantScope"];
-    /** A selector gives the most useful repair location; an expect-screen
-     * still establishes the blocker when no selector follows it. */
+    /** Prefer selector repair, but an expect-screen still establishes a blocker. */
     selector?: boolean;
   }) => {
     const selectedVariant = input.variantScope?.selectedVariant;
@@ -672,9 +670,7 @@ export function preflightCompiledAppMapTestOffline(
       findings.push(finding);
       return;
     }
-    // A declared source cannot support offline selector proof without its raw
-    // tree. Upgrade one compact screen repair instead of adding a noisy row
-    // for every dependent step.
+    // Upgrade one compact repair when a declared source has no usable raw tree.
     if (
       input.severity === "blocker" &&
       (findings[existing.index]?.severity !== "blocker" ||
@@ -701,18 +697,8 @@ export function preflightCompiledAppMapTestOffline(
         sourceScreenId = step.screenId;
         sourceScreenTitle = step.screenTitle;
         const rawEvidenceStatus = evidence.rawEvidenceStatusByScreenId?.[sourceScreenId];
-        // Dynamic Shared Conversations content has no ordinary raw-baseline
-        // requirement. A stable entry/exit control still reaches
-        // selectorAssessment below and will request exactly one recapture if
-        // its own source tree is unavailable.
-        if (
-          rawEvidenceStatus &&
-          !isDynamicSharedConversations(step.screenTitle) &&
-          !rawTargetProfileScopeBlocksRecapture(
-            plan.rawAccessibilityTargetProfiles,
-            options.targetProfileId,
-          )
-        ) {
+        // Shared Conversations excludes passive dynamic content, not entry/exit controls.
+        if (rawEvidenceStatus && !isDynamicSharedConversations(step.screenTitle)) {
           recordRawEvidenceRecapture({
             screenId: sourceScreenId,
             screenTitle: step.screenTitle,
@@ -731,8 +717,7 @@ export function preflightCompiledAppMapTestOffline(
             recipeId: recipe.id,
             ...(step.id ? { recipeStepId: step.id } : {}),
             connectionId: step.returnRequirement.connectionId,
-            // The forward edge's destination is the state the runner is in;
-            // the expectation's screen is the only reviewed return target.
+            // The expectation's screen is the only reviewed return target.
             sourceScreenId: step.returnRequirement.destinationScreenId,
             destinationScreenId: step.screenId,
             status: "review-required",
@@ -860,8 +845,23 @@ export function preflightCompiledAppMapTestOffline(
       }
     }
   }
+  const scopedRawBlockerScreens = new Set(
+    findings
+      .filter(
+        (finding) =>
+          finding.severity === "blocker" &&
+          finding.code.startsWith("raw-evidence-variant-") &&
+          Boolean(finding.screenId),
+      )
+      .map((finding) => finding.screenId!),
+  );
   const compactFindings = findings.filter(
     (finding, index) =>
+      !(
+        finding.code === "raw-evidence-recapture-required" &&
+        finding.screenId &&
+        scopedRawBlockerScreens.has(finding.screenId)
+      ) &&
       findings.findIndex(
         (other) =>
           other.severity === finding.severity &&

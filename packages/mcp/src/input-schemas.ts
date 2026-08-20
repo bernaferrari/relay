@@ -1,6 +1,12 @@
 import { operationDefinition, type OperationId } from "@relay/protocol";
 import * as z from "zod/v4";
-import { graphTest, testCapturePolicy, testSemanticEdits } from "./test-input-schemas.js";
+import {
+  appMapTestCompileInputSchema,
+  appMapTestRunInputSchema,
+  graphTest,
+  testCapturePolicy,
+  testSemanticEdits,
+} from "./test-input-schemas.js";
 import {
   authoringInteraction,
   authoringTarget,
@@ -567,37 +573,8 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       edits: testSemanticEdits,
     })
     .strict(),
-  "app-map.test.run": z
-    .object({
-      appMapId: identifier("App Map identifier"),
-      testId: identifier("Graph-native Test identifier"),
-      expectedRevision: natural("Exact saved App Map revision to run"),
-      target: authoringTarget.describe("Explicit device or managed browser target"),
-      startup: z
-        .discriminatedUnion("mode", [
-          z.object({ mode: z.literal("cold") }).strict(),
-          z
-            .object({
-              mode: z.literal("verified-checkpoint"),
-              screenId: identifier("Mapped screen identifier to prove before the suffix runs"),
-            })
-            .strict(),
-        ])
-        .optional()
-        .describe(
-          "Explicit startup policy. A checkpoint mismatch stops for review; it never falls back to a cold relaunch.",
-        ),
-    })
-    .strict(),
-  "app-map.test.compile": z
-    .object({
-      appMapId: identifier("App Map identifier"),
-      testId: identifier("Graph-native Test identifier"),
-      entryCheckpointScreenId: identifier(
-        "Optional mapped screen identifier to compile as a verified live checkpoint",
-      ).optional(),
-    })
-    .strict(),
+  "app-map.test.run": appMapTestRunInputSchema,
+  "app-map.test.compile": appMapTestCompileInputSchema,
   "app-map.test.from-intent": z
     .object({
       appMapId: identifier("App Map identifier"),

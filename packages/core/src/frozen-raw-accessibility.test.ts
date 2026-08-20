@@ -432,6 +432,40 @@ test("prioritizes a global profile choice over a generic unavailable-tree repair
   );
 });
 
+test("keeps an expect-screen-only raw repair when no selector can name the profile scope", async () => {
+  const compiled = sourcePlan({ profile: [] });
+  compiled.rawAccessibilityVariantsByScreenId = {
+    profile: [englishProfileVariant, portugueseProfileVariant],
+  };
+  compiled.rawAccessibilityTargetProfiles = [
+    {
+      id: englishProfileVariant.targetProfileId,
+      targetId: englishProfileVariant.targetId,
+      platform: englishProfileVariant.platform,
+      viewport: englishProfileVariant.viewport,
+    },
+    {
+      id: portugueseProfileVariant.targetProfileId,
+      targetId: portugueseProfileVariant.targetId,
+      platform: portugueseProfileVariant.platform,
+      viewport: portugueseProfileVariant.viewport,
+    },
+  ];
+  compiled.recipes.root!.steps = [compiled.recipes.root!.steps[0]!];
+
+  const report = preflightCompiledAppMapTestOffline(
+    compiled,
+    await loadFrozenRawAccessibilityEvidence(compiled),
+  );
+
+  assert.equal(report.selectors.length, 0);
+  assert.deepEqual(
+    report.findings.map((finding) => finding.code),
+    ["raw-evidence-recapture-required"],
+  );
+  assert.equal(report.summary.blockers, 1);
+});
+
 test("requires a profile choice before requesting a raw capture for two known Variants", async () => {
   const compiled = scopedSelectorPlan({
     sources: [],

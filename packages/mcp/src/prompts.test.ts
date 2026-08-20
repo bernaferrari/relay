@@ -437,7 +437,7 @@ test("mapping prompt turns one delegation into a bounded autonomous proposal", a
   }
 });
 
-test("matrix prompt keeps authoring, preflight, execution, retry, and export on one saved plan", async () => {
+test("matrix prompt keeps App Map Combine execution behind the per-cell profile boundary", async () => {
   const session = await connectMcp();
   try {
     const { text } = promptText(
@@ -453,9 +453,9 @@ test("matrix prompt keeps authoring, preflight, execution, retry, and export on 
     );
     assert.match(text, /Variables and graph-native scenario Tests/);
     assert.match(text, /relay_app_map_combine_preflight/);
-    assert.match(text, /retry only problem cells/i);
-    assert.match(text, /executionMode pilot/);
-    assert.match(text, /resume untouched locales/);
+    assert.match(text, /temporarily fail-closed/i);
+    assert.match(text, /relay_app_map_test_run/);
+    assert.match(text, /do not call relay_job_combine_start/i);
     assert.match(text, /App Language destinations that open OS Settings/);
     assert.match(text, /portable screenshot report/);
     assert.match(text, /absent from the canvas/);

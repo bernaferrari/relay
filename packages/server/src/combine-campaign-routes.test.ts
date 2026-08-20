@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { RelayClient } from "@relay/client";
+import { ApiError, RelayClient } from "@relay/client";
 import { createCombineCampaign } from "@relay/core";
 import type { CombineCampaign } from "@relay/protocol";
 import { startServer } from "./index.js";
@@ -59,6 +59,20 @@ test("campaign routes preserve untouched cases and cancel without scheduling the
     const beforeCampaign = before.campaign as CombineCampaign;
     assert.equal(beforeCampaign.status, "ready-to-resume");
     assert.equal(beforeCampaign.cases[1]?.status, "pending");
+    const jobsBeforeResume = await client.invoke("job.list", { limit: 100 });
+    const leasesBeforeResume = await client.invoke("lease.list", { status: "all" });
+    await assert.rejects(
+      client.invoke("job.combine.campaign.resume", { batchId: "campaign-1" }),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        (error.body as { code?: unknown }).code ===
+          "APP_MAP_COMBINE_RUNTIME_PROFILE_CONTRACT_REQUIRED",
+    );
+    const jobsAfterResume = await client.invoke("job.list", { limit: 100 });
+    const leasesAfterResume = await client.invoke("lease.list", { status: "all" });
+    assert.equal(jobsAfterResume.jobs.length, jobsBeforeResume.jobs.length);
+    assert.equal(leasesAfterResume.leases.length, leasesBeforeResume.leases.length);
 
     const cancelled = await client.invoke("job.combine.campaign.cancel", {
       batchId: "campaign-1",

@@ -7,6 +7,7 @@ import {
   compileAppMapConnection,
   compileAppMapFlow,
   compileAppMapTest,
+  createAppMapTestExecutionIntent,
   currentOperationContext,
   enqueueJob,
   listDevices,
@@ -118,25 +119,47 @@ export function frozenTestRunTargetProfile(input: {
   };
 }
 
-function assertFrozenEvidenceTargetCompatibility(input: {
+function frozenEvidenceTargetProfileForTarget(input: {
   target: Pick<OperationInput<"app-map.test.run">["target"], "targetId" | "platform">;
   profiles: AppMapCompiledRuntimeTargetProfile[] | undefined;
-}): void {
-  const profiles = input.profiles ?? [];
-  if (!profiles.length) return;
-  if (
-    profiles.some(
-      (profile) =>
-        profile.targetId === input.target.targetId && profile.platform === input.target.platform,
-    )
-  ) {
-    return;
-  }
+}): AppMapCompiledRuntimeTargetProfile | undefined {
+  const profiles = [
+    ...new Map(
+      (input.profiles ?? []).map((profile) => [
+        [
+          profile.id,
+          profile.targetId,
+          profile.platform,
+          profile.viewport ? `${profile.viewport.width}x${profile.viewport.height}` : "",
+        ].join("\u0000"),
+        profile,
+      ]),
+    ).values(),
+  ];
+  if (!profiles.length) return undefined;
+  const matching = profiles.filter(
+    (profile) =>
+      profile.targetId === input.target.targetId && profile.platform === input.target.platform,
+  );
+  if (matching.length === 1) return structuredClone(matching[0]!);
   const savedTargets = [
     ...new Set(profiles.map((profile) => `${profile.platform}:${profile.targetId}`)),
   ]
     .sort()
     .join(", ");
+  if (matching.length > 1) {
+    throw new HttpError(
+      409,
+      `Choose one frozen evidence profile for ${input.target.platform}:${input.target.targetId}`,
+      {
+        code: "TARGET_PROFILE_SELECTION_REQUIRED",
+        target: input.target,
+        targetProfileCandidates: matching.map((profile) => structuredClone(profile)),
+        recovery:
+          "Select one saved evidence profile for this target, then retry the exact Test revision.",
+      },
+    );
+  }
   throw new HttpError(
     409,
     `No frozen evidence profile binds to ${input.target.platform}:${input.target.targetId}`,
@@ -211,7 +234,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     const targetId = body.target.targetId.trim();
     const requestedTarget = { targetId, platform: body.target.platform };
     const targetProfileId = body.targetProfileId?.trim() || undefined;
-    const runtimeTargetProfile = targetProfileId
+    const explicitlySelectedRuntimeTargetProfile = targetProfileId
       ? frozenTestRunTargetProfile({ map, targetProfileId, target: requestedTarget })
       : undefined;
     let compiled;
@@ -236,22 +259,24 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       }
       throw new HttpError(409, error instanceof Error ? error.message : String(error));
     }
+    const inferredRuntimeTargetProfile = explicitlySelectedRuntimeTargetProfile
+      ? undefined
+      : frozenEvidenceTargetProfileForTarget({
+          target: requestedTarget,
+          profiles: compiled.plan.rawAccessibilityTargetProfiles,
+        });
+    const runtimeTargetProfile =
+      explicitlySelectedRuntimeTargetProfile ?? inferredRuntimeTargetProfile;
     const plan = {
       ...compiled.plan,
       ...(runtimeTargetProfile
         ? { runtimeTargetProfile: structuredClone(runtimeTargetProfile) }
         : {}),
     };
-    if (!runtimeTargetProfile) {
-      assertFrozenEvidenceTargetCompatibility({
-        target: requestedTarget,
-        profiles: plan.rawAccessibilityTargetProfiles,
-      });
-    }
     const preflight = preflightCompiledAppMapTestOffline(
       plan,
       await loadFrozenRawAccessibilityEvidence(plan),
-      targetProfileId ? { targetProfileId } : {},
+      runtimeTargetProfile ? { targetProfileId: runtimeTargetProfile.id } : {},
     );
     if (preflight.summary.blockers) {
       throw new HttpError(
@@ -342,6 +367,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       rootRecipeId: plan.rootRecipeId,
     };
     const queuedAt = Date.now();
+    const executionIntent = createAppMapTestExecutionIntent({ plan, recipeGraph, preflight });
     const job = runtime.enqueueJob({
       recipe: recipeSnapshot.id,
       title: recipeSnapshot.title,
@@ -353,6 +379,11 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       browserTargetId: body.target.kind === "browser" ? targetId : undefined,
       ...(targetProfile ? { targetProfile } : {}),
       artifacts: [
+        {
+          kind: "app-map-test-execution-intent",
+          capturedAt: queuedAt,
+          data: executionIntent,
+        },
         {
           kind: "app-map-test-plan",
           capturedAt: queuedAt,

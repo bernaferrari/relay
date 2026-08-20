@@ -188,19 +188,6 @@ function uniqueTargetProfiles(
     .map((profile) => structuredClone(profile));
 }
 
-/** Whether unavailable raw evidence must first be resolved as a profile-choice
- * problem. This lets callers avoid emitting a generic recapture beside the
- * more actionable selection/retarget directive. */
-export function rawTargetProfileScopeBlocksRecapture(
-  profiles: readonly AppMapCompiledRawAccessibilityTargetProfile[] | undefined,
-  selectedTargetProfileId: string | undefined,
-): boolean {
-  const candidates = uniqueTargetProfiles(profiles ?? []);
-  if (!candidates.length) return false;
-  if (!selectedTargetProfileId?.trim()) return candidates.length > 1;
-  return candidates.filter((profile) => profile.id === selectedTargetProfileId.trim()).length !== 1;
-}
-
 function sourceCount(
   variant: AppMapCompiledRawAccessibilityVariant,
   sources: readonly OfflineTestPreflightRawSource[],

@@ -137,6 +137,8 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Writes the pack and returns its findings: the same codes as relay_corpus_analysis, each with the frame it came from. Read those before opening screenshots by hand.",
   "job.locale-matrix.analysis":
     " The same findings without writing a pack, keyed to the frame of each case. Use this to read a matrix or combine batch while it is still running; export only when a person needs the folder.",
+  "job.combine.start":
+    " App Map Combine execution is fail-closed until every cell owns a frozen runtime profile and offline preflight. For one Test, use app-map.test.run with targetProfileId; do not retry this migration blocker.",
 };
 
 function toolDescriptor(

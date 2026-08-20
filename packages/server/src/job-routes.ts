@@ -41,6 +41,7 @@ import {
   type Recipe,
 } from "@relay/core";
 import { assertJobAccess, assertTargetControl } from "./access-control.js";
+import { requireAppMapCombineRuntimeProfileContract } from "./app-map-combine-runtime-contract.js";
 import { enqueueCompatibilityBatch } from "./compatibility-jobs.js";
 import { HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
@@ -377,6 +378,13 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     }
     const targetId = body.browserTargetId ?? body.serial;
     if (!targetId) throw new HttpError(400, "serial or browserTargetId is required");
+    if (body.testId?.trim() || body.combineId?.trim()) {
+      requireAppMapCombineRuntimeProfileContract({
+        appMapId: body.appMapId.trim(),
+        ...(body.testId?.trim() ? { testId: body.testId } : {}),
+        ...(body.combineId?.trim() ? { combineId: body.combineId } : {}),
+      });
+    }
     await assertTargetControl(scope, targetId);
     const platform =
       body.platform ??

@@ -703,6 +703,97 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   document.body.replaceChildren();
 });
 
+test("keeps a sole foreign evidence profile visible at compact width", async () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const restoreWidth = observeWidth(320);
+  const scenario: AppMapScenarioTest = {
+    kind: "scenario",
+    id: "foreign-evidence",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    name: "Foreign evidence",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        kind: "script",
+        id: "prepare",
+        intent: "Prepare",
+        binding: { status: "resolved", kind: "script", source: "return true" },
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const initial = fixture();
+  initial.tests[scenario.id] = scenario;
+  initial.screenVariants["checkout-ipad"] = {
+    id: "checkout-ipad",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    screenId: "checkout",
+    targetProfile: {
+      id: "ipad-en-US",
+      targetId: "ipad-1",
+      source: "device",
+      platform: "ios",
+      name: "Design iPad · English",
+      capabilities: [],
+      observedAt: 1,
+    },
+    evidenceIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  serverMock.current = {
+    selectedAppMap: () => initial,
+    isOffline: () => false,
+    health: () => "online",
+    devices: () => [
+      { serial: "pixel-1", name: "Pixel", platform: "android", connectionState: "connected" },
+    ],
+    selectedDevice: () => "pixel-1",
+    liveFrame: () => null,
+    liveCaptureIssue: () => null,
+    appleDeviceSetup: () => null,
+    jobs: () => [],
+    persistedRuns: () => [],
+    pollLiveFrame: async () => undefined,
+    loadRunDetail: async () => undefined,
+    frameUrlForPersisted: () => "",
+    refreshAppMaps: async () => undefined,
+    refreshJobs: async () => undefined,
+    runAction: async () => {
+      throw new Error("foreign evidence must block before compile or run");
+    },
+    cancelJob: async () => undefined,
+  };
+
+  const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
+  await settle();
+
+  const profile = root.querySelector<HTMLSelectElement>("[data-test-runtime-profile]");
+  expect(profile).not.toBeNull();
+  expect(profile?.closest("label")?.className).toContain("min-h-11");
+  expect([...profile!.options].map((option) => option.textContent)).toContain(
+    "Design iPad · English · ipad-en-US",
+  );
+  expect(root.querySelector("[data-test-runtime-profile-notice]")?.textContent).toContain(
+    "Evidence only: Design iPad · English · ipad-en-US",
+  );
+  expect(root.textContent).toContain("No saved evidence profile matches this target");
+  expect(root.querySelector<HTMLElement>("[data-test-workspace-bar]")?.className).toContain(
+    "flex-wrap",
+  );
+
+  dispose();
+  restoreWidth();
+  document.body.replaceChildren();
+});
+
 test("a verified checkpoint is compiled offline and sent unchanged to the exact run", async () => {
   document.body.replaceChildren();
   const root = document.createElement("div");

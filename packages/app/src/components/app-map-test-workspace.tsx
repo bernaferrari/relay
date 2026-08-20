@@ -396,6 +396,7 @@ export function AppMapTestWorkspace(props: {
             onStartupChange={testRun.setStartup}
             targetProfileOptions={testRun.targetProfileOptions()}
             targetProfileId={testRun.targetProfileId()}
+            targetProfileNotice={testRun.targetProfileNotice()}
             onTargetProfileChange={testRun.setTargetProfile}
             onRun={() => void testRun.run()}
             onCancel={() => void testRun.cancel()}

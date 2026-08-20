@@ -99,6 +99,17 @@ export function createAppMapTestRun(options: {
       label: appMapTestRuntimeProfileLabel(profile),
     })),
   );
+  const targetProfileNotice = createMemo(() => {
+    const scope = targetProfileScope();
+    if (scope.status === "selected-profile-incompatible" && scope.selectedProfile) {
+      return `Evidence only: ${appMapTestRuntimeProfileLabel(scope.selectedProfile)}. Capture evidence for this target.`;
+    }
+    if (scope.status !== "no-compatible-profile") return undefined;
+    const profiles = targetProfiles();
+    return profiles.length === 1
+      ? `Evidence only: ${appMapTestRuntimeProfileLabel(profiles[0]!)}. Capture evidence for this target.`
+      : "Saved evidence belongs to a different target. Capture evidence for this target.";
+  });
   const targetProfileMatchesSelectedDevice = createMemo(
     () =>
       targetProfileScope().status === "no-saved-profiles" ||
@@ -351,6 +362,7 @@ export function createAppMapTestRun(options: {
     setStartup,
     targetProfileId: selectedTargetProfileId,
     targetProfileOptions,
+    targetProfileNotice,
     targetProfileMatchesSelectedDevice,
     requiresTargetProfileSelection,
     setTargetProfile,

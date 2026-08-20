@@ -262,13 +262,25 @@ test("gives run agents one revision-pinned graph Test operation", () => {
     startup: { mode: "verified-checkpoint" as const, screenId: "settings" },
   };
   assert.deepEqual(tool("app-map.test.run").inputSchema.parse(warmInput), warmInput);
+  const scopedRunInput = {
+    ...input,
+    targetProfileId: "ipad-pt-BR",
+    surfaceCapture: { forceRecaptureScreenIds: ["voice-library"] },
+  };
+  assert.deepEqual(tool("app-map.test.run").inputSchema.parse(scopedRunInput), scopedRunInput);
   assert.deepEqual(
     tool("app-map.test.compile").inputSchema.parse({
       appMapId: "checkout",
       testId: "smoke",
       entryCheckpointScreenId: "settings",
+      targetProfileId: "ipad-pt-BR",
     }),
-    { appMapId: "checkout", testId: "smoke", entryCheckpointScreenId: "settings" },
+    {
+      appMapId: "checkout",
+      testId: "smoke",
+      entryCheckpointScreenId: "settings",
+      targetProfileId: "ipad-pt-BR",
+    },
   );
   assert.ok(
     relayMcpToolsForProfile("run").some(({ operationId }) => operationId === "app-map.test.run"),
@@ -292,6 +304,18 @@ test("gives run agents one revision-pinned graph Test operation", () => {
     tool("app-map.test.run").inputSchema.parse({
       ...input,
       startup: { mode: "cold", screenId: "settings" },
+    }),
+  );
+  assert.throws(() =>
+    tool("app-map.test.run").inputSchema.parse({
+      ...scopedRunInput,
+      unknownProfileControl: true,
+    }),
+  );
+  assert.throws(() =>
+    tool("app-map.test.run").inputSchema.parse({
+      ...input,
+      surfaceCapture: { forceRecaptureScreenIds: ["voice-library", "voice-library"] },
     }),
   );
 });
@@ -469,6 +493,11 @@ test("the locale profile exposes only the canonical Language Variable campaign",
   for (const tool of relayMcpTools) {
     assert.equal(tool.operationId.startsWith("corpus."), false);
   }
+});
+
+test("marks App Map Combine execution as a scoped-profile migration boundary", () => {
+  assert.match(tool("job.combine.start").description, /fail-closed/u);
+  assert.match(tool("job.combine.start").description, /app-map\.test\.run/u);
 });
 
 test("locale finding acceptance exposes safe cross-locale scope", () => {

@@ -9,6 +9,7 @@ import {
   enqueueJob,
   listDevices,
   materializeLogicalScrollSurfaceImport,
+  parseAppMapTestExecutionIntentArtifact,
   mutateStoredAppMap,
   persistAuthoringEvidence,
   readAuthoringEvidence,
@@ -254,6 +255,25 @@ test("offline Test compilation previews a verified checkpoint without a device o
         ],
       } as never,
     });
+    const selectorFree = await client.invoke("app-map.test.save", {
+      appMapId: "store",
+      testId: "script-only",
+      expectedRevision: saved.appMap.revision,
+      test: {
+        name: "Prepare once",
+        kind: "scenario",
+        intentSchemaVersion: 1,
+        steps: [
+          {
+            id: "prepare",
+            kind: "script",
+            intent: "Prepare without a selector",
+            binding: { status: "resolved", kind: "script", source: "return true" },
+          },
+        ],
+      } as never,
+    });
+    const runRevision = selectorFree.appMap.revision;
 
     const preview = await client.invoke("app-map.test.compile", {
       appMapId: "store",
@@ -261,7 +281,7 @@ test("offline Test compilation previews a verified checkpoint without a device o
       entryCheckpointScreenId: "settings",
     });
     assert.deepEqual(preview.plan.startup, { mode: "verified-checkpoint", screenId: "settings" });
-    assert.equal(preview.plan.appMapRevision, saved.appMap.revision);
+    assert.equal(preview.plan.appMapRevision, runRevision);
     assert.equal(preview.preflight.mode, "offline-test-preflight");
 
     const offline = await client.invoke("app-map.test.compile", {
@@ -333,24 +353,52 @@ test("offline Test compilation previews a verified checkpoint without a device o
     });
 
     const jobsBeforeBlockedRun = await client.invoke("job.list", { limit: 100 });
+    const leasesBeforeBlockedRun = await client.invoke("lease.list", { status: "all" });
     const isRunError = (code: string) => (error: unknown) =>
       error instanceof ApiError &&
       error.status === 409 &&
       (error.body as { code?: unknown }).code === code;
     await assert.rejects(
-      client.invoke("app-map.test.run", {
+      client.invoke("job.combine.start", {
         appMapId: "store",
         testId: "settings-test",
-        expectedRevision: saved.appMap.revision,
-        target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+        serial: "ipad-1",
+        platform: "ios",
       }),
-      isRunError("TEST_OFFLINE_PREFLIGHT_BLOCKED"),
+      isRunError("APP_MAP_COMBINE_RUNTIME_PROFILE_CONTRACT_REQUIRED"),
+    );
+    await assert.rejects(
+      client.invoke("job.combine.start", {
+        appMapId: "store",
+        combineId: "language-settings",
+        serial: "ipad-1",
+        platform: "ios",
+      }),
+      isRunError("APP_MAP_COMBINE_RUNTIME_PROFILE_CONTRACT_REQUIRED"),
     );
     await assert.rejects(
       client.invoke("app-map.test.run", {
         appMapId: "store",
         testId: "settings-test",
-        expectedRevision: saved.appMap.revision,
+        expectedRevision: runRevision,
+        target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+      }),
+      isRunError("TARGET_PROFILE_SELECTION_REQUIRED"),
+    );
+    await assert.rejects(
+      client.invoke("app-map.test.run", {
+        appMapId: "store",
+        testId: "script-only",
+        expectedRevision: runRevision,
+        target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+      }),
+      isRunError("TARGET_PROFILE_SELECTION_REQUIRED"),
+    );
+    await assert.rejects(
+      client.invoke("app-map.test.run", {
+        appMapId: "store",
+        testId: "settings-test",
+        expectedRevision: runRevision,
         target: { kind: "device", platform: "ios", targetId: "ipad-1" },
         targetProfileId: "ipad-pt",
       }),
@@ -360,7 +408,7 @@ test("offline Test compilation previews a verified checkpoint without a device o
       client.invoke("app-map.test.run", {
         appMapId: "store",
         testId: "settings-test",
-        expectedRevision: saved.appMap.revision,
+        expectedRevision: runRevision,
         target: { kind: "device", platform: "ios", targetId: "ipad-1" },
         targetProfileId: "missing-profile",
       }),
@@ -370,7 +418,7 @@ test("offline Test compilation previews a verified checkpoint without a device o
       client.invoke("app-map.test.run", {
         appMapId: "store",
         testId: "settings-test",
-        expectedRevision: saved.appMap.revision,
+        expectedRevision: runRevision,
         target: { kind: "device", platform: "android", targetId: "pixel-1" },
       }),
       isRunError("TARGET_PROFILE_TARGET_MISMATCH"),
@@ -379,14 +427,16 @@ test("offline Test compilation previews a verified checkpoint without a device o
       client.invoke("app-map.test.run", {
         appMapId: "store",
         testId: "settings-test",
-        expectedRevision: saved.appMap.revision,
+        expectedRevision: runRevision,
         target: { kind: "device", platform: "android", targetId: "pixel-1" },
         targetProfileId: "ipad-en",
       }),
       isRunError("TARGET_PROFILE_TARGET_MISMATCH"),
     );
     const jobsAfterBlockedRun = await client.invoke("job.list", { limit: 100 });
+    const leasesAfterBlockedRun = await client.invoke("lease.list", { status: "all" });
     assert.equal(jobsAfterBlockedRun.jobs.length, jobsBeforeBlockedRun.jobs.length);
+    assert.equal(leasesAfterBlockedRun.leases.length, leasesBeforeBlockedRun.leases.length);
     assert.deepEqual(offlineOnlyCalls, {
       listDevices: 0,
       assertTargetControl: 0,
@@ -402,7 +452,7 @@ test("offline Test compilation previews a verified checkpoint without a device o
     const queued = await client.invoke("app-map.test.run", {
       appMapId: "store",
       testId: "settings-test",
-      expectedRevision: saved.appMap.revision,
+      expectedRevision: runRevision,
       target: { kind: "device", platform: "ios", targetId: "ipad-1" },
       targetProfileId: "ipad-en",
     });
@@ -417,8 +467,12 @@ test("offline Test compilation previews a verified checkpoint without a device o
     const frozenPreflight = frozenArtifacts.find(
       (artifact) => artifact.kind === "app-map-test-preflight",
     );
+    const executionIntent = frozenArtifacts.find(
+      (artifact) => artifact.kind === "app-map-test-execution-intent",
+    );
     assert.ok(frozenPlan);
     assert.ok(frozenPreflight);
+    assert.ok(executionIntent);
     const frozenPlanData = frozenPlan.data as { runtimeTargetProfile?: unknown };
     const frozenPreflightData = frozenPreflight.data as {
       runtimeTargetProfile?: unknown;
@@ -427,11 +481,24 @@ test("offline Test compilation previews a verified checkpoint without a device o
     assert.deepEqual(frozenPlanData.runtimeTargetProfile, queued.plan.runtimeTargetProfile);
     assert.deepEqual(frozenPreflightData.runtimeTargetProfile, queued.plan.runtimeTargetProfile);
     assert.equal(typeof frozenPreflightData.report?.planDigest, "string");
+    const parsedExecutionIntent = parseAppMapTestExecutionIntentArtifact(executionIntent);
+    assert.ok(parsedExecutionIntent);
+    assert.deepEqual(parsedExecutionIntent.sourcePlan, {
+      appMapId: "store",
+      appMapRevision: runRevision,
+      testId: "settings-test",
+      rootRecipeId: queued.plan.rootRecipeId,
+      digest: frozenPreflightData.report?.planDigest,
+      recipeGraphDigest: parsedExecutionIntent.sourcePlan.recipeGraphDigest,
+      rootRecipeDigest: parsedExecutionIntent.sourcePlan.rootRecipeDigest,
+    });
+    assert.match(parsedExecutionIntent.sourcePlan.recipeGraphDigest, /^[a-f0-9]{64}$/u);
+    assert.match(parsedExecutionIntent.sourcePlan.rootRecipeDigest, /^[a-f0-9]{64}$/u);
     await client.invoke("job.cancel", { jobId: queued.job.id });
     await client.invoke("lease.release", { leaseId: lease.lease.id });
 
     const unchanged = await client.invoke("app-map.get", { appMapId: "store" });
-    assert.equal(unchanged.appMap.revision, saved.appMap.revision);
+    assert.equal(unchanged.appMap.revision, runRevision);
     assert.ok(unchanged.appMap.tests["settings-test"]);
   } finally {
     await server.close();

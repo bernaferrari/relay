@@ -37,6 +37,7 @@ export type TestRunControlProps = {
   /** A read-only frozen-evidence scope. It never changes the Test or device. */
   targetProfileOptions?: ReadonlyArray<{ id: string; label: string }>;
   targetProfileId?: string;
+  targetProfileNotice?: string;
   onTargetProfileChange?: (targetProfileId: string | undefined) => void;
 };
 
@@ -155,6 +156,15 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
             </For>
           </select>
         </label>
+      ) : null}
+      {props.targetProfileNotice ? (
+        <span
+          data-test-runtime-profile-notice
+          class="max-w-[28ch] text-caption/[1.3] text-text-weak"
+          title={props.targetProfileNotice}
+        >
+          {props.targetProfileNotice}
+        </span>
       ) : null}
       {props.startup ? (
         canChooseStartup() ? (

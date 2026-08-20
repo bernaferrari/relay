@@ -339,7 +339,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: [
         'relay combine run grok-ios language-x-settings --input \'{"serial":"<device>"}\'',
       ],
-      note: "A Combine applies one value from every selected Variable, then runs every selected Test. Prefer `relay test run` for one pass.",
+      note: "App Map Combine execution is fail-closed until each cell carries a frozen runtime profile and offline preflight. For one pass, use `relay test run` with the selected targetProfileId; keep Combines for reviewed planning only.",
       behavior: "job-start-watch",
     }),
     path("combine run", ["appMapId", "combineId"], undefined, {

@@ -213,6 +213,60 @@ test("invokes representative read, write, and confirmed operations with exact in
   }
 });
 
+test("forwards one frozen Test evidence scope without accepting unknown controls", async () => {
+  const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
+  const session = await connectMcp({
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      return {};
+    },
+  });
+  const compileInput = {
+    appMapId: "checkout",
+    testId: "smoke",
+    targetProfileId: "ipad-pt-BR",
+  };
+  const runInput = {
+    ...compileInput,
+    expectedRevision: 7,
+    target: { kind: "device" as const, platform: "ios" as const, targetId: "ipad-1" },
+    surfaceCapture: { forceRecaptureScreenIds: ["voice-library"] },
+  };
+  try {
+    assert.equal(
+      callResult(
+        await session.request("tools/call", {
+          name: "relay_app_map_test_compile",
+          arguments: compileInput,
+        }),
+      ).isError,
+      undefined,
+    );
+    assert.equal(
+      callResult(
+        await session.request("tools/call", {
+          name: "relay_app_map_test_run",
+          arguments: runInput,
+        }),
+      ).isError,
+      undefined,
+    );
+    const rejected = callResult(
+      await session.request("tools/call", {
+        name: "relay_app_map_test_run",
+        arguments: { ...runInput, ignoredProfileControl: true },
+      }),
+    );
+    assert.equal(rejected.isError, true);
+    assert.deepEqual(calls, [
+      { operationId: "app-map.test.compile", input: compileInput },
+      { operationId: "app-map.test.run", input: runInput },
+    ]);
+  } finally {
+    await session.close();
+  }
+});
+
 test("surfaces a standalone iOS step as terminal review-needed without a second action", async () => {
   const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
   const session = await connectMcp({
