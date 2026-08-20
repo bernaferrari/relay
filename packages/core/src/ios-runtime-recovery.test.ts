@@ -125,6 +125,28 @@ test("does not report iOS control ready when preparation has no accessibility pr
   assert.match(result.session.detail, /accessibility tree/i);
 });
 
+test("unavailable iOS automation gives a one-time, non-destructive next action", async () => {
+  const result = await recoverIosRuntimeSession(
+    "ipad",
+    async () => {
+      throw new Error("no accessibility proof");
+    },
+    async () => ({
+      serial: "ipad",
+      recovered: true,
+      ready: true,
+      actions: [],
+      summary:
+        "Relay repaired its local Apple-device services, but iOS automation is still unavailable.",
+    }),
+    async () => "XCTest did not return an accessibility tree.",
+  );
+
+  assert.equal(result.ready, false);
+  assert.doesNotMatch(result.summary, /restart it/i);
+  assert.match(result.summary, /automation is still unavailable/i);
+});
+
 const coreDevice =
   "/Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/XPCServices/CoreDeviceService.xpc/Contents/MacOS/CoreDeviceService";
 

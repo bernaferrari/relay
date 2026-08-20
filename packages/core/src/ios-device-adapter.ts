@@ -65,7 +65,7 @@ export class IosXCTestSessionUnavailableError extends IosDeviceAttentionError {
 
   constructor(readonly causeMessage: string) {
     super(
-      "Relay cannot attach its iOS UI Automation session yet. Press Reconnect once, keep the iPad unlocked and cabled, then wait for the Automation Running indicator before trying again.",
+      "Relay cannot attach its iOS UI Automation session yet. Keep the iPad unlocked and cabled, open Xcode, wait for the Automation Running indicator, then press Reconnect once.",
     );
     this.name = "IosXCTestSessionUnavailableError";
   }

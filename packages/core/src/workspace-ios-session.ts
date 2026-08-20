@@ -233,7 +233,8 @@ async function recoverTargetRuntimeReserved(
           {
             kind: "agent-device",
             status: "completed",
-            detail: "XCTest runner is ready. Pointer and tree share that one session.",
+            detail:
+              "Prepared the XCTest runner; Relay is now verifying that it can read interactive accessibility nodes.",
           },
           ...host.actions,
         ];

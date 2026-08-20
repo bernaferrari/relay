@@ -311,7 +311,7 @@ function summary(ready: boolean, recovered: boolean): string {
   if (ready && recovered) return "Relay repaired the Apple device connection.";
   if (ready) return "The Apple device connection is healthy.";
   if (recovered) {
-    return "Relay reset its local services, but iOS did not start the automation service. Keep the iPad unlocked, reconnect its cable, and restart it if control remains unavailable.";
+    return "Relay repaired its local Apple-device services, but iOS automation is still unavailable. Keep the iPad unlocked and cabled, open Xcode, and wait for Automation Running before one more Reconnect.";
   }
   return "The iPad automation service is unavailable. Keep the iPad unlocked and reconnect its cable.";
 }
