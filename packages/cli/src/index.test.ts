@@ -1016,7 +1016,7 @@ test("structured operation failures use a non-zero exit instead of a false succe
     error: {
       message: "the system Copy action did not appear",
       exitCode: ExitCode.validation,
-      details: { ok: false, error: "the system Copy action did not appear" },
+      details: { ok: false, error: "the system Copy action did not appear", logs: [] },
     },
   });
   assert.match(io.stderr(), /the system Copy action did not appear/);
