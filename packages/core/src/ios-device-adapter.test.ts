@@ -181,11 +181,22 @@ test("keeps regular runner failures intact", () => {
   assert.equal(normalizeIosRunnerError(original), original);
 });
 
-test("maps an interrupted physical-device automation session to an unlock action", () => {
+test("treats an interrupted XCTest attach as a session probe, not an iPad reboot", () => {
   const error = normalizeIosRunnerError(new Error("artifact restored but runner did not connect"));
-  assert.ok(error instanceof IosDeviceAttentionError);
-  assert.match(error.message, /reconnect its cable/i);
+  assert.ok(error instanceof IosXCTestSessionUnavailableError);
+  assert.equal(error.code, "ios-xctest-session-unavailable");
+  assert.match(error.message, /session probe/i);
+  assert.match(error.message, /press Reconnect/i);
+  assert.doesNotMatch(error.message, /restart|reboot/i);
   assert.doesNotMatch(error.message, /sign|setup/i);
+});
+
+test("keeps a locked iPad distinct from a failed XCTest session probe", () => {
+  const error = normalizeIosRunnerError(new Error("device locked: passcode required"));
+  assert.ok(error instanceof IosDeviceAttentionError);
+  assert.ok(!(error instanceof IosXCTestSessionUnavailableError));
+  assert.equal(error.code, "ios-device-attention");
+  assert.match(error.message, /unlock this iPad/i);
 });
 
 test("parses CoreDevice lock state without guessing from unrelated fields", () => {

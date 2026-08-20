@@ -65,7 +65,7 @@ export class IosXCTestSessionUnavailableError extends IosDeviceAttentionError {
 
   constructor(readonly causeMessage: string) {
     super(
-      "Relay cannot attach its iOS UI Automation session yet. Keep the iPad unlocked and cabled, open Xcode, wait for the Automation Running indicator, then press Reconnect once.",
+      "Relay’s bounded XCTest session probe could not attach. This only reports the runner session; it does not establish a physical-device fault. Keep the iPad unlocked and cabled, open Xcode, wait for the Automation Running indicator, then press Reconnect once.",
     );
     this.name = "IosXCTestSessionUnavailableError";
   }
@@ -253,9 +253,11 @@ export function normalizeIosRunnerError(error: unknown): Error {
       message,
     )
   ) {
-    return new IosDeviceAttentionError(
-      "iOS did not start UI Automation. Keep the iPad unlocked; reconnect its cable and approve the passcode prompt if one appears. Restart the iPad if it remains unavailable.",
-    );
+    // The runner reached its attach boundary but did not establish a session.
+    // That is a bounded XCTest probe failure, not evidence of a physical
+    // device failure. Preserve the native cause for diagnostics and let the
+    // explicit Reconnect flow re-probe before it considers repair.
+    return new IosXCTestSessionUnavailableError(message);
   }
   if (/device.*locked|passcode.*required/i.test(message)) {
     return new IosDeviceAttentionError(
