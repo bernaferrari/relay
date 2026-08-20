@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { TargetRuntimeReadiness } from "@relay/protocol";
 import type { Device } from "./device.js";
+import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
 import {
   captureIosEvidenceVideo,
   IosEvidenceCaptureUnavailableError,
@@ -188,4 +189,53 @@ test("a failed iOS recorder start does not turn into a second setup or recovery 
   assert.equal(preparations, 1);
   assert.equal(records, 1);
   assert.deepEqual(fixture.operations, ["evidence"]);
+});
+
+test("an unknown iOS video start remains terminal with its repair evidence", async () => {
+  const mutation = {
+    sequence: 7,
+    operation: "video" as const,
+    nativeAttempts: 1 as const,
+    outcome: "outcome-unknown" as const,
+    retry: {
+      attempts: 0 as const,
+      decision: "blocked" as const,
+      reason: "native-command-outcome-unknown" as const,
+    },
+    intervention: {
+      required: true,
+      action: "capture-current-screen-before-any-retry" as const,
+    },
+    at: 42,
+  };
+  const unknown = new IosMutationOutcomeUnknownError(mutation, new Error("socket disconnected"));
+  let records = 0;
+  let diagnoses = 0;
+  const fixture = runtime({
+    recordIosVideo: async () => {
+      records += 1;
+      throw unknown;
+    },
+    diagnoseIosRunnerError: async () => {
+      diagnoses += 1;
+      return new Error("should not normalize an unknown mutation");
+    },
+  });
+
+  await assert.rejects(
+    captureIosEvidenceVideo(
+      { device: {} as Device, serial: "ipad-proof", action: "start" },
+      fixture.runtime,
+    ),
+    (error: unknown) => {
+      assert.equal(error, unknown);
+      assert.deepEqual((error as IosMutationOutcomeUnknownError).iosMutation, mutation);
+      return true;
+    },
+  );
+
+  assert.equal(records, 1);
+  assert.equal(diagnoses, 0);
+  assert.deepEqual(fixture.operations, ["evidence"]);
+  assert.equal(fixture.capabilities.length, 0);
 });

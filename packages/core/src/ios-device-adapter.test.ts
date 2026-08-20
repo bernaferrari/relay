@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import type { Device } from "./device.js";
+import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
 import {
   diagnoseIosRunnerError,
   IosDeviceAttentionError,
@@ -12,6 +14,7 @@ import {
   IosXCTestSessionUnavailableError,
   normalizeIosRunnerError,
   parseIosDeviceLockState,
+  recordIosVideo,
 } from "./ios-device-adapter.js";
 
 test("maps signing failures to the Relay iOS setup action", () => {
@@ -76,6 +79,52 @@ test("reads signing diagnostics from the selected iPad session", async () => {
     const error = await diagnoseIosRunnerError(new Error("xcodebuild failed"), udid);
     assert.ok(error instanceof IosRunnerSetupError);
     assert.match(error.message, /Xcode is not signed in to this Apple team/);
+  } finally {
+    if (previousStateDir === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;
+    else process.env.AGENT_DEVICE_STATE_DIR = previousStateDir;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("keeps an unknown iOS video start terminal ahead of fresh runner diagnostics", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-ios-video-terminal-log-"));
+  const previousStateDir = process.env.AGENT_DEVICE_STATE_DIR;
+  const udid = "ipad-video-terminal";
+  let records = 0;
+  try {
+    process.env.AGENT_DEVICE_STATE_DIR = root;
+    const session = join(root, "sessions", "relay-ios-ipad-video-terminal");
+    await mkdir(session, { recursive: true });
+    await writeFile(
+      join(session, "runner.log"),
+      'Command line invocation:\nerror: No Account for Team "ABCDE12345".\n',
+      "utf8",
+    );
+    const device = {
+      recording: {
+        record: async () => {
+          records += 1;
+          throw new Error("connection reset");
+        },
+      },
+    } as unknown as Device;
+
+    await assert.rejects(
+      recordIosVideo(device, { udid, action: "start", path: "/tmp/take.mp4" }),
+      (error: unknown) => {
+        assert.ok(error instanceof IosMutationOutcomeUnknownError);
+        assert.equal(error.iosMutation.operation, "video");
+        assert.equal(error.iosMutation.nativeAttempts, 1);
+        assert.equal(error.iosMutation.retry.decision, "blocked");
+        assert.equal(
+          error.iosMutation.intervention.action,
+          "capture-current-screen-before-any-retry",
+        );
+        return true;
+      },
+    );
+
+    assert.equal(records, 1);
   } finally {
     if (previousStateDir === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;
     else process.env.AGENT_DEVICE_STATE_DIR = previousStateDir;

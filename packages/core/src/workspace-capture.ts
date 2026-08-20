@@ -14,6 +14,7 @@ import {
   type Device,
   type SnapshotNode,
 } from "./device.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import { now, publish } from "./events.js";
 import { attachJobFrame, getActiveJob } from "./session.js";
 import { observeScreenIdentity, observeVisualScreenFingerprint } from "./screen-identity.js";
@@ -842,6 +843,9 @@ export async function captureIosEvidenceVideo(
       "evidence",
     );
   } catch (error) {
+    // A video start might already be active on the device. Do not turn that
+    // terminal, reviewable fact into an ordinary recorder-unavailable retry.
+    rethrowIosMutationOutcomeUnknown(error);
     if (input.action === "start") return unavailable("recording", error);
     throw error;
   }

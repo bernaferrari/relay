@@ -13,7 +13,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Device } from "./device.js";
-import { runIosMutationOnce } from "./ios-mutation-policy.js";
+import { rethrowIosMutationOutcomeUnknown, runIosMutationOnce } from "./ios-mutation-policy.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -366,6 +366,10 @@ export async function recordIosVideo(
       ...(valueFrom(result, "warning") ? { warning: valueFrom(result, "warning") } : {}),
     };
   } catch (error) {
+    // A completed native video command may have lost its acknowledgement.
+    // Preserve that terminal outcome instead of replacing it with a runner-log
+    // diagnosis that callers could interpret as safe to retry.
+    rethrowIosMutationOutcomeUnknown(error);
     const diagnostic = await recentIosRunnerFailure(input.udid);
     throw normalizeIosRunnerError(diagnostic ? new Error(diagnostic) : error);
   }
