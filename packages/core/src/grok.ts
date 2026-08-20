@@ -11,6 +11,7 @@ import {
   sleep,
   snapshot,
 } from "./device.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 
 function onAuthChooserQueries(): string[] {
   return ["Continue with Google", "Continue with Email", "Continue with email", "Continue with X"];
@@ -37,9 +38,10 @@ export async function postLoginNotifications(device: Device, timeoutMs = 90_000)
 
   while (Date.now() < end) {
     if (await exists(device, "Enable notifications")) {
-      await pressLabel(device, "Enable notifications").catch(() =>
-        findClick(device, "Enable notifications"),
-      );
+      await pressLabel(device, "Enable notifications").catch((error) => {
+        rethrowIosMutationOutcomeUnknown(error);
+        return findClick(device, "Enable notifications");
+      });
       sawEnable = true;
       await sleep(1000, device);
     }
@@ -49,7 +51,10 @@ export async function postLoginNotifications(device: Device, timeoutMs = 90_000)
       (await exists(device, "Allow Grok to send notifications"));
 
     if (systemPrompt || (sawEnable && (await exists(device, "Allow")))) {
-      await pressLabel(device, "Allow").catch(() => findClick(device, "Allow"));
+      await pressLabel(device, "Allow").catch((error) => {
+        rethrowIosMutationOutcomeUnknown(error);
+        return findClick(device, "Allow");
+      });
       sawAllow = true;
       await sleep(1000, device);
       break;
@@ -58,7 +63,9 @@ export async function postLoginNotifications(device: Device, timeoutMs = 90_000)
     if ((await alreadySignedIn(device)) && !sawEnable) {
       // Late permission sheet
       if (await exists(device, "Allow")) {
-        await findClick(device, "Allow").catch(() => undefined);
+        await findClick(device, "Allow").catch((error) => {
+          rethrowIosMutationOutcomeUnknown(error);
+        });
         sawAllow = true;
       }
       break;
@@ -95,9 +102,13 @@ async function loginWithProvider(
 
   try {
     await pressLabel(device, providerLabel);
-  } catch {
+  } catch (error) {
+    rethrowIosMutationOutcomeUnknown(error);
     if (providerLabel === "Continue with Email") {
-      await pressLabel(device, "Continue with email").catch(() => findClick(device, providerLabel));
+      await pressLabel(device, "Continue with email").catch((fallbackError) => {
+        rethrowIosMutationOutcomeUnknown(fallbackError);
+        return findClick(device, providerLabel);
+      });
     } else {
       await findClick(device, providerLabel);
     }
@@ -116,7 +127,9 @@ async function loginWithProvider(
     }
     // still on chooser — one retry
     if (await onAuthChooser(device)) {
-      await findClick(device, providerLabel).catch(() => undefined);
+      await findClick(device, providerLabel).catch((error) => {
+        rethrowIosMutationOutcomeUnknown(error);
+      });
     }
     await sleep(2000, device);
   }
@@ -142,17 +155,25 @@ export async function logout(device: Device): Promise<void> {
 
   // Clear permission noise
   if (await exists(device, "Allow Grok to send you notifications?")) {
-    await findClick(device, "Allow").catch(() => undefined);
+    await findClick(device, "Allow").catch((error) => {
+      rethrowIosMutationOutcomeUnknown(error);
+    });
     await sleep(800, device);
   }
   if (await exists(device, "Enable notifications")) {
-    await findClick(device, "Enable notifications").catch(() => undefined);
+    await findClick(device, "Enable notifications").catch((error) => {
+      rethrowIosMutationOutcomeUnknown(error);
+    });
     await sleep(800, device);
-    await findClick(device, "Allow").catch(() => undefined);
+    await findClick(device, "Allow").catch((error) => {
+      rethrowIosMutationOutcomeUnknown(error);
+    });
     await sleep(800, device);
   }
   if (await exists(device, "Skip")) {
-    await findClick(device, "Skip").catch(() => undefined);
+    await findClick(device, "Skip").catch((error) => {
+      rethrowIosMutationOutcomeUnknown(error);
+    });
     await sleep(800, device);
   }
 
@@ -164,17 +185,20 @@ export async function logout(device: Device): Promise<void> {
   // Top-left menu (often unlabeled)
   try {
     await pressLabel(device, "Menu");
-  } catch {
+  } catch (error) {
+    rethrowIosMutationOutcomeUnknown(error);
     await pressPoint(device, 78, 192);
   }
   await sleep(2000, device);
 
   try {
     await pressLabel(device, "Settings");
-  } catch {
+  } catch (error) {
+    rethrowIosMutationOutcomeUnknown(error);
     try {
       await findClick(device, "Settings");
-    } catch {
+    } catch (fallbackError) {
+      rethrowIosMutationOutcomeUnknown(fallbackError);
       // observed settings control near bottom of drawer
       await pressPoint(device, 810, 2104);
     }
@@ -200,15 +224,21 @@ export async function logout(device: Device): Promise<void> {
 
   try {
     await pressLabel(device, "Sign out");
-  } catch {
-    await findClick(device, "Sign out").catch(() => findClick(device, "Sign Out"));
+  } catch (error) {
+    rethrowIosMutationOutcomeUnknown(error);
+    await findClick(device, "Sign out").catch((fallbackError) => {
+      rethrowIosMutationOutcomeUnknown(fallbackError);
+      return findClick(device, "Sign Out");
+    });
   }
   await sleep(1000, device);
 
   // confirm if second dialog
   for (const c of ["Sign out", "Sign Out", "Log out", "Confirm", "OK", "Yes"]) {
     if (await exists(device, c)) {
-      await findClick(device, c).catch(() => undefined);
+      await findClick(device, c).catch((error) => {
+        rethrowIosMutationOutcomeUnknown(error);
+      });
       break;
     }
   }
