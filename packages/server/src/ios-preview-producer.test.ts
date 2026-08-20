@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   IOS_SAFE_PREVIEW_PRODUCER_ENV,
   IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_ENV,
+  IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_PATH_ENV,
   IOS_SAFE_PREVIEW_PRODUCER_VERSION,
   IOS_SAFE_PREVIEW_PRODUCER_VERSION_CACHE_MS,
   IOS_SAFE_PREVIEW_PRODUCER_VERSION_TIMEOUT_MS,
@@ -126,7 +127,14 @@ test("caches a version proof only while the exact executable identity remains cu
 test("allows a deliberate override while making its observed provenance visibly unverified", async () => {
   const path = "/opt/relay/ios-preview";
   const verified = await verifySafeIosPreviewProducer({
-    env: { [IOS_SAFE_PREVIEW_PRODUCER_ENV]: path },
+    env: {
+      [IOS_SAFE_PREVIEW_PRODUCER_ENV]: path,
+      [IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_PATH_ENV]:
+        "/Relay.app/Contents/Resources/ios-preview/relay-ios-preview",
+      // A leftover marker must not turn a user-chosen binary into a packaged
+      // source. `BIN` always wins and remains explicitly unverified.
+      [IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_ENV]: "1",
+    },
     accessible: async (candidate) => assert.equal(candidate, path),
     fileIdentity: async () => "override:one",
     versionProbe: async (candidate, timeoutMs) => {
@@ -149,12 +157,28 @@ test("allows a deliberate override while making its observed provenance visibly 
   });
 });
 
-test("gives packaged Relay a reinstall path instead of an automatic source build", async () => {
+test("classifies only Desktop's dedicated packaged path as a pinned packaged resource", async () => {
+  const path = "/Relay.app/Contents/Resources/ios-preview/relay-ios-preview";
+  const verified = await verifySafeIosPreviewProducer({
+    env: { [IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_PATH_ENV]: path },
+    accessible: async (candidate) => assert.equal(candidate, path),
+    fileIdentity: async () => "packaged:one",
+    versionProbe: async () => IOS_SAFE_PREVIEW_PRODUCER_VERSION,
+    cache: new Map(),
+  });
+  assert.deepEqual(verified.provenance, {
+    source: "packaged-resource",
+    sourceSafety: "pinned-version-match",
+    observedVersion: IOS_SAFE_PREVIEW_PRODUCER_VERSION,
+  });
+});
+
+test("gives a missing packaged Relay resource a reinstall path instead of an automatic source build", async () => {
+  const path = "/Relay.app/Contents/Resources/ios-preview/relay-ios-preview";
   await assert.rejects(
     () =>
       verifySafeIosPreviewProducer({
-        env: { [IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_ENV]: "1" },
-        root,
+        env: { [IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_PATH_ENV]: path },
         accessible: async () => Promise.reject(new Error("missing")),
       }),
     (error: unknown) => {

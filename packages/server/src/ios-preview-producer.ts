@@ -6,8 +6,14 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 export const IOS_SAFE_PREVIEW_PRODUCER_ENV = "RELAY_IOS_PREVIEW_PRODUCER_BIN";
-/** Set only by Relay Desktop after it has preflighted its bundled sidecar. */
+/**
+ * Legacy marker retained only so old Desktop launches do not throw. It is not
+ * evidence of a trusted path and never changes provenance.
+ */
 export const IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_ENV = "RELAY_IOS_PREVIEW_PRODUCER_PACKAGED";
+/** Set only by Relay Desktop after it has preflighted its bundled sidecar. */
+export const IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_PATH_ENV =
+  "RELAY_IOS_PREVIEW_PRODUCER_PACKAGED_PATH";
 
 /**
  * Keep this in lockstep with `packages/ios-preview-producer/main.go`.
@@ -230,14 +236,17 @@ export async function verifySafeIosPreviewProducer(
   options: VerifySafeIosPreviewProducerOptions = {},
 ): Promise<VerifiedIosSafePreviewProducer> {
   const env = options.env ?? process.env;
-  const configured = env[IOS_SAFE_PREVIEW_PRODUCER_ENV]?.trim();
-  const packaged = env[IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_ENV] === "1";
-  const source: IosSafePreviewProducerProvenance["source"] = packaged
-    ? "packaged-resource"
-    : configured
-      ? "explicit-override"
+  const explicitOverride = env[IOS_SAFE_PREVIEW_PRODUCER_ENV]?.trim();
+  const packagedPath = env[IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_PATH_ENV]?.trim();
+  // `BIN` is always a human/operator override. Desktop carries its own
+  // preflighted path in a separate variable, so a stale marker can never
+  // silently upgrade arbitrary executable provenance.
+  const source: IosSafePreviewProducerProvenance["source"] = explicitOverride
+    ? "explicit-override"
+    : packagedPath
+      ? "packaged-resource"
       : "default";
-  const path = configured || defaultIosPreviewProducerPath(options.root);
+  const path = explicitOverride || packagedPath || defaultIosPreviewProducerPath(options.root);
   const accessible = options.accessible ?? ((candidate) => access(candidate, constants.X_OK));
   const fileIdentity = options.fileIdentity ?? defaultFileIdentity;
   const versionProbe = options.versionProbe ?? defaultVersionProbe;
@@ -247,14 +256,18 @@ export async function verifySafeIosPreviewProducer(
   try {
     await accessible(path);
   } catch {
-    throw new Error(safeIosPreviewProducerMissingMessage(path, { packaged }));
+    throw new Error(
+      safeIosPreviewProducerMissingMessage(path, { packaged: source === "packaged-resource" }),
+    );
   }
 
   let identity: string;
   try {
     identity = await fileIdentity(path);
   } catch {
-    throw new Error(safeIosPreviewProducerMissingMessage(path, { packaged }));
+    throw new Error(
+      safeIosPreviewProducerMissingMessage(path, { packaged: source === "packaged-resource" }),
+    );
   }
 
   const checkedAt = now();
