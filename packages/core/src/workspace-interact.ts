@@ -20,7 +20,11 @@ import { verifyIosScreenChanged } from "./ios-app-launch.js";
 import { annotateTapPreview } from "./tap-preview.js";
 import { iosLogicalBoundsForSerial } from "./workspace-capture.js";
 import { resolveRuntimeTarget } from "./workspace-devices.js";
-import { withSession } from "./workspace-ios-session.js";
+import {
+  lastIosSessionOperationDiagnostic,
+  withSession,
+  type IosSessionOperationDiagnostic,
+} from "./workspace-ios-session.js";
 import { rawKey, rawSwipe, rawTap } from "./workspace-android-raw.js";
 import { captureScreenshot, captureSnapshot, type ScreenshotPayload } from "./workspace-capture.js";
 
@@ -55,7 +59,13 @@ export type InteractInput =
 
 export type InteractResult = {
   resolution?: NamedControlResolution;
+  iosSessionLifecycle?: IosSessionOperationDiagnostic;
 };
+
+function attachIosSessionLifecycle(result: InteractResult, serial: string): InteractResult {
+  const lifecycle = lastIosSessionOperationDiagnostic(serial);
+  return { ...result, ...(lifecycle ? { iosSessionLifecycle: lifecycle } : {}) };
+}
 
 /**
  * A healthy iOS accessibility tree can still contain an off-screen SwiftUI
@@ -149,6 +159,7 @@ export async function previewInteract(
   ScreenshotPayload & {
     preview: true;
     resolution?: NamedControlResolution;
+    iosSessionLifecycle?: IosSessionOperationDiagnostic;
   }
 > {
   const shot = await captureScreenshot({
@@ -158,10 +169,12 @@ export async function previewInteract(
   });
   let nodes: SnapshotNode[] = [];
   let inspectable = false;
+  let iosSessionLifecycle: IosSessionOperationDiagnostic | undefined;
   try {
-    const snap = await captureSnapshot({ serial: opts?.serial });
+    const snap = await captureSnapshot({ serial: opts?.serial, iosOperation: "preview" });
     nodes = snap.nodes;
     inspectable = snap.inspectable !== false && snap.nodes.length > 0;
+    iosSessionLifecycle = snap.iosSessionLifecycle;
   } catch {
     inspectable = false;
   }
@@ -176,7 +189,12 @@ export async function previewInteract(
           : resolution?.point;
   const markPoint = resolution?.point ?? fallbackPoint;
   if (!markPoint) {
-    return { ...shot, inspectable, preview: true as const };
+    return {
+      ...shot,
+      inspectable,
+      preview: true as const,
+      ...(iosSessionLifecycle ? { iosSessionLifecycle } : {}),
+    };
   }
   let buf = Buffer.from(shot.base64, "base64");
   const serial = opts?.serial ?? shot.serial;
@@ -199,6 +217,7 @@ export async function previewInteract(
     bytes: buf.byteLength,
     inspectable,
     preview: true,
+    ...(iosSessionLifecycle ? { iosSessionLifecycle } : {}),
     ...(resolution ? { resolution } : {}),
   };
 }
@@ -315,16 +334,22 @@ export async function interact(
       }
     }
     if (context.kind === "device" && context.platform === "ios" && input.kind === "point") {
-      await withSession(target.device, () =>
-        verifyIosScreenChanged(context.serial, () => pressPoint(target.device, input.x, input.y)),
+      await withSession(
+        target.device,
+        () =>
+          verifyIosScreenChanged(context.serial, () => pressPoint(target.device, input.x, input.y)),
+        "interaction",
       );
-      return {
-        resolution: {
-          method: "point" as const,
-          point: { x: input.x, y: input.y },
-          bounds: { x: input.x, y: input.y, width: 1, height: 1 },
+      return attachIosSessionLifecycle(
+        {
+          resolution: {
+            method: "point" as const,
+            point: { x: input.x, y: input.y },
+            bounds: { x: input.x, y: input.y, width: 1, height: 1 },
+          },
         },
-      };
+        context.serial,
+      );
     }
     if (
       context.kind === "device" &&
@@ -333,45 +358,55 @@ export async function interact(
       canVerifyIosScreenChange(input)
     ) {
       let result: InteractResult | undefined;
-      await withSession(target.device, () =>
-        verifyIosScreenChanged(context.serial, async () => {
-          result = await interactOnDevice(target.device, input);
-          if (!result.resolution) {
-            throw new Error(
-              "No unique control matched this iOS accessibility target. Use a visible point instead.",
-            );
-          }
-        }),
+      await withSession(
+        target.device,
+        () =>
+          verifyIosScreenChanged(context.serial, async () => {
+            result = await interactOnDevice(target.device, input);
+            if (!result.resolution) {
+              throw new Error(
+                "No unique control matched this iOS accessibility target. Use a visible point instead.",
+              );
+            }
+          }),
+        "interaction",
       );
-      return result!;
+      return attachIosSessionLifecycle(result!, context.serial);
     }
     try {
-      return await withSession(target.device, async () => {
-        const named = await interactOnDevice(target.device, input);
-        if (named.resolution) return named;
-        switch (input.kind) {
-          case "ref":
-            await pressRef(target.device, input.ref);
-            return {};
-          case "swipe":
-            await swipeGesture(target.device, input.from, input.to, input.durationMs ?? 250);
-            return {};
-          case "type":
-            await typeText(target.device, input.text);
-            return {};
-          case "replace":
-            await replaceText(target.device, input.target, input.text);
-            return {};
-          case "identifier":
-          case "label":
-          case "point":
-            throw new Error(
-              `No unique control matched ${input.kind}. Snapshot the screen and retry with identifier, label, or an exact point.`,
-            );
-          default:
-            return {};
-        }
-      });
+      const result = await withSession(
+        target.device,
+        async () => {
+          const named = await interactOnDevice(target.device, input);
+          if (named.resolution) return named;
+          switch (input.kind) {
+            case "ref":
+              await pressRef(target.device, input.ref);
+              return {};
+            case "swipe":
+              await swipeGesture(target.device, input.from, input.to, input.durationMs ?? 250);
+              return {};
+            case "type":
+              await typeText(target.device, input.text);
+              return {};
+            case "replace":
+              await replaceText(target.device, input.target, input.text);
+              return {};
+            case "identifier":
+            case "label":
+            case "point":
+              throw new Error(
+                `No unique control matched ${input.kind}. Snapshot the screen and retry with identifier, label, or an exact point.`,
+              );
+            default:
+              return {};
+          }
+        },
+        "interaction",
+      );
+      return context.kind === "device" && context.platform === "ios"
+        ? attachIosSessionLifecycle(result, context.serial)
+        : result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const context = currentTargetContext();

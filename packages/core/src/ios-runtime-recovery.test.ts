@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   confirmIosRuntimeSession,
+  createIosSessionRecoverySingleFlight,
   isIosRunnerWatchdogError,
   isRecoverableIosRuntimeError,
   isIosSessionBindingError,
@@ -66,6 +67,42 @@ test("preserves a working unattended runner without invoking host repair", async
   assert.equal(result.recovered, false);
   assert.equal(result.session.app, "Grok");
   assert.match(result.summary, /already ready/i);
+  assert.equal(result.lifecycle.code, "IOS_SESSION_READY");
+  assert.equal(result.lifecycle.repairAttempts, 0);
+  assert.deepEqual(
+    result.lifecycle.steps.map(({ stage, outcome }) => [stage, outcome]),
+    [
+      ["preview", "passed"],
+      ["xctest-availability", "passed"],
+      ["accessibility-query", "passed"],
+      ["repair", "skipped"],
+      ["post-repair-proof", "skipped"],
+    ],
+  );
+});
+
+test("returns one actionable stable failure when XCTest is unavailable", async () => {
+  let repairs = 0;
+  const result = await recoverIosRuntimeSession(
+    "ipad",
+    async () => {
+      throw new Error("No active XCTest session");
+    },
+    async () => {
+      repairs += 1;
+      throw new Error("Developer Mode is disabled");
+    },
+    async () => "Unlock the iPad, enable Developer Mode, then press Reconnect once.",
+  );
+
+  assert.equal(repairs, 1);
+  assert.equal(result.ready, false);
+  assert.equal(result.lifecycle.code, "IOS_SESSION_UNAVAILABLE");
+  assert.equal(result.lifecycle.probeAttempts, 1);
+  assert.equal(result.lifecycle.repairAttempts, 1);
+  assert.equal(result.lifecycle.proofAttempts, 0);
+  assert.match(result.session.detail, /Developer Mode/i);
+  assert.match(result.summary, /No further retries/i);
 });
 
 test("repairs only after session inspection fails, then confirms the runner", async () => {
@@ -96,6 +133,10 @@ test("repairs only after session inspection fails, then confirms the runner", as
   assert.equal(repairs, 1);
   assert.equal(result.ready, true);
   assert.equal(result.session.status, "restored");
+  assert.equal(result.lifecycle.repairAttempts, 1);
+  assert.equal(result.lifecycle.proofAttempts, 1);
+  assert.equal(result.lifecycle.steps.at(-1)?.stage, "post-repair-proof");
+  assert.equal(result.lifecycle.steps.at(-1)?.outcome, "passed");
 });
 
 test("does not report iOS control ready when preparation has no accessibility proof", async () => {
@@ -123,6 +164,41 @@ test("does not report iOS control ready when preparation has no accessibility pr
   assert.equal(result.session.status, "unavailable");
   assert.match(result.summary, /runner prepared/i);
   assert.match(result.session.detail, /accessibility tree/i);
+  assert.equal(result.lifecycle.code, "IOS_SESSION_PROOF_REQUIRED");
+  assert.equal(result.lifecycle.repairAttempts, 1);
+  assert.equal(result.lifecycle.proofAttempts, 1);
+  assert.equal(result.lifecycle.steps.at(-1)?.outcome, "failed");
+});
+
+test("shares one bounded lifecycle across concurrent recovery callers", async () => {
+  const singleFlight = createIosSessionRecoverySingleFlight();
+  let runs = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const run = () =>
+    singleFlight("ipad", async () => {
+      runs += 1;
+      await gate;
+      return await recoverIosRuntimeSession(
+        "ipad",
+        async () => ({ app: "Grok" }),
+        async () => {
+          throw new Error("repair must not run");
+        },
+        async () => "unavailable",
+      );
+    });
+
+  const first = run();
+  const second = run();
+  release();
+  const [left, right] = await Promise.all([first, second]);
+
+  assert.equal(runs, 1);
+  assert.equal(left, right);
+  assert.equal(left.lifecycle.repairAttempts, 0);
 });
 
 test("unavailable iOS automation gives a one-time, non-destructive next action", async () => {

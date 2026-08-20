@@ -31,6 +31,7 @@ import {
   diagnoseIosRunnerError,
   IosDeviceAttentionError,
   IosRunnerSetupError,
+  IosXCTestSessionUnavailableError,
   readIosDisplayOrientation,
   recordIosVideo,
 } from "./ios-device-adapter.js";
@@ -44,7 +45,12 @@ import {
   type IosSnapshotGeometry,
 } from "./ios-geometry.js";
 import { resolveRuntimeTarget } from "./workspace-devices.js";
-import { ensureIosRunnerPrepared, withSession } from "./workspace-ios-session.js";
+import {
+  ensureIosRunnerPrepared,
+  lastIosSessionOperationDiagnostic,
+  withSession,
+  type IosSessionOperationDiagnostic,
+} from "./workspace-ios-session.js";
 import { rawScreenshot } from "./workspace-android-raw.js";
 
 export type SnapshotPayload = {
@@ -64,6 +70,8 @@ export type SnapshotPayload = {
   bindingState?: "matched" | "rebound" | "unavailable";
   /** Safe, actionable iOS runner state when pixels are available but AX is not. */
   inspectionError?: string;
+  /** One bounded iOS AX attempt; observation never performs hidden repair. */
+  iosSessionLifecycle?: IosSessionOperationDiagnostic;
   /** Full normalized identity lets UI and agents explain and reuse a match;
    * a digest alone is not enough to repair an older visual-only baseline. */
   screenIdentity: import("@relay/protocol").ScreenIdentityObservation;
@@ -166,9 +174,9 @@ export function inferSnapshotBounds(
 async function snapshotThroughSdk(
   device: Device,
   interactiveOnly: boolean,
+  operation: "preview" | "snapshot",
 ): Promise<SnapshotNode[]> {
-  const capture = () => withSession(device, () => snapshot(device, { interactiveOnly }));
-  return await capture();
+  return await withSession(device, () => snapshot(device, { interactiveOnly }), operation);
 }
 
 /**
@@ -183,7 +191,11 @@ export async function iosInspectionErrorMessage(
   if (!error) return undefined;
   if (error instanceof IosSnapshotInFlightError) return error.message;
   const diagnosed = await diagnoseIosRunnerError(error, serial).catch(() => undefined);
-  if (diagnosed instanceof IosRunnerSetupError || diagnosed instanceof IosDeviceAttentionError) {
+  if (
+    diagnosed instanceof IosRunnerSetupError ||
+    diagnosed instanceof IosDeviceAttentionError ||
+    diagnosed instanceof IosXCTestSessionUnavailableError
+  ) {
     return diagnosed.message;
   }
   return undefined;
@@ -204,20 +216,8 @@ type SnapshotCapture = Pick<
 async function snapshotForTarget(
   target: Awaited<ReturnType<typeof resolveRuntimeTarget>>,
   interactiveOnly: boolean,
+  operation: "preview" | "snapshot",
 ): Promise<SnapshotCapture> {
-  let iosPreparationError: unknown;
-  if (
-    target.context.kind === "device" &&
-    target.context.platform === "ios" &&
-    target.context.serial
-  ) {
-    try {
-      await ensureIosRunnerPrepared(target.device, target.context.serial);
-    } catch (error) {
-      // Prepare can fail while a previous runner is still usable. Still try SDK.
-      iosPreparationError = error;
-    }
-  }
   if (
     target.context.kind !== "device" ||
     target.context.platform !== "android" ||
@@ -231,20 +231,18 @@ async function snapshotForTarget(
     let iosSnapshotError: unknown;
     if (iosSerial) {
       try {
-        appleNodes = await withSession(target.device, () =>
-          snapshotThroughSdk(target.device, interactiveOnly),
-        );
+        appleNodes = await snapshotThroughSdk(target.device, interactiveOnly, operation);
       } catch (error) {
         appleNodes = [];
         iosSnapshotError = error;
       }
     } else {
-      appleNodes = await snapshotThroughSdk(target.device, interactiveOnly);
+      appleNodes = await snapshotThroughSdk(target.device, interactiveOnly, operation);
     }
     const inspectable = appleNodes.length > 0;
     const inspectionError = inspectable
       ? undefined
-      : await iosInspectionErrorMessage(iosSnapshotError ?? iosPreparationError, iosSerial);
+      : await iosInspectionErrorMessage(iosSnapshotError, iosSerial);
     return {
       nodes: appleNodes,
       inspectable,
@@ -273,7 +271,7 @@ async function snapshotForTarget(
   }
 
   try {
-    let nodes = await snapshotThroughSdk(target.device, interactiveOnly);
+    let nodes = await snapshotThroughSdk(target.device, interactiveOnly, "snapshot");
     let treeApp = androidSnapshotApplication(nodes);
     if (nodes.length > 0 && androidSnapshotMatchesForeground(nodes, foregroundApp)) {
       return {
@@ -294,7 +292,7 @@ async function snapshotForTarget(
         relaunch: false,
         noRecord: true,
       });
-      nodes = await snapshotThroughSdk(target.device, interactiveOnly);
+      nodes = await snapshotThroughSdk(target.device, interactiveOnly, "snapshot");
       treeApp = androidSnapshotApplication(nodes);
       if (nodes.length > 0 && androidSnapshotMatchesForeground(nodes, foregroundApp)) {
         return {
@@ -333,12 +331,18 @@ export async function captureSnapshot(opts?: {
   interactiveOnly?: boolean;
   device?: Device;
   includeVisual?: boolean;
+  /** Preview remains a single read-only AX attempt with distinct diagnostics. */
+  iosOperation?: "preview" | "snapshot";
 }): Promise<SnapshotPayload> {
   const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
   return runWithTargetContext(target.context, async () => {
     let snapshot: SnapshotCapture;
     try {
-      snapshot = await snapshotForTarget(target, opts?.interactiveOnly ?? false);
+      snapshot = await snapshotForTarget(
+        target,
+        opts?.interactiveOnly ?? false,
+        opts?.iosOperation ?? "snapshot",
+      );
     } catch (error) {
       if (target.context.kind === "device" && target.context.platform === "ios") {
         const inspectionError = await iosInspectionErrorMessage(error, target.context.serial);
@@ -355,6 +359,10 @@ export async function captureSnapshot(opts?: {
     }
     const { nodes: capturedNodes, ...capture } = snapshot;
     const context = target.context;
+    const iosSessionLifecycle =
+      context.kind === "device" && context.platform === "ios"
+        ? lastIosSessionOperationDiagnostic(context.serial)
+        : undefined;
     const iosGeometry =
       context.kind === "device" && context.platform === "ios"
         ? inferIosSnapshotGeometry(capturedNodes)
@@ -403,6 +411,7 @@ export async function captureSnapshot(opts?: {
       ...(visualFingerprint ? { visualFingerprint } : {}),
       ...(proposedRows?.length ? { proposedRows } : {}),
       ...capture,
+      ...(iosSessionLifecycle ? { iosSessionLifecycle } : {}),
     };
   });
 }
@@ -501,12 +510,18 @@ export async function captureScreenshot(opts?: {
       try {
         await captureIosPngViaGoIos(context.serial, path);
       } catch {
-        await withSession(target.device, () =>
-          target.device.capture.screenshot({ ...base(), path }),
+        await withSession(
+          target.device,
+          () => target.device.capture.screenshot({ ...base(), path }),
+          "screenshot",
         );
       }
     } else {
-      await withSession(target.device, () => target.device.capture.screenshot({ ...base(), path }));
+      await withSession(
+        target.device,
+        () => target.device.capture.screenshot({ ...base(), path }),
+        "screenshot",
+      );
     }
     let buf = await readFile(path);
     let semanticNodes: readonly SnapshotNode[] | undefined = opts?.semanticNodes;
@@ -558,7 +573,7 @@ export async function captureScreenshot(opts?: {
         context.platform !== "ios")
     ) {
       try {
-        semanticNodes ??= (await snapshotForTarget(target, false)).nodes;
+        semanticNodes ??= (await snapshotForTarget(target, false, "snapshot")).nodes;
         const identity = observeScreenIdentity(semanticNodes);
         if (identity.fingerprint || visualFingerprint) {
           screenMatch = {

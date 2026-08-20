@@ -23,6 +23,35 @@ export type IosRuntimeRecoveryResult = {
   summary: string;
 };
 
+export type IosSessionLifecycleStage =
+  | "preview"
+  | "xctest-availability"
+  | "accessibility-query"
+  | "repair"
+  | "post-repair-proof";
+
+export type IosSessionLifecycleStep = {
+  stage: IosSessionLifecycleStage;
+  outcome: "passed" | "failed" | "skipped" | "attempted";
+  durationMs: number;
+  detail: string;
+};
+
+/**
+ * Stable, host-neutral account of one bounded iOS control decision. UIs and
+ * agents should consume this instead of inferring readiness from setup logs.
+ */
+export type IosSessionLifecycleDiagnostic = {
+  operation: "recover";
+  outcome: "ready" | "unavailable" | "proof-required";
+  code: "IOS_SESSION_READY" | "IOS_SESSION_UNAVAILABLE" | "IOS_SESSION_PROOF_REQUIRED";
+  probeAttempts: 1;
+  repairAttempts: 0 | 1;
+  proofAttempts: 0 | 1;
+  repairAttempted: boolean;
+  steps: IosSessionLifecycleStep[];
+};
+
 export type IosRuntimeSessionRecovery = IosRuntimeRecoveryResult & {
   session: {
     status: "restored" | "unavailable";
@@ -30,7 +59,53 @@ export type IosRuntimeSessionRecovery = IosRuntimeRecoveryResult & {
     fallback?: boolean;
     detail: string;
   };
+  lifecycle: IosSessionLifecycleDiagnostic;
 };
+
+function elapsed(startedAt: number): number {
+  return Math.max(0, Date.now() - startedAt);
+}
+
+function probeSteps(outcome: "passed" | "failed", durationMs: number, detail: string) {
+  return [
+    { stage: "preview", outcome, durationMs, detail },
+    {
+      stage: "xctest-availability",
+      outcome,
+      durationMs,
+      detail:
+        outcome === "passed"
+          ? "The existing XCTest session answered the bounded probe."
+          : "The existing XCTest session did not answer the bounded probe.",
+    },
+    {
+      stage: "accessibility-query",
+      outcome,
+      durationMs,
+      detail:
+        outcome === "passed"
+          ? "The bounded accessibility query returned interactive nodes."
+          : "Relay could not prove interactive accessibility from the bounded query.",
+    },
+  ] satisfies IosSessionLifecycleStep[];
+}
+
+/** Share an entire recovery decision, including its destructive repair gate. */
+export function createIosSessionRecoverySingleFlight<T = IosRuntimeSessionRecovery>() {
+  const flights = new Map<string, Promise<T>>();
+  return function singleFlight(serial: string, run: () => Promise<T>): Promise<T> {
+    const existing = flights.get(serial);
+    if (existing) return existing;
+    let flight!: Promise<T>;
+    flight = Promise.resolve()
+      .then(run)
+      .finally(() => {
+        if (flights.get(serial) === flight) flights.delete(serial);
+      });
+    flights.set(serial, flight);
+    return flight;
+  };
+}
 
 /**
  * Preserve a working XCTest session. Recovery is a repair path, not a reset
@@ -43,8 +118,23 @@ export async function recoverIosRuntimeSession(
   repair: (cause: unknown) => Promise<IosRuntimeRecoveryResult>,
   diagnose: (error: unknown) => Promise<string>,
 ): Promise<IosRuntimeSessionRecovery> {
+  const steps: IosSessionLifecycleStep[] = [];
+  const probeStartedAt = Date.now();
   try {
     const restored = await inspect();
+    steps.push(...probeSteps("passed", elapsed(probeStartedAt), "Live session probe passed."));
+    steps.push({
+      stage: "repair",
+      outcome: "skipped",
+      durationMs: 0,
+      detail: "No repair was needed; the existing session was preserved.",
+    });
+    steps.push({
+      stage: "post-repair-proof",
+      outcome: "skipped",
+      durationMs: 0,
+      detail: "No repair occurred, so no post-repair proof was required.",
+    });
     return {
       serial,
       recovered: false,
@@ -58,10 +148,69 @@ export async function recoverIosRuntimeSession(
           ? "Relay restored device control at the Home Screen."
           : "Relay restored the app that was active in this workspace.",
       },
+      lifecycle: {
+        operation: "recover",
+        outcome: "ready",
+        code: "IOS_SESSION_READY",
+        probeAttempts: 1,
+        repairAttempts: 0,
+        proofAttempts: 0,
+        repairAttempted: false,
+        steps,
+      },
     };
   } catch (cause) {
-    const host = await repair(cause);
-    return confirmIosRuntimeSession(host, inspect, diagnose);
+    steps.push(
+      ...probeSteps(
+        "failed",
+        elapsed(probeStartedAt),
+        cause instanceof Error ? cause.message : "Live session probe failed.",
+      ),
+    );
+    const repairStartedAt = Date.now();
+    let host: IosRuntimeRecoveryResult;
+    try {
+      host = await repair(cause);
+      steps.push({
+        stage: "repair",
+        outcome: "attempted",
+        durationMs: elapsed(repairStartedAt),
+        detail: "Relay completed the single bounded repair attempt.",
+      });
+    } catch (repairError) {
+      const detail = await diagnose(repairError);
+      steps.push({
+        stage: "repair",
+        outcome: "failed",
+        durationMs: elapsed(repairStartedAt),
+        detail,
+      });
+      steps.push({
+        stage: "post-repair-proof",
+        outcome: "skipped",
+        durationMs: 0,
+        detail: "Repair failed, so Relay did not start another accessibility query.",
+      });
+      return {
+        serial,
+        recovered: false,
+        ready: false,
+        actions: [],
+        summary: "The iPad automation session is unavailable. No further retries were started.",
+        session: { status: "unavailable", detail },
+        lifecycle: {
+          operation: "recover",
+          outcome: "unavailable",
+          code: "IOS_SESSION_UNAVAILABLE",
+          probeAttempts: 1,
+          repairAttempts: 1,
+          proofAttempts: 0,
+          repairAttempted: true,
+          steps,
+        },
+      };
+    }
+    return confirmIosRuntimeSession(host, inspect, diagnose, steps);
   }
 }
 
@@ -74,9 +223,20 @@ export async function confirmIosRuntimeSession(
   host: IosRuntimeRecoveryResult,
   restore: () => Promise<{ app?: string; fallback?: boolean }>,
   diagnose: (error: unknown) => Promise<string>,
+  priorSteps: IosSessionLifecycleStep[] = [],
 ): Promise<IosRuntimeSessionRecovery> {
+  const proofStartedAt = Date.now();
   try {
     const restored = await restore();
+    const steps = [
+      ...priorSteps,
+      {
+        stage: "post-repair-proof" as const,
+        outcome: "passed" as const,
+        durationMs: elapsed(proofStartedAt),
+        detail: "The repaired session returned interactive accessibility nodes.",
+      },
+    ];
     return {
       ...host,
       ready: true,
@@ -90,14 +250,44 @@ export async function confirmIosRuntimeSession(
           ? "Relay restored device control at the Home Screen."
           : "Relay restored the app that was active in this workspace.",
       },
+      lifecycle: {
+        operation: "recover",
+        outcome: "ready",
+        code: "IOS_SESSION_READY",
+        probeAttempts: 1,
+        repairAttempts: 1,
+        proofAttempts: 1,
+        repairAttempted: true,
+        steps,
+      },
     };
   } catch (error) {
+    const detail = await diagnose(error);
+    const steps = [
+      ...priorSteps,
+      {
+        stage: "post-repair-proof" as const,
+        outcome: "failed" as const,
+        durationMs: elapsed(proofStartedAt),
+        detail,
+      },
+    ];
     return {
       ...host,
       ready: false,
       session: {
         status: "unavailable",
-        detail: await diagnose(error),
+        detail,
+      },
+      lifecycle: {
+        operation: "recover",
+        outcome: "proof-required",
+        code: "IOS_SESSION_PROOF_REQUIRED",
+        probeAttempts: 1,
+        repairAttempts: 1,
+        proofAttempts: 1,
+        repairAttempted: true,
+        steps,
       },
     };
   }

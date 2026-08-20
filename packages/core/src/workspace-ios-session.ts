@@ -1,13 +1,7 @@
 /**
  * One XCTest runner per attached Apple device. Pointer and tree share it.
  */
-import {
-  rememberedTargetApplication,
-  resetDeviceClient,
-  createDevice,
-  snapshot,
-  type Device,
-} from "./device.js";
+import { resetDeviceClient, createDevice, snapshot, type Device } from "./device.js";
 import { getExecutingJobId, hardStopDeviceSession } from "./control.js";
 import {
   IosDeviceAttentionError,
@@ -17,9 +11,7 @@ import {
   prepareIosRunner,
 } from "./ios-device-adapter.js";
 import {
-  confirmIosRuntimeSession,
-  isIosRunnerWatchdogError,
-  isIosSessionBindingError,
+  createIosSessionRecoverySingleFlight,
   isRecoverableIosRuntimeError,
   foreignSessionNameFromError,
   recoverIosRuntime,
@@ -28,11 +20,7 @@ import {
   type IosRuntimeSessionRecovery,
 } from "./ios-runtime-recovery.js";
 import { androidSnapshotApplication, recoverAndroidInspection } from "./android-ui-snapshot.js";
-import {
-  killStaleIosTestRunners,
-  launchIosAppOutsideXctest,
-  remountIosDeveloperDiskImage,
-} from "./ios-app-launch.js";
+import { killStaleIosTestRunners, remountIosDeveloperDiskImage } from "./ios-app-launch.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { runTargetMutation } from "./target-control.js";
 import { resolveRuntimeTarget } from "./workspace-devices.js";
@@ -47,31 +35,30 @@ import { resolveRuntimeTarget } from "./workspace-devices.js";
 const iosRunnerPreparations = new Map<string, Promise<void>>();
 const iosRunnerFailures = new Map<string, { error: Error; expiresAt: number }>();
 const iosRuntimeRecoveries = new Map<string, Promise<IosRuntimeRecoveryResult>>();
+const runIosRecoverySingleFlight = createIosSessionRecoverySingleFlight<TargetRuntimeRecovery>();
 const IOS_RUNNER_FAILURE_TTL_MS = 10_000;
 const IOS_DEVICE_ATTENTION_FAILURE_TTL_MS = 5 * 60_000;
 
-async function restoreIosAppSession(
-  device: Device,
+export type IosSessionOperationDiagnostic = {
+  operation: "preview" | "snapshot" | "screenshot" | "interaction";
+  outcome: "passed" | "unavailable";
+  code: "IOS_SESSION_OPERATION_READY" | "IOS_SESSION_OPERATION_UNAVAILABLE";
+  attempts: 1;
+  repairAttempted: false;
+  durationMs: number;
+  stages: {
+    stage: "preview" | "xctest-availability" | "accessibility-query" | "repair";
+    outcome: "passed" | "failed" | "skipped";
+  }[];
+};
+
+const iosSessionOperationDiagnostics = new Map<string, IosSessionOperationDiagnostic>();
+
+export function lastIosSessionOperationDiagnostic(
   serial: string,
-): Promise<{ app: string; fallback: boolean }> {
-  const remembered = await rememberedTargetApplication({
-    kind: "device",
-    platform: "ios",
-    serial,
-  });
-  const app = remembered ?? "com.apple.springboard";
-  try {
-    await launchIosAppOutsideXctest(serial, app, { relaunch: false });
-  } catch {
-    await device.apps.open({
-      platform: "ios",
-      udid: serial,
-      app,
-      relaunch: false,
-      noRecord: true,
-    });
-  }
-  return { app, fallback: !remembered };
+): IosSessionOperationDiagnostic | undefined {
+  const value = iosSessionOperationDiagnostics.get(serial);
+  return value ? structuredClone(value) : undefined;
 }
 
 async function recoverIosHostRuntime(
@@ -98,15 +85,26 @@ export function resetIosRunnerState(): void {
   iosRuntimeRecoveries.clear();
 }
 
-export type TargetRuntimeRecovery = IosRuntimeSessionRecovery;
+export type TargetRuntimeRecovery =
+  | IosRuntimeSessionRecovery
+  | (IosRuntimeRecoveryResult & {
+      session: {
+        status: "restored" | "unavailable";
+        app?: string;
+        fallback?: boolean;
+        detail: string;
+      };
+    });
 
 /** Shared UI/CLI/MCP recovery for attached devices. */
 export async function recoverTargetRuntime(
   serial: string,
   cause?: unknown,
 ): Promise<TargetRuntimeRecovery> {
-  return runTargetMutation(serial, getExecutingJobId(), () =>
-    recoverTargetRuntimeReserved(serial, cause),
+  return runIosRecoverySingleFlight(serial, () =>
+    runTargetMutation(serial, getExecutingJobId(), () =>
+      recoverTargetRuntimeReserved(serial, cause),
+    ),
   );
 }
 
@@ -162,21 +160,20 @@ async function recoverTargetRuntimeReserved(
     let remounted = false;
 
     const inspect = async () => {
-      await ensureIosRunnerPrepared(device, serial);
       try {
-        const restored = await restoreIosAppSession(device, serial);
-        // Preparing the runner only proves that Xcode accepted setup. It does
-        // not prove the signed XCTest process can return accessibility nodes.
-        // Reconnect is an explicit operation, so it must make that distinction
-        // before declaring control ready. Keep this deliberately small: live
-        // interaction needs hittable geometry, not a raw evidence traversal.
-        const nodes = await withSession(device, () => snapshot(device, { interactiveOnly: true }));
+        // Probe the existing session before any setup, launch, stop, or host
+        // repair. A reconnect request is not proof that the live runner is bad.
+        const nodes = await snapshot(device, { interactiveOnly: true });
         if (nodes.length === 0) {
           throw new IosXCTestSessionUnavailableError(
             "Reconnect prepared the XCTest runner, but it returned no interactive accessibility nodes.",
           );
         }
-        return restored;
+        const currentApp = nodes.find((node) => node.bundleId)?.bundleId;
+        return {
+          ...(currentApp ? { app: currentApp } : {}),
+          fallback: currentApp === "com.apple.springboard",
+        };
       } catch (error) {
         // Launch/pixel capture may remain available, but that is explicitly
         // not semantic control. Preserve the inspection failure so the
@@ -232,7 +229,7 @@ async function recoverTargetRuntimeReserved(
         host.recovered = true;
       }
       try {
-        await ensureIosRunnerPrepared(device, serial);
+        await ensureIosRunnerPrepared(device, serial, { allowHostRepair: false });
         host.actions = [
           {
             kind: "agent-device",
@@ -242,7 +239,6 @@ async function recoverTargetRuntimeReserved(
           },
           ...host.actions,
         ];
-        host.ready = true;
         host.recovered = true;
       } catch {
         // Screenshot + launch may still work; inspect will report the runner error.
@@ -250,18 +246,8 @@ async function recoverTargetRuntimeReserved(
       return host;
     };
 
-    // Killing XCTest first makes a flaky runner unrecoverable. Inspect the live
-    // session unless the caller already saw a conflict or hard failure.
-    if (cause !== undefined || foreign) {
-      const host = await repair(
-        cause ?? new Error(foreign ? `already in use by session "${foreign}"` : "recover"),
-      );
-      return confirmIosRuntimeSession(
-        host,
-        inspect,
-        async (error) => (await diagnoseIosRunnerError(error, serial)).message,
-      );
-    }
+    // Always probe first. Even a prior binding error may describe a request
+    // that lost a race while the shared session recovered independently.
     return recoverIosRuntimeSession(
       serial,
       inspect,
@@ -271,7 +257,11 @@ async function recoverTargetRuntimeReserved(
   });
 }
 
-export function ensureIosRunnerPrepared(device: Device, serial: string): Promise<void> {
+export function ensureIosRunnerPrepared(
+  device: Device,
+  serial: string,
+  options: { allowHostRepair?: boolean } = {},
+): Promise<void> {
   const recentFailure = iosRunnerFailures.get(serial);
   if (recentFailure && recentFailure.expiresAt > Date.now()) {
     return Promise.reject(recentFailure.error);
@@ -284,7 +274,7 @@ export function ensureIosRunnerPrepared(device: Device, serial: string): Promise
   let preparation!: Promise<void>;
   preparation = prepareIosRunner(device, { udid: serial })
     .catch(async (error) => {
-      if (!isRecoverableIosRuntimeError(error)) throw error;
+      if (options.allowHostRepair === false || !isRecoverableIosRuntimeError(error)) throw error;
       await recoverIosHostRuntime(serial, error);
       return prepareIosRunner(device, { udid: serial });
     })
@@ -320,60 +310,71 @@ export function ensureIosRunnerPrepared(device: Device, serial: string): Promise
  * Recover from session binding conflicts by releasing the stale binding
  * and retrying. Does NOT auto-open any app — each recipe opens its own.
  */
-export async function withSession<T>(device: Device, op: () => Promise<T>): Promise<T> {
+export async function withSession<T>(
+  device: Device,
+  op: () => Promise<T>,
+  operation: IosSessionOperationDiagnostic["operation"] = "interaction",
+): Promise<T> {
+  // Observation and interaction are truthful operations, not hidden recovery
+  // entry points. They get exactly one attempt and preserve the original
+  // failure. Only recoverTargetRuntime may stop, prepare, launch, or retry.
+  const startedAt = Date.now();
   try {
-    return await op();
-  } catch (err) {
+    const result = await op();
     const context = currentTargetContext();
-    if (
-      isIosSessionBindingError(err) &&
-      context.kind === "device" &&
-      context.platform === "ios" &&
-      context.serial
-    ) {
-      await ensureIosRunnerPrepared(device, context.serial);
-      await restoreIosAppSession(device, context.serial);
-      return await op();
+    if (context.kind === "device" && context.platform === "ios") {
+      iosSessionOperationDiagnostics.set(context.serial, {
+        operation,
+        outcome: "passed",
+        code: "IOS_SESSION_OPERATION_READY",
+        attempts: 1,
+        repairAttempted: false,
+        durationMs: Math.max(0, Date.now() - startedAt),
+        stages: [
+          {
+            stage: "preview",
+            outcome: operation === "preview" ? "passed" : "skipped",
+          },
+          { stage: "xctest-availability", outcome: "passed" },
+          {
+            stage: "accessibility-query",
+            outcome:
+              operation === "interaction" || operation === "screenshot" ? "skipped" : "passed",
+          },
+          { stage: "repair", outcome: "skipped" },
+        ],
+      });
     }
-    // Watchdog-wedged XCTest must kill the on-device runner, not just retry.
-    if (
-      isIosRunnerWatchdogError(err) &&
-      context.kind === "device" &&
-      context.platform === "ios" &&
-      context.serial
-    ) {
-      await hardStopDeviceSession(context).catch(() => undefined);
-      resetDeviceClient(context);
-      iosRunnerPreparations.delete(context.serial);
-      iosRunnerFailures.delete(context.serial);
-      await recoverIosHostRuntime(context.serial, err, true);
-      await ensureIosRunnerPrepared(device, context.serial);
-      await restoreIosAppSession(device, context.serial);
-      return await op();
-    }
-    if (
-      isRecoverableIosRuntimeError(err) &&
-      context.kind === "device" &&
-      context.platform === "ios" &&
-      context.serial
-    ) {
-      await hardStopDeviceSession(context).catch(() => undefined);
-      resetDeviceClient(context);
-      await recoverIosHostRuntime(context.serial, err);
-      iosRunnerPreparations.delete(context.serial);
-      iosRunnerFailures.delete(context.serial);
-      await ensureIosRunnerPrepared(device, context.serial);
-      await restoreIosAppSession(device, context.serial);
-      return await op();
-    }
-    const msg = err instanceof Error ? err.message : String(err);
-    if (/already bound/i.test(msg) && !getExecutingJobId()) {
-      if (context.kind === "device" && context.platform === "ios") {
-        throw err;
+    return result;
+  } catch (error) {
+    const context = currentTargetContext();
+    if (context.kind === "device" && context.platform === "ios") {
+      const diagnostic: IosSessionOperationDiagnostic = {
+        operation,
+        outcome: "unavailable",
+        code: "IOS_SESSION_OPERATION_UNAVAILABLE",
+        attempts: 1,
+        repairAttempted: false,
+        durationMs: Math.max(0, Date.now() - startedAt),
+        stages: [
+          {
+            stage: "preview",
+            outcome: operation === "preview" ? "failed" : "skipped",
+          },
+          { stage: "xctest-availability", outcome: "failed" },
+          { stage: "accessibility-query", outcome: "failed" },
+          { stage: "repair", outcome: "skipped" },
+        ],
+      };
+      iosSessionOperationDiagnostics.set(context.serial, diagnostic);
+      if (error instanceof Error) {
+        Object.defineProperty(error, "iosSessionLifecycle", {
+          configurable: true,
+          enumerable: true,
+          value: structuredClone(diagnostic),
+        });
       }
-      await hardStopDeviceSession(context).catch(() => undefined);
-      return await op();
     }
-    throw err;
+    throw error;
   }
 }
