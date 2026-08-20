@@ -264,6 +264,8 @@ export type ScanLanguagePickerInput = {
   platform?: "ios" | "android";
   maxScrolls?: number;
   save?: boolean;
+  /** Keep the already-visible picker bound to its current iOS session when false. */
+  openApp?: boolean;
 };
 
 export async function scanAppLanguagePicker(input: ScanLanguagePickerInput) {
@@ -281,6 +283,7 @@ export async function scanAppLanguagePicker(input: ScanLanguagePickerInput) {
     platform: input.platform,
     maxScrolls: input.maxScrolls,
     save: input.save,
+    openApp: input.openApp,
   });
   return {
     profile: toLanguage(result.profile),

@@ -83,6 +83,13 @@ const relayToolOutputSchema = z
           .strict()
           .optional(),
         currentRevision: z.number().int().nonnegative().optional(),
+        iosReview: z
+          .object({
+            iosMutation: z.record(z.string(), z.unknown()),
+            switcherScan: z.record(z.string(), z.unknown()).optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),

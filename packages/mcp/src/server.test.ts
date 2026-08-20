@@ -479,6 +479,62 @@ test("returns sanitized structured ApiError recovery without losing revision sta
   }
 });
 
+test("keeps an iOS switcher scan's terminal review package and never offers an automatic retry", async () => {
+  const iosMutation = {
+    sequence: 1,
+    operation: "press",
+    nativeAttempts: 1,
+    outcome: "outcome-unknown",
+    retry: {
+      attempts: 0,
+      decision: "blocked",
+      reason: "native-command-outcome-unknown",
+    },
+    intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+    at: 1,
+  };
+  const switcherScan = {
+    status: "interrupted",
+    phase: "entry-path",
+    repair: {
+      terminal: true,
+      nextAction: "capture-current-screen-before-any-retry",
+      blocked: ["fallback-target", "retry-launch", "path-step"],
+    },
+  };
+  const session = await connectMcp({
+    async invoke() {
+      throw new ApiError(409, "The iOS press may already have reached the device.", {
+        code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+        error: "The iOS press may already have reached the device.",
+        iosMutation,
+        switcherScan,
+      });
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_switcher_profile_scan",
+        arguments: {},
+      }),
+    );
+    assert.equal(result.isError, true);
+    assert.deepEqual(result.structuredContent, {
+      error: {
+        operationId: "switcher-profile.scan",
+        status: 409,
+        code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+        message: "The iOS press may already have reached the device.",
+        recovery: { action: "none", retryable: false },
+        iosReview: { iosMutation, switcherScan },
+      },
+    });
+  } finally {
+    await session.close();
+  }
+});
+
 test("bounds normal text and errors without exposing truncated paths or credentials", async () => {
   const path = "/Users/example/private/results/secret.json";
   const credential = "super-secret-bearer-token";

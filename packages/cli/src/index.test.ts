@@ -1054,6 +1054,43 @@ test("structured recovery is machine-readable and useful in the human CLI", asyn
   assert.match(io.stderr(), /Try: relay lease create ipad-1 --actor agent:mapper/u);
 });
 
+test("iOS switcher scan stops retain the exact review package in CLI JSON", async () => {
+  const io = capture();
+  const details = {
+    code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+    iosMutation: {
+      nativeAttempts: 1,
+      operation: "press",
+      retry: { attempts: 0, decision: "blocked", reason: "native-command-outcome-unknown" },
+    },
+    switcherScan: {
+      status: "interrupted",
+      repair: {
+        terminal: true,
+        nextAction: "capture-current-screen-before-any-retry",
+      },
+    },
+  };
+  const code = await runCli(
+    ["operation", "invoke", "switcher-profile.scan", "--input", "{}", "--json"],
+    {
+      streams: io.streams,
+      createClient: () => ({
+        invoke: async () => {
+          throw new ApiError(409, "The iOS press may already have reached the device.", details);
+        },
+        events: async () => {},
+      }),
+      registerSignalHandlers: false,
+      env: {},
+    },
+  );
+
+  assert.equal(code, ExitCode.conflict);
+  assert.deepEqual(JSON.parse(io.stdout()).error.details, details);
+  assert.match(io.stderr(), /Capture the current screen|may already have reached/u);
+});
+
 test("failed watched jobs use a non-zero exit", async () => {
   const io = capture();
   const code = await runCli(["job", "watch", "failed-job", "--json"], {

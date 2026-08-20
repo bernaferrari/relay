@@ -27,10 +27,12 @@ import {
   renameCorpusSession,
   setCorpusStatus,
   startCorpusSession,
+  IosMutationOutcomeUnknownError,
 } from "@relay/core";
 import type { CorpusScope, CorpusStatus } from "@relay/protocol";
 import { assertTargetControl } from "./access-control.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, text } from "./http.js";
+import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import type { RequestContext } from "./security.js";
 
 type CorpusRouteInput = {
@@ -155,6 +157,7 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
       name?: string;
       maxScrolls?: number;
       save?: boolean;
+      openApp?: boolean;
       entryPath?: unknown;
       pickerPath?: unknown;
     };
@@ -165,6 +168,9 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
         400,
         "kind is required (language | account | environment | theme | workspace | build | custom)",
       );
+    if (body.openApp !== undefined && typeof body.openApp !== "boolean") {
+      throw new HttpError(400, "openApp must be boolean when provided");
+    }
     await assertTargetControl(scope, body.serial);
     try {
       const result = await scanSwitcherPicker({
@@ -175,11 +181,15 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
         ...(body.name ? { name: body.name } : {}),
         ...(body.maxScrolls !== undefined ? { maxScrolls: body.maxScrolls } : {}),
         save: body.save !== false,
+        ...(body.openApp !== undefined ? { openApp: body.openApp } : {}),
         ...(Array.isArray(body.entryPath) ? { entryPath: body.entryPath as never } : {}),
         ...(Array.isArray(body.pickerPath) ? { pickerPath: body.pickerPath as never } : {}),
       });
       json(response, 200, result);
     } catch (error) {
+      if (error instanceof IosMutationOutcomeUnknownError) {
+        throw iosMutationOutcomeUnknownHttpError(error);
+      }
       throw new HttpError(400, error instanceof Error ? error.message : String(error));
     }
     return true;
@@ -211,11 +221,15 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
       name?: string;
       maxScrolls?: number;
       save?: boolean;
+      openApp?: boolean;
       entryPath?: unknown;
       languagePath?: unknown;
     };
     if (!body.serial?.trim()) throw new HttpError(400, "serial is required");
     if (!body.app?.trim()) throw new HttpError(400, "app is required");
+    if (body.openApp !== undefined && typeof body.openApp !== "boolean") {
+      throw new HttpError(400, "openApp must be boolean when provided");
+    }
     await assertTargetControl(scope, body.serial);
     try {
       const result = await scanAppLanguagePicker({
@@ -225,6 +239,7 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
         ...(body.name ? { name: body.name } : {}),
         ...(body.maxScrolls !== undefined ? { maxScrolls: body.maxScrolls } : {}),
         save: body.save !== false,
+        ...(body.openApp !== undefined ? { openApp: body.openApp } : {}),
         // A rescan exists to replace a path that no longer replays. Dropping
         // these left the caller re-walking the stale path they came to fix.
         ...(Array.isArray(body.entryPath) ? { entryPath: body.entryPath as never } : {}),
@@ -232,6 +247,9 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
       });
       json(response, 200, result);
     } catch (error) {
+      if (error instanceof IosMutationOutcomeUnknownError) {
+        throw iosMutationOutcomeUnknownHttpError(error);
+      }
       throw new HttpError(400, error instanceof Error ? error.message : String(error));
     }
     return true;

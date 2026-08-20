@@ -6,6 +6,7 @@ const localPath = /(?:file:\/\/)?(?:\/(?:Users|private|var|tmp|home)\/|[A-Za-z]:
 const bearerCredential = /\bBearer\s+[^\s,;]+/gi;
 const namedCredential = /\b(?:token|password|secret|credential|authorization)\s*[:=]\s*[^\s,;]+/gi;
 const url = /https?:\/\/[^\s"']+/gi;
+const iosMutationOutcomeUnknownCode = "IOS_MUTATION_OUTCOME_UNKNOWN";
 
 export type RelayMcpRecoveryAction =
   | "fix-input"
@@ -22,6 +23,16 @@ export type RelayMcpRecoveryCommand = {
   cli?: { argv: string[] };
 };
 
+/**
+ * The inspectable part of a terminal physical-iOS outcome. Keep it separate
+ * from generic error text so an MCP agent can see why it must stop before
+ * issuing another command, including route-specific proof from a picker scan.
+ */
+export type RelayMcpIosReview = {
+  iosMutation: Record<string, unknown>;
+  switcherScan?: Record<string, unknown>;
+};
+
 export type RelayMcpStructuredError = {
   operationId: OperationId;
   status?: number;
@@ -33,6 +44,7 @@ export type RelayMcpStructuredError = {
   };
   recoveryAction?: RelayMcpRecoveryCommand;
   currentRevision?: number;
+  iosReview?: RelayMcpIosReview;
 };
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -128,6 +140,17 @@ function recoveryActionFrom(value: unknown): RelayMcpStructuredError["recoveryAc
   };
 }
 
+function iosReviewFrom(body: Record<string, unknown> | undefined): RelayMcpIosReview | undefined {
+  if (body?.code !== iosMutationOutcomeUnknownCode) return undefined;
+  const iosMutation = object(body.iosMutation);
+  if (!iosMutation) return undefined;
+  const switcherScan = object(body.switcherScan);
+  return {
+    iosMutation,
+    ...(switcherScan ? { switcherScan } : {}),
+  };
+}
+
 export function relayMcpError(operationId: OperationId, error: unknown): RelayMcpStructuredError {
   const fallback = `Relay operation ${operationId} failed.`;
   if (!(error instanceof ApiError)) {
@@ -142,12 +165,19 @@ export function relayMcpError(operationId: OperationId, error: unknown): RelayMc
   const body = object(error.body);
   const suppliedCode = body?.code;
   const code =
-    typeof suppliedCode === "string" && codePattern.test(suppliedCode)
+    suppliedCode === iosMutationOutcomeUnknownCode ||
+    (typeof suppliedCode === "string" && codePattern.test(suppliedCode))
       ? suppliedCode
       : defaultCode(error.status);
   const message = sanitizeErrorText(body?.error ?? error.message, fallback);
   const revision = currentRevision(body);
-  const recovery = suppliedRecovery(body?.recovery, recoveryFor(error.status, message));
+  const iosReview = iosReviewFrom(body);
+  // An unknown physical iOS mutation has already used its one native command.
+  // It is categorically different from a stale revision conflict: telling an
+  // agent to refresh-and-retry would invite a duplicate press or scroll.
+  const recovery = iosReview
+    ? { action: "none" as const, retryable: false }
+    : suppliedRecovery(body?.recovery, recoveryFor(error.status, message));
   const recoveryAction = recoveryActionFrom(body?.recoveryAction);
 
   return {
@@ -158,6 +188,7 @@ export function relayMcpError(operationId: OperationId, error: unknown): RelayMc
     recovery,
     ...(recoveryAction ? { recoveryAction } : {}),
     ...(revision === undefined ? {} : { currentRevision: revision }),
+    ...(iosReview ? { iosReview } : {}),
   };
 }
 
