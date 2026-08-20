@@ -60,7 +60,6 @@ export type DeviceInteractionHover = {
   point: DeviceInteractionPoint;
   event: PointerEvent;
 };
-
 type ActivePointer = {
   id: number;
   start: DeviceInteractionPoint;
