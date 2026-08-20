@@ -244,6 +244,68 @@ test("target summaries preserve split-plane readiness without treating stale sem
   assert.deepEqual(result.readiness, readiness);
 });
 
+test("an in-flight iOS accessibility read keeps the pixel path actionable without suggesting reconnect", () => {
+  const readiness = {
+    previewPixels: {
+      mode: "pixels",
+      state: "proven",
+      freshness: "current",
+      proof: { at: 100, durationMs: 10 },
+    },
+    semanticControl: {
+      mode: "accessibility",
+      state: "unavailable",
+      freshness: "unproven",
+      reason: "probe-in-flight",
+      lastError: {
+        at: 101,
+        reason: "probe-in-flight",
+        durationMs: 8_000,
+        message:
+          "iOS accessibility is still reading this screen after 8000ms. Pixels remain usable; wait for the current query to settle before refreshing names.",
+      },
+    },
+    evidenceCapture: {
+      mode: "evidence",
+      state: "proven",
+      freshness: "current",
+      proof: { at: 100, durationMs: 10 },
+    },
+  };
+  const result = summarizeTargetOperationResult("target.snapshot.capture", {
+    serial: "ipad",
+    inspectable: false,
+    source: "pixels-only",
+    nodes: [],
+    readiness,
+    inspectionError: readiness.semanticControl.lastError.message,
+    iosSessionLifecycle: {
+      operation: "snapshot",
+      outcome: "in-flight",
+      code: "IOS_SESSION_OPERATION_ACCESSIBILITY_IN_FLIGHT",
+      attempts: 1,
+      repairAttempted: false,
+      durationMs: 8_000,
+      stages: [
+        { stage: "preview", outcome: "skipped" },
+        { stage: "xctest-availability", outcome: "skipped" },
+        { stage: "accessibility-query", outcome: "in-flight" },
+        { stage: "repair", outcome: "skipped" },
+      ],
+    },
+  }) as {
+    readiness?: unknown;
+    note?: string;
+    iosSessionLifecycle?: { code?: string; outcome?: string };
+  };
+
+  assert.deepEqual(result.readiness, readiness);
+  assert.equal(result.iosSessionLifecycle?.code, "IOS_SESSION_OPERATION_ACCESSIBILITY_IN_FLIGHT");
+  assert.equal(result.iosSessionLifecycle?.outcome, "in-flight");
+  assert.match(result.note ?? "", /pixels remain usable/i);
+  assert.doesNotMatch(result.note ?? "", /reconnect/i);
+});
+
 test("target summaries drop impossible capability combinations instead of inventing ready control", () => {
   const result = summarizeTargetOperationResult("target.snapshot.capture", {
     serial: "ipad",

@@ -119,11 +119,11 @@ export function StageViewToggle(props: {
 export function StageInspectionHint(props: {
   title: string;
   detail: string;
-  actionLabel: string;
+  actionLabel?: string;
   busyLabel?: string;
   actionVariant?: "primary" | "secondary";
   busy?: boolean;
-  onAction: () => void;
+  onAction?: () => void;
 }) {
   return (
     <div class="pointer-events-auto absolute inset-x-3 bottom-3 z-[6] flex items-start gap-2 rounded-xl bg-[color-mix(in_srgb,var(--surface-raised-base)_92%,transparent)] px-2.5 py-2 text-left shadow-[0_8px_24px_rgb(0_0_0/28%),inset_0_0_0_1px_var(--border-weak-base)]">
@@ -133,19 +133,21 @@ export function StageInspectionHint(props: {
         </strong>
         <p class="m-0 mt-0.5 text-micro leading-4 text-[var(--text-weak)]">{props.detail}</p>
       </div>
-      <Button
-        type="button"
-        size="sm"
-        variant={props.actionVariant ?? "secondary"}
-        disabled={props.busy}
-        aria-busy={props.busy}
-        onClick={() => props.onAction()}
-      >
-        <Show when={props.busy}>
-          <Icon name="refresh" size={12} class="ui-refresh-spin motion-reduce:opacity-70" />
-        </Show>
-        {props.busy ? (props.busyLabel ?? props.actionLabel) : props.actionLabel}
-      </Button>
+      <Show when={props.actionLabel && props.onAction}>
+        <Button
+          type="button"
+          size="sm"
+          variant={props.actionVariant ?? "secondary"}
+          disabled={props.busy}
+          aria-busy={props.busy}
+          onClick={() => props.onAction?.()}
+        >
+          <Show when={props.busy}>
+            <Icon name="refresh" size={12} class="ui-refresh-spin motion-reduce:opacity-70" />
+          </Show>
+          {props.busy ? (props.busyLabel ?? props.actionLabel) : props.actionLabel}
+        </Button>
+      </Show>
     </div>
   );
 }

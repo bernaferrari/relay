@@ -7,6 +7,7 @@ import {
   hasUsableSemanticAccessibility,
   invalidateTargetSemanticControl,
   recordTargetPixelCapture,
+  recordTargetSemanticProbeInFlight,
   recordTargetSemanticSnapshot,
   resetTargetRuntimeReadiness,
   targetRuntimeReadiness,
@@ -183,6 +184,44 @@ test("repeated iOS semantic failures expose bounded backoff instead of inviting 
       IOS_SEMANTIC_PROBE_INITIAL_COOLDOWN_MS * 2 +
       IOS_SEMANTIC_PROBE_MAX_COOLDOWN_MS,
   );
+});
+
+test("an in-flight iOS accessibility query preserves pixels without scheduling a competing probe", () => {
+  recordTargetPixelCapture(ipad, { at: 10, durationMs: 12 });
+  recordTargetSemanticProbeInFlight(ipad, {
+    at: 18,
+    durationMs: 8_000,
+    errorMessage:
+      "iOS accessibility is still reading this screen after 8000ms. Pixels remain usable; wait for the current query to settle before refreshing names.",
+  });
+
+  const readiness = targetRuntimeReadiness(ipad, 19);
+  assert.deepEqual(readiness.previewPixels, {
+    mode: "pixels",
+    state: "proven",
+    freshness: "current",
+    proof: { at: 10, durationMs: 12 },
+  });
+  assert.deepEqual(readiness.evidenceCapture, {
+    mode: "evidence",
+    state: "proven",
+    freshness: "current",
+    proof: { at: 10, durationMs: 12 },
+  });
+  assert.deepEqual(readiness.semanticControl, {
+    mode: "accessibility",
+    state: "unavailable",
+    freshness: "unproven",
+    reason: "probe-in-flight",
+    lastError: {
+      at: 18,
+      reason: "probe-in-flight",
+      durationMs: 8_000,
+      message:
+        "iOS accessibility is still reading this screen after 8000ms. Pixels remain usable; wait for the current query to settle before refreshing names.",
+    },
+  });
+  assert.equal("nextProbeAt" in readiness.semanticControl, false);
 });
 
 test("old proofs downgrade to unproven rather than becoming stale green readiness", () => {

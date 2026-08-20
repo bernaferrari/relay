@@ -48,6 +48,29 @@ test("a transient unavailable XCTest probe has a no-poll cooldown", () => {
   assert.equal(iosLiveSemanticPlane({ readiness, now: 200 }).state, "unavailable");
 });
 
+test("an in-flight accessibility read never starts a competing automatic probe", () => {
+  for (const readiness of [
+    {
+      mode: "accessibility" as const,
+      state: "unavailable" as const,
+      freshness: "unproven" as const,
+      reason: "probe-in-flight" as const,
+    },
+    {
+      mode: "accessibility" as const,
+      state: "unavailable" as const,
+      freshness: "unproven" as const,
+      lastError: { at: 100, reason: "probe-in-flight" as const, durationMs: 8_000 },
+    },
+  ]) {
+    assert.deepEqual(iosLiveSemanticPlane({ readiness, now: 200 }), {
+      state: "in-flight",
+      overlaysEnabled: false,
+      permitsAutomaticProbe: false,
+    });
+  }
+});
+
 test("an iPad with no proof does not look like current control", () => {
   assert.deepEqual(iosLiveSemanticPlane({ now: 1 }), {
     state: "unproven",

@@ -23,11 +23,11 @@ import {
   hasIosSetupIssueText,
   iosSetupGuidanceText,
   liveImageStyleFromLayout,
-  liveInspectionHint,
   pickerNodeLabel,
   pickerNodeMetaLine,
   PHONE_SHELL,
   resolveDevicePanelState,
+  resolveStageInspectionHint,
 } from "../lib/stage-presentation";
 import { DeviceVideoStream } from "./device-video-stream";
 import { DeviceInteractionSurface } from "./device-interaction-surface";
@@ -53,7 +53,7 @@ import { useDeviceStagePicker } from "./use-device-stage-picker";
 import { useDeviceStageLiveFrame } from "../lib/use-device-stage-live-frame";
 import { useDeviceStageKeyboard } from "../lib/use-device-stage-keyboard";
 import { refreshLiveDeviceEvidence } from "../lib/live-device-refresh";
-import { iosLiveSemanticPlane, iosSemanticPlaneCopy } from "../lib/ios-live-semantic-plane";
+import { iosLiveSemanticPlane } from "../lib/ios-live-semantic-plane";
 import { useDeviceStageLiveGesture } from "./use-device-stage-live-gesture";
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
@@ -658,38 +658,18 @@ export function DeviceStage(_props: {
     });
   const [inspectionRecovering, setInspectionRecovering] = createSignal(false);
   const [panelRetrying, setPanelRetrying] = createSignal(false);
-  const inspectionHint = createMemo(() => {
-    const snap = server.snapshot();
-    if (stageView() !== "live" || !livePixelsAvailable()) return null;
-    const existing = snap
-      ? liveInspectionHint({
-          inspectable: snap.inspectable,
-          inspectionState: snap.inspectionState,
-          nodeCount: snap.nodes?.length,
-          inspectionError: snap.inspectionError,
-          platform: currentDevice()?.platform,
-          developerServicesAvailable: currentDevice()?.developerServicesAvailable,
-          openXcodeAvailable: Boolean(platform.openXcode),
-        })
-      : null;
-    // Developer support is a static blocker with an exact useful action; do
-    // not replace it with generic semantic freshness language.
-    if (existing?.action === "open-xcode") return existing;
-    const plane = iosSemanticPlane();
-    if (targetIsPhysicalIos(currentDevice()) && plane && plane.state !== "current") {
-      const copy = iosSemanticPlaneCopy(plane);
-      return {
-        ...copy,
-        actionLabel:
-          plane.state === "stale" || plane.state === "unproven" ? "Refresh labels" : "Reconnect",
-        action:
-          plane.state === "stale" || plane.state === "unproven"
-            ? ("refresh-labels" as const)
-            : ("reconnect" as const),
-      };
-    }
-    return existing;
-  });
+  const inspectionHint = createMemo(() =>
+    resolveStageInspectionHint({
+      stageLive: stageView() === "live",
+      pixelsAvailable: livePixelsAvailable(),
+      snapshot: server.snapshot(),
+      physicalIos: targetIsPhysicalIos(currentDevice()),
+      semanticPlane: iosSemanticPlane(),
+      platform: currentDevice()?.platform,
+      developerServicesAvailable: currentDevice()?.developerServicesAvailable,
+      openXcodeAvailable: Boolean(platform.openXcode),
+    }),
+  );
   const controlHint = createMemo(() => {
     const issue = server.controlIssue();
     // A viewer can receive a healthy go-ios/MJPEG surface without owning the
@@ -1186,6 +1166,7 @@ export function DeviceStage(_props: {
                             actionVariant={hint().action === "open-xcode" ? "primary" : "secondary"}
                             busy={inspectionRecovering()}
                             onAction={() => {
+                              if (!hint().actionLabel) return;
                               if (hint().action === "open-xcode") {
                                 void platform.openXcode?.();
                                 return;

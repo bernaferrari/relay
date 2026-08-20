@@ -3,6 +3,7 @@
  * Kept in the app package (no core import) so the UI stays host-agnostic.
  */
 import type {
+  IosSessionOperationLifecycle,
   RecipeParameter,
   RecipeStep,
   ScreenIdentityObservation,
@@ -251,6 +252,10 @@ export type SnapshotState = {
   bindingState?: "matched" | "rebound" | "unavailable";
   /** A product-safe explanation when pixels are available but the device hierarchy is not. */
   inspectionError?: string;
+  /** One bounded iOS AX observation. `in-flight` means the picture remains
+   * usable while the existing native traversal settles; it is not a reconnect
+   * request. */
+  iosSessionLifecycle?: IosSessionOperationLifecycle;
   screenIdentity?: ScreenIdentityObservation;
   visualFingerprint?: string;
   proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;

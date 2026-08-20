@@ -49,7 +49,8 @@ test("exposes only product-safe iOS inspection failures", async () => {
   assert.match(diskImage ?? "", /Reconnect/i);
 
   const busy = await iosInspectionErrorMessage(new IosSnapshotInFlightError(), "ipad");
-  assert.match(busy ?? "", /previous screen/i);
+  assert.match(busy ?? "", /still reading/i);
+  assert.doesNotMatch(busy ?? "", /reconnect/i);
   assert.equal(
     await iosInspectionErrorMessage(new Error("/private/path with raw daemon details"), "ipad"),
     undefined,

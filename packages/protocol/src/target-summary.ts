@@ -1,4 +1,5 @@
 import type { DeviceSummary } from "./operations.js";
+import type { IosSessionOperationLifecycle } from "./target-contract.js";
 
 export type DeviceCatalogSummary = Pick<
   DeviceSummary,
@@ -174,9 +175,115 @@ const readinessReasons = new Set([
   "developer-mode-disabled",
   "developer-services-unavailable",
   "probe-failed",
+  "probe-in-flight",
   "input-changed",
   "visual-changed",
 ]);
+
+const iosSessionOperations = new Set<IosSessionOperationLifecycle["operation"]>([
+  "preview",
+  "snapshot",
+  "screenshot",
+  "interaction",
+  "evidence",
+]);
+const iosSessionOutcomes = new Set<IosSessionOperationLifecycle["outcome"]>([
+  "passed",
+  "unavailable",
+  "in-flight",
+]);
+const iosSessionCodes = new Set<IosSessionOperationLifecycle["code"]>([
+  "IOS_SESSION_OPERATION_READY",
+  "IOS_SESSION_OPERATION_UNAVAILABLE",
+  "IOS_SESSION_OPERATION_ACCESSIBILITY_IN_FLIGHT",
+]);
+const iosSessionStages = new Set<IosSessionOperationLifecycle["stages"][number]["stage"]>([
+  "preview",
+  "xctest-availability",
+  "accessibility-query",
+  "repair",
+]);
+const iosSessionStageOutcomes = new Set<IosSessionOperationLifecycle["stages"][number]["outcome"]>([
+  "passed",
+  "failed",
+  "skipped",
+  "in-flight",
+]);
+
+/** Keep bounded session state visible to agents without passing through a
+ * native/Xcode diagnostic. In-flight AX is specifically not a reconnect cue. */
+function iosSessionLifecycleSummary(value: unknown): IosSessionOperationLifecycle | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const lifecycle = value as Record<string, unknown>;
+  const operation = lifecycle.operation;
+  const outcome = lifecycle.outcome;
+  const code = lifecycle.code;
+  const durationMs = Number(lifecycle.durationMs);
+  if (
+    typeof operation !== "string" ||
+    !iosSessionOperations.has(operation as IosSessionOperationLifecycle["operation"]) ||
+    typeof outcome !== "string" ||
+    !iosSessionOutcomes.has(outcome as IosSessionOperationLifecycle["outcome"]) ||
+    typeof code !== "string" ||
+    !iosSessionCodes.has(code as IosSessionOperationLifecycle["code"]) ||
+    lifecycle.attempts !== 1 ||
+    lifecycle.repairAttempted !== false ||
+    !Number.isFinite(durationMs) ||
+    !Array.isArray(lifecycle.stages)
+  ) {
+    return undefined;
+  }
+  const stages = lifecycle.stages.flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const stage = value as Record<string, unknown>;
+    if (
+      typeof stage.stage !== "string" ||
+      !iosSessionStages.has(
+        stage.stage as IosSessionOperationLifecycle["stages"][number]["stage"],
+      ) ||
+      typeof stage.outcome !== "string" ||
+      !iosSessionStageOutcomes.has(
+        stage.outcome as IosSessionOperationLifecycle["stages"][number]["outcome"],
+      )
+    ) {
+      return [];
+    }
+    return [
+      {
+        stage: stage.stage as IosSessionOperationLifecycle["stages"][number]["stage"],
+        outcome: stage.outcome as IosSessionOperationLifecycle["stages"][number]["outcome"],
+      },
+    ];
+  });
+  if (stages.length !== lifecycle.stages.length) return undefined;
+  const expectedCode =
+    outcome === "passed"
+      ? "IOS_SESSION_OPERATION_READY"
+      : outcome === "unavailable"
+        ? "IOS_SESSION_OPERATION_UNAVAILABLE"
+        : "IOS_SESSION_OPERATION_ACCESSIBILITY_IN_FLIGHT";
+  if (code !== expectedCode) return undefined;
+  if (
+    outcome === "in-flight" &&
+    (!stages.some(
+      (stage) => stage.stage === "xctest-availability" && stage.outcome === "skipped",
+    ) ||
+      !stages.some(
+        (stage) => stage.stage === "accessibility-query" && stage.outcome === "in-flight",
+      ))
+  ) {
+    return undefined;
+  }
+  return {
+    operation: operation as IosSessionOperationLifecycle["operation"],
+    outcome: outcome as IosSessionOperationLifecycle["outcome"],
+    code: code as IosSessionOperationLifecycle["code"],
+    attempts: 1,
+    repairAttempted: false,
+    durationMs,
+    stages,
+  };
+}
 
 /** Keep runtime readiness useful to an agent while refusing arbitrary host
  * diagnostics or expanded trees in the default device/snapshot summary. */
@@ -311,6 +418,7 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
       proposedRows?: unknown;
       inspectionError?: unknown;
       readiness?: unknown;
+      iosSessionLifecycle?: unknown;
     };
     const nodes = Array.isArray(body.nodes) ? body.nodes : [];
     const chrome = describeSnapshotChrome(nodes);
@@ -347,6 +455,7 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
       : [];
     const inspectionError = inspectionErrorSummary(body.inspectionError);
     const readiness = runtimeReadinessSummary(body.readiness);
+    const iosSessionLifecycle = iosSessionLifecycleSummary(body.iosSessionLifecycle);
     return {
       serial: body.serial,
       bounds: body.bounds,
@@ -368,6 +477,7 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
       ...(proposedRows.length ? { proposedRows } : {}),
       ...(inspectionError ? { inspectionError } : {}),
       ...(readiness ? { readiness } : {}),
+      ...(iosSessionLifecycle ? { iosSessionLifecycle } : {}),
       nodeCount: nodes.length,
       ...(!inspectable
         ? {

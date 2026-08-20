@@ -1,6 +1,8 @@
-import type { SnapshotNode } from "./api-types";
+import type { SnapshotNode, SnapshotState } from "./api-types";
+import type { IosSessionOperationLifecycle } from "@relay/protocol";
 import type { PickStrategy } from "./snapshot";
 import { presentDeviceIssue, type DeviceReadiness } from "./device-readiness";
+import { iosSemanticPlaneCopy, type IosLiveSemanticPlane } from "./ios-live-semantic-plane";
 
 type DevicePanelState = {
   kind: "progress" | "recording" | "setup" | "error";
@@ -114,7 +116,9 @@ export function interactBodyForStrategy(
 export type LiveInspectionHint = {
   title: string;
   detail: string;
-  actionLabel: string;
+  /** Omitted when the only safe next action is to wait for the existing AX
+   * traversal rather than starting another one. */
+  actionLabel?: string;
   /** Xcode is the useful first action for a missing iPad developer image. */
   action?: "open-xcode";
 };
@@ -125,6 +129,7 @@ export function liveInspectionHint(input: {
   inspectionState?: string;
   nodeCount?: number;
   inspectionError?: string;
+  iosSessionLifecycle?: IosSessionOperationLifecycle;
   platform?: string;
   /** CoreDevice knows this before XCTest has a chance to emit a runner error. */
   developerServicesAvailable?: boolean;
@@ -143,6 +148,19 @@ export function liveInspectionHint(input: {
       title: "Unlock the phone",
       detail: "Names appear after you unlock. The picture still works.",
       actionLabel: "Try again",
+    };
+  }
+  if (
+    input.platform === "ios" &&
+    (input.iosSessionLifecycle?.outcome === "in-flight" ||
+      /iOS accessibility is still reading this screen|accessibility query.*in flight/i.test(
+        input.inspectionError ?? "",
+      ))
+  ) {
+    return {
+      title: "Accessibility is still reading",
+      detail:
+        "The picture is still live. Use picture taps or wait for the current names read to settle.",
     };
   }
   // A screenshot is still a useful, live fallback in this state. Distinguish
@@ -169,6 +187,66 @@ export function liveInspectionHint(input: {
     detail: "Relay couldn’t read names on this screen. Reconnect retries.",
     actionLabel: "Reconnect",
   };
+}
+
+/** The compact Stage hint is a projection of independent pixel and semantic
+ * planes. Keeping it pure prevents an in-flight AX read from being silently
+ * turned into a reconnect action by the component layer. */
+export type StageInspectionHint = {
+  title: string;
+  detail: string;
+  retryAt?: number;
+  actionLabel?: string;
+  action?: "open-xcode" | "refresh-labels" | "reconnect";
+};
+
+type StageInspectionSnapshot = Pick<
+  NonNullable<SnapshotState>,
+  "inspectable" | "inspectionState" | "nodes" | "inspectionError" | "iosSessionLifecycle"
+>;
+
+export function resolveStageInspectionHint(input: {
+  stageLive: boolean;
+  pixelsAvailable: boolean;
+  snapshot?: StageInspectionSnapshot | null;
+  physicalIos: boolean;
+  semanticPlane?: IosLiveSemanticPlane;
+  platform?: string;
+  developerServicesAvailable?: boolean;
+  openXcodeAvailable?: boolean;
+}): StageInspectionHint | null {
+  if (!input.stageLive || !input.pixelsAvailable) return null;
+  const snapshot = input.snapshot;
+  const existing = snapshot
+    ? liveInspectionHint({
+        inspectable: snapshot.inspectable,
+        inspectionState: snapshot.inspectionState,
+        nodeCount: snapshot.nodes?.length,
+        inspectionError: snapshot.inspectionError,
+        iosSessionLifecycle: snapshot.iosSessionLifecycle,
+        platform: input.platform,
+        developerServicesAvailable: input.developerServicesAvailable,
+        openXcodeAvailable: input.openXcodeAvailable,
+      })
+    : null;
+  // A missing action label is intentional for a timed-out AX traversal: a
+  // reconnect or refresh would start a competing native query.
+  if (existing?.action === "open-xcode" || (existing && !existing.actionLabel)) return existing;
+  const plane = input.semanticPlane;
+  if (input.physicalIos && plane && plane.state !== "current") {
+    const copy = iosSemanticPlaneCopy(plane);
+    if (plane.state === "in-flight") return copy;
+    return {
+      ...copy,
+      actionLabel:
+        plane.state === "stale" || plane.state === "unproven" ? "Refresh labels" : "Reconnect",
+      action:
+        plane.state === "stale" || plane.state === "unproven"
+          ? ("refresh-labels" as const)
+          : ("reconnect" as const),
+    };
+  }
+  return existing;
 }
 
 export type EmptyStageTitleInput = {

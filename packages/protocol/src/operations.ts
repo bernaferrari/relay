@@ -28,7 +28,8 @@ import type {
   RegisteredBuildPreflight,
   TargetWorkerStatus,
 } from "./target-runtime.js";
-import type { TargetRuntimeReadiness } from "./target-contract.js";
+import type { IosSessionOperationLifecycle, TargetRuntimeReadiness } from "./target-contract.js";
+import { assertIosSessionOperationLifecycle } from "./ios-session-lifecycle.js";
 import type { RunReview } from "./run-review.js";
 import {
   runRepairOperationDefinitions,
@@ -339,6 +340,7 @@ type SpecificOperationMap = {
       interactive: unknown[];
       tree: string;
       readiness?: TargetRuntimeReadiness;
+      iosSessionLifecycle?: IosSessionOperationLifecycle;
     };
   };
   "target.screenshot.capture": {
@@ -803,6 +805,7 @@ const targetRuntimeCapabilityReasons = new Set([
   "developer-mode-disabled",
   "developer-services-unavailable",
   "probe-failed",
+  "probe-in-flight",
   "input-changed",
   "visual-changed",
 ]);
@@ -961,6 +964,12 @@ const targetSnapshotOutputParser = objectParser<OperationOutput<"target.snapshot
     string(input.tree, "snapshot tree");
     if (input.readiness !== undefined) {
       assertTargetRuntimeReadiness(input.readiness, "snapshot readiness");
+    }
+    if (input.iosSessionLifecycle !== undefined) {
+      assertIosSessionOperationLifecycle(
+        input.iosSessionLifecycle,
+        "snapshot iOS session lifecycle",
+      );
     }
   },
 );

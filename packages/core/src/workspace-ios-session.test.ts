@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Device } from "./device.js";
+import { IosSnapshotTimedOutError, type Device } from "./device.js";
 import { recoverIosRuntimeSession } from "./ios-runtime-recovery.js";
 import { runWithTargetContext } from "./target-context.js";
 import {
@@ -142,4 +142,46 @@ test("only explicit recovery owns its one host-repair attempt", async () => {
   assert.equal(result.lifecycle.repairAttempts, 1);
   assert.equal(result.lifecycle.proofAttempts, 1);
   assert.equal(result.ready, true);
+});
+
+test("a slow accessibility query stays in-flight without claiming XCTest is unavailable", async () => {
+  const failure = new IosSnapshotTimedOutError(8_000, 8_000);
+
+  await assert.rejects(
+    runWithTargetContext({ kind: "device", platform: "ios", serial: "slow-ax-ipad" }, () =>
+      withSession(
+        {} as Device,
+        async () => {
+          throw failure;
+        },
+        "snapshot",
+      ),
+    ),
+    (error: unknown) => error === failure,
+  );
+
+  const diagnostic = lastIosSessionOperationDiagnostic("slow-ax-ipad");
+  assert.ok(diagnostic);
+  assert.deepEqual(
+    { ...diagnostic, durationMs: 0 },
+    {
+      operation: "snapshot",
+      outcome: "in-flight",
+      code: "IOS_SESSION_OPERATION_ACCESSIBILITY_IN_FLIGHT",
+      attempts: 1,
+      repairAttempted: false,
+      durationMs: 0,
+      stages: [
+        { stage: "preview", outcome: "skipped" },
+        { stage: "xctest-availability", outcome: "skipped" },
+        { stage: "accessibility-query", outcome: "in-flight" },
+        { stage: "repair", outcome: "skipped" },
+      ],
+    },
+  );
+  assert.equal(
+    (failure as Error & { iosSessionLifecycle?: { repairAttempted: boolean } }).iosSessionLifecycle
+      ?.repairAttempted,
+    false,
+  );
 });

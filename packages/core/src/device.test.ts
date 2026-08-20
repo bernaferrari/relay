@@ -636,30 +636,79 @@ test("named control resolver preserves true different-location ambiguity", () =>
   assert.match(outcome.detail, /2 different control locations/u);
 });
 
-test("iOS snapshot fails fast instead of waiting out the 90s daemon budget", async () => {
-  const { IosSnapshotInFlightError, snapshot } = await import("./device.js");
+test("a slow iOS accessibility traversal is timed out as in-flight, not a missing XCTest session", async () => {
+  const { IosSnapshotInFlightError, IosSnapshotTimedOutError, snapshot } =
+    await import("./device.js");
   const { runWithTargetContext } = await import("./target-context.js");
-  const started = Date.now();
   let calls = 0;
+  let release!: (value: { nodes: Array<{ label: string }> }) => void;
+  const pending = new Promise<{ nodes: Array<{ label: string }> }>((resolve) => {
+    release = resolve;
+  });
   const device = {
     capture: {
       snapshot: () => {
         calls += 1;
-        return new Promise(() => undefined);
+        return calls === 1 ? pending : Promise.resolve({ nodes: [{ label: "Settings" }] });
       },
     },
   };
   const target = { kind: "device", platform: "ios", serial: "ipad-timeout" } as const;
   await assert.rejects(
-    runWithTargetContext(target, () => snapshot(device as never)),
-    /XCTest session|timed out/i,
+    runWithTargetContext(target, () => snapshot(device as never, { timeoutMs: 20 })),
+    (error: unknown) => {
+      assert.ok(error instanceof IosSnapshotTimedOutError);
+      assert.equal(error.code, "IOS_SNAPSHOT_ACCESSIBILITY_QUERY_TIMED_OUT");
+      assert.equal(error.inFlight, true);
+      assert.equal(error.timeoutMs, 20);
+      assert.ok(error.elapsedMs >= 20);
+      assert.doesNotMatch(error.message, /XCTest session|reconnect/i);
+      return true;
+    },
   );
-  assert.ok(Date.now() - started < 9_500);
   await assert.rejects(
     runWithTargetContext(target, () => snapshot(device as never)),
-    (error: unknown) => error instanceof IosSnapshotInFlightError,
+    (error: unknown) => {
+      assert.ok(error instanceof IosSnapshotInFlightError);
+      assert.equal(error.code, "IOS_SNAPSHOT_ACCESSIBILITY_QUERY_IN_FLIGHT");
+      assert.equal(error.inFlight, true);
+      return true;
+    },
   );
   assert.equal(calls, 1);
+
+  // The native XCTest query eventually settles. Only then may a new tree
+  // read start; Relay never overlaps it with a retry or repair probe.
+  release({ nodes: [{ label: "Settings" }] });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    await runWithTargetContext(target, () => snapshot(device as never, { timeoutMs: 20 })),
+    [{ label: "Settings" }],
+  );
+  assert.equal(calls, 2);
+});
+
+test("a genuine missing iOS XCTest session remains distinct from an accessibility timeout", async () => {
+  const { IosSnapshotTimedOutError, snapshot } = await import("./device.js");
+  const { runWithTargetContext } = await import("./target-context.js");
+  const target = { kind: "device", platform: "ios", serial: "ipad-no-session" } as const;
+  const device = {
+    capture: {
+      snapshot: async () => {
+        throw new Error("No active XCTest session");
+      },
+    },
+  };
+
+  await assert.rejects(
+    runWithTargetContext(target, () => snapshot(device as never, { timeoutMs: 20 })),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, "iOS snapshot needs an active XCTest session");
+      assert.equal(error instanceof IosSnapshotTimedOutError, false);
+      return true;
+    },
+  );
 });
 
 test("shares one in-flight physical-iPad accessibility read", async () => {

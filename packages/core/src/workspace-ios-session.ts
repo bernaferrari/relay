@@ -1,7 +1,13 @@
 /**
  * One XCTest runner per attached Apple device. Pointer and tree share it.
  */
-import { resetDeviceClient, createDevice, snapshot, type Device } from "./device.js";
+import {
+  resetDeviceClient,
+  createDevice,
+  isIosAccessibilityQueryInFlightError,
+  snapshot,
+  type Device,
+} from "./device.js";
 import { getExecutingJobId, hardStopDeviceSession } from "./control.js";
 import {
   IosDeviceAttentionError,
@@ -28,7 +34,7 @@ import {
   recordTargetSemanticSnapshot,
   targetRuntimeReadiness,
 } from "./target-runtime-readiness.js";
-import type { TargetRuntimeReadiness } from "@relay/protocol";
+import type { IosSessionOperationLifecycle, TargetRuntimeReadiness } from "@relay/protocol";
 
 /**
  * XCTest runner setup is a device concern, not a recording concern. Keep one
@@ -69,18 +75,7 @@ export function setIosSessionHostRuntimeForTests(
   };
 }
 
-export type IosSessionOperationDiagnostic = {
-  operation: "preview" | "snapshot" | "screenshot" | "interaction" | "evidence";
-  outcome: "passed" | "unavailable";
-  code: "IOS_SESSION_OPERATION_READY" | "IOS_SESSION_OPERATION_UNAVAILABLE";
-  attempts: 1;
-  repairAttempted: false;
-  durationMs: number;
-  stages: {
-    stage: "preview" | "xctest-availability" | "accessibility-query" | "repair";
-    outcome: "passed" | "failed" | "skipped";
-  }[];
-};
+export type IosSessionOperationDiagnostic = IosSessionOperationLifecycle;
 
 const iosSessionOperationDiagnostics = new Map<string, IosSessionOperationDiagnostic>();
 
@@ -420,26 +415,44 @@ export async function withSession<T>(
   } catch (error) {
     const context = currentTargetContext();
     if (context.kind === "device" && context.platform === "ios") {
-      const diagnostic: IosSessionOperationDiagnostic = {
-        operation,
-        outcome: "unavailable",
-        code: "IOS_SESSION_OPERATION_UNAVAILABLE",
-        attempts: 1,
-        repairAttempted: false,
-        durationMs: Math.max(0, Date.now() - startedAt),
-        stages: [
-          {
-            stage: "preview",
-            outcome: operation === "preview" ? "failed" : "skipped",
-          },
-          { stage: "xctest-availability", outcome: "failed" },
-          {
-            stage: "accessibility-query",
-            outcome: operation === "preview" || operation === "snapshot" ? "failed" : "skipped",
-          },
-          { stage: "repair", outcome: "skipped" },
-        ],
-      };
+      const queryInFlight = isIosAccessibilityQueryInFlightError(error);
+      const diagnostic: IosSessionOperationDiagnostic = queryInFlight
+        ? {
+            operation,
+            outcome: "in-flight",
+            code: "IOS_SESSION_OPERATION_ACCESSIBILITY_IN_FLIGHT",
+            attempts: 1,
+            repairAttempted: false,
+            durationMs: Math.max(0, Date.now() - startedAt),
+            stages: [
+              {
+                stage: "preview",
+                outcome: operation === "preview" ? "in-flight" : "skipped",
+              },
+              // A timed-out traversal proves only that Relay stopped waiting.
+              // It says nothing about runner setup or XCTest availability.
+              { stage: "xctest-availability", outcome: "skipped" },
+              { stage: "accessibility-query", outcome: "in-flight" },
+              { stage: "repair", outcome: "skipped" },
+            ],
+          }
+        : {
+            operation,
+            outcome: "unavailable",
+            code: "IOS_SESSION_OPERATION_UNAVAILABLE",
+            attempts: 1,
+            repairAttempted: false,
+            durationMs: Math.max(0, Date.now() - startedAt),
+            stages: [
+              {
+                stage: "preview",
+                outcome: operation === "preview" ? "failed" : "skipped",
+              },
+              { stage: "xctest-availability", outcome: "failed" },
+              { stage: "accessibility-query", outcome: "failed" },
+              { stage: "repair", outcome: "skipped" },
+            ],
+          };
       iosSessionOperationDiagnostics.set(context.serial, diagnostic);
       if (error instanceof Error) {
         Object.defineProperty(error, "iosSessionLifecycle", {

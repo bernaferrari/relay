@@ -7,7 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { PNG } from "pngjs";
 import type { TargetRuntimeReadiness } from "@relay/protocol";
 import {
-  IosSnapshotInFlightError,
+  isIosAccessibilityQueryInFlightError,
   type DevicePlatform,
   base,
   snapshot,
@@ -57,7 +57,7 @@ import {
   hasUsableSemanticAccessibility,
   recordTargetRuntimeCapability,
   recordTargetPixelCapture,
-  recordTargetSemanticSnapshot,
+  recordTargetSemanticCapture,
   targetRuntimeReadiness,
 } from "./target-runtime-readiness.js";
 
@@ -199,7 +199,7 @@ export async function iosInspectionErrorMessage(
   serial: string | undefined,
 ): Promise<string | undefined> {
   if (!error) return undefined;
-  if (error instanceof IosSnapshotInFlightError) return error.message;
+  if (isIosAccessibilityQueryInFlightError(error)) return error.message;
   const diagnosed = await diagnoseIosRunnerError(error, serial).catch(() => undefined);
   if (
     diagnosed instanceof IosRunnerSetupError ||
@@ -221,7 +221,7 @@ type SnapshotCapture = Pick<
   | "treeApp"
   | "bindingState"
   | "inspectionError"
->;
+> & { semanticProbeInFlight?: boolean };
 
 async function snapshotForTarget(
   target: Awaited<ReturnType<typeof resolveRuntimeTarget>>,
@@ -262,12 +262,14 @@ async function snapshotForTarget(
         (iosSerial && appleNodes.length > 0
           ? "Relay did not observe named accessibility controls."
           : undefined));
+    const semanticProbeInFlight = isIosAccessibilityQueryInFlightError(iosSnapshotError);
     return {
       nodes: appleNodes,
       inspectable,
       source: inspectable ? "sdk" : "pixels-only",
       ...(inspectable ? {} : { bindingState: "unavailable" as const }),
       ...(inspectionError ? { inspectionError } : {}),
+      ...(semanticProbeInFlight ? { semanticProbeInFlight: true } : {}),
     };
   }
 
@@ -372,12 +374,13 @@ export async function captureSnapshot(opts?: {
           source: "pixels-only",
           bindingState: "unavailable",
           ...(inspectionError ? { inspectionError } : {}),
+          ...(isIosAccessibilityQueryInFlightError(error) ? { semanticProbeInFlight: true } : {}),
         };
       } else {
         throw error;
       }
     }
-    const { nodes: capturedNodes, ...capture } = snapshot;
+    const { nodes: capturedNodes, semanticProbeInFlight, ...capture } = snapshot;
     const context = target.context;
     const iosSessionLifecycle =
       context.kind === "device" && context.platform === "ios"
@@ -427,9 +430,10 @@ export async function captureSnapshot(opts?: {
         ? { serial: context.serial, platform: context.platform }
         : undefined;
     if (readinessTarget) {
-      recordTargetSemanticSnapshot(readinessTarget, {
+      recordTargetSemanticCapture(readinessTarget, {
         inspectable: capture.inspectable,
         nodes,
+        inFlight: semanticProbeInFlight,
         at: capturedAt,
         durationMs: Math.max(0, capturedAt - captureStartedAt),
         errorMessage: capture.inspectionError,

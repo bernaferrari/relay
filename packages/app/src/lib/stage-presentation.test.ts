@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { liveInspectionHint, resolveDevicePanelState } from "./stage-presentation";
+import { iosLiveSemanticPlane } from "./ios-live-semantic-plane";
+import {
+  liveInspectionHint,
+  resolveDevicePanelState,
+  resolveStageInspectionHint,
+} from "./stage-presentation";
 
 test("live inspection stays quiet when names are available", () => {
   assert.equal(liveInspectionHint({ inspectable: true, nodeCount: 12 }), null);
@@ -39,6 +44,58 @@ test("missing iPad developer support opens Xcode before retrying inspection", ()
         "The picture still works. Open Xcode and keep the iPad unlocked while it prepares device support, then reconnect for labels and replay.",
       actionLabel: "Open Xcode",
       action: "open-xcode",
+    },
+  );
+});
+
+test("a slow iOS accessibility read keeps the picture usable instead of offering reconnect", () => {
+  assert.deepEqual(
+    liveInspectionHint({
+      inspectable: false,
+      platform: "ios",
+      iosSessionLifecycle: {
+        operation: "snapshot",
+        outcome: "in-flight",
+        code: "IOS_SESSION_OPERATION_ACCESSIBILITY_IN_FLIGHT",
+        attempts: 1,
+        repairAttempted: false,
+        durationMs: 8_000,
+        stages: [
+          { stage: "preview", outcome: "skipped" },
+          { stage: "xctest-availability", outcome: "skipped" },
+          { stage: "accessibility-query", outcome: "in-flight" },
+          { stage: "repair", outcome: "skipped" },
+        ],
+      },
+    }),
+    {
+      title: "Accessibility is still reading",
+      detail:
+        "The picture is still live. Use picture taps or wait for the current names read to settle.",
+    },
+  );
+});
+
+test("the Stage preserves a wait-only AX plane even before a snapshot object arrives", () => {
+  const semanticPlane = iosLiveSemanticPlane({
+    readiness: {
+      mode: "accessibility",
+      state: "unavailable",
+      freshness: "unproven",
+      reason: "probe-in-flight",
+    },
+  });
+  assert.deepEqual(
+    resolveStageInspectionHint({
+      stageLive: true,
+      pixelsAvailable: true,
+      physicalIos: true,
+      semanticPlane,
+      platform: "ios",
+    }),
+    {
+      title: "Accessibility is still reading",
+      detail: "The picture is live. Wait for the current names read to settle.",
     },
   );
 });

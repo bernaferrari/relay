@@ -438,6 +438,67 @@ test("target capability outputs keep pixel, semantic, and evidence proofs distin
       }),
     /semanticControl mode/u,
   );
+
+  const inFlight = {
+    ...readiness,
+    semanticControl: {
+      mode: "accessibility",
+      state: "unavailable",
+      freshness: "unproven",
+      reason: "probe-in-flight",
+      lastError: {
+        at: 101,
+        reason: "probe-in-flight",
+        durationMs: 8_000,
+        message: "iOS accessibility is still reading this screen after 8000ms.",
+      },
+    },
+  };
+  const lifecycle = {
+    operation: "snapshot" as const,
+    outcome: "in-flight" as const,
+    code: "IOS_SESSION_OPERATION_ACCESSIBILITY_IN_FLIGHT" as const,
+    attempts: 1 as const,
+    repairAttempted: false as const,
+    durationMs: 8_000,
+    stages: [
+      { stage: "preview" as const, outcome: "skipped" as const },
+      { stage: "xctest-availability" as const, outcome: "skipped" as const },
+      { stage: "accessibility-query" as const, outcome: "in-flight" as const },
+      { stage: "repair" as const, outcome: "skipped" as const },
+    ],
+  };
+  assert.deepEqual(
+    operationDefinition("target.snapshot.capture").output.parse({
+      ...output,
+      readiness: inFlight,
+      iosSessionLifecycle: lifecycle,
+    }),
+    { ...output, readiness: inFlight, iosSessionLifecycle: lifecycle },
+  );
+  assert.throws(
+    () =>
+      operationDefinition("target.snapshot.capture").output.parse({
+        ...output,
+        readiness: {
+          ...inFlight,
+          semanticControl: { ...inFlight.semanticControl, nextProbeAt: 16_101 },
+        },
+      }),
+    /nextProbeAt/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("target.snapshot.capture").output.parse({
+        ...output,
+        readiness: inFlight,
+        iosSessionLifecycle: {
+          ...lifecycle,
+          code: "IOS_SESSION_OPERATION_UNAVAILABLE",
+        },
+      }),
+    /code.*outcome/u,
+  );
 });
 
 test("scroll survey has one strict target-operation contract", () => {

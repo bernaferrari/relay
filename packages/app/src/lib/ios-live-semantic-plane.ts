@@ -7,7 +7,7 @@ import type { TargetRuntimeCapabilityReadiness } from "@relay/protocol";
  * from an old tree.
  */
 export type IosLiveSemanticPlane = {
-  state: "current" | "stale" | "unproven" | "unavailable" | "cooldown";
+  state: "current" | "stale" | "unproven" | "in-flight" | "unavailable" | "cooldown";
   /** Only current proof may decorate pixels or drive a semantic action. */
   overlaysEnabled: boolean;
   /** A bounded background/query attempt is permitted, never required. */
@@ -33,6 +33,16 @@ export function iosLiveSemanticPlane(input: {
   }
   if (readiness?.state === "proven" || readiness?.freshness === "stale" || invalidatedLocally) {
     return { state: "stale", overlaysEnabled: false, permitsAutomaticProbe: true, proofAt };
+  }
+  // Relay's bounded wait expired, but the native XCTest traversal is still
+  // running. This must be separate from a failed runner: a second automatic
+  // probe would compete with that traversal while the independent picture
+  // stays useful.
+  if (
+    readiness?.state === "unavailable" &&
+    (readiness.reason === "probe-in-flight" || readiness.lastError?.reason === "probe-in-flight")
+  ) {
+    return { state: "in-flight", overlaysEnabled: false, permitsAutomaticProbe: false };
   }
   if (readiness?.state === "unavailable" && readiness.nextProbeAt !== undefined) {
     return readiness.nextProbeAt > now
@@ -78,6 +88,11 @@ export function iosSemanticPlaneCopy(
         title: "Labels refreshing",
         detail:
           "The picture is live. Relay hides old control bounds until it proves this screen again.",
+      };
+    case "in-flight":
+      return {
+        title: "Accessibility is still reading",
+        detail: "The picture is live. Wait for the current names read to settle.",
       };
     case "cooldown":
       return {

@@ -350,6 +350,43 @@ export function recordTargetSemanticSnapshot(
   );
 }
 
+/**
+ * A bounded iOS wait elapsed while XCTest continues its uncancellable tree
+ * traversal. This is not a failed runner and must not schedule another probe:
+ * a second traversal would compete with the one already in flight.
+ */
+export function recordTargetSemanticProbeInFlight(
+  target: Pick<RuntimeReadinessTarget, "platform" | "serial">,
+  input?: { at?: number; durationMs?: number; errorMessage?: string },
+): void {
+  recordTargetRuntimeCapability(target, "semanticControl", "unavailable", {
+    at: input?.at,
+    durationMs: input?.durationMs,
+    reason: "probe-in-flight",
+    errorMessage: input?.errorMessage,
+  });
+}
+
+/** Record one capture's semantic outcome without forcing callers to reason
+ * about whether a bounded iOS timeout is a runner failure. */
+export function recordTargetSemanticCapture(
+  target: Pick<RuntimeReadinessTarget, "platform" | "serial">,
+  input: {
+    inspectable: boolean;
+    nodes: readonly SnapshotNode[];
+    inFlight?: boolean;
+    at?: number;
+    durationMs?: number;
+    errorMessage?: string;
+  },
+): void {
+  if (input.inFlight) {
+    recordTargetSemanticProbeInFlight(target, input);
+    return;
+  }
+  recordTargetSemanticSnapshot(target, input);
+}
+
 /** Test/process-lifecycle seam. Runtime evidence is deliberately ephemeral and
  * should reset when the server restarts rather than becoming stale readiness. */
 export function resetTargetRuntimeReadiness(): void {

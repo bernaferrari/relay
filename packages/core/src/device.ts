@@ -34,18 +34,19 @@ import {
   runIosMutationOnce,
   type IosMutationOperation,
 } from "./ios-mutation-policy.js";
-import {
-  IosSnapshotInFlightError,
-  resetIosSnapshotFlights,
-  snapshotIosSingleFlight,
-} from "./ios-snapshot-flight.js";
+import { captureIosSnapshot, resetIosSnapshotFlights } from "./ios-snapshot-flight.js";
 export {
   IosMutationOutcomeUnknownError,
   lastIosMutationAttemptDiagnostic,
   runIosMutationOnce,
 } from "./ios-mutation-policy.js";
 export type { IosMutationAttemptDiagnostic, IosMutationOperation } from "./ios-mutation-policy.js";
-export { IOS_SNAPSHOT_TIMEOUT_MS, IosSnapshotInFlightError } from "./ios-snapshot-flight.js";
+export {
+  IOS_SNAPSHOT_TIMEOUT_MS,
+  IosSnapshotInFlightError,
+  IosSnapshotTimedOutError,
+  isIosAccessibilityQueryInFlightError,
+} from "./ios-snapshot-flight.js";
 export { selectedPlatform } from "./target-context.js";
 export * from "./android-app-build.js";
 import { captureNativeCrashEvidence, type CrashEvidenceResult } from "./crash-evidence.js";
@@ -394,7 +395,7 @@ export async function sleep(ms: number, device: Device = createDevice()): Promis
 
 export async function snapshot(
   device: Device,
-  opts?: { interactiveOnly?: boolean; raw?: boolean },
+  opts?: { interactiveOnly?: boolean; raw?: boolean; timeoutMs?: number },
 ): Promise<SnapshotNode[]> {
   const run = () =>
     device.capture.snapshot({
@@ -411,16 +412,7 @@ export async function snapshot(
   // Physical iOS XCTest snapshots can sit on the daemon's 90s budget after the
   // runner dies. Fail fast so expect-screen/tour can use pixels instead.
   if (context?.kind === "device" && context.platform === "ios") {
-    try {
-      return await snapshotIosSingleFlight(context, opts?.interactiveOnly ?? false, run);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (error instanceof IosSnapshotInFlightError) throw error;
-      if (/session|open first|timed out/i.test(message)) {
-        throw new Error("iOS snapshot needs an active XCTest session");
-      }
-      throw error;
-    }
+    return await captureIosSnapshot(context, opts?.interactiveOnly ?? false, run, opts?.timeoutMs);
   }
   const result = await controlled(run);
   return (result.nodes ?? []) as SnapshotNode[];

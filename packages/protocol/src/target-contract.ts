@@ -36,6 +36,8 @@ export type TargetRuntimeCapabilityReason =
   | "developer-mode-disabled"
   | "developer-services-unavailable"
   | "probe-failed"
+  /** A bounded iOS tree-read wait expired while the native traversal continues. */
+  | "probe-in-flight"
   | "input-changed"
   | "visual-changed";
 
@@ -78,18 +80,20 @@ export type TargetRuntimeCapabilityReadiness = {
   freshness: TargetRuntimeCapabilityFreshness;
   /** Present only after this exact path completed successfully. */
   proof?: TargetRuntimeCapabilityProof;
-  /** Present only after a real probe failed; not a raw host/Xcode error. */
+  /** Present after a completed probe failed, or while a bounded iOS probe is
+   * still running; never a raw host/Xcode error. */
   lastError?: TargetRuntimeCapabilityError;
   /** Present when a later input or changed pixel frame superseded `proof`. */
   invalidated?: TargetRuntimeCapabilityInvalidation;
   /** Static or unproven explanation when no live failure exists. */
   reason?: TargetRuntimeCapabilityReason;
   /**
-   * Earliest recommended automatic retry after a transient probe failure.
+   * Earliest recommended automatic retry after a completed transient probe failure.
    * This is a cooldown, not a polling instruction: callers should prefer an
    * explicit user action or a meaningful device event over background retries.
    * It is intentionally absent for static blockers such as disabled Developer
-   * Mode, because retrying cannot repair those conditions.
+   * Mode and for `probe-in-flight`, because a second traversal would compete
+   * with the native query that is still running.
    */
   nextProbeAt?: number;
 };
@@ -112,6 +116,25 @@ export type TargetRuntimeReadiness = {
   semanticControl: TargetRuntimeCapabilityReadiness;
   /** A current visual or semantic evidence capture path has been observed. */
   evidenceCapture: TargetRuntimeCapabilityReadiness;
+};
+
+/** A bounded, product-safe record of one local XCTest-facing operation. It
+ * distinguishes a runner that is unavailable from a slow, uncancellable
+ * accessibility traversal that remains in flight. */
+export type IosSessionOperationLifecycle = {
+  operation: "preview" | "snapshot" | "screenshot" | "interaction" | "evidence";
+  outcome: "passed" | "unavailable" | "in-flight";
+  code:
+    | "IOS_SESSION_OPERATION_READY"
+    | "IOS_SESSION_OPERATION_UNAVAILABLE"
+    | "IOS_SESSION_OPERATION_ACCESSIBILITY_IN_FLIGHT";
+  attempts: 1;
+  repairAttempted: false;
+  durationMs: number;
+  stages: Array<{
+    stage: "preview" | "xctest-availability" | "accessibility-query" | "repair";
+    outcome: "passed" | "failed" | "skipped" | "in-flight";
+  }>;
 };
 
 export type TargetCapability =
