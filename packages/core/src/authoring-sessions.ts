@@ -15,8 +15,14 @@ import type {
   RecipeStep,
   ScreenIdentityObservation,
 } from "@relay/protocol";
-import { recordedPauseDuration } from "./authoring-recorded-pause.js";
 export { recordedPauseDuration } from "./authoring-recorded-pause.js";
+import {
+  actionSource,
+  recordedPauseAction,
+  stepsForInteraction,
+} from "./authoring-action-steps.js";
+import { AuthoringStateError, transition } from "./authoring-session-state.js";
+export { AuthoringStateError, assertAuthoringTransition } from "./authoring-session-state.js";
 import { describeSnapshotChrome, serializeAuthoringSession } from "@relay/protocol";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
 import { now, publish } from "./events.js";
@@ -25,22 +31,12 @@ import { findWorkspaceRoot } from "./workspace-root.js";
 import { commitAppMapRecording } from "./app-map.js";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { authoringEvidenceExists, persistAuthoringEvidence } from "./authoring-evidence.js";
-import { validateRecipeSteps } from "./recipes.js";
 import type { SnapshotNode } from "./device.js";
 import {
   compareScreenIdentity,
   observeScreenIdentity,
   resolveScreenIdentity,
 } from "./screen-identity.js";
-
-export class AuthoringStateError extends Error {
-  readonly status = 409;
-
-  constructor(message: string) {
-    super(message);
-    this.name = "AuthoringStateError";
-  }
-}
 
 export type CapturedAuthoringObservation = {
   capturedAt: number;
@@ -80,31 +76,6 @@ export type AuthoringRecoveryScope = {
 export type AuthoringCommitFault = (
   boundary: "before-verify" | "after-verify" | "before-rename" | "after-rename",
 ) => void;
-
-const TRANSITIONS: Record<AuthoringSessionState, readonly AuthoringSessionState[]> = {
-  preparing: ["ready", "failed", "cancelled"],
-  ready: ["recording", "cancelled", "failed"],
-  recording: ["reviewing", "failed", "cancelled"],
-  reviewing: ["committing", "cancelled", "failed"],
-  committing: ["committed", "reviewing", "failed"],
-  committed: [],
-  failed: ["ready", "reviewing", "cancelled"],
-  cancelled: [],
-};
-
-export function assertAuthoringTransition(
-  from: AuthoringSessionState,
-  to: AuthoringSessionState,
-): void {
-  if (!TRANSITIONS[from].includes(to)) {
-    throw new AuthoringStateError(`Authoring Session cannot transition from ${from} to ${to}`);
-  }
-}
-
-function transition(session: AuthoringSession, state: AuthoringSessionState): AuthoringSession {
-  assertAuthoringTransition(session.state, state);
-  return { ...session, state, updatedAt: now() };
-}
 
 function root(): string {
   const state = process.env.RELAY_STATE_DIR?.trim() || join(findWorkspaceRoot(), ".relay");
@@ -596,149 +567,6 @@ async function persistObservation(
       ...(captured.nodes ? { nodes: clone(captured.nodes.slice(0, 256)) } : {}),
     },
     evidence,
-  };
-}
-
-function stableStep(step: RecipeStep, actionId: string, index: number, group?: string): RecipeStep {
-  return {
-    ...clone(step),
-    id: step.id?.trim() || `${actionId}-step-${index + 1}`,
-    ...(group?.trim() && !step.group ? { group: group.trim() } : {}),
-  };
-}
-
-function stepsForInteraction(
-  interaction: AuthoringInteraction,
-  actionId: string,
-  group?: string,
-): RecipeStep[] {
-  let steps: RecipeStep[];
-  switch (interaction.kind) {
-    case "tap":
-      steps = [
-        {
-          kind: "tap",
-          target: clone(interaction.target),
-          ...(interaction.expectedApp ? { expectedApp: interaction.expectedApp } : {}),
-        },
-      ];
-      break;
-    case "type":
-      steps = [
-        {
-          kind: "type",
-          text: interaction.text,
-          ...(interaction.target ? { target: clone(interaction.target) } : {}),
-          ...(interaction.mode ? { mode: interaction.mode } : {}),
-        },
-      ];
-      break;
-    case "clipboard":
-      steps = [
-        {
-          kind: "clipboard",
-          action: interaction.action,
-          ...(interaction.text !== undefined ? { text: interaction.text } : {}),
-          ...(interaction.target ? { target: clone(interaction.target) } : {}),
-          ...(interaction.expect !== undefined ? { expect: interaction.expect } : {}),
-          ...(interaction.match ? { match: interaction.match } : {}),
-        },
-      ];
-      break;
-    case "app":
-      steps = [
-        {
-          kind: "app",
-          action: interaction.action,
-          ...(interaction.app !== undefined ? { app: interaction.app } : {}),
-          ...(interaction.url !== undefined ? { url: interaction.url } : {}),
-          ...(interaction.relaunch !== undefined ? { relaunch: interaction.relaunch } : {}),
-          ...(interaction.artifact !== undefined ? { artifact: interaction.artifact } : {}),
-          ...(interaction.as !== undefined ? { as: interaction.as } : {}),
-          ...(interaction.version !== undefined ? { version: interaction.version } : {}),
-          ...(interaction.versionMatch ? { versionMatch: interaction.versionMatch } : {}),
-        },
-      ];
-      break;
-    case "device":
-      steps = [{ kind: "device", action: interaction.action }];
-      break;
-    case "rotate":
-      steps = [{ kind: "rotate", orientation: interaction.orientation }];
-      break;
-    case "swipe":
-      steps = [
-        {
-          kind: "swipe",
-          from: { ...interaction.from },
-          to: { ...interaction.to },
-          ...(interaction.durationMs !== undefined ? { durationMs: interaction.durationMs } : {}),
-        },
-      ];
-      break;
-    case "key":
-      steps = [{ kind: "key", key: interaction.key }];
-      break;
-    case "wait":
-      if (!Number.isFinite(interaction.ms) || interaction.ms < 0) {
-        throw new AuthoringStateError("Wait duration must be non-negative");
-      }
-      steps = interaction.ms === 0 ? [] : [{ kind: "sleep", ms: interaction.ms }];
-      break;
-    case "observe":
-    case "screenshot":
-      steps = [];
-      break;
-    case "reusable":
-      steps = [
-        {
-          kind: "module",
-          recipeId: interaction.recipeId,
-          ...(interaction.bindings ? { bindings: clone(interaction.bindings) } : {}),
-        },
-      ];
-      break;
-    case "steps":
-      steps = validateRecipeSteps(clone(interaction.steps));
-      break;
-  }
-  return steps.map((step, index) => stableStep(step, actionId, index, group));
-}
-
-function actionSource(interaction: AuthoringInteraction): AuthoringAction["source"] {
-  if (interaction.kind === "reusable") return "reusable";
-  if (
-    interaction.kind === "steps" ||
-    interaction.kind === "observe" ||
-    interaction.kind === "screenshot" ||
-    interaction.kind === "wait" ||
-    interaction.kind === "clipboard" ||
-    interaction.kind === "app" ||
-    interaction.kind === "device" ||
-    interaction.kind === "rotate"
-  )
-    return "manual";
-  return "captured";
-}
-
-function recordedPauseAction(input: {
-  durationMs: number;
-  finishedAt: number;
-  evidenceIds?: string[];
-  group?: string;
-}): AuthoringAction | undefined {
-  const durationMs = recordedPauseDuration(input.durationMs);
-  if (durationMs === 0) return undefined;
-  const actionId = `action-${randomUUID()}`;
-  return {
-    id: actionId,
-    source: "captured",
-    label: "Recorded pause",
-    recordedAt: input.finishedAt - durationMs,
-    startedAt: input.finishedAt - durationMs,
-    finishedAt: input.finishedAt,
-    steps: stepsForInteraction({ kind: "wait", ms: durationMs }, actionId, input.group),
-    evidenceIds: [...(input.evidenceIds ?? [])],
   };
 }
 

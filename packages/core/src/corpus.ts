@@ -14,8 +14,6 @@ import { existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import type {
   CorpusControl,
-  CorpusJourney,
-  CorpusJourneyStep,
   CorpusMapAction,
   CorpusMapPlan,
   CorpusNavStep,
@@ -64,6 +62,7 @@ import {
   type InteractInput,
 } from "./workspace.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
+import { normalizeCorpusScope, requiredCorpusText } from "./corpus-session-input.js";
 import {
   corpusControls,
   crawlableCorpusControls,
@@ -74,31 +73,7 @@ import { analyzeCorpus } from "./corpus-report.js";
 export { corpusControls, crawlableCorpusControls, fingerprintCorpusScreen, titleFromNodes };
 export { analyzeCorpus, buildCorpusCoverage, formatCorpusExport } from "./corpus-report.js";
 
-const DEFAULT_SCOPE: CorpusScope = {
-  maxDepth: 3,
-  maxScreens: 400,
-  maxTransitions: 1_200,
-  maxDurationMs: 45 * 60_000,
-  locales: ["en"],
-  strategy: "map-once-replay",
-  allowSensitiveControls: false,
-};
-
-const MAX_CORPUS_LOCALES = 250;
-
 const activeCorpusCrawls = new Map<string, { cancel: boolean; promise?: Promise<void> }>();
-
-function requiredText(value: unknown, label: string, maxLength: number): string {
-  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`);
-  const normalized = value.trim();
-  if (normalized.length > maxLength) throw new Error(`${label} is too long`);
-  return normalized;
-}
-
-function optionalText(value: unknown, label: string, maxLength: number): string | undefined {
-  if (value === undefined || value === null || value === "") return undefined;
-  return requiredText(value, label, maxLength);
-}
 function corpusRoot(): string {
   const base = process.env.RELAY_WORKSPACE_ROOT?.trim() || findWorkspaceRoot();
   const next = join(base, ".relay", "corpus");
@@ -152,192 +127,6 @@ function emitCorpus(session: CorpusSession, created = false): void {
   });
 }
 
-function normalizeNavSteps(value: unknown, label: string): CorpusNavStep[] | undefined {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
-  return value.map((step, index) => {
-    if (!step || typeof step !== "object") throw new Error(`${label}[${index}] is invalid`);
-    const record = step as Record<string, unknown>;
-    const kind = record.kind;
-    if (kind === "back") return { kind: "back" };
-    if (kind === "relaunch") return { kind: "relaunch" };
-    if (kind === "openApp") {
-      const appName = optionalText(record.app, `${label}[${index}].app`, 240);
-      if (!appName) throw new Error(`${label}[${index}].app is required`);
-      const relaunch = record.relaunch === undefined ? undefined : Boolean(record.relaunch);
-      return { kind: "openApp", app: appName, ...(relaunch !== undefined ? { relaunch } : {}) };
-    }
-    if (kind === "wait") {
-      const ms = Number(record.ms);
-      if (!Number.isFinite(ms) || ms < 0 || ms > 120_000) {
-        throw new Error(`${label}[${index}].ms is invalid`);
-      }
-      return { kind: "wait", ms: Math.round(ms) };
-    }
-    if (kind === "scroll") {
-      const direction = record.direction === "up" ? "up" : "down";
-      const amount =
-        record.amount === undefined
-          ? undefined
-          : Math.max(1, Math.min(8, Number(record.amount) || 1));
-      return { kind: "scroll", direction, ...(amount ? { amount } : {}) };
-    }
-    if (kind === "tap") {
-      const target = (record.target ?? {}) as Record<string, unknown>;
-      const identifier = optionalText(
-        target.identifier,
-        `${label}[${index}].target.identifier`,
-        240,
-      );
-      const stableKey = optionalText(target.stableKey, `${label}[${index}].target.stableKey`, 500);
-      const tapLabel = optionalText(target.label, `${label}[${index}].target.label`, 240);
-      const text = optionalText(target.text, `${label}[${index}].target.text`, 240);
-      const point = target.point as Record<string, unknown> | undefined;
-      const x = point ? Number(point.x) : Number.NaN;
-      const y = point ? Number(point.y) : Number.NaN;
-      const validPoint = Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0;
-      if (!stableKey && !identifier && !tapLabel && !text && !validPoint) {
-        throw new Error(`${label}[${index}] tap target requires identifier, label, text, or point`);
-      }
-      return {
-        kind: "tap",
-        target: {
-          ...(identifier ? { identifier } : {}),
-          ...(stableKey ? { stableKey } : {}),
-          ...(tapLabel ? { label: tapLabel } : {}),
-          ...(text ? { text } : {}),
-          ...(validPoint ? { point: { x, y } } : {}),
-        },
-      };
-    }
-    throw new Error(`${label}[${index}].kind is unsupported`);
-  });
-}
-
-function normalizeJourneys(value: unknown): CorpusJourney[] | undefined {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value)) throw new Error("journeys must be an array");
-  const seen = new Set<string>();
-  return value.map((journey, journeyIndex) => {
-    if (!journey || typeof journey !== "object") {
-      throw new Error(`journeys[${journeyIndex}] is invalid`);
-    }
-    const record = journey as Record<string, unknown>;
-    const id = requiredText(record.id, `journeys[${journeyIndex}].id`, 120);
-    if (seen.has(id)) throw new Error(`duplicate journey id: ${id}`);
-    seen.add(id);
-    const name = requiredText(record.name, `journeys[${journeyIndex}].name`, 160);
-    if (!Array.isArray(record.steps) || !record.steps.length) {
-      throw new Error(`journeys[${journeyIndex}].steps must not be empty`);
-    }
-    const steps = record.steps.map((step, stepIndex): CorpusJourneyStep => {
-      if (!step || typeof step !== "object") {
-        throw new Error(`journeys[${journeyIndex}].steps[${stepIndex}] is invalid`);
-      }
-      const stepRecord = step as Record<string, unknown>;
-      if (stepRecord.kind === "capture") {
-        return {
-          kind: "capture",
-          name: requiredText(
-            stepRecord.name,
-            `journeys[${journeyIndex}].steps[${stepIndex}].name`,
-            160,
-          ),
-          ...(optionalText(stepRecord.key, `journeys[${journeyIndex}].steps[${stepIndex}].key`, 120)
-            ? {
-                key: optionalText(
-                  stepRecord.key,
-                  `journeys[${journeyIndex}].steps[${stepIndex}].key`,
-                  120,
-                )!,
-              }
-            : {}),
-        };
-      }
-      return normalizeNavSteps([step], `journeys[${journeyIndex}].steps[${stepIndex}]`)![0]!;
-    });
-    if (!steps.some((step) => step.kind === "capture")) {
-      throw new Error(`journey ${id} requires at least one capture step`);
-    }
-    return { id, name, steps };
-  });
-}
-
-function normalizeScope(scope?: Partial<CorpusScope>): CorpusScope {
-  const bounded = (
-    value: number | undefined,
-    fallback: number,
-    min: number,
-    max: number,
-    name: string,
-  ) => {
-    const next = value ?? fallback;
-    if (!Number.isInteger(next) || next < min || next > max) {
-      throw new Error(`invalid corpus scope: ${name}`);
-    }
-    return next;
-  };
-  const locales = [
-    ...new Set(
-      (scope?.locales?.length ? scope.locales : DEFAULT_SCOPE.locales)
-        .map((locale) => locale.trim())
-        .filter(Boolean),
-    ),
-  ];
-  if (!locales.length) throw new Error("corpus requires at least one locale");
-  if (locales.length > MAX_CORPUS_LOCALES) {
-    throw new Error(`corpus supports at most ${MAX_CORPUS_LOCALES} locales`);
-  }
-  const languageOptions = scope?.languageOptions
-    ? Object.fromEntries(
-        Object.entries(scope.languageOptions).map(([locale, steps]) => [
-          locale,
-          normalizeNavSteps(steps, `languageOptions.${locale}`) ?? [],
-        ]),
-      )
-    : undefined;
-  const strategy =
-    scope?.strategy === "crawl-each" || scope?.strategy === "map-once-replay"
-      ? scope.strategy
-      : (DEFAULT_SCOPE.strategy ?? "map-once-replay");
-  const mapLocale = optionalText(scope?.mapLocale, "mapLocale", 40) ?? locales[0]!;
-  if (!locales.includes(mapLocale)) {
-    locales.unshift(mapLocale);
-  }
-  // Map locale first so UI/coverage order is natural.
-  const orderedLocales = [mapLocale, ...locales.filter((locale) => locale !== mapLocale)];
-  const entryPath = normalizeNavSteps(scope?.entryPath, "entryPath");
-  const languagePath = normalizeNavSteps(scope?.languagePath, "languagePath");
-  const journeys = normalizeJourneys(scope?.journeys);
-  return {
-    maxDepth: bounded(scope?.maxDepth, DEFAULT_SCOPE.maxDepth, 0, 6, "maxDepth"),
-    maxScreens: bounded(scope?.maxScreens, DEFAULT_SCOPE.maxScreens, 1, 2_000, "maxScreens"),
-    maxTransitions: bounded(
-      scope?.maxTransitions,
-      DEFAULT_SCOPE.maxTransitions,
-      1,
-      8_000,
-      "maxTransitions",
-    ),
-    maxDurationMs: bounded(
-      scope?.maxDurationMs,
-      DEFAULT_SCOPE.maxDurationMs,
-      30_000,
-      8 * 60 * 60_000,
-      "maxDurationMs",
-    ),
-    locales: orderedLocales,
-    strategy,
-    mapLocale,
-    ...(optionalText(scope?.app, "app", 240) ? { app: optionalText(scope?.app, "app", 240) } : {}),
-    ...(entryPath ? { entryPath } : {}),
-    ...(languagePath ? { languagePath } : {}),
-    ...(languageOptions && Object.keys(languageOptions).length ? { languageOptions } : {}),
-    ...(journeys ? { journeys } : {}),
-    allowSensitiveControls: scope?.allowSensitiveControls ?? false,
-  };
-}
-
 function idleProgress(): CorpusProgress {
   return {
     phase: "idle",
@@ -388,8 +177,8 @@ export async function createCorpusSession(input: {
   projectId?: string;
   organizationId?: string;
 }): Promise<CorpusSession> {
-  const name = requiredText(input.name, "corpus session name", 160);
-  const targetId = requiredText(input.targetId, "corpus target", 240);
+  const name = requiredCorpusText(input.name, "corpus session name", 160);
+  const targetId = requiredCorpusText(input.targetId, "corpus target", 240);
   const operation = currentOperationContext();
   const at = Date.now();
   const session: CorpusSession = {
@@ -399,7 +188,7 @@ export async function createCorpusSession(input: {
     organizationId: input.organizationId?.trim() || operation?.organizationId?.trim() || "local",
     targetId,
     ...(input.targetProfile ? { targetProfile: { ...input.targetProfile } } : {}),
-    scope: normalizeScope(input.scope),
+    scope: normalizeCorpusScope(input.scope),
     status: "draft",
     createdAt: at,
     updatedAt: at,
@@ -562,7 +351,7 @@ export async function renameCorpusSession(id: string, name: string): Promise<Cor
   const session = await readCorpusSession(id);
   if (!session) throw new Error("corpus session not found");
   assertCorpusAccess(session);
-  session.name = requiredText(name, "corpus session name", 160);
+  session.name = requiredCorpusText(name, "corpus session name", 160);
   session.updatedAt = Date.now();
   await writeSession(session);
   emitCorpus(session);
