@@ -40,8 +40,14 @@ test('normalizes defaults and retains the requested alias and projection', () =>
     include: 'headers',
     use: networkDumpUse,
   });
-  assert.deepEqual(networkDumpUse, { required: ['networkDump'], preferred: [] });
-  assert.deepEqual(networkAdmissionUse, { required: [], preferred: ['networkDump'] });
+  assert.deepEqual(networkDumpUse, {
+    required: ['networkDump'],
+    preferred: [],
+  });
+  assert.deepEqual(networkAdmissionUse, {
+    required: [],
+    preferred: ['networkDump'],
+  });
 });
 
 test('rejects actions and projections outside the frozen cells', () => {

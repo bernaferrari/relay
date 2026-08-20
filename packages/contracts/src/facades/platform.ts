@@ -218,14 +218,19 @@ export {
   resolveSnapshotRuntimePlan,
   screenshotRuntimePlanUses,
   selectorCaptureRuntimePlanUses,
+  selectorTextCaptureRuntimePlanUses,
   snapshotRuntimePlanUses,
+  waitSelectorCaptureRuntimePlanUses,
   viewportRuntimeUse,
 } from '../platform-runtime-operations.ts';
 export type {
   ScreenshotRuntimePlan,
+  SelectorCaptureRuntimeIntent,
   SelectorCaptureRuntimePlan,
   SnapshotRuntimePlan,
 } from '../platform-runtime-operations.ts';
+export { waitObservesDevice } from '../wait-runtime-plan.ts';
+export type { WaitRuntimeTarget } from '../wait-runtime-plan.ts';
 export type {
   PlatformRuntimeHost,
   PlatformRuntimeModule,
@@ -258,8 +263,21 @@ export type {
 export {
   bindLocalSnapshotInteractor,
   bindProviderSnapshotInteractor,
+  captureSnapshotSignal,
   snapshotRuntimeOperationFacts,
 } from '../snapshot-runtime.ts';
+export { selectorObservationRuntimeOperationFacts } from '../selector-observation-runtime.ts';
+export type {
+  FindSelectorInput,
+  FindSelectorResult,
+  FindSelectorRuntimeOperations,
+  FindTextInput,
+  FindTextResult,
+  FindTextRuntimeOperations,
+  SelectorObservationRuntimeOperationFacts,
+  SelectorObservationRuntimeOperations,
+  SelectorObservationResult,
+} from '../selector-observation-runtime.ts';
 export type {
   CaptureSnapshotInput,
   LocalSnapshotInteractorResolver,

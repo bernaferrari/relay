@@ -2,13 +2,15 @@ import {
   resolveSelectorCaptureRuntimePlan,
   type CaptureSnapshotInput,
   type ElementTextRuntimeOperations,
+  type FindTextRuntimeOperations,
+  type FindSelectorRuntimeOperations,
   type SnapshotResult,
 } from '@agent-device/contracts/platform';
 import type { BindDeviceRuntime, InspectDeviceRuntimeFacts } from './request-runtime-binding.ts';
 import { admitAndBindSnapshotCapture } from './snapshot-runtime-binding.ts';
 import type { DaemonResponse, SessionState } from './types.ts';
 
-/** The selector commands that resolve their targets from a request-bound capture. */
+/** The selector commands that resolve their targets from the shared request-bound capture seam. */
 export type SelectorCaptureCommand = 'find' | 'get' | 'is' | 'wait';
 
 /**
@@ -25,14 +27,15 @@ export type BoundSelectorCapture = (input: CaptureSnapshotInput) => Promise<Snap
  */
 export type BoundSelectorRead = ElementTextRuntimeOperations['readTextAtPoint'];
 
-/**
- * The bound operations a selector command's runtime executes through. A record rather than a bare
- * capture function so a unit can add its own bound operation without changing any signature on
- * this seam — which is how `readText` arrived, and how the next one will.
- */
+/** Optional operations appear only for the command intent that declared them. */
+export type BoundSelectorFindText = FindTextRuntimeOperations['findText'];
+export type BoundSelectorFindSelector = FindSelectorRuntimeOperations['findSelector'];
+
 export type BoundSelectorOperations = Readonly<{
   capture: BoundSelectorCapture;
   readText?: BoundSelectorRead;
+  findText?: BoundSelectorFindText;
+  findSelector?: BoundSelectorFindSelector;
 }>;
 
 export type ResolvedSelectorCapture =
@@ -57,6 +60,7 @@ export async function resolveBoundSelectorCapture(
     ...params,
     plan: resolveSelectorCaptureRuntimePlan({
       hasActiveApp: params.session?.appBundleId !== undefined,
+      intent: selectorCaptureIntent(params.command),
     }),
   });
   if (!bound.ok) return bound;
@@ -67,6 +71,22 @@ export async function resolveBoundSelectorCapture(
     operations: {
       capture: bound.capture,
       ...(bound.readTextAtPoint ? { readText: bound.readTextAtPoint } : {}),
+      ...(bound.findText ? { findText: bound.findText } : {}),
+      ...(bound.findSelector ? { findSelector: bound.findSelector } : {}),
     },
   };
+}
+
+function selectorCaptureIntent(
+  command: SelectorCaptureCommand,
+): 'capture-only' | 'element-text' | 'wait-observation' {
+  switch (command) {
+    case 'is':
+      return 'capture-only';
+    case 'find':
+    case 'get':
+      return 'element-text';
+    case 'wait':
+      return 'wait-observation';
+  }
 }

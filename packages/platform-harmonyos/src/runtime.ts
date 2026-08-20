@@ -12,6 +12,7 @@ import {
   elementTextRuntimeOperationFacts,
   localRuntimeOwner,
   screenshotRuntimeOperationFacts,
+  selectorObservationRuntimeOperationFacts,
   snapshotRuntimeOperationFacts,
   viewportRuntimeOperationFacts,
 } from '@agent-device/contracts/platform';
@@ -147,6 +148,11 @@ export function createHarmonyPlatformRuntime(host: PlatformRuntimeHost): Platfor
             device.kind === 'emulator' || device.kind === 'device'
               ? available
               : screenshotKindUnavailable,
+        }),
+        // No native text reading: every text wait on this owner polls the canonical tree.
+        ...selectorObservationRuntimeOperationFacts({
+          findText: snapshotKindUnavailable,
+          findSelector: snapshotKindUnavailable,
         }),
         ...viewportRuntimeOperationFacts({ setViewport: viewportUnavailable }),
         // HarmonyOS has no point-read tool: `get` answers from the captured tree, which is what

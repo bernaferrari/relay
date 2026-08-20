@@ -504,14 +504,22 @@ function createAdmissionRuntime(options: {
   screenshotAvailable?: boolean;
   providerMode: RuntimeProviderMode;
 }) {
-  const uses: Array<{ required: readonly string[]; preferred: readonly string[] }> = [];
+  const uses: Array<{
+    required: readonly string[];
+    preferred: readonly string[];
+    conditional?: readonly string[];
+  }> = [];
   const inspections: DeviceInfo[] = [];
   const inspectFacts: InspectDeviceRuntimeFacts = vi.fn(async (device: DeviceInfo) => {
     inspections.push(device);
     return createAdmissionBinding(device, options).facts;
   });
   const bindDevice: BindDeviceRuntime = async (device, use) => {
-    uses.push({ required: [...use.required], preferred: [...use.preferred] });
+    uses.push({
+      required: [...use.required],
+      preferred: [...use.preferred],
+      ...(use.conditional === undefined ? {} : { conditional: [...use.conditional] }),
+    });
     return narrowDeviceBinding(createAdmissionBinding(device, options), use);
   };
   return { bindDevice, inspectFacts, inspections, uses };
