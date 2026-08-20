@@ -30,7 +30,7 @@
     "doctor": "pnpm --filter @relay/cli exec tsx src/index.ts system doctor",
     "test": "pnpm run ios-preview:test && pnpm run test:packages && vp test",
     "test:packages": "pnpm -r --if-present run test",
-    "test:ios-terminality": "pnpm --filter @relay/core exec tsx --test src/ios-mutation-terminality-contract.test.ts src/workspace-capture-video.test.ts && pnpm --filter @relay/server exec tsx --import ./scripts/test-environment.mjs --test src/step-run-route.test.ts && pnpm --filter @relay/app exec tsx --test src/lib/ios-interaction-safety.test.ts",
+    "test:ios-terminality": "pnpm --filter @relay/core exec tsx --test src/ios-mutation-terminality-contract.test.ts src/workspace-capture-video.test.ts && pnpm --filter @relay/server exec tsx --import ./scripts/test-environment.mjs --test src/step-run-route.test.ts src/corpus-routes.test.ts && pnpm --filter @relay/app exec tsx --test src/lib/ios-interaction-safety.test.ts && pnpm --filter @relay/mcp exec tsx --test src/server.test.ts",
     "test:golden": "node scripts/golden-device.mjs",
     "test:golden:require": "GOLDEN_REQUIRE_DEVICE=1 node scripts/golden-device.mjs",
     "test:architecture": "node --test scripts/check-source-budgets.test.mjs",

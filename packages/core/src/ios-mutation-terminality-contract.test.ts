@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +16,7 @@ import {
   type Device,
   type SnapshotNode,
 } from "./device.js";
+import { clearControl, JobCancelledError, requestCancel, runWithJobControl } from "./control.js";
 import { setLocalDeviceProvider } from "./device-factory.js";
 import { captureFullSurfaceEvidence } from "./discovery-surface.js";
 import { dismissTowardParent } from "./explore.js";
@@ -67,6 +69,82 @@ function unknownIosMutation(operation: "press" | "scroll" = "press") {
     },
     new Error("lost native acknowledgement"),
   );
+}
+
+async function cancellationAfterDispatchTrace(
+  nativeDispatches: string[],
+): Promise<IosMutationTerminalityTrace> {
+  const serial = "terminal-cancel-after-dispatch";
+  const jobId = "terminality-cancel-after-dispatch";
+  const device = {
+    capture: { snapshot: async () => ({ nodes: [button("Continue")] }) },
+    interactions: {
+      press: async () => {
+        nativeDispatches.push("semantic-press");
+        // This happens after the native intent began, but before XCTest can
+        // confirm its outcome. It must become a review stop, not cleanup.
+        requestCancel(jobId);
+        // Leave the simulated native acknowledgement in flight so cancellation
+        // wins at the real race boundary rather than creating an unobserved
+        // rejected promise in the fake transport.
+        await Promise.resolve();
+      },
+    },
+  } as unknown as Device;
+  const context = { log: () => undefined, job: { id: jobId, artifacts: [] } as never };
+  try {
+    await runWithTargetContext(ios(serial), () =>
+      runWithJobControl(jobId, () =>
+        runRecipeStep(
+          device,
+          { kind: "tap", target: { label: "Continue" }, optional: true },
+          context,
+        ),
+      ),
+    );
+    return { nativeDispatches, status: "handled" };
+  } catch (error) {
+    assert.ok(error instanceof IosMutationOutcomeUnknownError);
+    assert.equal(error.iosMutation.operation, "press");
+    assert.equal(error.iosMutation.cancellation?.observedAfterAttemptStarted, true);
+    return { nativeDispatches, status: "terminal", error };
+  } finally {
+    clearControl(jobId);
+  }
+}
+
+async function cancellationBeforeDispatchTrace(
+  nativeDispatches: string[],
+): Promise<IosMutationTerminalityTrace> {
+  const serial = "recovery-cancel-before-dispatch";
+  const jobId = "terminality-cancel-before-dispatch";
+  const device = {
+    capture: { snapshot: async () => ({ nodes: [button("Continue")] }) },
+    interactions: {
+      press: async () => {
+        nativeDispatches.push("semantic-press");
+      },
+    },
+  } as unknown as Device;
+  try {
+    requestCancel(jobId);
+    await runWithTargetContext(ios(serial), () =>
+      runWithJobControl(jobId, () =>
+        runRecipeStep(
+          device,
+          { kind: "tap", target: { label: "Continue" }, optional: true },
+          { log: () => undefined, job: { id: jobId, artifacts: [] } as never },
+        ),
+      ),
+    );
+    return { nativeDispatches, status: "terminal" };
+  } catch (error) {
+    assert.ok(error instanceof JobCancelledError);
+    assert.ok(!(error instanceof IosMutationOutcomeUnknownError));
+    return { nativeDispatches, status: "handled" };
+  } finally {
+    clearControl(jobId);
+  }
 }
 
 async function terminalTrace(
@@ -464,6 +542,21 @@ test("registered public recovery boundaries preserve iOS exact-once terminality"
               ),
             ),
           );
+        },
+      },
+    },
+    {
+      id: "core.recipe.cancellation-after-dispatch",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        return await cancellationAfterDispatchTrace(nativeDispatches);
+      },
+      recovery: {
+        expectedStatus: "handled",
+        expectedNativeDispatches: 0,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          return await cancellationBeforeDispatchTrace(nativeDispatches);
         },
       },
     },
