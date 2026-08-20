@@ -1,6 +1,5 @@
-import { createAgentDeviceClient } from "agent-device";
+import type { createAgentDeviceClient } from "agent-device";
 import type { CrashEvidenceResult } from "./crash-evidence.js";
-import type { NativeDeviceMutations } from "./device-mutation-adapter.js";
 
 type NativeDevice = ReturnType<typeof createAgentDeviceClient>;
 
@@ -10,8 +9,13 @@ type NativeDevice = ReturnType<typeof createAgentDeviceClient>;
  * This deliberately omits every physical mutation primitive. Workflows express
  * a user-visible intent through the canonical helpers, whose single dispatcher
  * owns iOS exact-once terminality. The concrete SDK client still carries its
- * native methods at runtime, but they are intentionally absent from this public
- * type so a new workflow cannot compile a raw input escape hatch.
+ * native methods at runtime, but ordinary type-checked workflow code cannot
+ * access them through this facade.
+ *
+ * This is a TypeScript architecture boundary, not a security sandbox: code in
+ * the repository can always choose an unsafe cast or construct a non-literal
+ * dynamic import. Package exports and the source gate make that choice explicit
+ * and reviewable; they do not claim to make it impossible at runtime.
  */
 export type Device = {
   devices: {
@@ -87,23 +91,3 @@ export type SnapshotNode = {
   /** Owning Android package when the provider exposes multi-window nodes. */
   bundleId?: string;
 };
-
-/**
- * Approved dispatcher-only view of the bound SDK transport. It is deliberately
- * not re-exported from the package entrypoint; workflow modules receive only
- * `Device` and the architecture gate rejects direct imports of this seam.
- */
-export type DeviceTransport = Device & NativeDeviceMutations;
-
-export function nativeDevice(device: Device): DeviceTransport {
-  return device as DeviceTransport;
-}
-
-/**
- * Explicit test-only injection seam. The returned value is still the safe
- * workflow facade, so tests exercise public dispatch rather than exposing raw
- * input methods to recipe code.
- */
-export function deviceTestDouble<T extends object>(capabilities: T): Device {
-  return capabilities as unknown as Device;
-}

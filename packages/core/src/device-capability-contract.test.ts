@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deviceTestDouble, type Device } from "./device.js";
+import { deviceTestDouble } from "@relay/core/testing";
+import type { Device } from "./device.js";
+
+// @ts-expect-error The dispatcher-private transport is not part of the public device entrypoint.
+type DispatcherTransport = import("./device.js").DeviceTransport;
+void (undefined as unknown as DispatcherTransport);
 
 /**
  * Compile-time contract: a workflow gets observation plus the canonical helper
@@ -35,4 +40,30 @@ test("test doubles retain raw runtime behavior behind the safe workflow facade",
 
   assert.equal(device, capabilities);
   assert.equal(capabilities.interactions.press, nativePress);
+});
+
+test("the public device entrypoint cannot expose the dispatcher-private transport", async () => {
+  const device = await import("@relay/core/device");
+  const core = await import("@relay/core");
+  const testing = await import("@relay/core/testing");
+
+  assert.equal(typeof testing.deviceTestDouble, "function");
+  assert.equal("deviceTestDouble" in device, false);
+  assert.equal("deviceTestDouble" in core, false);
+  assert.equal("nativeDevice" in device, false);
+});
+
+async function importPackageSpecifier(specifier: string): Promise<unknown> {
+  return await import(specifier);
+}
+
+test("package exports reject direct internal transport imports", async () => {
+  for (const specifier of [
+    "@relay/core/device-capabilities",
+    "@relay/core/device-mutation-adapter",
+  ]) {
+    await assert.rejects(importPackageSpecifier(specifier), (error: unknown) => {
+      return (error as NodeJS.ErrnoException | undefined)?.code === "ERR_PACKAGE_PATH_NOT_EXPORTED";
+    });
+  }
 });

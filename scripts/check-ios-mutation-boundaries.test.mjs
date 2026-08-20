@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  evaluateCoreDevicePackageExports,
   evaluateIosMutationBoundaries,
+  privateDeviceCapabilityPaths,
   rawDeviceMutationBoundaryPaths,
 } from "./check-ios-mutation-boundaries.mjs";
 
@@ -24,6 +26,11 @@ test("only the canonical dispatcher and native adapter own the raw transport", (
     rawDeviceMutationBoundaryPaths.has("packages/core/src/device-mutation-adapter.ts"),
     true,
   );
+  assert.equal(
+    rawDeviceMutationBoundaryPaths.has("packages/core/src/device-capabilities.ts"),
+    false,
+  );
+  assert.equal(privateDeviceCapabilityPaths.has("packages/core/src/testing.ts"), true);
   assert.equal(rawDeviceMutationBoundaryPaths.has("packages/core/src/workspace-capture.ts"), false);
   assert.deepEqual(
     evaluateIosMutationBoundaries([
@@ -47,7 +54,57 @@ test("workflow modules cannot import a native transport or test-double escape ha
       "packages/core/src/recipe-runner.ts:2 accesses nativeDevice; workflow code receives the safe Device facade and must use packages/core/src/device.ts helpers.",
       "packages/core/src/recipe-runner.ts:2 accesses DeviceTransport; workflow code receives the safe Device facade and must use packages/core/src/device.ts helpers.",
       "packages/core/src/recipe-runner.ts:3 accesses deviceTestDouble; workflow code receives the safe Device facade and must use packages/core/src/device.ts helpers.",
+      "packages/core/src/recipe-runner.ts:1 imports ./device-mutation-adapter.js; internal device capability modules are private—use the public device helpers instead.",
+      "packages/core/src/recipe-runner.ts:2 imports ./device-capabilities.js; internal device capability modules are private—use the public device helpers instead.",
     ],
+  );
+});
+
+test("production code cannot reach private device seams through literal dynamic imports", () => {
+  const source = [
+    'import { createAgentDeviceClient } from "agent-device";',
+    'await import("./device-mutation-adapter.js");',
+    'await import("@relay/core/testing");',
+    'await import("agent-device");',
+  ].join("\n");
+  assert.deepEqual(
+    evaluateIosMutationBoundaries([{ path: "packages/server/src/run-route.ts", source }]),
+    [
+      "packages/server/src/run-route.ts:1 imports agent-device; raw agent-device access belongs only to the canonical device/control boundary.",
+      "packages/server/src/run-route.ts:2 imports ./device-mutation-adapter.js; internal device capability modules are private—use the public device helpers instead.",
+      "packages/server/src/run-route.ts:3 imports @relay/core/testing; test doubles may only be imported from test files.",
+      "packages/server/src/run-route.ts:4 imports agent-device; raw agent-device access belongs only to the canonical device/control boundary.",
+    ],
+  );
+});
+
+test("the core package gives test injection an explicit public entrypoint only", () => {
+  assert.deepEqual(
+    evaluateCoreDevicePackageExports({
+      exports: { ".": "./src/index.ts", "./device": "./src/device.ts" },
+    }),
+    ["packages/core/package.json must export ./testing."],
+  );
+  assert.deepEqual(
+    evaluateCoreDevicePackageExports({
+      exports: {
+        ".": "./src/index.ts",
+        "./device": "./src/device.ts",
+        "./testing": "./src/testing.ts",
+        "./device-mutation-adapter": "./src/device-mutation-adapter.ts",
+      },
+    }),
+    ["packages/core/package.json must not export private ./device-mutation-adapter."],
+  );
+  assert.deepEqual(
+    evaluateCoreDevicePackageExports({
+      exports: {
+        ".": "./src/index.ts",
+        "./device": "./src/device.ts",
+        "./testing": "./src/testing.ts",
+      },
+    }),
+    [],
   );
 });
 

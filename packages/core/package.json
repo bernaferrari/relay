@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./device": "./src/device.ts",
+    "./testing": "./src/testing.ts",
     "./play-store": "./src/play-store.ts",
     "./grok": "./src/grok.ts",
     "./actions": "./src/actions.ts",

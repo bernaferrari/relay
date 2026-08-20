@@ -13,9 +13,34 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  */
 export const rawDeviceMutationBoundaryPaths = new Set([
   "packages/core/src/device.ts",
-  "packages/core/src/device-capabilities.ts",
   "packages/core/src/device-mutation-adapter.ts",
 ]);
+
+/**
+ * Private implementation modules that may name a capability seam. They are
+ * deliberately fewer than ordinary workflow modules, and tests are excluded
+ * from this production-source scan so they can exercise explicit test seams.
+ */
+export const privateDeviceCapabilityPaths = new Set([
+  ...rawDeviceMutationBoundaryPaths,
+  "packages/core/src/device-capabilities.ts",
+  "packages/core/src/testing.ts",
+]);
+
+const rawSdkBoundaryPaths = new Set([
+  "packages/core/src/control.ts",
+  "packages/core/src/device-capabilities.ts",
+  "packages/core/src/device-mutation-adapter.ts",
+  "packages/core/src/device.ts",
+]);
+
+const internalDeviceModuleOwners = new Map([
+  ["device-capabilities", new Set(["packages/core/src/device.ts", "packages/core/src/testing.ts"])],
+  ["device-mutation-adapter", new Set(["packages/core/src/device.ts"])],
+]);
+
+const requiredCorePackageEntries = new Set(["./device", "./testing"]);
+const forbiddenCorePackageEntries = new Set(["./device-capabilities", "./device-mutation-adapter"]);
 
 const rawMutationCall =
   /\b(?:target\.)?device\.(?:devices\.boot|apps\.(?:open|close)|interactions\.(?:press|longPress|fill|type|scroll|swipe|pan)|command\.(?:back|home|keyboard|alert|appSwitcher|rotate|prepare)|settings\.update|recording\.record)\s*\(/gu;
@@ -24,9 +49,67 @@ const rawClipboardCall =
   /\b(?:target\.)?device\.command\.clipboard\s*\(\s*\{([\s\S]{0,600}?)\}\s*\)/gu;
 const nativeCapabilityEscape =
   /\b(?:bindNativeDeviceMutations|NativeDeviceMutations|DeviceTransport|nativeDevice|deviceTestDouble)\b/gu;
+const staticModuleSpecifier =
+  /\b(?:import|export)\s+(?:type\s+)?(?:[^;"']*?\s+from\s+)?["']([^"']+)["']/gu;
+const dynamicModuleSpecifier = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu;
 
 function lineAt(source, index) {
   return source.slice(0, index).split("\n").length;
+}
+
+function literalModuleSpecifiers(source) {
+  return [staticModuleSpecifier, dynamicModuleSpecifier]
+    .flatMap((expression) =>
+      [...source.matchAll(expression)].map((match) => ({
+        specifier: match[1] ?? "",
+        index: match.index ?? 0,
+      })),
+    )
+    .sort((left, right) => left.index - right.index);
+}
+
+function normalizedModuleSpecifier(specifier) {
+  return specifier.replaceAll("\\", "/").replace(/\.(?:[cm]?js|[cm]?ts|tsx)$/u, "");
+}
+
+function internalDeviceModule(specifier) {
+  const normalized = normalizedModuleSpecifier(specifier);
+  for (const name of internalDeviceModuleOwners.keys()) {
+    if (
+      normalized === `@relay/core/${name}` ||
+      normalized === `@relay/core/src/${name}` ||
+      normalized.endsWith(`/${name}`)
+    ) {
+      return name;
+    }
+  }
+  return undefined;
+}
+
+function isRawSdkSpecifier(specifier) {
+  return specifier === "agent-device" || specifier.startsWith("agent-device/");
+}
+
+/**
+ * Check the intentional package boundary as well as source imports. This is a
+ * build-time API boundary, not a runtime sandbox: a repository author could
+ * still edit package metadata or use a non-literal dynamic import deliberately.
+ */
+export function evaluateCoreDevicePackageExports(packageJson) {
+  const exports = packageJson?.exports;
+  const entries = exports && typeof exports === "object" && !Array.isArray(exports) ? exports : {};
+  const violations = [];
+  for (const entry of requiredCorePackageEntries) {
+    if (!(entry in entries)) {
+      violations.push(`packages/core/package.json must export ${entry}.`);
+    }
+  }
+  for (const entry of forbiddenCorePackageEntries) {
+    if (entry in entries) {
+      violations.push(`packages/core/package.json must not export private ${entry}.`);
+    }
+  }
+  return violations;
 }
 
 /**
@@ -40,41 +123,67 @@ function lineAt(source, index) {
 export function evaluateIosMutationBoundaries(entries) {
   const violations = [];
   for (const { path, source = "" } of entries) {
-    if (!path.startsWith("packages/core/src/") || rawDeviceMutationBoundaryPaths.has(path)) {
+    if (!path.startsWith("packages/") || !path.includes("/src/")) {
       continue;
     }
+    const privateCapabilityPath = privateDeviceCapabilityPaths.has(path);
     // The public `Device` type is intentionally read-only. Do not let a
     // workflow recover the hidden SDK transport by importing an internal
     // transport seam under a different local name.
-    for (const match of source.matchAll(nativeCapabilityEscape)) {
-      violations.push(
-        `${path}:${lineAt(source, match.index ?? 0)} accesses ${match[0]}; ` +
-          "workflow code receives the safe Device facade and must use packages/core/src/device.ts helpers.",
-      );
+    if (!privateCapabilityPath) {
+      for (const match of source.matchAll(nativeCapabilityEscape)) {
+        violations.push(
+          `${path}:${lineAt(source, match.index ?? 0)} accesses ${match[0]}; ` +
+            "workflow code receives the safe Device facade and must use packages/core/src/device.ts helpers.",
+        );
+      }
     }
-    for (const match of source.matchAll(rawMutationCall)) {
-      violations.push(
-        `${path}:${lineAt(source, match.index ?? 0)} directly invokes ${match[0].trim()}; ` +
-          "route physical input through packages/core/src/device.ts instead.",
-      );
+    if (!rawDeviceMutationBoundaryPaths.has(path)) {
+      for (const match of source.matchAll(rawMutationCall)) {
+        violations.push(
+          `${path}:${lineAt(source, match.index ?? 0)} directly invokes ${match[0].trim()}; ` +
+            "route physical input through packages/core/src/device.ts instead.",
+        );
+      }
+      for (const match of source.matchAll(rawFindCall)) {
+        // `exists` is a bounded semantic observation. A click (or a dynamic
+        // action) is a physical command and must use the canonical dispatcher.
+        if (/\baction\s*:\s*["']exists["']/u.test(match[1] ?? "")) continue;
+        violations.push(
+          `${path}:${lineAt(source, match.index ?? 0)} directly invokes device.interactions.find(; ` +
+            "route physical input through packages/core/src/device.ts instead.",
+        );
+      }
+      for (const match of source.matchAll(rawClipboardCall)) {
+        // Clipboard reads are observation. A write, paste, copy, or dynamic
+        // action can change device state and belongs behind the dispatcher.
+        if (/\baction\s*:\s*["']read["']/u.test(match[1] ?? "")) continue;
+        violations.push(
+          `${path}:${lineAt(source, match.index ?? 0)} directly invokes device.command.clipboard(; ` +
+            "route physical input through packages/core/src/device.ts instead.",
+        );
+      }
     }
-    for (const match of source.matchAll(rawFindCall)) {
-      // `exists` is a bounded semantic observation. A click (or a dynamic
-      // action) is a physical command and must use the canonical dispatcher.
-      if (/\baction\s*:\s*["']exists["']/u.test(match[1] ?? "")) continue;
-      violations.push(
-        `${path}:${lineAt(source, match.index ?? 0)} directly invokes device.interactions.find(; ` +
-          "route physical input through packages/core/src/device.ts instead.",
-      );
-    }
-    for (const match of source.matchAll(rawClipboardCall)) {
-      // Clipboard reads are observation. A write, paste, copy, or dynamic
-      // action can change device state and belongs behind the dispatcher.
-      if (/\baction\s*:\s*["']read["']/u.test(match[1] ?? "")) continue;
-      violations.push(
-        `${path}:${lineAt(source, match.index ?? 0)} directly invokes device.command.clipboard(; ` +
-          "route physical input through packages/core/src/device.ts instead.",
-      );
+    for (const { specifier, index } of literalModuleSpecifiers(source)) {
+      if (specifier === "@relay/core/testing") {
+        violations.push(
+          `${path}:${lineAt(source, index)} imports @relay/core/testing; ` +
+            "test doubles may only be imported from test files.",
+        );
+      }
+      const internalModule = internalDeviceModule(specifier);
+      if (internalModule && !internalDeviceModuleOwners.get(internalModule)?.has(path)) {
+        violations.push(
+          `${path}:${lineAt(source, index)} imports ${specifier}; ` +
+            "internal device capability modules are private—use the public device helpers instead.",
+        );
+      }
+      if (isRawSdkSpecifier(specifier) && !rawSdkBoundaryPaths.has(path)) {
+        violations.push(
+          `${path}:${lineAt(source, index)} imports ${specifier}; ` +
+            "raw agent-device access belongs only to the canonical device/control boundary.",
+        );
+      }
     }
   }
   return violations;
@@ -89,16 +198,29 @@ async function sourceFiles(directory) {
       files.push(...(await sourceFiles(path)));
       continue;
     }
-    if (extname(entry.name) !== ".ts" || /\.(?:test|spec)\.ts$/u.test(entry.name)) continue;
+    if (!new Set([".ts", ".tsx", ".mts", ".cts"]).has(extname(entry.name))) continue;
+    if (/\.(?:test|spec)\.[^.]+$/u.test(entry.name) || entry.name.endsWith(".d.ts")) continue;
     files.push(path);
   }
   return files;
 }
 
-async function inspectCoreSources() {
-  const root = resolve(repositoryRoot, "packages/core/src");
+async function inspectWorkflowSources() {
+  const packageDirectories = await readdir(resolve(repositoryRoot, "packages"), {
+    withFileTypes: true,
+  });
+  const sourcePaths = [];
+  for (const entry of packageDirectories) {
+    if (!entry.isDirectory()) continue;
+    const root = resolve(repositoryRoot, "packages", entry.name, "src");
+    try {
+      sourcePaths.push(...(await sourceFiles(root)));
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
   return Promise.all(
-    (await sourceFiles(root)).map(async (path) => ({
+    sourcePaths.map(async (path) => ({
       path: relative(repositoryRoot, path).split(sep).join("/"),
       source: await readFile(path, "utf8"),
     })),
@@ -106,14 +228,23 @@ async function inspectCoreSources() {
 }
 
 async function main() {
-  const violations = evaluateIosMutationBoundaries(await inspectCoreSources());
+  const [entries, corePackage] = await Promise.all([
+    inspectWorkflowSources(),
+    readFile(resolve(repositoryRoot, "packages/core/package.json"), "utf8").then(JSON.parse),
+  ]);
+  const violations = [
+    ...evaluateIosMutationBoundaries(entries),
+    ...evaluateCoreDevicePackageExports(corePackage),
+  ];
   if (violations.length) {
-    console.error("Raw iOS mutation-boundary check failed:");
+    console.error("Device mutation-boundary check failed:");
     for (const violation of violations) console.error(`- ${violation}`);
     process.exitCode = 1;
     return;
   }
-  console.log("iOS mutation-boundary check passed: workflow code uses the canonical dispatcher.");
+  console.log(
+    "Device mutation-boundary check passed: workflow code uses the canonical dispatcher.",
+  );
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

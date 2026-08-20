@@ -19,13 +19,7 @@ import {
 } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
 import { bindNativeDeviceMutations, clearAndroidTextWithAdb } from "./device-mutation-adapter.js";
-import {
-  nativeDevice,
-  type Device,
-  type DeviceTransport,
-  type SnapshotNode,
-} from "./device-capabilities.js";
-export { deviceTestDouble } from "./device-capabilities.js";
+import { type Device, type SnapshotNode } from "./device-capabilities.js";
 export type { Device, SnapshotNode } from "./device-capabilities.js";
 import { withRetry } from "./retry.js";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
@@ -92,6 +86,12 @@ export const GROK_PACKAGE = "ai.x.grok";
 export const PLAY_PACKAGE = "com.android.vending";
 export const WORK_ACCOUNT_MATCH = process.env.WORK_ACCOUNT_MATCH?.trim() || "teachx.ai";
 const execFileAsync = promisify(execFile);
+/** Dispatcher-private native transport; physical input stays below the exact-once dispatcher. */
+type DeviceTransport = Device & ReturnType<typeof bindNativeDeviceMutations>;
+
+function nativeDevice(device: Device): DeviceTransport {
+  return device as DeviceTransport;
+}
 
 // One client per explicit target preserves SDK session reuse without binding
 // unrelated concurrently executing targets to the same agent-device session.

@@ -1,4 +1,4 @@
-import { createAgentDeviceClient } from "agent-device";
+import type { createAgentDeviceClient } from "agent-device";
 import { getExecutingJobId, raceCancel } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
 import { execFile } from "node:child_process";
@@ -6,11 +6,11 @@ import { promisify } from "node:util";
 
 type NativeDevice = ReturnType<typeof createAgentDeviceClient>;
 /**
- * The SDK's mutating transport surface. This type is intentionally exported
- * only for the canonical dispatcher in `device.ts`; workflow code receives
- * the smaller `Device` observation facade instead.
+ * The SDK's mutating transport surface. It remains module-private; the
+ * canonical dispatcher infers it from `bindNativeDeviceMutations`, while
+ * workflow code receives only the smaller `Device` observation facade.
  */
-export type NativeDeviceMutations = Pick<
+type NativeDeviceMutations = Pick<
   NativeDevice,
   "devices" | "apps" | "interactions" | "command" | "settings" | "recording"
 >;
