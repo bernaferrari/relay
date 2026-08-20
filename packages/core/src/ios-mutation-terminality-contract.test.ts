@@ -28,6 +28,7 @@ import {
   setCorpusCrawlRuntimeForTests,
 } from "./corpus.js";
 import { postLoginNotifications } from "./grok.js";
+import { openPhysicalIosApp } from "./ios-app-open.js";
 import { runRecipeStep } from "./recipe-runner.js";
 import { captureScrollableSurvey } from "./scrollable-survey.js";
 import { scanSwitcherPicker } from "./switcher-profiles.js";
@@ -145,6 +146,58 @@ async function cancellationBeforeDispatchTrace(
   } finally {
     clearControl(jobId);
   }
+}
+
+async function appOpenTrace(
+  nativeDispatches: string[],
+  outcome: "unknown" | "completed",
+): Promise<IosMutationTerminalityTrace> {
+  const serial = `terminal-app-open-${outcome}`;
+  const remembered: string[] = [];
+  const open = () =>
+    openPhysicalIosApp(
+      {
+        context: ios(serial),
+        app: "Grok",
+        relaunch: false,
+        rememberApplication: async (app) => {
+          remembered.push(app);
+        },
+      },
+      {
+        resolveBundleId: (app) => {
+          assert.equal(app, "Grok");
+          return "ai.x.GrokApp";
+        },
+        launch: async (launchSerial, bundleId, options) => {
+          nativeDispatches.push("sidecar-app-open");
+          assert.equal(launchSerial, serial);
+          assert.equal(bundleId, "ai.x.GrokApp");
+          assert.deepEqual(options, { relaunch: false });
+          if (outcome === "unknown") {
+            throw new Error("sidecar transport ended after app-open dispatch");
+          }
+          return { bundleId, method: "devicectl" as const };
+        },
+      },
+    );
+
+  if (outcome === "unknown") {
+    try {
+      await runWithTargetContext(ios(serial), open);
+      throw new Error("Expected app-open to retain an unknown sidecar outcome");
+    } catch (error) {
+      assert.ok(error instanceof IosMutationOutcomeUnknownError);
+      assert.equal(error.iosMutation.operation, "app-open");
+      assert.equal(error.iosMutation.nativeAttempts, 1);
+      assert.deepEqual(remembered, []);
+      return { nativeDispatches, status: "terminal", error };
+    }
+  }
+
+  await runWithTargetContext(ios(serial), open);
+  assert.deepEqual(remembered, ["ai.x.GrokApp"]);
+  return { nativeDispatches, status: "handled" };
 }
 
 async function terminalTrace(
@@ -557,6 +610,21 @@ test("registered public recovery boundaries preserve iOS exact-once terminality"
         run: async () => {
           const nativeDispatches: string[] = [];
           return await cancellationBeforeDispatchTrace(nativeDispatches);
+        },
+      },
+    },
+    {
+      id: "core.ios-app-open.sidecar",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        return await appOpenTrace(nativeDispatches, "unknown");
+      },
+      recovery: {
+        expectedStatus: "handled",
+        expectedNativeDispatches: 1,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          return await appOpenTrace(nativeDispatches, "completed");
         },
       },
     },
