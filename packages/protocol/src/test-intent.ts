@@ -275,6 +275,28 @@ export type AppMapCompiledTest = {
    * offline preflight the exact same source geometry that authored this plan;
    * it must never re-read a newer mutable Variant instead. */
   rawAccessibilityTreesByScreenId?: Record<string, RawAccessibilityTreeEvidence[]>;
+  /** A device-free proposed order. It never changes the saved Test or grants
+   * the runtime permission to cross a cleanup, handoff, or unknown-state
+   * boundary; it exists so humans and agents can review a faster route before
+   * execution adopts it. */
+  executionSchedule?: {
+    schemaVersion: 1;
+    mode: "authored" | "review-required";
+    checks: Array<{
+      checkId: string;
+      recipeId: string;
+      authoredIndex: number;
+      proposedIndex: number;
+      sourceScreenId?: string;
+      documentY?: number;
+      disposition: "scheduled" | "fixed";
+      reason?:
+        | "cleanup-boundary"
+        | "external-handoff"
+        | "prerequisite-boundary"
+        | "unknown-document-position";
+    }>;
+  };
   rootRecipeId: string;
   recipes: Record<
     string,

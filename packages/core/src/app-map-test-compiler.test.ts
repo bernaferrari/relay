@@ -6,6 +6,7 @@ import { compileAppMapConnection } from "./app-map-compiler.js";
 import {
   AppMapTestCompileError,
   appMapTestReturnRepairEndpoints,
+  proposeAppMapTestExecutionSchedule,
 } from "./app-map-test-compiler.js";
 
 const at = 1;
@@ -178,6 +179,150 @@ function scenario(): AppMapScenarioTest {
     updatedAt: at,
   };
 }
+
+test("proposes monotonic document order only inside a proven Settings segment", () => {
+  const current = fixture();
+  current.screenVariants.settings = {
+    ...scope,
+    id: "settings",
+    screenId: "home",
+    targetProfile: {
+      id: "android",
+      targetId: "pixel",
+      source: "device",
+      platform: "android",
+      name: "Pixel",
+      capabilities: [],
+      observedAt: at,
+    },
+    evidenceIds: [],
+    scrollSurfaces: [
+      {
+        semanticIndex: {
+          schemaVersion: 1,
+          documentHeight: 1_200,
+          viewportHeight: 500,
+          anchors: [
+            { order: 0, documentY: 800, target: { label: "Later" }, label: "Later" },
+            { order: 1, documentY: 200, target: { label: "Earlier" }, label: "Earlier" },
+          ],
+        },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  } as unknown as AppMap["screenVariants"][string];
+  current.connections.later = {
+    ...current.connections["open-cart"]!,
+    id: "later",
+    navigation: {
+      targetAlternatives: [{ kind: "accessibility", label: "Later" }],
+      expectedDestination: {
+        screenId: "cart",
+        identity: screen("cart").identity!,
+        evidenceIds: [],
+      },
+    },
+  };
+  current.connections.earlier = {
+    ...current.connections["open-cart"]!,
+    id: "earlier",
+    navigation: {
+      targetAlternatives: [{ kind: "accessibility", label: "Earlier" }],
+      expectedDestination: {
+        screenId: "cart",
+        identity: screen("cart").identity!,
+        evidenceIds: [],
+      },
+    },
+  };
+  const graph = {
+    root: {
+      id: "root",
+      title: "Root",
+      source: "custom",
+      createdAt: at,
+      updatedAt: at,
+      steps: [
+        {
+          kind: "module",
+          recipeId: "later",
+          check: {
+            id: "later",
+            title: "Later",
+            warmSourceScreenId: "home",
+            transitionDependencies: [
+              {
+                connectionId: "later",
+                originScreenId: "home",
+                destination: { kind: "screen", screenId: "cart" },
+              },
+            ],
+          },
+        },
+        {
+          kind: "module",
+          recipeId: "earlier",
+          check: {
+            id: "earlier",
+            title: "Earlier",
+            warmSourceScreenId: "home",
+            transitionDependencies: [
+              {
+                connectionId: "earlier",
+                originScreenId: "home",
+                destination: { kind: "screen", screenId: "cart" },
+              },
+            ],
+          },
+        },
+        {
+          kind: "module",
+          recipeId: "cleanup",
+          check: {
+            id: "cleanup",
+            title: "Cleanup boundary",
+            warmSourceScreenId: "home",
+            cleanup: { recipeId: "cleanup-routine", terminalScreenId: "home", onCancel: "skip" },
+          },
+        },
+      ],
+    },
+  } as unknown as Record<string, import("./recipes.js").Recipe>;
+  assert.deepEqual(proposeAppMapTestExecutionSchedule(current, "root", graph), {
+    schemaVersion: 1,
+    mode: "review-required",
+    checks: [
+      {
+        checkId: "earlier",
+        recipeId: "earlier",
+        authoredIndex: 1,
+        proposedIndex: 0,
+        sourceScreenId: "home",
+        documentY: 200,
+        disposition: "scheduled",
+      },
+      {
+        checkId: "later",
+        recipeId: "later",
+        authoredIndex: 0,
+        proposedIndex: 1,
+        sourceScreenId: "home",
+        documentY: 800,
+        disposition: "scheduled",
+      },
+      {
+        checkId: "cleanup",
+        recipeId: "cleanup",
+        authoredIndex: 2,
+        proposedIndex: 2,
+        sourceScreenId: "home",
+        disposition: "fixed",
+        reason: "cleanup-boundary",
+      },
+    ],
+  });
+});
 
 test("same-screen return checkpoints are benign preflight markers", () => {
   assert.equal(
