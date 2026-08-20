@@ -1,0 +1,556 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, test } from "node:test";
+import {
+  defineIosMutationTerminalityRegistry,
+  verifyIosMutationTerminalityRegistry,
+  type IosMutationTerminalityTrace,
+} from "@relay/protocol";
+import {
+  IosMutationOutcomeUnknownError,
+  pressMatchingText,
+  pressNamedControl,
+  resetDeviceClients,
+  type Device,
+  type SnapshotNode,
+} from "./device.js";
+import { setLocalDeviceProvider } from "./device-factory.js";
+import { captureFullSurfaceEvidence } from "./discovery-surface.js";
+import { dismissTowardParent } from "./explore.js";
+import {
+  corpusCrawlLoopsForTests,
+  createCorpusSession,
+  recordCorpusScreen,
+  resetCorpusCrawlsForTests,
+  setCorpusCrawlRuntimeForTests,
+} from "./corpus.js";
+import { runRecipeStep } from "./recipe-runner.js";
+import { captureScrollableSurvey } from "./scrollable-survey.js";
+import { scanSwitcherPicker } from "./switcher-profiles.js";
+import { runWithTargetContext } from "./target-context.js";
+
+const ios = (serial: string) => ({ kind: "device" as const, platform: "ios" as const, serial });
+const roots: string[] = [];
+
+afterEach(async () => {
+  setLocalDeviceProvider(undefined);
+  resetDeviceClients();
+  resetCorpusCrawlsForTests();
+  delete process.env.RELAY_WORKSPACE_ROOT;
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+function unknownIosMutation(operation: "press" | "scroll" = "press") {
+  return new IosMutationOutcomeUnknownError(
+    {
+      sequence: 1,
+      operation,
+      nativeAttempts: 1,
+      outcome: "outcome-unknown",
+      retry: {
+        attempts: 0,
+        decision: "blocked",
+        reason: "native-command-outcome-unknown",
+      },
+      intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+      at: 1,
+    },
+    new Error("lost native acknowledgement"),
+  );
+}
+
+async function terminalTrace(
+  nativeDispatches: string[],
+  run: () => Promise<unknown>,
+): Promise<IosMutationTerminalityTrace> {
+  try {
+    await run();
+    return { nativeDispatches, status: "handled" };
+  } catch (error) {
+    return { nativeDispatches, status: "terminal", error };
+  }
+}
+
+async function ordinaryTrace(
+  nativeDispatches: string[],
+  status: "recovered" | "handled",
+  run: () => Promise<unknown>,
+): Promise<IosMutationTerminalityTrace> {
+  try {
+    await run();
+    return { nativeDispatches, status };
+  } catch (error) {
+    return { nativeDispatches, status, error };
+  }
+}
+
+async function withoutConsoleError<T>(run: () => Promise<T>): Promise<T> {
+  const previous = console.error;
+  console.error = () => undefined;
+  try {
+    return await run();
+  } finally {
+    console.error = previous;
+  }
+}
+
+function button(label: string): SnapshotNode {
+  return {
+    type: "Button",
+    role: "button",
+    label,
+    enabled: true,
+    hittable: true,
+    visibleToUser: true,
+    rect: { x: 20, y: 80, width: 240, height: 44 },
+  };
+}
+
+function selectorDevice(
+  nativeDispatches: string[],
+  label: string,
+  outcome: "unknown" | "selector-miss",
+): Device {
+  return {
+    capture: { snapshot: async () => ({ nodes: [button(label)] }) },
+    interactions: {
+      press: async (input: { selector?: string; x?: number; y?: number }) => {
+        nativeDispatches.push(input.selector ? "semantic-press" : "point-press");
+        if (input.selector) {
+          throw new Error(
+            outcome === "unknown" ? "XCTest transport ended" : "Selector did not match an element",
+          );
+        }
+      },
+      // `pressMatchingText` asks whether an older text finder is available
+      // before using the current snapshot point. A known miss is safe.
+      find: async () => {
+        throw new Error("element not found");
+      },
+    },
+  } as unknown as Device;
+}
+
+function exploreDismissDevice(
+  nativeDispatches: string[],
+  outcome: "unknown" | "selector-miss",
+): Device {
+  return {
+    capture: { snapshot: async () => ({ nodes: [button("Back")] }) },
+    interactions: {
+      find: async (input: { query?: string; action?: string }) => {
+        if (input.action === "exists" && input.query === "Back") return {};
+        if (input.action === "click") {
+          nativeDispatches.push("find-click");
+          return {};
+        }
+        throw new Error("element not found");
+      },
+      press: async (input: { selector?: string }) => {
+        nativeDispatches.push(input.selector ? "semantic-back" : "point-back");
+        if (input.selector) {
+          throw new Error(
+            outcome === "unknown" ? "XCTest transport ended" : "Selector did not match an element",
+          );
+        }
+      },
+    },
+    command: {
+      back: async () => {
+        nativeDispatches.push("key-back");
+      },
+      wait: async () => undefined,
+    },
+  } as unknown as Device;
+}
+
+function surveyCapture() {
+  return {
+    screenshot: { base64: "AA==", width: 64, height: 160, capturedAt: 1 },
+    snapshot: {
+      capturedAt: 1,
+      nodes: [
+        {
+          identifier: "settings-root",
+          type: "NavigationBar",
+          visibleToUser: true,
+          rect: { x: 0, y: 0, width: 64, height: 20 },
+        },
+      ],
+      interactive: [],
+      bounds: { width: 64, height: 160 },
+      inspectable: true,
+      source: "sdk" as const,
+      screenIdentity: { fingerprint: "settings", nodes: [], volatileSignals: [] },
+    },
+  };
+}
+
+function switcherPickerNodes(): SnapshotNode[] {
+  return [
+    {
+      index: 0,
+      depth: 0,
+      type: "Application",
+      label: "Settings",
+      rect: { x: 0, y: 0, width: 390, height: 844 },
+    },
+    button("English"),
+    button("Italiano"),
+    button("Português (Brasil)"),
+  ];
+}
+
+function switcherDevice(
+  nativeDispatches: string[],
+  outcome: "unknown" | "selector-miss",
+): Device {
+  return {
+    capture: { snapshot: async () => ({ nodes: structuredClone(switcherPickerNodes()) }) },
+    interactions: {
+      press: async () => {
+        nativeDispatches.push("entry-selector");
+        throw new Error(
+          outcome === "unknown" ? "XCTest transport ended" : "Selector did not match an element",
+        );
+      },
+      scroll: async () => {
+        nativeDispatches.push("picker-scroll");
+      },
+      pan: async () => {
+        nativeDispatches.push("picker-swipe");
+      },
+    },
+    command: { wait: async () => undefined },
+  } as unknown as Device;
+}
+
+async function runSwitcherSurface(
+  nativeDispatches: string[],
+  outcome: "unknown" | "selector-miss",
+): Promise<void> {
+  setLocalDeviceProvider({ kind: "device", create: () => switcherDevice(nativeDispatches, outcome) });
+  try {
+    await scanSwitcherPicker({
+      serial: `switcher-${outcome}`,
+      app: "com.example.switcher",
+      kind: "language",
+      platform: "ios",
+      openApp: false,
+      save: false,
+      maxScrolls: 1,
+      // Identifier-only chrome is intentionally soft: a proven selector miss
+      // lets the already-open picker continue to scan.
+      entryPath: [{ kind: "tap", target: { identifier: "optional.chrome" } }],
+      pickerPath: [{ kind: "wait", ms: 0 }],
+    });
+  } finally {
+    setLocalDeviceProvider(undefined);
+    resetDeviceClients();
+  }
+}
+
+const corpusNodes: SnapshotNode[] = [
+  {
+    index: 0,
+    type: "StaticText",
+    role: "header",
+    label: "Settings",
+    identifier: "settings.title",
+    visibleToUser: true,
+    hittable: false,
+  },
+  {
+    index: 1,
+    type: "Button",
+    role: "button",
+    label: "First row",
+    identifier: "settings.first",
+    visibleToUser: true,
+    hittable: true,
+  },
+];
+
+async function corpusWorkspace(): Promise<void> {
+  const root = await mkdtemp(join(tmpdir(), "relay-terminality-corpus-"));
+  roots.push(root);
+  process.env.RELAY_WORKSPACE_ROOT = root;
+}
+
+async function captureCorpusRoot(input: {
+  sessionId: string;
+  locale: string;
+  depth: number;
+  path: string[];
+  pathKeys: string[];
+}) {
+  return await recordCorpusScreen({
+    sessionId: input.sessionId,
+    nodes: corpusNodes,
+    locale: input.locale,
+    depth: input.depth,
+    path: input.path,
+    pathKeys: input.pathKeys,
+    makeCurrent: true,
+  });
+}
+
+async function runCorpusCrawlSurface(
+  nativeDispatches: string[],
+  outcome: "unknown" | "ordinary",
+): Promise<void> {
+  await corpusWorkspace();
+  const session = await createCorpusSession({
+    name: `Terminality ${outcome}`,
+    targetId: `ios-corpus-${outcome}`,
+    scope: { locales: ["en"], maxDepth: 1 },
+  });
+  setCorpusCrawlRuntimeForTests({
+    captureCurrent: captureCorpusRoot,
+    collectControlsWithScroll: async () => ({ nodes: corpusNodes, controls: [] }),
+    interactCorpusControl: async ({ control }) => {
+      nativeDispatches.push(control.label);
+      if (outcome === "unknown") throw unknownIosMutation("press");
+      throw new Error("row is no longer present");
+    },
+    backtrack: async () => {
+      nativeDispatches.push("backtrack");
+    },
+  });
+  await corpusCrawlLoopsForTests.crawlLocale({
+    session,
+    locale: "en",
+    serial: `ios-corpus-${outcome}`,
+    device: {} as Device,
+    recordPlan: [],
+  });
+}
+
+test("registered public recovery boundaries preserve iOS exact-once terminality", async () => {
+  const registry = defineIosMutationTerminalityRegistry([
+    {
+      id: "core.device.press-named-control",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        return await terminalTrace(nativeDispatches, () =>
+          runWithTargetContext(ios("terminal-named"), () =>
+            pressNamedControl(selectorDevice(nativeDispatches, "Settings", "unknown"), {
+              label: "Settings",
+            }),
+          ),
+        );
+      },
+      recovery: {
+        expectedStatus: "recovered",
+        expectedNativeDispatches: 2,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          return await ordinaryTrace(nativeDispatches, "recovered", () =>
+            runWithTargetContext(ios("recovery-named"), () =>
+              pressNamedControl(selectorDevice(nativeDispatches, "Settings", "selector-miss"), {
+                label: "Settings",
+              }),
+            ),
+          );
+        },
+      },
+    },
+    {
+      id: "core.device.press-matching-text",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        return await terminalTrace(nativeDispatches, () =>
+          runWithTargetContext(ios("terminal-text"), () =>
+            pressMatchingText(selectorDevice(nativeDispatches, "Settings", "unknown"), "Settings"),
+          ),
+        );
+      },
+      recovery: {
+        expectedStatus: "recovered",
+        expectedNativeDispatches: 2,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          return await ordinaryTrace(nativeDispatches, "recovered", () =>
+            runWithTargetContext(ios("recovery-text"), () =>
+              pressMatchingText(
+                selectorDevice(nativeDispatches, "Settings", "selector-miss"),
+                "Settings",
+              ),
+            ),
+          );
+        },
+      },
+    },
+    {
+      id: "core.recipe.optional-step",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        return await terminalTrace(nativeDispatches, () =>
+          runWithTargetContext(ios("terminal-recipe"), () =>
+            runRecipeStep(
+              selectorDevice(nativeDispatches, "Continue", "unknown"),
+              { kind: "tap", target: { label: "Continue" }, optional: true },
+              { log: () => undefined, job: { artifacts: [] } as never },
+            ),
+          ),
+        );
+      },
+      recovery: {
+        expectedStatus: "recovered",
+        expectedNativeDispatches: 2,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          return await ordinaryTrace(nativeDispatches, "recovered", () =>
+            runWithTargetContext(ios("recovery-recipe"), () =>
+              runRecipeStep(
+                selectorDevice(nativeDispatches, "Continue", "selector-miss"),
+                { kind: "tap", target: { label: "Continue" }, optional: true },
+                { log: () => undefined, job: { artifacts: [] } as never },
+              ),
+            ),
+          );
+        },
+      },
+    },
+    {
+      id: "core.explore.dismiss",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        return await terminalTrace(nativeDispatches, () =>
+          dismissTowardParent({
+            serial: "terminal-explore-dismiss",
+            platform: "ios",
+            device: exploreDismissDevice(nativeDispatches, "unknown"),
+          }),
+        );
+      },
+      recovery: {
+        expectedStatus: "recovered",
+        expectedNativeDispatches: 2,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          return await ordinaryTrace(nativeDispatches, "recovered", () =>
+            dismissTowardParent({
+              serial: "recovery-explore-dismiss",
+              platform: "ios",
+              device: exploreDismissDevice(nativeDispatches, "selector-miss"),
+            }),
+          );
+        },
+      },
+    },
+    {
+      id: "core.scrollable-survey.capture",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        return await terminalTrace(nativeDispatches, () =>
+          captureScrollableSurvey({
+            capture: async () => surveyCapture(),
+            scrollDown: async () => {
+              nativeDispatches.push("scroll-down");
+              throw unknownIosMutation("scroll");
+            },
+            scrollUp: async () => {
+              nativeDispatches.push("inverse-scroll");
+            },
+            settle: async () => undefined,
+          }),
+        );
+      },
+      recovery: {
+        expectedStatus: "handled",
+        expectedNativeDispatches: 1,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          return await ordinaryTrace(nativeDispatches, "handled", () =>
+            captureScrollableSurvey({
+              capture: async () => surveyCapture(),
+              scrollDown: async () => {
+                nativeDispatches.push("scroll-down");
+                throw new Error("scroll unavailable");
+              },
+              scrollUp: async () => {
+                nativeDispatches.push("inverse-scroll");
+              },
+              settle: async () => undefined,
+            }),
+          );
+        },
+      },
+    },
+    {
+      id: "core.discovery.full-surface",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        return await terminalTrace(nativeDispatches, () =>
+          captureFullSurfaceEvidence("terminal-full-surface", "Settings", [], {
+            captureSurvey: async () => {
+              nativeDispatches.push("scroll-survey");
+              throw unknownIosMutation("scroll");
+            },
+          }),
+        );
+      },
+      recovery: {
+        expectedStatus: "handled",
+        expectedNativeDispatches: 1,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          return await withoutConsoleError(() =>
+            ordinaryTrace(nativeDispatches, "handled", () =>
+              captureFullSurfaceEvidence("recovery-full-surface", "Settings", [], {
+                captureSurvey: async () => {
+                  nativeDispatches.push("scroll-survey");
+                  throw new Error("surface unavailable");
+                },
+              }),
+            ),
+          );
+        },
+      },
+    },
+    {
+      id: "core.switcher.scan-picker",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        return await terminalTrace(nativeDispatches, () =>
+          runSwitcherSurface(nativeDispatches, "unknown"),
+        );
+      },
+      recovery: {
+        expectedStatus: "recovered",
+        expectedNativeDispatches: 2,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          return await ordinaryTrace(nativeDispatches, "recovered", () =>
+            runSwitcherSurface(nativeDispatches, "selector-miss"),
+          );
+        },
+      },
+    },
+    {
+      id: "core.corpus.crawl",
+      unknown: async () => {
+        const nativeDispatches: string[] = [];
+        return await terminalTrace(nativeDispatches, () =>
+          runCorpusCrawlSurface(nativeDispatches, "unknown"),
+        );
+      },
+      recovery: {
+        expectedStatus: "handled",
+        expectedNativeDispatches: 1,
+        run: async () => {
+          const nativeDispatches: string[] = [];
+          return await ordinaryTrace(nativeDispatches, "handled", () =>
+            runCorpusCrawlSurface(nativeDispatches, "ordinary"),
+          );
+        },
+      },
+    },
+  ]);
+
+  await verifyIosMutationTerminalityRegistry(registry, {
+    isOutcomeUnknown: (error) => error instanceof IosMutationOutcomeUnknownError,
+  });
+});

@@ -117,7 +117,9 @@ export async function verifyIosMutationTerminalityRegistry(
       );
     }
     if (recovery.error !== undefined) {
-      throw new Error(`${surface.id}: ordinary recovery unexpectedly retained an error`);
+      const message =
+        recovery.error instanceof Error ? recovery.error.message : String(recovery.error);
+      throw new Error(`${surface.id}: ordinary recovery unexpectedly retained an error: ${message}`);
     }
     if (recovery.nativeDispatches.length !== surface.recovery.expectedNativeDispatches) {
       throw new Error(
