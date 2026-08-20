@@ -168,31 +168,41 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
       ) : null}
       {props.startup ? (
         canChooseStartup() ? (
-          <label
-            class="flex min-h-11 min-w-0 items-center gap-1 rounded-md border border-border-weak-base bg-surface-base px-2 text-caption text-text-base"
-            title={startupCopy().detail}
-          >
-            <span class="text-text-weak">Start</span>
-            <select
-              aria-label="Test startup policy"
-              data-test-startup-policy
-              class="min-w-0 max-w-40 cursor-pointer bg-transparent text-caption font-medium text-text-base outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
-              value={startupValue()}
-              disabled={busy() || active() || finished() || props.checkingOffline}
-              onChange={selectStartup}
+          <div class="flex min-w-0 max-w-[36rem] flex-wrap items-center gap-x-2 gap-y-0.5">
+            <label
+              class="flex min-h-11 min-w-0 items-center gap-1 rounded-md border border-border-weak-base bg-surface-base px-2 text-caption text-text-base"
+              title={startupCopy().detail}
             >
-              <option value="cold">Cold baseline</option>
-              <optgroup label="Verified checkpoint">
-                <For each={checkpointOptions()}>
-                  {(option) => (
-                    <option value={`checkpoint:${option.screenId}`}>
-                      Verified · {option.label}
-                    </option>
-                  )}
-                </For>
-              </optgroup>
-            </select>
-          </label>
+              <span class="text-text-weak">Start</span>
+              <select
+                aria-label="Test startup policy"
+                data-test-startup-policy
+                class="min-w-0 max-w-40 cursor-pointer bg-transparent text-caption font-medium text-text-base outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+                value={startupValue()}
+                disabled={busy() || active() || finished() || props.checkingOffline}
+                onChange={selectStartup}
+              >
+                <option value="cold">Cold baseline</option>
+                <optgroup label="Verified checkpoint">
+                  <For each={checkpointOptions()}>
+                    {(option) => (
+                      <option value={`checkpoint:${option.screenId}`}>
+                        Verified · {option.label}
+                      </option>
+                    )}
+                  </For>
+                </optgroup>
+              </select>
+            </label>
+            <span
+              data-test-startup-policy-detail
+              class="max-w-[42ch] text-caption/[1.3] text-text-weak"
+            >
+              {startup().mode === "verified-checkpoint"
+                ? "Mismatch stops for review. Relay never falls back to a cold relaunch."
+                : "Cold baseline runs the saved beginning. A new run must choose this policy again."}
+            </span>
+          </div>
         ) : (
           <span
             data-test-startup-policy

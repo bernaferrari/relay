@@ -944,6 +944,9 @@ test("a verified checkpoint is compiled offline and sent unchanged to the exact 
     { appMapId: "checkout", testId: "settings-warm", entryCheckpointScreenId: "settings" },
   ]);
   expect(root.textContent).toContain("Verified checkpoint · Settings");
+  expect(root.textContent).toContain(
+    "Mismatch stops for review. Relay never falls back to a cold relaunch.",
+  );
 
   [...root.querySelectorAll<HTMLButtonElement>("button")]
     .find((button) => button.textContent?.includes("Run test"))!

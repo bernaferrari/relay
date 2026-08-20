@@ -58,6 +58,85 @@ test("offline preflight blocks absent selectors but keeps flattened-tree ambigui
   );
 });
 
+test("offline preflight rejects invented Cloud filter copy unless a typed locator explains it", () => {
+  const cloud = {
+    fingerprint: "cloud",
+    nodes: [
+      { role: "textview", label: "Cloud Storage" },
+      { role: "view", label: "Filter and sort" },
+    ],
+    volatileSignals: [],
+  };
+  const invented = preflightCompiledAppMapTestOffline(
+    plan([
+      {
+        kind: "expect-screen",
+        screenId: "cloud",
+        screenTitle: "Cloud Storage",
+        fingerprint: "cloud",
+        observations: [cloud],
+      },
+      { kind: "tap", id: "open-filter-cloud-storage", target: { label: "Filter cloud storage" } },
+    ]),
+  );
+  assert.deepEqual(
+    invented.findings.map((finding) => finding.code),
+    ["selector-absent"],
+  );
+  const proven = preflightCompiledAppMapTestOffline(
+    plan([
+      {
+        kind: "expect-screen",
+        screenId: "cloud",
+        screenTitle: "Cloud Storage",
+        fingerprint: "cloud",
+        observations: [cloud],
+      },
+      { kind: "tap", id: "open-filter-cloud-storage", target: { label: "filter and sort" } },
+    ]),
+  );
+  assert.deepEqual(proven.findings, []);
+});
+
+test("offline preflight keeps Birth Year independent of the stored user year", () => {
+  const inventedYear = preflightCompiledAppMapTestOffline(
+    plan([
+      {
+        kind: "expect-screen",
+        screenId: "profile",
+        screenTitle: "Edit profile",
+        fingerprint: "profile",
+        observations: [observation],
+      },
+      { kind: "tap", id: "open-birth-year", target: { label: "1994" } },
+    ]),
+  );
+  assert.deepEqual(
+    inventedYear.findings.map((finding) => finding.code),
+    ["selector-absent"],
+  );
+  const heading = preflightCompiledAppMapTestOffline(
+    plan([
+      {
+        kind: "expect-screen",
+        screenId: "profile",
+        screenTitle: "Edit profile",
+        fingerprint: "profile",
+        observations: [observation],
+      },
+      {
+        kind: "tap",
+        id: "open-birth-year",
+        target: { relation: { kind: "following-row", anchor: { label: "Birth Year" } } },
+      },
+    ]),
+  );
+  assert.deepEqual(
+    heading.findings.map((finding) => finding.code),
+    ["selector-needs-raw-tree"],
+  );
+});
+
 test("offline preflight follows the runtime identifier-to-label fallback", () => {
   const report = preflightCompiledAppMapTestOffline(
     plan([

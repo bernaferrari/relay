@@ -73,11 +73,10 @@ export function AppMapCombine(props: {
   let initializedFor = "";
 
   const map = createMemo(() => server.selectedAppMap());
+  const selectedDevice = () =>
+    server.devices().find((device) => device.serial === server.selectedDevice());
   const canRunOnDevice = createMemo(() =>
-    targetIsReady(
-      server.devices().find((device) => device.serial === server.selectedDevice()),
-      server.health() === "online",
-    ),
+    targetIsReady(selectedDevice(), server.health() === "online"),
   );
   const variables = createMemo(() => Object.values(map()?.variables ?? {}));
   const candidates = createMemo((): TestCandidate[] => {
@@ -492,7 +491,9 @@ export function AppMapCombine(props: {
           cellRuntimeProfiles: cellRuntimeProfiles().filter(
             (binding) =>
               binding.testId === testId &&
-              selectedVariables().every((variable) => binding.values[variable.id] === values[variable.id]),
+              selectedVariables().every(
+                (variable) => binding.values[variable.id] === values[variable.id],
+              ),
           ),
         });
       } else {
@@ -612,6 +613,7 @@ export function AppMapCombine(props: {
               onRunCell={(worldIndex, test) => void runCombine({ worldIndex, test })}
               cellRuntimeProfiles={cellRuntimeProfiles()}
               runtimeProfiles={mapRuntimeProfileOptions(map() ?? undefined)}
+              device={selectedDevice()}
               onBindCell={(testId, values, targetProfileId) =>
                 setCellRuntimeProfiles((current) =>
                   upsertCellRuntimeProfile(current, { testId, values, targetProfileId }),

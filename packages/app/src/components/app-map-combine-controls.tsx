@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Show, createSignal } from "solid-js";
 import type {
   AppMapCapturePolicy,
   AppMapCombineCellRuntimeProfile,
@@ -7,11 +7,13 @@ import type {
 } from "@relay/protocol";
 import { bindingForCell } from "../lib/app-map-combine-profiles";
 import type { CombineRuntimeProfileOption } from "../lib/app-map-combine-profiles";
+import { nextGridRovingIndex } from "../lib/roving-focus";
 import { Button } from "@relay/ui/button";
 import type { TestCandidate } from "../lib/app-map-combine-candidates";
 import type { CombineProjection } from "../lib/app-map-combine-presentation";
 import { cn } from "../lib/cn";
 import { copyDescription, copyStack, copyTitle } from "../lib/ui";
+import { AppMapCombineProfilePicker } from "./app-map-combine-profile-picker";
 import { AppMapMatrixValuePicker } from "./app-map-matrix-value-picker";
 import { Icon } from "./icon";
 
@@ -144,6 +146,7 @@ export function AppMapCombinePlan(props: {
   canRunOnDevice: boolean;
   cellRuntimeProfiles: AppMapCombineCellRuntimeProfile[];
   runtimeProfiles: CombineRuntimeProfileOption[];
+  device?: { serial?: string; platform?: string };
   onBindCell: (testId: string, values: Record<string, string>, targetProfileId: string) => void;
   onCreateVariable: () => void;
   onEditVariable: (id: string) => void;
@@ -373,7 +376,8 @@ export function AppMapCombinePlan(props: {
                 Run plan
               </h3>
               <p class={cn(copyDescription, "m-0 text-micro")}>
-                Rows are Variable combinations. Columns are reusable Tests.
+                Rows are Variable combinations. Columns are reusable Tests. Arrow keys move between
+                cells; a suggestion is never bound until you choose it.
               </p>
             </div>
             <span class="shrink-0 text-micro tabular-nums text-[var(--text-weak)]">
@@ -391,103 +395,138 @@ export function AppMapCombinePlan(props: {
               </p>
             }
           >
-            <div
-              class="max-h-72 overflow-auto overscroll-contain rounded-xl border border-[var(--border-weak-base)]"
-              onWheel={(event) => event.stopPropagation()}
-            >
-              <table class="w-full min-w-[360px] border-collapse text-left">
-                <thead class="sticky top-0 z-[2] bg-[var(--surface-raised-stronger-non-alpha)]">
-                  <tr class="border-b border-[var(--border-weak-base)]">
-                    <th class="sticky left-0 z-[3] min-w-40 bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-micro font-medium text-[var(--text-weak)]">
-                      Variables
-                    </th>
-                    <For each={props.selectedTests}>
-                      {(test) => (
-                        <th class="min-w-28 px-2 py-2 text-micro font-medium text-[var(--text-weak)]">
-                          {test.name}
-                        </th>
-                      )}
-                    </For>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={props.projection.worlds}>
-                    {(world, worldIndex) => (
-                      <tr class="border-b border-[var(--border-weak-base)] last:border-b-0">
-                        <th class="sticky left-0 z-[1] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-micro font-medium text-[var(--text-strong)]">
-                          {world.label}
-                        </th>
-                        <For each={props.selectedTests}>
-                          {(test) => {
-                            const values = Object.fromEntries(
-                              Object.entries(world.values).map(([id, value]) => [id, value.id]),
-                            );
-                            const binding = bindingForCell(
-                              props.cellRuntimeProfiles,
-                              test.id,
-                              values,
-                            );
-                            const profile = props.runtimeProfiles.find(
-                              (item) => item.id === binding?.targetProfileId,
-                            );
-                            const status = binding
-                              ? `Bound to ${profile?.name ?? binding.targetProfileId}`
-                              : "No runtime profile";
-                            return (
-                              <td class="px-1.5 py-1">
-                                <div class="grid gap-1">
-                                  <label class="grid gap-0.5">
-                                    <span class="text-micro text-[var(--text-weak)]">{status}</span>
-                                    <select
-                                      class="h-8 rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-1.5 text-micro text-[var(--text-base)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
-                                      value={binding?.targetProfileId ?? ""}
-                                      aria-label={`Runtime profile for ${test.name} in ${world.label}`}
-                                      disabled={props.busy || !props.runtimeProfiles.length}
-                                      onChange={(event) =>
-                                        props.onBindCell(test.id, values, event.currentTarget.value)
-                                      }
-                                    >
-                                      <option value="">Choose profile</option>
-                                      <For each={props.runtimeProfiles}>
-                                        {(item) => (
-                                          <option value={item.id}>
-                                            {item.name} · {item.platform}
-                                          </option>
-                                        )}
-                                      </For>
-                                    </select>
-                                  </label>
-                                  <button
-                                    type="button"
-                                    class="grid min-h-9 w-full place-items-center rounded-lg text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)] disabled:text-[var(--text-weaker)]"
-                                    data-tip={
-                                      !binding
-                                        ? "Bind a runtime profile before running this cell"
-                                        : props.canRunOnDevice
-                                          ? undefined
-                                          : "Connect a ready device to run this check"
-                                    }
-                                    disabled={props.busy || !props.canRunOnDevice || !binding}
-                                    aria-label={`Run ${test.name} in ${world.label}. ${status}.`}
-                                    onClick={() => props.onRunCell(worldIndex(), test)}
-                                  >
-                                    <Icon name="play" size={11} />
-                                  </button>
-                                </div>
-                              </td>
-                            );
-                          }}
-                        </For>
-                      </tr>
-                    )}
-                  </For>
-                </tbody>
-              </table>
-            </div>
+            <CombinePlanGrid
+              worlds={props.projection.worlds}
+              tests={props.selectedTests}
+              cellRuntimeProfiles={props.cellRuntimeProfiles}
+              runtimeProfiles={props.runtimeProfiles}
+              device={props.device}
+              busy={props.busy}
+              canRunOnDevice={props.canRunOnDevice}
+              onBindCell={props.onBindCell}
+              onRunCell={props.onRunCell}
+            />
           </Show>
         </section>
       </Show>
     </>
+  );
+}
+
+function CombinePlanGrid(props: {
+  worlds: CombineProjection["worlds"];
+  tests: TestCandidate[];
+  cellRuntimeProfiles: AppMapCombineCellRuntimeProfile[];
+  runtimeProfiles: CombineRuntimeProfileOption[];
+  device?: { serial?: string; platform?: string };
+  busy: boolean;
+  canRunOnDevice: boolean;
+  onBindCell: (testId: string, values: Record<string, string>, targetProfileId: string) => void;
+  onRunCell: (worldIndex: number, test: TestCandidate) => void;
+}) {
+  const [focusIndex, setFocusIndex] = createSignal(0);
+  const columns = () => Math.max(1, props.tests.length);
+  const cellCount = () => props.worlds.length * columns();
+
+  function focusCell(index: number): void {
+    const next = Math.max(0, Math.min(cellCount() - 1, index));
+    setFocusIndex(next);
+    const triggers = document.querySelectorAll<HTMLButtonElement>("[data-combine-profile-trigger]");
+    triggers[next]?.focus();
+  }
+
+  return (
+    <div
+      class="max-h-72 overflow-auto overscroll-contain rounded-xl border border-[var(--border-weak-base)]"
+      onWheel={(event) => event.stopPropagation()}
+    >
+      <table class="w-full min-w-[360px] border-collapse text-left">
+        <thead class="sticky top-0 z-[2] bg-[var(--surface-raised-stronger-non-alpha)]">
+          <tr class="border-b border-[var(--border-weak-base)]">
+            <th class="sticky left-0 z-[3] min-w-40 bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-micro font-medium text-[var(--text-weak)]">
+              Variables
+            </th>
+            <For each={props.tests}>
+              {(test) => (
+                <th class="min-w-36 px-2 py-2 text-micro font-medium text-[var(--text-weak)]">
+                  {test.name}
+                </th>
+              )}
+            </For>
+          </tr>
+        </thead>
+        <tbody>
+          <For each={props.worlds}>
+            {(world, worldIndex) => (
+              <tr class="border-b border-[var(--border-weak-base)] last:border-b-0">
+                <th class="sticky left-0 z-[1] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-micro font-medium text-[var(--text-strong)]">
+                  {world.label}
+                </th>
+                <For each={props.tests}>
+                  {(test, testIndex) => {
+                    const values = Object.fromEntries(
+                      Object.entries(world.values).map(([id, value]) => [id, value.id]),
+                    );
+                    const binding = () =>
+                      bindingForCell(props.cellRuntimeProfiles, test.id, values);
+                    const cellIndex = () => worldIndex() * columns() + testIndex();
+                    const status = binding()
+                      ? `Bound to ${binding()!.targetProfileId}`
+                      : "Missing profile";
+                    return (
+                      <td class="px-1.5 py-1">
+                        <div class="grid gap-1">
+                          <AppMapCombineProfilePicker
+                            testName={test.name}
+                            worldLabel={world.label}
+                            values={values}
+                            profiles={props.runtimeProfiles}
+                            binding={binding()}
+                            device={props.device}
+                            busy={props.busy}
+                            tabIndex={cellIndex() === focusIndex() ? 0 : -1}
+                            onBind={(targetProfileId) =>
+                              props.onBindCell(test.id, values, targetProfileId)
+                            }
+                            onGridKeyDown={(event) => {
+                              const next = nextGridRovingIndex(
+                                event.key,
+                                cellIndex(),
+                                columns(),
+                                cellCount(),
+                              );
+                              if (next === null || next === cellIndex()) return;
+                              event.preventDefault();
+                              focusCell(next);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            class="grid min-h-9 w-full place-items-center rounded-lg text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)] disabled:text-[var(--text-weaker)]"
+                            data-tip={
+                              !binding()
+                                ? "Bind a runtime profile before running this cell"
+                                : props.canRunOnDevice
+                                  ? undefined
+                                  : "Connect a ready device to run this check"
+                            }
+                            disabled={props.busy || !props.canRunOnDevice || !binding()}
+                            aria-label={`Run ${test.name} in ${world.label}. ${status}.`}
+                            onClick={() => props.onRunCell(worldIndex(), test)}
+                          >
+                            <Icon name="play" size={11} />
+                          </button>
+                        </div>
+                      </td>
+                    );
+                  }}
+                </For>
+              </tr>
+            )}
+          </For>
+        </tbody>
+      </table>
+    </div>
   );
 }
 

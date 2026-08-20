@@ -1,5 +1,6 @@
 import { Show, Suspense, lazy } from "solid-js";
 import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
+import { FirstOperatorRunCard, useFirstOperatorRun } from "./first-operator-run";
 import { FirstTestChecklist, useFirstTestOnboarding } from "./first-test-onboarding";
 import type { MapCanvasView, MapMode } from "./map-mode-switch";
 import { WorkspaceSkeleton } from "./workspace-skeleton";
@@ -37,6 +38,13 @@ export function StudioAuthoringWorkspace(props: {
     onOpenRun: props.onOpenRun,
     onExportYaml: props.onExportYaml,
   });
+  const operatorRun = useFirstOperatorRun({
+    firstTestVisible: () => onboarding.visible(),
+    onOpenTargets: props.onOpenTargets,
+    onShowLiveDevice: () => window.dispatchEvent(new CustomEvent("relay:open-device-panel")),
+    onOpenCombine: (combineId) => props.onOpenCombine(combineId),
+    onOpenTest: () => props.onMode("test"),
+  });
 
   return (
     <div class="relative flex min-h-0 min-w-0 flex-1">
@@ -66,7 +74,21 @@ export function StudioAuthoringWorkspace(props: {
           <FirstTestChecklist {...onboarding.checklistProps()} />
         </aside>
       </Show>
-      <Show when={onboarding.canReopen()}>
+      <Show when={operatorRun.visible()}>
+        <aside class="absolute bottom-4 left-4 z-30 max-h-[calc(100%-2rem)] max-w-[calc(100%-2rem)] overflow-y-auto max-[760px]:right-2 max-[760px]:bottom-2 max-[760px]:left-2 max-[760px]:max-w-none">
+          <FirstOperatorRunCard
+            stage={operatorRun.state().stage}
+            title={operatorRun.state().title}
+            detail={operatorRun.state().detail}
+            actionLabel={operatorRun.state().actionLabel}
+            deviceLabel={operatorRun.state().deviceLabel}
+            deviceDetail={operatorRun.state().deviceDetail}
+            onAction={operatorRun.activate}
+            onDismiss={operatorRun.dismiss}
+          />
+        </aside>
+      </Show>
+      <Show when={onboarding.canReopen() && !operatorRun.visible()}>
         <button
           type="button"
           class="absolute bottom-4 left-4 z-30 min-h-10 rounded-xl border border-[var(--map-divider)] bg-[var(--map-control-surface)] px-3 text-caption font-medium text-[var(--text-strong)] shadow-[var(--map-elevation-control)] transition-colors hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] max-[760px]:bottom-2 max-[760px]:left-2"
