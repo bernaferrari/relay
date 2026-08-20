@@ -5,7 +5,7 @@ import { useRecorder } from "../context/recorder";
 /** Routes unmodified keys to a focused live device while respecting UI input focus. */
 export function useDeviceStageKeyboard(options: {
   controlActive: Accessor<boolean>;
-  screenElement: Accessor<HTMLImageElement | undefined>;
+  screenElement: Accessor<HTMLElement | undefined>;
 }) {
   const command = useCommand();
   const recorder = useRecorder();

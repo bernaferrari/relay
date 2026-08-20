@@ -171,7 +171,7 @@ export function useDeviceStagePicker(options: {
     }
     if (succeeded && recorder.interacting()) options.onInteractionSuccess();
   }
-  function openAt(image: HTMLImageElement, clientX: number, clientY: number): void {
+  function openAt(image: HTMLElement, clientX: number, clientY: number): void {
     const imageBounds = image.getBoundingClientRect();
     const logical = companionDisplayedPointToLogical(
       {

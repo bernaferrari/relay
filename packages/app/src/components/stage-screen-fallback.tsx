@@ -12,6 +12,8 @@ export type StageScreenFallbackProps = {
   arming: boolean;
   recordingIssue: StageRecordingIssue | null | undefined;
   displayImageSrc: string;
+  /** A stream may own live pixels before Relay has a PNG fallback frame. */
+  hasDisplayPixels?: boolean;
   embeddedRecordingControls: boolean;
   plannedFocus: { index: number; title: string } | null | undefined;
   focusedPlanStep: Accessor<RecipeStep | undefined>;
@@ -39,7 +41,11 @@ export type StageScreenFallbackProps = {
 export function StageScreenFallback(props: StageScreenFallbackProps) {
   return (
     <Show
-      when={!props.arming && !props.recordingIssue && props.displayImageSrc}
+      when={
+        !props.arming &&
+        !props.recordingIssue &&
+        (props.hasDisplayPixels ?? Boolean(props.displayImageSrc))
+      }
       fallback={
         <Show
           when={props.arming}

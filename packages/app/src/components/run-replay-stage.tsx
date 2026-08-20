@@ -82,10 +82,9 @@ export function RunReplayStage(props: {
     ) {
       return null;
     }
-    const lease = server.selectedLeaseId();
     const base = server.serverUrl().replace(/\/+$/, "");
-    if (!props.job.serial || !lease || !base) return null;
-    return `${base}/device/stream?serial=${encodeURIComponent(props.job.serial)}&lease=${encodeURIComponent(lease)}&attempt=${liveVideoAttempt()}`;
+    if (!props.job.serial || !base) return null;
+    return `${base}/device/stream?serial=${encodeURIComponent(props.job.serial)}&attempt=${liveVideoAttempt()}`;
   });
   const retryLiveVideo = () => {
     setLiveVideoReady(false);
@@ -493,6 +492,7 @@ export function RunReplayStage(props: {
                 <div class="absolute inset-0 bg-[var(--background-base)]">
                   <DeviceVideoStream
                     src={src}
+                    requestHeaders={server.previewRequestHeaders()}
                     onReady={() => setLiveVideoReady(true)}
                     onFailure={retryLiveVideo}
                     onSize={(width, height) => {

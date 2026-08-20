@@ -5,6 +5,7 @@ import type { AuthoringSession } from "@relay/protocol";
 import {
   buildTapTarget,
   canRetryTapAtPoint,
+  currentIosSemanticGeometry,
   logicalBoundsFromCapture,
   physicalIosTapStep,
   projectTake,
@@ -34,6 +35,39 @@ test("pixels-only live drive uses screenshot size when AX bounds are missing", (
     { width: 540, height: 1170 },
   );
   assert.equal(logicalBoundsFromCapture({ snapshot: null }), undefined);
+});
+
+test("iOS semantic geometry is usable only while its runtime proof is current", () => {
+  const base: SnapshotState = {
+    capturedAt: 1,
+    nodes: [],
+    interactive: [],
+    readiness: {
+      previewPixels: { mode: "pixels", state: "proven", freshness: "current", proof: { at: 1 } },
+      semanticControl: {
+        mode: "accessibility",
+        state: "proven",
+        freshness: "current",
+        proof: { at: 1, observedNodeCount: 1 },
+      },
+      evidenceCapture: { mode: "evidence", state: "unproven", freshness: "unproven" },
+    },
+  };
+  assert.equal(currentIosSemanticGeometry(base), true);
+  assert.equal(
+    currentIosSemanticGeometry({
+      ...base,
+      readiness: {
+        ...base.readiness!,
+        semanticControl: {
+          ...base.readiness!.semanticControl,
+          freshness: "stale",
+        },
+      },
+    }),
+    false,
+  );
+  assert.equal(currentIosSemanticGeometry({ ...base, readiness: undefined }), false);
 });
 
 test("physical iOS falls back to coordinates for duplicate non-hittable labels", () => {

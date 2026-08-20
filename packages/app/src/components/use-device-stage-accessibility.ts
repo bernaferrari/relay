@@ -17,18 +17,28 @@ type ImageRotation = "none" | "left" | "right";
 export function useDeviceStageAccessibility(options: {
   liveViewActive: Accessor<boolean>;
   imageRotation: Accessor<ImageRotation>;
+  /** A current semantic proof is required before stale tree geometry can
+   * decorate or target the newest pixels. */
+  semanticOverlaysEnabled?: Accessor<boolean>;
   refreshSnapshot: (delayMs?: number) => void;
 }) {
   const server = useServer();
+  const semanticOverlaysEnabled = () => options.semanticOverlaysEnabled?.() ?? true;
   const candidates = createMemo(() => {
     const snapshot = server.snapshot();
-    if (!snapshot?.nodes?.length || !snapshot.bounds || snapshot.inspectable === false) {
+    if (
+      !semanticOverlaysEnabled() ||
+      !snapshot?.nodes?.length ||
+      !snapshot.bounds ||
+      snapshot.inspectable === false
+    ) {
       return [] as SnapshotNode[];
     }
     return overlayCandidates(snapshot.nodes, snapshot.bounds);
   });
   const outlines = createMemo(() => {
     if (server.accessibilityMode() !== "always") return [];
+    if (!semanticOverlaysEnabled()) return [];
     const snapshot = server.snapshot();
     if (!snapshot?.bounds) return [];
     return companionAccessibilityOutlineStyles(
@@ -42,7 +52,7 @@ export function useDeviceStageAccessibility(options: {
   const hoverNode = createMemo(() => {
     const point = hoverPoint();
     const snapshot = server.snapshot();
-    if (!point || !snapshot?.bounds) return null;
+    if (!semanticOverlaysEnabled() || !point || !snapshot?.bounds) return null;
     return candidateAtPoint(candidates(), snapshot.bounds, point.fx, point.fy);
   });
   const hoverHighlight = createMemo(() =>
@@ -57,6 +67,7 @@ export function useDeviceStageAccessibility(options: {
   function scheduleHover(element: HTMLElement, clientX: number, clientY: number): void {
     if (
       !accessibilityHoverEnabled(server.accessibilityMode()) ||
+      !semanticOverlaysEnabled() ||
       server.snapshot()?.inspectable === false ||
       hoverFrame
     ) {
@@ -85,8 +96,12 @@ export function useDeviceStageAccessibility(options: {
 
   createEffect(() => {
     const mode = server.accessibilityMode();
-    if (!accessibilityHoverEnabled(mode)) clearHover();
-    if (accessibilityCollectionEnabled(mode) && options.liveViewActive()) {
+    if (!accessibilityHoverEnabled(mode) || !semanticOverlaysEnabled()) clearHover();
+    if (
+      accessibilityCollectionEnabled(mode) &&
+      options.liveViewActive() &&
+      semanticOverlaysEnabled()
+    ) {
       options.refreshSnapshot(0);
     }
   });

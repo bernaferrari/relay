@@ -48,3 +48,10 @@ test("pixels keep recovering when accessibility collection is off", () => {
     pollFallbackFrame: true,
   });
 });
+
+test("an unavailable semantic capability stops the automatic AX loop without stopping pixels", () => {
+  assert.deepEqual(liveInspectionPolicy(true, true, false, true, false), {
+    pollSnapshot: false,
+    pollFallbackFrame: true,
+  });
+});

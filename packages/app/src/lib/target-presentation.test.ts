@@ -7,6 +7,7 @@ import {
   targetChromeName,
   targetGroupMatchesQuery,
   targetIsPhysicalIos,
+  targetIsObservable,
   targetIsReady,
   targetSearchText,
 } from "./target-presentation";
@@ -146,9 +147,16 @@ test("does not call an Apple device ready before automation services are availab
     developerServicesAvailable: false,
   };
   assert.equal(targetIsReady(target, true), false);
+  assert.equal(
+    targetIsObservable(target, true),
+    true,
+    "go-ios pixels remain useful before XCTest control is proven",
+  );
   assert.equal(presentTarget(target).statusLabel, "Preparing…");
   assert.equal(deviceReadiness(target, true).kind, "ios-preparing");
   assert.equal(targetIsReady({ ...target, developerMode: "disabled" }, true), false);
+  assert.equal(targetIsObservable({ ...target, developerMode: "disabled" }, true), true);
+  assert.equal(targetIsObservable({ ...target, connectionState: "offline" }, true), false);
   assert.equal(
     presentTarget({ ...target, developerMode: "disabled" }).statusLabel,
     "Turn on Developer Mode",

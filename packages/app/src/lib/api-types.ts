@@ -7,6 +7,7 @@ import type {
   RecipeStep,
   ScreenIdentityObservation,
   StepTarget,
+  TargetRuntimeReadiness,
 } from "@relay/protocol";
 
 export type { RunEvidenceQuery } from "@relay/protocol";
@@ -39,6 +40,9 @@ export type DeviceInfo = {
   developerMode?: "enabled" | "disabled";
   /** Whether Xcode's on-device developer services are available for this iOS device. */
   developerServicesAvailable?: boolean;
+  /** Recent, independently-proven preview, semantic-control, and evidence facts.
+   * A listed iPad is not implicitly ready for XCTest interaction. */
+  readiness?: TargetRuntimeReadiness;
   platform?: "android" | "ios" | "browser";
   targetKind?: "device" | "browser";
   [key: string]: unknown;
@@ -250,6 +254,8 @@ export type SnapshotState = {
   screenIdentity?: ScreenIdentityObservation;
   visualFingerprint?: string;
   proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
+  /** Runtime facts are attached by the observation that produced this snapshot. */
+  readiness?: TargetRuntimeReadiness;
 } | null;
 
 export type Frame = {
@@ -268,6 +274,8 @@ export type Frame = {
   fingerprint?: string;
   visualFingerprint?: string;
   proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
+  /** Pixel proof is independent from XCTest semantic control. */
+  readiness?: TargetRuntimeReadiness;
   /**
    * Evidence retained from a bounded scrollable-page survey.  The stitched
    * image is only a convenience preview: each viewport keeps the exact tree

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { TargetRuntimeReadiness } from "@relay/protocol";
 import { createServerCapture, type CaptureServerDeps } from "./server-capture";
 
 function createHarness(
@@ -7,6 +8,7 @@ function createHarness(
     activeDiscoveryId?: string | null;
     collectAccessibility?: boolean;
     inspectionError?: string;
+    screenshotReadiness?: Array<TargetRuntimeReadiness | undefined>;
   } = {},
 ) {
   const calls: string[] = [];
@@ -18,6 +20,7 @@ function createHarness(
   let busy = false;
   const logs: string[] = [];
   const copied: Array<{ base64: string; mime: string }> = [];
+  let screenshotReads = 0;
 
   const request: CaptureServerDeps["request"] = async <T>(
     path: string,
@@ -26,6 +29,7 @@ function createHarness(
     calls.push(path);
     requestBodies.push(typeof init?.body === "string" ? JSON.parse(init.body) : undefined);
     if (path.startsWith("/screenshot")) {
+      const readiness = options.screenshotReadiness?.[screenshotReads++];
       return {
         serial: "device-1",
         capturedAt: 123,
@@ -35,6 +39,7 @@ function createHarness(
         framePath: "/tmp/frame.png",
         width: 1668,
         height: 2224,
+        ...(readiness ? { readiness } : {}),
       } as T;
     }
     if (path.startsWith("/snapshot")) {
@@ -197,6 +202,51 @@ test("live capture leaves an identical device frame mounted", async () => {
 
   assert.equal(harness.calls.length, 2, "polling still proves that the device is reachable");
   assert.equal(harness.getLiveFrameUpdates(), 1, "unchanged pixels are not decoded and remounted");
+});
+
+test("identical pixels retain newer runtime readiness without replacing the mounted bitmap", async () => {
+  const readiness = (
+    at: number,
+    semanticFreshness: "current" | "stale",
+  ): TargetRuntimeReadiness => ({
+    previewPixels: {
+      mode: "pixels",
+      state: "proven",
+      freshness: "current",
+      proof: { at },
+    },
+    semanticControl: {
+      mode: "accessibility",
+      state: "proven",
+      freshness: semanticFreshness,
+      proof: { at: at - 1, observedNodeCount: 12 },
+      ...(semanticFreshness === "stale"
+        ? { invalidated: { at, reason: "visual-changed" as const } }
+        : {}),
+    },
+    evidenceCapture: {
+      mode: "evidence",
+      state: "proven",
+      freshness: "current",
+      proof: { at },
+    },
+  });
+  const harness = createHarness({
+    screenshotReadiness: [readiness(100, "current"), readiness(200, "stale")],
+  });
+
+  await harness.capture.pollLiveFrame();
+  const initialFrame = harness.getLiveFrame();
+  await harness.capture.pollLiveFrame();
+
+  assert.equal(harness.getLiveFrameUpdates(), 2, "proof metadata advances without a bitmap decode");
+  assert.notEqual(harness.getLiveFrame(), initialFrame, "frame metadata is immutable");
+  assert.equal((harness.getLiveFrame() as { capturedAt: number }).capturedAt, 123);
+  assert.equal(
+    (harness.getLiveFrame() as { readiness?: TargetRuntimeReadiness }).readiness?.semanticControl
+      .freshness,
+    "stale",
+  );
 });
 
 test("a new live preview clears stale pixels and remounts an unchanged fresh frame", async () => {

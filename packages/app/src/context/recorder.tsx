@@ -18,8 +18,10 @@ import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
 import { toast } from "./toast";
 import { humanError } from "../lib/human-error";
 import {
+  authoringTargetFromPhysicalIosStep,
   buildTapTarget,
   canRetryTapAtPoint,
+  currentIosSemanticGeometry,
   hasUsableDeviceBounds,
   logicalBoundsFromCapture,
   physicalIosTapStep,
@@ -28,8 +30,10 @@ import {
 } from "../lib/recorder-tap-targeting";
 
 export {
+  authoringTargetFromPhysicalIosStep,
   buildTapTarget,
   canRetryTapAtPoint,
+  currentIosSemanticGeometry,
   hasUsableDeviceBounds,
   logicalBoundsFromCapture,
   physicalIosTapStep,
@@ -618,9 +622,16 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         // leave a physical iOS tap focused in the UI but absent from the take.
         if (!recordingHere && !alreadyApplied && !(await ensureDirectControl())) return false;
         await flushType();
+        const selectedDevice = server
+          .devices()
+          .find((device) => device.serial === server.selectedDevice());
+        const physicalIos = targetIsPhysicalIos(selectedDevice);
+        // A visible iPad video surface is enough to aim a deliberate point.
+        // Do not turn a direct point input into an implicit, potentially slow
+        // XCTest traversal when the semantic plane is unavailable.
         const snapshot = recordingHere
           ? snapshotFromAuthoringSession(session)
-          : (server.snapshot() ?? (await server.captureUiSnapshot()));
+          : (server.snapshot() ?? (physicalIos ? null : await server.captureUiSnapshot()));
         const liveFrame = server.liveFrame();
         const bounds = logicalBoundsFromCapture({
           snapshot,
@@ -631,30 +642,15 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           toast("Relay needs a live screen to aim this gesture", "warning");
           return alreadyApplied;
         }
-        const node = snapshot ? nodeAtPoint(snapshot, fx, fy) : null;
+        const node =
+          snapshot && (!physicalIos || currentIosSemanticGeometry(snapshot))
+            ? nodeAtPoint(snapshot, fx, fy)
+            : null;
         const semanticNode = semanticTapNode(snapshot, node);
         const target = buildTapTarget(bounds, semanticNode, fx, fy);
-        const selectedDevice = server
-          .devices()
-          .find((device) => device.serial === server.selectedDevice());
-        const physicalIos = targetIsPhysicalIos(selectedDevice);
         const physicalIosStep = physicalIosTapStep(snapshot, semanticNode, target);
         const physicalIosTarget = physicalIos
-          ? physicalIosStep?.kind === "ref"
-            ? { ref: physicalIosStep.ref, ...(target.point ? { point: target.point } : {}) }
-            : physicalIosStep?.kind === "identifier"
-              ? {
-                  identifier: physicalIosStep.identifier,
-                  point: { x: physicalIosStep.x, y: physicalIosStep.y },
-                }
-              : physicalIosStep?.kind === "label"
-                ? {
-                    label: physicalIosStep.label,
-                    point: { x: physicalIosStep.x, y: physicalIosStep.y },
-                  }
-                : target.point
-                  ? { point: target.point }
-                  : target
+          ? authoringTargetFromPhysicalIosStep(physicalIosStep, target)
           : target;
         if (recordingHere && session) {
           try {
@@ -739,9 +735,13 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         const recordingHere = session?.state === "recording" && ownsActiveSession();
         if (!recordingHere && !alreadyApplied && !(await ensureDirectControl())) return false;
         await flushType();
+        const selectedDevice = server
+          .devices()
+          .find((device) => device.serial === server.selectedDevice());
+        const physicalIos = targetIsPhysicalIos(selectedDevice);
         const snapshot = recordingHere
           ? snapshotFromAuthoringSession(session)
-          : (server.snapshot() ?? (await server.captureUiSnapshot()));
+          : (server.snapshot() ?? (physicalIos ? null : await server.captureUiSnapshot()));
         const liveFrame = server.liveFrame();
         const bounds = logicalBoundsFromCapture({
           snapshot,

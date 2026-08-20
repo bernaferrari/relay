@@ -21,6 +21,9 @@ export type DeviceVideoVisualSignal = VisualFrameSignal & {
 
 export function DeviceVideoStream(props: {
   src: string;
+  /** Authenticated viewer context for a project-scoped stream. Never put a
+   * bearer token or lease in `src`, which can end up in history or logs. */
+  requestHeaders?: HeadersInit;
   onReady: () => void;
   onFailure: () => void;
   onSize: (width: number, height: number) => void;
@@ -138,7 +141,11 @@ export function DeviceVideoStream(props: {
       }
     };
 
-    void fetch(props.src, { signal: abort.signal, cache: "no-store" })
+    void fetch(props.src, {
+      signal: abort.signal,
+      cache: "no-store",
+      headers: props.requestHeaders,
+    })
       .then(async (response) => {
         if (!response.ok) throw new Error(`Video stream failed (${response.status})`);
         if (!response.body) throw new Error("Video stream has no response body");

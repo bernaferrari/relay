@@ -5,7 +5,7 @@ import { ChooseDeviceEmptyState } from "./choose-device-empty-state";
 import { usePlatform } from "../context/platform";
 import { cn } from "../lib/cn";
 import { humanError } from "../lib/human-error";
-import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
+import { targetIsObservable, targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
 import { deviceReadiness } from "../lib/device-readiness";
 import {
   LIVE_FALLBACK_FRAME_INTERVAL_MS,
@@ -30,8 +30,8 @@ import {
   resolveDevicePanelState,
 } from "../lib/stage-presentation";
 import { DeviceVideoStream } from "./device-video-stream";
+import { DeviceInteractionSurface } from "./device-interaction-surface";
 import {
-  companionDisplayedPointToLogical,
   companionFramePresentation,
   companionImageLayout,
   companionLogicalViewport,
@@ -53,6 +53,8 @@ import { useDeviceStagePicker } from "./use-device-stage-picker";
 import { useDeviceStageLiveFrame } from "../lib/use-device-stage-live-frame";
 import { useDeviceStageKeyboard } from "../lib/use-device-stage-keyboard";
 import { refreshLiveDeviceEvidence } from "../lib/live-device-refresh";
+import { iosLiveSemanticPlane, iosSemanticPlaneCopy } from "../lib/ios-live-semantic-plane";
+import { useDeviceStageLiveGesture } from "./use-device-stage-live-gesture";
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
 export function DeviceStage(_props: {
@@ -73,12 +75,26 @@ export function DeviceStage(_props: {
   const server = useServer();
   const rec = useRecorder();
   const platform = usePlatform();
+  /** Device selection is intentional. Falling back to the first discovered
+   * target made this stage say "ready" while the rest of Relay correctly
+   * asked the person to choose a device. */
+  const currentDevice = () => {
+    const selected = server.selectedDevice();
+    return selected
+      ? (server.devices().find((device) => device.serial === selected) ?? null)
+      : null;
+  };
   const embeddedRecordingControls = () => _props.recordingControls === "embedded";
 
   const liveFrameSrc = useDeviceStageLiveFrame();
   const [stageView, setStageView] = createSignal<DeviceStageView>("live");
-  const liveViewActive = () => rec.interacting() && stageView() === "live";
-  const liveControlActive = () => liveViewActive() && Boolean(server.selectedLeaseId());
+  // Pixels are an observation plane, not a signal that XCTest control is
+  // ready. An attached iPad can therefore keep showing live go-ios video
+  // while Relay truthfully withholds recording and input.
+  const liveViewActive = () =>
+    stageView() === "live" && targetIsObservable(currentDevice(), server.health() === "online");
+  const liveControlActive = () =>
+    liveViewActive() && targetReady() && Boolean(server.selectedLeaseId());
   // A live surface must never borrow an old recording frame. That made the
   // device look awake while it was actually locked or had switched targets.
   const frame = () => (liveViewActive() ? (server.liveFrame() ?? undefined) : undefined);
@@ -86,7 +102,9 @@ export function DeviceStage(_props: {
   // evidence belongs in Recorded mode; using it as a video bootstrap made an
   // old screenshot flash while the current stream was still connecting.
   const liveSurfaceSrc = () => liveFrameSrc();
-  const liveInteractionSurfaceAvailable = () => liveViewActive() && Boolean(liveSurfaceSrc());
+  const livePixelsAvailable = () =>
+    Boolean(liveSurfaceSrc()) || (videoReady() && Boolean(liveVideoSrc()));
+  const liveInteractionSurfaceAvailable = () => liveViewActive() && livePixelsAvailable();
   const {
     focusedPlanStep,
     plannedFocus,
@@ -153,6 +171,11 @@ export function DeviceStage(_props: {
     | "failed"
   >("idle");
   const [iosSetupCheck, setIosSetupCheck] = createSignal(0);
+  /** Local input/video invalidation lands before the next server snapshot.
+   * It prevents a just-tapped screen from borrowing the old AX geometry. */
+  const [semanticOverlayInvalidatedAt, setSemanticOverlayInvalidatedAt] = createSignal<
+    number | undefined
+  >();
   let completedIosSetupCheck = "";
   let resumedIosPreview = "";
   // transient tap feedback (positioned in % of the glass)
@@ -165,7 +188,7 @@ export function DeviceStage(_props: {
   };
 
   let stageEl: HTMLElement | undefined;
-  let deviceScreenEl: HTMLImageElement | undefined;
+  let deviceScreenEl: HTMLElement | undefined;
   const {
     picker,
     close: closePicker,
@@ -220,26 +243,52 @@ export function DeviceStage(_props: {
   let snapTimer: NodeJS.Timeout | undefined;
   let snapRefreshTimer: number | undefined;
 
+  const iosFrameSharesSemanticSession = () =>
+    targetIsPhysicalIos(currentDevice()) &&
+    (server.appleDeviceSetup()?.setup.iosLivePreview?.backend ?? "go-ios-auto") ===
+      "agent-device-png";
+  const semanticReadiness = () => {
+    const device = currentDevice();
+    const snapshot = server.snapshot();
+    const snapshotBelongsToDevice =
+      Boolean(device) && (!snapshot?.serial || snapshot.serial === device?.serial);
+    return snapshotBelongsToDevice
+      ? (snapshot?.readiness?.semanticControl ?? device?.readiness?.semanticControl)
+      : device?.readiness?.semanticControl;
+  };
+  const iosSemanticPlane = createMemo(() =>
+    targetIsPhysicalIos(currentDevice())
+      ? iosLiveSemanticPlane({
+          readiness: semanticReadiness(),
+          invalidatedAt: semanticOverlayInvalidatedAt(),
+        })
+      : undefined,
+  );
+  const semanticOverlaysEnabled = () =>
+    !targetIsPhysicalIos(currentDevice()) || iosSemanticPlane()?.overlaysEnabled === true;
+  const semanticAutomaticProbeAllowed = () =>
+    !targetIsPhysicalIos(currentDevice()) || iosSemanticPlane()?.permitsAutomaticProbe === true;
+  const invalidateIosSemanticOverlay = () => {
+    if (targetIsPhysicalIos(currentDevice())) setSemanticOverlayInvalidatedAt(Date.now());
+  };
   const livePaused = () =>
     !liveViewActive() ||
     !tabVisible() ||
     server.health() !== "online" ||
     picker() !== null ||
-    physicalIosRecording() ||
-    (currentDevice()?.platform === "ios" && !["preparing", "ready"].includes(iosSetupState()));
+    physicalIosRecording();
 
   async function tickLiveFrame(): Promise<void> {
     if (livePaused() || frameRequestsInFlight >= 1) return;
-    // A physical Apple target serves pixels and accessibility through the same
-    // XCTest runner. Overlapping those requests repeatedly interrupts
-    // xcodebuild and makes a healthy device look disconnected.
-    if (targetIsPhysicalIos(currentDevice()) && snapInFlight) return;
+    // Only the explicit agent-device PNG fallback shares XCTest with AX.
+    // go-ios/MJPEG pixels remain useful even while semantic control is down.
+    if (iosFrameSharesSemanticSession() && snapInFlight) return;
     frameRequestsInFlight += 1;
     try {
       await server.pollLiveFrame();
     } finally {
       frameRequestsInFlight -= 1;
-      if (targetIsPhysicalIos(currentDevice()) && snapQueued) {
+      if (iosFrameSharesSemanticSession() && snapQueued) {
         snapQueued = false;
         scheduleLiveSnapshot();
       }
@@ -247,7 +296,11 @@ export function DeviceStage(_props: {
   }
   async function tickLiveSnapshot(): Promise<void> {
     if (livePaused()) return;
-    if (targetIsPhysicalIos(currentDevice()) && frameRequestsInFlight > 0) {
+    // A failed XCTest probe publishes a cooldown. It is a safety rail, not a
+    // background polling schedule: pixels remain live and explicit Recover
+    // owns the next repair attempt.
+    if (!semanticAutomaticProbeAllowed()) return;
+    if (iosFrameSharesSemanticSession() && frameRequestsInFlight > 0) {
       snapQueued = true;
       return;
     }
@@ -274,7 +327,7 @@ export function DeviceStage(_props: {
 
   async function refreshLiveEvidence(): Promise<void> {
     await refreshLiveDeviceEvidence({
-      physicalIos: targetIsPhysicalIos(currentDevice()),
+      frameSharesSemanticSession: iosFrameSharesSemanticSession(),
       pollFrame: tickLiveFrame,
       pollSnapshot: tickLiveSnapshot,
     });
@@ -309,6 +362,18 @@ export function DeviceStage(_props: {
     }
     snapQueued = false;
   }
+
+  const liveGesture = useDeviceStageLiveGesture({
+    platform: () => currentDevice()?.platform,
+    rotation: liveImageRotation,
+    sendTouch: (action, fx, fy) => server.touchDevice(action, fx, fy),
+    sendWheel: (fx, fy, scrollX, scrollY) => server.scrollDevice(fx, fy, scrollX, scrollY),
+    driveSwipe: (from, to, durationMs, alreadyApplied) =>
+      rec.driveSwipe(from, to, durationMs, alreadyApplied, liveImageDimensions()),
+    interacting: rec.interacting,
+    invalidateSemanticOverlay: invalidateIosSemanticOverlay,
+    scheduleSnapshot: scheduleLiveSnapshot,
+  });
 
   createEffect(() => {
     const selected = server.selectedDevice();
@@ -371,8 +436,9 @@ export function DeviceStage(_props: {
       });
   });
 
-  // Saving Apple details only gives the runner permission to prepare. Clear a
-  // stale frame error once and immediately prove readiness with a new frame.
+  // Saving Apple details only gives Relay permission to prepare semantic
+  // control. Pixels use the independent preview path and must never wait for
+  // XCTest to become available.
   createEffect(() => {
     const device = currentDevice();
     if (device?.platform !== "ios" || iosSetupState() !== "preparing") {
@@ -384,20 +450,17 @@ export function DeviceStage(_props: {
     resumedIosPreview = resumeKey;
     server.clearLiveCaptureIssue();
     if (liveViewActive()) {
-      // The Apple runner is exclusive. Establish pixels first, then semantic
-      // inspection; parallel setup requests can restart the runner we just
-      // prepared.
-      void tickLiveFrame().then(() => tickLiveSnapshot());
+      void refreshLiveEvidence();
     }
   });
 
-  // The first usable frame is the single source of truth for Apple readiness.
-  // Do not call an iPad "ready" merely because setup values were saved.
+  // A live picture proves preview pixels, not XCTest. Only the independent
+  // semantic capability may make the iPad control plane ready.
   createEffect(() => {
     if (
       currentDevice()?.platform === "ios" &&
       iosSetupState() === "preparing" &&
-      Boolean(displayImageSrc())
+      iosSemanticPlane()?.state === "current"
     ) {
       setIosSetupState("ready");
     }
@@ -421,6 +484,7 @@ export function DeviceStage(_props: {
       usesScreenshotPreview(),
       physicalIosRecording(),
       accessibilityCollectionEnabled(server.accessibilityMode()),
+      semanticAutomaticProbeAllowed(),
     );
     if (!policy.pollSnapshot && !policy.pollFallbackFrame) return;
 
@@ -429,15 +493,16 @@ export function DeviceStage(_props: {
     // physical interactions performed directly on the device.
     const physicalIos = targetIsPhysicalIos(currentDevice());
     const needsBootstrapFrame = !displayImageSrc();
-    if (physicalIos && (policy.pollSnapshot || policy.pollFallbackFrame || needsBootstrapFrame)) {
-      // Start a physical iPad in the same order as every later refresh. An
-      // eager snapshot followed immediately by the bootstrap frame used to
-      // make the frame lose its turn behind a slow XCTest traversal.
-      void refreshLiveEvidence();
-    }
+    if (physicalIos && needsBootstrapFrame) void tickLiveFrame();
     if (policy.pollSnapshot) {
-      if (!physicalIos) void tickLiveSnapshot();
-      snapTimer = setInterval(() => void tickLiveSnapshot(), LIVE_SNAPSHOT_INTERVAL_MS);
+      void tickLiveSnapshot();
+      // iOS video tells us when pixels materially change, so a permanent AX
+      // poll would only compete with direct input. Android retains its cheap
+      // bounded cadence; iPad semantics refresh on selection, input, visual
+      // change, manual request, or explicit recovery.
+      if (!physicalIos) {
+        snapTimer = setInterval(() => void tickLiveSnapshot(), LIVE_SNAPSHOT_INTERVAL_MS);
+      }
     }
     // The video canvas currently shares the evidence branch. A fresh process
     // has no frame yet, so capture one bootstrap image to mount the H.264
@@ -466,14 +531,11 @@ export function DeviceStage(_props: {
   } = useDeviceStageAccessibility({
     liveViewActive,
     imageRotation: liveImageRotation,
+    semanticOverlaysEnabled,
     refreshSnapshot: scheduleLiveSnapshot,
   });
   onCleanup(() => {
-    if (moveRaf) cancelAnimationFrame(moveRaf);
-    if (wheelRaf) cancelAnimationFrame(wheelRaf);
-    if (wheelEndTimer) clearTimeout(wheelEndTimer);
     if (feedbackTimer) clearTimeout(feedbackTimer);
-    if (gestureTrailTimer) clearTimeout(gestureTrailTimer);
   });
   /** The mirrored device is always interactive. Recording is an explicit
    *  start/stop action that decides whether interactions are also saved. */
@@ -486,159 +548,12 @@ export function DeviceStage(_props: {
     }
   }
 
-  // ── Mirror gestures: stream the full touch lifecycle over scrcpy control.
-  //    The completed gesture is still classified as tap/swipe for recording,
-  //    with the old one-shot interaction retained as an automatic fallback.
-  //    Right-click opens the picker for deliberate strategy selection.
-  let down: {
-    fx: number;
-    fy: number;
-    displayFx: number;
-    displayFy: number;
-    t: number;
-    pointerId: number;
-  } | null = null;
-  let lastLivePointerActionAt = -Infinity;
-  let touchChain = Promise.resolve(false);
-  let pendingMove: {
-    fx: number;
-    fy: number;
-    displayFx: number;
-    displayFy: number;
-    pointerId: number;
-  } | null = null;
-  let moveRaf = 0;
-  let gestureTrail: HTMLDivElement | undefined;
-  let gestureTrailLine: SVGLineElement | undefined;
-  let gestureTrailHead: HTMLElement | undefined;
-  let gestureTrailTimer: number | undefined;
-  let pendingWheel: { fx: number; fy: number; dx: number; dy: number } | null = null;
-  let wheelBurst: { startedAt: number; dx: number; dy: number } | null = null;
-  let wheelChain = Promise.resolve(false);
-  let wheelSent = false;
-  let wheelRaf = 0;
-  let wheelEndTimer: number | undefined;
-
-  function paintGestureTrail(fromX: number, fromY: number, toX: number, toY: number): void {
-    if (!gestureTrail || !gestureTrailLine || !gestureTrailHead) return;
-    gestureTrail.style.opacity = "1";
-    gestureTrailLine.setAttribute("x1", String(fromX * 100));
-    gestureTrailLine.setAttribute("y1", String(fromY * 100));
-    gestureTrailLine.setAttribute("x2", String(toX * 100));
-    gestureTrailLine.setAttribute("y2", String(toY * 100));
-    gestureTrailHead.style.left = `${toX * 100}%`;
-    gestureTrailHead.style.top = `${toY * 100}%`;
-  }
-
-  function settleGestureTrail(): void {
-    if (!gestureTrail) return;
-    if (gestureTrailTimer) clearTimeout(gestureTrailTimer);
-    gestureTrailTimer = window.setTimeout(() => {
-      if (gestureTrail) gestureTrail.style.opacity = "0";
-    }, 120);
-  }
-
-  function companionPointerPoint(
-    element: HTMLElement,
-    clientX: number,
-    clientY: number,
-  ): { fx: number; fy: number; displayFx: number; displayFy: number } {
-    const rect = element.getBoundingClientRect();
-    const displayFx = (clientX - rect.left) / rect.width;
-    const displayFy = (clientY - rect.top) / rect.height;
-    const logical = companionDisplayedPointToLogical(
-      { x: displayFx, y: displayFy },
-      liveImageRotation(),
-    );
-    return { fx: logical.x, fy: logical.y, displayFx, displayFy };
-  }
-
-  function queueTouch(
-    action: "down" | "move" | "up" | "cancel",
-    fx: number,
-    fy: number,
-  ): Promise<boolean> {
-    // The low-latency touch stream is backed by scrcpy and only exists for
-    // Android. Sending it for Apple targets creates a noisy 409 before the
-    // semantic XCTest interaction succeeds, making one tap look like an
-    // error. Return false so the normal recorder interaction is used directly.
-    if (currentDevice()?.platform !== "android") return Promise.resolve(false);
-    const send = () => server.touchDevice(action, fx, fy);
-    touchChain = action === "down" ? send() : touchChain.then((ready) => (ready ? send() : false));
-    return touchChain;
-  }
-
-  function flushPendingMove(pointerId: number): void {
-    if (moveRaf) {
-      cancelAnimationFrame(moveRaf);
-      moveRaf = 0;
-    }
-    const move = pendingMove;
-    pendingMove = null;
-    if (move?.pointerId === pointerId) void queueTouch("move", move.fx, move.fy);
-  }
-
-  function cancelGesture(pointerId: number): void {
-    const start = down;
-    if (!start || start.pointerId !== pointerId) return;
-    flushPendingMove(pointerId);
-    down = null;
-    void queueTouch("cancel", start.fx, start.fy);
-  }
-
-  function flushWheel(): void {
-    if (wheelRaf) {
-      cancelAnimationFrame(wheelRaf);
-      wheelRaf = 0;
-    }
-    const wheel = pendingWheel;
-    pendingWheel = null;
-    if (!wheel) return;
-    // scrcpy accepts signed units in [-1, 1]. DOM wheel signs are opposite
-    // Android's scroll axis, so a wheel-down becomes content moving upward.
-    const scrollX = Math.max(-1, Math.min(1, -wheel.dx / 80));
-    const scrollY = Math.max(-1, Math.min(1, -wheel.dy / 80));
-    const send = () => server.scrollDevice(wheel.fx, wheel.fy, scrollX, scrollY);
-    wheelChain = wheelSent ? wheelChain.then((ready) => (ready ? send() : false)) : send();
-    wheelSent = true;
-  }
-
-  function finishWheelBurst(): void {
-    flushWheel();
-    const burst = wheelBurst;
-    wheelBurst = null;
-    wheelEndTimer = undefined;
-    if (!burst) return;
-    const displayedFrom = { x: 0.5, y: 0.5 };
-    const displayedTo = {
-      x: 0.5 - Math.max(-0.28, Math.min(0.28, burst.dx / 600)),
-      y: 0.5 - Math.max(-0.28, Math.min(0.28, burst.dy / 600)),
-    };
-    const rotation = liveImageRotation();
-    const from = companionDisplayedPointToLogical(displayedFrom, rotation);
-    const to = companionDisplayedPointToLogical(displayedTo, rotation);
-    const durationMs = Math.round(Math.max(80, Math.min(performance.now() - burst.startedAt, 600)));
-    void wheelChain.then((live) =>
-      rec.driveSwipe(from, to, durationMs, live).then(() => {
-        if (rec.interacting()) scheduleLiveSnapshot();
-      }),
-    );
-  }
-
-  /**
-   * Device selection is intentional. Falling back to the first discovered
-   * target made this stage say "ready" while the rest of Relay correctly
-   * asked the person to choose a device.
-   */
-  const currentDevice = () => {
-    const selected = server.selectedDevice();
-    return selected
-      ? (server.devices().find((device) => device.serial === selected) ?? null)
-      : null;
-  };
   const liveImagePresentation = createMemo(() => {
     const frame = liveImageDimensions();
-    if (!frame || stageView() !== "live" || !liveSurfaceSrc()) return undefined;
+    // go-ios video owns its dimensions before a PNG fallback exists. The same
+    // geometry path must serve both transports, otherwise a video-only iPad
+    // can render but cannot map a deliberate point correctly.
+    if (!frame || stageView() !== "live" || !livePixelsAvailable()) return undefined;
     const nodes = server.snapshot()?.nodes;
     const recordedViewport = rec.recording() ? rec.take()?.sourceViewport : undefined;
     const logicalViewport = companionLogicalViewport(nodes) ?? recordedViewport;
@@ -685,8 +600,7 @@ export function DeviceStage(_props: {
     }
     return false;
   };
-  const usesScreenshotPreview = () =>
-    !supportsH264Stream() || videoFailed() || !server.selectedLeaseId();
+  const usesScreenshotPreview = () => !supportsH264Stream() || videoFailed();
   const physicalIosRecording = () => rec.recording() && targetIsPhysicalIos(currentDevice());
   let physicalIosRecordingWasActive = false;
   createEffect(() => {
@@ -746,20 +660,42 @@ export function DeviceStage(_props: {
   const [panelRetrying, setPanelRetrying] = createSignal(false);
   const inspectionHint = createMemo(() => {
     const snap = server.snapshot();
-    if (stageView() !== "live" || !displayImageSrc() || !snap) return null;
-    return liveInspectionHint({
-      inspectable: snap.inspectable,
-      inspectionState: snap.inspectionState,
-      nodeCount: snap.nodes?.length,
-      inspectionError: snap.inspectionError,
-      platform: currentDevice()?.platform,
-      developerServicesAvailable: currentDevice()?.developerServicesAvailable,
-      openXcodeAvailable: Boolean(platform.openXcode),
-    });
+    if (stageView() !== "live" || !livePixelsAvailable()) return null;
+    const existing = snap
+      ? liveInspectionHint({
+          inspectable: snap.inspectable,
+          inspectionState: snap.inspectionState,
+          nodeCount: snap.nodes?.length,
+          inspectionError: snap.inspectionError,
+          platform: currentDevice()?.platform,
+          developerServicesAvailable: currentDevice()?.developerServicesAvailable,
+          openXcodeAvailable: Boolean(platform.openXcode),
+        })
+      : null;
+    // Developer support is a static blocker with an exact useful action; do
+    // not replace it with generic semantic freshness language.
+    if (existing?.action === "open-xcode") return existing;
+    const plane = iosSemanticPlane();
+    if (targetIsPhysicalIos(currentDevice()) && plane && plane.state !== "current") {
+      const copy = iosSemanticPlaneCopy(plane);
+      return {
+        ...copy,
+        actionLabel:
+          plane.state === "stale" || plane.state === "unproven" ? "Refresh labels" : "Reconnect",
+        action:
+          plane.state === "stale" || plane.state === "unproven"
+            ? ("refresh-labels" as const)
+            : ("reconnect" as const),
+      };
+    }
+    return existing;
   });
   const controlHint = createMemo(() => {
     const issue = server.controlIssue();
-    if (stageView() !== "live" || !displayImageSrc() || !issue) return null;
+    // A viewer can receive a healthy go-ios/MJPEG surface without owning the
+    // exclusive input lease. Do not hide that truthful view-only state merely
+    // because there is no PNG fallback mounted underneath the video.
+    if (stageView() !== "live" || !livePixelsAvailable() || !issue) return null;
     const canTakeControl = server.canTakeControlOfSelectedDevice();
     return {
       title: canTakeControl ? "View only" : "Control unavailable",
@@ -795,7 +731,7 @@ export function DeviceStage(_props: {
       serverOnline: server.health() === "online",
       arming: rec.arming(),
       physicalIosRecording: physicalIosRecording(),
-      hasDisplayImage: Boolean(displayImageSrc()),
+      hasDisplayImage: livePixelsAvailable() || Boolean(displayImageSrc()),
       recordingIssue: rec.recordingIssue(),
       liveCaptureIssue: liveCaptureIssue(),
       inspectionError: server.snapshot()?.inspectionError,
@@ -814,17 +750,19 @@ export function DeviceStage(_props: {
   const videoIdentity = createMemo(() => {
     const serial = currentDevice()?.serial;
     const base = server.serverUrl().replace(/\/+$/, "");
-    return targetReady() && serial && base ? `${base}|${serial}` : "";
+    return liveViewActive() && serial && base ? `${base}|${serial}` : "";
   });
   const liveVideoSrc = createMemo(() => {
     const identity = videoIdentity();
-    if (!identity || !liveControlActive() || !tabVisible() || !supportsH264Stream()) return "";
+    // Pixel observation is project-scoped and intentionally independent from
+    // the exclusive control lease. A second Relay window may watch a live
+    // target, but only the controller can send input through the transparent
+    // interaction surface.
+    if (!identity || !liveViewActive() || !tabVisible() || !supportsH264Stream()) return "";
     const separator = identity.lastIndexOf("|");
     const base = identity.slice(0, separator);
     const serial = identity.slice(separator + 1);
-    const lease = server.selectedLeaseId();
-    if (!lease) return null;
-    return `${base}/device/stream?serial=${encodeURIComponent(serial)}&lease=${encodeURIComponent(lease)}&attempt=${videoAttempt()}`;
+    return `${base}/device/stream?serial=${encodeURIComponent(serial)}&attempt=${videoAttempt()}`;
   });
   let videoRetryTimer: number | undefined;
   createEffect(() => {
@@ -834,7 +772,12 @@ export function DeviceStage(_props: {
   });
   async function retryScreenPreview(): Promise<void> {
     if (currentDevice()?.platform === "ios" && iosSetupState() !== "ready") {
-      setIosSetupCheck((check) => check + 1);
+      // Preview and semantic setup are separate. A person asking to refresh
+      // the picture must not be forced through XCTest preparation first.
+      server.clearLiveCaptureIssue();
+      if (iosSetupState() === "needs-setup") setIosSetupCheck((check) => check + 1);
+      await tickLiveFrame();
+      if (semanticAutomaticProbeAllowed()) await tickLiveSnapshot();
       return;
     }
     server.clearLiveCaptureIssue();
@@ -897,12 +840,18 @@ export function DeviceStage(_props: {
         embeddedRecordingControls() ? "px-4 py-3" : "px-6 py-5",
       )}
     >
-      <Show when={!embeddedRecordingControls() && (targetReady() || recordedEvidenceSrc())}>
+      <Show
+        when={
+          !embeddedRecordingControls() &&
+          (targetIsObservable(currentDevice(), server.health() === "online") ||
+            recordedEvidenceSrc())
+        }
+      >
         <StageViewToggle
           stageView={stageView()}
           setStageView={setStageView}
           hasRecordedEvidence={Boolean(recordedEvidenceSrc())}
-          targetReady={targetReady()}
+          liveAvailable={targetIsObservable(currentDevice(), server.health() === "online")}
           recording={rec.recording()}
           videoReady={videoReady()}
           videoFailed={videoFailed()}
@@ -934,7 +883,7 @@ export function DeviceStage(_props: {
           fallback={
             <div
               data-device-chrome
-              data-device-content={displayImageSrc() ? "frame" : "status"}
+              data-device-content={livePixelsAvailable() || displayImageSrc() ? "frame" : "status"}
               class={cn(
                 PHONE_SHELL,
                 "relative z-[2] shrink-0",
@@ -954,6 +903,9 @@ export function DeviceStage(_props: {
                   arming={rec.arming()}
                   recordingIssue={rec.recordingIssue()}
                   displayImageSrc={displayImageSrc()}
+                  hasDisplayPixels={
+                    livePixelsAvailable() || Boolean(displayImageSrc()) || Boolean(liveVideoSrc())
+                  }
                   embeddedRecordingControls={embeddedRecordingControls()}
                   plannedFocus={plannedFocus()}
                   focusedPlanStep={focusedPlanStep}
@@ -984,12 +936,39 @@ export function DeviceStage(_props: {
                       >
                         <DeviceVideoStream
                           src={src}
+                          requestHeaders={server.previewRequestHeaders()}
                           onReady={() => {
                             setVideoFailed(false);
                             setVideoReady(true);
                           }}
                           onFailure={retryVideo}
-                          onSize={updateFrameAspect}
+                          onSize={(width, height) => {
+                            updateFrameAspect(width, height);
+                            // A video-only preview still needs the exact
+                            // rendered dimensions to normalize controller
+                            // point input; do not wait for a PNG fallback.
+                            setLiveImageDimensions({ width, height });
+                          }}
+                          onVisualFingerprint={(signal) => {
+                            if (!targetIsPhysicalIos(currentDevice())) return;
+                            // The stream can start after a prior XCTest proof.
+                            // Treat its first observed pixels exactly like a
+                            // material later frame: until a bounded fresh AX
+                            // query completes, old bounds must not steer the
+                            // visible surface.
+                            const semanticProofAt = semanticReadiness()?.proof?.at;
+                            if (
+                              semanticProofAt !== undefined &&
+                              semanticProofAt > signal.observedAt
+                            ) {
+                              return;
+                            }
+                            setSemanticOverlayInvalidatedAt(signal.observedAt);
+                            // One event-driven compact query may prove the
+                            // new screen. The capability cooldown inside
+                            // tickLiveSnapshot blocks retry loops.
+                            scheduleLiveSnapshot();
+                          }}
                         />
                       </div>
                     )}
@@ -997,6 +976,7 @@ export function DeviceStage(_props: {
                   <img
                     class={cn(
                       "block h-full w-full touch-none overscroll-contain select-none object-contain outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong-focus",
+                      stageView() === "live" && "pointer-events-none",
                       rec.recording()
                         ? "cursor-crosshair"
                         : liveControlActive() && "cursor-pointer",
@@ -1004,7 +984,7 @@ export function DeviceStage(_props: {
                       recordedAccessibilityHoverActive() && "cursor-pointer",
                     )}
                     ref={(element) => {
-                      deviceScreenEl = element;
+                      if (stageView() !== "live") deviceScreenEl = element;
                     }}
                     alt={displayCaption() || "Recorded device evidence"}
                     aria-label="Interactive device screen"
@@ -1012,31 +992,11 @@ export function DeviceStage(_props: {
                     src={displayImageSrc()}
                     style={liveImageStyleFromLayout(liveImageLayout())}
                     draggable={false}
-                    tabindex={0}
-                    onClick={(e) => {
-                      if (recordedAccessibilityHoverActive()) chooseRecordedNode();
-                      // Pointer capture is the best path for real drags, but
-                      // assistive technology, browser automation, and some
-                      // embedded Chromium input sources can emit a click
-                      // without delivering a matching pointer-up to Solid.
-                      // Treat that click as a tap unless pointer-up already
-                      // handled it. This keeps human and agent input on the
-                      // same recorder operation instead of maintaining a
-                      // private automation-only path.
-                      if (stageView() !== "live") return;
-                      if (!liveInteractionSurfaceAvailable()) return;
-                      if (!liveControlActive()) return;
-                      if (performance.now() - lastLivePointerActionAt < 250) return;
-                      const point = companionPointerPoint(e.currentTarget, e.clientX, e.clientY);
-                      down = null;
-                      pendingMove = null;
-                      lastLivePointerActionAt = performance.now();
-                      showTapFeedback(point.displayFx, point.displayFy);
-                      void rec
-                        .driveTap(point.fx, point.fy, false, liveImageDimensions())
-                        .then(() => {
-                          if (rec.interacting()) scheduleLiveSnapshot();
-                        });
+                    tabindex={stageView() === "live" ? -1 : 0}
+                    onClick={() => {
+                      if (stageView() === "recorded" && recordedAccessibilityHoverActive()) {
+                        chooseRecordedNode();
+                      }
                     }}
                     onLoad={(e) => {
                       const img = e.currentTarget;
@@ -1052,67 +1012,21 @@ export function DeviceStage(_props: {
                       }
                     }}
                     onPointerDown={(e) => {
-                      if (recordedCoordinateEditable() && e.button === 0) {
+                      if (
+                        stageView() === "recorded" &&
+                        recordedCoordinateEditable() &&
+                        e.button === 0
+                      ) {
                         e.preventDefault();
                         e.currentTarget.focus({ preventScroll: true });
                         beginRecordedCoordinateDrag(e.pointerId);
                         e.currentTarget.setPointerCapture(e.pointerId);
                         moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
-                        return;
                       }
-                      if (
-                        !liveInteractionSurfaceAvailable() ||
-                        !liveControlActive() ||
-                        e.button !== 0
-                      )
-                        return;
-                      e.currentTarget.focus({ preventScroll: true });
-                      const point = companionPointerPoint(e.currentTarget, e.clientX, e.clientY);
-                      down = {
-                        ...point,
-                        t: e.timeStamp,
-                        pointerId: e.pointerId,
-                      };
-                      if (gestureTrailTimer) clearTimeout(gestureTrailTimer);
-                      paintGestureTrail(
-                        point.displayFx,
-                        point.displayFy,
-                        point.displayFx,
-                        point.displayFy,
-                      );
-                      e.currentTarget.setPointerCapture(e.pointerId);
-                      void queueTouch("down", down.fx, down.fy);
                     }}
                     onPointerMove={(e) => {
                       if (recordedCoordinateDragging(e.pointerId)) {
                         moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
-                        return;
-                      }
-                      const start = down;
-                      if (!start || start.pointerId !== e.pointerId) return;
-                      const point = companionPointerPoint(e.currentTarget, e.clientX, e.clientY);
-                      pendingMove = {
-                        fx: point.fx,
-                        fy: point.fy,
-                        displayFx: point.displayFx,
-                        displayFy: point.displayFy,
-                        pointerId: e.pointerId,
-                      };
-                      if (!moveRaf) {
-                        moveRaf = requestAnimationFrame(() => {
-                          moveRaf = 0;
-                          const move = pendingMove;
-                          pendingMove = null;
-                          if (move && down?.pointerId === move.pointerId) {
-                            paintGestureTrail(
-                              down.displayFx,
-                              down.displayFy,
-                              move.displayFx,
-                              move.displayFy,
-                            );
-                            void queueTouch("move", move.fx, move.fy);
-                          }
-                        });
                       }
                     }}
                     onPointerUp={(e) => {
@@ -1122,105 +1036,13 @@ export function DeviceStage(_props: {
                         if (e.currentTarget.hasPointerCapture(e.pointerId)) {
                           e.currentTarget.releasePointerCapture(e.pointerId);
                         }
-                        return;
-                      }
-                      if (!liveInteractionSurfaceAvailable() || !liveControlActive()) return;
-                      const start = down;
-                      if (!start || start.pointerId !== e.pointerId || e.button !== 0) return;
-                      const r = e.currentTarget.getBoundingClientRect();
-                      const point = companionPointerPoint(e.currentTarget, e.clientX, e.clientY);
-                      const fx = point.fx;
-                      const fy = point.fy;
-                      paintGestureTrail(
-                        start.displayFx,
-                        start.displayFy,
-                        point.displayFx,
-                        point.displayFy,
-                      );
-                      settleGestureTrail();
-                      flushPendingMove(e.pointerId);
-                      down = null;
-                      const appliedLive = queueTouch("up", fx, fy);
-                      const dx = (point.displayFx - start.displayFx) * r.width;
-                      const dy = (point.displayFy - start.displayFy) * r.height;
-                      if (Math.hypot(dx, dy) < 6) {
-                        // tap → direct action, no picker
-                        // show brief physical feedback at tap location
-                        showTapFeedback(start.displayFx, start.displayFy);
-                        lastLivePointerActionAt = performance.now();
-
-                        void appliedLive.then((live) =>
-                          rec.driveTap(start.fx, start.fy, live, liveImageDimensions()).then(() => {
-                            if (rec.interacting()) scheduleLiveSnapshot();
-                          }),
-                        );
-                      } else {
-                        // drag → swipe, duration clamped to a sane gesture range
-                        const durationMs = Math.round(
-                          Math.max(80, Math.min(e.timeStamp - start.t, 800)),
-                        );
-                        void appliedLive.then((live) =>
-                          rec
-                            .driveSwipe(
-                              { x: start.fx, y: start.fy },
-                              { x: fx, y: fy },
-                              durationMs,
-                              live,
-                              liveImageDimensions(),
-                            )
-                            .then(() => {
-                              if (rec.interacting()) scheduleLiveSnapshot();
-                            }),
-                        );
                       }
                     }}
                     onPointerCancel={(e) => {
-                      if (endRecordedCoordinateDrag(e.pointerId)) return;
-                      cancelGesture(e.pointerId);
-                      settleGestureTrail();
+                      endRecordedCoordinateDrag(e.pointerId);
                     }}
                     onLostPointerCapture={(e) => {
-                      if (endRecordedCoordinateDrag(e.pointerId)) return;
-                      cancelGesture(e.pointerId);
-                      settleGestureTrail();
-                    }}
-                    onWheel={(e) => {
-                      if (!liveInteractionSurfaceAvailable() || !liveControlActive() || down)
-                        return;
-                      e.preventDefault();
-                      e.currentTarget.focus({ preventScroll: true });
-                      const r = e.currentTarget.getBoundingClientRect();
-                      const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? r.height : 1;
-                      const dx = e.deltaX * scale;
-                      const dy = e.deltaY * scale;
-                      const point = companionPointerPoint(e.currentTarget, e.clientX, e.clientY);
-                      const fx = point.fx;
-                      const fy = point.fy;
-                      if (!wheelBurst) {
-                        wheelBurst = { startedAt: performance.now(), dx: 0, dy: 0 };
-                        wheelSent = false;
-                      }
-                      wheelBurst.dx += dx;
-                      wheelBurst.dy += dy;
-                      if (pendingWheel) {
-                        pendingWheel = {
-                          fx,
-                          fy,
-                          dx: pendingWheel.dx + dx,
-                          dy: pendingWheel.dy + dy,
-                        };
-                      } else {
-                        pendingWheel = { fx, fy, dx, dy };
-                      }
-                      if (!wheelRaf) wheelRaf = requestAnimationFrame(flushWheel);
-                      if (wheelEndTimer) clearTimeout(wheelEndTimer);
-                      wheelEndTimer = window.setTimeout(finishWheelBurst, 90);
-                    }}
-                    onContextMenu={(e) => {
-                      // Right-click = deliberate inspection / strategy selection.
-                      if (!liveInteractionSurfaceAvailable() || !liveControlActive()) return;
-                      e.preventDefault();
-                      openPickerAt(e.currentTarget, e.clientX, e.clientY);
+                      endRecordedCoordinateDrag(e.pointerId);
                     }}
                     onMouseMove={(e) => {
                       if (stageView() === "recorded") {
@@ -1232,20 +1054,70 @@ export function DeviceStage(_props: {
                         } else {
                           clearRecordedNodeHover();
                         }
-                        // Overlay inspection follows the accessibility snapshot, not
-                        // the PNG fallback. Healthy H.264 deliberately stops PNG
-                        // polling, which previously made hover disappear when live
-                        // streaming was working best.
-                      } else if (liveControlActive()) {
-                        scheduleHover(e.currentTarget, e.clientX, e.clientY);
                       }
                     }}
                     onMouseLeave={() => {
                       setRecordedScreenHovered(false);
                       clearRecordedNodeHover();
-                      clearHover();
                     }}
                   />
+                  <Show when={stageView() === "live"}>
+                    <DeviceInteractionSurface
+                      sourceDimensions={liveImageDimensions}
+                      rotation={liveImageRotation}
+                      disabled={() => !liveInteractionSurfaceAvailable()}
+                      viewOnly={() => !liveControlActive()}
+                      elementRef={(element) => {
+                        deviceScreenEl = element;
+                      }}
+                      onGesture={liveGesture.onGesture}
+                      onTap={({ point, source }) => {
+                        const applied =
+                          source === "pointer"
+                            ? liveGesture.completedTransport()
+                            : Promise.resolve(false);
+                        showTapFeedback(point.displayed.x, point.displayed.y);
+                        invalidateIosSemanticOverlay();
+                        void applied.then((live) =>
+                          rec
+                            .driveTap(point.logical.x, point.logical.y, live, liveImageDimensions())
+                            .then(() => {
+                              if (rec.interacting()) scheduleLiveSnapshot();
+                            }),
+                        );
+                      }}
+                      onSwipe={({ start, end, durationMs }) => {
+                        invalidateIosSemanticOverlay();
+                        void liveGesture.completedTransport().then((live) =>
+                          rec
+                            .driveSwipe(
+                              start.logical,
+                              end.logical,
+                              Math.max(80, Math.min(durationMs, 800)),
+                              live,
+                              liveImageDimensions(),
+                            )
+                            .then(() => {
+                              if (rec.interacting()) scheduleLiveSnapshot();
+                            }),
+                        );
+                      }}
+                      onWheel={({ point, deltaX, deltaY }) => {
+                        liveGesture.queueWheel(point.logical, deltaX, deltaY);
+                      }}
+                      onInspect={({ event }) => {
+                        if (event.currentTarget instanceof HTMLElement) {
+                          openPickerAt(event.currentTarget, event.clientX, event.clientY);
+                        }
+                      }}
+                      onHover={({ event }) => {
+                        if (liveControlActive() && event.currentTarget instanceof HTMLElement) {
+                          scheduleHover(event.currentTarget, event.clientX, event.clientY);
+                        }
+                      }}
+                      onLeave={clearHover}
+                    />
+                  </Show>
                   <Show
                     when={
                       stageView() === "recorded" &&
@@ -1316,6 +1188,10 @@ export function DeviceStage(_props: {
                             onAction={() => {
                               if (hint().action === "open-xcode") {
                                 void platform.openXcode?.();
+                                return;
+                              }
+                              if (hint().action === "refresh-labels") {
+                                void tickLiveSnapshot();
                                 return;
                               }
                               void retryInspection();
@@ -1389,7 +1265,7 @@ export function DeviceStage(_props: {
 
                   <div
                     ref={(element) => {
-                      gestureTrail = element;
+                      liveGesture.setTrail(element);
                     }}
                     class="pointer-events-none absolute inset-0 z-[6] opacity-0 transition-opacity duration-hover ease-out motion-reduce:transition-none"
                     aria-hidden="true"
@@ -1401,7 +1277,7 @@ export function DeviceStage(_props: {
                     >
                       <line
                         ref={(element) => {
-                          gestureTrailLine = element;
+                          liveGesture.setTrailLine(element);
                         }}
                         class="stroke-[var(--text-interactive-base)] opacity-80"
                         stroke-width="2"
@@ -1411,7 +1287,7 @@ export function DeviceStage(_props: {
                     </svg>
                     <i
                       ref={(element) => {
-                        gestureTrailHead = element;
+                        liveGesture.setTrailHead(element);
                       }}
                       class="absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--text-interactive-base)] shadow-[0_0_0_2px_rgb(255_255_255/88%),0_2px_8px_rgb(0_0_0/35%)]"
                     />

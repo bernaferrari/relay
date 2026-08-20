@@ -54,6 +54,8 @@ import { createServerDeviceInventoryController } from "../lib/server-device-inve
 import { createServerAppMapController } from "../lib/server-app-map-controller";
 import { findActiveConnectionLease } from "../lib/device-control-session";
 import { refreshLiveDeviceEvidence } from "../lib/live-device-refresh";
+import { previewRequestHeaders as buildPreviewRequestHeaders } from "../lib/preview-request-headers";
+import { createServerTargetRecovery } from "../lib/server-target-recovery";
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
 export type {
@@ -242,6 +244,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         ...init,
         signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
       });
+    }
+
+    /** Read-only stream credentials stay in fetch headers instead of a URL.
+     * This is deliberately distinct from control/lease state. */
+    function previewRequestHeaders(): Record<string, string> {
+      return buildPreviewRequestHeaders(connection);
     }
 
     async function connectedClient(): Promise<RelayClient> {
@@ -514,44 +522,27 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       connectSse();
     }
 
-    let targetRecoveryInFlight: Promise<boolean> | null = null;
-    async function recoverSelectedTarget(
-      reason: "connect" | "observe" | "control" | "record" | "auto" = "auto",
-    ): Promise<boolean> {
-      if (targetRecoveryInFlight) return targetRecoveryInFlight;
-      const serial = selectedDevice();
-      const device = devices().find((candidate) => candidate.serial === serial);
-      if (!serial || (device?.platform !== "ios" && device?.platform !== "android")) return false;
-      const recovery = (async () => {
-        try {
-          await selectDeviceRemote(serial);
-          const result = await runAction("target.recover", { serial, reason });
-          appendLog(result.recovery.summary, result.recovery.ready ? "success" : "error");
-          if (result.recovery.ready) {
-            setLiveCaptureIssue(null);
-            setControlIssue(null);
-            await refreshLiveDeviceEvidence({
-              physicalIos: device?.platform === "ios" && device.kind === "Physical device",
-              pollFrame: () => pollLiveFrame(),
-              pollSnapshot: () => pollLiveSnapshot(),
-            });
-            return true;
-          }
-          setLiveCaptureIssue(result.recovery.session.detail);
-          return false;
-        } catch (error) {
-          setLiveCaptureIssue(humanError(error, "Could not reconnect to this device"));
-          appendLog(error instanceof Error ? error.message : String(error), "error");
-          return false;
-        }
-      })();
-      targetRecoveryInFlight = recovery;
-      try {
-        return await recovery;
-      } finally {
-        if (targetRecoveryInFlight === recovery) targetRecoveryInFlight = null;
-      }
-    }
+    const recoverSelectedTarget = createServerTargetRecovery({
+      selectedDevice,
+      devices,
+      selectDevice: selectDeviceRemote,
+      runAction,
+      appendLog,
+      setLiveCaptureIssue,
+      setControlIssue,
+      refreshEvidence: () => {
+        const device = devices().find((candidate) => candidate.serial === selectedDevice());
+        return refreshLiveDeviceEvidence({
+          frameSharesSemanticSession:
+            device?.platform === "ios" &&
+            device.kind === "Physical device" &&
+            (appleDeviceSetup()?.setup.iosLivePreview?.backend ?? "go-ios-auto") ===
+              "agent-device-png",
+          pollFrame: () => pollLiveFrame(),
+          pollSnapshot: () => pollLiveSnapshot(),
+        });
+      },
+    });
 
     const [bootingSerial, setBootingSerial] = createSignal<string | null>(null);
     const [authorizingSerial, setAuthorizingSerial] = createSignal<string | null>(null);
@@ -974,6 +965,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       projectId: () => connection?.projectId ?? "default",
       serverUrl,
       actorId,
+      previewRequestHeaders,
       setServerUrl,
       prodAccountMatch,
       setProdAccountMatch,

@@ -9,7 +9,8 @@ export function StageViewToggle(props: {
   stageView: "recorded" | "live";
   setStageView: (view: "recorded" | "live") => void;
   hasRecordedEvidence: boolean;
-  targetReady: boolean;
+  /** A reachable target can be viewed even before semantic control is ready. */
+  liveAvailable: boolean;
   recording: boolean;
   videoReady: boolean;
   videoFailed: boolean;
@@ -17,7 +18,7 @@ export function StageViewToggle(props: {
   return (
     <div class="absolute top-4 z-[4] flex h-8 items-center justify-center text-text-base">
       <Show
-        when={props.hasRecordedEvidence && props.targetReady}
+        when={props.hasRecordedEvidence && props.liveAvailable}
         fallback={
           <Show
             when={props.hasRecordedEvidence}
@@ -87,8 +88,8 @@ export function StageViewToggle(props: {
                 : "text-[var(--text-weak)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-base)]",
             )}
             aria-pressed={props.stageView === "live"}
-            disabled={!props.targetReady}
-            data-tip={!props.targetReady ? "Connect a device to use Live view" : undefined}
+            disabled={!props.liveAvailable}
+            data-tip={!props.liveAvailable ? "Connect a device to use Live view" : undefined}
             onClick={() => {
               props.setStageView("live");
             }}

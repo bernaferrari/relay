@@ -1,7 +1,9 @@
 /**
- * Accessibility on a physical Apple device is a full XCTest round trip, not a
- * cheap local DOM read. A five-second background cadence keeps hover metadata
- * useful while post-interaction refreshes still happen immediately.
+ * Accessibility is a full XCTest round trip on physical Apple hardware, not a
+ * cheap local DOM read. Android retains a bounded background cadence; the
+ * iPad Stage uses meaningful events (input, material pixel change, explicit
+ * refresh, recovery) instead. A runtime capability cooldown suppresses any
+ * automatic query after a real iOS failure.
  */
 export const LIVE_SNAPSHOT_INTERVAL_MS = 5_000;
 /**
@@ -31,9 +33,11 @@ export function liveInspectionPolicy(
   videoFailed: boolean,
   captureSuspended = false,
   collectAccessibility = true,
+  semanticAutomaticProbeAllowed = true,
 ) {
   return {
-    pollSnapshot: interacting && collectAccessibility && !captureSuspended,
+    pollSnapshot:
+      interacting && collectAccessibility && !captureSuspended && semanticAutomaticProbeAllowed,
     pollFallbackFrame: interacting && videoFailed && !captureSuspended,
   };
 }

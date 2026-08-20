@@ -97,6 +97,17 @@ export function semanticTapNode(
   );
 }
 
+/**
+ * iOS pixel preview can outlive its XCTest tree. A tree remains useful as
+ * evidence after input, but it must not silently steer the next interaction
+ * unless runtime readiness proves that its geometry is current. Android's
+ * existing snapshot lifecycle remains unchanged.
+ */
+export function currentIosSemanticGeometry(snapshot: SnapshotState): boolean {
+  const semantic = snapshot?.readiness?.semanticControl;
+  return semantic?.state === "proven" && semantic.freshness === "current";
+}
+
 export function canRetryTapAtPoint(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /selector did not match|expired ref|ref frame|invalid ref|no longer valid|stale/i.test(
@@ -144,17 +155,37 @@ function uniqueLabelCount(snapshot: SnapshotState, label: string): number {
  * or unique hittable label is how Grok chrome actually opens. Tap the control
  * center, not the finger glyph. Duplicate non-hittable labels stay exact-point.
  */
+export type PhysicalIosTapStep =
+  | { kind: "ref"; ref: string }
+  | { kind: "identifier"; identifier: string; x: number; y: number }
+  | { kind: "label"; label: string; x: number; y: number }
+  | { kind: "point"; x: number; y: number };
+
+/** Preserve semantic intent in an authored iOS action while keeping its
+ * reviewed fallback point. XCTest refs are frame scoped, so they never become
+ * the only durable targeting fact. */
+export function authoringTargetFromPhysicalIosStep(
+  step: PhysicalIosTapStep | null,
+  target: StepTarget,
+): StepTarget {
+  if (step?.kind === "ref") {
+    return { ref: step.ref, ...(target.point ? { point: target.point } : {}) };
+  }
+  if (step?.kind === "identifier") {
+    return { identifier: step.identifier, point: { x: step.x, y: step.y } };
+  }
+  if (step?.kind === "label") {
+    return { label: step.label, point: { x: step.x, y: step.y } };
+  }
+  return step ? { point: { x: step.x, y: step.y } } : target;
+}
+
 export function physicalIosTapStep(
   snapshot: SnapshotState,
   node: SnapshotNode | null,
   target: StepTarget,
   options?: { preferRef?: boolean },
-):
-  | { kind: "ref"; ref: string }
-  | { kind: "identifier"; identifier: string; x: number; y: number }
-  | { kind: "label"; label: string; x: number; y: number }
-  | { kind: "point"; x: number; y: number }
-  | null {
+): PhysicalIosTapStep | null {
   if (options?.preferRef && node?.hittable === true && target.ref) {
     return { kind: "ref", ref: target.ref };
   }

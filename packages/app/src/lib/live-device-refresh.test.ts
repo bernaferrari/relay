@@ -57,3 +57,34 @@ test("non-iOS refreshes pixels and semantics concurrently", async () => {
   releaseSnapshot();
   await refresh;
 });
+
+test("go-ios pixels and XCTest semantics are independent on physical iOS", async () => {
+  const calls: string[] = [];
+  let releaseFrame!: () => void;
+  let releaseSnapshot!: () => void;
+  const frame = new Promise<void>((resolve) => {
+    releaseFrame = resolve;
+  });
+  const snapshot = new Promise<void>((resolve) => {
+    releaseSnapshot = resolve;
+  });
+
+  const refresh = refreshLiveDeviceEvidence({
+    physicalIos: true,
+    frameSharesSemanticSession: false,
+    pollFrame: async () => {
+      calls.push("frame:start");
+      await frame;
+    },
+    pollSnapshot: async () => {
+      calls.push("snapshot:start");
+      await snapshot;
+    },
+  });
+
+  await Promise.resolve();
+  assert.deepEqual(calls, ["frame:start", "snapshot:start"]);
+  releaseFrame();
+  releaseSnapshot();
+  await refresh;
+});

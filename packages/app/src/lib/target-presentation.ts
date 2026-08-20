@@ -28,6 +28,25 @@ export function targetIsReady(target: DeviceInfo | null | undefined, online: boo
   );
 }
 
+/**
+ * A live preview is useful before semantic control is available. In
+ * particular, go-ios can provide an iPad's pixels while XCTest is preparing
+ * or unavailable. Keep that weaker observation fact separate from
+ * `targetIsReady`, which remains the shared gate for recording and mutation.
+ */
+export function targetIsObservable(
+  target: DeviceInfo | null | undefined,
+  online: boolean,
+): boolean {
+  return (
+    online &&
+    Boolean(target) &&
+    target?.booted !== false &&
+    target?.connectionState !== "unauthorized" &&
+    target?.connectionState !== "offline"
+  );
+}
+
 export function targetIsPhysicalIos(target: DeviceInfo | null | undefined): boolean {
   return Boolean(
     target?.platform === "ios" && !/simulator|emulator/i.test(String(target.kind ?? "")),

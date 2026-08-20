@@ -8,6 +8,7 @@ import type {
   SnapshotState,
   TraceFrameRef,
 } from "./api-types";
+import type { TargetRuntimeReadiness } from "@relay/protocol";
 import { interactionBody, type InteractiveStep } from "./server-interaction";
 import {
   frameUrlForPersisted as buildFrameUrl,
@@ -57,6 +58,7 @@ type ScreenshotResponse = {
     status?: string;
   };
   proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
+  readiness?: TargetRuntimeReadiness;
 };
 
 type ScrollSurveyResponse = {
@@ -106,6 +108,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
   let keyboardChain = Promise.resolve(true);
   let lastLiveFrameBase64 = "";
   let lastLiveFrameSerial: string | undefined;
+  let lastLiveFrame: Frame | null = null;
 
   function resetLivePreview(): void {
     // Starting a live view is a new observation session, even when it targets
@@ -114,6 +117,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
     // first screenshot can mount again.
     lastLiveFrameBase64 = "";
     lastLiveFrameSerial = undefined;
+    lastLiveFrame = null;
     deps.setLiveFrame(null);
     deps.setSnapshot(null);
     deps.setLiveCaptureIssue?.(null);
@@ -417,12 +421,24 @@ export function createServerCapture(deps: CaptureServerDeps) {
       // whole workbench feel frozen. Keep the current frame mounted; an input
       // or genuine visual change still produces a new payload immediately.
       if (responseSerial === lastLiveFrameSerial && data.base64 === lastLiveFrameBase64) {
+        // Pixel bytes can be unchanged while their proof state advances (for
+        // example, a successful go-ios capture following a stale XCTest
+        // overlay). Keep the mounted bitmap intact, but retain that newer
+        // metadata so the Stage never couples pixel freshness to AX freshness.
+        if (data.readiness && lastLiveFrame) {
+          lastLiveFrame = {
+            ...lastLiveFrame,
+            capturedAt: data.capturedAt,
+            readiness: data.readiness,
+          };
+          deps.setLiveFrame(lastLiveFrame);
+        }
         deps.setLiveCaptureIssue?.(null);
         return;
       }
       lastLiveFrameSerial = responseSerial;
       lastLiveFrameBase64 = data.base64;
-      deps.setLiveFrame({
+      lastLiveFrame = {
         id: `live-${data.capturedAt}`,
         capturedAt: data.capturedAt,
         mime: data.mime,
@@ -437,7 +453,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
           ? { visualFingerprint: data.screenMatch.visualFingerprint }
           : {}),
         ...(data.proposedRows?.length ? { proposedRows: data.proposedRows } : {}),
-      });
+        ...(data.readiness ? { readiness: data.readiness } : {}),
+      };
+      deps.setLiveFrame(lastLiveFrame);
       deps.setLiveCaptureIssue?.(null);
     } catch (error) {
       // Live refresh is best-effort; retain the last good frame, but preserve
