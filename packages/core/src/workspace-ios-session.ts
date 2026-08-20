@@ -12,7 +12,6 @@ import {
 } from "./ios-device-adapter.js";
 import {
   createIosSessionRecoverySingleFlight,
-  isRecoverableIosRuntimeError,
   foreignSessionNameFromError,
   recoverIosRuntime,
   recoverIosRuntimeSession,
@@ -32,11 +31,9 @@ import {
 import type { TargetRuntimeReadiness } from "@relay/protocol";
 
 /**
- * XCTest runner setup is a device concern, not a recording concern. A stage
- * opens by reading the screen, so that first read must be able to prepare the
- * iOS runner too. Keep one preparation in flight per device; otherwise the
- * initial screenshot and UI-tree polls race each other and each attempt can
- * try to sign/install the same runner.
+ * XCTest runner setup is a device concern, not a recording concern. Keep one
+ * preparation in flight per device; otherwise an explicit Reconnect and a
+ * deliberate evidence start could race to sign/install the same runner.
  */
 const iosRunnerPreparations = new Map<string, Promise<void>>();
 const iosRunnerFailures = new Map<string, { error: Error; expiresAt: number }>();
@@ -45,8 +42,35 @@ const runIosRecoverySingleFlight = createIosSessionRecoverySingleFlight<TargetRu
 const IOS_RUNNER_FAILURE_TTL_MS = 10_000;
 const IOS_DEVICE_ATTENTION_FAILURE_TTL_MS = 5 * 60_000;
 
+/**
+ * The only host-repair caller is `recoverTargetRuntime`. Keep preparation
+ * behind this tiny seam so the one-attempt rule is regression-testable
+ * without a connected iPad or an Xcode process.
+ */
+type IosSessionHostRuntime = {
+  prepareIosRunner: typeof prepareIosRunner;
+  recoverIosRuntime: typeof recoverIosRuntime;
+};
+
+const defaultIosSessionHostRuntime: IosSessionHostRuntime = {
+  prepareIosRunner,
+  recoverIosRuntime,
+};
+let iosSessionHostRuntime = defaultIosSessionHostRuntime;
+
+/** Test-only seam. Production always uses the native Apple runtime. */
+export function setIosSessionHostRuntimeForTests(
+  overrides: Partial<IosSessionHostRuntime> | undefined,
+): () => void {
+  const previous = iosSessionHostRuntime;
+  iosSessionHostRuntime = { ...defaultIosSessionHostRuntime, ...overrides };
+  return () => {
+    iosSessionHostRuntime = previous;
+  };
+}
+
 export type IosSessionOperationDiagnostic = {
-  operation: "preview" | "snapshot" | "screenshot" | "interaction";
+  operation: "preview" | "snapshot" | "screenshot" | "interaction" | "evidence";
   outcome: "passed" | "unavailable";
   code: "IOS_SESSION_OPERATION_READY" | "IOS_SESSION_OPERATION_UNAVAILABLE";
   attempts: 1;
@@ -75,7 +99,7 @@ async function recoverIosHostRuntime(
   const existing = iosRuntimeRecoveries.get(serial);
   if (existing && !force) return existing;
   let recovery!: Promise<IosRuntimeRecoveryResult>;
-  recovery = recoverIosRuntime({ serial, cause, force }).finally(() => {
+  recovery = iosSessionHostRuntime.recoverIosRuntime({ serial, cause, force }).finally(() => {
     // A forced recovery can supersede an older poisoned attempt. Never let
     // that older promise delete the newer recovery when it eventually settles.
     if (iosRuntimeRecoveries.get(serial) === recovery) iosRuntimeRecoveries.delete(serial);
@@ -280,7 +304,7 @@ async function recoverTargetRuntimeReserved(
         host.recovered = true;
       }
       try {
-        await ensureIosRunnerPrepared(device, serial, { allowHostRepair: false });
+        await ensureIosRunnerPrepared(device, serial);
         host.actions = [
           {
             kind: "agent-device",
@@ -310,11 +334,7 @@ async function recoverTargetRuntimeReserved(
   });
 }
 
-export function ensureIosRunnerPrepared(
-  device: Device,
-  serial: string,
-  options: { allowHostRepair?: boolean } = {},
-): Promise<void> {
+export function ensureIosRunnerPrepared(device: Device, serial: string): Promise<void> {
   const recentFailure = iosRunnerFailures.get(serial);
   if (recentFailure && recentFailure.expiresAt > Date.now()) {
     return Promise.reject(recentFailure.error);
@@ -325,12 +345,11 @@ export function ensureIosRunnerPrepared(
   if (existing) return existing;
 
   let preparation!: Promise<void>;
-  preparation = prepareIosRunner(device, { udid: serial })
-    .catch(async (error) => {
-      if (options.allowHostRepair === false || !isRecoverableIosRuntimeError(error)) throw error;
-      await recoverIosHostRuntime(serial, error);
-      return prepareIosRunner(device, { udid: serial });
-    })
+  // Preparation is a single proof attempt. It may install/start XCTest, but
+  // it must never repair the host or retry itself: only an explicit Reconnect
+  // may own destructive recovery and its mandatory post-repair proof.
+  preparation = iosSessionHostRuntime
+    .prepareIosRunner(device, { udid: serial })
     .then(() => {
       iosRunnerFailures.delete(serial);
     })
@@ -391,8 +410,7 @@ export async function withSession<T>(
           { stage: "xctest-availability", outcome: "passed" },
           {
             stage: "accessibility-query",
-            outcome:
-              operation === "interaction" || operation === "screenshot" ? "skipped" : "passed",
+            outcome: operation === "preview" || operation === "snapshot" ? "passed" : "skipped",
           },
           { stage: "repair", outcome: "skipped" },
         ],
@@ -415,7 +433,10 @@ export async function withSession<T>(
             outcome: operation === "preview" ? "failed" : "skipped",
           },
           { stage: "xctest-availability", outcome: "failed" },
-          { stage: "accessibility-query", outcome: "failed" },
+          {
+            stage: "accessibility-query",
+            outcome: operation === "preview" || operation === "snapshot" ? "failed" : "skipped",
+          },
           { stage: "repair", outcome: "skipped" },
         ],
       };

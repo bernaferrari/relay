@@ -3,12 +3,65 @@ import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { iosVideoTakeDirectory, isFinalizedMp4, pruneIosVideoTakes } from "./ios-video-capture.js";
+import { IosEvidenceCaptureUnavailableError } from "@relay/core";
+import {
+  iosVideoTakeDirectory,
+  iosVideoUnavailableResponse,
+  isFinalizedMp4,
+  pruneIosVideoTakes,
+} from "./ios-video-capture.js";
 
 test("recognizes only finalized MP4 evidence", () => {
   assert.equal(isFinalizedMp4(Buffer.from("....ftyp....mdat....moov....")), true);
   assert.equal(isFinalizedMp4(Buffer.from("....ftyp....mdat....")), false);
   assert.equal(isFinalizedMp4(Buffer.from("not a movie")), false);
+});
+
+test("turns a proof-only iOS video failure into a structured Reconnect response", () => {
+  const error = new IosEvidenceCaptureUnavailableError({
+    operation: "evidence-start",
+    stage: "runner-preparation",
+    outcome: "unavailable",
+    code: "IOS_EVIDENCE_CAPTURE_UNAVAILABLE",
+    attempts: 1,
+    repairAttempted: false,
+    message: "Keep the iPad unlocked, then press Reconnect once.",
+    readiness: {
+      previewPixels: {
+        mode: "pixels",
+        state: "proven",
+        freshness: "current",
+        proof: { at: 1 },
+      },
+      semanticControl: {
+        mode: "accessibility",
+        state: "unavailable",
+        freshness: "unproven",
+        reason: "probe-failed",
+      },
+      evidenceCapture: {
+        mode: "evidence",
+        state: "unavailable",
+        freshness: "unproven",
+        reason: "probe-failed",
+      },
+    },
+    recovery: "Recorded iOS video is unavailable. Press Reconnect once, then start the take again.",
+    recoveryAction: {
+      operationId: "target.recover",
+      input: { serial: "ipad-1", reason: "record" },
+      cli: { argv: ["device", "recover", "ipad-1", "--input", '{"reason":"record"}'] },
+    },
+  });
+
+  const response = iosVideoUnavailableResponse(error);
+  assert.ok(response);
+  assert.equal(response.status, 503);
+  assert.equal(response.body.code, "IOS_EVIDENCE_CAPTURE_UNAVAILABLE");
+  assert.equal(response.body.readiness.previewPixels.state, "proven");
+  assert.equal(response.body.diagnostic.repairAttempted, false);
+  assert.deepEqual(response.body.recoveryAction.input, { serial: "ipad-1", reason: "record" });
+  assert.equal(iosVideoUnavailableResponse(new Error("ordinary error")), undefined);
 });
 
 test("stores Apple review takes outside runs and prunes only expired ready evidence", async () => {

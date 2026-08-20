@@ -9,7 +9,11 @@
 import { access, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { captureDeviceVideo } from "@relay/core";
+import {
+  captureDeviceVideo,
+  IosEvidenceCaptureUnavailableError,
+  type IosEvidenceCaptureUnavailableDiagnostic,
+} from "@relay/core";
 
 export type IosVideoTake = {
   id: string;
@@ -20,6 +24,39 @@ export type IosVideoTake = {
   state: "recording" | "ready";
   warning?: string;
 };
+
+/**
+ * Keep a failed XCTest video start machine-actionable at the HTTP boundary.
+ * The core error intentionally contains no host logs, only a bounded proof
+ * result and the sole explicit repair command.
+ */
+export function iosVideoUnavailableResponse(error: unknown):
+  | {
+      status: 503;
+      message: string;
+      body: {
+        code: IosEvidenceCaptureUnavailableDiagnostic["code"];
+        diagnostic: IosEvidenceCaptureUnavailableDiagnostic;
+        readiness: IosEvidenceCaptureUnavailableDiagnostic["readiness"];
+        recovery: IosEvidenceCaptureUnavailableDiagnostic["recovery"];
+        recoveryAction: IosEvidenceCaptureUnavailableDiagnostic["recoveryAction"];
+      };
+    }
+  | undefined {
+  if (!(error instanceof IosEvidenceCaptureUnavailableError)) return undefined;
+  const diagnostic = error.diagnostic;
+  return {
+    status: 503,
+    message: error.message,
+    body: {
+      code: diagnostic.code,
+      diagnostic,
+      readiness: diagnostic.readiness,
+      recovery: diagnostic.recovery,
+      recoveryAction: diagnostic.recoveryAction,
+    },
+  };
+}
 
 /** A recorder can leave a large `mdat` behind when XCTest disappears without
  * writing the movie index. Browsers render that as a black 0:00 player. Keep

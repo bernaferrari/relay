@@ -44,6 +44,8 @@ export {
   captureScreenshot,
   normalizeIosScreenshotForCapture,
   type DeviceVideoCapture,
+  type IosEvidenceCaptureUnavailableDiagnostic,
+  IosEvidenceCaptureUnavailableError,
   captureDeviceVideo,
   cleanupScreenshot,
   formatSnapshotTree,

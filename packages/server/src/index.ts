@@ -104,6 +104,7 @@ import {
   readIosVideoTake,
   pruneIosVideoTakes,
   reconcileIosVideoTake,
+  iosVideoUnavailableResponse,
   startIosVideoTake,
   stopIosVideoTake,
 } from "./ios-video-capture.js";
@@ -669,6 +670,10 @@ async function handleRequest(
           },
         });
       } catch (error) {
+        const unavailable = iosVideoUnavailableResponse(error);
+        if (unavailable) {
+          throw new HttpError(unavailable.status, unavailable.message, unavailable.body);
+        }
         throw new HttpError(502, error instanceof Error ? error.message : String(error));
       }
       return;
