@@ -54,6 +54,7 @@ import {
 } from "./workspace-ios-session.js";
 import { rawScreenshot } from "./workspace-android-raw.js";
 import {
+  hasUsableSemanticAccessibility,
   recordTargetPixelCapture,
   recordTargetSemanticSnapshot,
   targetRuntimeReadiness,
@@ -247,10 +248,19 @@ async function snapshotForTarget(
     } else {
       appleNodes = await snapshotThroughSdk(target.device, interactiveOnly, operation);
     }
-    const inspectable = appleNodes.length > 0;
+    // A root/window-only XCTest response tells us that the runner answered,
+    // not that Relay can name or safely activate a control. Keep this fact in
+    // lockstep with the runtime-capability proof so callers never receive an
+    // `inspectable: true` snapshot while semantic control is unavailable.
+    const inspectable = iosSerial
+      ? hasUsableSemanticAccessibility(appleNodes)
+      : appleNodes.length > 0;
     const inspectionError = inspectable
       ? undefined
-      : await iosInspectionErrorMessage(iosSnapshotError, iosSerial);
+      : ((await iosInspectionErrorMessage(iosSnapshotError, iosSerial)) ??
+        (iosSerial && appleNodes.length > 0
+          ? "Relay did not observe named accessibility controls."
+          : undefined));
     return {
       nodes: appleNodes,
       inspectable,
