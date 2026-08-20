@@ -506,7 +506,25 @@ test("keeps a large offline replay causally actionable instead of dropping it at
         reason: "x".repeat(1_000),
         selectorAttempts: [{ strategy: "label" }],
         evidence: ["artifact"],
+        currentMatcher: {
+          status: "resolved",
+          comparison: "changed",
+          inputDigest: "b".repeat(64),
+          selectors: [{ status: "resolved" }],
+          evidence: ["failure-tree"],
+        },
       })),
+      repairProposals: [
+        {
+          id: "offline:run-1:birth-year:review-current-matcher",
+          checkId: "birth-year",
+          kind: "review-current-matcher",
+          reason: "Review the frozen target before creating any repair.",
+          mutation: "none",
+          requiresReview: true,
+          evidence: ["failure-tree"],
+        },
+      ],
       blockers: [{ kind: "root-failure", checkIds: ["birth-year"], message: "x".repeat(1_000) }],
     },
   };
@@ -523,7 +541,12 @@ test("keeps a large offline replay causally actionable instead of dropping it at
           evidenceTruncated: boolean;
           summary: { invalidCascades: number };
           firstRootFailure: { checkId: string };
-          checks: Array<{ selectorAttemptCount: number; evidenceCount: number }>;
+          checks: Array<{
+            selectorAttemptCount: number;
+            evidenceCount: number;
+            currentMatcher: { status: string; comparison: string; selectorCount: number };
+          }>;
+          repairProposals: Array<{ kind: string; requiresReview: boolean; evidenceCount: number }>;
         };
         resource: { uri: string };
       };
@@ -534,6 +557,24 @@ test("keeps a large offline replay causally actionable instead of dropping it at
     assert.equal(envelope.data.report.firstRootFailure.checkId, "birth-year");
     assert.equal(envelope.data.report.checks[0]?.selectorAttemptCount, 1);
     assert.equal(envelope.data.report.checks[0]?.evidenceCount, 1);
+    assert.deepEqual(envelope.data.report.checks[0]?.currentMatcher, {
+      status: "resolved",
+      comparison: "changed",
+      inputDigest: `${"b".repeat(23)}…`,
+      selectorCount: 1,
+      evidenceCount: 1,
+    });
+    assert.deepEqual(envelope.data.report.repairProposals, [
+      {
+        id: "offline:run-1:birth-year:review-current-matcher",
+        checkId: "birth-year",
+        kind: "review-current-matcher",
+        mutation: "none",
+        requiresReview: true,
+        reason: "Review the frozen target before creating any repair.",
+        evidenceCount: 1,
+      },
+    ]);
     assert.equal(envelope.data.resource.uri, "relay://runs/run-1/offline-replay");
   } finally {
     await session.close();

@@ -490,7 +490,38 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
             appMapRevision: 1,
             testId: scenario.id,
             planDigest: "compiled-before-device",
-            summary: { recipes: 1, checkedSelectors: 0, blockers: 0, warnings: 0 },
+            summary: {
+              recipes: 1,
+              checkedSelectors: 1,
+              resolvedSelectors: 1,
+              unknownCursorTransitions: 1,
+              reviewRequiredReturns: 0,
+              blockers: 0,
+              warnings: 0,
+            },
+            selectors: [
+              {
+                recipeId: "root",
+                recipeStepId: "open-checkout",
+                stepKind: "tap",
+                target: { label: "Checkout" },
+                status: "resolved",
+                evidence: {
+                  kind: "screen-observation",
+                  references: ["screen:checkout:observation"],
+                },
+              },
+            ],
+            cursorTimeline: [
+              {
+                recipeId: "root",
+                recipeStepId: "open-checkout",
+                stepIndex: 0,
+                state: "unknown",
+                reason: "A later screen expectation must prove this transition at runtime.",
+              },
+            ],
+            returns: [],
             findings: [],
           },
         };
@@ -541,6 +572,14 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   offlineCheck.click();
   await settle();
   expect(root.textContent).toContain("Offline check passed");
+  expect(root.textContent).toContain("1 of 1 selectors resolve from frozen evidence");
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent?.includes("Inspect plan"))!
+    .click();
+  await settle();
+  expect(root.textContent).toContain("1 / 1 resolved");
+  expect(root.textContent).toContain("1 unknown");
+  expect(root.textContent).toContain("Plan compiled-bef…");
   primary().click();
   await settle();
 
@@ -641,7 +680,35 @@ test("offline preflight blocks device control but leaves an inspectable repair r
           appMapRevision: 1,
           testId: scenario.id,
           planDigest: "blocked-before-device",
-          summary: { recipes: 1, checkedSelectors: 1, blockers: 1, warnings: 0 },
+          summary: {
+            recipes: 1,
+            checkedSelectors: 1,
+            resolvedSelectors: 0,
+            unknownCursorTransitions: 1,
+            reviewRequiredReturns: 0,
+            blockers: 1,
+            warnings: 0,
+          },
+          selectors: [
+            {
+              recipeId: "root",
+              recipeStepId: "cloud-filter",
+              stepKind: "tap",
+              target: { label: "Cloud filter" },
+              status: "absent",
+              evidence: { kind: "screen-observation", references: ["screen:settings:observation"] },
+            },
+          ],
+          cursorTimeline: [
+            {
+              recipeId: "root",
+              recipeStepId: "cloud-filter",
+              stepIndex: 0,
+              state: "unknown",
+              reason: "A later screen expectation must prove this transition at runtime.",
+            },
+          ],
+          returns: [],
           findings: [
             {
               severity: "blocker",
@@ -666,6 +733,8 @@ test("offline preflight blocks device control but leaves an inspectable repair r
   expect(calls).toEqual(["app-map.test.compile"]);
   expect(root.textContent).toContain("1 offline issue blocks device control");
   expect(root.textContent).toContain("Cloud filter is absent");
+  expect(root.textContent).toContain("0 / 1 resolved");
+  expect(root.textContent).toContain("1 unknown");
   expect(root.textContent).not.toContain("Run test");
 
   dispose();

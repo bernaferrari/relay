@@ -72,6 +72,20 @@ function compactCheck(value: unknown, reasonLimit: number): UnknownRecord {
     ? check.selectorAttempts.length
     : 0;
   result.evidenceCount = Array.isArray(check?.evidence) ? check.evidence.length : 0;
+  const currentMatcher = record(check?.currentMatcher);
+  if (currentMatcher) {
+    const compactMatcher: UnknownRecord = {};
+    assignText(compactMatcher, "status", currentMatcher.status, 32);
+    assignText(compactMatcher, "comparison", currentMatcher.comparison, 32);
+    assignText(compactMatcher, "inputDigest", currentMatcher.inputDigest, 24);
+    compactMatcher.selectorCount = Array.isArray(currentMatcher.selectors)
+      ? currentMatcher.selectors.length
+      : 0;
+    compactMatcher.evidenceCount = Array.isArray(currentMatcher.evidence)
+      ? currentMatcher.evidence.length
+      : 0;
+    result.currentMatcher = compactMatcher;
+  }
   return result;
 }
 
@@ -97,6 +111,18 @@ function compactBlocker(value: unknown, maxCheckIds: number): UnknownRecord {
         .slice(0, maxCheckIds)
     : [];
   if (checkIds.length) result.checkIds = checkIds;
+  return result;
+}
+
+function compactRepairProposal(value: unknown): UnknownRecord {
+  const proposal = record(value);
+  const result: UnknownRecord = {};
+  for (const key of ["id", "checkId", "kind", "mutation"]) {
+    assignText(result, key, proposal?.[key], 80);
+  }
+  if (proposal?.requiresReview === true) result.requiresReview = true;
+  assignText(result, "reason", proposal?.reason, 128);
+  result.evidenceCount = Array.isArray(proposal?.evidence) ? proposal.evidence.length : 0;
   return result;
 }
 
@@ -137,6 +163,9 @@ function compactOfflineReplayResult(value: unknown, options: CompactOptions): Un
   report.blockers = (Array.isArray(source.blockers) ? source.blockers : [])
     .slice(0, options.maxBlockers)
     .map((blocker) => compactBlocker(blocker, options.blockerCheckIds));
+  report.repairProposals = (Array.isArray(source.repairProposals) ? source.repairProposals : [])
+    .slice(0, options.maxBlockers)
+    .map(compactRepairProposal);
 
   const runId = compactText(source.runId, 64);
   return {

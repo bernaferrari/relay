@@ -314,3 +314,135 @@ test("offline preflight is deterministic and never turns unresolved Back into a 
   assert.equal(first.findings[0]?.code, "unresolved-return");
   assert.equal(first.findings[0]?.severity, "blocker");
 });
+
+test("offline preflight exposes deterministic selector, cursor, return, and frozen-evidence ledgers", () => {
+  const compiled = plan([
+    {
+      kind: "expect-screen",
+      id: "settings-source",
+      screenId: "settings",
+      screenTitle: "Settings",
+      fingerprint: "settings",
+    },
+    { kind: "tap", id: "open-usage", target: { label: "Usage", role: "button" } },
+    {
+      kind: "reveal",
+      id: "reveal-voice",
+      target: { label: "Voice", role: "button" },
+      navigation: [
+        {
+          schemaVersion: 1,
+          surfaceId: "settings-surface",
+          captureId: "capture-2",
+          documentHeight: 2_400,
+          viewportHeight: 800,
+          targetOrder: 9,
+          targetDocumentY: 1_680,
+          anchors: [],
+        },
+      ],
+    },
+    {
+      kind: "expect-screen",
+      id: "return-settings",
+      screenId: "settings",
+      screenTitle: "Settings",
+      fingerprint: "settings",
+      returnRequirement: {
+        connectionId: "return-from-usage",
+        fromScreenId: "settings",
+        destinationScreenId: "usage",
+      },
+    },
+  ]);
+  const evidence = {
+    rawObservationsByScreenId: {
+      settings: [
+        [
+          {
+            role: "button",
+            label: "Usage",
+            hittable: true,
+            rect: { x: 20, y: 100, width: 320, height: 48 },
+          },
+          {
+            role: "button",
+            label: "Voice",
+            hittable: true,
+            rect: { x: 20, y: 420, width: 320, height: 48 },
+          },
+        ],
+      ],
+    },
+    rawEvidenceReferencesByScreenId: {
+      settings: ["relay-evidence://b", "relay-evidence://a", "relay-evidence://a"],
+    },
+  };
+  const first = preflightCompiledAppMapTestOffline(compiled, evidence);
+  const reorderedPlan = Object.fromEntries(
+    Object.entries(structuredClone(compiled)).reverse(),
+  ) as AppMapCompiledTest;
+  const second = preflightCompiledAppMapTestOffline(reorderedPlan, evidence);
+
+  assert.equal(second.planDigest, first.planDigest);
+  assert.deepEqual(first.summary, {
+    recipes: 1,
+    checkedSelectors: 2,
+    resolvedSelectors: 2,
+    unknownCursorTransitions: 1,
+    reviewRequiredReturns: 1,
+    blockers: 1,
+    warnings: 0,
+  });
+  assert.deepEqual(
+    first.selectors.map((selector) => ({
+      id: selector.recipeStepId,
+      status: selector.status,
+      references: selector.evidence.references,
+      method: selector.resolution?.method,
+      revealPositions: selector.revealPositions,
+    })),
+    [
+      {
+        id: "open-usage",
+        status: "resolved",
+        references: ["relay-evidence://a", "relay-evidence://b"],
+        method: "label",
+        revealPositions: undefined,
+      },
+      {
+        id: "reveal-voice",
+        status: "resolved",
+        references: ["relay-evidence://a", "relay-evidence://b"],
+        method: "label",
+        revealPositions: [
+          {
+            surfaceId: "settings-surface",
+            captureId: "capture-2",
+            targetOrder: 9,
+            targetDocumentY: 1_680,
+            direction: "auto",
+          },
+        ],
+      },
+    ],
+  );
+  assert.deepEqual(
+    first.cursorTimeline.map((cursor) => [cursor.recipeStepId, cursor.state, cursor.screenId]),
+    [
+      ["settings-source", "expected", "settings"],
+      ["open-usage", "unknown", undefined],
+      ["return-settings", "return-required", "settings"],
+    ],
+  );
+  assert.deepEqual(first.returns, [
+    {
+      recipeId: "root",
+      recipeStepId: "return-settings",
+      connectionId: "return-from-usage",
+      sourceScreenId: "usage",
+      destinationScreenId: "settings",
+      status: "review-required",
+    },
+  ]);
+});

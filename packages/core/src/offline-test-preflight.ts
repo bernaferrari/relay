@@ -1,8 +1,11 @@
 import type {
   AppMapCompiledTest,
   NormalizedSemanticNode,
+  OfflineTestPreflightCursor,
   OfflineTestPreflightFinding,
   OfflineTestPreflightReport,
+  OfflineTestPreflightReturn,
+  OfflineTestPreflightSelector,
   RecipeStep,
   StepTarget,
 } from "@relay/protocol";
@@ -17,18 +20,33 @@ export type { OfflineTestPreflightFinding, OfflineTestPreflightReport };
  * reads current App Map state by itself. */
 export type OfflineTestPreflightEvidence = {
   rawObservationsByScreenId?: Readonly<Record<string, ReadonlyArray<ReadonlyArray<SnapshotNode>>>>;
+  /** Durable references for the supplied raw observations. Preflight never
+   * opens them; it only carries the frozen provenance into its report. */
+  rawEvidenceReferencesByScreenId?: Readonly<Record<string, ReadonlyArray<string>>>;
   /** A frozen tree reference existed but cannot be used now, or the frozen
    * Variant predates raw-tree capture. This is a recapture request, never a
    * reason to guess from flattened semantics. */
   rawEvidenceStatusByScreenId?: Readonly<Record<string, "missing" | "unreadable">>;
 };
 
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, entry]) => [key, stableValue(entry)]),
+  );
+}
+
 function digest(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify(stableValue(value)))
+    .digest("hex");
 }
 
 function normalize(value: string | undefined): string | undefined {
-  const normalized = value?.trim().toLocaleLowerCase();
+  const normalized = value?.trim().toLowerCase();
   return normalized || undefined;
 }
 
@@ -52,6 +70,56 @@ function candidate(node: NormalizedSemanticNode) {
     ...(node.label ? { label: node.label } : {}),
     ...(node.value ? { value: node.value } : {}),
   };
+}
+
+function compareCandidates(left: NormalizedSemanticNode, right: NormalizedSemanticNode): number {
+  const key = (node: NormalizedSemanticNode) =>
+    [node.role, node.identifier ?? "", node.label ?? "", node.value ?? ""].join("\u0000");
+  const leftKey = key(left);
+  const rightKey = key(right);
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+}
+
+function boundedCandidates(nodes: readonly NormalizedSemanticNode[]) {
+  return [...nodes].sort(compareCandidates).slice(0, 5).map(candidate);
+}
+
+function uniqueReferences(references: readonly string[]): string[] {
+  return [...new Set(references.filter((reference) => reference.trim()))].sort((left, right) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
+}
+
+function targetSummary(target: StepTarget): OfflineTestPreflightSelector["target"] {
+  return {
+    ...(target.identifier ? { identifier: target.identifier } : {}),
+    ...(target.ref ? { ref: target.ref } : {}),
+    ...(target.label ? { label: target.label } : {}),
+    ...(target.role ? { role: target.role } : {}),
+    ...(target.text ? { text: target.text } : {}),
+    ...(target.relation ? { relation: structuredClone(target.relation) } : {}),
+    ...(target.point ? { hasPointFallback: true } : {}),
+  };
+}
+
+function revealPositions(
+  step: Extract<RecipeStep, { kind: "reveal" }>,
+): NonNullable<OfflineTestPreflightSelector["revealPositions"]> | undefined {
+  const positions = (step.navigation ?? [])
+    .map((navigation) => ({
+      surfaceId: navigation.surfaceId,
+      captureId: navigation.captureId,
+      targetOrder: navigation.targetOrder,
+      targetDocumentY: navigation.targetDocumentY,
+      direction: step.direction ?? "auto",
+    }))
+    .sort(
+      (left, right) =>
+        left.targetDocumentY - right.targetDocumentY ||
+        (left.surfaceId < right.surfaceId ? -1 : left.surfaceId > right.surfaceId ? 1 : 0) ||
+        (left.captureId < right.captureId ? -1 : left.captureId > right.captureId ? 1 : 0),
+    );
+  return positions.length ? positions : undefined;
 }
 
 function observationsFromNavigation(
@@ -96,17 +164,44 @@ function matchesTarget(nodes: readonly NormalizedSemanticNode[], target: StepTar
   return [];
 }
 
-function selectorFinding(input: {
+function selectorAssessment(input: {
   recipeId: string;
   step: Extract<RecipeStep, { kind: "tap" | "reveal" | "expect" | "wait-for" }>;
+  screenId?: string;
   observations: readonly { nodes: NormalizedSemanticNode[] }[];
   rawObservations?: ReadonlyArray<ReadonlyArray<SnapshotNode>>;
-}): OfflineTestPreflightFinding[] {
-  const { recipeId, step, observations, rawObservations } = input;
+  rawEvidenceReferences?: readonly string[];
+}): { selector: OfflineTestPreflightSelector; findings: OfflineTestPreflightFinding[] } {
+  const { recipeId, step, screenId, observations, rawObservations, rawEvidenceReferences } = input;
   const target = step.target;
   const description = targetDescription(target);
   const hasReviewedFallback =
     target.point?.fallbackPolicy === "reviewed" || Boolean(target.point?.relativeTo);
+  const selectorBase = {
+    recipeId,
+    ...(step.id ? { recipeStepId: step.id } : {}),
+    ...(screenId ? { screenId } : {}),
+    stepKind: step.kind,
+    target: targetSummary(target),
+    ...(step.kind === "reveal" && revealPositions(step)
+      ? { revealPositions: revealPositions(step) }
+      : {}),
+  } satisfies Omit<OfflineTestPreflightSelector, "status" | "evidence">;
+  const normalizedReferences = uniqueReferences(
+    screenId ? [`screen:${screenId}:observation`] : ["compiled:screen-observation"],
+  );
+  const rawReferences = uniqueReferences(
+    rawEvidenceReferences?.length
+      ? rawEvidenceReferences
+      : screenId
+        ? [`screen:${screenId}:raw-accessibility-tree`]
+        : ["compiled:raw-accessibility-tree"],
+  );
+  const revealReferences = uniqueReferences(
+    (step.kind === "reveal" ? revealPositions(step) : [])?.map(
+      (position) => `surface:${position.surfaceId}#capture:${position.captureId}`,
+    ) ?? [],
+  );
   if (
     target.point &&
     !target.identifier &&
@@ -115,21 +210,51 @@ function selectorFinding(input: {
     !target.text &&
     !target.relation
   ) {
-    return [
-      {
-        severity: "warning",
-        code: "point-only-selector",
-        recipeId,
-        ...(step.id ? { recipeStepId: step.id } : {}),
-        message: `${description} has only a coordinate fallback; it cannot be proven across layout or locale changes.`,
+    return {
+      selector: {
+        ...selectorBase,
+        status: "point-only",
+        evidence: { kind: "none", references: [] },
+        detail:
+          "Only a recorded coordinate is available; no semantic target can be replayed offline.",
       },
-    ];
+      findings: [
+        {
+          severity: "warning",
+          code: "point-only-selector",
+          recipeId,
+          ...(step.id ? { recipeStepId: step.id } : {}),
+          message: `${description} has only a coordinate fallback; it cannot be proven across layout or locale changes.`,
+        },
+      ],
+    };
   }
   if (rawObservations?.length) {
     const attempts = rawObservations.map((nodes) =>
       preflightSemanticActivation([...nodes], target),
     );
-    if (attempts.some((attempt) => attempt.status === "proven")) return [];
+    const proven = attempts.find(
+      (attempt): attempt is Extract<typeof attempt, { status: "proven" }> =>
+        attempt.status === "proven",
+    );
+    if (proven) {
+      return {
+        selector: {
+          ...selectorBase,
+          status: "resolved",
+          evidence: {
+            kind: "raw-accessibility-tree",
+            references: rawReferences,
+          },
+          resolution: {
+            method: proven.resolution.method,
+            ...(proven.resolution.activation ? { activation: proven.resolution.activation } : {}),
+            snapshotBounds: { ...proven.resolution.bounds },
+          },
+        },
+        findings: [],
+      };
+    }
     const blockedAttempts = attempts.filter(
       (attempt): attempt is Extract<typeof attempt, { status: "blocked" }> =>
         attempt.status === "blocked",
@@ -137,27 +262,46 @@ function selectorFinding(input: {
     const ambiguous = blockedAttempts.find((attempt) => attempt.code === "ambiguous");
     const headingOnly = blockedAttempts.find((attempt) => attempt.code === "heading-only-noop");
     const detail = ambiguous?.detail ?? headingOnly?.detail ?? blockedAttempts[0]?.detail;
-    return [
-      {
-        severity: hasReviewedFallback ? "warning" : "blocker",
-        code: ambiguous ? "selector-ambiguous" : "selector-absent",
-        recipeId,
-        ...(step.id ? { recipeStepId: step.id } : {}),
-        message: `${description} cannot be activated from frozen raw accessibility evidence${detail ? `: ${detail}` : ""}${hasReviewedFallback ? "; a reviewed fallback needs live confirmation" : ""}.`,
+    return {
+      selector: {
+        ...selectorBase,
+        status: ambiguous ? "ambiguous" : "absent",
+        evidence: { kind: "raw-accessibility-tree", references: rawReferences },
+        detail,
       },
-    ];
+      findings: [
+        {
+          severity: hasReviewedFallback ? "warning" : "blocker",
+          code: ambiguous ? "selector-ambiguous" : "selector-absent",
+          recipeId,
+          ...(step.id ? { recipeStepId: step.id } : {}),
+          message: `${description} cannot be activated from frozen raw accessibility evidence${detail ? `: ${detail}` : ""}${hasReviewedFallback ? "; a reviewed fallback needs live confirmation" : ""}.`,
+        },
+      ],
+    };
   }
 
   if (!observations.length) {
-    return [
-      {
-        severity: "warning",
-        code: "source-observation-missing",
-        recipeId,
-        ...(step.id ? { recipeStepId: step.id } : {}),
-        message: `${description} has no frozen source accessibility observation for offline verification.`,
+    return {
+      selector: {
+        ...selectorBase,
+        status: "source-observation-missing",
+        evidence: {
+          kind: step.kind === "reveal" && revealReferences.length ? "reveal-plan" : "none",
+          references: step.kind === "reveal" ? revealReferences : [],
+        },
+        detail: "No frozen source accessibility observation is available for this selector.",
       },
-    ];
+      findings: [
+        {
+          severity: "warning",
+          code: "source-observation-missing",
+          recipeId,
+          ...(step.id ? { recipeStepId: step.id } : {}),
+          message: `${description} has no frozen source accessibility observation for offline verification.`,
+        },
+      ],
+    };
   }
 
   // Preserve every occurrence. The normalized identity projection deliberately
@@ -165,45 +309,113 @@ function selectorFinding(input: {
   // offline; collapsing them would turn an unsafe activation into a fake pass.
   const matches = observations.flatMap((observation) => matchesTarget(observation.nodes, target));
   if (!matches.length) {
-    return [
-      {
-        severity: hasReviewedFallback ? "warning" : "blocker",
-        code: "selector-absent",
-        recipeId,
-        ...(step.id ? { recipeStepId: step.id } : {}),
-        message: `${description} is absent from every frozen source accessibility observation${hasReviewedFallback ? "; a reviewed fallback needs live confirmation" : ""}.`,
+    return {
+      selector: {
+        ...selectorBase,
+        status: "absent",
+        evidence: {
+          kind:
+            step.kind === "reveal" && revealReferences.length
+              ? "reveal-plan"
+              : "screen-observation",
+          references:
+            step.kind === "reveal" && revealReferences.length
+              ? revealReferences
+              : normalizedReferences,
+        },
       },
-    ];
+      findings: [
+        {
+          severity: hasReviewedFallback ? "warning" : "blocker",
+          code: "selector-absent",
+          recipeId,
+          ...(step.id ? { recipeStepId: step.id } : {}),
+          message: `${description} is absent from every frozen source accessibility observation${hasReviewedFallback ? "; a reviewed fallback needs live confirmation" : ""}.`,
+        },
+      ],
+    };
   }
   if (target.relation) {
-    return [
-      {
-        severity: "warning",
-        code: "selector-needs-raw-tree",
-        recipeId,
-        ...(step.id ? { recipeStepId: step.id } : {}),
-        message: `${description} has a visible anchor, but its sibling relationship needs a raw accessibility tree to prove offline.`,
-        candidates: matches.slice(0, 5).map(candidate),
+    return {
+      selector: {
+        ...selectorBase,
+        status: "needs-raw-tree",
+        evidence: {
+          kind:
+            step.kind === "reveal" && revealReferences.length
+              ? "reveal-plan"
+              : "screen-observation",
+          references:
+            step.kind === "reveal" && revealReferences.length
+              ? revealReferences
+              : normalizedReferences,
+        },
+        candidates: boundedCandidates(matches),
+        detail:
+          "The sibling relationship needs raw-tree structure before it can be proved offline.",
       },
-    ];
+      findings: [
+        {
+          severity: "warning",
+          code: "selector-needs-raw-tree",
+          recipeId,
+          ...(step.id ? { recipeStepId: step.id } : {}),
+          message: `${description} has a visible anchor, but its sibling relationship needs a raw accessibility tree to prove offline.`,
+          candidates: boundedCandidates(matches),
+        },
+      ],
+    };
   }
   if (matches.length > 1) {
-    return [
-      {
-        // The normalized evidence deliberately drops bounds and parentage. It
-        // can flag repeated copy, but it cannot prove that two copies are two
-        // independently tappable rows (Compose frequently emits a heading and
-        // a row). Raw-tree geometry is required before this becomes a block.
-        severity: "warning",
-        code: "selector-ambiguous",
-        recipeId,
-        ...(step.id ? { recipeStepId: step.id } : {}),
-        message: `${description} matches ${matches.length} frozen semantic candidates and needs raw-tree geometry to distinguish them${hasReviewedFallback ? "; a reviewed fallback also exists" : ""}.`,
-        candidates: matches.slice(0, 5).map(candidate),
+    return {
+      selector: {
+        ...selectorBase,
+        status: "ambiguous",
+        evidence: {
+          kind:
+            step.kind === "reveal" && revealReferences.length
+              ? "reveal-plan"
+              : "screen-observation",
+          references:
+            step.kind === "reveal" && revealReferences.length
+              ? revealReferences
+              : normalizedReferences,
+        },
+        candidates: boundedCandidates(matches),
+        detail: `${matches.length} frozen semantic candidates matched.`,
       },
-    ];
+      findings: [
+        {
+          // The normalized evidence deliberately drops bounds and parentage. It
+          // can flag repeated copy, but it cannot prove that two copies are two
+          // independently tappable rows (Compose frequently emits a heading and
+          // a row). Raw-tree geometry is required before this becomes a block.
+          severity: "warning",
+          code: "selector-ambiguous",
+          recipeId,
+          ...(step.id ? { recipeStepId: step.id } : {}),
+          message: `${description} matches ${matches.length} frozen semantic candidates and needs raw-tree geometry to distinguish them${hasReviewedFallback ? "; a reviewed fallback also exists" : ""}.`,
+          candidates: boundedCandidates(matches),
+        },
+      ],
+    };
   }
-  return [];
+  return {
+    selector: {
+      ...selectorBase,
+      status: "resolved",
+      evidence: {
+        kind:
+          step.kind === "reveal" && revealReferences.length ? "reveal-plan" : "screen-observation",
+        references:
+          step.kind === "reveal" && revealReferences.length
+            ? revealReferences
+            : normalizedReferences,
+      },
+      candidates: boundedCandidates(matches),
+    },
+    findings: [],
+  };
 }
 
 /** Analyze one compiled graph Test using only its frozen plan and captured
@@ -215,12 +427,18 @@ export function preflightCompiledAppMapTestOffline(
   evidence: OfflineTestPreflightEvidence = {},
 ): OfflineTestPreflightReport {
   const findings: OfflineTestPreflightFinding[] = [];
+  const selectors: OfflineTestPreflightSelector[] = [];
+  const cursorTimeline: OfflineTestPreflightCursor[] = [];
+  const returns: OfflineTestPreflightReturn[] = [];
   const rawEvidenceFindingKeys = new Set<string>();
   let checkedSelectors = 0;
-  for (const recipe of Object.values(plan.recipes)) {
+  const recipes = Object.entries(plan.recipes).sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
+  for (const [, recipe] of recipes) {
     let observations: Array<{ nodes: NormalizedSemanticNode[] }> = [];
     let sourceScreenId: string | undefined;
-    for (const step of recipe.steps) {
+    for (const [stepIndex, step] of recipe.steps.entries()) {
       if (step.kind === "expect-screen") {
         observations = step.observations ?? [];
         sourceScreenId = step.screenId;
@@ -240,6 +458,26 @@ export function preflightCompiledAppMapTestOffline(
           });
         }
         if (step.returnRequirement) {
+          const returnContract: OfflineTestPreflightReturn = {
+            recipeId: recipe.id,
+            ...(step.id ? { recipeStepId: step.id } : {}),
+            connectionId: step.returnRequirement.connectionId,
+            // The forward edge's destination is the state the runner is in;
+            // the expectation's screen is the only reviewed return target.
+            sourceScreenId: step.returnRequirement.destinationScreenId,
+            destinationScreenId: step.screenId,
+            status: "review-required",
+          };
+          returns.push(returnContract);
+          cursorTimeline.push({
+            recipeId: recipe.id,
+            ...(step.id ? { recipeStepId: step.id } : {}),
+            stepIndex,
+            state: "return-required",
+            screenId: step.screenId,
+            screenTitle: step.screenTitle,
+            reason: `Return from ${returnContract.sourceScreenId} to ${returnContract.destinationScreenId} needs an explicit reviewed inverse for ${returnContract.connectionId}.`,
+          });
           findings.push({
             severity: "blocker",
             code: "unresolved-return",
@@ -247,6 +485,16 @@ export function preflightCompiledAppMapTestOffline(
             ...(step.id ? { recipeStepId: step.id } : {}),
             screenId: step.screenId,
             message: `A reviewed return is still required before ${step.screenTitle}; Relay will not invent Back navigation.`,
+          });
+        } else {
+          cursorTimeline.push({
+            recipeId: recipe.id,
+            ...(step.id ? { recipeStepId: step.id } : {}),
+            stepIndex,
+            state: "expected",
+            screenId: step.screenId,
+            screenTitle: step.screenTitle,
+            reason: `${step.screenTitle} is the next declared screen expectation; a device run must still prove it.`,
           });
         }
         continue;
@@ -261,18 +509,41 @@ export function preflightCompiledAppMapTestOffline(
         const navigationObservations =
           step.kind === "reveal" ? observationsFromNavigation(step.navigation) : [];
         const sourceObservations = observations.length ? observations : navigationObservations;
-        findings.push(
-          ...selectorFinding({
-            recipeId: recipe.id,
-            step,
-            observations: sourceObservations,
-            ...(sourceScreenId && evidence.rawObservationsByScreenId?.[sourceScreenId]
-              ? { rawObservations: evidence.rawObservationsByScreenId[sourceScreenId] }
-              : {}),
-          }),
-        );
+        const assessment = selectorAssessment({
+          recipeId: recipe.id,
+          step,
+          ...(sourceScreenId ? { screenId: sourceScreenId } : {}),
+          observations: sourceObservations,
+          ...(sourceScreenId && evidence.rawObservationsByScreenId?.[sourceScreenId]
+            ? { rawObservations: evidence.rawObservationsByScreenId[sourceScreenId] }
+            : {}),
+          ...(sourceScreenId && evidence.rawEvidenceReferencesByScreenId?.[sourceScreenId]
+            ? { rawEvidenceReferences: evidence.rawEvidenceReferencesByScreenId[sourceScreenId] }
+            : {}),
+        });
+        selectors.push(assessment.selector);
+        findings.push(...assessment.findings);
         if (navigationObservations.length) observations = navigationObservations;
+        if (step.kind === "tap") {
+          cursorTimeline.push({
+            recipeId: recipe.id,
+            ...(step.id ? { recipeStepId: step.id } : {}),
+            stepIndex,
+            state: "unknown",
+            reason:
+              "A tap can change navigation; the cursor remains unknown until a later screen expectation is proved at runtime.",
+          });
+        }
         continue;
+      }
+      if (step.kind === "key" || step.kind === "swipe" || step.kind === "app") {
+        cursorTimeline.push({
+          recipeId: recipe.id,
+          ...(step.id ? { recipeStepId: step.id } : {}),
+          stepIndex,
+          state: "unknown",
+          reason: `${step.kind} can change navigation; the cursor remains unknown until a later screen expectation is proved at runtime.`,
+        });
       }
       if (step.kind === "capture-surface" && step.baselineTrust === "recapture-required") {
         findings.push({
@@ -307,11 +578,18 @@ export function preflightCompiledAppMapTestOffline(
     testId: plan.test.id,
     planDigest: digest(plan),
     summary: {
-      recipes: Object.keys(plan.recipes).length,
+      recipes: recipes.length,
       checkedSelectors,
+      resolvedSelectors: selectors.filter((selector) => selector.status === "resolved").length,
+      unknownCursorTransitions: cursorTimeline.filter((cursor) => cursor.state === "unknown")
+        .length,
+      reviewRequiredReturns: returns.length,
       blockers: compactFindings.filter((finding) => finding.severity === "blocker").length,
       warnings: compactFindings.filter((finding) => finding.severity === "warning").length,
     },
+    selectors,
+    cursorTimeline,
+    returns,
     findings: compactFindings,
   };
 }

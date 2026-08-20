@@ -357,6 +357,79 @@ export type OfflineTestPreflightFinding = {
   >;
 };
 
+/** A read-only selector decision from the frozen Test plan. Unlike a runtime
+ * target resolution, this never grants permission to press the shown bounds;
+ * it exists so a person or agent can see exactly what offline evidence did or
+ * did not establish before a device lease is requested. */
+export type OfflineTestPreflightSelector = {
+  recipeId: string;
+  recipeStepId?: string;
+  screenId?: string;
+  stepKind: "tap" | "reveal" | "expect" | "wait-for";
+  target: Pick<StepTarget, "identifier" | "ref" | "label" | "role" | "text" | "relation"> & {
+    hasPointFallback?: boolean;
+  };
+  status:
+    | "resolved"
+    | "absent"
+    | "ambiguous"
+    | "needs-raw-tree"
+    | "point-only"
+    | "source-observation-missing";
+  /** The immutable evidence plane that produced this decision. */
+  evidence: {
+    kind: "raw-accessibility-tree" | "screen-observation" | "reveal-plan" | "none";
+    references: string[];
+  };
+  /** Bounded semantic candidates are review context, never an implicit
+   * selector rewrite. */
+  candidates?: Array<
+    Pick<import("./app-map.js").NormalizedSemanticNode, "role" | "identifier" | "label" | "value">
+  >;
+  /** A unique raw-tree match may identify the activation method and frozen
+   * bounds. It remains read-only evidence, not an executable coordinate. */
+  resolution?: {
+    method: "identifier" | "label" | "text" | "relation" | "point";
+    activation?: "snapshot-point";
+    snapshotBounds: { x: number; y: number; width: number; height: number };
+  };
+  /** A reveal position comes only from an already-frozen logical surface; no
+   * scroll offset is ever invented by preflight. */
+  revealPositions?: Array<{
+    surfaceId: string;
+    captureId: string;
+    targetOrder: number;
+    targetDocumentY: number;
+    direction: "up" | "down" | "auto";
+  }>;
+  detail?: string;
+};
+
+/** A static cursor trace. `expected` names the next declared screen, not a
+ * live proof. `unknown` records the exact point at which an interaction would
+ * require runtime evidence, and `return-required` makes a missing reviewed
+ * inverse explicit rather than silently pressing Back. */
+export type OfflineTestPreflightCursor = {
+  recipeId: string;
+  recipeStepId?: string;
+  stepIndex: number;
+  state: "expected" | "unknown" | "return-required";
+  screenId?: string;
+  screenTitle?: string;
+  reason: string;
+};
+
+/** One frozen return contract that is still awaiting an explicit reviewed
+ * inverse. This is a review object only; it cannot cause a Back gesture. */
+export type OfflineTestPreflightReturn = {
+  recipeId: string;
+  recipeStepId?: string;
+  connectionId: string;
+  sourceScreenId: string;
+  destinationScreenId: string;
+  status: "review-required";
+};
+
 export type OfflineTestPreflightReport = {
   schemaVersion: 1;
   mode: "offline-test-preflight";
@@ -367,8 +440,20 @@ export type OfflineTestPreflightReport = {
   summary: {
     recipes: number;
     checkedSelectors: number;
+    resolvedSelectors: number;
+    unknownCursorTransitions: number;
+    reviewRequiredReturns: number;
     blockers: number;
     warnings: number;
   };
+  /** A deterministic, reviewable record of every selector decision, including
+   * successful resolutions that would otherwise be invisible in a clean run. */
+  selectors: OfflineTestPreflightSelector[];
+  /** The plan's declared/unknown cursor states, scoped to individual recipes
+   * so recovery and alternate branches cannot masquerade as one linear run. */
+  cursorTimeline: OfflineTestPreflightCursor[];
+  /** Explicit unresolved return contracts. Empty means no implicit Back is
+   * pending in this frozen plan. */
+  returns: OfflineTestPreflightReturn[];
   findings: OfflineTestPreflightFinding[];
 };

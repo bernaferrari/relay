@@ -15,6 +15,16 @@ export function AppMapTestPreflight(props: {
   const blockers = () => props.report.summary.blockers;
   const warnings = () => props.report.summary.warnings;
   const issueCount = () => blockers() + warnings();
+  // Older persisted compiler responses remain readable while the server and
+  // app roll forward together; the expanded ledger is additive evidence.
+  const resolvedSelectors = () => props.report.summary.resolvedSelectors ?? 0;
+  const unknownCursorTransitions = () => props.report.summary.unknownCursorTransitions ?? 0;
+  const reviewRequiredReturns = () => props.report.summary.reviewRequiredReturns ?? 0;
+  const selectors = () => props.report.selectors ?? [];
+  const cursorTimeline = () => props.report.cursorTimeline ?? [];
+  const returns = () => props.report.returns ?? [];
+  const hasInspectablePlan = () =>
+    selectors().length > 0 || cursorTimeline().length > 0 || returns().length > 0;
   const groups = () => groupPreflightFindings(props.report.findings);
   const summary = () => {
     if (blockers()) {
@@ -57,11 +67,15 @@ export function AppMapTestPreflight(props: {
             {summary()}
           </p>
           <p class="mt-0.5 mb-0 max-w-[65ch] text-caption/[1.45] text-text-base">
-            Checked {props.report.summary.checkedSelectors} selectors against frozen evidence. No
-            phone was used, and Relay will not invent missing geometry or navigation.
+            {resolvedSelectors()} of {props.report.summary.checkedSelectors} selectors resolve from
+            frozen evidence. {unknownCursorTransitions()} runtime cursor{" "}
+            {unknownCursorTransitions() === 1 ? "handoff remains" : "handoffs remain"} unknown;{" "}
+            {reviewRequiredReturns()}{" "}
+            {reviewRequiredReturns() === 1 ? "return needs" : "returns need"} review. No phone was
+            used.
           </p>
         </div>
-        <Show when={issueCount() > 0}>
+        <Show when={issueCount() > 0 || hasInspectablePlan()}>
           <Button
             type="button"
             size="sm"
@@ -71,48 +85,78 @@ export function AppMapTestPreflight(props: {
             aria-controls="test-offline-preflight-findings"
             onClick={props.onToggle}
           >
-            {props.open ? "Hide checks" : "Review checks"}
+            {props.open ? "Hide plan" : issueCount() ? "Review checks" : "Inspect plan"}
           </Button>
         </Show>
       </div>
-      <Show when={props.open && issueCount() > 0}>
-        <ul
+      <Show when={props.open && (issueCount() > 0 || hasInspectablePlan())}>
+        <div
           id="test-offline-preflight-findings"
-          class="mt-3 grid list-none gap-2 border-t border-border-weak-base pt-3 pl-0"
+          class="mt-3 grid gap-2 border-t border-border-weak-base pt-3"
         >
-          <For each={groups()}>
-            {(group) => (
-              <li class="rounded-sm bg-surface-raised-stronger-non-alpha text-caption/[1.4] text-text-base">
-                <details>
-                  <summary class="flex min-h-11 cursor-pointer list-none items-center gap-2 px-2.5 py-2 marker:hidden [&::-webkit-details-marker]:hidden">
-                    <Icon name="chevron-right" size={14} class="shrink-0 text-icon-weak" />
-                    <span class="min-w-0 flex-1 font-medium text-text-strong">{group.title}</span>
-                    <span class="shrink-0 tabular-nums text-text-weak">
-                      {group.findings.length}
-                    </span>
-                  </summary>
-                  <div class="border-t border-border-weak-base px-2.5 py-2">
-                    <p class="m-0 max-w-[65ch] text-text-base">{group.action}</p>
-                    <ul class="mt-2 grid list-none gap-1.5 pl-0">
-                      <For each={group.findings}>
-                        {(finding) => (
-                          <li class="rounded-xs bg-surface-base px-2 py-1.5">
-                            <strong class="text-text-strong">
-                              {finding.severity === "blocker"
-                                ? "Fix before running."
-                                : "Review before trusting."}
-                            </strong>{" "}
-                            {finding.message}
-                          </li>
-                        )}
-                      </For>
-                    </ul>
-                  </div>
-                </details>
-              </li>
-            )}
-          </For>
-        </ul>
+          <dl class="m-0 grid grid-cols-3 gap-2 text-caption/[1.35]">
+            <div class="rounded-xs bg-surface-raised-stronger-non-alpha px-2 py-1.5">
+              <dt class="text-text-weak">Selectors</dt>
+              <dd class="m-0 tabular-nums text-text-strong">
+                {resolvedSelectors()} / {props.report.summary.checkedSelectors} resolved
+              </dd>
+            </div>
+            <div class="rounded-xs bg-surface-raised-stronger-non-alpha px-2 py-1.5">
+              <dt class="text-text-weak">Runtime cursor</dt>
+              <dd class="m-0 tabular-nums text-text-strong">
+                {unknownCursorTransitions()} unknown
+              </dd>
+            </div>
+            <div class="rounded-xs bg-surface-raised-stronger-non-alpha px-2 py-1.5">
+              <dt class="text-text-weak">Returns</dt>
+              <dd class="m-0 tabular-nums text-text-strong">
+                {reviewRequiredReturns()} need review
+              </dd>
+            </div>
+          </dl>
+          <p class="m-0 max-w-[65ch] text-caption/[1.4] text-text-weak">
+            Plan {props.report.planDigest.slice(0, 12)}… · frozen evidence and declared cursor
+            states only
+          </p>
+          <Show when={issueCount() > 0}>
+            <ul class="grid list-none gap-2 pl-0">
+              <For each={groups()}>
+                {(group) => (
+                  <li class="rounded-sm bg-surface-raised-stronger-non-alpha text-caption/[1.4] text-text-base">
+                    <details>
+                      <summary class="flex min-h-11 cursor-pointer list-none items-center gap-2 px-2.5 py-2 marker:hidden [&::-webkit-details-marker]:hidden">
+                        <Icon name="chevron-right" size={14} class="shrink-0 text-icon-weak" />
+                        <span class="min-w-0 flex-1 font-medium text-text-strong">
+                          {group.title}
+                        </span>
+                        <span class="shrink-0 tabular-nums text-text-weak">
+                          {group.findings.length}
+                        </span>
+                      </summary>
+                      <div class="border-t border-border-weak-base px-2.5 py-2">
+                        <p class="m-0 max-w-[65ch] text-text-base">{group.action}</p>
+                        <ul class="mt-2 grid list-none gap-1.5 pl-0">
+                          <For each={group.findings}>
+                            {(finding) => (
+                              <li class="rounded-xs bg-surface-base px-2 py-1.5">
+                                <strong class="text-text-strong">
+                                  {finding.severity === "blocker"
+                                    ? "Fix before running."
+                                    : "Review before trusting."}
+                                </strong>{" "}
+                                {finding.message}
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                      </div>
+                    </details>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+        </div>
       </Show>
     </section>
   );

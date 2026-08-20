@@ -45,9 +45,11 @@ function snapshotNodes(value: unknown): SnapshotNode[] | undefined {
  * without taking a device snapshot or consulting a live screen. */
 async function rawPreflightEvidence(plan: AppMapCompiledTest): Promise<{
   rawObservationsByScreenId: Record<string, SnapshotNode[][]>;
+  rawEvidenceReferencesByScreenId: Record<string, string[]>;
   rawEvidenceStatusByScreenId: Record<string, "missing" | "unreadable">;
 }> {
   const rawObservationsByScreenId: Record<string, SnapshotNode[][]> = {};
+  const rawEvidenceReferencesByScreenId: Record<string, string[]> = {};
   const rawEvidenceStatusByScreenId: Record<string, "missing" | "unreadable"> = {};
   for (const [screenId, rawTrees] of Object.entries(plan.rawAccessibilityTreesByScreenId ?? {})) {
     if (!rawTrees.length) {
@@ -68,10 +70,18 @@ async function rawPreflightEvidence(plan: AppMapCompiledTest): Promise<{
     const resolved = observations.filter((nodes): nodes is SnapshotNode[] =>
       Boolean(nodes?.length),
     );
-    if (resolved.length) rawObservationsByScreenId[screenId] = resolved;
-    else rawEvidenceStatusByScreenId[screenId] = "unreadable";
+    if (resolved.length) {
+      rawObservationsByScreenId[screenId] = resolved;
+      rawEvidenceReferencesByScreenId[screenId] = [
+        ...new Set(rawTrees.map((tree) => tree.uri)),
+      ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    } else rawEvidenceStatusByScreenId[screenId] = "unreadable";
   }
-  return { rawObservationsByScreenId, rawEvidenceStatusByScreenId };
+  return {
+    rawObservationsByScreenId,
+    rawEvidenceReferencesByScreenId,
+    rawEvidenceStatusByScreenId,
+  };
 }
 
 export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promise<boolean> {

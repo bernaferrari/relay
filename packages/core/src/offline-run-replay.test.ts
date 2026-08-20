@@ -185,3 +185,103 @@ test("offline replay is deterministic and never consults current authoring state
   };
   assert.equal(replayPersistedRunOffline(reorderedPlan).planDigest, first.planDigest);
 });
+
+test("offline replay re-evaluates the Kids cleanup matcher from exact frozen inputs without faking a pass", () => {
+  const run = structuredClone(relay40FailureFixture());
+  const plan = run.artifacts.find((artifact) => artifact.kind === "app-map-test-plan")!;
+  plan.data = {
+    schemaVersion: 1,
+    appMapId: "grok-android-manual-v2",
+    appMapRevision: 173,
+    test: { id: "relay-40-fresh-v2", name: "Relay 40" },
+    rootRecipeId: "root",
+    recipes: {
+      root: {
+        id: "root",
+        steps: [
+          {
+            kind: "module",
+            recipeId: "kids-cleanup",
+            check: { id: "kids-cleanup", title: "Kids cleanup" },
+          },
+        ],
+      },
+      "kids-cleanup": {
+        id: "kids-cleanup",
+        steps: [
+          {
+            kind: "tap",
+            id: "disable-kids",
+            target: { label: "Kids Mode", role: "button" },
+          },
+        ],
+      },
+    },
+  };
+  const evidence = run.artifacts.find((artifact) => artifact.kind === "campaign-check-evidence")!;
+  evidence.data = {
+    checkId: "kids-cleanup",
+    attempts: [
+      {
+        kind: "target-resolution-attempt",
+        data: { strategy: "label", target: { label: "Kids Mode" }, error: "not resolved" },
+      },
+    ],
+    nodes: [
+      {
+        role: "button",
+        label: "Kids Mode",
+        hittable: true,
+        rect: { x: 20, y: 100, width: 320, height: 48 },
+      },
+    ],
+  };
+  const result = run.artifacts.find(
+    (artifact) =>
+      artifact.kind === "campaign-check-result" &&
+      (artifact.data as { id?: unknown }).id === "visit-18-birth-year",
+  )!;
+  result.data = {
+    ...(result.data as Record<string, unknown>),
+    id: "kids-cleanup",
+    title: "Kids cleanup",
+    error: "cleanup target was unknown",
+  };
+
+  const report = replayPersistedRunOffline(run);
+  const check = report.checks.find((candidate) => candidate.id === "kids-cleanup")!;
+
+  assert.equal(check.replayStatus, "root-failure");
+  assert.deepEqual(check.currentMatcher, {
+    status: "resolved",
+    comparison: "changed",
+    inputDigest: check.currentMatcher?.inputDigest,
+    evidence: check.currentMatcher?.evidence,
+    selectors: [
+      {
+        recipeId: "kids-cleanup",
+        recipeStepId: "disable-kids",
+        stepKind: "tap",
+        target: { label: "Kids Mode", role: "button" },
+        status: "resolved",
+        method: "label",
+      },
+    ],
+  });
+  assert.match(check.currentMatcher!.inputDigest, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(
+    report.repairProposals.filter((proposal) => proposal.kind === "review-current-matcher"),
+    [
+      {
+        id: `offline:${run.id}:kids-cleanup:review-current-matcher`,
+        checkId: "kids-cleanup",
+        kind: "review-current-matcher",
+        reason:
+          "The current pure matcher disagrees with the recorded selector result. Review the frozen target and evidence before proposing any map or test repair.",
+        mutation: "none",
+        requiresReview: true,
+        evidence: check.currentMatcher!.evidence,
+      },
+    ],
+  );
+});

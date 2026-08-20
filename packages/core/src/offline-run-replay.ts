@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import type { StepTarget } from "@relay/protocol";
+import { preflightSemanticActivation } from "./device-target-resolution.js";
+import type { SnapshotNode } from "./device.js";
 import type { PersistedRun, RunArtifact } from "./runs.js";
 
 type UnknownRecord = Record<string, unknown>;
@@ -32,6 +35,43 @@ export type OfflineReplayCheck = {
   error?: string;
   reason: string;
   selectorAttempts: OfflineReplaySelectorAttempt[];
+  /** Re-evaluates the frozen compiled semantic selector against the stored
+   * failure tree with the current pure matcher. It is intentionally selector
+   * evidence only: a resolved target can never upgrade an unproved product
+   * transition to a pass. */
+  currentMatcher?: OfflineReplayCurrentMatcher;
+  evidence: string[];
+};
+
+export type OfflineReplayCurrentMatcherSelector = {
+  recipeId: string;
+  recipeStepId?: string;
+  stepKind: "tap" | "reveal" | "expect" | "wait-for";
+  target: Pick<StepTarget, "identifier" | "ref" | "label" | "role" | "text" | "relation"> & {
+    hasPointFallback?: boolean;
+  };
+  status: "resolved" | "blocked" | "unavailable";
+  method?: "identifier" | "label" | "text" | "relation" | "point";
+  detail?: string;
+};
+
+export type OfflineReplayCurrentMatcher = {
+  status: "resolved" | "blocked" | "unavailable";
+  /** `changed` means current pure matching disagrees with the recorded
+   * selector result. It proposes review, never a silent map rewrite. */
+  comparison: "matches-recorded" | "changed" | "not-recorded" | "not-comparable";
+  inputDigest: string;
+  evidence: string[];
+  selectors: OfflineReplayCurrentMatcherSelector[];
+};
+
+export type OfflineReplayRepairProposal = {
+  id: string;
+  checkId?: string;
+  kind: "review-current-matcher" | "replay-root-check" | "recapture-frozen-plan";
+  reason: string;
+  mutation: "none";
+  requiresReview: true;
   evidence: string[];
 };
 
@@ -60,6 +100,9 @@ export type OfflineRunReplayReport = {
   };
   cursorTimeline: OfflineReplayCursor[];
   checks: OfflineReplayCheck[];
+  /** Read-only next actions derived from the replay. Applying a test/map
+   * repair still requires an explicit reviewed proposal elsewhere. */
+  repairProposals: OfflineReplayRepairProposal[];
   blockers: Array<{
     kind: "root-failure" | "unproven-origin" | "missing-frozen-plan";
     checkIds: string[];
@@ -162,6 +205,208 @@ function selectorAttempts(
   return { attempts, evidence };
 }
 
+function snapshotNodes(value: unknown): SnapshotNode[] | undefined {
+  if (!Array.isArray(value) || !value.length) return undefined;
+  return value.every((node) => record(node)) ? (value as SnapshotNode[]) : undefined;
+}
+
+function targetSummary(target: StepTarget): OfflineReplayCurrentMatcherSelector["target"] {
+  return {
+    ...(target.identifier ? { identifier: target.identifier } : {}),
+    ...(target.ref ? { ref: target.ref } : {}),
+    ...(target.label ? { label: target.label } : {}),
+    ...(target.role ? { role: target.role } : {}),
+    ...(target.text ? { text: target.text } : {}),
+    ...(target.relation ? { relation: structuredClone(target.relation) } : {}),
+    ...(target.point ? { hasPointFallback: true } : {}),
+  };
+}
+
+type FrozenSelector = {
+  recipeId: string;
+  recipeStepId?: string;
+  stepKind: OfflineReplayCurrentMatcherSelector["stepKind"];
+  target: StepTarget;
+};
+
+function recipeSteps(value: unknown): unknown[] {
+  const recipe = record(value);
+  return Array.isArray(recipe?.steps) ? recipe.steps : [];
+}
+
+/** Locate exactly the compiled recipe called by a frozen campaign check. This
+ * intentionally consumes only the persisted plan artifact; it never reads a
+ * newer App Map or assumes an unrecorded route. */
+function selectorsForFrozenCheck(planData: unknown, checkId: string): FrozenSelector[] {
+  const plan = record(planData);
+  const recipes = record(plan?.recipes);
+  if (!recipes) return [];
+  const roots = Object.entries(recipes)
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .flatMap(([, recipe]) =>
+      recipeSteps(recipe).flatMap((rawStep) => {
+        const step = record(rawStep);
+        const check = record(step?.check);
+        const recipeId = text(step?.recipeId);
+        return step?.kind === "module" && text(check?.id) === checkId && recipeId ? [recipeId] : [];
+      }),
+    );
+  const selectors: FrozenSelector[] = [];
+  const visited = new Set<string>();
+  const visit = (recipeId: string): void => {
+    if (visited.has(recipeId)) return;
+    visited.add(recipeId);
+    const recipe = recipes[recipeId];
+    for (const rawStep of recipeSteps(recipe)) {
+      const step = record(rawStep);
+      if (!step) continue;
+      const kind = step?.kind;
+      if (
+        (kind === "tap" || kind === "reveal" || kind === "expect" || kind === "wait-for") &&
+        record(step.target)
+      ) {
+        selectors.push({
+          recipeId,
+          ...(text(step.id) ? { recipeStepId: text(step.id) } : {}),
+          stepKind: kind,
+          target: step.target as StepTarget,
+        });
+        continue;
+      }
+      if (kind === "module") {
+        const nested = text(step.recipeId);
+        if (nested) visit(nested);
+      }
+    }
+  };
+  for (const root of [...new Set(roots)].sort((left, right) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  )) {
+    visit(root);
+  }
+  return selectors;
+}
+
+function hasSemanticTarget(target: StepTarget): boolean {
+  return Boolean(target.identifier || target.label || target.text || target.relation);
+}
+
+function currentMatcher(
+  run: PersistedRun,
+  planData: unknown,
+  checkId: string,
+  recordedAttempts: OfflineReplaySelectorAttempt[],
+): OfflineReplayCurrentMatcher | undefined {
+  const selectors = selectorsForFrozenCheck(planData, checkId);
+  const snapshots = run.artifacts.flatMap((artifact, index) => {
+    if (artifact.kind !== "campaign-check-evidence") return [];
+    const data = record(artifact.data);
+    const nodes = text(data?.checkId) === checkId ? snapshotNodes(data?.nodes) : undefined;
+    return nodes
+      ? [
+          {
+            nodes,
+            artifact: artifactPointer(run, index),
+            capturedAt: artifact.capturedAt,
+          },
+        ]
+      : [];
+  });
+  if (!selectors.length && !snapshots.length) return undefined;
+  const evidence = snapshots.map((snapshot) => snapshot.artifact);
+  const matcherSelectors: OfflineReplayCurrentMatcherSelector[] = selectors.map((selector) => {
+    if (!hasSemanticTarget(selector.target)) {
+      return {
+        recipeId: selector.recipeId,
+        ...(selector.recipeStepId ? { recipeStepId: selector.recipeStepId } : {}),
+        stepKind: selector.stepKind,
+        target: targetSummary(selector.target),
+        status: "unavailable",
+        detail: "The frozen step has no semantic selector that the current matcher can replay.",
+      };
+    }
+    if (!snapshots.length) {
+      return {
+        recipeId: selector.recipeId,
+        ...(selector.recipeStepId ? { recipeStepId: selector.recipeStepId } : {}),
+        stepKind: selector.stepKind,
+        target: targetSummary(selector.target),
+        status: "unavailable",
+        detail:
+          "The persisted failure package has no raw accessibility tree for current-matcher replay.",
+      };
+    }
+    const outcomes = snapshots.map((snapshot) =>
+      preflightSemanticActivation([...snapshot.nodes], selector.target),
+    );
+    const resolved = outcomes.find(
+      (outcome): outcome is Extract<typeof outcome, { status: "proven" }> =>
+        outcome.status === "proven",
+    );
+    if (resolved) {
+      return {
+        recipeId: selector.recipeId,
+        ...(selector.recipeStepId ? { recipeStepId: selector.recipeStepId } : {}),
+        stepKind: selector.stepKind,
+        target: targetSummary(selector.target),
+        status: "resolved",
+        method: resolved.resolution.method,
+      };
+    }
+    const blocked = outcomes.find(
+      (outcome): outcome is Extract<typeof outcome, { status: "blocked" }> =>
+        outcome.status === "blocked",
+    );
+    return {
+      recipeId: selector.recipeId,
+      ...(selector.recipeStepId ? { recipeStepId: selector.recipeStepId } : {}),
+      stepKind: selector.stepKind,
+      target: targetSummary(selector.target),
+      status: "blocked",
+      ...(blocked?.detail ? { detail: blocked.detail } : {}),
+    };
+  });
+  const status: OfflineReplayCurrentMatcher["status"] =
+    matcherSelectors.length === 0 ||
+    matcherSelectors.some((selector) => selector.status === "unavailable")
+      ? "unavailable"
+      : matcherSelectors.every((selector) => selector.status === "resolved")
+        ? "resolved"
+        : "blocked";
+  const recordedStatus = recordedAttempts.length
+    ? recordedAttempts.some((attempt) => attempt.status === "resolved")
+      ? "resolved"
+      : "blocked"
+    : undefined;
+  const comparison: OfflineReplayCurrentMatcher["comparison"] = !recordedStatus
+    ? "not-recorded"
+    : status === "unavailable"
+      ? "not-comparable"
+      : status === recordedStatus
+        ? "matches-recorded"
+        : "changed";
+  return {
+    status,
+    comparison,
+    inputDigest: digest({
+      checkId,
+      selectors: matcherSelectors.map(({ recipeId, recipeStepId, stepKind, target }) => ({
+        recipeId,
+        recipeStepId,
+        stepKind,
+        target,
+      })),
+      snapshots: snapshots.map(({ nodes, artifact, capturedAt }) => ({
+        artifact,
+        capturedAt,
+        nodes,
+      })),
+    }),
+    evidence,
+    selectors: matcherSelectors,
+  };
+}
+
 function transitionDestination(data: UnknownRecord): string | undefined {
   const dependencies = Array.isArray(data.transitionDependencies)
     ? data.transitionDependencies
@@ -216,6 +461,7 @@ export function replayPersistedRunOffline(run: PersistedRun): OfflineRunReplayRe
     const warmSourceScreenId = text(data.warmSourceScreenId);
     const expectedDestinationScreenId = transitionDestination(data);
     const attempts = selectorAttempts(run, id);
+    const matcher = currentMatcher(run, plan.data, id, attempts.attempts);
     const resultPointer = artifactPointer(run, artifactIndex);
     const evidence = [...attempts.evidence, resultPointer];
     let replayStatus: OfflineReplayCheck["replayStatus"];
@@ -268,6 +514,7 @@ export function replayPersistedRunOffline(run: PersistedRun): OfflineRunReplayRe
       ...(text(data.error) ? { error: text(data.error) } : {}),
       reason,
       selectorAttempts: attempts.attempts,
+      ...(matcher ? { currentMatcher: matcher } : {}),
       evidence,
     });
   });
@@ -295,6 +542,42 @@ export function replayPersistedRunOffline(run: PersistedRun): OfflineRunReplayRe
       message: "The run has no frozen App Map plan or recipe snapshot to simulate.",
     });
   }
+  const repairProposals: OfflineReplayRepairProposal[] = [];
+  if (firstRoot) {
+    repairProposals.push({
+      id: `offline:${run.id}:${firstRoot.checkId}:replay-root-check`,
+      checkId: firstRoot.checkId,
+      kind: "replay-root-check",
+      reason: `Review ${firstRoot.title}'s frozen evidence and repair proposal before replaying only this causal root.`,
+      mutation: "none",
+      requiresReview: true,
+      evidence: firstRoot.evidence,
+    });
+  }
+  for (const check of checks) {
+    if (check.currentMatcher?.comparison !== "changed") continue;
+    repairProposals.push({
+      id: `offline:${run.id}:${check.id}:review-current-matcher`,
+      checkId: check.id,
+      kind: "review-current-matcher",
+      reason:
+        "The current pure matcher disagrees with the recorded selector result. Review the frozen target and evidence before proposing any map or test repair.",
+      mutation: "none",
+      requiresReview: true,
+      evidence: check.currentMatcher.evidence,
+    });
+  }
+  if (!plan.artifact && !run.recipeSnapshot) {
+    repairProposals.push({
+      id: `offline:${run.id}:recapture-frozen-plan`,
+      kind: "recapture-frozen-plan",
+      reason:
+        "The persisted run has no frozen plan; preserve one before relying on offline simulation.",
+      mutation: "none",
+      requiresReview: true,
+      evidence: [],
+    });
+  }
 
   return {
     schemaVersion: 1,
@@ -318,6 +601,7 @@ export function replayPersistedRunOffline(run: PersistedRun): OfflineRunReplayRe
     ...(firstRoot ? { firstRootFailure: firstRoot } : {}),
     cursorTimeline,
     checks,
+    repairProposals,
     blockers,
   };
 }
