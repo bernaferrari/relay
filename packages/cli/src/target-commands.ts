@@ -45,8 +45,9 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       ["serial"],
       { visual: true },
       {
-        summary: "Read the current accessibility structure",
+        summary: "Read the current screen and accessibility structure when available",
         argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+        note: "Read-only. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
       },
     ),
     path(
@@ -54,8 +55,9 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       ["serial"],
       { visual: true },
       {
-        summary: "Read the current accessibility structure",
+        summary: "Read the current screen and accessibility structure when available",
         argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+        note: "Read-only. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
       },
     ),
   ),
@@ -133,7 +135,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
     "target.recover",
     path("target recover", ["serial"]),
     path("device recover", ["serial"], undefined, {
-      summary: "Repair the live device: wake Android or restore the iPad runner",
+      summary: "Verify and, only when necessary, repair live device control",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
       inputHelp: [
         {
@@ -146,7 +148,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         'relay device recover 00008110 --input \'{"reason":"control"}\'',
         "relay device recover RQCY104BG8X",
       ],
-      note: "iPad: restart the XCTest runner. Android: wake the screen and retry labels. Unlock still needs a person.",
+      note: "iPad: first proves the existing XCTest session; only a failed proof gets one bounded runner repair. It never resets the app or restarts the iPad. Android: wake the screen and retry labels. Unlock still needs a person.",
     }),
   ),
   mapped(

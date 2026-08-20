@@ -203,6 +203,23 @@ test("device survey exposes the canonical scroll-survey operation and bounded in
   assert.match(help?.note ?? "", /exclusive lease/u);
 });
 
+test("iPad observation and recovery help exposes the proof-first lifecycle", () => {
+  const observe = mappedCommandDescriptors
+    .find((descriptor) => descriptor.operationId === "target.snapshot.capture")
+    ?.paths.find((candidate) => candidate.command === "device observe");
+  const recover = mappedCommandDescriptors
+    .find((descriptor) => descriptor.operationId === "target.recover")
+    ?.paths.find((candidate) => candidate.command === "device recover");
+
+  assert.match(observe?.summary ?? "", /when available/i);
+  assert.match(observe?.note ?? "", /Read-only/i);
+  assert.match(observe?.note ?? "", /pixels/i);
+  assert.match(recover?.summary ?? "", /only when necessary/i);
+  assert.match(recover?.note ?? "", /first proves/i);
+  assert.match(recover?.note ?? "", /never resets the app/i);
+  assert.doesNotMatch(recover?.note ?? "", /restart the XCTest runner/i);
+});
+
 test("screen capture-scroll targets one durable Screen Variant", () => {
   assert.deepEqual(
     resolveCommand(["screen", "capture-scroll", "map-1", "settings", "settings-ja"], {
