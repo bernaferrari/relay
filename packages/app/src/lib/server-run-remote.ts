@@ -277,12 +277,17 @@ export async function enqueueOptionMatrix(
     targetKind: "browser" | "device";
     platform?: string;
     variableIds?: string[];
-    sets?: unknown[];
     selected?: Record<string, string[]>;
     strategy?: "zip" | "cartesian" | "pairwise";
     title?: string;
     projectId: string;
     executionMode?: "all" | "pilot";
+    selectedCellIds?: string[];
+    cellRuntimeProfiles?: Array<{
+      testId: string;
+      values: Record<string, string>;
+      targetProfileId: string;
+    }>;
   },
 ): Promise<{
   batch: {
@@ -310,12 +315,13 @@ export async function enqueueOptionMatrix(
       combineId: input.combineId,
       capture: input.capture,
       variableIds: input.variableIds,
-      sets: input.sets,
       selected: input.selected,
       strategy: input.strategy,
       title: input.title,
       projectId: input.projectId,
       executionMode: input.executionMode,
+      selectedCellIds: input.selectedCellIds,
+      cellRuntimeProfiles: input.cellRuntimeProfiles,
       ...target,
     }),
   });
@@ -408,6 +414,11 @@ export async function saveCombineRemote(
       testIds: string[];
       selected?: Record<string, string[]>;
       captures?: Record<string, AppMapCapturePolicy>;
+      cellRuntimeProfiles?: Array<{
+        testId: string;
+        values: Record<string, string>;
+        targetProfileId: string;
+      }>;
       strategy?: "zip" | "cartesian" | "pairwise";
       createdAt: number;
       updatedAt: number;

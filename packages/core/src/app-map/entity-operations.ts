@@ -283,6 +283,29 @@ export function saveAppMapCombine(
       );
     }
   }
+  for (const binding of combine.cellRuntimeProfiles ?? []) {
+    if (!combine.testIds.includes(binding.testId)) {
+      appMapFail(
+        "missing-reference",
+        `Combine ${combine.id} binds missing Test ${binding.testId}`,
+      );
+    }
+    for (const [variableId, valueId] of Object.entries(binding.values)) {
+      if (!combine.variableIds.includes(variableId)) {
+        appMapFail(
+          "missing-reference",
+          `Combine ${combine.id} binds unused Variable ${variableId}`,
+        );
+      }
+      const variable = map.variables?.[variableId];
+      if (variable && !variable.options.some((option) => option.id === valueId)) {
+        appMapFail(
+          "missing-reference",
+          `Combine ${combine.id} binds missing value ${valueId} from Variable ${variableId}`,
+        );
+      }
+    }
+  }
   return mutateAppMap(
     map,
     context,

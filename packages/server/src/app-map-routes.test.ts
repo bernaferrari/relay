@@ -425,7 +425,7 @@ test("offline Test compilation previews a verified checkpoint without a device o
         serial: "ipad-1",
         platform: "ios",
       }),
-      isRunError("APP_MAP_COMBINE_RUNTIME_PROFILE_CONTRACT_REQUIRED"),
+      (error: unknown) => error instanceof ApiError && error.status === 404,
     );
     await assert.rejects(
       client.invoke("app-map.test.run", {

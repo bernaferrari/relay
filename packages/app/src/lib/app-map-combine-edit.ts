@@ -35,6 +35,13 @@ export function combineWithoutVariable(
     selected: Object.fromEntries(
       Object.entries(combine.selected ?? {}).filter(([id]) => id !== variableId),
     ),
+    ...(combine.cellRuntimeProfiles
+      ? {
+          cellRuntimeProfiles: combine.cellRuntimeProfiles.filter(
+            (binding) => !Object.hasOwn(binding.values, variableId),
+          ),
+        }
+      : {}),
     updatedAt,
   };
 }

@@ -29,6 +29,7 @@ export type CombineCell = {
   testId: string;
   worldLabel: string;
   testName: string;
+  values: Record<string, string>;
 };
 
 export type CombineProjection = {
@@ -147,6 +148,9 @@ export function combineCells(worlds: CombineWorld[], tests: CombineTestColumn[])
         testId: test.id,
         worldLabel: world.label,
         testName: test.name,
+        values: Object.fromEntries(
+          Object.entries(world.values).map(([variableId, value]) => [variableId, value.id]),
+        ),
       });
     }
   }

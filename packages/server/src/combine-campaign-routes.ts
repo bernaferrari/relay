@@ -1,19 +1,22 @@
 import {
+  AppMapCombineCellContractError,
   cancelJob,
   activeReviewedDocumentOriginsForAppMap,
-  compileAppMapCombine,
   currentOperationContext,
+  digestAppMapTestExecutionValue,
+  enqueuePreparedAppMapCombineCells,
   getJob,
+  pendingSelectedCombineCampaignCells,
+  prepareAppMapCombineCells,
   projectCombineCampaign,
   readAppMap,
   readCombineCampaign,
-  startOptionRecipeRun,
   summarizeJob,
   updateCombineCampaign,
-  type OptionRunSet,
 } from "@relay/core";
 import { assertTargetControl } from "./access-control.js";
-import { requireAppMapCombineRuntimeProfileContract } from "./app-map-combine-runtime-contract.js";
+import { combineCellContractHttpError } from "./app-map-combine-runtime-contract.js";
+import { queuedAppMapTestTargetProfile } from "./app-map-run-routes.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { JobRouteContext } from "./job-routes.js";
 
@@ -37,11 +40,6 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
     if (!existing || (!scope.localTrusted && existing.ownerId !== scope.subject)) {
       throw new HttpError(404, "Combine campaign not found");
     }
-    requireAppMapCombineRuntimeProfileContract({
-      appMapId: existing.appMapId,
-      combineId: existing.combineId,
-    });
-    await assertTargetControl(scope, existing.target.id);
     const projected = await projectCombineCampaign(existing);
     if (projected.status === "pilot-running" || projected.status === "running") {
       throw new HttpError(409, "Combine campaign is still running");
@@ -55,84 +53,112 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
     if (projected.status === "cancelled") {
       throw new HttpError(409, "Combine campaign is cancelled");
     }
-    const pendingIndexes = projected.cases.filter((item) => !item.jobId).map((item) => item.index);
-    if (!pendingIndexes.length) {
-      json(response, 200, { campaign: projected, jobs: [] });
-      return true;
-    }
     const map = await readAppMap(scope.projectId, projected.appMapId);
     if (!map) throw new HttpError(409, "The campaign App Map no longer exists");
     const combine = map.combines?.[projected.combineId];
     if (!combine) throw new HttpError(409, "The campaign Combine no longer exists");
-    const sets: OptionRunSet[] = combine.variableIds.map((id) => {
-      const set = map.variables?.[id];
-      if (!set) throw new HttpError(409, `Campaign Variable ${id} no longer exists`);
-      return {
-        id: set.id,
-        name: set.name,
-        kind: set.kind,
-        apply: set.apply as OptionRunSet["apply"],
-        options: set.options,
-        restoreId: set.restoreId,
-        screenshotEach: set.screenshotEach,
-      };
-    });
-    const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);
-    const compiled = compileAppMapCombine(map, combine, { reviewedDocumentOrigins });
-    const batch = await startOptionRecipeRun({
-      recipeId: compiled.root.id,
-      compiledBody: compiled.root,
-      compiledGraph: compiled.graph,
-      map,
-      targetId: projected.target.id,
-      platform: projected.target.platform === "browser" ? undefined : projected.target.platform,
-      targetKind: projected.target.kind,
-      browserTargetId: projected.target.kind === "browser" ? projected.target.id : undefined,
-      request: {
-        sets,
-        combineId: combine.id,
-        selected: projected.execution.selected,
-        strategy: projected.execution.strategy,
-        screenshotEach: false,
-      },
-      title: projected.execution.title,
-      seed: projected.execution.seed,
-      projectId: scope.projectId,
-      ownerId: currentOperationContext()!.actorId,
-      batchId: projected.id,
-      caseIndexes: pendingIndexes,
-      expectedCaseValues: Object.fromEntries(
-        projected.cases
-          .filter((item) => pendingIndexes.includes(item.index))
-          .map((item) => [item.index, item.values]),
-      ),
-    });
-    const jobByIndex = new Map(batch.jobs.map((job) => [job.caseIndex, job]));
-    const at = Date.now();
-    const updated = await updateCombineCampaign(scope.projectId, campaignId, (current) => ({
-      ...current,
-      latestRevision: map.revision,
-      updatedAt: at,
-      status: "running",
-      cases: current.cases.map((item) => {
-        const job = jobByIndex.get(item.index);
-        return job ? { ...item, status: "queued", jobId: job.id } : item;
-      }),
-      lineage: [
-        ...current.lineage,
-        {
-          kind: "resumed",
-          at,
-          appMapRevision: map.revision,
-          actorId: currentOperationContext()!.actorId,
+    const runtime = { ...context.runtime };
+    try {
+      const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);
+      const prepared = await prepareAppMapCombineCells({
+        map,
+        combine,
+        selected: projected.execution.selected ?? combine.selected,
+        strategy: projected.execution.strategy ?? combine.strategy,
+        cellRuntimeProfiles: combine.cellRuntimeProfiles,
+        selectedCellIds: projected.execution.selectedCellIds,
+        target: {
+          targetId: projected.target.id,
+          platform: projected.target.platform,
         },
-      ],
-    }));
-    json(response, 202, {
-      campaign: await projectCombineCampaign(updated),
-      jobs: batch.jobs.map((job) => summarizeJob(job)),
-    });
-    return true;
+        compileOptions: { reviewedDocumentOrigins },
+      });
+      const preparedById = new Map(prepared.cells.map((cell) => [cell.cellId, cell]));
+      for (const item of projected.cases) {
+        const preparedCell = preparedById.get(item.cellId);
+        if (!preparedCell) {
+          throw new HttpError(409, `Campaign cell ${item.cellId} is no longer on this Combine.`, {
+            code: "APP_MAP_COMBINE_CELL_CONTRACT",
+            cellId: item.cellId,
+            testId: item.testId,
+          });
+        }
+        if (preparedCell.outerIntent.digest !== item.outerIntentDigest) {
+          throw new HttpError(409, `Campaign cell ${item.cellId} identity changed since the pilot.`, {
+            code: "APP_MAP_COMBINE_CELL_CONTRACT",
+            cellId: item.cellId,
+            testId: item.testId,
+            recovery: "Start a new Combine campaign. Resume will not accept a tampered selector or profile.",
+          });
+        }
+        if (digestAppMapTestExecutionValue(preparedCell.staticInputs) !== item.staticInputDigest) {
+          throw new HttpError(409, `Campaign cell ${item.cellId} static inputs changed since the pilot.`, {
+            code: "APP_MAP_COMBINE_CELL_CONTRACT",
+            cellId: item.cellId,
+            testId: item.testId,
+          });
+        }
+      }
+      const pending = pendingSelectedCombineCampaignCells(projected);
+      if (!pending.length) {
+        json(response, 200, { campaign: projected, jobs: [], cells: prepared.cellStates });
+        return true;
+      }
+      await (runtime.assertTargetControl ?? assertTargetControl)(scope, existing.target.id);
+      const toQueue = pending.map((item) => preparedById.get(item.cellId)!);
+      const batch = enqueuePreparedAppMapCombineCells({
+        cells: toQueue,
+        batchId: projected.id,
+        title: projected.execution.title,
+        targetId: projected.target.id,
+        platform: projected.target.platform === "browser" ? undefined : projected.target.platform,
+        targetKind: projected.target.kind,
+        browserTargetId: projected.target.kind === "browser" ? projected.target.id : undefined,
+        queuedTargetProfile: (cell) =>
+          queuedAppMapTestTargetProfile({
+            runtimeTargetProfile: cell.selectedRuntimeTargetProfile,
+            observedTargetProfile: undefined,
+            target: {
+              kind: projected.target.kind,
+              targetId: projected.target.id,
+              platform: projected.target.platform,
+            },
+          }),
+        projectId: scope.projectId,
+        ownerId: currentOperationContext()!.actorId,
+      });
+      const jobByCell = new Map(batch.jobs.map((job, index) => [toQueue[index]?.cellId, job]));
+      const at = Date.now();
+      const updated = await updateCombineCampaign(scope.projectId, campaignId, (current) => ({
+        ...current,
+        latestRevision: map.revision,
+        updatedAt: at,
+        status: "running",
+        cases: current.cases.map((item) => {
+          const job = jobByCell.get(item.cellId);
+          return job ? { ...item, status: "queued" as const, jobId: job.id } : item;
+        }),
+        lineage: [
+          ...current.lineage,
+          {
+            kind: "resumed",
+            at,
+            appMapRevision: map.revision,
+            actorId: currentOperationContext()!.actorId,
+          },
+        ],
+      }));
+      json(response, 202, {
+        campaign: await projectCombineCampaign(updated),
+        jobs: batch.jobs.map((job) => summarizeJob(job)),
+        cells: prepared.cellStates,
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      if (error instanceof AppMapCombineCellContractError) throw combineCellContractHttpError(error);
+      throw new HttpError(409, error instanceof Error ? error.message : String(error));
+    }
   }
 
   const cancelMatch = matchPath(pathname, "/jobs/combine/:batchId/cancel");

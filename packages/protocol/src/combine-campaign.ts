@@ -18,8 +18,15 @@ export type CombineCampaignStatus =
 
 export type CombineCampaignCase = {
   index: number;
+  cellId: string;
+  testId: string;
   world: string;
   values: Record<string, string>;
+  targetProfileId: string;
+  childIntentDigest: string;
+  outerIntentDigest: string;
+  wrapperGraphDigest: string;
+  staticInputDigest: string;
   phase: "pilot" | "coverage";
   status: CombineCampaignCaseStatus;
   jobId?: string;
@@ -53,4 +60,11 @@ export type CombineCampaign = {
     appMapRevision: number;
     actorId?: string;
   }>;
+  execution?: {
+    selected?: Record<string, string[]>;
+    selectedCellIds: string[];
+    strategy?: "zip" | "cartesian" | "pairwise";
+    seed: number;
+    title?: string;
+  };
 };

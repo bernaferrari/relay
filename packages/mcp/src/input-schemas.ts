@@ -766,10 +766,21 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       browserTargetId: identifier("Managed browser target identifier").optional(),
       title: z.string().optional(),
       seed: z.number().int().optional(),
-      sets: z.array(unknownRecord).optional(),
       capture: testCapturePolicy.optional(),
       executionMode: z.enum(["pilot", "all"]).optional(),
       pilotCaseIndex: z.number().int().nonnegative().optional(),
+      selectedCellIds: z.array(identifier("Combine cell identifier")).optional(),
+      cellRuntimeProfiles: z
+        .array(
+          z
+            .object({
+              testId: identifier("Test identifier"),
+              values: z.record(z.string(), z.string()),
+              targetProfileId: identifier("Saved runtime profile identifier"),
+            })
+            .strict(),
+        )
+        .optional(),
     })
     .strict()
     .superRefine((input, context) => {

@@ -393,6 +393,15 @@ export type AppMapCapturePolicy =
 /** The only Test contract. Navigation is bound to reviewed App Map connections. */
 export type AppMapTest = AppMapScenarioTest;
 
+/** Explicit runtime evidence profile for one Test × world cell.
+ * Coverage must name every selected cell; a single compatible profile is never inferred. */
+export type AppMapCombineCellRuntimeProfile = {
+  testId: string;
+  /** Canonical variable-id → value-id map. Ordering is not identity. */
+  values: Record<string, string>;
+  targetProfileId: string;
+};
+
 /** Figma-like binding: variables × tests. Extra variables are M×N×O; extra tests run in order. */
 export type AppMapCombine = AppMapEntity & {
   name: string;
@@ -404,6 +413,8 @@ export type AppMapCombine = AppMapEntity & {
    * by a visual sweep and a fast no-screenshot smoke matrix. */
   captures?: Record<string, AppMapCapturePolicy>;
   strategy?: CaseExpansionStrategy;
+  /** Persisted per-cell target-profile bindings. Absent a binding, the cell cannot run. */
+  cellRuntimeProfiles?: AppMapCombineCellRuntimeProfile[];
 };
 
 export type AppMapCombinePreflightIssue = {
@@ -417,8 +428,38 @@ export type AppMapCombinePreflightIssue = {
     | "large-run"
     | "unknown-screenshot-count"
     | "target-missing"
-    | "target-not-ready";
+    | "target-not-ready"
+    | "missing-binding"
+    | "duplicate-binding"
+    | "foreign-binding"
+    | "extra-binding"
+    | "mismatched-binding"
+    | "zero-bindings";
   message: string;
+  cellId?: string;
+  testId?: string;
+  values?: Record<string, string>;
+  targetProfileId?: string;
+};
+
+export type AppMapCombineCellBindingStatus =
+  | "bound"
+  | "missing"
+  | "foreign"
+  | "duplicate"
+  | "extra"
+  | "mismatched";
+
+export type AppMapCombineCellState = {
+  cellId: string;
+  testId: string;
+  testName: string;
+  values: Record<string, string>;
+  worldLabel: string;
+  targetProfileId?: string;
+  binding: AppMapCombineCellBindingStatus;
+  preflight?: "ready" | "blocked";
+  message?: string;
 };
 
 /** Exact run-plan projection shared by the canvas, server, and CLI. */
@@ -448,6 +489,7 @@ export type AppMapCombinePreflight = {
   estimatedDurationMs?: number;
   blockers: AppMapCombinePreflightIssue[];
   warnings: AppMapCombinePreflightIssue[];
+  cells: AppMapCombineCellState[];
   target?: {
     serial: string;
     state: "connected" | "not-ready" | "missing";

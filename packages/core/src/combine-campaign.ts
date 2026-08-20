@@ -9,6 +9,7 @@ import { readPersistedRun } from "./runs.js";
 export type StoredCombineCampaign = CombineCampaign & {
   execution: {
     selected?: Record<string, string[]>;
+    selectedCellIds: string[];
     strategy?: "zip" | "cartesian" | "pairwise";
     seed: number;
     title?: string;
@@ -160,16 +161,18 @@ export async function projectCombineCampaign(
       };
     }),
   );
-  const scheduled = cases.filter((item) => item.jobId);
-  const pending = cases.filter((item) => !item.jobId);
-  const active = scheduled.some((item) => item.status === "queued" || item.status === "running");
-  const problems = scheduled.some(
+  const selectedCellIds = new Set(campaign.execution.selectedCellIds ?? []);
+  const pendingSelected = cases.filter(
+    (item) => item.status === "pending" && selectedCellIds.has(item.cellId),
+  );
+  const active = cases.some((item) => item.status === "queued" || item.status === "running");
+  const problems = cases.some(
     (item) => item.status === "failed" || item.status === "blocked" || item.status === "cancelled",
   );
   const pilot = cases.find((item) => item.phase === "pilot");
   let status = campaign.status;
   if (campaign.status !== "cancelled") {
-    if (pending.length) {
+    if (pendingSelected.length) {
       if (pilot?.status === "queued" || pilot?.status === "running") status = "pilot-running";
       else if (pilot?.status === "passed") status = "ready-to-resume";
       else status = "needs-review";
@@ -177,4 +180,12 @@ export async function projectCombineCampaign(
     else status = problems ? "completed-with-problems" : "completed";
   }
   return { ...campaign, cases, status };
+}
+
+/** A passed/failed/cancelled cell with no jobId is not pending work. */
+export function pendingSelectedCombineCampaignCells(
+  campaign: StoredCombineCampaign,
+): StoredCombineCampaign["cases"] {
+  const selected = new Set(campaign.execution.selectedCellIds ?? []);
+  return campaign.cases.filter((item) => item.status === "pending" && selected.has(item.cellId));
 }

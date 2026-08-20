@@ -337,9 +337,9 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     path("job combine start", [], undefined, {
       summary: "Run every selected Variable value × every selected Test",
       examples: [
-        'relay combine run grok-ios language-x-settings --input \'{"serial":"<device>"}\'',
+        'relay combine run grok-ios language-x-settings --input \'{"serial":"<device>","platform":"android"}\'',
       ],
-      note: "App Map Combine execution is fail-closed until each cell carries a frozen runtime profile and offline preflight. For one pass, use `relay test run` with the selected targetProfileId; keep Combines for reviewed planning only.",
+      note: "Each Combine cell needs an explicit saved targetProfileId. Relay preflights every selected cell offline before it touches a device. Bind profiles with cellRuntimeProfiles; missing or foreign bindings return 409 and queue nothing.",
       behavior: "job-start-watch",
     }),
     path("combine run", ["appMapId", "combineId"], undefined, {
@@ -350,6 +350,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ],
       inputHelp: [
         { name: "serial", type: "string", description: "Device serial" },
+        {
+          name: "platform",
+          type: "android | ios",
+          description: "Required for a device Combine so each cell binds before discovery",
+        },
         {
           name: "selected",
           type: "object",
@@ -366,6 +371,17 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           type: "pilot | all",
           description:
             "Pilot runs one representative case and persists the rest for reviewed resume",
+        },
+        {
+          name: "cellRuntimeProfiles",
+          type: "array",
+          description:
+            "Explicit {testId, values, targetProfileId} bindings for every selected Test × world cell",
+        },
+        {
+          name: "selectedCellIds",
+          type: "array",
+          description: "Optional subset of cell IDs to queue after offline preparation",
         },
       ],
       behavior: "job-start-watch",

@@ -34,7 +34,9 @@ export function fmtDur(job: JobInfo, now: number = Date.now()): string {
 }
 
 /**
- * Compact relative time for a finished job: "now" / "Nm" / "Nh" / "Nd".
+ * Compact relative time for a finished job: "now" / "1m ago" / "2h ago".
+ * The "ago" is load-bearing: "1m" next to a duration "52.4s" reads as one
+ * elapsed time, which is how an execution review used to lie.
  * Returns "" when there's no finish timestamp (running/queued/idle).
  */
 export function fmtAgo(finishedAt?: number, now: number = Date.now()): string {
@@ -42,10 +44,10 @@ export function fmtAgo(finishedAt?: number, now: number = Date.now()): string {
   const s = Math.max(0, Math.round((now - finishedAt) / 1000));
   if (s < 60) return "now";
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
+  if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 /** Compact millisecond formatting for a single step/action: 423ms / 1.2s / 1m4s. */

@@ -35,6 +35,7 @@ import {
   stopCorpusSweep,
 } from "../lib/corpus-remote";
 import { humanError } from "../lib/human-error";
+import { plural } from "../lib/plural";
 import {
   FALLBACK_MEDIA_RATIO,
   boundedMediaRatio,
@@ -295,17 +296,11 @@ export function LocaleSweepReview(props: { suggestedName?: string }) {
                   class="min-w-0 truncate text-micro tabular-nums text-[var(--text-weak)]"
                   aria-live="polite"
                 >
-                  {corpusStateLabel(current())} ·{" "}
-                  {current().locales.length === 1
-                    ? "1 language"
-                    : `${current().locales.length} languages`}{" "}
-                  ·{" "}
-                  {current().screens.length === 1
-                    ? "1 screen"
-                    : `${current().screens.length} screens`}
+                  {corpusStateLabel(current())} · {plural(current().locales.length, "language")} ·{" "}
+                  {plural(current().screens.length, "screen")}
                   <Show when={current().defects}>
                     <span class="ml-1.5 text-[var(--text-critical-base,var(--icon-critical-base))]">
-                      {current().defects} {current().defects === 1 ? "defect" : "defects"}
+                      {plural(current().defects, "defect")}
                     </span>
                   </Show>
                   <Show when={current().known}>
@@ -590,8 +585,7 @@ function analysisFor(cell: CorpusReviewCell, baselineLocale: string | undefined)
 }
 
 function sweepLabel(sweep: CorpusSession): string {
-  const languages = sweep.scope.locales.length;
-  return `${sweep.name} · ${languages} ${languages === 1 ? "language" : "languages"} · ${sweep.status}`;
+  return `${sweep.name} · ${sweep.status}`;
 }
 
 const languageNames = (() => {

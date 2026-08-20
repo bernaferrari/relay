@@ -24,6 +24,13 @@ test("never exposes invalid time arithmetic in the UI", () => {
   assert.equal(fmtAgo(Number.NaN), "");
 });
 
+test("relative time is not a duration", () => {
+  assert.equal(fmtAgo(1, 30_001), "now");
+  assert.equal(fmtAgo(1, 60_001), "1m ago");
+  assert.equal(fmtAgo(1, 3_600_001), "1h ago");
+  assert.equal(fmtAgo(1, 86_400_001), "1d ago");
+});
+
 test("running jobs use the live clock", () => {
   assert.equal(fmtDur(job({ status: "running", startedAt: 1_000 }), 2_500), "1.5s");
 });

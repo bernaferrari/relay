@@ -583,8 +583,8 @@ test("the locale profile exposes only the canonical Language Variable campaign",
   }
 });
 
-test("marks App Map Combine execution as a scoped-profile migration boundary", () => {
-  assert.match(tool("job.combine.start").description, /fail-closed/u);
+test("marks App Map Combine execution as a per-cell runtime profile contract", () => {
+  assert.match(tool("job.combine.start").description, /cellRuntimeProfiles/u);
   assert.match(tool("job.combine.start").description, /app-map\.test\.run/u);
 });
 

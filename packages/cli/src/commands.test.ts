@@ -420,8 +420,9 @@ test("legacy flow locale commands are internal and Combine is the public workflo
   );
   assert.ok(optionStart && !("exclusion" in optionStart));
   assert.match(optionStart.paths[0]?.examples?.[0] ?? "", /combine run|variableIds|combineId/);
-  assert.match(optionStart.paths[0]?.note ?? "", /fail-closed/u);
-  assert.match(optionStart.paths[0]?.note ?? "", /relay test run/u);
+  assert.match(optionStart.paths[0]?.examples?.[0] ?? "", /platform/);
+  assert.match(optionStart.paths[0]?.note ?? "", /targetProfileId/u);
+  assert.match(optionStart.paths[0]?.note ?? "", /cellRuntimeProfiles/u);
 });
 
 test("App Map vocabulary resolves to canonical granular operations", () => {

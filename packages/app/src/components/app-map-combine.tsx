@@ -1,16 +1,23 @@
 import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type {
   AppMapCapturePolicy,
+  AppMapCombineCellRuntimeProfile,
   AppMapCombinePreflight,
   AppMapVariable,
   CaseExpansionStrategy,
   CombineCampaign,
 } from "@relay/protocol";
+import {
+  bindingForCell,
+  mapRuntimeProfileOptions,
+  upsertCellRuntimeProfile,
+} from "../lib/app-map-combine-profiles";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { humanError } from "../lib/human-error";
 import { targetIsReady } from "../lib/target-presentation";
 import {
+  combineCells,
   combineHeadline,
   combineSubhead,
   combineValueLabel,
@@ -60,6 +67,9 @@ export function AppMapCombine(props: {
   const [campaignId, setCampaignId] = createSignal<string>();
   const [pilotJobId, setPilotJobId] = createSignal<string>();
   const [campaignReviewed, setCampaignReviewed] = createSignal(false);
+  const [cellRuntimeProfiles, setCellRuntimeProfiles] = createSignal<
+    AppMapCombineCellRuntimeProfile[]
+  >([]);
   let initializedFor = "";
 
   const map = createMemo(() => server.selectedAppMap());
@@ -168,7 +178,7 @@ export function AppMapCombine(props: {
           : undefined,
     }),
   );
-  const runIssue = createMemo(() => {
+  const draftIssue = createMemo(() => {
     if (!selectedVariables().length) return "Choose at least one Variable.";
     const empty = selectedVariables().find((variable) => valuesFor(variable).length === 0);
     if (empty) return `Choose at least one ${empty.name} value.`;
@@ -176,6 +186,20 @@ export function AppMapCombine(props: {
     if (projection().issue) return projection().issue!;
     if (projection().totalWorlds > MAX_DEVICE_WORLDS) {
       return `This creates ${projection().totalWorlds} device runs. Select fewer values or use matched rows (maximum ${MAX_DEVICE_WORLDS}).`;
+    }
+    return "";
+  });
+  const runIssue = createMemo(() => {
+    const draft = draftIssue();
+    if (draft) return draft;
+    const unbound = combineCells(projection().worlds, selectedTests()).filter(
+      (cell) => !bindingForCell(cellRuntimeProfiles(), cell.testId, cell.values),
+    );
+    if (unbound.length) {
+      const first = unbound[0]!;
+      return unbound.length === 1
+        ? `Bind a runtime profile to ${first.testName} · ${first.worldLabel}.`
+        : `Bind a runtime profile to every selected cell. ${unbound.length} cells have no profile.`;
     }
     return "";
   });
@@ -217,6 +241,7 @@ export function AppMapCombine(props: {
       ),
     );
     setStrategy(existing?.strategy ?? "cartesian");
+    setCellRuntimeProfiles(existing?.cellRuntimeProfiles ?? []);
     if (existing && typeof localStorage !== "undefined") {
       setCampaignId(localStorage.getItem(campaignStorageKey(current.id, existing.id)) || undefined);
     } else {
@@ -395,6 +420,7 @@ export function AppMapCombine(props: {
         testIds,
         selected,
         captures,
+        cellRuntimeProfiles: cellRuntimeProfiles(),
         strategy: strategy(),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
@@ -406,7 +432,7 @@ export function AppMapCombine(props: {
 
   async function saveCombine() {
     const currentMap = map();
-    if (!currentMap || runIssue() || busy()) return;
+    if (!currentMap || draftIssue() || busy()) return;
     setBusy(true);
     setSavingOnly(true);
     try {
@@ -446,6 +472,13 @@ export function AppMapCombine(props: {
           );
       if (input) {
         const testId = input.test.id;
+        const world = projection().worlds[input.worldIndex];
+        const values = Object.fromEntries(
+          selectedVariables().map((variable) => [
+            variable.id,
+            world?.values[variable.id]?.id ?? "",
+          ]),
+        );
         await server.runPathAcrossVariables({
           appMapId: currentMap.id,
           testId,
@@ -456,6 +489,11 @@ export function AppMapCombine(props: {
           selected,
           strategy: "zip",
           title: `${projection().worlds[input.worldIndex]?.label ?? "State"} → ${input.test.name}`,
+          cellRuntimeProfiles: cellRuntimeProfiles().filter(
+            (binding) =>
+              binding.testId === testId &&
+              selectedVariables().every((variable) => binding.values[variable.id] === values[variable.id]),
+          ),
         });
       } else {
         const persisted = await persistCombine(currentMap);
@@ -477,6 +515,7 @@ export function AppMapCombine(props: {
           strategy: strategy(),
           title: headline(),
           executionMode: projection().cellCount > 1 ? "pilot" : "all",
+          cellRuntimeProfiles: cellRuntimeProfiles(),
         });
         if (started?.campaignId) {
           setCampaignId(started.campaignId);
@@ -571,6 +610,13 @@ export function AppMapCombine(props: {
                 }))
               }
               onRunCell={(worldIndex, test) => void runCombine({ worldIndex, test })}
+              cellRuntimeProfiles={cellRuntimeProfiles()}
+              runtimeProfiles={mapRuntimeProfileOptions(map() ?? undefined)}
+              onBindCell={(testId, values, targetProfileId) =>
+                setCellRuntimeProfiles((current) =>
+                  upsertCellRuntimeProfile(current, { testId, values, targetProfileId }),
+                )
+              }
             />
 
             <Show when={runIssue()}>
@@ -638,6 +684,7 @@ export function AppMapCombine(props: {
           cellCount={projection().cellCount}
           canRunOnDevice={canRunOnDevice()}
           issue={runIssue()}
+          saveIssue={draftIssue()}
           busy={busy()}
           savingOnly={savingOnly()}
           onDelete={deleteCombine}

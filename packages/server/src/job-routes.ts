@@ -1,5 +1,5 @@
 import http from "node:http";
-import type { AppMapCapturePolicy } from "@relay/protocol";
+import type { AppMapCapturePolicy, AppMapCombine, AppMapCombineCellRuntimeProfile } from "@relay/protocol";
 import {
   AppMapCompileError,
   activeReviewedDocumentOriginsForAppMap,
@@ -31,21 +31,26 @@ import {
   replayPersistedRun,
   readPersistedRun,
   recordHumanInterventionReproof,
-  startOptionRecipeRun,
-  compileAppMapTest,
-  compileAppMapCombine,
   createCombineCampaign,
+  AppMapCombineCellContractError,
+  combineCampaignCaseFromPreparedCell,
+  enqueuePreparedAppMapCombineCells,
+  listDevices,
+  prepareAppMapCombineCells,
   resolveJobDevicePlatform,
   stabilizeOptionIds,
   summarizeJob,
   sensitiveInputNames,
   type LocaleRunScope,
-  type OptionRunSet,
-  type Recipe,
   type TestJob,
 } from "@relay/core";
 import { assertJobAccess, assertTargetControl } from "./access-control.js";
-import { requireAppMapCombineRuntimeProfileContract } from "./app-map-combine-runtime-contract.js";
+import {
+  assertPreparedCombineCells,
+  combineCellContractHttpError,
+  requireSingleTestUseAppMapTestRun,
+} from "./app-map-combine-runtime-contract.js";
+import { queuedAppMapTestTargetProfile } from "./app-map-run-routes.js";
 import {
   appMapTestExecutionReviewHttpError,
   requireScopedAppMapTestExecution,
@@ -59,15 +64,48 @@ import { handleLocaleMatrixRoute } from "./locale-matrix-routes.js";
 export type JobRouteRuntime = {
   getJob: typeof getJob;
   assertTargetControl: typeof assertTargetControl;
+  listDevices: typeof listDevices;
+  enqueueJob: typeof enqueueJob;
   captureSnapshot: typeof captureSnapshot;
   retryJob: typeof retryJob;
   replayPersistedRun: typeof replayPersistedRun;
   resumeJob: (id: string) => TestJob | Promise<TestJob>;
 };
 
+function ephemeralCombineFromTest(input: {
+  mapId: string;
+  organizationId: string;
+  projectId: string;
+  testId: string;
+  variableIds: string[];
+  selected?: Record<string, string[]>;
+  strategy?: "zip" | "cartesian" | "pairwise";
+  capture?: AppMapCapturePolicy;
+  cellRuntimeProfiles?: AppMapCombineCellRuntimeProfile[];
+}): AppMapCombine {
+  const now = Date.now();
+  return {
+    id: "ad-hoc",
+    organizationId: input.organizationId,
+    projectId: input.projectId,
+    appMapId: input.mapId,
+    name: input.testId,
+    variableIds: input.variableIds,
+    testIds: [input.testId],
+    ...(input.selected ? { selected: input.selected } : {}),
+    ...(input.strategy ? { strategy: input.strategy } : {}),
+    ...(input.capture ? { captures: { [input.testId]: input.capture } } : {}),
+    ...(input.cellRuntimeProfiles ? { cellRuntimeProfiles: input.cellRuntimeProfiles } : {}),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 const defaultJobRouteRuntime: JobRouteRuntime = {
   getJob,
   assertTargetControl,
+  listDevices,
+  enqueueJob,
   captureSnapshot,
   retryJob,
   replayPersistedRun,
@@ -391,6 +429,8 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       combineId?: string;
       variableIds?: string[];
       selected?: Record<string, string[]>;
+      selectedCellIds?: string[];
+      cellRuntimeProfiles?: AppMapCombineCellRuntimeProfile[];
       strategy?: "zip" | "cartesian" | "pairwise";
       serial?: string;
       platform?: "android" | "ios";
@@ -399,7 +439,6 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       title?: string;
       seed?: number;
       projectId?: string;
-      sets?: OptionRunSet[];
       capture?: AppMapCapturePolicy;
       executionMode?: "all" | "pilot";
       pilotCaseIndex?: number;
@@ -415,23 +454,6 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     }
     const targetId = body.browserTargetId ?? body.serial;
     if (!targetId) throw new HttpError(400, "serial or browserTargetId is required");
-    if (body.testId?.trim() || body.combineId?.trim()) {
-      requireAppMapCombineRuntimeProfileContract({
-        appMapId: body.appMapId.trim(),
-        ...(body.testId?.trim() ? { testId: body.testId } : {}),
-        ...(body.combineId?.trim() ? { combineId: body.combineId } : {}),
-      });
-    }
-    await assertTargetControl(scope, targetId);
-    const platform =
-      body.platform ??
-      (body.browserTargetId ? undefined : await resolveJobDevicePlatform(targetId));
-    if (!body.browserTargetId && !platform) {
-      throw new HttpError(
-        400,
-        `Cannot tell if ${targetId} is iOS or Android. Connect the device, or pass platform.`,
-      );
-    }
     const map = await readAppMap(scope.projectId, body.appMapId.trim());
     if (!map) throw new HttpError(404, `App Map ${body.appMapId} not found`);
     const combine = body.combineId?.trim() ? map.combines?.[body.combineId.trim()] : undefined;
@@ -439,125 +461,105 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       throw new HttpError(404, `Combination ${body.combineId} not found`);
     }
     const runTestOnce = Boolean(body.testId?.trim()) && !combine && !body.variableIds?.length;
-    const ids = body.variableIds?.length
-      ? body.variableIds
-      : combine?.variableIds.length
-        ? combine.variableIds
-        : runTestOnce || body.sets?.length
-          ? []
-          : Object.keys(map.variables ?? {});
-    if (!ids.length && !body.sets?.length && !body.testId?.trim()) {
-      throw new HttpError(400, "variableIds, inline sets, or testId is required");
+    if (runTestOnce) {
+      requireSingleTestUseAppMapTestRun(body.appMapId.trim(), body.testId!.trim());
     }
-    const sets: OptionRunSet[] = body.sets?.length
-      ? body.sets
-      : ids.map((id) => {
-          const set = map.variables?.[id];
-          if (!set) throw new HttpError(404, `Variable ${id} not found`);
-          return {
-            id: set.id,
-            name: set.name,
-            kind: set.kind,
-            apply: set.apply as OptionRunSet["apply"],
-            options: set.options,
-            restoreId: set.restoreId,
-            screenshotEach: set.screenshotEach,
-          };
+    const targetKind = body.targetKind ?? (body.browserTargetId ? "browser" : "device");
+    const requestedPlatform = body.browserTargetId
+      ? ("browser" as const)
+      : body.platform;
+    if (targetKind === "device" && !requestedPlatform) {
+      throw new HttpError(400, "platform is required so Relay can bind each cell before discovery.");
+    }
+    const scopedCombine = combine
+      ? combine
+      : ephemeralCombineFromTest({
+          mapId: map.id,
+          organizationId: map.organizationId,
+          projectId: map.projectId,
+          testId: body.testId!.trim(),
+          variableIds: body.variableIds ?? [],
+          selected: body.selected,
+          strategy: body.strategy,
+          capture: body.capture,
+          cellRuntimeProfiles: body.cellRuntimeProfiles,
         });
+    if (body.executionMode === "pilot" && !combine) {
+      throw new HttpError(400, "Pilot mode requires a saved Combine");
+    }
     try {
       const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);
-      let compiledBody: Recipe | undefined;
-      let compiledGraph: Record<string, Recipe> = {};
-      if (combine) {
-        const compiled = compileAppMapCombine(map, combine, { reviewedDocumentOrigins });
-        compiledBody = compiled.root;
-        compiledGraph = compiled.graph;
-      } else if (body.testId?.trim()) {
-        const work = map.tests?.[body.testId.trim()];
-        if (!work) throw new HttpError(404, `Test ${body.testId} not found`);
-        const compiled = compileAppMapTest(
+      const prepared = assertPreparedCombineCells(
+        await prepareAppMapCombineCells({
           map,
-          { ...work, ...(body.capture ? { capture: body.capture } : {}) },
-          { reviewedDocumentOrigins },
-        );
-        compiledBody = compiled.root;
-        compiledGraph = compiled.graph;
-      }
-      if (!sets.length) {
-        if (!compiledBody) throw new HttpError(400, "compiled test is required");
-        const job = enqueueJob({
-          recipe: compiledBody.id,
-          title: body.title?.trim() || compiledBody.title,
-          serial: body.browserTargetId ? undefined : targetId,
-          platform,
-          targetKind: body.targetKind ?? (body.browserTargetId ? "browser" : "device"),
-          browserTargetId: body.browserTargetId,
-          recipeSnapshot: compiledBody,
-          recipeGraph: compiledGraph,
-          projectId: scope.projectId,
-          ownerId: currentOperationContext()!.actorId,
-        });
-        json(res, 202, {
-          job: summarizeJob(job),
-          batch: {
-            id: job.id,
-            recipeId: compiledBody.id,
-            composedRecipeId: compiledBody.id,
-            title: job.title ?? compiledBody.title,
-            worlds: ["once"],
-            createdAt: job.queuedAt,
+          combine: scopedCombine,
+          selected: body.selected ?? scopedCombine.selected,
+          strategy: body.strategy ?? scopedCombine.strategy,
+          cellRuntimeProfiles: body.cellRuntimeProfiles ?? scopedCombine.cellRuntimeProfiles,
+          selectedCellIds: body.selectedCellIds,
+          target: {
+            targetId,
+            platform: requestedPlatform ?? "browser",
           },
-          jobs: [summarizeJob(job)],
-        });
-        return true;
+          compileOptions: { reviewedDocumentOrigins },
+        }),
+      );
+      await runtime.assertTargetControl(scope, targetId);
+      if (targetKind === "device") {
+        try {
+          await runtime.listDevices();
+        } catch (error) {
+          throw new HttpError(503, "Relay cannot verify the selected device", {
+            code: "TARGET_DISCOVERY_UNAVAILABLE",
+            targetId,
+            detail: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
-      if (body.executionMode === "pilot" && !combine) {
-        throw new HttpError(400, "Pilot mode requires a saved Combine");
+      const selectedToQueue =
+        body.executionMode === "pilot"
+          ? prepared.selectedCells.slice(0, 1)
+          : prepared.selectedCells;
+      if (!selectedToQueue.length) {
+        throw new HttpError(400, "No selected Combine cells to queue");
       }
-      const pilotCaseIndex = Math.max(0, Math.floor(body.pilotCaseIndex ?? 0));
-      const batch = await startOptionRecipeRun({
-        recipeId: compiledBody?.id ?? "combine",
-        compiledBody,
-        compiledGraph,
-        map,
+      const queued = enqueuePreparedAppMapCombineCells({
+        cells: selectedToQueue,
+        title: body.title ?? scopedCombine.name,
         targetId,
-        platform,
-        targetKind: body.targetKind ?? (body.browserTargetId ? "browser" : "device"),
+        platform: requestedPlatform,
+        targetKind,
         browserTargetId: body.browserTargetId,
-        request: {
-          sets,
-          ...(combine ? { combineId: combine.id } : {}),
-          selected: body.selected ?? combine?.selected,
-          strategy: body.strategy ?? combine?.strategy,
-          // Tests and saved matrices own their evidence policy. The generic
-          // before/after wrapper remains only for legacy raw-flow runs.
-          screenshotEach: !(combine || body.testId?.trim()),
-        },
-        title: body.title,
-        seed: body.seed,
+        queuedTargetProfile: (cell) =>
+          queuedAppMapTestTargetProfile({
+            runtimeTargetProfile: cell.selectedRuntimeTargetProfile,
+            observedTargetProfile: undefined,
+            target: {
+              kind: targetKind,
+              targetId,
+              platform: requestedPlatform ?? "browser",
+            },
+          }),
         projectId: scope.projectId,
         ownerId: currentOperationContext()!.actorId,
-        ...(body.executionMode === "pilot" ? { caseIndexes: [pilotCaseIndex] } : {}),
       });
       let campaign;
       if (body.executionMode === "pilot" && combine) {
-        const pilotJob = batch.jobs[0];
-        if (!pilotJob) throw new HttpError(400, `Pilot case ${pilotCaseIndex} is out of range`);
-        const variableKeys = new Set(sets.map((set) => set.id));
-        const cases = batch.matrix.cases.map((item) => ({
-          index: item.index,
-          world: item.name || `world-${item.index + 1}`,
-          values: Object.fromEntries(
-            Object.entries(item.values).filter(([key]) => variableKeys.has(key)),
-          ),
-          phase: item.index === pilotCaseIndex ? ("pilot" as const) : ("coverage" as const),
-          status: item.index === pilotCaseIndex ? ("queued" as const) : ("pending" as const),
-          ...(item.index === pilotCaseIndex ? { jobId: pilotJob.id } : {}),
-        }));
+        const jobByCell = new Map(queued.jobs.map((job, index) => [selectedToQueue[index]?.cellId, job]));
+        const cases = prepared.cells.map((cell, index) => {
+          const job = jobByCell.get(cell.cellId);
+          const isPilot = cell.cellId === selectedToQueue[0]?.cellId;
+          return combineCampaignCaseFromPreparedCell(cell, {
+            index,
+            phase: isPilot ? "pilot" : "coverage",
+            status: job ? "queued" : "pending",
+            jobId: job?.id,
+          });
+        });
         const at = Date.now();
         campaign = {
           schemaVersion: 1 as const,
-          id: batch.id,
+          id: queued.batchId,
           projectId: scope.projectId,
           ownerId: currentOperationContext()!.actorId,
           appMapId: map.id,
@@ -566,7 +568,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
           latestRevision: map.revision,
           target: body.browserTargetId
             ? { kind: "browser" as const, id: targetId, platform: "browser" as const }
-            : { kind: "device" as const, id: targetId, platform: platform! },
+            : { kind: "device" as const, id: targetId, platform: requestedPlatform! },
           status: "pilot-running" as const,
           createdAt: at,
           updatedAt: at,
@@ -581,8 +583,9 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
           ],
           execution: {
             selected: body.selected ?? combine.selected,
+            selectedCellIds: prepared.selectedCellIds,
             strategy: body.strategy ?? combine.strategy,
-            seed: batch.matrix.seed,
+            seed: prepared.matrix.seed,
             title: body.title?.trim() || combine.name,
           },
         };
@@ -590,24 +593,21 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       }
       json(res, 202, {
         batch: {
-          id: batch.id,
-          recipeId: batch.bodyRecipeId,
-          composedRecipeId: batch.composedRecipeId,
-          title: batch.title,
-          worlds: batch.worlds,
-          createdAt: batch.createdAt,
-          ...(batch.expectedScreenshotsPerWorld !== undefined
-            ? { expectedScreenshotsPerWorld: batch.expectedScreenshotsPerWorld }
-            : {}),
-          ...(batch.expectedScreenshots !== undefined
-            ? { expectedScreenshots: batch.expectedScreenshots }
-            : {}),
+          id: queued.batchId,
+          recipeId: selectedToQueue[0]!.recipeSnapshot.id,
+          composedRecipeId: selectedToQueue[0]!.recipeSnapshot.id,
+          title: body.title ?? scopedCombine.name,
+          worlds: prepared.cells.map((cell) => cell.worldLabel),
+          createdAt: Date.now(),
         },
-        matrix: batch.matrix,
-        jobs: batch.jobs.map((job) => summarizeJob(job)),
+        matrix: prepared.matrix,
+        cells: prepared.cellStates,
+        jobs: queued.jobs.map((job) => summarizeJob(job)),
         ...(campaign ? { campaign } : {}),
       });
     } catch (error) {
+      if (error instanceof HttpError) throw error;
+      if (error instanceof AppMapCombineCellContractError) throw combineCellContractHttpError(error);
       if (error instanceof AppMapCompileError) throw new HttpError(409, error.message);
       throw new HttpError(400, error instanceof Error ? error.message : String(error));
     }

@@ -1,4 +1,9 @@
 import {
+  appMapCombineCellExecutionIntentArtifactKind,
+  parseAppMapCombineCellExecutionIntentArtifact,
+  type AppMapCombineCellExecutionIntent,
+} from "./app-map-combine-cell-intent.js";
+import {
   appMapTestExecutionIntentArtifactKind,
   digestAppMapTestExecutionValue,
   parseAppMapTestExecutionIntentArtifact,
@@ -34,7 +39,11 @@ export type AppMapTestExecutionSource = {
 export type AppMapTestExecutionIntentAssessment =
   | { status: "not-app-map-test" }
   | { status: "review-required"; reason: string }
-  | { status: "valid"; intent: AppMapTestExecutionIntent };
+  | {
+      status: "valid";
+      intent: AppMapTestExecutionIntent;
+      combineCell?: AppMapCombineCellExecutionIntent;
+    };
 
 /** A typed cross-boundary signal: retries, resumes, and replays must turn
  * this into the same review-needed response rather than treating a stale
@@ -121,15 +130,24 @@ function queuedTargetProfileMismatch(
 function executionSourceMismatch(
   intent: AppMapTestExecutionIntent,
   source: AppMapTestExecutionSource,
+  combineCell?: AppMapCombineCellExecutionIntent,
 ): string | undefined {
-  const rootRecipeId = intent.sourcePlan.rootRecipeId;
+  const rootRecipeId = combineCell?.wrapper.rootRecipeId ?? intent.sourcePlan.rootRecipeId;
   const graph = parseCanonicalAppMapTestRecipeGraph(source.recipeGraph);
   if (!graph) return "The frozen Test recipe graph is missing or malformed.";
   const snapshot = parseCanonicalAppMapTestRecipe(source.recipeSnapshot, rootRecipeId);
   if (!snapshot) return "The frozen Test root recipe is missing or malformed.";
   const root = graph[rootRecipeId];
   if (!root) return "The frozen Test root recipe is absent from its graph.";
-  if (
+  if (combineCell) {
+    if (
+      digestAppMapTestExecutionValue(graph) !== combineCell.wrapper.recipeGraphDigest ||
+      digestAppMapTestExecutionValue(root) !== combineCell.wrapper.rootRecipeDigest ||
+      digestAppMapTestExecutionValue(snapshot) !== combineCell.wrapper.rootRecipeDigest
+    ) {
+      return "The queued Combine cell wrapper no longer matches its frozen execution intent.";
+    }
+  } else if (
     digestAppMapTestExecutionValue(graph) !== intent.sourcePlan.recipeGraphDigest ||
     digestAppMapTestExecutionValue(root) !== intent.sourcePlan.rootRecipeDigest ||
     digestAppMapTestExecutionValue(snapshot) !== intent.sourcePlan.rootRecipeDigest
@@ -142,14 +160,16 @@ function executionSourceMismatch(
       ? text(source.recipeId) !== rootRecipeId
       : source.recipeId !== undefined && text(source.recipeId) !== rootRecipeId)
   ) {
-    return "The queued Test action no longer names its frozen root recipe.";
+    return combineCell
+      ? "The queued Combine cell action no longer names its frozen wrapper root."
+      : "The queued Test action no longer names its frozen root recipe.";
   }
   const targetId = text(source.target?.targetId);
   const platform = source.target?.platform;
   if (!targetId || (platform !== "android" && platform !== "ios" && platform !== "browser")) {
     return "The Test no longer has one reusable target identity.";
   }
-  const profile = intent.selectedRuntimeTargetProfile;
+  const profile = combineCell?.selectedRuntimeTargetProfile ?? intent.selectedRuntimeTargetProfile;
   if (profile && (profile.targetId !== targetId || profile.platform !== platform)) {
     return "The selected runtime evidence profile no longer matches this target.";
   }
@@ -168,6 +188,16 @@ export function assessAppMapTestExecutionSource(
     return assessAppMapTestExecutionSourceValue(source);
   } catch {
     const artifacts = Array.isArray(source.artifacts) ? source.artifacts : [];
+    if (
+      artifacts.some((artifact) =>
+        artifactHasKind(artifact, appMapCombineCellExecutionIntentArtifactKind),
+      )
+    ) {
+      return {
+        status: "review-required",
+        reason: "The Combine cell execution intent is malformed or internally inconsistent.",
+      };
+    }
     if (
       artifacts.some((artifact) => artifactHasKind(artifact, appMapTestExecutionIntentArtifactKind))
     ) {
@@ -190,6 +220,28 @@ function assessAppMapTestExecutionSourceValue(
   source: AppMapTestExecutionSource,
 ): AppMapTestExecutionIntentAssessment {
   const artifacts = source.artifacts ?? [];
+  const combineArtifacts = artifacts.filter(
+    (artifact) => artifact.kind === appMapCombineCellExecutionIntentArtifactKind,
+  );
+  if (combineArtifacts.length) {
+    if (combineArtifacts.length !== 1) {
+      return {
+        status: "review-required",
+        reason: "The Combine cell has more than one execution intent artifact.",
+      };
+    }
+    const combineCell = parseAppMapCombineCellExecutionIntentArtifact(combineArtifacts[0]);
+    if (!combineCell) {
+      return {
+        status: "review-required",
+        reason: "The Combine cell execution intent is malformed or internally inconsistent.",
+      };
+    }
+    const mismatch = executionSourceMismatch(combineCell.child, source, combineCell);
+    return mismatch
+      ? { status: "review-required", reason: mismatch }
+      : { status: "valid", intent: combineCell.child, combineCell };
+  }
   const intentArtifacts = artifacts.filter(
     (artifact) => artifact.kind === appMapTestExecutionIntentArtifactKind,
   );

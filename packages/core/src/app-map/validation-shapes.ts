@@ -516,6 +516,33 @@ export function assertAppMapCombine(
   ) {
     appMapFail("invalid-map", `${label}.strategy is unsupported`);
   }
+  if (combine.cellRuntimeProfiles !== undefined) {
+    if (!Array.isArray(combine.cellRuntimeProfiles)) {
+      appMapFail("invalid-map", `${label}.cellRuntimeProfiles must be an array`);
+    }
+    combine.cellRuntimeProfiles.forEach((binding, index) => {
+      const entry = objectValue(binding, `${label}.cellRuntimeProfiles[${index}]`);
+      identifier(entry.testId, `${label}.cellRuntimeProfiles[${index}].testId`);
+      identifier(entry.targetProfileId, `${label}.cellRuntimeProfiles[${index}].targetProfileId`);
+      if (!combine.testIds.includes(entry.testId as string)) {
+        appMapFail(
+          "invalid-map",
+          `${label}.cellRuntimeProfiles[${index}] binds a Test that is not on this Combine`,
+        );
+      }
+      const values = objectValue(entry.values, `${label}.cellRuntimeProfiles[${index}].values`);
+      for (const [variableId, valueId] of Object.entries(values)) {
+        identifier(variableId, `${label}.cellRuntimeProfiles[${index}].values key`);
+        identifier(valueId, `${label}.cellRuntimeProfiles[${index}].values.${variableId}`);
+        if (!combine.variableIds.includes(variableId)) {
+          appMapFail(
+            "invalid-map",
+            `${label}.cellRuntimeProfiles[${index}] binds unused Variable ${variableId}`,
+          );
+        }
+      }
+    });
+  }
 }
 
 export function assertRoutine(routine: Routine, scope: AppMapScope, label: string): void {

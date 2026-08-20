@@ -589,6 +589,10 @@ test("combine preflight reports the exact device and screenshot expansion", asyn
     testIds: [work.id],
     selected: { [variable.id]: ["en", "it"] },
     strategy: "cartesian" as const,
+    cellRuntimeProfiles: [
+      { testId: work.id, values: { [variable.id]: "en" }, targetProfileId: "pixel-en" },
+      { testId: work.id, values: { [variable.id]: "it" }, targetProfileId: "pixel-it" },
+    ],
   };
   const map: AppMap = {
     ...base,
@@ -603,6 +607,8 @@ test("combine preflight reports the exact device and screenshot expansion", asyn
 
   const preflight = await preflightAppMapCombine(map, combine);
   assert.equal(preflight.ok, true, JSON.stringify(preflight.blockers));
+  assert.equal(preflight.cells.length, 2);
+  assert.ok(preflight.cells.every((cell) => cell.binding === "bound"));
   assert.equal(preflight.worlds, 2);
   assert.equal(preflight.deviceRuns, 2);
   assert.equal(preflight.checks, 2);
@@ -643,6 +649,10 @@ test("combine preflight previews the requested pilot selection", async () => {
     variableIds: [variable.id],
     testIds: [work.id],
     selected: { [variable.id]: ["en", "it"] },
+    cellRuntimeProfiles: [
+      { testId: work.id, values: { [variable.id]: "en" }, targetProfileId: "pixel-en" },
+      { testId: work.id, values: { [variable.id]: "it" }, targetProfileId: "pixel-it" },
+    ],
   };
   const map: AppMap = {
     ...base,
@@ -691,6 +701,11 @@ test("40 screens across 40 locales stay 40 device runs, not 1600 locale switches
     variableIds: [variable.id],
     testIds: [work.id],
     strategy: "cartesian" as const,
+    cellRuntimeProfiles: variable.options.map((option) => ({
+      testId: work.id,
+      values: { [variable.id]: option.id },
+      targetProfileId: `pixel-${option.id}`,
+    })),
   };
   const map: AppMap = {
     ...base,

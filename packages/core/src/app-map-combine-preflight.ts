@@ -8,6 +8,10 @@ import type {
 import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
 import { compileAppMapCombine, compileAppMapTest } from "./map-work.js";
 import {
+  assessAppMapCombineCellBindings,
+  enumerateAppMapCombineCells,
+} from "./app-map-combine-cell-prepare.js";
+import {
   assertOptionSandwichReady,
   composeOptionRunRecipes,
   defaultOptionMatrixStrategy,
@@ -224,6 +228,43 @@ export async function preflightAppMapCombine(
   const strategy = effectiveCombine.strategy ?? defaultOptionMatrixStrategy(variables.length);
   const variableNames = variables.map((variable) => variable.name);
   const testNames = tests.map((test) => test.name);
+  let cells: AppMapCombinePreflight["cells"] = [];
+  if (!blockers.length && worlds) {
+    try {
+      const matrix = await prepareOptionRunMatrix({
+        sets,
+        selected: effectiveCombine.selected,
+        strategy,
+        map,
+      });
+      const enumerated = enumerateAppMapCombineCells({
+        combine: effectiveCombine,
+        tests,
+        matrix,
+        variableIds: combine.variableIds,
+      });
+      const assessed = assessAppMapCombineCellBindings({
+        cells: enumerated,
+        bindings: effectiveCombine.cellRuntimeProfiles ?? [],
+        knownTests: new Set(effectiveCombine.testIds),
+        knownValues: Object.fromEntries(
+          variables.map((variable) => [
+            variable.id,
+            new Set(variable.options.map((option) => option.id)),
+          ]),
+        ),
+      });
+      cells = assessed.states;
+      blockers.push(...assessed.issues);
+    } catch (error) {
+      blockers.push(
+        issue(
+          "compile-failed",
+          error instanceof Error ? error.message : "Relay could not project Combine cells.",
+        ),
+      );
+    }
+  }
   return {
     ok: blockers.length === 0,
     appMapId: map.id,
@@ -249,5 +290,6 @@ export async function preflightAppMapCombine(
     ...(estimatedDurationMs !== undefined ? { estimatedDurationMs } : {}),
     blockers,
     warnings,
+    cells,
   };
 }

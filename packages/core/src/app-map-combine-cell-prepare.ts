@@ -1,0 +1,566 @@
+import type {
+  AppMap,
+  AppMapCombine,
+  AppMapCombineCellRuntimeProfile,
+  AppMapCombineCellState,
+  AppMapCombinePreflightIssue,
+  AppMapCompiledRuntimeTargetProfile,
+  AppMapScenarioTest,
+} from "@relay/protocol";
+import {
+  appMapCombineCellBindingId,
+  appMapCombineCellId,
+  canonicalAppMapCombineCellRuntimeProfile,
+  canonicalAppMapCombineCellValues,
+  sameAppMapCombineCellValues,
+} from "./app-map-combine-cell.js";
+import {
+  createAppMapCombineCellExecutionIntent,
+  type AppMapCombineCellExecutionIntent,
+} from "./app-map-combine-cell-intent.js";
+import {
+  composeAppMapCombineCellWrapper,
+  declaredCombineCellStaticInputs,
+  wrapperInputsForStatic,
+  type CombineCellStaticInputs,
+  type CombineCellWrapperInputs,
+} from "./app-map-combine-cell-wrapper.js";
+import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
+import { createAppMapTestExecutionIntent } from "./app-map-test-execution-intent.js";
+import { loadFrozenRawAccessibilityEvidence } from "./frozen-raw-accessibility.js";
+import { compileAppMapTest } from "./map-work.js";
+import { preflightCompiledAppMapTestOffline } from "./offline-test-preflight.js";
+import {
+  assertOptionSandwichReady,
+  defaultOptionMatrixStrategy,
+  prepareOptionRunMatrix,
+  type OptionRunSet,
+} from "./option-run.js";
+import type { Recipe } from "./recipes.js";
+import type { PreparedRunMatrix } from "./run-matrix.js";
+
+export class AppMapCombineCellContractError extends Error {
+  readonly code = "APP_MAP_COMBINE_CELL_CONTRACT";
+  constructor(
+    message: string,
+    readonly issues: AppMapCombinePreflightIssue[],
+    readonly cells: AppMapCombineCellState[],
+  ) {
+    super(message);
+    this.name = "AppMapCombineCellContractError";
+  }
+}
+
+export type PreparedAppMapCombineCell = {
+  cellId: string;
+  testId: string;
+  testName: string;
+  values: Record<string, string>;
+  worldLabel: string;
+  worldIndex: number;
+  targetProfileId: string;
+  selectedRuntimeTargetProfile: AppMapCompiledRuntimeTargetProfile;
+  staticInputs: CombineCellStaticInputs;
+  wrapperInputs: CombineCellWrapperInputs;
+  childIntent: ReturnType<typeof createAppMapTestExecutionIntent>;
+  outerIntent: AppMapCombineCellExecutionIntent;
+  recipeSnapshot: Recipe;
+  recipeGraph: Record<string, Recipe>;
+};
+
+export type PreparedAppMapCombine = {
+  cells: PreparedAppMapCombineCell[];
+  selectedCellIds: string[];
+  selectedCells: PreparedAppMapCombineCell[];
+  matrix: PreparedRunMatrix;
+  cellStates: AppMapCombineCellState[];
+  sets: OptionRunSet[];
+};
+
+function issue(
+  code: AppMapCombinePreflightIssue["code"],
+  message: string,
+  extra: Partial<AppMapCombinePreflightIssue> = {},
+): AppMapCombinePreflightIssue {
+  return { code, message, ...extra };
+}
+
+function selectedOptionIds(
+  combine: AppMapCombine,
+  variableId: string,
+  available: string[],
+  overrides?: Record<string, string[]>,
+): string[] {
+  const source = overrides ?? combine.selected;
+  if (!Object.hasOwn(source ?? {}, variableId)) return available;
+  const selected = source?.[variableId] ?? [];
+  const availableSet = new Set(available);
+  return [...new Set(selected.filter((id) => availableSet.has(id)))];
+}
+
+export function optionSetsForAppMapCombine(
+  map: AppMap,
+  combine: AppMapCombine,
+): OptionRunSet[] {
+  return combine.variableIds.map((id) => {
+    const set = map.variables?.[id];
+    if (!set) throw new AppMapCombineCellContractError(`Variable ${id} is no longer on this map.`, [
+      issue("missing-variable", `Variable “${id}” is no longer on this map.`),
+    ], []);
+    return {
+      id: set.id,
+      name: set.name,
+      kind: set.kind,
+      apply: set.apply,
+      options: set.options,
+      restoreId: set.restoreId,
+      screenshotEach: set.screenshotEach,
+    };
+  });
+}
+
+export function resolveSavedAppMapRuntimeTargetProfile(input: {
+  map: AppMap;
+  targetProfileId: string;
+  target: { targetId: string; platform: "android" | "ios" | "browser" };
+}): AppMapCompiledRuntimeTargetProfile {
+  const targetProfileId = input.targetProfileId.trim();
+  const profiles = Object.values(input.map.screenVariants)
+    .map((variant) => variant.targetProfile)
+    .filter((profile) => profile.id === targetProfileId);
+  if (!profiles.length) {
+    throw new AppMapCombineCellContractError(`Target profile ${targetProfileId} is not saved in this App Map.`, [
+      issue("mismatched-binding", `Target profile ${targetProfileId} is not saved in this App Map.`, {
+        targetProfileId,
+      }),
+    ], []);
+  }
+  const mismatched = profiles.filter(
+    (profile) =>
+      profile.targetId !== input.target.targetId || profile.platform !== input.target.platform,
+  );
+  if (mismatched.length) {
+    throw new AppMapCombineCellContractError(
+      `Target profile ${targetProfileId} does not bind to ${input.target.platform}:${input.target.targetId}`,
+      [
+        issue(
+          "mismatched-binding",
+          `Target profile ${targetProfileId} does not bind to ${input.target.platform}:${input.target.targetId}`,
+          { targetProfileId },
+        ),
+      ],
+      [],
+    );
+  }
+  const identity = (profile: (typeof profiles)[number]) =>
+    [
+      profile.id,
+      profile.targetId,
+      profile.platform,
+      profile.viewport ? `${profile.viewport.width}x${profile.viewport.height}` : "",
+    ].join("\u0000");
+  if (new Set(profiles.map(identity)).size !== 1) {
+    throw new AppMapCombineCellContractError(
+      `Target profile ${targetProfileId} has conflicting saved identities`,
+      [
+        issue("mismatched-binding", `Target profile ${targetProfileId} has conflicting saved identities`, {
+          targetProfileId,
+        }),
+      ],
+      [],
+    );
+  }
+  const profile = profiles[0]!;
+  return {
+    id: profile.id,
+    targetId: profile.targetId,
+    platform: profile.platform,
+    ...(profile.viewport ? { viewport: structuredClone(profile.viewport) } : {}),
+  };
+}
+
+export function enumerateAppMapCombineCells(input: {
+  combine: AppMapCombine;
+  tests: AppMapScenarioTest[];
+  matrix: PreparedRunMatrix;
+  variableIds: readonly string[];
+}): Array<{
+  cellId: string;
+  testId: string;
+  testName: string;
+  values: Record<string, string>;
+  worldLabel: string;
+  worldIndex: number;
+}> {
+  const cells = [];
+  for (const world of input.matrix.cases) {
+    const values = canonicalAppMapCombineCellValues(
+      Object.fromEntries(input.variableIds.map((id) => [id, world.values[id] ?? ""])),
+    );
+    if (Object.values(values).some((value) => !value)) {
+      throw new AppMapCombineCellContractError("A Combine world is missing a Variable value.", [
+        issue("empty-selection", "A Combine world is missing a Variable value."),
+      ], []);
+    }
+    for (const test of input.tests) {
+      cells.push({
+        cellId: appMapCombineCellId(test.id, values),
+        testId: test.id,
+        testName: test.name,
+        values,
+        worldLabel: world.name || `world-${world.index + 1}`,
+        worldIndex: world.index,
+      });
+    }
+  }
+  return cells;
+}
+
+export function assessAppMapCombineCellBindings(input: {
+  cells: Array<{ cellId: string; testId: string; testName: string; values: Record<string, string>; worldLabel: string }>;
+  bindings: AppMapCombineCellRuntimeProfile[];
+  /** Bindings may cover a larger saved grid. Unknown Test/value pairs are foreign. */
+  knownTests?: ReadonlySet<string>;
+  knownValues?: Record<string, ReadonlySet<string>>;
+  rejectUnselectedBindings?: boolean;
+}): {
+  issues: AppMapCombinePreflightIssue[];
+  states: AppMapCombineCellState[];
+  byCellId: Map<string, AppMapCombineCellRuntimeProfile>;
+} {
+  const issues: AppMapCombinePreflightIssue[] = [];
+  const byCellId = new Map<string, AppMapCombineCellRuntimeProfile>();
+  const seenBindings = new Set<string>();
+  const required = new Set(input.cells.map((cell) => cell.cellId));
+  if (!input.bindings.length && input.cells.length) {
+    issues.push(issue("zero-bindings", "Bind a saved runtime profile to every selected Combine cell."));
+  }
+  for (const raw of input.bindings) {
+    const binding = canonicalAppMapCombineCellRuntimeProfile(raw);
+    const cellId = appMapCombineCellBindingId(binding);
+    if (seenBindings.has(cellId)) {
+      issues.push(
+        issue("duplicate-binding", `Cell ${cellId} has more than one runtime profile binding.`, {
+          cellId,
+          testId: binding.testId,
+          values: binding.values,
+          targetProfileId: binding.targetProfileId,
+        }),
+      );
+      continue;
+    }
+    seenBindings.add(cellId);
+    const unknownTest = input.knownTests && !input.knownTests.has(binding.testId);
+    const unknownValue = Object.entries(binding.values).some(([variableId, valueId]) => {
+      const allowed = input.knownValues?.[variableId];
+      return allowed ? !allowed.has(valueId) : Boolean(input.knownValues);
+    });
+    if (unknownTest || unknownValue) {
+      issues.push(
+        issue("foreign-binding", `Binding for ${binding.testId} is not a selected Combine cell.`, {
+          cellId,
+          testId: binding.testId,
+          values: binding.values,
+          targetProfileId: binding.targetProfileId,
+        }),
+      );
+      continue;
+    }
+    const expected = input.cells.find((cell) => cell.cellId === cellId);
+    if (!expected) {
+      if (input.rejectUnselectedBindings) {
+        issues.push(
+          issue("extra-binding", `Binding for ${binding.testId} is outside the selected Combine cells.`, {
+            cellId,
+            testId: binding.testId,
+            values: binding.values,
+            targetProfileId: binding.targetProfileId,
+          }),
+        );
+      }
+      continue;
+    }
+    if (
+      expected.testId !== binding.testId ||
+      !sameAppMapCombineCellValues(expected.values, binding.values)
+    ) {
+      issues.push(
+        issue("mismatched-binding", `Binding for ${cellId} does not match its Test and values.`, {
+          cellId,
+          testId: binding.testId,
+          values: binding.values,
+          targetProfileId: binding.targetProfileId,
+        }),
+      );
+      continue;
+    }
+    if (!binding.targetProfileId.trim()) {
+      issues.push(
+        issue("missing-binding", `Cell ${cellId} is missing a targetProfileId.`, {
+          cellId,
+          testId: binding.testId,
+          values: binding.values,
+        }),
+      );
+      continue;
+    }
+    byCellId.set(cellId, binding);
+  }
+  const states: AppMapCombineCellState[] = input.cells.map((cell) => {
+    const binding = byCellId.get(cell.cellId);
+    if (!binding) {
+      issues.push(
+        issue("missing-binding", `Bind a runtime profile to ${cell.testName} · ${cell.worldLabel}.`, {
+          cellId: cell.cellId,
+          testId: cell.testId,
+          values: cell.values,
+        }),
+      );
+      return {
+        cellId: cell.cellId,
+        testId: cell.testId,
+        testName: cell.testName,
+        values: cell.values,
+        worldLabel: cell.worldLabel,
+        binding: "missing" as const,
+        message: "No saved runtime profile",
+      };
+    }
+    return {
+      cellId: cell.cellId,
+      testId: cell.testId,
+      testName: cell.testName,
+      values: cell.values,
+      worldLabel: cell.worldLabel,
+      targetProfileId: binding.targetProfileId,
+      binding: "bound" as const,
+    };
+  });
+  if (input.rejectUnselectedBindings && seenBindings.size > required.size) {
+    issues.push(issue("extra-binding", "This Combine has runtime profile bindings outside the selected cells."));
+  }
+  return { issues, states, byCellId };
+}
+
+async function prepareOneCell(input: {
+  map: AppMap;
+  combine: AppMapCombine;
+  cell: ReturnType<typeof enumerateAppMapCombineCells>[number];
+  binding: AppMapCombineCellRuntimeProfile;
+  sets: OptionRunSet[];
+  worldValues: Record<string, string>;
+  target: { targetId: string; platform: "android" | "ios" | "browser" };
+  compileOptions: AppMapTestCompileOptions;
+}): Promise<PreparedAppMapCombineCell> {
+  const test = input.map.tests[input.cell.testId] as AppMapScenarioTest | undefined;
+  if (!test) {
+    throw new AppMapCombineCellContractError(`Test ${input.cell.testId} is no longer on this map.`, [
+      issue("missing-test", `Test “${input.cell.testId}” is no longer on this map.`, {
+        cellId: input.cell.cellId,
+        testId: input.cell.testId,
+      }),
+    ], []);
+  }
+  const selectedRuntimeTargetProfile = resolveSavedAppMapRuntimeTargetProfile({
+    map: input.map,
+    targetProfileId: input.binding.targetProfileId,
+    target: input.target,
+  });
+  const compiled = compileAppMapTest(
+    input.map,
+    {
+      ...test,
+      ...(input.combine.captures?.[test.id] ? { capture: input.combine.captures[test.id] } : {}),
+    },
+    input.compileOptions,
+  );
+  const plan = {
+    ...compiled.plan,
+    runtimeTargetProfile: structuredClone(selectedRuntimeTargetProfile),
+  };
+  const preflight = preflightCompiledAppMapTestOffline(
+    plan,
+    await loadFrozenRawAccessibilityEvidence(plan),
+    { targetProfileId: selectedRuntimeTargetProfile.id },
+  );
+  if (preflight.summary.blockers) {
+    throw new AppMapCombineCellContractError(
+      `Offline preflight blocked ${input.cell.testName} · ${input.cell.worldLabel}`,
+      [
+        issue("compile-failed", `Offline preflight blocked ${input.cell.testName} · ${input.cell.worldLabel}`, {
+          cellId: input.cell.cellId,
+          testId: input.cell.testId,
+          values: input.cell.values,
+          targetProfileId: selectedRuntimeTargetProfile.id,
+        }),
+      ],
+      [
+        {
+          cellId: input.cell.cellId,
+          testId: input.cell.testId,
+          testName: input.cell.testName,
+          values: input.cell.values,
+          worldLabel: input.cell.worldLabel,
+          targetProfileId: selectedRuntimeTargetProfile.id,
+          binding: "bound",
+          preflight: "blocked",
+          message: "Offline preflight blocked this cell",
+        },
+      ],
+    );
+  }
+  const recipeGraph = Object.fromEntries(
+    Object.values(compiled.graph).map((recipe) => [recipe.id, structuredClone(recipe)]),
+  );
+  const childIntent = createAppMapTestExecutionIntent({ plan, recipeGraph, preflight });
+  const staticInputs = declaredCombineCellStaticInputs(input.sets, input.worldValues);
+  const wrapper = composeAppMapCombineCellWrapper({
+    cellId: input.cell.cellId,
+    childRootId: childIntent.sourcePlan.rootRecipeId,
+    childGraph: childIntent.recipeGraph,
+    sets: input.sets,
+    map: input.map,
+    at: 0,
+  });
+  const wrapperInputs = wrapperInputsForStatic(wrapper.prefixes, staticInputs);
+  const outerIntent = createAppMapCombineCellExecutionIntent({
+    cellId: input.cell.cellId,
+    testId: input.cell.testId,
+    values: input.cell.values,
+    selectedRuntimeTargetProfile,
+    child: childIntent,
+    wrapperRoot: wrapper.root,
+    recipeGraph: wrapper.graph,
+    staticInputs,
+  });
+  return {
+    cellId: input.cell.cellId,
+    testId: input.cell.testId,
+    testName: input.cell.testName,
+    values: input.cell.values,
+    worldLabel: input.cell.worldLabel,
+    worldIndex: input.cell.worldIndex,
+    targetProfileId: selectedRuntimeTargetProfile.id,
+    selectedRuntimeTargetProfile,
+    staticInputs,
+    wrapperInputs,
+    childIntent,
+    outerIntent,
+    recipeSnapshot: wrapper.root,
+    recipeGraph: wrapper.graph,
+  };
+}
+
+export async function prepareAppMapCombineCells(input: {
+  map: AppMap;
+  combine: AppMapCombine;
+  selected?: Record<string, string[]>;
+  strategy?: "zip" | "cartesian" | "pairwise";
+  cellRuntimeProfiles?: AppMapCombineCellRuntimeProfile[];
+  selectedCellIds?: string[];
+  rejectUnselectedBindings?: boolean;
+  target: { targetId: string; platform: "android" | "ios" | "browser" };
+  compileOptions?: AppMapTestCompileOptions;
+}): Promise<PreparedAppMapCombine> {
+  const tests = input.combine.testIds.map((id) => {
+    const test = input.map.tests?.[id];
+    if (!test) {
+      throw new AppMapCombineCellContractError(`Test ${id} is no longer on this map.`, [
+        issue("missing-test", `Test “${id}” is no longer on this map.`, { testId: id }),
+      ], []);
+    }
+    return test;
+  });
+  const sets = optionSetsForAppMapCombine(input.map, input.combine);
+  for (const set of sets) assertOptionSandwichReady(set, input.map);
+  const selected = input.selected ?? input.combine.selected;
+  for (const set of sets) {
+    if (!selectedOptionIds(input.combine, set.id, set.options.map((option) => option.id), selected).length) {
+      throw new AppMapCombineCellContractError(`Choose at least one ${set.name} value.`, [
+        issue("empty-selection", `Choose at least one ${set.name} value.`),
+      ], []);
+    }
+  }
+  const strategy = input.strategy ?? input.combine.strategy ?? defaultOptionMatrixStrategy(sets.length);
+  const matrix = await prepareOptionRunMatrix({
+    sets,
+    selected,
+    strategy,
+    map: input.map,
+  });
+  const cells = enumerateAppMapCombineCells({
+    combine: input.combine,
+    tests,
+    matrix,
+    variableIds: input.combine.variableIds,
+  });
+  const bindings = input.cellRuntimeProfiles ?? input.combine.cellRuntimeProfiles ?? [];
+  const assessed = assessAppMapCombineCellBindings({
+    cells,
+    bindings,
+    knownTests: new Set(input.combine.testIds),
+    knownValues: Object.fromEntries(
+      sets.map((set) => [set.id, new Set(set.options.map((option) => option.id))]),
+    ),
+    rejectUnselectedBindings: input.rejectUnselectedBindings === true,
+  });
+  if (assessed.issues.length) {
+    throw new AppMapCombineCellContractError(
+      assessed.issues[0]?.message ?? "Combine cells are missing explicit runtime profile bindings.",
+      assessed.issues,
+      assessed.states,
+    );
+  }
+  const requestedSelected = input.selectedCellIds?.map((id) => id.trim()).filter(Boolean);
+  const known = new Set(cells.map((cell) => cell.cellId));
+  if (requestedSelected) {
+    const unknown = requestedSelected.filter((id) => !known.has(id));
+    if (unknown.length) {
+      throw new AppMapCombineCellContractError("selectedCellIds includes a cell that is not in this Combine.", [
+        issue("foreign-binding", `Unknown selected cell ${unknown[0]}.`, { cellId: unknown[0] }),
+      ], assessed.states);
+    }
+  }
+  const selectedCellIds = requestedSelected?.length ? [...new Set(requestedSelected)] : cells.map((cell) => cell.cellId);
+  const prepared: PreparedAppMapCombineCell[] = [];
+  for (const cell of cells) {
+    const world = matrix.cases[cell.worldIndex];
+    if (!world) {
+      throw new AppMapCombineCellContractError(`Combine world ${cell.worldIndex} is missing.`, [
+        issue("compile-failed", `Combine world ${cell.worldIndex} is missing.`, { cellId: cell.cellId }),
+      ], assessed.states);
+    }
+    const preparedCell = await prepareOneCell({
+      map: input.map,
+      combine: input.combine,
+      cell,
+      binding: assessed.byCellId.get(cell.cellId)!,
+      sets,
+      worldValues: world.values,
+      target: input.target,
+      compileOptions: input.compileOptions ?? {},
+    });
+    prepared.push({
+      ...preparedCell,
+      worldLabel: cell.worldLabel,
+    });
+  }
+  const byId = new Map(prepared.map((cell) => [cell.cellId, cell]));
+  return {
+    cells: prepared,
+    selectedCellIds,
+    selectedCells: selectedCellIds.map((id) => byId.get(id)!),
+    matrix,
+    cellStates: prepared.map((cell) => ({
+      cellId: cell.cellId,
+      testId: cell.testId,
+      testName: cell.testName,
+      values: cell.values,
+      worldLabel: cell.worldLabel,
+      targetProfileId: cell.targetProfileId,
+      binding: "bound",
+      preflight: "ready",
+    })),
+    sets,
+  };
+}

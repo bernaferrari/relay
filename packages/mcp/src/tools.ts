@@ -138,7 +138,7 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "job.locale-matrix.analysis":
     " The same findings without writing a pack, keyed to the frame of each case. Use this to read a matrix or combine batch while it is still running; export only when a person needs the folder.",
   "job.combine.start":
-    " App Map Combine execution is fail-closed until every cell owns a frozen runtime profile and offline preflight. For one Test, use app-map.test.run with targetProfileId; do not retry this migration blocker.",
+    " Run a saved Variable × Test Combine. Every selected cell needs an explicit cellRuntimeProfiles binding (testId, values, targetProfileId). Relay prepares every cell offline and returns 409 without queueing if any binding is missing, foreign, or blocked. A single Test without Variables still uses app-map.test.run.",
   "app-map.scroll-surface.origin.inspect":
     " Offline audit only: it reads the signed immutable first PNG/tree evidence and lifecycle; it never resolves, leases, or controls a target.",
   "app-map.scroll-surface.origin.review":

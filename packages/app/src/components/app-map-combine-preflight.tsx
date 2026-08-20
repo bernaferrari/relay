@@ -51,6 +51,25 @@ export function AppMapCombinePreflightSummary(props: { preflight: AppMapCombineP
           )}
         </For>
       </div>
+      <Show when={props.preflight.cells?.some((cell) => cell.binding !== "bound")}>
+        <ul class="m-0 grid list-none gap-1 p-0" aria-label="Combine cell profiles">
+          <For each={props.preflight.cells}>
+            {(cell) => (
+              <li class="flex items-start gap-1.5 text-micro/[1.4] text-[var(--text-base)]">
+                <Icon
+                  name={cell.binding === "bound" ? "check" : "alert"}
+                  size={11}
+                  class="mt-0.5 shrink-0 text-[var(--text-weak)]"
+                />
+                {cell.testName} · {cell.worldLabel}:{" "}
+                {cell.binding === "bound"
+                  ? `bound to ${cell.targetProfileId}`
+                  : cell.message ?? "No runtime profile"}
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
       <Show when={props.preflight.blockers.length || props.preflight.warnings.length}>
         <ul class="m-0 grid list-none gap-1 p-0">
           <For each={[...props.preflight.blockers, ...props.preflight.warnings]}>

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   createCombineCampaign,
+  pendingSelectedCombineCampaignCells,
   projectCombineCampaign,
   readCombineCampaign,
   updateCombineCampaign,
@@ -26,17 +27,42 @@ function fixture(status: "passed" | "failed" = "passed"): StoredCombineCampaign 
     createdAt: 10,
     updatedAt: 10,
     cases: [
-      { index: 0, world: "English", values: { language: "en" }, phase: "pilot", status },
+      {
+        index: 0,
+        cellId: "c" + "a".repeat(32),
+        testId: "settings",
+        world: "English",
+        values: { language: "en" },
+        targetProfileId: "android-en",
+        childIntentDigest: "a".repeat(64),
+        outerIntentDigest: "b".repeat(64),
+        wrapperGraphDigest: "c".repeat(64),
+        staticInputDigest: "d".repeat(64),
+        phase: "pilot",
+        status,
+      },
       {
         index: 1,
+        cellId: "c" + "b".repeat(32),
+        testId: "settings",
         world: "Italian",
         values: { language: "it" },
+        targetProfileId: "android-it",
+        childIntentDigest: "e".repeat(64),
+        outerIntentDigest: "f".repeat(64),
+        wrapperGraphDigest: "1".repeat(64),
+        staticInputDigest: "2".repeat(64),
         phase: "coverage",
         status: "pending",
       },
     ],
     lineage: [{ kind: "created", at: 10, appMapRevision: 7, actorId: "agent:test" }],
-    execution: { selected: { language: ["en", "it"] }, strategy: "zip", seed: 42 },
+    execution: {
+      selected: { language: ["en", "it"] },
+      selectedCellIds: ["c" + "a".repeat(32), "c" + "b".repeat(32)],
+      strategy: "zip",
+      seed: 42,
+    },
   };
 }
 
@@ -75,6 +101,26 @@ test("Combine campaigns persist pilot state and derive a truthful resume boundar
     else process.env.RELAY_STATE_DIR = previous;
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("resume scope is pending selected cells by status, not missing jobId", async () => {
+  const campaign = fixture("passed");
+  campaign.cases[0]!.jobId = undefined;
+  campaign.cases.push({
+    ...campaign.cases[1]!,
+    index: 2,
+    cellId: "c" + "d".repeat(32),
+    world: "French",
+    values: { language: "fr" },
+    status: "pending",
+  });
+  const pending = pendingSelectedCombineCampaignCells(campaign);
+  assert.deepEqual(
+    pending.map((item) => item.cellId),
+    ["c" + "b".repeat(32)],
+  );
+  const projected = await projectCombineCampaign(campaign);
+  assert.equal(projected.status, "ready-to-resume");
 });
 
 test("a failed pilot requires review while untouched cases remain pending", async () => {

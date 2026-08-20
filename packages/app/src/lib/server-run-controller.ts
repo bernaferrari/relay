@@ -259,12 +259,17 @@ export function createServerRunController(deps: RunControllerDependencies) {
     testId?: string;
     combineId?: string;
     capture?: AppMapCapturePolicy;
-    sets?: unknown[];
     variableIds?: string[];
     selected?: Record<string, string[]>;
     strategy?: "zip" | "cartesian" | "pairwise";
     title?: string;
     executionMode?: "all" | "pilot";
+    selectedCellIds?: string[];
+    cellRuntimeProfiles?: Array<{
+      testId: string;
+      values: Record<string, string>;
+      targetProfileId: string;
+    }>;
   }): Promise<{ jobId: string | null; campaignId?: string } | null> {
     if (deps.health() !== "online") {
       toast("Relay isn’t connected — can’t run yet", "warning");
@@ -288,12 +293,13 @@ export function createServerRunController(deps: RunControllerDependencies) {
         targetKind: targetPlatform === "browser" ? "browser" : "device",
         platform: targetPlatform === "browser" ? undefined : targetPlatform,
         variableIds: input.variableIds,
-        sets: input.sets,
         selected: input.selected,
         strategy: input.strategy,
         title: input.title,
         projectId: deps.projectId(),
         executionMode: input.executionMode,
+        selectedCellIds: input.selectedCellIds,
+        cellRuntimeProfiles: input.cellRuntimeProfiles,
       });
       for (const job of data.jobs.toReversed()) deps.rememberJob(job);
       if (data.jobs[0]) {

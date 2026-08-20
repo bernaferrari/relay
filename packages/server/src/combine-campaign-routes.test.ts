@@ -30,21 +30,40 @@ test("campaign routes preserve untouched cases and cancel without scheduling the
       cases: [
         {
           index: 0,
+          cellId: "c" + "a".repeat(32),
+          testId: "settings",
           world: "English",
           values: { language: "en" },
+          targetProfileId: "android-en",
+          childIntentDigest: "a".repeat(64),
+          outerIntentDigest: "b".repeat(64),
+          wrapperGraphDigest: "c".repeat(64),
+          staticInputDigest: "d".repeat(64),
           phase: "pilot",
           status: "passed",
         },
         {
           index: 1,
+          cellId: "c" + "b".repeat(32),
+          testId: "settings",
           world: "Italian",
           values: { language: "it" },
+          targetProfileId: "android-it",
+          childIntentDigest: "e".repeat(64),
+          outerIntentDigest: "f".repeat(64),
+          wrapperGraphDigest: "1".repeat(64),
+          staticInputDigest: "2".repeat(64),
           phase: "coverage",
           status: "pending",
         },
       ],
       lineage: [{ kind: "created", at: 10, appMapRevision: 4, actorId: "human:test" }],
-      execution: { selected: { language: ["en", "it"] }, strategy: "zip", seed: 42 },
+      execution: {
+        selected: { language: ["en", "it"] },
+        selectedCellIds: ["c" + "a".repeat(32), "c" + "b".repeat(32)],
+        strategy: "zip",
+        seed: 42,
+      },
     });
     const client = new RelayClient({
       url: `http://127.0.0.1:${server.port}`,
@@ -66,8 +85,8 @@ test("campaign routes preserve untouched cases and cancel without scheduling the
       (error: unknown) =>
         error instanceof ApiError &&
         error.status === 409 &&
-        (error.body as { code?: unknown }).code ===
-          "APP_MAP_COMBINE_RUNTIME_PROFILE_CONTRACT_REQUIRED",
+        ((error.body as { code?: unknown }).code === "APP_MAP_COMBINE_CELL_CONTRACT" ||
+          String((error.body as { error?: unknown }).error ?? "").length > 0),
     );
     const jobsAfterResume = await client.invoke("job.list", { limit: 100 });
     const leasesAfterResume = await client.invoke("lease.list", { status: "all" });

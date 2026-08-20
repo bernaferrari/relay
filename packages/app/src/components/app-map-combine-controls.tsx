@@ -1,5 +1,12 @@
 import { For, Show } from "solid-js";
-import type { AppMapCapturePolicy, AppMapVariable, CaseExpansionStrategy } from "@relay/protocol";
+import type {
+  AppMapCapturePolicy,
+  AppMapCombineCellRuntimeProfile,
+  AppMapVariable,
+  CaseExpansionStrategy,
+} from "@relay/protocol";
+import { bindingForCell } from "../lib/app-map-combine-profiles";
+import type { CombineRuntimeProfileOption } from "../lib/app-map-combine-profiles";
 import { Button } from "@relay/ui/button";
 import type { TestCandidate } from "../lib/app-map-combine-candidates";
 import type { CombineProjection } from "../lib/app-map-combine-presentation";
@@ -135,6 +142,9 @@ export function AppMapCombinePlan(props: {
   projection: CombineProjection;
   busy: boolean;
   canRunOnDevice: boolean;
+  cellRuntimeProfiles: AppMapCombineCellRuntimeProfile[];
+  runtimeProfiles: CombineRuntimeProfileOption[];
+  onBindCell: (testId: string, values: Record<string, string>, targetProfileId: string) => void;
   onCreateVariable: () => void;
   onEditVariable: (id: string) => void;
   onToggleVariable: (variable: AppMapVariable) => void;
@@ -408,24 +418,65 @@ export function AppMapCombinePlan(props: {
                           {world.label}
                         </th>
                         <For each={props.selectedTests}>
-                          {(test) => (
-                            <td class="px-1.5 py-1">
-                              <button
-                                type="button"
-                                class="grid min-h-9 w-full place-items-center rounded-lg text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)] disabled:text-[var(--text-weaker)]"
-                                data-tip={
-                                  props.canRunOnDevice
-                                    ? undefined
-                                    : "Connect a ready device to run this check"
-                                }
-                                disabled={props.busy || !props.canRunOnDevice}
-                                aria-label={`Run ${test.name} in ${world.label}`}
-                                onClick={() => props.onRunCell(worldIndex(), test)}
-                              >
-                                <Icon name="play" size={11} />
-                              </button>
-                            </td>
-                          )}
+                          {(test) => {
+                            const values = Object.fromEntries(
+                              Object.entries(world.values).map(([id, value]) => [id, value.id]),
+                            );
+                            const binding = bindingForCell(
+                              props.cellRuntimeProfiles,
+                              test.id,
+                              values,
+                            );
+                            const profile = props.runtimeProfiles.find(
+                              (item) => item.id === binding?.targetProfileId,
+                            );
+                            const status = binding
+                              ? `Bound to ${profile?.name ?? binding.targetProfileId}`
+                              : "No runtime profile";
+                            return (
+                              <td class="px-1.5 py-1">
+                                <div class="grid gap-1">
+                                  <label class="grid gap-0.5">
+                                    <span class="text-micro text-[var(--text-weak)]">{status}</span>
+                                    <select
+                                      class="h-8 rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-1.5 text-micro text-[var(--text-base)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                                      value={binding?.targetProfileId ?? ""}
+                                      aria-label={`Runtime profile for ${test.name} in ${world.label}`}
+                                      disabled={props.busy || !props.runtimeProfiles.length}
+                                      onChange={(event) =>
+                                        props.onBindCell(test.id, values, event.currentTarget.value)
+                                      }
+                                    >
+                                      <option value="">Choose profile</option>
+                                      <For each={props.runtimeProfiles}>
+                                        {(item) => (
+                                          <option value={item.id}>
+                                            {item.name} · {item.platform}
+                                          </option>
+                                        )}
+                                      </For>
+                                    </select>
+                                  </label>
+                                  <button
+                                    type="button"
+                                    class="grid min-h-9 w-full place-items-center rounded-lg text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)] disabled:text-[var(--text-weaker)]"
+                                    data-tip={
+                                      !binding
+                                        ? "Bind a runtime profile before running this cell"
+                                        : props.canRunOnDevice
+                                          ? undefined
+                                          : "Connect a ready device to run this check"
+                                    }
+                                    disabled={props.busy || !props.canRunOnDevice || !binding}
+                                    aria-label={`Run ${test.name} in ${world.label}. ${status}.`}
+                                    onClick={() => props.onRunCell(worldIndex(), test)}
+                                  >
+                                    <Icon name="play" size={11} />
+                                  </button>
+                                </div>
+                              </td>
+                            );
+                          }}
                         </For>
                       </tr>
                     )}
@@ -489,6 +540,7 @@ export function AppMapCombineFooter(props: {
   cellCount: number;
   canRunOnDevice: boolean;
   issue: string;
+  saveIssue?: string;
   busy: boolean;
   savingOnly: boolean;
   onDelete: () => void;
@@ -519,7 +571,7 @@ export function AppMapCombineFooter(props: {
         <Button
           variant="secondary"
           size="lg"
-          disabled={props.busy || Boolean(props.issue)}
+          disabled={props.busy || Boolean(props.saveIssue)}
           onClick={props.onSave}
         >
           {props.savingOnly ? "Saving…" : "Save"}

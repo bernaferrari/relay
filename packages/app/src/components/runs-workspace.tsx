@@ -667,7 +667,7 @@ export function RunsWorkspace(props: {
                   </span>
                   <Show when={fmtDur(job(), server.clock())}>
                     <span class={cn(mono, "text-text-weaker")} data-tip="Run duration">
-                      {fmtDur(job(), server.clock())}
+                      · {fmtDur(job(), server.clock())}
                     </span>
                   </Show>
                   <span class="inline-flex min-w-0 items-center gap-1.5 text-text-base">

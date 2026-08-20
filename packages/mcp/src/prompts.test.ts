@@ -453,12 +453,11 @@ test("matrix prompt keeps App Map Combine execution behind the per-cell profile 
     );
     assert.match(text, /Variables and graph-native scenario Tests/);
     assert.match(text, /relay_app_map_combine_preflight/);
-    assert.match(text, /temporarily fail-closed/i);
+    assert.match(text, /cellRuntimeProfiles/);
     assert.match(text, /relay_app_map_test_run/);
-    assert.match(text, /do not call relay_job_combine_start/i);
+    assert.match(text, /relay_job_combine_start/);
     assert.match(text, /App Language destinations that open OS Settings/);
     assert.match(text, /portable screenshot report/);
-    assert.match(text, /absent from the canvas/);
   } finally {
     await session.close();
   }
