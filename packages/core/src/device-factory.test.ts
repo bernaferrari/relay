@@ -76,8 +76,10 @@ test("a registered local provider replaces the agent-device client for kind devi
   try {
     const context = { kind: "device", platform: "android", serial: "fake-serial" } as const;
     assert.equal(getLocalDeviceProvider()?.kind, "device");
-    assert.equal(createDeviceForTarget(context), fake);
-    assert.equal(await createDeviceForTargetAsync(context), fake);
+    const device = createDeviceForTarget(context);
+    assert.notEqual(device, fake);
+    assert.equal("marker" in device, false);
+    assert.equal(await createDeviceForTargetAsync(context), device);
     assert.deepEqual(seen, ["fake-serial", "fake-serial"]);
   } finally {
     setLocalDeviceProvider(undefined);

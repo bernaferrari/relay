@@ -28,7 +28,7 @@ function workflowCannotBypassDispatcher(device: Device): void {
 
 void workflowCannotBypassDispatcher;
 
-test("test doubles retain raw runtime behavior behind the safe workflow facade", () => {
+test("test doubles expose a separate observation facade and keep their raw spy explicit", () => {
   const nativePress = async () => ({ ok: true });
   const capabilities = {
     interactions: {
@@ -38,7 +38,8 @@ test("test doubles retain raw runtime behavior behind the safe workflow facade",
   };
   const device = deviceTestDouble(capabilities);
 
-  assert.equal(device, capabilities);
+  assert.notEqual(device, capabilities);
+  assert.equal("press" in device.interactions, false);
   assert.equal(capabilities.interactions.press, nativePress);
 });
 
@@ -61,6 +62,7 @@ test("package exports reject direct internal transport imports", async () => {
   for (const specifier of [
     "@relay/core/device-capabilities",
     "@relay/core/device-mutation-adapter",
+    "@relay/core/device-observation-membrane",
   ]) {
     await assert.rejects(importPackageSpecifier(specifier), (error: unknown) => {
       return (error as NodeJS.ErrnoException | undefined)?.code === "ERR_PACKAGE_PATH_NOT_EXPORTED";

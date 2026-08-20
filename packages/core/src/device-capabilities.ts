@@ -8,14 +8,15 @@ type NativeDevice = ReturnType<typeof createAgentDeviceClient>;
  *
  * This deliberately omits every physical mutation primitive. Workflows express
  * a user-visible intent through the canonical helpers, whose single dispatcher
- * owns iOS exact-once terminality. The concrete SDK client still carries its
- * native methods at runtime, but ordinary type-checked workflow code cannot
- * access them through this facade.
+ * owns iOS exact-once terminality. Supported adapters return a frozen runtime
+ * observation facade too: their complete transport stays in a private registry
+ * and is available only to the canonical dispatcher.
  *
- * This is a TypeScript architecture boundary, not a security sandbox: code in
- * the repository can always choose an unsafe cast or construct a non-literal
- * dynamic import. Package exports and the source gate make that choice explicit
- * and reviewable; they do not claim to make it impossible at runtime.
+ * This is a trusted-process capability boundary, not a security sandbox: code
+ * in the repository can still deliberately import private source files or
+ * modify an adapter before Relay wraps it. Package exports and the source gate
+ * make that choice explicit and reviewable; they do not claim to make it
+ * impossible in a hostile JavaScript realm.
  */
 export type Device = {
   devices: {

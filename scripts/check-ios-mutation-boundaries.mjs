@@ -24,6 +24,7 @@ export const rawDeviceMutationBoundaryPaths = new Set([
 export const privateDeviceCapabilityPaths = new Set([
   ...rawDeviceMutationBoundaryPaths,
   "packages/core/src/device-capabilities.ts",
+  "packages/core/src/device-observation-membrane.ts",
   "packages/core/src/testing.ts",
 ]);
 
@@ -37,10 +38,29 @@ const rawSdkBoundaryPaths = new Set([
 const internalDeviceModuleOwners = new Map([
   ["device-capabilities", new Set(["packages/core/src/device.ts", "packages/core/src/testing.ts"])],
   ["device-mutation-adapter", new Set(["packages/core/src/device.ts"])],
+  [
+    "device-observation-membrane",
+    new Set([
+      "packages/core/src/browser-target.ts",
+      "packages/core/src/device-factory.ts",
+      "packages/core/src/device.ts",
+      "packages/core/src/testing.ts",
+    ]),
+  ],
 ]);
 
 const requiredCorePackageEntries = new Set(["./device", "./testing"]);
-const forbiddenCorePackageEntries = new Set(["./device-capabilities", "./device-mutation-adapter"]);
+const forbiddenCorePackageEntries = new Set([
+  "./device-capabilities",
+  "./device-mutation-adapter",
+  "./device-observation-membrane",
+]);
+const runtimeObservationFacadeOwners = new Set([
+  "packages/core/src/browser-target.ts",
+  "packages/core/src/device-factory.ts",
+  "packages/core/src/device.ts",
+  "packages/core/src/testing.ts",
+]);
 
 const rawMutationCall =
   /\b(?:target\.)?device\.(?:devices\.boot|apps\.(?:open|close)|interactions\.(?:press|longPress|fill|type|scroll|swipe|pan)|command\.(?:back|home|keyboard|alert|appSwitcher|rotate|prepare)|settings\.update|recording\.record)\s*\(/gu;
@@ -107,6 +127,33 @@ export function evaluateCoreDevicePackageExports(packageJson) {
   for (const entry of forbiddenCorePackageEntries) {
     if (entry in entries) {
       violations.push(`packages/core/package.json must not export private ${entry}.`);
+    }
+  }
+  return violations;
+}
+
+/**
+ * Every supported adapter must produce the same runtime observation membrane.
+ * The import ownership check above prevents workflow code from doing this
+ * itself; this companion check prevents an adapter regression from returning a
+ * raw SDK/client object through the public Device type again.
+ */
+export function evaluateRuntimeObservationFacadeBindings(entries) {
+  const sources = new Map(entries.map(({ path, source = "" }) => [path, source]));
+  const violations = [];
+  for (const path of runtimeObservationFacadeOwners) {
+    const source = sources.get(path);
+    if (source === undefined) {
+      violations.push(`${path} is missing its required runtime Device observation facade binding.`);
+      continue;
+    }
+    const importsMembrane = literalModuleSpecifiers(source).some(({ specifier }) =>
+      normalizedModuleSpecifier(specifier).endsWith("/device-observation-membrane"),
+    );
+    if (!importsMembrane || !/\bcreateDeviceObservationFacade\b/u.test(source)) {
+      violations.push(
+        `${path} must create public Device values through the runtime observation facade.`,
+      );
     }
   }
   return violations;
@@ -235,6 +282,7 @@ async function main() {
   const violations = [
     ...evaluateIosMutationBoundaries(entries),
     ...evaluateCoreDevicePackageExports(corePackage),
+    ...evaluateRuntimeObservationFacadeBindings(entries),
   ];
   if (violations.length) {
     console.error("Device mutation-boundary check failed:");

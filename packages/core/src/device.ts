@@ -20,6 +20,7 @@ import {
 import { runTargetMutation } from "./target-control.js";
 import { bindNativeDeviceMutations, clearAndroidTextWithAdb } from "./device-mutation-adapter.js";
 import { type Device, type SnapshotNode } from "./device-capabilities.js";
+import * as observationDevice from "./device-observation-membrane.js";
 export type { Device, SnapshotNode } from "./device-capabilities.js";
 import { withRetry } from "./retry.js";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
@@ -90,12 +91,11 @@ const execFileAsync = promisify(execFile);
 type DeviceTransport = Device & ReturnType<typeof bindNativeDeviceMutations>;
 
 function nativeDevice(device: Device): DeviceTransport {
-  return device as DeviceTransport;
+  return (observationDevice.canonicalDeviceSource(device) ?? device) as DeviceTransport;
 }
-
 // One client per explicit target preserves SDK session reuse without binding
 // unrelated concurrently executing targets to the same agent-device session.
-const devicesByTarget = new Map<string, DeviceTransport>();
+const devicesByTarget = new Map<string, Device>();
 const applicationsByTarget = new Map<string, string>();
 const TARGET_APPLICATIONS_FILE = "runtime/target-applications.json";
 let applicationsLoaded = false;
@@ -166,7 +166,7 @@ export function createDevice(explicitContext?: TargetContext): Device {
     const native = createAgentDeviceClient({
       session: process.env.AGENT_DEVICE_SESSION?.trim() || targetSessionName(context),
     });
-    device = {
+    device = observationDevice.createDeviceObservationFacade({
       ...native,
       ...bindNativeDeviceMutations(native, targetIdentity(context)),
       observability: {
@@ -181,7 +181,7 @@ export function createDevice(explicitContext?: TargetContext): Device {
               })
             : captureNativeCrashEvidence(since),
       },
-    } as DeviceTransport;
+    } as DeviceTransport);
     devicesByTarget.set(key, device);
   }
   return device;

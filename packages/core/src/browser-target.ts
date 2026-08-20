@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import type { BrowserContext, Page, Request, Video } from "playwright-core";
 import { chromium } from "playwright-core";
 import type { Device, SnapshotNode } from "./device.js";
+import { createDeviceObservationFacade } from "./device-observation-membrane.js";
 import { browserExecutable, browserProfileDir, readTarget } from "./targets.js";
 
 type BrowserSession = {
@@ -581,7 +582,7 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
       },
     },
   };
-  return api;
+  return createDeviceObservationFacade(api);
 }
 
 export async function closeBrowserTarget(targetId?: string): Promise<void> {

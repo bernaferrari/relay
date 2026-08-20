@@ -1,4 +1,5 @@
 import { createDevice, type Device } from "./device.js";
+import { createDeviceObservationFacade } from "./device-observation-membrane.js";
 import type { TargetContext } from "./target-context.js";
 
 /**
@@ -78,10 +79,12 @@ export function createDeviceForTarget(context: TargetContext): Device {
           `Cloud device provider "${context.provider}" returned a Promise; sync createDeviceForTarget requires a sync Device (use createDeviceForTargetAsync)`,
         );
       }
-      return device;
+      return createDeviceObservationFacade(device);
     }
     case "device":
-      return localDeviceProvider?.create(context) ?? createDevice(context);
+      return createDeviceObservationFacade(
+        localDeviceProvider?.create(context) ?? createDevice(context),
+      );
     case "browser":
       return createDevice(context);
   }
@@ -101,5 +104,5 @@ export async function createDeviceForTargetAsync(context: TargetContext): Promis
       `Cloud device provider mismatch: context wants "${context.provider}", registry has "${registered.provider}"`,
     );
   }
-  return registered.create(context);
+  return createDeviceObservationFacade(await registered.create(context));
 }
