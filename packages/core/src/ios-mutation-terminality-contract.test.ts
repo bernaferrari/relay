@@ -336,7 +336,9 @@ function grokNotificationDevice(
     capture: { snapshot: async () => ({ nodes: labels }) },
     interactions: {
       press: async (input: { selector?: string }) => {
-        nativeDispatches.push(input.selector === 'label="Allow"' ? "allow" : "enable-notifications");
+        nativeDispatches.push(
+          input.selector === 'label="Allow"' ? "allow" : "enable-notifications",
+        );
         if (input.selector === 'label="Enable notifications"') {
           if (outcome === "unknown") throw unknownIosMutation("press");
           throw new Error("semantic label unavailable");
@@ -382,10 +384,7 @@ function switcherPickerNodes(): SnapshotNode[] {
   ];
 }
 
-function switcherDevice(
-  nativeDispatches: string[],
-  outcome: "unknown" | "selector-miss",
-): Device {
+function switcherDevice(nativeDispatches: string[], outcome: "unknown" | "selector-miss"): Device {
   return {
     capture: { snapshot: async () => ({ nodes: structuredClone(switcherPickerNodes()) }) },
     interactions: {
@@ -410,7 +409,10 @@ async function runSwitcherSurface(
   nativeDispatches: string[],
   outcome: "unknown" | "selector-miss",
 ): Promise<void> {
-  setLocalDeviceProvider({ kind: "device", create: () => switcherDevice(nativeDispatches, outcome) });
+  setLocalDeviceProvider({
+    kind: "device",
+    create: () => switcherDevice(nativeDispatches, outcome),
+  });
   try {
     await scanSwitcherPicker({
       serial: `switcher-${outcome}`,

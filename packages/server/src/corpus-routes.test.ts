@@ -61,9 +61,7 @@ function pickerDevice(
       press: async () => {
         onDispatch("entry-selector");
         throw new Error(
-          outcome === "unknown"
-            ? "XCTest transport ended after dispatch"
-            : "No matching element",
+          outcome === "unknown" ? "XCTest transport ended after dispatch" : "No matching element",
         );
       },
       pan: async () => {
@@ -93,8 +91,8 @@ function isSwitcherOutcomeUnknown(error: unknown): error is ApiError {
     error.status === 409 &&
     Boolean(
       error.body &&
-        typeof error.body === "object" &&
-        (error.body as { code?: unknown }).code === "IOS_MUTATION_OUTCOME_UNKNOWN",
+      typeof error.body === "object" &&
+      (error.body as { code?: unknown }).code === "IOS_MUTATION_OUTCOME_UNKNOWN",
     )
   );
 }
@@ -122,13 +120,7 @@ function assertTerminalSwitcherPayload(error: ApiError, serial: string): void {
   assert.deepEqual(body.switcherScan?.repair, {
     terminal: true,
     nextAction: "capture-current-screen-before-any-retry",
-    blocked: [
-      "fallback-target",
-      "retry-launch",
-      "path-step",
-      "next-scan-page",
-      "second-scan-pass",
-    ],
+    blocked: ["fallback-target", "retry-launch", "path-step", "next-scan-page", "second-scan-pass"],
   });
   assert.equal(body.switcherScan?.status, "interrupted");
   assert.equal(body.switcherScan?.phase, "entry-path");
@@ -250,7 +242,9 @@ test("registered switcher HTTP operations preserve terminal review evidence", as
     },
   ]);
 
-  await verifyIosMutationTerminalityRegistry(registry, { isOutcomeUnknown: isSwitcherOutcomeUnknown });
+  await verifyIosMutationTerminalityRegistry(registry, {
+    isOutcomeUnknown: isSwitcherOutcomeUnknown,
+  });
 });
 
 test("switcher scan validation failures stay ordinary HTTP errors", async () => {
