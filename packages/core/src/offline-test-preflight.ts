@@ -7,8 +7,17 @@ import type {
   StepTarget,
 } from "@relay/protocol";
 import { createHash } from "node:crypto";
+import { preflightSemanticActivation } from "./device-target-resolution.js";
+import type { SnapshotNode } from "./device.js";
 
 export type { OfflineTestPreflightFinding, OfflineTestPreflightReport };
+
+/** Immutable raw accessibility snapshots keyed by the authored source screen.
+ * The caller owns evidence loading; this module stays device-free and never
+ * reads current App Map state by itself. */
+export type OfflineTestPreflightEvidence = {
+  rawObservationsByScreenId?: Readonly<Record<string, ReadonlyArray<ReadonlyArray<SnapshotNode>>>>;
+};
 
 function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -87,10 +96,13 @@ function selectorFinding(input: {
   recipeId: string;
   step: Extract<RecipeStep, { kind: "tap" | "reveal" | "expect" | "wait-for" }>;
   observations: readonly { nodes: NormalizedSemanticNode[] }[];
+  rawObservations?: ReadonlyArray<ReadonlyArray<SnapshotNode>>;
 }): OfflineTestPreflightFinding[] {
-  const { recipeId, step, observations } = input;
+  const { recipeId, step, observations, rawObservations } = input;
   const target = step.target;
   const description = targetDescription(target);
+  const hasReviewedFallback =
+    target.point?.fallbackPolicy === "reviewed" || Boolean(target.point?.relativeTo);
   if (
     target.point &&
     !target.identifier &&
@@ -109,6 +121,29 @@ function selectorFinding(input: {
       },
     ];
   }
+  if (rawObservations?.length) {
+    const attempts = rawObservations.map((nodes) =>
+      preflightSemanticActivation([...nodes], target),
+    );
+    if (attempts.some((attempt) => attempt.status === "proven")) return [];
+    const blockedAttempts = attempts.filter(
+      (attempt): attempt is Extract<typeof attempt, { status: "blocked" }> =>
+        attempt.status === "blocked",
+    );
+    const ambiguous = blockedAttempts.find((attempt) => attempt.code === "ambiguous");
+    const headingOnly = blockedAttempts.find((attempt) => attempt.code === "heading-only-noop");
+    const detail = ambiguous?.detail ?? headingOnly?.detail ?? blockedAttempts[0]?.detail;
+    return [
+      {
+        severity: hasReviewedFallback ? "warning" : "blocker",
+        code: ambiguous ? "selector-ambiguous" : "selector-absent",
+        recipeId,
+        ...(step.id ? { recipeStepId: step.id } : {}),
+        message: `${description} cannot be activated from frozen raw accessibility evidence${detail ? `: ${detail}` : ""}${hasReviewedFallback ? "; a reviewed fallback needs live confirmation" : ""}.`,
+      },
+    ];
+  }
+
   if (!observations.length) {
     return [
       {
@@ -125,8 +160,6 @@ function selectorFinding(input: {
   // omits geometry and parentage, so two identical rows are still ambiguous
   // offline; collapsing them would turn an unsafe activation into a fake pass.
   const matches = observations.flatMap((observation) => matchesTarget(observation.nodes, target));
-  const hasReviewedFallback =
-    target.point?.fallbackPolicy === "reviewed" || Boolean(target.point?.relativeTo);
   if (!matches.length) {
     return [
       {
@@ -175,14 +208,17 @@ function selectorFinding(input: {
  * what still needs a device rather than producing a fictional pass. */
 export function preflightCompiledAppMapTestOffline(
   plan: AppMapCompiledTest,
+  evidence: OfflineTestPreflightEvidence = {},
 ): OfflineTestPreflightReport {
   const findings: OfflineTestPreflightFinding[] = [];
   let checkedSelectors = 0;
   for (const recipe of Object.values(plan.recipes)) {
     let observations: Array<{ nodes: NormalizedSemanticNode[] }> = [];
+    let sourceScreenId: string | undefined;
     for (const step of recipe.steps) {
       if (step.kind === "expect-screen") {
         observations = step.observations ?? [];
+        sourceScreenId = step.screenId;
         if (step.returnRequirement) {
           findings.push({
             severity: "blocker",
@@ -206,7 +242,14 @@ export function preflightCompiledAppMapTestOffline(
           step.kind === "reveal" ? observationsFromNavigation(step.navigation) : [];
         const sourceObservations = observations.length ? observations : navigationObservations;
         findings.push(
-          ...selectorFinding({ recipeId: recipe.id, step, observations: sourceObservations }),
+          ...selectorFinding({
+            recipeId: recipe.id,
+            step,
+            observations: sourceObservations,
+            ...(sourceScreenId && evidence.rawObservationsByScreenId?.[sourceScreenId]
+              ? { rawObservations: evidence.rawObservationsByScreenId[sourceScreenId] }
+              : {}),
+          }),
         );
         if (navigationObservations.length) observations = navigationObservations;
         continue;

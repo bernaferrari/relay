@@ -3,6 +3,7 @@ import {
   AppMapDomainError,
   AppMapTestStepOperationError,
   AppMapTestCompileError,
+  readAuthoringEvidence,
   compileAppMapTest,
   compileIntentWalk,
   currentOperationContext,
@@ -18,7 +19,8 @@ import {
   saveAppMapTest,
   submitAppMapProposal,
 } from "@relay/core";
-import type { OperationInput } from "@relay/protocol";
+import type { SnapshotNode } from "@relay/core";
+import type { AppMap, OperationInput } from "@relay/protocol";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
 import { applyAppMapMutation, applyRebasableAppMapMutation } from "./app-map-route-mutations.js";
@@ -30,6 +32,44 @@ type AppMapTestRouteInput = {
   response: http.ServerResponse;
   scope: RequestContext;
 };
+
+function snapshotNodes(value: unknown): SnapshotNode[] | undefined {
+  if (!value || typeof value !== "object" || !Array.isArray((value as { nodes?: unknown }).nodes)) {
+    return undefined;
+  }
+  return (value as { nodes: SnapshotNode[] }).nodes;
+}
+
+/** Read only raw snapshots that are already map-owned. The compiler has
+ * frozen the map revision first; this adds geometry to the offline verdict
+ * without taking a device snapshot or consulting a live screen. */
+async function rawPreflightEvidence(appMap: AppMap): Promise<{
+  rawObservationsByScreenId: Record<string, SnapshotNode[][]>;
+}> {
+  const rawObservationsByScreenId: Record<string, SnapshotNode[][]> = {};
+  for (const variant of Object.values(appMap.screenVariants)) {
+    const latestSurface = [...(variant.scrollSurfaces ?? [])].sort(
+      (left, right) => right.capturedAt - left.capturedAt,
+    )[0];
+    if (!latestSurface) continue;
+    const observations = await Promise.all(
+      latestSurface.viewports.map(async (viewport) => {
+        const bytes = await readAuthoringEvidence(viewport.accessibilityTree.sha256);
+        if (!bytes) return undefined;
+        try {
+          return snapshotNodes(JSON.parse(bytes.toString("utf8")));
+        } catch {
+          return undefined;
+        }
+      }),
+    );
+    const resolved = observations.filter((nodes): nodes is SnapshotNode[] =>
+      Boolean(nodes?.length),
+    );
+    if (resolved.length) rawObservationsByScreenId[variant.screenId] = resolved;
+  }
+  return { rawObservationsByScreenId };
+}
 
 export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
@@ -84,7 +124,8 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     if (!test) throw new HttpError(404, `Test ${testCompile.testId} not found`);
     try {
       const plan = compileAppMapTest(appMap, test).plan;
-      json(response, 200, { plan, preflight: preflightCompiledAppMapTestOffline(plan) });
+      const evidence = await rawPreflightEvidence(appMap);
+      json(response, 200, { plan, preflight: preflightCompiledAppMapTestOffline(plan, evidence) });
     } catch (error) {
       if (error instanceof AppMapTestCompileError) {
         throw new HttpError(409, error.message, {

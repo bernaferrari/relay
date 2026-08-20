@@ -178,6 +178,85 @@ test("offline preflight keeps a following-row repair and incomplete surface hone
   );
 });
 
+test("offline preflight proves a following-row target from immutable raw evidence", () => {
+  const report = preflightCompiledAppMapTestOffline(
+    plan([
+      {
+        kind: "expect-screen",
+        screenId: "profile",
+        screenTitle: "Profile",
+        fingerprint: "profile",
+      },
+      {
+        kind: "tap",
+        id: "birth-year",
+        target: { relation: { kind: "following-row", anchor: { label: "Birth Year" } } },
+      },
+    ]),
+    {
+      rawObservationsByScreenId: {
+        profile: [
+          [
+            {
+              index: 1,
+              parentIndex: 0,
+              role: "textview",
+              label: "Birth Year",
+              rect: { x: 20, y: 100, width: 150, height: 32 },
+            },
+            {
+              index: 2,
+              parentIndex: 0,
+              role: "button",
+              label: "1994",
+              hittable: true,
+              rect: { x: 20, y: 140, width: 320, height: 48 },
+            },
+          ],
+        ],
+      },
+    },
+  );
+  assert.deepEqual(report.findings, []);
+});
+
+test("offline preflight blocks an ambiguous raw selector instead of trusting its flat summary", () => {
+  const report = preflightCompiledAppMapTestOffline(
+    plan([
+      {
+        kind: "expect-screen",
+        screenId: "settings",
+        screenTitle: "Settings",
+        fingerprint: "settings",
+        observations: [observation],
+      },
+      { kind: "tap", id: "voice", target: { label: "Voice" } },
+    ]),
+    {
+      rawObservationsByScreenId: {
+        settings: [
+          [
+            {
+              role: "button",
+              label: "Voice",
+              hittable: true,
+              rect: { x: 20, y: 100, width: 320, height: 48 },
+            },
+            {
+              role: "button",
+              label: "Voice",
+              hittable: true,
+              rect: { x: 20, y: 220, width: 320, height: 48 },
+            },
+          ],
+        ],
+      },
+    },
+  );
+  assert.equal(report.findings[0]?.severity, "blocker");
+  assert.equal(report.findings[0]?.code, "selector-ambiguous");
+});
+
 test("offline preflight is deterministic and never turns unresolved Back into a gesture", () => {
   const compiled = plan([
     {
