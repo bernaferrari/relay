@@ -29,7 +29,7 @@ export function replayInputFromPersistedRun(
     | "recipeGraph"
     | "projectId"
     | "ownerId"
-  >,
+  > & { artifacts?: PersistedRun["artifacts"] },
 ): EnqueueJobInput {
   if (!run.recipeSnapshot || !run.recipeGraph) {
     throw new Error("This run predates frozen replay data and cannot be replayed safely");
@@ -60,6 +60,7 @@ export function replayInputFromPersistedRun(
     variables: structuredClone(run.resolvedInputs),
     recipeSnapshot: structuredClone(run.recipeSnapshot),
     recipeGraph: structuredClone(run.recipeGraph),
+    artifacts: structuredClone(run.artifacts ?? []),
     projectId: run.projectId,
     ownerId: run.ownerId,
   };

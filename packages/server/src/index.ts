@@ -63,9 +63,9 @@ import {
 } from "@relay/core";
 import { createSseHub } from "./sse.js";
 import { startScheduler } from "./scheduler.js";
-import { handleRunRoute } from "./run-routes.js";
+import { handleRunRoute, type RunRouteRuntime } from "./run-routes.js";
 import { handlePublicRunShareRoute } from "./run-share-routes.js";
-import { handleJobRoute } from "./job-routes.js";
+import { handleJobRoute, type JobRouteRuntime } from "./job-routes.js";
 import { assertTargetControl } from "./access-control.js";
 import {
   CORS_HEADERS,
@@ -125,6 +125,10 @@ export type StartServerOptions = {
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>;
   /** Test seam for proving blocked Test runs do not touch a target or queue work. */
   appMapTestRunRuntime?: Partial<AppMapTestRunRouteRuntime>;
+  /** Test seam for retry/replay/resume intent ordering. */
+  jobRouteRuntime?: Partial<JobRouteRuntime>;
+  /** Test seam for repair-retry intent ordering. */
+  runRouteRuntime?: Partial<RunRouteRuntime>;
   /** Test seam for standalone-step execution without a physical target. */
   stepRunRuntime?: Partial<StepRunRouteRuntime>;
 };
@@ -163,6 +167,8 @@ async function handleRequest(
   captureTargetScreenshot = captureScreenshot,
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>,
   appMapTestRunRuntime?: Partial<AppMapTestRunRouteRuntime>,
+  jobRouteRuntime?: Partial<JobRouteRuntime>,
+  runRouteRuntime?: Partial<RunRouteRuntime>,
   stepRunRuntime?: Partial<StepRunRouteRuntime>,
 ): Promise<void> {
   const method = req.method ?? "GET";
@@ -493,7 +499,17 @@ async function handleRequest(
       return;
     }
 
-    if (await handleJobRoute({ method, pathname, url, request: req, response: res, scope })) {
+    if (
+      await handleJobRoute({
+        method,
+        pathname,
+        url,
+        request: req,
+        response: res,
+        scope,
+        runtime: jobRouteRuntime,
+      })
+    ) {
       return;
     }
 
@@ -564,7 +580,18 @@ async function handleRequest(
     )
       return;
 
-    if (await handleRunRoute({ method, pathname, url, request: req, response: res, scope })) return;
+    if (
+      await handleRunRoute({
+        method,
+        pathname,
+        url,
+        request: req,
+        response: res,
+        scope,
+        runtime: runRouteRuntime,
+      })
+    )
+      return;
 
     if (method === "GET" && pathname === "/doctor") {
       const result = await runDoctor();
@@ -746,6 +773,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
       opts.captureTargetScreenshot,
       opts.targetRuntime,
       opts.appMapTestRunRuntime,
+      opts.jobRouteRuntime,
+      opts.runRouteRuntime,
       opts.stepRunRuntime,
     );
   });

@@ -2,9 +2,11 @@ import type {
   AppMapCompiledRuntimeTargetProfile,
   AppMapCompiledTest,
   OfflineTestPreflightReport,
+  RecipeStep,
 } from "@relay/protocol";
 import { createHash } from "node:crypto";
-import type { Recipe } from "./recipes.js";
+import { validateRecipeParameters, validateRecipeSteps, type Recipe } from "./recipes.js";
+import { CURRENT_RECORDING_FORMAT_VERSION } from "./recording-format.js";
 
 export const appMapTestExecutionIntentArtifactKind = "app-map-test-execution-intent" as const;
 
@@ -53,6 +55,226 @@ function number(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function integer(value: unknown): value is number {
+  return number(value) && Number.isSafeInteger(value) && value >= 0;
+}
+
+function ownKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function canonicalVariables(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (isRecord(value) && Object.values(value).every((entry) => typeof entry === "string"))
+  );
+}
+
+export function parseCanonicalAppMapTestRecipe(
+  value: unknown,
+  expectedId?: string,
+): Recipe | undefined {
+  if (!isRecord(value)) return undefined;
+  if (
+    !ownKeys(value, [
+      "id",
+      "title",
+      "description",
+      "variables",
+      "parameters",
+      "source",
+      "recordingFormatVersion",
+      "steps",
+      "createdAt",
+      "updatedAt",
+      "quarantined",
+      "quarantineReason",
+    ]) ||
+    !string(value.id) ||
+    (expectedId !== undefined && value.id !== expectedId) ||
+    !string(value.title) ||
+    (value.source !== "builtin" && value.source !== "custom") ||
+    !Array.isArray(value.steps) ||
+    !integer(value.createdAt) ||
+    !integer(value.updatedAt) ||
+    (value.description !== undefined && !string(value.description)) ||
+    !canonicalVariables(value.variables) ||
+    (value.recordingFormatVersion !== undefined &&
+      value.recordingFormatVersion !== CURRENT_RECORDING_FORMAT_VERSION) ||
+    (value.quarantined !== undefined && typeof value.quarantined !== "boolean") ||
+    (value.quarantineReason !== undefined && !string(value.quarantineReason))
+  ) {
+    return undefined;
+  }
+  try {
+    validateRecipeSteps(value.steps);
+    validateRecipeParameters(value.parameters);
+  } catch {
+    return undefined;
+  }
+  return structuredClone(value) as Recipe;
+}
+
+function referencedFrozenRecipeIds(step: RecipeStep): string[] {
+  if (step.kind === "module" || step.kind === "repeat") return [step.recipeId];
+  if (step.kind === "branch") {
+    return [step.thenRecipeId, ...(step.elseRecipeId ? [step.elseRecipeId] : [])];
+  }
+  return [];
+}
+
+/** A Test graph must be self-contained. Otherwise `runReusableRecipe` would
+ * fall through to a mutable saved recipe after target control has begun. */
+function closedAcyclicRecipeGraph(graph: Readonly<Record<string, Recipe>>): boolean {
+  const states = new Map<string, "visiting" | "complete">();
+  const visit = (recipeId: string): boolean => {
+    const state = states.get(recipeId);
+    if (state === "visiting") return false;
+    if (state === "complete") return true;
+    const recipe = graph[recipeId];
+    if (!recipe) return false;
+    states.set(recipeId, "visiting");
+    if (
+      !recipe.steps.every((step) =>
+        referencedFrozenRecipeIds(step).every((childId) => visit(childId)),
+      )
+    ) {
+      return false;
+    }
+    states.set(recipeId, "complete");
+    return true;
+  };
+  return Object.keys(graph).every((recipeId) => visit(recipeId));
+}
+
+/** Parse a frozen executable graph before it is allowed to identify a Test.
+ * This validates recipe syntax rather than trusting a recipe-like blob or an
+ * action-name convention. */
+export function parseCanonicalAppMapTestRecipeGraph(
+  value: unknown,
+): Record<string, Recipe> | undefined {
+  if (!isRecord(value) || !Object.keys(value).length) return undefined;
+  const graph: Record<string, Recipe> = {};
+  for (const [id, recipe] of Object.entries(value)) {
+    if (!string(id)) return undefined;
+    const parsed = parseCanonicalAppMapTestRecipe(recipe, id);
+    if (!parsed) return undefined;
+    graph[id] = parsed;
+  }
+  return closedAcyclicRecipeGraph(graph) ? graph : undefined;
+}
+
+function canonicalPlanRecipe(value: unknown, expectedId?: string): boolean {
+  if (!isRecord(value)) return false;
+  if (
+    !ownKeys(value, ["id", "title", "description", "parameters", "steps"]) ||
+    !string(value.id) ||
+    (expectedId !== undefined && value.id !== expectedId) ||
+    !string(value.title) ||
+    !Array.isArray(value.parameters) ||
+    !Array.isArray(value.steps) ||
+    (value.description !== undefined && !string(value.description))
+  ) {
+    return false;
+  }
+  try {
+    validateRecipeParameters(value.parameters);
+    validateRecipeSteps(value.steps);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function recipeProjection(recipe: Recipe): AppMapCompiledTest["recipes"][string] {
+  return {
+    id: recipe.id,
+    title: recipe.title,
+    ...(recipe.description ? { description: recipe.description } : {}),
+    parameters: structuredClone(recipe.parameters ?? []),
+    steps: structuredClone(recipe.steps),
+  };
+}
+
+function planMatchesRecipeGraph(
+  plan: AppMapCompiledTest,
+  recipeGraph: Record<string, Recipe>,
+): boolean {
+  const planIds = Object.keys(plan.recipes).sort();
+  const graphIds = Object.keys(recipeGraph).sort();
+  if (planIds.length !== graphIds.length || planIds.some((id, index) => id !== graphIds[index])) {
+    return false;
+  }
+  return graphIds.every(
+    (id) =>
+      digestAppMapTestExecutionValue(plan.recipes[id]) ===
+      digestAppMapTestExecutionValue(recipeProjection(recipeGraph[id]!)),
+  );
+}
+
+function canonicalStartup(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.mode === "cold") return ownKeys(value, ["mode"]);
+  return (
+    value.mode === "verified-checkpoint" &&
+    string(value.screenId) &&
+    ownKeys(value, ["mode", "screenId"])
+  );
+}
+
+/** The registered historical plan shape. This deliberately checks the
+ * App-Map-Test discriminators, compiled root, and parsed recipe projection;
+ * labels, recipe IDs, and opaque artifact fields never classify a legacy job
+ * as a Test. */
+export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest | undefined {
+  if (!isRecord(value)) return undefined;
+  if (
+    !ownKeys(value, [
+      "schemaVersion",
+      "appMapId",
+      "appMapRevision",
+      "test",
+      "runtimeTargetProfile",
+      "surfaceBindings",
+      "rawAccessibilitySourcesByScreenId",
+      "rawAccessibilityVariantsByScreenId",
+      "rawAccessibilityTargetProfiles",
+      "rawAccessibilityTreesByScreenId",
+      "executionSchedule",
+      "rootRecipeId",
+      "recipes",
+      "stepProvenance",
+      "performance",
+      "startup",
+      "omittedSteps",
+    ]) ||
+    value.schemaVersion !== 1 ||
+    !string(value.appMapId) ||
+    !integer(value.appMapRevision) ||
+    !isRecord(value.test) ||
+    !ownKeys(value.test, ["id", "name", "kind", "intentSchemaVersion"]) ||
+    !string(value.test.id) ||
+    !string(value.test.name) ||
+    value.test.kind !== "scenario" ||
+    value.test.intentSchemaVersion !== 1 ||
+    !string(value.rootRecipeId) ||
+    !isRecord(value.recipes) ||
+    !Object.keys(value.recipes).length ||
+    !Array.isArray(value.stepProvenance) ||
+    !isRecord(value.performance) ||
+    !canonicalStartup(value.startup)
+  ) {
+    return undefined;
+  }
+  for (const [id, recipe] of Object.entries(value.recipes)) {
+    if (!string(id) || !canonicalPlanRecipe(recipe, id)) return undefined;
+  }
+  if (!canonicalPlanRecipe(value.recipes[value.rootRecipeId], value.rootRecipeId)) return undefined;
+  if (value.runtimeTargetProfile !== undefined && !profile(value.runtimeTargetProfile))
+    return undefined;
+  return structuredClone(value) as AppMapCompiledTest;
+}
+
 function stableValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stableValue);
   if (!isRecord(value)) return value;
@@ -77,7 +299,14 @@ function digest(value: unknown): value is string {
 }
 
 function profile(value: unknown): AppMapCompiledRuntimeTargetProfile | undefined {
-  if (!isRecord(value) || !string(value.id) || !string(value.targetId)) return undefined;
+  if (
+    !isRecord(value) ||
+    !ownKeys(value, ["id", "targetId", "platform", "viewport"]) ||
+    !string(value.id) ||
+    !string(value.targetId)
+  ) {
+    return undefined;
+  }
   if (value.platform !== "android" && value.platform !== "ios" && value.platform !== "browser") {
     return undefined;
   }
@@ -86,6 +315,7 @@ function profile(value: unknown): AppMapCompiledRuntimeTargetProfile | undefined
   }
   if (
     !isRecord(value.viewport) ||
+    !ownKeys(value.viewport, ["width", "height"]) ||
     !number(value.viewport.width) ||
     !number(value.viewport.height) ||
     value.viewport.width <= 0 ||
@@ -145,22 +375,71 @@ export function createAppMapTestExecutionIntent(input: {
 export function parseAppMapTestExecutionIntent(
   value: unknown,
 ): AppMapTestExecutionIntent | undefined {
+  try {
+    return parseAppMapTestExecutionIntentValue(value);
+  } catch {
+    // Persisted artifacts are untrusted input. A non-JSON value, malformed
+    // clone, or non-digestible object must become review-needed, never a
+    // server exception that bypasses the intent membrane.
+    return undefined;
+  }
+}
+
+function parseAppMapTestExecutionIntentValue(
+  value: unknown,
+): AppMapTestExecutionIntent | undefined {
   if (
     !isRecord(value) ||
+    !ownKeys(value, [
+      "schemaVersion",
+      "kind",
+      "sourcePlan",
+      "selectedRuntimeTargetProfile",
+      "plan",
+      "recipeGraph",
+      "preflight",
+    ]) ||
     value.schemaVersion !== 1 ||
     value.kind !== appMapTestExecutionIntentArtifactKind
   ) {
     return undefined;
   }
   const sourcePlan = isRecord(value.sourcePlan) ? value.sourcePlan : undefined;
-  const plan = isRecord(value.plan) ? (value.plan as AppMapCompiledTest) : undefined;
-  const recipeGraph = isRecord(value.recipeGraph)
-    ? (value.recipeGraph as Record<string, Recipe>)
-    : undefined;
+  const plan = parseCanonicalAppMapTestPlan(value.plan);
+  const recipeGraph = parseCanonicalAppMapTestRecipeGraph(value.recipeGraph);
   const preflight = isRecord(value.preflight)
     ? (value.preflight as OfflineTestPreflightReport)
     : undefined;
-  if (!sourcePlan || !plan || !recipeGraph || !preflight) return undefined;
+  if (
+    !sourcePlan ||
+    !ownKeys(sourcePlan, [
+      "appMapId",
+      "appMapRevision",
+      "testId",
+      "rootRecipeId",
+      "digest",
+      "recipeGraphDigest",
+      "rootRecipeDigest",
+    ]) ||
+    !plan ||
+    !recipeGraph ||
+    !preflight ||
+    !ownKeys(preflight, [
+      "schemaVersion",
+      "mode",
+      "appMapId",
+      "appMapRevision",
+      "testId",
+      "planDigest",
+      "summary",
+      "selectors",
+      "cursorTimeline",
+      "returns",
+      "findings",
+    ])
+  ) {
+    return undefined;
+  }
   const selected =
     value.selectedRuntimeTargetProfile === undefined
       ? undefined
@@ -168,7 +447,7 @@ export function parseAppMapTestExecutionIntent(
   if (value.selectedRuntimeTargetProfile !== undefined && !selected) return undefined;
   if (
     !string(sourcePlan.appMapId) ||
-    !number(sourcePlan.appMapRevision) ||
+    !integer(sourcePlan.appMapRevision) ||
     !string(sourcePlan.testId) ||
     !string(sourcePlan.rootRecipeId) ||
     !digest(sourcePlan.digest) ||
@@ -176,16 +455,40 @@ export function parseAppMapTestExecutionIntent(
     !digest(sourcePlan.rootRecipeDigest) ||
     plan.schemaVersion !== 1 ||
     !string(plan.appMapId) ||
-    !number(plan.appMapRevision) ||
+    !integer(plan.appMapRevision) ||
     !isRecord(plan.test) ||
     !string(plan.test.id) ||
     !string(plan.rootRecipeId) ||
     preflight.schemaVersion !== 1 ||
     preflight.mode !== "offline-test-preflight" ||
     !string(preflight.appMapId) ||
-    !number(preflight.appMapRevision) ||
+    !integer(preflight.appMapRevision) ||
     !string(preflight.testId) ||
     !digest(preflight.planDigest) ||
+    !isRecord(preflight.summary) ||
+    !ownKeys(preflight.summary, [
+      "recipes",
+      "checkedSelectors",
+      "resolvedSelectors",
+      "excludedDynamicSelectors",
+      "unknownCursorTransitions",
+      "reviewRequiredReturns",
+      "blockers",
+      "warnings",
+    ]) ||
+    !integer(preflight.summary.recipes) ||
+    !integer(preflight.summary.checkedSelectors) ||
+    !integer(preflight.summary.resolvedSelectors) ||
+    (preflight.summary.excludedDynamicSelectors !== undefined &&
+      !integer(preflight.summary.excludedDynamicSelectors)) ||
+    !integer(preflight.summary.unknownCursorTransitions) ||
+    !integer(preflight.summary.reviewRequiredReturns) ||
+    !integer(preflight.summary.blockers) ||
+    preflight.summary.blockers !== 0 ||
+    !Array.isArray(preflight.findings) ||
+    !Array.isArray(preflight.selectors) ||
+    !Array.isArray(preflight.cursorTimeline) ||
+    !Array.isArray(preflight.returns) ||
     sourcePlan.appMapId !== plan.appMapId ||
     sourcePlan.appMapRevision !== plan.appMapRevision ||
     sourcePlan.testId !== plan.test.id ||
@@ -193,6 +496,7 @@ export function parseAppMapTestExecutionIntent(
     sourcePlan.digest !== preflight.planDigest ||
     sourcePlan.digest !== digestAppMapTestExecutionValue(plan) ||
     sourcePlan.recipeGraphDigest !== digestAppMapTestExecutionValue(recipeGraph) ||
+    !planMatchesRecipeGraph(plan, recipeGraph) ||
     !isRecord(recipeGraph[plan.rootRecipeId]) ||
     recipeGraph[plan.rootRecipeId]?.id !== plan.rootRecipeId ||
     sourcePlan.rootRecipeDigest !==

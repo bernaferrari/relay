@@ -14,6 +14,14 @@ function fixture(): {
   recipeGraph: Record<string, Recipe>;
   preflight: OfflineTestPreflightReport;
 } {
+  const root: Recipe = {
+    id: "settings:smoke:root",
+    title: "Smoke",
+    source: "custom",
+    steps: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
   const plan = {
     schemaVersion: 1,
     appMapId: "settings",
@@ -26,16 +34,26 @@ function fixture(): {
       viewport: { width: 1024, height: 1366 },
     },
     rootRecipeId: "settings:smoke:root",
+    recipes: {
+      "settings:smoke:root": {
+        id: "settings:smoke:root",
+        title: "Smoke",
+        parameters: [],
+        steps: [],
+      },
+    },
+    stepProvenance: [],
+    performance: {
+      executableOperations: 0,
+      moduleCalls: 0,
+      operationCounts: {},
+      screenshotCount: 0,
+      destinationProofCount: 0,
+    },
+    startup: { mode: "cold" },
   } as AppMapCompiledTest;
   const recipeGraph = {
-    "settings:smoke:root": {
-      id: "settings:smoke:root",
-      title: "Smoke",
-      source: "custom",
-      steps: [],
-      createdAt: 1,
-      updatedAt: 1,
-    },
+    "settings:smoke:root": root,
   } satisfies Record<string, Recipe>;
   const preflight: OfflineTestPreflightReport = {
     schemaVersion: 1,
@@ -104,10 +122,37 @@ test("rejects execution intents whose profile or source identity no longer match
   alteredRootDigest.sourcePlan.rootRecipeDigest = "c".repeat(64);
   assert.equal(parseAppMapTestExecutionIntent(alteredRootDigest), undefined);
 
+  const alteredProjection = structuredClone(intent);
+  alteredProjection.plan.recipes["settings:smoke:root"]!.title = "Different projection";
+  assert.equal(parseAppMapTestExecutionIntent(alteredProjection), undefined);
+
   // Historical sibling plan artifacts never acquire scope just by looking similar.
   assert.equal(parseAppMapTestExecutionIntent(intent.plan), undefined);
   assert.equal(
     parseAppMapTestExecutionIntentArtifact({ kind: "app-map-test-plan", data: intent }),
     undefined,
+  );
+});
+
+test("rejects a Test graph that could fall through to a mutable or cyclic recipe", () => {
+  const missing = fixture();
+  const rootId = missing.plan.rootRecipeId;
+  const externalStep = { kind: "module" as const, recipeId: "not-in-frozen-graph" };
+  missing.recipeGraph[rootId]!.steps = [externalStep];
+  missing.plan.recipes[rootId]!.steps = [structuredClone(externalStep)];
+  missing.preflight.planDigest = digestAppMapTestExecutionValue(missing.plan);
+  assert.throws(
+    () => createAppMapTestExecutionIntent(missing),
+    /inconsistent App Map Test execution intent/u,
+  );
+
+  const cyclic = fixture();
+  const recursiveStep = { kind: "module" as const, recipeId: cyclic.plan.rootRecipeId };
+  cyclic.recipeGraph[cyclic.plan.rootRecipeId]!.steps = [recursiveStep];
+  cyclic.plan.recipes[cyclic.plan.rootRecipeId]!.steps = [structuredClone(recursiveStep)];
+  cyclic.preflight.planDigest = digestAppMapTestExecutionValue(cyclic.plan);
+  assert.throws(
+    () => createAppMapTestExecutionIntent(cyclic),
+    /inconsistent App Map Test execution intent/u,
   );
 });

@@ -5,6 +5,7 @@ import type {
   CampaignRepairAction,
   CampaignRepairTarget,
   CampaignRepairTargetSummary,
+  AppMapCompiledTest,
 } from "@relay/protocol";
 import { PRIVATE_INPUT } from "./private-inputs.js";
 import { REDACTED } from "./redaction.js";
@@ -122,6 +123,10 @@ export type CampaignRepairReconciliation = {
     testId: string;
     compiledPlanDigest: string;
   };
+  /** The exact current plan that supplied a reconciled terminal edge. A
+   * repair retry binds its own intent to this frozen plan, never to a mutable
+   * map lookup performed after target control. */
+  compiledPlan: AppMapCompiledTest;
   plan: RepairPlan;
 };
 
@@ -347,6 +352,7 @@ export function reconcileCampaignCheckRepair(
     sourceRunId: run.id,
     sourceCheckId: checkId,
     identity: reconciliationIdentity,
+    compiledPlan: structuredClone(compiledTest.plan),
     plan,
   };
 }

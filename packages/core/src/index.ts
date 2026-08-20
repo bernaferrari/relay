@@ -33,6 +33,7 @@ export * from "./offline-run-replay.js";
 export * from "./offline-test-preflight.js";
 export * from "./frozen-raw-accessibility.js";
 export * from "./app-map-test-execution-intent.js";
+export * from "./app-map-test-execution-gate.js";
 export * from "./campaign-repair.js";
 export * from "./campaign-repair-proposal.js";
 export * from "./run-matrix.js";

@@ -5,6 +5,9 @@ import {
   buildRunStory,
   applyRunRetention,
   buildCampaignRepairTarget,
+  appMapTestExecutionSourceFromRun,
+  createAppMapTestExecutionIntent,
+  deriveAppMapTestRepairExecutionPlan,
   campaignRepairPlanIdentity,
   buildCompatibilityReport,
   buildSoakReport,
@@ -21,11 +24,13 @@ import {
   listCampaignRepairTargets,
   listRunSummaries,
   listRunShares,
+  loadFrozenRawAccessibilityEvidence,
   readFrameFile,
   readAppMap,
   readVisualBaselineFrame,
   readPersistedRun,
   replayPersistedRunOffline,
+  preflightCompiledAppMapTestOffline,
   rebuildRunCatalog,
   reconcileCampaignCheckRepair,
   runArtifactFile,
@@ -45,12 +50,23 @@ import {
   VISUAL_REVIEW_ACTIONS,
   VisualVerificationError,
   visualTargetKey,
+  type AppMapTestExecutionIntent,
+  type CampaignRepairReconciliation,
+  type EnqueueJobInput,
 } from "@relay/core";
 import type { CampaignRepairTarget, OperationInput } from "@relay/protocol";
 import { assertTargetControl } from "./access-control.js";
+import { requireScopedAppMapTestExecution } from "./app-map-test-execution-guard.js";
 import { applyRebasableAppMapMutation } from "./app-map-route-mutations.js";
 import { recordAudit, resolveCommandActor, type RequestContext } from "./security.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
+
+export type RunRouteRuntime = {
+  assertTargetControl: typeof assertTargetControl;
+  enqueueJob: typeof enqueueJob;
+};
+
+const defaultRunRouteRuntime: RunRouteRuntime = { assertTargetControl, enqueueJob };
 
 export type RunRouteContext = {
   method: string;
@@ -59,6 +75,7 @@ export type RunRouteContext = {
   request: http.IncomingMessage;
   response: http.ServerResponse;
   scope: RequestContext;
+  runtime?: Partial<RunRouteRuntime>;
 };
 
 function assertRunAccess(
@@ -115,8 +132,76 @@ async function currentCampaignRepairReconciliation(
   return reconcileCampaignCheckRepair(run, checkId, map, test);
 }
 
+async function scopedCampaignRepairInput(input: {
+  sourceIntent: AppMapTestExecutionIntent | undefined;
+  repairInput: EnqueueJobInput;
+  reconciliation?: CampaignRepairReconciliation;
+}): Promise<EnqueueJobInput> {
+  if (!input.sourceIntent) return input.repairInput;
+  const root = input.repairInput.recipeSnapshot;
+  const graph = input.repairInput.recipeGraph;
+  const checkpoint = root?.steps.find(
+    (step): step is Extract<(typeof root.steps)[number], { kind: "expect-screen" }> =>
+      step.kind === "expect-screen",
+  );
+  if (!root || !graph || !checkpoint) {
+    throw new HttpError(409, "Selective repair has no frozen Test checkpoint to preflight.", {
+      code: "APP_MAP_TEST_EXECUTION_INTENT_REVIEW_REQUIRED",
+      recovery: "Review the failed check and start a new scoped Test run before retrying it.",
+    });
+  }
+  const plan = deriveAppMapTestRepairExecutionPlan({
+    sourcePlan: input.reconciliation?.compiledPlan ?? input.sourceIntent.plan,
+    selectedRuntimeTargetProfile: input.sourceIntent.selectedRuntimeTargetProfile,
+    recipeGraph: graph,
+    rootRecipeId: root.id,
+    checkpointScreenId: checkpoint.screenId,
+  });
+  const preflight = preflightCompiledAppMapTestOffline(
+    plan,
+    await loadFrozenRawAccessibilityEvidence(plan),
+    input.sourceIntent.selectedRuntimeTargetProfile
+      ? { targetProfileId: input.sourceIntent.selectedRuntimeTargetProfile.id }
+      : {},
+  );
+  if (preflight.summary.blockers) {
+    throw new HttpError(
+      409,
+      "Selective repair needs offline review before Relay can control the target.",
+      {
+        code: "APP_MAP_TEST_EXECUTION_INTENT_REVIEW_REQUIRED",
+        preflight,
+        recovery:
+          "Repair the frozen evidence or current Test plan, then start a new scoped Test run before retrying this check.",
+      },
+    );
+  }
+  const executionIntent = createAppMapTestExecutionIntent({ plan, recipeGraph: graph, preflight });
+  const capturedAt = Date.now();
+  return {
+    ...input.repairInput,
+    artifacts: [
+      {
+        kind: "app-map-test-execution-intent",
+        capturedAt,
+        data: executionIntent,
+      },
+      // The repair becomes a distinct frozen Test contract. Do not leave a
+      // prior Test plan or intent beside it: two competing roots must never
+      // be silently selected by a later retry/replay.
+      { kind: "app-map-test-plan", capturedAt, data: structuredClone(plan) },
+      ...(input.repairInput.artifacts ?? []).filter(
+        (artifact) =>
+          artifact.kind !== "app-map-test-execution-intent" &&
+          artifact.kind !== "app-map-test-plan",
+      ),
+    ],
+  };
+}
+
 export async function handleRunRoute(context: RunRouteContext): Promise<boolean> {
   const { method, pathname, url, request, response, scope } = context;
+  const runtime = { ...defaultRunRouteRuntime, ...context.runtime };
   const matrixReportMatch = matchPath(pathname, "/reports/matrix/:batchId");
   if (method === "GET" && matrixReportMatch) {
     const persisted = await listPersistedRuns(500);
@@ -223,7 +308,9 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     const run = await readPersistedRun(repairRetryMatch.id!);
     assertRunAccess(scope, run);
     await parseJsonBody(request);
-    await assertTargetControl(scope, run.serial);
+    const sourceIntent = await requireScopedAppMapTestExecution(
+      appMapTestExecutionSourceFromRun(run),
+    );
     try {
       const reconciliation = await currentCampaignRepairReconciliation(
         scope,
@@ -232,9 +319,13 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
       );
       const repair = buildCampaignRepairTarget(run, repairRetryMatch.checkId!, [], reconciliation);
       if (!repair) throw new HttpError(404, `Failed check ${repairRetryMatch.checkId} not found`);
-      const job = enqueueJob(
-        campaignCheckRepairInput(run, repairRetryMatch.checkId!, reconciliation),
-      );
+      const repairInput = await scopedCampaignRepairInput({
+        sourceIntent,
+        repairInput: campaignCheckRepairInput(run, repairRetryMatch.checkId!, reconciliation),
+        ...(reconciliation ? { reconciliation } : {}),
+      });
+      await runtime.assertTargetControl(scope, run.serial);
+      const job = runtime.enqueueJob(repairInput);
       recordAudit(scope, {
         action: "run.repair.retry",
         resource: repair.id,

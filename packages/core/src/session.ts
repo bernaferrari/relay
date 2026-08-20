@@ -63,6 +63,12 @@ import { humanInterventionNeedsReproof } from "./job-intervention.js";
 import { captureAutomaticState } from "./session-automatic-evidence.js";
 import { appendStepLog, finishStep, observeStepActions, openStep } from "./session-trace-steps.js";
 import { createSessionJob, replayInputFromPersistedRun } from "./session-job-factory.js";
+import {
+  appMapTestExecutionSourceFromJob,
+  appMapTestExecutionSourceFromRun,
+  requireScopedAppMapTestExecutionSource,
+  revalidateAppMapTestExecutionSource,
+} from "./app-map-test-execution-gate.js";
 export type { EnqueueJobInput, JobErrorCode, JobStatus, TestJob } from "./session-contract.js";
 export { summarizeJob } from "./session-summary.js";
 export { captureAutomaticState } from "./session-automatic-evidence.js";
@@ -120,6 +126,7 @@ function setOutcome(job: TestJob): void {
 
 /** Re-run an immutable persisted execution and preserve its source lineage. */
 export function replayPersistedRun(run: PersistedRun): TestJob {
+  requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromRun(run));
   return enqueueJob({ ...replayInputFromPersistedRun(run), retryOf: run.id });
 }
 
@@ -144,6 +151,7 @@ export function jobForTransport(job: TestJob): TestJob {
 export function enqueueJob(input: EnqueueJobInput): TestJob {
   requireOperationContext();
   const job = makeJob(input);
+  requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromJob(job));
   let resolveCompletion!: () => void;
   const completion = new Promise<void>((resolve) => {
     resolveCompletion = resolve;
@@ -188,6 +196,7 @@ export function enqueueJob(input: EnqueueJobInput): TestJob {
 export function retryJob(id: string): TestJob {
   const parent = jobRegistry.get(id);
   if (!parent) throw new Error(`Unknown job: ${id}`);
+  requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromJob(parent));
   return enqueueJob({
     recipe: parent.recipeId!,
     serial: parent.serial,
@@ -224,6 +233,35 @@ async function persistCompletedRun(job: TestJob, log: (line: string) => void): P
   } catch (error) {
     log(`warn: persist run failed: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+/** Finish an execution that lost its offline proof before creating a device
+ * client. Queue admission is synchronous; this is the second, filesystem-only
+ * proof that protects a long-waiting job from stale or deleted frozen raw
+ * evidence. */
+async function finishExecutionIntentReview(job: TestJob, reason: string): Promise<void> {
+  job.startedAt = now();
+  job.finishedAt = job.startedAt;
+  job.status = "error";
+  job.error = `App Map Test execution needs review: ${reason}`;
+  job.errorCode = classifySessionError(job.error);
+  job.logs.push(`==> FAIL: ${job.error}`);
+  setOutcome(job);
+  publish({
+    type: "job.finished",
+    at: job.finishedAt,
+    jobId: job.id,
+    action: job.action,
+    ok: false,
+    error: job.error,
+    durationMs: 0,
+  });
+  await persistCompletedRun(job, (line) => job.logs.push(line));
+  if (job.targetContext.kind === "device") {
+    releaseTargetControl(job.targetContext.serial, job.id);
+  }
+  clearControl(job.id);
+  jobRegistry.pruneTerminalHistory();
 }
 
 function finalizeCancelled(job: TestJob, primary?: TraceStep): void {
@@ -321,10 +359,16 @@ export function pauseJob(id: string): TestJob {
   return job;
 }
 
-/** Resume a paused job. */
-export function resumeJob(id: string): TestJob {
+/** Resume a paused job only after reproducing the frozen offline proof. */
+export async function resumeJob(id: string): Promise<TestJob> {
   const job = jobRegistry.get(id);
   if (!job) throw new Error(`Unknown job: ${id}`);
+  const executionIntent = await revalidateAppMapTestExecutionSource(
+    appMapTestExecutionSourceFromJob(job),
+  );
+  if (executionIntent.status === "review-required") {
+    throw new Error(`App Map Test execution needs review: ${executionIntent.reason}`);
+  }
   if (job.status !== "paused") {
     throw new Error(`Cannot resume job in status ${job.status}`);
   }
@@ -466,7 +510,19 @@ async function executeJob(id: string): Promise<void> {
     publish({ type: "error", at: now(), message, where: "session.executeJob" });
     throw new Error(message);
   }
-  if (job.status === "cancelled") return;
+  if (jobRegistry.get(id)?.status === "cancelled") return;
+
+  const executionIntent = await revalidateAppMapTestExecutionSource(
+    appMapTestExecutionSourceFromJob(job),
+  );
+  // Revalidation is filesystem-only but asynchronous. A queued cancellation
+  // may have won while it was reading frozen evidence; never recreate control
+  // or start a device client after that terminal transition.
+  if (jobRegistry.get(id)?.status === "cancelled") return;
+  if (executionIntent.status === "review-required") {
+    await finishExecutionIntentReview(job, executionIntent.reason);
+    return;
+  }
 
   ensureControl(id);
   const validateLease = createJobLeaseValidator(job);

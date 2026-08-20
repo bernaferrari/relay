@@ -3,6 +3,8 @@ import type { AppMapCapturePolicy } from "@relay/protocol";
 import {
   AppMapCompileError,
   activeReviewedDocumentOriginsForAppMap,
+  appMapTestExecutionSourceFromJob,
+  appMapTestExecutionSourceFromRun,
   captureSnapshot,
   cancelActiveJob,
   cancelJob,
@@ -40,14 +42,34 @@ import {
   type LocaleRunScope,
   type OptionRunSet,
   type Recipe,
+  type TestJob,
 } from "@relay/core";
 import { assertJobAccess, assertTargetControl } from "./access-control.js";
 import { requireAppMapCombineRuntimeProfileContract } from "./app-map-combine-runtime-contract.js";
+import { requireScopedAppMapTestExecution } from "./app-map-test-execution-guard.js";
 import { enqueueCompatibilityBatch } from "./compatibility-jobs.js";
 import { HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
 import { handleCombineCampaignRoute } from "./combine-campaign-routes.js";
 import { handleLocaleMatrixRoute } from "./locale-matrix-routes.js";
+
+export type JobRouteRuntime = {
+  getJob: typeof getJob;
+  assertTargetControl: typeof assertTargetControl;
+  captureSnapshot: typeof captureSnapshot;
+  retryJob: typeof retryJob;
+  replayPersistedRun: typeof replayPersistedRun;
+  resumeJob: (id: string) => TestJob | Promise<TestJob>;
+};
+
+const defaultJobRouteRuntime: JobRouteRuntime = {
+  getJob,
+  assertTargetControl,
+  captureSnapshot,
+  retryJob,
+  replayPersistedRun,
+  resumeJob,
+};
 
 export type JobRouteContext = {
   method: string;
@@ -56,10 +78,12 @@ export type JobRouteContext = {
   request: http.IncomingMessage;
   response: http.ServerResponse;
   scope: RequestContext;
+  runtime?: Partial<JobRouteRuntime>;
 };
 
 export async function handleJobRoute(context: JobRouteContext): Promise<boolean> {
   const { method, pathname, url, request: req, response: res, scope } = context;
+  const runtime = { ...defaultJobRouteRuntime, ...context.runtime };
   if (method === "GET" && pathname === "/jobs") {
     const limit = parseLimit(url.searchParams.get("limit"), 50);
     const activeJobs = getActiveJobs().filter(
@@ -91,10 +115,11 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
 
   const retryMatch = matchPath(pathname, "/jobs/:id/retry");
   if (method === "POST" && retryMatch) {
-    const previous = getJob(retryMatch.id!);
+    const previous = runtime.getJob(retryMatch.id!);
     assertJobAccess(scope, previous);
-    await assertTargetControl(scope, previous?.browserTargetId ?? previous?.serial);
-    const job = retryJob(retryMatch.id!);
+    await requireScopedAppMapTestExecution(appMapTestExecutionSourceFromJob(previous));
+    await runtime.assertTargetControl(scope, previous.browserTargetId ?? previous.serial);
+    const job = runtime.retryJob(retryMatch.id!);
     json(res, 202, { job });
     return true;
   }
@@ -109,9 +134,10 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     ) {
       throw new HttpError(404, "Recorded run not found");
     }
-    await assertTargetControl(scope, run.serial);
+    await requireScopedAppMapTestExecution(appMapTestExecutionSourceFromRun(run));
+    await runtime.assertTargetControl(scope, run.serial);
     try {
-      const job = replayPersistedRun(run);
+      const job = runtime.replayPersistedRun(run);
       json(res, 202, { job });
     } catch (error) {
       throw new HttpError(409, error instanceof Error ? error.message : String(error));
@@ -137,8 +163,9 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
 
   const resumeMatch = matchPath(pathname, "/jobs/:id/resume");
   if (method === "POST" && resumeMatch) {
-    const paused = getJob(resumeMatch.id!);
+    const paused = runtime.getJob(resumeMatch.id!);
     assertJobAccess(scope, paused);
+    await requireScopedAppMapTestExecution(appMapTestExecutionSourceFromJob(paused));
     if (humanInterventionNeedsReproof(paused)) {
       const operation = currentOperationContext();
       if (!operation) throw new HttpError(400, "Actor-aware operation context is required");
@@ -147,7 +174,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         throw new HttpError(409, "The intervened target cannot be re-proven");
       }
       try {
-        const snapshot = await captureSnapshot({ serial: targetId, includeVisual: true });
+        const snapshot = await runtime.captureSnapshot({ serial: targetId, includeVisual: true });
         recordHumanInterventionReproof(paused, operation, {
           capturedAt: snapshot.capturedAt,
           inspectable: snapshot.inspectable,
@@ -171,7 +198,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         );
       }
     }
-    const job = resumeJob(resumeMatch.id!);
+    const job = await runtime.resumeJob(resumeMatch.id!);
     json(res, 200, { job });
     return true;
   }
@@ -639,17 +666,26 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     if (body.recipe && !scope.localTrusted) {
       throw new HttpError(403, "Recipe jobs require a project-owned recipe store");
     }
-    await assertTargetControl(scope, body.browserTargetId ?? body.serial);
+    if (body.retryOf) {
+      const previous = runtime.getJob(body.retryOf);
+      assertJobAccess(scope, previous);
+      await requireScopedAppMapTestExecution(appMapTestExecutionSourceFromJob(previous));
+      await runtime.assertTargetControl(scope, previous.browserTargetId ?? previous.serial);
+      try {
+        const job = runtime.retryJob(body.retryOf);
+        json(res, 202, { job });
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new HttpError(400, message);
+      }
+    }
+    await runtime.assertTargetControl(scope, body.browserTargetId ?? body.serial);
     const platform =
       body.platform ??
       (body.browserTargetId ? undefined : await resolveJobDevicePlatform(body.serial));
     let job;
     try {
-      if (body.retryOf) {
-        const previous = getJob(body.retryOf);
-        assertJobAccess(scope, previous);
-        await assertTargetControl(scope, previous?.browserTargetId ?? previous?.serial);
-      }
       const frozenRecipe = body.recipe ? await freezeRecipeExecution(body.recipe) : undefined;
       const definitions = body.variables ? await readProjectVariables(scope.projectId) : undefined;
       const variables = frozenRecipe
@@ -659,23 +695,21 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
             body.variables,
           )
         : body.variables;
-      job = body.retryOf
-        ? retryJob(body.retryOf)
-        : enqueueJob({
-            recipe: body.recipe!,
-            ...frozenRecipe,
-            serial: body.serial,
-            platform,
-            targetKind: body.targetKind,
-            browserTargetId: body.browserTargetId,
-            prodAccountMatch: body.prodAccountMatch,
-            variables,
-            sensitiveInputNames: definitions
-              ? sensitiveInputNames(definitions.value, variables ?? {})
-              : [],
-            projectId: scope.projectId,
-            ownerId: currentOperationContext()!.actorId,
-          });
+      job = enqueueJob({
+        recipe: body.recipe!,
+        ...frozenRecipe,
+        serial: body.serial,
+        platform,
+        targetKind: body.targetKind,
+        browserTargetId: body.browserTargetId,
+        prodAccountMatch: body.prodAccountMatch,
+        variables,
+        sensitiveInputNames: definitions
+          ? sensitiveInputNames(definitions.value, variables ?? {})
+          : [],
+        projectId: scope.projectId,
+        ownerId: currentOperationContext()!.actorId,
+      });
     } catch (err) {
       // Invalid or missing compiled recipes are client errors, not server faults.
       const message = err instanceof Error ? err.message : String(err);
