@@ -34,6 +34,12 @@ the exact producer/go-module hashes. Relay validates the native binary for the h
 before it starts the bundled server. A missing or changed packaged sidecar fails closed and asks the
 user to reinstall Relay; it never downloads, rebuilds, or falls back to `ios screenshot --stream`.
 
+Before either a source-built or packaged producer can provide pixels, Relay runs exactly one local
+`relay-ios-preview --version` process with a two-second `SIGKILL` deadline. The finite cold-start
+budget accommodates macOS's first-execution validation of a freshly signed release binary without
+making preview startup unbounded. That proof receives no UDID, tunnel, device, or control argument;
+there is no retry and a timeout remains an actionable unavailable diagnosis.
+
 The manifest's `buildSha256` is the deterministic pre-sign build checksum. macOS changes executable
 signature bytes while packaging, so the release gate and first-run preflight verify the final nested
 code signature and outer app seal instead of comparing signed bytes to that pre-sign checksum.

@@ -24,7 +24,14 @@ export const IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_PATH_ENV =
  */
 export const IOS_SAFE_PREVIEW_PRODUCER_VERSION =
   "relay-ios-preview/1 go-ios=v1.2.2-0.20260805152531-ebec9a0b076c";
-export const IOS_SAFE_PREVIEW_PRODUCER_VERSION_TIMEOUT_MS = 1_000;
+/**
+ * A freshly signed macOS sidecar can pay a one-time cold executable-validation
+ * cost before its otherwise immediate `--version` output. Give that one,
+ * strictly local probe a finite two-second budget. There is deliberately no
+ * retry: one SIGKILL-bounded process is deterministic and cannot turn a
+ * missing or stuck producer into device/tunnel work.
+ */
+export const IOS_SAFE_PREVIEW_PRODUCER_VERSION_TIMEOUT_MS = 2_000;
 export const IOS_SAFE_PREVIEW_PRODUCER_VERSION_CACHE_MS = 30_000;
 
 const IOS_SAFE_PREVIEW_PRODUCER_VERSION_MAX_BYTES = 512;

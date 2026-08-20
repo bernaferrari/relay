@@ -76,7 +76,7 @@ test("rejects a stale default sidecar with rebuild guidance before a target can 
   );
 });
 
-test("bounds a timed out version probe and never starts device or tunnel work from verification", async () => {
+test("uses one finite two-second local probe and never starts device or tunnel work from verification", async () => {
   let probes = 0;
   const timedOut = Object.assign(new Error("timed out"), { code: "ETIMEDOUT", killed: true });
   const options = safeDefaultOptions({
@@ -88,11 +88,12 @@ test("bounds a timed out version probe and never starts device or tunnel work fr
       throw timedOut;
     },
   });
+  assert.equal(IOS_SAFE_PREVIEW_PRODUCER_VERSION_TIMEOUT_MS, 2_000);
   await assert.rejects(
     () => verifySafeIosPreviewProducer(options),
-    /did not report a version within 1000ms/i,
+    /did not report a version within 2000ms/i,
   );
-  await assert.rejects(() => verifySafeIosPreviewProducer(options), /within 1000ms/i);
+  await assert.rejects(() => verifySafeIosPreviewProducer(options), /within 2000ms/i);
   assert.equal(probes, 1);
 });
 
@@ -157,15 +158,22 @@ test("allows a deliberate override while making its observed provenance visibly 
   });
 });
 
-test("classifies only Desktop's dedicated packaged path as a pinned packaged resource", async () => {
+test("gives Desktop's dedicated packaged sidecar one finite cold-start proof", async () => {
   const path = "/Relay.app/Contents/Resources/ios-preview/relay-ios-preview";
+  let probes = 0;
   const verified = await verifySafeIosPreviewProducer({
     env: { [IOS_SAFE_PREVIEW_PRODUCER_PACKAGED_PATH_ENV]: path },
     accessible: async (candidate) => assert.equal(candidate, path),
     fileIdentity: async () => "packaged:one",
-    versionProbe: async () => IOS_SAFE_PREVIEW_PRODUCER_VERSION,
+    versionProbe: async (candidate, timeoutMs) => {
+      probes += 1;
+      assert.equal(candidate, path);
+      assert.equal(timeoutMs, 2_000);
+      return IOS_SAFE_PREVIEW_PRODUCER_VERSION;
+    },
     cache: new Map(),
   });
+  assert.equal(probes, 1);
   assert.deepEqual(verified.provenance, {
     source: "packaged-resource",
     sourceSafety: "pinned-version-match",
