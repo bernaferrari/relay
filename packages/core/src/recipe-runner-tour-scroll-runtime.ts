@@ -7,6 +7,7 @@ import {
   tourViewportKey,
   visibleTourRow,
 } from "./recipe-runner-tour-scroll.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 
 export type TourSurface = { nodes: SnapshotNode[]; stops: TourStop[] };
 
@@ -67,6 +68,7 @@ async function normalizeTourToStart(
     try {
       next = await scrollTourSurface(device, step, "up", amount);
     } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       if (attempt === 0) {
         log(
           `tour: semantic scroll search unavailable (${error instanceof Error ? error.message : String(error)})`,
@@ -99,7 +101,8 @@ export async function collectSemanticTourRows(
     let next: TourSurface;
     try {
       next = await scrollTourSurface(device, step, "down", amount);
-    } catch {
+    } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       break;
     }
     const key = tourViewportKey(next.stops);
@@ -132,7 +135,8 @@ export async function seekSemanticTourRow(
     for (let attempt = 0; attempt < maxScrolls; attempt++) {
       try {
         current = await scrollTourSurface(device, step, "down", amount);
-      } catch {
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
         return undefined;
       }
       const key = tourViewportKey(current.stops);

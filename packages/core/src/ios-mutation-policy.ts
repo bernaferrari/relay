@@ -78,6 +78,15 @@ export class IosMutationOutcomeUnknownError extends Error {
   }
 }
 
+/**
+ * Recovery code may handle selector misses and ordinary adapter failures, but
+ * it must never reinterpret an ambiguous physical iOS mutation as either.
+ * Keep this guard explicit at every catch-all recovery boundary.
+ */
+export function rethrowIosMutationOutcomeUnknown(error: unknown): void {
+  if (error instanceof IosMutationOutcomeUnknownError) throw error;
+}
+
 export function currentIosDeviceSerial(): string | undefined {
   try {
     const context = currentTargetContext();

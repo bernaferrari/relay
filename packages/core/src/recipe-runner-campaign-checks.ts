@@ -18,6 +18,7 @@ import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { markNavigationUnknown, proveNavigationDestination } from "./recipe-runner-context.js";
 import { isTargetUnavailableError } from "./target-unavailable.js";
+import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
 
 async function captureCampaignFailureEvidence(
   device: Device,
@@ -559,6 +560,14 @@ export async function runCampaignCheck(
       ctx,
       error instanceof Error ? error.message : `Campaign check ${step.check.id} failed.`,
     );
+    if (error instanceof IosMutationOutcomeUnknownError) {
+      // An iOS native command may already have landed. Evidence is read-only,
+      // but cleanup would issue a second physical command against an unknown
+      // state, so preserve the exact error and stop this recipe/tour here.
+      const message = error.message;
+      await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message, "primary");
+      throw error;
+    }
     if (isTargetUnavailableError(error)) {
       recordTargetUnavailable(error, "primary");
     } else if (!isCancel(error)) {
@@ -567,7 +576,26 @@ export async function runCampaignCheck(
     }
   } finally {
     const cleanup = step.check.cleanup;
-    if (cleanup && targetUnavailableError) {
+    if (primaryError instanceof IosMutationOutcomeUnknownError) {
+      cleanupOutcome = "skipped";
+      const capturedAt = now();
+      if (cleanup) {
+        ctx.job?.artifacts.push({
+          kind: "campaign-check-cleanup",
+          capturedAt,
+          data: {
+            checkId: step.check.id,
+            recipeId: cleanup.recipeId,
+            terminalScreenId: cleanup.terminalScreenId,
+            status: "skipped",
+            reason: "An iOS mutation has an unknown outcome; no cleanup command is safe.",
+            startedAt: capturedAt,
+            finishedAt: capturedAt,
+          },
+        });
+      }
+      ctx.log(`check cleanup skipped: ${step.check.title} — iOS mutation outcome unknown`);
+    } else if (cleanup && targetUnavailableError) {
       cleanupOutcome = "skipped";
       const capturedAt = now();
       ctx.job?.artifacts.push({
@@ -627,6 +655,36 @@ export async function runCampaignCheck(
         } catch (error) {
           cleanupError = error;
           const finishedAt = now();
+          if (error instanceof IosMutationOutcomeUnknownError) {
+            // Cleanup is a physical recipe too. Its command may have landed,
+            // so the campaign cannot turn that ambiguity into a normal failed
+            // check, defer it, or begin a sibling check.
+            cleanupOutcome = "interrupted";
+            ctx.job?.artifacts.push({
+              kind: "campaign-check-cleanup",
+              capturedAt: finishedAt,
+              data: {
+                checkId: step.check.id,
+                recipeId: cleanup.recipeId,
+                terminalScreenId: cleanup.terminalScreenId,
+                status: "interrupted",
+                error: error.message,
+                reason:
+                  "An iOS cleanup mutation has an unknown outcome; no further command is safe.",
+                startedAt: cleanupStartedAt,
+                finishedAt,
+              },
+            });
+            await captureCampaignFailureEvidence(
+              device,
+              step.check,
+              ctx,
+              startedAt,
+              error.message,
+              "cleanup",
+            );
+            throw error;
+          }
           if (isTargetUnavailableError(error)) recordTargetUnavailable(error, "cleanup");
           cleanupOutcome = isCancel(error)
             ? "cancelled"

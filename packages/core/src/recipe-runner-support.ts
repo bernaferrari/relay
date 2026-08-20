@@ -38,6 +38,7 @@ import {
 } from "./recipe-target-match.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { currentVerifiedScreen } from "./recipe-runner-context.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 
 function snapshotBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
   let width = 0;
@@ -367,6 +368,7 @@ async function tapTarget(
         await pressResolvedControl(device, named, namedTarget, repeated);
       }
     } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       // A semantic control may intentionally open a system surface (for
       // example Grok's App Language row opens Android Settings). Keep the
       // recipe executor aligned with pressNamedControl: accept that completed
@@ -461,6 +463,7 @@ async function tapTarget(
         ...(attemptedPoint ? { point: attemptedPoint } : {}),
       };
     } catch (err) {
+      rethrowIosMutationOutcomeUnknown(err);
       if (isCancel(err)) throw err;
       // Losing the device lane is not a locator problem. Folding it into
       // "no strategy matched" sends the reader hunting for a selector that
@@ -583,6 +586,7 @@ async function tapRecordedTarget(
       }
       return;
     } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       if (isCancel(error)) throw error;
       const message = error instanceof Error ? error.message : String(error);
       failures.push({ target: structuredClone(candidate), error: message });
@@ -676,6 +680,7 @@ async function longPressRecordedTarget(
       if (index > 0) ctx.log(`locator: used recorded hold fallback ${index + 1}/${unique.length}`);
       return;
     } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       if (isCancel(error)) throw error;
       failures.push(error instanceof Error ? error.message : String(error));
     }

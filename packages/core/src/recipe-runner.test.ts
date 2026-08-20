@@ -20,7 +20,7 @@ it("recognizes right-to-left app locales for mirrored point fallbacks", () => {
   assert.equal(isRightToLeftRun({ locale: "he-IL" }), true);
   assert.equal(isRightToLeftRun({ language: "pt-BR" }), false);
 });
-import type { Device } from "./device.js";
+import { IosMutationOutcomeUnknownError, type Device } from "./device.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { currentVerifiedScreen, type VerifiedScreenCheckpoint } from "./recipe-runner-context.js";
 import type { TestJob } from "./session.js";
@@ -38,6 +38,10 @@ import { runWithTargetContext } from "./target-context.js";
 import { observeScreenIdentity } from "./screen-identity.js";
 import { runExpectScreenStep } from "./recipe-runner-screen.js";
 import { runTourStep } from "./recipe-runner-tour.js";
+import {
+  collectSemanticTourRows,
+  seekSemanticTourRow,
+} from "./recipe-runner-tour-scroll-runtime.js";
 import type { ScreenshotPayload } from "./workspace-capture.js";
 
 const runRecipeStep: typeof runRecipeStepWithoutContext = (...args) =>
@@ -841,6 +845,193 @@ describe("runRecipeStep optional policy", () => {
       true,
     );
   });
+
+  it("does not swallow an unknown iOS mutation from an optional step", async () => {
+    let presses = 0;
+    const job = { artifacts: [] } as unknown as TestJob;
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            {
+              role: "button",
+              label: "Continue",
+              enabled: true,
+              hittable: true,
+              rect: { x: 20, y: 80, width: 160, height: 44 },
+            },
+          ],
+        }),
+      press: () => {
+        presses += 1;
+        return Promise.reject(new Error("XCTest connection reset"));
+      },
+    });
+
+    await assert.rejects(
+      runIosRecipeStep(
+        device,
+        { kind: "tap", target: { label: "Continue" }, optional: true },
+        { ...noLog, job },
+      ),
+      IosMutationOutcomeUnknownError,
+    );
+
+    assert.equal(presses, 1);
+    assert.equal(
+      job.artifacts.some((artifact) => artifact.kind === "optional-step-skipped"),
+      false,
+    );
+  });
+});
+
+describe("iOS recipe outcome-unknown terminal policy", () => {
+  it("does not try a second locator after the first iOS locator may have landed", async () => {
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: [] }),
+      press: (input) => {
+        presses.push(input);
+        return Promise.reject(new Error("XCTest transport ended"));
+      },
+    });
+
+    await assert.rejects(
+      runIosRecipeStep(
+        device,
+        {
+          kind: "tap",
+          target: { ref: "@stale-control" },
+          fallbackTargets: [{ label: "Continue" }],
+        },
+        noLog,
+      ),
+      IosMutationOutcomeUnknownError,
+    );
+
+    assert.equal(presses.length, 1);
+    assert.equal((presses[0] as { ref?: string }).ref, "@stale-control");
+  });
+
+  it("does not turn an unknown semantic Back into a hardware Back", async () => {
+    let semanticBacks = 0;
+    let hardwareBacks = 0;
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: [{ role: "heading", label: "Wrong screen" }] }),
+      press: () => {
+        semanticBacks += 1;
+        return Promise.reject(new Error("XCTest transport ended"));
+      },
+      back: () => {
+        hardwareBacks += 1;
+        return Promise.resolve({});
+      },
+    });
+
+    await assert.rejects(
+      runWithTargetContext({ kind: "device", platform: "ios", serial: "expect-unknown-back" }, () =>
+        runExpectScreenStep(
+          device,
+          {
+            kind: "expect-screen",
+            screenId: "settings",
+            screenTitle: "Settings",
+            fingerprint: "a".repeat(64),
+            recovery: { strategy: "back", maxAttempts: 1 },
+          },
+          {
+            log: () => {},
+            observeVisualFingerprint: () => Promise.resolve("b".repeat(64)),
+          },
+        ),
+      ),
+      IosMutationOutcomeUnknownError,
+    );
+
+    assert.equal(semanticBacks, 1);
+    assert.equal(hardwareBacks, 0);
+  });
+
+  it("does not continue semantic tour indexing after an unknown iOS scroll", async () => {
+    const nodes = [
+      {
+        type: "Cell",
+        label: "Row A",
+        hittable: true,
+        rect: { x: 20, y: 100, width: 300, height: 60 },
+      },
+    ];
+    const directions: string[] = [];
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes }),
+      scroll: (input) => {
+        directions.push(String((input as { direction?: string }).direction));
+        return directions.length === 1
+          ? Promise.resolve({})
+          : Promise.reject(new Error("XCTest transport ended"));
+      },
+    });
+    const surface = {
+      nodes,
+      stops: [{ label: "Row A", point: { x: 170, y: 130 } }],
+    };
+
+    await assert.rejects(
+      runWithTargetContext(
+        { kind: "device", platform: "ios", serial: "tour-index-unknown-scroll" },
+        () =>
+          collectSemanticTourRows(
+            device,
+            { kind: "tour", screenshot: false, scrollSearch: { maxScrolls: 4, amount: 0.5 } },
+            surface,
+            () => {},
+          ),
+      ),
+      IosMutationOutcomeUnknownError,
+    );
+
+    assert.deepEqual(directions, ["up", "down"]);
+  });
+
+  it("does not normalize or retry after semantic tour row seek loses the iOS command outcome", async () => {
+    const nodes = [
+      {
+        type: "Cell",
+        label: "Row A",
+        hittable: true,
+        rect: { x: 20, y: 100, width: 300, height: 60 },
+      },
+    ];
+    let scrolls = 0;
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes }),
+      scroll: () => {
+        scrolls += 1;
+        return Promise.reject(new Error("XCTest transport ended"));
+      },
+    });
+    const surface = {
+      nodes,
+      stops: [{ label: "Row A", point: { x: 170, y: 130 } }],
+    };
+
+    await assert.rejects(
+      runWithTargetContext(
+        { kind: "device", platform: "ios", serial: "tour-seek-unknown-scroll" },
+        () =>
+          seekSemanticTourRow(
+            device,
+            { kind: "tour", screenshot: false, scrollSearch: { maxScrolls: 4, amount: 0.5 } },
+            { label: "Row B" },
+            surface,
+            () => {},
+          ),
+      ),
+      IosMutationOutcomeUnknownError,
+    );
+
+    assert.equal(scrolls, 1);
+  });
 });
 
 describe("runRecipeStep campaign check policy", () => {
@@ -1002,6 +1193,116 @@ describe("runRecipeStep campaign check policy", () => {
     const resultData = result.data as { status?: string; primaryError?: string };
     assert.equal(resultData.status, "failed");
     assert.match(resultData.primaryError ?? "", /identifier primary/u);
+  });
+
+  it("never runs campaign cleanup after an unknown iOS primary mutation", async () => {
+    const presses: string[] = [];
+    const job = { id: "campaign-ios-unknown", artifacts: [] } as unknown as TestJob;
+    const recipeGraph = {
+      primary: {
+        id: "primary",
+        title: "Primary",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "primary" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "Cleanup",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "cleanup" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const device = stubDevice({
+      press: (options) => {
+        const selector = String((options as { selector?: string }).selector);
+        presses.push(selector);
+        return Promise.reject(new Error("XCTest transport ended"));
+      },
+      snapshot: () => Promise.resolve({ nodes: [] }),
+    });
+
+    await assert.rejects(
+      runIosRecipeStep(
+        device,
+        {
+          kind: "module",
+          recipeId: "primary",
+          check: {
+            id: "kids",
+            title: "Kids Mode",
+            cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
+          },
+        },
+        { ...noLog, job, runtime: {}, recipeGraph },
+      ),
+      IosMutationOutcomeUnknownError,
+    );
+
+    assert.deepEqual(presses, ['id="primary"']);
+    const cleanup = job.artifacts.find((artifact) => artifact.kind === "campaign-check-cleanup");
+    assert.equal((cleanup?.data as { status?: string } | undefined)?.status, "skipped");
+  });
+
+  it("does not defer or continue after an unknown iOS cleanup mutation", async () => {
+    const presses: string[] = [];
+    const job = { id: "campaign-ios-cleanup-unknown", artifacts: [] } as unknown as TestJob;
+    const recipeGraph = {
+      primary: {
+        id: "primary",
+        title: "Primary",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "primary" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "Cleanup",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "cleanup" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const device = stubDevice({
+      press: (options) => {
+        const selector = String((options as { selector?: string }).selector);
+        presses.push(selector);
+        return selector.includes("cleanup")
+          ? Promise.reject(new Error("XCTest transport ended"))
+          : Promise.resolve({});
+      },
+      snapshot: () => Promise.resolve({ nodes: [] }),
+    });
+
+    await assert.rejects(
+      runIosRecipeStep(
+        device,
+        {
+          kind: "module",
+          recipeId: "primary",
+          check: {
+            id: "kids",
+            title: "Kids Mode",
+            cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
+          },
+        },
+        { ...noLog, job, runtime: {}, recipeGraph },
+      ),
+      IosMutationOutcomeUnknownError,
+    );
+
+    assert.deepEqual(presses, ['id="primary"', 'id="cleanup"']);
+    const cleanup = job.artifacts.find((artifact) => artifact.kind === "campaign-check-cleanup");
+    assert.equal((cleanup?.data as { status?: string } | undefined)?.status, "interrupted");
+    assert.equal(
+      job.artifacts.some((artifact) => artifact.kind === "campaign-check-deferred"),
+      false,
+    );
   });
 
   it("runs cleanup after a passing primary path before marking the check passed", async () => {
@@ -4733,6 +5034,39 @@ describe("runRecipeStep tour", () => {
     ]);
   });
 
+  it("does not send the second raw tour-back point after the first iOS point is unknown", async () => {
+    let screen: "settings" | "child" = "settings";
+    const backPoints: Array<{ x?: number; y?: number }> = [];
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({ nodes: screen === "settings" ? settingsNodes : appearanceNodes }),
+      press: (input) => {
+        const selector =
+          typeof input === "object" && input && "selector" in input
+            ? String((input as { selector?: string }).selector ?? "")
+            : "";
+        const point = input as { x?: number; y?: number };
+        if (selector.includes("Appearance")) {
+          screen = "child";
+          return Promise.resolve({});
+        }
+        if (point.x === 78 || point.x === 44) {
+          backPoints.push({ x: point.x, y: point.y });
+          return Promise.reject(new Error("XCTest transport ended"));
+        }
+        return Promise.resolve({});
+      },
+      wait: () => Promise.resolve({}),
+    });
+
+    await assert.rejects(
+      runIosRecipeStep(device, { kind: "tour", screenshot: false }, noLog),
+      IosMutationOutcomeUnknownError,
+    );
+
+    assert.deepEqual(backPoints, [{ x: 78, y: 88 }]);
+  });
+
   it("keeps popping until origin rows return, not just the shared header", async () => {
     let screen: "settings" | "appearance" | "haptics" = "settings";
     const presses: unknown[] = [];
@@ -4843,6 +5177,7 @@ describe("runRecipeStep tour", () => {
         screen = "settings";
         return Promise.resolve({});
       },
+      scroll: () => Promise.resolve({}),
       wait: () => Promise.resolve({}),
     });
 
@@ -5214,6 +5549,7 @@ describe("runRecipeStep tour", () => {
       snapshot: () => Promise.resolve({ nodes: automationsNodes }),
       press: () => Promise.resolve({}),
       back: () => Promise.resolve({}),
+      scroll: () => Promise.resolve({}),
       wait: () => Promise.resolve({}),
     });
     await assert.rejects(

@@ -78,6 +78,7 @@ import {
   runTapStep,
   runTypeStep,
 } from "./recipe-runner-extended-steps.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
 
 async function runReusableRecipe(
@@ -907,6 +908,7 @@ export async function runRecipeStep(
   try {
     await runRequiredRecipeStep(device, step, ctx);
   } catch (error) {
+    rethrowIosMutationOutcomeUnknown(error);
     if (isCancel(error)) throw error;
     const message = error instanceof Error ? error.message : String(error);
     ctx.log(`optional ${step.kind}: skipped — ${message}`);

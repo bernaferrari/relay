@@ -45,6 +45,7 @@ import {
   readCompleteTourSurface,
   seekSemanticTourRow,
 } from "./recipe-runner-tour-scroll-runtime.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 
 import {
   foregroundApplicationBundle,
@@ -84,7 +85,8 @@ async function returnToTourOrigin(
   if (!step.fallbackStops?.length && !step.originFingerprint) {
     try {
       await pressPoint(device, 78, 88);
-    } catch {
+    } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       await pressPoint(device, 44, 72);
     }
     await sleep(350, device);
@@ -178,6 +180,7 @@ async function returnToTourOrigin(
       await attempt.run();
       interactionSucceeded = true;
     } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       log(
         `tour: ${attempt.name} failed after ${stopLabel} (${error instanceof Error ? error.message : String(error)})`,
       );
@@ -202,7 +205,8 @@ async function returnToTourOrigin(
           log(`tour: restored semantic row checkpoint after ${stopLabel}`);
           return;
         }
-      } catch {
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
         // Continue through the existing bounded origin recovery ladder. The
         // semantic seek is an optimization, never weaker identity proof.
       }
@@ -257,6 +261,7 @@ async function restoreTourViewport(
     try {
       await move.run();
     } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       // Recovery is an enhancement over the semantic Back/prelude path. A
       // target without scroll support (or a test double without that optional
       // capability) must continue through the normal hierarchy recovery,
@@ -381,6 +386,7 @@ async function recoverMappedTourRows(
       if (direction === "up") await scrollUp(device, 0.6);
       else await scrollDown(device, 0.6);
     } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       log(
         `tour: cannot seek mapped rows (${error instanceof Error ? error.message : String(error)})`,
       );
@@ -437,6 +443,7 @@ async function runTourPrelude(
       }
       await sleep(350, device);
     } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       if (!step.optional) throw error;
       log(
         `tour: optional prelude ${step.kind} skipped — ${error instanceof Error ? error.message : String(error)}`,
@@ -583,7 +590,8 @@ async function seekTourOrigin(
       } else {
         await pressNamedControl(device, { label: "Back" });
       }
-    } catch {
+    } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       await pressKey(device, "back");
     }
     await sleep(350, device);

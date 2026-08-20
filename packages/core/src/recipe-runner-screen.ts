@@ -26,6 +26,7 @@ import {
   awaitStableDestinationEvidence,
   recordDestinationEvidenceTiming,
 } from "./destination-evidence.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 
 const DEFAULT_EXPECT_TIMEOUT_MS = 5_000;
 const MAX_WAIT_MS = 15 * 60 * 1_000;
@@ -252,7 +253,8 @@ export async function runExpectScreenStep(
       try {
         await scrollUp(device, 0.7);
         await sleep(350, device);
-      } catch {
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
         // Explicit Back remains available when the adapter cannot scroll.
       }
       continue;
@@ -263,7 +265,8 @@ export async function runExpectScreenStep(
       ctx.log(`screen: not ${step.screenTitle} yet — recovering with Back (${attempt})`);
       try {
         await pressLabel(device, "Back");
-      } catch {
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
         await pressKey(device, "back");
       }
       await sleep(350, device);
