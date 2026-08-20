@@ -5,6 +5,7 @@ import type {
   AppMapCompiledRawAccessibilitySource,
   AppMapCompiledTest,
   RawAccessibilityTreeEvidence,
+  StepTarget,
 } from "@relay/protocol";
 import { loadFrozenRawAccessibilityEvidence } from "./frozen-raw-accessibility.js";
 import { preflightCompiledAppMapTestOffline } from "./offline-test-preflight.js";
@@ -134,6 +135,77 @@ const reflowedBirthYearTree = {
   ],
 };
 
+function boundSource(
+  tree: ReturnType<typeof rawTree>,
+  variant: AppMapCompiledRawAccessibilitySource["variant"],
+  capturedAt: number,
+): AppMapCompiledRawAccessibilitySource {
+  return {
+    screenId: "profile",
+    variant,
+    origin: {
+      kind: "screen-variant",
+      observationId: `observation-${variant.id}`,
+      capturedAt,
+    },
+    tree: tree.reference,
+  };
+}
+
+function scopedSelectorPlan(input: {
+  sources: AppMapCompiledRawAccessibilitySource[];
+  variants: AppMapCompiledRawAccessibilitySource["variant"][];
+  target: StepTarget;
+}): AppMapCompiledTest {
+  const compiled = sourcePlan({ profile: input.sources });
+  compiled.rawAccessibilityVariantsByScreenId = { profile: structuredClone(input.variants) };
+  compiled.recipes.root!.steps[1] = {
+    kind: "tap",
+    id: "scoped-selector",
+    target: structuredClone(input.target),
+  };
+  return compiled;
+}
+
+const englishProfileVariant = {
+  id: "profile-en",
+  targetProfileId: "ipad-en-US",
+  targetId: "ipad-1",
+  platform: "ios" as const,
+  viewport: { width: 834, height: 1112 },
+};
+
+const portugueseProfileVariant = {
+  id: "profile-pt",
+  targetProfileId: "ipad-pt-BR",
+  targetId: "ipad-1",
+  platform: "ios" as const,
+  viewport: { width: 834, height: 1112 },
+};
+
+function buttonTree(input: { identifier?: string; label: string }) {
+  return {
+    nodes: [
+      {
+        index: 0,
+        type: "Application",
+        rect: { x: 0, y: 0, width: 834, height: 1112 },
+      },
+      {
+        index: 1,
+        parentIndex: 0,
+        type: "XCUIElementTypeButton",
+        ...(input.identifier ? { identifier: input.identifier } : {}),
+        label: input.label,
+        enabled: true,
+        visibleToUser: true,
+        hittable: true,
+        rect: { x: 42, y: 240, width: 750, height: 64 },
+      },
+    ],
+  };
+}
+
 test("loads a translated/reflowed raw tree with immutable source provenance", async () => {
   const tree = rawTree("profile-pt-tree", reflowedBirthYearTree);
   const source: AppMapCompiledRawAccessibilitySource = {
@@ -188,6 +260,423 @@ test("loads a translated/reflowed raw tree with immutable source provenance", as
       ["relation-anchor", 10, 0, { x: 72, y: 620, width: 620, height: 96 }, undefined, undefined],
       ["following-row", 12, 11, { x: 45, y: 748, width: 990, height: 136 }, true, 12],
     ],
+  );
+});
+
+test("does not let an English raw label bless the selected Portuguese Variant", async () => {
+  const english = rawTree("profile-en-voice", buttonTree({ label: "Voice" }));
+  const portuguese = rawTree("profile-pt-voice", buttonTree({ label: "Voz" }));
+  const englishSource = boundSource(english, englishProfileVariant, 10);
+  const portugueseSource = boundSource(portuguese, portugueseProfileVariant, 11);
+  const compiled = scopedSelectorPlan({
+    sources: [englishSource, portugueseSource],
+    variants: [englishProfileVariant, portugueseProfileVariant],
+    target: { label: "Voice" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) =>
+      sha256 === english.reference.sha256
+        ? english.bytes
+        : sha256 === portuguese.reference.sha256
+          ? portuguese.bytes
+          : null,
+  });
+
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: portugueseProfileVariant.targetProfileId,
+  });
+  const selector = report.selectors[0]!;
+
+  assert.equal(selector.status, "variant-incompatible");
+  assert.equal(selector.resolution, undefined);
+  assert.deepEqual(selector.rawVariantScope, {
+    selectedTargetProfileId: "ipad-pt-BR",
+    selectedVariant: portugueseProfileVariant,
+    candidates: [
+      {
+        variant: englishProfileVariant,
+        sourceCount: 1,
+        compatibility: "incompatible",
+        reason: "locale-sensitive-selector",
+      },
+      {
+        variant: portugueseProfileVariant,
+        sourceCount: 1,
+        compatibility: "selected-variant",
+        reason: "selected-runtime-variant",
+      },
+    ],
+  });
+  assert.equal(report.findings[0]?.code, "raw-evidence-variant-recapture-required");
+  assert.match(report.findings[0]?.message ?? "", /profile-pt/u);
+  assert.match(selector.detail ?? "", /incompatible raw Variant/u);
+});
+
+test("requires a profile choice when a known locale Variant still lacks raw evidence", async () => {
+  const english = rawTree("profile-en-only-voice", buttonTree({ label: "Voice" }));
+  const englishSource = boundSource(english, englishProfileVariant, 10);
+  const compiled = scopedSelectorPlan({
+    sources: [englishSource],
+    variants: [englishProfileVariant, portugueseProfileVariant],
+    target: { label: "Voice" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) => (sha256 === english.reference.sha256 ? english.bytes : null),
+  });
+
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence);
+  const selector = report.selectors[0]!;
+
+  assert.equal(selector.status, "variant-selection-required");
+  assert.equal(selector.resolution, undefined);
+  assert.deepEqual(selector.rawVariantScope?.candidates, [
+    {
+      variant: englishProfileVariant,
+      sourceCount: 1,
+      compatibility: "incompatible",
+      reason: "locale-sensitive-selector",
+    },
+    {
+      variant: portugueseProfileVariant,
+      sourceCount: 0,
+      compatibility: "incompatible",
+      reason: "no-raw-source",
+    },
+  ]);
+  assert.equal(report.findings[0]?.code, "raw-evidence-variant-selection-required");
+});
+
+test("requires a profile choice before requesting a raw capture for two known Variants", async () => {
+  const compiled = scopedSelectorPlan({
+    sources: [],
+    variants: [englishProfileVariant, portugueseProfileVariant],
+    target: { label: "Voice" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async () => null,
+  });
+
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence);
+  const selector = report.selectors[0]!;
+
+  assert.equal(selector.status, "variant-selection-required");
+  assert.equal(selector.resolution, undefined);
+  assert.deepEqual(selector.rawVariantScope?.candidates, [
+    {
+      variant: englishProfileVariant,
+      sourceCount: 0,
+      compatibility: "incompatible",
+      reason: "no-raw-source",
+    },
+    {
+      variant: portugueseProfileVariant,
+      sourceCount: 0,
+      compatibility: "incompatible",
+      reason: "no-raw-source",
+    },
+  ]);
+  assert.ok(
+    report.findings.some((finding) => finding.code === "raw-evidence-variant-selection-required"),
+  );
+});
+
+test("names the selected Variant when that profile has no raw tree to prove", async () => {
+  const compiled = scopedSelectorPlan({
+    sources: [],
+    variants: [englishProfileVariant, portugueseProfileVariant],
+    target: { label: "Voice" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async () => null,
+  });
+
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: portugueseProfileVariant.targetProfileId,
+  });
+  const selector = report.selectors[0]!;
+
+  assert.equal(selector.status, "raw-evidence-unavailable");
+  assert.deepEqual(selector.rawVariantScope?.selectedVariant, portugueseProfileVariant);
+  assert.match(selector.detail ?? "", /profile-pt/u);
+  assert.match(report.findings[0]?.message ?? "", /profile-pt/u);
+});
+
+test("reuses an explicit identifier across equal-viewport locale Variants", async () => {
+  const english = rawTree(
+    "profile-en-voice-identifier",
+    buttonTree({
+      identifier: "settings.voice",
+      label: "Voice",
+    }),
+  );
+  const englishSource = boundSource(english, englishProfileVariant, 10);
+  const compiled = scopedSelectorPlan({
+    sources: [englishSource],
+    variants: [englishProfileVariant, portugueseProfileVariant],
+    target: { identifier: "settings.voice", label: "Voice" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) => (sha256 === english.reference.sha256 ? english.bytes : null),
+  });
+
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: portugueseProfileVariant.targetProfileId,
+  });
+  const selector = report.selectors[0]!;
+
+  assert.deepEqual(report.findings, []);
+  assert.equal(selector.status, "resolved");
+  assert.equal(selector.resolution?.method, "identifier");
+  assert.deepEqual(selector.resolution?.provenance?.variant, englishProfileVariant);
+  assert.deepEqual(selector.rawVariantScope?.candidates, [
+    {
+      variant: englishProfileVariant,
+      sourceCount: 1,
+      compatibility: "stable-identifier-equivalent",
+      reason: "same-target-platform-and-viewport",
+    },
+    {
+      variant: portugueseProfileVariant,
+      sourceCount: 0,
+      compatibility: "selected-variant",
+      reason: "no-raw-source",
+    },
+  ]);
+});
+
+test("does not reuse an identifier across a different runtime viewport", async () => {
+  const portugueseAtOtherViewport = {
+    ...portugueseProfileVariant,
+    viewport: { width: 820, height: 1112 },
+  };
+  const english = rawTree(
+    "profile-en-voice-different-viewport",
+    buttonTree({ identifier: "settings.voice", label: "Voice" }),
+  );
+  const compiled = scopedSelectorPlan({
+    sources: [boundSource(english, englishProfileVariant, 10)],
+    variants: [englishProfileVariant, portugueseAtOtherViewport],
+    target: { identifier: "settings.voice", label: "Voice" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) => (sha256 === english.reference.sha256 ? english.bytes : null),
+  });
+
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: portugueseAtOtherViewport.targetProfileId,
+  });
+
+  assert.equal(report.selectors[0]?.status, "variant-incompatible");
+  assert.equal(
+    report.selectors[0]?.rawVariantScope?.candidates.find(
+      (candidate) => candidate.variant.id === englishProfileVariant.id,
+    )?.reason,
+    "target-platform-or-viewport-mismatch",
+  );
+});
+
+test("does not turn a failed cross-locale identifier into a label fallback", async () => {
+  const english = rawTree("profile-en-identifier-fallback", {
+    nodes: [
+      {
+        index: 0,
+        type: "Application",
+        rect: { x: 0, y: 0, width: 834, height: 1112 },
+      },
+      {
+        index: 1,
+        parentIndex: 0,
+        type: "XCUIElementTypeButton",
+        identifier: "settings.voice",
+        label: "Voice",
+        enabled: true,
+        visibleToUser: true,
+        hittable: true,
+        // The stable identifier is outside this frozen viewport.
+        rect: { x: 42, y: 1220, width: 750, height: 64 },
+      },
+      {
+        index: 2,
+        parentIndex: 0,
+        type: "XCUIElementTypeButton",
+        label: "Voice",
+        enabled: true,
+        visibleToUser: true,
+        hittable: true,
+        rect: { x: 42, y: 240, width: 750, height: 64 },
+      },
+    ],
+  });
+  const compiled = scopedSelectorPlan({
+    sources: [boundSource(english, englishProfileVariant, 10)],
+    variants: [englishProfileVariant, portugueseProfileVariant],
+    target: { identifier: "settings.voice", label: "Voice" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) => (sha256 === english.reference.sha256 ? english.bytes : null),
+  });
+
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: portugueseProfileVariant.targetProfileId,
+  });
+
+  assert.equal(report.selectors[0]?.status, "variant-incompatible");
+  assert.equal(report.selectors[0]?.resolution, undefined);
+  assert.equal(
+    report.selectors[0]?.rawVariantScope?.candidates.find(
+      (candidate) => candidate.variant.id === englishProfileVariant.id,
+    )?.reason,
+    "stable-selector-not-activatable",
+  );
+  assert.match(report.selectors[0]?.detail ?? "", /incompatible raw Variant/u);
+});
+
+test("requires the selected Variant to publish its own stable selector when it has raw evidence", async () => {
+  const english = rawTree(
+    "profile-en-stable-voice",
+    buttonTree({
+      identifier: "settings.voice",
+      label: "Voice",
+    }),
+  );
+  const portuguese = rawTree("profile-pt-unstable-voice", buttonTree({ label: "Voz" }));
+  const compiled = scopedSelectorPlan({
+    sources: [
+      boundSource(english, englishProfileVariant, 10),
+      boundSource(portuguese, portugueseProfileVariant, 11),
+    ],
+    variants: [englishProfileVariant, portugueseProfileVariant],
+    target: { identifier: "settings.voice", label: "Voice" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) =>
+      sha256 === english.reference.sha256
+        ? english.bytes
+        : sha256 === portuguese.reference.sha256
+          ? portuguese.bytes
+          : null,
+  });
+
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: portugueseProfileVariant.targetProfileId,
+  });
+  const selector = report.selectors[0]!;
+
+  assert.equal(selector.status, "variant-incompatible");
+  assert.equal(selector.resolution, undefined);
+  assert.equal(
+    selector.rawVariantScope?.candidates.find(
+      (candidate) => candidate.variant.id === englishProfileVariant.id,
+    )?.reason,
+    "selected-variant-needs-own-proof",
+  );
+});
+
+test("reuses a following-row proof only when its anchor publishes an explicit identifier", async () => {
+  const english = rawTree("profile-en-birth-year", reflowedBirthYearTree);
+  const englishSource = boundSource(english, englishProfileVariant, 10);
+  const compiled = scopedSelectorPlan({
+    sources: [englishSource],
+    variants: [englishProfileVariant, portugueseProfileVariant],
+    target: {
+      relation: {
+        kind: "following-row",
+        anchor: {
+          identifier: "profile.birth-year",
+          // Deliberately translated differently from the source tree: the
+          // stable identifier, not this label, licenses cross-locale reuse.
+          label: "Ano de nascimento",
+        },
+      },
+    },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) => (sha256 === english.reference.sha256 ? english.bytes : null),
+  });
+
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: portugueseProfileVariant.targetProfileId,
+  });
+  const selector = report.selectors[0]!;
+
+  assert.deepEqual(report.findings, []);
+  assert.equal(selector.status, "resolved");
+  assert.equal(selector.resolution?.method, "relation");
+  assert.deepEqual(selector.rawVariantScope?.candidates[0], {
+    variant: englishProfileVariant,
+    sourceCount: 1,
+    compatibility: "stable-relation-equivalent",
+    reason: "same-target-platform-and-viewport",
+  });
+});
+
+test("does not let a cross-locale relation fall back from its identifier to a label", async () => {
+  const english = rawTree("profile-en-relation-label-fallback", {
+    nodes: [
+      {
+        index: 0,
+        type: "Application",
+        rect: { x: 0, y: 0, width: 834, height: 1112 },
+      },
+      {
+        // This preserves the stable identifier in the frozen tree, but it is
+        // not a usable relation anchor. Ordinary resolution could otherwise
+        // use the visible label-only copy below.
+        index: 1,
+        parentIndex: 0,
+        type: "XCUIElementTypeStaticText",
+        identifier: "profile.birth-year",
+        label: "Birth Year",
+        enabled: true,
+        visibleToUser: false,
+        rect: { x: 42, y: 120, width: 750, height: 44 },
+      },
+      {
+        index: 2,
+        parentIndex: 0,
+        type: "XCUIElementTypeStaticText",
+        label: "Birth Year",
+        enabled: true,
+        visibleToUser: true,
+        rect: { x: 42, y: 240, width: 750, height: 44 },
+      },
+      {
+        index: 3,
+        parentIndex: 0,
+        type: "XCUIElementTypeButton",
+        label: "1994",
+        enabled: true,
+        visibleToUser: true,
+        hittable: true,
+        rect: { x: 42, y: 304, width: 750, height: 64 },
+      },
+    ],
+  });
+  const compiled = scopedSelectorPlan({
+    sources: [boundSource(english, englishProfileVariant, 10)],
+    variants: [englishProfileVariant, portugueseProfileVariant],
+    target: {
+      relation: {
+        kind: "following-row",
+        anchor: { identifier: "profile.birth-year", label: "Birth Year" },
+      },
+    },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) => (sha256 === english.reference.sha256 ? english.bytes : null),
+  });
+
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: portugueseProfileVariant.targetProfileId,
+  });
+
+  assert.equal(report.selectors[0]?.status, "variant-incompatible");
+  assert.equal(report.selectors[0]?.resolution, undefined);
+  assert.equal(
+    report.selectors[0]?.rawVariantScope?.candidates.find(
+      (candidate) => candidate.variant.id === englishProfileVariant.id,
+    )?.reason,
+    "stable-selector-not-activatable",
   );
 });
 

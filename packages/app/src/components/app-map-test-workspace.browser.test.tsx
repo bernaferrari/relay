@@ -424,6 +424,46 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   };
   const initial = fixture();
   initial.tests[scenario.id] = scenario;
+  initial.screenVariants = {
+    "checkout-en": {
+      id: "checkout-en",
+      organizationId: "org",
+      projectId: "project",
+      appMapId: "checkout",
+      screenId: "checkout",
+      targetProfile: {
+        id: "ipad-en-US",
+        targetId: "ipad-1",
+        source: "device",
+        platform: "ios",
+        name: "Design iPad · English",
+        capabilities: [],
+        observedAt: 1,
+      },
+      evidenceIds: [],
+      createdAt: 1,
+      updatedAt: 1,
+    },
+    "checkout-pt": {
+      id: "checkout-pt",
+      organizationId: "org",
+      projectId: "project",
+      appMapId: "checkout",
+      screenId: "checkout",
+      targetProfile: {
+        id: "ipad-pt-BR",
+        targetId: "ipad-1",
+        source: "device",
+        platform: "ios",
+        name: "Design iPad · Portuguese",
+        capabilities: [],
+        observedAt: 1,
+      },
+      evidenceIds: [],
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  };
   const rootRecipeId = "app-map:checkout:test:checkout-run:root:r1";
   const plan: AppMapCompiledTest = {
     schemaVersion: 1,
@@ -460,6 +500,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   let finishRun!: () => void;
   const runGate = new Promise<void>((resolve) => (finishRun = resolve));
   let runInput: Record<string, unknown> | undefined;
+  const compileInputs: Record<string, unknown>[] = [];
   serverMock.current = {
     selectedAppMap: () => initial,
     isOffline: () => false,
@@ -481,6 +522,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
     runAction: async (id: string, input: Record<string, unknown>) => {
       calls.push(id);
       if (id === "app-map.test.compile") {
+        compileInputs.push(input);
         return {
           plan,
           preflight: {
@@ -560,6 +602,12 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   );
   await settle();
   expect(root.textContent).toContain("Ready to run");
+  const runtimeProfile = root.querySelector<HTMLSelectElement>("[data-test-runtime-profile]")!;
+  expect(runtimeProfile.value).toBe("");
+  runtimeProfile.value = "ipad-pt-BR";
+  runtimeProfile.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle();
+  expect(runtimeProfile.value).toBe("ipad-pt-BR");
 
   const primary = () =>
     [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
@@ -571,6 +619,9 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   )!;
   offlineCheck.click();
   await settle();
+  expect(compileInputs).toEqual([
+    { appMapId: "checkout", testId: "checkout-run", targetProfileId: "ipad-pt-BR" },
+  ]);
   expect(root.textContent).toContain("Offline check passed");
   expect(root.textContent).toContain("1 of 1 selectors resolve from frozen evidence");
   [...root.querySelectorAll<HTMLButtonElement>("button")]
@@ -589,6 +640,10 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   await settle();
 
   expect(calls).toEqual(["app-map.test.compile", "app-map.test.compile", "app-map.test.run"]);
+  expect(compileInputs).toEqual([
+    { appMapId: "checkout", testId: "checkout-run", targetProfileId: "ipad-pt-BR" },
+    { appMapId: "checkout", testId: "checkout-run", targetProfileId: "ipad-pt-BR" },
+  ]);
   expect(runInput).toEqual({
     appMapId: "checkout",
     testId: "checkout-run",

@@ -324,6 +324,19 @@ export type AppMapTestStartup =
   | { mode: "cold" }
   | { mode: "verified-checkpoint"; screenId: string };
 
+/** The exact target/locale Variant identity frozen beside raw accessibility
+ * evidence. This is deliberately independent of visible copy: profile IDs,
+ * not translated labels, select a runtime evidence scope. */
+export type AppMapCompiledRawAccessibilityVariant = {
+  id: string;
+  /** This is the explicit target/locale source key. Relay never infers a
+   * locale from visible text. */
+  targetProfileId: string;
+  targetId: string;
+  platform: TargetProfile["platform"];
+  viewport?: { width: number; height: number };
+};
+
 /** One immutable raw AX blob with the exact App Map Variant that supplied it.
  *
  * The tree digest alone is intentionally not a selector-equivalence claim: a
@@ -334,15 +347,7 @@ export type AppMapTestStartup =
  * different Variant. */
 export type AppMapCompiledRawAccessibilitySource = {
   screenId: string;
-  variant: {
-    id: string;
-    /** This is the explicit target/locale source key. Relay never infers a
-     * locale from visible text. */
-    targetProfileId: string;
-    targetId: string;
-    platform: TargetProfile["platform"];
-    viewport?: { width: number; height: number };
-  };
+  variant: AppMapCompiledRawAccessibilityVariant;
   origin:
     | {
         kind: "screen-variant";
@@ -372,6 +377,11 @@ export type AppMapCompiledTest = {
    * preflight the exact same geometry that authored this plan; it must never
    * re-read a newer mutable Variant instead. */
   rawAccessibilitySourcesByScreenId?: Record<string, AppMapCompiledRawAccessibilitySource[]>;
+  /** Every known target/locale Variant per logical screen, including variants
+   * that currently lack a raw tree. This is a frozen selection ledger, not a
+   * selector-equivalence claim: offline review uses it to name an exact
+   * recapture or retarget when the chosen runtime profile has no evidence. */
+  rawAccessibilityVariantsByScreenId?: Record<string, AppMapCompiledRawAccessibilityVariant[]>;
   /** Legacy compiled-plan shape. New compiles emit `rawAccessibilitySourcesByScreenId`;
    * readers keep this only so an already-frozen historical plan can request a
    * clear recapture rather than becoming unreadable. */
@@ -435,6 +445,8 @@ export type OfflineTestPreflightFinding = {
     | "selector-ambiguous"
     | "selector-needs-raw-tree"
     | "raw-evidence-recapture-required"
+    | "raw-evidence-variant-selection-required"
+    | "raw-evidence-variant-recapture-required"
     | "point-only-selector"
     | "source-observation-missing"
     | "surface-recapture-required";
@@ -460,7 +472,7 @@ export type OfflineTestPreflightEvidenceSource = {
   /** Present for source-aware compiled plans. These facts identify the exact
    * target/locale Variant that supplied the blob; they are diagnostic facts,
    * never an implicit selector-equivalence rule. */
-  variant?: AppMapCompiledRawAccessibilitySource["variant"];
+  variant?: AppMapCompiledRawAccessibilityVariant;
   origin?: AppMapCompiledRawAccessibilitySource["origin"];
 };
 
@@ -496,6 +508,38 @@ export type OfflineTestPreflightRawCandidate = {
   };
 };
 
+/** How a frozen raw source relates to an explicitly selected runtime Variant.
+ * A source may cross a locale/profile boundary only when a stable identifier
+ * or a stable structural relation proves that reuse; translated labels and
+ * text never imply this equivalence. */
+export type OfflineTestPreflightRawVariantCandidate = {
+  variant: AppMapCompiledRawAccessibilityVariant;
+  sourceCount: number;
+  compatibility:
+    | "selected-variant"
+    | "stable-identifier-equivalent"
+    | "stable-relation-equivalent"
+    | "incompatible";
+  reason:
+    | "selected-runtime-variant"
+    | "same-target-platform-and-viewport"
+    | "locale-sensitive-selector"
+    | "target-platform-or-viewport-mismatch"
+    | "stable-selector-not-present"
+    | "stable-selector-not-activatable"
+    | "selected-variant-needs-own-proof"
+    | "no-raw-source";
+};
+
+/** The frozen runtime profile scope applied to one offline selector. It is
+ * intentionally visible in every scoped decision so humans, agents, and MCP
+ * clients can distinguish a missing selected capture from a bad selector. */
+export type OfflineTestPreflightRawVariantScope = {
+  selectedTargetProfileId?: string;
+  selectedVariant?: AppMapCompiledRawAccessibilityVariant;
+  candidates: OfflineTestPreflightRawVariantCandidate[];
+};
+
 /** A read-only selector decision from the frozen Test plan. Unlike a runtime
  * target resolution, this never grants permission to press the shown bounds;
  * it exists so a person or agent can see exactly what offline evidence did or
@@ -514,6 +558,8 @@ export type OfflineTestPreflightSelector = {
     | "ambiguous"
     | "needs-raw-tree"
     | "raw-evidence-unavailable"
+    | "variant-selection-required"
+    | "variant-incompatible"
     | "excluded-dynamic-content"
     | "point-only"
     | "source-observation-missing";
@@ -530,6 +576,10 @@ export type OfflineTestPreflightSelector = {
      * not a later observation of the same screen. */
     sources?: OfflineTestPreflightEvidenceSource[];
   };
+  /** Present when a compile caller selected a runtime profile, or when raw
+   * sources span more than one profile and preflight needs that choice before
+   * it can make a locale-sensitive selector claim. */
+  rawVariantScope?: OfflineTestPreflightRawVariantScope;
   /** Bounded semantic candidates are review context, never an implicit
    * selector rewrite. */
   candidates?: Array<

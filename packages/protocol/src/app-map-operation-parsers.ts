@@ -773,6 +773,9 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
       if (input.entryCheckpointScreenId !== undefined) {
         string(input.entryCheckpointScreenId, "Test compilation entryCheckpointScreenId");
       }
+      if (input.targetProfileId !== undefined) {
+        string(input.targetProfileId, "Test compilation targetProfileId");
+      }
     },
   );
 

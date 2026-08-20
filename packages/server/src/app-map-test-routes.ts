@@ -84,17 +84,23 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     const test = appMap.tests[testCompile.testId!];
     if (!test) throw new HttpError(404, `Test ${testCompile.testId} not found`);
     try {
-      const entryCheckpointScreenId = new URL(
-        request.url ?? pathname,
-        "http://relay.local",
-      ).searchParams.get("entryCheckpointScreenId");
+      const search = new URL(request.url ?? pathname, "http://relay.local").searchParams;
+      const entryCheckpointScreenId = search.get("entryCheckpointScreenId");
+      const targetProfileId = search.get("targetProfileId")?.trim() || undefined;
       const plan = compileAppMapTest(
         appMap,
         test,
         entryCheckpointScreenId ? { entryCheckpointScreenId } : {},
       ).plan;
       const evidence = await loadFrozenRawAccessibilityEvidence(plan);
-      json(response, 200, { plan, preflight: preflightCompiledAppMapTestOffline(plan, evidence) });
+      json(response, 200, {
+        plan,
+        preflight: preflightCompiledAppMapTestOffline(
+          plan,
+          evidence,
+          targetProfileId ? { targetProfileId } : {},
+        ),
+      });
     } catch (error) {
       if (error instanceof AppMapTestCompileError) {
         throw new HttpError(409, error.message, {

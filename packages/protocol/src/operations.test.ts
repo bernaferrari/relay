@@ -346,6 +346,7 @@ test("graph Test compilation can preview a verified checkpoint without changing 
     appMapId: "map-1",
     testId: "checkout",
     entryCheckpointScreenId: "settings",
+    targetProfileId: "ipad-pt-BR",
   };
   assert.deepEqual(operationDefinition("app-map.test.compile").input.parse(input), input);
   assert.throws(
@@ -355,6 +356,14 @@ test("graph Test compilation can preview a verified checkpoint without changing 
         entryCheckpointScreenId: 7,
       }),
     /entryCheckpointScreenId/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.compile").input.parse({
+        ...input,
+        targetProfileId: 7,
+      }),
+    /targetProfileId/u,
   );
 });
 

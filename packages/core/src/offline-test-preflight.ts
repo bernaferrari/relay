@@ -1,4 +1,5 @@
 import type {
+  AppMapCompiledRawAccessibilityVariant,
   AppMapCompiledTest,
   NormalizedSemanticNode,
   OfflineTestPreflightCursor,
@@ -8,7 +9,6 @@ import type {
   OfflineTestPreflightReturn,
   OfflineTestPreflightSelector,
   RecipeStep,
-  StepTarget,
 } from "@relay/protocol";
 import { createHash } from "node:crypto";
 import { preflightSemanticActivation } from "./device-target-resolution.js";
@@ -23,12 +23,34 @@ import {
   type OfflineTestPreflightRawEvidenceStatus,
   type OfflineTestPreflightRawSource,
 } from "./offline-test-preflight-raw.js";
+import {
+  rawVariantLabel,
+  scopeRawSourcesToRuntimeVariant,
+} from "./offline-test-preflight-variant-scope.js";
+import {
+  boundedCandidates,
+  excludesDynamicContent,
+  isDynamicSharedConversations,
+  matchesTarget,
+  observationsFromNavigation,
+  revealPositions,
+  targetDescription,
+  targetSummary,
+  uniqueReferences,
+} from "./offline-test-preflight-selector-utils.js";
 
 export type { OfflineTestPreflightFinding, OfflineTestPreflightReport };
 export type {
   OfflineTestPreflightEvidence,
   OfflineTestPreflightRawSource,
 } from "./offline-test-preflight-raw.js";
+
+/** Read-only runtime scope for an offline preflight. It is never inferred from
+ * translated copy: callers select the same target profile that a later run
+ * would use, and the frozen plan maps that profile to each screen Variant. */
+export type OfflineTestPreflightOptions = {
+  targetProfileId?: string;
+};
 
 function stableValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stableValue);
@@ -46,125 +68,6 @@ function digest(value: unknown): string {
     .digest("hex");
 }
 
-function normalize(value: string | undefined): string | undefined {
-  const normalized = value?.trim().toLowerCase();
-  return normalized || undefined;
-}
-
-function targetDescription(target: StepTarget): string {
-  if (target.relation?.kind === "following-row") {
-    return `the row following ${targetDescription(target.relation.anchor)}`;
-  }
-  return (
-    target.identifier ??
-    target.ref ??
-    target.label ??
-    target.text ??
-    (target.point ? "point" : "target")
-  );
-}
-
-function candidate(node: NormalizedSemanticNode) {
-  return {
-    role: node.role,
-    ...(node.identifier ? { identifier: node.identifier } : {}),
-    ...(node.label ? { label: node.label } : {}),
-    ...(node.value ? { value: node.value } : {}),
-  };
-}
-
-function compareCandidates(left: NormalizedSemanticNode, right: NormalizedSemanticNode): number {
-  const key = (node: NormalizedSemanticNode) =>
-    [node.role, node.identifier ?? "", node.label ?? "", node.value ?? ""].join("\u0000");
-  const leftKey = key(left);
-  const rightKey = key(right);
-  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
-}
-
-function boundedCandidates(nodes: readonly NormalizedSemanticNode[]) {
-  return [...nodes].sort(compareCandidates).slice(0, 5).map(candidate);
-}
-
-function uniqueReferences(references: readonly string[]): string[] {
-  return [...new Set(references.filter((reference) => reference.trim()))].sort((left, right) =>
-    left < right ? -1 : left > right ? 1 : 0,
-  );
-}
-
-function targetSummary(target: StepTarget): OfflineTestPreflightSelector["target"] {
-  return {
-    ...(target.identifier ? { identifier: target.identifier } : {}),
-    ...(target.ref ? { ref: target.ref } : {}),
-    ...(target.label ? { label: target.label } : {}),
-    ...(target.role ? { role: target.role } : {}),
-    ...(target.text ? { text: target.text } : {}),
-    ...(target.relation ? { relation: structuredClone(target.relation) } : {}),
-    ...(target.point ? { hasPointFallback: true } : {}),
-  };
-}
-
-function revealPositions(
-  step: Extract<RecipeStep, { kind: "reveal" }>,
-): NonNullable<OfflineTestPreflightSelector["revealPositions"]> | undefined {
-  const positions = (step.navigation ?? [])
-    .map((navigation) => ({
-      surfaceId: navigation.surfaceId,
-      captureId: navigation.captureId,
-      targetOrder: navigation.targetOrder,
-      targetDocumentY: navigation.targetDocumentY,
-      direction: step.direction ?? "auto",
-    }))
-    .sort(
-      (left, right) =>
-        left.targetDocumentY - right.targetDocumentY ||
-        (left.surfaceId < right.surfaceId ? -1 : left.surfaceId > right.surfaceId ? 1 : 0) ||
-        (left.captureId < right.captureId ? -1 : left.captureId > right.captureId ? 1 : 0),
-    );
-  return positions.length ? positions : undefined;
-}
-
-function observationsFromNavigation(
-  navigation: Extract<RecipeStep, { kind: "reveal" }>["navigation"],
-): Array<{ nodes: NormalizedSemanticNode[] }> {
-  return (navigation ?? []).map((plan) => ({
-    nodes: plan.anchors.map((anchor) => ({
-      role: anchor.role ?? "unknown",
-      ...(anchor.target.identifier ? { identifier: anchor.target.identifier } : {}),
-      ...((anchor.label ?? anchor.target.label)
-        ? { label: anchor.label ?? anchor.target.label }
-        : {}),
-      ...(anchor.value ? { value: anchor.value } : {}),
-      ...(anchor.enabled !== undefined ? { enabled: anchor.enabled } : {}),
-    })),
-  }));
-}
-
-function matchesTarget(nodes: readonly NormalizedSemanticNode[], target: StepTarget) {
-  const semantic = target.relation?.anchor ?? target;
-  const role = normalize(semantic.role);
-  const candidates = nodes.filter((node) => !role || normalize(node.role) === role);
-  // Runtime resolution intentionally tries durable identifiers first, then
-  // visible copy. Requiring every authored hint to match simultaneously makes
-  // an identifier refresh look like a broken control even when its reviewed
-  // label fallback is present.
-  const strategies: Array<(node: NormalizedSemanticNode) => boolean> = [];
-  const identifier = normalize(semantic.identifier);
-  const label = normalize(semantic.label);
-  const text = normalize(semantic.text);
-  if (identifier) strategies.push((node) => normalize(node.identifier) === identifier);
-  if (label) strategies.push((node) => normalize(node.label) === label);
-  if (text) {
-    strategies.push((node) =>
-      [node.label, node.value, node.identifier].some((value) => normalize(value)?.includes(text)),
-    );
-  }
-  for (const strategy of strategies) {
-    const matches = candidates.filter(strategy);
-    if (matches.length) return matches;
-  }
-  return [];
-}
-
 type SelectorAssessment = {
   selector: OfflineTestPreflightSelector;
   findings: OfflineTestPreflightFinding[];
@@ -174,24 +77,9 @@ type SelectorAssessment = {
   rawEvidenceRecapture?: {
     status: OfflineTestPreflightRawEvidenceStatus;
     sources: OfflineTestPreflightEvidenceSource[];
+    variantScope?: OfflineTestPreflightSelector["rawVariantScope"];
   };
 };
-
-function isDynamicSharedConversations(title: string | undefined): boolean {
-  return title?.trim().toLocaleLowerCase() === "shared conversations";
-}
-
-/** Shared Conversations is user-generated and deliberately not a visual or
- * selector baseline. This only excludes passive assertions on its changing
- * contents; entry/exit controls still go through normal frozen-tree proof. */
-function excludesDynamicContent(
-  title: string | undefined,
-  step: Extract<RecipeStep, { kind: "tap" | "reveal" | "expect" | "wait-for" }>,
-): boolean {
-  return (
-    isDynamicSharedConversations(title) && (step.kind === "expect" || step.kind === "wait-for")
-  );
-}
 
 function selectorAssessment(input: {
   recipeId: string;
@@ -203,6 +91,8 @@ function selectorAssessment(input: {
   rawEvidenceReferences?: readonly string[];
   rawEvidenceStatus?: OfflineTestPreflightRawEvidenceStatus;
   rawEvidenceDeclared?: boolean;
+  rawVariants?: readonly AppMapCompiledRawAccessibilityVariant[];
+  selectedTargetProfileId?: string;
 }): SelectorAssessment {
   const {
     recipeId,
@@ -214,6 +104,8 @@ function selectorAssessment(input: {
     rawEvidenceReferences,
     rawEvidenceStatus,
     rawEvidenceDeclared = false,
+    rawVariants,
+    selectedTargetProfileId,
   } = input;
   const target = step.target;
   const description = targetDescription(target);
@@ -293,7 +185,13 @@ function selectorAssessment(input: {
       Boolean(source.nodes?.length),
   );
   if (!rawEvidenceStatus && availableRawSources.length) {
-    const attempts = availableRawSources.map((source) => ({
+    const variantScope = scopeRawSourcesToRuntimeVariant({
+      sources: availableRawSources,
+      target,
+      ...(rawVariants ? { variants: rawVariants } : {}),
+      ...(selectedTargetProfileId ? { selectedTargetProfileId } : {}),
+    });
+    const allAttempts = availableRawSources.map((source) => ({
       source,
       attempt: preflightSemanticActivation([...source.nodes], target),
     }));
@@ -301,7 +199,7 @@ function selectorAssessment(input: {
       OfflineTestPreflightRawSource,
       { bounds: { x: number; y: number; width: number; height: number } }
     >(
-      attempts.flatMap(({ source, attempt }) =>
+      allAttempts.flatMap(({ source, attempt }) =>
         attempt.status === "proven" ? [[source, attempt.resolution] as const] : [],
       ),
     );
@@ -310,6 +208,91 @@ function selectorAssessment(input: {
       target,
       resolutions,
     });
+    const variantScopeFields = variantScope.scope
+      ? { rawVariantScope: structuredClone(variantScope.scope) }
+      : {};
+    const sourceIsSelectedVariant = (source: OfflineTestPreflightRawSource): boolean => {
+      const selected = variantScope.scope?.selectedVariant;
+      const sourceVariant = source.source.variant;
+      return Boolean(
+        selected &&
+        sourceVariant &&
+        selected.id === sourceVariant.id &&
+        selected.targetProfileId === sourceVariant.targetProfileId &&
+        selected.targetId === sourceVariant.targetId &&
+        selected.platform === sourceVariant.platform,
+      );
+    };
+    const usesStableCrossVariantMethod = (
+      source: OfflineTestPreflightRawSource,
+      attempt: (typeof allAttempts)[number]["attempt"],
+    ): boolean => {
+      if (variantScope.state !== "selected" || sourceIsSelectedVariant(source)) return true;
+      if (attempt.status !== "proven") return true;
+      return attempt.resolution.method === (target.relation ? "relation" : "identifier");
+    };
+    const canUseScopedAttempt = (
+      source: OfflineTestPreflightRawSource,
+      attempt: (typeof allAttempts)[number]["attempt"],
+    ): boolean =>
+      variantScope.compatibleSources.includes(source) &&
+      usesStableCrossVariantMethod(source, attempt);
+    const candidateLabels = (variantScope.scope?.candidates ?? [])
+      .map((candidate) => rawVariantLabel(candidate.variant))
+      .join(", ");
+    if (variantScope.state === "selection-required") {
+      const detail = `Raw evidence spans multiple target/locale variants (${candidateLabels || "unknown variants"}). Select a runtime target profile before Relay can prove this selector; it will not infer locale from visible text.`;
+      return {
+        selector: {
+          ...selectorBase,
+          status: "variant-selection-required",
+          evidence: rawEvidence,
+          ...variantScopeFields,
+          ...(rawLedger.candidates.length ? { rawCandidates: rawLedger.candidates } : {}),
+          ...(rawLedger.count ? { rawCandidateCount: rawLedger.count } : {}),
+          detail,
+        },
+        findings: [
+          {
+            severity: "blocker",
+            code: "raw-evidence-variant-selection-required",
+            recipeId,
+            ...(step.id ? { recipeStepId: step.id } : {}),
+            ...(screenId ? { screenId } : {}),
+            ...(rawSourcesMetadata.length ? { evidence: rawSourcesMetadata } : {}),
+            message: `${description} cannot be proven until a runtime target profile is selected; frozen candidates are ${candidateLabels || "unidentified"}.`,
+          },
+        ],
+      };
+    }
+    if (variantScope.state === "selection-missing") {
+      const detail = `The selected runtime target profile ${selectedTargetProfileId} has no frozen Variant for this screen. Retarget preflight to ${candidateLabels || "a captured variant"} or capture the selected profile.`;
+      return {
+        selector: {
+          ...selectorBase,
+          status: "variant-incompatible",
+          evidence: rawEvidence,
+          ...variantScopeFields,
+          ...(rawLedger.candidates.length ? { rawCandidates: rawLedger.candidates } : {}),
+          ...(rawLedger.count ? { rawCandidateCount: rawLedger.count } : {}),
+          detail,
+        },
+        findings: [
+          {
+            severity: "blocker",
+            code: "raw-evidence-variant-recapture-required",
+            recipeId,
+            ...(step.id ? { recipeStepId: step.id } : {}),
+            ...(screenId ? { screenId } : {}),
+            ...(rawSourcesMetadata.length ? { evidence: rawSourcesMetadata } : {}),
+            message: `${description} has no frozen Variant for selected target profile ${selectedTargetProfileId}; retarget preflight or capture that profile before relying on offline raw evidence.`,
+          },
+        ],
+      };
+    }
+    const attempts = allAttempts.filter(({ source, attempt }) =>
+      canUseScopedAttempt(source, attempt),
+    );
     const proven = attempts.find((attempt) => attempt.attempt.status === "proven");
     if (proven?.attempt.status === "proven") {
       return {
@@ -317,6 +300,7 @@ function selectorAssessment(input: {
           ...selectorBase,
           status: "resolved",
           evidence: rawEvidence,
+          ...variantScopeFields,
           ...(rawLedger.candidates.length ? { rawCandidates: rawLedger.candidates } : {}),
           ...(rawLedger.count ? { rawCandidateCount: rawLedger.count } : {}),
           resolution: {
@@ -329,6 +313,47 @@ function selectorAssessment(input: {
           },
         },
         findings: [],
+      };
+    }
+    const incompatibleProven = allAttempts.find(
+      ({ source, attempt }) => !canUseScopedAttempt(source, attempt) && attempt.status === "proven",
+    );
+    if (
+      variantScope.state === "selected" &&
+      (incompatibleProven !== undefined || attempts.length === 0)
+    ) {
+      const selected = variantScope.scope?.selectedVariant;
+      const selectedLabel = selected
+        ? rawVariantLabel(selected)
+        : (selectedTargetProfileId ?? "selected profile");
+      const incompatible = (variantScope.scope?.candidates ?? [])
+        .filter((candidate) => candidate.compatibility === "incompatible")
+        .map((candidate) => `${rawVariantLabel(candidate.variant)}: ${candidate.reason}`)
+        .join(", ");
+      const detail = incompatibleProven
+        ? `Only an incompatible raw Variant proves this selector. ${selectedLabel} remains the selected runtime Variant; ${incompatible || "the candidate crosses an unproven variant boundary"}.`
+        : `No compatible raw tree is available for selected runtime Variant ${selectedLabel}; ${incompatible || "capture or retarget is required"}.`;
+      return {
+        selector: {
+          ...selectorBase,
+          status: "variant-incompatible",
+          evidence: rawEvidence,
+          ...variantScopeFields,
+          ...(rawLedger.candidates.length ? { rawCandidates: rawLedger.candidates } : {}),
+          ...(rawLedger.count ? { rawCandidateCount: rawLedger.count } : {}),
+          detail,
+        },
+        findings: [
+          {
+            severity: "blocker",
+            code: "raw-evidence-variant-recapture-required",
+            recipeId,
+            ...(step.id ? { recipeStepId: step.id } : {}),
+            ...(screenId ? { screenId } : {}),
+            ...(rawSourcesMetadata.length ? { evidence: rawSourcesMetadata } : {}),
+            message: `${description} is not proven for selected runtime Variant ${selectedLabel}; recapture that Variant or retarget this selector to an explicit stable identifier/relation.`,
+          },
+        ],
       };
     }
     const blockedAttempts = attempts
@@ -345,6 +370,7 @@ function selectorAssessment(input: {
         ...selectorBase,
         status: ambiguous ? "ambiguous" : "absent",
         evidence: rawEvidence,
+        ...variantScopeFields,
         ...(rawLedger.candidates.length ? { rawCandidates: rawLedger.candidates } : {}),
         ...(rawLedger.count ? { rawCandidateCount: rawLedger.count } : {}),
         detail,
@@ -379,23 +405,87 @@ function selectorAssessment(input: {
         : "missing"
       : undefined);
   if (unavailableRawEvidence) {
+    const unavailableVariantScope = scopeRawSourcesToRuntimeVariant({
+      sources: rawSources,
+      target,
+      ...(rawVariants ? { variants: rawVariants } : {}),
+      ...(selectedTargetProfileId ? { selectedTargetProfileId } : {}),
+    });
+    const unavailableVariantScopeFields = unavailableVariantScope.scope
+      ? { rawVariantScope: structuredClone(unavailableVariantScope.scope) }
+      : {};
+    if (unavailableVariantScope.state === "selection-required") {
+      const candidates = (unavailableVariantScope.scope?.candidates ?? [])
+        .map((candidate) => rawVariantLabel(candidate.variant))
+        .join(", ");
+      return {
+        selector: {
+          ...selectorBase,
+          status: "variant-selection-required",
+          evidence: rawEvidence,
+          ...unavailableVariantScopeFields,
+          detail: `No raw accessibility tree can be scoped until a runtime target profile is selected from ${candidates || "the frozen Variants"}. Relay will not infer locale from visible text.`,
+        },
+        findings: [
+          {
+            severity: "blocker",
+            code: "raw-evidence-variant-selection-required",
+            recipeId,
+            ...(step.id ? { recipeStepId: step.id } : {}),
+            ...(screenId ? { screenId } : {}),
+            ...(rawSourcesMetadata.length ? { evidence: rawSourcesMetadata } : {}),
+            message: `${description} cannot be proven until a runtime target profile is selected; frozen candidates are ${candidates || "unidentified"}.`,
+          },
+        ],
+      };
+    }
+    if (unavailableVariantScope.state === "selection-missing") {
+      const candidates = (unavailableVariantScope.scope?.candidates ?? [])
+        .map((candidate) => rawVariantLabel(candidate.variant))
+        .join(", ");
+      return {
+        selector: {
+          ...selectorBase,
+          status: "variant-incompatible",
+          evidence: rawEvidence,
+          ...unavailableVariantScopeFields,
+          detail: `The selected runtime target profile ${selectedTargetProfileId} has no frozen Variant for this screen. Retarget preflight to ${candidates || "a captured variant"} or capture the selected profile.`,
+        },
+        findings: [
+          {
+            severity: "blocker",
+            code: "raw-evidence-variant-recapture-required",
+            recipeId,
+            ...(step.id ? { recipeStepId: step.id } : {}),
+            ...(screenId ? { screenId } : {}),
+            ...(rawSourcesMetadata.length ? { evidence: rawSourcesMetadata } : {}),
+            message: `${description} has no frozen Variant for selected target profile ${selectedTargetProfileId}; retarget preflight or capture that profile before relying on offline raw evidence.`,
+          },
+        ],
+      };
+    }
+    const selectedVariant = unavailableVariantScope.scope?.selectedVariant;
     const detail =
       unavailableRawEvidence === "missing"
-        ? "No immutable raw accessibility tree is available for this selector."
+        ? `No immutable raw accessibility tree is available for this selector${selectedVariant ? ` on selected runtime Variant ${rawVariantLabel(selectedVariant)}` : ""}.`
         : unavailableRawEvidence === "unreadable"
-          ? "The immutable raw accessibility tree failed its byte, hash, or JSON integrity check."
-          : "The immutable raw accessibility tree is not bound to this Variant's current observation.";
+          ? `The immutable raw accessibility tree failed its byte, hash, or JSON integrity check${selectedVariant ? ` for selected runtime Variant ${rawVariantLabel(selectedVariant)}` : ""}.`
+          : `The immutable raw accessibility tree is not bound to this Variant's current observation${selectedVariant ? ` for selected runtime Variant ${rawVariantLabel(selectedVariant)}` : ""}.`;
     return {
       selector: {
         ...selectorBase,
         status: "raw-evidence-unavailable",
         evidence: rawEvidence,
+        ...unavailableVariantScopeFields,
         detail,
       },
       findings: [],
       rawEvidenceRecapture: {
         status: unavailableRawEvidence,
         sources: rawSourcesMetadata,
+        ...(unavailableVariantScope.scope
+          ? { variantScope: structuredClone(unavailableVariantScope.scope) }
+          : {}),
       },
     };
   }
@@ -543,6 +633,7 @@ function selectorAssessment(input: {
 export function preflightCompiledAppMapTestOffline(
   plan: AppMapCompiledTest,
   evidence: OfflineTestPreflightEvidence = {},
+  options: OfflineTestPreflightOptions = {},
 ): OfflineTestPreflightReport {
   const findings: OfflineTestPreflightFinding[] = [];
   const selectors: OfflineTestPreflightSelector[] = [];
@@ -557,16 +648,21 @@ export function preflightCompiledAppMapTestOffline(
     status: OfflineTestPreflightRawEvidenceStatus;
     severity: "warning" | "blocker";
     sources: OfflineTestPreflightEvidenceSource[];
+    variantScope?: OfflineTestPreflightSelector["rawVariantScope"];
     /** A selector gives the most useful repair location; an expect-screen
      * still establishes the blocker when no selector follows it. */
     selector?: boolean;
   }) => {
+    const selectedVariant = input.variantScope?.selectedVariant;
+    const selectedSuffix = selectedVariant
+      ? ` for selected runtime Variant ${rawVariantLabel(selectedVariant)}`
+      : "";
     const message =
       input.status === "missing"
-        ? `${input.screenTitle} has no immutable raw accessibility tree; recapture this screen before relying on offline geometry.`
+        ? `${input.screenTitle} has no immutable raw accessibility tree${selectedSuffix}; recapture this screen before relying on offline geometry.`
         : input.status === "unreadable"
-          ? `${input.screenTitle}'s frozen raw accessibility tree is unavailable or corrupt; recapture this screen before relying on offline geometry.`
-          : `${input.screenTitle}'s frozen raw accessibility tree is not bound to its current observation; recapture this screen before relying on offline geometry.`;
+          ? `${input.screenTitle}'s frozen raw accessibility tree is unavailable or corrupt${selectedSuffix}; recapture this screen before relying on offline geometry.`
+          : `${input.screenTitle}'s frozen raw accessibility tree is not bound to its current observation${selectedSuffix}; recapture this screen before relying on offline geometry.`;
     const finding: OfflineTestPreflightFinding = {
       severity: input.severity,
       code: "raw-evidence-recapture-required",
@@ -692,6 +788,10 @@ export function preflightCompiledAppMapTestOffline(
           ...(sourceScreenTitle ? { screenTitle: sourceScreenTitle } : {}),
           observations: sourceObservations,
           ...(sourceRawSources.length ? { rawSources: sourceRawSources } : {}),
+          ...(sourceScreenId && plan.rawAccessibilityVariantsByScreenId?.[sourceScreenId]
+            ? { rawVariants: plan.rawAccessibilityVariantsByScreenId[sourceScreenId] }
+            : {}),
+          ...(options.targetProfileId ? { selectedTargetProfileId: options.targetProfileId } : {}),
           ...(sourceScreenId && evidence.rawEvidenceReferencesByScreenId?.[sourceScreenId]
             ? { rawEvidenceReferences: evidence.rawEvidenceReferencesByScreenId[sourceScreenId] }
             : {}),
@@ -717,6 +817,9 @@ export function preflightCompiledAppMapTestOffline(
             status: assessment.rawEvidenceRecapture.status,
             severity: "blocker",
             sources: assessment.rawEvidenceRecapture.sources,
+            ...(assessment.rawEvidenceRecapture.variantScope
+              ? { variantScope: assessment.rawEvidenceRecapture.variantScope }
+              : {}),
             selector: true,
           });
         }

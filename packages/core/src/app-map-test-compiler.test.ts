@@ -540,6 +540,23 @@ test("compiled graph Tests retain a conservative logical-surface capture policy"
     ],
     home: [],
   });
+  assert.deepEqual(compiled.plan.rawAccessibilityVariantsByScreenId, {
+    cart: [
+      {
+        id: "cart-en",
+        targetProfileId: "iphone-en",
+        targetId: "iphone-1",
+        platform: "ios",
+      },
+      {
+        id: "cart-pt",
+        targetProfileId: "iphone-pt",
+        targetId: "iphone-1",
+        platform: "ios",
+      },
+    ],
+    home: [],
+  });
   current.screenVariants["cart-en"]!.rawAccessibilityTree!.bytes = 999;
   const frozenCartSource = compiled.plan.rawAccessibilitySourcesByScreenId?.cart?.[0];
   assert.equal(frozenCartSource?.tree?.bytes, 42);

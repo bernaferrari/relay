@@ -429,6 +429,9 @@ export type AppMapOperationMap = {
       /** Read-only preview of the suffix that would start from this exact
        * checkpoint. Its resulting plan still owns the startup contract. */
       entryCheckpointScreenId?: string;
+      /** Read-only runtime evidence scope. The target profile is selected by
+       * immutable profile ID, never inferred from translated visible copy. */
+      targetProfileId?: string;
     };
     output: { plan: AppMapCompiledTest; preflight: OfflineTestPreflightReport };
   };

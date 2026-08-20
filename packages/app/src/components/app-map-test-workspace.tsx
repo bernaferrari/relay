@@ -205,6 +205,10 @@ export function AppMapTestWorkspace(props: {
       queueMicrotask(() => document.getElementById("app-map-test-switcher")?.focus());
       return;
     }
+    if (testRun.requiresTargetProfileSelection() || !testRun.targetProfileMatchesSelectedDevice()) {
+      queueMicrotask(() => document.getElementById("test-runtime-profile")?.focus());
+      return;
+    }
     if (testRun.preflightBlockers()) {
       setPreflightOpen(true);
       queueMicrotask(() => document.getElementById("test-offline-preflight")?.focus());
@@ -218,6 +222,9 @@ export function AppMapTestWorkspace(props: {
     if (saveState() === "error") return retryAvailable() ? "Retry save" : "Review save error";
     if (blockers().length)
       return `Fix ${blockers().length} ${blockers().length === 1 ? "issue" : "issues"}`;
+    if (testRun.requiresTargetProfileSelection() || !testRun.targetProfileMatchesSelectedDevice()) {
+      return "Choose target variant";
+    }
     if (testRun.preflightBlockers()) return "Review offline checks";
     if (!selectedDevice()) return "Choose target";
     return undefined;
@@ -383,6 +390,9 @@ export function AppMapTestWorkspace(props: {
             startup={testRun.startup()}
             checkpointOptions={checkpointOptions()}
             onStartupChange={testRun.setStartup}
+            targetProfileOptions={testRun.targetProfileOptions()}
+            targetProfileId={testRun.targetProfileId()}
+            onTargetProfileChange={testRun.setTargetProfile}
             onRun={() => void testRun.run()}
             onCancel={() => void testRun.cancel()}
             onOpenResult={() => {

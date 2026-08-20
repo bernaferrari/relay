@@ -10,6 +10,12 @@ import type { DeviceInfo, JobInfo } from "./api-types";
 import { isActiveTestRun, type TestRunLaunchState } from "../components/app-map-test-run-control";
 import { fullSurfaceScreenIds } from "./app-map-test-editor-model";
 import { coldAppMapTestStartup, sameAppMapTestStartup } from "./app-map-test-startup-policy";
+import {
+  appMapTestRuntimeProfileLabel,
+  appMapTestRuntimeProfileMatchesDevice,
+  appMapTestRuntimeProfiles,
+  suggestedAppMapTestRuntimeProfileId,
+} from "./app-map-test-runtime-profile";
 
 type SaveState = "saved" | "saving" | "error";
 
@@ -48,6 +54,7 @@ export function createAppMapTestRun(options: {
     appMapId: string;
     testId: string;
     entryCheckpointScreenId?: string;
+    targetProfileId?: string;
   }) => Promise<{
     plan: AppMapCompiledTest;
     preflight: OfflineTestPreflightReport;
@@ -61,12 +68,43 @@ export function createAppMapTestRun(options: {
   const [mismatched, setMismatched] = createSignal(false);
   const [freshEvidence, setFreshEvidence] = createSignal(false);
   const [startup, setStartupState] = createSignal<AppMapTestStartup>(coldAppMapTestStartup);
+  const [targetProfileId, setTargetProfileIdState] = createSignal<string>();
   const [preflight, setPreflight] = createSignal<OfflineTestPreflightReport>();
   const [preflightBusy, setPreflightBusy] = createSignal(false);
   const fullSurfaceIds = createMemo(() => {
     const test = options.draft();
     return test ? fullSurfaceScreenIds(test) : [];
   });
+  const targetProfiles = createMemo(() => appMapTestRuntimeProfiles(options.appMap()));
+  /** A single saved target/profile needs no extra interaction; multiple locale
+   * profiles deliberately remain unselected until a person or agent chooses. */
+  const selectedTargetProfileId = createMemo(() => {
+    const selected = targetProfileId();
+    return targetProfiles().some((profile) => profile.id === selected)
+      ? selected
+      : suggestedAppMapTestRuntimeProfileId(targetProfiles(), options.selectedDevice());
+  });
+  const selectedTargetProfile = createMemo(() =>
+    targetProfiles().find((profile) => profile.id === selectedTargetProfileId()),
+  );
+  const targetProfileOptions = createMemo(() =>
+    targetProfiles().map((profile) => ({
+      id: profile.id,
+      label: appMapTestRuntimeProfileLabel(profile),
+    })),
+  );
+  const targetProfileMatchesSelectedDevice = createMemo(() => {
+    const profile = selectedTargetProfile();
+    const device = options.selectedDevice();
+    return !profile || !device || appMapTestRuntimeProfileMatchesDevice(profile, device);
+  });
+  const requiresTargetProfileSelection = createMemo(() =>
+    Boolean(
+      preflight()?.findings.some(
+        (finding) => finding.code === "raw-evidence-variant-selection-required",
+      ),
+    ),
+  );
   const job = createMemo(() => {
     const id = jobId();
     return id ? options.jobs().find((candidate) => candidate.id === id) : undefined;
@@ -91,6 +129,20 @@ export function createAppMapTestRun(options: {
     setError("");
   }
 
+  /** Selecting a profile only scopes the next offline proof. It never edits a
+   * Test, changes device state, or chooses a locale from rendered copy. */
+  function setTargetProfile(next: string | undefined): void {
+    const profileId = next?.trim() || undefined;
+    if (profileId !== undefined && !targetProfiles().some((profile) => profile.id === profileId)) {
+      return;
+    }
+    if (targetProfileId() === profileId) return;
+    setTargetProfileIdState(profileId);
+    setPlan();
+    setPreflight();
+    setError("");
+  }
+
   const blockedReason = createMemo(() => {
     if (options.offline()) return "Reconnect Relay before running this Test.";
     if (options.saveState() === "saving") return "Wait for the latest changes to finish saving.";
@@ -106,6 +158,9 @@ export function createAppMapTestRun(options: {
     const device = options.selectedDevice();
     if (!device) return "Choose a target before running this Test.";
     if (!device.platform) return "Refresh the selected target before running this Test.";
+    if (!targetProfileMatchesSelectedDevice()) {
+      return "Choose a runtime evidence profile for the selected target before running this Test.";
+    }
     return undefined;
   });
 
@@ -185,6 +240,7 @@ export function createAppMapTestRun(options: {
         ...(chosenStartup.mode === "verified-checkpoint"
           ? { entryCheckpointScreenId: chosenStartup.screenId }
           : {}),
+        ...(selectedTargetProfileId() ? { targetProfileId: selectedTargetProfileId() } : {}),
       });
       if (!sameAppMapTestStartup(compiled.plan.startup, chosenStartup)) {
         setError("Relay compiled a different startup policy. It was not run.");
@@ -225,6 +281,11 @@ export function createAppMapTestRun(options: {
     freshEvidenceAvailable: () => fullSurfaceIds().length > 0,
     startup,
     setStartup,
+    targetProfileId: selectedTargetProfileId,
+    targetProfileOptions,
+    targetProfileMatchesSelectedDevice,
+    requiresTargetProfileSelection,
+    setTargetProfile,
     run,
     checkOffline,
     cancel,

@@ -234,6 +234,34 @@ test("offline Test compilation previews a verified checkpoint without a device o
       platform: "ios",
     });
 
+    const scoped = await client.invoke("app-map.test.compile", {
+      appMapId: "store",
+      testId: "settings-test",
+      targetProfileId: "ipad-en",
+    });
+    assert.deepEqual(scoped.preflight.selectors[0]?.rawVariantScope, {
+      selectedTargetProfileId: "ipad-en",
+      selectedVariant: {
+        id: "home-ios-en",
+        targetProfileId: "ipad-en",
+        targetId: "ipad-1",
+        platform: "ios",
+      },
+      candidates: [
+        {
+          variant: {
+            id: "home-ios-en",
+            targetProfileId: "ipad-en",
+            targetId: "ipad-1",
+            platform: "ios",
+          },
+          sourceCount: 1,
+          compatibility: "selected-variant",
+          reason: "selected-runtime-variant",
+        },
+      ],
+    });
+
     const unchanged = await client.invoke("app-map.get", { appMapId: "store" });
     assert.equal(unchanged.appMap.revision, saved.appMap.revision);
     assert.ok(unchanged.appMap.tests["settings-test"]);

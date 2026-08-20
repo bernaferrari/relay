@@ -105,9 +105,16 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
           description:
             "Optional read-only warm-plan preview. Relay first requires this exact mapped screen at runtime; a mismatch stops for review instead of relaunching the app.",
         },
+        {
+          name: "targetProfileId",
+          type: "string",
+          description:
+            "Optional read-only raw-evidence scope. Select the runtime profile explicitly so translated labels cannot borrow proof from another locale.",
+        },
       ],
       examples: [
         'relay test compile grok-ios settings-tour --input \'{"entryCheckpointScreenId":"settings"}\'',
+        'relay test compile grok-ios settings-tour --input \'{"targetProfileId":"ipad-pt-BR"}\'',
       ],
       note: "The returned plan always names its startup policy. This preview does not control a device or persist a Test edit.",
     }),

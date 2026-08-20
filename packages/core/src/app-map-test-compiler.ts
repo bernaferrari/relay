@@ -1,7 +1,6 @@
 import type {
   AppMap,
   AppMapCompiledFlow,
-  AppMapCompiledRawAccessibilitySource,
   AppMapCompiledTest,
   AppMapScenarioTest,
   AppMapScenarioTestStep,
@@ -22,6 +21,10 @@ import {
 import { frozenColdCoverageEffects } from "./campaign-recovery-effects.js";
 import { validateAppMap } from "./app-map.js";
 import { frozenDocumentOrigin } from "./app-map-scroll-surface-baseline.js";
+import {
+  frozenRawAccessibilitySources,
+  frozenRawAccessibilityVariants,
+} from "./app-map-test-raw-accessibility.js";
 import { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
 import type { Recipe } from "./recipes.js";
 
@@ -49,114 +52,6 @@ export class AppMapTestCompileError extends Error {
 }
 
 const MAX_COMPILED_STEPS = 4_096;
-
-function rawSourceKey(source: AppMapCompiledRawAccessibilitySource): string {
-  const origin =
-    source.origin.kind === "screen-variant"
-      ? [source.origin.kind, source.origin.observationId ?? "", source.origin.capturedAt ?? ""]
-      : [
-          source.origin.kind,
-          source.origin.surfaceId,
-          source.origin.captureId,
-          source.origin.viewportIndex,
-          source.origin.capturedAt,
-        ];
-  return [
-    source.screenId,
-    source.variant.id,
-    source.variant.targetProfileId,
-    source.variant.targetId,
-    source.variant.platform,
-    ...origin,
-    source.tree.uri,
-    source.tree.id,
-    source.tree.sha256,
-  ].join("\u0000");
-}
-
-function sourceVariant(variant: AppMap["screenVariants"][string]) {
-  return {
-    id: variant.id,
-    targetProfileId: variant.targetProfile.id,
-    targetId: variant.targetProfile.targetId,
-    platform: variant.targetProfile.platform,
-    ...(variant.targetProfile.viewport ? { viewport: { ...variant.targetProfile.viewport } } : {}),
-  };
-}
-
-function frozenRawAccessibilitySources(
-  map: AppMap,
-): NonNullable<AppMapCompiledTest["rawAccessibilitySourcesByScreenId"]> {
-  type RawSource = AppMapCompiledRawAccessibilitySource;
-  const grouped = new Map<string, Map<string, RawSource>>(
-    Object.keys(map.screens)
-      .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
-      .map((screenId) => [screenId, new Map<string, RawSource>()]),
-  );
-  for (const variant of Object.values(map.screenVariants).sort((left, right) =>
-    left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
-  )) {
-    const variantSource = sourceVariant(variant);
-    const sources: RawSource[] = variant.rawAccessibilityTree
-      ? [
-          {
-            screenId: variant.screenId,
-            variant: variantSource,
-            origin: {
-              kind: "screen-variant",
-              ...(variant.rawAccessibilityTree.observationId
-                ? { observationId: variant.rawAccessibilityTree.observationId }
-                : {}),
-              ...(variant.rawAccessibilityTree.capturedAt !== undefined
-                ? { capturedAt: variant.rawAccessibilityTree.capturedAt }
-                : {}),
-            },
-            tree: variant.rawAccessibilityTree,
-          },
-        ]
-      : [];
-    const latestSurface = [...(variant.scrollSurfaces ?? [])].sort(
-      (left, right) => right.capturedAt - left.capturedAt || left.id.localeCompare(right.id),
-    )[0];
-    if (latestSurface) {
-      sources.push(
-        ...latestSurface.viewports.map((viewport) => ({
-          screenId: variant.screenId,
-          variant: variantSource,
-          origin: {
-            kind: "scroll-surface-viewport" as const,
-            surfaceId: latestSurface.id,
-            captureId: latestSurface.captureId,
-            viewportIndex: viewport.index,
-            capturedAt: viewport.capturedAt,
-          },
-          tree: viewport.accessibilityTree,
-        })),
-      );
-    }
-    const screenSources = grouped.get(variant.screenId) ?? new Map<string, RawSource>();
-    for (const source of sources) {
-      // The source identity includes the Variant/profile, not only the CAS
-      // digest. A tree shared across locales must remain independently
-      // inspectable until explicit selector-equivalence rules approve reuse.
-      const key = rawSourceKey(source);
-      if (!screenSources.has(key)) screenSources.set(key, structuredClone(source));
-    }
-    grouped.set(variant.screenId, screenSources);
-  }
-  return Object.fromEntries(
-    [...grouped.entries()]
-      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-      .map(([screenId, sources]) => [
-        screenId,
-        [...sources.values()].sort((left, right) => {
-          const leftKey = rawSourceKey(left);
-          const rightKey = rawSourceKey(right);
-          return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
-        }),
-      ]),
-  );
-}
 
 type ReturnRequirementStep = Extract<RecipeStep, { kind: "expect-screen" }>;
 
@@ -813,6 +708,7 @@ export function compileAppMapScenarioTest(
     },
     surfaceBindings: structuredClone(test.surfaceBindings ?? []),
     rawAccessibilitySourcesByScreenId: frozenRawAccessibilitySources(map),
+    rawAccessibilityVariantsByScreenId: frozenRawAccessibilityVariants(map),
     executionSchedule: proposeAppMapTestExecutionSchedule(map, rootRecipeId, graph),
     rootRecipeId,
     recipes: Object.fromEntries(

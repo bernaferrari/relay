@@ -31,6 +31,10 @@ export type TestRunControlProps = {
   startup?: AppMapTestStartup;
   checkpointOptions?: readonly AppMapTestCheckpointOption[];
   onStartupChange?: (startup: AppMapTestStartup) => void;
+  /** A read-only frozen-evidence scope. It never changes the Test or device. */
+  targetProfileOptions?: ReadonlyArray<{ id: string; label: string }>;
+  targetProfileId?: string;
+  onTargetProfileChange?: (targetProfileId: string | undefined) => void;
 };
 
 const activeStatuses = new Set<JobInfo["status"]>(["queued", "running", "paused"]);
@@ -52,6 +56,9 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
   const startupCopy = () => appMapTestStartupCopy({ startup: startup() });
   const checkpointOptions = () => props.checkpointOptions ?? [];
   const canChooseStartup = () => Boolean(props.onStartupChange && checkpointOptions().length);
+  const targetProfileOptions = () => props.targetProfileOptions ?? [];
+  const canChooseTargetProfile = () =>
+    Boolean(props.onTargetProfileChange && targetProfileOptions().length > 1);
   const startupValue = () => {
     const selected = startup();
     return selected.mode === "verified-checkpoint" ? `checkpoint:${selected.screenId}` : "cold";
@@ -96,10 +103,14 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
     props.onStartupChange?.({ mode: "verified-checkpoint", screenId });
   }
 
+  function selectTargetProfile(event: Event & { currentTarget: HTMLSelectElement }): void {
+    props.onTargetProfileChange?.(event.currentTarget.value || undefined);
+  }
+
   // One row, so the primary action can live in the single workspace bar instead of
   // the status strip the old screen stacked under it.
   return (
-    <div class="flex min-w-0 items-center gap-2">
+    <div class="flex min-w-0 flex-wrap items-center gap-2">
       {props.onCheckOffline ? (
         <Button
           size="sm"
@@ -123,6 +134,28 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
             onChange={(event) => props.onFreshEvidenceChange?.(event.currentTarget.checked)}
           />
           Capture fresh evidence
+        </label>
+      ) : null}
+      {canChooseTargetProfile() ? (
+        <label
+          class="flex min-h-9 shrink-0 items-center gap-1 rounded-md border border-border-weak-base bg-surface-base px-2 text-caption text-text-base"
+          title="Scope the next offline proof to one saved target profile. This does not change the Test or device."
+        >
+          <span class="text-text-weak">Evidence</span>
+          <select
+            id="test-runtime-profile"
+            data-test-runtime-profile
+            aria-label="Runtime target profile for offline evidence"
+            class="min-w-0 max-w-52 cursor-pointer bg-transparent text-base font-medium text-text-base outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+            value={props.targetProfileId ?? ""}
+            disabled={busy() || active() || finished()}
+            onChange={selectTargetProfile}
+          >
+            <option value="">Choose profile…</option>
+            <For each={targetProfileOptions()}>
+              {(profile) => <option value={profile.id}>{profile.label}</option>}
+            </For>
+          </select>
         </label>
       ) : null}
       {props.startup ? (

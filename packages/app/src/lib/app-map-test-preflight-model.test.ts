@@ -32,12 +32,20 @@ test("groups a noisy frozen-plan report into ordered repair actions without drop
       screenId: "voice",
       message: "Voice needs a full capture.",
     },
+    {
+      severity: "blocker",
+      code: "raw-evidence-variant-selection-required",
+      recipeId: "settings",
+      recipeStepId: "open-voice",
+      message: "Select a target profile.",
+    },
   ]);
 
   assert.deepEqual(
     groups.map((group) => [group.id, group.findings.length]),
     [
       ["returns", 1],
+      ["variants", 1],
       ["surface", 1],
       ["evidence", 2],
     ],
