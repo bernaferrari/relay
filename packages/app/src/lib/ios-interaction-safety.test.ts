@@ -260,6 +260,7 @@ test("the registered renderer fallback boundary stops one unknown request but re
   ]);
 
   await verifyIosMutationTerminalityRegistry(registry, {
-    isOutcomeUnknown: (error) => iosInteractionFailure(error)?.code === "IOS_MUTATION_OUTCOME_UNKNOWN",
+    isOutcomeUnknown: (error) =>
+      iosInteractionFailure(error)?.code === "IOS_MUTATION_OUTCOME_UNKNOWN",
   });
 });

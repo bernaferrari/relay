@@ -61,9 +61,7 @@ function unknownIosStepError(): IosMutationOutcomeUnknownError {
   return error;
 }
 
-async function runTerminalityStepRoute(
-  outcome: "unknown" | "ordinary",
-): Promise<{
+async function runTerminalityStepRoute(outcome: "unknown" | "ordinary"): Promise<{
   nativeDispatches: string[];
   status: "terminal" | "handled";
   error?: unknown;
@@ -128,7 +126,10 @@ async function runTerminalityStepRoute(
     const body = (await response.json()) as { ok?: boolean; terminal?: string };
     return {
       nativeDispatches,
-      status: response.status === 200 && body.ok === false && body.terminal === undefined ? "handled" : "terminal",
+      status:
+        response.status === 200 && body.ok === false && body.terminal === undefined
+          ? "handled"
+          : "terminal",
     };
   } finally {
     await server.close();
