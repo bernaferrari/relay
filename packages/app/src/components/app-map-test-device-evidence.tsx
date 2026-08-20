@@ -19,6 +19,7 @@ import { AppMapTestDevicePanel } from "./app-map-test-device-panel";
 import { AppMapTestEvidencePanel } from "./app-map-test-evidence-panel";
 import { matchLiveScreen } from "../lib/app-map-live-location";
 import { useAppMapScrollSurface } from "../lib/use-app-map-scroll-surface";
+import { interactionSucceeded } from "../lib/ios-interaction-safety";
 import { Icon } from "./icon";
 
 export type InspectorTab = "device" | "evidence";
@@ -171,7 +172,7 @@ export function AppMapTestDeviceEvidence(props: {
     if (interactionBlocker() || interacting()) return false;
     setInteracting(true);
     try {
-      return await server.interactStep(step, "test preview tap");
+      return interactionSucceeded(await server.interactStep(step, "test preview tap"));
     } finally {
       setInteracting(false);
     }

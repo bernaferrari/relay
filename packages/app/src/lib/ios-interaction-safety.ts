@@ -111,14 +111,26 @@ export function iosMutationOutcomeUnknownIntervention(
  * renderer fallback is therefore forbidden unless a future server contract
  * explicitly proves that no selector command reached the device.
  */
-export function canFallbackToPointAfterFailedInteraction(input: {
+/**
+ * The one policy that can authorize a renderer-level point fallback.
+ *
+ * Keep this private. A false-y result, a stale selector, or a transport
+ * failure are not authority to send another iOS command. Callers must go
+ * through {@link dispatchWithSafePointFallback}, which preserves an unknown
+ * outcome instead of accidentally turning it into a second request.
+ */
+function canFallbackToPointAfterFailedInteraction(input: {
   platform?: string;
   kind: string;
   hasPoint: boolean;
   failure?: IosInteractionFailure;
 }): boolean {
   if (!input.hasPoint || input.kind === "point") return false;
-  if (input.platform !== "ios") return true;
+  // A missing platform proof is not permission to issue a physical point
+  // command. Android/browser keep their existing rescue behavior; iOS needs
+  // the exact server no-dispatch proof below, and every unknown target stops.
+  if (input.platform === "android" || input.platform === "browser") return true;
+  if (input.platform !== "ios") return false;
   const diagnostic = input.failure?.mutation;
   const retry = diagnostic?.retry;
   return (
@@ -128,4 +140,79 @@ export function canFallbackToPointAfterFailedInteraction(input: {
     retry?.decision === "safe-selector-fallback" &&
     retry?.reason === "selector-was-not-dispatched"
   );
+}
+
+type PointFallbackBase<Result> = {
+  /** iOS is deliberately strict; other platforms retain their existing
+   * semantic-to-point rescue behavior. */
+  platform?: string;
+  kind: string;
+  hasPoint: boolean;
+  attempt: () => Promise<Result>;
+  pointFallback: () => Promise<Result>;
+};
+
+type ErrorOnlyPointFallback<Result> = PointFallbackBase<Result> & {
+  failedResult?: never;
+  failureForResult?: never;
+};
+
+type ResultAwarePointFallback<Result> = PointFallbackBase<Result> & {
+  /** A renderer transport such as `interactStep` may turn HTTP errors into a
+   * typed result. It must provide both the failed result predicate and the
+   * reviewed server diagnostic before a fallback is even considered. */
+  failedResult: (result: Result) => boolean;
+  failureForResult: (result: Result) => IosInteractionFailure | undefined;
+};
+
+/**
+ * The canonical renderer boundary for a semantic-to-point rescue.
+ *
+ * For physical iOS this invokes `pointFallback` only when the server proves
+ * that the first selector command was *not dispatched*. An unknown outcome,
+ * stale/no-op result, or arbitrary error returns/rethrows without another
+ * device command. This is intentionally generic so the normal stage,
+ * recorder, and authoring-session transports cannot grow subtly different
+ * retry policies.
+ */
+export async function dispatchWithSafePointFallback<Result>(
+  input: ErrorOnlyPointFallback<Result> | ResultAwarePointFallback<Result>,
+): Promise<Result> {
+  try {
+    const result = await input.attempt();
+    const failedResult = input.failedResult;
+    const failureForResult = input.failureForResult;
+    if (
+      failedResult &&
+      failureForResult &&
+      failedResult(result) &&
+      canFallbackToPointAfterFailedInteraction({
+        platform: input.platform,
+        kind: input.kind,
+        hasPoint: input.hasPoint,
+        failure: failureForResult(result),
+      })
+    ) {
+      return input.pointFallback();
+    }
+    return result;
+  } catch (error) {
+    if (
+      canFallbackToPointAfterFailedInteraction({
+        platform: input.platform,
+        kind: input.kind,
+        hasPoint: input.hasPoint,
+        failure: iosInteractionFailure(error),
+      })
+    ) {
+      return input.pointFallback();
+    }
+    throw error;
+  }
+}
+
+/** A boolean is too weak to represent an uncertain iOS command. Keep the
+ * narrowing at the call site explicit instead of relying on truthiness. */
+export function interactionSucceeded(input: { status: string }): boolean {
+  return input.status === "succeeded";
 }

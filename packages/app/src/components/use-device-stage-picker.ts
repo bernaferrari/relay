@@ -14,7 +14,7 @@ import {
   companionDisplayedPointToLogical,
   companionLogicalRectToDisplayed,
 } from "./app-map-device-companion-geometry";
-import { canFallbackToPointAfterFailedInteraction } from "../lib/ios-interaction-safety";
+import { dispatchWithSafePointFallback, interactionSucceeded } from "../lib/ios-interaction-safety";
 
 export type DeviceStagePickerState = {
   fx: number;
@@ -151,27 +151,28 @@ export function useDeviceStagePicker(options: {
     const tapPoint = bounds
       ? { x: Math.round(value.fx * bounds.width), y: Math.round(value.fy * bounds.height) }
       : undefined;
-    let succeeded = await server.interactStep(
-      interactBodyForStrategy(strategy, tapPoint),
-      `tap ${strategy.describe}`,
-    );
     const selectedPlatform = () =>
       server.devices().find((device) => device.serial === server.selectedDevice())?.platform;
-    if (
-      !succeeded &&
-      canFallbackToPointAfterFailedInteraction({
-        platform: selectedPlatform(),
-        kind: strategy.kind,
-        hasPoint: Boolean(tapPoint),
-        failure: server.lastInteractionOutcome()?.iosFailure,
-      }) &&
-      tapPoint
-    ) {
-      succeeded = await server.interactStep(
-        { kind: "point", x: tapPoint.x, y: tapPoint.y },
-        `tap ${tapPoint.x},${tapPoint.y}`,
-      );
-    }
+    const outcome = await dispatchWithSafePointFallback({
+      platform: selectedPlatform(),
+      kind: strategy.kind,
+      hasPoint: Boolean(tapPoint),
+      attempt: () =>
+        server.interactStep(
+          interactBodyForStrategy(strategy, tapPoint),
+          `tap ${strategy.describe}`,
+        ),
+      failedResult: (result) => !interactionSucceeded(result),
+      failureForResult: (result) => result.iosFailure,
+      pointFallback: () =>
+        tapPoint
+          ? server.interactStep(
+              { kind: "point", x: tapPoint.x, y: tapPoint.y },
+              `tap ${tapPoint.x},${tapPoint.y}`,
+            )
+          : Promise.resolve({ status: "failed" as const }),
+    });
+    const succeeded = interactionSucceeded(outcome);
     if (succeeded && recorder.recording()) {
       void recorder.recordPick(
         strategy,

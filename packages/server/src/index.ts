@@ -99,6 +99,7 @@ import {
   type AndroidKeyboardInput,
   type AndroidTouchAction,
 } from "./live-video.js";
+import { assertAndroidLiveInputPlatform } from "./live-input-platform.js";
 import { streamTargetVideo } from "./target-video-stream.js";
 import {
   readIosVideoTake,
@@ -739,6 +740,7 @@ async function handleRequest(
         );
       }
       await assertTargetControl(scope, serial);
+      assertAndroidLiveInputPlatform(await devicePlatformForSerial(serial));
       await injectAndroidTouch(serial, action as AndroidTouchAction, x, y);
       json(res, 200, { ok: true });
       return;
@@ -765,6 +767,7 @@ async function handleRequest(
       }
 
       await assertTargetControl(scope, serial);
+      assertAndroidLiveInputPlatform(await devicePlatformForSerial(serial));
       try {
         // The live H.264 stream is the lowest-latency path when the device
         // stage is open. Keep the CLI usable without that optional stream by
@@ -800,6 +803,7 @@ async function handleRequest(
         );
       }
       await assertTargetControl(scope, serial);
+      assertAndroidLiveInputPlatform(await devicePlatformForSerial(serial));
       await injectAndroidScroll(
         serial,
         body.x as number,

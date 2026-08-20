@@ -3,6 +3,7 @@ import test from "node:test";
 import type { TargetRuntimeReadiness } from "@relay/protocol";
 import type { SnapshotNode } from "./api-types";
 import { createServerCapture, type CaptureServerDeps } from "./server-capture";
+import { canFlushBufferedTypeAfterLiveInput } from "../context/recorder";
 
 function unknownIosMutationError() {
   return Object.assign(new Error("The iOS press may already have reached the device."), {
@@ -26,6 +27,8 @@ function createHarness(
     inspectionError?: string;
     screenshotReadiness?: Array<TargetRuntimeReadiness | undefined>;
     interactError?: unknown;
+    keyError?: unknown;
+    devicePlatform?: "android" | "ios" | "browser";
   } = {},
 ) {
   const calls: string[] = [];
@@ -108,6 +111,7 @@ function createHarness(
       } as T;
     }
     if (path === "/step/run") return { ok: true, durationMs: 12, logs: [] } as T;
+    if (path === "/device/key" && options.keyError) throw options.keyError;
     if (path === "/interact" && options.interactError) throw options.interactError;
     return {} as T;
   };
@@ -116,6 +120,7 @@ function createHarness(
     request,
     serverUrl: () => "http://localhost:8787",
     selectedDevice: () => "device-1",
+    selectedDevicePlatform: () => options.devicePlatform ?? "android",
     selectedAction: () => "tap",
     activeDiscoverySessionId: () => options.activeDiscoveryId ?? null,
     collectAccessibility: () => options.collectAccessibility ?? true,
@@ -322,6 +327,7 @@ test("live capture exposes a setup failure without throwing from the polling loo
     },
     serverUrl: () => "http://localhost:8787",
     selectedDevice: () => "ipad-1",
+    selectedDevicePlatform: () => "ios",
     selectedAction: () => null,
     activeDiscoverySessionId: () => null,
     collectAccessibility: () => true,
@@ -354,10 +360,11 @@ test("an unknown iOS outcome saves current pixels and never becomes a second int
     interactError: unknownIosMutationError(),
   });
 
-  assert.equal(
-    await harness.capture.interactStep({ kind: "label", label: "Settings" }, "tap Settings"),
-    false,
+  const outcome = await harness.capture.interactStep(
+    { kind: "label", label: "Settings" },
+    "tap Settings",
   );
+  assert.equal(outcome.status, "ios-outcome-unknown");
   assert.equal(harness.calls.filter((path) => path === "/interact").length, 1);
   const screenshot = new URL(harness.calls[1]!, "http://relay.local");
   assert.equal(screenshot.pathname, "/screenshot");
@@ -367,7 +374,7 @@ test("an unknown iOS outcome saves current pixels and never becomes a second int
     (harness.frames[0] as { caption: string }).caption,
     "review before retry · tap Settings",
   );
-  assert.deepEqual(harness.capture.lastInteractionOutcome(), {
+  assert.deepEqual(outcome, {
     status: "ios-outcome-unknown",
     iosFailure: {
       code: "IOS_MUTATION_OUTCOME_UNKNOWN",
@@ -418,7 +425,8 @@ for (const selection of [
   test(`node press ${selection.name} preserves an unknown iOS outcome for review`, async () => {
     const harness = createHarness({ interactError: unknownIosMutationError() });
 
-    assert.equal(await harness.capture.pressNode(selection.node), false);
+    const outcome = await harness.capture.pressNode(selection.node);
+    assert.equal(outcome.status, "ios-outcome-unknown");
     assert.equal(
       harness.calls.filter((path) => path === "/interact").length,
       1,
@@ -432,7 +440,7 @@ for (const selection of [
       screenshot.searchParams.get("caption"),
       `review before retry · ${selection.caption}`,
     );
-    assert.deepEqual(harness.capture.lastInteractionOutcome(), {
+    assert.deepEqual(outcome, {
       status: "ios-outcome-unknown",
       iosFailure: {
         code: "IOS_MUTATION_OUTCOME_UNKNOWN",
@@ -518,4 +526,46 @@ test("live scroll sends coalesced wheel deltas to the selected H.264 session", a
     scrollX: -0.1,
     scrollY: 0.75,
   });
+});
+
+test("iOS never enters the Android live-input transport before its canonical action", async () => {
+  const harness = createHarness({ devicePlatform: "ios" });
+
+  assert.equal(await harness.capture.touchDevice("down", 0.25, 0.75), false);
+  assert.equal(await harness.capture.scrollDevice(0.5, 0.4, -0.1, 0.75), false);
+  assert.deepEqual(await harness.capture.keyDevice({ kind: "text", text: "a" }), {
+    status: "failed",
+  });
+
+  assert.deepEqual(harness.calls, []);
+  assert.deepEqual(harness.requestBodies, []);
+});
+
+test("an iOS-unknown /device/key never lets flushType retry through /interact", async () => {
+  // This simulates a stale renderer that believed the target was Android when
+  // the server reports the iOS one-command-unknown diagnostic. The typed
+  // delivery outcome is the only authority `flushType` consults.
+  const harness = createHarness({ keyError: unknownIosMutationError() });
+
+  const first = harness.capture.keyDevice({ kind: "text", text: "a" });
+  const queued = harness.capture.keyDevice({ kind: "text", text: "b" });
+  const [delivery, skipped] = await Promise.all([first, queued]);
+  assert.equal(delivery.status, "ios-outcome-unknown");
+  assert.equal(skipped.status, "ios-outcome-unknown");
+
+  if (canFlushBufferedTypeAfterLiveInput(delivery)) {
+    await harness.capture.interactStep({ kind: "type", text: "a" });
+  }
+
+  assert.equal(
+    harness.calls.filter((path) => path === "/device/key").length,
+    1,
+    "keys queued behind an unknown iOS command must be stopped too",
+  );
+  assert.equal(harness.calls.filter((path) => path === "/interact").length, 0);
+  assert.equal(
+    harness.calls.filter((path) => path.startsWith("/screenshot")).length,
+    1,
+    "the unknown command captures review evidence instead of issuing a retry",
+  );
 });

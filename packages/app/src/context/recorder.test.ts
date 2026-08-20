@@ -6,6 +6,7 @@ import {
   buildTapTarget,
   canRetryTapAtPoint,
   currentIosSemanticGeometry,
+  canFlushBufferedTypeAfterLiveInput,
   logicalBoundsFromCapture,
   physicalIosTapStep,
   projectTake,
@@ -14,6 +15,24 @@ import {
   stableLiveTapStep,
   supersededReviewSessionIds,
 } from "./recorder";
+
+test("a buffered type never follows an iOS outcome-unknown keyboard command", () => {
+  assert.equal(canFlushBufferedTypeAfterLiveInput({ status: "succeeded" }), true);
+  assert.equal(canFlushBufferedTypeAfterLiveInput({ status: "failed" }), true);
+  assert.equal(
+    canFlushBufferedTypeAfterLiveInput({
+      status: "ios-outcome-unknown",
+      iosFailure: { code: "IOS_MUTATION_OUTCOME_UNKNOWN" },
+      intervention: {
+        title: "Action may already have happened",
+        detail: "Capture the current screen before any retry.",
+        screenshotCaption: "review before retry · type text",
+        operation: "type",
+      },
+    }),
+    false,
+  );
+});
 
 test("pixels-only live drive uses screenshot size when AX bounds are missing", () => {
   assert.deepEqual(logicalBoundsFromCapture({ imageWidth: 1668, imageHeight: 2224 }), {

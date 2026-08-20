@@ -28,6 +28,9 @@ export type CaptureServerDeps = {
   request: Request;
   serverUrl: () => string;
   selectedDevice: () => string | null;
+  /** The persistent H.264 input transport is Android-only. iOS always goes
+   * through the typed semantic interaction boundary below. */
+  selectedDevicePlatform: () => "android" | "ios" | "browser" | undefined;
   selectedAction: () => string | null;
   activeDiscoverySessionId: () => string | null;
   collectAccessibility: () => boolean;
@@ -97,9 +100,8 @@ export type LiveKeyboardInput =
   | { kind: "text"; text: string }
   | { kind: "key"; key: "enter" | "backspace" };
 
-/** The last direct action is explicit state, not an inferred retry hint.
- * Boolean callers stay compatible while picker/recorder callers can preserve
- * an iOS outcome-unknown stop instead of turning it into a point fallback. */
+/** A direct action is explicit state, not an inferred retry hint. A boolean
+ * cannot represent the iOS outcome-unknown stop. */
 export type InteractionAttemptOutcome =
   | { status: "succeeded"; iosFailure?: undefined }
   | { status: "failed"; iosFailure?: IosInteractionFailure }
@@ -121,6 +123,10 @@ function activeDiscoveryId(deps: CaptureServerDeps): string | undefined {
 
 function serialFor(deps: CaptureServerDeps): string | undefined {
   return deps.selectedDevice() ?? undefined;
+}
+
+function hasAndroidLiveInput(deps: CaptureServerDeps): boolean {
+  return deps.selectedDevicePlatform() === "android";
 }
 
 /**
@@ -157,11 +163,10 @@ function interactionForSnapshotNode(
 }
 
 export function createServerCapture(deps: CaptureServerDeps) {
-  let keyboardChain = Promise.resolve(true);
+  let keyboardChain = Promise.resolve<InteractionAttemptOutcome>({ status: "failed" });
   let lastLiveFrameBase64 = "";
   let lastLiveFrameSerial: string | undefined;
   let lastLiveFrame: Frame | null = null;
-  let lastInteractionOutcome: InteractionAttemptOutcome | null = null;
 
   function resetLivePreview(): void {
     // Starting a live view is a new observation session, even when it targets
@@ -195,6 +200,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
   }
 
   async function touchDevice(action: LiveTouchAction, x: number, y: number): Promise<boolean> {
+    if (!hasAndroidLiveInput(deps)) return false;
     const serial = deps.selectedDevice();
     if (!serial) return false;
     try {
@@ -220,6 +226,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
     scrollX: number,
     scrollY: number,
   ): Promise<boolean> {
+    if (!hasAndroidLiveInput(deps)) return false;
     const serial = deps.selectedDevice();
     if (!serial) return false;
     try {
@@ -237,10 +244,11 @@ export function createServerCapture(deps: CaptureServerDeps) {
     }
   }
 
-  function keyDevice(input: LiveKeyboardInput): Promise<boolean> {
+  function keyDevice(input: LiveKeyboardInput): Promise<InteractionAttemptOutcome> {
     const send = async () => {
+      if (!hasAndroidLiveInput(deps)) return { status: "failed" } as const;
       const serial = deps.selectedDevice();
-      if (!serial) return false;
+      if (!serial) return { status: "failed" } as const;
       try {
         await deps.request(
           "/device/key",
@@ -250,15 +258,69 @@ export function createServerCapture(deps: CaptureServerDeps) {
           },
           2000,
         );
-        return true;
-      } catch {
-        return false;
+        return { status: "succeeded" } as const;
+      } catch (error) {
+        // A current renderer does not ask iOS to use this Android-only
+        // transport. Preserve the stop anyway: a stale client or a platform
+        // race must not swallow a reported unknown outcome and let
+        // `flushType` issue a second /interact command.
+        return reportIosMutationOutcomeUnknown(error, `type ${input.kind}`);
       }
     };
     // HTTP requests may resolve out of order under fast key repeat. Keep the
     // scrcpy control messages in exactly the same order as DOM keydown events.
-    keyboardChain = keyboardChain.then(send, send);
+    // An iOS unknown outcome is also a hard stop for any keys that were
+    // already queued behind it: a second key is still a second physical
+    // mutation, not a harmless retry.
+    keyboardChain = keyboardChain.then(
+      (previous) => (previous.status === "ios-outcome-unknown" ? previous : send()),
+      send,
+    );
     return keyboardChain;
+  }
+
+  async function reportIosMutationOutcomeUnknown(
+    error: unknown,
+    label: string,
+  ): Promise<InteractionAttemptOutcome> {
+    const intervention = iosMutationOutcomeUnknownIntervention(error, label);
+    const iosFailure = iosInteractionFailure(error);
+    if (!intervention || !iosFailure) {
+      return { status: "failed", ...(iosFailure ? { iosFailure } : {}) };
+    }
+    const evidence = await captureUiScreenshot(
+      intervention.screenshotCaption,
+      undefined,
+      undefined,
+      true,
+    ).catch((evidenceError) => {
+      deps.appendLog(
+        `could not capture review screen · ${
+          evidenceError instanceof Error ? evidenceError.message : String(evidenceError)
+        }`,
+        "error",
+      );
+      return undefined;
+    });
+    const outcome: InteractionAttemptOutcome = {
+      status: "ios-outcome-unknown",
+      iosFailure,
+      intervention,
+      ...(evidence ? { evidenceFrameId: evidence.id } : {}),
+    };
+    deps.appendLog(
+      `${intervention.title} · ${intervention.detail}${
+        evidence ? ` Frame ${evidence.id} is ready for review.` : ""
+      }`,
+      "error",
+    );
+    toast(
+      evidence
+        ? "Action may already have happened. Current screen saved for review; do not retry."
+        : "Action may already have happened. Capture the current screen before any retry.",
+      "warning",
+    );
+    return outcome;
   }
 
   async function captureUiSnapshot(): Promise<SnapshotState> {
@@ -550,29 +612,33 @@ export function createServerCapture(deps: CaptureServerDeps) {
     }
   }
 
-  async function pressNode(node: SnapshotNode): Promise<boolean> {
+  async function pressNode(node: SnapshotNode): Promise<InteractionAttemptOutcome> {
     const interaction = interactionForSnapshotNode(node);
     if (!interaction) {
-      // Do not leave stale unknown-outcome state attached to a node that never
-      // produced a device command. Callers can rely on every invocation
-      // returning a current, explicit result.
-      lastInteractionOutcome = { status: "failed" };
       deps.appendLog("node has no actionable target", "error");
-      return false;
+      return { status: "failed" };
     }
 
     // Composition is deliberate: the shared boundary owns the only error
-    // policy, including the exact-once iOS stop, current-pixel review frame,
-    // and durable lastInteractionOutcome. A tree-row press must never turn a
-    // 409 into an error log or a follow-up tap.
-    const succeeded = await interactStep(interaction.step, interaction.caption);
-    if (succeeded) void captureUiSnapshot().catch(() => undefined);
-    return succeeded;
+    // policy, including the exact-once iOS stop and current-pixel review
+    // frame. The typed outcome must travel to the caller; a tree-row press
+    // must never turn a 409 into an error log or a follow-up tap.
+    const outcome = await interactStep(interaction.step, interaction.caption);
+    if (outcome.status === "succeeded") void captureUiSnapshot().catch(() => undefined);
+    return outcome;
   }
 
-  async function interactStep(step: InteractiveStep, caption?: string): Promise<boolean> {
+  /**
+   * Canonical manual-action boundary. The return value deliberately is not a
+   * boolean: physical iOS can be failed, successful, or *unknown*. A caller
+   * that wants a point rescue must pass this outcome through
+   * `dispatchWithSafePointFallback`; it cannot mistake unknown for false.
+   */
+  async function interactStep(
+    step: InteractiveStep,
+    caption?: string,
+  ): Promise<InteractionAttemptOutcome> {
     const label = caption ?? `interact · ${step.kind}`;
-    lastInteractionOutcome = null;
     try {
       const body = interactionBody(step);
       const discoveryId = activeDiscoveryId(deps);
@@ -584,57 +650,17 @@ export function createServerCapture(deps: CaptureServerDeps) {
         },
       );
       deps.appendLog(`interact ${step.kind}`, "success");
-      lastInteractionOutcome = { status: "succeeded" };
       if (discoveryId) await deps.refreshDiscoverySessions();
       else await captureUiScreenshot(label, undefined, undefined, true).catch(() => undefined);
-      return true;
+      return { status: "succeeded" };
     } catch (error) {
-      const intervention = iosMutationOutcomeUnknownIntervention(error, label);
-      const iosFailure = iosInteractionFailure(error);
-      if (intervention && iosFailure) {
-        const evidence = await captureUiScreenshot(
-          intervention.screenshotCaption,
-          undefined,
-          undefined,
-          true,
-        ).catch((evidenceError) => {
-          deps.appendLog(
-            `could not capture review screen · ${
-              evidenceError instanceof Error ? evidenceError.message : String(evidenceError)
-            }`,
-            "error",
-          );
-          return undefined;
-        });
-        lastInteractionOutcome = {
-          status: "ios-outcome-unknown",
-          iosFailure,
-          intervention,
-          ...(evidence ? { evidenceFrameId: evidence.id } : {}),
-        };
-        deps.appendLog(
-          `${intervention.title} · ${intervention.detail}${
-            evidence ? ` Frame ${evidence.id} is ready for review.` : ""
-          }`,
-          "error",
-        );
-        toast(
-          evidence
-            ? "Action may already have happened. Current screen saved for review; do not retry."
-            : "Action may already have happened. Capture the current screen before any retry.",
-          "warning",
-        );
-        return false;
-      }
-      lastInteractionOutcome = {
-        status: "failed",
-        ...(iosFailure ? { iosFailure } : {}),
-      };
+      const outcome = await reportIosMutationOutcomeUnknown(error, label);
+      if (outcome.status === "ios-outcome-unknown") return outcome;
       const message = error instanceof Error ? error.message : String(error);
       const readable = humanError(error, "Could not run this step on the device");
       deps.appendLog(message, "error");
       toast(readable, "error");
-      return false;
+      return outcome;
     }
   }
 
@@ -675,8 +701,6 @@ export function createServerCapture(deps: CaptureServerDeps) {
     pollLiveSnapshot,
     pressNode,
     interactStep,
-    lastInteractionOutcome: () =>
-      lastInteractionOutcome ? structuredClone(lastInteractionOutcome) : null,
     runStep,
     frameUrlForPersisted: (run: PersistedRun, frame: TraceFrameRef) =>
       buildFrameUrl(deps.serverUrl(), run, frame),

@@ -17,10 +17,8 @@ import { sentenceForStep } from "../lib/step-sentence";
 import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
 import { toast } from "./toast";
 import { humanError } from "../lib/human-error";
-import {
-  canFallbackToPointAfterFailedInteraction,
-  iosInteractionFailure,
-} from "../lib/ios-interaction-safety";
+import { dispatchWithSafePointFallback, interactionSucceeded } from "../lib/ios-interaction-safety";
+import type { InteractionAttemptOutcome } from "../lib/server-capture";
 import {
   authoringTargetFromPhysicalIosStep,
   buildTapTarget,
@@ -100,6 +98,16 @@ export type CapturedStartScreen = {
 export type CapturedMapScreen = OperationOutput<"app-map.screen.capture"> & { appMap: AppMap };
 
 export const describeStep = sentenceForStep;
+
+/**
+ * A live Android key command can be either applied, unavailable, or an iOS
+ * command whose outcome is unknown. Only the unavailable case may be followed
+ * by the canonical semantic type action. The unknown case is a review stop,
+ * never a reason to type again.
+ */
+export function canFlushBufferedTypeAfterLiveInput(outcome: InteractionAttemptOutcome): boolean {
+  return outcome.status !== "ios-outcome-unknown";
+}
 
 function sessionRevision(session: AuthoringSession) {
   const take = session.take;
@@ -646,26 +654,34 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           ? authoringTargetFromPhysicalIosStep(physicalIosStep, target)
           : target;
         if (recordingHere && session) {
-          try {
-            await server.interactAuthoringSession(session.id, {
+          const primary = () =>
+            server.interactAuthoringSession(session.id, {
               kind: "tap",
               target: physicalIosTarget,
               ...(alreadyApplied ? { applied: true } : {}),
             });
-          } catch (error) {
-            const canRetry = physicalIos
-              ? canFallbackToPointAfterFailedInteraction({
-                  platform: "ios",
-                  kind: "tap",
-                  hasPoint: Boolean(target.point),
-                  failure: iosInteractionFailure(error),
-                })
-              : canRetryTapAtPoint(error);
-            if (alreadyApplied || !target.point || !canRetry) throw error;
-            await server.interactAuthoringSession(session.id, {
+          if (physicalIos) {
+            await dispatchWithSafePointFallback({
+              platform: "ios",
               kind: "tap",
-              target: { point: target.point },
+              hasPoint: !alreadyApplied && Boolean(target.point),
+              attempt: primary,
+              pointFallback: () =>
+                server.interactAuthoringSession(session.id, {
+                  kind: "tap",
+                  target: { point: target.point! },
+                }),
             });
+          } else {
+            try {
+              await primary();
+            } catch (error) {
+              if (alreadyApplied || !target.point || !canRetryTapAtPoint(error)) throw error;
+              await server.interactAuthoringSession(session.id, {
+                kind: "tap",
+                target: { point: target.point },
+              });
+            }
           }
           return true;
         }
@@ -687,34 +703,35 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
                     point: { x: physicalIosStep.x, y: physicalIosStep.y },
                   }
                 : physicalIosStep;
-          const succeeded = await server.interactStep(step);
-          if (
-            !succeeded &&
-            canFallbackToPointAfterFailedInteraction({
-              platform: "ios",
-              kind: step.kind,
-              hasPoint: Boolean(target.point),
-              failure: server.lastInteractionOutcome()?.iosFailure,
-            }) &&
-            target.point
-          ) {
-            return server.interactStep({
-              kind: "point",
-              x: target.point.x,
-              y: target.point.y,
-            });
-          }
-          return succeeded;
+          const outcome = await dispatchWithSafePointFallback({
+            platform: "ios",
+            kind: step.kind,
+            hasPoint: Boolean(target.point),
+            attempt: () => server.interactStep(step),
+            failedResult: (result) => !interactionSucceeded(result),
+            failureForResult: (result) => result.iosFailure,
+            pointFallback: () =>
+              target.point
+                ? server.interactStep({
+                    kind: "point",
+                    x: target.point.x,
+                    y: target.point.y,
+                  })
+                : Promise.resolve({ status: "failed" as const }),
+          });
+          return interactionSucceeded(outcome);
         }
         const stableStep = stableLiveTapStep(target);
         if (!stableStep) return false;
         try {
-          return await server.interactStep(stableStep);
+          return interactionSucceeded(await server.interactStep(stableStep));
         } catch (error) {
           if (stableStep.kind === "point" || !target.point || !canRetryTapAtPoint(error)) {
             throw error;
           }
-          return server.interactStep({ kind: "point", x: target.point.x, y: target.point.y });
+          return interactionSucceeded(
+            await server.interactStep({ kind: "point", x: target.point.x, y: target.point.y }),
+          );
         }
       } catch (error) {
         toast(humanError(error), "warning");
@@ -773,12 +790,14 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           return true;
         }
         if (alreadyApplied) return true;
-        return server.interactStep({
-          kind: "swipe",
-          from: interaction.from,
-          to: interaction.to,
-          durationMs,
-        });
+        return interactionSucceeded(
+          await server.interactStep({
+            kind: "swipe",
+            from: interaction.from,
+            to: interaction.to,
+            durationMs,
+          }),
+        );
       } catch (error) {
         toast(humanError(error), "warning");
         return false;
@@ -950,13 +969,13 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
 
     const [typeBuffer, setTypeBuffer] = createSignal("");
     let typeTimer: ReturnType<typeof setTimeout> | undefined;
-    let typeDelivery = Promise.resolve(true);
+    let typeDelivery = Promise.resolve<InteractionAttemptOutcome>({ status: "failed" });
 
     function queueDeviceKey(
       input: { kind: "text"; text: string } | { kind: "key"; key: "enter" | "backspace" },
     ): void {
       typeDelivery = typeDelivery.then(async () => {
-        if (!(await ensureDirectControl())) return false;
+        if (!(await ensureDirectControl())) return { status: "failed" } as const;
         return server.keyDevice(input);
       });
     }
@@ -971,9 +990,11 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       typeTimer = undefined;
       const text = typeBuffer();
       setTypeBuffer("");
-      const applied = await typeDelivery;
-      typeDelivery = Promise.resolve(true);
+      const delivery = await typeDelivery;
+      typeDelivery = Promise.resolve({ status: "failed" });
       if (!text) return;
+      if (!canFlushBufferedTypeAfterLiveInput(delivery)) return;
+      const applied = interactionSucceeded(delivery);
       const session = activeSession();
       if (session?.state === "recording" && ownsActiveSession()) {
         await server.interactAuthoringSession(session.id, {
