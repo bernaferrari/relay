@@ -53,6 +53,7 @@ import { createServerDeviceSetupController } from "../lib/server-device-setup-co
 import { createServerDeviceInventoryController } from "../lib/server-device-inventory-controller";
 import { createServerAppMapController } from "../lib/server-app-map-controller";
 import { findActiveConnectionLease } from "../lib/device-control-session";
+import { refreshLiveDeviceEvidence } from "../lib/live-device-refresh";
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
 export type {
@@ -529,7 +530,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           if (result.recovery.ready) {
             setLiveCaptureIssue(null);
             setControlIssue(null);
-            await Promise.all([pollLiveFrame(), pollLiveSnapshot()]);
+            await refreshLiveDeviceEvidence({
+              physicalIos: device?.platform === "ios" && device.kind === "Physical device",
+              pollFrame: () => pollLiveFrame(),
+              pollSnapshot: () => pollLiveSnapshot(),
+            });
             return true;
           }
           setLiveCaptureIssue(result.recovery.session.detail);

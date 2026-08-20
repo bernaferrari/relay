@@ -52,6 +52,7 @@ import { useDeviceStageAccessibility } from "./use-device-stage-accessibility";
 import { useDeviceStagePicker } from "./use-device-stage-picker";
 import { useDeviceStageLiveFrame } from "../lib/use-device-stage-live-frame";
 import { useDeviceStageKeyboard } from "../lib/use-device-stage-keyboard";
+import { refreshLiveDeviceEvidence } from "../lib/live-device-refresh";
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
 export function DeviceStage(_props: {
@@ -266,6 +267,14 @@ export function DeviceStage(_props: {
     }
   }
 
+  async function refreshLiveEvidence(): Promise<void> {
+    await refreshLiveDeviceEvidence({
+      physicalIos: targetIsPhysicalIos(currentDevice()),
+      pollFrame: tickLiveFrame,
+      pollSnapshot: tickLiveSnapshot,
+    });
+  }
+
   function scheduleLiveSnapshot(delayMs = POST_INTERACTION_SNAPSHOT_DELAY_MS): void {
     if (snapRefreshTimer) clearTimeout(snapRefreshTimer);
     snapRefreshTimer = window.setTimeout(() => {
@@ -413,16 +422,24 @@ export function DeviceStage(_props: {
     // H.264 owns pixels whenever it is healthy. Accessibility inspection is
     // independent: it stays fresh for hover targets, recording semantics, and
     // physical interactions performed directly on the device.
+    const physicalIos = targetIsPhysicalIos(currentDevice());
+    const needsBootstrapFrame = !displayImageSrc();
+    if (physicalIos && (policy.pollSnapshot || policy.pollFallbackFrame || needsBootstrapFrame)) {
+      // Start a physical iPad in the same order as every later refresh. An
+      // eager snapshot followed immediately by the bootstrap frame used to
+      // make the frame lose its turn behind a slow XCTest traversal.
+      void refreshLiveEvidence();
+    }
     if (policy.pollSnapshot) {
-      void tickLiveSnapshot();
+      if (!physicalIos) void tickLiveSnapshot();
       snapTimer = setInterval(() => void tickLiveSnapshot(), LIVE_SNAPSHOT_INTERVAL_MS);
     }
     // The video canvas currently shares the evidence branch. A fresh process
     // has no frame yet, so capture one bootstrap image to mount the H.264
     // consumer; healthy video remains the only steady-state pixel transport.
-    if (!displayImageSrc()) void tickLiveFrame();
+    if (needsBootstrapFrame && !physicalIos) void tickLiveFrame();
     if (policy.pollFallbackFrame) {
-      void tickLiveFrame();
+      if (!physicalIos) void tickLiveFrame();
       // Android promotes to H.264 and only polls while recovering.
       // Physical iOS defaults to the go-ios stream; PNG polling is the explicit fallback.
       const frameMs =
@@ -676,7 +693,7 @@ export function DeviceStage(_props: {
     } else if (physicalIosRecordingWasActive && liveViewActive()) {
       // Stop completes server-side before the projected session leaves the
       // recording state, so it is safe to refresh both pixels and semantics.
-      void Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
+      void refreshLiveEvidence();
     }
     physicalIosRecordingWasActive = active;
   });
@@ -754,10 +771,11 @@ export function DeviceStage(_props: {
     setInspectionRecovering(true);
     try {
       const recovered = await server.recoverSelectedTarget("observe");
-      await Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
-      if (!recovered) {
-        /* hint stays until the next snapshot is inspectable */
-      }
+      if (recovered) await refreshLiveEvidence();
+      // A failed recovery already produced the actionable runner state. Do
+      // not immediately enqueue another snapshot: on iPad that restarts the
+      // same slow XCTest preparation instead of making the existing pixels or
+      // diagnostic easier to use.
     } finally {
       setInspectionRecovering(false);
     }
@@ -765,7 +783,7 @@ export function DeviceStage(_props: {
   const takeControl = async () => {
     const controlled = await server.takeControlOfSelectedDevice();
     if (!controlled) return;
-    await Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
+    await refreshLiveEvidence();
   };
   const devicePanelState = createMemo(() =>
     resolveDevicePanelState({
@@ -828,7 +846,7 @@ export function DeviceStage(_props: {
       void rec.enterRecordMode();
       return;
     }
-    void Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
+    void refreshLiveEvidence();
   }
   async function retryDevicePanel(): Promise<void> {
     if (panelRetrying()) return;
