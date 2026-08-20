@@ -212,6 +212,53 @@ test("uninspectable snapshots preserve a bounded, safe inspection error", () => 
   assert.equal(result.note, result.inspectionError);
 });
 
+test("target summaries preserve split-plane readiness without treating stale semantics as current", () => {
+  const readiness = {
+    previewPixels: {
+      mode: "pixels",
+      state: "proven",
+      freshness: "current",
+      proof: { at: 100, durationMs: 10 },
+    },
+    semanticControl: {
+      mode: "accessibility",
+      state: "proven",
+      freshness: "stale",
+      proof: { at: 98, observedNodeCount: 12, durationMs: 240 },
+      invalidated: { at: 101, reason: "input-changed" },
+    },
+    evidenceCapture: {
+      mode: "evidence",
+      state: "proven",
+      freshness: "current",
+      proof: { at: 100, durationMs: 10 },
+    },
+  };
+  const result = summarizeTargetOperationResult("target.snapshot.capture", {
+    serial: "ipad",
+    inspectable: false,
+    source: "pixels-only",
+    nodes: [],
+    readiness,
+  }) as { readiness?: unknown };
+  assert.deepEqual(result.readiness, readiness);
+});
+
+test("target summaries drop impossible capability combinations instead of inventing ready control", () => {
+  const result = summarizeTargetOperationResult("target.snapshot.capture", {
+    serial: "ipad",
+    inspectable: false,
+    source: "pixels-only",
+    nodes: [],
+    readiness: {
+      previewPixels: { mode: "pixels", state: "proven", freshness: "current" },
+      semanticControl: { mode: "accessibility", state: "proven", freshness: "current" },
+      evidenceCapture: { mode: "evidence", state: "proven", freshness: "current" },
+    },
+  }) as { readiness?: unknown };
+  assert.equal(result.readiness, undefined);
+});
+
 test("snapshot summaries bound an inspection error", () => {
   const result = summarizeTargetOperationResult("target.snapshot.capture", {
     serial: "ipad",

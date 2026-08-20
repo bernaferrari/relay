@@ -397,6 +397,49 @@ test("screenshot preview coordinates accept query-string numbers", () => {
   );
 });
 
+test("target capability outputs keep pixel, semantic, and evidence proofs distinct", () => {
+  const readiness = {
+    previewPixels: {
+      mode: "pixels",
+      state: "proven",
+      freshness: "current",
+      proof: { at: 100, durationMs: 12 },
+    },
+    semanticControl: {
+      mode: "accessibility",
+      state: "unavailable",
+      freshness: "unproven",
+      reason: "probe-failed",
+      lastError: { at: 98, reason: "probe-failed", observedNodeCount: 14, durationMs: 320 },
+      nextProbeAt: 15_098,
+    },
+    evidenceCapture: {
+      mode: "evidence",
+      state: "proven",
+      freshness: "current",
+      proof: { at: 100, durationMs: 12 },
+    },
+  };
+  const output = {
+    nodes: [],
+    interactive: [],
+    tree: "Window · Settings",
+    readiness,
+  };
+  assert.deepEqual(operationDefinition("target.snapshot.capture").output.parse(output), output);
+  assert.throws(
+    () =>
+      operationDefinition("target.snapshot.capture").output.parse({
+        ...output,
+        readiness: {
+          ...readiness,
+          semanticControl: { ...readiness.semanticControl, mode: "pixels" },
+        },
+      }),
+    /semanticControl mode/u,
+  );
+});
+
 test("scroll survey has one strict target-operation contract", () => {
   const definition = operationDefinition("target.scroll-survey.capture");
   assert.equal(definition.transport.method, "POST");

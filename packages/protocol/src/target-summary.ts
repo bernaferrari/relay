@@ -12,6 +12,7 @@ export type DeviceCatalogSummary = Pick<
   | "osVersion"
   | "developerMode"
   | "developerServicesAvailable"
+  | "readiness"
 >;
 
 /** Keep an agent's default device catalog focused on hardware it can act on.
@@ -159,6 +160,142 @@ function inspectionErrorSummary(value: unknown): string | undefined {
   return message.slice(0, 480);
 }
 
+const readinessModes = new Set(["pixels", "accessibility", "evidence"]);
+const readinessStates = new Set(["unproven", "proven", "unavailable"]);
+const readinessFreshness = new Set(["current", "stale", "unproven"]);
+const readinessModeByCapability = {
+  previewPixels: "pixels",
+  semanticControl: "accessibility",
+  evidenceCapture: "evidence",
+} as const;
+const readinessReasons = new Set([
+  "not-yet-proven",
+  "target-stopped",
+  "developer-mode-disabled",
+  "developer-services-unavailable",
+  "probe-failed",
+  "input-changed",
+  "visual-changed",
+]);
+
+/** Keep runtime readiness useful to an agent while refusing arbitrary host
+ * diagnostics or expanded trees in the default device/snapshot summary. */
+function runtimeReadinessSummary(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const readiness = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const capability of Object.keys(readinessModeByCapability) as Array<
+    keyof typeof readinessModeByCapability
+  >) {
+    const raw = readiness[capability];
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+    const fact = raw as Record<string, unknown>;
+    if (
+      !readinessModes.has(String(fact.mode)) ||
+      !readinessStates.has(String(fact.state)) ||
+      !readinessFreshness.has(String(fact.freshness))
+    ) {
+      return undefined;
+    }
+    const state = String(fact.state);
+    const freshness = String(fact.freshness);
+    const proven = state === "proven";
+    if (
+      fact.mode !== readinessModeByCapability[capability] ||
+      (proven && freshness === "unproven") ||
+      (!proven && freshness !== "unproven") ||
+      (!proven && fact.proof !== undefined)
+    ) {
+      return undefined;
+    }
+    const summarized: Record<string, unknown> = {
+      mode: fact.mode,
+      state: fact.state,
+      freshness: fact.freshness,
+    };
+    if (readinessReasons.has(String(fact.reason))) summarized.reason = fact.reason;
+    if (fact.proof && typeof fact.proof === "object" && !Array.isArray(fact.proof)) {
+      const proof = fact.proof as Record<string, unknown>;
+      const at = Number(proof.at);
+      if (Number.isFinite(at)) {
+        summarized.proof = {
+          at,
+          ...(Number.isFinite(Number(proof.observedNodeCount))
+            ? { observedNodeCount: Number(proof.observedNodeCount) }
+            : {}),
+          ...(Number.isFinite(Number(proof.durationMs))
+            ? { durationMs: Number(proof.durationMs) }
+            : {}),
+        };
+      } else {
+        return undefined;
+      }
+    }
+    if (proven && summarized.proof === undefined) return undefined;
+    if (proven && fact.lastError !== undefined) return undefined;
+    let lastErrorReason: string | undefined;
+    if (fact.lastError !== undefined) {
+      if (!fact.lastError || typeof fact.lastError !== "object" || Array.isArray(fact.lastError)) {
+        return undefined;
+      }
+      const lastError = fact.lastError as Record<string, unknown>;
+      const at = Number(lastError.at);
+      lastErrorReason = String(lastError.reason);
+      if (!Number.isFinite(at) || !readinessReasons.has(lastErrorReason)) return undefined;
+      summarized.lastError = {
+        at,
+        reason: lastError.reason,
+        ...(Number.isFinite(Number(lastError.observedNodeCount))
+          ? { observedNodeCount: Number(lastError.observedNodeCount) }
+          : {}),
+        ...(Number.isFinite(Number(lastError.durationMs))
+          ? { durationMs: Number(lastError.durationMs) }
+          : {}),
+        ...(typeof lastError.message === "string" && lastError.message.trim()
+          ? { message: lastError.message.trim().slice(0, 480) }
+          : {}),
+      };
+    }
+    if (fact.invalidated !== undefined) {
+      if (
+        !fact.invalidated ||
+        typeof fact.invalidated !== "object" ||
+        Array.isArray(fact.invalidated) ||
+        !proven ||
+        freshness !== "stale" ||
+        capability !== "semanticControl"
+      ) {
+        return undefined;
+      }
+      const invalidated = fact.invalidated as Record<string, unknown>;
+      const at = Number(invalidated.at);
+      if (
+        Number.isFinite(at) &&
+        (invalidated.reason === "input-changed" || invalidated.reason === "visual-changed")
+      ) {
+        summarized.invalidated = { at, reason: invalidated.reason };
+      } else {
+        return undefined;
+      }
+    }
+    if (proven && freshness === "stale" && summarized.invalidated === undefined) return undefined;
+    if (fact.nextProbeAt !== undefined) {
+      const nextProbeAt = Number(fact.nextProbeAt);
+      if (
+        !Number.isFinite(nextProbeAt) ||
+        capability !== "semanticControl" ||
+        state !== "unavailable" ||
+        lastErrorReason !== "probe-failed"
+      ) {
+        return undefined;
+      }
+      summarized.nextProbeAt = nextProbeAt;
+    }
+    result[capability] = summarized;
+  }
+  return result;
+}
+
 export function summarizeTargetOperationResult(operationId: string, result: unknown): unknown {
   if (operationId === "target.snapshot.capture") {
     if (!result || typeof result !== "object" || Array.isArray(result)) return result;
@@ -173,6 +310,7 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
       visualFingerprint?: unknown;
       proposedRows?: unknown;
       inspectionError?: unknown;
+      readiness?: unknown;
     };
     const nodes = Array.isArray(body.nodes) ? body.nodes : [];
     const chrome = describeSnapshotChrome(nodes);
@@ -208,6 +346,7 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
         })
       : [];
     const inspectionError = inspectionErrorSummary(body.inspectionError);
+    const readiness = runtimeReadinessSummary(body.readiness);
     return {
       serial: body.serial,
       bounds: body.bounds,
@@ -228,6 +367,7 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
       controls: snapshotControlSummary(nodes),
       ...(proposedRows.length ? { proposedRows } : {}),
       ...(inspectionError ? { inspectionError } : {}),
+      ...(readiness ? { readiness } : {}),
       nodeCount: nodes.length,
       ...(!inspectable
         ? {
@@ -262,20 +402,24 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
   );
   return {
     ...(result as Record<string, unknown>),
-    devices: available.map((device) => ({
-      id: device.id,
-      serial: device.serial,
-      name: device.name,
-      kind: device.kind,
-      booted: device.booted,
-      platform: device.platform,
-      ...(device.connectionState ? { connectionState: device.connectionState } : {}),
-      ...(device.osVersion ? { osVersion: device.osVersion } : {}),
-      ...(device.developerMode ? { developerMode: device.developerMode } : {}),
-      ...(device.developerServicesAvailable !== undefined
-        ? { developerServicesAvailable: device.developerServicesAvailable }
-        : {}),
-    })),
+    devices: available.map((device) => {
+      const readiness = runtimeReadinessSummary(device.readiness);
+      return {
+        id: device.id,
+        serial: device.serial,
+        name: device.name,
+        kind: device.kind,
+        booted: device.booted,
+        platform: device.platform,
+        ...(device.connectionState ? { connectionState: device.connectionState } : {}),
+        ...(device.osVersion ? { osVersion: device.osVersion } : {}),
+        ...(device.developerMode ? { developerMode: device.developerMode } : {}),
+        ...(device.developerServicesAvailable !== undefined
+          ? { developerServicesAvailable: device.developerServicesAvailable }
+          : {}),
+        ...(readiness ? { readiness } : {}),
+      };
+    }),
     hiddenUnavailableCount: devices.length - available.length,
   };
 }

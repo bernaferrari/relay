@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { PNG } from "pngjs";
+import type { TargetRuntimeReadiness } from "@relay/protocol";
 import {
   IosSnapshotInFlightError,
   type DevicePlatform,
@@ -52,6 +53,11 @@ import {
   type IosSessionOperationDiagnostic,
 } from "./workspace-ios-session.js";
 import { rawScreenshot } from "./workspace-android-raw.js";
+import {
+  recordTargetPixelCapture,
+  recordTargetSemanticSnapshot,
+  targetRuntimeReadiness,
+} from "./target-runtime-readiness.js";
 
 export type SnapshotPayload = {
   serial?: string;
@@ -77,6 +83,8 @@ export type SnapshotPayload = {
   screenIdentity: import("@relay/protocol").ScreenIdentityObservation;
   visualFingerprint?: string;
   proposedRows?: ProposedVisualRow[];
+  /** Separate live facts for pixels, semantic control, and evidence capture. */
+  readiness?: TargetRuntimeReadiness;
 };
 
 const iosSnapshotGeometryBySerial = new Map<string, IosSnapshotGeometry>();
@@ -334,6 +342,7 @@ export async function captureSnapshot(opts?: {
   /** Preview remains a single read-only AX attempt with distinct diagnostics. */
   iosOperation?: "preview" | "snapshot";
 }): Promise<SnapshotPayload> {
+  const captureStartedAt = now();
   const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
   return runWithTargetContext(target.context, async () => {
     let snapshot: SnapshotCapture;
@@ -401,15 +410,33 @@ export async function captureSnapshot(opts?: {
         proposedRows = undefined;
       }
     }
+    const capturedAt = now();
+    const readinessTarget =
+      context.kind === "device"
+        ? { serial: context.serial, platform: context.platform }
+        : undefined;
+    if (readinessTarget) {
+      recordTargetSemanticSnapshot(readinessTarget, {
+        inspectable: capture.inspectable,
+        nodes,
+        at: capturedAt,
+        durationMs: Math.max(0, capturedAt - captureStartedAt),
+        errorMessage: capture.inspectionError,
+      });
+    }
+    const readiness = readinessTarget
+      ? targetRuntimeReadiness(readinessTarget, capturedAt)
+      : undefined;
     return {
       serial,
-      capturedAt: now(),
+      capturedAt,
       nodes,
       interactive,
       bounds,
       screenIdentity: observedIdentity,
       ...(visualFingerprint ? { visualFingerprint } : {}),
       ...(proposedRows?.length ? { proposedRows } : {}),
+      ...(readiness ? { readiness } : {}),
       ...capture,
       ...(iosSessionLifecycle ? { iosSessionLifecycle } : {}),
     };
@@ -436,6 +463,8 @@ export type ScreenshotPayload = {
   jobId?: string;
   framePath?: string;
   inspectable?: boolean;
+  /** Separate live facts for pixels, semantic control, and evidence capture. */
+  readiness?: TargetRuntimeReadiness;
 };
 
 type ScreenshotAttacher = (opts: {
@@ -489,6 +518,7 @@ export async function captureScreenshot(opts?: {
   /** Draw a tap preview ring; does not touch the device. */
   previewTap?: { x: number; y: number };
 }): Promise<ScreenshotPayload> {
+  const captureStartedAt = now();
   const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
   return runWithTargetContext(target.context, async () => {
     const foregroundApp =
@@ -610,9 +640,24 @@ export async function captureScreenshot(opts?: {
         ? { id: opts.jobId }
         : getActiveJob(serial)
       : undefined;
+    const capturedAt = now();
+    const readinessTarget =
+      context.kind === "device"
+        ? { serial: context.serial, platform: context.platform }
+        : undefined;
+    if (readinessTarget) {
+      recordTargetPixelCapture(readinessTarget, {
+        at: capturedAt,
+        durationMs: Math.max(0, capturedAt - captureStartedAt),
+        visualFingerprint,
+      });
+    }
+    const readiness = readinessTarget
+      ? targetRuntimeReadiness(readinessTarget, capturedAt)
+      : undefined;
     const screenshot: ScreenshotPayload = {
       serial,
-      capturedAt: now(),
+      capturedAt,
       mime: "image/png",
       base64,
       path,
@@ -621,6 +666,7 @@ export async function captureScreenshot(opts?: {
       ...(foregroundApp ? { foregroundApp } : {}),
       ...(screenMatch ? { screenMatch } : {}),
       ...(proposedRows.length ? { proposedRows } : {}),
+      ...(readiness ? { readiness } : {}),
       ...(active?.id || opts?.jobId ? { jobId: active?.id ?? opts?.jobId } : {}),
     };
     if (active) {

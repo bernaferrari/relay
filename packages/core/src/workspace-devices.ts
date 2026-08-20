@@ -26,6 +26,8 @@ import {
   runWithTargetContext,
   type TargetContext,
 } from "./target-context.js";
+import { targetRuntimeReadiness } from "./target-runtime-readiness.js";
+import type { TargetRuntimeReadiness } from "@relay/protocol";
 
 export type ListedDevice = {
   id: string;
@@ -42,6 +44,12 @@ export type ListedDevice = {
   developerMode?: "enabled" | "disabled";
   /** Xcode has mounted the platform services needed to install and run Relay's local iOS runner. */
   developerServicesAvailable?: boolean;
+  /**
+   * Recent, per-target runtime facts. This is intentionally separate from
+   * platform capabilities: discovery never pretends a booted iPad has an
+   * attached XCTest accessibility session.
+   */
+  readiness?: TargetRuntimeReadiness;
 };
 
 const execFileAsync = promisify(execFile);
@@ -257,7 +265,11 @@ export async function listAndroidDevicesFast(): Promise<ListedDevice[]> {
   for (const device of devices) {
     observedDevicePlatforms.set(device.serial, { platform: "android", expiresAt });
   }
-  return devices;
+  return devices.map(withRuntimeReadiness);
+}
+
+function withRuntimeReadiness(device: ListedDevice): ListedDevice {
+  return { ...device, readiness: targetRuntimeReadiness(device) };
 }
 
 export async function listDevices(): Promise<ListedDevice[]> {
@@ -385,8 +397,9 @@ export async function listDevices(): Promise<ListedDevice[]> {
   for (const device of merged) {
     observedDevicePlatforms.set(device.serial, { platform: device.platform, expiresAt });
   }
-  publish({ type: "device.list", at: now(), count: merged.length });
-  return merged;
+  const withReadiness = merged.map(withRuntimeReadiness);
+  publish({ type: "device.list", at: now(), count: withReadiness.length });
+  return withReadiness;
 }
 
 /** A successful ADB sample owns Android reachability. Adapter metadata may be

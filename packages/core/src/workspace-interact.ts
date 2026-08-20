@@ -27,6 +27,7 @@ import {
 } from "./workspace-ios-session.js";
 import { rawKey, rawSwipe, rawTap } from "./workspace-android-raw.js";
 import { captureScreenshot, captureSnapshot, type ScreenshotPayload } from "./workspace-capture.js";
+import { invalidateTargetSemanticControl } from "./target-runtime-readiness.js";
 
 export type InteractPoint = { x: number; y: number };
 
@@ -311,26 +312,38 @@ export async function interact(
   const target = await resolveRuntimeTarget(opts?.serial);
   return runWithTargetContext(target.context, async () => {
     const context = currentTargetContext();
+    // Pixels can update at preview rate. Accessibility geometry cannot: after
+    // any committed input the last tree remains useful historical evidence,
+    // but it must render stale until a deliberate snapshot proves the new UI.
+    const afterInput = <T>(result: T): T => {
+      if (context.kind === "device") {
+        invalidateTargetSemanticControl(
+          { serial: context.serial, platform: context.platform },
+          "input-changed",
+        );
+      }
+      return result;
+    };
     if (context.kind === "device" && context.platform === "android") {
       // Direct manipulation should survive app/session changes. Semantic refs
       // still use the SDK below, but mirror gestures never need an active app.
       if (input.kind === "point") {
         rawTap(input.x, input.y, context.serial);
-        return {
+        return afterInput({
           resolution: {
             method: "point" as const,
             point: { x: input.x, y: input.y },
             bounds: { x: input.x, y: input.y, width: 1, height: 1 },
           },
-        };
+        });
       }
       if (input.kind === "swipe") {
         rawSwipe(input.from, input.to, input.durationMs ?? 250, context.serial);
-        return {};
+        return afterInput({});
       }
       if (input.kind === "key") {
         rawKey(input.key, context.serial);
-        return {};
+        return afterInput({});
       }
     }
     if (context.kind === "device" && context.platform === "ios" && input.kind === "point") {
@@ -340,15 +353,17 @@ export async function interact(
           verifyIosScreenChanged(context.serial, () => pressPoint(target.device, input.x, input.y)),
         "interaction",
       );
-      return attachIosSessionLifecycle(
-        {
-          resolution: {
-            method: "point" as const,
-            point: { x: input.x, y: input.y },
-            bounds: { x: input.x, y: input.y, width: 1, height: 1 },
+      return afterInput(
+        attachIosSessionLifecycle(
+          {
+            resolution: {
+              method: "point" as const,
+              point: { x: input.x, y: input.y },
+              bounds: { x: input.x, y: input.y, width: 1, height: 1 },
+            },
           },
-        },
-        context.serial,
+          context.serial,
+        ),
       );
     }
     if (
@@ -371,7 +386,7 @@ export async function interact(
           }),
         "interaction",
       );
-      return attachIosSessionLifecycle(result!, context.serial);
+      return afterInput(attachIosSessionLifecycle(result!, context.serial));
     }
     try {
       const result = await withSession(
@@ -404,9 +419,11 @@ export async function interact(
         },
         "interaction",
       );
-      return context.kind === "device" && context.platform === "ios"
-        ? attachIosSessionLifecycle(result, context.serial)
-        : result;
+      const withLifecycle =
+        context.kind === "device" && context.platform === "ios"
+          ? attachIosSessionLifecycle(result, context.serial)
+          : result;
+      return afterInput(withLifecycle);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const context = currentTargetContext();
@@ -418,13 +435,13 @@ export async function interact(
         input.kind === "point"
       ) {
         rawTap(input.x, input.y, context.serial);
-        return {
+        return afterInput({
           resolution: {
             method: "point" as const,
             point: { x: input.x, y: input.y },
             bounds: { x: input.x, y: input.y, width: 1, height: 1 },
           },
-        };
+        });
       }
       if (
         /no active session/i.test(msg) &&
@@ -433,7 +450,7 @@ export async function interact(
         input.kind === "swipe"
       ) {
         rawSwipe(input.from, input.to, input.durationMs ?? 250, context.serial);
-        return {};
+        return afterInput({});
       }
       throw err;
     }

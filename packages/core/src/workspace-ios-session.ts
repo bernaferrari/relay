@@ -24,6 +24,12 @@ import { killStaleIosTestRunners, remountIosDeveloperDiskImage } from "./ios-app
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { runTargetMutation } from "./target-control.js";
 import { resolveRuntimeTarget } from "./workspace-devices.js";
+import {
+  hasUsableSemanticAccessibility,
+  recordTargetSemanticSnapshot,
+  targetRuntimeReadiness,
+} from "./target-runtime-readiness.js";
+import type { TargetRuntimeReadiness } from "@relay/protocol";
 
 /**
  * XCTest runner setup is a device concern, not a recording concern. A stage
@@ -85,7 +91,7 @@ export function resetIosRunnerState(): void {
   iosRuntimeRecoveries.clear();
 }
 
-export type TargetRuntimeRecovery =
+type IosTargetRuntimeRecovery =
   | IosRuntimeSessionRecovery
   | (IosRuntimeRecoveryResult & {
       session: {
@@ -95,6 +101,11 @@ export type TargetRuntimeRecovery =
         detail: string;
       };
     });
+
+export type TargetRuntimeRecovery = IosTargetRuntimeRecovery & {
+  /** Detailed capability planes supersede a platform-implied `ready` guess. */
+  readiness?: TargetRuntimeReadiness;
+};
 
 /** Shared UI/CLI/MCP recovery for attached devices. */
 export async function recoverTargetRuntime(
@@ -159,14 +170,37 @@ async function recoverTargetRuntimeReserved(
     let killed: string[] = [];
     let remounted = false;
 
+    const withReadiness = (recovery: IosTargetRuntimeRecovery): TargetRuntimeRecovery => ({
+      ...recovery,
+      readiness: targetRuntimeReadiness({ serial, platform: "ios" }),
+    });
+
     const inspect = async () => {
+      const startedAt = Date.now();
+      let nodes: Awaited<ReturnType<typeof snapshot>> = [];
+      let recorded = false;
       try {
         // Probe the existing session before any setup, launch, stop, or host
         // repair. A reconnect request is not proof that the live runner is bad.
-        const nodes = await snapshot(device, { interactiveOnly: true });
-        if (nodes.length === 0) {
+        nodes = await snapshot(device, { interactiveOnly: true });
+        const semanticControl = hasUsableSemanticAccessibility(nodes);
+        const capturedAt = Date.now();
+        recordTargetSemanticSnapshot(
+          { serial, platform: "ios" },
+          {
+            inspectable: semanticControl,
+            nodes,
+            at: capturedAt,
+            durationMs: Math.max(0, capturedAt - startedAt),
+            ...(semanticControl
+              ? {}
+              : { errorMessage: "Relay did not observe named accessibility controls." }),
+          },
+        );
+        recorded = true;
+        if (!semanticControl) {
           throw new IosXCTestSessionUnavailableError(
-            "Reconnect prepared the XCTest runner, but it returned no interactive accessibility nodes.",
+            "Reconnect prepared the XCTest runner, but it returned no named accessibility controls.",
           );
         }
         const currentApp = nodes.find((node) => node.bundleId)?.bundleId;
@@ -175,6 +209,23 @@ async function recoverTargetRuntimeReserved(
           fallback: currentApp === "com.apple.springboard",
         };
       } catch (error) {
+        if (!recorded) {
+          recordTargetSemanticSnapshot(
+            { serial, platform: "ios" },
+            {
+              inspectable: false,
+              nodes,
+              at: Date.now(),
+              durationMs: Math.max(0, Date.now() - startedAt),
+              errorMessage:
+                error instanceof IosXCTestSessionUnavailableError ||
+                error instanceof IosDeviceAttentionError ||
+                error instanceof IosRunnerSetupError
+                  ? error.message
+                  : undefined,
+            },
+          );
+        }
         // Launch/pixel capture may remain available, but that is explicitly
         // not semantic control. Preserve the inspection failure so the
         // recovery result can be unavailable instead of falsely "ready".
@@ -248,11 +299,13 @@ async function recoverTargetRuntimeReserved(
 
     // Always probe first. Even a prior binding error may describe a request
     // that lost a race while the shared session recovered independently.
-    return recoverIosRuntimeSession(
-      serial,
-      inspect,
-      repair,
-      async (error) => (await diagnoseIosRunnerError(error, serial)).message,
+    return withReadiness(
+      await recoverIosRuntimeSession(
+        serial,
+        inspect,
+        repair,
+        async (error) => (await diagnoseIosRunnerError(error, serial)).message,
+      ),
     );
   });
 }

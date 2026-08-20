@@ -23,6 +23,19 @@ export {
   recoverTargetRuntime,
 } from "./workspace-ios-session.js";
 export {
+  IOS_SEMANTIC_PROBE_INITIAL_COOLDOWN_MS,
+  IOS_SEMANTIC_PROBE_MAX_COOLDOWN_MS,
+  TARGET_RUNTIME_READINESS_TTL_MS,
+  hasUsableSemanticAccessibility,
+  invalidateTargetSemanticControl,
+  recordTargetPixelCapture,
+  recordTargetSemanticSnapshot,
+  resetTargetRuntimeReadiness,
+  targetRuntimeReadiness,
+  type RuntimeReadinessCapability,
+  type RuntimeReadinessTarget,
+} from "./target-runtime-readiness.js";
+export {
   type SnapshotPayload,
   inferSnapshotBounds,
   captureSnapshot,
