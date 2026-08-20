@@ -15,7 +15,8 @@ import {
   replaceAppMapScrollSurfaceDerived,
 } from "./logical-scroll-surface.js";
 import { recommendScrollSurfaceCapturePolicy } from "./scroll-surface-policy.js";
-import type { ScrollSurveyResult } from "./scrollable-survey.js";
+import { captureScrollableSurvey, type ScrollSurveyResult } from "./scrollable-survey.js";
+import { validatedFrozenOriginForTest } from "./scrollable-survey-test-support.js";
 
 function png(red: number): string {
   const image = new PNG({ width: 4, height: 4 });
@@ -116,11 +117,28 @@ function regenerableSurvey(): ScrollSurveyResult {
         serial: "android-1",
         capturedAt: 100 + index,
         foregroundApp: "app.relay.fixture",
-        nodes: Array.from({ length: 4 }, (_, nodeIndex) => ({
-          label: `Stable row ${nodeIndex}`,
-          type: "TextView",
-          rect: { x: 4, y: 60 + nodeIndex * 20 - documentOffset, width: 40, height: 12 },
-        })),
+        nodes: [
+          {
+            identifier: "android:id/content",
+            type: "android.widget.FrameLayout",
+            rect: { x: 0, y: 0, width: 64, height: 160 },
+            index: 0,
+          },
+          {
+            identifier: "regenerable-scroll",
+            type: "android.widget.ScrollView",
+            rect: { x: 0, y: 24, width: 64, height: 136 },
+            index: 1,
+            parentIndex: 0,
+          },
+          ...Array.from({ length: 4 }, (_, nodeIndex) => ({
+            label: `Stable row ${nodeIndex}`,
+            type: "android.widget.TextView",
+            rect: { x: 4, y: 60 + nodeIndex * 20 - documentOffset, width: 40, height: 12 },
+            index: nodeIndex + 2,
+            parentIndex: 1,
+          })),
+        ],
         interactive: [],
         bounds: { width: 64, height: 160 },
         inspectable: true,
@@ -145,6 +163,42 @@ function regenerableSurvey(): ScrollSurveyResult {
     documentOriginProven: true,
     message: "Fixture contains stale derived views.",
   };
+}
+
+/** The only fixture that receives the runtime-only issuance marker. It models
+ * a Voice/Settings-shaped surface: a stable scroll container advances once,
+ * then the terminal drag proves end-of-content and one fast return reaches the
+ * same fresh document origin. Hand-built completed results remain untrusted. */
+async function provenRegenerableSurvey(): Promise<ScrollSurveyResult> {
+  const fixture = regenerableSurvey();
+  const [first, second] = fixture.frames;
+  if (!first || !second) throw new Error("regenerable fixture requires two frames");
+  let page = 0;
+  return captureScrollableSurvey(
+    {
+      capture: async () => {
+        const frame = page === 0 ? first : second;
+        return { screenshot: frame.screenshot, snapshot: frame.snapshot };
+      },
+      scrollDown: async () => {
+        page = 1;
+      },
+      scrollUp: async () => {
+        page = 0;
+      },
+      scrollUpFast: async () => {
+        page = 0;
+      },
+      settle: async () => undefined,
+    },
+    {
+      maxScrolls: 2,
+      frozenDocumentOrigin: validatedFrozenOriginForTest({
+        screenshot: first.screenshot,
+        snapshot: first.snapshot,
+      }),
+    },
+  );
 }
 
 function mapFixture(): AppMap {
@@ -324,6 +378,46 @@ test("does not mint an origin proof from a stopped or unrestored survey", async 
       },
     });
     assert.equal(surface.documentOriginProof, undefined);
+    const handAuthoredCompleted = await persistLogicalScrollSurface({
+      survey: regenerableSurvey(),
+      targetProfile: regenerationProfile,
+      surfaceId: logicalScrollSurfaceId("settings", "settings-hand-authored"),
+      capturePolicy: {
+        captureMode: "full-surface",
+        source: "explicit",
+        reason: "A structural documentOriginProven flag is not an issuance authority.",
+        decidedAt: 101,
+      },
+    });
+    assert.equal(
+      handAuthoredCompleted.documentOriginProof,
+      undefined,
+      "only captureScrollableSurvey can mint an origin-attestation receipt",
+    );
+    const issuedThenMutated = await provenRegenerableSurvey();
+    issuedThenMutated.frames[0] = {
+      ...issuedThenMutated.frames[0]!,
+      screenshot: {
+        ...issuedThenMutated.frames[0]!.screenshot,
+        base64: patternedPng(17).toString("base64"),
+      },
+    };
+    const mutatedRawEvidence = await persistLogicalScrollSurface({
+      survey: issuedThenMutated,
+      targetProfile: regenerationProfile,
+      surfaceId: logicalScrollSurfaceId("settings", "settings-mutated-origin"),
+      capturePolicy: {
+        captureMode: "full-surface",
+        source: "explicit",
+        reason: "Mutating a marked survey must not mint a proof for new raw evidence.",
+        decidedAt: 102,
+      },
+    });
+    assert.equal(
+      mutatedRawEvidence.documentOriginProof,
+      undefined,
+      "a runtime marker is bound to immutable first raw evidence, not a mutable result object",
+    );
   } finally {
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;
@@ -382,8 +476,14 @@ test("regenerates derived views deterministically while retaining all raw captur
   const previous = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = state;
   try {
+    const captured = await provenRegenerableSurvey();
+    // Derived artifacts are intentionally mutable preview data. Keep the
+    // runtime-issued result object (and its private proof marker), but corrupt
+    // only the derived projections so regeneration has meaningful work.
+    captured.stitched = { base64: png(91), width: 4, height: 4, mime: "image/png" };
+    captured.mergedNodes = [{ label: "Stale node", type: "StaticText" }];
     const initial = await persistLogicalScrollSurface({
-      survey: regenerableSurvey(),
+      survey: captured,
       targetProfile: regenerationProfile,
       surfaceId: logicalScrollSurfaceId("settings", "settings-ja"),
       capturePolicy: {
@@ -393,10 +493,42 @@ test("regenerates derived views deterministically while retaining all raw captur
         decidedAt: 100,
       },
     });
-    assert.deepEqual(initial.documentOriginProof, {
+    assert.equal(initial.documentOriginProof?.schemaVersion, 1);
+    assert.equal(initial.documentOriginProof?.method, "frozen-origin-match");
+    assert.deepEqual(initial.documentOriginProof?.firstViewport, {
+      screenshotSha256: initial.viewports[0]!.screenshot.sha256,
+      accessibilityTreeSha256: initial.viewports[0]!.accessibilityTree.sha256,
+    });
+    assert.equal(initial.documentOriginProof?.attestation.mime, "application/json");
+    const attestation = await readAuthoringEvidence(
+      initial.documentOriginProof!.attestation.sha256,
+    );
+    assert.deepEqual(JSON.parse(attestation!.toString("utf8")), {
       schemaVersion: 1,
+      kind: "relay.document-origin-attestation",
       method: "frozen-origin-match",
+      targetProfileId: "android-en",
+      surfaceId: logicalScrollSurfaceId("settings", "settings-ja"),
+      capturedAt: 100,
+      terminal: {
+        status: "completed",
+        reason: "end-of-content",
+        restoredStartViewport: true,
+      },
       firstViewport: {
+        index: 0,
+        offsetY: 0,
+        appendedHeight: 0,
+        capturedAt: 100,
+        width: 64,
+        height: 160,
+        screenshotSha256: initial.viewports[0]!.screenshot.sha256,
+        accessibilityTreeSha256: initial.viewports[0]!.accessibilityTree.sha256,
+      },
+      terminalViewport: {
+        capturedAt: 100,
+        width: 64,
+        height: 160,
         screenshotSha256: initial.viewports[0]!.screenshot.sha256,
         accessibilityTreeSha256: initial.viewports[0]!.accessibilityTree.sha256,
       },
@@ -514,6 +646,21 @@ test("regenerates derived views deterministically while retaining all raw captur
     assert.throws(
       () => validateAppMap(forgedOriginProof),
       /must bind the first raw viewport evidence/u,
+    );
+    const unownedAttestation = structuredClone(replaced);
+    unownedAttestation.screenVariants["settings-ja"]!.scrollSurfaces![0]!.documentOriginProof = {
+      ...regenerated.documentOriginProof!,
+      attestation: {
+        id: "foreign-origin-attestation",
+        uri: `relay-evidence://${"e".repeat(64)}`,
+        sha256: "e".repeat(64),
+        mime: "application/json",
+        bytes: 1,
+      },
+    };
+    assert.throws(
+      () => validateAppMap(unownedAttestation),
+      /foreign-origin-attestation is not owned by its variant/u,
     );
   } finally {
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

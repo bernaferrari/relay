@@ -28,21 +28,28 @@ const reasons = new Set([
 ]);
 
 function assertEvidence(
-  value: ScrollSurfaceEvidence,
+  value: unknown,
   expectedMime: ScrollSurfaceEvidence["mime"],
   label: string,
 ): void {
-  objectValue(value, label);
-  identifier(value.id, `${label}.id`);
-  requiredText(value.uri, `${label}.uri`, 2_048);
-  if (!/^relay-evidence:\/\/[a-f0-9]{64}$/u.test(value.uri)) {
+  const evidence = objectValue(value, label);
+  identifier(evidence.id, `${label}.id`);
+  requiredText(evidence.uri, `${label}.uri`, 2_048);
+  if (
+    typeof evidence.uri !== "string" ||
+    !/^relay-evidence:\/\/[a-f0-9]{64}$/u.test(evidence.uri)
+  ) {
     appMapFail("invalid-map", `${label}.uri must be a Relay evidence resource`);
   }
-  if (!/^[a-f0-9]{64}$/u.test(value.sha256) || value.uri !== `relay-evidence://${value.sha256}`) {
+  if (
+    typeof evidence.sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(evidence.sha256) ||
+    evidence.uri !== `relay-evidence://${evidence.sha256}`
+  ) {
     appMapFail("invalid-map", `${label}.sha256 must match its evidence URI`);
   }
-  if (value.mime !== expectedMime) appMapFail("invalid-map", `${label}.mime is unsupported`);
-  safeInteger(value.bytes, `${label}.bytes`);
+  if (evidence.mime !== expectedMime) appMapFail("invalid-map", `${label}.mime is unsupported`);
+  safeInteger(evidence.bytes, `${label}.bytes`);
 }
 
 function assertPositiveInteger(value: unknown, label: string): void {
@@ -124,6 +131,23 @@ export function assertLogicalScrollSurface(
     const proof = objectValue(surface.documentOriginProof, `${label}.documentOriginProof`);
     if (proof.schemaVersion !== 1 || proof.method !== "frozen-origin-match") {
       appMapFail("invalid-map", `${label}.documentOriginProof is unsupported`);
+    }
+    assertEvidence(
+      proof.attestation,
+      "application/json",
+      `${label}.documentOriginProof.attestation`,
+    );
+    const authorization = objectValue(
+      proof.authorization,
+      `${label}.documentOriginProof.authorization`,
+    );
+    if (
+      authorization.schemaVersion !== 1 ||
+      authorization.issuer !== "relay-local-capture" ||
+      typeof authorization.signature !== "string" ||
+      !/^[A-Za-z0-9_-]{43}$/u.test(authorization.signature)
+    ) {
+      appMapFail("invalid-map", `${label}.documentOriginProof.authorization is unsupported`);
     }
     const firstViewport = surface.viewports[0]!;
     const first = objectValue(proof.firstViewport, `${label}.documentOriginProof.firstViewport`);
@@ -249,6 +273,11 @@ export function assertLogicalScrollSurface(
   assertEvidence(surface.manifest, "application/json", `${label}.manifest`);
   const evidence = [
     ...surface.viewports.flatMap((viewport) => [viewport.screenshot, viewport.accessibilityTree]),
+    ...(surface.diagnosticViewports ?? []).flatMap((viewport) => [
+      viewport.screenshot,
+      viewport.accessibilityTree,
+    ]),
+    ...(surface.documentOriginProof ? [surface.documentOriginProof.attestation] : []),
     ...(surface.composite ? [surface.composite] : []),
     surface.mergedTree,
     surface.manifest,

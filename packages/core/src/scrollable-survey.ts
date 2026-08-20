@@ -19,9 +19,14 @@ import {
   isSystemSemantic,
   normalizedSemanticPart,
   semanticNodeKey,
-  semanticViewportIsStationary,
   verticalScrollSeam,
 } from "./scrollable-survey-seams.js";
+import {
+  documentOriginIssuanceFor,
+  recordValidatedDocumentOriginIssuance,
+  type ValidatedDocumentOriginIssuance,
+} from "./document-origin-survey-issuance.js";
+import { isMintedValidatedFrozenDocumentOrigin } from "./frozen-document-origin-capability.js";
 
 import type {
   ScrollSurveyCapture,
@@ -228,8 +233,10 @@ function sameSurveySurface(first: SnapshotPayload, next: SnapshotPayload): boole
   return meaningfulOverlap && structural.count > 0;
 }
 
-/** Restoration is proven only when the live viewport matches the frozen start
- * semantically and visually. Inverse swipes that settle are not enough. */
+/** Restoration is proven only by a same-surface identity plus a pixel seam
+ * with zero vertical movement. Semantic stationary hints stay review-only:
+ * sticky controls inside a list can be stationary while unlabeled content
+ * moves, so they must never certify a document-origin return. */
 function startViewportMatches(start: ScrollSurveyCapture, restored: ScrollSurveyCapture): boolean {
   if (!sameSurveySurface(start.snapshot, restored.snapshot)) return false;
   const startFingerprint = start.snapshot.screenIdentity?.fingerprint;
@@ -243,9 +250,7 @@ function startViewportMatches(start: ScrollSurveyCapture, restored: ScrollSurvey
     start.snapshot,
     restored.snapshot,
   );
-  return Boolean(
-    (seam && seam.shiftY === 0) || semanticViewportIsStationary(start.snapshot, restored.snapshot),
-  );
+  return Boolean(seam && seam.shiftY === 0);
 }
 
 function bottomSystemChromeTop(frame: ScrollSurveyFrame): number | undefined {
@@ -395,12 +400,17 @@ function result(
   message: string,
   restoredStartViewport: boolean,
   diagnosticFrames: ScrollSurveyFrame[] = [],
-  documentOriginProven = false,
+  documentOriginIssuance?: ValidatedDocumentOriginIssuance,
 ): ScrollSurveyResult {
   const composition = composeScrollSurveyFrames(frames);
   const composedFrames = composition?.frames ?? frames;
   const stitched = reason === "seam-ambiguous" ? undefined : composition?.stitched;
-  return {
+  const documentOriginValidated =
+    documentOriginIssuance &&
+    status === "completed" &&
+    reason === "end-of-content" &&
+    restoredStartViewport;
+  const output: ScrollSurveyResult = {
     status,
     reason,
     frames: composedFrames,
@@ -408,9 +418,17 @@ function result(
     ...(stitched ? { stitched } : {}),
     mergedNodes: composition?.mergedNodes ?? mergedSurveyNodes(frames),
     restoredStartViewport,
-    ...(documentOriginProven ? { documentOriginProven: true as const } : {}),
+    ...(documentOriginValidated ? { documentOriginProven: true as const } : {}),
     message,
   };
+  if (documentOriginValidated) {
+    // The facts are a value-only frozen snapshot of the exact raw evidence
+    // before the result leaves this module. Persistence compares them to its
+    // newly written CAS objects, so a caller cannot mutate a marked result and
+    // mint a proof for different pixels/tree/terminal facts.
+    recordValidatedDocumentOriginIssuance(output, documentOriginIssuance);
+  }
+  return output;
 }
 
 /**
@@ -474,11 +492,17 @@ export async function captureScrollableSurvey(
   options: ScrollSurveyOptions = {},
 ): Promise<ScrollSurveyResult> {
   const maxScrolls = Math.max(1, Math.min(12, options.maxScrolls ?? 4));
+  // Type assertions do not survive JavaScript callers. Only the evidence
+  // loader's in-process capability can make this survey eligible for either a
+  // fast restore or a durable document-origin issuance.
+  const frozenDocumentOrigin = isMintedValidatedFrozenDocumentOrigin(options.frozenDocumentOrigin)
+    ? options.frozenDocumentOrigin
+    : undefined;
   // A cached expect-screen checkpoint can show the correct screen while the
   // physical list has since moved. It remains useful evidence for ordinary
   // collection, but cannot be used to authorize a high-distance origin
   // restore: ask the device for one fresh PNG/tree pair first.
-  const first = options.frozenDocumentOrigin
+  const first = frozenDocumentOrigin
     ? await driver.capture()
     : (options.initialCapture ?? (await driver.capture()));
   const initial: ScrollSurveyFrame = {
@@ -495,8 +519,8 @@ export async function captureScrollableSurvey(
   };
   const frames = [initial];
   const diagnosticFrames: ScrollSurveyFrame[] = [];
-  const frozenOriginMatched = options.frozenDocumentOrigin
-    ? startViewportMatches(options.frozenDocumentOrigin, first)
+  const frozenOriginMatched = frozenDocumentOrigin
+    ? startViewportMatches(frozenDocumentOrigin, first)
     : undefined;
   // A fast restore is allowed only after this same live first frame proved the
   // immutable origin. At the terminal proof, require both identities again:
@@ -505,10 +529,7 @@ export async function captureScrollableSurvey(
   const startingViewportMatches = (candidate: ScrollSurveyCapture): boolean =>
     startViewportMatches(first, candidate) &&
     (frozenOriginMatched !== true ||
-      Boolean(
-        options.frozenDocumentOrigin &&
-        startViewportMatches(options.frozenDocumentOrigin, candidate),
-      ));
+      Boolean(frozenDocumentOrigin && startViewportMatches(frozenDocumentOrigin, candidate)));
   if (!first.snapshot.inspectable) {
     return result(
       frames,
@@ -537,6 +558,7 @@ export async function captureScrollableSurvey(
   let attemptedScroll = false;
   let lastPostAttemptCapture: ScrollSurveyCapture | undefined;
   let provedRestoration: ScrollSurveyCapture | undefined;
+  let terminalOriginProof: ScrollSurveyCapture | undefined;
   let restorationStarted = false;
   let restorationFailure: string | undefined;
   const rejectedRestorationFrames: ScrollSurveyFrame[] = [];
@@ -684,18 +706,10 @@ export async function captureScrollableSurvey(
         next.snapshot,
       );
       if (!seam) {
-        if (semanticViewportIsStationary(previous.snapshot, next.snapshot)) {
-          // The gesture resolved but accessibility proves the document did not
-          // move. Dynamic images/video can invalidate pixel overlap without
-          // creating a second viewport, so no inverse gesture is owed.
-          owedMovements -= 1;
-          decision = {
-            status: "completed",
-            reason: "end-of-content",
-            message: "Captured the complete visible list and restored the original viewport.",
-          };
-          break;
-        }
+        // Semantic stationary hints are intentionally not enough to discharge
+        // a physical down gesture. Sticky controls can be descendants of the
+        // scroll container while unlabeled rows move underneath; keeping the
+        // owed exact inverse is safer than certifying an end position.
         fastRestoreEligible = false;
         diagnosticFrames.push(candidateFrame(next, frames.length, previous.offsetY));
         decision = {
@@ -786,6 +800,7 @@ export async function captureScrollableSurvey(
           diagnosticFrames,
         );
       }
+      terminalOriginProof = proved;
     } catch (error) {
       if (error instanceof IosMutationOutcomeUnknownError) {
         attachScrollSurveyOutcomeUnknownDiagnostic(error, frames, diagnosticFrames);
@@ -815,6 +830,15 @@ export async function captureScrollableSurvey(
       diagnosticFrames,
     );
   }
+  const documentOriginIssuance =
+    frozenDocumentOrigin &&
+    frozenOriginMatched === true &&
+    attemptedScroll &&
+    decision.status === "completed" &&
+    decision.reason === "end-of-content" &&
+    terminalOriginProof
+      ? documentOriginIssuanceFor(initial, terminalOriginProof)
+      : undefined;
   return result(
     frames,
     decision.status,
@@ -822,10 +846,7 @@ export async function captureScrollableSurvey(
     `${decision.message}${originWarning}`,
     true,
     diagnosticFrames,
-    frozenOriginMatched === true &&
-      attemptedScroll &&
-      decision.status === "completed" &&
-      decision.reason === "end-of-content",
+    documentOriginIssuance,
   );
 }
 

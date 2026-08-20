@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { PNG } from "pngjs";
 import { persistAuthoringEvidence } from "./authoring-evidence.js";
+import { issueDocumentOriginAttestationAuthorization } from "./document-origin-attestation-authority.js";
 import type { RecipeStep } from "./recipes.js";
 import {
   captureSurfaceBaselineDisposition,
   loadFrozenDocumentOriginForCaptureSurface,
 } from "./recipe-runner-extended-steps.js";
+
+const targetProfileId = "android-profile";
 
 function png(width: number, height: number): Buffer {
   const image = new PNG({ width, height });
@@ -48,6 +51,85 @@ async function trustedSettingsOrigin(): Promise<Extract<RecipeStep, { kind: "cap
     }),
     mime: "application/json",
   });
+  const documentOrigin = {
+    index: 0,
+    offsetY: 0,
+    appendedHeight: 0,
+    capturedAt,
+    width: 64,
+    height: 160,
+    screenshot: {
+      id: screenshot.id,
+      uri: screenshot.uri,
+      sha256: screenshot.sha256!,
+      mime: "image/png" as const,
+      bytes: screenshot.bytes!,
+    },
+    accessibilityTree: {
+      id: accessibilityTree.id,
+      uri: accessibilityTree.uri,
+      sha256: accessibilityTree.sha256!,
+      mime: "application/json" as const,
+      bytes: accessibilityTree.bytes!,
+    },
+  };
+  const attestation = await persistAuthoringEvidence({
+    kind: "snapshot",
+    capturedAt,
+    data: JSON.stringify({
+      schemaVersion: 1,
+      kind: "relay.document-origin-attestation",
+      method: "frozen-origin-match",
+      targetProfileId,
+      surfaceId: "settings-surface",
+      capturedAt,
+      terminal: {
+        status: "completed",
+        reason: "end-of-content",
+        restoredStartViewport: true,
+      },
+      firstViewport: {
+        index: documentOrigin.index,
+        offsetY: documentOrigin.offsetY,
+        appendedHeight: documentOrigin.appendedHeight,
+        capturedAt: documentOrigin.capturedAt,
+        width: documentOrigin.width,
+        height: documentOrigin.height,
+        screenshotSha256: documentOrigin.screenshot.sha256,
+        accessibilityTreeSha256: documentOrigin.accessibilityTree.sha256,
+      },
+      terminalViewport: {
+        capturedAt,
+        width: documentOrigin.width,
+        height: documentOrigin.height,
+        screenshotSha256: documentOrigin.screenshot.sha256,
+        accessibilityTreeSha256: documentOrigin.accessibilityTree.sha256,
+      },
+    }),
+    mime: "application/json",
+  });
+  const authorization = await issueDocumentOriginAttestationAuthorization({
+    attestationSha256: attestation.sha256!,
+    targetProfileId,
+    surfaceId: "settings-surface",
+    firstViewport: {
+      index: 0,
+      offsetY: 0,
+      appendedHeight: 0,
+      capturedAt,
+      width: documentOrigin.width,
+      height: documentOrigin.height,
+      screenshotSha256: documentOrigin.screenshot.sha256,
+      accessibilityTreeSha256: documentOrigin.accessibilityTree.sha256,
+    },
+    terminalViewport: {
+      capturedAt,
+      width: documentOrigin.width,
+      height: documentOrigin.height,
+      screenshotSha256: documentOrigin.screenshot.sha256,
+      accessibilityTreeSha256: documentOrigin.accessibilityTree.sha256,
+    },
+  });
   return {
     kind: "capture-surface",
     screenId: "settings",
@@ -57,28 +139,7 @@ async function trustedSettingsOrigin(): Promise<Extract<RecipeStep, { kind: "cap
     baselineCaptureId: "settings-r1",
     reason: "Settings is a stable product-owned surface.",
     baselineTrust: "trusted",
-    documentOrigin: {
-      index: 0,
-      offsetY: 0,
-      appendedHeight: 0,
-      capturedAt,
-      width: 64,
-      height: 160,
-      screenshot: {
-        id: screenshot.id,
-        uri: screenshot.uri,
-        sha256: screenshot.sha256!,
-        mime: "image/png",
-        bytes: screenshot.bytes!,
-      },
-      accessibilityTree: {
-        id: accessibilityTree.id,
-        uri: accessibilityTree.uri,
-        sha256: accessibilityTree.sha256!,
-        mime: "application/json",
-        bytes: accessibilityTree.bytes!,
-      },
-    },
+    documentOrigin,
     documentOriginProof: {
       schemaVersion: 1,
       method: "frozen-origin-match",
@@ -86,6 +147,14 @@ async function trustedSettingsOrigin(): Promise<Extract<RecipeStep, { kind: "cap
         screenshotSha256: screenshot.sha256!,
         accessibilityTreeSha256: accessibilityTree.sha256!,
       },
+      attestation: {
+        id: attestation.id,
+        uri: attestation.uri,
+        sha256: attestation.sha256!,
+        mime: "application/json",
+        bytes: attestation.bytes!,
+      },
+      authorization,
     },
   };
 }
@@ -96,7 +165,11 @@ test("rehydrates only exact immutable Settings origin evidence for fast restore"
   process.env.RELAY_STATE_DIR = root;
   try {
     const step = await trustedSettingsOrigin();
-    const origin = await loadFrozenDocumentOriginForCaptureSurface(step, "android-device");
+    const origin = await loadFrozenDocumentOriginForCaptureSurface(
+      step,
+      "android-device",
+      targetProfileId,
+    );
     assert.equal(origin?.screenshot.width, 64);
     assert.equal(origin?.screenshot.height, 160);
     assert.equal(origin?.snapshot.foregroundApp, "ai.x.GrokApp");
@@ -108,12 +181,17 @@ test("rehydrates only exact immutable Settings origin evidence for fast restore"
       documentOrigin: { ...step.documentOrigin!, width: 65 },
     };
     assert.equal(
-      await loadFrozenDocumentOriginForCaptureSurface(mismatchedDimensions, "android-device"),
+      await loadFrozenDocumentOriginForCaptureSurface(
+        mismatchedDimensions,
+        "android-device",
+        targetProfileId,
+      ),
       undefined,
     );
     const missingOrigin = await loadFrozenDocumentOriginForCaptureSurface(
       mismatchedDimensions,
       "android-device",
+      targetProfileId,
     );
     assert.deepEqual(captureSurfaceBaselineDisposition(mismatchedDimensions, missingOrigin), {
       requiresRecapture: true,
@@ -141,6 +219,7 @@ test("rehydrates only exact immutable Settings origin evidence for fast restore"
           documentOrigin: { ...step.documentOrigin!, appendedHeight: 40 },
         },
         "android-device",
+        targetProfileId,
       ),
       undefined,
     );
@@ -148,12 +227,13 @@ test("rehydrates only exact immutable Settings origin evidence for fast restore"
       await loadFrozenDocumentOriginForCaptureSurface(
         { ...step, baselineTrust: "recapture-required" },
         "android-device",
+        targetProfileId,
       ),
       undefined,
     );
     const { documentOriginProof: _documentOriginProof, ...proofless } = step;
     assert.equal(
-      await loadFrozenDocumentOriginForCaptureSurface(proofless, "android-device"),
+      await loadFrozenDocumentOriginForCaptureSurface(proofless, "android-device", targetProfileId),
       undefined,
     );
     const malformedProof = {
@@ -165,9 +245,77 @@ test("rehydrates only exact immutable Settings origin evidence for fast restore"
       } as unknown as NonNullable<typeof step.documentOriginProof>,
     };
     assert.equal(
-      await loadFrozenDocumentOriginForCaptureSurface(malformedProof, "android-device"),
+      await loadFrozenDocumentOriginForCaptureSurface(
+        malformedProof,
+        "android-device",
+        targetProfileId,
+      ),
       undefined,
       "malformed persisted proof must disable fast restore instead of throwing",
+    );
+    const forgedAttestation = await persistAuthoringEvidence({
+      kind: "snapshot",
+      capturedAt: 123,
+      data: JSON.stringify({
+        schemaVersion: 1,
+        kind: "relay.document-origin-attestation",
+        method: "frozen-origin-match",
+        targetProfileId,
+        surfaceId: "settings-surface",
+        capturedAt: 123,
+        terminal: {
+          status: "completed",
+          reason: "end-of-content",
+          restoredStartViewport: true,
+        },
+        firstViewport: {
+          index: 0,
+          offsetY: 0,
+          appendedHeight: 0,
+          capturedAt: 123,
+          width: 64,
+          height: 160,
+          screenshotSha256: step.documentOrigin!.screenshot.sha256,
+          accessibilityTreeSha256: step.documentOrigin!.accessibilityTree.sha256,
+        },
+        terminalViewport: {
+          capturedAt: 123,
+          width: 64,
+          height: 160,
+          screenshotSha256: step.documentOrigin!.screenshot.sha256,
+          accessibilityTreeSha256: step.documentOrigin!.accessibilityTree.sha256,
+        },
+        manualWriter: true,
+      }),
+      mime: "application/json",
+    });
+    const handAuthoredProof = {
+      ...step,
+      documentOriginProof: {
+        ...step.documentOriginProof!,
+        attestation: {
+          id: forgedAttestation.id,
+          uri: forgedAttestation.uri,
+          sha256: forgedAttestation.sha256!,
+          mime: "application/json" as const,
+          bytes: forgedAttestation.bytes!,
+        },
+      },
+    };
+    assert.equal(
+      await loadFrozenDocumentOriginForCaptureSurface(
+        handAuthoredProof,
+        "android-device",
+        targetProfileId,
+      ),
+      undefined,
+      "a matching hand-authored receipt cannot authorize fast restoration without issuer authority",
+    );
+    await writeFile(join(root, ".document-origin-attestation-authority"), "corrupt\n", "utf8");
+    assert.equal(
+      await loadFrozenDocumentOriginForCaptureSurface(step, "android-device", targetProfileId),
+      undefined,
+      "a corrupt local authority disables the fast path instead of failing the capture",
     );
   } finally {
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

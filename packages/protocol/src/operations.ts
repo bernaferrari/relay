@@ -290,7 +290,6 @@ const targetSnapshotOutputParser = objectParser<OperationOutput<"target.snapshot
     }
   },
 );
-
 const scrollSurveyReasons = new Set<ScrollSurveyStopReasonDto>([
   "end-of-content",
   "screen-changed",

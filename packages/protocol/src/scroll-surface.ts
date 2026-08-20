@@ -52,8 +52,26 @@ export type ScrollSurfaceViewport = {
   accessibilityTree: RawAccessibilityTreeEvidence;
 };
 
+/** Immutable capture-process receipt for a document-origin proof. It is not
+ * authorable map metadata: execution reopens these bytes from Relay's CAS and
+ * verifies every bound field before it can authorize a high-distance restore. */
+export type ScrollSurfaceDocumentOriginAttestation = ScrollSurfaceEvidence & {
+  mime: "application/json";
+};
+
+/** Authorization made by Relay's local capture authority after it verified
+ * the runtime-only survey issuance facts. The signature binds the attestation
+ * digest, target/surface scope, first raw viewport, and terminal return.
+ * App Map JSON can carry this reference, but cannot mint a replacement. */
+export type ScrollSurfaceDocumentOriginAuthorization = {
+  schemaVersion: 1;
+  issuer: "relay-local-capture";
+  signature: string;
+};
+
 /** Explicit provenance for a physical first viewport, bound to its immutable
- * raw evidence. Zero stitch geometry alone is not evidence that a viewport
+ * raw evidence and an immutable capture-process attestation. Zero stitch
+ * geometry—or a hand-authored hash pair—alone is not evidence that a viewport
  * was at the top of the underlying document. */
 export type ScrollSurfaceDocumentOriginProof = {
   schemaVersion: 1;
@@ -64,6 +82,8 @@ export type ScrollSurfaceDocumentOriginProof = {
     screenshotSha256: string;
     accessibilityTreeSha256: string;
   };
+  attestation: ScrollSurfaceDocumentOriginAttestation;
+  authorization: ScrollSurfaceDocumentOriginAuthorization;
 };
 
 export type ScrollSurfaceCapturePolicy = {

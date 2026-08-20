@@ -11,12 +11,14 @@ import type {
 } from "@relay/protocol";
 import { PNG } from "pngjs";
 import { persistAuthoringEvidence, readAuthoringEvidence } from "./authoring-evidence.js";
+import { issueDocumentOriginAttestationAuthorization } from "./document-origin-attestation-authority.js";
 import {
   composeScrollSurveyFrames,
   mergeScrollSurfaceNodes,
   type ScrollSurveyFrame,
   type ScrollSurveyResult,
 } from "./scrollable-survey.js";
+import { validatedDocumentOriginIssuance } from "./document-origin-survey-issuance.js";
 import { appMapFail } from "./app-map/errors.js";
 import { mutateAppMap } from "./app-map/mutation.js";
 import { compileScrollSurfaceSemanticIndex } from "./scroll-surface-semantic-index.js";
@@ -75,6 +77,78 @@ export function logicalScrollSurfaceId(screenId: string, variantId: string): str
     .update(`${screenId}\0${variantId}\0full-surface`)
     .digest("hex");
   return `scroll-surface-${digest.slice(0, 24)}`;
+}
+
+async function persistDocumentOriginProof(input: {
+  survey: ScrollSurveyResult;
+  targetProfile: TargetProfile;
+  surfaceId: string;
+  firstViewport: LogicalScrollSurface["viewports"][number] | undefined;
+}): Promise<ScrollSurfaceDocumentOriginProof | undefined> {
+  const firstViewport = input.firstViewport;
+  const issuance = validatedDocumentOriginIssuance(input.survey);
+  // A boolean copied into a JSON-shaped result is not an issuance authority.
+  // The private issuance facts record the exact first and terminal raw bytes
+  // before a result leaves captureScrollableSurvey; compare the newly written
+  // CAS references before asking the local authority to sign a receipt.
+  if (
+    !firstViewport ||
+    !issuance ||
+    input.survey.status !== "completed" ||
+    input.survey.reason !== "end-of-content" ||
+    !input.survey.restoredStartViewport ||
+    firstViewport.index !== issuance.firstViewport.index ||
+    firstViewport.offsetY !== issuance.firstViewport.offsetY ||
+    firstViewport.appendedHeight !== issuance.firstViewport.appendedHeight ||
+    firstViewport.capturedAt !== issuance.firstViewport.capturedAt ||
+    firstViewport.width !== issuance.firstViewport.width ||
+    firstViewport.height !== issuance.firstViewport.height ||
+    firstViewport.screenshot.sha256 !== issuance.firstViewport.screenshotSha256 ||
+    firstViewport.accessibilityTree.sha256 !== issuance.firstViewport.accessibilityTreeSha256
+  ) {
+    return undefined;
+  }
+  const attestation = await persistAuthoringEvidence({
+    kind: "snapshot",
+    capturedAt: firstViewport.capturedAt,
+    data: JSON.stringify({
+      schemaVersion: 1,
+      kind: "relay.document-origin-attestation",
+      method: "frozen-origin-match",
+      targetProfileId: input.targetProfile.id,
+      surfaceId: input.surfaceId,
+      capturedAt: firstViewport.capturedAt,
+      terminal: {
+        status: "completed",
+        reason: "end-of-content",
+        restoredStartViewport: true,
+      },
+      firstViewport: issuance.firstViewport,
+      terminalViewport: issuance.terminalViewport,
+    }),
+    mime: "application/json",
+  });
+  if (!attestation.sha256) throw new Error("Document-origin attestation has no digest");
+  const authorization = await issueDocumentOriginAttestationAuthorization({
+    attestationSha256: attestation.sha256,
+    targetProfileId: input.targetProfile.id,
+    surfaceId: input.surfaceId,
+    firstViewport: issuance.firstViewport,
+    terminalViewport: issuance.terminalViewport,
+  });
+  return {
+    schemaVersion: 1,
+    method: "frozen-origin-match",
+    firstViewport: {
+      screenshotSha256: firstViewport.screenshot.sha256,
+      accessibilityTreeSha256: firstViewport.accessibilityTree.sha256,
+    },
+    attestation: {
+      ...evidenceReference(attestation, "application/json"),
+      mime: "application/json",
+    },
+    authorization,
+  };
 }
 
 /** Persist a survey without retaining base64 in the logical App Map. Every raw
@@ -179,32 +253,20 @@ export async function persistLogicalScrollSurface(input: {
     };
   }
 
+  const firstViewport = viewports[0];
+  const documentOriginProof = await persistDocumentOriginProof({
+    survey: input.survey,
+    targetProfile: input.targetProfile,
+    surfaceId: input.surfaceId,
+    firstViewport,
+  });
   const rawEvidence = [
     ...viewports.flatMap((viewport) => [viewport.screenshot, viewport.accessibilityTree]),
     ...diagnosticViewports.flatMap((viewport) => [viewport.screenshot, viewport.accessibilityTree]),
+    ...(documentOriginProof ? [documentOriginProof.attestation] : []),
     ...(composite ? [composite] : []),
     mergedTree,
   ];
-  const firstViewport = viewports[0];
-  // The survey can set this only after its fresh first capture and terminal
-  // restoration both matched a prior frozen origin. Bind it to the two raw
-  // CAS objects so a later map edit cannot transplant the attestation onto a
-  // normalized-but-mid-page first viewport.
-  const documentOriginProof: ScrollSurfaceDocumentOriginProof | undefined =
-    input.survey.documentOriginProven &&
-    input.survey.status === "completed" &&
-    input.survey.reason === "end-of-content" &&
-    input.survey.restoredStartViewport &&
-    firstViewport
-      ? {
-          schemaVersion: 1,
-          method: "frozen-origin-match",
-          firstViewport: {
-            screenshotSha256: firstViewport.screenshot.sha256,
-            accessibilityTreeSha256: firstViewport.accessibilityTree.sha256,
-          },
-        }
-      : undefined;
   const surface: SurfaceWithoutManifest = {
     schemaVersion: 1,
     id: input.surfaceId,
@@ -259,6 +321,7 @@ function surfaceEvidence(surface: LogicalScrollSurface): ScrollSurfaceEvidence[]
       viewport.screenshot,
       viewport.accessibilityTree,
     ]),
+    ...(surface.documentOriginProof ? [surface.documentOriginProof.attestation] : []),
     ...(surface.composite ? [surface.composite] : []),
     surface.mergedTree,
     surface.manifest,

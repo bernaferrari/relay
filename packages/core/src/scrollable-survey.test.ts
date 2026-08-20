@@ -8,10 +8,11 @@ import {
   scrollSurveyGesture,
   scrollSurveyOutcomeUnknownDiagnostic,
   verticalScrollSeam,
-  type ScrollSurveyCapture,
   type ValidatedFrozenDocumentOrigin,
 } from "./scrollable-survey.js";
+import { semanticViewportIsStationary } from "./scrollable-survey-seams.js";
 import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
+import { validatedFrozenOriginForTest } from "./scrollable-survey-test-support.js";
 import type { SnapshotPayload } from "./workspace-capture.js";
 
 function unknownIosScroll(): IosMutationOutcomeUnknownError {
@@ -44,6 +45,17 @@ function image(offset: number): Buffer {
       png.data[index + 2] = (value * 5) % 255;
       png.data[index + 3] = 255;
     }
+  }
+  return PNG.sync.write(png);
+}
+
+function flatImage(value: number): Buffer {
+  const png = new PNG({ width: 64, height: 160 });
+  for (let offset = 0; offset < png.data.length; offset += 4) {
+    png.data[offset] = value;
+    png.data[offset + 1] = Math.max(0, value - 12);
+    png.data[offset + 2] = Math.min(255, value + 20);
+    png.data[offset + 3] = 255;
   }
   return PNG.sync.write(png);
 }
@@ -193,7 +205,7 @@ function superGrokScrolledFrame(phase: number, capturedAt: number) {
   return frame;
 }
 
-test("completes a one-viewport SuperGrok surface when semantics prove the scroll did not move", async () => {
+test("keeps a dynamic one-viewport SuperGrok surface review-only when pixels cannot prove no movement", async () => {
   const frames = [superGrokTerminalFrame(0, 1), superGrokTerminalFrame(1, 2)];
   assert.equal(
     verticalScrollSeam(
@@ -216,16 +228,21 @@ test("completes a one-viewport SuperGrok surface when semantics prove the scroll
     settle: async () => {},
   });
 
-  assert.equal(survey.status, "completed");
-  assert.equal(survey.reason, "end-of-content");
+  assert.equal(survey.status, "stopped");
+  assert.equal(survey.reason, "seam-ambiguous");
   assert.equal(survey.frames.length, 1);
-  assert.equal(survey.restoredStartViewport, true);
-  assert.equal(inverseScrolls, 0);
-  assert.ok(survey.stitched);
-  assert.ok(survey.mergedNodes.some((node) => node.label === "Manage your billing"));
+  assert.equal(
+    survey.diagnosticFrames.length,
+    2,
+    "retain the rejected forward viewport and failed terminal proof for review",
+  );
+  assert.equal(survey.restoredStartViewport, false);
+  assert.equal(inverseScrolls, 1);
+  assert.equal(survey.stitched, undefined);
+  assert.equal(survey.documentOriginProven, undefined);
 });
 
-test("captures the exact SuperGrok 1173px semantic shift before its dynamic terminal viewport", async () => {
+test("keeps verified SuperGrok segments but does not certify a dynamic terminal viewport", async () => {
   let page = 0;
   let captureCount = 0;
   let inverseScrolls = 0;
@@ -244,15 +261,16 @@ test("captures the exact SuperGrok 1173px semantic shift before its dynamic term
     settle: async () => {},
   });
 
-  assert.equal(survey.status, "completed");
-  assert.equal(survey.reason, "end-of-content");
+  assert.equal(survey.status, "stopped");
+  assert.equal(survey.reason, "seam-ambiguous");
   assert.equal(survey.frames.length, 2);
   assert.equal(survey.frames[1]?.offsetY, 1173);
   assert.equal(survey.frames[1]?.appendedHeight, 1173);
-  assert.deepEqual(survey.diagnosticFrames, []);
-  assert.equal(inverseScrolls, 1);
-  assert.equal(survey.restoredStartViewport, true);
-  assert.equal(survey.stitched?.height, 3513);
+  assert.equal(survey.diagnosticFrames.length, 2);
+  assert.equal(inverseScrolls, 2);
+  assert.equal(survey.restoredStartViewport, false);
+  assert.equal(survey.stitched, undefined);
+  assert.equal(survey.documentOriginProven, undefined);
 });
 
 test("keeps an uncertain moved SuperGrok viewport stopped instead of calling it terminal", async () => {
@@ -474,11 +492,69 @@ function captured(png: Buffer, capturedAt: number, anchor = "toolbar") {
   };
 }
 
-/** Test fixtures model an origin already admitted by the production evidence
- * loader. Deliberately keep this assertion local: product code cannot pass a
- * plain viewport into the fast-restoration capability. */
-function validatedFrozenOriginForTest(capture: ScrollSurveyCapture): ValidatedFrozenDocumentOrigin {
-  return capture as ValidatedFrozenDocumentOrigin;
+/**
+ * Three named sticky controls live inside the scroll hierarchy while the
+ * actual row has no durable semantic key. This is the dangerous case for a
+ * semantic-only stationary matcher: it can see broad, unchanged support even
+ * though the document content moved beneath those controls.
+ */
+function stickyDescendantCapture(page: 0 | 1, capturedAt: number) {
+  const nodes: SnapshotPayload["nodes"] = [
+    {
+      identifier: "grok-root",
+      type: "Application",
+      rect: { x: 0, y: 0, width: 64, height: 160 },
+      visibleToUser: true,
+      index: 0,
+    },
+    {
+      identifier: "voice-scroll",
+      type: "android.widget.ScrollView",
+      rect: { x: 0, y: 0, width: 64, height: 160 },
+      visibleToUser: true,
+      index: 1,
+      parentIndex: 0,
+    },
+    ...(
+      [
+        ["Filter", 24],
+        ["Sort", 80],
+        ["Display", 136],
+      ] as const
+    ).map(([label, y], index) => ({
+      label,
+      type: "Button",
+      rect: { x: 4, y, width: 56, height: 12 },
+      visibleToUser: true,
+      index: index + 2,
+      parentIndex: 1,
+    })),
+    {
+      type: "TextView",
+      rect: { x: 4, y: page === 0 ? 120 : 32, width: 56, height: 18 },
+      visibleToUser: true,
+      index: 5,
+      parentIndex: 1,
+    },
+  ];
+  return {
+    screenshot: {
+      base64: flatImage(page === 0 ? 24 : 188).toString("base64"),
+      width: 64,
+      height: 160,
+      capturedAt,
+    },
+    snapshot: {
+      capturedAt,
+      foregroundApp: "ai.x.GrokApp",
+      nodes,
+      interactive: [],
+      bounds: { width: 64, height: 160 },
+      inspectable: true,
+      source: "sdk" as const,
+      screenIdentity: { fingerprint: "voice-sticky-controls", nodes: [], volatileSignals: [] },
+    },
+  };
 }
 
 /** A deterministic product-shaped surface rather than a generic scroll
@@ -773,6 +849,59 @@ test("restores after an ambiguous seam", async () => {
   assert.equal(result.documentOriginProven, undefined);
 });
 
+test("does not let sticky descendant controls certify a moved Voice Library viewport", async () => {
+  const first = stickyDescendantCapture(0, 0);
+  const moved = stickyDescendantCapture(1, 1);
+  assert.equal(
+    semanticViewportIsStationary(first.snapshot, moved.snapshot),
+    true,
+    "the review-only semantic hint sees the three fixed controls, not the unlabeled moving row",
+  );
+  assert.equal(
+    verticalScrollSeam(
+      Buffer.from(first.screenshot.base64, "base64"),
+      Buffer.from(moved.screenshot.base64, "base64"),
+      first.snapshot,
+      moved.snapshot,
+    ),
+    undefined,
+    "the dynamically redrawn pixels provide no physical overlap proof",
+  );
+  let page: 0 | 1 = 0;
+  let exactUp = 0;
+  let fastUp = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => stickyDescendantCapture(page, page + exactUp + fastUp),
+      scrollDown: async () => {
+        page = 1;
+      },
+      scrollUp: async () => {
+        exactUp += 1;
+        page = 0;
+      },
+      scrollUpFast: async () => {
+        fastUp += 1;
+        page = 0;
+      },
+      settle: async () => {},
+    },
+    {
+      maxScrolls: 1,
+      frozenDocumentOrigin: validatedFrozenOriginForTest(first),
+    },
+  );
+
+  assert.equal(result.status, "stopped");
+  assert.equal(result.reason, "seam-ambiguous");
+  assert.equal(result.frames.length, 1);
+  assert.equal(result.diagnosticFrames.length, 1);
+  assert.equal(exactUp, 1);
+  assert.equal(fastUp, 0, "an ambiguous forward movement never receives an Android fling");
+  assert.equal(result.restoredStartViewport, true);
+  assert.equal(result.documentOriginProven, undefined);
+});
+
 test("restores after capture failure", async () => {
   let captures = 0;
   let successfulDown = 0;
@@ -1043,6 +1172,74 @@ test("uses bounded Android restoration only after a frozen Voice Library origin 
   assert.equal(page, 0);
   assert.equal(fastUp, 2);
   assert.equal(exactUp, 0);
+});
+
+test("rejects a type-asserted frozen origin at the runtime capability boundary", async () => {
+  let page = 0;
+  let exactUp = 0;
+  let fastUp = 0;
+  const forged = productSurfaceCapture("Settings", 0) as unknown as ValidatedFrozenDocumentOrigin;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => productSurfaceCapture("Settings", page),
+      scrollDown: async () => {
+        page = 1;
+      },
+      scrollUp: async () => {
+        exactUp += 1;
+        page = 0;
+      },
+      scrollUpFast: async () => {
+        fastUp += 1;
+        page = 0;
+      },
+      settle: async () => {},
+    },
+    { maxScrolls: 1, frozenDocumentOrigin: forged },
+  );
+  assert.equal(result.reason, "limit-reached");
+  assert.equal(result.restoredStartViewport, true);
+  assert.equal(exactUp, 1);
+  assert.equal(fastUp, 0);
+  assert.equal(result.documentOriginProven, undefined);
+});
+
+test("keeps a minted Settings origin immutable after the evidence loader issues it", async () => {
+  const origin = validatedFrozenOriginForTest(productSurfaceCapture("Settings", 0));
+  const mutable = origin as unknown as {
+    screenshot: { base64: string };
+    snapshot: { nodes: Array<{ identifier?: string }> };
+  };
+  assert.throws(() => {
+    mutable.screenshot.base64 = productSurfaceCapture("Settings", 1).screenshot.base64;
+  }, TypeError);
+  assert.throws(() => {
+    mutable.snapshot.nodes[0]!.identifier = "forged-root";
+  }, TypeError);
+
+  let page = 0;
+  let fastUp = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => productSurfaceCapture("Settings", page),
+      scrollDown: async () => {
+        page = 1;
+      },
+      scrollUp: async () => {
+        page = 0;
+      },
+      scrollUpFast: async () => {
+        fastUp += 1;
+        page = 0;
+      },
+      settle: async () => {},
+    },
+    { maxScrolls: 1, frozenDocumentOrigin: origin },
+  );
+
+  assert.equal(result.reason, "limit-reached");
+  assert.equal(result.restoredStartViewport, true);
+  assert.equal(fastUp, 1, "the immutable original, not the attempted mutation, authorizes it");
 });
 
 test("refreshes a frozen Voice Library origin instead of trusting a stale checkpoint", async () => {

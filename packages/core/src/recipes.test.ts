@@ -362,6 +362,18 @@ describe("validateRecipeSteps", () => {
         screenshotSha256: digest,
         accessibilityTreeSha256: digest,
       },
+      attestation: {
+        id: "settings-origin-attestation",
+        uri: `relay-evidence://${digest}`,
+        sha256: digest,
+        mime: "application/json" as const,
+        bytes: 42,
+      },
+      authorization: {
+        schemaVersion: 1 as const,
+        issuer: "relay-local-capture" as const,
+        signature: "s".repeat(43),
+      },
     };
     const step = {
       kind: "capture-surface" as const,
@@ -395,6 +407,23 @@ describe("validateRecipeSteps", () => {
     assert.throws(
       () => validateRecipeSteps([{ ...step, baselineTrust: "trusted", documentOrigin }]),
       /documentOriginProof must bind the frozen first viewport evidence/,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            ...step,
+            baselineTrust: "trusted",
+            documentOrigin,
+            documentOriginProof: {
+              schemaVersion: 1,
+              method: "frozen-origin-match",
+              firstViewport: documentOriginProof.firstViewport,
+            },
+          },
+        ]),
+      /documentOriginProof must bind the frozen first viewport evidence/,
+      "a raw/manual recipe cannot omit the immutable origin-attestation receipt",
     );
     assert.throws(
       () =>

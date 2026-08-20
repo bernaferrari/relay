@@ -17,6 +17,12 @@ import {
   type ValidatedFrozenDocumentOrigin,
 } from "./scrollable-survey.js";
 import { readAuthoringEvidence } from "./authoring-evidence.js";
+import {
+  documentOriginAttestationAuthorizationIsValid,
+  type DocumentOriginAttestationAuthorization,
+  type DocumentOriginAttestationBinding,
+} from "./document-origin-attestation-authority.js";
+import { mintValidatedFrozenDocumentOrigin } from "./frozen-document-origin-capability.js";
 import { persistLogicalScrollSurface } from "./logical-scroll-surface.js";
 import { listPersistedRuns } from "./runs.js";
 import {
@@ -389,6 +395,59 @@ function evidenceSha256(value: unknown): string | undefined {
   return typeof sha256 === "string" && /^[a-f0-9]{64}$/u.test(sha256) ? sha256 : undefined;
 }
 
+type RuntimeEvidenceReference = {
+  id: string;
+  uri: string;
+  sha256: string;
+  mime: "application/json";
+  bytes: number;
+};
+
+function attestationEvidence(value: unknown): RuntimeEvidenceReference | undefined {
+  const evidence = objectRecord(value);
+  const sha256 = evidenceSha256(evidence);
+  if (
+    !evidence ||
+    !sha256 ||
+    typeof evidence.id !== "string" ||
+    !evidence.id.trim() ||
+    evidence.uri !== `relay-evidence://${sha256}` ||
+    evidence.mime !== "application/json" ||
+    typeof evidence.bytes !== "number" ||
+    !Number.isSafeInteger(evidence.bytes) ||
+    evidence.bytes < 0
+  ) {
+    return undefined;
+  }
+  return {
+    id: evidence.id,
+    uri: evidence.uri,
+    sha256,
+    mime: "application/json",
+    bytes: evidence.bytes,
+  };
+}
+
+function attestationAuthorization(
+  value: unknown,
+): DocumentOriginAttestationAuthorization | undefined {
+  const authorization = objectRecord(value);
+  if (
+    !authorization ||
+    authorization.schemaVersion !== 1 ||
+    authorization.issuer !== "relay-local-capture" ||
+    typeof authorization.signature !== "string" ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(authorization.signature)
+  ) {
+    return undefined;
+  }
+  return {
+    schemaVersion: 1,
+    issuer: "relay-local-capture",
+    signature: authorization.signature,
+  };
+}
+
 function frozenDocumentOriginProofIsValid(
   step: Extract<RecipeStep, { kind: "capture-surface" }>,
 ): boolean {
@@ -400,17 +459,116 @@ function frozenDocumentOriginProofIsValid(
   const firstViewport = objectRecord(proof?.firstViewport);
   const screenshotSha256 = evidenceSha256(origin?.screenshot);
   const accessibilityTreeSha256 = evidenceSha256(origin?.accessibilityTree);
+  const attestation = attestationEvidence(proof?.attestation);
+  const authorization = attestationAuthorization(proof?.authorization);
   return Boolean(
     origin &&
     proof &&
     firstViewport &&
     screenshotSha256 &&
     accessibilityTreeSha256 &&
+    attestation &&
+    authorization &&
     proof.schemaVersion === 1 &&
     proof.method === "frozen-origin-match" &&
     firstViewport.screenshotSha256 === screenshotSha256 &&
     firstViewport.accessibilityTreeSha256 === accessibilityTreeSha256,
   );
+}
+
+async function frozenDocumentOriginAttestationIsValid(
+  step: Extract<RecipeStep, { kind: "capture-surface" }>,
+  origin: NonNullable<Extract<RecipeStep, { kind: "capture-surface" }>["documentOrigin"]>,
+  targetProfileId: string,
+): Promise<boolean> {
+  const proof = objectRecord(step.documentOriginProof);
+  const attestation = attestationEvidence(proof?.attestation);
+  const authorization = attestationAuthorization(proof?.authorization);
+  if (
+    !attestation ||
+    !authorization ||
+    typeof targetProfileId !== "string" ||
+    !targetProfileId.trim()
+  ) {
+    return false;
+  }
+  const bytes = await readAuthoringEvidence(attestation.sha256);
+  if (!bytes || !evidenceBytesMatch(bytes, attestation)) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    return false;
+  }
+  const payload = objectRecord(parsed);
+  const terminal = objectRecord(payload?.terminal);
+  const firstViewport = objectRecord(payload?.firstViewport);
+  const terminalViewport = objectRecord(payload?.terminalViewport);
+  const terminalCapturedAt = terminalViewport?.capturedAt;
+  const terminalWidth = terminalViewport?.width;
+  const terminalHeight = terminalViewport?.height;
+  const terminalScreenshotSha256 = terminalViewport?.screenshotSha256;
+  const terminalAccessibilityTreeSha256 = terminalViewport?.accessibilityTreeSha256;
+  if (
+    !payload ||
+    !terminal ||
+    !firstViewport ||
+    !terminalViewport ||
+    payload.schemaVersion !== 1 ||
+    payload.kind !== "relay.document-origin-attestation" ||
+    payload.method !== "frozen-origin-match" ||
+    payload.targetProfileId !== targetProfileId ||
+    payload.surfaceId !== step.surfaceId ||
+    payload.capturedAt !== origin.capturedAt ||
+    terminal.status !== "completed" ||
+    terminal.reason !== "end-of-content" ||
+    terminal.restoredStartViewport !== true ||
+    firstViewport.index !== 0 ||
+    firstViewport.offsetY !== 0 ||
+    firstViewport.appendedHeight !== 0 ||
+    firstViewport.capturedAt !== origin.capturedAt ||
+    firstViewport.width !== origin.width ||
+    firstViewport.height !== origin.height ||
+    firstViewport.screenshotSha256 !== origin.screenshot.sha256 ||
+    firstViewport.accessibilityTreeSha256 !== origin.accessibilityTree.sha256 ||
+    typeof terminalCapturedAt !== "number" ||
+    !Number.isSafeInteger(terminalCapturedAt) ||
+    typeof terminalWidth !== "number" ||
+    !Number.isSafeInteger(terminalWidth) ||
+    typeof terminalHeight !== "number" ||
+    !Number.isSafeInteger(terminalHeight) ||
+    terminalWidth <= 0 ||
+    terminalHeight <= 0 ||
+    typeof terminalScreenshotSha256 !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(terminalScreenshotSha256) ||
+    typeof terminalAccessibilityTreeSha256 !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(terminalAccessibilityTreeSha256)
+  ) {
+    return false;
+  }
+  const binding: DocumentOriginAttestationBinding = {
+    attestationSha256: attestation.sha256,
+    targetProfileId,
+    surfaceId: step.surfaceId,
+    firstViewport: {
+      index: 0,
+      offsetY: 0,
+      appendedHeight: 0,
+      capturedAt: origin.capturedAt,
+      width: origin.width,
+      height: origin.height,
+      screenshotSha256: origin.screenshot.sha256,
+      accessibilityTreeSha256: origin.accessibilityTree.sha256,
+    },
+    terminalViewport: {
+      capturedAt: terminalCapturedAt,
+      width: terminalWidth,
+      height: terminalHeight,
+      screenshotSha256: terminalScreenshotSha256,
+      accessibilityTreeSha256: terminalAccessibilityTreeSha256,
+    },
+  };
+  return documentOriginAttestationAuthorizationIsValid(binding, authorization);
 }
 
 function isFrozenInspectableSnapshot(
@@ -436,6 +594,7 @@ function isFrozenInspectableSnapshot(
 export async function loadFrozenDocumentOriginForCaptureSurface(
   step: Extract<RecipeStep, { kind: "capture-surface" }>,
   serial: string,
+  targetProfileId: string,
 ): Promise<ValidatedFrozenDocumentOrigin | undefined> {
   const origin = step.documentOrigin;
   // A hand-authored or degraded step must not turn its title/first frame into
@@ -448,6 +607,9 @@ export async function loadFrozenDocumentOriginForCaptureSurface(
     !frozenDocumentOriginGeometryIsValid(origin) ||
     !frozenDocumentOriginProofIsValid(step)
   ) {
+    return undefined;
+  }
+  if (!(await frozenDocumentOriginAttestationIsValid(step, origin, targetProfileId))) {
     return undefined;
   }
   const [image, tree] = await Promise.all([
@@ -471,10 +633,11 @@ export async function loadFrozenDocumentOriginForCaptureSurface(
   }
   if (!isFrozenInspectableSnapshot(parsed)) return undefined;
   const nodes = parsed.nodes;
-  // This is deliberately the only production cast to the opaque capability:
-  // every preceding guard validates the trusted step, proof-to-evidence
-  // binding, CAS bytes, decoded PNG geometry, and inspectable AX document.
-  return {
+  // This is the only production issuer of the in-memory capability: every
+  // preceding guard validates the trusted step, proof-to-evidence binding,
+  // locally authorized attestation, CAS bytes, decoded PNG geometry, and an
+  // inspectable AX document.
+  return mintValidatedFrozenDocumentOrigin({
     screenshot: {
       base64: image.toString("base64"),
       width: origin.width,
@@ -492,7 +655,7 @@ export async function loadFrozenDocumentOriginForCaptureSurface(
       ...(parsed.foregroundApp?.trim() ? { foregroundApp: parsed.foregroundApp } : {}),
       screenIdentity: observeScreenIdentity(nodes),
     },
-  } as ValidatedFrozenDocumentOrigin;
+  });
 }
 
 /** Freeze runtime comparison policy before a capture begins. A compiled
@@ -528,7 +691,11 @@ export async function runCaptureSurfaceStep(
   }
   await ensureAndroidSurfaceRuntimeFacts(job);
   const evaluatedAt = now();
-  const documentOrigin = await loadFrozenDocumentOriginForCaptureSurface(step, job.serial);
+  const documentOrigin = await loadFrozenDocumentOriginForCaptureSurface(
+    step,
+    job.serial,
+    job.targetProfile.id,
+  );
   const baselineDisposition = captureSurfaceBaselineDisposition(step, documentOrigin);
   const baselineRequiresRecapture = baselineDisposition.requiresRecapture;
   if (step.baselineTrust === "trusted" && !documentOrigin) {

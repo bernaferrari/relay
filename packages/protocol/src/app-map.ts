@@ -27,6 +27,8 @@ export type {
   RawAccessibilityTreeEvidence,
   ScreenVariantRawAccessibilityTree,
   ScrollSurfaceCapturePolicy,
+  ScrollSurfaceDocumentOriginAuthorization,
+  ScrollSurfaceDocumentOriginAttestation,
   ScrollSurfaceDocumentOriginProof,
   ScrollSurfaceEvidence,
   ScrollSurfaceSemanticAnchor,

@@ -199,7 +199,13 @@ function semanticScrollShift(
     : undefined;
 }
 
-/** Prove no content movement when visual pixels are animated or noisy. */
+/**
+ * Review-only hint that named descendants appear stationary while pixels are
+ * animated or noisy. It is intentionally not an execution proof: sticky
+ * controls can be descendants of a scroll container while unlabeled content
+ * moves underneath, so callers must never use this to discharge a gesture,
+ * certify restoration, or mint a document-origin attestation.
+ */
 export function semanticViewportIsStationary(
   previous: SnapshotPayload,
   current: SnapshotPayload,

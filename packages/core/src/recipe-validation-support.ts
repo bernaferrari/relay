@@ -449,6 +449,10 @@ function parseCaptureSurfaceStep(
   if (documentOrigin) {
     const screenshot = originEvidence(documentOrigin.screenshot, "image/png");
     const accessibilityTree = originEvidence(documentOrigin.accessibilityTree, "application/json");
+    const attestation = originEvidence(documentOriginProof?.attestation, "application/json");
+    const authorization = isObject(documentOriginProof?.authorization)
+      ? documentOriginProof.authorization
+      : undefined;
     const numbers = [
       documentOrigin.index,
       documentOrigin.offsetY,
@@ -475,8 +479,14 @@ function parseCaptureSurfaceStep(
     const firstViewport = documentOriginProof?.firstViewport;
     if (
       !documentOriginProof ||
+      !attestation ||
+      !authorization ||
       documentOriginProof.schemaVersion !== 1 ||
       documentOriginProof.method !== "frozen-origin-match" ||
+      authorization.schemaVersion !== 1 ||
+      authorization.issuer !== "relay-local-capture" ||
+      !isString(authorization.signature) ||
+      !/^[A-Za-z0-9_-]{43}$/u.test(authorization.signature) ||
       !isObject(firstViewport) ||
       !isString(firstViewport.screenshotSha256) ||
       !isString(firstViewport.accessibilityTreeSha256) ||
@@ -504,6 +514,12 @@ function parseCaptureSurfaceStep(
       firstViewport: {
         screenshotSha256: screenshot.sha256,
         accessibilityTreeSha256: accessibilityTree.sha256,
+      },
+      attestation,
+      authorization: {
+        schemaVersion: 1,
+        issuer: "relay-local-capture",
+        signature: authorization.signature,
       },
     };
   } else if (documentOriginProof) {

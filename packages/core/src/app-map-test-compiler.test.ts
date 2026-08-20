@@ -600,6 +600,15 @@ test("full-surface bindings compile one executable capture after reaching the de
             screenshotSha256: digest,
             accessibilityTreeSha256: digest,
           },
+          attestation: {
+            ...evidence("origin-attestation", "application/json"),
+            mime: "application/json",
+          },
+          authorization: {
+            schemaVersion: 1,
+            issuer: "relay-local-capture",
+            signature: "s".repeat(43),
+          },
         },
         viewports: [
           {
@@ -633,7 +642,7 @@ test("full-surface bindings compile one executable capture after reaching the de
         },
       },
     ],
-    evidenceIds: ["shot", "tree", "composite", "merged", "manifest"],
+    evidenceIds: ["shot", "tree", "origin-attestation", "composite", "merged", "manifest"],
     evidenceUris: [`relay-evidence://${digest}`],
     createdAt: at,
     updatedAt: at,
@@ -687,6 +696,15 @@ test("full-surface bindings compile one executable capture after reaching the de
         firstViewport: {
           screenshotSha256: digest,
           accessibilityTreeSha256: digest,
+        },
+        attestation: {
+          ...evidence("origin-attestation", "application/json"),
+          mime: "application/json",
+        },
+        authorization: {
+          schemaVersion: 1,
+          issuer: "relay-local-capture",
+          signature: "s".repeat(43),
         },
       },
       baseline: { compositeWidth: 100, compositeHeight: 200, semanticNodeCount: 12 },

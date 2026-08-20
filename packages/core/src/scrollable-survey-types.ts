@@ -34,9 +34,10 @@ export type ScrollSurveyResult = {
   /** Leaf semantics translated into the stitched document coordinate space. */
   mergedNodes: SnapshotNode[];
   restoredStartViewport: boolean;
-  /** Present only when this run began at, and finally returned to, an
-   * immutable frozen document origin. A stored frame index/offset of zero is
-   * merely local stitch geometry and must never be inferred as this proof. */
+  /** Diagnostic projection of a runtime-validated document-origin return.
+   * A stored frame index/offset of zero is merely local stitch geometry and
+   * must never be inferred as this proof. Persistence must additionally use
+   * the runtime-only issuance guard, so a hand-built result cannot mint one. */
   documentOriginProven?: true;
   message: string;
 };
