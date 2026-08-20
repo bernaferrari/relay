@@ -20,8 +20,8 @@ struct RunnerScrollGesturePlan {
 }
 
 private let runnerDefaultScrollAmount = 0.6
-private let runnerDefaultIosScrollAmount = 0.35
-private let runnerDefaultMobileScrollDurationMs = 300.0
+private let runnerDefaultIosScrollAmount = 0.65
+private let runnerDefaultIosScrollDurationMs = 400.0
 let runnerDefaultDragDurationMs = 250.0
 // The platform scroll defaults and planner constants are pinned by
 // contracts/fixtures/scroll-gesture.json (`constants`). Scroll gestures stay out of the outer 10%
@@ -79,7 +79,7 @@ func runnerDragCommandDefaults(_ command: Command) -> RunnerDragCommandDefaults 
   if command.command == .scroll {
     return RunnerDragCommandDefaults(
       scrollAmount: command.pixels == nil ? (command.amount ?? runnerDefaultIosScrollAmount) : command.amount,
-      durationMs: command.durationMs ?? runnerDefaultMobileScrollDurationMs
+      durationMs: command.durationMs ?? runnerDefaultIosScrollDurationMs
     )
   }
   return RunnerDragCommandDefaults(
@@ -93,8 +93,11 @@ private struct ScrollGestureFixture: Decodable {
   struct Constants: Decodable {
     let defaultIosScrollAmount: Double
     let defaultMobileScrollDurationMs: Double
+    let defaultIosScrollDurationMs: Double
     let defaultScrollAmount: Double
     let defaultEdgePaddingFraction: Double
+    let ordinaryScrollReleaseBehavior: String
+    let edgeScrollReleaseBehavior: String
   }
   struct Expected: Decodable {
     let x1: Double
@@ -163,7 +166,7 @@ extension RunnerTests {
     let defaultScroll = try JSONDecoder().decode(
       Command.self, from: Data(#"{"command":"scroll"}"#.utf8))
     let defaults = runnerDragCommandDefaults(defaultScroll)
-    XCTAssertEqual(defaults.durationMs, constants.defaultMobileScrollDurationMs)
+    XCTAssertEqual(defaults.durationMs, constants.defaultIosScrollDurationMs)
     XCTAssertEqual(defaults.scrollAmount, constants.defaultIosScrollAmount)
     let defaulted = try XCTUnwrap(
       runnerScrollGesturePlan(
@@ -188,7 +191,7 @@ extension RunnerTests {
     let pixelScroll = runnerDragCommandDefaults(
       try command(#"{"command":"scroll","pixels":120}"#))
     XCTAssertNil(pixelScroll.scrollAmount)
-    XCTAssertEqual(pixelScroll.durationMs, 300)
+    XCTAssertEqual(pixelScroll.durationMs, 400)
 
     let drag = runnerDragCommandDefaults(try command(#"{"command":"drag"}"#))
     XCTAssertNil(drag.scrollAmount)
@@ -202,6 +205,51 @@ extension RunnerTests {
     let explicitDrag = runnerDragCommandDefaults(
       try command(#"{"command":"drag","durationMs":125}"#))
     XCTAssertEqual(explicitDrag.durationMs, 125)
+  }
+
+  func testRunnerScrollReleaseBehaviorSelectsTheDragProfile() throws {
+    let constants = try loadScrollGestureFixture().constants
+    let controlled = try XCTUnwrap(ScrollReleaseBehavior(rawValue: constants.ordinaryScrollReleaseBehavior))
+    let inertial = try XCTUnwrap(ScrollReleaseBehavior(rawValue: constants.edgeScrollReleaseBehavior))
+    XCTAssertEqual(
+      scrollDragProfile(releaseBehavior: nil),
+      .controlledScroll
+    )
+    XCTAssertEqual(
+      scrollDragProfile(releaseBehavior: controlled),
+      .controlledScroll
+    )
+    XCTAssertEqual(
+      scrollDragProfile(releaseBehavior: inertial),
+      .fastSwipe
+    )
+  }
+
+  func testControlledScrollProfileUsesReliableCadenceAndMonotonicDeceleration() {
+    XCTAssertEqual(RunnerControlledScrollFrameCount(350), 21)
+    XCTAssertEqual(RunnerControlledScrollFrameCount(400), 24)
+    XCTAssertEqual(RunnerControlledScrollFrameCount(500), 30)
+    XCTAssertEqual(RunnerControlledScrollFrameCount(1_000), 30)
+    XCTAssertEqual(RunnerControlledScrollFrameCount(10_000), 30)
+
+    let frameCount = RunnerControlledScrollFrameCount(400)
+    let progress = (0...frameCount).map {
+      RunnerControlledScrollProgress(Double($0) / Double(frameCount))
+    }
+    let deltas = zip(progress.dropFirst(), progress).map { $0.0 - $0.1 }
+    XCTAssertEqual(progress.first, 0)
+    XCTAssertEqual(progress.last, 1)
+    XCTAssertTrue(zip(deltas, deltas.dropFirst()).allSatisfy { $0.1 <= $0.0 })
+
+    let iPhoneViewportPoints = 874.0
+    let defaultFingerTravel = iPhoneViewportPoints * 0.65
+    let finalSampleTravel = (1 - progress[progress.count - 2]) * defaultFingerTravel
+    XCTAssertLessThan(finalSampleTravel, 0.1)
+  }
+
+  func testContinuousDragRetainsSixteenMillisecondSamplingAtLongDurations() {
+    XCTAssertEqual(RunnerContinuousDragFrameCount(1_000), 62)
+    XCTAssertEqual(RunnerContinuousDragFrameCount(10_000), 625)
   }
 
   func testRunnerScrollGesturePlanRejectsUnknownDirection() {

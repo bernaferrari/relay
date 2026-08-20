@@ -18,9 +18,16 @@ extension RunnerTests {
     case sampled
   }
 
-  enum SynthesizedDragProfile {
+  enum SynthesizedDragProfile: Equatable {
     case continuous
+    case controlledScroll
     case fastSwipe
+  }
+
+  func scrollDragProfile(
+    releaseBehavior: ScrollReleaseBehavior?
+  ) -> SynthesizedDragProfile {
+    releaseBehavior == .inertial ? .fastSwipe : .controlledScroll
   }
 
   struct TouchVisualizationFrame {
@@ -639,6 +646,15 @@ extension RunnerTests {
     let message = switch profile {
     case .continuous:
       RunnerSynthesizedGesture.synthesizeContinuousDrag(
+        withApplication: app,
+        x: Double(start.x),
+        y: Double(start.y),
+        x2: Double(end.x),
+        y2: Double(end.y),
+        durationMs: durationMs
+      )
+    case .controlledScroll:
+      RunnerSynthesizedGesture.synthesizeControlledScroll(
         withApplication: app,
         x: Double(start.x),
         y: Double(start.y),
