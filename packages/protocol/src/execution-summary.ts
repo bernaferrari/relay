@@ -258,12 +258,48 @@ function summarizePackExport(response: Record<string, unknown>): unknown {
   };
 }
 
+/**
+ * A standalone step is not a job, but an iOS outcome-unknown still needs the
+ * exact same terminal/review facts to reach an MCP caller. Keep the repair
+ * package intact (it contains durable evidence references, not screen bytes)
+ * while bounding incidental logs and error prose.
+ */
+function summarizeStandaloneStep(response: Record<string, unknown>): unknown {
+  const logs = Array.isArray(response.logs)
+    ? response.logs
+        .filter((entry): entry is string => typeof entry === "string")
+        .slice(-24)
+        .map((entry) => boundedText(entry, 512) ?? "")
+    : [];
+  const base = {
+    ok: response.ok === true,
+    ...(typeof response.error === "string" ? { error: boundedText(response.error, 2_000) } : {}),
+    ...(typeof response.durationMs === "number" ? { durationMs: response.durationMs } : {}),
+    logs,
+  };
+  if (response.terminal !== "review-needed") return base;
+  return {
+    ...base,
+    terminal: "review-needed",
+    ...(typeof response.code === "string" ? { code: response.code } : {}),
+    ...(response.iosMutation !== undefined ? { iosMutation: response.iosMutation } : {}),
+    ...(response.iosSessionLifecycle !== undefined
+      ? { iosSessionLifecycle: response.iosSessionLifecycle }
+      : {}),
+    ...(response.iosVisualVerification !== undefined
+      ? { iosVisualVerification: response.iosVisualVerification }
+      : {}),
+    ...(response.stepReview !== undefined ? { stepReview: response.stepReview } : {}),
+  };
+}
+
 /** Bounded command/MCP projection for execution jobs. Full traces remain in
  * run resources and TracePacks where they can be queried deliberately. */
 export function summarizeExecutionOperationResult(operationId: string, result: unknown): unknown {
-  if (operationId !== "app-map.flow.run" && !operationId.startsWith("job.")) return result;
   const response = object(result);
   if (!response) return result;
+  if (operationId === "step.run") return summarizeStandaloneStep(response);
+  if (operationId !== "app-map.flow.run" && !operationId.startsWith("job.")) return result;
   if (operationId.endsWith(".export")) return summarizePackExport(response);
   if (operationId.endsWith(".analysis")) return summarizeLocaleAnalysis(response);
   const job = response.job === undefined ? undefined : summarizeJob(response.job);

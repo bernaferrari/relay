@@ -34,3 +34,35 @@ test("transition replay stops at the first failed action", async () => {
   });
   assert.equal(calls, 2);
 });
+
+test("transition replay keeps an iOS review boundary instead of treating it as retryable", async () => {
+  let calls = 0;
+  const result = await replayTransitionSteps(steps, async () => {
+    calls += 1;
+    return {
+      ok: false as const,
+      error: "Action may already have happened",
+      terminal: "review-needed" as const,
+      stepReview: {
+        captureCurrent: {
+          operationId: "target.screenshot.capture" as const,
+          input: { serial: "ipad-1" },
+        },
+      },
+    };
+  });
+
+  assert.deepEqual(result, {
+    ok: false,
+    error: "Action may already have happened",
+    failedStepIndex: 0,
+    terminal: "review-needed",
+    stepReview: {
+      captureCurrent: {
+        operationId: "target.screenshot.capture",
+        input: { serial: "ipad-1" },
+      },
+    },
+  });
+  assert.equal(calls, 1, "a review-needed outcome must stop the transition immediately");
+});

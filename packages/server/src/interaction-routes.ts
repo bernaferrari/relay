@@ -56,6 +56,43 @@ function assertNoRunningJob(serial?: string): void {
   }
 }
 
+/**
+ * The transport-safe portion of an ambiguous iOS mutation. Keep this shared
+ * between interaction surfaces: an endpoint may choose a different HTTP
+ * status, but it must never lose the fact that exactly one native command was
+ * attempted or the evidence attached to it.
+ */
+export type IosMutationOutcomeUnknownPayload = Readonly<Record<string, unknown>> & {
+  code: "IOS_MUTATION_OUTCOME_UNKNOWN";
+  iosMutation: IosMutationOutcomeUnknownError["iosMutation"];
+  iosSessionLifecycle?: unknown;
+  iosVisualVerification?: unknown;
+};
+
+/**
+ * Preserve the exact command diagnostic for both error and in-band result
+ * transports. Route-specific fields are deliberately added first so the
+ * canonical stop facts below cannot be overwritten by a caller.
+ */
+export function iosMutationOutcomeUnknownPayload(
+  error: IosMutationOutcomeUnknownError,
+  details?: Readonly<Record<string, unknown>>,
+): IosMutationOutcomeUnknownPayload {
+  const lifecycle = (
+    error as IosMutationOutcomeUnknownError & {
+      iosSessionLifecycle?: unknown;
+    }
+  ).iosSessionLifecycle;
+  const visualVerification = iosVisualVerificationDiagnostic(error);
+  return {
+    ...details,
+    code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+    iosMutation: error.iosMutation,
+    ...(lifecycle ? { iosSessionLifecycle: lifecycle } : {}),
+    ...(visualVerification ? { iosVisualVerification: visualVerification } : {}),
+  };
+}
+
 /** Preserve the exact device-command fact for both people and MCP callers.
  * A retry is an explicit follow-up after fresh pixels, never an HTTP retry. */
 export function iosMutationOutcomeUnknownHttpError(
@@ -64,19 +101,7 @@ export function iosMutationOutcomeUnknownHttpError(
    * pointer). Canonical mutation facts below always win over this extension. */
   details?: Readonly<Record<string, unknown>>,
 ): HttpError {
-  const lifecycle = (
-    error as IosMutationOutcomeUnknownError & {
-      iosSessionLifecycle?: unknown;
-    }
-  ).iosSessionLifecycle;
-  const visualVerification = iosVisualVerificationDiagnostic(error);
-  return new HttpError(409, error.message, {
-    ...details,
-    code: "IOS_MUTATION_OUTCOME_UNKNOWN",
-    iosMutation: error.iosMutation,
-    ...(lifecycle ? { iosSessionLifecycle: lifecycle } : {}),
-    ...(visualVerification ? { iosVisualVerification: visualVerification } : {}),
-  });
+  return new HttpError(409, error.message, iosMutationOutcomeUnknownPayload(error, details));
 }
 
 export async function handleInteractionRoute(input: InteractionRouteInput): Promise<boolean> {

@@ -14,7 +14,7 @@ import { useRecipeDraft } from "./recipe-draft";
  */
 
 export type RowAnno = {
-  status: "idle" | "running" | "pass" | "fail";
+  status: "idle" | "running" | "pass" | "fail" | "review";
   durationMs?: number;
   /** Failure message shown as one compact line under the sentence. */
   error?: string;
@@ -113,6 +113,7 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
           putResult(i, { status: "running" });
           const res = await server.runStep(step);
           if (token !== runSeq) return;
+          const reviewNeeded = !res.ok && "terminal" in res && res.terminal === "review-needed";
           putResult(
             i,
             res.ok
@@ -122,7 +123,10 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
                   ...(res.logs?.length ? { log: res.logs.join("\n") } : {}),
                 }
               : {
-                  status: "fail",
+                  // An ambiguous iOS command is terminal, but not a normal
+                  // failure: it needs fresh pixels and a deliberate human or
+                  // agent decision before this debugger can continue.
+                  status: reviewNeeded ? "review" : "fail",
                   ...(res.durationMs ? { durationMs: res.durationMs } : {}),
                   error: res.error ?? "Step failed",
                   ...(res.logs?.length ? { log: res.logs.join("\n") } : {}),

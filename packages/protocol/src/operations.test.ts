@@ -742,6 +742,46 @@ test("offline run replay is a frozen-evidence response, not a live run job", () 
   );
 });
 
+test("standalone step output keeps an unknown iOS command as terminal review evidence", () => {
+  const definition = operationDefinition("step.run");
+  const result = {
+    ok: false,
+    terminal: "review-needed",
+    error: "The iOS press may already have reached the device.",
+    durationMs: 12,
+    logs: ["native command issued once"],
+    code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+    iosMutation: {
+      sequence: 1,
+      operation: "press",
+      nativeAttempts: 1,
+      outcome: "outcome-unknown",
+      retry: { attempts: 0, decision: "blocked", reason: "native-command-outcome-unknown" },
+      intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+      at: 1,
+    },
+    stepReview: {
+      captureCurrent: {
+        operationId: "target.screenshot.capture",
+        input: { serial: "ipad-1" },
+      },
+    },
+  };
+
+  assert.deepEqual(definition.output.parse(result), result);
+  assert.throws(() => definition.output.parse({ ...result, terminal: "failed" }), /review-needed/);
+  assert.throws(
+    () =>
+      definition.output.parse({
+        ...result,
+        stepReview: {
+          captureCurrent: { operationId: "target.interact", input: { serial: "ipad-1" } },
+        },
+      }),
+    /target screenshot/,
+  );
+});
+
 test("descriptor invariants catch duplicates and unsafe cancellation metadata", () => {
   const first = operationDefinitions[0]!;
   assert.throws(

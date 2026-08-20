@@ -1,8 +1,19 @@
-import type { RecipeStep } from "@relay/protocol";
+import type { RecipeStep, StandaloneStepReview } from "@relay/protocol";
 
 export type TransitionReplayResult =
   | { ok: true }
-  | { ok: false; error: string; failedStepIndex: number };
+  | {
+      ok: false;
+      error: string;
+      failedStepIndex: number;
+      /** The connection must stop for an explicit current-screen review. */
+      terminal?: "review-needed";
+      stepReview?: StandaloneStepReview;
+    };
+
+type ReplayStepResult =
+  | { ok: true }
+  | { ok: false; error?: string; terminal?: "review-needed"; stepReview?: StandaloneStepReview };
 
 /**
  * Reproduce one connection without running the rest of the Flow. Keeping this
@@ -11,7 +22,7 @@ export type TransitionReplayResult =
  */
 export async function replayTransitionSteps(
   steps: RecipeStep[],
-  runStep: (step: RecipeStep) => Promise<{ ok: boolean; error?: string }>,
+  runStep: (step: RecipeStep) => Promise<ReplayStepResult>,
 ): Promise<TransitionReplayResult> {
   if (steps.length === 0) {
     return { ok: false, error: "This transition has no actions to replay.", failedStepIndex: 0 };
@@ -23,6 +34,12 @@ export async function replayTransitionSteps(
         ok: false,
         error: result.error?.trim() || `Action ${index + 1} did not complete.`,
         failedStepIndex: index,
+        ...(result.terminal === "review-needed"
+          ? {
+              terminal: "review-needed" as const,
+              ...(result.stepReview ? { stepReview: result.stepReview } : {}),
+            }
+          : {}),
       };
     }
   }

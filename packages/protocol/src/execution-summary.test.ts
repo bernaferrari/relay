@@ -31,6 +31,50 @@ test("job.get falls back to lastLogs when the compact summary omitted the full r
   assert.deepEqual(result.job?.logs, ["tour: 14 stop(s)", "tour → Appearance"]);
 });
 
+test("standalone step keeps a terminal iOS review pointer for MCP callers", () => {
+  const result = summarizeExecutionOperationResult("step.run", {
+    ok: false,
+    terminal: "review-needed",
+    error: "The iOS press may already have reached the device.",
+    durationMs: 12,
+    logs: Array.from({ length: 30 }, (_, index) => `native log ${index + 1}`),
+    code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+    iosMutation: {
+      sequence: 1,
+      operation: "press",
+      nativeAttempts: 1,
+      outcome: "outcome-unknown",
+      retry: { attempts: 0, decision: "blocked", reason: "native-command-outcome-unknown" },
+      intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+      at: 1,
+    },
+    stepReview: {
+      captureCurrent: {
+        operationId: "target.screenshot.capture",
+        input: { serial: "ipad-1" },
+      },
+    },
+  }) as {
+    terminal?: string;
+    code?: string;
+    logs?: string[];
+    stepReview?: { captureCurrent?: { operationId?: string; input?: { serial?: string } } };
+  };
+
+  assert.equal(result.terminal, "review-needed");
+  assert.equal(result.code, "IOS_MUTATION_OUTCOME_UNKNOWN");
+  assert.deepEqual(
+    result.logs,
+    Array.from({ length: 24 }, (_, index) => `native log ${index + 7}`),
+  );
+  assert.deepEqual(result.stepReview, {
+    captureCurrent: {
+      operationId: "target.screenshot.capture",
+      input: { serial: "ipad-1" },
+    },
+  });
+});
+
 test("a pack export hands back its findings with the frame each one came from", () => {
   const result = summarizeExecutionOperationResult("job.locale-matrix.export", {
     rootDir: "/tmp/pack",

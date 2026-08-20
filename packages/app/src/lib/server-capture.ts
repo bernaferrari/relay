@@ -8,11 +8,13 @@ import type {
   SnapshotState,
   TraceFrameRef,
 } from "./api-types";
-import type { TargetRuntimeReadiness } from "@relay/protocol";
+import type { StandaloneStepReview, StepRunResult, TargetRuntimeReadiness } from "@relay/protocol";
 import { interactionBody, type InteractiveStep } from "./server-interaction";
 import {
   iosInteractionFailure,
+  iosInteractionFailureFromPayload,
   iosMutationOutcomeUnknownIntervention,
+  iosMutationOutcomeUnknownInterventionFromPayload,
   type IosInteractionFailure,
   type IosMutationOutcomeUnknownIntervention,
 } from "./ios-interaction-safety";
@@ -112,6 +114,24 @@ export type InteractionAttemptOutcome =
       evidenceFrameId?: string;
     };
 
+/** The standalone-step response remains in-band (HTTP 200), so preserve its
+ * terminal review state as a distinct client result rather than collapsing it
+ * into an ordinary failed boolean. */
+export type StepRunOutcome =
+  | { ok: true; durationMs: number; logs: string[] }
+  | {
+      ok: false;
+      error: string;
+      durationMs?: number;
+      logs?: string[];
+      terminal?: never;
+    }
+  | (Extract<StepRunResult, { terminal: "review-needed" }> & {
+      iosFailure: IosInteractionFailure;
+      intervention: IosMutationOutcomeUnknownIntervention;
+      stepReview: StandaloneStepReview;
+    });
+
 function activeDiscoveryId(deps: CaptureServerDeps): string | undefined {
   // An explicit selection is authoritative, even when it is paused: the
   // server can then explain why the interaction is unavailable instead of
@@ -123,6 +143,58 @@ function activeDiscoveryId(deps: CaptureServerDeps): string | undefined {
 
 function serialFor(deps: CaptureServerDeps): string | undefined {
   return deps.selectedDevice() ?? undefined;
+}
+
+/**
+ * `/step/run` is intentionally an in-band result so a debugger can retain its
+ * row/log context. Validate the terminal iOS shape before exposing it as a
+ * review state; a malformed result remains an ordinary failure and cannot
+ * authorize a follow-up action.
+ */
+function normalizeStepRunOutcome(
+  result: StepRunResult,
+  serial: string | undefined,
+  label: string,
+): StepRunOutcome {
+  if (result.ok) return result;
+  if (
+    !("terminal" in result) ||
+    result.terminal !== "review-needed" ||
+    result.code !== "IOS_MUTATION_OUTCOME_UNKNOWN" ||
+    !serial ||
+    result.stepReview.captureCurrent.operationId !== "target.screenshot.capture" ||
+    result.stepReview.captureCurrent.input.serial !== serial
+  ) {
+    return {
+      ok: false,
+      error: result.error,
+      durationMs: result.durationMs,
+      logs: result.logs,
+    };
+  }
+  const iosFailure = iosInteractionFailureFromPayload(result);
+  const baseIntervention = iosMutationOutcomeUnknownInterventionFromPayload(result, label);
+  if (!iosFailure || !baseIntervention) {
+    return {
+      ok: false,
+      error: result.error,
+      durationMs: result.durationMs,
+      logs: result.logs,
+    };
+  }
+  return {
+    ...result,
+    iosFailure,
+    // Unlike an interactive renderer action, the standalone runner does not
+    // capture after the uncertain command. Keep that next observation
+    // explicit through stepReview rather than implying pixels are already
+    // saved.
+    intervention: {
+      ...baseIntervention,
+      detail:
+        "Relay sent one iOS command and did not retry it. Capture the current screen, review it, then explicitly choose any next action.",
+    },
+  };
 }
 
 function hasAndroidLiveInput(deps: CaptureServerDeps): boolean {
@@ -664,20 +736,14 @@ export function createServerCapture(deps: CaptureServerDeps) {
     }
   }
 
-  async function runStep(
-    step: RecipeStep,
-  ): Promise<{ ok: boolean; error?: string; durationMs?: number; logs?: string[] }> {
+  async function runStep(step: RecipeStep): Promise<StepRunOutcome> {
     try {
       const serial = serialFor(deps);
-      return await deps.request<{
-        ok: boolean;
-        error?: string;
-        durationMs?: number;
-        logs?: string[];
-      }>("/step/run", {
+      const result = await deps.request<StepRunResult>("/step/run", {
         method: "POST",
         body: JSON.stringify({ step, ...(serial ? { serial } : {}) }),
       });
+      return normalizeStepRunOutcome(result, serial, `run ${step.kind} step`);
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }

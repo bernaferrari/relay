@@ -31,7 +31,6 @@ import {
   currentOperationContext,
   cleanupScreenshot,
   captureSnapshot,
-  createDevice,
   enqueueJob,
   formatSnapshotTree,
   getActiveJob,
@@ -48,8 +47,6 @@ import {
   requestAndroidAuthorization,
   listJobs,
   listTargetWorkers,
-  runRecipeStep,
-  validateRecipeSteps,
   now,
   publish,
   runsRoot,
@@ -67,7 +64,6 @@ import {
   dismissTowardParent,
   exploreControls,
   scrollCollectControls,
-  runWithTargetContext,
   restartAgentDeviceDaemonForBuildDrift,
   restartAgentDeviceDaemonForSigningEnvDrift,
   authoringSessions,
@@ -132,6 +128,7 @@ import { livePreviewOperationContext } from "./target-stream-context.js";
 import { handleControlPlaneRoute } from "./control-plane-routes.js";
 import { handleRecipeRoute } from "./recipe-routes.js";
 import { handleInteractionRoute } from "./interaction-routes.js";
+import { handleStepRunRoute, type StepRunRouteRuntime } from "./step-run-route.js";
 import {
   handleTargetRuntimeRoute,
   type TargetRuntimeRouteRuntime,
@@ -153,6 +150,8 @@ export type StartServerOptions = {
   /** Test seam for target observation without starting a device daemon. */
   captureTargetScreenshot?: typeof captureScreenshot;
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>;
+  /** Test seam for standalone-step execution without a physical target. */
+  stepRunRuntime?: Partial<StepRunRouteRuntime>;
 };
 
 export type StartedServer = {
@@ -188,6 +187,7 @@ async function handleRequest(
   liveVideoStream = streamTargetVideo,
   captureTargetScreenshot = captureScreenshot,
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>,
+  stepRunRuntime?: Partial<StepRunRouteRuntime>,
 ): Promise<void> {
   const method = req.method ?? "GET";
   const host = req.headers.host ?? "localhost";
@@ -325,6 +325,17 @@ async function handleRequest(
         request: req,
         response: res,
         scope,
+      })
+    )
+      return;
+    if (
+      await handleStepRunRoute({
+        method,
+        pathname,
+        request: req,
+        response: res,
+        scope,
+        runtime: stepRunRuntime,
       })
     )
       return;
@@ -858,57 +869,6 @@ async function handleRequest(
       return;
     }
 
-    if (method === "POST" && pathname === "/step/run") {
-      const body = (await parseJsonBody(req)) as { step?: unknown; serial?: string };
-      if (!body || typeof body !== "object" || body.step === undefined) {
-        throw new HttpError(400, "body.step is required");
-      }
-      await assertTargetControl(scope, body.serial);
-      let steps;
-      try {
-        steps = validateRecipeSteps([body.step]);
-      } catch (err) {
-        throw new HttpError(400, err instanceof Error ? err.message : String(err));
-      }
-      const step = steps[0]!;
-      if (step.kind === "pause") {
-        throw new HttpError(400, "pause steps cannot run standalone");
-      }
-      if (getActiveJob(body.serial)?.status === "running") {
-        throw new HttpError(
-          409,
-          "A job is running — pause or cancel it before interacting manually",
-        );
-      }
-      // No connected device would surface as a confusing step-level failure
-      // (e.g. "expect ... not visible") — report it plainly instead.
-      let deviceCount = 0;
-      try {
-        deviceCount = (await listDevices()).length;
-      } catch {
-        deviceCount = 0;
-      }
-      if (deviceCount === 0) {
-        json(res, 200, { ok: false, error: "No device connected", durationMs: 0, logs: [] });
-        return;
-      }
-      const logs: string[] = [];
-      const started = now();
-      try {
-        const serial = body.serial!;
-        const platform = await devicePlatformForSerial(serial);
-        if (!platform) throw new Error(`Target ${serial} is not connected`);
-        await runWithTargetContext({ kind: "device", platform, serial }, async () => {
-          await runRecipeStep(createDevice(), step, { log: (line) => logs.push(line) });
-        });
-        json(res, 200, { ok: true, durationMs: now() - started, logs });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        json(res, 200, { ok: false, error: message, durationMs: now() - started, logs });
-      }
-      return;
-    }
-
     if (await handleRunRoute({ method, pathname, url, request: req, response: res, scope })) return;
 
     if (method === "GET" && pathname === "/doctor") {
@@ -1090,6 +1050,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
       opts.liveVideoStream,
       opts.captureTargetScreenshot,
       opts.targetRuntime,
+      opts.stepRunRuntime,
     );
   });
   const scheduler = startScheduler();

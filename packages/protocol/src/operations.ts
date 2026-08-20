@@ -170,6 +170,53 @@ type GenerationResultDto = {
   };
 };
 
+/** The exact-once diagnostic returned when a physical iOS command may already
+ * have reached XCTest. It is a terminal review state, never retry metadata. */
+export type IosMutationAttemptDiagnosticDto = {
+  sequence: number;
+  operation: string;
+  nativeAttempts: 1;
+  outcome: "completed" | "selector-miss" | "outcome-unknown";
+  retry: {
+    attempts: 0;
+    decision: "not-needed" | "safe-selector-fallback" | "blocked";
+    reason:
+      | "native-command-completed"
+      | "selector-was-not-dispatched"
+      | "native-command-outcome-unknown";
+  };
+  intervention: {
+    required: boolean;
+    action: "none" | "capture-current-screen-before-any-retry";
+  };
+  at: number;
+};
+
+export type StandaloneStepReview = {
+  /** Explicit observation action to take before any retry or repair. */
+  captureCurrent: {
+    operationId: "target.screenshot.capture";
+    input: { serial: string };
+  };
+};
+
+export type StepRunResult =
+  | { ok: true; durationMs: number; logs: string[] }
+  | { ok: false; error: string; durationMs: number; logs: string[] }
+  | {
+      ok: false;
+      terminal: "review-needed";
+      error: string;
+      durationMs: number;
+      logs: string[];
+      code: "IOS_MUTATION_OUTCOME_UNKNOWN";
+      iosMutation: IosMutationAttemptDiagnosticDto;
+      iosSessionLifecycle?: IosSessionOperationLifecycle;
+      /** Immutable visual proof, when the native path was able to retain it. */
+      iosVisualVerification?: OperationRecord;
+      stepReview: StandaloneStepReview;
+    };
+
 type ProjectDto = {
   id: string;
   organizationId: string;
@@ -370,6 +417,7 @@ type SpecificOperationMap = {
       readiness?: TargetRuntimeReadiness;
     };
   };
+  "step.run": { input: OperationRecord; output: StepRunResult };
   "target.scroll-survey.capture": {
     input: { serial: string; maxScrolls?: number };
     output: {
@@ -754,8 +802,7 @@ type GenericOperationId =
   | "job.soak.start"
   | "run.catalog.rebuild"
   | "run.retention.apply"
-  | "run.pin.update"
-  | "step.run";
+  | "run.pin.update";
 
 type GenericOperationMap = {
   [Id in GenericOperationId]: { input: OperationRecord; output: OperationRecord };
@@ -1276,6 +1323,110 @@ const targetInputParser = objectParser<OperationRecord>("target operation", (inp
     }
   }
 });
+
+function assertIosMutationAttemptDiagnostic(
+  value: unknown,
+  label: string,
+): asserts value is IosMutationAttemptDiagnosticDto {
+  const diagnostic = record(value, label);
+  const sequence = number(diagnostic.sequence, `${label} sequence`);
+  if (!Number.isInteger(sequence) || sequence < 1) {
+    fail(`${label} sequence`, "must be a positive integer");
+  }
+  string(diagnostic.operation, `${label} operation`);
+  if (diagnostic.nativeAttempts !== 1) fail(`${label} nativeAttempts`, "must be exactly one");
+  if (
+    diagnostic.outcome !== "completed" &&
+    diagnostic.outcome !== "selector-miss" &&
+    diagnostic.outcome !== "outcome-unknown"
+  ) {
+    fail(`${label} outcome`, "is unsupported");
+  }
+  const retry = record(diagnostic.retry, `${label} retry`);
+  if (retry.attempts !== 0) fail(`${label} retry attempts`, "must be zero");
+  if (
+    retry.decision !== "not-needed" &&
+    retry.decision !== "safe-selector-fallback" &&
+    retry.decision !== "blocked"
+  ) {
+    fail(`${label} retry decision`, "is unsupported");
+  }
+  if (
+    retry.reason !== "native-command-completed" &&
+    retry.reason !== "selector-was-not-dispatched" &&
+    retry.reason !== "native-command-outcome-unknown"
+  ) {
+    fail(`${label} retry reason`, "is unsupported");
+  }
+  const intervention = record(diagnostic.intervention, `${label} intervention`);
+  boolean(intervention.required, `${label} intervention required`);
+  if (
+    intervention.action !== "none" &&
+    intervention.action !== "capture-current-screen-before-any-retry"
+  ) {
+    fail(`${label} intervention action`, "is unsupported");
+  }
+  number(diagnostic.at, `${label} at`);
+}
+
+const stepRunOutputParser = objectParser<OperationOutput<"step.run">>(
+  "standalone step response",
+  (input) => {
+    const response = input as unknown as OperationRecord;
+    boolean(response.ok, "standalone step ok");
+    number(response.durationMs, "standalone step durationMs");
+    if (!Array.isArray(response.logs) || response.logs.some((entry) => typeof entry !== "string")) {
+      fail("standalone step logs", "must be an array of strings");
+    }
+    if (response.ok === true) {
+      if (response.terminal !== undefined) {
+        fail("standalone step terminal", "is only valid on failure");
+      }
+      return;
+    }
+    string(response.error, "standalone step error");
+    if (response.code === undefined) {
+      if (response.terminal !== undefined) fail("standalone step terminal", "is unsupported");
+      return;
+    }
+    if (response.code !== "IOS_MUTATION_OUTCOME_UNKNOWN") {
+      fail("standalone step code", "is unsupported");
+    }
+    if (response.terminal !== "review-needed") {
+      fail("standalone step terminal", "must be review-needed for an unknown iOS outcome");
+    }
+    assertIosMutationAttemptDiagnostic(response.iosMutation, "standalone step iOS mutation");
+    const mutation = response.iosMutation as IosMutationAttemptDiagnosticDto;
+    if (
+      mutation.outcome !== "outcome-unknown" ||
+      mutation.retry.decision !== "blocked" ||
+      mutation.retry.reason !== "native-command-outcome-unknown" ||
+      mutation.intervention.required !== true ||
+      mutation.intervention.action !== "capture-current-screen-before-any-retry"
+    ) {
+      fail("standalone step iOS mutation", "must describe a blocked unknown outcome");
+    }
+    if (response.iosSessionLifecycle !== undefined) {
+      assertIosSessionOperationLifecycle(
+        response.iosSessionLifecycle,
+        "standalone step iOS session lifecycle",
+      );
+    }
+    if (response.iosVisualVerification !== undefined) {
+      record(response.iosVisualVerification, "standalone step iOS visual verification");
+    }
+    const review = record(response.stepReview, "standalone step review");
+    const captureCurrent = record(review.captureCurrent, "standalone step review captureCurrent");
+    if (captureCurrent.operationId !== "target.screenshot.capture") {
+      fail("standalone step review captureCurrent operationId", "must capture a target screenshot");
+    }
+    const captureInput = record(
+      captureCurrent.input,
+      "standalone step review captureCurrent input",
+    );
+    string(captureInput.serial, "standalone step review captureCurrent serial");
+  },
+);
 
 const targetAppLaunchInputParser = objectParser<OperationInput<"target.app.launch">>(
   "target app launch input",
@@ -2659,6 +2810,7 @@ export const operationDefinitions = [
     progress: true,
     cancellable: true,
     input: targetInputParser,
+    output: stepRunOutputParser,
   }),
   command("generation.create", "Generate test data", "POST", "/generate", {
     category: "authoring",

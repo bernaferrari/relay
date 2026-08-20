@@ -208,6 +208,84 @@ test("invokes representative read, write, and confirmed operations with exact in
   }
 });
 
+test("surfaces a standalone iOS step as terminal review-needed without a second action", async () => {
+  const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
+  const session = await connectMcp({
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      return {
+        ok: false,
+        terminal: "review-needed",
+        error: "The iOS press may already have reached the device.",
+        durationMs: 12,
+        logs: ["native command issued once"],
+        code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+        iosMutation: {
+          sequence: 1,
+          operation: "press",
+          nativeAttempts: 1,
+          outcome: "outcome-unknown",
+          retry: {
+            attempts: 0,
+            decision: "blocked",
+            reason: "native-command-outcome-unknown",
+          },
+          intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+          at: 1,
+        },
+        stepReview: {
+          captureCurrent: {
+            operationId: "target.screenshot.capture",
+            input: { serial: "ipad-1" },
+          },
+        },
+      };
+    },
+  });
+  const input = { serial: "ipad-1", step: { kind: "sleep", ms: 1 } };
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_step_run",
+        arguments: input,
+      }),
+    );
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(calls, [{ operationId: "step.run", input }]);
+    assert.deepEqual(result.structuredContent, {
+      result: {
+        ok: false,
+        terminal: "review-needed",
+        error: "The iOS press may already have reached the device.",
+        durationMs: 12,
+        logs: ["native command issued once"],
+        code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+        iosMutation: {
+          sequence: 1,
+          operation: "press",
+          nativeAttempts: 1,
+          outcome: "outcome-unknown",
+          retry: {
+            attempts: 0,
+            decision: "blocked",
+            reason: "native-command-outcome-unknown",
+          },
+          intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+          at: 1,
+        },
+        stepReview: {
+          captureCurrent: {
+            operationId: "target.screenshot.capture",
+            input: { serial: "ipad-1" },
+          },
+        },
+      },
+    });
+  } finally {
+    await session.close();
+  }
+});
+
 test("publishes operation-shaped schemas and rejects invalid arguments before invocation", async () => {
   const calls: string[] = [];
   const session = await connectMcp({

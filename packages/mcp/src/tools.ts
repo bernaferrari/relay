@@ -127,6 +127,8 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Step 1 of a tap when you need identifiers or labels. The accessibility tree may be missing. Screenshot plus a point tap still works. Do not retry snapshot in a loop.",
   "target.recover":
     " Repair the runner without rebooting the device. A missing XCTest session is not a failed launch.",
+  "step.run":
+    " Runs one standalone step only. If it returns terminal: review-needed, capture the current screen from stepReview before any retry; never repeat the command automatically.",
   "lease.create":
     ' Only after TARGET_CONTROL_LEASE_REQUIRED. Pass poolId "local", deviceSerial, and confirm:true. Local trusted servers often mint a lease on first control.',
   "discovery.start":

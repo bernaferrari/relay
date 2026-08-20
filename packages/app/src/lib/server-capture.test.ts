@@ -28,6 +28,7 @@ function createHarness(
     screenshotReadiness?: Array<TargetRuntimeReadiness | undefined>;
     interactError?: unknown;
     keyError?: unknown;
+    stepResult?: unknown;
     devicePlatform?: "android" | "ios" | "browser";
   } = {},
 ) {
@@ -110,7 +111,9 @@ function createHarness(
         mergedNodes: [{ label: "Buy more", rect: { x: 10, y: 220, width: 60, height: 24 } }],
       } as T;
     }
-    if (path === "/step/run") return { ok: true, durationMs: 12, logs: [] } as T;
+    if (path === "/step/run") {
+      return (options.stepResult ?? { ok: true, durationMs: 12, logs: [] }) as T;
+    }
     if (path === "/device/key" && options.keyError) throw options.keyError;
     if (path === "/interact" && options.interactError) throw options.interactError;
     return {} as T;
@@ -353,6 +356,80 @@ test("step execution returns the typed backend result and includes the selected 
 
   assert.deepEqual(result, { ok: true, durationMs: 12, logs: [] });
   assert.equal(harness.calls.at(-1), "/step/run");
+});
+
+test("a standalone iOS unknown outcome stays terminal and never captures or retries itself", async () => {
+  const harness = createHarness({
+    devicePlatform: "ios",
+    stepResult: {
+      ok: false,
+      terminal: "review-needed",
+      error: "The iOS press may already have reached the device.",
+      durationMs: 12,
+      logs: ["native command issued once"],
+      code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+      iosMutation: {
+        sequence: 1,
+        operation: "press",
+        nativeAttempts: 1,
+        outcome: "outcome-unknown",
+        retry: { attempts: 0, decision: "blocked", reason: "native-command-outcome-unknown" },
+        intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+        at: 1,
+      },
+      stepReview: {
+        captureCurrent: {
+          operationId: "target.screenshot.capture",
+          input: { serial: "device-1" },
+        },
+      },
+    },
+  });
+
+  const outcome = await harness.capture.runStep({ kind: "sleep", ms: 50 });
+
+  assert.deepEqual(harness.calls, ["/step/run"]);
+  assert.deepEqual(outcome, {
+    ok: false,
+    terminal: "review-needed",
+    error: "The iOS press may already have reached the device.",
+    durationMs: 12,
+    logs: ["native command issued once"],
+    code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+    iosMutation: {
+      sequence: 1,
+      operation: "press",
+      nativeAttempts: 1,
+      outcome: "outcome-unknown",
+      retry: { attempts: 0, decision: "blocked", reason: "native-command-outcome-unknown" },
+      intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+      at: 1,
+    },
+    stepReview: {
+      captureCurrent: {
+        operationId: "target.screenshot.capture",
+        input: { serial: "device-1" },
+      },
+    },
+    iosFailure: {
+      code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+      mutation: {
+        operation: "press",
+        nativeAttempts: 1,
+        outcome: "outcome-unknown",
+        retry: { decision: "blocked", reason: "native-command-outcome-unknown" },
+        intervention: { action: "capture-current-screen-before-any-retry" },
+      },
+    },
+    intervention: {
+      title: "Action may already have happened",
+      detail:
+        "Relay sent one iOS command and did not retry it. Capture the current screen, review it, then explicitly choose any next action.",
+      screenshotCaption: "review before retry · run sleep step",
+      operation: "press",
+    },
+  });
+  assert.deepEqual(harness.frames, [], "the review pointer must not trigger an automatic capture");
 });
 
 test("an unknown iOS outcome saves current pixels and never becomes a second interaction", async () => {

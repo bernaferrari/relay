@@ -32,8 +32,10 @@ export type IosInteractionFailure = {
 /** Preserve only the reviewed fields a renderer needs to make a follow-up
  * decision. Raw transport errors stay out of UI state and never become a
  * reason to guess that another point tap is safe. */
-export function iosInteractionFailure(error: unknown): IosInteractionFailure | undefined {
-  const body = responseBody(error);
+export function iosInteractionFailureFromPayload(
+  payload: unknown,
+): IosInteractionFailure | undefined {
+  const body = asRecord(payload);
   if (typeof body?.code !== "string") return undefined;
   const rawMutation = asRecord(body.iosMutation);
   const rawRetry = asRecord(rawMutation?.retry);
@@ -69,6 +71,10 @@ export function iosInteractionFailure(error: unknown): IosInteractionFailure | u
   };
 }
 
+export function iosInteractionFailure(error: unknown): IosInteractionFailure | undefined {
+  return iosInteractionFailureFromPayload(responseBody(error));
+}
+
 /** A machine-readable stop supplied by the server after exactly one native
  * iOS command. The current pixels are evidence, not a prompt to retry. */
 export type IosMutationOutcomeUnknownIntervention = {
@@ -82,7 +88,17 @@ export function iosMutationOutcomeUnknownIntervention(
   error: unknown,
   label: string,
 ): IosMutationOutcomeUnknownIntervention | undefined {
-  const failure = iosInteractionFailure(error);
+  return iosMutationOutcomeUnknownInterventionFromPayload(responseBody(error), label);
+}
+
+/** The standalone-step endpoint reports an in-band terminal result rather
+ * than throwing an HTTP error. Reuse the exact same diagnostic predicate so
+ * a result cannot be mistaken for ordinary failure and retried. */
+export function iosMutationOutcomeUnknownInterventionFromPayload(
+  payload: unknown,
+  label: string,
+): IosMutationOutcomeUnknownIntervention | undefined {
+  const failure = iosInteractionFailureFromPayload(payload);
   const diagnostic = failure?.mutation;
   const retry = diagnostic?.retry;
   const intervention = diagnostic?.intervention;
