@@ -10,7 +10,6 @@
  */
 import type { CorpusNavStep, CorpusScope } from "@relay/protocol";
 import {
-  createDevice,
   openApp,
   pressIdentifier,
   pressKey,
@@ -23,9 +22,21 @@ import {
   type Device,
   type SnapshotNode,
 } from "./device.js";
+import { createDeviceForTarget } from "./device-factory.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import { extractSwitcherOptionsFromNodes } from "./switcher-option-rows.js";
+import {
+  attachSwitcherScanOutcomeUnknownDiagnostic,
+  createSwitcherScanProgress,
+  type SwitcherScanProgress,
+} from "./switcher-scan-outcome.js";
 import { runWithTargetContext } from "./target-context.js";
 import { devicePlatformForSerial } from "./workspace.js";
+
+export {
+  switcherScanOutcomeUnknownDiagnostic,
+  type SwitcherScanOutcomeUnknownDiagnostic,
+} from "./switcher-scan-outcome.js";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
 
 export type SwitcherKind =
@@ -345,8 +356,17 @@ async function ensureOptionList(
   entryPath: CorpusNavStep[],
   pickerPath: CorpusNavStep[],
   kind: SwitcherKind,
+  progress: SwitcherScanProgress,
 ): Promise<void> {
-  if (looksLikeOptionList(await snapshot(device), kind)) return;
+  const observePicker = async (): Promise<boolean> => {
+    const nodes = await snapshot(device);
+    const proven = looksLikeOptionList(nodes, kind);
+    if (proven) progress.pickerProven = true;
+    return proven;
+  };
+
+  progress.phase = "ensure-picker";
+  if (await observePicker()) return;
 
   // Recovery for OS deep-links (Grok App Language → Preferences):
   // Preferences may already be foregrounded on the app page.
@@ -354,40 +374,54 @@ async function ensureOptionList(
     try {
       await openApp(device, "com.apple.Preferences", { relaunch: false });
       await sleep(800, device);
-    } catch {
+    } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       /* ignore */
     }
     for (const label of ["Language", "Preferred Language", "App Language", "Grok"]) {
       try {
         await pressMatchingText(device, label);
         await sleep(700, device);
-        if (looksLikeOptionList(await snapshot(device), kind)) return;
-      } catch {
+        if (await observePicker()) return;
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
         /* try next */
       }
     }
   }
 
   // Full path retry from the target app.
+  progress.phase = "open-app";
   try {
     await openApp(device, app, { relaunch: false });
-  } catch {
+  } catch (error) {
+    rethrowIosMutationOutcomeUnknown(error);
     await openApp(device, app, { relaunch: true });
   }
   await sleep(900, device);
-  await runNavSteps(device, entryPath);
-  await runNavSteps(device, pickerPath);
+  await runNavSteps(device, entryPath, progress, "entry-path");
+  await runNavSteps(device, pickerPath, progress, "picker-path");
 }
 
-async function runNavSteps(device: Device, steps: CorpusNavStep[] | undefined): Promise<void> {
+async function runNavSteps(
+  device: Device,
+  steps: CorpusNavStep[] | undefined,
+  progress?: SwitcherScanProgress,
+  phase?: SwitcherScanProgress["phase"],
+): Promise<void> {
   if (!steps?.length) return;
+  if (progress && phase) progress.phase = phase;
   for (const step of steps) {
     if (step.kind === "wait") {
       await sleep(step.ms ?? 500, device);
       continue;
     }
     if (step.kind === "back") {
-      await pressKey(device, "back").catch(() => undefined);
+      try {
+        await pressKey(device, "back");
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
+      }
       await sleep(400, device);
       continue;
     }
@@ -397,12 +431,17 @@ async function runNavSteps(device: Device, steps: CorpusNavStep[] | undefined): 
       if (!targetApp) continue;
       try {
         await openApp(device, targetApp, { relaunch: step.relaunch === true });
-      } catch {
+      } catch (error) {
+        rethrowIosMutationOutcomeUnknown(error);
         if (step.relaunch !== false) {
           await openApp(device, targetApp, { relaunch: true });
         } else {
           // Deep-link handoff: Preferences may already be foreground; still bind session.
-          await openApp(device, targetApp, { relaunch: false }).catch(() => undefined);
+          try {
+            await openApp(device, targetApp, { relaunch: false });
+          } catch (fallbackError) {
+            rethrowIosMutationOutcomeUnknown(fallbackError);
+          }
         }
       }
       await sleep(700, device);
@@ -425,11 +464,13 @@ async function runNavSteps(device: Device, steps: CorpusNavStep[] | undefined): 
       else if (step.target.label) {
         try {
           await pressLabel(device, step.target.label);
-        } catch {
+        } catch (error) {
+          rethrowIosMutationOutcomeUnknown(error);
           await pressMatchingText(device, step.target.label);
         }
       }
     } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       // Identifier-only chrome (sidebar/gear) may already be open.
       if (!soft) throw error;
     }
@@ -455,7 +496,8 @@ async function scrollPicker(device: Device, direction: "up" | "down"): Promise<v
       await swipeGesture(device, { x, y: fromY }, { x, y: toY }, 280);
       return;
     }
-  } catch {
+  } catch (error) {
+    rethrowIosMutationOutcomeUnknown(error);
     /* fall through */
   }
   if (direction === "down") await scrollDown(device, 0.85);
@@ -473,7 +515,8 @@ async function scrollPicker(device: Device, direction: "up" | "down"): Promise<v
         { x, y: Math.round(height * 0.7) },
         280,
       );
-    } catch {
+    } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
       await scrollDown(device, 0.5);
     }
   }
@@ -527,91 +570,49 @@ export async function scanSwitcherPicker(input: ScanSwitcherInput): Promise<Scan
     throw new Error("switcher scan needs a concrete ios or android platform");
   }
 
-  return runWithTargetContext({ kind: "device", platform, serial }, async () => {
-    const device = createDevice();
-    const ensureApp = async (force: boolean) => {
-      if (!force && input.openApp === false) {
-        await sleep(300, device);
-        return;
-      }
-      try {
-        await openApp(device, app, { relaunch: false });
-      } catch {
-        await openApp(device, app, { relaunch: true });
-      }
-      await sleep(800, device);
-    };
-    // Prefer leaving the app open (iOS runner health), but open when asked or as retry.
-    await ensureApp(input.openApp === true);
-    await runNavSteps(device, entryPath);
-    await runNavSteps(device, pickerPath);
-    await ensureOptionList(device, app, entryPath, pickerPath, input.kind);
+  const target = { kind: "device" as const, platform, serial };
+  const progress = createSwitcherScanProgress();
 
-    const maxScrolls = Math.max(1, Math.min(30, input.maxScrolls ?? 12));
-    const collected = new Map<string, SwitcherOption>();
-    let stableRounds = 0;
-    let scrolls = 0;
+  try {
+    return await runWithTargetContext(target, async () => {
+      // Use the target factory instead of constructing a global local client so
+      // switcher navigation has the same controlled adapter seam as other live
+      // device work (and never crosses target contexts while recovering).
+      const device = createDeviceForTarget(target);
+      const ensureApp = async (force: boolean) => {
+        if (!force && input.openApp === false) {
+          await sleep(300, device);
+          return;
+        }
+        try {
+          await openApp(device, app, { relaunch: false });
+        } catch (error) {
+          rethrowIosMutationOutcomeUnknown(error);
+          await openApp(device, app, { relaunch: true });
+        }
+        await sleep(800, device);
+      };
+      // Prefer leaving the app open (iOS runner health), but open when asked or as retry.
+      progress.phase = "open-app";
+      await ensureApp(input.openApp === true);
+      await runNavSteps(device, entryPath, progress, "entry-path");
+      await runNavSteps(device, pickerPath, progress, "picker-path");
+      await ensureOptionList(device, app, entryPath, pickerPath, input.kind, progress);
 
-    for (let page = 0; page <= maxScrolls; page += 1) {
-      const nodes = await snapshot(device);
-      const rows = extractSwitcherOptionsFromNodes(nodes);
-      let added = 0;
-      for (const row of rows) {
-        const key = row.label.toLocaleLowerCase();
-        if (collected.has(key)) continue;
-        collected.set(key, row);
-        added += 1;
-      }
-      if (added === 0) {
-        stableRounds += 1;
-        if (stableRounds >= 2) break;
-      } else {
-        stableRounds = 0;
-      }
-      if (page === maxScrolls) break;
-      await scrollPicker(device, "up");
-      await sleep(450, device);
-      scrolls += 1;
-    }
+      const maxScrolls = Math.max(1, Math.min(30, input.maxScrolls ?? 12));
+      const collected = new Map<string, SwitcherOption>();
+      let stableRounds = 0;
+      let scrolls = 0;
 
-    const byId = new Map<string, SwitcherOption>();
-    for (const row of collected.values()) {
-      const existingOption = byId.get(row.id);
-      if (!existingOption) {
-        byId.set(row.id, row);
-        continue;
-      }
-      const aliases = new Set([
-        ...(existingOption.aliases ?? []),
-        row.label,
-        ...(row.aliases ?? []),
-      ]);
-      aliases.delete(existingOption.label);
-      byId.set(row.id, {
-        ...existingOption,
-        aliases: [...aliases],
-        ...((existingOption.identifier ?? row.identifier)
-          ? { identifier: existingOption.identifier ?? row.identifier }
-          : {}),
-      });
-    }
-
-    let options = [...byId.values()].sort((left, right) =>
-      left.label.localeCompare(right.label, undefined, { sensitivity: "base" }),
-    );
-    if (!options.length && input.openApp !== true) {
-      // One recovery pass: open the app and walk the path again.
-      await ensureApp(true);
-      await runNavSteps(device, entryPath);
-      await runNavSteps(device, pickerPath);
-      collected.clear();
-      stableRounds = 0;
       for (let page = 0; page <= maxScrolls; page += 1) {
+        progress.phase = "scan";
         const nodes = await snapshot(device);
+        if (looksLikeOptionList(nodes, input.kind)) progress.pickerProven = true;
         const rows = extractSwitcherOptionsFromNodes(nodes);
         let added = 0;
         for (const row of rows) {
           const key = row.label.toLocaleLowerCase();
+          if (!progress.partialRows.has(key)) progress.partialRows.set(key, structuredClone(row));
           if (collected.has(key)) continue;
           collected.set(key, row);
           added += 1;
@@ -626,8 +627,10 @@ export async function scanSwitcherPicker(input: ScanSwitcherInput): Promise<Scan
         await scrollPicker(device, "up");
         await sleep(450, device);
         scrolls += 1;
+        progress.scrollsCompleted = scrolls;
       }
-      byId.clear();
+
+      const byId = new Map<string, SwitcherOption>();
       for (const row of collected.values()) {
         const existingOption = byId.get(row.id);
         if (!existingOption) {
@@ -648,54 +651,117 @@ export async function scanSwitcherPicker(input: ScanSwitcherInput): Promise<Scan
             : {}),
         });
       }
-      options = [...byId.values()].sort((left, right) =>
+
+      let options = [...byId.values()].sort((left, right) =>
         left.label.localeCompare(right.label, undefined, { sensitivity: "base" }),
       );
-    }
-    if (!options.length) {
-      throw new Error(
-        "No option rows found. Open the picker on the device and try Scan again, or check entry/picker paths.",
-      );
-    }
+      if (!options.length && input.openApp !== true) {
+        // One recovery pass: open the app and walk the path again.
+        progress.scanPass = 2;
+        progress.phase = "open-app";
+        await ensureApp(true);
+        await runNavSteps(device, entryPath, progress, "entry-path");
+        await runNavSteps(device, pickerPath, progress, "picker-path");
+        collected.clear();
+        stableRounds = 0;
+        for (let page = 0; page <= maxScrolls; page += 1) {
+          progress.phase = "scan";
+          const nodes = await snapshot(device);
+          if (looksLikeOptionList(nodes, input.kind)) progress.pickerProven = true;
+          const rows = extractSwitcherOptionsFromNodes(nodes);
+          let added = 0;
+          for (const row of rows) {
+            const key = row.label.toLocaleLowerCase();
+            if (!progress.partialRows.has(key)) progress.partialRows.set(key, structuredClone(row));
+            if (collected.has(key)) continue;
+            collected.set(key, row);
+            added += 1;
+          }
+          if (added === 0) {
+            stableRounds += 1;
+            if (stableRounds >= 2) break;
+          } else {
+            stableRounds = 0;
+          }
+          if (page === maxScrolls) break;
+          await scrollPicker(device, "up");
+          await sleep(450, device);
+          scrolls += 1;
+          progress.scrollsCompleted = scrolls;
+        }
+        byId.clear();
+        for (const row of collected.values()) {
+          const existingOption = byId.get(row.id);
+          if (!existingOption) {
+            byId.set(row.id, row);
+            continue;
+          }
+          const aliases = new Set([
+            ...(existingOption.aliases ?? []),
+            row.label,
+            ...(row.aliases ?? []),
+          ]);
+          aliases.delete(existingOption.label);
+          byId.set(row.id, {
+            ...existingOption,
+            aliases: [...aliases],
+            ...((existingOption.identifier ?? row.identifier)
+              ? { identifier: existingOption.identifier ?? row.identifier }
+              : {}),
+          });
+        }
+        options = [...byId.values()].sort((left, right) =>
+          left.label.localeCompare(right.label, undefined, { sensitivity: "base" }),
+        );
+      }
+      if (!options.length) {
+        throw new Error(
+          "No option rows found. Open the picker on the device and try Scan again, or check entry/picker paths.",
+        );
+      }
 
-    const previousOptions = existing?.options ?? [];
-    // A partial/wrong-screen scan must never erase a richer seed list (e.g. only
-    // capturing a stray "Grok" cell while the language picker never opened).
-    const minAccept =
-      previousOptions.length > 0 ? Math.max(2, Math.ceil(previousOptions.length * 0.5)) : 1;
-    if (previousOptions.length && options.length < minAccept) {
-      throw new Error(
-        `Scan found only ${options.length} option(s), but this profile already has ${previousOptions.length}. ` +
-          "Kept the previous list. Open the real option picker (for Grok: Ask tab → Settings → App Language) and scan again.",
-      );
-    }
-    if (previousOptions.length) {
-      options = mergeSwitcherOptions(previousOptions, options);
-    }
+      const previousOptions = existing?.options ?? [];
+      // A partial/wrong-screen scan must never erase a richer seed list (e.g. only
+      // capturing a stray "Grok" cell while the language picker never opened).
+      const minAccept =
+        previousOptions.length > 0 ? Math.max(2, Math.ceil(previousOptions.length * 0.5)) : 1;
+      if (previousOptions.length && options.length < minAccept) {
+        throw new Error(
+          `Scan found only ${options.length} option(s), but this profile already has ${previousOptions.length}. ` +
+            "Kept the previous list. Open the real option picker (for Grok: Ask tab → Settings → App Language) and scan again.",
+        );
+      }
+      if (previousOptions.length) {
+        options = mergeSwitcherOptions(previousOptions, options);
+      }
 
-    const defaultOptionId =
-      options.find((option) => option.id === existing?.defaultOptionId)?.id ??
-      options.find((option) => option.id === "en")?.id ??
-      options[0]!.id;
+      const defaultOptionId =
+        options.find((option) => option.id === existing?.defaultOptionId)?.id ??
+        options.find((option) => option.id === "en")?.id ??
+        options[0]!.id;
 
-    const profile: SwitcherProfile = {
-      id: input.profileId?.trim() || existing?.id || slugProfileId(app, input.kind),
-      name: input.name?.trim() || existing?.name || `${app} · ${input.kind}`,
-      kind: input.kind,
-      app,
-      platform,
-      entryPath: structuredClone(entryPath),
-      pickerPath: structuredClone(pickerPath),
-      options,
-      defaultOptionId,
-      notes: `Live-scanned ${options.length} ${input.kind} options on device ${serial}.`,
-      verifiedAt: new Date().toISOString().slice(0, 10),
-      scanned: true,
-    };
+      const profile: SwitcherProfile = {
+        id: input.profileId?.trim() || existing?.id || slugProfileId(app, input.kind),
+        name: input.name?.trim() || existing?.name || `${app} · ${input.kind}`,
+        kind: input.kind,
+        app,
+        platform,
+        entryPath: structuredClone(entryPath),
+        pickerPath: structuredClone(pickerPath),
+        options,
+        defaultOptionId,
+        notes: `Live-scanned ${options.length} ${input.kind} options on device ${serial}.`,
+        verifiedAt: new Date().toISOString().slice(0, 10),
+        scanned: true,
+      };
 
-    if (input.save !== false) await saveSwitcherProfile(profile);
-    return { profile, optionsFound: options.length, scrolls };
-  });
+      if (input.save !== false) await saveSwitcherProfile(profile);
+      return { profile, optionsFound: options.length, scrolls };
+    });
+  } catch (error) {
+    attachSwitcherScanOutcomeUnknownDiagnostic(error, { app, kind: input.kind, serial }, progress);
+    throw error;
+  }
 }
 
 function slugProfileId(app: string, kind: string): string {

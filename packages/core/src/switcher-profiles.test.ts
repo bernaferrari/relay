@@ -3,7 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
-import type { SnapshotNode } from "./device.js";
+import {
+  IosMutationOutcomeUnknownError,
+  resetDeviceClients,
+  type Device,
+  type SnapshotNode,
+} from "./device.js";
+import { setLocalDeviceProvider } from "./device-factory.js";
 import { extractSwitcherOptionsFromNodes, inferOptionId } from "./switcher-option-rows.js";
 import {
   getSwitcherProfile,
@@ -11,12 +17,17 @@ import {
   listSwitcherProfiles,
   mergeSwitcherOptions,
   saveSwitcherProfile,
+  scanSwitcherPicker,
+  switcherScanOutcomeUnknownDiagnostic,
 } from "./switcher-profiles.js";
 
 const roots: string[] = [];
 
 afterEach(async () => {
+  setLocalDeviceProvider(undefined);
+  resetDeviceClients();
   delete process.env.RELAY_WORKSPACE_ROOT;
+  delete process.env.RELAY_RETRY_ATTEMPTS;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -25,6 +36,98 @@ async function workspace(): Promise<string> {
   roots.push(root);
   process.env.RELAY_WORKSPACE_ROOT = root;
   return root;
+}
+
+type FakeSwitcherDeviceInput = {
+  nodes: SnapshotNode[] | (() => SnapshotNode[]);
+  commands: string[];
+  onPress?: (input: unknown) => Promise<void> | void;
+  onPan?: (input: unknown) => Promise<void> | void;
+  onScroll?: (input: unknown) => Promise<void> | void;
+  onBack?: () => Promise<void> | void;
+};
+
+function fakeSwitcherDevice(input: FakeSwitcherDeviceInput): Device {
+  const nodes = () => (typeof input.nodes === "function" ? input.nodes() : input.nodes);
+  return {
+    capture: {
+      snapshot: async () => ({ nodes: structuredClone(nodes()) }),
+    },
+    interactions: {
+      press: async (command: unknown) => {
+        input.commands.push(`press:${JSON.stringify(command)}`);
+        await input.onPress?.(command);
+      },
+      pan: async (command: unknown) => {
+        input.commands.push(`pan:${JSON.stringify(command)}`);
+        await input.onPan?.(command);
+      },
+      scroll: async (command: unknown) => {
+        input.commands.push(`scroll:${JSON.stringify(command)}`);
+        await input.onScroll?.(command);
+      },
+    },
+    command: {
+      wait: async () => undefined,
+      back: async () => {
+        input.commands.push("back");
+        await input.onBack?.();
+      },
+    },
+  } as unknown as Device;
+}
+
+function useFakeSwitcherDevice(device: Device): void {
+  setLocalDeviceProvider({
+    kind: "device",
+    create: () => device,
+  });
+}
+
+function languagePickerNodes(width = 390, height = 844): SnapshotNode[] {
+  return [
+    {
+      index: 0,
+      depth: 0,
+      type: "Application",
+      label: "Settings",
+      rect: { x: 0, y: 0, width, height },
+    },
+    {
+      index: 1,
+      parentIndex: 0,
+      type: "Cell",
+      label: "English",
+      hittable: true,
+      rect: { x: Math.round(width * 0.52), y: 140, width: Math.round(width * 0.42), height: 48 },
+    },
+    {
+      index: 2,
+      parentIndex: 0,
+      type: "Cell",
+      label: "Italiano",
+      hittable: true,
+      rect: { x: Math.round(width * 0.52), y: 198, width: Math.round(width * 0.42), height: 48 },
+    },
+    {
+      index: 3,
+      parentIndex: 0,
+      type: "Cell",
+      label: "Português (Brasil)",
+      hittable: true,
+      rect: { x: Math.round(width * 0.52), y: 256, width: Math.round(width * 0.42), height: 48 },
+    },
+  ];
+}
+
+async function unknownScan(input: Parameters<typeof scanSwitcherPicker>[0]) {
+  try {
+    await scanSwitcherPicker(input);
+  } catch (error) {
+    assert.ok(error instanceof IosMutationOutcomeUnknownError);
+    return error;
+  }
+  assert.fail("expected an unknown iOS mutation outcome");
 }
 
 test("inferOptionId covers language and non-language options", () => {
@@ -234,4 +337,193 @@ test("mergeSwitcherOptions unions scanned into seed without wipe", () => {
   );
   assert.deepEqual(merged.map((option) => option.id).sort(), ["en", "it", "ja", "pt-BR"]);
   assert.equal(merged.find((option) => option.id === "ja")?.identifier, "lang.ja");
+});
+
+test("stops an unknown iOS label press before the text fallback and retains a repair package", async () => {
+  const commands: string[] = [];
+  useFakeSwitcherDevice(
+    fakeSwitcherDevice({
+      commands,
+      nodes: [
+        {
+          index: 0,
+          type: "Cell",
+          label: "Open picker",
+          hittable: true,
+          rect: { x: 0, y: 100, width: 390, height: 48 },
+        },
+      ],
+      onPress: () => {
+        throw new Error("XCTest connection lost after dispatch");
+      },
+    }),
+  );
+
+  const error = await unknownScan({
+    serial: "switcher-unknown-label",
+    app: "com.example.switcher",
+    kind: "language",
+    platform: "ios",
+    openApp: false,
+    save: false,
+    entryPath: [{ kind: "tap", target: { label: "Open picker" } }],
+    pickerPath: [{ kind: "wait", ms: 1 }],
+  });
+
+  assert.equal(commands.length, 1);
+  assert.match(commands[0]!, /selector.*label=\\"Open picker\\"/);
+  assert.doesNotMatch(commands[0]!, /label\*=/);
+  const diagnostic = switcherScanOutcomeUnknownDiagnostic(error);
+  assert.deepEqual(diagnostic?.repair, {
+    terminal: true,
+    nextAction: "capture-current-screen-before-any-retry",
+    blocked: ["fallback-target", "retry-launch", "path-step", "next-scan-page", "second-scan-pass"],
+  });
+  assert.equal(diagnostic?.phase, "entry-path");
+  assert.equal(diagnostic?.picker.proven, false);
+});
+
+test("stops an unknown iOS Back before the next switcher path step", async () => {
+  const commands: string[] = [];
+  useFakeSwitcherDevice(
+    fakeSwitcherDevice({
+      commands,
+      nodes: [],
+      onBack: () => {
+        throw new Error("XCTest connection lost after dispatch");
+      },
+    }),
+  );
+
+  const error = await unknownScan({
+    serial: "switcher-unknown-back",
+    app: "com.example.switcher",
+    kind: "language",
+    platform: "ios",
+    openApp: false,
+    save: false,
+    entryPath: [
+      { kind: "back" },
+      { kind: "tap", target: { label: "must not run after unknown Back" } },
+    ],
+    pickerPath: [{ kind: "wait", ms: 1 }],
+  });
+
+  assert.deepEqual(commands, ["back"]);
+  assert.equal(switcherScanOutcomeUnknownDiagnostic(error)?.phase, "entry-path");
+});
+
+test("stops an unknown wide-pane swipe before generic scroll recovery and retains picker rows", async () => {
+  const commands: string[] = [];
+  useFakeSwitcherDevice(
+    fakeSwitcherDevice({
+      commands,
+      nodes: languagePickerNodes(1112, 834),
+      onPan: () => {
+        throw new Error("XCTest connection lost after dispatch");
+      },
+    }),
+  );
+
+  const error = await unknownScan({
+    serial: "switcher-unknown-wide-swipe",
+    app: "com.example.switcher",
+    kind: "language",
+    platform: "ios",
+    openApp: false,
+    save: false,
+    maxScrolls: 1,
+    entryPath: [{ kind: "wait", ms: 1 }],
+    pickerPath: [{ kind: "wait", ms: 1 }],
+  });
+
+  assert.equal(commands.length, 1);
+  assert.match(commands[0]!, /^pan:/);
+  assert.ok(!commands.some((command) => command.startsWith("scroll:")));
+  const diagnostic = switcherScanOutcomeUnknownDiagnostic(error);
+  assert.equal(diagnostic?.phase, "scan");
+  assert.equal(diagnostic?.scanPass, 1);
+  assert.equal(diagnostic?.picker.proven, true);
+  assert.deepEqual(diagnostic?.picker.partialRows.map((row) => row.id).sort(), [
+    "en",
+    "it",
+    "pt-BR",
+  ]);
+  assert.equal(diagnostic?.picker.scrollsCompleted, 0);
+});
+
+test("does not launch a second scan pass after an unknown first-pass iOS scroll", async () => {
+  const commands: string[] = [];
+  useFakeSwitcherDevice(
+    fakeSwitcherDevice({
+      commands,
+      nodes: languagePickerNodes(),
+      onPan: () => {
+        throw new Error("XCTest connection lost after dispatch");
+      },
+    }),
+  );
+
+  const error = await unknownScan({
+    serial: "switcher-unknown-first-pass",
+    app: "com.example.switcher",
+    kind: "language",
+    platform: "ios",
+    openApp: false,
+    save: false,
+    maxScrolls: 1,
+    entryPath: [{ kind: "wait", ms: 1 }],
+    pickerPath: [{ kind: "wait", ms: 1 }],
+  });
+
+  assert.deepEqual(
+    commands.map((command) => command.split(":", 1)[0]),
+    ["pan"],
+  );
+  const diagnostic = switcherScanOutcomeUnknownDiagnostic(error);
+  assert.equal(diagnostic?.scanPass, 1);
+  assert.ok(diagnostic?.repair.blocked.includes("second-scan-pass"));
+});
+
+test("keeps selector-miss recovery available when the initial iOS press was not dispatched", async () => {
+  const commands: string[] = [];
+  let presses = 0;
+  const nodes = [
+    {
+      index: 4,
+      type: "Cell",
+      label: "Open picker",
+      hittable: true,
+      rect: { x: 0, y: 80, width: 390, height: 48 },
+    },
+    ...languagePickerNodes(),
+  ];
+  useFakeSwitcherDevice(
+    fakeSwitcherDevice({
+      commands,
+      nodes,
+      onPress: () => {
+        presses += 1;
+        if (presses === 1) throw new Error("No matching element");
+      },
+    }),
+  );
+
+  const result = await scanSwitcherPicker({
+    serial: "switcher-selector-miss",
+    app: "com.example.switcher",
+    kind: "language",
+    platform: "ios",
+    openApp: false,
+    save: false,
+    maxScrolls: 1,
+    entryPath: [{ kind: "tap", target: { label: "Open picker" } }],
+    pickerPath: [{ kind: "wait", ms: 1 }],
+  });
+
+  assert.equal(result.optionsFound, 4);
+  assert.equal(presses, 2);
+  assert.match(commands[0]!, /selector/);
+  assert.match(commands[0]!, /Open picker/);
+  assert.ok(commands[1]?.includes('"x":195'));
 });
