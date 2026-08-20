@@ -86,11 +86,7 @@ export type {
 export const { use: useServer, provider: ServerProvider } = createSimpleContext({
   name: "Server",
   gate: false,
-  init: (
-    props: {
-      pollMs?: number;
-    } = {},
-  ) => {
+  init: (props: { pollMs?: number } = {}) => {
     const platform = usePlatform();
     const pollMs = props.pollMs ?? 5000;
 
@@ -728,6 +724,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       scrollDevice,
       pressNode,
       interactStep,
+      lastInteractionOutcome,
       runStep,
       frameUrlForPersisted,
       videoUrlForRun,
@@ -1047,6 +1044,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       clearLogs,
       pressNode,
       interactStep,
+      lastInteractionOutcome,
       runStep,
       refreshActions,
       refreshRecipes,

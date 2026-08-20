@@ -11,6 +11,12 @@ import type {
 import type { TargetRuntimeReadiness } from "@relay/protocol";
 import { interactionBody, type InteractiveStep } from "./server-interaction";
 import {
+  iosInteractionFailure,
+  iosMutationOutcomeUnknownIntervention,
+  type IosInteractionFailure,
+  type IosMutationOutcomeUnknownIntervention,
+} from "./ios-interaction-safety";
+import {
   frameUrlForPersisted as buildFrameUrl,
   recordingEvidenceUrl as buildRecordingEvidenceUrl,
   videoUrlForRun as buildVideoUrl,
@@ -91,6 +97,19 @@ export type LiveKeyboardInput =
   | { kind: "text"; text: string }
   | { kind: "key"; key: "enter" | "backspace" };
 
+/** The last direct action is explicit state, not an inferred retry hint.
+ * Boolean callers stay compatible while picker/recorder callers can preserve
+ * an iOS outcome-unknown stop instead of turning it into a point fallback. */
+export type InteractionAttemptOutcome =
+  | { status: "succeeded"; iosFailure?: undefined }
+  | { status: "failed"; iosFailure?: IosInteractionFailure }
+  | {
+      status: "ios-outcome-unknown";
+      iosFailure: IosInteractionFailure;
+      intervention: IosMutationOutcomeUnknownIntervention;
+      evidenceFrameId?: string;
+    };
+
 function activeDiscoveryId(deps: CaptureServerDeps): string | undefined {
   // An explicit selection is authoritative, even when it is paused: the
   // server can then explain why the interaction is unavailable instead of
@@ -109,6 +128,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
   let lastLiveFrameBase64 = "";
   let lastLiveFrameSerial: string | undefined;
   let lastLiveFrame: Frame | null = null;
+  let lastInteractionOutcome: InteractionAttemptOutcome | null = null;
 
   function resetLivePreview(): void {
     // Starting a live view is a new observation session, even when it targets
@@ -540,6 +560,8 @@ export function createServerCapture(deps: CaptureServerDeps) {
   }
 
   async function interactStep(step: InteractiveStep, caption?: string): Promise<boolean> {
+    const label = caption ?? `interact · ${step.kind}`;
+    lastInteractionOutcome = null;
     try {
       const body = interactionBody(step);
       const discoveryId = activeDiscoveryId(deps);
@@ -551,16 +573,52 @@ export function createServerCapture(deps: CaptureServerDeps) {
         },
       );
       deps.appendLog(`interact ${step.kind}`, "success");
+      lastInteractionOutcome = { status: "succeeded" };
       if (discoveryId) await deps.refreshDiscoverySessions();
-      else
-        await captureUiScreenshot(
-          caption ?? `interact · ${step.kind}`,
+      else await captureUiScreenshot(label, undefined, undefined, true).catch(() => undefined);
+      return true;
+    } catch (error) {
+      const intervention = iosMutationOutcomeUnknownIntervention(error, label);
+      const iosFailure = iosInteractionFailure(error);
+      if (intervention && iosFailure) {
+        const evidence = await captureUiScreenshot(
+          intervention.screenshotCaption,
           undefined,
           undefined,
           true,
-        ).catch(() => undefined);
-      return true;
-    } catch (error) {
+        ).catch((evidenceError) => {
+          deps.appendLog(
+            `could not capture review screen · ${
+              evidenceError instanceof Error ? evidenceError.message : String(evidenceError)
+            }`,
+            "error",
+          );
+          return undefined;
+        });
+        lastInteractionOutcome = {
+          status: "ios-outcome-unknown",
+          iosFailure,
+          intervention,
+          ...(evidence ? { evidenceFrameId: evidence.id } : {}),
+        };
+        deps.appendLog(
+          `${intervention.title} · ${intervention.detail}${
+            evidence ? ` Frame ${evidence.id} is ready for review.` : ""
+          }`,
+          "error",
+        );
+        toast(
+          evidence
+            ? "Action may already have happened. Current screen saved for review; do not retry."
+            : "Action may already have happened. Capture the current screen before any retry.",
+          "warning",
+        );
+        return false;
+      }
+      lastInteractionOutcome = {
+        status: "failed",
+        ...(iosFailure ? { iosFailure } : {}),
+      };
       const message = error instanceof Error ? error.message : String(error);
       const readable = humanError(error, "Could not run this step on the device");
       deps.appendLog(message, "error");
@@ -606,6 +664,8 @@ export function createServerCapture(deps: CaptureServerDeps) {
     pollLiveSnapshot,
     pressNode,
     interactStep,
+    lastInteractionOutcome: () =>
+      lastInteractionOutcome ? structuredClone(lastInteractionOutcome) : null,
     runStep,
     frameUrlForPersisted: (run: PersistedRun, frame: TraceFrameRef) =>
       buildFrameUrl(deps.serverUrl(), run, frame),

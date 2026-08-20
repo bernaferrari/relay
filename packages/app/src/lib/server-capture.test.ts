@@ -9,6 +9,7 @@ function createHarness(
     collectAccessibility?: boolean;
     inspectionError?: string;
     screenshotReadiness?: Array<TargetRuntimeReadiness | undefined>;
+    interactError?: unknown;
   } = {},
 ) {
   const calls: string[] = [];
@@ -91,6 +92,7 @@ function createHarness(
       } as T;
     }
     if (path === "/step/run") return { ok: true, durationMs: 12, logs: [] } as T;
+    if (path === "/interact" && options.interactError) throw options.interactError;
     return {} as T;
   };
 
@@ -329,6 +331,59 @@ test("step execution returns the typed backend result and includes the selected 
 
   assert.deepEqual(result, { ok: true, durationMs: 12, logs: [] });
   assert.equal(harness.calls.at(-1), "/step/run");
+});
+
+test("an unknown iOS outcome saves current pixels and never becomes a second interaction", async () => {
+  const harness = createHarness({
+    interactError: Object.assign(new Error("The iOS press may already have reached the device."), {
+      body: {
+        code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+        iosMutation: {
+          operation: "press",
+          nativeAttempts: 1,
+          outcome: "outcome-unknown",
+          retry: { attempts: 0, decision: "blocked", reason: "native-command-outcome-unknown" },
+          intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+        },
+      },
+    }),
+  });
+
+  assert.equal(
+    await harness.capture.interactStep({ kind: "label", label: "Settings" }, "tap Settings"),
+    false,
+  );
+  assert.equal(harness.calls.filter((path) => path === "/interact").length, 1);
+  const screenshot = new URL(harness.calls[1]!, "http://relay.local");
+  assert.equal(screenshot.pathname, "/screenshot");
+  assert.equal(screenshot.searchParams.get("caption"), "review before retry · tap Settings");
+  assert.equal(harness.frames.length, 1);
+  assert.equal(
+    (harness.frames[0] as { caption: string }).caption,
+    "review before retry · tap Settings",
+  );
+  assert.deepEqual(harness.capture.lastInteractionOutcome(), {
+    status: "ios-outcome-unknown",
+    iosFailure: {
+      code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+      mutation: {
+        operation: "press",
+        nativeAttempts: 1,
+        outcome: "outcome-unknown",
+        retry: { decision: "blocked", reason: "native-command-outcome-unknown" },
+        intervention: { action: "capture-current-screen-before-any-retry" },
+      },
+    },
+    intervention: {
+      title: "Action may already have happened",
+      detail:
+        "Relay sent one iOS command and did not retry it. The current screen is saved for review before any next action.",
+      screenshotCaption: "review before retry · tap Settings",
+      operation: "press",
+    },
+    evidenceFrameId: "frame-1",
+  });
+  assert.ok(harness.logs.some((line) => line.includes("Frame frame-1 is ready for review.")));
 });
 
 test("interaction boundary routes an explicitly active discovery session", async () => {

@@ -18,6 +18,10 @@ import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
 import { toast } from "./toast";
 import { humanError } from "../lib/human-error";
 import {
+  canFallbackToPointAfterFailedInteraction,
+  iosInteractionFailure,
+} from "../lib/ios-interaction-safety";
+import {
   authoringTargetFromPhysicalIosStep,
   buildTapTarget,
   canRetryTapAtPoint,
@@ -232,9 +236,8 @@ export function selectProjectedAuthoringSession(
         (!input.targetId || session.target.targetId === input.targetId),
     )
     .sort((left, right) => right.updatedAt - left.updatedAt);
-  // A collaborator's live recording is useful shared presence. Their stopped
-  // Take is a proposal, not the local user's modal workspace: opening Relay
-  // must never trap someone in another actor's stale review.
+  // A collaborator's stopped Take is a proposal, never this actor's modal
+  // workspace; opening Relay must not trap a person in stale remote review.
   return (
     relevant.find((session) => session.actorId === input.actorId) ??
     relevant.find((session) => session.state === "recording") ??
@@ -316,10 +319,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     }
 
     async function ensureControlLease(serial: string): Promise<string | null> {
-      // Validate ownership at the server boundary instead of trusting a
-      // renderer-local id that may have expired or been released after a
-      // process restart. Re-selecting the same target is intentionally
-      // idempotent from the person's point of view.
+      // Validate ownership at the server boundary; a renderer-local id can
+      // expire after a process restart, while re-selecting is idempotent.
       await server.setSelectedDevice(serial);
       return server.selectedLeaseId();
     }
@@ -344,10 +345,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           toast("Another collaborator is using this device", "info");
           return false;
         }
-        // Observation and video preparation are intentionally separate on
-        // physical iOS. If video could not start yet (for example while the
-        // Home screen had no active app session), retain the valid observation
-        // and let Start recording retry it after the person opens an app.
+        // On physical iOS, retain a valid observation when video cannot yet
+        // start (for example, Home has no active app session).
         if (existing.state === "ready") {
           try {
             const session = await server.startAuthoringSession(existing.id);
@@ -575,11 +574,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           ...(options.title?.trim() ? { title: options.title.trim() } : {}),
           ...(options.position ? { position: options.position } : {}),
         });
-        // The capture operation uses a short-lived Authoring Session so CLI,
-        // MCP, and UI share one observation boundary. Its server-side cleanup
-        // is intentionally invisible; refresh both projections so the
-        // transient reviewing session cannot open the path-review editor for
-        // a screenshot-only action.
+        // A short-lived Authoring Session keeps CLI, MCP, and UI on one
+        // observation boundary; refresh projections after its invisible cleanup.
         await Promise.all([server.refreshAppMaps(), server.refreshAuthoringSessions()]);
         if (result.reviewProposalId) {
           toast("Screen changed · review the old and new capture before replacing it", "info");
@@ -616,19 +612,16 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       try {
         const session = activeSession();
         const recordingHere = session?.state === "recording" && ownsActiveSession();
-        // A recording session already owns and validates the device lease. Its
-        // interaction endpoint is the authoritative execute + record boundary;
-        // acquiring a second direct-control path here can race the session and
-        // leave a physical iOS tap focused in the UI but absent from the take.
+        // A recording session owns the lease and is the execute + record
+        // boundary; a second direct path could race it on physical iOS.
         if (!recordingHere && !alreadyApplied && !(await ensureDirectControl())) return false;
         await flushType();
         const selectedDevice = server
           .devices()
           .find((device) => device.serial === server.selectedDevice());
         const physicalIos = targetIsPhysicalIos(selectedDevice);
-        // A visible iPad video surface is enough to aim a deliberate point.
-        // Do not turn a direct point input into an implicit, potentially slow
-        // XCTest traversal when the semantic plane is unavailable.
+        // A visible iPad surface is enough to aim a point; do not start a
+        // slow XCTest traversal when the semantic plane is unavailable.
         const snapshot = recordingHere
           ? snapshotFromAuthoringSession(session)
           : (server.snapshot() ?? (physicalIos ? null : await server.captureUiSnapshot()));
@@ -660,7 +653,15 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
               ...(alreadyApplied ? { applied: true } : {}),
             });
           } catch (error) {
-            if (alreadyApplied || !target.point || !canRetryTapAtPoint(error)) throw error;
+            const canRetry = physicalIos
+              ? canFallbackToPointAfterFailedInteraction({
+                  platform: "ios",
+                  kind: "tap",
+                  hasPoint: Boolean(target.point),
+                  failure: iosInteractionFailure(error),
+                })
+              : canRetryTapAtPoint(error);
+            if (alreadyApplied || !target.point || !canRetry) throw error;
             await server.interactAuthoringSession(session.id, {
               kind: "tap",
               target: { point: target.point },
@@ -669,8 +670,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           return true;
         }
         if (alreadyApplied) return true;
-        // Physical iOS live drive prefers the exact point touched — refs expire
-        // across runner generations. If a ref still fails, retry as a point.
+        // Core owns iOS selector fallback; every other failure is review-only.
         if (physicalIos) {
           if (!physicalIosStep) return false;
           const step =
@@ -687,24 +687,24 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
                     point: { x: physicalIosStep.x, y: physicalIosStep.y },
                   }
                 : physicalIosStep;
-          try {
-            return await server.interactStep(step);
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            if (
-              /expired ref|ref frame|invalid ref|no longer valid|stale|did not change the screen/i.test(
-                message,
-              ) &&
-              target.point
-            ) {
-              return server.interactStep({
-                kind: "point",
-                x: target.point.x,
-                y: target.point.y,
-              });
-            }
-            throw error;
+          const succeeded = await server.interactStep(step);
+          if (
+            !succeeded &&
+            canFallbackToPointAfterFailedInteraction({
+              platform: "ios",
+              kind: step.kind,
+              hasPoint: Boolean(target.point),
+              failure: server.lastInteractionOutcome()?.iosFailure,
+            }) &&
+            target.point
+          ) {
+            return server.interactStep({
+              kind: "point",
+              x: target.point.x,
+              y: target.point.y,
+            });
           }
+          return succeeded;
         }
         const stableStep = stableLiveTapStep(target);
         if (!stableStep) return false;
@@ -828,10 +828,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     ): Promise<AuthoringSession | null> {
       const session = activeSession();
       if (!session || session.state !== "reviewing" || !ownsActiveSession()) return null;
-      // Approval is a local decision, so close the transient review surface
-      // immediately. App-map refreshes can take a few seconds on attached iOS
-      // hardware and must not make a successful click look ignored. Restore
-      // the session only when persistence actually fails.
+      // Close local review immediately; slow iOS map refreshes must not make a
+      // successful approval look ignored. Restore it only on persistence failure.
       const dismissedIds = supersededReviewSessionIds(server.authoringSessions(), session);
       setDismissedSessionIds((current) => new Set([...current, ...dismissedIds]));
       try {

@@ -5,6 +5,7 @@ import {
   groundTarget,
   GroundingError,
   IosMutationOutcomeUnknownError,
+  iosVisualVerificationDiagnostic,
   interact,
   previewInteract,
   type InteractInput,
@@ -57,16 +58,20 @@ function assertNoRunningJob(serial?: string): void {
 
 /** Preserve the exact device-command fact for both people and MCP callers.
  * A retry is an explicit follow-up after fresh pixels, never an HTTP retry. */
-function iosMutationOutcomeUnknownHttpError(error: IosMutationOutcomeUnknownError): HttpError {
+export function iosMutationOutcomeUnknownHttpError(
+  error: IosMutationOutcomeUnknownError,
+): HttpError {
   const lifecycle = (
     error as IosMutationOutcomeUnknownError & {
       iosSessionLifecycle?: unknown;
     }
   ).iosSessionLifecycle;
+  const visualVerification = iosVisualVerificationDiagnostic(error);
   return new HttpError(409, error.message, {
     code: "IOS_MUTATION_OUTCOME_UNKNOWN",
     iosMutation: error.iosMutation,
     ...(lifecycle ? { iosSessionLifecycle: lifecycle } : {}),
+    ...(visualVerification ? { iosVisualVerification: visualVerification } : {}),
   });
 }
 

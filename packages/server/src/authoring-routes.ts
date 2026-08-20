@@ -8,6 +8,7 @@ import {
   createDevice,
   describeRecipeStep,
   getBrowserDevice,
+  IosMutationOutcomeUnknownError,
   isBlankScreenshot,
   listDevices,
   observeVisualScreenFingerprint,
@@ -32,6 +33,7 @@ import type {
 } from "@relay/protocol";
 import { assertTargetControl, assertTargetLease } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
+import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import { isFinalizedMp4, startIosVideoTake, stopIosVideoTake } from "./ios-video-capture.js";
 import type { RequestContext } from "./security.js";
 
@@ -220,6 +222,7 @@ export function createAuthoringRuntime(): AuthoringRuntime {
         try {
           await runRecipeStep(device, step, { log: () => undefined, variables, artifacts });
         } catch (error) {
+          if (error instanceof IosMutationOutcomeUnknownError) throw error;
           const message = error instanceof Error ? error.message : String(error);
           throw new Error(`Step ${index + 1} (${describeRecipeStep(step)}): ${message}`, {
             cause: error,
@@ -309,6 +312,9 @@ async function body<T>(request: http.IncomingMessage): Promise<T> {
 }
 
 function mapError(error: unknown): never {
+  if (error instanceof IosMutationOutcomeUnknownError) {
+    throw iosMutationOutcomeUnknownHttpError(error);
+  }
   if (error instanceof HttpError) throw error;
   if (error instanceof AuthoringStateError) throw new HttpError(error.status, error.message);
   throw error;

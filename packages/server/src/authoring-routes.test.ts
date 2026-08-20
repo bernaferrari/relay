@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
-import { currentTargetContext, type AuthoringRuntime, type Device } from "@relay/core";
+import {
+  currentTargetContext,
+  IosMutationOutcomeUnknownError,
+  type AuthoringRuntime,
+  type Device,
+} from "@relay/core";
 import type { AuthoringSession } from "@relay/protocol";
 import { captureAuthoringObservation } from "./authoring-routes.js";
 import { startServer } from "./index.js";
@@ -299,6 +304,110 @@ test("atomic authoring begin preserves the device failure instead of masking it 
         error.message.includes("xcrun timed out after 20000ms") &&
         error.body?.code === "AUTHORING_SOURCE_UNAVAILABLE",
     );
+  } finally {
+    await server.close();
+    if (previous.workspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous.workspace;
+    if (previous.state === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous.state;
+    if (previous.recipes === undefined) delete process.env.RELAY_RECIPES_DIR;
+    else process.env.RELAY_RECIPES_DIR = previous.recipes;
+    if (previous.tests === undefined) delete process.env.RELAY_TESTS_DIR;
+    else process.env.RELAY_TESTS_DIR = previous.tests;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("authoring preserves an unknown iOS action as one-command review instead of a retry", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-authoring-unknown-ios-"));
+  const previous = {
+    workspace: process.env.RELAY_WORKSPACE_ROOT,
+    state: process.env.RELAY_STATE_DIR,
+    recipes: process.env.RELAY_RECIPES_DIR,
+    tests: process.env.RELAY_TESTS_DIR,
+  };
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  process.env.RELAY_STATE_DIR = join(root, "state");
+  process.env.RELAY_RECIPES_DIR = join(root, "recipes");
+  process.env.RELAY_TESTS_DIR = join(root, "tests");
+  let nativeCalls = 0;
+  const runtime: AuthoringRuntime = {
+    async observe() {
+      return {
+        capturedAt: Date.now(),
+        targetId: "ipad-authoring-unknown",
+        fingerprint: "authoring-source",
+        bounds: { width: 834, height: 1112 },
+        nodes: [{ role: "button", label: "Settings" }],
+        screenshot: { data: Buffer.from("authoring-source"), mime: "image/png" },
+      };
+    },
+    async execute() {
+      nativeCalls += 1;
+      throw new IosMutationOutcomeUnknownError(
+        {
+          sequence: 1,
+          operation: "press",
+          nativeAttempts: 1,
+          outcome: "outcome-unknown",
+          retry: {
+            attempts: 0,
+            decision: "blocked",
+            reason: "native-command-outcome-unknown",
+          },
+          intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+          at: Date.now(),
+        },
+        new Error("connection reset after native XCTest press"),
+      );
+    },
+    async replay() {},
+  };
+  const server = await startServer({ host: "127.0.0.1", port: 0, authoringRuntime: runtime });
+  const client = new RelayClient({
+    url: `http://127.0.0.1:${server.port}`,
+    auth: { type: "none" },
+    organizationId: "local",
+    projectId: "project-authoring-unknown",
+    actorId: "human:author",
+    actorKind: "human",
+  });
+  try {
+    const appMap = await client.invoke("app-map.create", {
+      appMapId: "authoring-unknown",
+      name: "Authoring unknown",
+    });
+    const lease = await client.lease({
+      poolId: "authoring",
+      deviceSerial: "ipad-authoring-unknown",
+      expiresAt: Date.now() + 60_000,
+    });
+    const begun = await client.invoke("authoring.session.begin", {
+      appMapId: appMap.appMap.id,
+      target: { kind: "device", platform: "ios", targetId: "ipad-authoring-unknown" },
+      leaseId: lease.lease.id,
+      expectedAppMapRevision: appMap.appMap.revision,
+    });
+
+    await assert.rejects(
+      client.interactAuthoringSession(begun.session.id, {
+        kind: "tap",
+        target: { label: "Settings" },
+      }),
+      (error: unknown) => {
+        if (!(error instanceof ApiError) || error.status !== 409) return false;
+        const body = error.body as {
+          code?: unknown;
+          iosMutation?: { nativeAttempts?: unknown; outcome?: unknown };
+        };
+        return (
+          body.code === "IOS_MUTATION_OUTCOME_UNKNOWN" &&
+          body.iosMutation?.nativeAttempts === 1 &&
+          body.iosMutation.outcome === "outcome-unknown"
+        );
+      },
+    );
+    assert.equal(nativeCalls, 1, "the authoring endpoint never retries an unknown native press");
   } finally {
     await server.close();
     if (previous.workspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;

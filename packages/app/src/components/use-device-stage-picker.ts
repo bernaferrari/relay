@@ -14,6 +14,7 @@ import {
   companionDisplayedPointToLogical,
   companionLogicalRectToDisplayed,
 } from "./app-map-device-companion-geometry";
+import { canFallbackToPointAfterFailedInteraction } from "../lib/ios-interaction-safety";
 
 export type DeviceStagePickerState = {
   fx: number;
@@ -154,7 +155,18 @@ export function useDeviceStagePicker(options: {
       interactBodyForStrategy(strategy, tapPoint),
       `tap ${strategy.describe}`,
     );
-    if (!succeeded && strategy.kind !== "point" && tapPoint) {
+    const selectedPlatform = () =>
+      server.devices().find((device) => device.serial === server.selectedDevice())?.platform;
+    if (
+      !succeeded &&
+      canFallbackToPointAfterFailedInteraction({
+        platform: selectedPlatform(),
+        kind: strategy.kind,
+        hasPoint: Boolean(tapPoint),
+        failure: server.lastInteractionOutcome()?.iosFailure,
+      }) &&
+      tapPoint
+    ) {
       succeeded = await server.interactStep(
         { kind: "point", x: tapPoint.x, y: tapPoint.y },
         `tap ${tapPoint.x},${tapPoint.y}`,
