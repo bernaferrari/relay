@@ -11,7 +11,7 @@ import {
   resolveIosLivePreview,
   type IosLivePreviewBackend,
 } from "@relay/core";
-import { HttpError } from "./http.js";
+import { CORS_HEADERS, HttpError } from "./http.js";
 
 function defer<T>(): {
   promise: Promise<T>;
@@ -27,22 +27,419 @@ function defer<T>(): {
   return { promise, resolve, reject };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 const PACKET_HEADER_BYTES = 16;
 const DEFAULT_MJPEG_BASE_PORT = 3333;
+const GO_IOS_TUNNEL_COMMAND_TIMEOUT_MS = 2_000;
+const GO_IOS_TUNNEL_READY_TIMEOUT_MS = 12_000;
+const GO_IOS_STREAM_START_TIMEOUT_MS = 12_000;
+const GO_IOS_UPSTREAM_CONNECT_TIMEOUT_MS = 1_500;
+const GO_IOS_START_POLL_MS = 200;
+const GO_IOS_PROCESS_STOP_TIMEOUT_MS = 2_000;
+const IOS_PREVIEW_STALE_AFTER_MS = 8_000;
+const IOS_PREVIEW_RESTART_COOLDOWN_MS = 2_000;
+const IOS_PREVIEW_IDLE_STOP_MS = 15_000;
+const MAX_GO_IOS_COMMAND_OUTPUT_CHARS = 16_000;
+const MAX_MJPEG_FRAME_BYTES = 16 * 1024 * 1024;
+const MAX_MJPEG_BUFFER_BYTES = MAX_MJPEG_FRAME_BYTES + 256 * 1024;
 
 type StreamMode = "instruments-mjpeg";
+type IosPreviewStopReason = "idle" | "stale" | "startup-failed" | "upstream-ended" | "shutdown";
 
-type ActiveIosPreview = {
-  serial: string;
-  mode: StreamMode;
-  child?: ChildProcess;
-  port?: number;
-  baseUrl?: string;
-  stop: () => void;
+/** The small part of ServerResponse needed for bounded latest-frame fanout. */
+export type IosFrameSink = {
+  write: (chunk: Uint8Array) => boolean;
+  once: (event: "drain", listener: () => void) => unknown;
+  off?: (event: "drain", listener: () => void) => unknown;
+  destroyed?: boolean;
+  writableEnded?: boolean;
 };
 
-const activePreviews = new Map<string, ActiveIosPreview>();
-let activeTunnel: { child: ChildProcess; stop: () => void } | null = null;
+export type IosFrameFanoutDiagnostics = {
+  subscribers: number;
+  publishedFrames: number;
+  writtenFrames: number;
+  droppedFrames: number;
+};
+
+type IosFrameSubscriber = {
+  sink: IosFrameSink;
+  blocked: boolean;
+  pending?: Buffer;
+  onDrain: () => void;
+};
+
+/**
+ * Fan a single device source out to Relay clients without allowing one slow
+ * HTTP response to queue the capture behind old frames. Node owns at most its
+ * current buffered write; Relay retains only the newest frame after that.
+ */
+export class IosLatestFrameFanout {
+  readonly #subscribers = new Map<symbol, IosFrameSubscriber>();
+  #latestPacket: Buffer | undefined;
+  #publishedFrames = 0;
+  #writtenFrames = 0;
+  #droppedFrames = 0;
+
+  get subscriberCount(): number {
+    return this.#subscribers.size;
+  }
+
+  get diagnostics(): IosFrameFanoutDiagnostics {
+    return {
+      subscribers: this.subscriberCount,
+      publishedFrames: this.#publishedFrames,
+      writtenFrames: this.#writtenFrames,
+      droppedFrames: this.#droppedFrames,
+    };
+  }
+
+  subscribe(sink: IosFrameSink): () => void {
+    const token = Symbol("ios-preview-subscriber");
+    const subscriber: IosFrameSubscriber = {
+      sink,
+      blocked: false,
+      onDrain: () => this.#flush(token),
+    };
+    this.#subscribers.set(token, subscriber);
+    if (this.#latestPacket) this.#offer(token, subscriber, this.#latestPacket);
+    return () => this.#remove(token, subscriber);
+  }
+
+  /** Packet ownership remains with the source and it must not mutate it after publishing. */
+  publish(packet: Buffer): void {
+    this.#latestPacket = packet;
+    this.#publishedFrames += 1;
+    for (const [token, subscriber] of this.#subscribers) {
+      this.#offer(token, subscriber, packet);
+    }
+  }
+
+  #offer(token: symbol, subscriber: IosFrameSubscriber, packet: Buffer): void {
+    if (this.#subscribers.get(token) !== subscriber) return;
+    if (subscriber.sink.destroyed || subscriber.sink.writableEnded) {
+      this.#remove(token, subscriber);
+      return;
+    }
+    if (subscriber.blocked) {
+      if (subscriber.pending) this.#droppedFrames += 1;
+      subscriber.pending = packet;
+      return;
+    }
+    try {
+      const writable = subscriber.sink.write(packet);
+      this.#writtenFrames += 1;
+      if (!writable) {
+        subscriber.blocked = true;
+        subscriber.sink.once("drain", subscriber.onDrain);
+      }
+    } catch {
+      this.#remove(token, subscriber);
+    }
+  }
+
+  #flush(token: symbol): void {
+    const subscriber = this.#subscribers.get(token);
+    if (!subscriber) return;
+    subscriber.blocked = false;
+    const pending = subscriber.pending;
+    subscriber.pending = undefined;
+    if (pending) this.#offer(token, subscriber, pending);
+  }
+
+  #remove(token: symbol, subscriber: IosFrameSubscriber): void {
+    if (this.#subscribers.get(token) !== subscriber) return;
+    this.#subscribers.delete(token);
+    subscriber.pending = undefined;
+    subscriber.sink.off?.("drain", subscriber.onDrain);
+  }
+}
+
+export type IosPreviewOwner = {
+  stop: (reason?: IosPreviewStopReason) => Promise<boolean>;
+};
+
+/**
+ * A singleflight registry keeps refreshes and multiple Relay windows from
+ * starting concurrent go-ios processes for the same physical target.
+ */
+export class IosPreviewOwnerRegistry<T extends IosPreviewOwner> {
+  readonly #active = new Map<string, T>();
+  readonly #starting = new Map<string, Promise<T>>();
+
+  async acquire(
+    serial: string,
+    isLive: (owner: T) => boolean,
+    start: () => Promise<T>,
+  ): Promise<T> {
+    const existing = this.#active.get(serial);
+    if (existing) {
+      if (isLive(existing)) return existing;
+      const stopped = await existing.stop("stale");
+      if (!stopped) {
+        throw new HttpError(
+          503,
+          "The previous iOS preview is still stopping; retry once it exits.",
+        );
+      }
+    }
+
+    const pending = this.#starting.get(serial);
+    if (pending) return pending;
+
+    const created = Promise.resolve()
+      .then(start)
+      .then((owner) => {
+        if (!isLive(owner)) {
+          void owner.stop("startup-failed");
+          throw new HttpError(502, "iOS preview ended before its first frame arrived.");
+        }
+        this.#active.set(serial, owner);
+        return owner;
+      });
+    this.#starting.set(serial, created);
+    void created.then(
+      () => {
+        if (this.#starting.get(serial) === created) this.#starting.delete(serial);
+      },
+      () => {
+        if (this.#starting.get(serial) === created) this.#starting.delete(serial);
+      },
+    );
+    return created;
+  }
+
+  release(serial: string, owner: T): boolean {
+    if (this.#active.get(serial) !== owner) return false;
+    this.#active.delete(serial);
+    return true;
+  }
+
+  values(): readonly T[] {
+    return [...this.#active.values()];
+  }
+
+  get count(): number {
+    return this.#active.size;
+  }
+}
+
+export function iosPreviewFrameIsFresh(
+  lastFrameAt: number | undefined,
+  now = Date.now(),
+  staleAfterMs = IOS_PREVIEW_STALE_AFTER_MS,
+): boolean {
+  return lastFrameAt !== undefined && now - lastFrameAt >= 0 && now - lastFrameAt <= staleAfterMs;
+}
+
+type IosPreviewSourceState = "starting" | "streaming" | "stopped" | "failed";
+type IosPreviewSourceEnd = {
+  state: Extract<IosPreviewSourceState, "stopped" | "failed">;
+  error?: Error;
+};
+
+type IosPreviewSourceDiagnostics = {
+  state: IosPreviewSourceState;
+  startedAt: number;
+  readyAt?: number;
+  lastFrameAt?: number;
+  frames: number;
+  bytes: number;
+  contentType?: string;
+  fanout: IosFrameFanoutDiagnostics;
+};
+
+/** One go-ios HTTP consumer per target. It remains fast even when viewers are slow. */
+class IosPreviewSource {
+  readonly fanout = new IosLatestFrameFanout();
+  readonly #ready = defer<void>();
+  readonly #endedListeners = new Set<(outcome: IosPreviewSourceEnd) => void>();
+  readonly #startedAt = Date.now();
+  #state: IosPreviewSourceState = "starting";
+  #readyAt: number | undefined;
+  #lastFrameAt: number | undefined;
+  #frames = 0;
+  #bytes = 0;
+  #contentType: string | undefined;
+  #upstream: http.IncomingMessage | undefined;
+  #ended: IosPreviewSourceEnd | undefined;
+  #stopped = false;
+  #staleTimer: ReturnType<typeof setInterval> | undefined;
+
+  get diagnostics(): IosPreviewSourceDiagnostics {
+    return {
+      state: this.#state,
+      startedAt: this.#startedAt,
+      ...(this.#readyAt === undefined ? {} : { readyAt: this.#readyAt }),
+      ...(this.#lastFrameAt === undefined ? {} : { lastFrameAt: this.#lastFrameAt }),
+      frames: this.#frames,
+      bytes: this.#bytes,
+      ...(this.#contentType ? { contentType: this.#contentType } : {}),
+      fanout: this.fanout.diagnostics,
+    };
+  }
+
+  isFresh(now = Date.now()): boolean {
+    return this.#state === "streaming" && iosPreviewFrameIsFresh(this.#lastFrameAt, now);
+  }
+
+  onEnded(listener: (outcome: IosPreviewSourceEnd) => void): () => void {
+    if (this.#ended) {
+      queueMicrotask(() => {
+        try {
+          listener(this.#ended!);
+        } catch {
+          // A disconnected client cannot take down the source owner.
+        }
+      });
+      return () => undefined;
+    }
+    this.#endedListeners.add(listener);
+    return () => this.#endedListeners.delete(listener);
+  }
+
+  async start(url: string, child: ChildProcess, logPath: string): Promise<void> {
+    void this.#pump(url, child, logPath).then(
+      () => this.#finish(this.#stopped ? undefined : new Error("go-ios MJPEG upstream ended")),
+      (error) => this.#finish(this.#stopped ? undefined : error),
+    );
+    const timeout = defer<never>();
+    const timer = setTimeout(
+      () =>
+        timeout.reject(
+          new Error(
+            `go-ios stream did not deliver a frame after ${GO_IOS_STREAM_START_TIMEOUT_MS}ms`,
+          ),
+        ),
+      GO_IOS_STREAM_START_TIMEOUT_MS,
+    );
+    try {
+      await Promise.race([this.#ready.promise, timeout.promise]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  stop(): void {
+    if (this.#stopped) return;
+    this.#stopped = true;
+    this.#upstream?.destroy();
+    this.#finish();
+  }
+
+  fail(error: unknown): void {
+    if (this.#stopped) return;
+    this.#upstream?.destroy();
+    this.#finish(error);
+  }
+
+  #accept(packet: Buffer): void {
+    const now = Date.now();
+    this.#state = "streaming";
+    this.#lastFrameAt = now;
+    this.#frames += 1;
+    this.#bytes += packet.byteLength;
+    if (this.#readyAt === undefined) {
+      this.#readyAt = now;
+      this.#ready.resolve();
+      this.#staleTimer = setInterval(
+        () => {
+          if (!this.#stopped && !this.isFresh()) {
+            this.fail(
+              new Error(`go-ios MJPEG source became stale after ${IOS_PREVIEW_STALE_AFTER_MS}ms`),
+            );
+          }
+        },
+        Math.min(1_000, Math.max(250, Math.floor(IOS_PREVIEW_STALE_AFTER_MS / 4))),
+      );
+      this.#staleTimer.unref?.();
+    }
+    this.fanout.publish(packet);
+  }
+
+  async #pump(url: string, child: ChildProcess, logPath: string): Promise<void> {
+    const upstream = await openMjpegUpstreamWhenReady(url, child, logPath);
+    this.#upstream = upstream;
+    try {
+      if ((upstream.statusCode ?? 500) >= 400) {
+        upstream.resume();
+        throw new HttpError(502, `iOS preview upstream returned ${upstream.statusCode}`);
+      }
+      const contentType = String(upstream.headers["content-type"] || "");
+      this.#contentType = contentType;
+      if (/h264|video\/avc|octet-stream/i.test(contentType)) {
+        for await (const chunk of upstream as AsyncIterable<Buffer>) {
+          if (this.#stopped) return;
+          if (!chunk.length) continue;
+          const elapsedNs = BigInt(Date.now() - this.#startedAt) * 1_000_000n;
+          const keyframe = chunk.includes(Buffer.from([0, 0, 0, 1, 0x67])) || chunk[4] === 0x67;
+          this.#accept(encodeRelayAnnexBPacket(chunk, elapsedNs, keyframe));
+        }
+        return;
+      }
+      for await (const jpeg of readMjpegJpegs(upstream as AsyncIterable<Buffer>)) {
+        if (this.#stopped) return;
+        const elapsedNs = BigInt(Date.now() - this.#startedAt) * 1_000_000n;
+        this.#accept(encodeRelayJpegPacket(jpeg, elapsedNs));
+      }
+    } finally {
+      if (this.#upstream === upstream) this.#upstream = undefined;
+      upstream.destroy();
+    }
+  }
+
+  #finish(error?: unknown): void {
+    if (this.#ended) return;
+    if (this.#staleTimer) {
+      clearInterval(this.#staleTimer);
+      this.#staleTimer = undefined;
+    }
+    const normalized = error === undefined ? undefined : new Error(errorMessage(error));
+    this.#state = normalized ? "failed" : "stopped";
+    this.#ended = normalized ? { state: "failed", error: normalized } : { state: "stopped" };
+    if (this.#readyAt === undefined) {
+      this.#ready.reject(
+        normalized ?? new Error("iOS preview stopped before its first frame arrived"),
+      );
+    }
+    for (const listener of this.#endedListeners) {
+      try {
+        listener(this.#ended);
+      } catch {
+        // A disconnected client cannot take down the source owner.
+      }
+    }
+    this.#endedListeners.clear();
+  }
+}
+
+type ActiveIosPreview = IosPreviewOwner & {
+  serial: string;
+  mode: StreamMode;
+  child: ChildProcess;
+  port: number;
+  source: IosPreviewSource;
+  stop: (reason?: IosPreviewStopReason) => Promise<boolean>;
+  idleTimer?: ReturnType<typeof setTimeout>;
+};
+
+type ActiveGoIosTunnel = {
+  child: ChildProcess;
+  stop: () => Promise<boolean>;
+};
+
+const activePreviews = new IosPreviewOwnerRegistry<ActiveIosPreview>();
+const stoppingPreviews = new Map<string, ActiveIosPreview>();
+const failedPreviews = new Map<string, { failedAt: number; message: string }>();
+let activeTunnel: ActiveGoIosTunnel | null = null;
+let tunnelStartup: Promise<void> | null = null;
 
 function repoRootFromHere(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -65,7 +462,7 @@ export async function resolveGoIosBinary(): Promise<string> {
       await access(path);
       return path;
     } catch {
-      // try next
+      // Try the next configured candidate.
     }
   }
   return fromEnv || join(repoRootFromHere(), "vendor", "go-ios", "bin", "ios");
@@ -95,6 +492,13 @@ async function allocateMjpegPort(): Promise<number> {
   throw new HttpError(500, "No free local port for go-ios MJPEG");
 }
 
+function appendCommandOutput(current: string, chunk: unknown): string {
+  const next = current + String(chunk);
+  return next.length <= MAX_GO_IOS_COMMAND_OUTPUT_CHARS
+    ? next
+    : next.slice(-MAX_GO_IOS_COMMAND_OUTPUT_CHARS);
+}
+
 async function runGoIos(
   bin: string,
   args: string[],
@@ -104,10 +508,10 @@ async function runGoIos(
   let stdout = "";
   let stderr = "";
   child.stdout?.on("data", (chunk) => {
-    stdout += String(chunk);
+    stdout = appendCommandOutput(stdout, chunk);
   });
   child.stderr?.on("data", (chunk) => {
-    stderr += String(chunk);
+    stderr = appendCommandOutput(stderr, chunk);
   });
   const done = defer<number | null>();
   child.once("error", (error) => done.reject(error));
@@ -125,174 +529,323 @@ async function runGoIos(
   }
 }
 
-async function ensureGoIosTunnel(bin: string): Promise<void> {
-  const listTunnels = async (): Promise<string> => {
-    const result = await runGoIos(bin, ["tunnel", "ls"], { timeoutMs: 8_000 });
-    return `${result.stdout}\n${result.stderr}`;
-  };
-  const tunnelReady = (listed: string) =>
-    /"udid"\s*:/.test(listed) || /userspaceTun/.test(listed) || /rsdPort/.test(listed);
+function tunnelListingLooksReady(listed: string): boolean {
+  return /"udid"\s*:/.test(listed) || /userspaceTun/.test(listed) || /rsdPort/.test(listed);
+}
 
+async function hasGoIosTunnel(bin: string): Promise<boolean> {
+  const result = await runGoIos(bin, ["tunnel", "ls"], {
+    timeoutMs: GO_IOS_TUNNEL_COMMAND_TIMEOUT_MS,
+  });
+  return tunnelListingLooksReady(`${result.stdout}\n${result.stderr}`);
+}
+
+async function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null) return true;
+  const done = defer<boolean>();
+  const onExit = () => done.resolve(true);
+  child.once("exit", onExit);
+  const timer = setTimeout(() => done.resolve(false), timeoutMs);
   try {
-    if (tunnelReady(await listTunnels())) return;
-  } catch {
-    // start below
+    return await done.promise;
+  } finally {
+    clearTimeout(timer);
+    child.off("exit", onExit);
   }
+}
 
-  if (!activeTunnel || activeTunnel.child.exitCode !== null) {
-    const child = spawn(bin, ["tunnel", "start", "--userspace", "--tunnel-info-port", "28100"], {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, ENABLE_GO_IOS_AGENT: process.env.ENABLE_GO_IOS_AGENT || "user" },
-    });
-    const logPath = join(tmpdir(), "relay-go-ios-tunnel.log");
-    const log = createWriteStream(logPath, { flags: "a" });
-    child.stdout?.pipe(log);
-    child.stderr?.pipe(log);
-    const stop = () => {
-      if (activeTunnel?.child === child) activeTunnel = null;
-      if (!child.killed) child.kill("SIGTERM");
-    };
-    child.once("exit", () => {
-      if (activeTunnel?.child === child) activeTunnel = null;
-    });
-    activeTunnel = { child, stop };
-  }
+async function stopChild(child: ChildProcess): Promise<boolean> {
+  if (child.exitCode !== null || child.pid === undefined) return true;
+  child.kill("SIGTERM");
+  return waitForChildExit(child, GO_IOS_PROCESS_STOP_TIMEOUT_MS);
+}
 
-  const deadline = Date.now() + 18_000;
+function pipeGoIosLog(child: ChildProcess, logPath: string): void {
+  const log = createWriteStream(logPath, { flags: "a" });
+  // A diagnostic-log failure must not crash the stream owner.
+  log.on("error", () => undefined);
+  child.stdout?.pipe(log);
+  child.stderr?.pipe(log);
+  const closeLog = () => log.end();
+  child.once("exit", closeLog);
+  child.once("error", closeLog);
+}
+
+async function startGoIosTunnel(bin: string): Promise<void> {
+  const child = spawn(bin, ["tunnel", "start", "--userspace", "--tunnel-info-port", "28100"], {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, ENABLE_GO_IOS_AGENT: process.env.ENABLE_GO_IOS_AGENT || "user" },
+  });
+  pipeGoIosLog(child, join(tmpdir(), "relay-go-ios-tunnel.log"));
+  let tunnel!: ActiveGoIosTunnel;
+  tunnel = {
+    child,
+    async stop() {
+      const stopped = await stopChild(child);
+      if (stopped && activeTunnel === tunnel) activeTunnel = null;
+      return stopped;
+    },
+  };
+  let startupError: Error | undefined;
+  child.once("error", (error) => {
+    startupError = error;
+  });
+  child.once("exit", () => {
+    if (activeTunnel === tunnel) activeTunnel = null;
+  });
+  activeTunnel = tunnel;
+
+  const deadline = Date.now() + GO_IOS_TUNNEL_READY_TIMEOUT_MS;
   let lastError: unknown;
   while (Date.now() < deadline) {
-    if (activeTunnel?.child.exitCode != null) {
+    if (startupError) {
+      const stopped = await tunnel.stop();
+      throw new HttpError(
+        502,
+        `go-ios tunnel failed to start: ${startupError.message}${stopped ? "" : "; process is still stopping"}`,
+      );
+    }
+    if (child.exitCode !== null) {
       throw new HttpError(
         502,
         "go-ios tunnel exited before ready. On iOS 17+ run: vendor/go-ios/bin/ios tunnel start --userspace",
       );
     }
     try {
-      if (tunnelReady(await listTunnels())) {
-        const settle = defer<void>();
-        setTimeout(settle.resolve, 1_200);
-        await settle.promise;
-        return;
-      }
+      if (await hasGoIosTunnel(bin)) return;
     } catch (error) {
       lastError = error;
     }
-    const delay = defer<void>();
-    setTimeout(delay.resolve, 400);
-    await delay.promise;
+    await sleep(GO_IOS_START_POLL_MS);
   }
+  const stopped = await tunnel.stop();
   throw new HttpError(
     502,
-    `go-ios tunnel did not become ready (${lastError instanceof Error ? lastError.message : String(lastError)})`,
+    `go-ios tunnel did not become ready (${errorMessage(lastError)}${stopped ? "" : "; process is still stopping"})`,
   );
 }
 
-async function httpOk(url: string, timeoutMs = 1_500): Promise<boolean> {
-  const wait = defer<boolean>();
-  const req = http.get(url, (res) => {
-    res.resume();
-    wait.resolve((res.statusCode ?? 500) >= 200 && (res.statusCode ?? 500) < 500);
-  });
-  req.setTimeout(timeoutMs, () => {
-    req.destroy(new Error("timeout"));
-  });
-  req.on("error", () => wait.resolve(false));
-  return wait.promise;
+async function ensureGoIosTunnel(bin: string): Promise<void> {
+  if (tunnelStartup) return tunnelStartup;
+  try {
+    if (await hasGoIosTunnel(bin)) return;
+  } catch {
+    // Start a local userspace tunnel below.
+  }
+  if (tunnelStartup) return tunnelStartup;
+
+  const previous = activeTunnel;
+  if (previous) {
+    const stopped = await previous.stop();
+    if (!stopped) {
+      throw new HttpError(
+        503,
+        "The previous go-ios tunnel is still stopping; retry once it exits.",
+      );
+    }
+  }
+  if (tunnelStartup) return tunnelStartup;
+
+  const startup = startGoIosTunnel(bin);
+  tunnelStartup = startup;
+  void startup.then(
+    () => {
+      if (tunnelStartup === startup) tunnelStartup = null;
+    },
+    () => {
+      if (tunnelStartup === startup) tunnelStartup = null;
+    },
+  );
+  return startup;
 }
 
-async function waitHttpServer(url: string, child: ChildProcess, logPath: string): Promise<void> {
-  const deadline = Date.now() + 12_000;
+async function openUpstream(url: string, timeoutMs: number): Promise<http.IncomingMessage> {
+  const wait = defer<http.IncomingMessage>();
+  let settled = false;
+  const settle = (operation: () => void) => {
+    if (settled) return;
+    settled = true;
+    operation();
+  };
+  const req = http.get(url, (response) => settle(() => wait.resolve(response)));
+  const timer = setTimeout(() => req.destroy(new Error("upstream connect timeout")), timeoutMs);
+  req.once("error", (error) => settle(() => wait.reject(error)));
+  try {
+    return await wait.promise;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function openMjpegUpstreamWhenReady(
+  url: string,
+  child: ChildProcess,
+  logPath: string,
+): Promise<http.IncomingMessage> {
+  const deadline = Date.now() + GO_IOS_STREAM_START_TIMEOUT_MS;
   let lastError: unknown;
   while (Date.now() < deadline) {
-    if (child.exitCode != null) {
+    if (child.exitCode !== null) {
       throw new HttpError(502, `go-ios stream process exited (see ${logPath})`);
     }
     try {
-      if (await httpOk(url, 1_200)) return;
-      lastError = new Error("not ready");
+      return await openUpstream(
+        url,
+        Math.max(1, Math.min(GO_IOS_UPSTREAM_CONNECT_TIMEOUT_MS, deadline - Date.now())),
+      );
     } catch (error) {
       lastError = error;
     }
-    const delay = defer<void>();
-    setTimeout(delay.resolve, 300);
-    await delay.promise;
+    await sleep(Math.min(GO_IOS_START_POLL_MS, Math.max(1, deadline - Date.now())));
   }
   throw new HttpError(
     502,
-    `go-ios stream did not become ready (${lastError instanceof Error ? lastError.message : String(lastError)}). Log: ${logPath}`,
+    `go-ios stream did not accept an upstream connection (${errorMessage(lastError)}). Log: ${logPath}`,
   );
+}
+
+function previewStillLive(preview: ActiveIosPreview): boolean {
+  return preview.child.exitCode === null && preview.source.isFresh();
+}
+
+async function awaitStoppingPreview(serial: string): Promise<void> {
+  const preview = stoppingPreviews.get(serial);
+  if (!preview) return;
+  const stopped = await preview.stop();
+  if (!stopped) {
+    throw new HttpError(503, "The previous iOS preview is still stopping; retry once it exits.");
+  }
+}
+
+function throwIfPreviewCoolingDown(serial: string): void {
+  const failure = failedPreviews.get(serial);
+  if (!failure) return;
+  const remaining = failure.failedAt + IOS_PREVIEW_RESTART_COOLDOWN_MS - Date.now();
+  if (remaining <= 0) {
+    failedPreviews.delete(serial);
+    return;
+  }
+  throw new HttpError(
+    503,
+    `iOS preview is cooling down after a failed source (${failure.message}); retry once after ${remaining}ms.`,
+  );
+}
+
+function rememberPreviewFailure(serial: string, error: unknown): void {
+  const failure = { failedAt: Date.now(), message: errorMessage(error) };
+  failedPreviews.set(serial, failure);
+  const cleanup = setTimeout(() => {
+    if (failedPreviews.get(serial) === failure) failedPreviews.delete(serial);
+  }, IOS_PREVIEW_RESTART_COOLDOWN_MS);
+  cleanup.unref?.();
+}
+
+function cancelIdleStop(preview: ActiveIosPreview): void {
+  if (!preview.idleTimer) return;
+  clearTimeout(preview.idleTimer);
+  preview.idleTimer = undefined;
+}
+
+function scheduleIdleStop(preview: ActiveIosPreview): void {
+  if (preview.idleTimer || preview.source.fanout.subscriberCount > 0) return;
+  preview.idleTimer = setTimeout(() => {
+    preview.idleTimer = undefined;
+    if (preview.source.fanout.subscriberCount === 0) void preview.stop("idle");
+  }, IOS_PREVIEW_IDLE_STOP_MS);
+  preview.idleTimer.unref?.();
 }
 
 async function startInstrumentsMjpeg(bin: string, serial: string): Promise<ActiveIosPreview> {
+  const startedAt = Date.now();
   await ensureGoIosTunnel(bin);
+  const tunnelReadyMs = Date.now() - startedAt;
   const port = await allocateMjpegPort();
   const logPath = join(tmpdir(), `relay-go-ios-${serial.slice(0, 8)}.log`);
-  let lastError: unknown;
+  const child = spawn(bin, ["screenshot", "--udid", serial, "--stream", "--port", String(port)], {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env },
+  });
+  pipeGoIosLog(child, logPath);
+  const source = new IosPreviewSource();
+  let preview!: ActiveIosPreview;
+  let stopped = false;
+  let stopPromise: Promise<boolean> | undefined;
 
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const child = spawn(bin, ["screenshot", "--udid", serial, "--stream", "--port", String(port)], {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
+  const stop = async (reason: IosPreviewStopReason = "shutdown"): Promise<boolean> => {
+    if (stopPromise) return stopPromise;
+    stopped = true;
+    cancelIdleStop(preview);
+    source.stop();
+    stoppingPreviews.set(serial, preview);
+    stopPromise = stopChild(child).then((exited) => {
+      if (exited) {
+        activePreviews.release(serial, preview);
+        if (stoppingPreviews.get(serial) === preview) stoppingPreviews.delete(serial);
+      }
+      return exited;
     });
-    const log = createWriteStream(logPath, { flags: "a" });
-    child.stdout?.pipe(log);
-    child.stderr?.pipe(log);
-    const stop = () => {
-      activePreviews.delete(serial);
-      if (!child.killed) child.kill("SIGTERM");
-    };
-    child.once("exit", () => {
-      if (activePreviews.get(serial)?.child === child) activePreviews.delete(serial);
+    void stopPromise.then((exited) => {
+      const diagnostics = source.diagnostics;
+      console.log(
+        `[video] iOS source stopped serial=${serial} mode=instruments-mjpeg reason=${reason} exited=${exited} frames=${diagnostics.frames} bytes=${diagnostics.bytes} droppedFrames=${diagnostics.fanout.droppedFrames} durationMs=${Date.now() - startedAt}`,
+      );
     });
-    const preview: ActiveIosPreview = {
-      serial,
-      mode: "instruments-mjpeg",
-      child,
-      port,
-      stop,
-    };
-    activePreviews.set(serial, preview);
-    try {
-      await waitHttpServer(`http://127.0.0.1:${port}/`, child, logPath);
-      return preview;
-    } catch (error) {
-      lastError = error;
-      stop();
-      const backoff = defer<void>();
-      setTimeout(backoff.resolve, 900);
-      await backoff.promise;
+    return stopPromise;
+  };
+  preview = { serial, mode: "instruments-mjpeg", child, port, source, stop };
+
+  child.once("exit", (code, signal) => {
+    activePreviews.release(serial, preview);
+    if (stoppingPreviews.get(serial) === preview) stoppingPreviews.delete(serial);
+    if (!stopped) {
+      source.fail(
+        new Error(`go-ios stream process exited code=${code ?? "null"} signal=${signal ?? "none"}`),
+      );
     }
-  }
-  throw new HttpError(
-    502,
-    `Instruments MJPEG failed (${lastError instanceof Error ? lastError.message : String(lastError)}). Log: ${logPath}`,
-  );
-}
+  });
+  child.once("error", (error) => source.fail(error));
+  source.onEnded((outcome) => {
+    if (!stopped && outcome.error) {
+      rememberPreviewFailure(serial, outcome.error);
+      console.warn(
+        `[video] iOS source failed serial=${serial} mode=instruments-mjpeg error=${outcome.error.message}`,
+      );
+    }
+    if (!stopped) void stop(outcome.error ? "upstream-ended" : "shutdown");
+  });
 
-async function previewStillLive(preview: ActiveIosPreview): Promise<boolean> {
-  if (preview.child && preview.child.exitCode != null) return false;
-  if (preview.mode === "instruments-mjpeg" && preview.port) {
-    return httpOk(`http://127.0.0.1:${preview.port}/`, 800);
+  try {
+    await source.start(`http://127.0.0.1:${port}/`, child, logPath);
+    const diagnostics = source.diagnostics;
+    console.log(
+      `[video] iOS source ready serial=${serial} mode=instruments-mjpeg port=${port} tunnelReadyMs=${tunnelReadyMs} firstFrameMs=${(diagnostics.readyAt ?? Date.now()) - startedAt} startupMs=${Date.now() - startedAt} upstreamType=${diagnostics.contentType ?? "unknown"}`,
+    );
+    return preview;
+  } catch (error) {
+    rememberPreviewFailure(serial, error);
+    const exited = await stop("startup-failed");
+    throw new HttpError(
+      502,
+      `Instruments MJPEG failed (${errorMessage(error)}). Log: ${logPath}${exited ? "" : "; process is still stopping"}`,
+    );
   }
-  return false;
 }
 
 async function ensureIosPreview(
   serial: string,
   backend: IosLivePreviewBackend,
 ): Promise<ActiveIosPreview> {
-  const existing = activePreviews.get(serial);
-  if (existing) {
-    if (await previewStillLive(existing)) return existing;
-    existing.stop();
-    activePreviews.delete(serial);
-  }
-
-  const bin = await resolveGoIosBinary();
   if (backend === "agent-device-png") {
     throw new HttpError(400, "PNG preview does not use the live stream route");
   }
-  return startInstrumentsMjpeg(bin, serial);
+  await awaitStoppingPreview(serial);
+  return activePreviews.acquire(serial, previewStillLive, async () => {
+    throwIfPreviewCoolingDown(serial);
+    const bin = await resolveGoIosBinary();
+    const preview = await startInstrumentsMjpeg(bin, serial);
+    failedPreviews.delete(serial);
+    return preview;
+  });
 }
 
 /** Encode one JPEG as Relay framed packet (kind 2). */
@@ -317,6 +870,14 @@ export function encodeRelayAnnexBPacket(data: Uint8Array, ptsNs = 0n, keyframe =
   return Buffer.concat([header, Buffer.from(data)]);
 }
 
+function assertMjpegBufferLimit(buffer: Buffer): void {
+  if (buffer.byteLength > MAX_MJPEG_BUFFER_BYTES) {
+    throw new Error(
+      `MJPEG parser buffer exceeded ${MAX_MJPEG_BUFFER_BYTES} bytes without a complete frame`,
+    );
+  }
+}
+
 export async function* readMjpegJpegs(
   body: AsyncIterable<Buffer>,
 ): AsyncGenerator<Buffer, void, void> {
@@ -328,6 +889,7 @@ export async function* readMjpegJpegs(
   ];
   for await (const chunk of body) {
     buffer = Buffer.concat([buffer, chunk]);
+    assertMjpegBufferLimit(buffer);
     while (true) {
       const headerSep = buffer.indexOf("\r\n\r\n");
       if (headerSep < 0) break;
@@ -348,6 +910,9 @@ export async function* readMjpegJpegs(
         continue;
       }
       const length = Number(lengthMatch[1]);
+      if (!Number.isSafeInteger(length) || length <= 0 || length > MAX_MJPEG_FRAME_BYTES) {
+        throw new Error(`MJPEG frame has invalid Content-Length ${lengthMatch[1]}`);
+      }
       const start = headerSep + 4;
       const end = start + length;
       if (buffer.length < end) break;
@@ -366,17 +931,10 @@ export async function* readMjpegJpegs(
   }
 }
 
-async function openUpstream(url: string): Promise<http.IncomingMessage> {
-  const wait = defer<http.IncomingMessage>();
-  const req = http.get(url, (response) => wait.resolve(response));
-  req.setTimeout(6_000, () => req.destroy(new Error("upstream connect timeout")));
-  req.on("error", wait.reject);
-  return wait.promise;
-}
-
 /**
  * Stream iOS live preview as Relay framed packets on /device/stream.
- * kind 2 = JPEG, kind 3 = annex-B H.264 chunk (best-effort).
+ * Pixels come from the go-ios source only; this path never initializes or
+ * waits for XCTest accessibility control.
  */
 export async function streamIosGoIosMjpeg(res: http.ServerResponse, serial: string): Promise<void> {
   const backend = await readIosLivePreviewBackend();
@@ -387,81 +945,73 @@ export async function streamIosGoIosMjpeg(res: http.ServerResponse, serial: stri
     );
   }
 
-  let preview = await ensureIosPreview(serial, backend);
-  let disconnected = false;
-  res.once("close", () => {
+  let disconnected = res.destroyed;
+  const beforeReadyClose = () => {
     disconnected = true;
-  });
-
-  const resolveUpstreamUrl = (item: ActiveIosPreview) =>
-    item.mode === "instruments-mjpeg" ? `http://127.0.0.1:${item.port}/` : item.baseUrl!;
-
-  let upstream: http.IncomingMessage;
-  try {
-    upstream = await openUpstream(resolveUpstreamUrl(preview));
-  } catch {
-    preview.stop();
-    activePreviews.delete(serial);
-    preview = await ensureIosPreview(serial, backend);
-    upstream = await openUpstream(resolveUpstreamUrl(preview));
-  }
-  if ((upstream.statusCode ?? 500) >= 400) {
-    upstream.resume();
-    throw new HttpError(502, `iOS preview upstream returned ${upstream.statusCode}`);
+  };
+  res.once("close", beforeReadyClose);
+  const requestStartedAt = Date.now();
+  const preview = await ensureIosPreview(serial, backend);
+  if (disconnected || res.destroyed || res.writableEnded) return;
+  if (!previewStillLive(preview)) {
+    void preview.stop("stale");
+    throw new HttpError(
+      503,
+      "iOS preview became stale before the Relay client attached; retry once.",
+    );
   }
 
-  const contentType = String(upstream.headers["content-type"] || "");
+  cancelIdleStop(preview);
+  res.off("close", beforeReadyClose);
+  const diagnostics = preview.source.diagnostics;
   res.writeHead(200, {
+    ...CORS_HEADERS,
     "Content-Type": "application/x-relay-h264",
     "Cache-Control": "no-store, no-cache, must-revalidate",
     Connection: "keep-alive",
+    "X-Content-Type-Options": "nosniff",
     "X-Relay-Ios-Preview": preview.mode,
-    "X-Relay-Ios-Upstream-Type": contentType.slice(0, 80),
+    "X-Relay-Ios-Upstream-Type": (diagnostics.contentType ?? "").slice(0, 80),
+    "X-Relay-Ios-Source-Startup-Ms": String(
+      (diagnostics.readyAt ?? Date.now()) - diagnostics.startedAt,
+    ),
   });
 
-  const started = Date.now();
-  let frames = 0;
-  try {
-    if (/h264|video\/avc|octet-stream/i.test(contentType)) {
-      // Raw annex-B / length-prefixed stream: forward chunks as kind 3.
-      for await (const chunk of upstream as AsyncIterable<Buffer>) {
-        if (disconnected || res.destroyed || res.writableEnded) break;
-        if (!chunk.length) continue;
-        const pts = BigInt(Date.now() - started) * 1_000_000n;
-        const keyframe = chunk.includes(Buffer.from([0, 0, 0, 1, 0x67])) || chunk[4] === 0x67;
-        const packet = encodeRelayAnnexBPacket(chunk, pts, keyframe);
-        if (!res.write(packet)) {
-          const drained = defer<void>();
-          res.once("drain", drained.resolve);
-          await drained.promise;
-        }
-        frames += 1;
-      }
-    } else {
-      for await (const jpeg of readMjpegJpegs(upstream as AsyncIterable<Buffer>)) {
-        if (disconnected || res.destroyed || res.writableEnded) break;
-        const pts = BigInt(Date.now() - started) * 1_000_000n;
-        const packet = encodeRelayJpegPacket(jpeg, pts);
-        if (!res.write(packet)) {
-          const drained = defer<void>();
-          res.once("drain", drained.resolve);
-          await drained.promise;
-        }
-        frames += 1;
-      }
+  const completion = defer<void>();
+  const clientAttachedAt = Date.now();
+  let closed = false;
+  let releaseFrameSink: () => void = () => undefined;
+  let removeSourceEndListener: () => void = () => undefined;
+  const finish = (reason: "client-closed" | "source-ended") => {
+    if (closed) return;
+    closed = true;
+    res.off("close", onClose);
+    releaseFrameSink();
+    removeSourceEndListener();
+    if (preview.source.fanout.subscriberCount === 0 && previewStillLive(preview)) {
+      scheduleIdleStop(preview);
     }
-  } finally {
-    upstream.destroy();
-    if (!res.destroyed && !res.writableEnded) res.end();
     console.log(
-      `[video] iOS ${preview.mode} stopped serial=${serial} frames=${frames} durationMs=${Date.now() - started}`,
+      `[video] iOS client detached serial=${serial} mode=${preview.mode} reason=${reason} clientDurationMs=${Date.now() - clientAttachedAt} subscribers=${preview.source.fanout.subscriberCount}`,
     );
-  }
+    completion.resolve();
+  };
+  const onClose = () => finish("client-closed");
+  releaseFrameSink = preview.source.fanout.subscribe(res);
+  removeSourceEndListener = preview.source.onEnded(() => {
+    if (!res.destroyed && !res.writableEnded) res.end();
+    finish("source-ended");
+  });
+  res.once("close", onClose);
+  console.log(
+    `[video] iOS client attached serial=${serial} mode=${preview.mode} startupWaitMs=${clientAttachedAt - requestStartedAt} subscribers=${preview.source.fanout.subscriberCount}`,
+  );
+  return completion.promise;
 }
 
 export function stopAllIosLivePreviews(): void {
-  for (const preview of activePreviews.values()) preview.stop();
-  activePreviews.clear();
-  activeTunnel?.stop();
-  activeTunnel = null;
+  for (const preview of [...activePreviews.values(), ...stoppingPreviews.values()]) {
+    void preview.stop("shutdown");
+  }
+  if (activeTunnel) void activeTunnel.stop();
 }
