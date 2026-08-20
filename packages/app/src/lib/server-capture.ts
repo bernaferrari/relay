@@ -123,6 +123,39 @@ function serialFor(deps: CaptureServerDeps): string | undefined {
   return deps.selectedDevice() ?? undefined;
 }
 
+/**
+ * The older tree-row affordance still accepts a SnapshotNode, but it must not
+ * own a second physical-action transport path. Convert its reviewed selector
+ * preference into the same typed interaction that powers the stage,
+ * recorder, and picker. In particular, a ref remains more specific than a
+ * label, and a point is only the final fallback.
+ */
+function interactionForSnapshotNode(
+  node: SnapshotNode,
+): { step: InteractiveStep; caption: string } | undefined {
+  if (node.ref) {
+    return {
+      step: { kind: "ref", ref: node.ref },
+      caption: `tap ref ${node.ref}`,
+    };
+  }
+  if (node.label) {
+    return {
+      step: { kind: "label", label: node.label },
+      caption: `tap ${node.label}`,
+    };
+  }
+  if (node.rect) {
+    const x = Math.round(node.rect.x + node.rect.width / 2);
+    const y = Math.round(node.rect.y + node.rect.height / 2);
+    return {
+      step: { kind: "point", x, y },
+      caption: `tap ${x},${y}`,
+    };
+  }
+  return undefined;
+}
+
 export function createServerCapture(deps: CaptureServerDeps) {
   let keyboardChain = Promise.resolve(true);
   let lastLiveFrameBase64 = "";
@@ -517,46 +550,24 @@ export function createServerCapture(deps: CaptureServerDeps) {
     }
   }
 
-  async function pressNode(node: SnapshotNode): Promise<void> {
-    try {
-      const discoveryId = activeDiscoveryId(deps);
-      const run = (body: Record<string, unknown>) =>
-        deps.request(
-          discoveryId ? `/discovery/${encodeURIComponent(discoveryId)}/interact` : "/interact",
-          {
-            method: "POST",
-            body: JSON.stringify({ ...body, serial: deps.selectedDevice() }),
-          },
-        );
-
-      if (node.ref) {
-        await run({ kind: "ref", ref: node.ref });
-        deps.appendLog(`pressed ref ${node.ref}`, "success");
-      } else if (node.label) {
-        await run({ kind: "label", label: node.label });
-        deps.appendLog(`pressed label ${node.label}`, "success");
-      } else if (node.rect) {
-        const x = Math.round(node.rect.x + node.rect.width / 2);
-        const y = Math.round(node.rect.y + node.rect.height / 2);
-        await run({ kind: "point", x, y });
-        deps.appendLog(`pressed point ${x},${y}`, "success");
-      } else {
-        deps.appendLog("node has no actionable target", "error");
-      }
-
-      if (discoveryId) await deps.refreshDiscoverySessions();
-      else {
-        await captureUiScreenshot(
-          node.label ? `after tap · ${node.label}` : "after tap",
-          undefined,
-          undefined,
-          true,
-        ).catch(() => undefined);
-      }
-      void captureUiSnapshot().catch(() => undefined);
-    } catch (error) {
-      deps.appendLog(error instanceof Error ? error.message : String(error), "error");
+  async function pressNode(node: SnapshotNode): Promise<boolean> {
+    const interaction = interactionForSnapshotNode(node);
+    if (!interaction) {
+      // Do not leave stale unknown-outcome state attached to a node that never
+      // produced a device command. Callers can rely on every invocation
+      // returning a current, explicit result.
+      lastInteractionOutcome = { status: "failed" };
+      deps.appendLog("node has no actionable target", "error");
+      return false;
     }
+
+    // Composition is deliberate: the shared boundary owns the only error
+    // policy, including the exact-once iOS stop, current-pixel review frame,
+    // and durable lastInteractionOutcome. A tree-row press must never turn a
+    // 409 into an error log or a follow-up tap.
+    const succeeded = await interactStep(interaction.step, interaction.caption);
+    if (succeeded) void captureUiSnapshot().catch(() => undefined);
+    return succeeded;
   }
 
   async function interactStep(step: InteractiveStep, caption?: string): Promise<boolean> {

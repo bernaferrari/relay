@@ -1,7 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TargetRuntimeReadiness } from "@relay/protocol";
+import type { SnapshotNode } from "./api-types";
 import { createServerCapture, type CaptureServerDeps } from "./server-capture";
+
+function unknownIosMutationError() {
+  return Object.assign(new Error("The iOS press may already have reached the device."), {
+    body: {
+      code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+      iosMutation: {
+        operation: "press",
+        nativeAttempts: 1,
+        outcome: "outcome-unknown",
+        retry: { attempts: 0, decision: "blocked", reason: "native-command-outcome-unknown" },
+        intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+      },
+    },
+  });
+}
 
 function createHarness(
   options: {
@@ -335,18 +351,7 @@ test("step execution returns the typed backend result and includes the selected 
 
 test("an unknown iOS outcome saves current pixels and never becomes a second interaction", async () => {
   const harness = createHarness({
-    interactError: Object.assign(new Error("The iOS press may already have reached the device."), {
-      body: {
-        code: "IOS_MUTATION_OUTCOME_UNKNOWN",
-        iosMutation: {
-          operation: "press",
-          nativeAttempts: 1,
-          outcome: "outcome-unknown",
-          retry: { attempts: 0, decision: "blocked", reason: "native-command-outcome-unknown" },
-          intervention: { required: true, action: "capture-current-screen-before-any-retry" },
-        },
-      },
-    }),
+    interactError: unknownIosMutationError(),
   });
 
   assert.equal(
@@ -385,6 +390,71 @@ test("an unknown iOS outcome saves current pixels and never becomes a second int
   });
   assert.ok(harness.logs.some((line) => line.includes("Frame frame-1 is ready for review.")));
 });
+
+for (const selection of [
+  {
+    name: "named label",
+    node: { label: "Settings" } satisfies SnapshotNode,
+    expectedBody: { kind: "label", label: "Settings", serial: "device-1" },
+    caption: "tap Settings",
+  },
+  {
+    name: "ref",
+    node: {
+      ref: "settings-row",
+      label: "Settings",
+      rect: { x: 10, y: 20, width: 30, height: 50 },
+    } satisfies SnapshotNode,
+    expectedBody: { kind: "ref", ref: "settings-row", serial: "device-1" },
+    caption: "tap ref settings-row",
+  },
+  {
+    name: "point fallback",
+    node: { rect: { x: 10, y: 20, width: 30, height: 50 } } satisfies SnapshotNode,
+    expectedBody: { kind: "point", x: 25, y: 45, serial: "device-1" },
+    caption: "tap 25,45",
+  },
+]) {
+  test(`node press ${selection.name} preserves an unknown iOS outcome for review`, async () => {
+    const harness = createHarness({ interactError: unknownIosMutationError() });
+
+    assert.equal(await harness.capture.pressNode(selection.node), false);
+    assert.equal(
+      harness.calls.filter((path) => path === "/interact").length,
+      1,
+      "a node press sends one command and never retries it",
+    );
+    assert.equal(harness.calls.length, 2, "only the action and its review frame are requested");
+    assert.deepEqual(harness.requestBodies[0], selection.expectedBody);
+    const screenshot = new URL(harness.calls[1]!, "http://relay.local");
+    assert.equal(screenshot.pathname, "/screenshot");
+    assert.equal(
+      screenshot.searchParams.get("caption"),
+      `review before retry · ${selection.caption}`,
+    );
+    assert.deepEqual(harness.capture.lastInteractionOutcome(), {
+      status: "ios-outcome-unknown",
+      iosFailure: {
+        code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+        mutation: {
+          operation: "press",
+          nativeAttempts: 1,
+          outcome: "outcome-unknown",
+          retry: { decision: "blocked", reason: "native-command-outcome-unknown" },
+          intervention: { action: "capture-current-screen-before-any-retry" },
+        },
+      },
+      intervention: {
+        title: "Action may already have happened",
+        detail:
+          "Relay sent one iOS command and did not retry it. The current screen is saved for review before any next action.",
+        screenshotCaption: `review before retry · ${selection.caption}`,
+        operation: "press",
+      },
+      evidenceFrameId: "frame-1",
+    });
+  });
+}
 
 test("interaction boundary routes an explicitly active discovery session", async () => {
   const harness = createHarness({ activeDiscoveryId: "map-1" });
