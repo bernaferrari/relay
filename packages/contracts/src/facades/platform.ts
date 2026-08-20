@@ -214,12 +214,18 @@ export {
   captureSnapshotUse,
   defineUse,
   resolveScreenshotRuntimePlan,
+  resolveSelectorCaptureRuntimePlan,
   resolveSnapshotRuntimePlan,
   screenshotRuntimePlanUses,
+  selectorCaptureRuntimePlanUses,
   snapshotRuntimePlanUses,
   viewportRuntimeUse,
 } from '../platform-runtime-operations.ts';
-export type { ScreenshotRuntimePlan, SnapshotRuntimePlan } from '../platform-runtime-operations.ts';
+export type {
+  ScreenshotRuntimePlan,
+  SelectorCaptureRuntimePlan,
+  SnapshotRuntimePlan,
+} from '../platform-runtime-operations.ts';
 export type {
   PlatformRuntimeHost,
   PlatformRuntimeModule,
@@ -270,6 +276,19 @@ export type {
   ViewportRuntimeOperationFacts,
   ViewportRuntimeOperations,
 } from '../viewport-runtime.ts';
+export {
+  bindElementTextRuntime,
+  elementTextRead,
+  elementTextRuntimeOperationFacts,
+} from '../element-text-runtime.ts';
+export type {
+  ElementTextReadOutcome,
+  ElementTextInteractorResolver,
+  ElementTextRuntimeOperationFacts,
+  ElementTextRuntimeOperations,
+  ElementTextUnreadableReason,
+  ReadTextAtPointInput,
+} from '../element-text-runtime.ts';
 export type {
   AppStateRuntimeCommand,
   AppStateRuntimeCommandResult,

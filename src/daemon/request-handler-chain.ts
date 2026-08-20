@@ -224,6 +224,8 @@ async function runFindHandler(
       logPath: params.logPath,
       sessionStore: params.sessionStore,
       invoke: params.invoke,
+      inspectFacts: params.inspectFacts,
+      bindDevice: params.bindDevice,
     }),
   );
 }
@@ -241,6 +243,8 @@ async function runInteractionHandler(
       logPath: params.logPath,
       sessionStore: params.sessionStore,
       contextFromFlags: params.contextFromFlags,
+      inspectFacts: params.inspectFacts,
+      bindDevice: params.bindDevice,
     }),
   );
 }

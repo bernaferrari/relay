@@ -2,7 +2,7 @@ import type { CommandFlags } from '@agent-device/contracts/command';
 import { attachRefs, type SnapshotBackend } from '@agent-device/kernel/snapshot';
 import {
   makeAndroidSession as makeBaseAndroidSession,
-  makeIosSession,
+  makeIosAppSession,
   makeMacOsSession as makeBaseMacOsSession,
 } from '../../../__tests__/test-utils/session-factories.ts';
 import { makeTestScreenRecordingResource } from '../../../__tests__/test-utils/screen-recording-live-handle.ts';
@@ -10,6 +10,7 @@ import { activateCompleteRefFrame } from '../../ref-frame.ts';
 import type { SessionStore } from '../../session-store.ts';
 import type { SessionState } from '../../types.ts';
 import { handleInteractionCommands } from '../interaction.ts';
+import { getRuntimeBindings } from './interaction-get-runtime-fixture.ts';
 import { buildSnapshotState } from '../../snapshot-state.ts';
 
 /**
@@ -17,8 +18,12 @@ import { buildSnapshotState } from '../../snapshot-state.ts';
  * factories only: each test file installs and resets its own `vi.mock`s.
  */
 
+/**
+ * An iOS session WITH a tracked app: on an iOS leaf the without-active-app capture row is
+ * unavailable, so a selector command against an app-less session is refused before it captures.
+ */
 export function makeSession(name: string): SessionState {
-  return makeIosSession(name);
+  return makeIosAppSession(name);
 }
 
 export function makeAndroidSession(name: string): SessionState {
@@ -125,6 +130,7 @@ export async function runInteraction(
     sessionName,
     sessionStore,
     contextFromFlags,
+    ...getRuntimeBindings(),
   });
 }
 

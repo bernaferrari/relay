@@ -13,6 +13,7 @@ import type {
 import { screenshotRuntimeOperationFacts } from './screenshot-runtime.ts';
 import { snapshotRuntimeOperationFacts } from './snapshot-runtime.ts';
 import { viewportRuntimeOperationFacts } from './viewport-runtime.ts';
+import { elementTextRuntimeOperationFacts } from './element-text-runtime.ts';
 
 /**
  * A runtime-contract helper for provider ownership gaps. It never assigns lifecycle semantics:
@@ -28,25 +29,20 @@ export type UnavailablePlatformRuntimeFacts = Readonly<{
   screenshot: RuntimeOperationUnavailability;
   snapshot?: RuntimeOperationUnavailability;
   viewport: RuntimeOperationUnavailability;
+  elementText: RuntimeOperationUnavailability;
   readiness?: RuntimeOperationUnavailability;
   shutdown?: RuntimeOperationUnavailability;
   lifecycle: ApplicationLifecycleOperationFacts;
 }>;
 
-type FrozenUnavailablePlatformRuntimeFacts = Readonly<{
-  appLog: RuntimeOperationUnavailability;
-  apps: RuntimeOperationUnavailability;
-  appDeployment: RuntimeOperationUnavailability;
-  appState: RuntimeOperationUnavailability;
-  network: RuntimeOperationUnavailability;
-  screenRecording: RuntimeOperationUnavailability;
-  screenshot: RuntimeOperationUnavailability;
-  snapshot: RuntimeOperationUnavailability;
-  viewport: RuntimeOperationUnavailability;
-  readiness: RuntimeOperationUnavailability;
-  shutdown: RuntimeOperationUnavailability;
-  lifecycle: ApplicationLifecycleOperationFacts;
-}>;
+/**
+ * The same cells with every optional one resolved. Derived from the input type rather than
+ * restated, so a new cell cannot be added to one and forgotten in the other.
+ */
+type FrozenUnavailablePlatformRuntimeFacts = Readonly<
+  Required<Omit<UnavailablePlatformRuntimeFacts, 'lifecycle'>> &
+    Readonly<{ lifecycle: ApplicationLifecycleOperationFacts }>
+>;
 
 export function createUnavailablePlatformRuntimeBinding(
   device: DeviceInfo,
@@ -77,6 +73,7 @@ export function createUnavailablePlatformRuntimeFacts(
     screenshot,
     snapshot,
     viewport,
+    elementText,
     readiness,
     shutdown,
     lifecycle,
@@ -109,6 +106,7 @@ export function createUnavailablePlatformRuntimeFacts(
         withoutActiveApp: snapshot,
       }),
       ...viewportRuntimeOperationFacts({ setViewport: viewport }),
+      ...elementTextRuntimeOperationFacts({ readTextAtPoint: elementText }),
       ensureReady: readiness,
       bootTarget: readiness,
       bootTargetHeadless: readiness,
@@ -138,6 +136,7 @@ function freezeUnavailableFacts(
     viewport: Object.freeze({ ...unavailable.viewport }),
     readiness: orNetwork(unavailable.readiness),
     shutdown: orNetwork(unavailable.shutdown),
+    elementText: Object.freeze({ ...unavailable.elementText }),
     lifecycle: applicationLifecycleOperationFacts(unavailable.lifecycle),
   });
 }
