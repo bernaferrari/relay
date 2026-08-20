@@ -13,6 +13,7 @@ import {
   LIVE_SNAPSHOT_INTERVAL_MS,
   POST_INTERACTION_SNAPSHOT_DELAY_MS,
   liveInspectionPolicy,
+  liveStageSnapshotPollOptions,
 } from "../lib/live-inspection-policy";
 import {
   accessibilityCollectionEnabled,
@@ -311,12 +312,7 @@ export function DeviceStage(_props: {
     }
     snapInFlight = true;
     try {
-      await server.pollLiveSnapshot({
-        // The live iPad stage only needs hittable geometry for hover, keyboard,
-        // and direct interaction. Raw trees are intentionally captured through
-        // the explicit Teach/Evidence paths instead.
-        interactiveOnly: targetIsPhysicalIos(currentDevice()),
-      });
+      await server.pollLiveSnapshot(liveStageSnapshotPollOptions(currentDevice()));
     } finally {
       snapInFlight = false;
       if (snapQueued) {

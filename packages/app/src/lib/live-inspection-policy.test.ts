@@ -4,6 +4,7 @@ import {
   LIVE_FALLBACK_FRAME_INTERVAL_MS,
   LIVE_SNAPSHOT_INTERVAL_MS,
   liveInspectionPolicy,
+  liveStageSnapshotPollOptions,
 } from "./live-inspection-policy";
 import { iosLiveSemanticPlane } from "./ios-live-semantic-plane";
 
@@ -13,6 +14,22 @@ test("PNG fallback never runs at video-frame cadence", () => {
 
 test("background accessibility inspection leaves room for physical-device input", () => {
   assert.ok(LIVE_SNAPSHOT_INTERVAL_MS >= LIVE_FALLBACK_FRAME_INTERVAL_MS * 2);
+});
+
+test("only a physical iOS live stage asks for compact accessibility geometry", () => {
+  assert.deepEqual(
+    liveStageSnapshotPollOptions({
+      serial: "ipad",
+      platform: "ios",
+      kind: "Physical device",
+    }),
+    { interactiveOnly: true },
+  );
+  assert.equal(
+    liveStageSnapshotPollOptions({ serial: "sim", platform: "ios", kind: "simulator" }),
+    undefined,
+  );
+  assert.equal(liveStageSnapshotPollOptions({ serial: "pixel", platform: "android" }), undefined);
 });
 
 test("healthy video keeps accessibility inspection live without PNG polling", () => {

@@ -212,12 +212,16 @@ test("live snapshots retain a safe inspection error alongside usable pixels", as
   );
 });
 
-test("live iPad preview requests compact interactive accessibility geometry", async () => {
+test("live iPad preview is compact while explicit capture preserves the full tree", async () => {
   const harness = createHarness();
 
+  await harness.capture.captureUiSnapshot();
   await harness.capture.pollLiveSnapshot({ interactiveOnly: true });
 
-  assert.deepEqual(harness.calls, ["/snapshot?serial=device-1&interactiveOnly=1"]);
+  assert.deepEqual(harness.calls, [
+    "/snapshot?serial=device-1",
+    "/snapshot?serial=device-1&interactiveOnly=1",
+  ]);
 });
 
 test("live capture leaves an identical device frame mounted", async () => {

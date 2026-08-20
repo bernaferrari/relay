@@ -1,3 +1,6 @@
+import type { DeviceInfo } from "./api-types";
+import { targetIsPhysicalIos } from "./target-presentation";
+
 /**
  * Accessibility is a full XCTest round trip on physical Apple hardware, not a
  * cheap local DOM read. Android retains a bounded background cadence; the
@@ -19,6 +22,18 @@ export const LIVE_FALLBACK_FRAME_INTERVAL_MS = 2_500;
 /** Physical iOS PNG preview: slower than Android recovery to avoid XCTest thrash. */
 export const LIVE_IOS_FALLBACK_FRAME_INTERVAL_MS = 4_000;
 export const POST_INTERACTION_SNAPSHOT_DELAY_MS = 180;
+
+/**
+ * The Stage needs only actionable geometry while it is live. Full/raw trees
+ * remain an explicit Teach or evidence capture so physical iOS does not spend
+ * an XCTest traversal budget redrawing hover affordances. Simulators and
+ * every non-iOS target retain the existing full-snapshot request.
+ */
+export function liveStageSnapshotPollOptions(
+  target: DeviceInfo | null | undefined,
+): { interactiveOnly: true } | undefined {
+  return targetIsPhysicalIos(target) ? { interactiveOnly: true } : undefined;
+}
 
 /** Video and accessibility capture have independent lifecycles.
  *
