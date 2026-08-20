@@ -257,6 +257,19 @@ test("gives run agents one revision-pinned graph Test operation", () => {
     target: { kind: "browser" as const, platform: "browser" as const, targetId: "chrome" },
   };
   assert.deepEqual(tool("app-map.test.run").inputSchema.parse(input), input);
+  const warmInput = {
+    ...input,
+    startup: { mode: "verified-checkpoint" as const, screenId: "settings" },
+  };
+  assert.deepEqual(tool("app-map.test.run").inputSchema.parse(warmInput), warmInput);
+  assert.deepEqual(
+    tool("app-map.test.compile").inputSchema.parse({
+      appMapId: "checkout",
+      testId: "smoke",
+      entryCheckpointScreenId: "settings",
+    }),
+    { appMapId: "checkout", testId: "smoke", entryCheckpointScreenId: "settings" },
+  );
   assert.ok(
     relayMcpToolsForProfile("run").some(({ operationId }) => operationId === "app-map.test.run"),
   );
@@ -273,6 +286,12 @@ test("gives run agents one revision-pinned graph Test operation", () => {
       testId: "smoke",
       expectedRevision: 7,
       target: { kind: "browser", platform: "android", targetId: "chrome" },
+    }),
+  );
+  assert.throws(() =>
+    tool("app-map.test.run").inputSchema.parse({
+      ...input,
+      startup: { mode: "cold", screenId: "settings" },
     }),
   );
 });

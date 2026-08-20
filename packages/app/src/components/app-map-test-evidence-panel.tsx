@@ -14,6 +14,11 @@ import { cn } from "../lib/cn";
 import { findScenarioStep } from "../lib/app-map-test-editor-tree";
 import type { PersistedRun } from "../lib/api-types";
 import { runTargetLabel } from "../lib/run-presentation";
+import {
+  appMapTestPlanRelaunchCount,
+  appMapTestStartupCopy,
+  type AppMapTestStartupScreenSource,
+} from "../lib/app-map-test-startup-policy";
 import { StatusChip, type StatusChipTone } from "./status-chip";
 import {
   TestContextEmpty,
@@ -47,6 +52,7 @@ const evidenceSummary = cn(
 );
 
 export function AppMapTestEvidencePanel(props: {
+  appMap?: AppMapTestStartupScreenSource;
   test: AppMapScenarioTest;
   plan?: AppMapCompiledTest;
   selectedStepId?: string;
@@ -128,7 +134,7 @@ export function AppMapTestEvidencePanel(props: {
               )}
             </Show>
             <ProvenanceCard selectedStepId={props.selectedStepId} provenance={props.provenance} />
-            <CompiledTestSummary plan={plan()} />
+            <CompiledTestSummary appMap={props.appMap} plan={plan()} />
           </>
         )}
       </Show>
@@ -145,12 +151,33 @@ export function AppMapTestEvidencePanel(props: {
   );
 }
 
-function CompiledTestSummary(props: { plan: AppMapCompiledTest }) {
+function CompiledTestSummary(props: {
+  appMap?: AppMapTestStartupScreenSource;
+  plan: AppMapCompiledTest;
+}) {
+  const startup = createMemo(() => {
+    const screenTitle =
+      props.plan.startup.mode === "verified-checkpoint"
+        ? props.appMap?.screens[props.plan.startup.screenId]?.title
+        : undefined;
+    return appMapTestStartupCopy({
+      startup: props.plan.startup,
+      screenTitle,
+      relaunchCount: appMapTestPlanRelaunchCount(props.plan),
+    });
+  });
   return (
     <details class="rounded-md border border-border-weak-base">
-      <summary class={evidenceSummary}>What ran · map revision {props.plan.appMapRevision}</summary>
+      <summary class={evidenceSummary}>
+        What ran · {startup().label} · map revision {props.plan.appMapRevision}
+      </summary>
       <div class="border-t border-border-weak-base p-2.5">
-        <p class="m-0 text-caption/[1.4] text-text-weak">
+        <section aria-label="Startup policy" data-test-startup-summary>
+          <strong class="text-caption font-medium text-text-base">Startup policy</strong>
+          <p class="mt-1 text-caption/[1.4] text-text-weak">{startup().detail}</p>
+          <p class="mt-1 text-micro/[1.4] text-text-weaker">{startup().retryDetail}</p>
+        </section>
+        <p class="mt-2.5 text-caption/[1.4] text-text-weak">
           {Object.keys(props.plan.recipes).length}{" "}
           {Object.keys(props.plan.recipes).length === 1 ? "recipe" : "recipes"} compiled from this
           revision.

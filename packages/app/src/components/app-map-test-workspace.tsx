@@ -22,6 +22,7 @@ import { AppMapTestUndo } from "./app-map-test-undo";
 import { AppMapTestDeviceEvidence } from "./app-map-test-device-evidence";
 import { AppMapTestRunControl } from "./app-map-test-run-control";
 import { createAppMapTestRun } from "../lib/use-app-map-test-run";
+import { appMapTestCheckpointOptions } from "../lib/app-map-test-startup-policy";
 import { Icon } from "./icon";
 import { AppMapTestProposalReview } from "./app-map-test-proposal-review";
 import { AppMapTestPreflight } from "./app-map-test-preflight";
@@ -125,6 +126,7 @@ export function AppMapTestWorkspace(props: {
   const selectedDevice = createMemo(() =>
     server.devices().find((device) => device.serial === server.selectedDevice()),
   );
+  const checkpointOptions = createMemo(() => appMapTestCheckpointOptions(appMap()));
   run = createAppMapTestRun({
     appMap,
     draft,
@@ -378,6 +380,9 @@ export function AppMapTestWorkspace(props: {
             freshEvidenceAvailable={testRun.freshEvidenceAvailable()}
             freshEvidence={testRun.freshEvidence()}
             onFreshEvidenceChange={testRun.setFreshEvidence}
+            startup={testRun.startup()}
+            checkpointOptions={checkpointOptions()}
+            onStartupChange={testRun.setStartup}
             onRun={() => void testRun.run()}
             onCancel={() => void testRun.cancel()}
             onOpenResult={() => {

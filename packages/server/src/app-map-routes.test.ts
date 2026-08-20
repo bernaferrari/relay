@@ -73,6 +73,93 @@ test("App Map proof stops give agents one explicit current-pixels review action"
   );
 });
 
+test("offline Test compilation previews a verified checkpoint without a device or Test mutation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-test-checkpoint-compile-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await client.invoke("app-map.create", { appMapId: "store", name: "Store" });
+    await client.invoke("app-map.screen.add", {
+      appMapId: "store",
+      expectedRevision: 0,
+      screen: {
+        id: "home",
+        title: "Home",
+        identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+      },
+    });
+    await client.invoke("app-map.screen.add", {
+      appMapId: "store",
+      expectedRevision: 1,
+      screen: {
+        id: "settings",
+        title: "Settings",
+        identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
+      },
+    });
+    await client.invoke("app-map.connection.create", {
+      appMapId: "store",
+      expectedRevision: 2,
+      connection: {
+        id: "open-settings",
+        fromScreenId: "home",
+        destination: { kind: "screen", screenId: "settings" },
+        state: "ready",
+        actions: [{ id: "tap-settings", kind: "tap", target: { label: "Settings" } }],
+      },
+    });
+    const saved = await client.invoke("app-map.test.save", {
+      appMapId: "store",
+      testId: "settings-test",
+      expectedRevision: 3,
+      test: {
+        name: "Settings",
+        kind: "scenario",
+        intentSchemaVersion: 1,
+        steps: [
+          {
+            id: "open-settings",
+            kind: "instruction",
+            intent: "Open Settings",
+            binding: {
+              status: "resolved",
+              kind: "connections",
+              connectionIds: ["open-settings"],
+            },
+          },
+        ],
+      } as never,
+    });
+
+    const preview = await client.invoke("app-map.test.compile", {
+      appMapId: "store",
+      testId: "settings-test",
+      entryCheckpointScreenId: "settings",
+    });
+    assert.deepEqual(preview.plan.startup, { mode: "verified-checkpoint", screenId: "settings" });
+    assert.equal(preview.plan.appMapRevision, saved.appMap.revision);
+    assert.equal(preview.preflight.mode, "offline-test-preflight");
+
+    const unchanged = await client.invoke("app-map.get", { appMapId: "store" });
+    assert.equal(unchanged.appMap.revision, saved.appMap.revision);
+    assert.ok(unchanged.appMap.tests["settings-test"]);
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("teaching converts every supported interaction into a source-guarded Take action", () => {
   assert.deepEqual(teachInteractionToAuthoringInteraction({ kind: "point", x: 40, y: 80 }), {
     kind: "tap",

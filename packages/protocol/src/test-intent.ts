@@ -315,6 +315,14 @@ export type AppMapTestDeferredScheduleBranch = {
   reason: "cold-reset-branch";
 };
 
+/** The run-scoped starting contract for a compiled Test. A verified checkpoint
+ * is deliberately not a cache hint: Relay proves the live screen before the
+ * first suffix operation and stops on a mismatch instead of recovering with a
+ * cold app launch. */
+export type AppMapTestStartup =
+  | { mode: "cold" }
+  | { mode: "verified-checkpoint"; screenId: string };
+
 export type AppMapCompiledTest = {
   schemaVersion: 1;
   appMapId: string;
@@ -364,7 +372,7 @@ export type AppMapCompiledTest = {
     screenshotCount: number;
     destinationProofCount: number;
   };
-  startup: { mode: "cold" } | { mode: "verified-checkpoint"; screenId: string };
+  startup: AppMapTestStartup;
   omittedSteps?: Array<{
     stepId: string;
     intent: string;

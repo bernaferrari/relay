@@ -3,11 +3,13 @@ import type {
   AppMap,
   AppMapCompiledTest,
   AppMapScenarioTest,
+  AppMapTestStartup,
   OfflineTestPreflightReport,
 } from "@relay/protocol";
 import type { DeviceInfo, JobInfo } from "./api-types";
 import { isActiveTestRun, type TestRunLaunchState } from "../components/app-map-test-run-control";
 import { fullSurfaceScreenIds } from "./app-map-test-editor-model";
+import { coldAppMapTestStartup, sameAppMapTestStartup } from "./app-map-test-startup-policy";
 
 type SaveState = "saved" | "saving" | "error";
 
@@ -36,12 +38,17 @@ export function createAppMapTestRun(options: {
       | { kind: "browser"; platform: "browser"; targetId: string }
       | { kind: "device"; platform: "android" | "ios"; targetId: string };
     surfaceCapture?: { forceRecaptureScreenIds: string[] };
+    startup: AppMapTestStartup;
   }) => Promise<{
     plan: AppMapCompiledTest;
     planIdentity: { rootRecipeId: string };
     job: { id: string };
   }>;
-  compile: (input: { appMapId: string; testId: string }) => Promise<{
+  compile: (input: {
+    appMapId: string;
+    testId: string;
+    entryCheckpointScreenId?: string;
+  }) => Promise<{
     plan: AppMapCompiledTest;
     preflight: OfflineTestPreflightReport;
   }>;
@@ -53,6 +60,7 @@ export function createAppMapTestRun(options: {
   const [error, setError] = createSignal("");
   const [mismatched, setMismatched] = createSignal(false);
   const [freshEvidence, setFreshEvidence] = createSignal(false);
+  const [startup, setStartupState] = createSignal<AppMapTestStartup>(coldAppMapTestStartup);
   const [preflight, setPreflight] = createSignal<OfflineTestPreflightReport>();
   const [preflightBusy, setPreflightBusy] = createSignal(false);
   const fullSurfaceIds = createMemo(() => {
@@ -70,6 +78,17 @@ export function createAppMapTestRun(options: {
     setError("");
     setMismatched(false);
     setPreflight();
+  }
+
+  /** Startup is part of the frozen run contract. Switching it invalidates any
+   * plan/preflight compiled for the previous entry; leaving those visible
+   * would make a warm selection look as if it had already been proved. */
+  function setStartup(next: AppMapTestStartup): void {
+    if (sameAppMapTestStartup(startup(), next)) return;
+    setStartupState(next);
+    setPlan();
+    setPreflight();
+    setError("");
   }
 
   const blockedReason = createMemo(() => {
@@ -95,12 +114,13 @@ export function createAppMapTestRun(options: {
     const test = options.draft();
     const device = options.selectedDevice();
     if (!map || !test || !device || blockedReason() || isActiveTestRun(job())) return;
+    const chosenStartup = startup();
     setLaunchState("preparing");
     setError("");
     setMismatched(false);
     setJobId();
     try {
-      const compiled = await checkOffline();
+      const compiled = await checkOffline(chosenStartup);
       if (!compiled) {
         setLaunchState("idle");
         return;
@@ -121,13 +141,18 @@ export function createAppMapTestRun(options: {
         ...(freshEvidence() && fullSurfaceIds().length
           ? { surfaceCapture: { forceRecaptureScreenIds: fullSurfaceIds() } }
           : {}),
+        startup: chosenStartup,
       });
       setPlan(result.plan);
       setJobId(result.job.id);
       await options.refreshJobs();
       setLaunchState("idle");
       const queued = options.jobs().find((candidate) => candidate.id === result.job.id);
-      if (queued && queued.action !== result.planIdentity.rootRecipeId) {
+      if (!sameAppMapTestStartup(result.plan.startup, chosenStartup)) {
+        setMismatched(true);
+        setError("Relay returned a plan with a different startup policy. Review this queued run.");
+        setLaunchState("error");
+      } else if (queued && queued.action !== result.planIdentity.rootRecipeId) {
         setMismatched(true);
         setError("The queued job does not match this saved Test revision.");
         setLaunchState("error");
@@ -141,9 +166,9 @@ export function createAppMapTestRun(options: {
   /** Compile against frozen evidence without allocating a target lease or
    * touching a device. This is the normal way to make authoring improvements
    * while hardware is unavailable. */
-  async function checkOffline(): Promise<
-    { plan: AppMapCompiledTest; preflight: OfflineTestPreflightReport } | undefined
-  > {
+  async function checkOffline(
+    chosenStartup = startup(),
+  ): Promise<{ plan: AppMapCompiledTest; preflight: OfflineTestPreflightReport } | undefined> {
     const map = options.appMap();
     const test = options.draft();
     if (!map || !test || options.saveState() === "saving") return undefined;
@@ -154,7 +179,17 @@ export function createAppMapTestRun(options: {
       const currentMap = options.appMap();
       const currentTest = options.draft();
       if (!currentMap || !currentTest) return undefined;
-      const compiled = await options.compile({ appMapId: currentMap.id, testId: currentTest.id });
+      const compiled = await options.compile({
+        appMapId: currentMap.id,
+        testId: currentTest.id,
+        ...(chosenStartup.mode === "verified-checkpoint"
+          ? { entryCheckpointScreenId: chosenStartup.screenId }
+          : {}),
+      });
+      if (!sameAppMapTestStartup(compiled.plan.startup, chosenStartup)) {
+        setError("Relay compiled a different startup policy. It was not run.");
+        return undefined;
+      }
       setPlan(compiled.plan);
       setPreflight(compiled.preflight);
       return compiled;
@@ -188,6 +223,8 @@ export function createAppMapTestRun(options: {
     freshEvidence,
     setFreshEvidence,
     freshEvidenceAvailable: () => fullSurfaceIds().length > 0,
+    startup,
+    setStartup,
     run,
     checkOffline,
     cancel,
@@ -202,6 +239,7 @@ export function createAppMapTestRun(options: {
     /** Switching Test or map starts a clean run slate. */
     reset(): void {
       setPlan();
+      setStartupState(coldAppMapTestStartup);
       forget();
     },
     consumeResult(): string | undefined {

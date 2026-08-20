@@ -29,3 +29,25 @@ test("graph Test commands expose one canonical scenario-only workflow", () => {
     ],
   );
 });
+
+test("Test help makes checkpoint startup and retry behavior explicit", () => {
+  const compile = graphTestCommandDescriptors.find(
+    ({ operationId }) => operationId === "app-map.test.compile",
+  )!;
+  const run = graphTestCommandDescriptors.find(
+    ({ operationId }) => operationId === "app-map.test.run",
+  )!;
+  assert.match(
+    compile.paths[0]?.inputHelp?.[0]?.description ?? "",
+    /stops for review instead of relaunching/u,
+  );
+  assert.match(
+    run.paths[0]?.inputHelp?.find(({ name }) => name === "startup")?.description ?? "",
+    /never falls back to a cold relaunch/u,
+  );
+  assert.match(run.paths[0]?.note ?? "", /paused job resumes its existing plan/u);
+  assert.ok(
+    compile.paths[0]?.examples?.some((example) => example.includes("entryCheckpointScreenId")),
+  );
+  assert.ok(run.paths[0]?.examples?.some((example) => example.includes("verified-checkpoint")));
+});

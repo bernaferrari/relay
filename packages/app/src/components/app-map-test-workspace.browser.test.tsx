@@ -594,6 +594,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
     testId: "checkout-run",
     expectedRevision: 1,
     target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+    startup: { mode: "cold" },
   });
   expect(primary().textContent).toContain("Cancel queued run");
   expect(root.textContent).toContain("Queued on the selected target");
@@ -604,6 +605,174 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   expect(primary().textContent).toContain("Open result");
   primary().click();
   expect(opened).toEqual(["job-exact"]);
+
+  dispose();
+  document.body.replaceChildren();
+});
+
+test("a verified checkpoint is compiled offline and sent unchanged to the exact run", async () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const scenario: AppMapScenarioTest = {
+    kind: "scenario",
+    id: "settings-warm",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    name: "Settings warm",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        kind: "script",
+        id: "check-settings",
+        intent: "Check Settings",
+        binding: { status: "resolved", kind: "script", source: "return true" },
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const initial = fixture();
+  initial.tests[scenario.id] = scenario;
+  initial.screens.settings = {
+    id: "settings",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    title: "Settings",
+    variantIds: [],
+    identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const rootRecipeId = "app-map:checkout:test:settings-warm:root:r1";
+  const coldPlan: AppMapCompiledTest = {
+    schemaVersion: 1,
+    appMapId: "checkout",
+    appMapRevision: 1,
+    test: {
+      id: scenario.id,
+      name: scenario.name,
+      kind: "scenario",
+      intentSchemaVersion: 1,
+    },
+    rootRecipeId,
+    performance: {
+      executableOperations: 1,
+      moduleCalls: 0,
+      operationCounts: { script: 1 },
+      screenshotCount: 0,
+      destinationProofCount: 0,
+    },
+    startup: { mode: "cold" },
+    recipes: {
+      [rootRecipeId]: {
+        id: rootRecipeId,
+        title: scenario.name,
+        parameters: [],
+        steps: [{ kind: "script", source: "return true" }],
+      },
+    },
+    stepProvenance: [],
+  };
+  const warmPlan: AppMapCompiledTest = {
+    ...coldPlan,
+    startup: { mode: "verified-checkpoint", screenId: "settings" },
+  };
+  const compileInputs: Record<string, unknown>[] = [];
+  let runInput: Record<string, unknown> | undefined;
+  serverMock.current = {
+    selectedAppMap: () => initial,
+    isOffline: () => false,
+    health: () => "online",
+    devices: () => [
+      { serial: "ipad-1", name: "Design iPad", platform: "ios", connectionState: "connected" },
+    ],
+    selectedDevice: () => "ipad-1",
+    liveFrame: () => null,
+    liveCaptureIssue: () => null,
+    appleDeviceSetup: () => ({ setup: {}, checks: [] }),
+    jobs: () => [],
+    persistedRuns: () => [],
+    pollLiveFrame: async () => undefined,
+    loadRunDetail: async () => undefined,
+    frameUrlForPersisted: () => "",
+    refreshAppMaps: async () => undefined,
+    refreshJobs: async () => undefined,
+    runAction: async (id: string, input: Record<string, unknown>) => {
+      if (id === "app-map.test.compile") {
+        compileInputs.push(input);
+        return {
+          plan: input.entryCheckpointScreenId === "settings" ? warmPlan : coldPlan,
+          preflight: {
+            schemaVersion: 1,
+            mode: "offline-test-preflight",
+            appMapId: "checkout",
+            appMapRevision: 1,
+            testId: scenario.id,
+            planDigest: "settings-warm",
+            summary: {
+              recipes: 1,
+              checkedSelectors: 0,
+              resolvedSelectors: 0,
+              unknownCursorTransitions: 0,
+              reviewRequiredReturns: 0,
+              blockers: 0,
+              warnings: 0,
+            },
+            selectors: [],
+            cursorTimeline: [],
+            returns: [],
+            findings: [],
+          },
+        };
+      }
+      runInput = input;
+      return {
+        plan: warmPlan,
+        planIdentity: {
+          appMapId: "checkout",
+          appMapRevision: 1,
+          testId: scenario.id,
+          rootRecipeId,
+        },
+        job: { id: "warm-job", action: rootRecipeId, status: "queued", queuedAt: 2 },
+      };
+    },
+    cancelJob: async () => undefined,
+  };
+
+  const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
+  await settle();
+  const startup = root.querySelector<HTMLSelectElement>("[data-test-startup-policy]")!;
+  expect(startup.value).toBe("cold");
+  startup.value = "checkpoint:settings";
+  startup.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle();
+  expect(startup.value).toBe("checkpoint:settings");
+
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent?.includes("Check offline"))!
+    .click();
+  await settle();
+  expect(compileInputs).toEqual([
+    { appMapId: "checkout", testId: "settings-warm", entryCheckpointScreenId: "settings" },
+  ]);
+  expect(root.textContent).toContain("Verified checkpoint · Settings");
+
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent?.includes("Run test"))!
+    .click();
+  await settle();
+  expect(compileInputs).toHaveLength(2);
+  expect(runInput).toEqual({
+    appMapId: "checkout",
+    testId: "settings-warm",
+    expectedRevision: 1,
+    target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+    startup: { mode: "verified-checkpoint", screenId: "settings" },
+  });
 
   dispose();
   document.body.replaceChildren();

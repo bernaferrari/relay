@@ -84,6 +84,9 @@ test("invoke derives path, query, and method from the operation registry", async
         if (String(input).includes("/jobs/abc")) {
           return new Response(JSON.stringify({ job: { id: "abc" } }), { status: 200 });
         }
+        if (String(input).includes("/app-maps/checkout/tests/smoke/compile")) {
+          return new Response(JSON.stringify({ plan: {}, preflight: {} }), { status: 200 });
+        }
         return new Response(JSON.stringify({ jobs: [] }), { status: 200 });
       },
     },
@@ -91,10 +94,19 @@ test("invoke derives path, query, and method from the operation registry", async
 
   await client.invoke("job.list", { limit: 12 });
   await client.invoke("job.get", { jobId: "abc" });
+  await client.invoke("app-map.test.compile", {
+    appMapId: "checkout",
+    testId: "smoke",
+    entryCheckpointScreenId: "settings",
+  });
 
   assert.equal(requests[0]?.method, "GET");
   assert.equal(requests[0]?.url, "https://relay.test/jobs?limit=12");
   assert.equal(requests[1]?.url, "https://relay.test/jobs/abc");
+  assert.equal(
+    requests[2]?.url,
+    "https://relay.test/app-maps/checkout/tests/smoke/compile?entryCheckpointScreenId=settings",
+  );
 });
 
 test("invoke rejects malformed successful responses as an upstream contract error", async () => {

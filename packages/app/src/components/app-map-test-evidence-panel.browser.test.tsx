@@ -3,6 +3,7 @@ import { render } from "solid-js/web";
 import type { AppMapCompiledTest, AppMapScenarioTest } from "@relay/protocol";
 import type { JobInfo } from "../lib/api-types";
 import { AppMapTestEvidencePanel } from "./app-map-test-evidence-panel";
+import type { AppMapTestStartupScreenSource } from "../lib/app-map-test-startup-policy";
 
 const testFixture: AppMapScenarioTest = {
   kind: "scenario",
@@ -239,6 +240,46 @@ test("compiled summary exposes the deterministic schedule proposal without imply
   expect(root.textContent).toContain("1 review-only recovery");
   expect(root.textContent).toContain("Saved Test order stays unchanged.");
   expect(root.querySelector("[data-app-map-schedule-check='open-privacy']")).not.toBeNull();
+
+  dispose();
+  document.body.replaceChildren();
+});
+
+test("compiled summary makes a verified checkpoint and its no-relaunch recovery rule explicit", () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const warmPlan: AppMapCompiledTest = {
+    ...plan,
+    startup: { mode: "verified-checkpoint", screenId: "settings" },
+  };
+  const appMap = {
+    screens: {
+      settings: { id: "settings", title: "Settings" },
+    },
+  } satisfies AppMapTestStartupScreenSource;
+  const dispose = render(
+    () => (
+      <AppMapTestEvidencePanel
+        appMap={appMap}
+        test={testFixture}
+        plan={warmPlan}
+        counts={{ frames: 0, events: 0, artifacts: 0 }}
+        provenance={warmPlan.stepProvenance}
+        detailError=""
+        devices={[]}
+        frameUrl={() => ""}
+      />
+    ),
+    root,
+  );
+
+  expect(root.textContent).toContain("What ran · Verified checkpoint · Settings · map revision 4");
+  expect(root.textContent).toContain("Relay first proves the live Settings (settings) checkpoint");
+  expect(root.textContent).toContain(
+    "never falls back to the cold prefix or relaunches to recover",
+  );
+  expect(root.textContent).toContain("A paused job resumes this exact plan");
 
   dispose();
   document.body.replaceChildren();

@@ -1,4 +1,11 @@
+import { For } from "solid-js";
+import type { AppMapTestStartup } from "@relay/protocol";
 import type { JobInfo } from "../lib/api-types";
+import {
+  appMapTestStartupCopy,
+  coldAppMapTestStartup,
+  type AppMapTestCheckpointOption,
+} from "../lib/app-map-test-startup-policy";
 import { Button } from "@relay/ui/button";
 import { Icon } from "./icon";
 
@@ -19,6 +26,11 @@ export type TestRunControlProps = {
   freshEvidenceAvailable?: boolean;
   freshEvidence?: boolean;
   onFreshEvidenceChange?: (value: boolean) => void;
+  /** A run-scoped starting contract. It is intentionally kept beside Run,
+   * rather than written into the Test document. */
+  startup?: AppMapTestStartup;
+  checkpointOptions?: readonly AppMapTestCheckpointOption[];
+  onStartupChange?: (startup: AppMapTestStartup) => void;
 };
 
 const activeStatuses = new Set<JobInfo["status"]>(["queued", "running", "paused"]);
@@ -36,6 +48,14 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
   const active = () => isActiveTestRun(props.job);
   const finished = () => isFinishedTestRun(props.job);
   const busy = () => props.launchState === "preparing" || props.launchState === "canceling";
+  const startup = () => props.startup ?? coldAppMapTestStartup;
+  const startupCopy = () => appMapTestStartupCopy({ startup: startup() });
+  const checkpointOptions = () => props.checkpointOptions ?? [];
+  const canChooseStartup = () => Boolean(props.onStartupChange && checkpointOptions().length);
+  const startupValue = () => {
+    const selected = startup();
+    return selected.mode === "verified-checkpoint" ? `checkpoint:${selected.screenId}` : "cold";
+  };
   const label = () => {
     if (props.launchState === "preparing") return "Preparing run…";
     if (props.launchState === "canceling") return "Requesting cancel…";
@@ -63,6 +83,17 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
     else if (finished()) props.onOpenResult();
     else if (props.blockedReason) props.onResolveBlocked?.();
     else props.onRun();
+  }
+
+  function selectStartup(event: Event & { currentTarget: HTMLSelectElement }): void {
+    const value = event.currentTarget.value;
+    if (value === "cold") {
+      props.onStartupChange?.(coldAppMapTestStartup);
+      return;
+    }
+    const screenId = value.startsWith("checkpoint:") ? value.slice("checkpoint:".length) : "";
+    if (!checkpointOptions().some((option) => option.screenId === screenId)) return;
+    props.onStartupChange?.({ mode: "verified-checkpoint", screenId });
   }
 
   // One row, so the primary action can live in the single workspace bar instead of
@@ -93,6 +124,43 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
           />
           Capture fresh evidence
         </label>
+      ) : null}
+      {props.startup ? (
+        canChooseStartup() ? (
+          <label
+            class="flex min-h-9 shrink-0 items-center gap-1 rounded-md border border-border-weak-base bg-surface-base px-2 text-caption text-text-base"
+            title={startupCopy().detail}
+          >
+            <span class="text-text-weak">Start</span>
+            <select
+              aria-label="Test startup policy"
+              data-test-startup-policy
+              class="min-w-0 max-w-40 cursor-pointer bg-transparent text-caption font-medium text-text-base outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+              value={startupValue()}
+              disabled={busy() || active() || finished()}
+              onChange={selectStartup}
+            >
+              <option value="cold">Cold baseline</option>
+              <optgroup label="Verified checkpoint">
+                <For each={checkpointOptions()}>
+                  {(option) => (
+                    <option value={`checkpoint:${option.screenId}`}>
+                      Verified · {option.label}
+                    </option>
+                  )}
+                </For>
+              </optgroup>
+            </select>
+          </label>
+        ) : (
+          <span
+            data-test-startup-policy
+            class="shrink-0 text-caption text-text-weak"
+            title={startupCopy().detail}
+          >
+            Start · {startupCopy().label}
+          </span>
+        )
       ) : null}
       {status() ? (
         <span

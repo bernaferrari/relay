@@ -29,6 +29,7 @@ import type { RunReview } from "./run-review.js";
 import type {
   AppMapCompiledTest,
   AppMapScenarioTestEdit,
+  AppMapTestStartup,
   OfflineTestPreflightReport,
 } from "./test-intent.js";
 
@@ -422,7 +423,13 @@ export type AppMapOperationMap = {
     output: { appMap: AppMap; proposalId: string };
   };
   "app-map.test.compile": {
-    input: { appMapId: string; testId: string };
+    input: {
+      appMapId: string;
+      testId: string;
+      /** Read-only preview of the suffix that would start from this exact
+       * checkpoint. Its resulting plan still owns the startup contract. */
+      entryCheckpointScreenId?: string;
+    };
     output: { plan: AppMapCompiledTest; preflight: OfflineTestPreflightReport };
   };
   "app-map.test.from-intent": {
@@ -448,7 +455,7 @@ export type AppMapOperationMap = {
       };
       /** Explicit startup behavior. Verified checkpoint performs a fresh
        * destination proof and never falls back to an app relaunch. */
-      startup?: { mode: "cold" } | { mode: "verified-checkpoint"; screenId: string };
+      startup?: AppMapTestStartup;
     };
     output: {
       planIdentity: {

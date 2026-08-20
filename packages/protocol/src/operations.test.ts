@@ -341,6 +341,23 @@ test("graph Test runs require an exact revision and explicit target", () => {
   );
 });
 
+test("graph Test compilation can preview a verified checkpoint without changing the saved Test", () => {
+  const input = {
+    appMapId: "map-1",
+    testId: "checkout",
+    entryCheckpointScreenId: "settings",
+  };
+  assert.deepEqual(operationDefinition("app-map.test.compile").input.parse(input), input);
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.compile").input.parse({
+        ...input,
+        entryCheckpointScreenId: 7,
+      }),
+    /entryCheckpointScreenId/u,
+  );
+});
+
 test("graph Test proposals accept only bounded semantic edit batches", () => {
   const input = {
     appMapId: "map-1",

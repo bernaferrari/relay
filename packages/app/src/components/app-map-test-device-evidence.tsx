@@ -280,6 +280,7 @@ export function AppMapTestDeviceEvidence(props: {
         class="min-h-0 flex-1 overflow-y-auto p-2.5"
       >
         <AppMapTestEvidencePanel
+          appMap={props.appMap}
           test={props.test}
           plan={props.compiledPlan}
           selectedStepId={props.selectedStepId}

@@ -98,6 +98,18 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
     "app-map.test.compile",
     path("test compile", ["appMapId", "testId"], undefined, {
       summary: "Validate and inspect deterministic recipes plus step provenance",
+      inputHelp: [
+        {
+          name: "entryCheckpointScreenId",
+          type: "string",
+          description:
+            "Optional read-only warm-plan preview. Relay first requires this exact mapped screen at runtime; a mismatch stops for review instead of relaunching the app.",
+        },
+      ],
+      examples: [
+        'relay test compile grok-ios settings-tour --input \'{"entryCheckpointScreenId":"settings"}\'',
+      ],
+      note: "The returned plan always names its startup policy. This preview does not control a device or persist a Test edit.",
     }),
   ),
   mapped(
@@ -145,15 +157,16 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
           name: "startup",
           type: "object",
           description:
-            'Explicit startup: { mode: "cold" } or { mode: "verified-checkpoint", screenId: "settings" }. Checkpoint mode verifies live state and never relaunches.',
+            'Explicit startup: { mode: "cold" } runs the saved baseline; { mode: "verified-checkpoint", screenId: "settings" } first proves the live screen and runs its suffix. A checkpoint mismatch stops for review — it never falls back to a cold relaunch.',
         },
       ],
       examples: [
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
+        'relay test run grok-ios settings-tour --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"},"startup":{"mode":"verified-checkpoint","screenId":"settings"}}\'',
         'relay test run grok relay-40 --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"android","targetId":"DEVICE"},"surfaceCapture":{"forceRecaptureScreenIds":["voice"]}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"browser","platform":"browser","targetId":"checkout-web"}}\'',
       ],
-      note: "The revision and target are mandatory. Device runs require authorized server-managed control; active jobs serialize Target mutations.",
+      note: "The revision and target are mandatory. A paused job resumes its existing plan; a new run uses only the startup policy supplied here. Relay never turns a checkpoint mismatch into an implicit cold retry or relaunch.",
       behavior: "job-start-watch",
     }),
   ),
