@@ -8,6 +8,7 @@ import {
   currentOperationContext,
   editAppMapScenarioTest,
   listDevices,
+  preflightCompiledAppMapTestOffline,
   preflightAppMapCombine,
   proposalConflictsSince,
   readAppMap,
@@ -82,7 +83,8 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     const test = appMap.tests[testCompile.testId!];
     if (!test) throw new HttpError(404, `Test ${testCompile.testId} not found`);
     try {
-      json(response, 200, { plan: compileAppMapTest(appMap, test).plan });
+      const plan = compileAppMapTest(appMap, test).plan;
+      json(response, 200, { plan, preflight: preflightCompiledAppMapTestOffline(plan) });
     } catch (error) {
       if (error instanceof AppMapTestCompileError) {
         throw new HttpError(409, error.message, {

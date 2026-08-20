@@ -26,7 +26,11 @@ import type {
 } from "./app-map.js";
 import type { OperationRecord } from "./operation-contract.js";
 import type { RunReview } from "./run-review.js";
-import type { AppMapCompiledTest, AppMapScenarioTestEdit } from "./test-intent.js";
+import type {
+  AppMapCompiledTest,
+  AppMapScenarioTestEdit,
+  OfflineTestPreflightReport,
+} from "./test-intent.js";
 
 type AppMapJobSummary = {
   id: string;
@@ -419,7 +423,7 @@ export type AppMapOperationMap = {
   };
   "app-map.test.compile": {
     input: { appMapId: string; testId: string };
-    output: { plan: AppMapCompiledTest };
+    output: { plan: AppMapCompiledTest; preflight: OfflineTestPreflightReport };
   };
   "app-map.test.from-intent": {
     input: { appMapId: string; intent: string };

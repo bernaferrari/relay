@@ -307,3 +307,41 @@ export type AppMapCompiledTest = {
     repairTargetId: string;
   }>;
 };
+
+/** A device-free review of the frozen plan. Findings are deliberately
+ * conservative: this report never guesses geometry, scroll offsets, or a
+ * recovery gesture from incomplete evidence. */
+export type OfflineTestPreflightFinding = {
+  severity: "blocker" | "warning";
+  code:
+    | "unresolved-return"
+    | "selector-absent"
+    | "selector-ambiguous"
+    | "selector-needs-raw-tree"
+    | "point-only-selector"
+    | "source-observation-missing"
+    | "surface-recapture-required";
+  recipeId: string;
+  recipeStepId?: string;
+  screenId?: string;
+  message: string;
+  candidates?: Array<
+    Pick<import("./app-map.js").NormalizedSemanticNode, "role" | "identifier" | "label" | "value">
+  >;
+};
+
+export type OfflineTestPreflightReport = {
+  schemaVersion: 1;
+  mode: "offline-test-preflight";
+  appMapId: string;
+  appMapRevision: number;
+  testId: string;
+  planDigest: string;
+  summary: {
+    recipes: number;
+    checkedSelectors: number;
+    blockers: number;
+    warnings: number;
+  };
+  findings: OfflineTestPreflightFinding[];
+};

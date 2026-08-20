@@ -373,6 +373,8 @@ test("App Map operations are equivalent for human and agent actors", async () =>
     });
     assert.equal(scenarioCompiled.plan.test.id, "welcome-scenario");
     assert.equal(scenarioCompiled.plan.stepProvenance[0]?.testStepId, "check-welcome");
+    assert.equal(scenarioCompiled.preflight.mode, "offline-test-preflight");
+    assert.equal(scenarioCompiled.preflight.testId, "welcome-scenario");
 
     const scenarioEdited = await human.invoke("app-map.test.edit", {
       appMapId: "store",

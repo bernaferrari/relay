@@ -775,7 +775,10 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
 
   const appMapTestCompileOutputParser = objectParser<AppMapOperationOutput<"app-map.test.compile">>(
     "Test compilation response",
-    (output) => record(output.plan, "Test compilation plan"),
+    (output) => {
+      record(output.plan, "Test compilation plan");
+      record(output.preflight, "Test compilation offline preflight");
+    },
   );
 
   const appMapTestFromIntentInputParser = objectParser<
