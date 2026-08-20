@@ -533,7 +533,10 @@ async function mcpSwitcherTransportTrace(
   };
   const session = await connectMcp({
     async invoke() {
-      nativeDispatches.push("mcp-operation-invoke");
+      // A schema rejection stops before any device action. The terminal
+      // outcomes below represent the one transport call that owns an already
+      // dispatched physical action, so only those belong in this trace.
+      if (outcome !== "validation") nativeDispatches.push("mcp-operation-invoke");
       if (outcome === "unknown") {
         throw new ApiError(409, "The iOS press may already have reached the device.", {
           code: "IOS_MUTATION_OUTCOME_UNKNOWN",
@@ -621,7 +624,7 @@ test("registered switcher MCP tools preserve terminal review evidence", async ()
       unknown: async () => await mcpSwitcherTransportTrace("switcher-profile.scan", "unknown"),
       recovery: {
         expectedStatus: "handled",
-        expectedNativeDispatches: 1,
+        expectedNativeDispatches: 0,
         run: async () => await mcpSwitcherTransportTrace("switcher-profile.scan", "validation"),
       },
     },
@@ -630,7 +633,7 @@ test("registered switcher MCP tools preserve terminal review evidence", async ()
       unknown: async () => await mcpSwitcherTransportTrace("language-profile.scan", "unknown"),
       recovery: {
         expectedStatus: "handled",
-        expectedNativeDispatches: 1,
+        expectedNativeDispatches: 0,
         run: async () => await mcpSwitcherTransportTrace("language-profile.scan", "validation"),
       },
     },
@@ -640,7 +643,7 @@ test("registered switcher MCP tools preserve terminal review evidence", async ()
         await mcpSwitcherTransportTrace("switcher-profile.scan", "code-only-terminal"),
       recovery: {
         expectedStatus: "handled",
-        expectedNativeDispatches: 1,
+        expectedNativeDispatches: 0,
         run: async () => await mcpSwitcherTransportTrace("switcher-profile.scan", "validation"),
       },
     },
