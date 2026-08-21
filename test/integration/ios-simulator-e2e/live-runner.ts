@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
+import type { AgentDeviceDaemonTransport } from '@agent-device/contracts/client';
 import { PUBLIC_COMMANDS } from '../../../src/command-catalog.ts';
+import { sendToDaemon } from '../../../src/daemon/client/daemon-client.ts';
 import { assertPngFile } from '../provider-scenarios/assertions.ts';
 import {
   assertFilesDiffer,
@@ -30,8 +34,35 @@ import {
   writeCoverageReport,
 } from './live-harness.ts';
 import { bindIosSimulatorScenarios } from './scenarios.ts';
+import {
+  assertSnapshotBackendConformance,
+  createSnapshotBackendConformanceTransport,
+  SNAPSHOT_BACKEND_CONFORMANCE_TARGETS,
+  loadSnapshotBackendConformanceFixture,
+  snapshotBackendEvidence,
+} from './snapshot-backend-conformance.ts';
 
 const C = PUBLIC_COMMANDS;
+
+type AgentDeviceSdk = typeof import('../../../src/sdk/index.ts');
+
+const sendToDaemonTransport: AgentDeviceDaemonTransport = async (request, context) => {
+  if (request.session === undefined) {
+    throw new Error('Snapshot conformance transport requires an explicit session.');
+  }
+  return await sendToDaemon({ ...request, session: request.session }, context);
+};
+
+async function loadBuiltAgentDeviceClient() {
+  // The live harness drives the built CLI, so use the built SDK entry as well. Importing the
+  // source SDK here would intentionally take over the daemon on code-signature mismatch and make
+  // the forced-backend evidence come from a different runtime than the rest of the scenario.
+  const builtSdk = (await import(
+    pathToFileURL(path.resolve('dist/src/index.js')).href
+  )) as AgentDeviceSdk;
+  return builtSdk.createAgentDeviceClient;
+}
+
 const LIVE_SCENARIOS = bindIosSimulatorScenarios<LiveContext>({
   automationInput: assertAutomationInput,
   captureClose: async (context) => {
@@ -224,6 +255,48 @@ async function assertFormInput(context: LiveContext): Promise<void> {
     context,
     C.type,
     'AX-independent first-responder typing appends a suffix to the coordinate-focused field',
+  );
+
+  await assertSnapshotBackendConformanceLive(context);
+}
+
+async function assertSnapshotBackendConformanceLive(context: LiveContext): Promise<void> {
+  await runStep(context, 'dismiss keyboard before backend conformance capture', [
+    'keyboard',
+    'dismiss',
+  ]);
+  const fixture = loadSnapshotBackendConformanceFixture();
+  const createAgentDeviceClient = await loadBuiltAgentDeviceClient();
+  const evidence = [];
+
+  for (const backend of SNAPSHOT_BACKEND_CONFORMANCE_TARGETS) {
+    const client = createAgentDeviceClient(
+      {
+        session: context.session,
+        stateDir: context.stateDir,
+      },
+      { transport: createSnapshotBackendConformanceTransport(backend, sendToDaemonTransport) },
+    );
+    const snapshot = await client.capture.snapshot({
+      interactiveOnly: true,
+      platform: 'ios',
+      udid: context.udid,
+    });
+    assertSnapshotBackendConformance(snapshot, backend, fixture);
+    if (backend === 'tree') {
+      assert.equal(
+        snapshot.snapshotQuality?.reasonCode,
+        'requested-backend',
+        'tree conformance capture must disclose that the force seam was honored',
+      );
+    }
+    evidence.push(snapshotBackendEvidence(snapshot, backend));
+  }
+
+  const evidencePath = path.join(context.artifactDir, 'snapshot-backend-conformance.json');
+  fs.writeFileSync(
+    evidencePath,
+    JSON.stringify({ fixture: fixture.screen, captures: evidence }, null, 2),
   );
 }
 

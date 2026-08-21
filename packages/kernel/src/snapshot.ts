@@ -15,6 +15,9 @@
  */
 export type SnapshotCaptureBackend = 'tree' | 'queries' | 'private-ax';
 
+/** Internal backends that evidence probes may select explicitly. */
+export type SnapshotPreferredBackend = 'tree' | 'private-ax';
+
 export type SnapshotQualityVerdict = {
   state: 'healthy' | 'recovered' | 'sparse';
   backend: SnapshotCaptureBackend;
@@ -67,7 +70,7 @@ export type SnapshotOptions = {
    * are not comparable views of a screen), so a corroboration probe must be
    * captured the way its baseline was.
    */
-  preferredBackend?: 'private-ax';
+  preferredBackend?: SnapshotPreferredBackend;
   /**
    * Read accessibility custom actions for elements that merge their children
    * away. Opt-in because each such element costs its own accessibility round
