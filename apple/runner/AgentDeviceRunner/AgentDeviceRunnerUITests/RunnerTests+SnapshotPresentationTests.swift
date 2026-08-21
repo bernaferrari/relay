@@ -37,7 +37,8 @@ extension RunnerTests {
           candidates: 2,
           truncated: 0,
           blocked: false
-        )
+        ),
+        viewport: .infinite
       ),
       options: PresentationOptions(
         interactiveOnly: true,
@@ -108,7 +109,8 @@ extension RunnerTests {
         SnapshotAcquisition(
           hint: CaptureHint(
             projection: .regular, depth: nil, interactiveOnly: false, customActions: false),
-          nodes: acquired, truncated: false, effectiveDepth: nil),
+          nodes: acquired, truncated: false, effectiveDepth: nil,
+          viewport: CGRect(x: 0, y: 0, width: 1_000, height: 1_000)),
         options: PresentationOptions(interactiveOnly: false, depth: nil, scope: nil, raw: false)
       ).payload.nodes
     )
@@ -117,7 +119,8 @@ extension RunnerTests {
         SnapshotAcquisition(
           hint: CaptureHint(
             projection: .regular, depth: nil, interactiveOnly: true, customActions: false),
-          nodes: acquired, truncated: false, effectiveDepth: nil),
+          nodes: acquired, truncated: false, effectiveDepth: nil,
+          viewport: CGRect(x: 0, y: 0, width: 1_000, height: 1_000)),
         options: PresentationOptions(interactiveOnly: true, depth: nil, scope: nil, raw: false)
       ).payload.nodes
     )
@@ -139,13 +142,44 @@ extension RunnerTests {
         SnapshotAcquisition(
           hint: CaptureHint(
             projection: .raw, depth: nil, interactiveOnly: false, customActions: false),
-          nodes: acquired, truncated: false, effectiveDepth: nil),
+          nodes: acquired, truncated: false, effectiveDepth: nil, viewport: .infinite),
         options: PresentationOptions(interactiveOnly: true, depth: nil, scope: nil, raw: true)
       ).payload.nodes
     )
     XCTAssertEqual(raw.map(\.index), Array(0...10))
     XCTAssertEqual(raw.last?.depth, 2)
     XCTAssertEqual(raw.last?.parentIndex, 9)
+  }
+
+  func testRegularPresentationRoutesThroughVisibilityFold() {
+    let nodes = [
+      RawAXNode(
+        index: 0, type: "Application", label: "App", identifier: nil, value: nil,
+        rect: SnapshotRect(x: 0, y: 0, width: 100, height: 100), enabled: true,
+        focused: nil, selected: nil, hittable: false, depth: 0, parentIndex: nil,
+        hiddenContentAbove: nil, hiddenContentBelow: nil),
+      RawAXNode(
+        index: 1, type: "Button", label: "Outside viewport", identifier: nil, value: nil,
+        rect: SnapshotRect(x: 200, y: 200, width: 40, height: 40), enabled: true,
+        focused: nil, selected: nil, hittable: true, depth: 1, parentIndex: 0,
+        hiddenContentAbove: nil, hiddenContentBelow: nil),
+    ]
+    let acquisition = SnapshotAcquisition(
+      hint: CaptureHint(
+        projection: .regular, depth: nil, interactiveOnly: false, customActions: false),
+      nodes: nodes,
+      truncated: false,
+      effectiveDepth: nil,
+      viewport: CGRect(x: 0, y: 0, width: 100, height: 100)
+    )
+
+    let presented = SnapshotPresentation.presentRegular(
+      acquisition,
+      options: PresentationOptions(
+        interactiveOnly: false, depth: nil, scope: nil, raw: false)
+    ).payload.nodes
+
+    XCTAssertEqual(presented?.compactMap(\.label), ["App"])
   }
 
   func testSnapshotPresentationOwnsScopeAndRelativeDepth() throws {
@@ -189,7 +223,8 @@ extension RunnerTests {
         node(6, type: "Button", label: "Outside sibling", depth: 1, parentIndex: 0),
       ],
       truncated: false,
-      effectiveDepth: nil
+      effectiveDepth: nil,
+      viewport: CGRect(x: 0, y: 0, width: 1_000, height: 1_000)
     )
     let options = PresentationOptions(
       interactiveOnly: true,
@@ -214,7 +249,8 @@ extension RunnerTests {
             projection: .raw, depth: nil, interactiveOnly: false, customActions: false),
           nodes: acquisition.nodes,
           truncated: false,
-          effectiveDepth: nil
+          effectiveDepth: nil,
+          viewport: .infinite
         ),
         options: PresentationOptions(
           interactiveOnly: true,
@@ -270,10 +306,11 @@ extension RunnerTests {
 
     let regularAcquisition = SnapshotAcquisition(
       hint: SnapshotPresentation.captureHint(for: regularRequest),
-      nodes: nodes, truncated: false, effectiveDepth: nil)
+      nodes: nodes, truncated: false, effectiveDepth: nil,
+      viewport: CGRect(x: 0, y: 0, width: 100, height: 100))
     let rawAcquisition = SnapshotAcquisition(
       hint: SnapshotPresentation.captureHint(for: rawRequest),
-      nodes: nodes, truncated: false, effectiveDepth: nil)
+      nodes: nodes, truncated: false, effectiveDepth: nil, viewport: .infinite)
 
     XCTAssertNil(SnapshotPresentation.present(regularAcquisition, options: rawRequest))
     XCTAssertNil(SnapshotPresentation.present(rawAcquisition, options: regularRequest))

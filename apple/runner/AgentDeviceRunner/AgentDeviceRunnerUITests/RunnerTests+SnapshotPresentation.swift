@@ -20,6 +20,12 @@ struct RawAXNode {
   let hiddenContentAbove: Bool?
   let hiddenContentBelow: Bool?
   var actions: [String]? = nil
+
+  var hasSemanticContent: Bool {
+    [label, identifier, value].contains {
+      !($0?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+  }
 }
 
 /// The acquisition-facing view of a snapshot request, derived once by
@@ -69,6 +75,9 @@ struct SnapshotAcquisition {
   let truncated: Bool
   let effectiveDepth: Int?
   var customActions: SnapshotCustomActionCoverage? = nil
+  /// Viewport the regular projection's clip fold runs against. `.infinite` disables the fold --
+  /// legitimate only for raw acquisitions and depth-0 probes, where no fold applies.
+  let viewport: CGRect
 }
 
 /// The only snapshot node shape accepted by response payload assembly.
@@ -169,14 +178,26 @@ enum SnapshotPresentation {
     }
   }
 
-  /// Visible projection: eligibility (an interactive type or non-empty semantic content, below the
-  /// root carrier), scope, and the acquired scroll hints. The only interpreter of what a screen
-  /// currently shows.
+  /// Visible projection: the clip fold (viewport ∩ scroll clip, ancestor cursor, scroll hints),
+  /// eligibility (an interactive type or non-empty semantic content, below the root carrier), and
+  /// scope. The only interpreter of what a screen currently shows -- no backend folds its own
+  /// visibility (#1797).
   static func presentRegular(
     _ acquisition: SnapshotAcquisition,
-    options: PresentationOptions
+    options: PresentationOptions,
+    policy: SnapshotVisibilityFold.Policy = .platformDefault
   ) -> SnapshotBackendCapture {
-    project(acquisition, options: options, projection: .regular)
+    project(
+      SnapshotVisibilityFold.fold(
+        acquisition.nodes,
+        viewport: acquisition.viewport,
+        interactiveOnly: options.interactiveOnly,
+        policy: policy
+      ),
+      acquisition: acquisition,
+      options: options,
+      projection: .regular
+    )
   }
 
   /// Diagnostic projection: the acquired tree, normalized. Scope and depth apply when explicitly
@@ -186,7 +207,7 @@ enum SnapshotPresentation {
     _ acquisition: SnapshotAcquisition,
     options: PresentationOptions
   ) -> SnapshotBackendCapture {
-    project(acquisition, options: options, projection: .raw)
+    project(acquisition.nodes, acquisition: acquisition, options: options, projection: .raw)
   }
 
   /// Derives the one acquisition-facing view of a request, so no backend re-reads
@@ -206,15 +227,16 @@ enum SnapshotPresentation {
   }
 
   private static func project(
-    _ acquisition: SnapshotAcquisition,
+    _ projectionNodes: [RawAXNode],
+    acquisition: SnapshotAcquisition,
     options: PresentationOptions,
     projection: CaptureHint.Projection
   ) -> SnapshotBackendCapture {
-    let scopedRawNodes = applyScope(to: acquisition.nodes, options: options, projection: projection)
+    let scopedRawNodes = applyScope(to: projectionNodes, options: options, projection: projection)
     let nodes = presentedNodes(from: scopedRawNodes, projection: projection)
     let qualityPayload: DataPayload? = SnapshotScopePolicy.isActive(options.scope)
       ? DataPayload(
-        nodes: presentedNodes(from: acquisition.nodes, projection: projection),
+        nodes: presentedNodes(from: projectionNodes, projection: projection),
         truncated: acquisition.truncated
       )
       : nil
@@ -331,13 +353,6 @@ enum SnapshotPresentation {
     // The top-level carrier owns viewport geometry and must survive even for query-sweep's
     // deliberately unlabeled synthetic Application node.
     if node.parentIndex == nil { return true }
-    return eligibleInteractiveTypes.contains(node.type) || hasSemanticContent(node)
-  }
-
-  private static func hasSemanticContent(_ node: RawAXNode) -> Bool {
-    [node.label, node.identifier, node.value].contains { value in
-      guard let value else { return false }
-      return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
+    return eligibleInteractiveTypes.contains(node.type) || node.hasSemanticContent
   }
 }
