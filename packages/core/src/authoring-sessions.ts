@@ -17,11 +17,7 @@ import type {
   RecipeStep,
 } from "@relay/protocol";
 export { recordedPauseDuration } from "./authoring-recorded-pause.js";
-import {
-  actionSource,
-  recordedPauseAction,
-  stepsForInteraction,
-} from "./authoring-action-steps.js";
+import { actionSource, stepsForInteraction } from "./authoring-action-steps.js";
 import { AuthoringStateError, transition } from "./authoring-session-state.js";
 import {
   approvedAfterObservation,
@@ -42,15 +38,20 @@ import { findWorkspaceRoot } from "./workspace-root.js";
 import { commitAppMapRecording } from "./app-map.js";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { authoringEvidenceExists, persistAuthoringEvidence } from "./authoring-evidence.js";
-import {
-  authoringTransitionProofStatus,
-  invalidateAuthoringActionProof,
-} from "./authoring-transition-proof.js";
+import { invalidateAuthoringActionProof } from "./authoring-transition-proof.js";
 import {
   MAX_AUTHORING_RETAINED_OBSERVATIONS,
   authoringReplayActionProof,
   retainAuthoringObservations,
 } from "./authoring-observation-links.js";
+import {
+  appendAuthoringRawObservation,
+  seedAuthoringRawRecording,
+} from "./authoring-raw-recording.js";
+import {
+  finishAuthoringRecording,
+  recordAuthoringInteraction,
+} from "./authoring-recording-lifecycle.js";
 
 export type CapturedAuthoringObservation = {
   capturedAt: number;
@@ -62,7 +63,15 @@ export type CapturedAuthoringObservation = {
   foregroundApp?: string;
   bounds?: { width: number; height: number };
   nodes?: Array<Record<string, unknown>>;
+  /** Timestamp of the primary pixel evidence. `capturedAt` remains the
+   * complete observation boundary, which may be later than this raster after
+   * an iOS pixels → AX → pixels bracket. */
+  screenshotCapturedAt?: number;
   screenshot?: { data: Uint8Array; mime: string };
+  /** The closing iOS raster when it differs from the primary frame. It is
+   * retained as immutable diagnostic evidence, never substituted for the
+   * opening frame that established the observation's screen fingerprint. */
+  bracketScreenshot?: { data: Uint8Array; mime: string; capturedAt: number };
 };
 
 export type AuthoringRuntime = {
@@ -240,11 +249,12 @@ function observationId(capturedAt: number, fingerprint: string): string {
 function fallbackObservationProof(
   captured: CapturedAuthoringObservation,
 ): AuthoringObservationProof {
+  const pixelCapturedAt = captured.screenshotCapturedAt ?? captured.capturedAt;
   return {
     schemaVersion: 1,
     captureOrder: "concurrent",
     pixels: captured.screenshot
-      ? { status: "captured", capturedAt: captured.capturedAt, fingerprint: captured.fingerprint }
+      ? { status: "captured", capturedAt: pixelCapturedAt, fingerprint: captured.fingerprint }
       : { status: "unavailable" },
     semantics:
       captured.nodes && captured.nodes.length > 0
@@ -257,12 +267,18 @@ async function persistObservation(
   captured: CapturedAuthoringObservation,
 ): Promise<{ observation: AuthoringObservation; evidence: AuthoringEvidence[] }> {
   const proof = clone(captured.proof ?? fallbackObservationProof(captured));
+  const semanticCapturedAt = proof.semantics.capturedAt ?? captured.capturedAt;
+  const primaryPixelCapturedAt =
+    captured.screenshotCapturedAt ?? proof.pixels.capturedAt ?? captured.capturedAt;
   const snapshot = await persistAuthoringEvidence({
     kind: "snapshot",
-    capturedAt: captured.capturedAt,
+    // A snapshot is the semantic plane, not the enclosing observation. Keep
+    // its own timestamp so a delayed iOS tree is auditable offline.
+    capturedAt: semanticCapturedAt,
     data: JSON.stringify({
       schemaVersion: 1,
-      capturedAt: captured.capturedAt,
+      capturedAt: semanticCapturedAt,
+      observationCapturedAt: captured.capturedAt,
       targetId: captured.targetId,
       fingerprint: captured.fingerprint,
       proof,
@@ -278,9 +294,19 @@ async function persistObservation(
     evidence.push(
       await persistAuthoringEvidence({
         kind: "screenshot",
-        capturedAt: captured.capturedAt,
+        capturedAt: primaryPixelCapturedAt,
         data: captured.screenshot.data,
         mime: captured.screenshot.mime,
+      }),
+    );
+  }
+  if (captured.bracketScreenshot) {
+    evidence.push(
+      await persistAuthoringEvidence({
+        kind: "screenshot",
+        capturedAt: captured.bracketScreenshot.capturedAt,
+        data: captured.bracketScreenshot.data,
+        mime: captured.bracketScreenshot.mime,
       }),
     );
   }
@@ -292,7 +318,9 @@ async function persistObservation(
       screen: {
         id,
         fingerprint: captured.fingerprint,
-        capturedAt: captured.capturedAt,
+        // The screen fingerprint is a pixel claim, so give it the primary
+        // raster's timestamp rather than the later semantic/bracket boundary.
+        capturedAt: primaryPixelCapturedAt,
         source: "recording",
         deviceId: captured.targetId,
       },
@@ -305,55 +333,6 @@ async function persistObservation(
     },
     evidence,
   };
-}
-
-async function finishRecording(
-  session: AuthoringSession,
-  runtime: AuthoringRuntime,
-): Promise<AuthoringSession> {
-  const stoppedAt = now();
-  // Seal the transport before asking the target for its final state. On a
-  // physical Apple device both video and snapshots use XCTest; taking the
-  // snapshot first restarts the runner and destroys the active recording.
-  // The final observation still happens immediately afterwards and therefore
-  // remains the destination state for this Take.
-  const video = await runtime.stopVideo?.(session);
-  const captured = await persistObservation(await runtime.observe(session));
-  const before = currentRevision(session).before?.capturedAt ?? captured.observation.capturedAt;
-  const videoEndMs = Math.max(0, stoppedAt - before);
-  const videoEvidence = video?.data
-    ? [
-        await persistAuthoringEvidence({
-          kind: "video",
-          capturedAt: now(),
-          data: video.data,
-          mime: video.mime ?? "video/mp4",
-          startMs: 0,
-          endMs: videoEndMs,
-        }),
-      ]
-    : [];
-  session = nextRevision(session, "recording", (revision) => {
-    return {
-      ...revision,
-      // Pauses are meaningful only between two recorded actions. Time spent
-      // inspecting the result and reaching for Stop is authoring overhead,
-      // not executable behavior, and must never slow every replay.
-      actions: revision.actions,
-      evidence: [...revision.evidence, ...captured.evidence, ...videoEvidence],
-      after: captured.observation,
-      ...(videoEvidence[0]
-        ? {
-            videoClip: {
-              startMs: 0,
-              endMs: videoEndMs,
-            },
-          }
-        : {}),
-    };
-  });
-  if (video?.warning) session.error = video.warning;
-  return session;
 }
 
 function nextRevision(
@@ -380,6 +359,14 @@ function nextRevision(
     },
   };
 }
+
+const recordingLifecycleDependencies = {
+  now,
+  persistEvidence: persistAuthoringEvidence,
+  persistObservation,
+  nextRevision,
+  writeSession: atomicSessionWrite,
+};
 
 export class AuthoringSessionStore {
   readonly #queue = new KeyedSerialQueue();
@@ -516,6 +503,12 @@ export class AuthoringSessionStore {
           evidence: [...revision.evidence, ...observed.evidence],
           after: observed.observation,
         }));
+        const raw = appendAuthoringRawObservation(session.take!, {
+          target: session.target,
+          recordedAt: session.updatedAt,
+          observation: observed.observation,
+        });
+        if (raw) session = { ...session, take: { ...session.take!, ...raw } };
       }
       return session;
     });
@@ -556,6 +549,12 @@ export class AuthoringSessionStore {
           },
         ],
         replayAttempts: [],
+        ...seedAuthoringRawRecording({
+          target: session.target,
+          trigger: "capture",
+          recordedAt: at,
+          observation: captured.observation,
+        }),
       };
       session = transition(session, "reviewing");
       session.take = { ...session.take!, state: "reviewing", updatedAt: session.updatedAt };
@@ -602,6 +601,12 @@ export class AuthoringSessionStore {
           },
         ],
         replayAttempts: [],
+        ...seedAuthoringRawRecording({
+          target: session.target,
+          trigger: "recording",
+          recordedAt: at,
+          observation: captured.observation,
+        }),
       };
       return session;
     });
@@ -615,82 +620,9 @@ export class AuthoringSessionStore {
     return this.#mutate(id, async (session) => {
       assertOwner(session);
       requireState(session, "recording");
-      const revisionAtEntrance = currentRevision(session);
-      const entrance = revisionAtEntrance.after ?? revisionAtEntrance.before;
-      const retainedEntrance = retainAuthoringObservations(revisionAtEntrance.observations, [
-        entrance,
-      ]);
-      // Reserve an endpoint before issuing input. Losing a source/exit link
-      // after a successful tap would make the durable revision misleading.
-      if (!retainedEntrance || retainedEntrance.length >= MAX_AUTHORING_RETAINED_OBSERVATIONS) {
-        throw new AuthoringStateError(
-          `A Take can retain at most ${MAX_AUTHORING_RETAINED_OBSERVATIONS} action observations; stop and trim it before recording another action`,
-        );
-      }
-      const idleStartedAt = this.#recordingReadyAt.get(id);
-      const startedAt = now();
-      const previousAction = revisionAtEntrance.actions.at(-1);
-      if (
-        !["reusable", "observe", "screenshot", "wait"].includes(interaction.kind) &&
-        !("applied" in interaction && interaction.applied)
-      ) {
-        await runtime.execute(session, interaction);
-      } else if (interaction.kind === "wait" && interaction.ms > 0) {
-        await runtime.execute(session, interaction);
-      }
-      const captured = await persistObservation(await runtime.observe(session));
-      const observations = retainAuthoringObservations(retainedEntrance, [captured.observation]);
-      if (!observations) {
-        throw new AuthoringStateError(
-          `A Take can retain at most ${MAX_AUTHORING_RETAINED_OBSERVATIONS} action observations; the new action was not saved`,
-        );
-      }
-      // Finish after Relay has captured the resulting state. The next gap then
-      // measures human idle time, not device execution or evidence I/O.
-      const finishedAt = now();
-      const actionId = `action-${randomUUID()}`;
-      const action: AuthoringAction = {
-        id: actionId,
-        source: actionSource(interaction),
-        recordedAt: startedAt,
-        startedAt,
-        finishedAt,
-        steps: stepsForInteraction(interaction, actionId, session.group),
-        evidenceIds: captured.evidence.map((item) => item.id),
-        ...(entrance
-          ? {
-              entranceObservationId: entrance.id,
-              exitObservationId: captured.observation.id,
-              proofStatus: authoringTransitionProofStatus(entrance, captured.observation),
-            }
-          : {}),
-        ...((interaction.kind === "observe" || interaction.kind === "screenshot") &&
-        interaction.label
-          ? { label: interaction.label }
-          : interaction.kind === "steps" && interaction.label
-            ? { label: interaction.label }
-            : {}),
-      };
-      return nextRevision(session, "recording", (revision) => {
-        // Human cadence is meaningful recording data. Agent wall-clock gaps are
-        // orchestration latency (reasoning, tool round-trips, model queues), not
-        // application behavior, and must never make the saved replay slower.
-        const pause =
-          previousAction && session.actorKind === "human"
-            ? recordedPauseAction({
-                durationMs: startedAt - (idleStartedAt ?? previousAction.finishedAt),
-                finishedAt: startedAt,
-                evidenceIds: previousAction.evidenceIds,
-                group: session.group,
-              })
-            : undefined;
-        return {
-          ...revision,
-          actions: [...revision.actions, ...(pause ? [pause] : []), action],
-          evidence: [...revision.evidence, ...captured.evidence],
-          observations,
-          after: captured.observation,
-        };
+      return recordAuthoringInteraction(session, interaction, runtime, {
+        ...recordingLifecycleDependencies,
+        idleStartedAt: this.#recordingReadyAt.get(id),
       });
     });
   }
@@ -700,7 +632,7 @@ export class AuthoringSessionStore {
       return await this.#mutate(id, async (session) => {
         assertOwner(session);
         requireState(session, "recording");
-        session = await finishRecording(session, runtime);
+        session = await finishAuthoringRecording(session, runtime, recordingLifecycleDependencies);
         if (currentRevision(session).actions.length === 0) {
           session = transition(session, "cancelled");
           session.take = { ...session.take!, state: "discarded", updatedAt: session.updatedAt };
@@ -1101,7 +1033,11 @@ export class AuthoringSessionStore {
               "Cancelling an active recording requires target reconciliation",
             );
           }
-          session = await finishRecording(session, runtime);
+          session = await finishAuthoringRecording(
+            session,
+            runtime,
+            recordingLifecycleDependencies,
+          );
         }
         session = transition(session, "cancelled");
         if (session.take) {

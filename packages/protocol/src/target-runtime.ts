@@ -5,6 +5,13 @@ export type TargetWorkerStatus = {
   queued: number;
   activeTargets: string[];
   queuedTargets: string[];
+  /** Optional aggregate host/provider constraint for this physical target lane. */
+  host?: {
+    workerId: string;
+    capacity: number;
+    active: number;
+    queued: number;
+  };
 };
 
 export type RuntimePreflightCheck = {

@@ -22,9 +22,10 @@ import {
   loadCollaborationJson,
   type CollaborationState,
 } from "./collaboration-json.js";
+import type { StoredAppMapDisposition } from "./app-map/stored-map-repair.js";
 
 export const CONTROL_DB_NAME = "control.sqlite";
-export const CONTROL_SCHEMA_VERSION = 4;
+export const CONTROL_SCHEMA_VERSION = 5;
 export const JSON_MIGRATED_META = "json_migrated";
 export const RECOVERED_FROM_BACKUP_META = "recovered_from_json_backup";
 export const REPAIRED_ON_MIGRATE_META = "repaired_on_migrate";
@@ -119,6 +120,10 @@ export function applyControlSchema(db: DatabaseSync): void {
       status TEXT NOT NULL CHECK (status IN ('ok', 'degraded')),
       error TEXT,
       document TEXT NOT NULL,
+      /* Canonical document may be repaired/migrated; keep its source for recovery/export. */
+      source_document TEXT,
+      disposition TEXT NOT NULL DEFAULT 'ready'
+        CHECK (disposition IN ('ready', 'migrated', 'read-only', 'quarantined')),
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS app_maps_project_updated
@@ -183,6 +188,28 @@ function userVersion(db: DatabaseSync): number {
   return Number(row?.user_version ?? 0);
 }
 
+function appMapsHasColumn(db: DatabaseSync, name: string): boolean {
+  const rows = db.prepare("PRAGMA table_info(app_maps)").all() as Array<{ name?: string }>;
+  return rows.some((row) => row.name === name);
+}
+
+/**
+ * SQLite ALTER TABLE can be interrupted after one additive column. Checking
+ * each column makes this migration resume safely on the next startup rather
+ * than treating an already-added column as a fatal migration error.
+ */
+function ensureAppMapRecoveryColumns(db: DatabaseSync): void {
+  if (!appMapsHasColumn(db, "source_document")) {
+    db.exec("ALTER TABLE app_maps ADD COLUMN source_document TEXT");
+  }
+  if (!appMapsHasColumn(db, "disposition")) {
+    db.exec(
+      "ALTER TABLE app_maps ADD COLUMN disposition TEXT NOT NULL DEFAULT 'ready' " +
+        "CHECK (disposition IN ('ready', 'migrated', 'read-only', 'quarantined'))",
+    );
+  }
+}
+
 function migrateControlSchema(db: DatabaseSync): void {
   let version = userVersion(db);
   if (version < 1) {
@@ -234,6 +261,11 @@ function migrateControlSchema(db: DatabaseSync): void {
       );
       PRAGMA user_version = 4;
     `);
+    version = 4;
+  }
+  if (version < 5) {
+    ensureAppMapRecoveryColumns(db);
+    db.exec("PRAGMA user_version = 5");
   }
 }
 
@@ -411,23 +443,52 @@ export function upsertAppMapRow(
   status: "ok" | "degraded",
   error: string | undefined,
   updatedAt: number,
+  options: {
+    sourceDocument?: string;
+    disposition?: StoredAppMapDisposition;
+  } = {},
 ): void {
   const { projectId, appMapId } = splitAppMapKey(key);
+  const disposition = options.disposition ?? (status === "ok" ? "ready" : "quarantined");
   db.prepare(
-    `INSERT INTO app_maps(map_key, project_id, app_map_id, status, error, document, updated_at)
-     VALUES(?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO app_maps(
+      map_key, project_id, app_map_id, status, error, document, source_document, disposition, updated_at
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(map_key) DO UPDATE SET
        project_id = excluded.project_id,
        app_map_id = excluded.app_map_id,
        status = excluded.status,
        error = excluded.error,
        document = excluded.document,
+       source_document = COALESCE(excluded.source_document, app_maps.source_document),
+       disposition = excluded.disposition,
        updated_at = excluded.updated_at`,
-  ).run(key, projectId, appMapId, status, error ?? null, document, updatedAt);
+  ).run(
+    key,
+    projectId,
+    appMapId,
+    status,
+    error ?? null,
+    document,
+    options.sourceDocument ?? null,
+    disposition,
+    updatedAt,
+  );
 }
 
-export function upsertHealthyAppMap(db: DatabaseSync, key: string, appMap: AppMap): void {
-  upsertAppMapRow(db, key, JSON.stringify(appMap), "ok", undefined, appMap.updatedAt);
+export function upsertHealthyAppMap(
+  db: DatabaseSync,
+  key: string,
+  appMap: AppMap,
+  options: {
+    sourceDocument?: string;
+    disposition?: Extract<StoredAppMapDisposition, "ready" | "migrated">;
+  } = {},
+): void {
+  upsertAppMapRow(db, key, JSON.stringify(appMap), "ok", undefined, appMap.updatedAt, {
+    sourceDocument: options.sourceDocument ?? JSON.stringify(appMap),
+    disposition: options.disposition ?? "ready",
+  });
 }
 
 export function reviewedDocumentOriginMapEpoch(
@@ -599,10 +660,17 @@ function importState(db: DatabaseSync, state: CollaborationState): void {
     upsertIdempotencyRow(db, key, value);
   }
   for (const [key, appMap] of Object.entries(state.appMaps)) {
-    upsertHealthyAppMap(db, key, appMap);
+    const source = state.appMapSources[key];
+    upsertHealthyAppMap(db, key, appMap, {
+      sourceDocument: JSON.stringify(source?.original ?? appMap),
+      disposition: source?.disposition ?? "ready",
+    });
   }
   for (const [key, item] of Object.entries(state.degradedAppMaps)) {
-    upsertAppMapRow(db, key, JSON.stringify(item.raw), "degraded", item.error, now());
+    upsertAppMapRow(db, key, JSON.stringify(item.raw), "degraded", item.error, now(), {
+      sourceDocument: JSON.stringify(item.raw),
+      disposition: item.disposition ?? "quarantined",
+    });
   }
 }
 

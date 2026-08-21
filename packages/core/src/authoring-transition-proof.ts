@@ -3,6 +3,7 @@ import type {
   AuthoringObservation,
   AuthoringTransitionProofStatus,
 } from "@relay/protocol";
+import { hasCurrentAuthoringSemantics } from "./authoring-observation-proof.js";
 
 /**
  * Classify an action without conflating visual evidence with semantic control.
@@ -18,7 +19,7 @@ export function authoringTransitionProofStatus(
     entrance.proof?.pixels.status === "captured" && exit.proof?.pixels.status === "captured";
   if (!pixelsCaptured) return "unresolved";
   const semanticsCurrent =
-    entrance.proof?.semantics.status === "current" && exit.proof?.semantics.status === "current";
+    hasCurrentAuthoringSemantics(entrance.proof) && hasCurrentAuthoringSemantics(exit.proof);
   return semanticsCurrent ? "verified" : "pixels-only";
 }
 

@@ -497,8 +497,9 @@ export async function captureSnapshot(opts?: {
     let visualFingerprint: string | undefined;
     let proposedRows: ProposedVisualRow[] | undefined;
     if (opts?.includeVisual && (capture.inspectable === false || nodes.length === 0)) {
+      let shot: ScreenshotPayload | undefined;
       try {
-        const shot = await captureScreenshot({
+        shot = await captureScreenshot({
           serial,
           device: target.device,
           ephemeral: true,
@@ -512,6 +513,12 @@ export async function captureSnapshot(opts?: {
       } catch {
         visualFingerprint = undefined;
         proposedRows = undefined;
+      } finally {
+        // This fallback projects pixels into the snapshot payload; it never
+        // exposes the temporary file to its caller. Dispose it after the
+        // base64-derived fingerprint and proposed rows have been calculated,
+        // including when the visual inspection itself fails.
+        if (shot) await cleanupScreenshot(shot.path).catch(() => undefined);
       }
     }
     const capturedAt = semanticCapturedAt;
@@ -612,17 +619,22 @@ export async function captureScreenshot(opts?: {
 }): Promise<ScreenshotPayload> {
   const captureStartedAt = now();
   const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
-  return runWithTargetContext(target.context, async () => {
+  // A capture hands its private temporary path to the caller only after the
+  // complete payload is available. If any part of capture/normalization/
+  // attachment fails first, this function retains ownership and removes the
+  // directory itself. Successful callers that do not need `path` must still
+  // call cleanupScreenshot after transferring the bytes to durable evidence.
+  const parent = join(tmpdir(), "relay");
+  await mkdir(parent, { recursive: true, mode: 0o700 });
+  const dir = await mkdtemp(join(parent, "shot-"));
+  const path = join(dir, "capture.png");
+  return await runWithTargetContext(target.context, async () => {
     const foregroundApp =
       target.context.kind === "device" &&
       target.context.platform === "android" &&
       target.context.serial
         ? await captureAndroidForegroundApp(target.context.serial)
         : undefined;
-    const parent = join(tmpdir(), "relay");
-    await mkdir(parent, { recursive: true, mode: 0o700 });
-    const dir = await mkdtemp(join(parent, "shot-"));
-    const path = join(dir, "capture.png");
     const context = currentTargetContext();
     const readinessTarget =
       context.kind === "device"
@@ -788,6 +800,9 @@ export async function captureScreenshot(opts?: {
       );
     }
     return screenshot;
+  }).catch(async (error: unknown) => {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
   });
 }
 

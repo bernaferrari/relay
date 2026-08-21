@@ -44,6 +44,9 @@ export type TestJob = {
   /** Scheduler provenance. Optional only when reading older persisted runs. */
   workerId?: string;
   workerCapacity?: number;
+  /** Optional aggregate host/provider ceiling in addition to the target lane. */
+  hostWorkerId?: string;
+  hostWorkerCapacity?: number;
   status: JobStatus;
   queuedAt: number;
   startedAt?: number;
@@ -134,6 +137,10 @@ export type EnqueueJobInput = {
   projectId?: string;
   ownerId?: string;
   evidencePolicy?: EvidenceCollectionPolicy;
+  /** @deprecated Shared host identity; target lanes are inferred from the target. */
   workerId?: string;
+  /** @deprecated Shared host capacity; target lanes are always exclusive. */
   workerCapacity?: number;
+  hostWorkerId?: string;
+  hostWorkerCapacity?: number;
 };

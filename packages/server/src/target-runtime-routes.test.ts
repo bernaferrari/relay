@@ -553,3 +553,132 @@ test("repairs an Android target through the same recover operation", async () =>
     await server.close();
   }
 });
+
+test("preflights local campaign capacity from current target, lease, and scheduler facts without admission", async () => {
+  let deviceReads = 0;
+  let leaseReads = 0;
+  let workerReads = 0;
+  let controlChecks = 0;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      now: () => 10_000,
+      listDevices: async () => {
+        deviceReads += 1;
+        return [
+          {
+            id: "pixel-a",
+            serial: "pixel-a",
+            name: "Pixel A",
+            platform: "android" as const,
+            kind: "Physical device",
+            booted: true,
+          },
+          {
+            id: "ipad-a",
+            serial: "ipad-a",
+            name: "iPad A",
+            platform: "ios" as const,
+            kind: "Physical device",
+            booted: true,
+          },
+        ];
+      },
+      listDeviceLeases: async () => {
+        leaseReads += 1;
+        return [];
+      },
+      listTargetWorkers: () => {
+        workerReads += 1;
+        return [
+          {
+            workerId: "local:android:target:pixel-a",
+            capacity: 1,
+            active: 0,
+            queued: 0,
+            activeTargets: [],
+            queuedTargets: [],
+          },
+          {
+            workerId: "local:ios:target:ipad-a",
+            capacity: 1,
+            active: 0,
+            queued: 0,
+            activeTargets: [],
+            queuedTargets: [],
+          },
+        ];
+      },
+      assertTargetControl: async () => {
+        controlChecks += 1;
+        throw new Error("read-only preflight must not acquire control");
+      },
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/campaign-capacity/preflight`, {
+      method: "POST",
+      headers: headers("campaign.capacity.preflight"),
+      body: JSON.stringify({
+        targets: [
+          { targetId: "pixel-a", platform: "android" },
+          { targetId: "ipad-a", platform: "ios" },
+        ],
+        workItems: 4,
+        workItemsByPlatform: { android: 2, ios: 2 },
+        duration: {
+          workItemDurationMs: 1_000,
+          provenance: "observed-p95",
+          observedAt: 9_900,
+          sampleCount: 20,
+          maxAgeMs: 1_000,
+        },
+        deadlineMs: 5_000,
+        setupHeadroomMs: 500,
+        recoveryHeadroomMs: 500,
+      }),
+    });
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as {
+      preflight: {
+        deadline: {
+          assurance: string;
+          achievableWithCurrentCapacity: boolean;
+          estimatedParallelDurationMs: number | null;
+        };
+        targets: Array<{ targetId: string; workerFact: string }>;
+      };
+    };
+    assert.deepEqual(body.preflight.deadline, {
+      assurance: "measured-current",
+      achievableWithCurrentCapacity: true,
+      estimatedParallelDurationMs: 3_000,
+      requestedMs: 5_000,
+      reservedHeadroomMs: 1_000,
+      workBudgetMs: 4_000,
+      capacity: "within-budget",
+    });
+    assert.deepEqual(
+      body.preflight.targets.map((target) => ({
+        targetId: target.targetId,
+        workerFact: target.workerFact,
+      })),
+      [
+        { targetId: "pixel-a", workerFact: "scheduler" },
+        { targetId: "ipad-a", workerFact: "scheduler" },
+      ],
+    );
+    assert.deepEqual(
+      { deviceReads, leaseReads, workerReads, controlChecks },
+      {
+        deviceReads: 1,
+        leaseReads: 1,
+        workerReads: 1,
+        controlChecks: 0,
+      },
+    );
+  } finally {
+    await server.close();
+  }
+});

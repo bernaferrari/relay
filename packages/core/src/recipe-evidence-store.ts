@@ -4,6 +4,15 @@
 import { mkdir, readFile, writeFile, unlink, link } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import type { ArtifactRefProjection } from "@relay/protocol";
+import {
+  artifactRefFromIntegrity,
+  missingArtifactRef,
+  opaqueArtifactLocation,
+  projectArtifactRef,
+  redactedArtifactRef,
+} from "./artifact-ref.js";
+import { visualEvidenceAllowed } from "./redaction.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 
 /** Directory for custom recipes — mirrors runsRoot()'s convention. */
@@ -27,7 +36,15 @@ export async function saveRecipeEvidenceImage(input: {
   recipeId: string;
   evidenceId: string;
   base64: string;
-}): Promise<{ bytes: number; sha256: string; deduplicated: boolean }> {
+  /** Available for new capture callers; legacy evidence intentionally leaves
+   * this absent instead of inventing a capture timestamp. */
+  capturedAt?: number;
+}): Promise<{
+  bytes: number;
+  sha256: string;
+  deduplicated: boolean;
+  artifact: ArtifactRefProjection;
+}> {
   const dir = evidenceDir(input.recipeId);
   const id = evidencePart(input.evidenceId, "evidenceId");
   const data = Buffer.from(input.base64, "base64");
@@ -62,7 +79,18 @@ export async function saveRecipeEvidenceImage(input: {
     await unlink(target);
     await link(blob, target);
   }
-  return { bytes: data.byteLength, sha256, deduplicated };
+  return {
+    bytes: data.byteLength,
+    sha256,
+    deduplicated,
+    artifact: projectRecipeEvidenceImageArtifact({
+      recipeId: input.recipeId,
+      evidenceId: input.evidenceId,
+      sha256,
+      bytes: data.byteLength,
+      ...(input.capturedAt !== undefined ? { capturedAt: input.capturedAt } : {}),
+    }),
+  };
 }
 
 export async function readRecipeEvidenceImage(
@@ -76,4 +104,74 @@ export async function readRecipeEvidenceImage(
   } catch {
     return null;
   }
+}
+
+/** Project an already-known recipe evidence record without treating its
+ * recipe-relative file location as an authority. The SHA-256 identity is
+ * shared with authoring and run adapters when their bytes match. */
+export function projectRecipeEvidenceImageArtifact(input: {
+  recipeId: string;
+  evidenceId: string;
+  sha256: string;
+  bytes: number;
+  capturedAt?: number;
+}): ArtifactRefProjection {
+  const recipeId = evidencePart(input.recipeId, "recipeId");
+  const evidenceId = evidencePart(input.evidenceId, "evidenceId");
+  return projectArtifactRef(
+    artifactRefFromIntegrity({
+      sha256: input.sha256,
+      bytes: input.bytes,
+      media: { kind: "image", mime: "image/png" },
+      ...(input.capturedAt !== undefined ? { capturedAt: input.capturedAt } : {}),
+      provenance: { source: "recipe-evidence", capture: "recorded" },
+      retention: {
+        scope: "recipe-content-addressed",
+        recoverability: "content-addressed",
+      },
+      locations: [opaqueArtifactLocation("recipe-evidence", [recipeId, evidenceId])],
+    }),
+  );
+}
+
+/** Resolve older recipe evidence only when pixels are permitted. A missing
+ * image and a policy-held image remain distinguishable without exposing a
+ * path-shaped read handle to callers. */
+export async function projectStoredRecipeEvidenceImageArtifact(input: {
+  recipeId: string;
+  evidenceId: string;
+  capturedAt?: number;
+}): Promise<ArtifactRefProjection> {
+  const recipeId = evidencePart(input.recipeId, "recipeId");
+  const evidenceId = evidencePart(input.evidenceId, "evidenceId");
+  const media = { kind: "image" as const, mime: "image/png" };
+  if (!visualEvidenceAllowed()) {
+    return redactedArtifactRef({
+      source: "recipe-evidence",
+      media,
+      ...(input.capturedAt !== undefined ? { capturedAt: input.capturedAt } : {}),
+    });
+  }
+  const data = await readRecipeEvidenceImage(recipeId, evidenceId);
+  if (!data) {
+    return missingArtifactRef({
+      source: "recipe-evidence",
+      media,
+      ...(input.capturedAt !== undefined ? { capturedAt: input.capturedAt } : {}),
+    });
+  }
+  return projectArtifactRef(
+    artifactRefFromIntegrity({
+      sha256: createHash("sha256").update(data).digest("hex"),
+      bytes: data.byteLength,
+      media,
+      ...(input.capturedAt !== undefined ? { capturedAt: input.capturedAt } : {}),
+      provenance: { source: "recipe-evidence", capture: "recorded" },
+      retention: {
+        scope: "recipe-content-addressed",
+        recoverability: "content-addressed",
+      },
+      locations: [opaqueArtifactLocation("recipe-evidence", [recipeId, evidenceId])],
+    }),
+  );
 }

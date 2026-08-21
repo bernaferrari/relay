@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { PNG } from "pngjs";
 import {
   captureScrollableSurvey,
+  captureScrollableSurveyForTarget,
   composeScrollSurveyFrames,
   scrollSurveyFastRestoreGesture,
   scrollSurveyGesture,
@@ -14,6 +19,13 @@ import { semanticViewportIsStationary } from "./scrollable-survey-seams.js";
 import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
 import { validatedFrozenOriginForTest } from "./scrollable-survey-test-support.js";
 import type { SnapshotPayload } from "./workspace-capture.js";
+
+async function temporarySurveyScreenshot(name: string) {
+  const root = join(tmpdir(), "relay");
+  await mkdir(root, { recursive: true });
+  const directory = await mkdtemp(join(root, `shot-survey-${name}-`));
+  return { directory, path: join(directory, "capture.png") };
+}
 
 function unknownIosScroll(): IosMutationOutcomeUnknownError {
   return new IosMutationOutcomeUnknownError(
@@ -438,6 +450,80 @@ test("uses a verified initial PNG/tree pair without recapturing the first viewpo
   assert.equal(captures, 1);
   assert.equal(survey.frames[0]?.screenshot.capturedAt, 1);
   assert.equal(survey.reason, "end-of-content");
+});
+
+test("target-backed survey disposes every temporary viewport after copying its evidence", async () => {
+  const temporaryDirectories: string[] = [];
+  const surface = productSurfaceCapture("Settings", 0, 1);
+  try {
+    const survey = await captureScrollableSurveyForTarget(
+      { serial: "android-survey-cleanup", maxScrolls: 1 },
+      {
+        devicePlatformForSerial: async () => "android",
+        captureScreenshot: async () => {
+          const temporary = await temporarySurveyScreenshot(
+            `success-${temporaryDirectories.length}`,
+          );
+          temporaryDirectories.push(temporary.directory);
+          const bytes = Buffer.from(surface.screenshot.base64, "base64");
+          return {
+            serial: "android-survey-cleanup",
+            capturedAt: surface.screenshot.capturedAt,
+            mime: "image/png" as const,
+            base64: surface.screenshot.base64,
+            path: temporary.path,
+            bytes: bytes.byteLength,
+            width: surface.screenshot.width,
+            height: surface.screenshot.height,
+          };
+        },
+        captureSnapshot: async () => surface.snapshot,
+        interact: async () => ({}),
+      },
+    );
+
+    assert.equal(survey.reason, "end-of-content");
+    assert.equal(temporaryDirectories.length, 2);
+    for (const directory of temporaryDirectories) assert.equal(existsSync(directory), false);
+    assert.equal(survey.frames[0]?.screenshot.base64, surface.screenshot.base64);
+  } finally {
+    await Promise.all(
+      temporaryDirectories.map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  }
+});
+
+test("target-backed survey disposes a temporary screenshot when AX capture fails", async () => {
+  const temporary = await temporarySurveyScreenshot("failed-ax");
+  const surface = productSurfaceCapture("Settings", 0, 1);
+  try {
+    await assert.rejects(
+      captureScrollableSurveyForTarget(
+        { serial: "android-survey-cleanup-failure" },
+        {
+          devicePlatformForSerial: async () => "android",
+          captureScreenshot: async () => ({
+            serial: "android-survey-cleanup-failure",
+            capturedAt: surface.screenshot.capturedAt,
+            mime: "image/png" as const,
+            base64: surface.screenshot.base64,
+            path: temporary.path,
+            bytes: Buffer.from(surface.screenshot.base64, "base64").byteLength,
+            width: surface.screenshot.width,
+            height: surface.screenshot.height,
+          }),
+          captureSnapshot: async () => {
+            throw new Error("AX capture failed");
+          },
+          interact: async () => ({}),
+        },
+      ),
+      /AX capture failed/u,
+    );
+    assert.equal(existsSync(temporary.directory), false);
+  } finally {
+    await rm(temporary.directory, { recursive: true, force: true });
+  }
 });
 
 test("composes Android chrome once using the corroborated semantic body translation", () => {

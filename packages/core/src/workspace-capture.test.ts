@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { dirname } from "node:path";
 import test from "node:test";
 import { IosSnapshotTimedOutError, type Device, type SnapshotNode } from "./device.js";
 import { runWithTargetContext } from "./target-context.js";
@@ -7,7 +9,11 @@ import {
   recordTargetPixelCapture,
   resetTargetRuntimeReadiness,
 } from "./target-runtime-readiness.js";
-import { captureSnapshot, iosLogicalBoundsForSerial } from "./workspace-capture.js";
+import {
+  captureScreenshot,
+  captureSnapshot,
+  iosLogicalBoundsForSerial,
+} from "./workspace-capture.js";
 
 function iosSnapshotDevice(nodes: SnapshotNode[]): Device {
   return {
@@ -135,4 +141,29 @@ test("iOS geometry cache follows the exact semantic proof, not the device serial
   );
 
   assert.equal(iosLogicalBoundsForSerial(serial), undefined);
+});
+
+test("a failed screenshot capture removes its private temporary directory before returning", async () => {
+  let temporaryPath: string | undefined;
+  await assert.rejects(
+    runWithTargetContext(
+      { kind: "browser", platform: "browser", targetId: "cleanup-browser" },
+      () =>
+        captureScreenshot({
+          ephemeral: true,
+          includeScreenMatch: false,
+          device: {
+            capture: {
+              screenshot: async ({ path }: { path: string }) => {
+                temporaryPath = path;
+                throw new Error("screenshot transport failed");
+              },
+            },
+          } as unknown as Device,
+        }),
+    ),
+    /screenshot transport failed/u,
+  );
+  assert.ok(temporaryPath);
+  assert.equal(existsSync(dirname(temporaryPath)), false);
 });

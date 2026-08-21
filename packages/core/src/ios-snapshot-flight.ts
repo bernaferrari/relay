@@ -40,16 +40,39 @@ export class IosSnapshotInFlightError extends Error {
   }
 }
 
+/**
+ * A native input completed after this tree traversal started. XCTest cannot
+ * cancel the old traversal, but its result is historical evidence and must
+ * never be handed to a caller asking what the target looks like now.
+ */
+export class IosSnapshotStaleAfterInputError extends Error {
+  readonly code = "IOS_SNAPSHOT_ACCESSIBILITY_QUERY_STALE_AFTER_INPUT";
+  readonly inFlight = true;
+
+  constructor(readonly elapsedMs?: number) {
+    super(
+      `iOS accessibility completed a tree from before a newer confirmed input${elapsedMs !== undefined ? ` (${elapsedMs}ms after it began)` : ""}. Relay will wait for that traversal to settle before reading the current screen.`,
+    );
+    this.name = "IosSnapshotStaleAfterInputError";
+  }
+}
+
 /** A tree read is running or exceeded Relay's wait budget, but XCTest itself
  * has not been proven unavailable. Callers must not reconnect or start a
  * second tree traversal in response. */
 export function isIosAccessibilityQueryInFlightError(
   error: unknown,
-): error is IosSnapshotTimedOutError | IosSnapshotInFlightError {
-  return error instanceof IosSnapshotTimedOutError || error instanceof IosSnapshotInFlightError;
+): error is IosSnapshotTimedOutError | IosSnapshotInFlightError | IosSnapshotStaleAfterInputError {
+  return (
+    error instanceof IosSnapshotTimedOutError ||
+    error instanceof IosSnapshotInFlightError ||
+    error instanceof IosSnapshotStaleAfterInputError
+  );
 }
 
 type IosSnapshotFlight = {
+  /** Input epoch when the native XCTest traversal began. */
+  inputEpoch: number;
   interactiveOnly: boolean;
   timedOut: boolean;
   startedAt: number;
@@ -57,6 +80,11 @@ type IosSnapshotFlight = {
 };
 
 const iosSnapshotFlights = new Map<string, IosSnapshotFlight>();
+/**
+ * Per-target semantic fence. It advances only after a native iOS command is
+ * known to have completed, never for a selector miss or an uncertain outcome.
+ */
+const iosSnapshotInputEpochs = new Map<string, number>();
 
 function iosSnapshotKey(context: TargetContext): string | undefined {
   return context.kind === "device" && context.platform === "ios"
@@ -66,8 +94,31 @@ function iosSnapshotKey(context: TargetContext): string | undefined {
 
 export function resetIosSnapshotFlights(context?: TargetContext): void {
   const key = context ? iosSnapshotKey(context) : undefined;
-  if (key) iosSnapshotFlights.delete(key);
-  else if (!context) iosSnapshotFlights.clear();
+  if (key) {
+    iosSnapshotFlights.delete(key);
+    iosSnapshotInputEpochs.delete(key);
+  } else if (!context) {
+    iosSnapshotFlights.clear();
+    iosSnapshotInputEpochs.clear();
+  }
+}
+
+function currentIosSnapshotInputEpoch(key: string): number {
+  return iosSnapshotInputEpochs.get(key) ?? 0;
+}
+
+/**
+ * Fence a physical iOS tree after a confirmed native screen-affecting input.
+ * The old XCTest request remains the one and only request until it settles;
+ * new callers receive a typed in-flight response instead of sharing stale
+ * semantics or starting a second traversal.
+ */
+export function noteConfirmedIosSnapshotInput(serial: string): void {
+  if (!serial.trim()) return;
+  // Match TargetContext's exact identity representation. Validation owns any
+  // normalization before a target reaches this module.
+  const key = `ios:${serial}`;
+  iosSnapshotInputEpochs.set(key, currentIosSnapshotInputEpoch(key) + 1);
 }
 
 function boundedIosSnapshotTimeoutMs(timeoutMs: number | undefined): number {
@@ -110,9 +161,14 @@ export async function snapshotIosSingleFlight(
 ): Promise<SnapshotNode[]> {
   const key = iosSnapshotKey(context);
   if (!key) throw new Error("iOS snapshot single-flight requires a connected iOS target");
+  const inputEpoch = currentIosSnapshotInputEpoch(key);
   const existing = iosSnapshotFlights.get(key);
   if (existing) {
     const elapsedMs = Math.max(0, Date.now() - existing.startedAt);
+    // The shared traversal began before a successfully acknowledged input.
+    // It cannot answer a post-input assertion, and iOS cannot safely overlap
+    // it with a replacement traversal.
+    if (existing.inputEpoch !== inputEpoch) throw new IosSnapshotInFlightError(elapsedMs);
     if (existing.timedOut) throw new IosSnapshotInFlightError(elapsedMs);
     // A full tree is a safe superset of an interactive-only tree, so those
     // callers can share work. The inverse is not safe: do not make a full
@@ -124,10 +180,15 @@ export async function snapshotIosSingleFlight(
   let flight!: IosSnapshotFlight;
   const startedAt = Date.now();
   const native = Promise.resolve().then(run);
-  const result = raceIosSnapshotTimeout(native, boundedIosSnapshotTimeoutMs(timeoutMs)).then(
-    (value) => (value.nodes ?? []) as SnapshotNode[],
-  );
-  flight = { interactiveOnly, timedOut: false, startedAt, result };
+  const result = raceIosSnapshotTimeout(native, boundedIosSnapshotTimeoutMs(timeoutMs))
+    .then((value) => (value.nodes ?? []) as SnapshotNode[])
+    .then((nodes) => {
+      if (currentIosSnapshotInputEpoch(key) !== inputEpoch) {
+        throw new IosSnapshotStaleAfterInputError(Math.max(0, Date.now() - startedAt));
+      }
+      return nodes;
+    });
+  flight = { inputEpoch, interactiveOnly, timedOut: false, startedAt, result };
   iosSnapshotFlights.set(key, flight);
 
   // Retain the lock until the actual native request settles, not merely until

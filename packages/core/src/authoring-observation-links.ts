@@ -8,6 +8,7 @@ import type {
   ScreenIdentityObservation,
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
+import { hasCurrentAuthoringSemantics } from "./authoring-observation-proof.js";
 import { authoringTransitionProofStatus } from "./authoring-transition-proof.js";
 import { compareScreenIdentity, observeScreenIdentity } from "./screen-identity.js";
 
@@ -47,11 +48,11 @@ export function authoringRevisionObservations(
 function currentSemanticIdentity(
   observation: AuthoringObservation,
 ): ScreenIdentityObservation | undefined {
-  if (observation.proof?.semantics.status !== "current") return undefined;
+  if (!hasCurrentAuthoringSemantics(observation.proof)) return undefined;
   if (observation.nodes?.length) {
     return observeScreenIdentity(observation.nodes as SnapshotNode[]);
   }
-  const fingerprint = observation.proof.semantics.fingerprint;
+  const fingerprint = observation.proof?.semantics.fingerprint;
   return fingerprint ? { fingerprint, nodes: [], volatileSignals: [] } : undefined;
 }
 

@@ -216,6 +216,60 @@ test("does not promote a stale tree into a semantic identity or selector source"
   assert.equal(variant.rawAccessibilityTree, undefined);
 });
 
+test("does not promote a malformed current tree when its iOS pixel bracket changed", () => {
+  const snapshotSha = "6".repeat(64);
+  const changedBracket: AuthoringObservation = {
+    ...observation("settings-bracket-changed", beforeFingerprint, "settings-tree"),
+    proof: {
+      schemaVersion: 1,
+      captureOrder: "pixels-ax-pixels",
+      pixels: {
+        status: "captured",
+        capturedAt: 2,
+        fingerprint: beforeFingerprint,
+        bracket: {
+          status: "changed",
+          afterCapturedAt: 3,
+          afterFingerprint: afterFingerprint,
+        },
+      },
+      // A partially written or legacy producer could claim current here. The
+      // consumer must still fail closed rather than promote this tree.
+      semantics: { status: "current", capturedAt: 2, fingerprint: "late-settings-tree" },
+    },
+  };
+  const result = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      observation: changedBracket,
+      evidenceUrisById: { "settings-tree": `relay-evidence://${snapshotSha}` },
+      evidenceKindsById: { "settings-tree": "snapshot" },
+      evidenceById: {
+        "settings-tree": {
+          id: "settings-tree",
+          kind: "snapshot",
+          capturedAt: 2,
+          uri: `relay-evidence://${snapshotSha}`,
+          mime: "application/json",
+          bytes: 128,
+          sha256: snapshotSha,
+        },
+      },
+    },
+    context("capture-bracket-changed-settings-tree"),
+    { createInitialFlow: false },
+  );
+
+  const variant = result.appMap.screenVariants[result.variantId]!;
+  assert.deepEqual(variant.observation, {
+    fingerprint: beforeFingerprint,
+    nodes: [],
+    volatileSignals: [],
+  });
+  assert.equal(variant.rawAccessibilityTree, undefined);
+});
+
 test("does not carry a raw tree into a newer observation that has no snapshot", () => {
   const snapshotSha = "3".repeat(64);
   const first = commitAppMapScreenCapture(

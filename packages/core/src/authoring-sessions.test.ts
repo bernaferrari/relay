@@ -4,12 +4,19 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { AuthoringCaptureContext, AuthoringInteraction, RecipeStep } from "@relay/protocol";
+import {
+  AUTHORING_RAW_CAPTURE_VERSION,
+  summarizeAuthoringSession,
+  type AuthoringCaptureContext,
+  type AuthoringInteraction,
+  type RecipeStep,
+} from "@relay/protocol";
 import {
   AuthoringSessionStore,
   AuthoringStateError,
   assertAuthoringTransition,
   recordedPauseDuration,
+  type CapturedAuthoringObservation,
   type AuthoringRuntime,
 } from "./authoring-sessions.js";
 import { runWithOperationContext, type OperationContext } from "./operation-context.js";
@@ -17,6 +24,10 @@ import { commitAppMapChanges } from "./app-map.js";
 import { createAppMap, mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { readAuthoringEvidence } from "./authoring-evidence.js";
 import { MAX_AUTHORING_RETAINED_OBSERVATIONS } from "./authoring-observation-links.js";
+import {
+  appendAuthoringRawInteractionIntent,
+  pendingAuthoringRawInteractionIntents,
+} from "./authoring-raw-recording.js";
 
 function operation(operationId = "authoring.test"): OperationContext {
   const requestId = crypto.randomUUID();
@@ -53,7 +64,7 @@ class FakeRuntime implements AuthoringRuntime {
   replayAction?: AuthoringRuntime["replayAction"];
   observeReplayActionEndpoint?: AuthoringRuntime["observeReplayActionEndpoint"];
 
-  async observe() {
+  async observe(): Promise<CapturedAuthoringObservation> {
     this.lifecycle.push("observe");
     this.observations += 1;
     const capturedAt = 1_000 + this.observations;
@@ -271,6 +282,66 @@ test("authoring snapshot evidence keeps proof and capture provenance for offline
   });
 });
 
+test("authoring persists iOS pixel, semantic, and closing-bracket times independently", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    runtime.observe = async () => ({
+      capturedAt: 30,
+      targetId: "device-a",
+      fingerprint: "primary-raster",
+      bounds: { width: 400, height: 800 },
+      nodes: [{ role: "button", label: "Settings" }],
+      proof: {
+        schemaVersion: 1 as const,
+        captureOrder: "pixels-ax-pixels" as const,
+        pixels: {
+          status: "captured" as const,
+          capturedAt: 10,
+          fingerprint: "primary-raster",
+          bracket: {
+            status: "changed" as const,
+            afterCapturedAt: 30,
+            afterFingerprint: "closing-raster",
+          },
+        },
+        semantics: { status: "stale" as const, capturedAt: 20, fingerprint: "late-tree" },
+      },
+      screenshotCapturedAt: 10,
+      screenshot: { data: Buffer.from("opening-raster"), mime: "image/png" },
+      bracketScreenshot: {
+        data: Buffer.from("closing-raster"),
+        mime: "image/png",
+        capturedAt: 30,
+      },
+    });
+    const appMap = await readAppMap("project-a", appMapId);
+    assert.ok(appMap);
+    const session = await store.create({
+      appMapId,
+      target: { kind: "device", platform: "ios", targetId: "ipad-a" },
+      leaseId: "lease-a",
+      expectedAppMapRevision: appMap.revision,
+    });
+
+    const captured = await store.capture(session.id, runtime);
+    const revision = captured.take!.revisions[0]!;
+    const snapshot = revision.evidence.find((evidence) => evidence.kind === "snapshot");
+    const screenshots = revision.evidence.filter((evidence) => evidence.kind === "screenshot");
+    assert.equal(snapshot?.capturedAt, 20);
+    assert.deepEqual(
+      screenshots.map((evidence) => evidence.capturedAt),
+      [10, 30],
+    );
+    assert.equal(revision.before?.capturedAt, 30);
+    assert.equal(revision.before?.screen.capturedAt, 10);
+    assert.equal(revision.before?.proof?.semantics.status, "stale");
+    assert.ok(snapshot?.sha256);
+    const payload = JSON.parse((await readAuthoringEvidence(snapshot.sha256))!.toString("utf8"));
+    assert.equal(payload.capturedAt, 20);
+    assert.equal(payload.observationCapturedAt, 30);
+    assert.equal(payload.proof.pixels.bracket.afterCapturedAt, 30);
+  });
+});
+
 test("sessions on different explicit targets progress independently", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     const first = await createReadySession(store, runtime, appMapId);
@@ -334,6 +405,85 @@ test("unsupported target interactions stay explicit and are not recorded", async
       /Capability unavailable for swipe/,
     );
     assert.equal((await store.get(session.id)).take?.revisions.at(-1)?.actions.length, 0);
+    const raw = (await store.get(session.id)).take?.rawEvents ?? [];
+    assert.deepEqual(
+      raw.map((event) => event.kind),
+      ["take-start", "interaction-intent", "interaction-outcome"],
+    );
+    const outcome = raw.at(-1);
+    assert.ok(outcome && outcome.kind === "interaction-outcome");
+    assert.equal(outcome.outcome, "failed");
+  });
+});
+
+test("recording persists a redacted raw intent before native input and appends its linked outcome", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    let durableKinds: string[] | undefined;
+    runtime.execute = async (activeSession) => {
+      const durable = await store.get((activeSession as { id: string }).id);
+      durableKinds = durable.take?.rawEvents?.map((event) => event.kind);
+      runtime.screen = "destination";
+    };
+
+    session = await store.interact(
+      session.id,
+      {
+        kind: "type",
+        text: "private entry\n秘密",
+        target: { label: "Private selector", identifier: "private-id" },
+      },
+      runtime,
+    );
+
+    assert.deepEqual(durableKinds, ["take-start", "interaction-intent"]);
+    const raw = session.take?.rawEvents ?? [];
+    assert.deepEqual(
+      raw.map((event) => event.kind),
+      ["take-start", "interaction-intent", "interaction-outcome"],
+    );
+    const intent = raw[1];
+    const outcome = raw[2];
+    assert.ok(intent && intent.kind === "interaction-intent");
+    assert.ok(outcome && outcome.kind === "interaction-outcome");
+    assert.equal(outcome.intentEventId, intent.id);
+    assert.equal(outcome.outcome, "succeeded");
+    assert.equal(outcome.links.actionId, session.take?.revisions.at(-1)?.actions[0]?.id);
+    assert.equal(summarizeAuthoringSession(session).take?.rawCapture?.pendingIntentCount, 0);
+    assert.doesNotMatch(JSON.stringify(raw), /private entry|秘密|Private selector|private-id/u);
+  });
+});
+
+test("recording marks an intent unknown when native input returns but exit evidence fails", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    const observe = runtime.observe.bind(runtime);
+    let failExitObservation = false;
+    runtime.execute = async () => {
+      runtime.screen = "destination";
+      failExitObservation = true;
+    };
+    runtime.observe = async () => {
+      if (failExitObservation) throw new Error("private native diagnostic");
+      return observe();
+    };
+
+    await assert.rejects(
+      store.interact(session.id, { kind: "tap", target: { label: "Private target" } }, runtime),
+      /private native diagnostic/,
+    );
+
+    const raw = (await store.get(session.id)).take?.rawEvents ?? [];
+    assert.deepEqual(
+      raw.map((event) => event.kind),
+      ["take-start", "interaction-intent", "interaction-outcome"],
+    );
+    const outcome = raw.at(-1);
+    assert.ok(outcome && outcome.kind === "interaction-outcome");
+    assert.equal(outcome.outcome, "unknown");
+    assert.doesNotMatch(JSON.stringify(raw), /Private target|private native diagnostic/u);
   });
 });
 
@@ -1240,6 +1390,45 @@ test("later atomic commits retain evidence for every existing graph connection",
   });
 });
 
+test("recovery preserves a pending pre-dispatch intent without inventing an outcome", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    const entrance = session.take?.revisions.at(-1)?.before;
+    assert.ok(entrance);
+    const intent = appendAuthoringRawInteractionIntent(session.take!, {
+      target: session.target,
+      interaction: {
+        kind: "type",
+        text: "interrupted private value",
+        target: { label: "interrupted private selector" },
+      },
+      startedAt: Date.now(),
+      entrance,
+    });
+    assert.ok(intent);
+    const { intentEventId, ...raw } = intent;
+    await writeFile(
+      join(process.env.RELAY_STATE_DIR!, "authoring-sessions", `${session.id}.json`),
+      JSON.stringify({ ...session, take: { ...session.take!, ...raw } }),
+    );
+
+    const recovered = await new AuthoringSessionStore().recover({ async releaseLease() {} });
+    const restored = recovered[0];
+    assert.ok(restored);
+    assert.equal(restored.state, "failed");
+    assert.deepEqual(
+      pendingAuthoringRawInteractionIntents(restored.take!)?.map((event) => event.id),
+      [intentEventId],
+    );
+    assert.equal(summarizeAuthoringSession(restored).take?.rawCapture?.pendingIntentCount, 1);
+    assert.doesNotMatch(
+      JSON.stringify(restored.take?.rawEvents),
+      /interrupted private value|interrupted private selector/u,
+    );
+  });
+});
+
 test("recovery preserves interrupted recording and resolves post-rename commits", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     let session = await createReadySession(store, runtime, appMapId);
@@ -1372,5 +1561,96 @@ test("startup recovery scopes every persisted project without crossing project o
     });
     assert.deepEqual(released, []);
     assert.deepEqual(await store.recoveryScopes(), []);
+  });
+});
+
+test("raw Takes preserve append-only source facts across review edits", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    const captureOnly = await createReadySession(store, runtime, appMapId);
+    const captured = await store.capture(captureOnly.id, runtime);
+    assert.equal(captured.take?.rawCaptureVersion, AUTHORING_RAW_CAPTURE_VERSION);
+    assert.deepEqual(
+      captured.take?.rawEvents?.map((event) => [event.sequence, event.kind]),
+      [[1, "take-start"]],
+    );
+    assert.equal(captured.take?.rawEvents?.[0]?.kind, "take-start");
+    assert.equal(
+      captured.take?.rawEvents?.[0]?.kind === "take-start" && captured.take.rawEvents[0].trigger,
+      "capture",
+    );
+
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(
+      session.id,
+      {
+        kind: "type",
+        text: "super-secret\n秘密",
+        target: { label: "Private recipient", identifier: "recipient-input" },
+      },
+      runtime,
+    );
+    session = await store.interact(
+      session.id,
+      {
+        kind: "clipboard",
+        action: "write",
+        text: "super-secret\n秘密",
+        expect: "super-secret\n秘密",
+        target: { label: "Private clipboard" },
+      },
+      runtime,
+    );
+    session = await store.stop(session.id, runtime);
+
+    const recorded = session.take!;
+    const raw = recorded.rawEvents!;
+    assert.deepEqual(
+      raw.map((event) => [event.sequence, event.kind]),
+      [
+        [1, "take-start"],
+        [2, "interaction-intent"],
+        [3, "interaction-outcome"],
+        [4, "interaction-intent"],
+        [5, "interaction-outcome"],
+        [6, "take-stop"],
+      ],
+    );
+    const rawIntents = raw.filter((event) => event.kind === "interaction-intent");
+    const rawOutcomes = raw.filter((event) => event.kind === "interaction-outcome");
+    assert.equal(rawIntents.length, 2);
+    assert.equal(rawOutcomes.length, 2);
+    assert.deepEqual(
+      rawOutcomes.map((event) => event.links.actionId),
+      recorded.revisions.at(-1)?.actions.map((action) => action.id),
+    );
+    assert.equal(rawIntents[0]?.links.entranceObservationId, recorded.revisions.at(-1)?.before?.id);
+    assert.equal(
+      rawIntents[1]?.links.entranceObservationId,
+      rawOutcomes[0]?.links.exitObservationId,
+    );
+    const final = raw.at(-1);
+    assert.ok(final && final.kind === "take-stop");
+    assert.equal(final.observation.observationId, recorded.revisions.at(-1)?.after?.id);
+    assert.ok(final.evidenceIds.length > 0);
+    assert.doesNotMatch(
+      JSON.stringify(raw),
+      /super-secret|秘密|Private recipient|recipient-input|Private clipboard/u,
+    );
+
+    const immutableRaw = structuredClone(raw);
+    const actionIds = recorded.revisions
+      .at(-1)!
+      .actions.map((action) => action.id)
+      .reverse();
+    session = await store.reorder(session.id, actionIds);
+    session = await store.replace(session.id, actionIds[0]!, {
+      kind: "type",
+      text: "new-private-value",
+      target: { label: "Different private selector" },
+    });
+    session = await store.trim(session.id, { actionIds });
+    assert.deepEqual(session.take?.rawEvents, immutableRaw);
+    assert.equal(session.take?.rawCaptureVersion, AUTHORING_RAW_CAPTURE_VERSION);
   });
 });

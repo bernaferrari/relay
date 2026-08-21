@@ -48,10 +48,17 @@ export { describeTarget, describeRecipeStep, glyphsForStep } from "./recipe-pres
 import {
   saveRecipeEvidenceImage,
   readRecipeEvidenceImage,
+  projectRecipeEvidenceImageArtifact,
+  projectStoredRecipeEvidenceImageArtifact,
   evidencePart,
   evidenceDir,
 } from "./recipe-evidence-store.js";
-export { saveRecipeEvidenceImage, readRecipeEvidenceImage };
+export {
+  saveRecipeEvidenceImage,
+  readRecipeEvidenceImage,
+  projectRecipeEvidenceImageArtifact,
+  projectStoredRecipeEvidenceImageArtifact,
+};
 import {
   formatRecipeYaml,
   listYamlRecipeFiles,

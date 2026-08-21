@@ -86,9 +86,12 @@ without making them a second test format.
 | Project-scoped local storage, immutable evidence, access roles for configured service tokens, and authenticated remote serving when you operate the server yourself. | Hosted multi-tenant control/data planes, multi-node stores, fleet shards, quotas, or published service-level objectives. |
 | Expiring, revocable, redacted evidence sharing.                                                                                                                      | SSO/OIDC, managed group-to-role provisioning, and enterprise encryption-policy management.                               |
 
-Remote serving is self-managed: non-loopback HTTP requires a bearer token and evidence redaction.
-It should not be read as an offer of a hosted Relay cloud. For the evidence behind these boundaries,
-see [Enterprise readiness](./docs/ENTERPRISE_READINESS.md).
+Remote serving is self-managed: non-loopback HTTP requires a bearer token, evidence redaction, and
+an explicit static-token role, organization, and project scope. Browser access is opt-in: set
+`RELAY_ALLOWED_BROWSER_ORIGINS` to the exact Relay-owned HTTP(S) renderer origins, or use bearer
+authentication. Originless Electron and CLI clients keep the local desktop path. It should not be
+read as an offer of a hosted Relay cloud. For an executable remote setup, see
+[External identity](./docs/EXTERNAL_IDENTITY.md) and [Enterprise readiness](./docs/ENTERPRISE_READINESS.md).
 
 ## CLI and automation
 
@@ -123,7 +126,11 @@ input so two people or agents cannot silently drive the same target.
 For browser-only UI development, run the service and product app separately:
 
 ```bash
+# Terminal 1: explicitly trust the Relay-owned Vite renderer, not every local site.
+export RELAY_ALLOWED_BROWSER_ORIGINS="http://127.0.0.1:5173"
 pnpm ensure:serve
+
+# Terminal 2
 pnpm dev:app
 ```
 

@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  authenticatedBrowserOrigin,
   allowedBrowserOrigin,
+  assertExplicitRemoteServiceTokenScope,
   assertSafeBinding,
   authorizationMatches,
+  configuredBrowserOrigins,
   isLoopbackHost,
   isLocalWorkspacePath,
   resolveCommandActor,
@@ -32,12 +35,63 @@ describe("server security", () => {
     assert.equal(authorizationMatches(`Bearer ${token}`, token), true);
   });
 
-  it("allows only loopback browser origins for the local API", () => {
-    assert.equal(allowedBrowserOrigin(undefined), null);
-    assert.equal(allowedBrowserOrigin("http://localhost:5173"), "http://localhost:5173");
-    assert.equal(allowedBrowserOrigin("http://127.0.0.1:4173"), "http://127.0.0.1:4173");
-    assert.equal(allowedBrowserOrigin("https://relay.example"), null);
-    assert.equal(allowedBrowserOrigin("null"), null);
+  it("allows only explicitly configured Relay browser origins for local trust", () => {
+    const origins = configuredBrowserOrigins("http://relay.local:5173,https://console.relay.test");
+    assert.equal(allowedBrowserOrigin(undefined, origins), null);
+    assert.equal(
+      allowedBrowserOrigin("http://relay.local:5173", origins),
+      "http://relay.local:5173",
+    );
+    assert.equal(allowedBrowserOrigin("http://localhost:5173", origins), null);
+    assert.equal(allowedBrowserOrigin("http://127.0.0.1:4173", origins), null);
+    assert.equal(
+      allowedBrowserOrigin("https://console.relay.test", origins),
+      "https://console.relay.test",
+    );
+    assert.equal(allowedBrowserOrigin("null", origins), null);
+    assert.equal(
+      authenticatedBrowserOrigin("https://self-managed.relay.test"),
+      "https://self-managed.relay.test",
+    );
+    assert.equal(authenticatedBrowserOrigin("file://relay"), null);
+    assert.throws(
+      () => configuredBrowserOrigins("http://relay.local:5173/not-an-origin"),
+      /invalid origin/,
+    );
+    assert.throws(() => configuredBrowserOrigins("*"), /invalid origin/);
+  });
+
+  it("requires an explicit role and scope for a network-visible static token", () => {
+    const previous = {
+      organization: process.env.RELAY_AUTH_ORGANIZATION_ID,
+      projects: process.env.RELAY_AUTH_PROJECT_IDS,
+      role: process.env.RELAY_AUTH_ROLE,
+    };
+    delete process.env.RELAY_AUTH_ORGANIZATION_ID;
+    delete process.env.RELAY_AUTH_PROJECT_IDS;
+    delete process.env.RELAY_AUTH_ROLE;
+    try {
+      assert.throws(
+        () => assertExplicitRemoteServiceTokenScope("0.0.0.0", "a-secure-token-with-24-chars"),
+        /RELAY_AUTH_ROLE.*RELAY_AUTH_ORGANIZATION_ID.*RELAY_AUTH_PROJECT_IDS/,
+      );
+      process.env.RELAY_AUTH_ROLE = "runner";
+      process.env.RELAY_AUTH_ORGANIZATION_ID = "acme";
+      process.env.RELAY_AUTH_PROJECT_IDS = "mobile-ios,mobile-android";
+      assert.doesNotThrow(() =>
+        assertExplicitRemoteServiceTokenScope("0.0.0.0", "a-secure-token-with-24-chars"),
+      );
+      assert.doesNotThrow(() =>
+        assertExplicitRemoteServiceTokenScope("127.0.0.1", "a-secure-token-with-24-chars"),
+      );
+    } finally {
+      if (previous.organization === undefined) delete process.env.RELAY_AUTH_ORGANIZATION_ID;
+      else process.env.RELAY_AUTH_ORGANIZATION_ID = previous.organization;
+      if (previous.projects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
+      else process.env.RELAY_AUTH_PROJECT_IDS = previous.projects;
+      if (previous.role === undefined) delete process.env.RELAY_AUTH_ROLE;
+      else process.env.RELAY_AUTH_ROLE = previous.role;
+    }
   });
 
   it("keeps unowned workspace assets on the local control plane", () => {

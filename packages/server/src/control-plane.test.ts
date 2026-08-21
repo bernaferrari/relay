@@ -62,15 +62,19 @@ test("project-scoped variables persist and expose revision conflicts", async () 
   }
 });
 
-test("loopback API rejects hostile browser origins and reflects Relay origins", async () => {
-  const server = await startServer({ host: "127.0.0.1", port: 0 });
+test("loopback API accepts only configured Relay browser origins without bearer auth", async () => {
+  const origin = "http://relay-desktop.test:5173";
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    browserOrigins: [origin],
+  });
   const url = `http://127.0.0.1:${server.port}/health`;
   try {
-    const denied = await fetch(url, { headers: { Origin: "https://hostile.example" } });
+    const denied = await fetch(url, { headers: { Origin: "http://localhost:5173" } });
     assert.equal(denied.status, 403);
     assert.equal(denied.headers.get("access-control-allow-origin"), null);
 
-    const origin = "http://localhost:5173";
     const allowed = await fetch(url, {
       headers: { Origin: origin, ...operationHeaders("system.health.get") },
     });
@@ -78,6 +82,79 @@ test("loopback API rejects hostile browser origins and reflects Relay origins", 
     assert.equal(allowed.headers.get("access-control-allow-origin"), origin);
   } finally {
     await server.close();
+  }
+});
+
+test("authenticated browser requests may use an unconfigured origin without granting local trust", async () => {
+  const token = "browser-service-token-with-32-characters";
+  const origin = "https://self-managed.relay.test";
+  const server = await startServer({ host: "127.0.0.1", port: 0, token });
+  const url = `http://127.0.0.1:${server.port}/health`;
+  try {
+    const denied = await fetch(url, { headers: { Origin: origin } });
+    assert.equal(denied.status, 401);
+    assert.equal(denied.headers.get("access-control-allow-origin"), null);
+
+    const preflight = await fetch(url, {
+      method: "OPTIONS",
+      headers: {
+        Origin: origin,
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "authorization",
+      },
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get("access-control-allow-origin"), origin);
+
+    const allowed = await fetch(url, {
+      headers: { Origin: origin, Authorization: `Bearer ${token}` },
+    });
+    assert.equal(allowed.status, 200);
+    assert.equal(allowed.headers.get("access-control-allow-origin"), origin);
+
+    const unauthenticatedPreflight = await fetch(url, {
+      method: "OPTIONS",
+      headers: {
+        Origin: origin,
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "content-type",
+      },
+    });
+    assert.equal(unauthenticatedPreflight.status, 403);
+  } finally {
+    await server.close();
+  }
+});
+
+test("network static tokens refuse implicit administrator and default project scope", async () => {
+  const previous = {
+    organization: process.env.RELAY_AUTH_ORGANIZATION_ID,
+    projects: process.env.RELAY_AUTH_PROJECT_IDS,
+    redaction: process.env.RELAY_REDACTION_MODE,
+    role: process.env.RELAY_AUTH_ROLE,
+  };
+  delete process.env.RELAY_AUTH_ORGANIZATION_ID;
+  delete process.env.RELAY_AUTH_PROJECT_IDS;
+  delete process.env.RELAY_AUTH_ROLE;
+  process.env.RELAY_REDACTION_MODE = "on";
+  try {
+    await assert.rejects(
+      startServer({
+        host: "0.0.0.0",
+        port: 0,
+        token: "missing-static-service-scope-token",
+      }),
+      /RELAY_AUTH_ROLE.*RELAY_AUTH_ORGANIZATION_ID.*RELAY_AUTH_PROJECT_IDS/,
+    );
+  } finally {
+    if (previous.organization === undefined) delete process.env.RELAY_AUTH_ORGANIZATION_ID;
+    else process.env.RELAY_AUTH_ORGANIZATION_ID = previous.organization;
+    if (previous.projects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
+    else process.env.RELAY_AUTH_PROJECT_IDS = previous.projects;
+    if (previous.redaction === undefined) delete process.env.RELAY_REDACTION_MODE;
+    else process.env.RELAY_REDACTION_MODE = previous.redaction;
+    if (previous.role === undefined) delete process.env.RELAY_AUTH_ROLE;
+    else process.env.RELAY_AUTH_ROLE = previous.role;
   }
 });
 
@@ -136,9 +213,15 @@ test("mobile setup endpoints report prerequisites and persist Apple runner setti
 
 test("authenticated network service cannot read unowned workspace assets", async () => {
   const token = "test-service-token-with-24-characters";
-  const previousProjects = process.env.RELAY_AUTH_PROJECT_IDS;
-  const previousRedaction = process.env.RELAY_REDACTION_MODE;
+  const previous = {
+    organization: process.env.RELAY_AUTH_ORGANIZATION_ID,
+    projects: process.env.RELAY_AUTH_PROJECT_IDS,
+    redaction: process.env.RELAY_REDACTION_MODE,
+    role: process.env.RELAY_AUTH_ROLE,
+  };
+  process.env.RELAY_AUTH_ORGANIZATION_ID = "acme";
   process.env.RELAY_AUTH_PROJECT_IDS = "project-a";
+  process.env.RELAY_AUTH_ROLE = "runner";
   process.env.RELAY_REDACTION_MODE = "on";
   const server = await startServer({ host: "0.0.0.0", port: 0, token });
   try {
@@ -161,10 +244,14 @@ test("authenticated network service cannot read unowned workspace assets", async
     assert.equal(health.status, 200);
   } finally {
     await server.close();
-    if (previousProjects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
-    else process.env.RELAY_AUTH_PROJECT_IDS = previousProjects;
-    if (previousRedaction === undefined) delete process.env.RELAY_REDACTION_MODE;
-    else process.env.RELAY_REDACTION_MODE = previousRedaction;
+    if (previous.organization === undefined) delete process.env.RELAY_AUTH_ORGANIZATION_ID;
+    else process.env.RELAY_AUTH_ORGANIZATION_ID = previous.organization;
+    if (previous.projects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
+    else process.env.RELAY_AUTH_PROJECT_IDS = previous.projects;
+    if (previous.redaction === undefined) delete process.env.RELAY_REDACTION_MODE;
+    else process.env.RELAY_REDACTION_MODE = previous.redaction;
+    if (previous.role === undefined) delete process.env.RELAY_AUTH_ROLE;
+    else process.env.RELAY_AUTH_ROLE = previous.role;
   }
 });
 
@@ -172,10 +259,16 @@ test("authenticated network service only sees schedules for its project", async 
   const token = "test-service-token-with-24-characters";
   const root = await mkdtemp(join(tmpdir(), "relay-schedules-scope-"));
   const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
-  const previousProjects = process.env.RELAY_AUTH_PROJECT_IDS;
-  const previousRedaction = process.env.RELAY_REDACTION_MODE;
+  const previous = {
+    organization: process.env.RELAY_AUTH_ORGANIZATION_ID,
+    projects: process.env.RELAY_AUTH_PROJECT_IDS,
+    redaction: process.env.RELAY_REDACTION_MODE,
+    role: process.env.RELAY_AUTH_ROLE,
+  };
   process.env.RELAY_WORKSPACE_ROOT = root;
+  process.env.RELAY_AUTH_ORGANIZATION_ID = "acme";
   process.env.RELAY_AUTH_PROJECT_IDS = "project-a";
+  process.env.RELAY_AUTH_ROLE = "runner";
   process.env.RELAY_REDACTION_MODE = "on";
   const { saveSchedule } = await import("@relay/core");
   await saveSchedule({
@@ -214,10 +307,14 @@ test("authenticated network service only sees schedules for its project", async 
     await server.close();
     if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
-    if (previousProjects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
-    else process.env.RELAY_AUTH_PROJECT_IDS = previousProjects;
-    if (previousRedaction === undefined) delete process.env.RELAY_REDACTION_MODE;
-    else process.env.RELAY_REDACTION_MODE = previousRedaction;
+    if (previous.organization === undefined) delete process.env.RELAY_AUTH_ORGANIZATION_ID;
+    else process.env.RELAY_AUTH_ORGANIZATION_ID = previous.organization;
+    if (previous.projects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
+    else process.env.RELAY_AUTH_PROJECT_IDS = previous.projects;
+    if (previous.redaction === undefined) delete process.env.RELAY_REDACTION_MODE;
+    else process.env.RELAY_REDACTION_MODE = previous.redaction;
+    if (previous.role === undefined) delete process.env.RELAY_AUTH_ROLE;
+    else process.env.RELAY_AUTH_ROLE = previous.role;
     await rm(root, { recursive: true, force: true });
   }
 });

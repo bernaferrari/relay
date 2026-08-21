@@ -6,10 +6,13 @@ import http from "node:http";
 import { URL } from "node:url";
 import { readFile } from "node:fs/promises";
 import {
+  authenticatedBrowserOrigin,
   allowedBrowserOrigin,
+  assertExplicitRemoteServiceTokenScope,
   isLocalWorkspacePath,
   assertSafeBinding,
   authenticateRequest,
+  configuredBrowserOrigins,
   isLoopbackHost,
   listAuditEvents,
   recordAudit,
@@ -112,6 +115,8 @@ export type StartServerOptions = {
   port?: number;
   host?: string;
   token?: string;
+  /** Exact HTTP(S) renderer origins that may use local browser trust. */
+  browserOrigins?: readonly string[];
   /**
    * Optional trusted bridge for externally verified bearer credentials. Relay
    * does not decode JWTs itself; see external-identity.ts for the contract.
@@ -151,6 +156,28 @@ function collectReports(limit: number, scope?: RequestContext): JobReport[] {
     .map(toJobReport);
 }
 
+function setCorsOrigin(response: http.ServerResponse, origin: string): void {
+  response.setHeader("Access-Control-Allow-Origin", origin);
+  const existing = response.getHeader("Vary");
+  const vary = Array.isArray(existing) ? existing.join(", ") : existing;
+  response.setHeader("Vary", vary ? `${vary}, Origin` : "Origin");
+}
+
+/** Browser preflights cannot carry the bearer itself. They may be reflected
+ * only when the browser declares it will send Authorization on the real
+ * request, which remains fully authenticated before any route is invoked. */
+function requestsBearerAuthentication(req: http.IncomingMessage): boolean {
+  const requestedMethod = req.headers["access-control-request-method"];
+  const requestedHeaders = req.headers["access-control-request-headers"];
+  const headerList = Array.isArray(requestedHeaders)
+    ? requestedHeaders.join(",")
+    : (requestedHeaders ?? "");
+  return (
+    Boolean(requestedMethod) &&
+    headerList.split(",").some((value) => value.trim().toLowerCase() === "authorization")
+  );
+}
+
 const serverStartedAt = Date.now();
 let lastKnownDeviceCount: number | null = null;
 const PRODUCT_VERSION = "0.1.0";
@@ -161,6 +188,7 @@ async function handleRequest(
   token?: string,
   externalIdentityVerifier?: ExternalIdentityVerifier,
   localTrusted = true,
+  browserOrigins: readonly string[] = [],
   sse = createSseHub(CORS_HEADERS),
   authoringRuntime?: AuthoringRuntime,
   liveVideoStream = streamTargetVideo,
@@ -177,17 +205,18 @@ async function handleRequest(
   const pathname = url.pathname.replace(/\/+$/, "") || "/";
 
   const requestOrigin = req.headers.origin;
-  const corsOrigin = allowedBrowserOrigin(requestOrigin);
-  if (requestOrigin && !corsOrigin) {
-    json(res, 403, { error: "This browser origin is not allowed to access Relay" });
-    return;
-  }
-  if (corsOrigin) {
-    res.setHeader("Access-Control-Allow-Origin", corsOrigin);
-    res.setHeader("Vary", "Origin");
-  }
+  const configuredCorsOrigin = allowedBrowserOrigin(requestOrigin, browserOrigins);
+  if (configuredCorsOrigin) setCorsOrigin(res, configuredCorsOrigin);
 
   if (method === "OPTIONS") {
+    const corsOrigin =
+      configuredCorsOrigin ??
+      (requestsBearerAuthentication(req) ? authenticatedBrowserOrigin(requestOrigin) : null);
+    if (requestOrigin && !corsOrigin) {
+      json(res, 403, { error: "This browser origin is not allowed to access Relay" });
+      return;
+    }
+    if (corsOrigin && !configuredCorsOrigin) setCorsOrigin(res, corsOrigin);
     res.writeHead(204, CORS_HEADERS);
     res.end();
     return;
@@ -208,6 +237,18 @@ async function handleRequest(
     json(res, 401, { error: "Authentication required" });
     return;
   }
+
+  // Originless Electron/CLI traffic keeps its local trusted behavior. A
+  // browser origin must instead be explicitly Relay-owned, or prove bearer
+  // authentication before it can reach an administrative route.
+  const corsOrigin =
+    configuredCorsOrigin ??
+    (authentication.kind !== "local" ? authenticatedBrowserOrigin(requestOrigin) : null);
+  if (requestOrigin && !corsOrigin) {
+    json(res, 403, { error: "This browser origin is not allowed to access Relay" });
+    return;
+  }
+  if (corsOrigin && !configuredCorsOrigin) setCorsOrigin(res, corsOrigin);
 
   let resolvedScope: RequestContext | undefined;
   try {
@@ -717,6 +758,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   const preferredPort = opts.port ?? 8787;
   const token = opts.token ?? process.env.RELAY_AUTH_TOKEN;
   const externalIdentityVerifier = opts.externalIdentityVerifier;
+  const browserOrigins = opts.browserOrigins
+    ? configuredBrowserOrigins(opts.browserOrigins.join(","))
+    : configuredBrowserOrigins();
   const redaction = await loadRedactionPolicy();
   await loadEvidenceCollectionPolicy();
   for (const recoveryScope of await authoringSessions.recoveryScopes()) {
@@ -759,6 +803,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   if (!isLoopbackHost(host) && !redaction.enabled) {
     throw new Error("Refusing a non-local binding while evidence redaction is disabled");
   }
+  assertExplicitRemoteServiceTokenScope(host, token);
   const sse = createSseHub(CORS_HEADERS);
   const server = http.createServer((req, res) => {
     void handleRequest(
@@ -767,6 +812,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
       token,
       externalIdentityVerifier,
       isLoopbackHost(host),
+      browserOrigins,
       sse,
       opts.authoringRuntime,
       opts.liveVideoStream,

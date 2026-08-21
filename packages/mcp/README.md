@@ -49,16 +49,20 @@ deliberately.
 ## Tool profiles
 
 Relay advertises a role-sized tool set instead of sending every operation to every agent. Select one
-with `--profile <name>` or `RELAY_MCP_PROFILE`; the default is the compact `author` profile.
+with `--profile <name>` or `RELAY_MCP_PROFILE`; the default is the compact `control` profile.
 Choose `test` when one agent should read, create, propose, compile, run, cancel, and inspect evidence
 for graph-native Tests without loading the 184-operation `full` catalog.
 
 | Profile   | Intended use                                                               |
 | --------- | -------------------------------------------------------------------------- |
+| `control` | Default direct target observation, input, recovery, and lease management   |
+| `map`     | Discovery and observation proposals without full authoring edits           |
 | `observe` | Read-only project, device, App Map, proposal, run, and evidence inspection |
 | `author`  | Default App Map editing, device recording, and proposal creation           |
 | `test`    | Graph Test creation, review, compilation, one-pass runs, and evidence      |
-| `execute` | Device control, reusable actions, jobs, matrices, and individual steps     |
+| `run`     | Test/Combine execution, jobs, and run evidence                             |
+| `execute` | Alias of `run` for execution-focused agents                                |
+| `locale`  | Language Variables, profiles, Combine campaigns, and analysis              |
 | `review`  | Proposal/take repair, replay, approval, and run-baseline review            |
 | `admin`   | Workspace policy, projects, targets, schedules, matrices, and retention    |
 | `full`    | Every canonical Relay operation; intended for trusted orchestration only   |

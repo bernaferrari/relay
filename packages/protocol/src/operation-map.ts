@@ -31,6 +31,10 @@ import type {
   RegisteredBuildPreflight,
   TargetWorkerStatus,
 } from "./target-runtime.js";
+import type {
+  LocalCampaignCapacityPreflight,
+  LocalCampaignCapacityPreflightInput,
+} from "./campaign-capacity-plan.js";
 import type { IosSessionOperationLifecycle, TargetRuntimeReadiness } from "./target-contract.js";
 import type { RunReview } from "./run-review.js";
 import type { CampaignRepairOperationMap } from "./run-repair-operations.js";
@@ -673,6 +677,10 @@ type SpecificOperationMap = {
   "target-worker.list": {
     input: Record<string, never>;
     output: { workers: TargetWorkerStatus[] };
+  };
+  "campaign.capacity.preflight": {
+    input: LocalCampaignCapacityPreflightInput;
+    output: { preflight: LocalCampaignCapacityPreflight };
   };
   "lease.list": {
     input: { status?: "active" | "all" };

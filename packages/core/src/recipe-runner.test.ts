@@ -14,13 +14,14 @@ import {
   retryDeferredCampaignChecks,
   runCampaignCheck,
 } from "./recipe-runner-campaign-checks.js";
+import { IosSnapshotStaleAfterInputError } from "./ios-snapshot-flight.js";
 
 it("recognizes right-to-left app locales for mirrored point fallbacks", () => {
   assert.equal(isRightToLeftRun({ language: "ar" }), true);
   assert.equal(isRightToLeftRun({ locale: "he-IL" }), true);
   assert.equal(isRightToLeftRun({ language: "pt-BR" }), false);
 });
-import { IosMutationOutcomeUnknownError, type Device } from "./device.js";
+import { IosMutationOutcomeUnknownError, pressPoint, snapshot, type Device } from "./device.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { currentVerifiedScreen, type VerifiedScreenCheckpoint } from "./recipe-runner-context.js";
 import type { TestJob } from "./session.js";
@@ -3256,6 +3257,61 @@ describe("runRecipeStep expect-screen", () => {
       /return-edge open-widget: reviewed inverse is required for widget → settings.*no Back was attempted/u,
     );
     assert.equal(backs, 0);
+  });
+
+  it("never lets a delayed pre-tap iOS tree satisfy a later expect-screen", async () => {
+    const serial = "ios-delayed-expect-fence";
+    let snapshotCalls = 0;
+    let releasePreTapTree!: (value: { nodes: typeof nodes }) => void;
+    const preTapTree = new Promise<{ nodes: typeof nodes }>((resolve) => {
+      releasePreTapTree = resolve;
+    });
+    const device = stubDevice({
+      snapshot: () => {
+        snapshotCalls += 1;
+        return snapshotCalls === 1 ? preTapTree : Promise.resolve({ nodes: [] });
+      },
+      press: () => Promise.resolve({}),
+    });
+
+    // Start an AX traversal while the previous screen is still visible.
+    const delayedRead = runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
+      snapshot(device),
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    // The tap is acknowledged before the old traversal completes.
+    await runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
+      pressPoint(device, 48, 72),
+    );
+
+    // An expect-screen for the old fingerprint must not pass by sharing that
+    // delayed tree. It receives an honest unavailable semantic attempt until
+    // XCTest settles, rather than opening an overlapping tree request.
+    await assert.rejects(
+      runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
+        runExpectScreenStep(
+          device,
+          {
+            kind: "expect-screen",
+            screenId: "old-screen",
+            screenTitle: "Old screen",
+            fingerprint,
+            timeoutMs: 0,
+          },
+          {
+            log: () => {},
+            runtime: {},
+            observeVisualFingerprint: async () => "newer-pixels",
+          },
+        ),
+      ),
+      /expect-screen/u,
+    );
+    assert.equal(snapshotCalls, 1, "post-tap expect must not overlap the old XCTest read");
+
+    releasePreTapTree({ nodes });
+    await assert.rejects(delayedRead, IosSnapshotStaleAfterInputError);
   });
 
   it("persists immutable lineage after a fresh selective-repair checkpoint matches", async () => {

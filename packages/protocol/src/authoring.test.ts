@@ -43,6 +43,37 @@ test("Authoring Session parsing rejects unknown lifecycle states", () => {
   );
 });
 
+test("legacy Takes without raw capture remain wire-compatible", () => {
+  const legacy: AuthoringSession = {
+    ...session("reviewing"),
+    take: {
+      id: "take-before-raw-capture",
+      state: "reviewing",
+      createdAt: 10,
+      updatedAt: 11,
+      currentRevision: 1,
+      revisions: [
+        {
+          id: "take-before-raw-capture:revision:1",
+          takeId: "take-before-raw-capture",
+          revision: 1,
+          createdAt: 10,
+          createdBy: "agent:a",
+          reason: "recording",
+          actions: [],
+          evidence: [],
+        },
+      ],
+      replayAttempts: [],
+    },
+  };
+
+  const parsed = parseAuthoringSession(JSON.parse(serializeAuthoringSession(legacy)));
+  assert.deepEqual(parsed, legacy);
+  assert.equal(parsed.take?.rawCaptureVersion, undefined);
+  assert.equal(parsed.take?.rawEvents, undefined);
+});
+
 test("agent mutation output summarizes a take without repeating evidence or semantic nodes", () => {
   const value: AuthoringSession = {
     ...session("reviewing"),

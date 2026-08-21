@@ -36,7 +36,8 @@ export type CampaignCapacityExclusionReason =
   | "worker-unknown"
   | "worker-active"
   | "worker-queued"
-  | "worker-saturated";
+  | "worker-saturated"
+  | "host-saturated";
 
 export type CampaignCapacityExcludedTarget = {
   targetId: string;
@@ -54,10 +55,20 @@ export type CampaignCapacitySlot = {
 /** Capacity observed from an existing local/hybrid worker, with no mutation. */
 export type CampaignCapacityWorker = Pick<
   TargetWorkerStatus,
-  "workerId" | "capacity" | "active" | "queued" | "activeTargets" | "queuedTargets"
+  "workerId" | "capacity" | "active" | "queued" | "activeTargets" | "queuedTargets" | "host"
 >;
 
 export type CampaignCapacityWorkerPlan = {
+  workerId: string;
+  capacity: number;
+  active: number;
+  queued: number;
+  freeCapacity: number;
+  slotCount: number;
+};
+
+/** A shared local-host/provider ceiling observed across one or more target lanes. */
+export type CampaignCapacityHostPlan = {
   workerId: string;
   capacity: number;
   active: number;
@@ -103,6 +114,8 @@ export type CampaignCapacityPlan = {
   slots: CampaignCapacitySlot[];
   excludedTargets: CampaignCapacityExcludedTarget[];
   workers: CampaignCapacityWorkerPlan[];
+  /** Aggregate ceilings applied after each physical target lane is considered. */
+  hosts: CampaignCapacityHostPlan[];
   platforms: CampaignCapacityPlatformPlan[];
   serial: CampaignCapacityTimeEstimate;
   parallel: CampaignCapacityTimeEstimate & { idealSpeedup: number | null };
@@ -127,4 +140,98 @@ export type CampaignCapacityPlanInput = {
   workItemsByPlatform?: Partial<Record<CampaignCapacityTarget["platform"], number>>;
   estimatedWorkItemDurationMs: number;
   timeBudgetMs?: number;
+};
+
+/** The target selector used by the local-device preflight. It stays explicit
+ * so a missing serial can be reported against the requested platform rather
+ * than guessed from its text. */
+export type LocalCampaignCapacityTargetInput = {
+  targetId: string;
+  platform: "android" | "ios";
+};
+
+/** The source of one duration estimate. A supplied estimate is useful for
+ * rough sizing, but is never equivalent to an observed service-level result. */
+export type CampaignCapacityDurationProvenance = "observed-p50" | "observed-p95" | "supplied";
+
+export type CampaignCapacityDurationInput = {
+  /** Duration of one independently executable work item, excluding campaign headroom. */
+  workItemDurationMs: number;
+  provenance: CampaignCapacityDurationProvenance;
+  /** Required for observed p50/p95 values. */
+  observedAt?: number;
+  /** Required for observed p50/p95 values. */
+  sampleCount?: number;
+  /** Required for observed p50/p95 values; makes measurement freshness explicit. */
+  maxAgeMs?: number;
+};
+
+/** Read-only request for sizing independent local Android/iOS work. */
+export type LocalCampaignCapacityPreflightInput = {
+  targets: LocalCampaignCapacityTargetInput[];
+  workItems: number;
+  /** Every work item is explicitly assigned to its platform partition. */
+  workItemsByPlatform: Partial<Record<"android" | "ios", number>>;
+  duration: CampaignCapacityDurationInput;
+  /** Whole critical-path budget requested by the caller. */
+  deadlineMs: number;
+  /** Critical-path reserve for install/launch/setup, applied once to the campaign. */
+  setupHeadroomMs?: number;
+  /** Critical-path reserve for one recovery/repair path, applied once to the campaign. */
+  recoveryHeadroomMs?: number;
+};
+
+export type LocalCampaignCapacityTargetReason =
+  | "missing"
+  | "platform-mismatch"
+  | "offline"
+  | "not-booted"
+  | "developer-mode-disabled"
+  | "developer-services-unavailable"
+  | "stale-readiness";
+
+/** The concrete local observation used to derive one planner target. */
+export type LocalCampaignCapacityTargetFact = {
+  targetId: string;
+  requestedPlatform: "android" | "ios";
+  observedPlatform?: "android" | "ios";
+  availability: CampaignCapacityTargetAvailability;
+  lease: CampaignCapacityTargetLease;
+  workerId: string;
+  /** A never-seen local lane has a deterministic one-target policy, but its
+   * idle state is derived rather than read from the in-memory scheduler. */
+  workerFact: "scheduler" | "derived-local-lane";
+  reason?: LocalCampaignCapacityTargetReason;
+};
+
+export type CampaignCapacityMeasurementAssurance =
+  | "measured-current"
+  | "measurement-stale"
+  | "supplied-estimate";
+
+export type LocalCampaignCapacityDeadlineAssessment = {
+  requestedMs: number;
+  reservedHeadroomMs: number;
+  workBudgetMs: number;
+  /** Work duration plus the once-per-campaign critical-path reserve. */
+  estimatedParallelDurationMs: number | null;
+  capacity: "within-budget" | "outside-budget";
+  assurance: CampaignCapacityMeasurementAssurance;
+  /** True only for a current observed duration and presently available slots.
+   * This remains a read-only preflight, never an admission or lease guarantee. */
+  achievableWithCurrentCapacity: boolean;
+};
+
+/** A truthful local-device sizing result. It captures observations but never
+ * leases, queues, reserves, or otherwise changes target state. */
+export type LocalCampaignCapacityPreflight = {
+  checkedAt: number;
+  input: LocalCampaignCapacityPreflightInput;
+  duration: CampaignCapacityDurationInput & {
+    assurance: CampaignCapacityMeasurementAssurance;
+  };
+  targets: LocalCampaignCapacityTargetFact[];
+  deadline: LocalCampaignCapacityDeadlineAssessment;
+  plan: CampaignCapacityPlan;
+  assumptions: string[];
 };

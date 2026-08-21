@@ -17,6 +17,7 @@ import { runRepairOperationDefinitions } from "./run-repair-operations.js";
 import { runShareOperationDefinitions } from "./run-share.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
+import { campaignCapacityOperationDefinitions } from "./campaign-capacity-operation-definitions.js";
 import { createCorpusOperationDefinitions } from "./corpus-operation-definitions.js";
 import { createDiscoveryOperationDefinitions } from "./discovery-operation-definitions.js";
 import { combineOperationDefinitions } from "./combine-operation-definitions.js";
@@ -1306,11 +1307,8 @@ const authoringSessionListInputParser = objectParser<OperationInput<"authoring.s
 );
 
 const { command, query } = createOperationBuilders<OperationId>(operationRecordParser);
-
 const discoveryOperationDefinitions = createDiscoveryOperationDefinitions(operationRecordParser);
-
 const corpusOperationDefinitions = createCorpusOperationDefinitions(operationRecordParser);
-
 const appMapOperationDefinitions = createAppMapOperationDefinitions(operationRecordParser, {
   boolean,
   emptyInputParser,
@@ -1610,6 +1608,7 @@ export const operationDefinitions = [
       "workers",
     ),
   }),
+  ...campaignCapacityOperationDefinitions,
   query("lease.list", "List target leases", "/device-leases", {
     input: leaseListInputParser,
     output: arrayFieldParser("leases response", "leases"),

@@ -11,7 +11,7 @@ import type {
   Revisioned,
   TestData,
 } from "@relay/protocol";
-import { loadStoredAppMap } from "./app-map/stored-map-repair.js";
+import { loadStoredAppMap, type StoredAppMapDisposition } from "./app-map/stored-map-repair.js";
 import { notifyControlWrite, runControlWrite, type DeviceEvent } from "./events.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { join } from "node:path";
@@ -53,6 +53,13 @@ export type DegradedAppMap = {
   key: string;
   id?: string;
   error: string;
+  disposition: Extract<StoredAppMapDisposition, "read-only" | "quarantined">;
+};
+
+/** Opaque source bytes retained before a map was normalized or quarantined. */
+export type AppMapRecoveryDocument = {
+  document: string;
+  disposition: StoredAppMapDisposition;
 };
 
 export function collaborationStateRoot(): string {
@@ -69,12 +76,43 @@ function documents<T>(rows: Array<{ document?: string }>): T[] {
     .filter((item): item is T => item !== undefined);
 }
 
-function degradedFromRaw(key: string, error: string, raw: unknown): DegradedAppMap {
+function degradedFromRaw(
+  key: string,
+  error: string,
+  raw: unknown,
+  disposition: Extract<StoredAppMapDisposition, "read-only" | "quarantined"> = "quarantined",
+): DegradedAppMap {
   return {
     key,
     error,
+    disposition,
     id: isRecord(raw) && typeof raw.id === "string" ? raw.id : undefined,
   };
+}
+
+function persistedDisposition(
+  value: string | null | undefined,
+): Extract<StoredAppMapDisposition, "read-only" | "quarantined"> {
+  return value === "read-only" ? "read-only" : "quarantined";
+}
+
+function storedDisposition(value: string | null | undefined): StoredAppMapDisposition {
+  switch (value) {
+    case "migrated":
+    case "read-only":
+    case "quarantined":
+      return value;
+    default:
+      return "ready";
+  }
+}
+
+function parseAppMapDocument(source: string): unknown | undefined {
+  try {
+    return JSON.parse(source) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 export type ControlStore = {
@@ -96,6 +134,7 @@ export type ControlStore = {
   idempotency(key: string): number | string | undefined;
   upsertIdempotency(key: string, value: number | string): void;
   appMap(key: string): AppMap | undefined;
+  appMapRecoveryDocument(key: string): AppMapRecoveryDocument | undefined;
   hasAppMap(key: string): boolean;
   upsertAppMap(key: string, appMap: AppMap): void;
   deleteAppMap(key: string): boolean;
@@ -236,8 +275,26 @@ function createStore(db: DatabaseSync): ControlStore {
         | { document?: string; status?: string }
         | undefined;
       if (!row?.document || row.status !== "ok") return undefined;
-      const loaded = loadStoredAppMap(JSON.parse(row.document) as unknown, key);
+      const document = parseAppMapDocument(row.document);
+      if (document === undefined) return undefined;
+      const loaded = loadStoredAppMap(document, key);
       return loaded.ok ? loaded.appMap : undefined;
+    },
+    appMapRecoveryDocument(key) {
+      const row = db
+        .prepare("SELECT document, source_document, disposition FROM app_maps WHERE map_key = ?")
+        .get(key) as
+        | {
+            document?: string;
+            source_document?: string | null;
+            disposition?: string | null;
+          }
+        | undefined;
+      if (!row?.document) return undefined;
+      return {
+        document: row.source_document ?? row.document,
+        disposition: storedDisposition(row.disposition),
+      };
     },
     hasAppMap(key) {
       const row = db.prepare("SELECT 1 AS present FROM app_maps WHERE map_key = ?").get(key) as
@@ -254,7 +311,7 @@ function createStore(db: DatabaseSync): ControlStore {
     listAppMaps(projectId) {
       const rows = db
         .prepare(
-          `SELECT map_key, status, error, document FROM app_maps
+          `SELECT map_key, status, error, document, disposition FROM app_maps
            WHERE project_id = ? ORDER BY updated_at DESC`,
         )
         .all(projectId) as Array<{
@@ -262,53 +319,93 @@ function createStore(db: DatabaseSync): ControlStore {
         status: string;
         error?: string | null;
         document: string;
+        disposition?: string | null;
       }>;
       const appMaps: AppMap[] = [];
       const degraded: DegradedAppMap[] = [];
       for (const row of rows) {
         if (row.status === "degraded") {
           let raw: unknown = row.document;
-          try {
-            raw = JSON.parse(row.document) as unknown;
-          } catch {
-            /* keep raw string */
-          }
-          degraded.push(degradedFromRaw(row.map_key, row.error ?? "unreadable App Map", raw));
+          raw = parseAppMapDocument(row.document) ?? raw;
+          degraded.push(
+            degradedFromRaw(
+              row.map_key,
+              row.error ?? "unreadable App Map",
+              raw,
+              persistedDisposition(row.disposition),
+            ),
+          );
           continue;
         }
-        const loaded = loadStoredAppMap(JSON.parse(row.document) as unknown, row.map_key);
+        const document = parseAppMapDocument(row.document);
+        if (document === undefined) {
+          degraded.push(
+            degradedFromRaw(row.map_key, "app map document JSON could not be parsed", row.document),
+          );
+          continue;
+        }
+        const loaded = loadStoredAppMap(document, row.map_key);
         if (loaded.ok) {
           appMaps.push(loaded.appMap);
           continue;
         }
-        degraded.push(degradedFromRaw(row.map_key, loaded.error, loaded.raw));
+        degraded.push(degradedFromRaw(row.map_key, loaded.error, loaded.raw, loaded.disposition));
       }
       return { appMaps, degraded };
     },
     persistAppMapRepairs() {
-      const rows = db.prepare("SELECT map_key, status, document FROM app_maps").all() as Array<{
+      const rows = db
+        .prepare("SELECT map_key, status, document, source_document, disposition FROM app_maps")
+        .all() as Array<{
         map_key: string;
         status: string;
         document: string;
+        source_document?: string | null;
+        disposition?: string | null;
       }>;
       let repaired = false;
       for (const row of rows) {
-        let raw: unknown;
-        try {
-          raw = JSON.parse(row.document) as unknown;
-        } catch {
-          continue;
-        }
-        const loaded = loadStoredAppMap(raw, row.map_key);
-        if (loaded.ok) {
-          if (loaded.repaired || row.status !== "ok") {
-            upsertHealthyAppMap(db, row.map_key, loaded.appMap);
+        const raw = parseAppMapDocument(row.document);
+        if (raw === undefined) {
+          if (
+            row.status !== "degraded" ||
+            persistedDisposition(row.disposition) !== "quarantined"
+          ) {
+            upsertAppMapRow(
+              db,
+              row.map_key,
+              row.document,
+              "degraded",
+              "app map document JSON could not be parsed",
+              Date.now(),
+              {
+                sourceDocument: row.source_document ?? row.document,
+                disposition: "quarantined",
+              },
+            );
             repaired = true;
           }
           continue;
         }
-        if (row.status !== "degraded") {
-          upsertAppMapRow(db, row.map_key, row.document, "degraded", loaded.error, Date.now());
+        const loaded = loadStoredAppMap(raw, row.map_key);
+        if (loaded.ok) {
+          if (loaded.repaired || loaded.migrated || row.status !== "ok") {
+            upsertHealthyAppMap(db, row.map_key, loaded.appMap, {
+              sourceDocument: row.source_document ?? JSON.stringify(loaded.original),
+              disposition: loaded.disposition,
+            });
+            repaired = true;
+          }
+          continue;
+        }
+        if (
+          row.status !== "degraded" ||
+          persistedDisposition(row.disposition) !== loaded.disposition
+        ) {
+          upsertAppMapRow(db, row.map_key, row.document, "degraded", loaded.error, Date.now(), {
+            sourceDocument: row.source_document ?? row.document,
+            disposition: loaded.disposition,
+          });
           repaired = true;
         }
       }
@@ -319,16 +416,24 @@ function createStore(db: DatabaseSync): ControlStore {
     },
     degradedMaps() {
       const rows = db
-        .prepare("SELECT map_key, error, document FROM app_maps WHERE status = 'degraded'")
-        .all() as Array<{ map_key: string; error?: string | null; document: string }>;
+        .prepare(
+          "SELECT map_key, error, document, disposition FROM app_maps WHERE status = 'degraded'",
+        )
+        .all() as Array<{
+        map_key: string;
+        error?: string | null;
+        document: string;
+        disposition?: string | null;
+      }>;
       return rows.map((row) => {
         let raw: unknown = row.document;
-        try {
-          raw = JSON.parse(row.document) as unknown;
-        } catch {
-          /* keep raw string */
-        }
-        return degradedFromRaw(row.map_key, row.error ?? "unreadable App Map", raw);
+        raw = parseAppMapDocument(row.document) ?? raw;
+        return degradedFromRaw(
+          row.map_key,
+          row.error ?? "unreadable App Map",
+          raw,
+          persistedDisposition(row.disposition),
+        );
       });
     },
     takeMigrationFlags() {

@@ -152,3 +152,35 @@ test("session factory freezes target selection behind an injected transport proj
   assert.equal(job.targetContext.serial, "emulator-5554");
   assert.equal(JSON.parse(JSON.stringify(job)).title, "transport projection");
 });
+
+test("session factory separates a physical target lane from a legacy host ceiling", () => {
+  const first = createSessionJob(
+    {
+      recipe: "settings-tour",
+      serial: "ipad-a",
+      platform: "ios",
+      workerId: "mac-xcode",
+      workerCapacity: 2,
+    },
+    { findJob: () => undefined, toTransport: (value) => value },
+  );
+
+  assert.equal(first.workerId, "local:ios:target:ipad-a");
+  assert.equal(first.workerCapacity, 1);
+  assert.equal(first.hostWorkerId, "mac-xcode");
+  assert.equal(first.hostWorkerCapacity, 2);
+
+  const retry = createSessionJob(
+    {
+      recipe: "settings-tour",
+      serial: "ipad-a",
+      platform: "ios",
+      retryOf: first.id,
+    },
+    { findJob: (id) => (id === first.id ? first : undefined), toTransport: (value) => value },
+  );
+
+  assert.equal(retry.workerId, "local:ios:target:ipad-a");
+  assert.equal(retry.hostWorkerId, "mac-xcode");
+  assert.equal(retry.hostWorkerCapacity, 2);
+});

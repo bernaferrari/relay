@@ -17,6 +17,7 @@ import {
   listCompatibilityMatrices,
   listAppMaps,
   listAppMapCatalog,
+  readAppMapRecoveryDocument,
   listDevicePools,
   listDeviceLeases,
   listDurableControlEvents,
@@ -35,7 +36,12 @@ import {
   recoverCollaborationState,
 } from "./collaboration.js";
 import { addAppMapScreen, APP_MAP_SCHEMA_VERSION } from "./app-map.js";
-import { CONTROL_DB_NAME, CONTROL_SCHEMA_VERSION, pruneControlEvents } from "./collaboration-db.js";
+import {
+  CONTROL_DB_NAME,
+  CONTROL_SCHEMA_VERSION,
+  openControlDatabase,
+  pruneControlEvents,
+} from "./collaboration-db.js";
 import { publish, subscribe } from "./events.js";
 import { readControlStore, withControlStore } from "./collaboration-store.js";
 
@@ -648,6 +654,150 @@ test("legacy collaboration.json migrates into SQLite once", async () => {
       (await listAppMaps("mobile")).map((map) => map.id),
       ["store"],
     );
+  });
+});
+
+test("unversioned App Map JSON migrates while retaining its original source document", async () => {
+  await withStateRoot("relay-state-app-map-legacy-source-", async (root) => {
+    const legacy = sampleStoredAppMap();
+    delete legacy.schemaVersion;
+    await writeFile(
+      join(root, "collaboration.json"),
+      JSON.stringify({
+        projects: [
+          {
+            id: "default",
+            organizationId: "local",
+            name: "Mobile QA",
+            createdAt: 100,
+            updatedAt: 100,
+          },
+        ],
+        appMaps: { "mobile:store": legacy },
+      }),
+      "utf8",
+    );
+
+    assert.deepEqual(
+      (await listAppMaps("mobile")).map((map) => map.id),
+      ["store"],
+    );
+    const db = controlDb(root);
+    try {
+      const row = db
+        .prepare("SELECT document, source_document, disposition FROM app_maps WHERE map_key = ?")
+        .get("mobile:store") as
+        | { document: string; source_document?: string | null; disposition?: string }
+        | undefined;
+      assert.ok(row);
+      assert.equal((JSON.parse(row.document) as { schemaVersion: number }).schemaVersion, 1);
+      assert.deepEqual(JSON.parse(row.source_document ?? "null"), legacy);
+      assert.equal(row.disposition, "migrated");
+    } finally {
+      db.close();
+    }
+  });
+});
+
+test("newer App Map JSON is quarantined as read-only without losing its source", async () => {
+  await withStateRoot("relay-state-app-map-future-source-", async (root) => {
+    const future = sampleStoredAppMap({ schemaVersion: APP_MAP_SCHEMA_VERSION + 1, future: true });
+    await writeFile(
+      join(root, "collaboration.json"),
+      JSON.stringify({ appMaps: { "mobile:store": future } }),
+      "utf8",
+    );
+
+    const catalog = await listAppMapCatalog("mobile");
+    assert.deepEqual(catalog.appMaps, []);
+    assert.equal(catalog.degraded?.[0]?.key, "mobile:store");
+    assert.equal(catalog.degraded?.[0]?.disposition, "read-only");
+    assert.deepEqual(await readAppMapRecoveryDocument("mobile", "store"), {
+      document: JSON.stringify(future),
+      disposition: "read-only",
+    });
+    const db = controlDb(root);
+    try {
+      const row = db
+        .prepare(
+          "SELECT status, document, source_document, disposition FROM app_maps WHERE map_key = ?",
+        )
+        .get("mobile:store") as
+        | {
+            status: string;
+            document: string;
+            source_document?: string | null;
+            disposition?: string;
+          }
+        | undefined;
+      assert.ok(row);
+      assert.equal(row.status, "degraded");
+      assert.equal(row.disposition, "read-only");
+      assert.deepEqual(JSON.parse(row.document), future);
+      assert.deepEqual(JSON.parse(row.source_document ?? "null"), future);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+test("resumes a partially applied App Map recovery-column migration", async () => {
+  await withStateRoot("relay-state-app-map-column-recovery-", async (root) => {
+    const path = join(root, CONTROL_DB_NAME);
+    const interrupted = new DatabaseSync(path);
+    const original = JSON.stringify(sampleStoredAppMap());
+    try {
+      interrupted.exec(`
+        CREATE TABLE app_maps (
+          map_key TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          app_map_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          error TEXT,
+          document TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        ALTER TABLE app_maps ADD COLUMN source_document TEXT;
+        PRAGMA user_version = 4;
+      `);
+      interrupted
+        .prepare(
+          `INSERT INTO app_maps(
+            map_key, project_id, app_map_id, status, error, document, source_document, updated_at
+          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run("mobile:store", "mobile", "store", "ok", null, original, null, 100);
+    } finally {
+      interrupted.close();
+    }
+
+    const resumed = openControlDatabase(path);
+    try {
+      const columns = resumed.prepare("PRAGMA table_info(app_maps)").all() as Array<{
+        name: string;
+      }>;
+      assert.equal(
+        columns.some((column) => column.name === "source_document"),
+        true,
+      );
+      assert.equal(
+        columns.some((column) => column.name === "disposition"),
+        true,
+      );
+      const version = resumed.prepare("PRAGMA user_version").get() as { user_version: number };
+      assert.equal(version.user_version, CONTROL_SCHEMA_VERSION);
+      const row = resumed
+        .prepare("SELECT document, source_document, disposition FROM app_maps WHERE map_key = ?")
+        .get("mobile:store") as
+        | { document: string; source_document?: string | null; disposition?: string }
+        | undefined;
+      assert.ok(row);
+      assert.equal(row.document, original);
+      assert.equal(row.source_document, null);
+      assert.equal(row.disposition, "ready");
+    } finally {
+      resumed.close();
+    }
   });
 });
 

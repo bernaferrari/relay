@@ -48,13 +48,22 @@ export type AuthoringObservationProof = {
   /** Physical iOS captures must serialize pixels before XCTest; other targets
    * may acquire both planes concurrently. This is evidence ordering, not a
    * claim that the two planes have identical timestamps. */
-  captureOrder: "pixels-first" | "semantics-first" | "concurrent";
+  captureOrder: "pixels-first" | "pixels-ax-pixels" | "semantics-first" | "concurrent";
   pixels: {
     status: "captured" | "unavailable";
     capturedAt?: number;
     fingerprint?: string;
     width?: number;
     height?: number;
+    /** A physical iOS AX tree is promotable only when rasters taken directly
+     * before and after its bounded read still describe the same surface.
+     * The primary `capturedAt` / `fingerprint` fields describe the first
+     * raster; this optional record retains the closing raster separately. */
+    bracket?: {
+      status: "coherent" | "changed" | "unavailable";
+      afterCapturedAt?: number;
+      afterFingerprint?: string;
+    };
   };
   semantics: {
     status: "current" | "stale" | "unavailable";
@@ -244,6 +253,217 @@ export type AuthoringReplayAttempt = {
   error?: string;
 };
 
+/** Raw authoring capture is deliberately separate from an editable Take
+ * revision. Revisions describe the reviewed replay path; these events retain
+ * the append-only source record that produced it. A missing stream is valid
+ * for Takes saved before raw capture shipped. Version 2 splits the source
+ * record for an interaction into an immutable
+ * pre-dispatch intent and a separately appended terminal outcome. Version 1
+ * remains readable so a Relay update never invalidates an in-flight Take. */
+export const AUTHORING_RAW_CAPTURE_VERSION = 2 as const;
+
+export type AuthoringRawCaptureVersion = 1 | typeof AUTHORING_RAW_CAPTURE_VERSION;
+
+/** A selector-shaped record with no copied selector strings. Raw capture must
+ * not become a second place that stores user-generated copy or identifiers. */
+export type AuthoringRawTargetMetadata = {
+  strategies: Array<"identifier" | "ref" | "label" | "text" | "relation" | "point">;
+  point?: {
+    x: number;
+    y: number;
+    referenceBounds?: { width: number; height: number };
+    anchored?: boolean;
+    relative?: boolean;
+  };
+};
+
+/** Typed and clipboard values are represented only by non-reversible shape
+ * metadata. In particular, raw capture never stores their value or a digest
+ * that could be checked against guesses. */
+export type AuthoringRawRedactedValue = {
+  redacted: true;
+  length: number;
+  lineCount: number;
+  hasNonAscii: boolean;
+};
+
+export type AuthoringRawInteraction =
+  | {
+      kind: "tap";
+      target?: AuthoringRawTargetMetadata;
+      hasExpectedApp?: boolean;
+      applied?: boolean;
+    }
+  | {
+      kind: "type";
+      target?: AuthoringRawTargetMetadata;
+      mode?: "append" | "replace";
+      value: AuthoringRawRedactedValue;
+      applied?: boolean;
+    }
+  | {
+      kind: "clipboard";
+      action: "write" | "read" | "paste" | "copy";
+      target?: AuthoringRawTargetMetadata;
+      value?: AuthoringRawRedactedValue;
+      expectation?: AuthoringRawRedactedValue;
+      match?: "exact" | "contains";
+      applied?: boolean;
+    }
+  | {
+      kind: "app";
+      action:
+        | "open"
+        | "close"
+        | "switcher"
+        | "inspect"
+        | "assert-installed"
+        | "assert-not-installed"
+        | "install"
+        | "update"
+        | "uninstall";
+      hasApp?: boolean;
+      hasUrl?: boolean;
+      hasArtifact?: boolean;
+      hasVersion?: boolean;
+      relaunch?: boolean;
+      applied?: boolean;
+    }
+  | {
+      kind: "device";
+      action: "lock" | "unlock" | "keyboard-dismiss" | "keyboard-enter";
+      applied?: boolean;
+    }
+  | {
+      kind: "rotate";
+      orientation: "portrait" | "portrait-upside-down" | "landscape-left" | "landscape-right";
+      applied?: boolean;
+    }
+  | {
+      kind: "swipe";
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+      durationMs?: number;
+      applied?: boolean;
+    }
+  | { kind: "key"; key: "back" | "home"; applied?: boolean }
+  | { kind: "wait"; ms: number }
+  | { kind: "observe"; hasLabel?: boolean }
+  | { kind: "screenshot"; hasLabel?: boolean }
+  | { kind: "reusable"; hasRecipe?: boolean; bindingCount: number }
+  | { kind: "steps"; stepCount: number; hasLabel?: boolean; applied?: boolean };
+
+/** Bounded reference to durable capture facts. It intentionally excludes the
+ * semantic tree and every visible value; those remain in their evidence item
+ * under the workspace evidence policy. */
+export type AuthoringRawObservationLink = {
+  observationId: string;
+  capturedAt: number;
+  evidenceIds: string[];
+  viewport?: { width: number; height: number };
+  focus?: { status: "captured" | "unavailable"; target?: AuthoringRawTargetMetadata };
+};
+
+export type AuthoringRawCaptureSource = {
+  kind: "authoring-runtime";
+  target: AuthoringTarget;
+};
+
+type AuthoringRawEventBase = {
+  id: string;
+  /** Strictly append-only, one-based order within the Take. */
+  sequence: number;
+  recordedAt: number;
+  source: AuthoringRawCaptureSource;
+};
+
+export type AuthoringRawTakeStartEvent = AuthoringRawEventBase & {
+  kind: "take-start";
+  trigger: "recording" | "capture";
+  observation: AuthoringRawObservationLink;
+};
+
+export type AuthoringRawObservationEvent = AuthoringRawEventBase & {
+  kind: "observation";
+  observation: AuthoringRawObservationLink;
+};
+
+/** The completed-interaction event written by raw capture version 1. Keep it
+ * in the union for historical recordings; new version 2 captures use the
+ * intent/outcome pair below instead of rewriting an intent after dispatch. */
+export type AuthoringRawInteractionEvent = AuthoringRawEventBase & {
+  kind: "interaction";
+  startedAt: number;
+  finishedAt: number;
+  interaction: AuthoringRawInteraction;
+  links: {
+    actionId: string;
+    entranceObservationId?: string;
+    exitObservationId?: string;
+    evidenceIds: string[];
+  };
+};
+
+/** A durable command fact written before Relay invokes the native target
+ * adapter. Its event id is the immutable key used by a later outcome event. */
+export type AuthoringRawInteractionIntentEvent = AuthoringRawEventBase & {
+  kind: "interaction-intent";
+  startedAt: number;
+  interaction: AuthoringRawInteraction;
+  links: {
+    entranceObservationId?: string;
+    evidenceIds: string[];
+  };
+};
+
+/** Terminal dispatch status for a prior intent. Errors themselves are never
+ * copied here because platform diagnostics can contain private text. An
+ * absent outcome is therefore an explicitly recoverable pending intent, not
+ * a completed interaction with missing evidence. */
+export type AuthoringRawInteractionOutcomeEvent = AuthoringRawEventBase & {
+  kind: "interaction-outcome";
+  intentEventId: string;
+  outcome: "succeeded" | "failed" | "unknown";
+  finishedAt: number;
+  links: {
+    actionId?: string;
+    exitObservationId?: string;
+    evidenceIds: string[];
+  };
+};
+
+export type AuthoringRawTakeStopEvent = AuthoringRawEventBase & {
+  kind: "take-stop";
+  observation: AuthoringRawObservationLink;
+  evidenceIds: string[];
+};
+
+export type AuthoringRawEvent =
+  | AuthoringRawTakeStartEvent
+  | AuthoringRawObservationEvent
+  | AuthoringRawInteractionEvent
+  | AuthoringRawInteractionIntentEvent
+  | AuthoringRawInteractionOutcomeEvent
+  | AuthoringRawTakeStopEvent;
+
+/** A deterministic review queue derived from raw events. It carries no
+ * mutations and cannot replace the original raw source or a Take revision. */
+export type AuthoringRawOptimizationProposal = {
+  schemaVersion: 1;
+  kind: "authoring-raw-optimization";
+  reviewOnly: true;
+  takeId: string;
+  captureVersion: AuthoringRawCaptureVersion;
+  baseRevision: number;
+  sourceEventIds: string[];
+  suggestions: Array<{
+    kind: "review-observe-only" | "review-wait";
+    rawEventId: string;
+    actionId: string;
+    reason: string;
+  }>;
+};
+
 export type AuthoringTake = {
   id: string;
   state: "recording" | "reviewing" | "committed" | "discarded";
@@ -252,6 +472,11 @@ export type AuthoringTake = {
   currentRevision: number;
   revisions: AuthoringTakeRevision[];
   replayAttempts: AuthoringReplayAttempt[];
+  /** Optional for backward compatibility with recordings created before raw
+   * capture. Once present, this is append-only and never rewritten by trim,
+   * reorder, replacement, or optimizer review. */
+  rawCaptureVersion?: AuthoringRawCaptureVersion;
+  rawEvents?: AuthoringRawEvent[];
 };
 
 export type AuthoringCommitDestination =
@@ -350,8 +575,30 @@ export type AuthoringSessionSummary = {
         Pick<AuthoringReplayActionProof, "outcome" | "proofStatus" | "transition">
       >;
     };
+    /** Safe recovery signal only: it reveals counts, never private command
+     * values, selectors, labels, recipe ids, or platform diagnostics. */
+    rawCapture?: {
+      version: AuthoringRawCaptureVersion;
+      eventCount: number;
+      pendingIntentCount: number;
+    };
   };
 };
+
+function pendingRawIntentCount(events: readonly AuthoringRawEvent[]): number {
+  const outcomes = new Set(
+    events
+      .filter(
+        (event): event is AuthoringRawInteractionOutcomeEvent =>
+          event.kind === "interaction-outcome",
+      )
+      .map((event) => event.intentEventId),
+  );
+  return events.filter(
+    (event): event is AuthoringRawInteractionIntentEvent =>
+      event.kind === "interaction-intent" && !outcomes.has(event.id),
+  ).length;
+}
 
 /** Progressive-disclosure representation for CLI and MCP mutations.
  * Full revisions, semantic trees, and evidence stay available through the
@@ -410,6 +657,15 @@ export function summarizeAuthoringSession(session: AuthoringSession): AuthoringS
                           ),
                         }
                       : {}),
+                  },
+                }
+              : {}),
+            ...(take.rawCaptureVersion !== undefined && take.rawEvents !== undefined
+              ? {
+                  rawCapture: {
+                    version: take.rawCaptureVersion,
+                    eventCount: take.rawEvents.length,
+                    pendingIntentCount: pendingRawIntentCount(take.rawEvents),
                   },
                 }
               : {}),

@@ -1,7 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { link, mkdir, open, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import type { AuthoringEvidence } from "@relay/protocol";
+import type { ArtifactRefProjection, AuthoringEvidence } from "@relay/protocol";
+import {
+  artifactMediaKindForMime,
+  artifactRefFromIntegrity,
+  missingArtifactRef,
+  opaqueArtifactLocation,
+  projectArtifactRef,
+} from "./artifact-ref.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 
 function stateRoot(): string {
@@ -94,4 +101,44 @@ export async function readAuthoringEvidence(sha256: string): Promise<Buffer | nu
   } catch {
     return null;
   }
+}
+
+/** Additive projection for the future provider-neutral artifact plane. The
+ * returned opaque location is never a filesystem instruction; callers use
+ * `readAuthoringEvidence` (or a future provider adapter) with their own
+ * validated scope. */
+export function projectAuthoringEvidenceArtifact(
+  evidence: AuthoringEvidence,
+): ArtifactRefProjection {
+  const mime = evidence.mime ?? (evidence.kind === "screenshot" ? "image/png" : undefined);
+  const media = {
+    kind:
+      evidence.kind === "snapshot"
+        ? ("structured-data" as const)
+        : evidence.kind === "video"
+          ? ("video" as const)
+          : artifactMediaKindForMime(mime),
+    ...(mime ? { mime } : {}),
+  };
+  if (!evidence.sha256 || evidence.bytes === undefined) {
+    return missingArtifactRef({
+      source: "authoring-evidence",
+      media,
+      capturedAt: evidence.capturedAt,
+    });
+  }
+  return projectArtifactRef(
+    artifactRefFromIntegrity({
+      sha256: evidence.sha256,
+      bytes: evidence.bytes,
+      media,
+      capturedAt: evidence.capturedAt,
+      provenance: { source: "authoring-evidence", capture: "recorded" },
+      retention: {
+        scope: "workspace-content-addressed",
+        recoverability: "content-addressed",
+      },
+      locations: [opaqueArtifactLocation("authoring-evidence", [evidence.id, evidence.uri])],
+    }),
+  );
 }

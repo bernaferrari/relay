@@ -17,12 +17,18 @@ import { APP_MAP_SCHEMA_VERSION, validateAppMap } from "./app-map.js";
 import { rescopeAppMap } from "./app-map-yaml.js";
 import { validateDevicePool } from "./device-pool.js";
 import { currentOperationContext } from "./operation-context.js";
-import { readControlStore, withControlStore, type DegradedAppMap } from "./collaboration-store.js";
+import {
+  readControlStore,
+  withControlStore,
+  type AppMapRecoveryDocument,
+  type DegradedAppMap,
+} from "./collaboration-store.js";
 
 export {
   collaborationStateRoot,
   listDurableControlEvents,
   recoverCollaborationState,
+  type AppMapRecoveryDocument,
   type DegradedAppMap,
 } from "./collaboration-store.js";
 export {
@@ -484,6 +490,22 @@ export async function listDegradedAppMaps(projectId: string): Promise<DegradedAp
 
 export async function readAppMap(projectId: string, appMapId: string): Promise<AppMap | null> {
   return (await readControlStore((store) => store.appMap(appMapKey(projectId, appMapId)))) ?? null;
+}
+
+/**
+ * Return the opaque source retained before map normalization. Hosts can write
+ * it to a recovery/export file even when a newer schema is intentionally
+ * unavailable as a live App Map.
+ */
+export async function readAppMapRecoveryDocument(
+  projectId: string,
+  appMapId: string,
+): Promise<AppMapRecoveryDocument | null> {
+  return (
+    (await readControlStore((store) =>
+      store.appMapRecoveryDocument(appMapKey(projectId, appMapId)),
+    )) ?? null
+  );
 }
 
 export async function deleteAppMap(projectId: string, appMapId: string): Promise<boolean> {

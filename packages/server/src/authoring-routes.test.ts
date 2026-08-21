@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -16,6 +17,13 @@ import {
   captureAuthoringReplayActionEndpoint,
 } from "./authoring-routes.js";
 import { startServer } from "./index.js";
+
+async function temporaryAuthoringScreenshot(name: string) {
+  const root = join(tmpdir(), "relay");
+  await mkdir(root, { recursive: true });
+  const directory = await mkdtemp(join(root, `shot-authoring-${name}-`));
+  return { directory, path: join(directory, "capture.png") };
+}
 
 test("browser authoring observation stays on the explicit browser adapter path", async () => {
   const browserDevice = {} as Device;
@@ -148,6 +156,248 @@ test("physical Apple authoring freezes visible evidence before inspecting the ru
   assert.equal(observation.proof?.semantics.status, "unavailable");
 });
 
+test("iOS brackets an otherwise current tree and retains it only as stale diagnostics when pixels move", async () => {
+  const order: string[] = [];
+  let screenshots = 0;
+  const session = {
+    target: { kind: "device", platform: "ios", targetId: "ipad-a" },
+  } as AuthoringSession;
+
+  const observation = await captureAuthoringObservation(session, {
+    async resolveDevice() {
+      return {} as Device;
+    },
+    async captureSnapshot() {
+      order.push("snapshot");
+      return {
+        serial: "ipad-a",
+        capturedAt: 20,
+        nodes: [{ role: "button", label: "Old Settings" }],
+        interactive: [],
+        inspectable: true,
+        source: "sdk",
+        screenIdentity: {
+          schemaVersion: 1,
+          fingerprint: "late-tree-identity",
+          nodes: [],
+          volatileSignals: [],
+        },
+      };
+    },
+    async captureScreenshot() {
+      screenshots += 1;
+      const after = screenshots === 2;
+      order.push(after ? "screenshot:after" : "screenshot:before");
+      return {
+        serial: "ipad-a",
+        capturedAt: after ? 30 : 10,
+        mime: "image/png",
+        base64: Buffer.from(after ? "new-visible-screen" : "old-visible-screen").toString("base64"),
+        path: after ? "/ipad/after.png" : "/ipad/before.png",
+        bytes: after ? 18 : 18,
+      };
+    },
+  });
+
+  assert.deepEqual(order, ["screenshot:before", "snapshot", "screenshot:after"]);
+  assert.equal(observation.capturedAt, 30);
+  assert.equal(observation.proof?.captureOrder, "pixels-ax-pixels");
+  assert.equal(observation.proof?.semantics.status, "stale");
+  assert.deepEqual(observation.proof?.pixels.bracket?.status, "changed");
+  assert.equal(observation.proof?.pixels.bracket?.afterCapturedAt, 30);
+  assert.notEqual(observation.fingerprint, "late-tree-identity");
+  assert.deepEqual(observation.nodes, [{ role: "button", label: "Old Settings" }]);
+  assert.deepEqual(observation.bracketScreenshot, {
+    data: Buffer.from("new-visible-screen"),
+    mime: "image/png",
+    capturedAt: 30,
+  });
+});
+
+test("iOS promotes a tree only after a coherent pixel bracket", async () => {
+  const order: string[] = [];
+  const session = {
+    target: { kind: "device", platform: "ios", targetId: "ipad-a" },
+  } as AuthoringSession;
+
+  const observation = await captureAuthoringObservation(session, {
+    async resolveDevice() {
+      return {} as Device;
+    },
+    async captureSnapshot() {
+      order.push("snapshot");
+      return {
+        serial: "ipad-a",
+        capturedAt: 20,
+        nodes: [{ role: "button", label: "Settings" }],
+        interactive: [],
+        inspectable: true,
+        source: "sdk",
+        screenIdentity: {
+          schemaVersion: 1,
+          fingerprint: "settings-tree",
+          nodes: [],
+          volatileSignals: [],
+        },
+      };
+    },
+    async captureScreenshot() {
+      order.push("screenshot");
+      return {
+        serial: "ipad-a",
+        capturedAt: order.length === 1 ? 10 : 30,
+        mime: "image/png",
+        base64: Buffer.from("same-visible-screen").toString("base64"),
+        path: "/ipad/same.png",
+        bytes: 19,
+      };
+    },
+  });
+
+  assert.deepEqual(order, ["screenshot", "snapshot", "screenshot"]);
+  assert.equal(observation.proof?.captureOrder, "pixels-ax-pixels");
+  assert.equal(observation.proof?.semantics.status, "current");
+  assert.equal(observation.proof?.pixels.bracket?.status, "coherent");
+  assert.equal(observation.screenshotCapturedAt, 10);
+  assert.equal(observation.bracketScreenshot, undefined, "identical raw frames deduplicate safely");
+});
+
+test("authoring transfers primary and bracket bytes before disposing temporary rasters", async () => {
+  const opening = await temporaryAuthoringScreenshot("opening");
+  const closing = await temporaryAuthoringScreenshot("closing");
+  const session = {
+    target: { kind: "device", platform: "ios", targetId: "ipad-cleanup" },
+  } as AuthoringSession;
+  let captures = 0;
+  try {
+    const observation = await captureAuthoringObservation(session, {
+      async resolveDevice() {
+        return {} as Device;
+      },
+      async captureSnapshot() {
+        return {
+          serial: "ipad-cleanup",
+          capturedAt: 20,
+          nodes: [{ role: "button", label: "Settings" }],
+          interactive: [],
+          inspectable: true,
+          source: "sdk",
+          screenIdentity: {
+            schemaVersion: 1,
+            fingerprint: "settings-tree",
+            nodes: [],
+            volatileSignals: [],
+          },
+        };
+      },
+      async captureScreenshot() {
+        captures += 1;
+        const isClosing = captures === 2;
+        const bytes = Buffer.from(isClosing ? "closing-durable-pixels" : "opening-durable-pixels");
+        return {
+          serial: "ipad-cleanup",
+          capturedAt: isClosing ? 30 : 10,
+          mime: "image/png" as const,
+          base64: bytes.toString("base64"),
+          path: isClosing ? closing.path : opening.path,
+          bytes: bytes.byteLength,
+        };
+      },
+    });
+
+    assert.deepEqual(observation.screenshot?.data, Buffer.from("opening-durable-pixels"));
+    assert.deepEqual(observation.bracketScreenshot?.data, Buffer.from("closing-durable-pixels"));
+    assert.equal(existsSync(opening.directory), false);
+    assert.equal(existsSync(closing.directory), false);
+  } finally {
+    await Promise.all([
+      rm(opening.directory, { recursive: true, force: true }),
+      rm(closing.directory, { recursive: true, force: true }),
+    ]);
+  }
+});
+
+test("a failed concurrent authoring observation still disposes its completed temporary raster", async () => {
+  const temporary = await temporaryAuthoringScreenshot("failed-observation");
+  const session = {
+    target: { kind: "device", platform: "android", targetId: "android-cleanup" },
+  } as AuthoringSession;
+  try {
+    await assert.rejects(
+      captureAuthoringObservation(session, {
+        async resolveDevice() {
+          return {} as Device;
+        },
+        async captureSnapshot() {
+          throw new Error("AX failed after screenshot capture began");
+        },
+        async captureScreenshot() {
+          return {
+            serial: "android-cleanup",
+            capturedAt: 10,
+            mime: "image/png" as const,
+            base64: Buffer.from("still-durable-until-finally").toString("base64"),
+            path: temporary.path,
+            bytes: 26,
+          };
+        },
+      }),
+      /AX failed/u,
+    );
+    assert.equal(existsSync(temporary.directory), false);
+  } finally {
+    await rm(temporary.directory, { recursive: true, force: true });
+  }
+});
+
+test("iOS keeps usable pixels but marks a tree stale when the closing bracket cannot be captured", async () => {
+  let screenshots = 0;
+  const session = {
+    target: { kind: "device", platform: "ios", targetId: "ipad-a" },
+  } as AuthoringSession;
+
+  const observation = await captureAuthoringObservation(session, {
+    async resolveDevice() {
+      return {} as Device;
+    },
+    async captureSnapshot() {
+      return {
+        serial: "ipad-a",
+        capturedAt: 20,
+        nodes: [{ role: "button", label: "Settings" }],
+        interactive: [],
+        inspectable: true,
+        source: "sdk",
+        screenIdentity: {
+          schemaVersion: 1,
+          fingerprint: "settings-tree",
+          nodes: [],
+          volatileSignals: [],
+        },
+      };
+    },
+    async captureScreenshot() {
+      screenshots += 1;
+      if (screenshots === 2) throw new Error("XCTest closing raster timed out");
+      return {
+        serial: "ipad-a",
+        capturedAt: 10,
+        mime: "image/png",
+        base64: Buffer.from("opening-visible-screen").toString("base64"),
+        path: "/ipad/opening.png",
+        bytes: 22,
+      };
+    },
+  });
+
+  assert.equal(screenshots, 2);
+  assert.equal(observation.proof?.captureOrder, "pixels-ax-pixels");
+  assert.equal(observation.proof?.pixels.status, "captured");
+  assert.deepEqual(observation.proof?.pixels.bracket, { status: "unavailable" });
+  assert.equal(observation.proof?.semantics.status, "stale");
+  assert.equal(observation.nodes?.[0]?.label, "Settings");
+});
+
 test("replay action endpoint captures pixels without querying or trusting accessibility", async () => {
   const operations: string[] = [];
   const session = {
@@ -188,6 +438,38 @@ test("replay action endpoint captures pixels without querying or trusting access
   });
   assert.equal(observation.nodes, undefined);
   assert.deepEqual(observation.bounds, { width: 1194, height: 834 });
+});
+
+test("replay action endpoint disposes the temporary raster after copying its bytes", async () => {
+  const temporary = await temporaryAuthoringScreenshot("replay");
+  const session = {
+    target: { kind: "device", platform: "ios", targetId: "ipad-replay-cleanup" },
+  } as AuthoringSession;
+  try {
+    const observation = await captureAuthoringReplayActionEndpoint(session, {
+      async resolveDevice() {
+        return {} as Device;
+      },
+      async captureSnapshot() {
+        throw new Error("replay endpoints must remain pixels-only");
+      },
+      async captureScreenshot() {
+        const bytes = Buffer.from("replay-durable-pixels");
+        return {
+          serial: "ipad-replay-cleanup",
+          capturedAt: 12,
+          mime: "image/png" as const,
+          base64: bytes.toString("base64"),
+          path: temporary.path,
+          bytes: bytes.byteLength,
+        };
+      },
+    });
+    assert.deepEqual(observation.screenshot?.data, Buffer.from("replay-durable-pixels"));
+    assert.equal(existsSync(temporary.directory), false);
+  } finally {
+    await rm(temporary.directory, { recursive: true, force: true });
+  }
 });
 
 test("authoring rejects a blank device screenshot instead of saving a broken screen", async () => {

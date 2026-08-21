@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   IosMutationOutcomeUnknownError,
+  IosSnapshotInFlightError,
   lastIosMutationAttemptDiagnostic,
   pressNamedControl,
   pressMatchingText,
   pressPoint,
   runIosMutationOnce,
+  snapshot,
   type Device,
 } from "./device.js";
 import { recordIosVideo } from "./ios-device-adapter.js";
+import { IosSnapshotStaleAfterInputError } from "./ios-snapshot-flight.js";
 import { scrollUp as recipeRunnerScrollUp } from "./recipe-runner-support.js";
 import { runWithTargetContext } from "./target-context.js";
 import { TargetControlReservedError } from "./target-control.js";
@@ -60,6 +63,85 @@ test("a transient physical iOS point press is issued once and stops for evidence
   assert.equal(nativePresses, 1);
   assert.equal(lastIosMutationAttemptDiagnostic(serial)?.nativeAttempts, 1);
   assert.equal(lastIosMutationAttemptDiagnostic(serial)?.retry.decision, "blocked");
+});
+
+test("a confirmed iOS input fences a delayed tree without overlapping XCTest reads", async () => {
+  const serial = "ios-input-fence";
+  const beforeInput = [{ role: "button", label: "Old screen" }];
+  const afterInput = [{ role: "button", label: "New screen" }];
+  let snapshotCalls = 0;
+  let releaseOldTree!: (value: { nodes: typeof beforeInput }) => void;
+  const oldTree = new Promise<{ nodes: typeof beforeInput }>((resolve) => {
+    releaseOldTree = resolve;
+  });
+  const device = {
+    capture: {
+      snapshot: () => {
+        snapshotCalls += 1;
+        return snapshotCalls === 1 ? oldTree : Promise.resolve({ nodes: afterInput });
+      },
+    },
+    interactions: { press: async () => undefined },
+  } as unknown as Device;
+
+  const preInputRead = runWithTargetContext(ios(serial), () => snapshot(device));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  await runWithTargetContext(ios(serial), () => pressPoint(device, 48, 72));
+
+  // iOS cannot cancel the old traversal, so a post-tap caller must wait for
+  // it rather than share its pre-tap nodes or start a second XCTest request.
+  await assert.rejects(
+    runWithTargetContext(ios(serial), () => snapshot(device)),
+    IosSnapshotInFlightError,
+  );
+  assert.equal(snapshotCalls, 1);
+
+  releaseOldTree({ nodes: beforeInput });
+  await assert.rejects(preInputRead, IosSnapshotStaleAfterInputError);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(await runWithTargetContext(ios(serial), () => snapshot(device)), afterInput);
+  assert.equal(snapshotCalls, 2);
+});
+
+test("an iOS selector miss or outcome-unknown mutation does not falsely fence a tree", async () => {
+  for (const [serial, error] of [
+    ["ios-selector-miss-no-fence", new Error("Selector did not match an element")],
+    ["ios-outcome-unknown-no-fence", new Error("connection reset")],
+  ] as const) {
+    let releaseTree!: (value: { nodes: Array<{ label: string }> }) => void;
+    const tree = new Promise<{ nodes: Array<{ label: string }> }>((resolve) => {
+      releaseTree = resolve;
+    });
+    let snapshotCalls = 0;
+    const device = {
+      capture: {
+        snapshot: () => {
+          snapshotCalls += 1;
+          return tree;
+        },
+      },
+    } as unknown as Device;
+
+    const first = runWithTargetContext(ios(serial), () => snapshot(device));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await assert.rejects(
+      runWithTargetContext(ios(serial), () =>
+        runIosMutationOnce(serial, "press", async () => {
+          throw error;
+        }),
+      ),
+    );
+
+    // No completed native input was observed, so both callers retain the one
+    // safe read instead of pretending the screen changed.
+    const second = runWithTargetContext(ios(serial), () => snapshot(device));
+    assert.equal(snapshotCalls, 1);
+    releaseTree({ nodes: [{ label: "Still current" }] });
+    assert.deepEqual(await first, [{ label: "Still current" }]);
+    assert.deepEqual(await second, [{ label: "Still current" }]);
+  }
 });
 
 test("an uncertain semantic iOS press never falls through to a second point press", async () => {

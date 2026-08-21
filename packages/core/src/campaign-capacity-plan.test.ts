@@ -174,6 +174,66 @@ test("honors per-worker free capacity while keeping independent targets parallel
   });
 });
 
+test("does not overstate independent target lanes behind one shared host ceiling", () => {
+  const plan = planCampaignCapacity({
+    workItems: 2,
+    estimatedWorkItemDurationMs: 1_000,
+    targets: [
+      {
+        targetId: "ipad-a",
+        platform: "ios",
+        availability: "available",
+        lease: "available",
+        workerId: "local:ios:target:ipad-a",
+      },
+      {
+        targetId: "ipad-b",
+        platform: "ios",
+        availability: "available",
+        lease: "available",
+        workerId: "local:ios:target:ipad-b",
+      },
+    ],
+    workers: [
+      {
+        workerId: "local:ios:target:ipad-a",
+        capacity: 1,
+        active: 0,
+        queued: 0,
+        activeTargets: [],
+        queuedTargets: [],
+        host: { workerId: "mac-xcode", capacity: 1, active: 0, queued: 0 },
+      },
+      {
+        workerId: "local:ios:target:ipad-b",
+        capacity: 1,
+        active: 0,
+        queued: 0,
+        activeTargets: [],
+        queuedTargets: [],
+        host: { workerId: "mac-xcode", capacity: 1, active: 0, queued: 0 },
+      },
+    ],
+  });
+
+  assert.deepEqual(plan.slots, [
+    { targetId: "ipad-a", platform: "ios", workerId: "local:ios:target:ipad-a" },
+  ]);
+  assert.deepEqual(plan.excludedTargets, [
+    { targetId: "ipad-b", platform: "ios", reasons: ["host-saturated"] },
+  ]);
+  assert.deepEqual(plan.hosts, [
+    {
+      workerId: "mac-xcode",
+      capacity: 1,
+      active: 0,
+      queued: 0,
+      freeCapacity: 1,
+      slotCount: 1,
+    },
+  ]);
+});
+
 test("makes a campaign time budget and missing independent target slots explicit", () => {
   const plan = planCampaignCapacity({
     workItems: 800,

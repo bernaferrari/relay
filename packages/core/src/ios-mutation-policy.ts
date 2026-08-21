@@ -6,8 +6,10 @@
  * too easy to reintroduce a generic retry around a tap.
  */
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
+import { noteConfirmedIosSnapshotInput } from "./ios-snapshot-flight.js";
 import { currentTargetContext } from "./target-context.js";
 import { TargetControlReservedError } from "./target-control.js";
+import { invalidateTargetSemanticControl } from "./target-runtime-readiness.js";
 
 export type IosMutationOperation =
   | "app-open"
@@ -59,6 +61,25 @@ export type IosMutationAttemptDiagnostic = {
   };
   at: number;
 };
+
+/** Video capture is evidence transport, not a UI input. Every other exact-once
+ * operation can alter the visible or semantic surface, including app launch,
+ * keyboard dismissal, clipboard paste, and device rotation. */
+function changesIosSemanticSurface(operation: IosMutationOperation): boolean {
+  return operation !== "video";
+}
+
+/**
+ * Advance both semantic fences only after the one native iOS command returned
+ * success. In particular, a selector miss is known pre-dispatch and an
+ * outcome-unknown error has no proof of input, so neither may discard a tree
+ * or make a caller hide usable current semantics.
+ */
+function recordConfirmedIosInput(serial: string, operation: IosMutationOperation): void {
+  if (!changesIosSemanticSurface(operation)) return;
+  noteConfirmedIosSnapshotInput(serial);
+  invalidateTargetSemanticControl({ serial, platform: "ios" }, "input-changed");
+}
 
 const iosMutationAttemptDiagnostics = new Map<string, IosMutationAttemptDiagnostic>();
 const iosMutationSequences = new Map<string, number>();
@@ -188,6 +209,7 @@ export async function runIosMutationOnce<T>(
     const diagnostic = mutationDiagnostic(serial, operation, "completed");
     iosMutationSequences.set(serial, diagnostic.sequence);
     iosMutationAttemptDiagnostics.set(serial, diagnostic);
+    recordConfirmedIosInput(serial, operation);
     return result;
   } catch (error) {
     // The target lane rejects before it invokes the native SDK callback, so

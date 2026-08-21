@@ -66,6 +66,17 @@ async function main() {
   const urls = server.resolvedUrls?.local ?? [];
   const rendererUrl = urls[0] ?? "http://127.0.0.1:5173/";
   console.log(`[desktop] renderer ${rendererUrl}`);
+  // The Relay service trusts browser origins only when the embedding host
+  // names them explicitly. This dev server is created by Relay and receives a
+  // fresh renderer URL, so pass its exact origin to the Electron-owned server
+  // instead of granting every loopback web page administrative access.
+  const relayBrowserOrigins = [
+    ...(process.env.RELAY_ALLOWED_BROWSER_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+    new URL(rendererUrl).origin,
+  ].filter((origin, index, all) => all.indexOf(origin) === index);
 
   const relayPort = await reserveLoopbackPort();
   const relayUrl = `http://127.0.0.1:${relayPort}`;
@@ -93,6 +104,7 @@ async function main() {
       RELAY_DESKTOP_ROOT: root,
       RELAY_URL: relayUrl,
       RELAY_DEBUG_PORT: String(debugPort),
+      RELAY_ALLOWED_BROWSER_ORIGINS: relayBrowserOrigins.join(","),
     },
     stdio: "inherit",
   });

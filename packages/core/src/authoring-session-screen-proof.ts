@@ -11,6 +11,7 @@ import {
 import { readAppMap } from "./collaboration.js";
 import type { SnapshotNode } from "./device.js";
 import { now } from "./events.js";
+import { hasCurrentAuthoringSemantics } from "./authoring-observation-proof.js";
 import { AuthoringStateError } from "./authoring-session-state.js";
 import {
   compareScreenIdentity,
@@ -111,7 +112,7 @@ function semanticObservation(
   // establish that a replay is on an expected screen. Legacy observations
   // predate proof metadata, so preserve their established behavior until they
   // are explicitly recaptured with a stale/unavailable semantic result.
-  if (observation?.proof && observation.proof.semantics.status !== "current") return undefined;
+  if (observation?.proof && !hasCurrentAuthoringSemantics(observation.proof)) return undefined;
   if (!observation?.nodes?.length) return undefined;
   return observeScreenIdentity(observation.nodes as SnapshotNode[]);
 }

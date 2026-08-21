@@ -11,9 +11,19 @@ import type {
   TestData,
 } from "@relay/protocol";
 import { now } from "./events.js";
-import { loadStoredAppMap } from "./app-map/stored-map-repair.js";
+import { loadStoredAppMap, type StoredAppMapDisposition } from "./app-map/stored-map-repair.js";
 
-export type DegradedAppMapRecord = { error: string; raw: unknown };
+export type DegradedAppMapRecord = {
+  error: string;
+  raw: unknown;
+  disposition?: Extract<StoredAppMapDisposition, "read-only" | "quarantined">;
+};
+
+/** The original source is retained separately from the canonical App Map. */
+export type AppMapSourceRecord = {
+  original: unknown;
+  disposition: Extract<StoredAppMapDisposition, "ready" | "migrated">;
+};
 
 export type CollaborationState = {
   projects: Project[];
@@ -23,6 +33,7 @@ export type CollaborationState = {
   leases: DeviceLease[];
   variables: Record<string, Revisioned<TestData[]>>;
   appMaps: Record<string, AppMap>;
+  appMapSources: Record<string, AppMapSourceRecord>;
   degradedAppMaps: Record<string, DegradedAppMapRecord>;
   idempotency: Record<string, number | string>;
 };
@@ -54,6 +65,7 @@ export function emptyCollaborationState(): CollaborationState {
     leases: [],
     variables: {},
     appMaps: {},
+    appMapSources: {},
     degradedAppMaps: {},
     idempotency: {},
   };
@@ -116,16 +128,35 @@ export function parseCollaborationJson(source: string): {
 
   const rawAppMaps = objectRecord<unknown>(value, "appMaps", {});
   const appMaps: Record<string, AppMap> = {};
+  const appMapSources: Record<string, AppMapSourceRecord> = {};
   const degradedAppMaps: Record<string, DegradedAppMapRecord> = {};
   let repaired = false;
   for (const [key, candidate] of Object.entries(rawAppMaps)) {
     const loaded = loadStoredAppMap(candidate, key);
     if (loaded.ok) {
       appMaps[key] = loaded.appMap;
-      repaired ||= loaded.repaired;
+      appMapSources[key] = { original: loaded.original, disposition: loaded.disposition };
+      repaired ||= loaded.repaired || loaded.migrated;
       continue;
     }
-    degradedAppMaps[key] = { error: loaded.error, raw: loaded.raw };
+    degradedAppMaps[key] = {
+      error: loaded.error,
+      raw: loaded.raw,
+      disposition: loaded.disposition,
+    };
+  }
+
+  // A short-lived JSON migration may already have quarantined a map before
+  // SQLite became authoritative. Preserve those entries verbatim rather than
+  // letting an otherwise valid top-level state erase their recovery source.
+  const rawDegradedMaps = objectRecord<unknown>(value, "degradedAppMaps", {});
+  for (const [key, candidate] of Object.entries(rawDegradedMaps)) {
+    if (key in appMaps || key in degradedAppMaps) continue;
+    if (!isRecord(candidate) || typeof candidate.error !== "string" || !("raw" in candidate)) {
+      invalidState(`degradedAppMaps.${key} must include error and raw`);
+    }
+    const disposition = candidate.disposition === "read-only" ? "read-only" : "quarantined";
+    degradedAppMaps[key] = { error: candidate.error, raw: candidate.raw, disposition };
   }
 
   const idempotency = objectRecord<number | string>(value, "idempotency", {});
@@ -145,6 +176,7 @@ export function parseCollaborationJson(source: string): {
       leases: objectArray<DeviceLease>(value, "leases", []),
       variables,
       appMaps,
+      appMapSources,
       degradedAppMaps,
       idempotency,
     },

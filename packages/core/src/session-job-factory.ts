@@ -112,8 +112,20 @@ export function createSessionJob(
   const assignment = defaultTargetWorkerAssignment({
     targetId,
     platform: targetContext.platform,
-    workerId: input.workerId ?? parent?.workerId,
-    workerCapacity: input.workerCapacity ?? parent?.workerCapacity,
+    // Legacy worker fields represented an aggregate platform worker. Keep
+    // accepting them as host ceilings, but never reuse a derived target lane
+    // from a newer parent as a host id on retry.
+    workerId:
+      input.workerId ??
+      (!input.hostWorkerId && !parent?.hostWorkerId ? parent?.workerId : undefined),
+    workerCapacity:
+      input.workerCapacity ??
+      (!input.hostWorkerCapacity && !parent?.hostWorkerCapacity
+        ? parent?.workerCapacity
+        : undefined),
+    hostWorkerId: input.hostWorkerId ?? (!input.workerId ? parent?.hostWorkerId : undefined),
+    hostWorkerCapacity:
+      input.hostWorkerCapacity ?? (!input.workerCapacity ? parent?.hostWorkerCapacity : undefined),
   });
   const baseJob = {
     id,
@@ -131,6 +143,8 @@ export function createSessionJob(
     targetProfile: input.targetProfile ?? parent?.targetProfile,
     workerId: assignment.workerId,
     workerCapacity: assignment.capacity,
+    hostWorkerId: assignment.host?.workerId,
+    hostWorkerCapacity: assignment.host?.capacity,
     status: "queued" as const,
     queuedAt: now(),
     logs: [] as string[],

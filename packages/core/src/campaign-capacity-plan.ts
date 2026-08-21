@@ -2,6 +2,7 @@ import type {
   CampaignCapacityBudgetEstimate,
   CampaignCapacityExcludedTarget,
   CampaignCapacityExclusionReason,
+  CampaignCapacityHostPlan,
   CampaignCapacityPlan,
   CampaignCapacityPlanInput,
   CampaignCapacitySlot,
@@ -10,7 +11,16 @@ import type {
   CampaignCapacityWorkerPlan,
 } from "@relay/protocol";
 
-type WorkerState = CampaignCapacityWorker & { key: string; displayId: string };
+type HostState = NonNullable<CampaignCapacityWorker["host"]> & {
+  key: string;
+  displayId: string;
+};
+
+type WorkerState = CampaignCapacityWorker & {
+  key: string;
+  displayId: string;
+  host?: HostState;
+};
 
 type Candidate = CampaignCapacityTarget & { targetId: string; worker: WorkerState };
 
@@ -18,10 +28,11 @@ const ASSUMPTIONS = [
   "Each work item is independently executable on any assigned target slot.",
   "Each physical target supplies at most one slot; work remains serial on that target.",
   "Mixed-platform deadline estimates require an explicit workItemsByPlatform partition; aggregate slots never let Android capacity stand in for iOS capacity.",
-  "Parallel estimates assume equal work-item durations and do not include installation, queue drain, or recovery time.",
+  "Parallel estimates assume equal work-item durations and do not include installation, queue drain, or recovery time unless the caller reserves them outside this pure planner.",
   "The serial estimate is a theoretical one-slot baseline, not authority to use an excluded target.",
   "Additional slots still need fresh, available, unleased targets with observed free worker capacity.",
   "Leased, stale, unavailable, active, queued, duplicate, unknown-worker, and worker-saturated targets are never assigned.",
+  "A shared host/provider ceiling is applied across otherwise independent physical target lanes.",
 ] as const;
 
 const PLATFORM_ORDER = ["android", "ios", "browser"] as const;
@@ -42,6 +53,12 @@ function requireDuration(value: number, label: string): void {
   }
 }
 
+function requireBudget(value: number): void {
+  if (!isSafeNonNegativeInteger(value)) {
+    throw new Error("Campaign timeBudgetMs must be a non-negative safe integer in milliseconds");
+  }
+}
+
 function checkedProduct(left: number, right: number): number {
   const product = left * right;
   if (!Number.isSafeInteger(product)) {
@@ -50,8 +67,15 @@ function checkedProduct(left: number, right: number): number {
   return product;
 }
 
+function sameHostFacts(left: HostState, right: HostState): boolean {
+  return (
+    left.capacity === right.capacity && left.active === right.active && left.queued === right.queued
+  );
+}
+
 function workersById(workers: readonly CampaignCapacityWorker[]): Map<string, WorkerState> {
   const result = new Map<string, WorkerState>();
+  const hosts = new Map<string, HostState>();
   for (const worker of workers) {
     const workerId = worker.workerId.trim();
     if (!workerId) throw new Error("Campaign worker ids cannot be empty");
@@ -65,11 +89,39 @@ function workersById(workers: readonly CampaignCapacityWorker[]): Map<string, Wo
     if (!isSafeNonNegativeInteger(worker.queued)) {
       throw new Error(`Campaign worker ${workerId} must have a non-negative queued count`);
     }
+    let host: HostState | undefined;
+    if (worker.host) {
+      const hostId = worker.host.workerId.trim();
+      if (!hostId) throw new Error(`Campaign worker ${workerId} has an empty host id`);
+      if (!Number.isSafeInteger(worker.host.capacity) || worker.host.capacity < 1) {
+        throw new Error(`Campaign host ${hostId} must have positive capacity`);
+      }
+      if (!isSafeNonNegativeInteger(worker.host.active)) {
+        throw new Error(`Campaign host ${hostId} must have a non-negative active count`);
+      }
+      if (!isSafeNonNegativeInteger(worker.host.queued)) {
+        throw new Error(`Campaign host ${hostId} must have a non-negative queued count`);
+      }
+      const candidate: HostState = {
+        ...worker.host,
+        workerId: hostId,
+        key: `host:${hostId}`,
+        displayId: hostId,
+      };
+      const established = hosts.get(hostId);
+      if (established && !sameHostFacts(established, candidate)) {
+        throw new Error(`Campaign host ${hostId} has inconsistent observed capacity facts`);
+      }
+      host = established ?? candidate;
+      hosts.set(hostId, host);
+    }
+    const { host: _untypedHost, ...workerWithoutHost } = worker;
     result.set(workerId, {
-      ...worker,
+      ...workerWithoutHost,
       key: `explicit:${workerId}`,
       displayId: workerId,
       workerId,
+      ...(host ? { host } : {}),
     });
   }
   return result;
@@ -203,7 +255,7 @@ export function planCampaignCapacity(input: CampaignCapacityPlanInput): Campaign
   requireWorkItems(input.workItems);
   requireDuration(input.estimatedWorkItemDurationMs, "Campaign estimatedWorkItemDurationMs");
   if (input.timeBudgetMs !== undefined) {
-    requireDuration(input.timeBudgetMs, "Campaign timeBudgetMs");
+    requireBudget(input.timeBudgetMs);
   }
   const platformWorkItems = workItemsByPlatform(input);
 
@@ -244,35 +296,71 @@ export function planCampaignCapacity(input: CampaignCapacityPlanInput): Campaign
   }
 
   const slots: CampaignCapacitySlot[] = [];
-  const workerPlans: CampaignCapacityWorkerPlan[] = [];
-  for (const [workerKey, candidates] of [...candidatesByWorker.entries()].sort(([left], [right]) =>
-    left.localeCompare(right),
-  )) {
-    const worker = workerStates.get(workerKey)!;
-    const freeCapacity = Math.max(0, worker.capacity - worker.active);
-    const sorted = [...candidates].sort((left, right) =>
-      left.targetId.localeCompare(right.targetId),
-    );
-    const assigned = sorted.slice(0, freeCapacity);
-    for (const candidate of assigned) {
-      slots.push({
-        targetId: candidate.targetId,
-        platform: candidate.platform,
-        workerId: worker.displayId,
-      });
+  const slotCountByWorker = new Map<string, number>();
+  const freeCapacityByWorker = new Map<string, number>();
+  const hostStates = new Map<string, HostState>();
+  const freeCapacityByHost = new Map<string, number>();
+  const slotCountByHost = new Map<string, number>();
+  for (const worker of workerStates.values()) {
+    freeCapacityByWorker.set(worker.key, Math.max(0, worker.capacity - worker.active));
+    if (worker.host) {
+      hostStates.set(worker.host.key, worker.host);
+      if (!freeCapacityByHost.has(worker.host.key)) {
+        freeCapacityByHost.set(
+          worker.host.key,
+          Math.max(0, worker.host.capacity - worker.host.active),
+        );
+      }
     }
-    for (const candidate of sorted.slice(freeCapacity)) {
-      addExcluded(excludedTargets, candidate, ["worker-saturated"]);
-    }
-    workerPlans.push({
-      workerId: worker.displayId,
-      capacity: worker.capacity,
-      active: worker.active,
-      queued: worker.queued,
-      freeCapacity,
-      slotCount: assigned.length,
-    });
   }
+
+  // Ordering is deliberately global rather than worker-first. A shared host
+  // ceiling must not let whichever worker map happened to be iterated first
+  // silently consume all capacity in a different order on another process.
+  const candidates = [...candidatesByWorker.values()]
+    .flat()
+    .sort((left, right) => left.targetId.localeCompare(right.targetId));
+  for (const candidate of candidates) {
+    const worker = candidate.worker;
+    const workerFree = freeCapacityByWorker.get(worker.key) ?? 0;
+    if (workerFree < 1) {
+      addExcluded(excludedTargets, candidate, ["worker-saturated"]);
+      continue;
+    }
+    const hostFree = worker.host ? (freeCapacityByHost.get(worker.host.key) ?? 0) : undefined;
+    if (hostFree !== undefined && hostFree < 1) {
+      addExcluded(excludedTargets, candidate, ["host-saturated"]);
+      continue;
+    }
+    slots.push({
+      targetId: candidate.targetId,
+      platform: candidate.platform,
+      workerId: worker.displayId,
+    });
+    freeCapacityByWorker.set(worker.key, workerFree - 1);
+    slotCountByWorker.set(worker.key, (slotCountByWorker.get(worker.key) ?? 0) + 1);
+    if (worker.host && hostFree !== undefined) {
+      freeCapacityByHost.set(worker.host.key, hostFree - 1);
+      slotCountByHost.set(worker.host.key, (slotCountByHost.get(worker.host.key) ?? 0) + 1);
+    }
+  }
+
+  const workerPlans: CampaignCapacityWorkerPlan[] = [...workerStates.values()].map((worker) => ({
+    workerId: worker.displayId,
+    capacity: worker.capacity,
+    active: worker.active,
+    queued: worker.queued,
+    freeCapacity: Math.max(0, worker.capacity - worker.active),
+    slotCount: slotCountByWorker.get(worker.key) ?? 0,
+  }));
+  const hostPlans: CampaignCapacityHostPlan[] = [...hostStates.values()].map((host) => ({
+    workerId: host.displayId,
+    capacity: host.capacity,
+    active: host.active,
+    queued: host.queued,
+    freeCapacity: Math.max(0, host.capacity - host.active),
+    slotCount: slotCountByHost.get(host.key) ?? 0,
+  }));
 
   slots.sort((left, right) => left.targetId.localeCompare(right.targetId));
   excludedTargets.sort((left, right) => left.targetId.localeCompare(right.targetId));
@@ -358,6 +446,7 @@ export function planCampaignCapacity(input: CampaignCapacityPlanInput): Campaign
     slots,
     excludedTargets,
     workers: workerPlans.sort((left, right) => left.workerId.localeCompare(right.workerId)),
+    hosts: hostPlans.sort((left, right) => left.workerId.localeCompare(right.workerId)),
     platforms,
     serial: { slots: input.workItems === 0 ? 0 : 1, estimatedDurationMs: serialDurationMs },
     parallel: {

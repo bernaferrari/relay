@@ -176,6 +176,14 @@ export function enqueueJob(input: EnqueueJobInput): TestJob {
     workerId: job.workerId!,
     targetId: job.browserTargetId ?? job.serial!,
     capacity: job.workerCapacity!,
+    ...(job.hostWorkerId && job.hostWorkerCapacity
+      ? {
+          host: {
+            workerId: job.hostWorkerId,
+            capacity: job.hostWorkerCapacity,
+          },
+        }
+      : {}),
     run: async () => {
       try {
         if (job.status === "cancelled") return;
@@ -215,8 +223,8 @@ export function retryJob(id: string): TestJob {
     targetKind: parent.targetKind,
     browserTargetId: parent.browserTargetId,
     targetProfile: parent.targetProfile,
-    workerId: parent.workerId,
-    workerCapacity: parent.workerCapacity,
+    hostWorkerId: parent.hostWorkerId,
+    hostWorkerCapacity: parent.hostWorkerCapacity,
     artifacts: parent.artifacts,
     projectId: parent.projectId,
     ownerId: parent.ownerId,

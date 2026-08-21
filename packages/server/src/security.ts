@@ -27,6 +27,60 @@ export function isLoopbackHost(host: string): boolean {
   );
 }
 
+/**
+ * Normalize a web Origin without ever accepting a path, credential, or opaque
+ * origin as a CORS authority. Relay deliberately does not support wildcards:
+ * an allowed browser must be named by its exact scheme/host/port origin.
+ */
+function normalizeHttpOrigin(value: string | undefined): string | null {
+  if (!value) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== "/" ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    return null;
+  }
+  return parsed.origin;
+}
+
+/**
+ * Parse Relay-owned browser origins from an embedding host or
+ * RELAY_ALLOWED_BROWSER_ORIGINS. Invalid entries fail startup instead of
+ * silently widening (or unexpectedly disabling) the CORS boundary.
+ */
+export function configuredBrowserOrigins(
+  raw = process.env.RELAY_ALLOWED_BROWSER_ORIGINS,
+): readonly string[] {
+  if (!raw?.trim()) return [];
+  const origins = raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => {
+      const normalized = normalizeHttpOrigin(value);
+      if (!normalized) {
+        throw new Error(
+          `RELAY_ALLOWED_BROWSER_ORIGINS contains an invalid origin: ${JSON.stringify(value)}`,
+        );
+      }
+      return normalized;
+    });
+  if (!origins.length) {
+    throw new Error("RELAY_ALLOWED_BROWSER_ORIGINS must contain at least one HTTP(S) origin");
+  }
+  return [...new Set(origins)];
+}
+
 export function assertSafeBinding(
   host: string,
   token?: string,
@@ -105,20 +159,23 @@ export async function authenticateRequest(
 }
 
 /**
- * Browsers can reach loopback services from arbitrary web pages. Only Relay's
- * own loopback renderer origins may use the unauthenticated local API. Native
- * clients do not send Origin and continue to use the local trust path.
+ * Browsers can reach loopback services from arbitrary web pages. An
+ * unauthenticated browser must exactly match an explicit Relay-owned origin.
+ * Native clients do not send Origin and continue to use the local trust path.
  */
-export function allowedBrowserOrigin(origin: string | undefined): string | null {
-  if (!origin) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(origin);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-  return isLoopbackHost(parsed.hostname) ? parsed.origin : null;
+export function allowedBrowserOrigin(
+  origin: string | undefined,
+  configuredOrigins = configuredBrowserOrigins(),
+): string | null {
+  const normalized = normalizeHttpOrigin(origin);
+  return normalized && configuredOrigins.includes(normalized) ? normalized : null;
+}
+
+/** A valid HTTP(S) origin may use CORS only after the request proves bearer
+ * authentication. This lets self-managed remote browser clients opt in with a
+ * token without treating every local web page as a trusted Relay renderer. */
+export function authenticatedBrowserOrigin(origin: string | undefined): string | null {
+  return normalizeHttpOrigin(origin);
 }
 
 /** Workspace assets do not carry project ownership yet. Keep them on the local
@@ -197,6 +254,32 @@ function configuredProjectRole(): ProjectRole {
     throw new Error("RELAY_AUTH_ROLE must be viewer, author, runner, or admin");
   }
   return value as ProjectRole;
+}
+
+/**
+ * A network-visible static bearer has no issuer-backed claims from which
+ * Relay can safely infer access. Refuse defaults that would otherwise turn a
+ * typo into a remote administrator for `local/default`.
+ */
+export function assertExplicitRemoteServiceTokenScope(host: string, token?: string): void {
+  if (isLoopbackHost(host) || !token) return;
+  const role = process.env.RELAY_AUTH_ROLE?.trim();
+  const organization = process.env.RELAY_AUTH_ORGANIZATION_ID?.trim();
+  const projects = (process.env.RELAY_AUTH_PROJECT_IDS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const missing = [
+    ...(role ? [] : ["RELAY_AUTH_ROLE"]),
+    ...(organization ? [] : ["RELAY_AUTH_ORGANIZATION_ID"]),
+    ...(projects.length ? [] : ["RELAY_AUTH_PROJECT_IDS"]),
+  ];
+  if (missing.length) {
+    throw new Error(
+      `Non-loopback static-token bindings require explicit ${missing.join(", ")}; Relay will not default remote service tokens to admin/local/default scope.`,
+    );
+  }
+  configuredProjectRole();
 }
 
 function resolveExternalRequestContext(

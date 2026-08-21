@@ -13,6 +13,7 @@ import type {
   StepTarget,
   TargetProfile,
 } from "@relay/protocol";
+import { hasCurrentAuthoringSemantics } from "../authoring-observation-proof.js";
 import { observeScreenIdentity } from "../screen-identity.js";
 import type { SnapshotNode } from "../device.js";
 import type {
@@ -109,7 +110,7 @@ function observationLikelyMatchesTitle(
   // A stale tree often contains the previous sheet's sidebar/title. It is
   // useful for diagnostics but must not merge a visually new capture into an
   // existing named screen.
-  if (observation?.proof && observation.proof.semantics.status !== "current") return false;
+  if (observation?.proof && !hasCurrentAuthoringSemantics(observation.proof)) return false;
   const words = title
     .toLocaleLowerCase()
     .split(/[^a-z0-9]+/u)
@@ -184,7 +185,7 @@ function semanticObservation(
   // Snapshot evidence with an explicit stale/unavailable proof cannot become
   // a durable semantic identity or offline selector source. Older recordings
   // have no proof metadata and remain readable until a fresh capture exists.
-  if (observation?.proof && observation.proof.semantics.status !== "current") return undefined;
+  if (observation?.proof && !hasCurrentAuthoringSemantics(observation.proof)) return undefined;
   if (!observation?.nodes?.length) return undefined;
   return observeScreenIdentity(observation.nodes.slice(0, 256) as SnapshotNode[]);
 }
@@ -263,7 +264,7 @@ function capturedVariant(input: {
     return uri ? [uri] : [];
   })[0];
   const rawAccessibilityTree =
-    observation.proof && observation.proof.semantics.status !== "current"
+    observation.proof && !hasCurrentAuthoringSemantics(observation.proof)
       ? undefined
       : observation.evidenceIds.flatMap((id) => {
           if (input.evidenceKindsById?.[id] !== "snapshot") return [];

@@ -72,10 +72,99 @@ test("repairs a persisted App Map that still carries a removed step field", () =
   assert.equal("cleanup" in loaded.appMap.tests.smoke!.steps[0]!, false);
 });
 
+test("migrates a structurally valid unversioned App Map without mutating its source", () => {
+  const legacy = {
+    id: "store",
+    organizationId: "acme",
+    projectId: "mobile",
+    name: "Store",
+    revision: 0,
+    notes: {},
+    groups: {},
+    screens: {},
+    screenVariants: {},
+    connections: {},
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const loaded = loadStoredAppMap(legacy, "mobile:store");
+  assert.equal(loaded.ok, true);
+  if (!loaded.ok) return;
+  assert.equal(loaded.migrated, true);
+  assert.equal(loaded.disposition, "migrated");
+  assert.equal(loaded.appMap.schemaVersion, APP_MAP_SCHEMA_VERSION);
+  assert.equal("schemaVersion" in legacy, false);
+  assert.deepEqual(loaded.original, legacy);
+});
+
+test("accepts a current App Map without marking it migrated", () => {
+  const current = {
+    schemaVersion: APP_MAP_SCHEMA_VERSION,
+    id: "store",
+    organizationId: "acme",
+    projectId: "mobile",
+    name: "Store",
+    revision: 0,
+    notes: {},
+    groups: {},
+    screens: {},
+    screenVariants: {},
+    connections: {},
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const loaded = loadStoredAppMap(current, "mobile:store");
+  assert.equal(loaded.ok, true);
+  if (!loaded.ok) return;
+  assert.equal(loaded.migrated, false);
+  assert.equal(loaded.disposition, "ready");
+});
+
+test("keeps newer App Maps read-only and preserves their complete source", () => {
+  const future = { schemaVersion: APP_MAP_SCHEMA_VERSION + 1, id: "store", novelField: true };
+  const loaded = loadStoredAppMap(future, "mobile:store");
+  assert.equal(loaded.ok, false);
+  if (loaded.ok) return;
+  assert.equal(loaded.disposition, "read-only");
+  assert.match(loaded.error, /newer schemaVersion/u);
+  assert.deepEqual(loaded.raw, future);
+});
+
+test("does not guess-convert an explicitly unknown historical schema", () => {
+  const unknownHistorical = { schemaVersion: 0, id: "store" };
+  const loaded = loadStoredAppMap(unknownHistorical, "mobile:store");
+  assert.equal(loaded.ok, false);
+  if (loaded.ok) return;
+  assert.equal(loaded.disposition, "quarantined");
+  assert.match(loaded.error, /unsupported historical schemaVersion 0/u);
+  assert.deepEqual(loaded.raw, unknownHistorical);
+});
+
 test("quarantines a structurally broken App Map instead of throwing", () => {
   const loaded = loadStoredAppMap({ schemaVersion: 1 }, "p:broken");
   assert.equal(loaded.ok, false);
   if (loaded.ok) return;
   assert.match(loaded.error, /App Map/);
+  assert.equal(loaded.disposition, "quarantined");
   assert.deepEqual(loaded.raw, { schemaVersion: 1 });
 });

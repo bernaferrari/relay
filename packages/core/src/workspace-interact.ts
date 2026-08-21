@@ -366,7 +366,10 @@ export async function interact(
     // any committed input the last tree remains useful historical evidence,
     // but it must render stale until a deliberate snapshot proves the new UI.
     const afterInput = <T>(result: T): T => {
-      if (context.kind === "device") {
+      if (context.kind === "device" && context.platform === "android") {
+        // iOS advances the same fence in runIosMutationOnce, precisely when
+        // XCTest acknowledges its one native command. Keeping it there avoids
+        // fencing after selector misses or outcome-unknown attempts.
         invalidateTargetSemanticControl(
           { serial: context.serial, platform: context.platform },
           "input-changed",

@@ -55,6 +55,8 @@ export type DegradedAppMapRef = {
   key: string;
   id?: string;
   error: string;
+  /** Newer maps are retained but cannot be opened or rewritten by this Relay. */
+  disposition?: "read-only" | "quarantined";
 };
 
 export type AppMapOperationMap = {

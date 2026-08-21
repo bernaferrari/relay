@@ -8,13 +8,12 @@
  */
 import { PNG } from "pngjs";
 import type { SnapshotNode } from "./device.js";
-import { interact } from "./workspace-interact.js";
-import { devicePlatformForSerial } from "./workspace-devices.js";
-import { captureScreenshot, captureSnapshot, type SnapshotPayload } from "./workspace-capture.js";
+import type { SnapshotPayload } from "./workspace-capture.js";
 import {
   IosMutationOutcomeUnknownError,
   rethrowIosMutationOutcomeUnknown,
 } from "./ios-mutation-policy.js";
+import { createScrollableSurveyTargetCaptureAdapter } from "./scrollable-survey-target.js";
 import {
   isSystemSemantic,
   normalizedSemanticPart,
@@ -35,7 +34,6 @@ import type {
   ScrollSurveyOptions,
   ScrollSurveyResult,
   ScrollSurveyStopReason,
-  ValidatedFrozenDocumentOrigin,
 } from "./scrollable-survey-types.js";
 
 export type {
@@ -48,6 +46,12 @@ export type {
   ValidatedFrozenDocumentOrigin,
 } from "./scrollable-survey-types.js";
 export { verticalScrollSeam } from "./scrollable-survey-seams.js";
+export {
+  scrollSurveyFastRestoreGesture,
+  scrollSurveyGesture,
+  type ScrollSurveyTargetDependencies,
+  type ScrollSurveyTargetInput,
+} from "./scrollable-survey-target.js";
 
 /**
  * A scroll command may have moved an iOS viewport even when XCTest lost its
@@ -101,42 +105,6 @@ export function scrollSurveyOutcomeUnknownDiagnostic(
   const diagnostic = outcomeUnknownDiagnostics.get(error);
   return diagnostic ? structuredClone(diagnostic) : undefined;
 }
-export function scrollSurveyGesture(
-  platform: "android" | "ios",
-  bounds: { width: number; height: number },
-  direction: "down" | "up",
-) {
-  // Android turns a fast half-screen swipe into a fling; Settings physically
-  // skipped 1857px after the old 1170px gesture, leaving only two overlapping
-  // anchors. A slow quarter-screen drag keeps enough old content visible to
-  // prove the seam. XCTest does not share Android's fling behavior.
-  const lower = platform === "android" ? 0.68 : 0.78;
-  const upper = platform === "android" ? 0.42 : 0.28;
-  const fromY = bounds.height * (direction === "down" ? lower : upper);
-  const toY = bounds.height * (direction === "down" ? upper : lower);
-  return {
-    kind: "swipe" as const,
-    from: { x: bounds.width * 0.5, y: fromY },
-    to: { x: bounds.width * 0.5, y: toY },
-    durationMs: platform === "android" ? 800 : 360,
-  };
-}
-
-/** A single Android restoration fling. It is intentionally separate from the
- * overlap-heavy capture drag: collection needs a small, seam-friendly move;
- * returning to a proven document origin benefits from distance. */
-export function scrollSurveyFastRestoreGesture(
-  platform: "android",
-  bounds: { width: number; height: number },
-) {
-  return {
-    kind: "swipe" as const,
-    from: { x: bounds.width * 0.5, y: bounds.height * 0.86 },
-    to: { x: bounds.width * 0.5, y: bounds.height * 0.14 },
-    durationMs: 180,
-  };
-}
-
 type Composition = {
   frames: ScrollSurveyFrame[];
   stitched?: ScrollSurveyResult["stitched"];
@@ -429,62 +397,6 @@ function result(
     recordValidatedDocumentOriginIssuance(output, documentOriginIssuance);
   }
   return output;
-}
-
-/**
- * Device-backed survey used by the local API. It scrolls only after the first
- * inspectable frame proves a stable page anchor, captures PNG then AX in that
- * order (safe for the single-channel physical iOS runner), and returns to the
- * precise starting viewport on every non-destructive exit.
- */
-export async function captureScrollableSurveyForTarget(input: {
-  serial: string;
-  maxScrolls?: number;
-  initialCapture?: ScrollSurveyCapture;
-  frozenDocumentOrigin?: ValidatedFrozenDocumentOrigin;
-}): Promise<ScrollSurveyResult> {
-  const platform = await devicePlatformForSerial(input.serial);
-  if (platform !== "android" && platform !== "ios") {
-    throw new Error(`Target ${input.serial} is not an available Android or iOS device.`);
-  }
-  let bounds = { width: 1080, height: 2340 };
-  const settle = () =>
-    new Promise<void>((resolve) => setTimeout(resolve, platform === "ios" ? 700 : 350));
-  return captureScrollableSurvey(
-    {
-      capture: async () => {
-        const screenshot = await captureScreenshot({
-          serial: input.serial,
-          ephemeral: true,
-          includeScreenMatch: false,
-        });
-        const snapshot = await captureSnapshot({ serial: input.serial });
-        if (snapshot.bounds) bounds = snapshot.bounds;
-        return { screenshot, snapshot };
-      },
-      scrollDown: async () => {
-        await interact(scrollSurveyGesture(platform, bounds, "down"), { serial: input.serial });
-      },
-      scrollUp: async () => {
-        await interact(scrollSurveyGesture(platform, bounds, "up"), { serial: input.serial });
-      },
-      ...(platform === "android"
-        ? {
-            scrollUpFast: async () => {
-              await interact(scrollSurveyFastRestoreGesture("android", bounds), {
-                serial: input.serial,
-              });
-            },
-          }
-        : {}),
-      settle,
-    },
-    {
-      maxScrolls: input.maxScrolls,
-      ...(input.initialCapture ? { initialCapture: input.initialCapture } : {}),
-      ...(input.frozenDocumentOrigin ? { frozenDocumentOrigin: input.frozenDocumentOrigin } : {}),
-    },
-  );
 }
 
 export async function captureScrollableSurvey(
@@ -868,3 +780,10 @@ function candidateFrame(
     snapshot: capture.snapshot,
   };
 }
+
+/**
+ * Public local-device entry point. Its target effects live in the injected
+ * adapter module; this module supplies only the pure survey algorithm.
+ */
+export const captureScrollableSurveyForTarget =
+  createScrollableSurveyTargetCaptureAdapter(captureScrollableSurvey);

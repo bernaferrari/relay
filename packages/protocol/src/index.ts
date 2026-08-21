@@ -25,6 +25,8 @@ export * from "./target-runtime.js";
 export * from "./campaign-capacity-plan.js";
 export * from "./target-summary.js";
 export * from "./target-contract.js";
+export * from "./execution-target.js";
+export * from "./artifact-ref.js";
 export * from "./discovery-contract.js";
 export * from "./corpus-contract.js";
 export * from "./locale-pack-contract.js";

@@ -447,6 +447,22 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     "App Maps response",
     (output) => {
       if (!Array.isArray(output.appMaps)) fail("App Maps response appMaps", "must be an array");
+      const degradedEntries: unknown = output.degraded;
+      if (degradedEntries === undefined) return;
+      if (!Array.isArray(degradedEntries)) {
+        fail("App Maps response degraded", "must be an array");
+      }
+      for (const item of degradedEntries as unknown[]) {
+        const degraded = record(item, "App Maps response degraded item");
+        string(degraded.key, "App Maps response degraded key");
+        string(degraded.error, "App Maps response degraded error");
+        if (degraded.id !== undefined) string(degraded.id, "App Maps response degraded id");
+        if (degraded.disposition !== undefined) {
+          if (degraded.disposition !== "read-only" && degraded.disposition !== "quarantined") {
+            fail("App Maps response degraded disposition", "must be read-only or quarantined");
+          }
+        }
+      }
     },
   );
   const appMapCombinePreflightInputParser = objectParser<

@@ -23,6 +23,14 @@ test("operation descriptors have unique IDs, transports, and complete safety met
   );
 });
 
+test("campaign capacity preflight remains composed into the central operation registry", () => {
+  const definition = operationDefinition("campaign.capacity.preflight");
+  assert.equal(definition.transport.method, "POST");
+  assert.equal(definition.transport.path, "/campaign-capacity/preflight");
+  assert.equal(definition.input.description, "campaign capacity preflight input");
+  assert.equal(definition.output.description, "campaign capacity preflight response");
+});
+
 test("App Map descriptors keep their canonical contiguous order", () => {
   assert.deepEqual(
     operationDefinitions.filter(({ id }) => id.startsWith("app-map.")).map(({ id }) => id),

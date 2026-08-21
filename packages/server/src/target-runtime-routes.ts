@@ -9,6 +9,7 @@ import {
   listDevices,
   listAndroidAppLocales,
   listTargetWorkers,
+  preflightLocalCampaignCapacity,
   preflightDevicePool,
   preflightRegisteredBuild,
   openApp,
@@ -20,12 +21,14 @@ import {
 } from "@relay/core";
 import { assertTargetControl } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
+import type { OperationInput } from "@relay/protocol";
 import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import type { RequestContext } from "./security.js";
 
 export type TargetRuntimeRouteRuntime = {
   listDevices: typeof listDevices;
   listDeviceLeases: typeof listDeviceLeases;
+  listTargetWorkers: typeof listTargetWorkers;
   assertTargetControl: typeof assertTargetControl;
   launchApp: (input: {
     serial: string;
@@ -36,11 +39,13 @@ export type TargetRuntimeRouteRuntime = {
   recoverTarget: (serial: string, reason?: string) => ReturnType<typeof recoverTargetRuntime>;
   runBuildCommand?: BuildCommandRunner;
   listAndroidAppLocales: typeof listAndroidAppLocales;
+  now: () => number;
 };
 
 const defaultRuntime: TargetRuntimeRouteRuntime = {
   listDevices,
   listDeviceLeases,
+  listTargetWorkers,
   assertTargetControl,
   launchApp: async ({ serial, platform, app, relaunch }) => {
     await runWithTargetContext({ kind: "device", platform, serial }, () =>
@@ -53,6 +58,7 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
       reason ? new Error(`Recovery requested for ${reason}`) : undefined,
     ),
   listAndroidAppLocales,
+  now: () => Date.now(),
 };
 
 export async function handleTargetRuntimeRoute(context: {
@@ -67,7 +73,28 @@ export async function handleTargetRuntimeRoute(context: {
   const runtime = { ...defaultRuntime, ...context.runtime };
 
   if (method === "GET" && pathname === "/target-workers") {
-    json(response, 200, { workers: listTargetWorkers() });
+    json(response, 200, { workers: runtime.listTargetWorkers() });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/campaign-capacity/preflight") {
+    const body = (await parseJsonBody(request)) as OperationInput<"campaign.capacity.preflight">;
+    const checkedAt = runtime.now();
+    // Do not turn a failed inventory or lease read into optimistic capacity.
+    // The caller needs to retry the read rather than receive a green-looking
+    // plan based on absent facts.
+    const [devices, leases] = await Promise.all([
+      runtime.listDevices(),
+      runtime.listDeviceLeases(scope.projectId),
+    ]);
+    const preflight = preflightLocalCampaignCapacity({
+      ...body,
+      devices,
+      leases,
+      workers: runtime.listTargetWorkers(),
+      at: checkedAt,
+    });
+    json(response, 200, { preflight });
     return true;
   }
 

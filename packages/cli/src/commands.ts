@@ -95,6 +95,48 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("device-pool.preflight", path("device-pool preflight", ["poolId"])),
   mapped("target-worker.list", path("target worker list")),
   mapped(
+    "campaign.capacity.preflight",
+    path("campaign capacity preflight", [], undefined, {
+      summary: "Read-only preflight for a local Android and iOS campaign",
+      inputHelp: [
+        {
+          name: "targets",
+          type: "array",
+          required: true,
+          description: "Explicit target IDs and platforms to consider",
+        },
+        {
+          name: "workItems",
+          type: "number",
+          required: true,
+          description: "Total work items in the campaign",
+        },
+        {
+          name: "workItemsByPlatform",
+          type: "object",
+          required: true,
+          description: "Required Android and iOS partition of the campaign",
+        },
+        {
+          name: "duration",
+          type: "object",
+          required: true,
+          description: "Measured or supplied per-work-item duration and provenance",
+        },
+        {
+          name: "deadlineMs",
+          type: "number",
+          required: true,
+          description: "Campaign deadline in milliseconds",
+        },
+      ],
+      note: "This only reports currently usable local capacity; it never takes a lease or queues a job.",
+      examples: [
+        'relay campaign capacity preflight --input \'{"targets":[{"targetId":"android-1","platform":"android"},{"targetId":"ios-1","platform":"ios"}],"workItems":40,"workItemsByPlatform":{"android":20,"ios":20},"duration":{"workItemDurationMs":6000,"provenance":"supplied"},"deadlineMs":180000}\'',
+      ],
+    }),
+  ),
+  mapped(
     "lease.list",
     path(
       "lease list",
