@@ -14,7 +14,7 @@ const LEGACY_OUTPUT_DIRS = [
   path.join('dist', 'apple-runner'),
   path.join('dist', 'apple', 'apple-runner'),
 ];
-const SKIPPED_DIR_NAMES = new Set(['.build', '.swiftpm', 'xcuserdata']);
+const SKIPPED_DIR_NAMES = new Set(['.build', '.swiftpm', 'UnitTests', 'xcuserdata']);
 const SKIPPED_ROOT_FILES = new Set(['README.md', 'RUNNER_PROTOCOL.md']);
 // XCTest discovers instance methods named test*; anything matching this that survives stripping
 // would ship to (and compile on) every user's machine. Only the runner's command-loop entrypoint

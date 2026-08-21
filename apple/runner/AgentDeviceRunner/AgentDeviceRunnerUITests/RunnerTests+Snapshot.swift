@@ -40,46 +40,42 @@ extension RunnerTests {
 
   // MARK: - Snapshot Entry
 
+  /// One raw-value table covers public XCTest cases and the SDK-hidden Keyboard/Key values.
+  static let elementTypeNamesByRawValue = [
+    XCUIElement.ElementType.application.rawValue: "Application",
+    XCUIElement.ElementType.window.rawValue: "Window",
+    XCUIElement.ElementType.button.rawValue: "Button",
+    XCUIElement.ElementType.cell.rawValue: "Cell",
+    XCUIElement.ElementType.staticText.rawValue: "StaticText",
+    XCUIElement.ElementType.textField.rawValue: "TextField",
+    XCUIElement.ElementType.textView.rawValue: "TextView",
+    XCUIElement.ElementType.secureTextField.rawValue: "SecureTextField",
+    XCUIElement.ElementType.switch.rawValue: "Switch",
+    XCUIElement.ElementType.slider.rawValue: "Slider",
+    XCUIElement.ElementType.link.rawValue: "Link",
+    XCUIElement.ElementType.image.rawValue: "Image",
+    XCUIElement.ElementType.navigationBar.rawValue: "NavigationBar",
+    XCUIElement.ElementType.tabBar.rawValue: "TabBar",
+    XCUIElement.ElementType.collectionView.rawValue: "CollectionView",
+    XCUIElement.ElementType.table.rawValue: "Table",
+    XCUIElement.ElementType.scrollView.rawValue: "ScrollView",
+    XCUIElement.ElementType.toolbar.rawValue: "Toolbar",
+    XCUIElement.ElementType.searchField.rawValue: "SearchField",
+    XCUIElement.ElementType.segmentedControl.rawValue: "SegmentedControl",
+    XCUIElement.ElementType.stepper.rawValue: "Stepper",
+    XCUIElement.ElementType.picker.rawValue: "Picker",
+    XCUIElement.ElementType.activityIndicator.rawValue: "ActivityIndicator",
+    XCUIElement.ElementType.progressIndicator.rawValue: "ProgressIndicator",
+    XCUIElement.ElementType.checkBox.rawValue: "CheckBox",
+    XCUIElement.ElementType.menuItem.rawValue: "MenuItem",
+    XCUIElement.ElementType.webView.rawValue: "WebView",
+    XCUIElement.ElementType.other.rawValue: "Other",
+    19: "Keyboard",
+    20: "Key"
+  ]
+
   func elementTypeName(_ type: XCUIElement.ElementType) -> String {
-    switch type {
-    case .application: return "Application"
-    case .window: return "Window"
-    case .button: return "Button"
-    case .cell: return "Cell"
-    case .staticText: return "StaticText"
-    case .textField: return "TextField"
-    case .textView: return "TextView"
-    case .secureTextField: return "SecureTextField"
-    case .switch: return "Switch"
-    case .slider: return "Slider"
-    case .link: return "Link"
-    case .image: return "Image"
-    case .navigationBar: return "NavigationBar"
-    case .tabBar: return "TabBar"
-    case .collectionView: return "CollectionView"
-    case .table: return "Table"
-    case .scrollView: return "ScrollView"
-    case .toolbar: return "Toolbar"
-    case .searchField: return "SearchField"
-    case .segmentedControl: return "SegmentedControl"
-    case .stepper: return "Stepper"
-    case .picker: return "Picker"
-    case .activityIndicator: return "ActivityIndicator"
-    case .progressIndicator: return "ProgressIndicator"
-    case .checkBox: return "CheckBox"
-    case .menuItem: return "MenuItem"
-    case .webView: return "WebView"
-    case .other: return "Other"
-    default:
-      switch type.rawValue {
-      case 19:
-        return "Keyboard"
-      case 20:
-        return "Key"
-      default:
-        return "Element(\(type.rawValue))"
-      }
-    }
+    Self.elementTypeNamesByRawValue[type.rawValue] ?? "Element(\(type.rawValue))"
   }
 
   static let structuralOnlyNodeTypes: Set<String> = [

@@ -213,14 +213,8 @@ struct SequenceStepResult: Codable {
 
 struct Response: Codable {
   let ok: Bool
-  let data: DataPayload?
-  let error: ErrorPayload?
-
-  init(ok: Bool, data: DataPayload? = nil, error: ErrorPayload? = nil) {
-    self.ok = ok
-    self.data = data
-    self.error = error
-  }
+  var data: DataPayload?
+  var error: ErrorPayload?
 }
 
 extension Response {
@@ -236,142 +230,52 @@ extension Response {
 }
 
 struct DataPayload: Codable {
-  let message: String?
-  let imageBase64: String?
-  let text: String?
-  let found: Bool?
-  let items: [String]?
-  let nodes: [PresentedNode]?
-  let truncated: Bool?
-  let snapshotQuality: SnapshotQuality?
-  let gestureStartUptimeMs: Double?
-  let gestureEndUptimeMs: Double?
-  let x: Double?
-  let y: Double?
-  let x2: Double?
-  let y2: Double?
-  let referenceWidth: Double?
-  let referenceHeight: Double?
+  var message: String?
+  var imageBase64: String?
+  var text: String?
+  var found: Bool?
+  var items: [String]?
+  var nodes: [PresentedNode]?
+  var truncated: Bool?
+  var snapshotQuality: SnapshotQuality?
+  var gestureStartUptimeMs: Double?
+  var gestureEndUptimeMs: Double?
+  var x: Double?
+  var y: Double?
+  var x2: Double?
+  var y2: Double?
+  var referenceWidth: Double?
+  var referenceHeight: Double?
   var currentUptimeMs: Double?
-  let commandId: String?
-  let lifecycleState: String?
-  let lifecycleCommand: String?
-  let lifecycleResponseOk: Bool?
-  let lifecycleResponseJson: String?
-  let lifecycleErrorCode: String?
-  let lifecycleErrorMessage: String?
-  let lifecycleErrorHint: String?
-  let visible: Bool?
-  let wasVisible: Bool?
-  let dismissed: Bool?
-  let keyboardDismissMechanism: String?
-  let orientation: String?
-  let gestureFallback: String?
-  let gestureFallbackMessage: String?
-  let gestureFallbackHint: String?
-  let maestroNonHittableCoordinateFallbackUsed: Bool?
-  let textEntryRoute: String?
-  let runnerFatal: Bool?
-  let runnerFatalReason: String?
-  let completedSteps: Int?
-  let failedStepIndex: Int?
-  let sequenceResults: [SequenceStepResult]?
-
-  init(
-    message: String? = nil,
-    imageBase64: String? = nil,
-    text: String? = nil,
-    found: Bool? = nil,
-    items: [String]? = nil,
-    nodes: [PresentedNode]? = nil,
-    truncated: Bool? = nil,
-    snapshotQuality: SnapshotQuality? = nil,
-    gestureStartUptimeMs: Double? = nil,
-    gestureEndUptimeMs: Double? = nil,
-    x: Double? = nil,
-    y: Double? = nil,
-    x2: Double? = nil,
-    y2: Double? = nil,
-    referenceWidth: Double? = nil,
-    referenceHeight: Double? = nil,
-    currentUptimeMs: Double? = nil,
-    commandId: String? = nil,
-    lifecycleState: String? = nil,
-    lifecycleCommand: String? = nil,
-    lifecycleResponseOk: Bool? = nil,
-    lifecycleResponseJson: String? = nil,
-    lifecycleErrorCode: String? = nil,
-    lifecycleErrorMessage: String? = nil,
-    lifecycleErrorHint: String? = nil,
-    visible: Bool? = nil,
-    wasVisible: Bool? = nil,
-    dismissed: Bool? = nil,
-    keyboardDismissMechanism: String? = nil,
-    orientation: String? = nil,
-    gestureFallback: String? = nil,
-    gestureFallbackMessage: String? = nil,
-    gestureFallbackHint: String? = nil,
-    maestroNonHittableCoordinateFallbackUsed: Bool? = nil,
-    textEntryRoute: String? = nil,
-    runnerFatal: Bool? = nil,
-    runnerFatalReason: String? = nil,
-    completedSteps: Int? = nil,
-    failedStepIndex: Int? = nil,
-    sequenceResults: [SequenceStepResult]? = nil
-  ) {
-    self.message = message
-    self.imageBase64 = imageBase64
-    self.text = text
-    self.found = found
-    self.items = items
-    self.nodes = nodes
-    self.truncated = truncated
-    self.snapshotQuality = snapshotQuality
-    self.gestureStartUptimeMs = gestureStartUptimeMs
-    self.gestureEndUptimeMs = gestureEndUptimeMs
-    self.x = x
-    self.y = y
-    self.x2 = x2
-    self.y2 = y2
-    self.referenceWidth = referenceWidth
-    self.referenceHeight = referenceHeight
-    self.currentUptimeMs = currentUptimeMs
-    self.commandId = commandId
-    self.lifecycleState = lifecycleState
-    self.lifecycleCommand = lifecycleCommand
-    self.lifecycleResponseOk = lifecycleResponseOk
-    self.lifecycleResponseJson = lifecycleResponseJson
-    self.lifecycleErrorCode = lifecycleErrorCode
-    self.lifecycleErrorMessage = lifecycleErrorMessage
-    self.lifecycleErrorHint = lifecycleErrorHint
-    self.visible = visible
-    self.wasVisible = wasVisible
-    self.dismissed = dismissed
-    self.keyboardDismissMechanism = keyboardDismissMechanism
-    self.orientation = orientation
-    self.gestureFallback = gestureFallback
-    self.gestureFallbackMessage = gestureFallbackMessage
-    self.gestureFallbackHint = gestureFallbackHint
-    self.maestroNonHittableCoordinateFallbackUsed = maestroNonHittableCoordinateFallbackUsed
-    self.textEntryRoute = textEntryRoute
-    self.runnerFatal = runnerFatal
-    self.runnerFatalReason = runnerFatalReason
-    self.completedSteps = completedSteps
-    self.failedStepIndex = failedStepIndex
-    self.sequenceResults = sequenceResults
-  }
+  var commandId: String?
+  var lifecycleState: String?
+  var lifecycleCommand: String?
+  var lifecycleResponseOk: Bool?
+  var lifecycleResponseJson: String?
+  var lifecycleErrorCode: String?
+  var lifecycleErrorMessage: String?
+  var lifecycleErrorHint: String?
+  var visible: Bool?
+  var wasVisible: Bool?
+  var dismissed: Bool?
+  var keyboardDismissMechanism: String?
+  var orientation: String?
+  var gestureFallback: String?
+  var gestureFallbackMessage: String?
+  var gestureFallbackHint: String?
+  var maestroNonHittableCoordinateFallbackUsed: Bool?
+  var textEntryRoute: String?
+  var runnerFatal: Bool?
+  var runnerFatalReason: String?
+  var completedSteps: Int?
+  var failedStepIndex: Int?
+  var sequenceResults: [SequenceStepResult]?
 }
 
 struct ErrorPayload: Codable {
-  let code: String?
+  var code: String?
   let message: String
-  let hint: String?
-
-  init(code: String? = nil, message: String, hint: String? = nil) {
-    self.code = code
-    self.message = message
-    self.hint = hint
-  }
+  var hint: String?
 }
 
 struct SnapshotRect: Codable {

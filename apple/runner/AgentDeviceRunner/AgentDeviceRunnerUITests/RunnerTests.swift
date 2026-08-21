@@ -180,25 +180,6 @@ final class RunnerTests: XCTestCase {
   // issues this session muted, so wedge investigations see the volume without grepping logs.
   let suppressedIssueLock = NSLock()
   var suppressedAxSnapshotIssueCount = 0
-  let interactiveTypes: Set<XCUIElement.ElementType> = [
-    .button,
-    .cell,
-    .checkBox,
-    .collectionView,
-    .link,
-    .menuItem,
-    .picker,
-    .searchField,
-    .segmentedControl,
-    .slider,
-    .stepper,
-    .switch,
-    .tabBar,
-    .textField,
-    .secureTextField,
-    .textView,
-    .webView
-  ]
   // Keep blocker actions narrow to avoid false positives from generic hittable containers.
   let actionableTypes: Set<XCUIElement.ElementType> = [
     .button,
