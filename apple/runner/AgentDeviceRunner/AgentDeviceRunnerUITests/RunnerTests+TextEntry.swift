@@ -7,6 +7,7 @@ extension RunnerTests {
   enum TextEntryFailure: String {
     case notFocused = "TEXT_INPUT_NOT_FOCUSED"
     case synthesisUnavailable = "TEXT_INPUT_SYNTHESIS_UNAVAILABLE"
+    case commitNotObserved = "TEXT_INPUT_COMMIT_NOT_OBSERVED"
 
     var message: String {
       switch self {
@@ -14,6 +15,8 @@ extension RunnerTests {
         return "No focused text input was available for typing."
       case .synthesisUnavailable:
         return "Reliable text synthesis is unavailable while the software keyboard is hidden."
+      case .commitNotObserved:
+        return "The runner could not confirm the typed text reached the field."
       }
     }
 
@@ -23,6 +26,8 @@ extension RunnerTests {
         return "Focus a visible text input, then retry type or fill. If the input is not exposed by accessibility, use a coordinate focus command before typing."
       case .synthesisUnavailable:
         return "Show the software keyboard, then retry type or fill."
+      case .commitNotObserved:
+        return "The field may hold none, part, or all of the text. Read it back before retrying, and prefer fill, which replaces the whole value, over type, which appends to whatever committed."
       }
     }
   }
@@ -516,19 +521,25 @@ extension RunnerTests {
   }
 
   private func isPlaceholderValue(_ value: String, for element: XCUIElement) -> Bool {
+    if Self.textMatchesPlaceholder(value, placeholder: element.placeholderValue) {
+      return true
+    }
     let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedValue.isEmpty else {
       return false
-    }
-    let placeholder = element.placeholderValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    if !placeholder.isEmpty && normalizedValue == placeholder {
-      return true
     }
     if isGenericTextInputLabel(normalizedValue) {
       return true
     }
     let normalizedLabel = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
     return normalizedLabel == normalizedValue && isGenericTextInputLabel(normalizedLabel)
+  }
+
+  static func textMatchesPlaceholder(_ text: String, placeholder: String?) -> Bool {
+    let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedText.isEmpty else { return false }
+    let normalizedPlaceholder = placeholder?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return !normalizedPlaceholder.isEmpty && normalizedText == normalizedPlaceholder
   }
 
   private func isGenericTextInputLabel(_ value: String) -> Bool {
