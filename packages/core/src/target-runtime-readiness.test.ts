@@ -4,6 +4,7 @@ import {
   IOS_SEMANTIC_PROBE_INITIAL_COOLDOWN_MS,
   IOS_SEMANTIC_PROBE_MAX_COOLDOWN_MS,
   TARGET_RUNTIME_READINESS_TTL_MS,
+  beginTargetRuntimeObservation,
   hasUsableSemanticAccessibility,
   invalidateTargetSemanticControl,
   recordTargetPixelCapture,
@@ -315,4 +316,134 @@ test("an expired visual fingerprint does not invalidate a new semantic session",
     targetRuntimeReadiness(ipad, TARGET_RUNTIME_READINESS_TTL_MS + 4).semanticControl.freshness,
     "current",
   );
+});
+
+test("a slow iOS tree that started before a newer frame remains stale when it finishes", () => {
+  const initialFrame = beginTargetRuntimeObservation(ipad);
+  recordTargetPixelCapture(ipad, {
+    at: 1,
+    visualFingerprint: "frame-a",
+    observationEpoch: initialFrame,
+  });
+  const slowSemantic = beginTargetRuntimeObservation(ipad);
+  const newerVisual = beginTargetRuntimeObservation(ipad);
+  recordTargetPixelCapture(ipad, {
+    at: 3,
+    visualFingerprint: "frame-b",
+    observationEpoch: newerVisual,
+  });
+
+  recordTargetSemanticSnapshot(ipad, {
+    inspectable: true,
+    at: 4,
+    observationEpoch: slowSemantic,
+    nodes: [
+      {
+        type: "Button",
+        label: "Settings",
+        rect: { x: 80, y: 80, width: 120, height: 44 },
+      },
+    ],
+  });
+
+  const semantic = targetRuntimeReadiness(ipad, 5).semanticControl;
+  assert.equal(semantic.state, "proven");
+  assert.equal(semantic.freshness, "stale");
+  assert.deepEqual(semantic.proof, { at: 4, observedNodeCount: 1 });
+  assert.deepEqual(semantic.invalidated, { at: 3, reason: "visual-changed" });
+});
+
+test("an older iOS picture that completes late cannot erase a newer semantic epoch", () => {
+  const initialFrame = beginTargetRuntimeObservation(ipad);
+  recordTargetPixelCapture(ipad, {
+    at: 1,
+    visualFingerprint: "frame-a",
+    observationEpoch: initialFrame,
+  });
+  const slowVisual = beginTargetRuntimeObservation(ipad);
+  const newerSemantic = beginTargetRuntimeObservation(ipad);
+  recordTargetSemanticSnapshot(ipad, {
+    inspectable: true,
+    at: 4,
+    observationEpoch: newerSemantic,
+    nodes: [
+      {
+        type: "Button",
+        label: "Done",
+        rect: { x: 720, y: 80, width: 70, height: 44 },
+      },
+    ],
+  });
+  recordTargetPixelCapture(ipad, {
+    at: 5,
+    visualFingerprint: "frame-b",
+    observationEpoch: slowVisual,
+  });
+
+  const semantic = targetRuntimeReadiness(ipad, 6).semanticControl;
+  assert.equal(semantic.state, "proven");
+  assert.equal(semantic.freshness, "current");
+  assert.deepEqual(semantic.proof, { at: 4, observedNodeCount: 1 });
+  assert.equal(semantic.invalidated, undefined);
+});
+
+test("a user input fence keeps an already-running iOS tree from becoming current", () => {
+  const slowSemantic = beginTargetRuntimeObservation(ipad);
+  invalidateTargetSemanticControl(ipad, "input-changed", 2);
+
+  recordTargetSemanticSnapshot(ipad, {
+    inspectable: true,
+    at: 3,
+    observationEpoch: slowSemantic,
+    nodes: [
+      {
+        type: "Button",
+        label: "Settings",
+        rect: { x: 80, y: 80, width: 120, height: 44 },
+      },
+    ],
+  });
+
+  let semantic = targetRuntimeReadiness(ipad, 4).semanticControl;
+  assert.equal(semantic.freshness, "stale");
+  assert.deepEqual(semantic.invalidated, { at: 2, reason: "input-changed" });
+
+  const freshSemantic = beginTargetRuntimeObservation(ipad);
+  recordTargetSemanticSnapshot(ipad, {
+    inspectable: true,
+    at: 5,
+    observationEpoch: freshSemantic,
+    nodes: [
+      {
+        type: "Button",
+        label: "Done",
+        rect: { x: 720, y: 80, width: 70, height: 44 },
+      },
+    ],
+  });
+
+  semantic = targetRuntimeReadiness(ipad, 6).semanticControl;
+  assert.equal(semantic.freshness, "current");
+  assert.equal(semantic.invalidated, undefined);
+});
+
+test("a semantic tree begun after an input fence can become current", () => {
+  invalidateTargetSemanticControl(ipad, "input-changed", 1);
+  const freshSemantic = beginTargetRuntimeObservation(ipad);
+  recordTargetSemanticSnapshot(ipad, {
+    inspectable: true,
+    at: 2,
+    observationEpoch: freshSemantic,
+    nodes: [
+      {
+        type: "Button",
+        label: "Continue",
+        rect: { x: 80, y: 80, width: 120, height: 44 },
+      },
+    ],
+  });
+
+  const semantic = targetRuntimeReadiness(ipad, 3).semanticControl;
+  assert.equal(semantic.freshness, "current");
+  assert.equal(semantic.invalidated, undefined);
 });

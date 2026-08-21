@@ -39,14 +39,35 @@ export const INTERACTIVE_SNAPSHOT_ROLES = new Set([
   "textview",
 ]);
 
+/**
+ * Native bridges commonly serialize a wrapped visual label with a line break,
+ * while an authored semantic selector retains ordinary spaces. Treat those as
+ * the same text without weakening word or punctuation boundaries. This is
+ * intentionally limited to human-readable fields: identifiers remain exact.
+ */
+function normalizeSemanticText(value: string | undefined): string | undefined {
+  // NFC makes an authored composed accent and an AX decomposed accent agree.
+  // `toLowerCase` is Unicode-aware but independent of the host machine's
+  // locale, so resolution does not vary between workers in a device farm.
+  const normalized = value?.normalize("NFC").replace(/\s+/gu, " ").trim().toLowerCase();
+  return normalized || undefined;
+}
+
 /** Mapped "SuperGrok" still matches the live "SuperGrok, X Premium" row.
  * A following word ("SuperGrok More") is a different control. */
 export function snapshotLabelMatches(query: string, live: string | undefined): boolean {
-  if (!live) return false;
-  const normalizedLive = live.trim().toLocaleLowerCase();
-  if (normalizedLive === query) return true;
-  if (!normalizedLive.startsWith(query)) return false;
-  return /^[\s]*[,:;–—([{/-]/u.test(normalizedLive.slice(query.length));
+  const normalizedQuery = normalizeSemanticText(query);
+  const normalizedLive = normalizeSemanticText(live);
+  if (!normalizedQuery || !normalizedLive) return false;
+  if (normalizedLive === normalizedQuery) return true;
+  if (!normalizedLive.startsWith(normalizedQuery)) return false;
+  return /^[\s]*[,:;–—([{/-]/u.test(normalizedLive.slice(normalizedQuery.length));
+}
+
+function snapshotTextMatches(query: string, live: string | undefined): boolean {
+  const normalizedQuery = normalizeSemanticText(query);
+  const normalizedLive = normalizeSemanticText(live);
+  return Boolean(normalizedQuery && normalizedLive?.includes(normalizedQuery));
 }
 
 /** Status-bar crumbs and 20px captions are unique matches that still waste a tap.
@@ -65,6 +86,25 @@ function isUsableTapTarget(node: SnapshotNode): boolean {
 function isActivationContainer(node: SnapshotNode): boolean {
   const role = (node.role ?? node.type ?? "").trim().toLocaleLowerCase();
   return role === "application" || role === "window";
+}
+
+/** A resolver can coalesce duplicate native nodes at the same tap point. Keep
+ * the representative stable even if a bridge changes traversal order. */
+function compareSnapshotNodeIdentity(left: SnapshotNode, right: SnapshotNode): number {
+  const leftIndex = left.index ?? Number.MAX_SAFE_INTEGER;
+  const rightIndex = right.index ?? Number.MAX_SAFE_INTEGER;
+  if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+  for (const field of ["identifier", "ref", "label", "value", "role", "type"] as const) {
+    const leftValue = left[field] ?? "";
+    const rightValue = right[field] ?? "";
+    if (leftValue < rightValue) return -1;
+    if (leftValue > rightValue) return 1;
+  }
+  for (const field of ["x", "y", "width", "height"] as const) {
+    const difference = (left.rect?.[field] ?? 0) - (right.rect?.[field] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
 }
 
 type SnapshotTargetResolution = {
@@ -90,9 +130,9 @@ function resolveSnapshotTarget(
   const normalized = {
     identifier: target.identifier?.trim().toLocaleLowerCase(),
     ref: target.ref?.replace(/^@/u, "").trim().toLocaleLowerCase(),
-    label: target.label?.trim().toLocaleLowerCase(),
+    label: normalizeSemanticText(target.label),
     role: target.role?.trim().toLocaleLowerCase(),
-    text: target.text?.trim().toLocaleLowerCase(),
+    text: normalizeSemanticText(target.text),
   };
   const nodesByIndex = new Map(
     nodes.flatMap((node) => (typeof node.index === "number" ? [[node.index, node] as const] : [])),
@@ -136,8 +176,10 @@ function resolveSnapshotTarget(
         node.rect &&
         node.rect.x <= 0 &&
         node.rect.y <= 0 &&
-        node.rect.width >= 320 &&
-        node.rect.height >= 480,
+        // A root can legitimately be landscape on a small phone (568×320).
+        // Test the short and long sides rather than assuming portrait.
+        Math.min(node.rect.width, node.rect.height) >= 320 &&
+        Math.max(node.rect.width, node.rect.height) >= 480,
     )
     .sort(
       (left, right) =>
@@ -226,7 +268,7 @@ function resolveSnapshotTarget(
       if (normalized.label) return snapshotLabelMatches(normalized.label, node.label);
       if (normalized.text) {
         return [node.label, node.value, node.identifier].some((value) =>
-          value?.toLocaleLowerCase().includes(normalized.text!),
+          snapshotTextMatches(normalized.text!, value),
         );
       }
       return false;
@@ -332,7 +374,10 @@ function resolveSnapshotTarget(
         Math.abs(candidate.point.y - distinct[0]!.point.y) <= 4,
     )
     .sort(
-      (left, right) => left.area - right.area || (right.node.depth ?? 0) - (left.node.depth ?? 0),
+      (left, right) =>
+        left.area - right.area ||
+        (right.node.depth ?? 0) - (left.node.depth ?? 0) ||
+        compareSnapshotNodeIdentity(left.node, right.node),
     )[0];
   return selected
     ? {
@@ -555,7 +600,7 @@ export function resolveNamedControlOutcome(
       return undefined;
     }
     if (!hit) {
-      const normalizedValue = value.trim().toLocaleLowerCase();
+      const normalizedValue = normalizeSemanticText(value)!;
       const normalizedRole = target.role?.trim().toLocaleLowerCase();
       const matches = nodes.filter((node) => {
         if (
@@ -571,7 +616,7 @@ export function resolveNamedControlOutcome(
           return snapshotLabelMatches(normalizedValue, node.label);
         }
         return [node.label, node.value, node.identifier].some((candidate) =>
-          candidate?.toLocaleLowerCase().includes(normalizedValue),
+          snapshotTextMatches(normalizedValue, candidate),
         );
       });
       const usable = matches.filter(

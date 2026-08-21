@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { AuthoringInteraction, RecipeStep } from "@relay/protocol";
+import type { AuthoringCaptureContext, AuthoringInteraction, RecipeStep } from "@relay/protocol";
 import {
   AuthoringSessionStore,
   AuthoringStateError,
@@ -15,6 +15,8 @@ import {
 import { runWithOperationContext, type OperationContext } from "./operation-context.js";
 import { commitAppMapChanges } from "./app-map.js";
 import { createAppMap, mutateStoredAppMap, readAppMap } from "./collaboration.js";
+import { readAuthoringEvidence } from "./authoring-evidence.js";
+import { MAX_AUTHORING_RETAINED_OBSERVATIONS } from "./authoring-observation-links.js";
 
 function operation(operationId = "authoring.test"): OperationContext {
   const requestId = crypto.randomUUID();
@@ -41,19 +43,42 @@ class FakeRuntime implements AuthoringRuntime {
   lifecycle: string[] = [];
   executed: AuthoringInteraction[] = [];
   replayed: RecipeStep[][] = [];
+  replayedActions: string[] = [];
+  replayEndpointCaptures = 0;
+  replayEndpointSemantics: "current" | "stale" | "unavailable" = "unavailable";
+  fullObservationSemantics?: "current" | "stale" | "unavailable";
+  fullCapture?: AuthoringCaptureContext;
   failReplay = false;
   replayScreen = "destination";
+  replayAction?: AuthoringRuntime["replayAction"];
+  observeReplayActionEndpoint?: AuthoringRuntime["observeReplayActionEndpoint"];
 
   async observe() {
     this.lifecycle.push("observe");
     this.observations += 1;
     const capturedAt = 1_000 + this.observations;
+    const fingerprint = createHash("sha256").update(this.screen).digest("hex");
+    const semantics = this.fullObservationSemantics;
     return {
       capturedAt,
       targetId: "device-a",
-      fingerprint: createHash("sha256").update(this.screen).digest("hex"),
+      fingerprint,
       bounds: { width: 400, height: 800 },
       nodes: this.nodesByScreen.get(this.screen) ?? [{ role: "button", label: this.screen }],
+      ...(semantics
+        ? {
+            proof: {
+              schemaVersion: 1 as const,
+              captureOrder: "concurrent" as const,
+              pixels: { status: "captured" as const, capturedAt, fingerprint },
+              semantics:
+                semantics === "current"
+                  ? { status: "current" as const, capturedAt, fingerprint }
+                  : { status: semantics, capturedAt },
+            },
+          }
+        : {}),
+      ...(this.fullCapture ? { capture: structuredClone(this.fullCapture) } : {}),
       screenshot: { data: Buffer.from(`png:${this.screen}:${capturedAt}`), mime: "image/png" },
     };
   }
@@ -67,6 +92,35 @@ class FakeRuntime implements AuthoringRuntime {
     this.replayed.push(structuredClone(steps));
     if (this.failReplay) throw new Error("replay failed");
     if (steps.length > 0) this.screen = this.replayScreen;
+  }
+
+  async immediateReplayEndpoint() {
+    this.replayEndpointCaptures += 1;
+    const capturedAt = 10_000 + this.replayEndpointCaptures;
+    const fingerprint = createHash("sha256").update(this.screen).digest("hex");
+    const semantics = this.replayEndpointSemantics;
+    return {
+      capturedAt,
+      targetId: "device-a",
+      fingerprint,
+      bounds: { width: 400, height: 800 },
+      ...(semantics === "current"
+        ? { nodes: this.nodesByScreen.get(this.screen) ?? [{ role: "button", label: this.screen }] }
+        : {}),
+      proof: {
+        schemaVersion: 1 as const,
+        captureOrder: "pixels-first" as const,
+        pixels: { status: "captured" as const, capturedAt, fingerprint, width: 400, height: 800 },
+        semantics:
+          semantics === "current"
+            ? { status: "current" as const, capturedAt, fingerprint }
+            : { status: semantics, capturedAt },
+      },
+      screenshot: {
+        data: Buffer.from(`png:endpoint:${this.screen}:${capturedAt}`),
+        mime: "image/png",
+      },
+    };
   }
 
   async startVideo() {
@@ -187,6 +241,34 @@ test("recorded pauses ignore scheduling noise, stay readable, and bound forgotte
   assert.equal(recordedPauseDuration(1_234), 1_250);
   assert.equal(recordedPauseDuration(90_000), 10_000);
   assert.equal(recordedPauseDuration(Number.NaN), 0);
+});
+
+test("authoring snapshot evidence keeps proof and capture provenance for offline analysis", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    runtime.fullObservationSemantics = "current";
+    runtime.fullCapture = {
+      snapshotSource: "sdk",
+      inspectable: true,
+      inspectionState: "active",
+      bindingState: "matched",
+      treeApp: "com.example.product",
+      visualFingerprint: "visual-source",
+    };
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+
+    const revision = session.take!.revisions.at(-1)!;
+    const snapshot = revision.evidence.find((evidence) => evidence.kind === "snapshot");
+    assert.ok(snapshot?.sha256);
+    const payload = JSON.parse((await readAuthoringEvidence(snapshot.sha256))!.toString("utf8"));
+
+    assert.equal(payload.schemaVersion, 1);
+    assert.equal(payload.capturedAt, snapshot.capturedAt);
+    assert.equal(payload.targetId, "device-a");
+    assert.deepEqual(payload.proof, revision.before?.proof);
+    assert.deepEqual(payload.capture, runtime.fullCapture);
+    assert.equal(payload.nodes[0]?.label, "source");
+  });
 });
 
 test("sessions on different explicit targets progress independently", async () => {
@@ -322,6 +404,93 @@ test("the session routes every supported control and evidence-only interaction",
     assert.equal(revision.actions[12]?.label, "Checkpoint");
     assert.equal(revision.actions[13]?.steps.length, 0);
     assert.ok(revision.actions.every((action) => action.evidenceIds.length > 0));
+    assert.ok(
+      revision.actions.every(
+        (action) =>
+          action.entranceObservationId &&
+          action.exitObservationId &&
+          action.proofStatus === "verified",
+      ),
+    );
+    const retainedIds = new Set(revision.observations?.map((observation) => observation.id));
+    assert.ok(
+      revision.actions.every(
+        (action) =>
+          action.entranceObservationId !== undefined &&
+          action.exitObservationId !== undefined &&
+          retainedIds.has(action.entranceObservationId) &&
+          retainedIds.has(action.exitObservationId),
+      ),
+      "recorded action links must resolve from the bounded revision observation index",
+    );
+  });
+});
+
+test("recording rejects an action before input when its endpoint cannot be retained", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    const revision = session.take!.revisions.at(-1)!;
+    const initial = revision.before!;
+    const saturated = structuredClone(session);
+    saturated.take!.revisions.at(-1)!.observations = Array.from(
+      { length: MAX_AUTHORING_RETAINED_OBSERVATIONS },
+      (_, index) =>
+        index === 0
+          ? initial
+          : {
+              ...structuredClone(initial),
+              id: `retained-${index}`,
+              screen: { ...initial.screen, id: `retained-${index}` },
+            },
+    );
+    await writeFile(
+      join(process.env.RELAY_STATE_DIR!, "authoring-sessions", `${session.id}.json`),
+      JSON.stringify(saturated),
+    );
+
+    const executedBefore = runtime.executed.length;
+    const observedBefore = runtime.observations;
+    await assert.rejects(
+      store.interact(session.id, { kind: "tap", target: { label: "Continue" } }, runtime),
+      /stop and trim it before recording another action/,
+    );
+    assert.equal(runtime.executed.length, executedBefore);
+    assert.equal(runtime.observations, observedBefore);
+    assert.equal((await store.get(session.id)).take?.revisions.at(-1)?.actions.length, 0);
+  });
+});
+
+test("per-action replay rejects an oversized editable Take before device observation", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(session.id, { kind: "wait", ms: 0 }, runtime);
+    session = await store.stop(session.id, runtime);
+    const revision = session.take!.revisions.at(-1)!;
+    const baseAction = revision.actions[0]!;
+    const oversized = structuredClone(session);
+    oversized.take!.revisions.at(-1)!.actions = Array.from(
+      { length: MAX_AUTHORING_RETAINED_OBSERVATIONS },
+      (_, index) => ({ ...structuredClone(baseAction), id: `oversized-${index}` }),
+    );
+    await writeFile(
+      join(process.env.RELAY_STATE_DIR!, "authoring-sessions", `${session.id}.json`),
+      JSON.stringify(oversized),
+    );
+
+    runtime.replayAction = async (_session, action) => {
+      runtime.replayedActions.push(action.id);
+      throw new Error("must not run");
+    };
+    runtime.observeReplayActionEndpoint = () => runtime.immediateReplayEndpoint();
+    const observedBefore = runtime.observations;
+    await assert.rejects(
+      store.replay(session.id, runtime),
+      /replay action endpoints; trim it before replaying/,
+    );
+    assert.equal(runtime.observations, observedBefore);
+    assert.equal(runtime.replayedActions.length, 0);
   });
 });
 
@@ -433,6 +602,9 @@ test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, 
     const originalRevisions = session.take!.revisions.length;
     const reversed = [...recorded.actions].reverse().map((action) => action.id);
     session = await store.reorder(session.id, reversed);
+    assert.ok(
+      session.take!.revisions.at(-1)!.actions.every((action) => action.proofStatus === undefined),
+    );
     session = await store.replace(session.id, reversed[0]!, {
       kind: "steps",
       label: "Automatic",
@@ -440,10 +612,16 @@ test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, 
       steps: [{ kind: "sleep", ms: 10 }],
     });
     assert.equal(session.take!.revisions.at(-1)?.actions[0]?.label, "Automatic");
+    assert.ok(
+      session.take!.revisions.at(-1)!.actions.every((action) => action.proofStatus === undefined),
+    );
     session = await store.trim(session.id, { actionIds: reversed.slice(0, 3), fromMs: 0 });
     assert.equal(session.take!.revisions.length, originalRevisions + 3);
     assert.equal(session.take!.revisions[originalRevisions - 1]?.actions.length, 4);
     assert.equal(session.take!.revisions.at(-1)?.actions.length, 3);
+    assert.ok(
+      session.take!.revisions.at(-1)!.actions.every((action) => action.proofStatus === undefined),
+    );
 
     runtime.failReplay = true;
     runtime.screen = "source";
@@ -462,6 +640,14 @@ test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, 
       session.take!.replayAttempts.map((attempt) => attempt.outcome),
       ["passed", "failed", "failed", "passed"],
     );
+    const finalOnlyReplay = session.take!.replayAttempts.at(-1)!;
+    assert.equal(finalOnlyReplay.captureMode, "final-only");
+    assert.ok(
+      Object.values(finalOnlyReplay.actionProofs ?? {}).every(
+        (proof) => proof.outcome === "unobserved" && proof.proofStatus === "unresolved",
+      ),
+      "legacy fake runtimes remain final-only rather than claiming per-action endpoints",
+    );
     const immutableFirst = structuredClone(session.take!.replayAttempts[0]);
 
     session = await store.commit(session.id, {
@@ -479,6 +665,180 @@ test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, 
       connection.actions[0]?.kind === "recorded" && connection.actions[0].evidenceIds.length > 0,
     );
     assert.equal(appMap.activity[session.id]?.eventType, "recording.committed");
+  });
+});
+
+test("edited multi-action replays retain an immediate proof for every action", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(session.id, { kind: "wait", ms: 0 }, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "screenshot", label: "Before submit" },
+      runtime,
+    );
+    session = await store.interact(session.id, { kind: "observe", label: "Ready" }, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Continue" } },
+      runtime,
+    );
+    session = await store.stop(session.id, runtime);
+
+    const recorded = session.take!.revisions.at(-1)!;
+    const byLabel = new Map(recorded.actions.map((action) => [action.label ?? action.id, action]));
+    const tap = recorded.actions.find((action) => action.steps.some((step) => step.kind === "tap"));
+    const beforeSubmit = byLabel.get("Before submit");
+    const ready = byLabel.get("Ready");
+    const initialWait = recorded.actions.find(
+      (action) => action !== tap && action !== beforeSubmit && action !== ready,
+    );
+    assert.ok(tap && beforeSubmit && ready && initialWait);
+
+    // The edit order keeps the navigation last, while trimming away the
+    // screenshot creates a genuinely new multi-action path to prove.
+    session = await store.reorder(session.id, [ready.id, beforeSubmit.id, initialWait.id, tap.id]);
+    session = await store.trim(session.id, { actionIds: [ready.id, initialWait.id, tap.id] });
+    const edited = session.take!.revisions.at(-1)!;
+    assert.deepEqual(
+      edited.actions.map((action) => action.id),
+      [ready.id, initialWait.id, tap.id],
+    );
+    assert.ok(edited.actions.every((action) => action.proofStatus === undefined));
+
+    runtime.replayAction = async (_session, action) => {
+      runtime.replayedActions.push(action.id);
+      if (action.steps.some((step) => step.kind === "tap")) runtime.screen = "destination";
+    };
+    runtime.observeReplayActionEndpoint = () => runtime.immediateReplayEndpoint();
+    runtime.replayEndpointSemantics = "current";
+    runtime.screen = "source";
+    const fullObservationsBeforeReplay = runtime.observations;
+    session = await store.replay(session.id, runtime);
+
+    const semanticReplay = session.take!.replayAttempts.at(-1)!;
+    assert.equal(semanticReplay.outcome, "passed");
+    assert.equal(semanticReplay.captureMode, "per-action");
+    assert.deepEqual(
+      runtime.replayedActions,
+      edited.actions.map((action) => action.id),
+    );
+    assert.equal(runtime.replayed.length, 0, "the legacy all-steps batch was not used");
+    assert.equal(
+      runtime.observations - fullObservationsBeforeReplay,
+      2,
+      "per-action endpoint capture does not call the slow full observer",
+    );
+    assert.equal(runtime.replayEndpointCaptures, edited.actions.length);
+    const semanticResolver = new Set(
+      semanticReplay.observations?.map((observation) => observation.id),
+    );
+    for (const action of edited.actions) {
+      const proof = semanticReplay.actionProofs?.[action.id];
+      assert.equal(proof?.outcome, "passed");
+      assert.equal(proof?.proofStatus, "verified");
+      const entranceId = proof?.entranceObservationId;
+      const exitId = proof?.exitObservationId;
+      assert.ok(entranceId);
+      assert.ok(exitId);
+      assert.ok(semanticResolver.has(entranceId));
+      assert.ok(semanticResolver.has(exitId));
+      assert.ok(
+        proof?.evidenceIds.every((id) => semanticReplay.evidence.some((item) => item.id === id)),
+      );
+    }
+    assert.equal(semanticReplay.actionProofs?.[ready.id]?.transition, "unchanged");
+    assert.equal(semanticReplay.actionProofs?.[initialWait.id]?.transition, "unchanged");
+    assert.equal(semanticReplay.actionProofs?.[tap.id]?.transition, "changed");
+
+    // A real iOS fast endpoint is normally pixels-only. It still retains
+    // both endpoints, but cannot silently create a semantic navigation edge.
+    runtime.replayEndpointSemantics = "stale";
+    runtime.screen = "source";
+    session = await store.replay(session.id, runtime);
+    const pixelsOnlyReplay = session.take!.replayAttempts.at(-1)!;
+    assert.equal(pixelsOnlyReplay.outcome, "passed");
+    for (const action of edited.actions) {
+      const proof = pixelsOnlyReplay.actionProofs?.[action.id];
+      assert.equal(proof?.outcome, "passed");
+      assert.equal(proof?.proofStatus, "pixels-only");
+      assert.equal(proof?.transition, "unproven");
+    }
+  });
+});
+
+test("a failed replay action stops the batch and marks later actions not-run", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(session.id, { kind: "wait", ms: 0 }, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Continue" } },
+      runtime,
+    );
+    session = await store.stop(session.id, runtime);
+    const [failedAction, skippedAction] = session.take!.revisions.at(-1)!.actions;
+    assert.ok(failedAction && skippedAction);
+
+    runtime.screen = "source";
+    runtime.replayAction = async (_session, action) => {
+      runtime.replayedActions.push(action.id);
+      if (action.id === failedAction.id) throw new Error("intentional first action failure");
+      runtime.screen = "destination";
+    };
+    runtime.observeReplayActionEndpoint = () => runtime.immediateReplayEndpoint();
+    session = await store.replay(session.id, runtime);
+
+    const replay = session.take!.replayAttempts.at(-1)!;
+    assert.equal(replay.outcome, "failed");
+    assert.deepEqual(runtime.replayedActions, [failedAction.id]);
+    assert.equal(
+      runtime.replayEndpointCaptures,
+      0,
+      "the failed action has no invented exit capture",
+    );
+    assert.equal(replay.actionProofs?.[failedAction.id]?.outcome, "failed");
+    assert.equal(replay.actionProofs?.[failedAction.id]?.proofStatus, "unresolved");
+    assert.equal(replay.actionProofs?.[skippedAction.id]?.outcome, "not-run");
+    assert.equal(replay.actionProofs?.[skippedAction.id]?.exitObservationId, undefined);
+  });
+});
+
+test("a replay source mismatch marks every action not-run before any action batch begins", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(session.id, { kind: "wait", ms: 0 }, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Continue" } },
+      runtime,
+    );
+    session = await store.stop(session.id, runtime);
+    const actions = session.take!.revisions.at(-1)!.actions;
+
+    runtime.screen = "wrong-screen";
+    runtime.replayAction = async (_session, action) => {
+      runtime.replayedActions.push(action.id);
+    };
+    runtime.observeReplayActionEndpoint = () => runtime.immediateReplayEndpoint();
+    session = await store.replay(session.id, runtime);
+
+    const replay = session.take!.replayAttempts.at(-1)!;
+    assert.equal(replay.outcome, "failed");
+    assert.equal(replay.captureMode, "per-action");
+    assert.deepEqual(runtime.replayedActions, []);
+    assert.equal(runtime.replayEndpointCaptures, 0);
+    for (const action of actions) {
+      const proof = replay.actionProofs?.[action.id];
+      assert.equal(proof?.outcome, "not-run");
+      assert.equal(proof?.proofStatus, "unresolved");
+      assert.equal(proof?.transition, "unproven");
+      assert.equal(proof?.entranceObservationId, undefined);
+      assert.equal(proof?.exitObservationId, undefined);
+    }
   });
 });
 
@@ -518,6 +878,37 @@ test("replay accepts a stable application shell when generated destination conte
 
     runtime.screen = "source";
     runtime.replayScreen = "blank-shell";
+    session = await store.replay(session.id, runtime);
+
+    assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "failed");
+  });
+});
+
+test("a stale replay tree cannot validate a changed dynamic destination", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    runtime.nodesByScreen.set("destination", [
+      { role: "header", identifier: "conversation_top_bar", enabled: true },
+      { role: "textbox", identifier: "chat_text_input", enabled: true },
+      { role: "button", label: "Copy message", enabled: true },
+      { role: "button", label: "Share this conversation", enabled: true },
+      { role: "text", label: "The first generated answer", enabled: true },
+    ]);
+    runtime.nodesByScreen.set("replayed-destination", [
+      { role: "header", identifier: "conversation_top_bar", enabled: true },
+      { role: "textbox", identifier: "chat_text_input", enabled: true },
+      { role: "button", label: "Copy message", enabled: true },
+      { role: "button", label: "Share this conversation", enabled: true },
+      { role: "text", label: "A different generated answer", enabled: true },
+    ]);
+    runtime.fullObservationSemantics = "current";
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(session.id, { kind: "tap", target: { label: "Send" } }, runtime);
+    session = await store.stop(session.id, runtime);
+
+    runtime.fullObservationSemantics = "stale";
+    runtime.screen = "source";
+    runtime.replayScreen = "replayed-destination";
     session = await store.replay(session.id, runtime);
 
     assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "failed");
@@ -699,6 +1090,7 @@ test("editing a Take still requires a successful replay before commit", async ()
       kind: "tap",
       target: { label: "Next" },
     });
+    assert.equal(session.take!.revisions.at(-1)?.actions[0]?.proofStatus, undefined);
     await assert.rejects(
       store.commit(session.id, { destination: { kind: "new-screen", title: "Home" } }),
       /Replay the current Take successfully/,

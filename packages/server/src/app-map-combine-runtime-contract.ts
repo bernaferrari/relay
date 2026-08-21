@@ -1,7 +1,4 @@
-import {
-  AppMapCombineCellContractError,
-  type PreparedAppMapCombine,
-} from "@relay/core";
+import { AppMapCombineCellContractError, type PreparedAppMapCombine } from "@relay/core";
 import { HttpError } from "./http.js";
 
 export function requireSingleTestUseAppMapTestRun(appMapId: string, testId: string): never {

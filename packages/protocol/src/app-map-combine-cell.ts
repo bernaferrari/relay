@@ -38,6 +38,9 @@ export function sameAppMapCombineCellValues(
   const b = appMapCombineCellValueEntries(right);
   return (
     a.length === b.length &&
-    a.every((entry, index) => entry.variableId === b[index]?.variableId && entry.valueId === b[index]?.valueId)
+    a.every(
+      (entry, index) =>
+        entry.variableId === b[index]?.variableId && entry.valueId === b[index]?.valueId,
+    )
   );
 }

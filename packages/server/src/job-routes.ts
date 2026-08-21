@@ -1,5 +1,9 @@
 import http from "node:http";
-import type { AppMapCapturePolicy, AppMapCombine, AppMapCombineCellRuntimeProfile } from "@relay/protocol";
+import type {
+  AppMapCapturePolicy,
+  AppMapCombine,
+  AppMapCombineCellRuntimeProfile,
+} from "@relay/protocol";
 import {
   AppMapCompileError,
   activeReviewedDocumentOriginsForAppMap,
@@ -465,11 +469,12 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       requireSingleTestUseAppMapTestRun(body.appMapId.trim(), body.testId!.trim());
     }
     const targetKind = body.targetKind ?? (body.browserTargetId ? "browser" : "device");
-    const requestedPlatform = body.browserTargetId
-      ? ("browser" as const)
-      : body.platform;
+    const requestedPlatform = body.browserTargetId ? ("browser" as const) : body.platform;
     if (targetKind === "device" && !requestedPlatform) {
-      throw new HttpError(400, "platform is required so Relay can bind each cell before discovery.");
+      throw new HttpError(
+        400,
+        "platform is required so Relay can bind each cell before discovery.",
+      );
     }
     const scopedCombine = combine
       ? combine
@@ -545,7 +550,9 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       });
       let campaign;
       if (body.executionMode === "pilot" && combine) {
-        const jobByCell = new Map(queued.jobs.map((job, index) => [selectedToQueue[index]?.cellId, job]));
+        const jobByCell = new Map(
+          queued.jobs.map((job, index) => [selectedToQueue[index]?.cellId, job]),
+        );
         const cases = prepared.cells.map((cell, index) => {
           const job = jobByCell.get(cell.cellId);
           const isPilot = cell.cellId === selectedToQueue[0]?.cellId;
@@ -607,7 +614,8 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       });
     } catch (error) {
       if (error instanceof HttpError) throw error;
-      if (error instanceof AppMapCombineCellContractError) throw combineCellContractHttpError(error);
+      if (error instanceof AppMapCombineCellContractError)
+        throw combineCellContractHttpError(error);
       if (error instanceof AppMapCompileError) throw new HttpError(409, error.message);
       throw new HttpError(400, error instanceof Error ? error.message : String(error));
     }

@@ -173,6 +173,49 @@ test("captures the immutable raw accessibility tree for offline selector proof",
   });
 });
 
+test("does not promote a stale tree into a semantic identity or selector source", () => {
+  const snapshotSha = "5".repeat(64);
+  const staleObservation: AuthoringObservation = {
+    ...observation("settings-stale", beforeFingerprint, "settings-tree"),
+    proof: {
+      schemaVersion: 1,
+      captureOrder: "pixels-first",
+      pixels: { status: "captured", capturedAt: 2, fingerprint: beforeFingerprint },
+      semantics: { status: "stale", capturedAt: 1, fingerprint: "old-settings-tree" },
+    },
+  };
+  const result = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      observation: staleObservation,
+      evidenceUrisById: { "settings-tree": `relay-evidence://${snapshotSha}` },
+      evidenceKindsById: { "settings-tree": "snapshot" },
+      evidenceById: {
+        "settings-tree": {
+          id: "settings-tree",
+          kind: "snapshot",
+          capturedAt: 2,
+          uri: `relay-evidence://${snapshotSha}`,
+          mime: "application/json",
+          bytes: 128,
+          sha256: snapshotSha,
+        },
+      },
+    },
+    context("capture-stale-settings-tree"),
+    { createInitialFlow: false },
+  );
+
+  const variant = result.appMap.screenVariants[result.variantId]!;
+  assert.deepEqual(variant.observation, {
+    fingerprint: beforeFingerprint,
+    nodes: [],
+    volatileSignals: [],
+  });
+  assert.equal(variant.rawAccessibilityTree, undefined);
+});
+
 test("does not carry a raw tree into a newer observation that has no snapshot", () => {
   const snapshotSha = "3".repeat(64);
   const first = commitAppMapScreenCapture(

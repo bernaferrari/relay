@@ -7,6 +7,7 @@ import type {
   OperationOutput,
 } from "@relay/protocol";
 import type { HealthState } from "./api-types";
+import { createCoalescedRefresh } from "./coalesced-refresh";
 
 type RunAction = <Id extends OperationId>(
   operationId: Id,
@@ -21,13 +22,17 @@ export function createServerAppMapController(input: {
   const [degradedAppMaps, setDegradedAppMaps] = createSignal<DegradedAppMapRef[]>([]);
   const [appMapsLoaded, setAppMapsLoaded] = createSignal(false);
 
-  async function refreshAppMaps(): Promise<AppMap[]> {
-    if (input.health() === "offline") return appMaps();
+  const refreshAppMaps = createCoalescedRefresh(async (): Promise<AppMap[]> => {
     const result = await input.runAction("app-map.list", {});
     setAppMaps(result.appMaps);
     setDegradedAppMaps(result.degraded ?? []);
     setAppMapsLoaded(true);
     return result.appMaps;
+  });
+
+  function refreshAppMapsWhenOnline(): Promise<AppMap[]> {
+    if (input.health() === "offline") return Promise.resolve(appMaps());
+    return refreshAppMaps();
   }
 
   async function loadAppMap(appMapId: string): Promise<AppMap> {
@@ -45,5 +50,12 @@ export function createServerAppMapController(input: {
     return result.appMap;
   }
 
-  return { appMaps, appMapsLoaded, degradedAppMaps, refreshAppMaps, loadAppMap, createAppMap };
+  return {
+    appMaps,
+    appMapsLoaded,
+    degradedAppMaps,
+    refreshAppMaps: refreshAppMapsWhenOnline,
+    loadAppMap,
+    createAppMap,
+  };
 }

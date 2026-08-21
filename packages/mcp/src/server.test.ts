@@ -433,6 +433,48 @@ test("requires literal confirmation for confirmation-protected operations", asyn
   }
 });
 
+test("preserves confirmed lease takeover consent for the canonical protocol operation", async () => {
+  const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
+  const session = await connectMcp({
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      return { lease: { id: "lease-2" } };
+    },
+  });
+  const input = {
+    leaseId: "lease-1",
+    expiresAt: Date.now() + 60_000,
+    reason: "User approved the control handoff",
+  };
+  try {
+    const unconfirmed = callResult(
+      await session.request("tools/call", {
+        name: "relay_lease_takeover",
+        arguments: input,
+      }),
+    );
+    assert.equal(unconfirmed.isError, true);
+    assert.match(String(unconfirmed.content[0]?.text), /confirm/i);
+    assert.deepEqual(calls, []);
+
+    const confirmed = callResult(
+      await session.request("tools/call", {
+        name: "relay_lease_takeover",
+        arguments: { ...input, confirm: true },
+      }),
+    );
+    assert.notEqual(confirmed.isError, true, JSON.stringify(confirmed.content));
+    assert.deepEqual(calls, [
+      {
+        operationId: "lease.takeover",
+        input: { ...input, confirm: true },
+      },
+    ]);
+  } finally {
+    await session.close();
+  }
+});
+
 test("translates confirmed reviewed-origin MCP consent into the signed protocol confirmation", async () => {
   const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
   const session = await connectMcp(
@@ -792,6 +834,57 @@ test("fails closed for a malformed iOS terminal payload while retaining valid re
         iosReview: { switcherScan },
       },
     });
+  } finally {
+    await session.close();
+  }
+});
+
+test("large Authoring Sessions point MCP callers at their full offline resource", async () => {
+  const session = await connectMcp({
+    async invoke(operationId) {
+      assert.equal(operationId, "authoring.session.get");
+      return {
+        session: {
+          schemaVersion: 1,
+          id: "session-large",
+          organizationId: "local",
+          projectId: "project-a",
+          actorId: "agent:relay",
+          actorKind: "agent",
+          appMapId: "map-a",
+          state: "reviewing",
+          target: { kind: "device", platform: "android", targetId: "device-a" },
+          leaseId: "lease-a",
+          expectedAppMapRevision: 1,
+          createdAt: 1,
+          updatedAt: 2,
+          immutableCapture: "x".repeat(relayMcpTextLimit * 2),
+        },
+      };
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_authoring_session_get",
+        arguments: { sessionId: "session-large" },
+      }),
+    );
+    assert.equal(result.isError, undefined);
+    const compact = result.structuredContent?.result as Record<string, unknown>;
+    assert.deepEqual(compact, {
+      truncated: true,
+      resourceUri: "relay://authoring-sessions/session-large",
+      message: "Read resourceUri for the complete Authoring Session and immutable evidence links.",
+      session: {
+        id: "session-large",
+        appMapId: "map-a",
+        state: "reviewing",
+        target: { kind: "device", platform: "android", targetId: "device-a" },
+      },
+    });
+    assert.ok(String(result.content[0]?.text).length <= relayMcpTextLimit);
+    assert.doesNotMatch(String(result.content[0]?.text), /immutableCapture/);
   } finally {
     await session.close();
   }

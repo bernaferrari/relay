@@ -3,6 +3,11 @@ import { Icon, type IconName } from "./icon";
 import { cn } from "../lib/cn";
 import { executionStateForJob, executionStateLabel } from "../lib/execution-moments";
 import type { JobInfo } from "../context/server";
+import type {
+  AuthoringReplayActionOutcome,
+  AuthoringReplayActionTransition,
+  AuthoringTransitionProofStatus,
+} from "@relay/protocol";
 
 export type StatusChipTone = "pass" | "attention" | "fail" | "run" | "idle";
 
@@ -46,6 +51,26 @@ export function StatusChip(props: {
       {props.label}
     </span>
   );
+}
+
+/** A concise, non-deceptive label for evidence attached to a recorded action.
+ * This intentionally distinguishes usable pixels from a current semantic
+ * proof: delayed iOS accessibility must not appear as a green verification. */
+export function authoringProofStatusChip(input: {
+  status: AuthoringTransitionProofStatus;
+  outcome?: AuthoringReplayActionOutcome;
+  transition?: AuthoringReplayActionTransition;
+}): {
+  tone: StatusChipTone;
+  label: string;
+} {
+  if (input.outcome === "failed") return { tone: "fail", label: "Replay failed" };
+  if (input.outcome === "not-run") return { tone: "idle", label: "Not run" };
+  if (input.outcome === "unobserved") return { tone: "attention", label: "Replay unobserved" };
+  if (input.transition === "unchanged") return { tone: "attention", label: "No screen change" };
+  if (input.status === "verified") return { tone: "pass", label: "Verified" };
+  if (input.status === "pixels-only") return { tone: "attention", label: "Pixels only" };
+  return { tone: "attention", label: "Needs capture" };
 }
 
 /** Maps a job's raw status to the chip vocabulary used across the Runs area. */

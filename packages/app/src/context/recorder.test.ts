@@ -419,7 +419,7 @@ test("leaving the newest review also dismisses superseded reviews for that map a
   );
 });
 
-test("Take projection preserves canonical zero-step and grouped action boundaries", () => {
+test("Take projection preserves action boundaries and favors current replay proof", () => {
   const session: AuthoringSession = {
     schemaVersion: 1,
     id: "session-1",
@@ -460,6 +460,15 @@ test("Take projection preserves canonical zero-step and grouped action boundarie
           finishedAt: 5,
           outcome: "passed",
           evidence: [],
+          actionProofs: {
+            "grouped-action": {
+              actionId: "grouped-action",
+              outcome: "passed",
+              proofStatus: "verified",
+              transition: "changed",
+              evidenceIds: [],
+            },
+          },
         },
       ],
       revisions: [
@@ -520,6 +529,7 @@ test("Take projection preserves canonical zero-step and grouped action boundarie
               steps: [],
               evidenceIds: [],
               label: "Wait for redirect",
+              proofStatus: "pixels-only",
             },
             {
               id: "grouped-action",
@@ -547,10 +557,26 @@ test("Take projection preserves canonical zero-step and grouped action boundarie
       id: action.id,
       start: action.stepStartIndex,
       steps: action.steps.length,
+      proof: action.proof,
     })),
     [
-      { id: "observe-action", start: 0, steps: 0 },
-      { id: "grouped-action", start: 0, steps: 2 },
+      {
+        id: "observe-action",
+        start: 0,
+        steps: 0,
+        proof: { source: "recording", status: "pixels-only" },
+      },
+      {
+        id: "grouped-action",
+        start: 0,
+        steps: 2,
+        proof: {
+          source: "replay",
+          status: "verified",
+          outcome: "passed",
+          transition: "changed",
+        },
+      },
     ],
   );
   assert.deepEqual(take.actionIds, ["grouped-action", "grouped-action"]);

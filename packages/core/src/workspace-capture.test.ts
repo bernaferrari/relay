@@ -3,10 +3,11 @@ import test from "node:test";
 import { IosSnapshotTimedOutError, type Device, type SnapshotNode } from "./device.js";
 import { runWithTargetContext } from "./target-context.js";
 import {
+  invalidateTargetSemanticControl,
   recordTargetPixelCapture,
   resetTargetRuntimeReadiness,
 } from "./target-runtime-readiness.js";
-import { captureSnapshot } from "./workspace-capture.js";
+import { captureSnapshot, iosLogicalBoundsForSerial } from "./workspace-capture.js";
 
 function iosSnapshotDevice(nodes: SnapshotNode[]): Device {
   return {
@@ -92,4 +93,46 @@ test("a slow iOS AX query publishes in-flight semantic readiness without disturb
       ?.outcome,
     "skipped",
   );
+});
+
+test("iOS geometry cache follows the exact semantic proof, not the device serial", async () => {
+  const serial = "geometry-epoch-ipad";
+  const result = await runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
+    captureSnapshot({
+      device: iosSnapshotDevice([
+        {
+          index: 0,
+          depth: 0,
+          type: "Application",
+          rect: { x: 0, y: 0, width: 1112, height: 834 },
+        },
+        {
+          index: 1,
+          parentIndex: 0,
+          depth: 1,
+          type: "Window",
+          rect: { x: 0, y: 0, width: 834, height: 1112 },
+        },
+        {
+          index: 2,
+          parentIndex: 1,
+          depth: 2,
+          type: "Button",
+          label: "Settings",
+          rect: { x: 498, y: 600, width: 88, height: 68 },
+        },
+      ]),
+    }),
+  );
+
+  assert.equal(result.readiness?.semanticControl.freshness, "current");
+  assert.deepEqual(iosLogicalBoundsForSerial(serial), { width: 1112, height: 834 });
+
+  invalidateTargetSemanticControl(
+    { serial, platform: "ios" },
+    "input-changed",
+    result.capturedAt + 1,
+  );
+
+  assert.equal(iosLogicalBoundsForSerial(serial), undefined);
 });

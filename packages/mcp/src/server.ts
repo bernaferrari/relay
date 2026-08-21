@@ -2,8 +2,10 @@ import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import { RelayClient } from "@relay/client";
 import {
   operationDefinition,
+  parseAuthoringSessionResponse,
   REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
   summarizeAppMapOperationResult,
+  summarizeAuthoringSession,
   summarizeAuthoringOperationResult,
   summarizeExecutionOperationResult,
   summarizeTargetOperationResult,
@@ -49,13 +51,18 @@ const reviewedOriginConfirmationOperationIds = new Set<OperationId>([
   "app-map.scroll-surface.origin.revoke",
 ]);
 
-/** `confirm: true` is the MCP-facing consent affordance. For the two durable
- * authority operations, turn it into the canonical signed protocol field only
- * after the generic confirmation guard has accepted it. */
+/** `confirm: true` is the MCP-facing consent affordance. After the generic
+ * confirmation guard accepts it, preserve it for the canonical lease-takeover
+ * protocol field and translate it into the signed field required by the two
+ * durable reviewed-origin authority operations. */
 function confirmedInput(
   operationId: OperationId,
   input: Record<string, unknown>,
+  confirmed: boolean,
 ): Record<string, unknown> {
+  if (operationId === "lease.takeover") {
+    return confirmed ? { ...input, confirm: true } : input;
+  }
   return reviewedOriginConfirmationOperationIds.has(operationId)
     ? { ...input, confirmation: REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION }
     : input;
@@ -183,6 +190,57 @@ function normalResult(result: unknown, fallback?: unknown): CallToolResult {
   } as CallToolResult;
 }
 
+/** A complete Authoring Session can contain many immutable screenshots and
+ * trees. Keep the MCP tool response small while giving an agent a stable
+ * resource URI for the full offline record instead of an opaque truncation. */
+function compactAuthoringSessionToolResult(result: unknown): unknown {
+  try {
+    const session = parseAuthoringSessionResponse(result).session;
+    const summary = summarizeAuthoringSession(session);
+    const take = summary.take;
+    return {
+      truncated: true,
+      resourceUri: `relay://authoring-sessions/${encodeURIComponent(session.id)}`,
+      message: "Read resourceUri for the complete Authoring Session and immutable evidence links.",
+      session: {
+        id: summary.id,
+        appMapId: summary.appMapId,
+        state: summary.state,
+        target: summary.target,
+        ...(take
+          ? {
+              take: {
+                id: take.id,
+                state: take.state,
+                revision: take.revision,
+                actionCount: take.actionCount,
+                evidenceCount: take.evidenceCount,
+                actions: take.actions.slice(0, 40).map((action) => ({
+                  id: action.id,
+                  stepCount: action.stepCount,
+                  ...(action.proofStatus ? { proofStatus: action.proofStatus } : {}),
+                })),
+                ...(take.actionCount > 40 ? { remainingActionCount: take.actionCount - 40 } : {}),
+                ...(take.latestReplay
+                  ? {
+                      latestReplay: {
+                        id: take.latestReplay.id,
+                        outcome: take.latestReplay.outcome,
+                        takeRevision: take.latestReplay.takeRevision,
+                        durationMs: take.latestReplay.durationMs,
+                      },
+                    }
+                  : {}),
+              },
+            }
+          : {}),
+      },
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 function decodePngBase64(value: unknown): Buffer | undefined {
   if (
     typeof value !== "string" ||
@@ -285,7 +343,7 @@ async function invokeRelayTool(
     );
   }
 
-  const operationInput = confirmedInput(descriptor.operationId, input);
+  const operationInput = confirmedInput(descriptor.operationId, input, confirmed);
 
   try {
     operationDefinition(descriptor.operationId).input.parse(operationInput);
@@ -317,12 +375,13 @@ async function invokeRelayTool(
         ),
       ),
     );
-    return normalResult(
-      summarized,
+    const fallback =
       descriptor.operationId === "run.replay.offline"
         ? compactOfflineReplayToolResult(summarized)
-        : undefined,
-    );
+        : descriptor.operationId === "authoring.session.get"
+          ? compactAuthoringSessionToolResult(summarized)
+          : undefined;
+    return normalResult(summarized, fallback);
   } catch {
     return errorResult(
       localError(

@@ -2,6 +2,7 @@ import { For, Show, createSignal, onCleanup, type JSX } from "solid-js";
 import type { RecordingTakeAction } from "../context/recorder";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
+import { authoringProofStatusChip, StatusChip } from "./status-chip";
 import { describeTakeAction, moveActionIds } from "./take-action-model";
 
 /** Ordered Take actions — drag the grip to reorder; no up/down arrow clutter. */
@@ -151,6 +152,7 @@ export function TakeActionList(props: {
             const selected = () => props.selectedActionId === action.id;
             const editing = () => props.editingActionId === action.id;
             const description = () => describeTakeAction(action);
+            const proof = () => (action.proof ? authoringProofStatusChip(action.proof) : undefined);
             const dragging = () => draggingId() === action.id;
             const marker = () => {
               const current = dropMarker();
@@ -227,6 +229,17 @@ export function TakeActionList(props: {
                         <span class="block truncate text-micro text-[var(--text-weak)]">
                           Pause between actions · edit or remove
                         </span>
+                      </Show>
+                      <Show when={proof()}>
+                        {(status) => (
+                          <span class="mt-1 block">
+                            <StatusChip
+                              tone={status().tone}
+                              label={status().label}
+                              class={action.proof?.error ? "max-w-full" : undefined}
+                            />
+                          </span>
+                        )}
                       </Show>
                     </span>
                   </button>

@@ -1,8 +1,10 @@
 import type {
   AuthoringActionSource,
   AuthoringObservation,
+  AuthoringReplayActionProof,
   AuthoringScreenObservation,
   AuthoringSession,
+  AuthoringTransitionProofStatus,
   AuthoringVideoClip,
   AppMap,
   OperationOutput,
@@ -14,9 +16,20 @@ export type RecordingTakeAction = {
   id: string;
   source: AuthoringActionSource;
   label?: string;
+  /** The best current evidence for this action. A replay proof supersedes the
+   * original capture after a trim, reorder, or replacement. */
+  proof?: RecordingTakeActionProof;
   steps: RecipeStep[];
   stepStartIndex: number;
   evidenceUrl?: string;
+};
+
+export type RecordingTakeActionProof = {
+  source: "recording" | "replay";
+  status: AuthoringTransitionProofStatus;
+  outcome?: AuthoringReplayActionProof["outcome"];
+  transition?: AuthoringReplayActionProof["transition"];
+  error?: string;
 };
 
 /** UI shape projected from the server-owned immutable Take revision. */
@@ -101,6 +114,9 @@ export function projectTake(
   const revision = sessionRevision(session);
   if (!take || !revision) return null;
   const evidenceById = new Map(revision.evidence.map((item) => [item.id, item]));
+  const latestReplay = take.replayAttempts
+    .filter((attempt) => attempt.takeRevision === revision.revision)
+    .at(-1);
   const actions: RecordingTakeAction[] = [];
   const steps: RecipeStep[] = [];
   const actionIds: string[] = [];
@@ -110,10 +126,23 @@ export function projectTake(
       .map((id) => evidenceById.get(id))
       .find((item) => item?.kind === "screenshot");
     const projectedSteps = action.steps.map((step) => structuredClone(step));
+    const replayProof = latestReplay?.actionProofs?.[action.id];
+    const proof: RecordingTakeActionProof | undefined = replayProof
+      ? {
+          source: "replay",
+          status: replayProof.proofStatus,
+          outcome: replayProof.outcome,
+          transition: replayProof.transition,
+          ...(replayProof.error ? { error: replayProof.error } : {}),
+        }
+      : action.proofStatus
+        ? { source: "recording", status: action.proofStatus }
+        : undefined;
     actions.push({
       id: action.id,
       source: action.source,
       ...(action.label ? { label: action.label } : {}),
+      ...(proof ? { proof } : {}),
       steps: projectedSteps,
       stepStartIndex: steps.length,
       ...(screenshot ? { evidenceUrl: evidenceUrl(screenshot.uri, screenshot.mime) } : {}),
@@ -133,9 +162,6 @@ export function projectTake(
   };
   const sourceEvidenceUrl = screenshotFor(revision.before);
   const destinationEvidenceUrl = screenshotFor(revision.after);
-  const latestReplay = take.replayAttempts
-    .filter((attempt) => attempt.takeRevision === revision.revision)
-    .at(-1);
   return {
     id: take.id,
     sessionId: session.id,

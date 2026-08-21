@@ -85,7 +85,12 @@ export function enqueuePreparedAppMapCombineCells(input: {
 
 export function combineCampaignCaseFromPreparedCell(
   cell: PreparedAppMapCombineCell,
-  input: { index: number; phase: "pilot" | "coverage"; status: "pending" | "queued"; jobId?: string },
+  input: {
+    index: number;
+    phase: "pilot" | "coverage";
+    status: "pending" | "queued";
+    jobId?: string;
+  },
 ) {
   return {
     index: input.index,

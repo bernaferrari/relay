@@ -84,19 +84,28 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           });
         }
         if (preparedCell.outerIntent.digest !== item.outerIntentDigest) {
-          throw new HttpError(409, `Campaign cell ${item.cellId} identity changed since the pilot.`, {
-            code: "APP_MAP_COMBINE_CELL_CONTRACT",
-            cellId: item.cellId,
-            testId: item.testId,
-            recovery: "Start a new Combine campaign. Resume will not accept a tampered selector or profile.",
-          });
+          throw new HttpError(
+            409,
+            `Campaign cell ${item.cellId} identity changed since the pilot.`,
+            {
+              code: "APP_MAP_COMBINE_CELL_CONTRACT",
+              cellId: item.cellId,
+              testId: item.testId,
+              recovery:
+                "Start a new Combine campaign. Resume will not accept a tampered selector or profile.",
+            },
+          );
         }
         if (digestAppMapTestExecutionValue(preparedCell.staticInputs) !== item.staticInputDigest) {
-          throw new HttpError(409, `Campaign cell ${item.cellId} static inputs changed since the pilot.`, {
-            code: "APP_MAP_COMBINE_CELL_CONTRACT",
-            cellId: item.cellId,
-            testId: item.testId,
-          });
+          throw new HttpError(
+            409,
+            `Campaign cell ${item.cellId} static inputs changed since the pilot.`,
+            {
+              code: "APP_MAP_COMBINE_CELL_CONTRACT",
+              cellId: item.cellId,
+              testId: item.testId,
+            },
+          );
         }
       }
       const pending = pendingSelectedCombineCampaignCells(projected);
@@ -156,7 +165,8 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
       return true;
     } catch (error) {
       if (error instanceof HttpError) throw error;
-      if (error instanceof AppMapCombineCellContractError) throw combineCellContractHttpError(error);
+      if (error instanceof AppMapCombineCellContractError)
+        throw combineCellContractHttpError(error);
       throw new HttpError(409, error instanceof Error ? error.message : String(error));
     }
   }

@@ -22,6 +22,7 @@ export * from "./graph-exploration.js";
 export * from "./run-share.js";
 export * from "./visual-verification.js";
 export * from "./target-runtime.js";
+export * from "./campaign-capacity-plan.js";
 export * from "./target-summary.js";
 export * from "./target-contract.js";
 export * from "./discovery-contract.js";

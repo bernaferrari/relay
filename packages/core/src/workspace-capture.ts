@@ -53,7 +53,9 @@ import {
 } from "./workspace-ios-session.js";
 import { rawScreenshot } from "./workspace-android-raw.js";
 import {
+  beginTargetRuntimeObservation,
   hasUsableSemanticAccessibility,
+  hasCurrentTargetSemanticProof,
   recordTargetPixelCapture,
   recordTargetSemanticCapture,
   targetRuntimeReadiness,
@@ -96,7 +98,37 @@ export type SnapshotPayload = {
   readiness?: TargetRuntimeReadiness;
 };
 
-const iosSnapshotGeometryBySerial = new Map<string, IosSnapshotGeometry>();
+type IosSnapshotGeometryProof = {
+  geometry: IosSnapshotGeometry;
+  proofAt: number;
+  observationEpoch?: number;
+};
+
+/**
+ * This is deliberately a proof cache, not a device geometry cache. iOS can
+ * return an old XCTest tree after a rotation or after pixels have advanced.
+ * Rectangles are usable only while that exact semantic proof remains current.
+ */
+const iosSnapshotGeometryBySerial = new Map<string, IosSnapshotGeometryProof>();
+
+function currentIosSnapshotGeometry(
+  serial: string,
+  observedAt = Date.now(),
+): IosSnapshotGeometry | undefined {
+  const cached = iosSnapshotGeometryBySerial.get(serial);
+  if (!cached) return undefined;
+  if (
+    !hasCurrentTargetSemanticProof(
+      { serial, platform: "ios" },
+      { at: cached.proofAt, observationEpoch: cached.observationEpoch },
+      observedAt,
+    )
+  ) {
+    iosSnapshotGeometryBySerial.delete(serial);
+    return undefined;
+  }
+  return cached.geometry;
+}
 
 /**
  * An all-black PNG is a transport/display failure, not valid visual evidence.
@@ -123,7 +155,7 @@ export function isBlankScreenshot(bytes: Uint8Array): boolean {
 export function iosLogicalBoundsForSerial(
   serial: string,
 ): { width: number; height: number } | undefined {
-  const geometry = iosSnapshotGeometryBySerial.get(serial);
+  const geometry = currentIosSnapshotGeometry(serial);
   if (!geometry) return undefined;
   return { width: geometry.logicalWidth, height: geometry.logicalHeight };
 }
@@ -359,6 +391,18 @@ export async function captureSnapshot(opts?: {
   const captureStartedAt = now();
   const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
   return runWithTargetContext(target.context, async () => {
+    const context = target.context;
+    const readinessTarget =
+      context.kind === "device"
+        ? { serial: context.serial, platform: context.platform }
+        : undefined;
+    // Stamp request order before XCTest starts. Its result can arrive after a
+    // newer pixel frame, in which case the tree is evidence but not geometry
+    // for that frame.
+    const semanticObservationEpoch =
+      context.kind === "device" && context.platform === "ios"
+        ? beginTargetRuntimeObservation(readinessTarget!)
+        : undefined;
     let snapshot: SnapshotCapture;
     try {
       snapshot = await snapshotForTarget(
@@ -382,7 +426,6 @@ export async function captureSnapshot(opts?: {
       }
     }
     const { nodes: capturedNodes, semanticProbeInFlight, ...capture } = snapshot;
-    const context = target.context;
     const iosSessionLifecycle =
       context.kind === "device" && context.platform === "ios"
         ? lastIosSessionOperationDiagnostic(context.serial)
@@ -394,8 +437,54 @@ export async function captureSnapshot(opts?: {
     const nodes = iosGeometry
       ? normalizeIosSnapshotNodes(capturedNodes, iosGeometry)
       : capturedNodes;
-    if (context.kind === "device" && context.platform === "ios" && context.serial && iosGeometry) {
-      iosSnapshotGeometryBySerial.set(context.serial, iosGeometry);
+    // Record semantic completion before any optional visual fallback. A late
+    // fallback PNG must be able to invalidate this tree; recording after that
+    // PNG would falsely restamp an older AX read as current.
+    const semanticCapturedAt = now();
+    if (readinessTarget) {
+      recordTargetSemanticCapture(readinessTarget, {
+        inspectable: capture.inspectable,
+        nodes,
+        inFlight: semanticProbeInFlight,
+        at: semanticCapturedAt,
+        durationMs: Math.max(0, semanticCapturedAt - captureStartedAt),
+        errorMessage: capture.inspectionError,
+        ...(semanticObservationEpoch !== undefined
+          ? { observationEpoch: semanticObservationEpoch }
+          : {}),
+      });
+    }
+    if (context.kind === "device" && context.platform === "ios") {
+      const semanticProof = readinessTarget
+        ? targetRuntimeReadiness(readinessTarget, semanticCapturedAt).semanticControl.proof
+        : undefined;
+      if (
+        iosGeometry &&
+        capture.inspectable &&
+        semanticProof?.at === semanticCapturedAt &&
+        hasCurrentTargetSemanticProof(
+          { serial: context.serial, platform: "ios" },
+          {
+            at: semanticProof.at,
+            ...(semanticObservationEpoch !== undefined
+              ? { observationEpoch: semanticObservationEpoch }
+              : {}),
+          },
+          semanticCapturedAt,
+        )
+      ) {
+        iosSnapshotGeometryBySerial.set(context.serial, {
+          geometry: iosGeometry,
+          proofAt: semanticProof.at,
+          ...(semanticObservationEpoch !== undefined
+            ? { observationEpoch: semanticObservationEpoch }
+            : {}),
+        });
+      } else {
+        // A root-only, delayed, or failed tree cannot lend its old coordinate
+        // system to the next screenshot or interaction preview.
+        iosSnapshotGeometryBySerial.delete(context.serial);
+      }
     }
     const interactive = nodes.filter((n) => n.hittable || n.enabled !== false);
     const bounds = inferSnapshotBounds(
@@ -403,7 +492,7 @@ export async function captureSnapshot(opts?: {
       target.context.kind === "device" ? target.context.platform : undefined,
     );
     const serial = targetIdentity();
-    publish({ type: "snapshot.captured", at: now(), serial, nodeCount: nodes.length });
+    publish({ type: "snapshot.captured", at: semanticCapturedAt, serial, nodeCount: nodes.length });
     const observedIdentity = observeScreenIdentity(nodes);
     let visualFingerprint: string | undefined;
     let proposedRows: ProposedVisualRow[] | undefined;
@@ -425,23 +514,10 @@ export async function captureSnapshot(opts?: {
         proposedRows = undefined;
       }
     }
-    const capturedAt = now();
-    const readinessTarget =
-      context.kind === "device"
-        ? { serial: context.serial, platform: context.platform }
-        : undefined;
-    if (readinessTarget) {
-      recordTargetSemanticCapture(readinessTarget, {
-        inspectable: capture.inspectable,
-        nodes,
-        inFlight: semanticProbeInFlight,
-        at: capturedAt,
-        durationMs: Math.max(0, capturedAt - captureStartedAt),
-        errorMessage: capture.inspectionError,
-      });
-    }
+    const capturedAt = semanticCapturedAt;
+    const readinessAt = now();
     const readiness = readinessTarget
-      ? targetRuntimeReadiness(readinessTarget, capturedAt)
+      ? targetRuntimeReadiness(readinessTarget, readinessAt)
       : undefined;
     return {
       serial,
@@ -548,6 +624,17 @@ export async function captureScreenshot(opts?: {
     const dir = await mkdtemp(join(parent, "shot-"));
     const path = join(dir, "capture.png");
     const context = currentTargetContext();
+    const readinessTarget =
+      context.kind === "device"
+        ? { serial: context.serial, platform: context.platform }
+        : undefined;
+    // Capture order is evidence: a screenshot requested after an AX read must
+    // make its geometry stale if its pixels changed, while an older screenshot
+    // that merely finishes late must not erase a newer semantic proof.
+    const pixelObservationEpoch =
+      context.kind === "device" && context.platform === "ios"
+        ? beginTargetRuntimeObservation(readinessTarget!)
+        : undefined;
     if (context.kind === "device" && context.platform === "android") {
       // Mirroring is device-scoped, not app-scoped. Going directly through adb
       // avoids the SDK's long retry path when its optional app session expires.
@@ -570,19 +657,38 @@ export async function captureScreenshot(opts?: {
       );
     }
     let buf = await readFile(path);
+    // Use the transport raster solely to advance the visual epoch before we
+    // consult cached AX geometry. The public fingerprint below remains the
+    // normalized image that people actually inspect.
+    const rawVisualFingerprint = observeVisualScreenFingerprint(buf);
+    const pixelCapturedAt = now();
+    if (readinessTarget) {
+      recordTargetPixelCapture(readinessTarget, {
+        at: pixelCapturedAt,
+        durationMs: Math.max(0, pixelCapturedAt - captureStartedAt),
+        visualFingerprint: rawVisualFingerprint,
+        ...(pixelObservationEpoch !== undefined ? { observationEpoch: pixelObservationEpoch } : {}),
+      });
+    }
     let semanticNodes: readonly SnapshotNode[] | undefined = opts?.semanticNodes;
     if (context.kind === "device" && context.platform === "ios" && context.serial) {
-      // UIImage.pngData() drops imageOrientation. Bake from CoreDevice orientation:
-      // portrait transport + landscape interface → one 90°; same-aspect pixels stay
-      // in the AX coordinate space. Do not invent a landscape orientation when
-      // the recovering XCTest session has no geometry: physical iPads often
-      // already give us an upright portrait go-ios raster in that state.
-      const geometry = iosSnapshotGeometryBySerial.get(context.serial);
+      // UIImage.pngData() drops imageOrientation. A directly supplied tree is
+      // a same-operation proof; a cached tree is usable only while its exact
+      // readiness proof is current. If CoreDevice cannot confirm orientation,
+      // never rotate a new raster from cached AX geometry alone.
+      const suppliedGeometry =
+        semanticNodes && hasUsableSemanticAccessibility(semanticNodes)
+          ? inferIosSnapshotGeometry([...semanticNodes])
+          : undefined;
+      const cachedGeometry = semanticNodes
+        ? undefined
+        : currentIosSnapshotGeometry(context.serial, pixelCapturedAt);
+      const geometry = suppliedGeometry ?? cachedGeometry;
       const displayOrientation = geometry
         ? await readIosDisplayOrientation(context.serial).catch(() => undefined)
         : undefined;
       const normalized = normalizeIosScreenshotForCapture(buf, {
-        ...(geometry ? { geometry } : {}),
+        ...(suppliedGeometry || displayOrientation ? (geometry ? { geometry } : {}) : {}),
         ...(displayOrientation ? { displayOrientation } : {}),
       });
       if (!buf.equals(normalized)) {
@@ -598,7 +704,7 @@ export async function captureScreenshot(opts?: {
     ) {
       const logical =
         context.kind === "device" && context.platform === "ios" && context.serial
-          ? iosSnapshotGeometryBySerial.get(context.serial)
+          ? currentIosSnapshotGeometry(context.serial, pixelCapturedAt)
           : undefined;
       buf = Buffer.from(
         annotateTapPreview(
@@ -648,7 +754,7 @@ export async function captureScreenshot(opts?: {
       };
     }
     const serial = targetIdentity();
-    publish({ type: "screenshot.captured", at: now(), serial, bytes: buf.byteLength });
+    publish({ type: "screenshot.captured", at: pixelCapturedAt, serial, bytes: buf.byteLength });
 
     const proposedRows = proposeVisualRows(buf);
     const active = !opts?.ephemeral
@@ -656,18 +762,7 @@ export async function captureScreenshot(opts?: {
         ? { id: opts.jobId }
         : getActiveJob(serial)
       : undefined;
-    const capturedAt = now();
-    const readinessTarget =
-      context.kind === "device"
-        ? { serial: context.serial, platform: context.platform }
-        : undefined;
-    if (readinessTarget) {
-      recordTargetPixelCapture(readinessTarget, {
-        at: capturedAt,
-        durationMs: Math.max(0, capturedAt - captureStartedAt),
-        visualFingerprint,
-      });
-    }
+    const capturedAt = pixelCapturedAt;
     const readiness = readinessTarget
       ? targetRuntimeReadiness(readinessTarget, capturedAt)
       : undefined;

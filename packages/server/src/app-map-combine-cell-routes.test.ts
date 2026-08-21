@@ -160,7 +160,7 @@ async function saveLocaleCombine(client: RelayClient): Promise<void> {
       ],
     } as never,
   });
-  const variableSaved = await client.invoke("app-map.variable.save", {
+  await client.invoke("app-map.variable.save", {
     appMapId: "store",
     variableId: "language",
     expectedRevision: created.appMap.revision,
@@ -289,7 +289,9 @@ test("campaign resume queues one pending selected cell and leaves a passed pilot
           status: "pending",
         }),
       ],
-      lineage: [{ kind: "created", at: 10, appMapRevision: map.revision, actorId: "human:designer" }],
+      lineage: [
+        { kind: "created", at: 10, appMapRevision: map.revision, actorId: "human:designer" },
+      ],
       execution: {
         selected: { language: ["en", "it", "fr"] },
         selectedCellIds: [english.cellId, italian.cellId],
@@ -309,7 +311,8 @@ test("campaign resume queues one pending selected cell and leaves a passed pilot
     const jobsAfter = await client.invoke("job.list", { limit: 100 });
     assert.equal(jobsAfter.jobs.length, jobsBefore.jobs.length + 1);
     const campaign = (resumed.campaign ??
-      (await client.invoke("job.combine.campaign.get", { batchId: "campaign-scope" })).campaign) as CombineCampaign;
+      (await client.invoke("job.combine.campaign.get", { batchId: "campaign-scope" }))
+        .campaign) as CombineCampaign;
     const passed = campaign.cases.find((item) => item.cellId === english.cellId);
     const queued = campaign.cases.find((item) => item.cellId === italian.cellId);
     const unselected = campaign.cases.find((item) => item.cellId === french.cellId);

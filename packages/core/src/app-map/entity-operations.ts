@@ -285,10 +285,7 @@ export function saveAppMapCombine(
   }
   for (const binding of combine.cellRuntimeProfiles ?? []) {
     if (!combine.testIds.includes(binding.testId)) {
-      appMapFail(
-        "missing-reference",
-        `Combine ${combine.id} binds missing Test ${binding.testId}`,
-      );
+      appMapFail("missing-reference", `Combine ${combine.id} binds missing Test ${binding.testId}`);
     }
     for (const [variableId, valueId] of Object.entries(binding.values)) {
       if (!combine.variableIds.includes(variableId)) {

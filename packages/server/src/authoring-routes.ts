@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type http from "node:http";
 import {
@@ -21,7 +22,10 @@ import {
   type SnapshotPayload,
 } from "@relay/core";
 import type {
+  AuthoringAction,
+  AuthoringCaptureContext,
   AuthoringInteraction,
+  AuthoringObservationProof,
   AuthoringSession,
   AuthoringTarget,
   CommitAuthoringSessionInput,
@@ -127,13 +131,108 @@ export async function captureAuthoringObservation(
     // deterministic resolver; visual identity is only the screen-state key.
     const fingerprint =
       observeVisualScreenFingerprint(screenshotBytes) ?? snapshot.screenIdentity.fingerprint;
+    const semanticReadiness = snapshot.readiness?.semanticControl;
+    const semanticStatus: AuthoringObservationProof["semantics"]["status"] =
+      snapshot.inspectable === false || snapshot.nodes.length === 0
+        ? "unavailable"
+        : semanticReadiness?.freshness === "stale"
+          ? "stale"
+          : semanticReadiness && semanticReadiness.state !== "proven"
+            ? "unavailable"
+            : "current";
+    const proof: AuthoringObservationProof = {
+      schemaVersion: 1,
+      captureOrder:
+        session.target.kind === "device" && session.target.platform === "ios"
+          ? "pixels-first"
+          : "concurrent",
+      pixels: {
+        status: "captured",
+        capturedAt: screenshot.capturedAt,
+        fingerprint,
+        ...(screenshot.width !== undefined ? { width: screenshot.width } : {}),
+        ...(screenshot.height !== undefined ? { height: screenshot.height } : {}),
+      },
+      semantics: {
+        status: semanticStatus,
+        capturedAt: snapshot.capturedAt,
+        ...(snapshot.inspectable !== false && snapshot.nodes.length > 0
+          ? { fingerprint: snapshot.screenIdentity.fingerprint }
+          : {}),
+      },
+    };
+    const capture: AuthoringCaptureContext = {
+      snapshotSource: snapshot.source,
+      inspectable: snapshot.inspectable,
+      ...(snapshot.inspectionState ? { inspectionState: snapshot.inspectionState } : {}),
+      ...(snapshot.bindingState ? { bindingState: snapshot.bindingState } : {}),
+      ...(snapshot.treeApp ? { treeApp: snapshot.treeApp } : {}),
+      ...(snapshot.visualFingerprint ? { visualFingerprint: snapshot.visualFingerprint } : {}),
+    };
     return {
       capturedAt: Math.max(snapshot.capturedAt, screenshot.capturedAt),
       targetId: session.target.targetId,
       fingerprint,
+      proof,
+      capture,
       ...(snapshot.foregroundApp ? { foregroundApp: snapshot.foregroundApp } : {}),
       ...(snapshot.bounds ? { bounds: snapshot.bounds } : {}),
       nodes: snapshot.nodes.slice(0, 256) as Array<Record<string, unknown>>,
+      screenshot: { data: screenshotBytes, mime: screenshot.mime },
+    };
+  });
+}
+
+/**
+ * Capture a replay action endpoint without starting a new accessibility
+ * request. This is intentionally a pixels-only fact: `captureScreenshot`
+ * owns physical iOS orientation normalization, while a cached tree must never
+ * be presented as current after the action changed the device.
+ */
+export async function captureAuthoringReplayActionEndpoint(
+  session: AuthoringSession,
+  dependencies: AuthoringObservationDependencies = authoringObservationDependencies,
+): Promise<CapturedAuthoringObservation> {
+  const device = await dependencies.resolveDevice(session);
+  return runWithTargetContext(targetContext(session.target), async () => {
+    const screenshot = await dependencies.captureScreenshot(device);
+    const screenshotBytes = Buffer.from(screenshot.base64, "base64");
+    if (isBlankScreenshot(screenshotBytes)) {
+      throw new Error(
+        "The device returned a blank replay endpoint screenshot. Recover or relaunch the app before trying again; no action proof was saved.",
+      );
+    }
+    const fingerprint =
+      observeVisualScreenFingerprint(screenshotBytes) ??
+      createHash("sha256").update(screenshotBytes).digest("hex");
+    return {
+      capturedAt: screenshot.capturedAt,
+      targetId: session.target.targetId,
+      fingerprint,
+      proof: {
+        schemaVersion: 1,
+        captureOrder: "pixels-first",
+        pixels: {
+          status: "captured",
+          capturedAt: screenshot.capturedAt,
+          fingerprint,
+          ...(screenshot.width !== undefined ? { width: screenshot.width } : {}),
+          ...(screenshot.height !== undefined ? { height: screenshot.height } : {}),
+        },
+        // Do not reuse or query AX here. A later normal observation may carry
+        // current semantics, but this immediate action endpoint is honest
+        // pixels-only evidence even when the platform still has a tree cached.
+        semantics: { status: "unavailable", capturedAt: screenshot.capturedAt },
+      },
+      capture: {
+        snapshotSource: "pixels-only",
+        inspectable: false,
+        visualFingerprint: fingerprint,
+      },
+      ...(screenshot.foregroundApp ? { foregroundApp: screenshot.foregroundApp } : {}),
+      ...(screenshot.width !== undefined && screenshot.height !== undefined
+        ? { bounds: { width: screenshot.width, height: screenshot.height } }
+        : {}),
       screenshot: { data: screenshotBytes, mime: screenshot.mime },
     };
   });
@@ -249,6 +348,12 @@ export function createAuthoringRuntime(): AuthoringRuntime {
     },
     async replay(session, steps) {
       await executeSteps(session, steps);
+    },
+    async replayAction(session, action: AuthoringAction) {
+      await executeSteps(session, action.steps);
+    },
+    async observeReplayActionEndpoint(session) {
+      return captureAuthoringReplayActionEndpoint(session);
     },
     async settle(ms) {
       await new Promise<void>((resolve) => setTimeout(resolve, ms));

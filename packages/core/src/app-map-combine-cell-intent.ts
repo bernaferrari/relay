@@ -87,10 +87,7 @@ export function reachableRecipeGraph(
   return visit(rootId) ? out : undefined;
 }
 
-function sameRecipeGraph(
-  left: Record<string, Recipe>,
-  right: Record<string, Recipe>,
-): boolean {
+function sameRecipeGraph(left: Record<string, Recipe>, right: Record<string, Recipe>): boolean {
   const leftIds = Object.keys(left).sort();
   const rightIds = Object.keys(right).sort();
   if (leftIds.length !== rightIds.length || leftIds.some((id, index) => id !== rightIds[index])) {
@@ -159,7 +156,10 @@ function parseStaticInputs(value: unknown): CombineCellStaticInputs | undefined 
   }
   const valueIds = Object.keys(values).sort();
   const companionIds = Object.keys(companions).sort();
-  if (valueIds.length !== companionIds.length || valueIds.some((id, index) => id !== companionIds[index])) {
+  if (
+    valueIds.length !== companionIds.length ||
+    valueIds.some((id, index) => id !== companionIds[index])
+  ) {
     return undefined;
   }
   return { values: canonicalAppMapCombineCellValues(values), companions };

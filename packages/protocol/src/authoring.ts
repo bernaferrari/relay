@@ -38,11 +38,57 @@ export type AuthoringScreenObservation = {
   deviceId?: string;
 };
 
+/**
+ * The viewport raster and semantic tree are independent observations. Keeping
+ * their timestamps and availability separate prevents a delayed iOS AX query
+ * from being presented as if it were part of the same instant as the pixels.
+ */
+export type AuthoringObservationProof = {
+  schemaVersion: 1;
+  /** Physical iOS captures must serialize pixels before XCTest; other targets
+   * may acquire both planes concurrently. This is evidence ordering, not a
+   * claim that the two planes have identical timestamps. */
+  captureOrder: "pixels-first" | "semantics-first" | "concurrent";
+  pixels: {
+    status: "captured" | "unavailable";
+    capturedAt?: number;
+    fingerprint?: string;
+    width?: number;
+    height?: number;
+  };
+  semantics: {
+    status: "current" | "stale" | "unavailable";
+    capturedAt?: number;
+    fingerprint?: string;
+  };
+};
+
+/** Capture diagnostics retained with an observation so a later optimizer can
+ * distinguish a real semantic tree from an unavailable, rebound, or
+ * pixels-only capture without reconnecting the device. */
+export type AuthoringCaptureContext = {
+  snapshotSource?: "sdk" | "android-system" | "pixels-only";
+  inspectable?: boolean;
+  inspectionState?: "active" | "keyguard" | "asleep" | "unavailable" | "unknown";
+  bindingState?: "matched" | "rebound" | "unavailable";
+  treeApp?: string;
+  visualFingerprint?: string;
+};
+
+/** The honest validation level for one recorded action's entrance and exit.
+ * Pixels-only remains a usable, reviewable device path; it is never reported
+ * as a current semantic proof. */
+export type AuthoringTransitionProofStatus = "verified" | "pixels-only" | "unresolved";
+
 export type AuthoringObservation = {
   id: string;
   capturedAt: number;
   screen: AuthoringScreenObservation;
   evidenceIds: string[];
+  /** Exact capture-plane facts for this entrance or exit observation. */
+  proof?: AuthoringObservationProof;
+  /** Safe capture provenance retained alongside the immutable evidence files. */
+  capture?: AuthoringCaptureContext;
   bounds?: { width: number; height: number };
   /** Exact foreground owner observed with the screenshot/tree. */
   foregroundApp?: string;
@@ -63,7 +109,37 @@ export type AuthoringAction = {
   /** Empty means an intentional observe-only/no-op transition. */
   steps: RecipeStep[];
   evidenceIds: string[];
+  /** The observation immediately before and after this action. They make an
+   * action's source and destination reviewable without reusing a later screen
+   * as its entrance proof. */
+  entranceObservationId?: string;
+  exitObservationId?: string;
+  proofStatus?: AuthoringTransitionProofStatus;
   label?: string;
+};
+
+/** Whether one replay action ran, failed, or could only be observed as part
+ * of an older all-steps batch. `unobserved` never claims an endpoint proof. */
+export type AuthoringReplayActionOutcome = "passed" | "failed" | "unobserved" | "not-run";
+
+/**
+ * A semantic identity result for one replayed action. This stays separate
+ * from proofStatus: a wait can be well-evidenced and intentionally unchanged,
+ * while an unproven semantic identity must never establish a new map edge.
+ */
+export type AuthoringReplayActionTransition = "changed" | "unchanged" | "unproven";
+
+/** Current replay evidence for one action. Its observation ids resolve only
+ * against the owning replay attempt's bounded `observations` collection. */
+export type AuthoringReplayActionProof = {
+  actionId: string;
+  outcome: AuthoringReplayActionOutcome;
+  proofStatus: AuthoringTransitionProofStatus;
+  transition: AuthoringReplayActionTransition;
+  entranceObservationId?: string;
+  exitObservationId?: string;
+  evidenceIds: string[];
+  error?: string;
 };
 
 export type AuthoringInteraction =
@@ -140,6 +216,9 @@ export type AuthoringTakeRevision = {
   reason: "recording" | "trim" | "reorder" | "replace" | "manual";
   actions: AuthoringAction[];
   evidence: AuthoringEvidence[];
+  /** Bounded, immutable observation index for this revision's action links.
+   * The initial/final observations remain explicit for backward compatibility. */
+  observations?: AuthoringObservation[];
   before?: AuthoringObservation;
   after?: AuthoringObservation;
   videoClip?: AuthoringVideoClip;
@@ -153,6 +232,13 @@ export type AuthoringReplayAttempt = {
   finishedAt: number;
   outcome: "passed" | "failed" | "cancelled";
   evidence: AuthoringEvidence[];
+  /** `per-action` captures an entrance and exit around each action. Older
+   * runtimes retain the safe `final-only` fallback instead of inventing links. */
+  captureMode?: "per-action" | "final-only";
+  /** Bounded, immutable resolver for actionProofs observation ids. */
+  observations?: AuthoringObservation[];
+  /** Current replay evidence keyed by the durable authored action id. */
+  actionProofs?: Record<string, AuthoringReplayActionProof>;
   before?: AuthoringObservation;
   after?: AuthoringObservation;
   error?: string;
@@ -247,13 +333,22 @@ export type AuthoringSessionSummary = {
     revision: number;
     actionCount: number;
     evidenceCount: number;
-    actions: Array<{ id: string; label?: string; stepCount: number }>;
+    actions: Array<{
+      id: string;
+      label?: string;
+      stepCount: number;
+      proofStatus?: AuthoringTransitionProofStatus;
+    }>;
     latestReplay?: {
       id: string;
       outcome: AuthoringReplayAttempt["outcome"];
       takeRevision: number;
       durationMs: number;
       error?: string;
+      actionProofs?: Record<
+        string,
+        Pick<AuthoringReplayActionProof, "outcome" | "proofStatus" | "transition">
+      >;
     };
   };
 };
@@ -264,7 +359,9 @@ export type AuthoringSessionSummary = {
 export function summarizeAuthoringSession(session: AuthoringSession): AuthoringSessionSummary {
   const take = session.take;
   const revision = take?.revisions.find((item) => item.revision === take.currentRevision);
-  const replay = take?.replayAttempts.at(-1);
+  const replay = take?.replayAttempts
+    .filter((attempt) => attempt.takeRevision === revision?.revision)
+    .at(-1);
   return {
     id: session.id,
     actorId: session.actorId,
@@ -289,6 +386,7 @@ export function summarizeAuthoringSession(session: AuthoringSession): AuthoringS
               id: action.id,
               ...(action.label ? { label: action.label } : {}),
               stepCount: action.steps.length,
+              ...(action.proofStatus ? { proofStatus: action.proofStatus } : {}),
             })),
             ...(replay
               ? {
@@ -298,6 +396,20 @@ export function summarizeAuthoringSession(session: AuthoringSession): AuthoringS
                     takeRevision: replay.takeRevision,
                     durationMs: Math.max(0, replay.finishedAt - replay.startedAt),
                     ...(replay.error ? { error: replay.error } : {}),
+                    ...(replay.actionProofs
+                      ? {
+                          actionProofs: Object.fromEntries(
+                            Object.entries(replay.actionProofs).map(([actionId, proof]) => [
+                              actionId,
+                              {
+                                outcome: proof.outcome,
+                                proofStatus: proof.proofStatus,
+                                transition: proof.transition,
+                              },
+                            ]),
+                          ),
+                        }
+                      : {}),
                   },
                 }
               : {}),

@@ -12,8 +12,6 @@ export function createServerEventController(input: {
   setRunning: Setter<boolean>;
   selectedJobId: Accessor<string | null>;
   setSelectedJobId: Setter<string | null>;
-  refreshJobs: () => Promise<unknown>;
-  refreshRuns: () => Promise<unknown>;
   loadRunDetail: (id: string) => Promise<void>;
   captureUiScreenshot: (
     caption?: string,
@@ -37,19 +35,25 @@ export function createServerEventController(input: {
     if (!projection.accepted) return;
     cursor = projection.cursor;
     if (projection.activity) setEventActivity(projection.activity);
-    for (const refresh of new Set(projection.refresh)) refreshFromEvent(refresh);
+    const refreshed = new Set<EventRefresh>();
+    const refreshOnce = (kind: EventRefresh) => {
+      if (refreshed.has(kind)) return;
+      refreshed.add(kind);
+      refreshFromEvent(kind);
+    };
+    for (const refresh of projection.refresh) refreshOnce(refresh);
     const event = envelope.payload as Record<string, unknown>;
     const type = String(event.type ?? "");
     switch (type) {
       case "job.queued":
         input.appendLog(`queued ${event.action}`, "info", event.jobId as string);
-        void input.refreshJobs();
+        refreshOnce("jobs");
         break;
       case "job.started":
         input.appendLog(`started ${event.action}`, "info", event.jobId as string);
         input.setRunning(true);
         if (!input.selectedJobId()) input.setSelectedJobId((event.jobId as string) ?? null);
-        void input.refreshJobs();
+        refreshOnce("jobs");
         break;
       case "job.log":
         if (event.line) {
@@ -66,8 +70,8 @@ export function createServerEventController(input: {
           "success",
           event.jobId as string,
         );
-        void input.refreshJobs();
-        void input.refreshRuns();
+        refreshOnce("jobs");
+        refreshOnce("runs");
         break;
       case "job.paused":
       case "job.resumed":
@@ -77,13 +81,13 @@ export function createServerEventController(input: {
           event.jobId as string,
         );
         input.setRunning(true);
-        void input.refreshJobs();
+        refreshOnce("jobs");
         break;
       case "job.cancelled":
         input.appendLog(`cancelled ${event.action}`, "error", event.jobId as string);
         input.setRunning(false);
-        void input.refreshJobs();
-        void input.refreshRuns();
+        refreshOnce("jobs");
+        refreshOnce("runs");
         void input.loadRunDetail(event.jobId as string);
         break;
       case "job.finished":
@@ -97,11 +101,11 @@ export function createServerEventController(input: {
           event.jobId as string,
         );
         input.setRunning(false);
-        void input.refreshJobs();
-        void input.refreshRuns();
+        refreshOnce("jobs");
+        refreshOnce("runs");
         // Persistence happens immediately after the terminal event; reconcile
         // once more so the durable catalog cannot remain one write behind.
-        setTimeout(() => void input.refreshRuns(), 300);
+        setTimeout(() => refreshFromEvent("runs"), 300);
         void input
           .captureUiScreenshot(
             event.ok || event.healed ? `${event.action} · done` : `${event.action} · failed`,
@@ -120,7 +124,7 @@ export function createServerEventController(input: {
             event.jobId as string,
           );
         }
-        void input.refreshJobs();
+        refreshOnce("jobs");
         break;
       }
       case "job.frame": {
@@ -136,7 +140,7 @@ export function createServerEventController(input: {
             path: frame.path,
           });
         }
-        void input.refreshJobs();
+        refreshOnce("jobs");
         break;
       }
       case "device.selected":

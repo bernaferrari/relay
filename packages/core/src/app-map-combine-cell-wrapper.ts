@@ -1,10 +1,6 @@
 import type { AppMap, RecipeStep, VariableRow } from "@relay/protocol";
 import { appMapCombineCellVariablePrefix } from "./app-map-combine-cell.js";
-import {
-  assertOptionSandwichReady,
-  navStepsToRecipe,
-  type OptionRunSet,
-} from "./option-run.js";
+import { assertOptionSandwichReady, navStepsToRecipe, type OptionRunSet } from "./option-run.js";
 import type { Recipe } from "./recipes.js";
 
 const NONE = "-";
@@ -183,12 +179,14 @@ export function composeAppMapCombineCellWrapper(input: {
   const appLocale = input.sets.find((set) => set.apply.kind === "appLocale");
   const app = appLocale?.apply.kind === "appLocale" ? appLocale.apply.app : undefined;
 
-  for (const [index, set] of input.sets.entries()) {
+  for (const set of input.sets) {
     const prefix = prefixes[set.id]!;
     const helpers = tapHelpers(prefix, at);
     for (const helperId of Object.keys(helpers)) {
       if (graph[helperId]) {
-        throw new Error(`Combine cell wrapper helper ${helperId} collides with a frozen Test recipe`);
+        throw new Error(
+          `Combine cell wrapper helper ${helperId} collides with a frozen Test recipe`,
+        );
       }
     }
     Object.assign(graph, helpers);

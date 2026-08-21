@@ -773,8 +773,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setRunning,
       selectedJobId,
       setSelectedJobId,
-      refreshJobs,
-      refreshRuns,
       loadRunDetail,
       captureUiScreenshot,
     });

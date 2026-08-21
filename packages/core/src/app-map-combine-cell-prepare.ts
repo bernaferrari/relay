@@ -98,15 +98,15 @@ function selectedOptionIds(
   return [...new Set(selected.filter((id) => availableSet.has(id)))];
 }
 
-export function optionSetsForAppMapCombine(
-  map: AppMap,
-  combine: AppMapCombine,
-): OptionRunSet[] {
+export function optionSetsForAppMapCombine(map: AppMap, combine: AppMapCombine): OptionRunSet[] {
   return combine.variableIds.map((id) => {
     const set = map.variables?.[id];
-    if (!set) throw new AppMapCombineCellContractError(`Variable ${id} is no longer on this map.`, [
-      issue("missing-variable", `Variable “${id}” is no longer on this map.`),
-    ], []);
+    if (!set)
+      throw new AppMapCombineCellContractError(
+        `Variable ${id} is no longer on this map.`,
+        [issue("missing-variable", `Variable “${id}” is no longer on this map.`)],
+        [],
+      );
     return {
       id: set.id,
       name: set.name,
@@ -129,11 +129,19 @@ export function resolveSavedAppMapRuntimeTargetProfile(input: {
     .map((variant) => variant.targetProfile)
     .filter((profile) => profile.id === targetProfileId);
   if (!profiles.length) {
-    throw new AppMapCombineCellContractError(`Target profile ${targetProfileId} is not saved in this App Map.`, [
-      issue("mismatched-binding", `Target profile ${targetProfileId} is not saved in this App Map.`, {
-        targetProfileId,
-      }),
-    ], []);
+    throw new AppMapCombineCellContractError(
+      `Target profile ${targetProfileId} is not saved in this App Map.`,
+      [
+        issue(
+          "mismatched-binding",
+          `Target profile ${targetProfileId} is not saved in this App Map.`,
+          {
+            targetProfileId,
+          },
+        ),
+      ],
+      [],
+    );
   }
   const mismatched = profiles.filter(
     (profile) =>
@@ -163,9 +171,13 @@ export function resolveSavedAppMapRuntimeTargetProfile(input: {
     throw new AppMapCombineCellContractError(
       `Target profile ${targetProfileId} has conflicting saved identities`,
       [
-        issue("mismatched-binding", `Target profile ${targetProfileId} has conflicting saved identities`, {
-          targetProfileId,
-        }),
+        issue(
+          "mismatched-binding",
+          `Target profile ${targetProfileId} has conflicting saved identities`,
+          {
+            targetProfileId,
+          },
+        ),
       ],
       [],
     );
@@ -198,9 +210,11 @@ export function enumerateAppMapCombineCells(input: {
       Object.fromEntries(input.variableIds.map((id) => [id, world.values[id] ?? ""])),
     );
     if (Object.values(values).some((value) => !value)) {
-      throw new AppMapCombineCellContractError("A Combine world is missing a Variable value.", [
-        issue("empty-selection", "A Combine world is missing a Variable value."),
-      ], []);
+      throw new AppMapCombineCellContractError(
+        "A Combine world is missing a Variable value.",
+        [issue("empty-selection", "A Combine world is missing a Variable value.")],
+        [],
+      );
     }
     for (const test of input.tests) {
       cells.push({
@@ -217,7 +231,13 @@ export function enumerateAppMapCombineCells(input: {
 }
 
 export function assessAppMapCombineCellBindings(input: {
-  cells: Array<{ cellId: string; testId: string; testName: string; values: Record<string, string>; worldLabel: string }>;
+  cells: Array<{
+    cellId: string;
+    testId: string;
+    testName: string;
+    values: Record<string, string>;
+    worldLabel: string;
+  }>;
   bindings: AppMapCombineCellRuntimeProfile[];
   /** Bindings may cover a larger saved grid. Unknown Test/value pairs are foreign. */
   knownTests?: ReadonlySet<string>;
@@ -233,7 +253,9 @@ export function assessAppMapCombineCellBindings(input: {
   const seenBindings = new Set<string>();
   const required = new Set(input.cells.map((cell) => cell.cellId));
   if (!input.bindings.length && input.cells.length) {
-    issues.push(issue("zero-bindings", "Bind a saved runtime profile to every selected Combine cell."));
+    issues.push(
+      issue("zero-bindings", "Bind a saved runtime profile to every selected Combine cell."),
+    );
   }
   for (const raw of input.bindings) {
     const binding = canonicalAppMapCombineCellRuntimeProfile(raw);
@@ -270,12 +292,16 @@ export function assessAppMapCombineCellBindings(input: {
     if (!expected) {
       if (input.rejectUnselectedBindings) {
         issues.push(
-          issue("extra-binding", `Binding for ${binding.testId} is outside the selected Combine cells.`, {
-            cellId,
-            testId: binding.testId,
-            values: binding.values,
-            targetProfileId: binding.targetProfileId,
-          }),
+          issue(
+            "extra-binding",
+            `Binding for ${binding.testId} is outside the selected Combine cells.`,
+            {
+              cellId,
+              testId: binding.testId,
+              values: binding.values,
+              targetProfileId: binding.targetProfileId,
+            },
+          ),
         );
       }
       continue;
@@ -310,11 +336,15 @@ export function assessAppMapCombineCellBindings(input: {
     const binding = byCellId.get(cell.cellId);
     if (!binding) {
       issues.push(
-        issue("missing-binding", `Bind a runtime profile to ${cell.testName} · ${cell.worldLabel}.`, {
-          cellId: cell.cellId,
-          testId: cell.testId,
-          values: cell.values,
-        }),
+        issue(
+          "missing-binding",
+          `Bind a runtime profile to ${cell.testName} · ${cell.worldLabel}.`,
+          {
+            cellId: cell.cellId,
+            testId: cell.testId,
+            values: cell.values,
+          },
+        ),
       );
       return {
         cellId: cell.cellId,
@@ -337,7 +367,12 @@ export function assessAppMapCombineCellBindings(input: {
     };
   });
   if (input.rejectUnselectedBindings && seenBindings.size > required.size) {
-    issues.push(issue("extra-binding", "This Combine has runtime profile bindings outside the selected cells."));
+    issues.push(
+      issue(
+        "extra-binding",
+        "This Combine has runtime profile bindings outside the selected cells.",
+      ),
+    );
   }
   return { issues, states, byCellId };
 }
@@ -354,12 +389,16 @@ async function prepareOneCell(input: {
 }): Promise<PreparedAppMapCombineCell> {
   const test = input.map.tests[input.cell.testId] as AppMapScenarioTest | undefined;
   if (!test) {
-    throw new AppMapCombineCellContractError(`Test ${input.cell.testId} is no longer on this map.`, [
-      issue("missing-test", `Test “${input.cell.testId}” is no longer on this map.`, {
-        cellId: input.cell.cellId,
-        testId: input.cell.testId,
-      }),
-    ], []);
+    throw new AppMapCombineCellContractError(
+      `Test ${input.cell.testId} is no longer on this map.`,
+      [
+        issue("missing-test", `Test “${input.cell.testId}” is no longer on this map.`, {
+          cellId: input.cell.cellId,
+          testId: input.cell.testId,
+        }),
+      ],
+      [],
+    );
   }
   const selectedRuntimeTargetProfile = resolveSavedAppMapRuntimeTargetProfile({
     map: input.map,
@@ -387,12 +426,16 @@ async function prepareOneCell(input: {
     throw new AppMapCombineCellContractError(
       `Offline preflight blocked ${input.cell.testName} · ${input.cell.worldLabel}`,
       [
-        issue("compile-failed", `Offline preflight blocked ${input.cell.testName} · ${input.cell.worldLabel}`, {
-          cellId: input.cell.cellId,
-          testId: input.cell.testId,
-          values: input.cell.values,
-          targetProfileId: selectedRuntimeTargetProfile.id,
-        }),
+        issue(
+          "compile-failed",
+          `Offline preflight blocked ${input.cell.testName} · ${input.cell.worldLabel}`,
+          {
+            cellId: input.cell.cellId,
+            testId: input.cell.testId,
+            values: input.cell.values,
+            targetProfileId: selectedRuntimeTargetProfile.id,
+          },
+        ),
       ],
       [
         {
@@ -465,9 +508,11 @@ export async function prepareAppMapCombineCells(input: {
   const tests = input.combine.testIds.map((id) => {
     const test = input.map.tests?.[id];
     if (!test) {
-      throw new AppMapCombineCellContractError(`Test ${id} is no longer on this map.`, [
-        issue("missing-test", `Test “${id}” is no longer on this map.`, { testId: id }),
-      ], []);
+      throw new AppMapCombineCellContractError(
+        `Test ${id} is no longer on this map.`,
+        [issue("missing-test", `Test “${id}” is no longer on this map.`, { testId: id })],
+        [],
+      );
     }
     return test;
   });
@@ -475,13 +520,23 @@ export async function prepareAppMapCombineCells(input: {
   for (const set of sets) assertOptionSandwichReady(set, input.map);
   const selected = input.selected ?? input.combine.selected;
   for (const set of sets) {
-    if (!selectedOptionIds(input.combine, set.id, set.options.map((option) => option.id), selected).length) {
-      throw new AppMapCombineCellContractError(`Choose at least one ${set.name} value.`, [
-        issue("empty-selection", `Choose at least one ${set.name} value.`),
-      ], []);
+    if (
+      !selectedOptionIds(
+        input.combine,
+        set.id,
+        set.options.map((option) => option.id),
+        selected,
+      ).length
+    ) {
+      throw new AppMapCombineCellContractError(
+        `Choose at least one ${set.name} value.`,
+        [issue("empty-selection", `Choose at least one ${set.name} value.`)],
+        [],
+      );
     }
   }
-  const strategy = input.strategy ?? input.combine.strategy ?? defaultOptionMatrixStrategy(sets.length);
+  const strategy =
+    input.strategy ?? input.combine.strategy ?? defaultOptionMatrixStrategy(sets.length);
   const matrix = await prepareOptionRunMatrix({
     sets,
     selected,
@@ -516,19 +571,29 @@ export async function prepareAppMapCombineCells(input: {
   if (requestedSelected) {
     const unknown = requestedSelected.filter((id) => !known.has(id));
     if (unknown.length) {
-      throw new AppMapCombineCellContractError("selectedCellIds includes a cell that is not in this Combine.", [
-        issue("foreign-binding", `Unknown selected cell ${unknown[0]}.`, { cellId: unknown[0] }),
-      ], assessed.states);
+      throw new AppMapCombineCellContractError(
+        "selectedCellIds includes a cell that is not in this Combine.",
+        [issue("foreign-binding", `Unknown selected cell ${unknown[0]}.`, { cellId: unknown[0] })],
+        assessed.states,
+      );
     }
   }
-  const selectedCellIds = requestedSelected?.length ? [...new Set(requestedSelected)] : cells.map((cell) => cell.cellId);
+  const selectedCellIds = requestedSelected?.length
+    ? [...new Set(requestedSelected)]
+    : cells.map((cell) => cell.cellId);
   const prepared: PreparedAppMapCombineCell[] = [];
   for (const cell of cells) {
     const world = matrix.cases[cell.worldIndex];
     if (!world) {
-      throw new AppMapCombineCellContractError(`Combine world ${cell.worldIndex} is missing.`, [
-        issue("compile-failed", `Combine world ${cell.worldIndex} is missing.`, { cellId: cell.cellId }),
-      ], assessed.states);
+      throw new AppMapCombineCellContractError(
+        `Combine world ${cell.worldIndex} is missing.`,
+        [
+          issue("compile-failed", `Combine world ${cell.worldIndex} is missing.`, {
+            cellId: cell.cellId,
+          }),
+        ],
+        assessed.states,
+      );
     }
     const preparedCell = await prepareOneCell({
       map: input.map,

@@ -2,6 +2,7 @@ import type { Accessor, Setter } from "solid-js";
 import type { RelayClient } from "@relay/client";
 import type { JobInfo, LogLine, PersistedRun } from "./api-types";
 import { asArray } from "./api";
+import { createCoalescedRefresh } from "./coalesced-refresh";
 import { refreshFailure, type RefreshOutcome } from "./refresh-outcome";
 
 type Request = <T = unknown>(path: string, init?: RequestInit, timeoutMs?: number) => Promise<T>;
@@ -19,8 +20,7 @@ export function createServerJobController(input: {
   selectedJobId: Accessor<string | null>;
   appendLog: (text: string, level?: LogLine["level"], jobId?: string) => void;
 }) {
-  async function refreshJobs(): Promise<RefreshOutcome> {
-    if (input.health() === "offline") return refreshFailure("Relay is offline");
+  const coalescedRefreshJobs = createCoalescedRefresh(async (): Promise<RefreshOutcome> => {
     try {
       const data = await input.request<{ jobs: JobInfo[]; active: JobInfo | null }>("/jobs");
       const list = asArray<JobInfo>(data, "jobs");
@@ -44,6 +44,11 @@ export function createServerJobController(input: {
     } catch (error) {
       return refreshFailure(error);
     }
+  });
+
+  function refreshJobs(): Promise<RefreshOutcome> {
+    if (input.health() === "offline") return Promise.resolve(refreshFailure("Relay is offline"));
+    return coalescedRefreshJobs();
   }
 
   async function refreshRuns(appMapId?: string): Promise<RefreshOutcome> {

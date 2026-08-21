@@ -106,6 +106,10 @@ function observationLikelyMatchesTitle(
   observation: AuthoringObservation | undefined,
   title: string,
 ): boolean {
+  // A stale tree often contains the previous sheet's sidebar/title. It is
+  // useful for diagnostics but must not merge a visually new capture into an
+  // existing named screen.
+  if (observation?.proof && observation.proof.semantics.status !== "current") return false;
   const words = title
     .toLocaleLowerCase()
     .split(/[^a-z0-9]+/u)
@@ -177,6 +181,10 @@ export function findAppMapCaptureScreen(
 function semanticObservation(
   observation?: AuthoringObservation,
 ): ScreenIdentityObservation | undefined {
+  // Snapshot evidence with an explicit stale/unavailable proof cannot become
+  // a durable semantic identity or offline selector source. Older recordings
+  // have no proof metadata and remain readable until a fresh capture exists.
+  if (observation?.proof && observation.proof.semantics.status !== "current") return undefined;
   if (!observation?.nodes?.length) return undefined;
   return observeScreenIdentity(observation.nodes.slice(0, 256) as SnapshotNode[]);
 }
@@ -254,32 +262,35 @@ function capturedVariant(input: {
     const uri = input.evidenceUrisById?.[id];
     return uri ? [uri] : [];
   })[0];
-  const rawAccessibilityTree = observation.evidenceIds.flatMap((id) => {
-    if (input.evidenceKindsById?.[id] !== "snapshot") return [];
-    const uri = input.evidenceUrisById?.[id];
-    const sha256 = uri?.match(/^relay-evidence:\/\/([a-f0-9]{64})$/u)?.[1];
-    const evidence = input.evidenceById?.[id];
-    return uri &&
-      sha256 &&
-      evidence?.uri === uri &&
-      evidence.sha256 === sha256 &&
-      evidence.mime === "application/json" &&
-      typeof evidence.bytes === "number" &&
-      Number.isSafeInteger(evidence.bytes) &&
-      evidence.bytes > 0
-      ? [
-          {
-            id,
-            uri,
-            sha256,
-            mime: "application/json" as const,
-            bytes: evidence.bytes,
-            observationId: observation.id,
-            capturedAt: evidence.capturedAt,
-          },
-        ]
-      : [];
-  })[0];
+  const rawAccessibilityTree =
+    observation.proof && observation.proof.semantics.status !== "current"
+      ? undefined
+      : observation.evidenceIds.flatMap((id) => {
+          if (input.evidenceKindsById?.[id] !== "snapshot") return [];
+          const uri = input.evidenceUrisById?.[id];
+          const sha256 = uri?.match(/^relay-evidence:\/\/([a-f0-9]{64})$/u)?.[1];
+          const evidence = input.evidenceById?.[id];
+          return uri &&
+            sha256 &&
+            evidence?.uri === uri &&
+            evidence.sha256 === sha256 &&
+            evidence.mime === "application/json" &&
+            typeof evidence.bytes === "number" &&
+            Number.isSafeInteger(evidence.bytes) &&
+            evidence.bytes > 0
+            ? [
+                {
+                  id,
+                  uri,
+                  sha256,
+                  mime: "application/json" as const,
+                  bytes: evidence.bytes,
+                  observationId: observation.id,
+                  capturedAt: evidence.capturedAt,
+                },
+              ]
+            : [];
+        })[0];
   const semantics = semanticObservation(observation);
   const variant: ScreenVariant = {
     ...entityScope(map),

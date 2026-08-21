@@ -432,11 +432,14 @@ test("MCP agent authors a transition observed by an app client", async () => {
     );
     assert.equal(stopped.session.state, "reviewing");
 
-    const inspected = relayResult<{ session: AuthoringSession }>(
-      await callTool(mcp, "relay_authoring_session_get", { sessionId }),
-    );
-    assert.equal(inspected.session.take?.state, "reviewing");
-    assert.equal(inspected.session.take?.revisions.at(-1)?.actions[0]?.steps[0]?.kind, "key");
+    const inspected = relayResult<{
+      truncated: true;
+      resourceUri: string;
+      session: { take?: { actionCount: number } };
+    }>(await callTool(mcp, "relay_authoring_session_get", { sessionId }));
+    assert.equal(inspected.truncated, true);
+    assert.equal(inspected.resourceUri, `relay://authoring-sessions/${sessionId}`);
+    assert.equal(inspected.session.take?.actionCount, 1);
 
     runtime.screen = "source";
     const replayResult = callResult(

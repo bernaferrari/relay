@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMap, AppMapCombine, AppMapScenarioTest, OfflineTestPreflightReport } from "@relay/protocol";
+import type {
+  AppMap,
+  AppMapCombine,
+  AppMapScenarioTest,
+  OfflineTestPreflightReport,
+} from "@relay/protocol";
 import {
   appMapCombineCellId,
   appMapCombineCellVariablePrefix,
@@ -22,7 +27,10 @@ import {
   composeAppMapCombineCellWrapper,
   declaredCombineCellStaticInputs,
 } from "./app-map-combine-cell-wrapper.js";
-import { pendingSelectedCombineCampaignCells, type StoredCombineCampaign } from "./combine-campaign.js";
+import {
+  pendingSelectedCombineCampaignCells,
+  type StoredCombineCampaign,
+} from "./combine-campaign.js";
 import {
   createAppMapTestExecutionIntent,
   digestAppMapTestExecutionValue,
@@ -31,14 +39,17 @@ import type { Recipe } from "./recipes.js";
 
 test("cell IDs stay identifier-safe for punctuation and large tuples", () => {
   const values = Object.fromEntries(
-    Array.from({ length: 24 }, (_, index) => [`var-${index}.id_x`, `value/${index}:ok`.replace("/", "-")]),
+    Array.from({ length: 24 }, (_, index) => [
+      `var-${index}.id_x`,
+      `value/${index}:ok`.replace("/", "-"),
+    ]),
   );
   const cellId = appMapCombineCellId("settings-test.v2", values);
   assert.match(cellId, /^c[a-f0-9]{32}$/u);
   assert.equal(cellId.length, 33);
-  assert.equal(appMapCombineCellId("settings-test.v2", { "z": "1", "a": "2" }).length, 33);
-  const punct = appMapCombineCellId("t", { "a-b": "en-US", "a_b": "pt-BR" });
-  assert.equal(punct, appMapCombineCellId("t", { "a_b": "pt-BR", "a-b": "en-US" }));
+  assert.equal(appMapCombineCellId("settings-test.v2", { z: "1", a: "2" }).length, 33);
+  const punct = appMapCombineCellId("t", { "a-b": "en-US", a_b: "pt-BR" });
+  assert.equal(punct, appMapCombineCellId("t", { a_b: "pt-BR", "a-b": "en-US" }));
 });
 
 test("canonical cell values sort bytewise, not by localeCompare", () => {
@@ -145,7 +156,10 @@ test("static companions freeze identifier/label/text for the selected row", () =
       id: "language",
       name: "Language",
       kind: "language" as const,
-      apply: { kind: "list" as const, entryPath: [{ kind: "tap" as const, target: { label: "Open" } }] },
+      apply: {
+        kind: "list" as const,
+        entryPath: [{ kind: "tap" as const, target: { label: "Open" } }],
+      },
       options: [
         { id: "en", identifier: "lang.en", label: "English", text: "EN" },
         { id: "en-dup", identifier: "lang.en2", label: "English", text: "English" },
@@ -187,7 +201,11 @@ test("binding assessment rejects zero, duplicate, foreign, and missing coverage"
     knownTests: new Set(["settings"]),
     knownValues: { language: new Set(["en", "it"]) },
   });
-  assert.ok(missing.issues.some((item) => item.code === "missing-binding" && item.values?.language === "it"));
+  assert.ok(
+    missing.issues.some(
+      (item) => item.code === "missing-binding" && item.values?.language === "it",
+    ),
+  );
   const duplicate = assessAppMapCombineCellBindings({
     cells,
     bindings: [
@@ -225,7 +243,12 @@ function childFixture() {
     schemaVersion: 1 as const,
     appMapId: "settings",
     appMapRevision: 7,
-    test: { id: "smoke", name: "Smoke", kind: "scenario" as const, intentSchemaVersion: 1 as const },
+    test: {
+      id: "smoke",
+      name: "Smoke",
+      kind: "scenario" as const,
+      intentSchemaVersion: 1 as const,
+    },
     runtimeTargetProfile: { id: "ipad-en", targetId: "ipad-1", platform: "ios" as const },
     rootRecipeId: root.id,
     recipes: { [root.id]: { id: root.id, title: root.title, parameters: [], steps: [] } },
@@ -521,7 +544,9 @@ test("prepares a locale matrix and a selector-free Test before any target contro
   });
   assert.equal(prepared.cells.length, 2);
   assert.equal(prepared.selectedCells.length, 2);
-  assert.ok(prepared.cells.every((cell) => cell.outerIntent.child.sourcePlan.testId === "script-only"));
+  assert.ok(
+    prepared.cells.every((cell) => cell.outerIntent.child.sourcePlan.testId === "script-only"),
+  );
   assert.equal(prepared.cells[0]?.targetProfileId, "pixel-en");
   assert.equal(prepared.cells[1]?.targetProfileId, "pixel-it");
   const again = await prepareAppMapCombineCells({

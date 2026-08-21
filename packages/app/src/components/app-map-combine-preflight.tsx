@@ -64,7 +64,7 @@ export function AppMapCombinePreflightSummary(props: { preflight: AppMapCombineP
                 {cell.testName} · {cell.worldLabel}:{" "}
                 {cell.binding === "bound"
                   ? `bound to ${cell.targetProfileId}`
-                  : cell.message ?? "No runtime profile"}
+                  : (cell.message ?? "No runtime profile")}
               </li>
             )}
           </For>

@@ -70,6 +70,7 @@ test("agent mutation output summarizes a take without repeating evidence or sema
               finishedAt: 21,
               steps: [{ kind: "sleep", ms: 1_000 }],
               evidenceIds: ["evidence-a"],
+              proofStatus: "pixels-only",
             },
           ],
           evidence: [
@@ -96,6 +97,16 @@ test("agent mutation output summarizes a take without repeating evidence or sema
       ],
       replayAttempts: [
         {
+          id: "replay-old",
+          takeId: "take-a",
+          takeRevision: 1,
+          startedAt: 30,
+          finishedAt: 35,
+          outcome: "failed",
+          evidence: [],
+          error: "An older revision failed",
+        },
+        {
           id: "replay-a",
           takeId: "take-a",
           takeRevision: 2,
@@ -103,6 +114,18 @@ test("agent mutation output summarizes a take without repeating evidence or sema
           finishedAt: 65,
           outcome: "passed",
           evidence: [],
+          captureMode: "per-action",
+          actionProofs: {
+            "action-a": {
+              actionId: "action-a",
+              outcome: "passed",
+              proofStatus: "pixels-only",
+              transition: "unproven",
+              entranceObservationId: "replay-before",
+              exitObservationId: "replay-after",
+              evidenceIds: ["evidence-a"],
+            },
+          },
         },
       ],
     },
@@ -126,12 +149,19 @@ test("agent mutation output summarizes a take without repeating evidence or sema
         revision: 2,
         actionCount: 1,
         evidenceCount: 1,
-        actions: [{ id: "action-a", stepCount: 1 }],
+        actions: [{ id: "action-a", stepCount: 1, proofStatus: "pixels-only" }],
         latestReplay: {
           id: "replay-a",
           outcome: "passed",
           takeRevision: 2,
           durationMs: 25,
+          actionProofs: {
+            "action-a": {
+              outcome: "passed",
+              proofStatus: "pixels-only",
+              transition: "unproven",
+            },
+          },
         },
       },
     },

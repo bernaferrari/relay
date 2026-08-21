@@ -3,17 +3,18 @@ import { mkdir, open, readFile, readdir, rename, rm, unlink } from "node:fs/prom
 import { join } from "node:path";
 import type {
   AuthoringAction,
+  AuthoringCaptureContext,
   AuthoringCommitDestination,
   AuthoringEvidence,
   AuthoringInteraction,
   AuthoringObservation,
+  AuthoringObservationProof,
   AuthoringReplayAttempt,
   AuthoringSession,
   AuthoringSessionState,
   AuthoringTakeRevision,
   CreateAuthoringSessionInput,
   RecipeStep,
-  ScreenIdentityObservation,
 } from "@relay/protocol";
 export { recordedPauseDuration } from "./authoring-recorded-pause.js";
 import {
@@ -22,8 +23,18 @@ import {
   stepsForInteraction,
 } from "./authoring-action-steps.js";
 import { AuthoringStateError, transition } from "./authoring-session-state.js";
+import {
+  approvedAfterObservation,
+  assertExpectedSource,
+  attachLiveDemonstrationAttempt,
+  currentRevision,
+  destinationMismatchError,
+  destinationForSession,
+  expectedReplayScreen,
+  observationMatchesExpectedDestination,
+} from "./authoring-session-screen-proof.js";
 export { AuthoringStateError, assertAuthoringTransition } from "./authoring-session-state.js";
-import { describeSnapshotChrome, serializeAuthoringSession } from "@relay/protocol";
+import { serializeAuthoringSession } from "@relay/protocol";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
 import { now, publish } from "./events.js";
 import { KeyedSerialQueue } from "./coordination-store.js";
@@ -31,17 +42,23 @@ import { findWorkspaceRoot } from "./workspace-root.js";
 import { commitAppMapRecording } from "./app-map.js";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { authoringEvidenceExists, persistAuthoringEvidence } from "./authoring-evidence.js";
-import type { SnapshotNode } from "./device.js";
 import {
-  compareScreenIdentity,
-  observeScreenIdentity,
-  resolveScreenIdentity,
-} from "./screen-identity.js";
+  authoringTransitionProofStatus,
+  invalidateAuthoringActionProof,
+} from "./authoring-transition-proof.js";
+import {
+  MAX_AUTHORING_RETAINED_OBSERVATIONS,
+  authoringReplayActionProof,
+  retainAuthoringObservations,
+} from "./authoring-observation-links.js";
 
 export type CapturedAuthoringObservation = {
   capturedAt: number;
   targetId: string;
   fingerprint: string;
+  proof?: AuthoringObservationProof;
+  /** Platform capture provenance kept for offline optimization and audit. */
+  capture?: AuthoringCaptureContext;
   foregroundApp?: string;
   bounds?: { width: number; height: number };
   nodes?: Array<Record<string, unknown>>;
@@ -52,6 +69,17 @@ export type AuthoringRuntime = {
   observe(session: AuthoringSession): Promise<CapturedAuthoringObservation>;
   execute(session: AuthoringSession, interaction: AuthoringInteraction): Promise<void>;
   replay(session: AuthoringSession, steps: RecipeStep[]): Promise<void>;
+  /** Executes one authored action as an atomic batch. When present, the store
+   * captures durable entrance/exit evidence around each action; older
+   * runtimes keep the final-only replay path instead of inventing links. */
+  replayAction?(session: AuthoringSession, action: AuthoringAction): Promise<void>;
+  /**
+   * Captures the endpoint immediately after one replayed action. This must be
+   * pixels-first and must not wait for a new accessibility query: an iOS
+   * endpoint is still useful while XCTest semantics are delayed, but stale
+   * geometry must never be promoted to a current proof.
+   */
+  observeReplayActionEndpoint?(session: AuthoringSession): Promise<CapturedAuthoringObservation>;
   /** Allow asynchronous application and system UI to settle before Relay
    * decides that a replay reached the wrong destination. */
   settle?(ms: number): Promise<void>;
@@ -93,325 +121,6 @@ function pathFor(id: string): string {
 
 function clone<T>(value: T): T {
   return structuredClone(value);
-}
-
-function currentRevision(session: AuthoringSession): AuthoringTakeRevision {
-  const take = session.take;
-  const revision = take?.revisions.find((item) => item.revision === take.currentRevision);
-  if (!take || !revision) throw new AuthoringStateError("Authoring Session has no current Take");
-  return revision;
-}
-
-async function expectedReplayScreen(
-  session: AuthoringSession,
-  revision: AuthoringTakeRevision,
-): Promise<{ fingerprints: string[]; observations: ScreenIdentityObservation[]; title?: string }> {
-  const appMap = await readAppMap(session.projectId, session.appMapId);
-  if (!appMap) throw new AuthoringStateError("App Map no longer exists");
-  const configured =
-    session.destination ??
-    (session.pendingConnectionId
-      ? appMap.connections[session.pendingConnectionId]?.destination
-      : undefined);
-  if (configured?.kind === "end") return { fingerprints: [], observations: [] };
-  if (configured?.kind === "screen") {
-    const screen = appMap.screens[configured.screenId];
-    if (!screen) throw new AuthoringStateError("Expected destination screen no longer exists");
-    const fingerprints = [
-      screen.identity?.fingerprint,
-      ...(screen.identity?.aliases ?? []),
-      ...screen.variantIds.flatMap((variantId) => {
-        const fingerprint = appMap.screenVariants[variantId]?.observation?.fingerprint;
-        return fingerprint ? [fingerprint] : [];
-      }),
-    ].filter((fingerprint): fingerprint is string => Boolean(fingerprint));
-    // A planned destination intentionally has no identity yet. Its recorded
-    // final observation is still authoritative and must be verified before
-    // the placeholder can become a real screen.
-    const observations = screen.variantIds.flatMap((variantId) => {
-      const observation = appMap.screenVariants[variantId]?.observation;
-      return observation ? [observation] : [];
-    });
-    if (fingerprints.length > 0 || observations.length > 0) {
-      return { fingerprints, observations, title: screen.title };
-    }
-    const fallback = revision.reason === "recording" ? revision.after : undefined;
-    const semantic = semanticObservation(fallback);
-    return {
-      fingerprints: fallback?.screen.fingerprint ? [fallback.screen.fingerprint] : [],
-      observations: semantic ? [semantic] : [],
-      title: screen.title,
-    };
-  }
-  const semantic = semanticObservation(revision.after);
-  return {
-    fingerprints: revision.after?.screen.fingerprint ? [revision.after.screen.fingerprint] : [],
-    observations: semantic ? [semantic] : [],
-  };
-}
-
-async function expectedSourceScreen(session: AuthoringSession): Promise<{
-  title: string;
-  fingerprints: string[];
-  observations: ScreenIdentityObservation[];
-} | null> {
-  const appMap = await readAppMap(session.projectId, session.appMapId);
-  if (!appMap) throw new AuthoringStateError("App Map no longer exists");
-  const sourceScreenId =
-    session.sourceScreenId ??
-    (session.pendingConnectionId
-      ? appMap.connections[session.pendingConnectionId]?.fromScreenId
-      : undefined);
-  if (!sourceScreenId) return null;
-  const screen = appMap.screens[sourceScreenId];
-  if (!screen) throw new AuthoringStateError("Source screen no longer exists");
-  const fingerprints = [
-    screen.identity?.fingerprint,
-    ...(screen.identity?.aliases ?? []),
-    ...screen.variantIds.flatMap((variantId) => {
-      const fingerprint = appMap.screenVariants[variantId]?.observation?.fingerprint;
-      return fingerprint ? [fingerprint] : [];
-    }),
-  ].filter((fingerprint): fingerprint is string => Boolean(fingerprint));
-  const observations = screen.variantIds.flatMap((variantId) => {
-    const observation = appMap.screenVariants[variantId]?.observation;
-    return observation ? [observation] : [];
-  });
-  return { title: screen.title, fingerprints: [...new Set(fingerprints)], observations };
-}
-
-function semanticObservation(
-  observation: AuthoringObservation | undefined,
-): ScreenIdentityObservation | undefined {
-  if (!observation?.nodes?.length) return undefined;
-  return observeScreenIdentity(observation.nodes as SnapshotNode[]);
-}
-
-function semanticsMatch(
-  observed: AuthoringObservation,
-  expected: readonly ScreenIdentityObservation[],
-): boolean {
-  const semantic = semanticObservation(observed);
-  if (!semantic || expected.length === 0) return false;
-  return (
-    resolveScreenIdentity(
-      semantic,
-      expected.map((observation, index) => ({ id: `expected-${index}`, observation })),
-    ).kind === "existing"
-  );
-}
-
-/**
- * A recorded destination may contain generated copy, timestamps, or remote
- * content that is expected to change on every replay. Exact semantics remain
- * the first choice, but the same stable application shell is also sufficient
- * when it has multiple matching identifiers and substantially the same role
- * structure. This keeps chat/feed replays meaningful without weakening the
- * stricter source-screen guard or treating a shared app root as a match.
- */
-function replayDestinationMatches(
-  observed: AuthoringObservation,
-  expected: readonly ScreenIdentityObservation[],
-): boolean {
-  const semantic = semanticObservation(observed);
-  if (!semantic || expected.length === 0) return false;
-  return expected.some((candidate) => {
-    const comparison = compareScreenIdentity(semantic, candidate);
-    if (comparison.decision === "match") return true;
-    if (comparison.decision !== "possible") return false;
-
-    const expectedIdentifiers = new Set(
-      candidate.nodes.flatMap((node) => (node.identifier ? [node.identifier] : [])),
-    );
-    const observedIdentifiers = new Set(
-      semantic.nodes.flatMap((node) => (node.identifier ? [node.identifier] : [])),
-    );
-    const sharedIdentifiers = [...expectedIdentifiers].filter((identifier) =>
-      observedIdentifiers.has(identifier),
-    );
-    const identifierSignal = comparison.signals.find(
-      (signal) => signal.kind === "stable-identifier-overlap",
-    );
-    const roleLabelSignal = comparison.signals.find(
-      (signal) => signal.kind === "role-label-overlap",
-    );
-    const structuralSignal = comparison.signals.find(
-      (signal) => signal.kind === "structural-overlap",
-    );
-    const expectedInteractiveLabels = new Set(
-      candidate.nodes.flatMap((node) =>
-        node.label && (node.hittable || /button|imageview/u.test(node.role))
-          ? [`${node.role}\u0000${node.label}`]
-          : [],
-      ),
-    );
-    const observedInteractiveLabels = new Set(
-      semantic.nodes.flatMap((node) =>
-        node.label && (node.hittable || /button|imageview/u.test(node.role))
-          ? [`${node.role}\u0000${node.label}`]
-          : [],
-      ),
-    );
-    const sharedInteractiveLabels = [...expectedInteractiveLabels].filter((label) =>
-      observedInteractiveLabels.has(label),
-    );
-    return (
-      sharedIdentifiers.length >= 2 &&
-      sharedInteractiveLabels.length >= 2 &&
-      sharedInteractiveLabels.length / expectedInteractiveLabels.size >= 0.5 &&
-      (identifierSignal?.strength ?? 0) >= 0.8 &&
-      (roleLabelSignal?.strength ?? 0) >= 0.2 &&
-      (structuralSignal?.strength ?? 0) >= 0.6
-    );
-  });
-}
-
-function observationMatchesExpectedDestination(
-  observed: AuthoringObservation,
-  expected: { fingerprints: string[]; observations: ScreenIdentityObservation[] },
-): boolean {
-  const hasExpectedDestination =
-    expected.fingerprints.length > 0 || expected.observations.length > 0;
-  if (!hasExpectedDestination) return true;
-  return (
-    expected.fingerprints.includes(observed.screen.fingerprint) ||
-    replayDestinationMatches(observed, expected.observations)
-  );
-}
-
-function destinationMismatchError(
-  expected: { fingerprints: string[]; title?: string },
-  received: AuthoringObservation,
-  activity: "Recording" | "Replay",
-): string {
-  const chrome = received.nodes ? describeSnapshotChrome(received.nodes) : {};
-  const expectedName = expected.title ?? "the expected screen";
-  const receivedName = chrome.header ?? chrome.app ?? "a different screen";
-  return `${activity} landed on “${receivedName}”, not “${expectedName}”`;
-}
-
-/** The live demonstration is the first successful pass. A second device run is
- * only required after the Take is edited, or when the recorded destination
- * does not match the expected screen. */
-async function attachLiveDemonstrationAttempt(
-  session: AuthoringSession,
-): Promise<AuthoringSession> {
-  const take = session.take;
-  if (!take) return session;
-  const revision = currentRevision(session);
-  if (!revision.before || !revision.after) return session;
-  const latest = take.replayAttempts.at(-1);
-  if (latest?.takeRevision === revision.revision) return session;
-  const expected = await expectedReplayScreen(session, revision);
-  const destination = await destinationForSession(session);
-  const stayed = recordingStayedOnSourceError(session, revision, destination);
-  const matches = !stayed && observationMatchesExpectedDestination(revision.after, expected);
-  const attempt: AuthoringReplayAttempt = {
-    id: `replay-${randomUUID()}`,
-    takeId: take.id,
-    takeRevision: revision.revision,
-    startedAt: revision.before.capturedAt,
-    finishedAt: Math.max(revision.after.capturedAt, now()),
-    outcome: matches ? "passed" : "failed",
-    evidence: [],
-    ...(matches
-      ? {}
-      : {
-          error: stayed ?? destinationMismatchError(expected, revision.after, "Recording"),
-        }),
-  };
-  return {
-    ...session,
-    take: {
-      ...take,
-      replayAttempts: [...take.replayAttempts, attempt],
-    },
-  };
-}
-
-function recordingStayedOnSourceError(
-  session: AuthoringSession,
-  revision: AuthoringTakeRevision,
-  destination: AuthoringCommitDestination | undefined,
-): string | undefined {
-  if (!revision.before || !revision.after) return undefined;
-  if (!revision.actions.some((action) => action.steps.length > 0)) return undefined;
-  if (revision.after.screen.fingerprint !== revision.before.screen.fingerprint) return undefined;
-  const destScreenId = destination?.kind === "screen" ? destination.screenId : undefined;
-  const targetsAnotherScreen =
-    destination?.kind === "new-screen" ||
-    (Boolean(destScreenId) && destScreenId !== session.sourceScreenId);
-  if (!targetsAnotherScreen) return undefined;
-  return "Recording did not leave the source screen. If the picture changed, the app likely opened Settings or another process — XCTest is still attached here. Launch that app before trusting this tree.";
-}
-
-async function destinationForSession(
-  session: AuthoringSession,
-  override?: AuthoringCommitDestination,
-): Promise<AuthoringCommitDestination | undefined> {
-  if (override) return override;
-  if (session.destination) return session.destination;
-  if (!session.pendingConnectionId) return undefined;
-  const appMap = await readAppMap(session.projectId, session.appMapId);
-  return appMap?.connections[session.pendingConnectionId]?.destination;
-}
-
-async function approvedAfterObservation(
-  session: AuthoringSession,
-  revision: AuthoringTakeRevision,
-  destination?: AuthoringCommitDestination,
-): Promise<AuthoringObservation | undefined> {
-  const stayed = recordingStayedOnSourceError(session, revision, destination);
-  if (stayed) throw new AuthoringStateError(stayed);
-  const take = session.take!;
-  const latestAttempt = take.replayAttempts.at(-1);
-  if (latestAttempt?.takeRevision === revision.revision) {
-    if (latestAttempt.outcome === "passed") {
-      return latestAttempt.after ?? revision.after;
-    }
-    throw new AuthoringStateError(
-      latestAttempt.error ?? "Replay the current Take successfully before committing it",
-    );
-  }
-  if (revision.reason === "recording" && revision.before && revision.after) {
-    const expected = await expectedReplayScreen(session, revision);
-    if (observationMatchesExpectedDestination(revision.after, expected)) {
-      return revision.after;
-    }
-    throw new AuthoringStateError(destinationMismatchError(expected, revision.after, "Recording"));
-  }
-  throw new AuthoringStateError("Replay the current Take successfully before committing it");
-}
-
-async function assertExpectedSource(
-  session: AuthoringSession,
-  observed: AuthoringObservation,
-  fallback?: AuthoringObservation,
-  activity: "recording" | "replaying" = "recording",
-): Promise<void> {
-  const expected = await expectedSourceScreen(session);
-  const fingerprints = expected?.fingerprints.length
-    ? expected.fingerprints
-    : fallback?.screen.fingerprint
-      ? [fallback.screen.fingerprint]
-      : [];
-  const expectedSemantics = expected?.observations.length
-    ? expected.observations
-    : semanticObservation(fallback)
-      ? [semanticObservation(fallback)!]
-      : [];
-  if (
-    (fingerprints.length === 0 && expectedSemantics.length === 0) ||
-    fingerprints.includes(observed.screen.fingerprint) ||
-    semanticsMatch(observed, expectedSemantics) ||
-    replayDestinationMatches(observed, expectedSemantics)
-  )
-    return;
-  throw new AuthoringStateError(
-    expected
-      ? `Navigate the device to “${expected.title}” before ${activity} this connection`
-      : "Return the device to the recorded source screen before replaying this connection",
-  );
 }
 
 function requireState(
@@ -522,17 +231,43 @@ async function readStoredSession(id: string): Promise<AuthoringSession | null> {
 }
 
 function observationId(capturedAt: number, fingerprint: string): string {
-  return `observation-${capturedAt.toString(36)}-${fingerprint.slice(0, 12)}`;
+  // Captures can share a millisecond and visual fingerprint (especially a
+  // fast intentional observe). A durable action link must never resolve to a
+  // different capture just because the two endpoints happened to look alike.
+  return `observation-${capturedAt.toString(36)}-${fingerprint.slice(0, 12)}-${randomUUID()}`;
+}
+
+function fallbackObservationProof(
+  captured: CapturedAuthoringObservation,
+): AuthoringObservationProof {
+  return {
+    schemaVersion: 1,
+    captureOrder: "concurrent",
+    pixels: captured.screenshot
+      ? { status: "captured", capturedAt: captured.capturedAt, fingerprint: captured.fingerprint }
+      : { status: "unavailable" },
+    semantics:
+      captured.nodes && captured.nodes.length > 0
+        ? { status: "current", capturedAt: captured.capturedAt, fingerprint: captured.fingerprint }
+        : { status: "unavailable", capturedAt: captured.capturedAt },
+  };
 }
 
 async function persistObservation(
   captured: CapturedAuthoringObservation,
 ): Promise<{ observation: AuthoringObservation; evidence: AuthoringEvidence[] }> {
+  const proof = clone(captured.proof ?? fallbackObservationProof(captured));
   const snapshot = await persistAuthoringEvidence({
     kind: "snapshot",
     capturedAt: captured.capturedAt,
     data: JSON.stringify({
+      schemaVersion: 1,
+      capturedAt: captured.capturedAt,
+      targetId: captured.targetId,
       fingerprint: captured.fingerprint,
+      proof,
+      ...(captured.capture ? { capture: captured.capture } : {}),
+      ...(captured.foregroundApp ? { foregroundApp: captured.foregroundApp } : {}),
       bounds: captured.bounds,
       nodes: captured.nodes?.slice(0, 256) ?? [],
     }),
@@ -562,6 +297,8 @@ async function persistObservation(
         deviceId: captured.targetId,
       },
       evidenceIds: evidence.map((item) => item.id),
+      proof,
+      ...(captured.capture ? { capture: clone(captured.capture) } : {}),
       ...(captured.bounds ? { bounds: { ...captured.bounds } } : {}),
       ...(captured.foregroundApp ? { foregroundApp: captured.foregroundApp } : {}),
       ...(captured.nodes ? { nodes: clone(captured.nodes.slice(0, 256)) } : {}),
@@ -813,6 +550,7 @@ export class AuthoringSessionStore {
             reason: "recording",
             actions: [],
             evidence: captured.evidence,
+            observations: [captured.observation],
             before: captured.observation,
             after: captured.observation,
           },
@@ -859,6 +597,7 @@ export class AuthoringSessionStore {
             reason: "recording",
             actions: [],
             evidence: captured.evidence,
+            observations: [captured.observation],
             before: captured.observation,
           },
         ],
@@ -876,9 +615,21 @@ export class AuthoringSessionStore {
     return this.#mutate(id, async (session) => {
       assertOwner(session);
       requireState(session, "recording");
+      const revisionAtEntrance = currentRevision(session);
+      const entrance = revisionAtEntrance.after ?? revisionAtEntrance.before;
+      const retainedEntrance = retainAuthoringObservations(revisionAtEntrance.observations, [
+        entrance,
+      ]);
+      // Reserve an endpoint before issuing input. Losing a source/exit link
+      // after a successful tap would make the durable revision misleading.
+      if (!retainedEntrance || retainedEntrance.length >= MAX_AUTHORING_RETAINED_OBSERVATIONS) {
+        throw new AuthoringStateError(
+          `A Take can retain at most ${MAX_AUTHORING_RETAINED_OBSERVATIONS} action observations; stop and trim it before recording another action`,
+        );
+      }
       const idleStartedAt = this.#recordingReadyAt.get(id);
       const startedAt = now();
-      const previousAction = currentRevision(session).actions.at(-1);
+      const previousAction = revisionAtEntrance.actions.at(-1);
       if (
         !["reusable", "observe", "screenshot", "wait"].includes(interaction.kind) &&
         !("applied" in interaction && interaction.applied)
@@ -888,6 +639,12 @@ export class AuthoringSessionStore {
         await runtime.execute(session, interaction);
       }
       const captured = await persistObservation(await runtime.observe(session));
+      const observations = retainAuthoringObservations(retainedEntrance, [captured.observation]);
+      if (!observations) {
+        throw new AuthoringStateError(
+          `A Take can retain at most ${MAX_AUTHORING_RETAINED_OBSERVATIONS} action observations; the new action was not saved`,
+        );
+      }
       // Finish after Relay has captured the resulting state. The next gap then
       // measures human idle time, not device execution or evidence I/O.
       const finishedAt = now();
@@ -900,6 +657,13 @@ export class AuthoringSessionStore {
         finishedAt,
         steps: stepsForInteraction(interaction, actionId, session.group),
         evidenceIds: captured.evidence.map((item) => item.id),
+        ...(entrance
+          ? {
+              entranceObservationId: entrance.id,
+              exitObservationId: captured.observation.id,
+              proofStatus: authoringTransitionProofStatus(entrance, captured.observation),
+            }
+          : {}),
         ...((interaction.kind === "observe" || interaction.kind === "screenshot") &&
         interaction.label
           ? { label: interaction.label }
@@ -924,6 +688,7 @@ export class AuthoringSessionStore {
           ...revision,
           actions: [...revision.actions, ...(pause ? [pause] : []), action],
           evidence: [...revision.evidence, ...captured.evidence],
+          observations,
           after: captured.observation,
         };
       });
@@ -966,14 +731,16 @@ export class AuthoringSessionStore {
       ) {
         throw new AuthoringStateError("Trim does not reference an action in this Take");
       }
-      const actions = previous.actions.filter((action) => {
-        if (allowed && !allowed.has(action.id)) return false;
-        const relativeStart = action.startedAt - start;
-        const relativeEnd = action.finishedAt - start;
-        if (input.fromMs !== undefined && relativeEnd < input.fromMs) return false;
-        if (input.toMs !== undefined && relativeStart > input.toMs) return false;
-        return true;
-      });
+      const actions = previous.actions
+        .filter((action) => {
+          if (allowed && !allowed.has(action.id)) return false;
+          const relativeStart = action.startedAt - start;
+          const relativeEnd = action.finishedAt - start;
+          if (input.fromMs !== undefined && relativeEnd < input.fromMs) return false;
+          if (input.toMs !== undefined && relativeStart > input.toMs) return false;
+          return true;
+        })
+        .map(invalidateAuthoringActionProof);
       return nextRevision(session, "trim", (revision) => ({
         ...revision,
         actions,
@@ -1007,7 +774,9 @@ export class AuthoringSessionStore {
       const byId = new Map(previous.actions.map((action) => [action.id, action]));
       return nextRevision(session, "reorder", (revision) => ({
         ...revision,
-        actions: actionIds.map((actionId) => clone(byId.get(actionId)!)),
+        actions: actionIds.map((actionId) =>
+          invalidateAuthoringActionProof(clone(byId.get(actionId)!)),
+        ),
       }));
     });
   }
@@ -1026,10 +795,11 @@ export class AuthoringSessionStore {
       }
       return nextRevision(session, "replace", (revision) => ({
         ...revision,
-        actions: revision.actions.map((action) =>
-          action.id === actionId
+        actions: revision.actions.map((action) => {
+          const invalidated = invalidateAuthoringActionProof(action);
+          return action.id === actionId
             ? {
-                ...action,
+                ...invalidated,
                 source: actionSource(interaction),
                 steps: stepsForInteraction(interaction, action.id, session.group),
                 label: undefined,
@@ -1040,8 +810,8 @@ export class AuthoringSessionStore {
                   ? { label: interaction.label }
                   : {}),
               }
-            : action,
-        ),
+            : invalidated;
+        }),
       }));
     });
   }
@@ -1052,24 +822,121 @@ export class AuthoringSessionStore {
       requireState(session, "reviewing");
       const revision = currentRevision(session);
       const startedAt = now();
+      const replayAction = runtime.replayAction;
+      const observeReplayActionEndpoint = runtime.observeReplayActionEndpoint;
+      if (
+        replayAction &&
+        observeReplayActionEndpoint &&
+        revision.actions.length + 1 > MAX_AUTHORING_RETAINED_OBSERVATIONS
+      ) {
+        // Do not execute a path whose per-action endpoints could not all be
+        // retained. A partial index would leave action ids resolving to
+        // nothing and make a failed proof look reviewable.
+        throw new AuthoringStateError(
+          `A Take can retain at most ${MAX_AUTHORING_RETAINED_OBSERVATIONS - 1} replay action endpoints; trim it before replaying`,
+        );
+      }
       let outcome: AuthoringReplayAttempt["outcome"] = "passed";
       let error: string | undefined;
       const source = await persistObservation(await runtime.observe(session));
+      const actionProofs: NonNullable<AuthoringReplayAttempt["actionProofs"]> = {};
+      let replayObservations = retainAuthoringObservations(undefined, [source.observation]);
+      if (!replayObservations) {
+        throw new AuthoringStateError("Replay source observation could not be retained");
+      }
+      const evidence = [...source.evidence];
       let sourceMismatch = false;
       try {
         await assertExpectedSource(session, source.observation, revision.before, "replaying");
-        await runtime.replay(
-          session,
-          revision.actions.flatMap((action) => action.steps),
-        );
       } catch (caught) {
         outcome = "failed";
         error = caught instanceof Error ? caught.message : String(caught);
-        sourceMismatch = /before recording|before replaying/.test(error);
+        // This try block contains only source validation. Nothing may execute
+        // after it fails, regardless of the adapter's exact diagnostic text.
+        sourceMismatch = true;
+      }
+      if (!sourceMismatch && outcome === "passed") {
+        if (replayAction && observeReplayActionEndpoint) {
+          let entrance = source.observation;
+          for (let index = 0; index < revision.actions.length; index += 1) {
+            const action = revision.actions[index]!;
+            try {
+              await replayAction(session, action);
+              // This endpoint is deliberately immediate. It must not settle or
+              // start a fresh AX query: pixels remain valid proof while an iOS
+              // tree is delayed, and the final destination check keeps its
+              // existing bounded settle behavior below.
+              const exit = await persistObservation(await observeReplayActionEndpoint(session));
+              const retained = retainAuthoringObservations(replayObservations, [exit.observation]);
+              if (!retained) {
+                throw new AuthoringStateError(
+                  "Replay action endpoint could not be retained; no further actions were executed",
+                );
+              }
+              replayObservations = retained;
+              evidence.push(...exit.evidence);
+              actionProofs[action.id] = authoringReplayActionProof({
+                action,
+                outcome: "passed",
+                entrance,
+                exit: exit.observation,
+              });
+              entrance = exit.observation;
+            } catch (caught) {
+              outcome = "failed";
+              error = caught instanceof Error ? caught.message : String(caught);
+              actionProofs[action.id] = authoringReplayActionProof({
+                action,
+                outcome: "failed",
+                entrance,
+                error,
+              });
+              for (const skipped of revision.actions.slice(index + 1)) {
+                actionProofs[skipped.id] = authoringReplayActionProof({
+                  action: skipped,
+                  outcome: "not-run",
+                  error: "A previous replay action failed",
+                });
+              }
+              break;
+            }
+          }
+        } else {
+          try {
+            await runtime.replay(
+              session,
+              revision.actions.flatMap((action) => action.steps),
+            );
+          } catch (caught) {
+            outcome = "failed";
+            error = caught instanceof Error ? caught.message : String(caught);
+          }
+        }
+      }
+      if (replayAction && observeReplayActionEndpoint && sourceMismatch) {
+        for (const action of revision.actions) {
+          actionProofs[action.id] = authoringReplayActionProof({
+            action,
+            outcome: "not-run",
+            error,
+          });
+        }
+      } else if (!replayAction || !observeReplayActionEndpoint) {
+        for (const action of revision.actions) {
+          actionProofs[action.id] = authoringReplayActionProof({
+            action,
+            // A legacy batch can have run zero, some, or every action. It is
+            // honest to say the individual result is unobserved, never to
+            // claim that a particular action was skipped or proved.
+            outcome: "unobserved",
+            ...(error ? { error } : {}),
+          });
+        }
       }
       let captured = sourceMismatch
         ? source
         : await persistObservation(await runtime.observe(session));
+      if (captured !== source) evidence.push(...captured.evidence);
       if (outcome === "passed") {
         const expected = await expectedReplayScreen(session, revision);
         const destinationMatches = () =>
@@ -1082,6 +949,7 @@ export class AuthoringSessionStore {
           for (const delayMs of [250, 500, 750]) {
             await runtime.settle(delayMs);
             captured = await persistObservation(await runtime.observe(session));
+            evidence.push(...captured.evidence);
             if (destinationMatches()) break;
           }
         }
@@ -1099,7 +967,12 @@ export class AuthoringSessionStore {
         outcome,
         before: source.observation,
         after: captured.observation,
-        evidence: [...source.evidence, ...(captured === source ? [] : captured.evidence)],
+        captureMode: replayAction && observeReplayActionEndpoint ? "per-action" : "final-only",
+        ...(replayAction && observeReplayActionEndpoint
+          ? { observations: replayObservations }
+          : {}),
+        actionProofs,
+        evidence,
         ...(error ? { error } : {}),
       };
       return {

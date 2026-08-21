@@ -280,6 +280,127 @@ test("matches a unique decorated live label without treating a longer name as th
   );
 });
 
+test("matches a wrapped iOS row label in its logical wide viewport", () => {
+  const application = {
+    index: 0,
+    depth: 0,
+    type: "Application",
+    enabled: true,
+    rect: { x: 0, y: 0, width: 1112, height: 834 },
+  };
+  const row = {
+    index: 1,
+    parentIndex: 0,
+    depth: 1,
+    type: "Cell",
+    label: "Langue\u00a0préférée\n",
+    enabled: true,
+    hittable: false,
+    rect: { x: 24, y: 470, width: 512, height: 88 },
+  };
+
+  const result = resolveNamedControl([application, row], {
+    label: "Langue pre\u0301fe\u0301re\u0301e",
+  });
+
+  assert.equal(result?.method, "label");
+  assert.deepEqual(result?.point, { x: 280, y: 514 });
+  assert.deepEqual(result?.bounds, row.rect);
+});
+
+test("does not mistake a wrapped continuation word for a decorated label", () => {
+  const control = {
+    type: "Button",
+    label: "Preferred\nLanguage More",
+    enabled: true,
+    hittable: true,
+    rect: { x: 20, y: 100, width: 280, height: 88 },
+  };
+
+  assert.equal(resolveNamedControl([control], { label: "Preferred Language" }), undefined);
+});
+
+test("matches wrapped Android text and ignores an off-screen duplicate on a narrow landscape viewport", () => {
+  // Android can expose only a FrameLayout root. Its 568×320 landscape bounds
+  // must still reject the stale/off-screen duplicate rather than treating two
+  // otherwise identical wrapped labels as an ambiguity.
+  const root = {
+    index: 0,
+    type: "android.widget.FrameLayout",
+    rect: { x: 0, y: 0, width: 568, height: 320 },
+  };
+  const visibleRow = {
+    index: 1,
+    parentIndex: 0,
+    type: "android.view.View",
+    enabled: true,
+    hittable: true,
+    rect: { x: 0, y: 178, width: 568, height: 80 },
+  };
+  const visibleText = {
+    index: 2,
+    parentIndex: 1,
+    type: "android.widget.TextView",
+    label: "Change\nLanguage",
+    enabled: true,
+    rect: { x: 24, y: 196, width: 264, height: 44 },
+  };
+  const staleRow = {
+    index: 3,
+    parentIndex: 0,
+    type: "android.view.View",
+    enabled: true,
+    hittable: true,
+    rect: { x: 0, y: 350, width: 568, height: 80 },
+  };
+  const staleText = {
+    index: 4,
+    parentIndex: 3,
+    type: "android.widget.TextView",
+    label: "Change\nLanguage",
+    enabled: true,
+    rect: { x: 24, y: 368, width: 264, height: 44 },
+  };
+
+  const result = resolveNamedControl([root, visibleRow, visibleText, staleRow, staleText], {
+    text: "Change Language",
+  });
+
+  assert.equal(result?.method, "text");
+  assert.deepEqual(result?.point, { x: 284, y: 218 });
+  assert.deepEqual(result?.bounds, visibleRow.rect);
+});
+
+test("chooses the same co-located wrapped AX node regardless of traversal order", () => {
+  const firstRow = {
+    index: 1,
+    type: "Cell",
+    enabled: true,
+    hittable: true,
+    rect: { x: 20, y: 100, width: 280, height: 80 },
+  };
+  const firstTitle = {
+    index: 3,
+    parentIndex: 1,
+    depth: 2,
+    type: "StaticText",
+    label: "Change\nLanguage",
+    enabled: true,
+    hittable: false,
+    rect: { x: 40, y: 120, width: 180, height: 32 },
+  };
+  const secondRow = { ...firstRow, index: 2 };
+  const secondTitle = { ...firstTitle, index: 4, parentIndex: 2, hittable: undefined };
+  const target = { label: "Change Language" };
+
+  const first = resolveNamedControl([firstRow, firstTitle, secondRow, secondTitle], target);
+  const reordered = resolveNamedControl([secondRow, secondTitle, firstRow, firstTitle], target);
+
+  assert.deepEqual(reordered, first);
+  assert.equal(first?.activation, "snapshot-point");
+  assert.deepEqual(first?.point, { x: 160, y: 140 });
+});
+
 test("refuses to guess between distinct controls with the same semantic label", () => {
   assert.equal(
     resolveSnapshotTargetPoint(

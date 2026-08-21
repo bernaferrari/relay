@@ -20,13 +20,16 @@ test("collaboration locks serialize overlapping writers", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-collab-lock-serial-"));
   const order: string[] = [];
   let release!: () => void;
+  let firstEntered!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
+  const firstHasLock = new Promise<void>((resolve) => (firstEntered = resolve));
   const first = withCollaborationLock(root, async () => {
     order.push("first:start");
+    firstEntered();
     await held;
     order.push("first:end");
   });
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await firstHasLock;
   const second = withCollaborationLock(root, async () => {
     order.push("second");
   });

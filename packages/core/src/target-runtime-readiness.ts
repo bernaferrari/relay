@@ -29,6 +29,12 @@ export type RuntimeReadinessCapability = keyof TargetRuntimeReadiness;
 type RuntimeProbe = {
   state: Exclude<TargetRuntimeCapabilityState, "unproven">;
   mode: TargetRuntimeCapabilityMode;
+  /**
+   * Local observation order, never sent over the wire. A slow iOS tree can
+   * finish after a newer pixel capture; wall-clock completion time alone
+   * cannot tell us which surface the tree actually observed.
+   */
+  observationEpoch?: number;
   proof?: NonNullable<TargetRuntimeCapabilityReadiness["proof"]>;
   lastError?: NonNullable<TargetRuntimeCapabilityReadiness["lastError"]>;
   invalidated?: NonNullable<TargetRuntimeCapabilityReadiness["invalidated"]>;
@@ -41,7 +47,18 @@ type RuntimeProbe = {
 type TargetProbes = {
   capabilities: Partial<Record<RuntimeReadinessCapability, RuntimeProbe>>;
   /** Never exposed: it only tells Relay whether a newer pixel frame invalidates AX geometry. */
-  visualFingerprint?: { value: string; at: number };
+  visualFingerprint?: { value: string; at: number; observationEpoch?: number };
+  /**
+   * A user mutation or changed frame can occur while XCTest is still reading.
+   * Keep that fence until a semantic request begun after it supplies a proof.
+   */
+  semanticInvalidation?: {
+    at: number;
+    reason: "input-changed" | "visual-changed";
+    observationEpoch?: number;
+  };
+  /** Monotonic only within this in-memory target session. */
+  nextObservationEpoch?: number;
 };
 
 /**
@@ -59,6 +76,22 @@ const probesByTarget = new Map<string, TargetProbes>();
 
 function targetKey(target: Pick<RuntimeReadinessTarget, "platform" | "serial">): string {
   return `${target.platform}:${target.serial}`;
+}
+
+/**
+ * Allocate a local order token before starting an observation. It deliberately
+ * models request order, not completion order: XCTest can return an old tree
+ * after a newer pixel frame has already arrived.
+ */
+export function beginTargetRuntimeObservation(
+  target: Pick<RuntimeReadinessTarget, "platform" | "serial">,
+): number {
+  const key = targetKey(target);
+  const targetProbes = probesByTarget.get(key) ?? { capabilities: {} };
+  const next = (targetProbes.nextObservationEpoch ?? 0) + 1;
+  targetProbes.nextObservationEpoch = next;
+  probesByTarget.set(key, targetProbes);
+  return next;
 }
 
 function isSimulator(target: RuntimeReadinessTarget): boolean {
@@ -208,12 +241,21 @@ export function recordTargetRuntimeCapability(
     observedNodeCount?: number;
     reason?: TargetRuntimeCapabilityReason;
     errorMessage?: string;
+    /** Request-order token from beginTargetRuntimeObservation. */
+    observationEpoch?: number;
   },
 ): void {
   const at = options?.at ?? Date.now();
   const key = targetKey(target);
   const targetProbes = probesByTarget.get(key) ?? { capabilities: {} };
   const previous = targetProbes.capabilities[capability];
+  if (
+    options?.observationEpoch !== undefined &&
+    previous?.observationEpoch !== undefined &&
+    options.observationEpoch < previous.observationEpoch
+  ) {
+    return;
+  }
   const reason = options?.reason ?? "probe-failed";
   const retryableSemanticFailure =
     state === "unavailable" &&
@@ -231,6 +273,9 @@ export function recordTargetRuntimeCapability(
   targetProbes.capabilities[capability] = {
     state,
     mode: modeFor(capability),
+    ...(options?.observationEpoch !== undefined
+      ? { observationEpoch: options.observationEpoch }
+      : {}),
     ...(state === "proven"
       ? {
           proof: {
@@ -264,27 +309,52 @@ export function recordTargetRuntimeCapability(
  * paths; it says nothing about XCTest accessibility control. */
 export function recordTargetPixelCapture(
   target: Pick<RuntimeReadinessTarget, "platform" | "serial">,
-  options?: { at?: number; durationMs?: number; visualFingerprint?: string },
+  options?: {
+    at?: number;
+    durationMs?: number;
+    visualFingerprint?: string;
+    /** Request-order token from beginTargetRuntimeObservation. */
+    observationEpoch?: number;
+  },
 ): void {
   const at = options?.at ?? Date.now();
   const key = targetKey(target);
   const targetProbes = probesByTarget.get(key) ?? { capabilities: {} };
   const fingerprint = options?.visualFingerprint?.trim();
   const previous = targetProbes.visualFingerprint;
+  if (
+    options?.observationEpoch !== undefined &&
+    previous?.observationEpoch !== undefined &&
+    options.observationEpoch < previous.observationEpoch
+  ) {
+    return;
+  }
   const previousIsCurrent =
     previous && (previous.at > at || at - previous.at <= TARGET_RUNTIME_READINESS_TTL_MS);
   const changed = Boolean(fingerprint && previousIsCurrent && previous.value !== fingerprint);
-  if (fingerprint) targetProbes.visualFingerprint = { value: fingerprint, at };
+  if (fingerprint) {
+    targetProbes.visualFingerprint = {
+      value: fingerprint,
+      at,
+      ...(options?.observationEpoch !== undefined
+        ? { observationEpoch: options.observationEpoch }
+        : {}),
+    };
+  }
   probesByTarget.set(key, targetProbes);
   recordTargetRuntimeCapability(target, "previewPixels", "proven", {
     at,
     durationMs: options?.durationMs,
+    observationEpoch: options?.observationEpoch,
   });
   recordTargetRuntimeCapability(target, "evidenceCapture", "proven", {
     at,
     durationMs: options?.durationMs,
+    observationEpoch: options?.observationEpoch,
   });
-  if (changed) invalidateTargetSemanticControl(target, "visual-changed", at);
+  if (changed) {
+    invalidateTargetSemanticControl(target, "visual-changed", at, options?.observationEpoch);
+  }
 }
 
 /**
@@ -296,12 +366,122 @@ export function invalidateTargetSemanticControl(
   target: Pick<RuntimeReadinessTarget, "platform" | "serial">,
   reason: "input-changed" | "visual-changed",
   at = Date.now(),
+  observationEpoch?: number,
+): void {
+  const key = targetKey(target);
+  const targetProbes = probesByTarget.get(key) ?? { capabilities: {} };
+  probesByTarget.set(key, targetProbes);
+  // Inputs have no separate capture request, so they get their own fence.
+  // This prevents a tree that began before the tap from returning afterward
+  // and being accidentally promoted to current.
+  const invalidationEpoch = observationEpoch ?? beginTargetRuntimeObservation(target);
+  const semantic = targetProbes.capabilities.semanticControl;
+  // A visual capture that was started before this semantic request may finish
+  // later. It is historical evidence, not a reason to hide the newer tree.
+  if (
+    semantic?.proof &&
+    semantic.state === "proven" &&
+    observationEpoch !== undefined &&
+    semantic.observationEpoch !== undefined &&
+    invalidationEpoch <= semantic.observationEpoch
+  ) {
+    return;
+  }
+  const invalidation = { at, reason, observationEpoch: invalidationEpoch };
+  if (
+    targetProbes.semanticInvalidation &&
+    !isNewerInvalidation(invalidation, targetProbes.semanticInvalidation)
+  ) {
+    return;
+  }
+  targetProbes.semanticInvalidation = invalidation;
+  probesByTarget.set(key, targetProbes);
+  applyPendingSemanticInvalidation(target);
+}
+
+/**
+ * Check that one exact semantic proof still owns the target. Geometry caches
+ * use this private-runtime fact instead of treating a target-wide `current`
+ * flag as proof that their older rectangles are still safe.
+ */
+export function hasCurrentTargetSemanticProof(
+  target: Pick<RuntimeReadinessTarget, "platform" | "serial">,
+  proof: { at: number; observationEpoch?: number },
+  observedAt = Date.now(),
+): boolean {
+  const readiness = targetRuntimeReadiness(target, observedAt).semanticControl;
+  if (
+    readiness.state !== "proven" ||
+    readiness.freshness !== "current" ||
+    readiness.proof?.at !== proof.at
+  ) {
+    return false;
+  }
+  const stored = probesByTarget.get(targetKey(target))?.capabilities.semanticControl;
+  return (
+    proof.observationEpoch === undefined || stored?.observationEpoch === proof.observationEpoch
+  );
+}
+
+function isNewerInvalidation(
+  candidate: NonNullable<TargetProbes["semanticInvalidation"]>,
+  current: NonNullable<TargetProbes["semanticInvalidation"]>,
+): boolean {
+  if (candidate.observationEpoch !== undefined && current.observationEpoch !== undefined) {
+    return candidate.observationEpoch > current.observationEpoch;
+  }
+  if (candidate.observationEpoch !== undefined) return true;
+  if (current.observationEpoch !== undefined) return false;
+  return candidate.at > current.at;
+}
+
+function semanticPredatesInvalidation(
+  semantic: RuntimeProbe,
+  invalidation: NonNullable<TargetProbes["semanticInvalidation"]>,
+): boolean {
+  if (!semantic.proof) return false;
+  if (semantic.observationEpoch !== undefined && invalidation.observationEpoch !== undefined) {
+    return semantic.observationEpoch <= invalidation.observationEpoch;
+  }
+  return semantic.proof.at <= invalidation.at;
+}
+
+function applyPendingSemanticInvalidation(
+  target: Pick<RuntimeReadinessTarget, "platform" | "serial">,
 ): void {
   const targetProbes = probesByTarget.get(targetKey(target));
+  if (!targetProbes) return;
   const semantic = targetProbes?.capabilities.semanticControl;
+  const visual = targetProbes?.visualFingerprint;
   if (!semantic?.proof || semantic.state !== "proven") return;
-  if (semantic.invalidated && semantic.invalidated.at >= at) return;
-  semantic.invalidated = { at, reason };
+
+  if (
+    visual?.observationEpoch !== undefined &&
+    semantic.observationEpoch !== undefined &&
+    visual.observationEpoch > semantic.observationEpoch
+  ) {
+    const visualInvalidation = {
+      at: visual.at,
+      reason: "visual-changed" as const,
+      observationEpoch: visual.observationEpoch,
+    };
+    if (
+      !targetProbes.semanticInvalidation ||
+      isNewerInvalidation(visualInvalidation, targetProbes.semanticInvalidation)
+    ) {
+      targetProbes.semanticInvalidation = visualInvalidation;
+    }
+  }
+
+  const invalidation = targetProbes.semanticInvalidation;
+  if (!invalidation) return;
+  if (semanticPredatesInvalidation(semantic, invalidation)) {
+    semantic.invalidated = { at: invalidation.at, reason: invalidation.reason };
+    return;
+  }
+  // This proof started after the input/frame fence and replaces it. Any older
+  // async tree will be rejected by its lower observation epoch.
+  delete targetProbes.semanticInvalidation;
 }
 
 /**
@@ -335,6 +515,7 @@ export function recordTargetSemanticSnapshot(
     at?: number;
     durationMs?: number;
     errorMessage?: string;
+    observationEpoch?: number;
   },
 ): void {
   recordTargetRuntimeCapability(
@@ -346,8 +527,10 @@ export function recordTargetSemanticSnapshot(
       durationMs: input.durationMs,
       observedNodeCount: input.nodes.length,
       errorMessage: input.errorMessage,
+      observationEpoch: input.observationEpoch,
     },
   );
+  applyPendingSemanticInvalidation(target);
 }
 
 /**
@@ -357,13 +540,19 @@ export function recordTargetSemanticSnapshot(
  */
 export function recordTargetSemanticProbeInFlight(
   target: Pick<RuntimeReadinessTarget, "platform" | "serial">,
-  input?: { at?: number; durationMs?: number; errorMessage?: string },
+  input?: {
+    at?: number;
+    durationMs?: number;
+    errorMessage?: string;
+    observationEpoch?: number;
+  },
 ): void {
   recordTargetRuntimeCapability(target, "semanticControl", "unavailable", {
     at: input?.at,
     durationMs: input?.durationMs,
     reason: "probe-in-flight",
     errorMessage: input?.errorMessage,
+    observationEpoch: input?.observationEpoch,
   });
 }
 
@@ -378,6 +567,7 @@ export function recordTargetSemanticCapture(
     at?: number;
     durationMs?: number;
     errorMessage?: string;
+    observationEpoch?: number;
   },
 ): void {
   if (input.inFlight) {

@@ -11,7 +11,10 @@ import {
   type Device,
 } from "@relay/core";
 import type { AuthoringSession } from "@relay/protocol";
-import { captureAuthoringObservation } from "./authoring-routes.js";
+import {
+  captureAuthoringObservation,
+  captureAuthoringReplayActionEndpoint,
+} from "./authoring-routes.js";
 import { startServer } from "./index.js";
 
 test("browser authoring observation stays on the explicit browser adapter path", async () => {
@@ -35,6 +38,10 @@ test("browser authoring observation stays on the explicit browser adapter path",
         bounds: { width: 1280, height: 800 },
         inspectable: true,
         source: "sdk",
+        inspectionState: "active",
+        bindingState: "matched",
+        treeApp: "com.example.browser",
+        visualFingerprint: "browser-visual",
         screenIdentity: {
           schemaVersion: 1,
           fingerprint: "browser-screen",
@@ -58,6 +65,20 @@ test("browser authoring observation stays on the explicit browser adapter path",
 
   assert.equal(observation.targetId, "browser-a");
   assert.equal(observation.fingerprint, "browser-screen");
+  assert.deepEqual(observation.proof, {
+    schemaVersion: 1,
+    captureOrder: "concurrent",
+    pixels: { status: "captured", capturedAt: 11, fingerprint: "browser-screen" },
+    semantics: { status: "unavailable", capturedAt: 10 },
+  });
+  assert.deepEqual(observation.capture, {
+    snapshotSource: "sdk",
+    inspectable: true,
+    inspectionState: "active",
+    bindingState: "matched",
+    treeApp: "com.example.browser",
+    visualFingerprint: "browser-visual",
+  });
   assert.deepEqual(
     seen.map(({ operation, device, context }) => ({
       operation,
@@ -85,7 +106,7 @@ test("physical Apple authoring freezes visible evidence before inspecting the ru
     target: { kind: "device", platform: "ios", targetId: "ipad-a" },
   } as AuthoringSession;
 
-  await captureAuthoringObservation(session, {
+  const observation = await captureAuthoringObservation(session, {
     async resolveDevice() {
       return {} as Device;
     },
@@ -123,6 +144,50 @@ test("physical Apple authoring freezes visible evidence before inspecting the ru
   });
 
   assert.deepEqual(order, ["screenshot", "snapshot:start", "snapshot:end"]);
+  assert.equal(observation.proof?.captureOrder, "pixels-first");
+  assert.equal(observation.proof?.semantics.status, "unavailable");
+});
+
+test("replay action endpoint captures pixels without querying or trusting accessibility", async () => {
+  const operations: string[] = [];
+  const session = {
+    target: { kind: "device", platform: "ios", targetId: "ipad-a" },
+  } as AuthoringSession;
+
+  const observation = await captureAuthoringReplayActionEndpoint(session, {
+    async resolveDevice() {
+      operations.push("device");
+      return {} as Device;
+    },
+    async captureSnapshot() {
+      operations.push("snapshot");
+      throw new Error("a fast replay endpoint must not read AX");
+    },
+    async captureScreenshot() {
+      operations.push("screenshot");
+      return {
+        serial: "ipad-a",
+        capturedAt: 12,
+        mime: "image/png",
+        base64: Buffer.from("immediate-replay-png").toString("base64"),
+        path: "/ipad/replay-endpoint.png",
+        bytes: 20,
+        width: 1194,
+        height: 834,
+      };
+    },
+  });
+
+  assert.deepEqual(operations, ["device", "screenshot"]);
+  assert.equal(observation.proof?.captureOrder, "pixels-first");
+  assert.deepEqual(observation.proof?.semantics, { status: "unavailable", capturedAt: 12 });
+  assert.deepEqual(observation.capture, {
+    snapshotSource: "pixels-only",
+    inspectable: false,
+    visualFingerprint: observation.fingerprint,
+  });
+  assert.equal(observation.nodes, undefined);
+  assert.deepEqual(observation.bounds, { width: 1194, height: 834 });
 });
 
 test("authoring rejects a blank device screenshot instead of saving a broken screen", async () => {
