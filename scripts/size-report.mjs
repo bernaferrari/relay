@@ -3,7 +3,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import {
+  formatBytes,
+  formatDiff,
+  formatMaybeBytes,
+  formatSignedBytes,
+} from './size-report-format.mjs';
+import {
+  collectNpmPack,
+  formatPackageComponents,
+  formatPackedFiles,
+} from './size-report-package.mjs';
 
 const COMMENT_MARKER = '<!-- agent-device-size-report -->';
 const GITHUB_REQUEST_ATTEMPTS = 4;
@@ -25,29 +37,39 @@ const STARTUP_BENCHMARKS = [
   { name: 'CLI --help', args: ['--help'] },
 ];
 
-const args = parseArgs(process.argv.slice(2));
-const cwd = path.resolve(args.cwd ?? process.cwd());
-
-if (args.postComment) {
-  await postGitHubCommentBestEffort(args.postComment, args.pr);
-  process.exit(0);
+if (isMainModule()) {
+  await run();
 }
 
-const report = collectReport(cwd, {
-  startupRuns: parseNonNegativeInteger(args.startupRuns ?? '0', '--startup-runs'),
-});
-const baseReport = args.compare ? JSON.parse(fs.readFileSync(args.compare, 'utf8')) : null;
+async function run() {
+  const args = parseArgs(process.argv.slice(2));
+  const cwd = path.resolve(args.cwd ?? process.cwd());
 
-if (args.json) {
-  writeFile(args.json, `${JSON.stringify(report, null, 2)}\n`);
+  if (args.postComment) {
+    await postGitHubCommentBestEffort(args.postComment, args.pr);
+    return;
+  }
+
+  const report = collectReport(cwd, {
+    startupRuns: parseNonNegativeInteger(args.startupRuns ?? '0', '--startup-runs'),
+  });
+  const baseReport = args.compare ? JSON.parse(fs.readFileSync(args.compare, 'utf8')) : null;
+
+  if (args.json) {
+    writeFile(args.json, `${JSON.stringify(report, null, 2)}\n`);
+  }
+
+  const markdown = formatMarkdown(report, baseReport);
+
+  if (args.markdown) {
+    writeFile(args.markdown, markdown);
+  } else {
+    process.stdout.write(markdown);
+  }
 }
 
-const markdown = formatMarkdown(report, baseReport);
-
-if (args.markdown) {
-  writeFile(args.markdown, markdown);
-} else {
-  process.stdout.write(markdown);
+function isMainModule() {
+  return process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 }
 
 function parseArgs(argv) {
@@ -207,33 +229,6 @@ function walk(root) {
   });
 }
 
-function collectNpmPack(root) {
-  const cachePath = path.join(root, '.tmp', 'npm-cache');
-  fs.mkdirSync(cachePath, { recursive: true });
-  const stdout = execFileSync(
-    'npm',
-    ['pack', '--dry-run', '--ignore-scripts', '--json', '--cache', cachePath],
-    { cwd: root, encoding: 'utf8' },
-  );
-  const pack = parseNpmPackOutput(stdout);
-  return {
-    filename: pack.filename,
-    tarballBytes: pack.size,
-    unpackedBytes: pack.unpackedSize,
-    files: countNpmPackEntries(pack),
-  };
-}
-
-function parseNpmPackOutput(stdout) {
-  const parsed = JSON.parse(stdout);
-  return Array.isArray(parsed) ? parsed[0] : parsed;
-}
-
-function countNpmPackEntries(pack) {
-  if (typeof pack.entryCount === 'number') return pack.entryCount;
-  return Array.isArray(pack.files) ? pack.files.length : 0;
-}
-
 function formatMarkdown(report, baseReport) {
   const rows = [
     metricRow('JS raw', baseReport?.js.rawBytes, report.js.rawBytes),
@@ -245,7 +240,12 @@ function formatMarkdown(report, baseReport) {
   const changedChunks = baseReport
     ? formatChangedChunks(report.chunks, baseReport.chunks ?? [])
     : formatTopChunks(report.chunks);
+  const components = formatPackageComponents(report.npmPack, baseReport?.npmPack);
   const startup = formatStartupBenchmarks(report.startup, baseReport?.startup);
+  const packedFiles = formatPackedFiles(
+    report.npmPack.entries,
+    baseReport ? (baseReport.npmPack?.entries ?? []) : undefined,
+  );
 
   return `${COMMENT_MARKER}
 ## Size Report
@@ -254,8 +254,10 @@ function formatMarkdown(report, baseReport) {
 |---|---:|---:|---:|
 ${rows.join('\n')}
 
+${components}
 ${startup}
 ${changedChunks}
+${packedFiles}
 `;
 }
 
@@ -305,14 +307,6 @@ ${rows.join('\n')}
 `;
 }
 
-function formatMaybeBytes(value) {
-  return typeof value === 'number' ? formatBytes(value) : '-';
-}
-
-function formatDiff(base, current) {
-  return typeof base === 'number' ? formatSignedBytes(current - base) : '-';
-}
-
 function formatStartupBenchmarks(startup, baseStartup) {
   if (!startup) return '';
   const baseByName = new Map(
@@ -345,19 +339,6 @@ function formatMsDiff(base, current) {
 
 function formatMs(value) {
   return value < 1000 ? `${value.toFixed(1)} ms` : `${(value / 1000).toFixed(2)} s`;
-}
-
-function formatBytes(value) {
-  const absoluteValue = Math.abs(value);
-  if (absoluteValue < 1000) return `${value} B`;
-  if (absoluteValue < 1000 * 1000) return `${(value / 1000).toFixed(1)} kB`;
-  return `${(value / (1000 * 1000)).toFixed(2)} MB`;
-}
-
-function formatSignedBytes(value) {
-  if (value === 0) return '0 B';
-  const sign = value > 0 ? '+' : '-';
-  return `${sign}${formatBytes(Math.abs(value))}`;
 }
 
 function writeFile(filePath, contents) {
@@ -510,3 +491,5 @@ async function githubStatusError(response, action) {
 function isTransientGitHubStatus(status) {
   return status === 429 || status >= 500;
 }
+
+export { formatMarkdown };

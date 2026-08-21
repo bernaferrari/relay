@@ -92,8 +92,14 @@ export default defineConfig({
             // The Bundle Size lane's PR-comment path: spawns the real script against a
             // stubbed fetch, so it needs no network; pins retry/reconcile/fatal outcomes.
             'scripts/__tests__/size-report-post-comment.test.ts',
+            // Package attribution is a pure npm-pack manifest model. Keep it in the fast lane so
+            // every new package path remains accounted for without building an archive.
+            'scripts/__tests__/size-report-package.test.ts',
             // Parses CI configuration only, so this action guard needs no device or subprocess lane.
             'test/ci/upload-agent-device-artifacts.test.ts',
+            // The size reporter is preserved across a base checkout; its entrypoint and imported
+            // modules must move as one directory or the Bundle Size lane fails before measuring.
+            'test/ci/size-workflow.test.ts',
             // #1781 A9: pins the root-doc paths-ignore entries directly against the
             // real workflow YAML, parse-only like its sibling above.
             'test/ci/root-docs-paths-ignore.test.ts',
