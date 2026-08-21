@@ -198,18 +198,6 @@ function createInteractionBackend(
         ),
       );
     },
-    typeText: async (_context, text): Promise<BackendActionResult> => {
-      expireRefFrame(session);
-      return toBackendActionResult(
-        await dispatchCommand(
-          session.device,
-          'type',
-          [text],
-          req.flags?.out,
-          params.contextFromFlags(req.flags, session.appBundleId, session.trace?.outPath),
-        ),
-      );
-    },
   };
 }
 
