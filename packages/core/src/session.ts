@@ -50,7 +50,7 @@ import { requireOperationContext, runWithOperationContext } from "./operation-co
 import { redactText, visualEvidenceAllowed } from "./redaction.js";
 import { projectPersistedAppMapRun } from "./app-map-run-history.js";
 import { JobRegistry } from "./job-registry.js";
-import { reserveTargetControl, releaseTargetControl } from "./target-control.js";
+import { releaseTargetControl, reserveTargetControl } from "./target-control.js";
 import {
   classifySessionError,
   createJobLeaseValidator,
@@ -62,7 +62,25 @@ import { isTargetUnavailableError } from "./target-unavailable.js";
 import { humanInterventionNeedsReproof } from "./job-intervention.js";
 import { captureAutomaticState } from "./session-automatic-evidence.js";
 import { appendStepLog, finishStep, observeStepActions, openStep } from "./session-trace-steps.js";
-import { createSessionJob, replayInputFromPersistedRun } from "./session-job-factory.js";
+import {
+  createSessionJob,
+  replayInputFromPersistedRun,
+  retryInputFromJob,
+} from "./session-job-factory.js";
+import {
+  createDurableSessionHeartbeat,
+  finishDurableSessionJob,
+  runScheduledSessionJob,
+  setDurableSessionPaused,
+} from "./session-durable-worker.js";
+import {
+  prepareSessionJobBatch,
+  scheduledSessionJob,
+  type DeferredSessionJobBatch,
+  type SessionBatchInput,
+} from "./session-batch-admission.js";
+import { commitTerminalSessionRun } from "./session-terminal-persistence.js";
+import { shutdownSessionExecutions } from "./session-execution-shutdown.js";
 import {
   AppMapTestExecutionReviewRequiredError,
   appMapTestExecutionSourceFromJob,
@@ -80,7 +98,6 @@ const jobRegistry = new JobRegistry<TestJob>(MAX_JOBS);
 const jobCompletions = new WeakMap<TestJob, { promise: Promise<void>; resolve: () => void }>();
 const activeJobIds = new Set<string>();
 const scheduler = new TargetWorkerScheduler();
-
 export function listJobs(limit = 50): TestJob[] {
   return jobRegistry.list(limit);
 }
@@ -88,10 +105,7 @@ export function listJobs(limit = 50): TestJob[] {
 export function getJob(id: string): TestJob | undefined {
   return jobRegistry.get(id);
 }
-
-/** Wait until the scheduled execution has fully drained, including its
- * terminal persistence attempt and lifecycle cleanup. A terminal status alone
- * is not this boundary: it is assigned before the terminal run is written. */
+/** Wait for terminal persistence and lifecycle cleanup, not merely terminal status. */
 export async function waitForJobCompletion(id: string): Promise<TestJob> {
   const job = jobRegistry.get(id);
   if (!job) throw new Error(`Unknown job: ${id}`);
@@ -101,12 +115,17 @@ export async function waitForJobCompletion(id: string): Promise<TestJob> {
   return job;
 }
 
+/** Stop session input before a hosting server hands its state directory over. */
+export const shutdownSessionExecution = (timeoutMs?: number) =>
+  shutdownSessionExecutions(
+    { activeJobs: getActiveJobs, cancelJob, waitForCompletion: waitForJobCompletion },
+    { timeoutMs },
+  );
+
 export function getActiveJobs(): TestJob[] {
   return jobRegistry
-    .list(MAX_JOBS)
-    .filter(
-      (job) => job.status === "queued" || job.status === "running" || job.status === "paused",
-    );
+    .listAll()
+    .filter((job) => ["queued", "running", "paused"].includes(job.status));
 }
 
 export function getActiveJob(targetId?: string): TestJob | null {
@@ -115,9 +134,7 @@ export function getActiveJob(targetId?: string): TestJob | null {
   return occupying.find((job) => (job.browserTargetId ?? job.serial) === targetId) ?? null;
 }
 
-export function listTargetWorkers(): TargetWorkerStatus[] {
-  return scheduler.statuses();
-}
+export const listTargetWorkers = (): TargetWorkerStatus[] => scheduler.statuses();
 
 function setOutcome(job: TestJob): void {
   const classified = classifyRunOutcome(job);
@@ -149,56 +166,82 @@ export function jobForTransport(job: TestJob): TestJob {
   ) as TestJob;
 }
 
-export function enqueueJob(input: EnqueueJobInput): TestJob {
+export function prepareJobBatch(inputs: readonly SessionBatchInput[]): DeferredSessionJobBatch {
   requireOperationContext();
-  const job = makeJob(input);
-  requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromJob(job));
-  let resolveCompletion!: () => void;
-  const completion = new Promise<void>((resolve) => {
-    resolveCompletion = resolve;
-  });
-  jobCompletions.set(job, { promise: completion, resolve: resolveCompletion });
-  if (input.retryOf) {
-    const parent = jobRegistry.get(input.retryOf);
-    if (parent) parent.retriedBy = job.id;
-  }
-  jobRegistry.remember(job);
-  if (job.targetContext.kind === "device") reserveTargetControl(job.targetContext.serial, job.id);
-  publish({
-    type: "job.queued",
-    at: job.queuedAt,
-    jobId: job.id,
-    action: job.action,
-    serial: job.serial,
-  });
-  scheduler.enqueue({
-    id: job.id,
-    workerId: job.workerId!,
-    targetId: job.browserTargetId ?? job.serial!,
-    capacity: job.workerCapacity!,
-    ...(job.hostWorkerId && job.hostWorkerCapacity
-      ? {
-          host: {
-            workerId: job.hostWorkerId,
-            capacity: job.hostWorkerCapacity,
-          },
-        }
-      : {}),
-    run: async () => {
-      try {
-        if (job.status === "cancelled") return;
-        const execute = () =>
-          runWithJobControl(job.id, () =>
-            runWithTargetContext(job.targetContext, () => executeJob(job.id)),
-          );
-        if (job.operationContext) await runWithOperationContext(job.operationContext, execute);
-        else await execute();
-      } finally {
-        resolveCompletion();
+  return prepareSessionJobBatch(inputs, {
+    createJob: (input) => makeJob(input),
+    validateJob: (job) =>
+      requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromJob(job)),
+    registerCompletion(job) {
+      let resolve!: () => void;
+      const promise = new Promise<void>((done) => (resolve = done));
+      jobCompletions.set(job, { promise, resolve });
+    },
+    forgetCompletion: (job) => jobCompletions.delete(job),
+    linkRetry(input, job) {
+      if (!input.retryOf) return;
+      const parent = jobRegistry.get(input.retryOf);
+      if (parent) parent.retriedBy = job.id;
+    },
+    unlinkRetry(input, job) {
+      if (!input.retryOf) return;
+      const parent = jobRegistry.get(input.retryOf);
+      if (parent?.retriedBy === job.id) parent.retriedBy = undefined;
+    },
+    remember: (job) => jobRegistry.remember(job),
+    forgetUnstarted: (job) => jobRegistry.forgetUnstarted(job),
+    reserveTargetControl: (job) => {
+      if (job.targetContext.kind === "device") {
+        reserveTargetControl(job.targetContext.serial, job.id);
       }
     },
+    releaseTargetControl: (job) => {
+      if (job.targetContext.kind === "device") {
+        releaseTargetControl(job.targetContext.serial, job.id);
+      }
+    },
+    scheduler,
+    schedule: (job) =>
+      scheduledSessionJob({
+        job,
+        run: async () => {
+          try {
+            await runScheduledSessionJob({
+              job,
+              execute: (workerInstanceId) => {
+                const execute = () =>
+                  runWithJobControl(job.id, () =>
+                    runWithTargetContext(job.targetContext, () =>
+                      executeJob(job.id, workerInstanceId),
+                    ),
+                  );
+                return job.operationContext
+                  ? runWithOperationContext(job.operationContext, execute)
+                  : execute();
+              },
+              onDispatchFailure: (error) =>
+                finishPreExecutionFailure(
+                  job,
+                  `Durable worker dispatch failed: ${error instanceof Error ? error.message : String(error)}`,
+                ),
+              onDurabilityFailure: (error) =>
+                publish({
+                  type: "error",
+                  at: now(),
+                  message: error instanceof Error ? error.message : String(error),
+                  where: "session.durable-worker.finish",
+                }),
+            });
+          } finally {
+            jobCompletions.get(job)?.resolve();
+          }
+        },
+      }),
   });
-  return job;
+}
+
+export function enqueueJob(input: EnqueueJobInput): TestJob {
+  return prepareJobBatch([{ input }]).commit()[0]!;
 }
 
 /** Re-run a failed (or any) job — success after failure marks healed. */
@@ -206,56 +249,29 @@ export function retryJob(id: string): TestJob {
   const parent = jobRegistry.get(id);
   if (!parent) throw new Error(`Unknown job: ${id}`);
   requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromJob(parent));
-  return enqueueJob({
-    recipe: parent.recipeId!,
-    serial: parent.serial,
-    platform: parent.platform,
-    prodAccountMatch: parent.options?.prodAccountMatch,
-    retryOf: parent.id,
-    title: parent.title,
-    variables: parent.resolvedInputs,
-    sensitiveInputNames: parent.sensitiveInputNames ?? [],
-    recipeSnapshot: parent.recipeSnapshot,
-    recipeGraph: parent.recipeGraph,
-    batchId: parent.batchId,
-    caseIndex: parent.caseIndex,
-    caseCount: parent.caseCount,
-    targetKind: parent.targetKind,
-    browserTargetId: parent.browserTargetId,
-    targetProfile: parent.targetProfile,
-    hostWorkerId: parent.hostWorkerId,
-    hostWorkerCapacity: parent.hostWorkerCapacity,
-    artifacts: parent.artifacts,
-    projectId: parent.projectId,
-    ownerId: parent.ownerId,
+  return enqueueJob(retryInputFromJob(parent));
+}
+
+const commitTerminalRun = (job: TestJob, log: (line: string) => void) =>
+  commitTerminalSessionRun(job, log, {
+    persistRun,
+    projectPersistedRun: projectPersistedAppMapRun,
+    now,
+    setOutcome,
   });
-}
 
-async function persistCompletedRun(job: TestJob, log: (line: string) => void): Promise<void> {
-  try {
-    const persisted = await persistRun(job);
-    await projectPersistedAppMapRun(persisted).catch((error) =>
-      log(
-        `warn: App Map run projection failed: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
-  } catch (error) {
-    log(`warn: persist run failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-/** Finish an execution that lost its offline proof before creating a device
- * client. Queue admission is synchronous; this is the second, filesystem-only
- * proof that protects a long-waiting job from stale or deleted frozen raw
- * evidence. */
-async function finishExecutionIntentReview(job: TestJob, reason: string): Promise<void> {
+/** Finish a job before creating a device client. Queue admission is
+ * synchronous; this protects a long-waiting job from stale frozen evidence or
+ * a durable-dispatch failure without sending another input to the target. */
+async function finishPreExecutionFailure(job: TestJob, error: string): Promise<void> {
   job.startedAt = now();
   job.finishedAt = job.startedAt;
   job.status = "error";
-  job.error = `App Map Test execution needs review: ${reason}`;
+  job.error = error;
   job.errorCode = classifySessionError(job.error);
   job.logs.push(`==> FAIL: ${job.error}`);
   setOutcome(job);
+  await commitTerminalRun(job, (line) => job.logs.push(line));
   publish({
     type: "job.finished",
     at: job.finishedAt,
@@ -265,7 +281,6 @@ async function finishExecutionIntentReview(job: TestJob, reason: string): Promis
     error: job.error,
     durationMs: 0,
   });
-  await persistCompletedRun(job, (line) => job.logs.push(line));
   if (job.targetContext.kind === "device") {
     releaseTargetControl(job.targetContext.serial, job.id);
   }
@@ -326,7 +341,22 @@ export function cancelJob(id: string): TestJob {
     job.startedAt = job.startedAt ?? now();
     finalizeCancelled(job);
     void persistRun(job)
-      .then(() => jobRegistry.pruneTerminalHistory())
+      .then(() => {
+        try {
+          // A queued assignment is allowed to become terminal only after its
+          // terminal run manifest commits. If writing the manifest fails, a
+          // future server deliberately reports recovery-required instead.
+          finishDurableSessionJob(job);
+        } catch (error) {
+          publish({
+            type: "error",
+            at: now(),
+            message: error instanceof Error ? error.message : String(error),
+            where: "session.durable-worker.finish",
+          });
+        }
+        jobRegistry.pruneTerminalHistory();
+      })
       .catch(() => undefined)
       .finally(() => jobCompletions.get(job)?.resolve());
     clearControl(id);
@@ -354,6 +384,7 @@ export function pauseJob(id: string): TestJob {
   if (job.status !== "running") {
     throw new Error(`Cannot pause job in status ${job.status}`);
   }
+  setDurableSessionPaused(job.id, true);
   requestPause(id);
   job.status = "paused";
   job.logs.push("==> paused");
@@ -384,6 +415,7 @@ export async function resumeJob(id: string): Promise<TestJob> {
   if (humanInterventionNeedsReproof(job)) {
     throw new Error("Cannot resume after manual intervention until the target state is re-proven");
   }
+  setDurableSessionPaused(job.id, false);
   requestResume(id);
   job.status = "running";
   job.logs.push("==> resumed");
@@ -511,8 +543,7 @@ async function runRecipeSteps(
   finalizeDeferredChecksForJob(job, pushLog, runtime);
   setCurrentStep(undefined);
 }
-
-async function executeJob(id: string): Promise<void> {
+async function executeJob(id: string, workerInstanceId?: string): Promise<void> {
   const job = jobRegistry.get(id);
   if (!job) {
     const message = `Job registry invariant violated: scheduled job ${id} is missing`;
@@ -529,10 +560,22 @@ async function executeJob(id: string): Promise<void> {
   // or start a device client after that terminal transition.
   if (jobRegistry.get(id)?.status === "cancelled") return;
   if (executionIntent.status === "review-required") {
-    await finishExecutionIntentReview(job, executionIntent.reason);
+    await finishPreExecutionFailure(
+      job,
+      `App Map Test execution needs review: ${executionIntent.reason}`,
+    );
     return;
   }
-
+  if (job.targetContext.kind === "cloud") {
+    // A provider session must never be passed to local AgentDevice cleanup or
+    // client construction. Until a registered provider driver owns this
+    // target, fail before anything can affect a same-named local session.
+    await finishPreExecutionFailure(
+      job,
+      `No registered Relay provider driver can execute ${job.targetContext.provider} session ${job.targetContext.sessionId}.`,
+    );
+    return;
+  }
   ensureControl(id);
   const validateLease = createJobLeaseValidator(job);
   if (validateLease) {
@@ -568,7 +611,7 @@ async function executeJob(id: string): Promise<void> {
           durationMs: 0,
         });
       }
-      await persistCompletedRun(job, (line) => job.logs.push(line));
+      await commitTerminalRun(job, (line) => job.logs.push(line));
       if (job.targetContext.kind === "device")
         releaseTargetControl(job.targetContext.serial, job.id);
       clearControl(id);
@@ -672,10 +715,14 @@ async function executeJob(id: string): Promise<void> {
       physicalIos: meta.physicalIos,
     });
 
-    // Heartbeat: surface cancel even during long SDK calls; hard-stop session
+    // Heartbeat: surface cancel even during long SDK calls; hard-stop session.
+    const durableHeartbeat = workerInstanceId
+      ? createDurableSessionHeartbeat(job.id, workerInstanceId)
+      : undefined;
     let pendingCancel: Error | null = null;
     const heartbeat = setInterval(() => {
       try {
+        durableHeartbeat?.();
         throwIfCancelled(id);
       } catch (err) {
         pendingCancel = err instanceof Error ? err : new Error(String(err));
@@ -724,13 +771,6 @@ async function executeJob(id: string): Promise<void> {
         last.heal = job.healMessage;
         finishStep(last, "healed", "✓ healed");
       }
-      publish({
-        type: "job.healed",
-        at: job.finishedAt,
-        jobId: job.id,
-        action: job.action,
-        healMessage: job.healMessage,
-      });
     } else {
       job.status = "ok";
       const step = primary();
@@ -742,6 +782,16 @@ async function executeJob(id: string): Promise<void> {
     job.errorCode = undefined;
     setOutcome(job);
 
+    await commitTerminalRun(job, pushLog);
+    if (job.status === "healed" && job.healMessage) {
+      publish({
+        type: "job.healed",
+        at: job.finishedAt,
+        jobId: job.id,
+        action: job.action,
+        healMessage: job.healMessage,
+      });
+    }
     publish({
       type: "job.finished",
       at: job.finishedAt,
@@ -753,8 +803,6 @@ async function executeJob(id: string): Promise<void> {
       durationMs: job.finishedAt - (job.startedAt ?? job.queuedAt),
       healed: job.healed,
     });
-
-    await persistCompletedRun(job, pushLog);
   } catch (err) {
     if (
       err instanceof JobCancelledError ||
@@ -766,7 +814,7 @@ async function executeJob(id: string): Promise<void> {
         if (s.status === "running" || !s.finishedAt) finishStep(s, "error", "✗ cancelled");
       }
       finalizeCancelled(job, primary());
-      await persistCompletedRun(job, pushLog);
+      await commitTerminalRun(job, pushLog);
       return;
     }
     if (
@@ -798,7 +846,7 @@ async function executeJob(id: string): Promise<void> {
       error: message,
       durationMs: job.finishedAt - (job.startedAt ?? job.queuedAt),
     });
-    await persistCompletedRun(job, pushLog);
+    await commitTerminalRun(job, pushLog);
   } finally {
     try {
       await finishEvidence();

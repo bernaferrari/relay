@@ -120,6 +120,11 @@ export function isExecutionTargetRef(value: unknown): value is ExecutionTargetRe
     return false;
   }
   if (!nonEmptyString(value.provider.key) || !nonEmptyString(value.identity.value)) return false;
+  // `targetId` is the public scheduling projection while `identity.value` is
+  // the provider-scoped canonical identity. Keeping two divergent values would
+  // let inventory, worker lanes, and durable evidence describe different
+  // targets, so every currently supported target kind requires one value.
+  if (value.targetId !== value.identity.value) return false;
 
   switch (value.kind) {
     case "local-device":

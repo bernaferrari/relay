@@ -1,27 +1,43 @@
-name: Golden path (skips without device)
+name: Golden device acceptance (quarantined hardware)
 
 on:
   workflow_dispatch:
   schedule:
-    # Optional nightly probe; skips cleanly when no hardware is attached.
+    # The runner is deliberately outside ordinary PR CI. This is a real-hardware
+    # acceptance lane, not an optional cloud-runner smoke probe.
     - cron: "0 7 * * *"
 
 permissions:
   contents: read
 
 concurrency:
-  group: golden-device-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel input or recovery while a physical fixture is mid-run.
+  group: golden-device-acceptance
+  cancel-in-progress: false
 
 jobs:
-  golden:
-    name: Golden path (skips without device)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+  acceptance:
+    name: Android + iOS fixture acceptance
+    # This label belongs only on the quarantined Mac that has the two configured
+    # fixtures, Xcode/Developer Disk Image support, adb, and go-ios provisioned.
+    runs-on: [self-hosted, macOS, relay-golden-device]
+    environment: golden-device-quarantine
+    timeout-minutes: 45
     env:
-      # Never block CI for missing hardware on shared runners.
-      GOLDEN_REQUIRE_DEVICE: "0"
-      RELAY_URL: http://127.0.0.1:8787
+      RELAY_PORT: "18787"
+      RELAY_URL: http://127.0.0.1:18787
+      RELAY_ACTOR_ID: system:golden-device
+      RELAY_STATE_DIR: ${{ runner.temp }}/relay-golden-state
+      RELAY_RUNS_DIR: ${{ runner.temp }}/relay-golden-artifacts/runs
+      # Recipe IDs in the protected fixture contract resolve only from this
+      # checked-out, reviewed source — never a stale runner-local catalog.
+      RELAY_TESTS_DIR: ${{ github.workspace }}/tests
+      GOLDEN_ARTIFACT_DIR: ${{ runner.temp }}/relay-golden-artifacts
+      GOLDEN_ACCEPTANCE_MODE: required
+      # Configure this protected Environment secret with the schema documented
+      # in docs/GOLDEN_DEVICE_ACCEPTANCE.md. An empty value is a hard failure.
+      GOLDEN_FIXTURE_CONFIG: ${{ secrets.RELAY_GOLDEN_FIXTURE_CONFIG }}
+
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -34,36 +50,58 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26.x"
+          cache-dependency-path: packages/ios-preview-producer/go.sum
+
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Start Relay server
-        run: |
-          pnpm dev:serve > /tmp/relay-server.log 2>&1 &
-          echo $! > /tmp/relay-server.pid
+      - name: Build the bounded iOS pixel producer
+        run: pnpm ios-preview:build
 
-      - name: Wait for /health
+      - name: Prepare isolated acceptance evidence roots
         run: |
           set -euo pipefail
-          for i in $(seq 1 60); do
-            if curl -fsS "$RELAY_URL/health" >/dev/null 2>&1; then
-              echo "Relay is healthy"
+          umask 077
+          mkdir -p "$GOLDEN_ARTIFACT_DIR" "$RELAY_STATE_DIR" "$RELAY_RUNS_DIR"
+          xcodebuild -version | tee "$GOLDEN_ARTIFACT_DIR/xcode-version.txt"
+          adb version | tee "$GOLDEN_ARTIFACT_DIR/adb-version.txt"
+
+      - name: Start isolated Relay server
+        run: |
+          set -euo pipefail
+          node node_modules/tsx/dist/cli.mjs packages/server/src/index.ts --port "$RELAY_PORT" > "$GOLDEN_ARTIFACT_DIR/server.log" 2>&1 &
+          echo $! > "$GOLDEN_ARTIFACT_DIR/server.pid"
+
+      - name: Wait for Relay health
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            if curl -fsS "$RELAY_URL/health" > "$GOLDEN_ARTIFACT_DIR/health.json"; then
               exit 0
             fi
             sleep 1
           done
-          echo "Relay server failed to become healthy" >&2
-          if [ -f /tmp/relay-server.log ]; then
-            tail -n 200 /tmp/relay-server.log >&2 || true
-          fi
+          tail -n 200 "$GOLDEN_ARTIFACT_DIR/server.log" >&2 || true
           exit 1
 
-      - name: Golden device path
-        run: pnpm test:golden
+      - name: Execute strict Android+iOS acceptance
+        run: pnpm test:golden:acceptance
 
-      - name: Stop Relay server
+      - name: Stop isolated Relay server
         if: always()
         run: |
-          if [ -f /tmp/relay-server.pid ]; then
-            kill "$(cat /tmp/relay-server.pid)" 2>/dev/null || true
+          if [ -f "$GOLDEN_ARTIFACT_DIR/server.pid" ]; then
+            kill "$(cat "$GOLDEN_ARTIFACT_DIR/server.pid")" 2>/dev/null || true
           fi
+
+      - name: Upload complete hardware evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: relay-golden-device-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/relay-golden-artifacts
+          if-no-files-found: error
+          retention-days: 30

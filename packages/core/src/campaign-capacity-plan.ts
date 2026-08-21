@@ -28,9 +28,9 @@ const ASSUMPTIONS = [
   "Each work item is independently executable on any assigned target slot.",
   "Each physical target supplies at most one slot; work remains serial on that target.",
   "Mixed-platform deadline estimates require an explicit workItemsByPlatform partition; aggregate slots never let Android capacity stand in for iOS capacity.",
-  "Parallel estimates assume equal work-item durations and do not include installation, queue drain, or recovery time unless the caller reserves them outside this pure planner.",
+  "Parallel estimates assume equal work-item durations and do not include installation or recovery time unless the caller reserves them outside this pure planner.",
   "The serial estimate is a theoretical one-slot baseline, not authority to use an excluded target.",
-  "Additional slots still need fresh, available, unleased targets with observed free worker capacity.",
+  "Additional slots still need fresh, available, unleased targets with observed free worker and host capacity after active and queued work reserve their lanes.",
   "Leased, stale, unavailable, active, queued, duplicate, unknown-worker, and worker-saturated targets are never assigned.",
   "A shared host/provider ceiling is applied across otherwise independent physical target lanes.",
 ] as const;
@@ -302,13 +302,19 @@ export function planCampaignCapacity(input: CampaignCapacityPlanInput): Campaign
   const freeCapacityByHost = new Map<string, number>();
   const slotCountByHost = new Map<string, number>();
   for (const worker of workerStates.values()) {
-    freeCapacityByWorker.set(worker.key, Math.max(0, worker.capacity - worker.active));
+    // A queued item has already claimed a future turn on this worker. It has
+    // no bounded drain time here, so an immediate/deadline-aware plan must
+    // reserve that capacity instead of promising it to a new campaign.
+    freeCapacityByWorker.set(
+      worker.key,
+      Math.max(0, worker.capacity - worker.active - worker.queued),
+    );
     if (worker.host) {
       hostStates.set(worker.host.key, worker.host);
       if (!freeCapacityByHost.has(worker.host.key)) {
         freeCapacityByHost.set(
           worker.host.key,
-          Math.max(0, worker.host.capacity - worker.host.active),
+          Math.max(0, worker.host.capacity - worker.host.active - worker.host.queued),
         );
       }
     }
@@ -350,7 +356,7 @@ export function planCampaignCapacity(input: CampaignCapacityPlanInput): Campaign
     capacity: worker.capacity,
     active: worker.active,
     queued: worker.queued,
-    freeCapacity: Math.max(0, worker.capacity - worker.active),
+    freeCapacity: Math.max(0, worker.capacity - worker.active - worker.queued),
     slotCount: slotCountByWorker.get(worker.key) ?? 0,
   }));
   const hostPlans: CampaignCapacityHostPlan[] = [...hostStates.values()].map((host) => ({
@@ -358,7 +364,7 @@ export function planCampaignCapacity(input: CampaignCapacityPlanInput): Campaign
     capacity: host.capacity,
     active: host.active,
     queued: host.queued,
-    freeCapacity: Math.max(0, host.capacity - host.active),
+    freeCapacity: Math.max(0, host.capacity - host.active - host.queued),
     slotCount: slotCountByHost.get(host.key) ?? 0,
   }));
 

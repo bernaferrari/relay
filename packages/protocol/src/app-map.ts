@@ -8,6 +8,7 @@ import type {
   DestinationEvidenceSurface,
 } from "./connection-navigation.js";
 import type { TargetProfile } from "./target-contract.js";
+import type { ExecutionTargetRef } from "./execution-target.js";
 import type { ScreenConsolidationPreview } from "./screen-consolidation.js";
 import type {
   LogicalScrollSurface,
@@ -410,6 +411,19 @@ export type AppMapCombineCellRuntimeProfile = {
   targetProfileId: string;
 };
 
+/**
+ * Explicit execution location for one Test × world cell. This is deliberately
+ * separate from `targetProfileId`: a profile proves the frozen evidence Relay
+ * compiled against, while this reference says where the accepted work will
+ * execute. A Combine run never borrows either one from another cell.
+ */
+export type AppMapCombineCellTargetBinding = {
+  testId: string;
+  /** Canonical variable-id → value-id map. Ordering is not identity. */
+  values: Record<string, string>;
+  target: ExecutionTargetRef;
+};
+
 /** Figma-like binding: variables × tests. Extra variables are M×N×O; extra tests run in order. */
 export type AppMapCombine = AppMapEntity & {
   name: string;
@@ -442,7 +456,14 @@ export type AppMapCombinePreflightIssue = {
     | "foreign-binding"
     | "extra-binding"
     | "mismatched-binding"
-    | "zero-bindings";
+    | "zero-bindings"
+    | "missing-target-binding"
+    | "duplicate-target-binding"
+    | "foreign-target-binding"
+    | "extra-target-binding"
+    | "mismatched-target-binding"
+    | "unsupported-target-binding"
+    | "zero-target-bindings";
   message: string;
   cellId?: string;
   testId?: string;
@@ -465,6 +486,8 @@ export type AppMapCombineCellState = {
   values: Record<string, string>;
   worldLabel: string;
   targetProfileId?: string;
+  /** The explicitly accepted execution location, when the caller supplied one. */
+  target?: ExecutionTargetRef;
   binding: AppMapCombineCellBindingStatus;
   preflight?: "ready" | "blocked";
   message?: string;

@@ -1,6 +1,7 @@
 import type {
   EvidenceCollectionPolicy,
   EvidenceManifest,
+  ExecutionTargetRef,
   FailureCategory,
   RunOutcome,
   RunReview,
@@ -30,6 +31,12 @@ export type TestJob = {
   operationContext?: OperationContext;
   /** Immutable execution target captured when the job is accepted. */
   targetContext: TargetContext;
+  /**
+   * Provider-scoped, serializable target identity. New jobs always receive
+   * this immutable ref; it remains optional only while older in-memory jobs
+   * and run fixtures are being read through the compatibility bridge.
+   */
+  executionTarget?: ExecutionTargetRef;
   action: string;
   /** recipe id when this job runs a recipe (action == recipeId for naming) */
   recipeId?: string;
@@ -115,6 +122,11 @@ export type TestJob = {
 export type EnqueueJobInput = {
   /** Internal executable recipe projection for a canonical App Map Flow. */
   recipe: string;
+  /**
+   * Canonical provider-neutral target identity. When supplied it must agree
+   * with any legacy serial/browser fields rather than silently picking one.
+   */
+  executionTarget?: ExecutionTargetRef;
   serial?: string;
   platform?: DevicePlatform;
   targetKind?: "device" | "browser";

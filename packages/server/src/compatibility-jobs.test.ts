@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  currentOperationContext,
   resetControlDatabaseCache,
   runWithOperationContext,
   saveCompatibilityMatrix,
@@ -153,7 +152,6 @@ test("admits Android and iOS targets concurrently while preserving target lease 
     const android = deferred<DeviceLease>();
     const ios = deferred<DeviceLease>();
     const admissions: string[] = [];
-    const queued: Array<{ targetId: string; leaseId?: string; leaseOwnerId?: string }> = [];
     const result = runWithOperationContext(operation, () =>
       enqueueCompatibilityBatch(
         scope,
@@ -161,25 +159,16 @@ test("admits Android and iOS targets concurrently while preserving target lease 
         campaignOptions,
         {
           ...baseRuntime(),
-          async assertTargetControl(_scope, targetId) {
+          async admitTargetControl(_scope, targetId) {
             if (!targetId) throw new Error("target id is required");
             admissions.push(targetId);
             const targetLease =
               targetId === "android-1" ? await android.promise : await ios.promise;
             setOperationLease(targetLease.id, targetLease.ownerId);
-            return targetLease;
+            return { lease: targetLease, createdByThisCall: true };
           },
           async releaseDeviceLease() {
             throw new Error("successful admissions must not release a lease");
-          },
-          enqueueJob(input) {
-            const current = currentOperationContext();
-            queued.push({
-              targetId: input.serial ?? input.browserTargetId ?? "",
-              leaseId: current?.leaseId,
-              leaseOwnerId: current?.leaseOwnerId,
-            });
-            return { id: `job:${queued.length}` } as TestJob;
           },
         },
       ),
@@ -187,26 +176,31 @@ test("admits Android and iOS targets concurrently while preserving target lease 
 
     await waitFor(() => admissions.length === 2, "both independent target admissions");
     assert.deepEqual([...admissions].sort(), ["android-1", "ios-1"]);
-    assert.deepEqual(queued, []);
 
     ios.resolve(lease("ios-1"));
     await new Promise<void>((resolve) => setImmediate(resolve));
-    assert.deepEqual(queued, []);
 
     android.resolve(lease("android-1"));
     const batch = await result;
     assert.deepEqual(
-      batch.jobs.map((job) => job.id),
-      ["job:1", "job:2"],
+      batch.jobs.map((job) => job.serial),
+      ["android-1", "ios-1"],
     );
-    assert.deepEqual(queued, [
-      {
-        targetId: "android-1",
-        leaseId: "lease:android-1",
-        leaseOwnerId: "owner:android-1",
-      },
-      { targetId: "ios-1", leaseId: "lease:ios-1", leaseOwnerId: "owner:ios-1" },
-    ]);
+    assert.deepEqual(
+      batch.jobs.map((job) => ({
+        targetId: job.serial,
+        leaseId: job.operationContext?.leaseId,
+        leaseOwnerId: job.operationContext?.leaseOwnerId,
+      })),
+      [
+        {
+          targetId: "android-1",
+          leaseId: "lease:android-1",
+          leaseOwnerId: "owner:android-1",
+        },
+        { targetId: "ios-1", leaseId: "lease:ios-1", leaseOwnerId: "owner:ios-1" },
+      ],
+    );
   });
 });
 
@@ -216,7 +210,6 @@ test("a failed target admission rolls back leases minted for other targets befor
     const admissions: string[] = [];
     const activeLeaseIds = new Set<string>();
     const released: Array<{ id: string; ownerId?: string }> = [];
-    const queued: string[] = [];
 
     const batch = runWithOperationContext(operation, () =>
       enqueueCompatibilityBatch(
@@ -225,34 +218,28 @@ test("a failed target admission rolls back leases minted for other targets befor
         campaignOptions,
         {
           ...baseRuntime(),
-          async assertTargetControl(_scope, targetId) {
+          async admitTargetControl(_scope, targetId) {
             if (!targetId) throw new Error("target id is required");
             admissions.push(targetId);
             if (targetId === "ios-1") throw new Error("iOS lease rejected");
             const targetLease = await androidAdmission.promise;
             activeLeaseIds.add(targetLease.id);
             setOperationLease(targetLease.id, targetLease.ownerId);
-            return targetLease;
+            return { lease: targetLease, createdByThisCall: true };
           },
           async releaseDeviceLease(id, releaseScope) {
             released.push({ id, ownerId: releaseScope?.ownerId });
             activeLeaseIds.delete(id);
             return lease("android-1");
           },
-          enqueueJob(input) {
-            queued.push(input.serial ?? input.browserTargetId ?? "");
-            return { id: `job:${queued.length}` } as TestJob;
-          },
         },
       ),
     );
     await waitFor(() => admissions.length === 2, "the accepted and rejected admissions");
     assert.deepEqual([...admissions].sort(), ["android-1", "ios-1"]);
-    assert.deepEqual(queued, []);
 
     androidAdmission.resolve(lease("android-1"));
     await assert.rejects(batch, /iOS lease rejected/u);
-    assert.deepEqual(queued, []);
     assert.deepEqual(activeLeaseIds, new Set());
     assert.deepEqual(released, [{ id: "lease:android-1", ownerId: "owner:android-1" }]);
   });
@@ -274,17 +261,14 @@ test("a failed target admission does not release an existing caller lease", asyn
             async listDeviceLeases() {
               return [existing];
             },
-            async assertTargetControl(_scope, targetId) {
+            async admitTargetControl(_scope, targetId) {
               if (targetId === "ios-1") throw new Error("iOS lease rejected");
               setOperationLease(existing.id, existing.ownerId);
-              return existing;
+              return { lease: existing, createdByThisCall: false };
             },
             async releaseDeviceLease(id) {
               released.push(id);
               return existing;
-            },
-            enqueueJob() {
-              throw new Error("a failed campaign must not queue a job");
             },
           },
         ),
@@ -292,5 +276,62 @@ test("a failed target admission does not release an existing caller lease", asyn
       /iOS lease rejected/u,
     );
     assert.deepEqual(released, []);
+  });
+});
+
+test("a staged compatibility activation failure releases only new leases before dispatch", async () => {
+  await withCampaignFixture(async () => {
+    const released: string[] = [];
+    const calls = { activate: 0, dispatch: 0, rollback: 0 };
+
+    await assert.rejects(
+      runWithOperationContext(operation, () =>
+        enqueueCompatibilityBatch(
+          scope,
+          { recipe: "compatibility-smoke", matrixId: "mobile-pair" },
+          campaignOptions,
+          {
+            ...baseRuntime(),
+            async admitTargetControl(_scope, targetId) {
+              if (!targetId) throw new Error("target id is required");
+              const targetLease = lease(targetId);
+              setOperationLease(targetLease.id, targetLease.ownerId);
+              return { lease: targetLease, createdByThisCall: targetId === "android-1" };
+            },
+            async releaseDeviceLease(id) {
+              released.push(id);
+              return lease("released");
+            },
+            prepareJobBatch(inputs) {
+              assert.equal(inputs.length, 2);
+              return {
+                jobs: inputs.map(
+                  (item, index) =>
+                    ({ id: `staged:${index}`, serial: item.input.serial }) as TestJob,
+                ),
+                activate() {
+                  calls.activate += 1;
+                  throw new Error("injected staged compatibility activation failure");
+                },
+                dispatch() {
+                  calls.dispatch += 1;
+                  return [];
+                },
+                commit() {
+                  return [];
+                },
+                rollback() {
+                  calls.rollback += 1;
+                },
+              };
+            },
+          },
+        ),
+      ),
+      /injected staged compatibility activation failure/u,
+    );
+
+    assert.deepEqual(released, ["lease:android-1"]);
+    assert.deepEqual(calls, { activate: 1, dispatch: 0, rollback: 1 });
   });
 });

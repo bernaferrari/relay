@@ -1,3 +1,9 @@
+import type {
+  CampaignCapacityDurationInput,
+  LocalCampaignCapacityPreflight,
+} from "./campaign-capacity-plan.js";
+import type { ExecutionTargetRef, LocalAgentDeviceExecutionTargetRef } from "./execution-target.js";
+
 export type CombineCampaignCaseStatus =
   | "pending"
   | "queued"
@@ -23,6 +29,12 @@ export type CombineCampaignCase = {
   world: string;
   values: Record<string, string>;
   targetProfileId: string;
+  /**
+   * Frozen per-cell execution location. Optional only for schema-v1 campaigns
+   * written before target binding was introduced; those records fall back to
+   * the legacy campaign-wide target during resume.
+   */
+  target?: ExecutionTargetRef;
   childIntentDigest: string;
   outerIntentDigest: string;
   wrapperGraphDigest: string;
@@ -45,7 +57,9 @@ export type CombineCampaign = {
   combineId: string;
   sourceRevision: number;
   latestRevision: number;
-  target: {
+  /** Legacy campaign-wide target for schema-v1 records. New multi-target
+   * campaigns put the authoritative target on every case instead. */
+  target?: {
     kind: "device" | "browser";
     id: string;
     platform: "android" | "ios" | "browser";
@@ -66,5 +80,23 @@ export type CombineCampaign = {
     strategy?: "zip" | "cartesian" | "pairwise";
     seed: number;
     title?: string;
+    /** Immutable admission evidence captured before any Combine jobs queued. */
+    localAdmission?: {
+      request: {
+        deadlineMs: number;
+        duration: LocalCampaignCapacityPreflight["input"]["duration"];
+        /** Required for a mixed Android/iOS campaign so one platform's timing
+         * is never silently used as the other platform's SLA. */
+        durationsByPlatform?: Partial<Record<"android" | "ios", CampaignCapacityDurationInput>>;
+        setupHeadroomMs?: number;
+        recoveryHeadroomMs?: number;
+      };
+      preflight: LocalCampaignCapacityPreflight;
+      /** Per-bound-target checks preserve target affinity rather than
+       * pretending that same-platform work can move between devices. */
+      targetPreflights?: LocalCampaignCapacityPreflight[];
+      /** Exact local execution targets that were admitted. */
+      targets: LocalAgentDeviceExecutionTargetRef[];
+    };
   };
 };

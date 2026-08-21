@@ -5,6 +5,10 @@ import { join } from "node:path";
 import test from "node:test";
 import { JobRegistry } from "./job-registry.js";
 import { leaseDevice } from "./collaboration.js";
+import {
+  durableWorkerAssignmentStore,
+  resetDurableWorkerAssignmentStoreForTests,
+} from "./durable-worker-assignments.js";
 import { runWithOperationContext } from "./operation-context.js";
 import type { Device } from "./device.js";
 import type { RecipeRuntimeState, VerifiedScreenCheckpoint } from "./recipe-runner-context.js";
@@ -34,6 +38,7 @@ for (const count of [101, 200, 500]) {
 
     assert.equal(registry.size, count);
     assert.equal(registry.list(count).length, count);
+    assert.equal(registry.listAll().length, count);
     assert.ok(jobs.every((job) => registry.get(job.id) === job));
 
     const cancellable = registry.get("job-0");
@@ -342,8 +347,78 @@ test("an expired frozen lease fails before device execution starts", async () =>
         false,
         "device discovery never became the failure path",
       );
+      const assignment = durableWorkerAssignmentStore().get(terminal.id);
+      assert.equal(assignment?.status, "error");
+      assert.equal(assignment?.terminal?.reason, "job-finished");
+      assert.equal(assignment?.execution?.workerInstanceId.includes("relay:"), true);
     }
   } finally {
+    resetDurableWorkerAssignmentStoreForTests();
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an unregistered provider session fails closed before any local device session is touched", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-provider-session-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  process.env.RELAY_RUNS_DIR = join(root, "runs");
+  resetDurableWorkerAssignmentStoreForTests();
+  try {
+    const job = runWithOperationContext(
+      {
+        schemaVersion: 1,
+        actorId: "agent:provider-test",
+        actorKind: "agent",
+        organizationId: "org-provider-test",
+        projectId: "project-provider-test",
+        operationId: "job.start",
+        requestId: crypto.randomUUID(),
+        idempotencyKey: crypto.randomUUID(),
+        issuedAt: Date.now(),
+      },
+      () =>
+        enqueueJob({
+          recipe: "provider-driver-required",
+          executionTarget: {
+            schemaVersion: 1,
+            kind: "provider-session",
+            provider: { key: "example.device-farm", scope: "remote" },
+            targetId: "ios-session-42",
+            platform: "ios",
+            identity: { kind: "provider-session", value: "ios-session-42" },
+          },
+          targetKind: "device",
+          platform: "ios",
+          projectId: "project-provider-test",
+          ownerId: "agent:provider-test",
+          recipeSnapshot: {
+            id: "provider-driver-required",
+            title: "Provider driver required",
+            source: "builtin",
+            steps: [],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          recipeGraph: {},
+        }),
+    );
+
+    const terminal = await waitForJobCompletion(job.id);
+    assert.equal(terminal.status, "error");
+    assert.match(terminal.error ?? "", /No registered Relay provider driver/u);
+    assert.equal(terminal.persisted, true);
+    assert.equal(terminal.serial, undefined, "a remote session never becomes a local serial");
+    const assignment = durableWorkerAssignmentStore().get(job.id);
+    assert.equal(assignment?.status, "error");
+    assert.equal(assignment?.executionTarget.kind, "provider-session");
+  } finally {
+    resetDurableWorkerAssignmentStoreForTests();
     if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previousState;
     if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;

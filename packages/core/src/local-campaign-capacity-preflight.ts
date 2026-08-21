@@ -280,7 +280,7 @@ export function preflightLocalCampaignCapacity(
     assumptions: [
       "This preflight did not acquire a lease, reserve a target, or enqueue work.",
       "Each derived local lane has the scheduler's one-target capacity; observed scheduler facts replace that idle default when available.",
-      "Queued work is reported by the plan but its drain time is not included in the deadline estimate.",
+      "Queued or staged work reserves its target and shared-host capacity; its unbounded drain time is not included in a new deadline estimate.",
       "Setup and recovery headroom are reserved once on the campaign critical path, not multiplied by every work item.",
       "A supplied or stale duration can size work, but cannot make the deadline achievable with current capacity.",
     ],

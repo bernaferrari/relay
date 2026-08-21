@@ -29,6 +29,19 @@ function headers(operationId: string): Record<string, string> {
   };
 }
 
+async function post(
+  base: string,
+  path: string,
+  operationId: string,
+  body: Record<string, unknown> = {},
+): Promise<Response> {
+  return fetch(`${base}${path}`, {
+    method: "POST",
+    headers: headers(operationId),
+    body: JSON.stringify(body),
+  });
+}
+
 function legacyTestJob(id: string, status: TestJob["status"] = "error"): TestJob {
   const at = 1;
   const root: Recipe = {
@@ -226,6 +239,31 @@ function scopedRepairJob(id: string): TestJob {
     resolvedInputs: {},
     evidencePolicy: { schemaVersion: 1, sensitive: {} },
   };
+}
+
+function providerIosRepairJob(id: string): TestJob {
+  const job = scopedRepairJob(id);
+  const target = {
+    schemaVersion: 1 as const,
+    kind: "provider-session" as const,
+    provider: { key: "example.device-farm", scope: "remote" as const },
+    targetId: "ios-provider-session-42",
+    platform: "ios" as const,
+    identity: { kind: "provider-session" as const, value: "ios-provider-session-42" },
+  };
+  job.targetContext = {
+    kind: "cloud",
+    provider: target.provider.key,
+    sessionId: target.targetId,
+    platform: target.platform,
+  };
+  job.executionTarget = target;
+  // Deliberately retain an obsolete compatibility projection. Every public
+  // route must prefer executionTarget and must never lease this text locally.
+  job.serial = target.targetId;
+  job.platform = "ios";
+  job.targetKind = "device";
+  return job;
 }
 
 async function assertReviewRequired(response: Response): Promise<void> {
@@ -513,6 +551,92 @@ test("a valid scoped Test crosses every retry and replay entry point", async () 
     assert.equal(retried, 2);
     assert.equal(resumed, 1);
     assert.equal(replayed, 1);
+  } finally {
+    await server.close();
+    resetControlDatabaseCache();
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("provider iOS retry, replay, and selective repair fail before local target control", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-provider-route-boundary-"));
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  const previousState = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  process.env.RELAY_STATE_DIR = join(root, "state");
+  const retrySource = providerIosRepairJob("provider-retry");
+  const persisted = providerIosRepairJob("provider-run");
+  await persistRun(persisted);
+  const expectedTarget = retrySource.executionTarget;
+  assert.ok(expectedTarget);
+  const localControlAttempts: Array<string | undefined> = [];
+  let retries = 0;
+  let replays = 0;
+  let repairs = 0;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      getJob: () => retrySource,
+      assertTargetControl: async (_scope, targetId) => {
+        localControlAttempts.push(targetId);
+        throw new Error("provider targets must not request local control");
+      },
+      retryJob: () => {
+        retries += 1;
+        return retrySource;
+      },
+      replayPersistedRun: () => {
+        replays += 1;
+        return retrySource;
+      },
+    },
+    runRouteRuntime: {
+      assertTargetControl: async (_scope, targetId) => {
+        localControlAttempts.push(targetId);
+        throw new Error("provider targets must not request local control");
+      },
+      enqueueJob: () => {
+        repairs += 1;
+        return retrySource;
+      },
+    },
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  const assertUnavailable = async (response: Response) => {
+    assert.equal(response.status, 409);
+    const body = (await response.json()) as {
+      code?: string;
+      capability?: string;
+      reason?: string;
+      provider?: { key?: string; scope?: string };
+      target?: unknown;
+      error?: string;
+    };
+    assert.equal(body.code, "TARGET_DRIVER_CAPABILITY_UNAVAILABLE");
+    assert.equal(body.capability, "control");
+    assert.equal(body.reason, "not-configured");
+    assert.deepEqual(body.provider, expectedTarget.provider);
+    assert.deepEqual(body.target, expectedTarget);
+    assert.match(body.error ?? "", /no registered relay control driver/i);
+  };
+  try {
+    await assertUnavailable(await post(base, `/jobs/${retrySource.id}/retry`, "job.retry"));
+    await assertUnavailable(
+      await post(base, "/jobs", "job.start", { recipe: "ignored", retryOf: retrySource.id }),
+    );
+    await assertUnavailable(await post(base, `/runs/${persisted.id}/replay`, "run.replay"));
+    await assertUnavailable(
+      await post(base, `/runs/${persisted.id}/checks/usage/retry`, "run.repair.retry"),
+    );
+    assert.deepEqual(localControlAttempts, []);
+    assert.equal(retries, 0);
+    assert.equal(replays, 0);
+    assert.equal(repairs, 0);
   } finally {
     await server.close();
     resetControlDatabaseCache();

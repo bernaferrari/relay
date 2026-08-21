@@ -1,5 +1,6 @@
 import {
   assertExecutionTargetRef,
+  executionTargetRefKey,
   EXECUTION_TARGET_REF_VERSION,
   LOCAL_AGENT_DEVICE_PROVIDER_KEY,
   LOCAL_BROWSER_PROVIDER_KEY,
@@ -11,6 +12,7 @@ import {
 } from "@relay/protocol";
 import type { Device } from "./device.js";
 import { createDeviceForTarget } from "./device-factory.js";
+import type { TestJob } from "./session-contract.js";
 import { runWithTargetContext, type TargetContext } from "./target-context.js";
 
 /** A small, provider-neutral recovery request. Platform-specific recovery
@@ -238,6 +240,33 @@ export function executionTargetRefFromTargetContext(context: TargetContext): Exe
         identity: { kind: "provider-session", value: context.sessionId },
       };
   }
+}
+
+/**
+ * Return a canonical target ref for both newly-created jobs and legacy jobs
+ * that only carry the older TargetContext projection. The fallback is kept in
+ * one place so schedulers and durable stores never have to guess whether a
+ * bare serial belongs to a local host or a remote provider.
+ */
+export function executionTargetRefForJob(
+  job: Pick<TestJob, "executionTarget" | "targetContext">,
+): ExecutionTargetRef {
+  const target = job.executionTarget ?? executionTargetRefFromTargetContext(job.targetContext);
+  assertExecutionTargetRef(target);
+  return target;
+}
+
+/**
+ * Stable scheduler identity. Existing local targets retain their familiar
+ * serial/browser id for status compatibility. Remote sessions include their
+ * provider-scoped ref key, so a provider session can never contend with a
+ * coincidentally named local serial.
+ */
+export function executionTargetSchedulingKey(target: ExecutionTargetRef): string {
+  assertExecutionTargetRef(target);
+  return target.kind === "provider-session"
+    ? `remote:${executionTargetRefKey(target)}`
+    : target.identity.value;
 }
 
 /** Compatibility bridge for entry points that still use the current local

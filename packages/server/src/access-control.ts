@@ -18,6 +18,8 @@ import {
 import type { DeviceLease } from "@relay/protocol";
 import { HttpError } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
+import { runWithTargetControlAdmissionLock } from "./target-control-admission-lock.js";
+import { noteTargetLeaseControlUse } from "./target-lease-admission-state.js";
 
 export function localControlSessionOwner(scope: RequestContext): string {
   const key = Buffer.from(`${scope.organizationId}\0${scope.projectId}`, "utf8").toString(
@@ -71,10 +73,19 @@ export function humanInterventionControlGrant(job: TestJob, operation: Operation
     : undefined;
 }
 
-export async function assertTargetControl(
+export type TargetControlAdmission = {
+  lease: DeviceLease;
+  /** Exact provenance from the atomic lease-create branch. Callers must never
+   * infer this from a prior list snapshot. */
+  createdByThisCall: boolean;
+};
+
+/** Acquire or reuse target control while retaining exact lease provenance for
+ * a compensating multi-target admission. */
+async function admitTargetControlUnlocked(
   scope: RequestContext,
   targetId?: string,
-): Promise<DeviceLease> {
+): Promise<TargetControlAdmission> {
   if (!targetId) throw new HttpError(400, "Explicit target identity is required");
   const operation = currentOperationContext();
   if (!operation) throw new HttpError(400, "Actor-aware operation context is required");
@@ -113,6 +124,7 @@ export async function assertTargetControl(
     });
   }
   const leases = await listDeviceLeases(scope.projectId);
+  let createdByThisCall = false;
   let active = leases.find(
     (lease) =>
       lease.deviceSerial === targetId &&
@@ -159,6 +171,7 @@ export async function assertTargetControl(
         controlScope: "local-project",
         expiresAt: at + DEVICE_LEASE_TTL_MS,
       });
+      createdByThisCall = true;
     } else {
       recordAudit(scope, {
         action: "target.control",
@@ -190,7 +203,29 @@ export async function assertTargetControl(
     target: targetId,
     result: "allow",
   });
-  return active;
+  noteTargetLeaseControlUse(active.id);
+  return { lease: active, createdByThisCall };
+}
+
+/**
+ * Serialize every local control acquisition with campaign lease admission.
+ * This prevents a normal control request from reusing a newly minted lease in
+ * the interval before an atomic campaign either seals or compensates it.
+ */
+export function admitTargetControl(
+  scope: RequestContext,
+  targetId?: string,
+): Promise<TargetControlAdmission> {
+  return runWithTargetControlAdmissionLock(scope, () =>
+    admitTargetControlUnlocked(scope, targetId),
+  );
+}
+
+export async function assertTargetControl(
+  scope: RequestContext,
+  targetId?: string,
+): Promise<DeviceLease> {
+  return (await admitTargetControl(scope, targetId)).lease;
 }
 
 /**

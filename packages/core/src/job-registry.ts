@@ -38,6 +38,18 @@ export class JobRegistry<T extends RetainedJob> {
     this.pruneTerminalHistory();
   }
 
+  /** Remove a job that was registered during a failed admission before it was
+   * ever handed to an execution worker. Normal lifecycle code must use the
+   * terminal-state path instead; this is intentionally a narrow transaction
+   * compensation primitive. */
+  forgetUnstarted(job: T): boolean {
+    if (this.#jobs.get(job.id) !== job) return false;
+    this.#jobs.delete(job.id);
+    const index = this.#order.indexOf(job.id);
+    if (index >= 0) this.#order.splice(index, 1);
+    return true;
+  }
+
   list(limit: number): T[] {
     return this.#order
       .slice()
@@ -47,6 +59,11 @@ export class JobRegistry<T extends RetainedJob> {
         return job ? [job] : [];
       })
       .slice(0, Math.max(0, limit));
+  }
+
+  /** Every retained job, newest first. Use this for lifecycle ownership, not UI pagination. */
+  listAll(): T[] {
+    return this.list(this.#order.length);
   }
 
   /** Remove only the oldest terminal jobs whose durable run write completed. */

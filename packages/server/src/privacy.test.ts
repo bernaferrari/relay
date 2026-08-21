@@ -59,17 +59,24 @@ test("environment policy is locked and unredacted network bindings are refused",
   process.env.RELAY_WORKSPACE_ROOT = root;
   process.env.RELAY_REDACTION_MODE = "off";
   const local = await startServer({ host: "127.0.0.1", port: 0 });
+  let localClosed = false;
   try {
     await assert.rejects(
       clientFor(local.port).setRedactionEnabled(true),
       (error) => error instanceof ApiError && error.status === 409,
     );
+    // The server has established the locked policy. Release its state-dir
+    // lease before independently asserting the rejected network binding;
+    // otherwise the singleton boundary correctly rejects the second server
+    // before the binding policy is reached.
+    await local.close();
+    localClosed = true;
     await assert.rejects(
       startServer({ host: "0.0.0.0", port: 0, token: "a-secure-token-with-24-chars" }),
       /non-local binding while evidence redaction is disabled/,
     );
   } finally {
-    await local.close();
+    if (!localClosed) await local.close();
     if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
     if (previousMode === undefined) delete process.env.RELAY_REDACTION_MODE;

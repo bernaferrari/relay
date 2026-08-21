@@ -26,9 +26,20 @@ export type TargetWorkerStatus = {
   };
 };
 
-type ScheduledWork = TargetWorkerAssignment & {
+export type TargetWorkerScheduledWork = TargetWorkerAssignment & {
   id: string;
   run: () => Promise<void>;
+};
+
+type ScheduledWork = TargetWorkerScheduledWork;
+
+/** A validated scheduler reservation. Staged work is deliberately invisible
+ * to drain until its owning campaign record is durable. Once staged,
+ * `dispatch()` only transfers the already-normalized work to the queue and
+ * cannot re-plan a later cell into a partial dispatch. */
+export type TargetWorkerStagedBatch = {
+  dispatch(): void;
+  rollback(): void;
 };
 
 function positiveCapacity(value: number): number {
@@ -44,6 +55,10 @@ function positiveCapacity(value: number): number {
  */
 export class TargetWorkerScheduler {
   readonly #queued: ScheduledWork[] = [];
+  /** Scheduler-policy reservations that have passed admission but must not
+   * start until their campaign/job records are durable. */
+  readonly #staged = new Map<string, readonly ScheduledWork[]>();
+  #nextStagedBatchId = 0;
   readonly #activeTargets = new Set<string>();
   readonly #activeByWorker = new Map<string, Set<string>>();
   readonly #capacityByWorker = new Map<string, number>();
@@ -52,6 +67,109 @@ export class TargetWorkerScheduler {
   readonly #capacityByHost = new Map<string, number>();
 
   enqueue(work: ScheduledWork): void {
+    this.enqueueBatch([work]);
+  }
+
+  /** Validate and register an entire accepted batch before starting any work.
+   * This is the queue half of campaign atomicity: an invalid later cell cannot
+   * dispatch an earlier one while Relay is still constructing the batch. */
+  enqueueBatch(work: readonly ScheduledWork[]): void {
+    this.stageBatch(work).dispatch();
+  }
+
+  /** Preflight the exact scheduler policy without registering or dispatching
+   * work. Batch admission uses this before durable queue records are written. */
+  assertCanEnqueueBatch(work: readonly ScheduledWork[]): void {
+    this.#planBatch(work);
+  }
+
+  /** Reserve a fully validated batch without exposing it to the worker drain.
+   * Subsequent admissions validate against staged policy too, so a later
+   * request cannot invalidate this batch between campaign persistence and
+   * dispatch. `dispatch()` has no policy validation or external I/O. */
+  stageBatch(work: readonly ScheduledWork[]): TargetWorkerStagedBatch {
+    const { normalized } = this.#planBatch(work);
+    const batchId = `scheduler-stage-${++this.#nextStagedBatchId}`;
+    this.#staged.set(batchId, normalized);
+    let state: "staged" | "dispatched" | "rolled-back" = "staged";
+    return {
+      dispatch: () => {
+        if (state !== "staged") return;
+        // Every throwing validation was completed by stageBatch(). Applying
+        // frozen policy is Map mutation only; this is the intentionally
+        // no-throw post-persistence transition.
+        this.#staged.delete(batchId);
+        this.#applyPolicy(normalized);
+        this.#queued.push(...normalized);
+        state = "dispatched";
+        this.#drain();
+      },
+      rollback: () => {
+        if (state !== "staged") return;
+        this.#staged.delete(batchId);
+        state = "rolled-back";
+      },
+    };
+  }
+
+  #planBatch(work: readonly ScheduledWork[]) {
+    const normalized = work.map((item) => this.#normalize(item));
+    const workerCapacities = new Map(this.#capacityByWorker);
+    const workerHosts = new Map(this.#hostByWorker);
+    const hostCapacities = new Map(this.#capacityByHost);
+    const addPolicy = (item: ScheduledWork) => {
+      if (!workerCapacities.has(item.workerId)) {
+        workerCapacities.set(item.workerId, item.capacity);
+      }
+      const hasEstablishedHost = workerHosts.has(item.workerId);
+      const establishedHost = workerHosts.get(item.workerId);
+      if (
+        hasEstablishedHost &&
+        ((!establishedHost && item.host) ||
+          (establishedHost && (!item.host || establishedHost.workerId !== item.host.workerId)))
+      ) {
+        throw new Error(`Target worker ${item.workerId} cannot change host capacity policy`);
+      }
+      if (!hasEstablishedHost) workerHosts.set(item.workerId, item.host);
+      if (item.host) {
+        const previous = hostCapacities.get(item.host.workerId);
+        // A later, lower explicit ceiling must take effect immediately; raising
+        // a shared ceiling is intentionally a process restart/config action.
+        hostCapacities.set(
+          item.host.workerId,
+          previous === undefined ? item.host.capacity : Math.min(previous, item.host.capacity),
+        );
+      }
+    };
+    // A staged campaign has an accepted immutable policy even though it is
+    // not visible in the execution queue yet. Include it in every following
+    // admission so a concurrent enqueue cannot make its dispatch invalid.
+    for (const staged of this.#staged.values()) {
+      for (const item of staged) addPolicy(item);
+    }
+    for (const item of normalized) addPolicy(item);
+    return { normalized, workerCapacities, workerHosts, hostCapacities };
+  }
+
+  #applyPolicy(work: readonly ScheduledWork[]): void {
+    for (const item of work) {
+      if (!this.#capacityByWorker.has(item.workerId)) {
+        this.#capacityByWorker.set(item.workerId, item.capacity);
+      }
+      if (!this.#hostByWorker.has(item.workerId)) {
+        this.#hostByWorker.set(item.workerId, item.host);
+      }
+      if (item.host) {
+        const previous = this.#capacityByHost.get(item.host.workerId);
+        this.#capacityByHost.set(
+          item.host.workerId,
+          previous === undefined ? item.host.capacity : Math.min(previous, item.host.capacity),
+        );
+      }
+    }
+  }
+
+  #normalize(work: ScheduledWork): ScheduledWork {
     const normalized = {
       ...work,
       workerId: work.workerId.trim() || "local",
@@ -68,33 +186,7 @@ export class TargetWorkerScheduler {
     if (normalized.host && !normalized.host.workerId) {
       throw new Error("Scheduled host capacity requires an explicit worker");
     }
-    if (!this.#capacityByWorker.has(normalized.workerId)) {
-      this.#capacityByWorker.set(normalized.workerId, normalized.capacity);
-    }
-    const hasEstablishedHost = this.#hostByWorker.has(normalized.workerId);
-    const establishedHost = this.#hostByWorker.get(normalized.workerId);
-    if (
-      hasEstablishedHost &&
-      ((!establishedHost && normalized.host) ||
-        (establishedHost &&
-          (!normalized.host || establishedHost.workerId !== normalized.host.workerId)))
-    ) {
-      throw new Error(`Target worker ${normalized.workerId} cannot change host capacity policy`);
-    }
-    if (!hasEstablishedHost) this.#hostByWorker.set(normalized.workerId, normalized.host);
-    if (normalized.host) {
-      const previous = this.#capacityByHost.get(normalized.host.workerId);
-      // A later, lower explicit ceiling must take effect immediately; raising a
-      // shared ceiling is intentionally a process restart/configuration action.
-      this.#capacityByHost.set(
-        normalized.host.workerId,
-        previous === undefined
-          ? normalized.host.capacity
-          : Math.min(previous, normalized.host.capacity),
-      );
-    }
-    this.#queued.push(normalized);
-    this.#drain();
+    return normalized;
   }
 
   remove(id: string): boolean {
@@ -105,23 +197,43 @@ export class TargetWorkerScheduler {
   }
 
   statuses(): TargetWorkerStatus[] {
+    // A staged batch is already an accepted capacity reservation. It cannot
+    // dispatch before its owner is durable, but preflight must still see it so
+    // a concurrent campaign cannot promise the same target or host capacity.
+    const staged = [...this.#staged.values()].flat();
+    const pending = [...this.#queued, ...staged];
     const workerIds = new Set([
       ...this.#capacityByWorker.keys(),
-      ...this.#queued.map((work) => work.workerId),
+      ...pending.map((work) => work.workerId),
     ]);
     return [...workerIds].sort().map((workerId) => {
+      const stagedForWorker = staged.filter((work) => work.workerId === workerId);
+      const hasWorkerPolicy = this.#capacityByWorker.has(workerId);
+      const hasHostPolicy = this.#hostByWorker.has(workerId);
+      const host = hasHostPolicy
+        ? this.#hostByWorker.get(workerId)
+        : stagedForWorker.find((work) => work.host)?.host;
       const activeTargets = [...(this.#activeByWorker.get(workerId) ?? [])].sort();
-      const queuedTargets = this.#queued
+      const queuedTargets = pending
         .filter((work) => work.workerId === workerId)
         .map((work) => work.targetId);
-      const host = this.#hostByWorker.get(workerId);
       const hostActive = host ? (this.#activeByHost.get(host.workerId)?.size ?? 0) : undefined;
       const hostQueued = host
-        ? this.#queued.filter((work) => work.host?.workerId === host.workerId).length
+        ? pending.filter((work) => work.host?.workerId === host.workerId).length
+        : undefined;
+      const stagedHostCapacity = host
+        ? staged
+            .filter((work) => work.host?.workerId === host.workerId)
+            .reduce(
+              (capacity, work) => Math.min(capacity, work.host?.capacity ?? capacity),
+              host.capacity,
+            )
         : undefined;
       return {
         workerId,
-        capacity: this.#capacityByWorker.get(workerId) ?? 1,
+        capacity: hasWorkerPolicy
+          ? this.#capacityByWorker.get(workerId)!
+          : (stagedForWorker[0]?.capacity ?? 1),
         active: activeTargets.length,
         queued: queuedTargets.length,
         activeTargets,
@@ -130,7 +242,8 @@ export class TargetWorkerScheduler {
           ? {
               host: {
                 workerId: host.workerId,
-                capacity: this.#capacityByHost.get(host.workerId) ?? host.capacity,
+                capacity:
+                  this.#capacityByHost.get(host.workerId) ?? stagedHostCapacity ?? host.capacity,
                 active: hostActive!,
                 queued: hostQueued!,
               },

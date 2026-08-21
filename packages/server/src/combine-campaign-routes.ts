@@ -4,21 +4,68 @@ import {
   activeReviewedDocumentOriginsForAppMap,
   currentOperationContext,
   digestAppMapTestExecutionValue,
-  enqueuePreparedAppMapCombineCells,
+  stagePreparedAppMapCombineCells,
   getJob,
+  listDeviceLeases,
+  listDevices,
+  listTargetWorkers,
+  localExecutionTargetRef,
   pendingSelectedCombineCampaignCells,
   prepareAppMapCombineCells,
   projectCombineCampaign,
   readAppMap,
   readCombineCampaign,
+  releaseDeviceLease,
   summarizeJob,
   updateCombineCampaign,
 } from "@relay/core";
-import { assertTargetControl } from "./access-control.js";
+import {
+  executionTargetRefKey,
+  type AppMapCombineCellTargetBinding,
+  type CombineCampaign,
+} from "@relay/protocol";
+import { admitTargetControl, assertTargetControl } from "./access-control.js";
 import { combineCellContractHttpError } from "./app-map-combine-runtime-contract.js";
 import { queuedAppMapTestTargetProfile } from "./app-map-run-routes.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { JobRouteContext } from "./job-routes.js";
+import {
+  admitAndStageLocalCombineCampaign,
+  type LocalCombineCampaignAdmission,
+} from "./local-combine-campaign-admission.js";
+
+function targetBindingsForCampaign(campaign: CombineCampaign): AppMapCombineCellTargetBinding[] {
+  const legacyTarget = campaign.target
+    ? localExecutionTargetRef({ targetId: campaign.target.id, platform: campaign.target.platform })
+    : undefined;
+  return campaign.cases.map((item) => {
+    const target = item.target ?? legacyTarget;
+    if (!target) {
+      throw new HttpError(409, `Campaign cell ${item.cellId} has no frozen execution target.`, {
+        code: "COMBINE_CAMPAIGN_TARGET_BINDING_MISSING",
+        cellId: item.cellId,
+        recovery:
+          "Start a new Combine campaign with explicit per-cell target bindings. Relay will not infer a target during resume.",
+      });
+    }
+    return {
+      testId: item.testId,
+      values: structuredClone(item.values),
+      target: structuredClone(target),
+    };
+  });
+}
+
+function queuedProfileTarget(
+  cell: Awaited<ReturnType<typeof prepareAppMapCombineCells>>["cells"][number],
+) {
+  const target = cell.executionTarget;
+  return {
+    kind: target.kind === "local-browser" ? ("browser" as const) : ("device" as const),
+    targetId: target.targetId,
+    platform: target.platform,
+  };
+}
 
 export async function handleCombineCampaignRoute(context: JobRouteContext): Promise<boolean> {
   const { method, pathname, request, response, scope } = context;
@@ -58,6 +105,10 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
     const combine = map.combines?.[projected.combineId];
     if (!combine) throw new HttpError(409, "The campaign Combine no longer exists");
     const runtime = { ...context.runtime };
+    let staged: ReturnType<typeof stagePreparedAppMapCombineCells> | undefined;
+    let admission: LocalCombineCampaignAdmission | undefined;
+    let resumePersisted = false;
+    let resumedCellIds = new Set<string>();
     try {
       const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);
       const prepared = await prepareAppMapCombineCells({
@@ -67,10 +118,7 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         strategy: projected.execution.strategy ?? combine.strategy,
         cellRuntimeProfiles: combine.cellRuntimeProfiles,
         selectedCellIds: projected.execution.selectedCellIds,
-        target: {
-          targetId: projected.target.id,
-          platform: projected.target.platform,
-        },
+        cellTargetBindings: targetBindingsForCampaign(projected),
         compileOptions: { reviewedDocumentOrigins },
       });
       const preparedById = new Map(prepared.cells.map((cell) => [cell.cellId, cell]));
@@ -113,30 +161,66 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         json(response, 200, { campaign: projected, jobs: [], cells: prepared.cellStates });
         return true;
       }
-      await (runtime.assertTargetControl ?? assertTargetControl)(scope, existing.target.id);
       const toQueue = pending.map((item) => preparedById.get(item.cellId)!);
-      const batch = enqueuePreparedAppMapCombineCells({
-        cells: toQueue,
-        batchId: projected.id,
-        title: projected.execution.title,
-        targetId: projected.target.id,
-        platform: projected.target.platform === "browser" ? undefined : projected.target.platform,
-        targetKind: projected.target.kind,
-        browserTargetId: projected.target.kind === "browser" ? projected.target.id : undefined,
-        queuedTargetProfile: (cell) =>
-          queuedAppMapTestTargetProfile({
-            runtimeTargetProfile: cell.selectedRuntimeTargetProfile,
-            observedTargetProfile: undefined,
-            target: {
-              kind: projected.target.kind,
-              targetId: projected.target.id,
-              platform: projected.target.platform,
+      resumedCellIds = new Set(toQueue.map((cell) => cell.cellId));
+      const localAdmission = projected.execution.localAdmission;
+      const stageCells = (acceptedAdmission?: LocalCombineCampaignAdmission) =>
+        stagePreparedAppMapCombineCells({
+          cells: toQueue,
+          batchId: projected.id,
+          title: projected.execution.title,
+          targetForCell: (cell) => cell.executionTarget,
+          operationContextForCell: acceptedAdmission?.operationContextForCell,
+          queuedTargetProfile: (cell) =>
+            queuedAppMapTestTargetProfile({
+              runtimeTargetProfile: cell.selectedRuntimeTargetProfile,
+              observedTargetProfile: undefined,
+              target: queuedProfileTarget(cell),
+            }),
+          projectId: scope.projectId,
+          ownerId: currentOperationContext()!.actorId,
+        });
+      if (localAdmission) {
+        const admitted = await admitAndStageLocalCombineCampaign({
+          scope,
+          cells: toQueue,
+          request: localAdmission.request,
+          runtime: {
+            listDevices: runtime.listDevices ?? listDevices,
+            listDeviceLeases: runtime.listDeviceLeases ?? listDeviceLeases,
+            listTargetWorkers: runtime.listTargetWorkers ?? listTargetWorkers,
+            assertTargetControl: runtime.assertTargetControl ?? assertTargetControl,
+            admitTargetControl: runtime.admitTargetControl ?? admitTargetControl,
+            releaseDeviceLease: runtime.releaseDeviceLease ?? releaseDeviceLease,
+          },
+          stage: stageCells,
+        });
+        admission = admitted.admission;
+        staged = admitted.staged;
+      } else {
+        const targets = new Map(
+          toQueue.map((cell) => [
+            executionTargetRefKey(cell.executionTarget),
+            cell.executionTarget,
+          ]),
+        );
+        if (targets.size !== 1) {
+          throw new HttpError(
+            409,
+            "This multi-target campaign has no frozen local admission plan.",
+            {
+              code: "LOCAL_COMBINE_ADMISSION_REQUIRED",
+              recovery:
+                "Start a new Combine campaign with explicit per-cell target bindings and localAdmission. Relay will not resume multi-target work on assumed capacity.",
             },
-          }),
-        projectId: scope.projectId,
-        ownerId: currentOperationContext()!.actorId,
-      });
-      const jobByCell = new Map(batch.jobs.map((job, index) => [toQueue[index]?.cellId, job]));
+          );
+        }
+        const target = targets.values().next().value;
+        if (!target) throw new Error("Combine campaign target resolution failed");
+        await (runtime.assertTargetControl ?? assertTargetControl)(scope, target.targetId);
+        staged = stageCells();
+      }
+      const jobByCell = new Map(staged.jobs.map((job, index) => [toQueue[index]?.cellId, job]));
       const at = Date.now();
       const updated = await updateCombineCampaign(scope.projectId, campaignId, (current) => ({
         ...current,
@@ -157,13 +241,69 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           },
         ],
       }));
+      resumePersisted = true;
+      const acceptedAdmission = admission;
+      await acceptedAdmission?.commit();
+      staged.activate();
+      await acceptedAdmission?.finalize();
+      admission = undefined;
+      const batch = { batchId: staged.batchId, jobs: staged.dispatch() };
+      staged = undefined;
+      resumePersisted = false;
       json(response, 202, {
         campaign: await projectCombineCampaign(updated),
         jobs: batch.jobs.map((job) => summarizeJob(job)),
         cells: prepared.cellStates,
+        ...(acceptedAdmission
+          ? {
+              admission: {
+                preflight: acceptedAdmission.preflight,
+                targetPreflights: acceptedAdmission.targetPreflights,
+              },
+            }
+          : {}),
       });
       return true;
     } catch (error) {
+      const cleanupErrors: string[] = [];
+      try {
+        staged?.rollback();
+      } catch (cleanupError) {
+        cleanupErrors.push(
+          cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        );
+      }
+      try {
+        await admission?.rollback();
+      } catch (cleanupError) {
+        cleanupErrors.push(
+          cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        );
+      }
+      if (resumePersisted) {
+        try {
+          await updateCombineCampaign(scope.projectId, campaignId, (current) => ({
+            ...current,
+            status: projected.status,
+            updatedAt: Date.now(),
+            cases: current.cases.map((item) => {
+              if (!resumedCellIds.has(item.cellId)) return item;
+              const { jobId: _jobId, ...withoutJob } = item;
+              return { ...withoutJob, status: "pending" as const };
+            }),
+          }));
+        } catch (cleanupError) {
+          cleanupErrors.push(
+            cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+          );
+        }
+      }
+      if (cleanupErrors.length) {
+        throw new HttpError(
+          500,
+          `Combine resume failed and Relay could not fully compensate staged work: ${cleanupErrors.join("; ")}`,
+        );
+      }
       if (error instanceof HttpError) throw error;
       if (error instanceof AppMapCombineCellContractError)
         throw combineCellContractHttpError(error);

@@ -70,6 +70,99 @@ test("runs independent targets up to worker capacity while serializing one targe
   duplicate.resolve();
 });
 
+test("rejects an invalid batch before any earlier target starts", async () => {
+  const scheduler = new TargetWorkerScheduler();
+  const started: string[] = [];
+  assert.throws(
+    () =>
+      scheduler.enqueueBatch([
+        {
+          id: "valid-first",
+          workerId: "worker",
+          targetId: "phone-a",
+          capacity: 1,
+          run: async () => {
+            started.push("valid-first");
+          },
+        },
+        {
+          id: "invalid-second",
+          workerId: "worker",
+          targetId: "",
+          capacity: 1,
+          run: async () => undefined,
+        },
+      ]),
+    /explicit target/u,
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, []);
+  assert.deepEqual(scheduler.statuses(), []);
+});
+
+test("stages a validated batch without dispatching until its durable owner commits", async () => {
+  const scheduler = new TargetWorkerScheduler();
+  const started: string[] = [];
+  const staged = scheduler.stageBatch([
+    {
+      id: "durable-campaign-cell",
+      workerId: "worker",
+      targetId: "phone-a",
+      capacity: 1,
+      host: { workerId: "host-a", capacity: 1 },
+      run: async () => {
+        started.push("durable-campaign-cell");
+      },
+    },
+  ]);
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, []);
+  assert.deepEqual(scheduler.statuses(), [
+    {
+      workerId: "worker",
+      capacity: 1,
+      active: 0,
+      queued: 1,
+      activeTargets: [],
+      queuedTargets: ["phone-a"],
+      host: { workerId: "host-a", capacity: 1, active: 0, queued: 1 },
+    },
+  ]);
+
+  staged.dispatch();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, ["durable-campaign-cell"]);
+});
+
+test("staged policy prevents a concurrent incompatible enqueue before dispatch", () => {
+  const scheduler = new TargetWorkerScheduler();
+  const staged = scheduler.stageBatch([
+    {
+      id: "campaign-a",
+      workerId: "worker",
+      targetId: "phone-a",
+      capacity: 1,
+      host: { workerId: "host-a", capacity: 1 },
+      run: async () => undefined,
+    },
+  ]);
+
+  assert.throws(
+    () =>
+      scheduler.enqueue({
+        id: "conflicting-work",
+        workerId: "worker",
+        targetId: "phone-b",
+        capacity: 1,
+        host: { workerId: "host-b", capacity: 1 },
+        run: async () => undefined,
+      }),
+    /cannot change host capacity policy/u,
+  );
+  staged.rollback();
+});
+
 test("gives each physical target its own local execution lane", () => {
   assert.deepEqual(defaultTargetWorkerAssignment({ targetId: "a", platform: "ios" }), {
     workerId: "local:ios:target:a",

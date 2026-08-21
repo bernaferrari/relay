@@ -5,6 +5,7 @@ import { atomicWriteFile, KeyedSerialQueue } from "./coordination-store.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { getJob } from "./session.js";
 import { readPersistedRun } from "./runs.js";
+import { durableWorkerAssignmentStore } from "./durable-worker-assignments.js";
 
 export type StoredCombineCampaign = CombineCampaign & {
   execution: {
@@ -145,6 +146,16 @@ async function observableJob(jobId: string): Promise<ObservableJob | null> {
   return readPersistedRun(jobId);
 }
 
+/** A durable row is the restart truth when no live registry entry or completed
+ * manifest exists. A queued row never reached a target and can safely return
+ * to the Combine resume set; a claimed row may have changed device state and
+ * must stop for human review. */
+function recoveryCaseStatus(jobId: string): "pending" | "blocked" | undefined {
+  const assignment = durableWorkerAssignmentStore().get(jobId);
+  if (assignment?.status !== "recovery-required") return undefined;
+  return assignment.execution ? "blocked" : "pending";
+}
+
 /** Refresh only execution observations. Authored inputs and lineage remain
  * immutable unless an explicit resume/cancel operation updates them. */
 export async function projectCombineCampaign(
@@ -154,6 +165,21 @@ export async function projectCombineCampaign(
     campaign.cases.map(async (item) => {
       if (!item.jobId) return item;
       const job = await observableJob(item.jobId);
+      if (!job) {
+        const recoveryStatus = recoveryCaseStatus(item.jobId);
+        if (recoveryStatus) {
+          return {
+            ...item,
+            status: recoveryStatus,
+            ...(recoveryStatus === "blocked"
+              ? {
+                  error:
+                    "Relay restarted after this cell began execution. Review device state before retrying.",
+                }
+              : {}),
+          };
+        }
+      }
       return {
         ...item,
         status: caseStatus(job),
@@ -169,12 +195,16 @@ export async function projectCombineCampaign(
   const problems = cases.some(
     (item) => item.status === "failed" || item.status === "blocked" || item.status === "cancelled",
   );
+  const blocked = cases.some((item) => item.status === "blocked");
   const pilot = cases.find((item) => item.phase === "pilot");
   let status = campaign.status;
   if (campaign.status !== "cancelled") {
-    if (pendingSelected.length) {
+    if (blocked) {
+      status = "needs-review";
+    } else if (pendingSelected.length) {
       if (pilot?.status === "queued" || pilot?.status === "running") status = "pilot-running";
-      else if (pilot?.status === "passed") status = "ready-to-resume";
+      else if (pilot?.status === "passed" || pilot?.status === "pending")
+        status = "ready-to-resume";
       else status = "needs-review";
     } else if (active) status = "running";
     else status = problems ? "completed-with-problems" : "completed";

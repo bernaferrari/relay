@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { RecipeStep } from "@relay/protocol";
+import { executionTargetRefKey, type RecipeStep } from "@relay/protocol";
 import type { Device } from "./device.js";
 import { independentlySourceProvenLeafRecipe } from "./recipe-runner-campaign-support.js";
 import { runReusableRecipe } from "./recipe-runner-reusable.js";
@@ -8,7 +8,8 @@ import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { parseDeviceRecipeStep } from "./recipe-validation-device-steps.js";
 import { parseRecordedEvidence } from "./recipe-validation-evidence.js";
 import { parseTarget } from "./recipe-validation-primitives.js";
-import { createSessionJob } from "./session-job-factory.js";
+import { createSessionJob, retryInputFromJob } from "./session-job-factory.js";
+import { executionTargetSchedulingKey } from "./target-driver.js";
 
 test("campaign firewall recognizes only a frozen source-proven warm leaf", () => {
   const check: NonNullable<RecipeStep["check"]> = {
@@ -183,4 +184,51 @@ test("session factory separates a physical target lane from a legacy host ceilin
   assert.equal(retry.workerId, "local:ios:target:ipad-a");
   assert.equal(retry.hostWorkerId, "mac-xcode");
   assert.equal(retry.hostWorkerCapacity, 2);
+  assert.deepEqual(retry.executionTarget, first.executionTarget);
+});
+
+test("session factory freezes provider-scoped targets and rejects split-brain input", () => {
+  const target = {
+    schemaVersion: 1 as const,
+    kind: "provider-session" as const,
+    provider: { key: "example.farm", scope: "remote" as const },
+    targetId: "session-42",
+    platform: "ios" as const,
+    identity: { kind: "provider-session" as const, value: "session-42" },
+  };
+  const job = createSessionJob(
+    { recipe: "settings-tour", executionTarget: target },
+    { findJob: () => undefined, toTransport: (value) => value },
+  );
+
+  assert.deepEqual(job.targetContext, {
+    kind: "cloud",
+    provider: "example.farm",
+    sessionId: "session-42",
+    platform: "ios",
+  });
+  assert.equal(job.platform, "ios", "legacy reports retain the frozen remote platform");
+  assert.deepEqual(job.executionTarget, target);
+  assert.notEqual(job.executionTarget, target, "factory owns an immutable target copy");
+  assert.equal(
+    executionTargetSchedulingKey(job.executionTarget!),
+    `remote:${executionTargetRefKey(target)}`,
+  );
+  const retry = createSessionJob(
+    {
+      ...retryInputFromJob(job),
+    },
+    { findJob: (id) => (id === job.id ? job : undefined), toTransport: (value) => value },
+  );
+  assert.equal(retry.platform, "ios");
+  assert.deepEqual(retry.targetContext, job.targetContext);
+  assert.deepEqual(retry.executionTarget, job.executionTarget);
+  assert.throws(
+    () =>
+      createSessionJob(
+        { recipe: "settings-tour", executionTarget: target, serial: "local-ios" },
+        { findJob: () => undefined, toTransport: (value) => value },
+      ),
+    /executionTarget must agree/i,
+  );
 });

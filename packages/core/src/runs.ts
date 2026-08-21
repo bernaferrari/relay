@@ -7,14 +7,16 @@ import { join, basename, isAbsolute, relative, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { TestJob } from "./session.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
-import type {
-  ActorKind,
-  ArtifactRefProjection,
-  EvidenceManifest,
-  FailureCategory,
-  RunOutcome,
-  RunReview,
-  TargetProfile,
+import {
+  assertExecutionTargetRef,
+  type ActorKind,
+  type ArtifactRefProjection,
+  type EvidenceManifest,
+  type ExecutionTargetRef,
+  type FailureCategory,
+  type RunOutcome,
+  type RunReview,
+  type TargetProfile,
 } from "@relay/protocol";
 import { now } from "./events.js";
 import {
@@ -67,6 +69,8 @@ export type PersistedRun = {
   serial?: string;
   deviceName?: string;
   platform?: string;
+  /** Additive v5 metadata; old reports remain readable without it. */
+  executionTarget?: ExecutionTargetRef;
   targetProfile?: TargetProfile;
   status: string;
   healed?: boolean;
@@ -211,6 +215,14 @@ function terminalStatus(status: TestJob["status"]): boolean {
   return status === "ok" || status === "error" || status === "healed" || status === "cancelled";
 }
 
+function persistedExecutionTarget(job: TestJob): ExecutionTargetRef | undefined {
+  if (!job.executionTarget) return undefined;
+  // Persisted runs are a replay boundary. Do not let a malformed transport
+  // object degrade into an implicitly local serial when the run is reopened.
+  assertExecutionTargetRef(job.executionTarget);
+  return structuredClone(job.executionTarget);
+}
+
 function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): PersistedRun {
   const durationMs =
     job.finishedAt && (job.startedAt ?? job.queuedAt)
@@ -225,6 +237,7 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
   }));
   const privateSafe = <T>(value: T): T =>
     redactPrivateValue(value, job.resolvedInputs, job.sensitiveInputNames ?? []);
+  const executionTarget = persistedExecutionTarget(job);
 
   const frozenInput = JSON.stringify({
     action: job.action,
@@ -233,6 +246,7 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
       id: job.browserTargetId ?? job.serial,
       platform: job.targetKind === "browser" ? "browser" : (job.platform ?? "android"),
     },
+    executionTarget: executionTarget ?? null,
     recipe: job.recipeSnapshot ?? null,
     recipeGraph: job.recipeGraph ?? null,
     variables: job.resolvedInputs,
@@ -247,6 +261,7 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     serial: job.browserTargetId ?? job.serial,
     deviceName: job.deviceName,
     platform: job.targetKind === "browser" ? "browser" : (job.platform ?? "android"),
+    executionTarget,
     targetProfile: job.targetProfile,
     status: job.status,
     healed: job.healed,

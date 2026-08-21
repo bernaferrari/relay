@@ -310,6 +310,32 @@ test("builds a frozen one-check retry and omits successful siblings", () => {
   assert.equal(input.artifacts?.[0]?.kind, "campaign-check-repair-lineage");
 });
 
+test("selective repair preserves a frozen provider iOS target without a local serial", () => {
+  const run = fixture();
+  const providerTarget = {
+    schemaVersion: 1 as const,
+    kind: "provider-session" as const,
+    provider: { key: "example.device-farm", scope: "remote" as const },
+    targetId: "ios-session-42",
+    platform: "ios" as const,
+    identity: { kind: "provider-session" as const, value: "ios-session-42" },
+  };
+  run.executionTarget = providerTarget;
+  // A v5 compatibility report can retain an old projection. It must not win
+  // over the canonical provider ref when a repair is constructed.
+  run.serial = "local-shadow-device";
+  run.platform = "ios";
+
+  const input = campaignCheckRepairInput(run, "usage");
+
+  assert.deepEqual(input.executionTarget, providerTarget);
+  assert.notEqual(input.executionTarget, providerTarget);
+  assert.equal(input.targetKind, "device");
+  assert.equal(input.platform, "ios");
+  assert.equal(input.serial, undefined);
+  assert.equal(input.browserTargetId, undefined);
+});
+
 test("a first check drops frozen setup and requires the live origin proof", () => {
   const run = fixture();
   const check = run.recipeSnapshot!.steps[0]!;

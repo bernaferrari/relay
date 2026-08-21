@@ -14,6 +14,7 @@ import {
   runsRoot,
   writeFramePng,
 } from "./runs.js";
+import { replayInputFromPersistedRun } from "./session-job-factory.js";
 
 function job(root: string, status: TestJob["status"] = "ok"): TestJob {
   const at = Date.now();
@@ -264,6 +265,43 @@ test("persisted browser runs retain browser identity instead of becoming Android
     const persisted = await persistRun(run);
     assert.equal(persisted.platform, "browser");
     assert.equal(persisted.serial, "browser-chat");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("persisted runs retain a provider-scoped target for replay", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-provider-target-run-"));
+  const run = job(join(root, "run"));
+  run.targetContext = {
+    kind: "cloud",
+    provider: "example.device-farm",
+    sessionId: "ios-session-42",
+    platform: "ios",
+  };
+  run.platform = "ios";
+  run.executionTarget = {
+    schemaVersion: 1,
+    kind: "provider-session",
+    provider: { key: "example.device-farm", scope: "remote" },
+    targetId: "ios-session-42",
+    platform: "ios",
+    identity: { kind: "provider-session", value: "ios-session-42" },
+  };
+  try {
+    const persisted = await persistRun(run);
+    assert.deepEqual(persisted.executionTarget, run.executionTarget);
+    const replay = replayInputFromPersistedRun({
+      ...persisted,
+      recipeSnapshot: { id: "evidence-test", title: "Evidence test", steps: [] } as never,
+      recipeGraph: {
+        "evidence-test": { id: "evidence-test", title: "Evidence test", steps: [] },
+      } as never,
+    });
+    assert.deepEqual(replay.executionTarget, run.executionTarget);
+    assert.equal(replay.serial, undefined, "a provider session is never rebuilt as a local serial");
+    assert.equal(replay.platform, "ios");
+    assert.equal(replay.targetKind, "device");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

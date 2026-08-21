@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
-import type {
-  AppMap,
-  AppMapScenarioTest,
-  CampaignRepairAction,
-  CampaignRepairTarget,
-  CampaignRepairTargetSummary,
-  AppMapCompiledTest,
+import {
+  assertExecutionTargetRef,
+  type ExecutionTargetRef,
+  type AppMap,
+  type AppMapScenarioTest,
+  type CampaignRepairAction,
+  type CampaignRepairTarget,
+  type CampaignRepairTargetSummary,
+  type AppMapCompiledTest,
 } from "@relay/protocol";
 import { PRIVATE_INPUT } from "./private-inputs.js";
 import { REDACTED } from "./redaction.js";
@@ -707,6 +709,50 @@ function assertReusableInputs(run: PersistedRun): void {
   }
 }
 
+/**
+ * A selective repair is a new recipe, not a new target selection. Prefer the
+ * run's immutable provider-neutral ref over its lossy report fields so a
+ * provider iOS session cannot become a local serial when the repair is
+ * re-enqueued.
+ */
+function repairTargetInput(
+  run: PersistedRun,
+): Pick<
+  EnqueueJobInput,
+  "executionTarget" | "targetKind" | "serial" | "platform" | "browserTargetId"
+> {
+  if (run.executionTarget) {
+    assertExecutionTargetRef(run.executionTarget);
+    const executionTarget = structuredClone(run.executionTarget) as ExecutionTargetRef;
+    if (executionTarget.kind === "local-browser") {
+      return {
+        executionTarget,
+        targetKind: "browser",
+        browserTargetId: executionTarget.identity.value,
+      };
+    }
+    return {
+      executionTarget,
+      targetKind: "device",
+      platform: executionTarget.platform,
+      ...(executionTarget.kind === "local-device"
+        ? { serial: executionTarget.identity.value }
+        : {}),
+    };
+  }
+  const platform =
+    run.platform === "android" || run.platform === "ios" || run.platform === "browser"
+      ? run.platform
+      : undefined;
+  const targetId = run.serial?.trim();
+  if (!platform || !targetId) {
+    throw new Error("This run has no reusable target identity and cannot retry one check safely");
+  }
+  return platform === "browser"
+    ? { targetKind: "browser", browserTargetId: targetId }
+    : { targetKind: "device", serial: targetId, platform };
+}
+
 /** Build a new one-check execution from frozen source data. No field in the
  * persisted source run is rewritten, and sibling campaign checks are omitted. */
 export function campaignCheckRepairInput(
@@ -755,20 +801,11 @@ export function campaignCheckRepairInput(
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
-  const platform =
-    run.platform === "android" || run.platform === "ios" || run.platform === "browser"
-      ? run.platform
-      : undefined;
-  const targetId = run.serial?.trim();
-  if (!platform || !targetId) {
-    throw new Error("This run has no reusable target identity and cannot retry one check safely");
-  }
+  const targetInput = repairTargetInput(run);
   return {
     recipe: root.id,
     title: root.title,
-    ...(platform === "browser"
-      ? { targetKind: "browser", browserTargetId: targetId }
-      : { targetKind: "device", serial: targetId, platform }),
+    ...targetInput,
     targetProfile: run.targetProfile,
     variables: structuredClone(run.resolvedInputs),
     recipeSnapshot: root,

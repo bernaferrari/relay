@@ -110,6 +110,11 @@ The CLI does not silently start another server. Use `pnpm relay --help` or famil
 stdout; waits and diagnostics are written to stderr. The [MCP adapter](./packages/mcp/README.md)
 exposes the same registered operations to capable agents.
 
+One Relay server owns each `RELAY_STATE_DIR`. Starting a second server against the same local state
+directory fails before it can recover jobs or touch a device; use `pnpm ensure:serve` to replace the
+local service deliberately, or give an isolated worker its own state directory. A state directory
+owned by another host also fails closed until a supervised multi-host lease is available.
+
 ## Evidence, privacy, and control
 
 Every consequential operation is attributed. A run freezes the selected App Map and Test revision,

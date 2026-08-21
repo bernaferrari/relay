@@ -98,15 +98,29 @@ export async function runDueSchedules(at = Date.now()): Promise<void> {
   }
 }
 
-export function startScheduler(intervalMs = 30_000): { close: () => void } {
-  let running = false;
-  const timer = setInterval(() => {
-    if (running) return;
-    running = true;
-    void runDueSchedules().finally(() => {
-      running = false;
-    });
-  }, intervalMs);
+export function startScheduler(
+  intervalMs = 30_000,
+  runDue: () => Promise<void> = runDueSchedules,
+): { close: () => Promise<void> } {
+  let closed = false;
+  let running: Promise<void> | undefined;
+  const run = () => {
+    if (closed || running) return;
+    running = runDue()
+      // One failing scheduled poll must not produce an unhandled rejection or
+      // prevent a later shutdown from observing that the poll has settled.
+      .catch(() => undefined)
+      .finally(() => {
+        running = undefined;
+      });
+  };
+  const timer = setInterval(run, intervalMs);
   timer.unref?.();
-  return { close: () => clearInterval(timer) };
+  return {
+    close: async () => {
+      closed = true;
+      clearInterval(timer);
+      await running;
+    },
+  };
 }

@@ -58,6 +58,7 @@ import type { CampaignRepairTarget, OperationInput } from "@relay/protocol";
 import { assertTargetControl } from "./access-control.js";
 import { requireScopedAppMapTestExecution } from "./app-map-test-execution-guard.js";
 import { applyRebasableAppMapMutation } from "./app-map-route-mutations.js";
+import { assertEnqueueExecutionTargetRouteControl } from "./execution-target-route-control.js";
 import { recordAudit, resolveCommandActor, type RequestContext } from "./security.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
 
@@ -324,7 +325,11 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
         repairInput: campaignCheckRepairInput(run, repairRetryMatch.checkId!, reconciliation),
         ...(reconciliation ? { reconciliation } : {}),
       });
-      await runtime.assertTargetControl(scope, run.serial);
+      await assertEnqueueExecutionTargetRouteControl({
+        scope,
+        enqueue: repairInput,
+        assertLocalTargetControl: runtime.assertTargetControl,
+      });
       const job = runtime.enqueueJob(repairInput);
       recordAudit(scope, {
         action: "run.repair.retry",

@@ -2,10 +2,12 @@ import type {
   AppMap,
   AppMapCombine,
   AppMapCombineCellRuntimeProfile,
+  AppMapCombineCellTargetBinding,
   AppMapCombineCellState,
   AppMapCombinePreflightIssue,
   AppMapCompiledRuntimeTargetProfile,
   AppMapScenarioTest,
+  ExecutionTargetRef,
 } from "@relay/protocol";
 import {
   appMapCombineCellBindingId,
@@ -36,6 +38,11 @@ import {
   prepareOptionRunMatrix,
   type OptionRunSet,
 } from "./option-run.js";
+import {
+  assessAppMapCombineCellTargetBindings,
+  localExecutionTargetRef,
+  type LocalExecutionTarget,
+} from "./app-map-combine-cell-target-binding.js";
 import type { Recipe } from "./recipes.js";
 import type { PreparedRunMatrix } from "./run-matrix.js";
 
@@ -59,6 +66,8 @@ export type PreparedAppMapCombineCell = {
   worldLabel: string;
   worldIndex: number;
   targetProfileId: string;
+  /** Immutable location that this cell was explicitly bound to before queueing. */
+  executionTarget: LocalExecutionTarget;
   selectedRuntimeTargetProfile: AppMapCompiledRuntimeTargetProfile;
   staticInputs: CombineCellStaticInputs;
   wrapperInputs: CombineCellWrapperInputs;
@@ -384,7 +393,7 @@ async function prepareOneCell(input: {
   binding: AppMapCombineCellRuntimeProfile;
   sets: OptionRunSet[];
   worldValues: Record<string, string>;
-  target: { targetId: string; platform: "android" | "ios" | "browser" };
+  target: LocalExecutionTarget;
   compileOptions: AppMapTestCompileOptions;
 }): Promise<PreparedAppMapCombineCell> {
   const test = input.map.tests[input.cell.testId] as AppMapScenarioTest | undefined;
@@ -403,7 +412,7 @@ async function prepareOneCell(input: {
   const selectedRuntimeTargetProfile = resolveSavedAppMapRuntimeTargetProfile({
     map: input.map,
     targetProfileId: input.binding.targetProfileId,
-    target: input.target,
+    target: { targetId: input.target.targetId, platform: input.target.platform },
   });
   const compiled = compileAppMapTest(
     input.map,
@@ -484,6 +493,7 @@ async function prepareOneCell(input: {
     worldLabel: input.cell.worldLabel,
     worldIndex: input.cell.worldIndex,
     targetProfileId: selectedRuntimeTargetProfile.id,
+    executionTarget: structuredClone(input.target),
     selectedRuntimeTargetProfile,
     staticInputs,
     wrapperInputs,
@@ -500,9 +510,12 @@ export async function prepareAppMapCombineCells(input: {
   selected?: Record<string, string[]>;
   strategy?: "zip" | "cartesian" | "pairwise";
   cellRuntimeProfiles?: AppMapCombineCellRuntimeProfile[];
+  /** Explicit execution target per Test × world cell. Required for multi-target runs. */
+  cellTargetBindings?: AppMapCombineCellTargetBinding[];
   selectedCellIds?: string[];
   rejectUnselectedBindings?: boolean;
-  target: { targetId: string; platform: "android" | "ios" | "browser" };
+  /** Backward-compatible single local target. It is expanded to every cell. */
+  target?: { targetId: string; platform: "android" | "ios" | "browser" };
   compileOptions?: AppMapTestCompileOptions;
 }): Promise<PreparedAppMapCombine> {
   const tests = input.combine.testIds.map((id) => {
@@ -559,11 +572,27 @@ export async function prepareAppMapCombineCells(input: {
     ),
     rejectUnselectedBindings: input.rejectUnselectedBindings === true,
   });
-  if (assessed.issues.length) {
+  const fallbackTarget = input.target ? localExecutionTargetRef(input.target) : undefined;
+  const assessedTargets = assessAppMapCombineCellTargetBindings({
+    cells,
+    bindings: input.cellTargetBindings,
+    fallbackTarget,
+    knownTests: new Set(input.combine.testIds),
+    knownValues: Object.fromEntries(
+      sets.map((set) => [set.id, new Set(set.options.map((option) => option.id))]),
+    ),
+    rejectUnselectedBindings: input.rejectUnselectedBindings === true,
+  });
+  const cellStates = assessed.states.map((state) => {
+    const target = assessedTargets.byCellId.get(state.cellId);
+    return target ? { ...state, target: structuredClone(target) } : state;
+  });
+  const issues = [...assessed.issues, ...assessedTargets.issues];
+  if (issues.length) {
     throw new AppMapCombineCellContractError(
-      assessed.issues[0]?.message ?? "Combine cells are missing explicit runtime profile bindings.",
-      assessed.issues,
-      assessed.states,
+      issues[0]?.message ?? "Combine cells are missing explicit runtime profile bindings.",
+      issues,
+      cellStates,
     );
   }
   const requestedSelected = input.selectedCellIds?.map((id) => id.trim()).filter(Boolean);
@@ -574,7 +603,7 @@ export async function prepareAppMapCombineCells(input: {
       throw new AppMapCombineCellContractError(
         "selectedCellIds includes a cell that is not in this Combine.",
         [issue("foreign-binding", `Unknown selected cell ${unknown[0]}.`, { cellId: unknown[0] })],
-        assessed.states,
+        cellStates,
       );
     }
   }
@@ -592,7 +621,7 @@ export async function prepareAppMapCombineCells(input: {
             cellId: cell.cellId,
           }),
         ],
-        assessed.states,
+        cellStates,
       );
     }
     const preparedCell = await prepareOneCell({
@@ -602,7 +631,7 @@ export async function prepareAppMapCombineCells(input: {
       binding: assessed.byCellId.get(cell.cellId)!,
       sets,
       worldValues: world.values,
-      target: input.target,
+      target: assessedTargets.byCellId.get(cell.cellId)!,
       compileOptions: input.compileOptions ?? {},
     });
     prepared.push({
@@ -623,6 +652,7 @@ export async function prepareAppMapCombineCells(input: {
       values: cell.values,
       worldLabel: cell.worldLabel,
       targetProfileId: cell.targetProfileId,
+      target: structuredClone(cell.executionTarget) as ExecutionTargetRef,
       binding: "bound",
       preflight: "ready",
     })),

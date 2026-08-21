@@ -43,4 +43,14 @@ test("execution target refs reject provider and identity mismatches", () => {
 
   const missingIdentity = { ...localDevice(), identity: { kind: "device-serial", value: "" } };
   assert.equal(isExecutionTargetRef(missingIdentity), false);
+
+  const splitIdentity = {
+    ...localDevice(),
+    targetId: "other-physical-target",
+  };
+  assert.equal(isExecutionTargetRef(splitIdentity), false);
+  assert.throws(
+    () => assertExecutionTargetRef(splitIdentity),
+    /Invalid execution target reference/u,
+  );
 });

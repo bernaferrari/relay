@@ -11,6 +11,10 @@ import {
   updateCombineCampaign,
   type StoredCombineCampaign,
 } from "./combine-campaign.js";
+import {
+  durableWorkerAssignmentStore,
+  resetDurableWorkerAssignmentStoreForTests,
+} from "./durable-worker-assignments.js";
 
 function fixture(status: "passed" | "failed" = "passed"): StoredCombineCampaign {
   return {
@@ -128,4 +132,83 @@ test("a failed pilot requires review while untouched cases remain pending", asyn
   const projected = await projectCombineCampaign(campaign);
   assert.equal(projected.status, "needs-review");
   assert.equal(projected.cases[1]?.status, "pending");
+});
+
+async function withDurableCampaignState(operation: () => Promise<void> | void): Promise<void> {
+  const directory = await mkdtemp(join(tmpdir(), "relay-combine-campaign-recovery-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = directory;
+  resetDurableWorkerAssignmentStoreForTests();
+  try {
+    await operation();
+  } finally {
+    resetDurableWorkerAssignmentStoreForTests();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function queueRecoveryAssignment(id: string) {
+  return durableWorkerAssignmentStore().queue({
+    id,
+    projectId: "project-1",
+    executionTarget: {
+      schemaVersion: 1,
+      kind: "local-device",
+      provider: { key: "relay.local.agent-device", scope: "local" },
+      targetId: "android-1",
+      platform: "android",
+      identity: { kind: "device-serial", value: "android-1" },
+    },
+    lane: { workerId: "local:android:target:android-1", capacity: 1 },
+    queuedAt: 1_000,
+  });
+}
+
+test("restart recovery returns an unclaimed queued Combine cell to the safe resume set", async () => {
+  await withDurableCampaignState(() => {
+    const campaign = fixture("passed");
+    const coverage = campaign.cases[1]!;
+    coverage.status = "queued";
+    coverage.jobId = "queued-before-dispatch";
+    campaign.status = "running";
+    queueRecoveryAssignment(coverage.jobId);
+    durableWorkerAssignmentStore().reconcileAfterRestart({
+      workerInstanceId: "restart-after-queue",
+      at: 2_000,
+    });
+
+    return projectCombineCampaign(campaign).then((projected) => {
+      assert.equal(projected.cases[1]?.status, "pending");
+      assert.equal(projected.cases[1]?.jobId, "queued-before-dispatch");
+      assert.deepEqual(
+        pendingSelectedCombineCampaignCells(projected).map((item) => item.cellId),
+        [coverage.cellId],
+      );
+      assert.equal(projected.status, "ready-to-resume");
+    });
+  });
+});
+
+test("restart recovery blocks a Combine cell that had already begun execution", async () => {
+  await withDurableCampaignState(() => {
+    const campaign = fixture("passed");
+    const coverage = campaign.cases[1]!;
+    coverage.status = "queued";
+    coverage.jobId = "executing-before-restart";
+    campaign.status = "running";
+    queueRecoveryAssignment(coverage.jobId);
+    durableWorkerAssignmentStore().claimRunning(coverage.jobId, "server-before-restart", 1_100);
+    durableWorkerAssignmentStore().reconcileAfterRestart({
+      workerInstanceId: "restart-after-execution",
+      at: 2_000,
+    });
+
+    return projectCombineCampaign(campaign).then((projected) => {
+      assert.equal(projected.cases[1]?.status, "blocked");
+      assert.match(projected.cases[1]?.error ?? "", /began execution/u);
+      assert.equal(projected.status, "needs-review");
+    });
+  });
 });

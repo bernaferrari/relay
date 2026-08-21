@@ -62,10 +62,17 @@ import {
   runWithOperationContext,
   reconcilePersistedAppMapRuns,
   recoverCollaborationState,
+  recoverDurableWorkerAssignments,
+  acquireRelayStateServerLease,
+  beginDurableWorkerServerLifecycle,
+  shutdownSessionExecution,
   type AuthoringRuntime,
+  type RelayStateServerLease,
 } from "@relay/core";
 import { createSseHub } from "./sse.js";
 import { startScheduler } from "./scheduler.js";
+import { createRequestHandlerLifecycle } from "./request-handler-lifecycle.js";
+import { createFailClosedServerShutdown } from "./server-shutdown.js";
 import { handleRunRoute, type RunRouteRuntime } from "./run-routes.js";
 import { handlePublicRunShareRoute } from "./run-share-routes.js";
 import { handleJobRoute, type JobRouteRuntime } from "./job-routes.js";
@@ -110,39 +117,8 @@ import {
   handleTargetRuntimeRoute,
   type TargetRuntimeRouteRuntime,
 } from "./target-runtime-routes.js";
-
-export type StartServerOptions = {
-  port?: number;
-  host?: string;
-  token?: string;
-  /** Exact HTTP(S) renderer origins that may use local browser trust. */
-  browserOrigins?: readonly string[];
-  /**
-   * Optional trusted bridge for externally verified bearer credentials. Relay
-   * does not decode JWTs itself; see external-identity.ts for the contract.
-   */
-  externalIdentityVerifier?: ExternalIdentityVerifier;
-  authoringRuntime?: AuthoringRuntime;
-  /** Test seam for the host-owned Android stream transport. */
-  liveVideoStream?: (response: http.ServerResponse, serial: string) => Promise<void>;
-  /** Test seam for target observation without starting a device daemon. */
-  captureTargetScreenshot?: typeof captureScreenshot;
-  targetRuntime?: Partial<TargetRuntimeRouteRuntime>;
-  /** Test seam for proving blocked Test runs do not touch a target or queue work. */
-  appMapTestRunRuntime?: Partial<AppMapTestRunRouteRuntime>;
-  /** Test seam for retry/replay/resume intent ordering. */
-  jobRouteRuntime?: Partial<JobRouteRuntime>;
-  /** Test seam for repair-retry intent ordering. */
-  runRouteRuntime?: Partial<RunRouteRuntime>;
-  /** Test seam for standalone-step execution without a physical target. */
-  stepRunRuntime?: Partial<StepRunRouteRuntime>;
-};
-
-export type StartedServer = {
-  port: number;
-  host: string;
-  close: () => Promise<void>;
-};
+import type { StartServerOptions, StartedServer } from "./server-types.js";
+export type { StartServerOptions, StartedServer } from "./server-types.js";
 
 function collectReports(limit: number, scope?: RequestContext): JobReport[] {
   return listJobs(Math.max(limit, 200))
@@ -746,6 +722,22 @@ async function handleRequest(
 }
 
 export async function startServer(opts: StartServerOptions = {}): Promise<StartedServer> {
+  // Acquire this before device setup/recovery. A concurrent process must not
+  // be allowed to touch a daemon or reinterpret a live worker's journal rows.
+  const stateLease = acquireRelayStateServerLease();
+  beginDurableWorkerServerLifecycle();
+  try {
+    return await startServerWithStateLease(opts, stateLease);
+  } catch (error) {
+    stateLease.release();
+    throw error;
+  }
+}
+
+async function startServerWithStateLease(
+  opts: StartServerOptions,
+  stateLease: RelayStateServerLease,
+): Promise<StartedServer> {
   // Apply saved signing settings, then replace only a verified helper from a
   // different installed build. A matching daemon may own the only controllable
   // session on an unattended iPad and is deliberately preserved.
@@ -797,6 +789,11 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   }
   // Rebuild App Map run projections and repair persisted collaboration state.
   await recoverCollaborationState();
+  // No job is replayed after a process boundary: target pixels, lease
+  // ownership, and UI state may all have changed. Before quarantining work,
+  // reconcile any immutable manifest that committed just before the process
+  // stopped so it cannot leave its target/host fence behind.
+  await recoverDurableWorkerAssignments();
   await reconcilePersistedAppMapRuns();
   await pruneIosVideoTakes();
   assertSafeBinding(host, token, externalIdentityVerifier);
@@ -805,51 +802,66 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   }
   assertExplicitRemoteServiceTokenScope(host, token);
   const sse = createSseHub(CORS_HEADERS);
+  const requestHandlers = createRequestHandlerLifecycle();
   const server = http.createServer((req, res) => {
-    void handleRequest(
-      req,
-      res,
-      token,
-      externalIdentityVerifier,
-      isLoopbackHost(host),
-      browserOrigins,
-      sse,
-      opts.authoringRuntime,
-      opts.liveVideoStream,
-      opts.captureTargetScreenshot,
-      opts.targetRuntime,
-      opts.appMapTestRunRuntime,
-      opts.jobRouteRuntime,
-      opts.runRouteRuntime,
-      opts.stepRunRuntime,
-    );
+    if (
+      !requestHandlers.run(() =>
+        handleRequest(
+          req,
+          res,
+          token,
+          externalIdentityVerifier,
+          isLoopbackHost(host),
+          browserOrigins,
+          sse,
+          opts.authoringRuntime,
+          opts.liveVideoStream,
+          opts.captureTargetScreenshot,
+          opts.targetRuntime,
+          opts.appMapTestRunRuntime,
+          opts.jobRouteRuntime,
+          opts.runRouteRuntime,
+          opts.stepRunRuntime,
+        ),
+      )
+    ) {
+      json(res, 503, { error: "Relay server is shutting down" });
+    }
   });
   const scheduler = startScheduler();
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(preferredPort, host, () => {
-      server.off("error", reject);
-      resolve();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(preferredPort, host, () => {
+        server.off("error", reject);
+        resolve();
+      });
     });
-  });
+  } catch (error) {
+    await scheduler.close().catch(() => undefined);
+    sse.close();
+    throw error;
+  }
 
   const addr = server.address();
   const port = typeof addr === "object" && addr !== null ? addr.port : preferredPort;
   publish({ type: "server.ready", at: now(), host, port });
 
-  return {
-    port,
-    host,
-    close: async () => {
-      await new Promise<void>((resolve, reject) => {
-        scheduler.close();
-        sse.close();
-        server.close((err) => (err ? reject(err) : resolve()));
-      });
-      await flushOperationActivity();
-    },
-  };
+  const close = createFailClosedServerShutdown({
+    stopRequestAdmission: () => requestHandlers.stopAdmission(),
+    closeHttp: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+    drainRequestHandlers: () => requestHandlers.drain(),
+    closeScheduler: () => scheduler.close(),
+    closeSse: () => sse.close(),
+    drainSessionExecutions: (timeoutMs) => shutdownSessionExecution(timeoutMs),
+    flushActivity: flushOperationActivity,
+    releaseStateLease: () => stateLease.release(),
+  });
+  return { port, host, close };
 }
 
 async function main(): Promise<void> {

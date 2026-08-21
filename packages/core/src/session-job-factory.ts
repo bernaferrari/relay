@@ -1,5 +1,6 @@
 /** Build frozen replay jobs without coupling construction to the scheduler. */
 import { randomUUID } from "node:crypto";
+import { assertExecutionTargetRef, type ExecutionTargetRef } from "@relay/protocol";
 import { now } from "./events.js";
 import { getEvidenceCollectionPolicy } from "./evidence-policy.js";
 import { currentOperationContext } from "./operation-context.js";
@@ -10,10 +11,80 @@ import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
 import { defaultTargetWorkerAssignment } from "./target-worker.js";
 import {
-  inferDevicePlatformFromSerial,
-  targetIdentity,
-  type TargetContext,
-} from "./target-context.js";
+  executionTargetRefForJob,
+  executionTargetRefFromTargetContext,
+  executionTargetSchedulingKey,
+  targetContextFromExecutionTargetRef,
+} from "./target-driver.js";
+import { inferDevicePlatformFromSerial, type TargetContext } from "./target-context.js";
+
+function freezeExecutionTarget(target: ExecutionTargetRef): ExecutionTargetRef {
+  assertExecutionTargetRef(target);
+  const clone = structuredClone(target);
+  return Object.freeze({
+    ...clone,
+    provider: Object.freeze({ ...clone.provider }),
+    identity: Object.freeze({ ...clone.identity }),
+  }) as ExecutionTargetRef;
+}
+
+function legacyTargetKind(target: ExecutionTargetRef): "device" | "browser" {
+  return target.kind === "local-browser" ? "browser" : "device";
+}
+
+/** Whether a retry explicitly selects a different legacy target instead of
+ * inheriting its parent's immutable provider-neutral ref. */
+function legacyInputOverridesTarget(input: EnqueueJobInput, target: ExecutionTargetRef): boolean {
+  const identity = target.identity.value;
+  if (input.targetKind !== undefined && input.targetKind !== legacyTargetKind(target)) return true;
+  if (input.serial !== undefined && input.serial.trim() !== identity) return true;
+  if (input.browserTargetId !== undefined) {
+    return target.kind !== "local-browser" || input.browserTargetId.trim() !== identity;
+  }
+  if (input.platform !== undefined) return target.platform !== input.platform;
+  return false;
+}
+
+/** An explicit ref is authoritative. Reject split-brain legacy input instead
+ * of allowing a provider session and serial to be accidentally mixed. */
+function assertExplicitTargetMatchesLegacy(
+  input: EnqueueJobInput,
+  target: ExecutionTargetRef,
+): void {
+  if (legacyInputOverridesTarget(input, target)) {
+    throw new Error("executionTarget must agree with serial, platform, and target kind");
+  }
+}
+
+function legacyTargetContext(input: EnqueueJobInput, parent: TestJob | undefined): TargetContext {
+  const targetKind = input.targetKind ?? parent?.targetKind ?? "device";
+  return targetKind === "browser"
+    ? Object.freeze({
+        kind: "browser" as const,
+        platform: "browser" as const,
+        targetId:
+          input.browserTargetId?.trim() ||
+          (parent?.targetContext.kind === "browser" ? parent.targetContext.targetId : "") ||
+          input.serial?.trim() ||
+          "",
+      })
+    : Object.freeze({
+        kind: "device" as const,
+        platform:
+          input.platform ??
+          parent?.platform ??
+          inferDevicePlatformFromSerial(
+            input.serial?.trim() ||
+              (parent?.targetContext.kind === "device" ? parent.targetContext.serial : "") ||
+              "",
+          ) ??
+          ("android" as const),
+        serial:
+          input.serial?.trim() ||
+          (parent?.targetContext.kind === "device" ? parent.targetContext.serial : "") ||
+          "",
+      });
+}
 
 export function replayInputFromPersistedRun(
   run: Pick<
@@ -29,6 +100,7 @@ export function replayInputFromPersistedRun(
     | "recipeGraph"
     | "projectId"
     | "ownerId"
+    | "executionTarget"
   > & { artifacts?: PersistedRun["artifacts"] },
 ): EnqueueJobInput {
   if (!run.recipeSnapshot || !run.recipeGraph) {
@@ -41,6 +113,37 @@ export function replayInputFromPersistedRun(
     throw new Error(
       `This run used a private value for “${unavailableInput[0]}”. Provide it again before replaying.`,
     );
+  }
+  const executionTarget = run.executionTarget
+    ? freezeExecutionTarget(run.executionTarget)
+    : undefined;
+  if (executionTarget) {
+    const targetInput =
+      executionTarget.kind === "local-browser"
+        ? {
+            targetKind: "browser" as const,
+            browserTargetId: executionTarget.identity.value,
+          }
+        : executionTarget.kind === "local-device"
+          ? {
+              targetKind: "device" as const,
+              serial: executionTarget.identity.value,
+              platform: executionTarget.platform,
+            }
+          : { targetKind: "device" as const, platform: executionTarget.platform };
+    return {
+      recipe: run.action,
+      executionTarget,
+      ...targetInput,
+      targetProfile: run.targetProfile,
+      title: `${run.title ?? run.action} · replay`,
+      variables: structuredClone(run.resolvedInputs),
+      recipeSnapshot: structuredClone(run.recipeSnapshot),
+      recipeGraph: structuredClone(run.recipeGraph),
+      artifacts: structuredClone(run.artifacts ?? []),
+      projectId: run.projectId,
+      ownerId: run.ownerId,
+    };
   }
   const platform =
     run.platform === "android" || run.platform === "ios" || run.platform === "browser"
@@ -66,6 +169,58 @@ export function replayInputFromPersistedRun(
   };
 }
 
+/**
+ * Build the compatibility projection for a retry from the job's canonical
+ * target, not from its lossy legacy report fields. In particular a remote iOS
+ * session has no local serial, while a browser has no device platform.
+ */
+export function retryTargetInputFromJob(
+  job: TestJob,
+): Pick<
+  EnqueueJobInput,
+  "executionTarget" | "targetKind" | "serial" | "platform" | "browserTargetId"
+> {
+  const executionTarget = freezeExecutionTarget(executionTargetRefForJob(job));
+  if (executionTarget.kind === "local-browser") {
+    return {
+      executionTarget,
+      targetKind: "browser",
+      browserTargetId: executionTarget.identity.value,
+    };
+  }
+  return {
+    executionTarget,
+    targetKind: "device",
+    platform: executionTarget.platform,
+    ...(executionTarget.kind === "local-device" ? { serial: executionTarget.identity.value } : {}),
+  };
+}
+
+/** A retry always derives every scheduling/target field from the frozen job. */
+export function retryInputFromJob(job: TestJob): EnqueueJobInput {
+  if (!job.recipeId) throw new Error(`Job ${job.id} has no frozen recipe to retry`);
+  return {
+    recipe: job.recipeId,
+    ...retryTargetInputFromJob(job),
+    prodAccountMatch: job.options?.prodAccountMatch,
+    retryOf: job.id,
+    title: job.title,
+    variables: job.resolvedInputs,
+    sensitiveInputNames: job.sensitiveInputNames ?? [],
+    recipeSnapshot: job.recipeSnapshot,
+    recipeGraph: job.recipeGraph,
+    batchId: job.batchId,
+    caseIndex: job.caseIndex,
+    caseCount: job.caseCount,
+    targetProfile: job.targetProfile,
+    hostWorkerId: job.hostWorkerId,
+    hostWorkerCapacity: job.hostWorkerCapacity,
+    artifacts: job.artifacts,
+    projectId: job.projectId,
+    ownerId: job.ownerId,
+  };
+}
+
 export interface SessionJobFactoryOptions {
   findJob(id: string): TestJob | undefined;
   toTransport(job: TestJob): TestJob;
@@ -78,35 +233,26 @@ export function createSessionJob(
 ): TestJob {
   const parent = input.retryOf ? findJob(input.retryOf) : undefined;
   const id = randomUUID();
-  const targetKind = input.targetKind ?? parent?.targetKind ?? "device";
-  const targetContext: TargetContext =
-    targetKind === "browser"
-      ? Object.freeze({
-          kind: "browser" as const,
-          platform: "browser" as const,
-          targetId:
-            input.browserTargetId?.trim() ||
-            (parent?.targetContext.kind === "browser" ? parent.targetContext.targetId : "") ||
-            input.serial?.trim() ||
-            "",
-        })
-      : Object.freeze({
-          kind: "device" as const,
-          platform:
-            input.platform ??
-            parent?.platform ??
-            inferDevicePlatformFromSerial(
-              input.serial?.trim() ||
-                (parent?.targetContext.kind === "device" ? parent.targetContext.serial : "") ||
-                "",
-            ) ??
-            ("android" as const),
-          serial:
-            input.serial?.trim() ||
-            (parent?.targetContext.kind === "device" ? parent.targetContext.serial : "") ||
-            "",
-        });
-  const targetId = targetIdentity(targetContext);
+  const inheritedTarget = parent
+    ? freezeExecutionTarget(executionTargetRefForJob(parent))
+    : undefined;
+  const explicitTarget = input.executionTarget
+    ? freezeExecutionTarget(input.executionTarget)
+    : undefined;
+  if (explicitTarget) assertExplicitTargetMatchesLegacy(input, explicitTarget);
+  const selectedTarget =
+    explicitTarget ??
+    (inheritedTarget && !legacyInputOverridesTarget(input, inheritedTarget)
+      ? inheritedTarget
+      : undefined);
+  const targetContext: TargetContext = selectedTarget
+    ? Object.freeze(targetContextFromExecutionTargetRef(selectedTarget))
+    : legacyTargetContext(input, parent);
+  const executionTarget = freezeExecutionTarget(
+    selectedTarget ?? executionTargetRefFromTargetContext(targetContext),
+  );
+  const targetKind = legacyTargetKind(executionTarget);
+  const targetId = executionTargetSchedulingKey(executionTarget);
   if (!targetId) throw new Error("Every Relay job requires an explicit target");
   const operationContext = currentOperationContext() ?? parent?.operationContext;
   const assignment = defaultTargetWorkerAssignment({
@@ -135,9 +281,13 @@ export function createSessionJob(
       ? Object.freeze(structuredClone(operationContext))
       : undefined,
     targetContext,
+    executionTarget,
     serial: targetContext.kind === "device" ? targetContext.serial : undefined,
     deviceName: parent?.deviceName,
-    platform: targetContext.kind === "device" ? targetContext.platform : ("android" as const),
+    // A provider session is still a concrete iOS/Android execution target.
+    // Only the legacy browser projection lacks a device platform; collapsing
+    // cloud iOS to Android here would make a retry reconstruct a local target.
+    platform: targetContext.kind === "browser" ? ("android" as const) : targetContext.platform,
     targetKind,
     browserTargetId: targetContext.kind === "browser" ? targetContext.targetId : undefined,
     targetProfile: input.targetProfile ?? parent?.targetProfile,

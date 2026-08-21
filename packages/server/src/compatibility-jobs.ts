@@ -1,21 +1,21 @@
 import {
   buildTargetProfiles,
-  enqueueJob,
   freezeRecipeExecution,
   listDevices,
   listDevicePools,
   listDeviceLeases,
   listTargets,
   now,
+  prepareJobBatch,
   readCompatibilityMatrix,
   releaseDeviceLease,
   requireOperationContext,
   resolveCompatibilityMatrix,
-  runWithOperationContext,
 } from "@relay/core";
 import type { RequestContext } from "./security.js";
-import { assertTargetControl } from "./access-control.js";
+import { admitTargetControl } from "./access-control.js";
 import { HttpError } from "./http.js";
+import { acquireTargetLeasesAtomically } from "./target-lease-admission.js";
 
 export type CompatibilityBatchInput = {
   recipe?: string;
@@ -29,9 +29,9 @@ export type CompatibilityBatchRuntime = {
   listTargets: typeof listTargets;
   listDevicePools: typeof listDevicePools;
   listDeviceLeases: typeof listDeviceLeases;
-  assertTargetControl: typeof assertTargetControl;
+  admitTargetControl: typeof admitTargetControl;
   releaseDeviceLease: typeof releaseDeviceLease;
-  enqueueJob: typeof enqueueJob;
+  prepareJobBatch: typeof prepareJobBatch;
 };
 
 const defaultRuntime: CompatibilityBatchRuntime = {
@@ -39,89 +39,13 @@ const defaultRuntime: CompatibilityBatchRuntime = {
   listTargets,
   listDevicePools,
   listDeviceLeases,
-  assertTargetControl,
+  admitTargetControl,
   releaseDeviceLease,
-  enqueueJob,
+  prepareJobBatch,
 };
 
 async function freezeBatchExecution(body: CompatibilityBatchInput) {
   return freezeRecipeExecution(body.recipe!);
-}
-
-type TargetLease = Awaited<ReturnType<typeof assertTargetControl>>;
-
-type TargetLeaseAdmission =
-  | { status: "accepted"; targetId: string; lease: TargetLease }
-  | { status: "rejected"; targetId: string; error: unknown };
-
-/**
- * Admission is independent per target, so do not make an Android worker wait
- * for an unrelated iOS lease round-trip before it may be queued. The batch is
- * still atomic at the queue boundary: no job is created until every target is
- * admitted. If one admission fails, only leases first created by this attempt
- * are released; caller-owned leases that existed before admission are kept.
- */
-async function acquireCompatibilityTargetLeases(input: {
-  scope: RequestContext;
-  targetIds: readonly string[];
-  listDeviceLeases: typeof listDeviceLeases;
-  assertTargetControl: typeof assertTargetControl;
-  releaseDeviceLease: typeof releaseDeviceLease;
-}): Promise<Map<string, TargetLease>> {
-  const existingLeaseIds = new Set(
-    (await input.listDeviceLeases(input.scope.projectId)).map((lease) => lease.id),
-  );
-  const operation = requireOperationContext();
-  const targetIds = [...new Set(input.targetIds)];
-  const admissions = await Promise.all(
-    targetIds.map(async (targetId): Promise<TargetLeaseAdmission> => {
-      try {
-        // assertTargetControl records the lease in its async context. Give each
-        // independent target its own copy so one result cannot overwrite the
-        // lease provenance later frozen into another target's job.
-        const lease = await runWithOperationContext({ ...operation }, () =>
-          input.assertTargetControl(input.scope, targetId),
-        );
-        return { status: "accepted", targetId, lease };
-      } catch (error) {
-        return { status: "rejected", targetId, error };
-      }
-    }),
-  );
-  const rejected = admissions.find((admission) => admission.status === "rejected");
-  if (rejected) {
-    const newlyAcquired = admissions.filter(
-      (admission): admission is Extract<TargetLeaseAdmission, { status: "accepted" }> =>
-        admission.status === "accepted" && !existingLeaseIds.has(admission.lease.id),
-    );
-    const cleanup = await Promise.allSettled(
-      newlyAcquired.map(({ lease }) =>
-        input.releaseDeviceLease(lease.id, {
-          projectId: input.scope.projectId,
-          ownerId: lease.ownerId,
-        }),
-      ),
-    );
-    const cleanupFailure = cleanup.find((result) => result.status === "rejected");
-    if (cleanupFailure?.status === "rejected") {
-      const message =
-        cleanupFailure.reason instanceof Error
-          ? cleanupFailure.reason.message
-          : String(cleanupFailure.reason);
-      throw new Error(
-        `Target admission failed and Relay could not release a newly acquired lease: ${message}`,
-      );
-    }
-    throw rejected.error;
-  }
-  return new Map(
-    admissions.map((admission) => {
-      if (admission.status !== "accepted") {
-        throw new Error("Compatibility target admission did not settle");
-      }
-      return [admission.targetId, admission.lease] as const;
-    }),
-  );
 }
 
 export async function enqueueCompatibilityBatch(
@@ -171,24 +95,21 @@ export async function enqueueCompatibilityBatch(
     );
   }
   const operation = requireOperationContext();
-  const leases = await acquireCompatibilityTargetLeases({
+  const leaseAdmission = await acquireTargetLeasesAtomically({
     scope,
     targetIds: expansion.profiles.map((profile) => profile.targetId),
     listDeviceLeases: runtime.listDeviceLeases,
-    assertTargetControl: runtime.assertTargetControl,
+    admitTargetControl: runtime.admitTargetControl,
     releaseDeviceLease: runtime.releaseDeviceLease,
   });
+  const leases = leaseAdmission.leasesByTargetId;
   const batchId = `${options.kind}-${matrix.id}-${now()}`;
-  const jobs = expansion.profiles.flatMap((profile) =>
-    Array.from({ length: repetitions }, (_, repetition) =>
-      runWithOperationContext(
-        {
-          ...operation,
-          leaseId: leases.get(profile.targetId)?.id,
-          leaseOwnerId: leases.get(profile.targetId)?.ownerId,
-        },
-        () =>
-          runtime.enqueueJob({
+  const inputs: Parameters<typeof prepareJobBatch>[0] = expansion.profiles.flatMap(
+    (profile, profileIndex) =>
+      Array.from({ length: repetitions }, (_, repetition) => {
+        const lease = leases.get(profile.targetId);
+        return {
+          input: {
             recipe: frozenRecipe.recipeSnapshot.id,
             recipeSnapshot: frozenRecipe.recipeSnapshot,
             recipeGraph: frozenRecipe.recipeGraph,
@@ -199,8 +120,8 @@ export async function enqueueCompatibilityBatch(
             targetProfile: profile,
             prodAccountMatch: body.prodAccountMatch,
             batchId,
-            caseIndex: repetition,
-            caseCount: repetitions,
+            caseIndex: profileIndex * repetitions + repetition,
+            caseCount: jobCount,
             artifacts: [
               {
                 kind: "compatibility-profile",
@@ -219,21 +140,58 @@ export async function enqueueCompatibilityBatch(
             ],
             projectId: scope.projectId,
             ownerId: operation.actorId,
-            ...(leases.get(profile.targetId)
+            ...(lease
               ? {
-                  workerId: `pool:${leases.get(profile.targetId)!.poolId}`,
+                  workerId: `pool:${lease.poolId}`,
                   workerCapacity: Math.max(
                     1,
                     new Set(
-                      pools.find((pool) => pool.id === leases.get(profile.targetId)!.poolId)
-                        ?.deviceSerials ?? [profile.targetId],
+                      pools.find((pool) => pool.id === lease.poolId)?.deviceSerials ?? [
+                        profile.targetId,
+                      ],
                     ).size,
                   ),
                 }
               : {}),
-          }),
-      ),
-    ),
+          },
+          operationContext: {
+            ...operation,
+            ...(lease ? { leaseId: lease.id, leaseOwnerId: lease.ownerId } : {}),
+          },
+        };
+      }),
   );
-  return { matrix: expansion, jobs, batchId, repetitions };
+  let staged: ReturnType<typeof prepareJobBatch> | undefined;
+  try {
+    staged = runtime.prepareJobBatch(inputs);
+    staged.activate();
+    await leaseAdmission.commit();
+    await leaseAdmission.finalize();
+    const jobs = staged.dispatch();
+    staged = undefined;
+    return { matrix: expansion, jobs, batchId, repetitions };
+  } catch (error) {
+    const cleanupFailures: unknown[] = [];
+    try {
+      staged?.rollback();
+    } catch (cleanupError) {
+      cleanupFailures.push(cleanupError);
+    }
+    try {
+      await leaseAdmission.rollback();
+    } catch (cleanupError) {
+      cleanupFailures.push(cleanupError);
+    }
+    if (cleanupFailures.length) {
+      const details = cleanupFailures
+        .map((cleanupError) =>
+          cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        )
+        .join("; ");
+      throw new Error(
+        `Compatibility batch admission failed (${error instanceof Error ? error.message : String(error)}) and compensation also failed: ${details}`,
+      );
+    }
+    throw error;
+  }
 }
