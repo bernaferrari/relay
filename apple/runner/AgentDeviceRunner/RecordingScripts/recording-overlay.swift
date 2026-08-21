@@ -30,28 +30,23 @@ struct GestureEvent: Decodable {
   let edge: String?
 }
 
-enum OverlayError: Error, CustomStringConvertible {
-  case invalidArgs(String)
-  case missingVideoTrack
-  case exportFailed(String)
-
-  var description: String {
-    switch self {
-    case .invalidArgs(let message):
-      return message
-    case .missingVideoTrack:
-      return "Input video does not contain a video track."
-    case .exportFailed(let message):
-      return message
-    }
-  }
+enum ExportQuality: String {
+  case medium
+  case high
 }
 
-do {
-  try run()
-} catch {
-  fputs("recording-overlay: \(error)\n", stderr)
-  exit(1)
+/// Entry point: `@main` because multi-file swiftc compilation reserves top-level statements for
+/// `main.swift`, which cannot be shared per-script.
+@main
+enum RecordingOverlay {
+  static func main() {
+    do {
+      try run()
+    } catch {
+      fputs("recording-overlay: \(error)\n", stderr)
+      exit(1)
+    }
+  }
 }
 
 func run() throws {
@@ -61,9 +56,7 @@ func run() throws {
   let outputURL = URL(fileURLWithPath: parsedArgs.outputPath)
   let eventsURL = URL(fileURLWithPath: parsedArgs.eventsPath)
 
-  if FileManager.default.fileExists(atPath: outputURL.path) {
-    try FileManager.default.removeItem(at: outputURL)
-  }
+  try removeStaleOutput(outputURL)
 
   let payload = try Data(contentsOf: eventsURL)
   let envelope = try JSONDecoder().decode(GestureEnvelope.self, from: payload)
@@ -74,27 +67,15 @@ func run() throws {
   }
 
   let asset = AVURLAsset(url: inputURL)
-  guard let sourceVideoTrack = asset.tracks(withMediaType: .video).first else {
-    throw OverlayError.missingVideoTrack
-  }
-
-  let composition = AVMutableComposition()
-  guard let compositionVideoTrack = composition.addMutableTrack(
-    withMediaType: .video,
-    preferredTrackID: kCMPersistentTrackID_Invalid
-  ) else {
-    throw OverlayError.exportFailed("Failed to create composition video track.")
-  }
-
+  let sourceVideoTrack = try sourceVideoTrack(of: asset)
   let fullRange = CMTimeRange(start: .zero, duration: asset.duration)
-  try compositionVideoTrack.insertTimeRange(fullRange, of: sourceVideoTrack, at: .zero)
-
-  if let sourceAudioTrack = asset.tracks(withMediaType: .audio).first,
-     let compositionAudioTrack = composition.addMutableTrack(
-       withMediaType: .audio,
-       preferredTrackID: kCMPersistentTrackID_Invalid
-     ) {
-    try? compositionAudioTrack.insertTimeRange(fullRange, of: sourceAudioTrack, at: .zero)
+  let composition = try makeRecordingComposition(
+    asset: asset,
+    videoTrack: sourceVideoTrack,
+    timeRange: fullRange
+  )
+  guard let compositionVideoTrack = composition.tracks(withMediaType: .video).first else {
+    throw RecordingScriptError.exportFailed("Failed to create composition video track.")
   }
 
   let renderSize = resolvedRenderSize(for: sourceVideoTrack)
@@ -149,32 +130,17 @@ func run() throws {
   // while avoiding very slow highest-quality exports. Pass --quality high to opt into
   // the slower highest-quality export.
   let presetName = exportPresetName(for: parsedArgs.exportQuality, compatibleWith: composition)
-  guard let exporter = AVAssetExportSession(asset: composition, presetName: presetName) else {
-    throw OverlayError.exportFailed("Failed to create export session.")
-  }
-
-  exporter.outputURL = outputURL
-  exporter.outputFileType = .mp4
-  exporter.videoComposition = videoComposition
-  exporter.shouldOptimizeForNetworkUse = true
-
-  let semaphore = DispatchSemaphore(value: 0)
-  exporter.exportAsynchronously {
-    semaphore.signal()
-  }
-  if semaphore.wait(timeout: .now() + 120) == .timedOut {
-    exporter.cancelExport()
-    throw OverlayError.exportFailed("Touch overlay export timed out.")
-  }
-
-  if exporter.status != .completed {
-    throw OverlayError.exportFailed(exporter.error?.localizedDescription ?? "Touch overlay export failed.")
-  }
-}
-
-enum ExportQuality: String {
-  case medium
-  case high
+  let exporter = try makeRecordingExporter(
+    composition,
+    presetName: presetName,
+    outputURL: outputURL,
+    videoComposition: videoComposition
+  )
+  try runRecordingExport(
+    exporter,
+    timeoutMessage: "Touch overlay export timed out.",
+    failureMessage: "Touch overlay export failed."
+  )
 }
 
 func parseArguments(
@@ -193,33 +159,28 @@ func parseArguments(
     let nextIndex = index + 1
     switch argument {
     case "--input":
-      guard nextIndex < arguments.count else { throw OverlayError.invalidArgs("--input requires a value") }
-      inputPath = arguments[nextIndex]
+      inputPath = try recordingOptionValue(arguments, nextIndex, "--input")
       index += 2
     case "--output":
-      guard nextIndex < arguments.count else { throw OverlayError.invalidArgs("--output requires a value") }
-      outputPath = arguments[nextIndex]
+      outputPath = try recordingOptionValue(arguments, nextIndex, "--output")
       index += 2
     case "--events":
-      guard nextIndex < arguments.count else { throw OverlayError.invalidArgs("--events requires a value") }
-      eventsPath = arguments[nextIndex]
+      eventsPath = try recordingOptionValue(arguments, nextIndex, "--events")
       index += 2
     case "--quality":
-      guard nextIndex < arguments.count else {
-        throw OverlayError.invalidArgs("--quality requires a value")
-      }
-      guard let parsed = ExportQuality(rawValue: arguments[nextIndex]) else {
-        throw OverlayError.invalidArgs("--quality must be one of: medium, high")
+      let rawValue = try recordingOptionValue(arguments, nextIndex, "--quality")
+      guard let parsed = ExportQuality(rawValue: rawValue) else {
+        throw RecordingScriptError.invalidArgs("--quality must be one of: medium, high")
       }
       exportQuality = parsed
       index += 2
     default:
-      throw OverlayError.invalidArgs("Unknown argument: \(argument)")
+      throw RecordingScriptError.invalidArgs("Unknown argument: \(argument)")
     }
   }
 
   guard let inputPath, let outputPath, let eventsPath else {
-    throw OverlayError.invalidArgs(
+    throw RecordingScriptError.invalidArgs(
       "Usage: recording-overlay.swift --input <video> --output <video> --events <json> [--quality <medium|high>]"
     )
   }
