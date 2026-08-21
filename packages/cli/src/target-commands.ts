@@ -143,12 +143,18 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
           type: "connect | observe | control | record | auto",
           description: "Recovery phase for Activity attribution",
         },
+        {
+          name: "recoveryFenceAssignmentId",
+          type: "string",
+          description:
+            "Release this interrupted local worker assignment only after Relay captures fresh screenshot and accessibility evidence",
+        },
       ],
       examples: [
         'relay device recover 00008110 --input \'{"reason":"control"}\'',
         "relay device recover RQCY104BG8X",
       ],
-      note: "iPad: first proves the existing XCTest session; only a failed proof gets one bounded runner repair. It never resets the app or restarts the iPad. Android: wake the screen and retry labels. Unlock still needs a person.",
+      note: "iPad: first proves the existing XCTest session; only a failed proof gets one bounded runner repair. It never resets the app or restarts the iPad. Android: wake the screen and retry labels. Unlock still needs a person. Supplying recoveryFenceAssignmentId is local-host-only and records a new pixel/semantic/pixel proof before any durable fence is released.",
     }),
   ),
   mapped(

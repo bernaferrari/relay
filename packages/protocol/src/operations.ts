@@ -13,6 +13,8 @@ import {
   type TrimAuthoringTakeInput,
 } from "./authoring.js";
 import { assertIosSessionOperationLifecycle } from "./ios-session-lifecycle.js";
+import { isExecutionTargetRef } from "./execution-target.js";
+import { createTargetRecoveryOperationParsers } from "./target-recovery-operation-parsers.js";
 import { runRepairOperationDefinitions } from "./run-repair-operations.js";
 import { runShareOperationDefinitions } from "./run-share.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
@@ -233,6 +235,11 @@ function assertTargetRuntimeReadiness(value: unknown, label: string): void {
   }
 }
 
+const { targetRecoverInputParser, targetRecoverOutputParser } =
+  createTargetRecoveryOperationParsers({
+    assertTargetRuntimeReadiness,
+  });
+
 const devicesParser = objectParser<{ devices: DeviceSummary[] }>("devices response", (input) => {
   if (!Array.isArray(input.devices)) fail("devices", "must be an array");
   for (const item of input.devices) {
@@ -279,7 +286,16 @@ const targetSnapshotOutputParser = objectParser<OperationOutput<"target.snapshot
   (input) => {
     if (!Array.isArray(input.nodes)) fail("snapshot nodes", "must be an array");
     if (!Array.isArray(input.interactive)) fail("snapshot interactive", "must be an array");
-    string(input.tree, "snapshot tree");
+    if (input.inspectable !== undefined) boolean(input.inspectable, "snapshot inspectable");
+    if (typeof input.tree !== "string") fail("snapshot tree", "must be a string");
+    // An iPad can have fresh pixels while its bounded XCTest tree read is still
+    // unavailable. That is a useful, truthful observation—not a malformed
+    // response. Keep the empty tree legal only when the producer explicitly
+    // marks it uninspectable, so semantic snapshots cannot silently lose their
+    // tree text.
+    if (!input.tree && input.inspectable !== false) {
+      fail("snapshot tree", "must be non-empty unless the snapshot is explicitly uninspectable");
+    }
     if (input.readiness !== undefined) {
       assertTargetRuntimeReadiness(input.readiness, "snapshot readiness");
     }
@@ -744,53 +760,6 @@ const targetAppLocalesOutputParser = objectParser<OperationOutput<"target.app.lo
   },
 );
 
-const targetRecoverInputParser = objectParser<OperationInput<"target.recover">>(
-  "target recovery input",
-  (input) => {
-    string(input.serial, "target recovery serial");
-    if (
-      input.reason !== undefined &&
-      (typeof input.reason !== "string" ||
-        !["connect", "observe", "control", "record", "auto"].includes(input.reason))
-    ) {
-      fail("target recovery reason", "must be connect, observe, control, record, or auto");
-    }
-  },
-);
-
-const targetRecoverOutputParser = objectParser<OperationOutput<"target.recover">>(
-  "target recovery response",
-  (input) => {
-    const recovery = record(input.recovery, "target recovery");
-    string(recovery.serial, "target recovery serial");
-    boolean(recovery.recovered, "target recovered");
-    boolean(recovery.ready, "target ready");
-    string(recovery.summary, "target recovery summary");
-    if (!Array.isArray(recovery.actions)) fail("target recovery actions", "must be an array");
-    for (const value of recovery.actions as unknown[]) {
-      const action = record(value, "target recovery action");
-      if (!["stale-lock", "agent-device", "core-device"].includes(String(action.kind))) {
-        fail("target recovery action kind", "is invalid");
-      }
-      if (!["completed", "skipped", "failed"].includes(String(action.status))) {
-        fail("target recovery action status", "is invalid");
-      }
-      string(action.detail, "target recovery action detail");
-    }
-    const session = record(recovery.session, "target recovery session");
-    if (session.status !== "restored" && session.status !== "unavailable") {
-      fail("target recovery session status", "must be restored or unavailable");
-    }
-    if (session.app !== undefined) string(session.app, "target recovery session app");
-    if (session.fallback !== undefined)
-      boolean(session.fallback, "target recovery session fallback");
-    string(session.detail, "target recovery session detail");
-    if (recovery.readiness !== undefined) {
-      assertTargetRuntimeReadiness(recovery.readiness, "target recovery readiness");
-    }
-  },
-);
-
 const recipeRefParser = objectParser<OperationRecord>("recipe reference", (input) => {
   string(input.recipeId, "recipeId");
 });
@@ -825,6 +794,9 @@ const genericObjectOutputParser = objectParser<OperationRecord>("operation respo
 
 const startJobInputParser = objectParser<OperationInput<"job.start">>("job input", (input) => {
   string(input.recipe, "job recipe");
+  if (input.executionTarget !== undefined && !isExecutionTargetRef(input.executionTarget)) {
+    fail("job executionTarget", "must be a valid execution target reference");
+  }
 });
 
 const enabledInputParser = objectParser<{ enabled: boolean }>("enabled input", (input) => {

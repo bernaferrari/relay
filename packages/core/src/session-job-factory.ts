@@ -45,6 +45,28 @@ function legacyInputOverridesTarget(input: EnqueueJobInput, target: ExecutionTar
   return false;
 }
 
+/** New jobs always store a per-target lane in workerId. Old records may still
+ * carry a caller-supplied aggregate host in that field. Retry must preserve
+ * only the latter: treating the frozen target lane as a host makes the same
+ * retry change scheduler policy from "no host" to "host = target lane". */
+function inheritedLegacyWorkerHost(parent: TestJob | undefined): {
+  workerId?: string;
+  workerCapacity?: number;
+} {
+  if (!parent?.workerId || parent.hostWorkerId) return {};
+  const target = executionTargetRefForJob(parent);
+  const derivedLane = defaultTargetWorkerAssignment({
+    targetId: target.identity.value,
+    platform: target.platform,
+    provider: target.provider,
+  });
+  if (parent.workerId === derivedLane.workerId) return {};
+  return {
+    workerId: parent.workerId,
+    ...(parent.workerCapacity ? { workerCapacity: parent.workerCapacity } : {}),
+  };
+}
+
 /** An explicit ref is authoritative. Reject split-brain legacy input instead
  * of allowing a provider session and serial to be accidentally mixed. */
 function assertExplicitTargetMatchesLegacy(
@@ -252,23 +274,25 @@ export function createSessionJob(
     selectedTarget ?? executionTargetRefFromTargetContext(targetContext),
   );
   const targetKind = legacyTargetKind(executionTarget);
-  const targetId = executionTargetSchedulingKey(executionTarget);
-  if (!targetId) throw new Error("Every Relay job requires an explicit target");
+  const schedulingKey = executionTargetSchedulingKey(executionTarget);
+  if (!schedulingKey) throw new Error("Every Relay job requires an explicit target");
   const operationContext = currentOperationContext() ?? parent?.operationContext;
+  const inheritedLegacyWorker =
+    !input.workerId && !input.hostWorkerId && !parent?.hostWorkerId
+      ? inheritedLegacyWorkerHost(parent)
+      : {};
   const assignment = defaultTargetWorkerAssignment({
-    targetId,
+    // The scheduler separately uses executionTargetSchedulingKey(), which
+    // includes the provider. The lane itself keeps the human-readable target
+    // identity and derives its remote namespace from this frozen provider.
+    targetId: executionTarget.identity.value,
     platform: targetContext.platform,
+    provider: executionTarget.provider,
     // Legacy worker fields represented an aggregate platform worker. Keep
     // accepting them as host ceilings, but never reuse a derived target lane
     // from a newer parent as a host id on retry.
-    workerId:
-      input.workerId ??
-      (!input.hostWorkerId && !parent?.hostWorkerId ? parent?.workerId : undefined),
-    workerCapacity:
-      input.workerCapacity ??
-      (!input.hostWorkerCapacity && !parent?.hostWorkerCapacity
-        ? parent?.workerCapacity
-        : undefined),
+    workerId: input.workerId ?? inheritedLegacyWorker.workerId,
+    workerCapacity: input.workerCapacity ?? inheritedLegacyWorker.workerCapacity,
     hostWorkerId: input.hostWorkerId ?? (!input.workerId ? parent?.hostWorkerId : undefined),
     hostWorkerCapacity:
       input.hostWorkerCapacity ?? (!input.workerCapacity ? parent?.hostWorkerCapacity : undefined),

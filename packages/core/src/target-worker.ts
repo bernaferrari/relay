@@ -1,3 +1,5 @@
+import type { ExecutionTargetProvider } from "@relay/protocol";
+
 export type TargetWorkerAssignment = {
   /** A one-target execution lane. This is deliberately not a host identity. */
   workerId: string;
@@ -311,9 +313,20 @@ function localTargetLaneId(platform: "android" | "ios" | "browser", targetId: st
   return `local:${platform}:target:${encodeURIComponent(targetId)}`;
 }
 
+function providerTargetLaneId(
+  provider: ExecutionTargetProvider,
+  platform: "android" | "ios" | "browser",
+  targetId: string,
+): string {
+  return `remote:${encodeURIComponent(provider.key)}:${platform}:target:${encodeURIComponent(targetId)}`;
+}
+
 export function defaultTargetWorkerAssignment(input: {
   targetId: string;
   platform: "android" | "ios" | "browser";
+  /** A remote provider gets its own lane namespace even when a session id
+   * happens to equal a local serial. Local callers intentionally omit this. */
+  provider?: ExecutionTargetProvider;
   /** @deprecated Treat this as a host worker id; target lanes are derived from targetId. */
   workerId?: string;
   /** @deprecated Treat this as a host capacity; target lanes are always one-at-a-time. */
@@ -323,16 +336,28 @@ export function defaultTargetWorkerAssignment(input: {
 }): TargetWorkerAssignment {
   const platform = input.platform;
   const targetId = input.targetId.trim();
-  const canonicalHostCapacity = configuredCapacity(`RELAY_${platform.toUpperCase()}_HOST_CAPACITY`);
+  const remoteProvider = input.provider?.scope === "remote" ? input.provider : undefined;
+  const isRemoteProvider = remoteProvider !== undefined;
+  // Existing environment knobs describe this Relay host's local device
+  // capacity. A remote provider must opt into an aggregate host/fleet ceiling
+  // explicitly; inheriting one here would accidentally serialize it behind a
+  // local machine's budget.
+  const canonicalHostCapacity = isRemoteProvider
+    ? undefined
+    : configuredCapacity(`RELAY_${platform.toUpperCase()}_HOST_CAPACITY`);
   // Preserve the old configuration name as a host ceiling rather than silently
   // continuing to serialize every physical device behind one platform worker.
-  const legacyHostCapacity = configuredCapacity(`RELAY_${platform.toUpperCase()}_WORKER_CAPACITY`);
+  const legacyHostCapacity = isRemoteProvider
+    ? undefined
+    : configuredCapacity(`RELAY_${platform.toUpperCase()}_WORKER_CAPACITY`);
   const configuredHostCapacity = canonicalHostCapacity ?? legacyHostCapacity;
   const explicitHostId = input.hostWorkerId?.trim() || input.workerId?.trim();
   const hostCapacity = input.hostWorkerCapacity ?? input.workerCapacity ?? configuredHostCapacity;
   return {
     targetId,
-    workerId: localTargetLaneId(platform, targetId),
+    workerId: isRemoteProvider
+      ? providerTargetLaneId(remoteProvider, platform, targetId)
+      : localTargetLaneId(platform, targetId),
     capacity: 1,
     ...((explicitHostId || configuredHostCapacity !== undefined) && hostCapacity !== undefined
       ? {

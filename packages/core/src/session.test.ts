@@ -9,6 +9,7 @@ import {
   durableWorkerAssignmentStore,
   resetDurableWorkerAssignmentStoreForTests,
 } from "./durable-worker-assignments.js";
+import { setLocalDeviceProvider } from "./device-factory.js";
 import { runWithOperationContext } from "./operation-context.js";
 import type { Device } from "./device.js";
 import type { RecipeRuntimeState, VerifiedScreenCheckpoint } from "./recipe-runner-context.js";
@@ -362,7 +363,7 @@ test("an expired frozen lease fails before device execution starts", async () =>
   }
 });
 
-test("an unregistered provider session fails closed before any local device session is touched", async () => {
+test("an unregistered provider session is rejected before durable queueing or any local device session", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-provider-session-"));
   const previousState = process.env.RELAY_STATE_DIR;
   const previousRuns = process.env.RELAY_RUNS_DIR;
@@ -370,54 +371,64 @@ test("an unregistered provider session fails closed before any local device sess
   process.env.RELAY_RUNS_DIR = join(root, "runs");
   resetDurableWorkerAssignmentStoreForTests();
   try {
-    const job = runWithOperationContext(
-      {
-        schemaVersion: 1,
-        actorId: "agent:provider-test",
-        actorKind: "agent",
-        organizationId: "org-provider-test",
-        projectId: "project-provider-test",
-        operationId: "job.start",
-        requestId: crypto.randomUUID(),
-        idempotencyKey: crypto.randomUUID(),
-        issuedAt: Date.now(),
+    let localFactoryCalls = 0;
+    setLocalDeviceProvider({
+      kind: "device",
+      create: () => {
+        localFactoryCalls += 1;
+        throw new Error("provider admission must never create a local device");
       },
+    });
+    assert.throws(
       () =>
-        enqueueJob({
-          recipe: "provider-driver-required",
-          executionTarget: {
+        runWithOperationContext(
+          {
             schemaVersion: 1,
-            kind: "provider-session",
-            provider: { key: "example.device-farm", scope: "remote" },
-            targetId: "ios-session-42",
-            platform: "ios",
-            identity: { kind: "provider-session", value: "ios-session-42" },
+            actorId: "agent:provider-test",
+            actorKind: "agent",
+            organizationId: "org-provider-test",
+            projectId: "project-provider-test",
+            operationId: "job.start",
+            requestId: crypto.randomUUID(),
+            idempotencyKey: crypto.randomUUID(),
+            issuedAt: Date.now(),
           },
-          targetKind: "device",
-          platform: "ios",
-          projectId: "project-provider-test",
-          ownerId: "agent:provider-test",
-          recipeSnapshot: {
-            id: "provider-driver-required",
-            title: "Provider driver required",
-            source: "builtin",
-            steps: [],
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          recipeGraph: {},
-        }),
+          () =>
+            enqueueJob({
+              recipe: "provider-driver-required",
+              executionTarget: {
+                schemaVersion: 1,
+                kind: "provider-session",
+                provider: { key: "example.device-farm", scope: "remote" },
+                targetId: "ios-session-42",
+                platform: "ios",
+                identity: { kind: "provider-session", value: "ios-session-42" },
+              },
+              targetKind: "device",
+              platform: "ios",
+              projectId: "project-provider-test",
+              ownerId: "agent:provider-test",
+              recipeSnapshot: {
+                id: "provider-driver-required",
+                title: "Provider driver required",
+                source: "builtin",
+                steps: [],
+                createdAt: 1,
+                updatedAt: 1,
+              },
+              recipeGraph: {},
+            }),
+        ),
+      /Target driver example\.device-farm cannot control.*not-configured/u,
     );
-
-    const terminal = await waitForJobCompletion(job.id);
-    assert.equal(terminal.status, "error");
-    assert.match(terminal.error ?? "", /No registered Relay provider driver/u);
-    assert.equal(terminal.persisted, true);
-    assert.equal(terminal.serial, undefined, "a remote session never becomes a local serial");
-    const assignment = durableWorkerAssignmentStore().get(job.id);
-    assert.equal(assignment?.status, "error");
-    assert.equal(assignment?.executionTarget.kind, "provider-session");
+    assert.equal(localFactoryCalls, 0);
+    assert.deepEqual(
+      durableWorkerAssignmentStore().list(),
+      [],
+      "capability rejection happens before any durable provider assignment is written",
+    );
   } finally {
+    setLocalDeviceProvider(undefined);
     resetDurableWorkerAssignmentStoreForTests();
     if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previousState;

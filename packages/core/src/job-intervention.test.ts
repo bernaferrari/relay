@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { OperationContext } from "./operation-context.js";
 import {
+  HumanInterventionReproofUnavailableError,
   humanInterventionNeedsReproof,
   operationOwnsHumanIntervention,
   recordHumanInterventionAuthorization,
@@ -46,6 +47,24 @@ function pausedJob(): TestJob {
   } as TestJob;
 }
 
+function qualifiedReproof(capturedAt = 100): Record<string, unknown> {
+  return {
+    capturedAt,
+    inspectable: true,
+    source: "sdk",
+    nodeCount: 1,
+    screenIdentity: { fingerprint: "birth-year-closed", nodes: [], volatileSignals: [] },
+    readiness: {
+      semanticControl: {
+        mode: "accessibility",
+        state: "proven",
+        freshness: "current",
+        proof: { at: capturedAt, observedNodeCount: 1 },
+      },
+    },
+  };
+}
+
 test("paused intervention belongs only to the exact project and actor", () => {
   const job = pausedJob();
   assert.deepEqual(operationOwnsHumanIntervention(job, operation()), { requestCapturedAt: 99 });
@@ -69,11 +88,42 @@ test("manual intervention has immutable authorization and re-proof lineage", () 
   );
   assert.equal(humanInterventionNeedsReproof(job), true);
 
-  recordHumanInterventionReproof(job, operation(), {
-    screenIdentity: { fingerprint: "birth-year-closed" },
-  });
+  recordHumanInterventionReproof(job, operation(), qualifiedReproof());
   assert.equal(humanInterventionNeedsReproof(job), false);
 
   recordHumanInterventionAuthorization(job, operation(), 99);
   assert.equal(humanInterventionNeedsReproof(job), true, "a later edit invalidates the old proof");
+});
+
+test("pixels-only and stale intervention observations cannot clear a human pause", () => {
+  const job = pausedJob();
+  recordHumanInterventionAuthorization(job, operation(), 99);
+
+  const pixelsOnly = qualifiedReproof();
+  pixelsOnly.inspectable = false;
+  pixelsOnly.nodeCount = 0;
+  const pixelsReadiness = pixelsOnly.readiness as { semanticControl: Record<string, unknown> };
+  pixelsReadiness.semanticControl = {
+    mode: "accessibility",
+    state: "unavailable",
+    freshness: "unproven",
+    reason: "probe-failed",
+  };
+  assert.throws(
+    () => recordHumanInterventionReproof(job, operation(), pixelsOnly),
+    HumanInterventionReproofUnavailableError,
+  );
+  assert.equal(humanInterventionNeedsReproof(job), true);
+
+  const stale = qualifiedReproof();
+  const staleReadiness = stale.readiness as { semanticControl: Record<string, unknown> };
+  staleReadiness.semanticControl.freshness = "stale";
+  assert.throws(
+    () => recordHumanInterventionReproof(job, operation(), stale),
+    HumanInterventionReproofUnavailableError,
+  );
+  assert.equal(
+    job.artifacts.filter((artifact) => artifact.kind === "human-intervention-reproof").length,
+    0,
+  );
 });

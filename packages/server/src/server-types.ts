@@ -1,5 +1,5 @@
 import type http from "node:http";
-import type { AuthoringRuntime, captureScreenshot } from "@relay/core";
+import type { AuthoringRuntime, captureScreenshot, TargetDriverRegistry } from "@relay/core";
 import type { ExternalIdentityVerifier } from "./external-identity.js";
 import type { AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
 import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";
@@ -18,6 +18,9 @@ export type StartServerOptions = {
   /** Trusted bridge for externally verified bearer credentials. */
   externalIdentityVerifier?: ExternalIdentityVerifier;
   authoringRuntime?: AuthoringRuntime;
+  /** Explicit process-local drivers for provider-session targets. The default
+   * registry remains local-only, so remote sessions are opt-in by host. */
+  targetDriverRegistry?: TargetDriverRegistry;
   /** Test seam for the host-owned Android stream transport. */
   liveVideoStream?: (response: http.ServerResponse, serial: string) => Promise<void>;
   /** Test seam for target observation without starting a device daemon. */

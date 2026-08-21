@@ -176,6 +176,18 @@ test("gives each physical target its own local execution lane", () => {
   });
   assert.deepEqual(
     defaultTargetWorkerAssignment({
+      targetId: "same-text-as-local-serial",
+      platform: "ios",
+      provider: { key: "example.device-farm", scope: "remote" },
+    }),
+    {
+      workerId: "remote:example.device-farm:ios:target:same-text-as-local-serial",
+      targetId: "same-text-as-local-serial",
+      capacity: 1,
+    },
+  );
+  assert.deepEqual(
+    defaultTargetWorkerAssignment({
       targetId: "ipad-b",
       platform: "ios",
       workerId: "mac-xcode",

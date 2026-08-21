@@ -198,6 +198,22 @@ test("uninspectable snapshots surface visual fingerprint and proposed rows", () 
   assert.match(result.note ?? "", /device recover/i);
 });
 
+test("uninspectable empty AX observations never relabel semantic absence as pixel evidence", () => {
+  const result = summarizeTargetOperationResult("target.snapshot.capture", {
+    serial: "ipad",
+    inspectable: false,
+    source: "pixels-only",
+    nodes: [],
+    // `observeScreenIdentity([])` is deterministic but has no semantic or
+    // raster value. A failed pixels-first fallback must remain unproven.
+    screenIdentity: { fingerprint: "f".repeat(64), nodes: [], volatileSignals: [] },
+  }) as { fingerprint?: string; visualFingerprint?: string; inspectable?: boolean };
+
+  assert.equal(result.inspectable, false);
+  assert.equal(result.fingerprint, undefined);
+  assert.equal(result.visualFingerprint, undefined);
+});
+
 test("uninspectable snapshots preserve a bounded, safe inspection error", () => {
   const result = summarizeTargetOperationResult("target.snapshot.capture", {
     serial: "ipad",

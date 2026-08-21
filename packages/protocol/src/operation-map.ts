@@ -6,6 +6,7 @@
  * registry's runtime parsers to every DTO in one source file.
  */
 import type {
+  AuthoringEvidence,
   AuthoringInteraction,
   AuthoringSessionListResponse,
   AuthoringSessionResponse,
@@ -50,6 +51,7 @@ import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import type { CorpusOperationId } from "./corpus-operation-definitions.js";
 import type { CombineOperationId } from "./combine-operation-definitions.js";
 import type { OperationRecord, ProjectRole } from "./operation-contract.js";
+import type { ExecutionTargetRef } from "./execution-target.js";
 
 export type RedactionPolicyDto = {
   enabled: boolean;
@@ -66,6 +68,20 @@ export type EvidenceCollectionPolicyDto = {
     Record<SensitiveEvidenceChannelDto, { grantedAt: number; grantedBy: string; reason: string }>
   >;
   updatedAt?: number;
+};
+
+/** Immutable proof returned only when a local target recovery explicitly
+ * releases a process-boundary durable worker fence. */
+export type DurableRecoveryFenceReleaseDto = {
+  assignmentId: string;
+  releasedAt: number;
+  reproofId: string;
+  evidence: {
+    manifest: AuthoringEvidence;
+    screenshotBefore: AuthoringEvidence;
+    semanticSnapshot: AuthoringEvidence;
+    screenshotAfter: AuthoringEvidence;
+  };
 };
 
 export type JobSummaryDto = {
@@ -367,6 +383,8 @@ type SpecificOperationMap = {
     output: {
       nodes: unknown[];
       interactive: unknown[];
+      /** Pixels-first iOS observations intentionally have no current AX tree. */
+      inspectable?: boolean;
       tree: string;
       readiness?: TargetRuntimeReadiness;
       iosSessionLifecycle?: IosSessionOperationLifecycle;
@@ -491,6 +509,9 @@ type SpecificOperationMap = {
     input: {
       serial: string;
       reason?: "connect" | "observe" | "control" | "record" | "auto";
+      /** Optional, local-only request to release one interrupted durable
+       * assignment after Relay captures a fresh pixel/semantic/pixel proof. */
+      recoveryFenceAssignmentId?: string;
     };
     output: {
       recovery: {
@@ -511,6 +532,7 @@ type SpecificOperationMap = {
         };
         readiness?: TargetRuntimeReadiness;
       };
+      recoveryFenceRelease?: DurableRecoveryFenceReleaseDto;
     };
   };
   "job.list": {
@@ -519,7 +541,14 @@ type SpecificOperationMap = {
   };
   "job.get": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.start": {
-    input: { recipe: string; serial?: string; [key: string]: unknown };
+    input: {
+      recipe: string;
+      serial?: string;
+      /** Explicit immutable target identity. Remote provider sessions are
+       * admitted only when the server host has registered their driver. */
+      executionTarget?: ExecutionTargetRef;
+      [key: string]: unknown;
+    };
     output: { job: OperationRecord };
   };
   "run.replay": { input: { runId: string }; output: { job: OperationRecord } };

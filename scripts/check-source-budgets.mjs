@@ -23,7 +23,7 @@ export const grandfatheredSourceLimits = Object.freeze({
   "packages/core/src/authoring-sessions.ts": 1160,
   "packages/core/src/corpus.ts": 1922,
   "packages/core/src/device.ts": 1494,
-  "packages/protocol/src/operations.ts": 2147,
+  "packages/protocol/src/operations.ts": 2119,
 });
 
 export function defaultSourceLimit(path) {

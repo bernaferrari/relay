@@ -12,6 +12,7 @@ import {
   getActiveJob,
   getActiveJobs,
   getJob,
+  HumanInterventionReproofUnavailableError,
   humanInterventionNeedsReproof,
   listJobs,
   inferLocaleOptionsFromTeach,
@@ -46,6 +47,7 @@ import {
 } from "./app-map-test-execution-guard.js";
 import { enqueueCompatibilityBatch } from "./compatibility-jobs.js";
 import {
+  assertExecutionTargetRouteControl,
   assertJobExecutionTargetRouteControl,
   assertPersistedRunExecutionTargetRouteControl,
 } from "./execution-target-route-control.js";
@@ -56,7 +58,11 @@ import { recordAudit, type RequestContext } from "./security.js";
 import { handleCombineCampaignRoute } from "./combine-campaign-routes.js";
 import { handleLocaleMatrixRoute } from "./locale-matrix-routes.js";
 import type { verifyCampaignDurationCohortEvidence } from "./campaign-duration-cohort-evidence.js";
-import type { LocalCampaignAdmissionPreflightRequest } from "@relay/protocol";
+import {
+  assertExecutionTargetRef,
+  type ExecutionTargetRef,
+  type LocalCampaignAdmissionPreflightRequest,
+} from "@relay/protocol";
 
 export type JobRouteRuntime = {
   getJob: typeof getJob;
@@ -234,9 +240,19 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
           bindingState: snapshot.bindingState,
           screenIdentity: snapshot.screenIdentity,
           visualFingerprint: snapshot.visualFingerprint,
+          readiness: snapshot.readiness,
           nodeCount: snapshot.nodes.length,
         });
       } catch (error) {
+        if (error instanceof HumanInterventionReproofUnavailableError) {
+          throw new HttpError(409, error.message, {
+            code: error.code,
+            jobId: paused.id,
+            targetId,
+            recovery:
+              "Keep the run paused. Capture a fresh current accessibility snapshot with named controls after the human repair, then resume.",
+          });
+        }
         throw new HttpError(
           409,
           error instanceof Error ? error.message : "The intervened target could not be re-proven",
@@ -491,6 +507,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       prodAccountMatch?: string;
       retryOf?: string;
       variables?: Record<string, string>;
+      executionTarget?: unknown;
     };
     if (!body.recipe && !body.retryOf) {
       throw new HttpError(400, "recipe is required");
@@ -516,8 +533,27 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         throw new HttpError(400, message);
       }
     }
-    await runtime.assertTargetControl(scope, body.browserTargetId ?? body.serial);
+    let executionTarget: ExecutionTargetRef | undefined;
+    if (body.executionTarget !== undefined) {
+      try {
+        assertExecutionTargetRef(body.executionTarget);
+        // Do not let a request object be mutated after admission but before
+        // the core factory freezes its own canonical copy.
+        executionTarget = structuredClone(body.executionTarget);
+      } catch {
+        throw new HttpError(400, "executionTarget must be a valid execution target reference");
+      }
+      await assertExecutionTargetRouteControl({
+        scope,
+        target: executionTarget,
+        assertLocalTargetControl: runtime.assertTargetControl,
+        source: "enqueue",
+      });
+    } else {
+      await runtime.assertTargetControl(scope, body.browserTargetId ?? body.serial);
+    }
     const platform =
+      (executionTarget?.platform === "browser" ? undefined : executionTarget?.platform) ??
       body.platform ??
       (body.browserTargetId ? undefined : await resolveJobDevicePlatform(body.serial));
     let job;
@@ -534,6 +570,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       job = enqueueJob({
         recipe: body.recipe!,
         ...frozenRecipe,
+        executionTarget,
         serial: body.serial,
         platform,
         targetKind: body.targetKind,

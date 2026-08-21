@@ -1,5 +1,7 @@
 import { assertExecutionTargetRef, type ExecutionTargetRef } from "@relay/protocol";
 import {
+  assertProviderTargetExecutionAdmission,
+  currentTargetDriverRegistry,
   TargetDriverCapabilityUnavailableError,
   executionTargetRefForJob,
   type EnqueueJobInput,
@@ -43,16 +45,18 @@ function validatedTarget(
  * so a provider session id can never contend with, renew, or mint a local
  * device lease that happens to use the same text.
  */
-export function providerTargetControlUnavailable(target: ExecutionTargetRef): HttpError {
-  const unavailable = new TargetDriverCapabilityUnavailableError(
+export function providerTargetControlUnavailable(
+  target: ExecutionTargetRef,
+  unavailable = new TargetDriverCapabilityUnavailableError(
     target.provider.key,
     "control",
     "not-configured",
     target,
-  );
+  ),
+): HttpError {
   return new HttpError(
     409,
-    `No registered Relay control driver is available for ${target.provider.key} session ${target.targetId}.`,
+    `No registered Relay ${unavailable.capability} driver is available for ${target.provider.key} session ${target.targetId}.`,
     {
       code: unavailable.code,
       capability: unavailable.capability,
@@ -60,16 +64,16 @@ export function providerTargetControlUnavailable(target: ExecutionTargetRef): Ht
       provider: structuredClone(target.provider),
       target: structuredClone(target),
       recovery:
-        "Register a control-capable driver for this provider session, then retry. Relay will not fall back to a local device lease.",
+        "Register a control- and capture-capable driver for this provider session, then retry. Relay will not fall back to a local device lease.",
     },
   );
 }
 
 /**
  * Route-level control admission for an immutable execution target. Local
- * targets retain the established lease path; a provider session fails at the
- * provider boundary until a concrete driver is registered by the execution
- * host. Keeping this branch here makes retry/replay/repair agree on the same
+ * targets retain the established lease path; a provider session has to prove
+ * both concrete control and capture support at the provider boundary. Keeping
+ * this branch here makes enqueue/retry/replay/repair agree on the same
  * no-local-fallback rule.
  */
 export async function assertExecutionTargetRouteControl(input: {
@@ -80,13 +84,27 @@ export async function assertExecutionTargetRouteControl(input: {
 }): Promise<void> {
   const target = validatedTarget(input.target, input.source);
   if (target.kind === "provider-session") {
+    try {
+      assertProviderTargetExecutionAdmission(target, currentTargetDriverRegistry());
+    } catch (error) {
+      recordAudit(input.scope, {
+        action: "target.control",
+        resource: "provider-driver",
+        target: `${target.provider.key}:${target.targetId}`,
+        result: "deny",
+      });
+      if (error instanceof TargetDriverCapabilityUnavailableError) {
+        throw providerTargetControlUnavailable(target, error);
+      }
+      throw error;
+    }
     recordAudit(input.scope, {
       action: "target.control",
       resource: "provider-driver",
       target: `${target.provider.key}:${target.targetId}`,
-      result: "deny",
+      result: "allow",
     });
-    throw providerTargetControlUnavailable(target);
+    return;
   }
   await input.assertLocalTargetControl(input.scope, target.identity.value);
 }

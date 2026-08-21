@@ -211,6 +211,11 @@ test("session factory freezes provider-scoped targets and rejects split-brain in
   assert.deepEqual(job.executionTarget, target);
   assert.notEqual(job.executionTarget, target, "factory owns an immutable target copy");
   assert.equal(
+    job.workerId,
+    "remote:example.farm:ios:target:session-42",
+    "provider sessions cannot share a local target lane with the same session text",
+  );
+  assert.equal(
     executionTargetSchedulingKey(job.executionTarget!),
     `remote:${executionTargetRefKey(target)}`,
   );
@@ -223,6 +228,7 @@ test("session factory freezes provider-scoped targets and rejects split-brain in
   assert.equal(retry.platform, "ios");
   assert.deepEqual(retry.targetContext, job.targetContext);
   assert.deepEqual(retry.executionTarget, job.executionTarget);
+  assert.equal(retry.workerId, job.workerId, "retry keeps the frozen provider lane");
   assert.throws(
     () =>
       createSessionJob(

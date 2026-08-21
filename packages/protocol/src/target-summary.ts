@@ -423,12 +423,17 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
     const nodes = Array.isArray(body.nodes) ? body.nodes : [];
     const chrome = describeSnapshotChrome(nodes);
     const inspectable = body.inspectable !== false && nodes.length > 0;
+    // A screen-identity digest is derived from accessibility semantics. In an
+    // uninspectable/empty response it is merely the deterministic digest of
+    // no usable nodes, not evidence that Relay captured pixels. Do not
+    // relabel it as a visual fingerprint: callers use that field to decide
+    // whether a point-based follow-up has fresh raster evidence.
     const visualFingerprint =
-      typeof body.visualFingerprint === "string"
-        ? body.visualFingerprint
-        : typeof body.screenIdentity?.fingerprint === "string" && !inspectable
-          ? body.screenIdentity.fingerprint
-          : undefined;
+      typeof body.visualFingerprint === "string" ? body.visualFingerprint : undefined;
+    const semanticFingerprint =
+      inspectable && typeof body.screenIdentity?.fingerprint === "string"
+        ? body.screenIdentity.fingerprint
+        : undefined;
     const proposedRows = Array.isArray(body.proposedRows)
       ? body.proposedRows.flatMap((row) => {
           if (!row || typeof row !== "object" || Array.isArray(row)) return [];
@@ -464,12 +469,11 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
       ...(typeof body.inspectionState === "string"
         ? { inspectionState: body.inspectionState }
         : {}),
-      fingerprint:
-        typeof body.screenIdentity?.fingerprint === "string"
-          ? body.screenIdentity.fingerprint.slice(0, 16)
-          : visualFingerprint
-            ? visualFingerprint.slice(0, 16)
-            : undefined,
+      fingerprint: semanticFingerprint
+        ? semanticFingerprint.slice(0, 16)
+        : visualFingerprint
+          ? visualFingerprint.slice(0, 16)
+          : undefined,
       ...(visualFingerprint ? { visualFingerprint: visualFingerprint.slice(0, 16) } : {}),
       ...(chrome.app ? { app: chrome.app } : {}),
       ...(chrome.header ? { header: chrome.header } : {}),

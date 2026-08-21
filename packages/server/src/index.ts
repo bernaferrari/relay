@@ -30,6 +30,7 @@ export {
 import {
   captureScreenshot,
   currentOperationContext,
+  defaultTargetDriverRegistry,
   enqueueJob,
   getActiveJob,
   getActiveJobs,
@@ -50,7 +51,6 @@ import {
   doctorFailureMessage,
   toJobReport,
   toJunitXml,
-  type JobReport,
   releaseDeviceLease,
   listTargets,
   loadEvidenceCollectionPolicy,
@@ -60,6 +60,7 @@ import {
   restartAgentDeviceDaemonForSigningEnvDrift,
   authoringSessions,
   runWithOperationContext,
+  runWithTargetDriverRegistry,
   reconcilePersistedAppMapRuns,
   recoverCollaborationState,
   recoverDurableWorkerAssignments,
@@ -69,6 +70,7 @@ import {
   type AuthoringRuntime,
   type RelayStateServerLease,
 } from "@relay/core";
+import { collectVisibleReports } from "./report-access.js";
 import { createSseHub } from "./sse.js";
 import { startScheduler } from "./scheduler.js";
 import { createRequestHandlerLifecycle } from "./request-handler-lifecycle.js";
@@ -120,18 +122,6 @@ import {
 } from "./target-runtime-routes.js";
 import type { StartServerOptions, StartedServer } from "./server-types.js";
 export type { StartServerOptions, StartedServer } from "./server-types.js";
-
-function collectReports(limit: number, scope?: RequestContext): JobReport[] {
-  return listJobs(Math.max(limit, 200))
-    .filter(
-      (job) =>
-        !scope ||
-        scope.localTrusted ||
-        (job.projectId === scope.projectId && job.ownerId === scope.subject),
-    )
-    .slice(0, limit)
-    .map(toJobReport);
-}
 
 function setCorsOrigin(response: http.ServerResponse, origin: string): void {
   response.setHeader("Access-Control-Allow-Origin", origin);
@@ -423,7 +413,7 @@ async function handleRequest(
         const jobId = "jobId" in event.payload ? event.payload.jobId : undefined;
         if (typeof jobId !== "string") return true;
         const job = getJob(jobId);
-        return job?.projectId === scope.projectId && job.ownerId === scope.subject;
+        return job?.projectId === scope.projectId && job?.ownerId === scope.subject;
       });
       return;
     }
@@ -626,13 +616,13 @@ async function handleRequest(
     // Must be registered before /report/:jobId so "junit" is not treated as an id.
     if (method === "GET" && pathname === "/report/junit") {
       const limit = parseLimit(url.searchParams.get("limit"), 50);
-      text(res, 200, toJunitXml(collectReports(limit, scope)), "text/xml; charset=utf-8");
+      text(res, 200, toJunitXml(collectVisibleReports(limit, scope)), "text/xml; charset=utf-8");
       return;
     }
 
     if (method === "GET" && pathname === "/report") {
       const limit = parseLimit(url.searchParams.get("limit"), 20);
-      json(res, 200, { reports: collectReports(limit, scope) });
+      json(res, 200, { reports: collectVisibleReports(limit, scope) });
       return;
     }
 
@@ -756,6 +746,10 @@ async function startServerWithStateLease(
   const browserOrigins = opts.browserOrigins
     ? configuredBrowserOrigins(opts.browserOrigins.join(","))
     : configuredBrowserOrigins();
+  // Remote provider adapters are host-owned and intentionally opt-in. Each
+  // request runs under this explicit registry; core captures it at admission
+  // so a queued job cannot later resolve a provider against ambient defaults.
+  const targetDriverRegistry = opts.targetDriverRegistry ?? defaultTargetDriverRegistry;
   const redaction = await loadRedactionPolicy();
   await loadEvidenceCollectionPolicy();
   for (const recoveryScope of await authoringSessions.recoveryScopes()) {
@@ -809,23 +803,25 @@ async function startServerWithStateLease(
   const server = http.createServer((req, res) => {
     if (
       !requestHandlers.run(() =>
-        handleRequest(
-          req,
-          res,
-          token,
-          externalIdentityVerifier,
-          isLoopbackHost(host),
-          browserOrigins,
-          sse,
-          opts.authoringRuntime,
-          opts.liveVideoStream,
-          opts.captureTargetScreenshot,
-          opts.targetRuntime,
-          opts.appMapTestRunRuntime,
-          opts.jobRouteRuntime,
-          opts.runRouteRuntime,
-          opts.stepRunRuntime,
-          opts.campaignDurationRuntime,
+        runWithTargetDriverRegistry(targetDriverRegistry, () =>
+          handleRequest(
+            req,
+            res,
+            token,
+            externalIdentityVerifier,
+            isLoopbackHost(host),
+            browserOrigins,
+            sse,
+            opts.authoringRuntime,
+            opts.liveVideoStream,
+            opts.captureTargetScreenshot,
+            opts.targetRuntime,
+            opts.appMapTestRunRuntime,
+            opts.jobRouteRuntime,
+            opts.runRouteRuntime,
+            opts.stepRunRuntime,
+            opts.campaignDurationRuntime,
+          ),
         ),
       )
     ) {

@@ -3,7 +3,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { IosMutationOutcomeUnknownError } from "@relay/core";
+import {
+  DurableWorkerAssignmentStore,
+  IosMutationOutcomeUnknownError,
+  listActivity,
+} from "@relay/core";
+import { executionTargetRefKey } from "@relay/protocol";
 import { startServer } from "./index.js";
 
 function headers(operationId: string): Record<string, string> {
@@ -17,6 +22,90 @@ function headers(operationId: string): Record<string, string> {
     "x-relay-request-id": crypto.randomUUID(),
     "x-relay-command-at": String(Date.now()),
     "idempotency-key": crypto.randomUUID(),
+  };
+}
+
+function recoveryFenceTarget(serial = "ipad-recovery-fence") {
+  return {
+    schemaVersion: 1 as const,
+    kind: "local-device" as const,
+    provider: { key: "relay.local.agent-device" as const, scope: "local" as const },
+    targetId: serial,
+    platform: "ios" as const,
+    identity: { kind: "device-serial" as const, value: serial },
+  };
+}
+
+function seedRecoveryFence(store: DurableWorkerAssignmentStore, serial = "ipad-recovery-fence") {
+  const executionTarget = recoveryFenceTarget(serial);
+  store.queue({
+    id: "interrupted-recovery-job",
+    projectId: "runtime-project",
+    executionTarget,
+    lane: { workerId: `local:ios:${serial}`, capacity: 1 },
+    queuedAt: 1,
+  });
+  store.claimRunning("interrupted-recovery-job", "server-before-restart", 2);
+  const assignment = store.reconcileAfterRestart({
+    workerInstanceId: "server-after-restart",
+    at: 3,
+  }).assignments[0]!;
+  assert.equal(assignment.executionTargetKey, executionTargetRefKey(executionTarget));
+  return assignment;
+}
+
+const RECOVERY_FENCE_SCREENSHOT_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAGwAAADqCAYAAABHj6AIAAACAklEQVR4Ae3BQQ3CUAAFweUFBV9G/WupnaKBE9mwM69zzkM0RlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZU3nzpvm9+6bou/tmIyojKiMqIyojKiMqIyojKiMqIyojKiMqIyojKiMqIyojK65zzEI0RlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlRGVEZURlQ8JFgc/rAxuHwAAAABJRU5ErkJggg==";
+
+function recoveryFenceScreenshot(serial: string, capturedAt: number) {
+  const data = Buffer.from(RECOVERY_FENCE_SCREENSHOT_BASE64, "base64");
+  return {
+    serial,
+    capturedAt,
+    mime: "image/png" as const,
+    base64: RECOVERY_FENCE_SCREENSHOT_BASE64,
+    path: `/tmp/${serial}-${capturedAt}.png`,
+    bytes: data.byteLength,
+    width: 108,
+    height: 234,
+  };
+}
+
+function recoveryFenceReadiness() {
+  const proof = { at: 11, observedNodeCount: 1, durationMs: 5 };
+  return {
+    previewPixels: {
+      mode: "pixels" as const,
+      state: "proven" as const,
+      freshness: "current" as const,
+      proof,
+    },
+    semanticControl: {
+      mode: "accessibility" as const,
+      state: "proven" as const,
+      freshness: "current" as const,
+      proof,
+    },
+    evidenceCapture: {
+      mode: "evidence" as const,
+      state: "proven" as const,
+      freshness: "current" as const,
+      proof,
+    },
+  };
+}
+
+function recoveryFenceSnapshot(serial: string, capturedAt = 11) {
+  const nodes = [{ role: "button", label: "Continue", visibleToUser: true }];
+  return {
+    serial,
+    capturedAt,
+    nodes,
+    interactive: nodes,
+    inspectable: true,
+    source: "sdk" as const,
+    screenIdentity: { fingerprint: "a".repeat(64), nodes: [], volatileSignals: [] },
+    readiness: recoveryFenceReadiness(),
   };
 }
 
@@ -680,5 +769,336 @@ test("preflights local campaign capacity from current target, lease, and schedul
     );
   } finally {
     await server.close();
+  }
+});
+
+test("target recovery releases a local durable fence only after a fresh immutable pixel and semantic reproof", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-recovery-fence-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const store = new DurableWorkerAssignmentStore(join(root, "recovery-fence.sqlite"));
+  const serial = "ipad-recovery-fence";
+  seedRecoveryFence(store, serial);
+  let captures = 0;
+  let recoveryCalls = 0;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      now: () => 20,
+      getDurableWorkerAssignments: () => store,
+      listDevices: async () => [
+        {
+          id: "ipad",
+          serial,
+          name: "iPad",
+          platform: "ios" as const,
+          kind: "iPad Pro",
+          booted: true,
+        },
+      ],
+      assertTargetControl: async () => ({
+        id: "lease",
+        projectId: "runtime-project",
+        poolId: "tablets",
+        deviceSerial: serial,
+        ownerId: "human:runtime-test",
+        status: "leased",
+        leasedAt: 1,
+        expiresAt: Date.now() + 60_000,
+      }),
+      recoverTarget: async (targetSerial) => {
+        recoveryCalls += 1;
+        return {
+          serial: targetSerial,
+          recovered: true,
+          ready: true,
+          summary: "Relay verified the repaired target.",
+          actions: [],
+          session: { status: "restored" as const, detail: "Ready for a fresh proof." },
+        };
+      },
+      captureScreenshot: async () => recoveryFenceScreenshot(serial, captures++ === 0 ? 10 : 12),
+      captureSnapshot: async () => recoveryFenceSnapshot(serial, 11),
+      cleanupScreenshot: async () => undefined,
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/recover`, {
+      method: "POST",
+      headers: headers("target.recover"),
+      body: JSON.stringify({ serial, recoveryFenceAssignmentId: "interrupted-recovery-job" }),
+    });
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as {
+      recoveryFenceRelease: {
+        assignmentId: string;
+        releasedAt: number;
+        reproofId: string;
+        evidence: { manifest: { uri: string }; semanticSnapshot: { uri: string } };
+      };
+    };
+    assert.equal(recoveryCalls, 1);
+    assert.equal(captures, 2);
+    assert.equal(body.recoveryFenceRelease.assignmentId, "interrupted-recovery-job");
+    assert.match(
+      body.recoveryFenceRelease.reproofId,
+      /^durable-recovery-fence-reproof:[a-f0-9]{64}$/u,
+    );
+    assert.match(body.recoveryFenceRelease.evidence.manifest.uri, /^relay-evidence:\/\//u);
+    assert.match(body.recoveryFenceRelease.evidence.semanticSnapshot.uri, /^relay-evidence:\/\//u);
+    assert.deepEqual(store.get("interrupted-recovery-job")?.recoveryFenceRelease, {
+      releasedAt: 20,
+      releasedBy: "human:runtime-test",
+      reproofId: body.recoveryFenceRelease.reproofId,
+    });
+    const activity = await listActivity({ organizationId: "relay", projectId: "runtime-project" });
+    const authorization = activity.items.find(
+      (item) => item.eventType === "target.recovery-fence.release-authorized",
+    );
+    assert.equal(authorization?.actorId, "human:runtime-test");
+    assert.equal(authorization?.actorKind, "human");
+    assert.equal(authorization?.operationId, "target.recover");
+    assert.ok(authorization?.requestId, "the release audit must retain the operation request id");
+    assert.equal(authorization?.resourceId, "interrupted-recovery-job");
+    assert.equal(authorization?.evidenceIds?.length, 3);
+  } finally {
+    await server.close();
+    store.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("target recovery keeps an interrupted fence when fresh semantic evidence is unavailable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-recovery-fence-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const store = new DurableWorkerAssignmentStore(join(root, "recovery-fence.sqlite"));
+  const serial = "ipad-recovery-fence";
+  seedRecoveryFence(store, serial);
+  let captures = 0;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      getDurableWorkerAssignments: () => store,
+      listDevices: async () => [
+        {
+          id: "ipad",
+          serial,
+          name: "iPad",
+          platform: "ios" as const,
+          kind: "iPad Pro",
+          booted: true,
+        },
+      ],
+      assertTargetControl: async () => ({
+        id: "lease",
+        projectId: "runtime-project",
+        poolId: "tablets",
+        deviceSerial: serial,
+        ownerId: "human:runtime-test",
+        status: "leased",
+        leasedAt: 1,
+        expiresAt: Date.now() + 60_000,
+      }),
+      recoverTarget: async (targetSerial) => ({
+        serial: targetSerial,
+        recovered: true,
+        ready: true,
+        summary: "Relay repaired the device connection.",
+        actions: [],
+        session: { status: "restored" as const, detail: "Pixels remain available." },
+      }),
+      captureScreenshot: async () => recoveryFenceScreenshot(serial, captures++ === 0 ? 10 : 12),
+      captureSnapshot: async () => ({
+        ...recoveryFenceSnapshot(serial, 11),
+        inspectable: false,
+        nodes: [],
+        interactive: [],
+        source: "pixels-only" as const,
+        readiness: {
+          ...recoveryFenceReadiness(),
+          semanticControl: {
+            mode: "accessibility" as const,
+            state: "unavailable" as const,
+            freshness: "unproven" as const,
+            reason: "probe-failed" as const,
+          },
+        },
+      }),
+      cleanupScreenshot: async () => undefined,
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/recover`, {
+      method: "POST",
+      headers: headers("target.recover"),
+      body: JSON.stringify({ serial, recoveryFenceAssignmentId: "interrupted-recovery-job" }),
+    });
+    assert.equal(response.status, 409);
+    const body = (await response.json()) as { code?: string };
+    assert.equal(body.code, "DURABLE_RECOVERY_FENCE_SEMANTIC_EVIDENCE_INVALID");
+    assert.equal(captures, 2, "the semantic read is bracketed even when it cannot release");
+    assert.equal(store.get("interrupted-recovery-job")?.recoveryFenceRelease, undefined);
+  } finally {
+    await server.close();
+    store.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("target recovery rejects a durable fence from another target before it starts recovery", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-recovery-fence-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const store = new DurableWorkerAssignmentStore(join(root, "recovery-fence.sqlite"));
+  seedRecoveryFence(store, "ipad-fenced");
+  let recoveryCalls = 0;
+  let captureCalls = 0;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      getDurableWorkerAssignments: () => store,
+      listDevices: async () => [
+        {
+          id: "other-ipad",
+          serial: "ipad-other",
+          name: "Other iPad",
+          platform: "ios" as const,
+          kind: "iPad Pro",
+          booted: true,
+        },
+      ],
+      assertTargetControl: async () => {
+        throw new Error("target control must not be acquired for a mismatched fence");
+      },
+      recoverTarget: async () => {
+        recoveryCalls += 1;
+        throw new Error("recovery must not run for a mismatched fence");
+      },
+      captureScreenshot: async () => {
+        captureCalls += 1;
+        throw new Error("capture must not run for a mismatched fence");
+      },
+      captureSnapshot: async () => {
+        captureCalls += 1;
+        throw new Error("capture must not run for a mismatched fence");
+      },
+      cleanupScreenshot: async () => undefined,
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/recover`, {
+      method: "POST",
+      headers: headers("target.recover"),
+      body: JSON.stringify({
+        serial: "ipad-other",
+        recoveryFenceAssignmentId: "interrupted-recovery-job",
+      }),
+    });
+    assert.equal(response.status, 409);
+    const body = (await response.json()) as { code?: string };
+    assert.equal(body.code, "DURABLE_RECOVERY_FENCE_TARGET_MISMATCH");
+    assert.equal(recoveryCalls, 0);
+    assert.equal(captureCalls, 0);
+    assert.equal(store.get("interrupted-recovery-job")?.recoveryFenceRelease, undefined);
+  } finally {
+    await server.close();
+    store.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a network-authenticated recovery request cannot release a local durable fence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-recovery-fence-remote-"));
+  const previous = {
+    stateDir: process.env.RELAY_STATE_DIR,
+    redaction: process.env.RELAY_REDACTION_MODE,
+    role: process.env.RELAY_AUTH_ROLE,
+    organization: process.env.RELAY_AUTH_ORGANIZATION_ID,
+    projects: process.env.RELAY_AUTH_PROJECT_IDS,
+  };
+  process.env.RELAY_STATE_DIR = root;
+  process.env.RELAY_REDACTION_MODE = "on";
+  process.env.RELAY_AUTH_ROLE = "runner";
+  process.env.RELAY_AUTH_ORGANIZATION_ID = "relay";
+  process.env.RELAY_AUTH_PROJECT_IDS = "runtime-project";
+  const token = "target-recovery-fence-remote-test-token";
+  let targetWork = 0;
+  const server = await startServer({
+    host: "0.0.0.0",
+    port: 0,
+    token,
+    targetRuntime: {
+      getDurableWorkerAssignments: () => {
+        throw new Error("remote callers must not read local durable assignments");
+      },
+      listDevices: async () => {
+        targetWork += 1;
+        return [];
+      },
+      assertTargetControl: async () => {
+        targetWork += 1;
+        throw new Error("remote callers must not acquire target control");
+      },
+      recoverTarget: async () => {
+        targetWork += 1;
+        throw new Error("remote callers must not start target recovery");
+      },
+      captureScreenshot: async () => {
+        targetWork += 1;
+        throw new Error("remote callers must not capture local evidence");
+      },
+      captureSnapshot: async () => {
+        targetWork += 1;
+        throw new Error("remote callers must not capture local evidence");
+      },
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/recover`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+        "x-project-id": "runtime-project",
+        "x-organization-id": "relay",
+        "x-relay-operation-id": "target.recover",
+        "x-relay-request-id": crypto.randomUUID(),
+        "x-relay-command-at": String(Date.now()),
+        "idempotency-key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({
+        serial: "ipad-1",
+        recoveryFenceAssignmentId: "interrupted-recovery-job",
+      }),
+    });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), {
+      error: "Durable recovery-fence release is available only from the local Relay host",
+      code: "DURABLE_RECOVERY_FENCE_LOCAL_ONLY",
+    });
+    assert.equal(targetWork, 0);
+  } finally {
+    await server.close();
+    if (previous.stateDir === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous.stateDir;
+    if (previous.redaction === undefined) delete process.env.RELAY_REDACTION_MODE;
+    else process.env.RELAY_REDACTION_MODE = previous.redaction;
+    if (previous.role === undefined) delete process.env.RELAY_AUTH_ROLE;
+    else process.env.RELAY_AUTH_ROLE = previous.role;
+    if (previous.organization === undefined) delete process.env.RELAY_AUTH_ORGANIZATION_ID;
+    else process.env.RELAY_AUTH_ORGANIZATION_ID = previous.organization;
+    if (previous.projects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
+    else process.env.RELAY_AUTH_PROJECT_IDS = previous.projects;
+    await rm(root, { recursive: true, force: true });
   }
 });

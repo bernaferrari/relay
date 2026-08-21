@@ -1,12 +1,6 @@
 /** Test-run sessions with action traces, heal retries, and disk persistence. */
 import { now, publish } from "./events.js";
-import {
-  createDevice,
-  openApp,
-  rememberedTargetApplication,
-  resetDeviceClient,
-  type Device,
-} from "./device.js";
+import { resetDeviceClient, type Device } from "./device.js";
 import { runWithTargetContext } from "./target-context.js";
 import type { Glyph, TraceFrameRef, TraceStep } from "./trace.js";
 import { persistRun, writeFramePng, ensureRunDir, type PersistedRun } from "./runs.js";
@@ -43,8 +37,6 @@ import {
   stopRunEvidence,
   type RunEvidenceHandle,
 } from "./run-evidence.js";
-import { getBrowserDevice } from "./browser-target.js";
-import { preflightTarget, readTarget } from "./targets.js";
 import { TargetWorkerScheduler, type TargetWorkerStatus } from "./target-worker.js";
 import { requireOperationContext, runWithOperationContext } from "./operation-context.js";
 import { redactText, visualEvidenceAllowed } from "./redaction.js";
@@ -55,7 +47,6 @@ import {
   classifySessionError,
   createJobLeaseValidator,
   failedCampaignChecks,
-  resolveSessionDeviceMeta,
 } from "./session-job-support.js";
 import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import { isTargetUnavailableError } from "./target-unavailable.js";
@@ -88,6 +79,14 @@ import {
   requireScopedAppMapTestExecutionSource,
   revalidateAppMapTestExecutionSource,
 } from "./app-map-test-execution-gate.js";
+import {
+  acquirePreparedSessionDevice,
+  assertProviderTargetJobAdmission,
+  captureProviderDriverRegistry,
+  prepareSessionTarget,
+  runProviderTargetJobIfNeeded,
+  type ProviderSessionExecution,
+} from "./session-provider-execution.js";
 export type { EnqueueJobInput, JobErrorCode, JobStatus, TestJob } from "./session-contract.js";
 export { summarizeJob } from "./session-summary.js";
 export { captureAutomaticState } from "./session-automatic-evidence.js";
@@ -149,11 +148,13 @@ export function replayPersistedRun(run: PersistedRun): TestJob {
 }
 
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
-  return createSessionJob(input, {
+  const job = createSessionJob(input, {
     findJob: (id) => jobRegistry.get(id),
     toTransport: jobForTransport,
     attemptSeed,
   });
+  captureProviderDriverRegistry(job);
+  return job;
 }
 
 /** The runtime keeps private values only in memory for step resolution. Every
@@ -170,8 +171,10 @@ export function prepareJobBatch(inputs: readonly SessionBatchInput[]): DeferredS
   requireOperationContext();
   return prepareSessionJobBatch(inputs, {
     createJob: (input) => makeJob(input),
-    validateJob: (job) =>
-      requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromJob(job)),
+    validateJob: (job) => {
+      requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromJob(job));
+      assertProviderTargetJobAdmission(job);
+    },
     registerCompletion(job) {
       let resolve!: () => void;
       const promise = new Promise<void>((done) => (resolve = done));
@@ -331,8 +334,12 @@ export function cancelJob(id: string): TestJob {
   requestCancel(id);
   const finishCompensatingCleanup = compensatingCleanupIsArmed(id);
   if ((job.status === "running" || job.status === "paused") && !finishCompensatingCleanup) {
-    void hardStopDeviceSession(job.targetContext);
-    resetDeviceClient(job.targetContext);
+    // Provider sessions have no AgentDevice session to close. A registered
+    // provider owns any cancellation transport behind its driver boundary.
+    if (job.targetContext.kind === "device") {
+      void hardStopDeviceSession(job.targetContext);
+      resetDeviceClient(job.targetContext);
+    }
   }
 
   if (job.status === "queued") {
@@ -566,16 +573,25 @@ async function executeJob(id: string, workerInstanceId?: string): Promise<void> 
     );
     return;
   }
-  if (job.targetContext.kind === "cloud") {
-    // A provider session must never be passed to local AgentDevice cleanup or
-    // client construction. Until a registered provider driver owns this
-    // target, fail before anything can affect a same-named local session.
-    await finishPreExecutionFailure(
-      job,
-      `No registered Relay provider driver can execute ${job.targetContext.provider} session ${job.targetContext.sessionId}.`,
-    );
+
+  if (
+    await runProviderTargetJobIfNeeded(job, (providerExecution) =>
+      executeJobOnTarget(job, workerInstanceId, providerExecution),
+    )
+  )
     return;
-  }
+
+  await executeJobOnTarget(job, workerInstanceId);
+}
+
+/** Execute the generic lifecycle after a target-specific boundary has chosen
+ * its provider-owned or local Device facade. */
+async function executeJobOnTarget(
+  job: TestJob,
+  workerInstanceId?: string,
+  providerExecution?: ProviderSessionExecution,
+): Promise<void> {
+  const id = job.id;
   ensureControl(id);
   const validateLease = createJobLeaseValidator(job);
   if (validateLease) {
@@ -622,12 +638,8 @@ async function executeJob(id: string, workerInstanceId?: string): Promise<void> 
   activeJobIds.add(id);
   job.status = "running";
   job.startedAt = now();
-  const browserTarget = job.browserTargetId ? await readTarget(job.browserTargetId) : null;
-  const meta =
-    job.targetKind === "browser"
-      ? { deviceName: browserTarget?.name, deviceAvailable: Boolean(browserTarget) }
-      : await resolveSessionDeviceMeta(job.serial, job.platform);
-  if (meta.deviceName) job.deviceName = meta.deviceName;
+  const target = await prepareSessionTarget(job, providerExecution);
+  if (target.deviceName) job.deviceName = target.deviceName;
   await ensureRunDir(job).catch(() => undefined);
 
   publish({
@@ -670,7 +682,7 @@ async function executeJob(id: string, workerInstanceId?: string): Promise<void> 
   try {
     await cooperativeCheckpoint(id);
 
-    if ((job.serial || job.browserTargetId) && meta.deviceAvailable === false) {
+    if ((job.serial || job.browserTargetId) && target.deviceAvailable === false) {
       throw new Error(
         job.targetKind === "browser"
           ? `managed browser missing: ${job.browserTargetId}`
@@ -678,41 +690,9 @@ async function executeJob(id: string, workerInstanceId?: string): Promise<void> 
       );
     }
 
-    if (job.targetKind === "browser" && browserTarget) {
-      const preflight = await preflightTarget(browserTarget);
-      job.artifacts.push({ kind: "target-preflight", capturedAt: now(), data: preflight });
-      if (!preflight.ok) {
-        const failures = preflight.checks
-          .filter((check) => check.status === "fail")
-          .map((check) => check.message)
-          .join("; ");
-        throw new Error(`environment preflight failed: ${failures}`);
-      }
-      device = await getBrowserDevice(browserTarget.id);
-    } else {
-      // A physical iOS target uses one long-lived XCTest process. Stopping it
-      // here backgrounds the app immediately before source verification and
-      // turns a valid map run into a tap on SpringBoard. Simulators and Android
-      // still benefit from releasing stale bindings between jobs.
-      if (!meta.physicalIos) {
-        await hardStopDeviceSession(job.targetContext);
-        resetDeviceClient(job.targetContext);
-      }
-      device = createDevice();
-      if (job.platform === "ios" && job.serial) {
-        const app = await rememberedTargetApplication(job.targetContext);
-        if (app) {
-          pushLog(`session: prime ${app} without relaunch`);
-          await openApp(device, app, { relaunch: false }).catch((error) => {
-            pushLog(
-              `warn: iOS session still unbound (${error instanceof Error ? error.message : String(error)}) — continuing with pixels`,
-            );
-          });
-        }
-      }
-    }
+    device = await acquirePreparedSessionDevice(job, target, pushLog);
     evidence = await startRunEvidence(job, device, pushLog, evidence, {
-      physicalIos: meta.physicalIos,
+      physicalIos: target.physicalIos,
     });
 
     // Heartbeat: surface cancel even during long SDK calls; hard-stop session.
@@ -726,7 +706,7 @@ async function executeJob(id: string, workerInstanceId?: string): Promise<void> 
         throwIfCancelled(id);
       } catch (err) {
         pendingCancel = err instanceof Error ? err : new Error(String(err));
-        if (!compensatingCleanupIsArmed(id)) {
+        if (!compensatingCleanupIsArmed(id) && job.targetContext.kind === "device") {
           void hardStopDeviceSession(job.targetContext);
           resetDeviceClient(job.targetContext);
         }
@@ -821,8 +801,10 @@ async function executeJob(id: string, workerInstanceId?: string): Promise<void> 
       err instanceof JobControlOwnershipError ||
       (err instanceof Error && err.name === "JobControlOwnershipError")
     ) {
-      await hardStopDeviceSession(job.targetContext);
-      resetDeviceClient(job.targetContext);
+      if (job.targetContext.kind === "device") {
+        await hardStopDeviceSession(job.targetContext);
+        resetDeviceClient(job.targetContext);
+      }
     }
     await finishEvidence();
     const message = err instanceof Error ? err.message : String(err);

@@ -1,0 +1,153 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import {
+  durableWorkerAssignmentStore,
+  resetDurableWorkerAssignmentStoreForTests,
+} from "./durable-worker-assignments.js";
+import { setCloudDeviceProvider, setLocalDeviceProvider } from "./device-factory.js";
+import { createDeterministicProviderTestDriver } from "./deterministic-provider-test-driver.js";
+import { runWithOperationContext } from "./operation-context.js";
+import type { Recipe } from "./recipes.js";
+import { readPersistedRun } from "./runs.js";
+import { runJobSync } from "./session.js";
+import { TargetDriverRegistry, runWithTargetDriverRegistry } from "./target-driver-registry.js";
+
+test("a registered provider session executes through driver control and capture without legacy device fallback", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-provider-driver-execution-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  const previousAutomaticVisualEvidence = process.env.RELAY_AUTO_VISUAL_EVIDENCE;
+  process.env.RELAY_STATE_DIR = join(root, "state");
+  process.env.RELAY_RUNS_DIR = join(root, "runs");
+  process.env.RELAY_AUTO_VISUAL_EVIDENCE = "0";
+  resetDurableWorkerAssignmentStoreForTests();
+
+  const fixture = createDeterministicProviderTestDriver();
+  const registry = new TargetDriverRegistry([fixture.driver]);
+  const target = fixture.target("same-text-as-a-local-serial", "ios");
+  const recipe: Recipe = {
+    id: "provider-bounded-capture",
+    title: "Provider bounded capture",
+    source: "builtin",
+    steps: [{ kind: "screenshot", caption: "provider capture" }],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  let localFactoryCalls = 0;
+  let legacyCloudFactoryCalls = 0;
+  setLocalDeviceProvider({
+    kind: "device",
+    create: () => {
+      localFactoryCalls += 1;
+      throw new Error("registered provider execution must not create a local AgentDevice client");
+    },
+  });
+  setCloudDeviceProvider({
+    kind: "cloud",
+    provider: target.provider.key,
+    create: () => {
+      legacyCloudFactoryCalls += 1;
+      throw new Error("registered provider execution must not use the legacy cloud device factory");
+    },
+  });
+
+  try {
+    const job = await runWithTargetDriverRegistry(
+      registry,
+      async () =>
+        await runWithOperationContext(
+          {
+            schemaVersion: 1,
+            actorId: "agent:provider-driver-test",
+            actorKind: "agent",
+            organizationId: "org-provider-driver-test",
+            projectId: "project-provider-driver-test",
+            operationId: "job.start",
+            requestId: crypto.randomUUID(),
+            idempotencyKey: crypto.randomUUID(),
+            issuedAt: Date.now(),
+            leaseId: "provider-lease-42",
+            leaseOwnerId: "agent:provider-lease-owner",
+          },
+          async () =>
+            await runJobSync({
+              recipe: recipe.id,
+              recipeSnapshot: recipe,
+              recipeGraph: { [recipe.id]: recipe },
+              executionTarget: target,
+              projectId: "project-provider-driver-test",
+              ownerId: "agent:provider-driver-test",
+            }),
+        ),
+    );
+
+    assert.equal(job.status, "ok");
+    assert.equal(job.serial, undefined, "a provider session never becomes a local serial");
+    assert.equal(localFactoryCalls, 0);
+    assert.equal(legacyCloudFactoryCalls, 0);
+    assert.ok(
+      fixture.events.indexOf(`control.enter:${target.provider.key}:${target.targetId}`) >= 0,
+      "the registered control scope owns the run",
+    );
+    assert.ok(
+      fixture.events.indexOf(`capture.enter:${target.provider.key}:${target.targetId}`) >= 0,
+      "the registered capture scope owns the run",
+    );
+    assert.ok(
+      fixture.events.includes(`capture.screenshot:${target.targetId}`),
+      "the bounded recipe captured through the provider Device facade",
+    );
+    assert.ok(
+      fixture.events.indexOf(`control.enter:${target.provider.key}:${target.targetId}`) <
+        fixture.events.indexOf(`capture.enter:${target.provider.key}:${target.targetId}`),
+    );
+    assert.ok(
+      fixture.events.indexOf(`capture.enter:${target.provider.key}:${target.targetId}`) <
+        fixture.events.indexOf(`capture.screenshot:${target.targetId}`),
+    );
+
+    const persisted = await readPersistedRun(job.id);
+    assert.ok(persisted);
+    assert.deepEqual(persisted.executionTarget, target);
+    assert.equal(persisted.executionProvenance?.leaseId, "provider-lease-42");
+    assert.deepEqual(
+      persisted.artifacts.find((artifact) => artifact.kind === "target-driver-execution")?.data,
+      {
+        schemaVersion: 1,
+        target,
+        provider: target.provider,
+        capabilities: ["control", "capture"],
+        lease: { id: "provider-lease-42", ownerId: "agent:provider-lease-owner" },
+      },
+    );
+
+    const assignment = durableWorkerAssignmentStore().get(job.id);
+    assert.ok(assignment);
+    assert.equal(assignment.status, "ok");
+    assert.deepEqual(assignment.executionTarget, target);
+    assert.deepEqual(assignment.lease, {
+      leaseId: "provider-lease-42",
+      ownerId: "agent:provider-lease-owner",
+      actorId: "agent:provider-driver-test",
+    });
+    assert.match(
+      assignment.lane.workerId,
+      /^remote:relay\.test\.deterministic-provider:ios:target:/u,
+    );
+  } finally {
+    setLocalDeviceProvider(undefined);
+    setCloudDeviceProvider(undefined);
+    resetDurableWorkerAssignmentStoreForTests();
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    if (previousAutomaticVisualEvidence === undefined)
+      delete process.env.RELAY_AUTO_VISUAL_EVIDENCE;
+    else process.env.RELAY_AUTO_VISUAL_EVIDENCE = previousAutomaticVisualEvidence;
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -469,6 +469,7 @@ test("target capability outputs keep pixel, semantic, and evidence proofs distin
   const output = {
     nodes: [],
     interactive: [],
+    inspectable: false,
     tree: "Window · Settings",
     readiness,
   };
@@ -483,6 +484,32 @@ test("target capability outputs keep pixel, semantic, and evidence proofs distin
         },
       }),
     /semanticControl mode/u,
+  );
+  const pixelsOnly = {
+    ...output,
+    tree: "",
+    readiness: {
+      ...readiness,
+      semanticControl: {
+        mode: "accessibility" as const,
+        state: "unavailable" as const,
+        freshness: "unproven" as const,
+        reason: "probe-in-flight" as const,
+      },
+    },
+  };
+  assert.deepEqual(
+    operationDefinition("target.snapshot.capture").output.parse(pixelsOnly),
+    pixelsOnly,
+    "a pixels-first iOS observation must remain useful while XCTest has no tree",
+  );
+  assert.throws(
+    () =>
+      operationDefinition("target.snapshot.capture").output.parse({
+        ...pixelsOnly,
+        inspectable: true,
+      }),
+    /explicitly uninspectable/u,
   );
 
   const inFlight = {
@@ -544,6 +571,81 @@ test("target capability outputs keep pixel, semantic, and evidence proofs distin
         },
       }),
     /code.*outcome/u,
+  );
+});
+
+test("target recovery exposes durable fence release evidence only as an immutable ready reproof", () => {
+  const evidence = (kind: "screenshot" | "snapshot", sha256: string) => ({
+    id: `${kind}-${sha256.slice(0, 8)}`,
+    kind,
+    capturedAt: 12,
+    uri: `relay-evidence://${sha256}`,
+    sha256,
+    bytes: 128,
+    mime: kind === "screenshot" ? "image/png" : "application/json",
+  });
+  const manifestHash = "a".repeat(64);
+  const output = {
+    recovery: {
+      serial: "ipad-1",
+      recovered: true,
+      ready: true,
+      summary: "Relay repaired the target.",
+      actions: [],
+      session: { status: "restored" as const, detail: "Ready for a fresh proof." },
+    },
+    recoveryFenceRelease: {
+      assignmentId: "interrupted-job-1",
+      releasedAt: 12,
+      reproofId: `durable-recovery-fence-reproof:${manifestHash}`,
+      evidence: {
+        manifest: evidence("snapshot", manifestHash),
+        screenshotBefore: evidence("screenshot", "b".repeat(64)),
+        semanticSnapshot: evidence("snapshot", "c".repeat(64)),
+        screenshotAfter: evidence("screenshot", "d".repeat(64)),
+      },
+    },
+  };
+  assert.deepEqual(operationDefinition("target.recover").output.parse(output), output);
+  assert.deepEqual(
+    operationDefinition("target.recover").input.parse({
+      serial: "ipad-1",
+      recoveryFenceAssignmentId: "interrupted-job-1",
+    }),
+    { serial: "ipad-1", recoveryFenceAssignmentId: "interrupted-job-1" },
+  );
+  assert.throws(
+    () =>
+      operationDefinition("target.recover").input.parse({
+        serial: "ipad-1",
+        recoveryFenceAssignmentId: "   ",
+      }),
+    /non-empty identifier/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("target.recover").output.parse({
+        ...output,
+        recoveryFenceRelease: {
+          ...output.recoveryFenceRelease,
+          evidence: {
+            ...output.recoveryFenceRelease.evidence,
+            manifest: {
+              ...output.recoveryFenceRelease.evidence.manifest,
+              uri: "relay-evidence://not-content-addressed",
+            },
+          },
+        },
+      }),
+    /content-addressed Relay evidence/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("target.recover").output.parse({
+        ...output,
+        recovery: { ...output.recovery, ready: false },
+      }),
+    /requires a ready recovered target/u,
   );
 });
 
@@ -700,6 +802,29 @@ test("runtime parsers reject malformed input and output", () => {
   assert.throws(
     () => operationDefinition("job.start").input.parse({ serial: "device" }),
     /job recipe/,
+  );
+  const providerTarget = {
+    schemaVersion: 1,
+    kind: "provider-session",
+    provider: { key: "relay.test.provider", scope: "remote" },
+    targetId: "session-42",
+    platform: "ios",
+    identity: { kind: "provider-session", value: "session-42" },
+  } as const;
+  assert.deepEqual(
+    operationDefinition("job.start").input.parse({
+      recipe: "provider-smoke",
+      executionTarget: providerTarget,
+    }),
+    { recipe: "provider-smoke", executionTarget: providerTarget },
+  );
+  assert.throws(
+    () =>
+      operationDefinition("job.start").input.parse({
+        recipe: "provider-smoke",
+        executionTarget: { ...providerTarget, targetId: "different-session" },
+      }),
+    /job executionTarget/,
   );
   assert.deepEqual(
     operationDefinition("run.share.create").input.parse({

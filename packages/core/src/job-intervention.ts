@@ -1,6 +1,17 @@
 import type { OperationContext } from "./operation-context.js";
 import type { TestJob } from "./session-contract.js";
 
+export class HumanInterventionReproofUnavailableError extends Error {
+  readonly code = "HUMAN_INTERVENTION_REPROOF_UNQUALIFIED" as const;
+
+  constructor() {
+    super(
+      "Resume requires a fresh current accessibility snapshot with named controls; pixels-only or stale observations keep the intervention paused.",
+    );
+    this.name = "HumanInterventionReproofUnavailableError";
+  }
+}
+
 type InterventionArtifactData = {
   requestCapturedAt?: number;
   requestId?: string;
@@ -10,6 +21,55 @@ function dataOf(artifact: TestJob["artifacts"][number]): InterventionArtifactDat
   return artifact.data && typeof artifact.data === "object"
     ? (artifact.data as InterventionArtifactData)
     : {};
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * A human action changes the target outside Relay's command boundary. Before
+ * a paused run can resume, the replacement observation must be the semantic
+ * capture that just completed—not a deterministic empty-tree digest, a stale
+ * AX proof, or a pixels-only fallback whose raster is not durable evidence.
+ */
+function isQualifiedHumanInterventionReproof(observation: unknown): boolean {
+  const value = objectValue(observation);
+  if (!value || value.inspectable !== true) return false;
+  const capturedAt = value.capturedAt;
+  if (typeof capturedAt !== "number" || !Number.isFinite(capturedAt)) return false;
+  if (
+    typeof value.nodeCount !== "number" ||
+    !Number.isInteger(value.nodeCount) ||
+    value.nodeCount < 1
+  ) {
+    return false;
+  }
+  const screenIdentity = objectValue(value.screenIdentity);
+  if (
+    !screenIdentity ||
+    typeof screenIdentity.fingerprint !== "string" ||
+    !screenIdentity.fingerprint.trim()
+  ) {
+    return false;
+  }
+  const semantic = objectValue(objectValue(value.readiness)?.semanticControl);
+  const proof = objectValue(semantic?.proof);
+  return (
+    semantic?.state === "proven" &&
+    semantic.freshness === "current" &&
+    typeof proof?.at === "number" &&
+    Number.isFinite(proof.at) &&
+    proof.at === capturedAt
+  );
+}
+
+export function assertQualifiedHumanInterventionReproof(observation: unknown): void {
+  if (!isQualifiedHumanInterventionReproof(observation)) {
+    throw new HumanInterventionReproofUnavailableError();
+  }
 }
 
 function lastArtifactIndex(
@@ -102,6 +162,7 @@ export function recordHumanInterventionReproof(
 ): void {
   const owned = operationOwnsHumanIntervention(job, operation);
   if (!owned) throw new Error("Only the intervention owner can re-prove the paused target state");
+  assertQualifiedHumanInterventionReproof(observation);
   job.artifacts.push({
     kind: "human-intervention-reproof",
     capturedAt: Date.now(),
