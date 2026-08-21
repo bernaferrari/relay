@@ -113,6 +113,7 @@ import { handleControlPlaneRoute } from "./control-plane-routes.js";
 import { handleRecipeRoute } from "./recipe-routes.js";
 import { handleInteractionRoute } from "./interaction-routes.js";
 import { handleStepRunRoute, type StepRunRouteRuntime } from "./step-run-route.js";
+import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";
 import {
   handleTargetRuntimeRoute,
   type TargetRuntimeRouteRuntime,
@@ -174,6 +175,7 @@ async function handleRequest(
   jobRouteRuntime?: Partial<JobRouteRuntime>,
   runRouteRuntime?: Partial<RunRouteRuntime>,
   stepRunRuntime?: Partial<StepRunRouteRuntime>,
+  campaignDurationRuntime?: CampaignDurationRouteRuntime,
 ): Promise<void> {
   const method = req.method ?? "GET";
   const host = req.headers.host ?? "localhost";
@@ -269,6 +271,7 @@ async function handleRequest(
         response: res,
         scope,
         runtime: targetRuntime,
+        campaignDurationRuntime,
       })
     )
       return;
@@ -822,6 +825,7 @@ async function startServerWithStateLease(
           opts.jobRouteRuntime,
           opts.runRouteRuntime,
           opts.stepRunRuntime,
+          opts.campaignDurationRuntime,
         ),
       )
     ) {

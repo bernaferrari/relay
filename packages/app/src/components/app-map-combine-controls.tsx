@@ -2,11 +2,17 @@ import { For, Show, createSignal } from "solid-js";
 import type {
   AppMapCapturePolicy,
   AppMapCombineCellRuntimeProfile,
+  AppMapCombineCellTargetBinding,
   AppMapVariable,
   CaseExpansionStrategy,
 } from "@relay/protocol";
 import { bindingForCell } from "../lib/app-map-combine-profiles";
 import type { CombineRuntimeProfileOption } from "../lib/app-map-combine-profiles";
+import {
+  combineCellTargetBindingFor,
+  isBoundLocalCombineTargetReady as isTargetReady,
+  type LocalCombineTargetOption,
+} from "../lib/app-map-combine-targets";
 import { clampRovingIndex, nextGridRovingIndex } from "../lib/roving-focus";
 import { Button } from "@relay/ui/button";
 import type { TestCandidate } from "../lib/app-map-combine-candidates";
@@ -14,11 +20,11 @@ import type { CombineProjection } from "../lib/app-map-combine-presentation";
 import { cn } from "../lib/cn";
 import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 import { AppMapCombineProfilePicker } from "./app-map-combine-profile-picker";
+import { AppMapCombineTargetPicker } from "./app-map-combine-target-picker";
 import { AppMapMatrixValuePicker } from "./app-map-matrix-value-picker";
 import { Icon } from "./icon";
 
 export type { TestCandidate } from "../lib/app-map-combine-candidates";
-
 export type SimpleCaptureMode = Exclude<AppMapCapturePolicy["mode"], "checkpoints">;
 
 export function candidateKey(candidate: TestCandidate): string {
@@ -145,9 +151,17 @@ export function AppMapCombinePlan(props: {
   busy: boolean;
   canRunOnDevice: boolean;
   cellRuntimeProfiles: AppMapCombineCellRuntimeProfile[];
+  cellTargetBindings: AppMapCombineCellTargetBinding[];
+  localTargets: LocalCombineTargetOption[];
+  localCampaignMode: boolean;
   runtimeProfiles: CombineRuntimeProfileOption[];
   device?: { serial?: string; platform?: string };
   onBindCell: (testId: string, values: Record<string, string>, targetProfileId: string) => void;
+  onBindCellTarget: (
+    testId: string,
+    values: Record<string, string>,
+    target?: LocalCombineTargetOption["target"],
+  ) => void;
   onCreateVariable: () => void;
   onEditVariable: (id: string) => void;
   onToggleVariable: (variable: AppMapVariable) => void;
@@ -387,6 +401,12 @@ export function AppMapCombinePlan(props: {
                 : ""}
             </span>
           </div>
+          <Show when={!props.localTargets.length && !props.localCampaignMode}>
+            <p class="m-0 rounded-lg bg-[var(--surface-base)] px-2.5 py-2 text-micro/[1.4] text-[var(--text-weak)]">
+              Local multi-target admission needs an attached Android or iOS target. Provider/cloud
+              capacity is not configured in Relay.
+            </p>
+          </Show>
           <Show
             when={!props.projection.issue}
             fallback={
@@ -399,11 +419,15 @@ export function AppMapCombinePlan(props: {
               worlds={props.projection.worlds}
               tests={props.selectedTests}
               cellRuntimeProfiles={props.cellRuntimeProfiles}
+              cellTargetBindings={props.cellTargetBindings}
+              localTargets={props.localTargets}
+              localCampaignMode={props.localCampaignMode}
               runtimeProfiles={props.runtimeProfiles}
               device={props.device}
               busy={props.busy}
               canRunOnDevice={props.canRunOnDevice}
               onBindCell={props.onBindCell}
+              onBindCellTarget={props.onBindCellTarget}
               onRunCell={props.onRunCell}
             />
           </Show>
@@ -417,11 +441,19 @@ function CombinePlanGrid(props: {
   worlds: CombineProjection["worlds"];
   tests: TestCandidate[];
   cellRuntimeProfiles: AppMapCombineCellRuntimeProfile[];
+  cellTargetBindings: AppMapCombineCellTargetBinding[];
+  localTargets: LocalCombineTargetOption[];
+  localCampaignMode: boolean;
   runtimeProfiles: CombineRuntimeProfileOption[];
   device?: { serial?: string; platform?: string };
   busy: boolean;
   canRunOnDevice: boolean;
   onBindCell: (testId: string, values: Record<string, string>, targetProfileId: string) => void;
+  onBindCellTarget: (
+    testId: string,
+    values: Record<string, string>,
+    target?: LocalCombineTargetOption["target"],
+  ) => void;
   onRunCell: (worldIndex: number, test: TestCandidate) => void;
 }) {
   const [focusIndex, setFocusIndex] = createSignal(0);
@@ -470,10 +502,21 @@ function CombinePlanGrid(props: {
                     );
                     const binding = () =>
                       bindingForCell(props.cellRuntimeProfiles, test.id, values);
+                    const cellTarget = { testId: test.id, values };
+                    const targetBinding = () =>
+                      combineCellTargetBindingFor(props.cellTargetBindings, cellTarget);
+                    const targetReady = () => isTargetReady(targetBinding(), props.localTargets);
                     const cellIndex = () => worldIndex() * columns() + testIndex();
-                    const status = binding()
-                      ? `Bound to ${binding()!.targetProfileId}`
-                      : "Missing profile";
+                    const status = [
+                      binding()
+                        ? `Profile ${binding()!.targetProfileId}`
+                        : "Missing runtime profile",
+                      props.localCampaignMode
+                        ? targetBinding()
+                          ? `Target ${targetBinding()!.target.targetId}`
+                          : "Missing local target"
+                        : "Single selected target mode",
+                    ].join(". ");
                     return (
                       <td class="px-1.5 py-1">
                         <div class="grid gap-1">
@@ -501,17 +544,36 @@ function CombinePlanGrid(props: {
                               focusCell(next);
                             }}
                           />
+                          <Show when={props.localCampaignMode || props.localTargets.length > 0}>
+                            <AppMapCombineTargetPicker
+                              testName={test.name}
+                              worldLabel={world.label}
+                              targets={props.localTargets}
+                              binding={targetBinding()}
+                              busy={props.busy}
+                              onBind={(target) => props.onBindCellTarget(test.id, values, target)}
+                            />
+                          </Show>
                           <button
                             type="button"
-                            class="grid min-h-9 w-full place-items-center rounded-lg text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)] disabled:text-[var(--text-weaker)]"
+                            class="grid min-h-11 w-full place-items-center rounded-lg text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)] disabled:text-[var(--text-weaker)]"
                             data-tip={
                               !binding()
                                 ? "Bind a runtime profile before running this cell"
-                                : props.canRunOnDevice
-                                  ? undefined
-                                  : "Connect a ready device to run this check"
+                                : props.localCampaignMode && !targetBinding()
+                                  ? "Bind a local Android or iOS target before running this cell"
+                                  : props.localCampaignMode && !targetReady()
+                                    ? "This selected local target is unavailable or not ready. Refresh or rebind it before running this cell"
+                                    : props.canRunOnDevice
+                                      ? undefined
+                                      : "Connect a ready device to run this check"
                             }
-                            disabled={props.busy || !props.canRunOnDevice || !binding()}
+                            disabled={
+                              props.busy ||
+                              !props.canRunOnDevice ||
+                              !binding() ||
+                              (props.localCampaignMode && !targetReady())
+                            }
                             aria-label={`Run ${test.name} in ${world.label}. ${status}.`}
                             onClick={() => props.onRunCell(worldIndex(), test)}
                           >

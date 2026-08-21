@@ -1,6 +1,5 @@
 import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type {
-  AppMapCapturePolicy,
   AppMapCombineCellRuntimeProfile,
   AppMapCombinePreflight,
   AppMapVariable,
@@ -12,6 +11,8 @@ import {
   mapRuntimeProfileOptions,
   upsertCellRuntimeProfile,
 } from "../lib/app-map-combine-profiles";
+import { createAppMapCombineLocalAdmission } from "../lib/use-app-map-combine-local-admission";
+import { createAppMapCombineCampaignActions } from "../lib/use-app-map-combine-campaign-actions";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { humanError } from "../lib/human-error";
@@ -24,10 +25,10 @@ import {
   projectCombine,
 } from "../lib/app-map-combine-presentation";
 import { combineWithoutVariable, initialCombineDraft } from "../lib/app-map-combine-edit";
-import { combineIdFor, savedTestId, testCandidates } from "../lib/app-map-combine-candidates";
+import { savedTestId, testCandidates } from "../lib/app-map-combine-candidates";
+import { buildCombineForPersistence } from "../lib/app-map-combine-persistence";
 import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import { confirmAction } from "./confirm-dialog";
-import { AppMapCombinePreflightSummary } from "./app-map-combine-preflight";
 import {
   AppMapCombinePlan,
   AppMapCombineFooter,
@@ -38,9 +39,8 @@ import {
   type TestCandidate,
 } from "./app-map-combine-controls";
 import { AppMapStateSetEditor } from "./app-map-state-set-editor";
-import { Icon } from "./icon";
 import { useAppMapCombineSectionFocus } from "../lib/use-app-map-combine-section-focus";
-import { AppMapCombineCampaign } from "./app-map-combine-campaign";
+import { AppMapCombineRunStatus } from "./app-map-combine-run-status";
 
 const [MAX_DEVICE_WORLDS, MAX_PREVIEW_WORLDS] = [250, 40];
 const campaignStorageKey = (appMapId: string, combineId: string) =>
@@ -71,7 +71,6 @@ export function AppMapCombine(props: {
     AppMapCombineCellRuntimeProfile[]
   >([]);
   let initializedFor = "";
-
   const map = createMemo(() => server.selectedAppMap());
   const selectedDevice = () =>
     server.devices().find((device) => device.serial === server.selectedDevice());
@@ -120,17 +119,14 @@ export function AppMapCombine(props: {
     return id ? map()?.variables[id] : undefined;
   });
   const variableEditorOpen = () => creatingSet() || Boolean(editingVariableId());
-
   const observeScrollArea = useAppMapCombineSectionFocus({
     section: () => props.focusSection,
     editorOpen: variableEditorOpen,
   });
-
   function valuesFor(variable: AppMapVariable): string[] {
     const selected = selectedValues()[variable.id];
     return selected !== undefined ? selected : variable.options.map((option) => option.id);
   }
-
   const projection = createMemo(() =>
     projectCombine(
       selectedVariables().map((variable) => {
@@ -148,6 +144,24 @@ export function AppMapCombine(props: {
       MAX_PREVIEW_WORLDS,
     ),
   );
+  const currentCells = createMemo(() => combineCells(projection().worlds, selectedTests()));
+  const localAdmission = createAppMapCombineLocalAdmission({
+    appMapId: () => map()?.id,
+    cells: currentCells,
+    server,
+  });
+  const canExecute = createMemo(() =>
+    localAdmission.localCampaignMode() ? server.health() === "online" : canRunOnDevice(),
+  );
+  const campaignActions = createAppMapCombineCampaignActions({
+    campaignId,
+    pilotJobId,
+    reviewed: campaignReviewed,
+    busy,
+    setBusy,
+    setCampaign,
+    combineCampaign: server.combineCampaign,
+  });
   const headline = createMemo(() =>
     combineHeadline({
       variableNames: selectedVariables().map((variable) => variable.name),
@@ -191,7 +205,10 @@ export function AppMapCombine(props: {
   const runIssue = createMemo(() => {
     const draft = draftIssue();
     if (draft) return draft;
-    const unbound = combineCells(projection().worlds, selectedTests()).filter(
+    if (localAdmission.localCampaignMode() && projection().truncated) {
+      return `This local campaign has more than ${projection().worlds.length} rows. Select fewer values before binding every target explicitly.`;
+    }
+    const unbound = currentCells().filter(
       (cell) => !bindingForCell(cellRuntimeProfiles(), cell.testId, cell.values),
     );
     if (unbound.length) {
@@ -200,9 +217,20 @@ export function AppMapCombine(props: {
         ? `Bind a runtime profile to ${first.testName} · ${first.worldLabel}.`
         : `Bind a runtime profile to every selected cell. ${unbound.length} cells have no profile.`;
     }
+    if (localAdmission.localCampaignMode()) {
+      const selection = localAdmission.fullSelection();
+      if ("issue" in selection) return selection.issue;
+      if (!localAdmission.targetsReady()) {
+        return "A bound local target is not ready. Refresh or rebind this cell before admission.";
+      }
+      const admission = localAdmission.fullRequest();
+      if ("issue" in admission) return admission.issue;
+      if (!localAdmission.previewIsReady()) {
+        return "Refresh measured timing evidence, then check current local capacity before starting.";
+      }
+    }
     return "";
   });
-
   function initialize() {
     const current = map();
     if (!current) return;
@@ -241,6 +269,7 @@ export function AppMapCombine(props: {
     );
     setStrategy(existing?.strategy ?? "cartesian");
     setCellRuntimeProfiles(existing?.cellRuntimeProfiles ?? []);
+    localAdmission.resetBindings();
     if (existing && typeof localStorage !== "undefined") {
       setCampaignId(localStorage.getItem(campaignStorageKey(current.id, existing.id)) || undefined);
     } else {
@@ -252,7 +281,6 @@ export function AppMapCombine(props: {
 
   createEffect(initialize);
   onMount(initialize);
-
   createEffect(() => {
     const current = map();
     const id = props.combineId?.trim();
@@ -278,7 +306,6 @@ export function AppMapCombine(props: {
     strategy();
     setPreflight();
   });
-
   function toggleVariable(variable: AppMapVariable) {
     setSelectedVariableIds((current) =>
       current.includes(variable.id)
@@ -293,18 +320,12 @@ export function AppMapCombine(props: {
           : variable.options.map((option) => option.id),
     }));
   }
-
   function toggleTest(candidate: TestCandidate) {
     const key = candidateKey(candidate);
     setSelectedTestKeys((current) =>
       current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
     );
   }
-
-  function selectedTestIds(): string[] {
-    return selectedTests().map(savedTestId);
-  }
-
   async function deleteVariable(variable: AppMapVariable) {
     const currentMap = map();
     if (!currentMap || busy()) return;
@@ -354,7 +375,6 @@ export function AppMapCombine(props: {
       },
     });
   }
-
   function deleteCombine() {
     const currentMap = map();
     const id = props.combineId?.trim();
@@ -384,51 +404,27 @@ export function AppMapCombine(props: {
       },
     });
   }
-
-  function selectedOptionIds(): Record<string, string[]> {
-    return Object.fromEntries(
-      selectedVariables().map((variable) => [variable.id, valuesFor(variable)]),
-    );
-  }
-
   async function persistCombine(currentMap: NonNullable<ReturnType<typeof map>>) {
-    const testIds = selectedTestIds();
-    const variableIds = selectedVariables().map((variable) => variable.id);
-    const selected = selectedOptionIds();
-    const id = props.combineId?.trim() || combineIdFor(variableIds, testIds);
-    const existing = currentMap.combines?.[id];
-    const captures = Object.fromEntries(
-      selectedTests().map((candidate, index) => [
-        testIds[index]!,
-        {
-          mode: captureModes()[candidateKey(candidate)] ?? defaultCaptureMode(candidate),
-        } satisfies AppMapCapturePolicy,
-      ]),
-    );
-    const now = Date.now();
+    const saved = buildCombineForPersistence({
+      map: currentMap,
+      combineId: props.combineId,
+      name: headline(),
+      variables: selectedVariables(),
+      tests: selectedTests(),
+      valueIdsFor: valuesFor,
+      captureModeFor: (candidate) =>
+        captureModes()[candidateKey(candidate)] ?? defaultCaptureMode(candidate),
+      cellRuntimeProfiles: cellRuntimeProfiles(),
+      strategy: strategy(),
+    });
     await server.saveCombine({
       appMapId: currentMap.id,
       expectedRevision: currentMap.revision,
-      combine: {
-        id,
-        organizationId: currentMap.organizationId,
-        projectId: currentMap.projectId,
-        appMapId: currentMap.id,
-        name: headline(),
-        variableIds,
-        testIds,
-        selected,
-        captures,
-        cellRuntimeProfiles: cellRuntimeProfiles(),
-        strategy: strategy(),
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-      },
+      combine: saved.combine,
     });
     await server.refreshAppMaps();
-    return { id, variableIds, selected };
+    return saved;
   }
-
   async function saveCombine() {
     const currentMap = map();
     if (!currentMap || draftIssue() || busy()) return;
@@ -452,33 +448,61 @@ export function AppMapCombine(props: {
       toast(runIssue() || "This combine is incomplete", "warning");
       return;
     }
-    if (!canRunOnDevice()) {
-      toast("Connect a ready device to run this combine", "warning");
+    if (!canExecute()) {
+      toast(
+        localAdmission.localCampaignMode()
+          ? "Relay is not connected to inspect local capacity"
+          : "Connect a ready device to run this combine",
+        "warning",
+      );
       return;
     }
     setBusy(true);
     try {
       const variableIds = selectedVariables().map((variable) => variable.id);
+      const world = input ? projection().worlds[input.worldIndex] : undefined;
       const selected = input
         ? Object.fromEntries(
             selectedVariables().map((variable) => {
-              const value = projection().worlds[input.worldIndex]?.values[variable.id];
+              const value = world?.values[variable.id];
               return [variable.id, value ? [value.id] : []];
             }),
           )
         : Object.fromEntries(
             selectedVariables().map((variable) => [variable.id, valuesFor(variable)]),
           );
+      const values = input
+        ? Object.fromEntries(
+            selectedVariables().map((variable) => [
+              variable.id,
+              world?.values[variable.id]?.id ?? "",
+            ]),
+          )
+        : undefined;
+      const localStart = localAdmission.localCampaignMode()
+        ? await localAdmission.prepareForStart(
+            input
+              ? currentCells().filter(
+                  (cell) =>
+                    cell.testId === input.test.id &&
+                    Object.entries(values!).every(([id, value]) => cell.values[id] === value),
+                )
+              : currentCells(),
+          )
+        : undefined;
+      if (localAdmission.localCampaignMode() && !localStart) {
+        toast(localAdmission.feedback() || "Could not admit local capacity", "warning");
+        return;
+      }
+      const localCampaign = localStart
+        ? {
+            cellTargetBindings: localStart.bindings,
+            localAdmission: localStart.request,
+          }
+        : {};
       if (input) {
         const testId = input.test.id;
-        const world = projection().worlds[input.worldIndex];
-        const values = Object.fromEntries(
-          selectedVariables().map((variable) => [
-            variable.id,
-            world?.values[variable.id]?.id ?? "",
-          ]),
-        );
-        await server.runPathAcrossVariables({
+        const started = await server.runPathAcrossVariables({
           appMapId: currentMap.id,
           testId,
           capture: {
@@ -492,21 +516,26 @@ export function AppMapCombine(props: {
             (binding) =>
               binding.testId === testId &&
               selectedVariables().every(
-                (variable) => binding.values[variable.id] === values[variable.id],
+                (variable) => binding.values[variable.id] === values![variable.id],
               ),
           ),
+          ...localCampaign,
         });
+        if (!started) return;
       } else {
+        if (localStart) setPreflight();
         const persisted = await persistCombine(currentMap);
-        const checked = await server.preflightCombine({
-          appMapId: currentMap.id,
-          combineId: persisted.id,
-          serial: server.selectedDevice() || undefined,
-        });
-        setPreflight(checked);
-        if (!checked.ok) {
-          toast(checked.blockers[0]?.message ?? "This combine is not ready", "warning");
-          return;
+        if (!localStart) {
+          const checked = await server.preflightCombine({
+            appMapId: currentMap.id,
+            combineId: persisted.id,
+            serial: server.selectedDevice() || undefined,
+          });
+          setPreflight(checked);
+          if (!checked.ok) {
+            toast(checked.blockers[0]?.message ?? "This combine is not ready", "warning");
+            return;
+          }
         }
         const started = await server.runPathAcrossVariables({
           appMapId: currentMap.id,
@@ -517,7 +546,9 @@ export function AppMapCombine(props: {
           title: headline(),
           executionMode: projection().cellCount > 1 ? "pilot" : "all",
           cellRuntimeProfiles: cellRuntimeProfiles(),
+          ...localCampaign,
         });
+        if (!started) return;
         if (started?.campaignId) {
           setCampaignId(started.campaignId);
           if (typeof localStorage !== "undefined") {
@@ -536,7 +567,9 @@ export function AppMapCombine(props: {
       props.onClose();
       window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
     } catch (error) {
-      toast(humanError(error, "Could not start this combine"), "error");
+      const readable = humanError(error, "Could not start this combine");
+      if (localAdmission.localCampaignMode()) localAdmission.reportFeedback(readable);
+      toast(readable, "error");
     } finally {
       setBusy(false);
     }
@@ -588,7 +621,10 @@ export function AppMapCombine(props: {
               strategy={strategy()}
               projection={projection()}
               busy={busy()}
-              canRunOnDevice={canRunOnDevice()}
+              canRunOnDevice={canExecute()}
+              cellTargetBindings={localAdmission.cellTargetBindings()}
+              localTargets={localAdmission.localTargets()}
+              localCampaignMode={localAdmission.localCampaignMode()}
               onCreateVariable={() => {
                 setEditingVariableId(undefined);
                 setCreatingSet(true);
@@ -619,61 +655,22 @@ export function AppMapCombine(props: {
                   upsertCellRuntimeProfile(current, { testId, values, targetProfileId }),
                 )
               }
+              onBindCellTarget={localAdmission.bindCellTarget}
             />
 
-            <Show when={runIssue()}>
-              <p class="m-0 flex items-start gap-2 rounded-lg bg-[var(--surface-base)] px-2.5 py-2 text-micro/[1.4] text-[var(--text-base)]">
-                <Icon name="info" size={12} class="mt-0.5 shrink-0" /> {runIssue()}
-              </p>
-            </Show>
-            <Show when={preflight()}>
-              {(value) => <AppMapCombinePreflightSummary preflight={value()} />}
-            </Show>
-            <Show when={campaign()}>
-              {(value) => (
-                <AppMapCombineCampaign
-                  campaign={value()}
-                  reviewed={campaignReviewed()}
-                  busy={busy()}
-                  onReviewed={setCampaignReviewed}
-                  onOpenPilot={() =>
-                    window.dispatchEvent(
-                      new CustomEvent("relay:open-run-history", {
-                        detail: { jobId: pilotJobId() },
-                      }),
-                    )
-                  }
-                  onResume={() => {
-                    const id = campaignId();
-                    if (!id || busy()) return;
-                    setBusy(true);
-                    void server.combineCampaign
-                      .resume(id, campaignReviewed())
-                      .then((next) => {
-                        setCampaign(next);
-                        toast("Running untouched campaign cases", "success");
-                        window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
-                      })
-                      .catch((error) =>
-                        toast(humanError(error, "Could not resume campaign"), "error"),
-                      )
-                      .finally(() => setBusy(false));
-                  }}
-                  onCancel={() => {
-                    const id = campaignId();
-                    if (!id || busy()) return;
-                    setBusy(true);
-                    void server.combineCampaign
-                      .cancel(id)
-                      .then(setCampaign)
-                      .catch((error) =>
-                        toast(humanError(error, "Could not stop campaign"), "error"),
-                      )
-                      .finally(() => setBusy(false));
-                  }}
-                />
-              )}
-            </Show>
+            <AppMapCombineRunStatus
+              admission={localAdmission}
+              cellCount={currentCells().length}
+              issue={runIssue()}
+              preflight={preflight()}
+              campaign={campaign()}
+              reviewed={campaignReviewed()}
+              busy={busy()}
+              onReviewed={setCampaignReviewed}
+              onOpenPilot={campaignActions.openPilot}
+              onResume={campaignActions.resume}
+              onCancel={campaignActions.cancel}
+            />
           </div>
         </Show>
       </div>
@@ -684,7 +681,7 @@ export function AppMapCombine(props: {
           combinations={projection().totalWorlds || 0}
           testCount={selectedTests().length}
           cellCount={projection().cellCount}
-          canRunOnDevice={canRunOnDevice()}
+          canRunOnDevice={canExecute()}
           issue={runIssue()}
           saveIssue={draftIssue()}
           busy={busy()}

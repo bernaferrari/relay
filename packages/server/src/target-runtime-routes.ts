@@ -21,6 +21,10 @@ import {
 } from "@relay/core";
 import { assertTargetControl } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
+import {
+  handleCampaignDurationRoute,
+  type CampaignDurationRouteRuntime,
+} from "./campaign-duration-routes.js";
 import type { OperationInput } from "@relay/protocol";
 import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import type { RequestContext } from "./security.js";
@@ -68,9 +72,22 @@ export async function handleTargetRuntimeRoute(context: {
   response: http.ServerResponse;
   scope: RequestContext;
   runtime?: Partial<TargetRuntimeRouteRuntime>;
+  campaignDurationRuntime?: CampaignDurationRouteRuntime;
 }): Promise<boolean> {
   const { method, pathname, request, response, scope } = context;
   const runtime = { ...defaultRuntime, ...context.runtime };
+
+  if (
+    await handleCampaignDurationRoute({
+      method,
+      pathname,
+      request,
+      response,
+      scope,
+      runtime: context.campaignDurationRuntime,
+    })
+  )
+    return true;
 
   if (method === "GET" && pathname === "/target-workers") {
     json(response, 200, { workers: runtime.listTargetWorkers() });

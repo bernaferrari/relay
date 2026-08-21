@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
-import type { EventEnvelope, OperationId } from "@relay/protocol";
+import {
+  MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS,
+  type EventEnvelope,
+  type OperationId,
+} from "@relay/protocol";
 import { ExitCode } from "./errors.js";
 import { runCli } from "./index.js";
 import type { OperationInvoker } from "./invoke.js";
@@ -698,6 +702,89 @@ test("combine run waits for every locale case before succeeding", async () => {
     JSON.parse(io.stdout()).result.jobs.map((job: { id: string }) => job.id),
     polled,
   );
+});
+
+test("combine run carries the shared explicit local-admission contract unchanged", async () => {
+  const io = capture();
+  const calls: Array<{ operationId: OperationId; input: Record<string, unknown> }> = [];
+  const localAdmission = {
+    deadlineMs: 180_000,
+    durationEvidence: [
+      {
+        schemaVersion: 1,
+        cohort: {
+          targetId: "pixel-1",
+          platform: "android",
+          testId: "settings",
+          action: "app-map:settings:test:settings",
+        },
+        duration: {
+          workItemDurationMs: 12_000,
+          provenance: "observed-p95",
+          observedAt: 100,
+          sampleCount: 5,
+          maxAgeMs: MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS,
+        },
+        measurement: {
+          estimator: "campaign-duration-estimate",
+          recordSource: "persisted-runs",
+          durationSource: "run-wall-clock",
+          sampleIds: ["run-1", "run-2", "run-3", "run-4", "run-5"],
+          observationWindow: { startedAt: 1, finishedAt: 100 },
+        },
+      },
+    ],
+    recoveryHeadroomMs: 5_000,
+  };
+  const client: OperationInvoker = {
+    async invoke(operationId, input) {
+      calls.push({ operationId, input: input as Record<string, unknown> });
+      if (operationId === "job.combine.start") {
+        return { jobs: [{ id: "local-cell", status: "queued" }] };
+      }
+      return { job: { id: "local-cell", status: "ok" } };
+    },
+    events: async () => {},
+  };
+  const input = {
+    cellRuntimeProfiles: [
+      { testId: "settings", values: { language: "it" }, targetProfileId: "pixel-profile" },
+    ],
+    cellTargetBindings: [
+      {
+        testId: "settings",
+        values: { language: "it" },
+        target: {
+          schemaVersion: 1,
+          kind: "local-device",
+          provider: { key: "relay.local.agent-device", scope: "local" },
+          targetId: "pixel-1",
+          platform: "android",
+          identity: { kind: "device-serial", value: "pixel-1" },
+        },
+      },
+    ],
+    localAdmission,
+  };
+
+  const code = await runCli(
+    ["combine", "run", "map", "languages", "--input", JSON.stringify(input), "--json"],
+    {
+      streams: io.streams,
+      createClient: () => client,
+      registerSignalHandlers: false,
+      pollIntervalMs: 0,
+      env: {},
+    },
+  );
+
+  assert.equal(code, ExitCode.success);
+  const started = calls.find((call) => call.operationId === "job.combine.start");
+  assert.deepEqual(started?.input.localAdmission, localAdmission);
+  assert.deepEqual(started?.input.cellTargetBindings, input.cellTargetBindings);
+  assert.equal(started?.input.serial, undefined);
+  assert.equal(started?.input.appMapId, "map");
+  assert.equal(started?.input.combineId, "languages");
 });
 
 test("combine run waits for later cases and fails when any locale fails", async () => {

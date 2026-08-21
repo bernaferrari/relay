@@ -1,6 +1,9 @@
 import type {
+  CampaignCapacityCohortDurationEvidence,
   CampaignCapacityDurationInput,
+  CampaignCapacityDurationCohort,
   EvidenceManifest,
+  ExecutionTargetRef,
   RunReview,
   RunSummary,
 } from "@relay/protocol";
@@ -35,6 +38,11 @@ export type CampaignDurationRunRecord = Pick<
   | "review"
   | "writtenAt"
 > & {
+  /** The persisted local serial is an older but still concrete target identity.
+   * New v5 records additionally carry the provider-neutral target below. */
+  serial?: string;
+  executionTarget?: ExecutionTargetRef;
+  artifacts?: ReadonlyArray<{ kind: string; data: unknown }>;
   evidence?: EvidenceManifest;
 };
 
@@ -51,6 +59,9 @@ export type CampaignDurationEstimateInput = {
   platform: CampaignDurationPlatform;
   /** A stable independently-executable work-item identity, usually a recipe/action id. */
   action: string;
+  /** When present, reject every record that cannot prove this exact physical
+   * target and frozen Test/action cohort. */
+  cohort?: CampaignCapacityDurationCohort;
   /** Read-only records already selected by the caller. This function never reads or writes storage. */
   runs: readonly CampaignDurationRunRecord[];
   /** Makes audit output honest about whether records came from manifests, summaries, or both. */
@@ -77,13 +88,20 @@ export type CampaignDurationExclusionReason =
   | "non-successful-terminal"
   | "invalid-run-timestamps"
   | "inconsistent-run-duration"
-  | "evidence-duration-unavailable";
+  | "evidence-duration-unavailable"
+  | "missing-target"
+  | "target-mismatch"
+  | "incompatible-target"
+  | "missing-test"
+  | "test-mismatch"
+  | "incompatible-test";
 
 export type CampaignDurationFilteringProvenance = {
   recordSource: CampaignDurationRecordSource;
   durationSource: CampaignDurationSource;
   requestedPlatform: CampaignDurationPlatform;
   requestedAction: string;
+  requestedCohort?: CampaignCapacityDurationCohort;
   totalRecords: number;
   acceptedBeforeSampleCap: number;
   excludedByReason: Partial<Record<CampaignDurationExclusionReason, number>>;
@@ -105,12 +123,17 @@ export type CampaignDurationEstimate = {
   schemaVersion: 1;
   platform: CampaignDurationPlatform;
   action: string;
+  cohort?: CampaignCapacityDurationCohort;
   checkedAt: number;
   /** `stale` remains inspectable but is not a current measurement or SLA. */
   status: "current" | "stale" | "insufficient-samples";
   minSamples: number;
   maxAgeMs: number;
   sampleCount: number;
+  /** Exact, de-duplicated accepted run ids, ordered newest-first. They are
+   * included in admission evidence so a later audit knows which records made
+   * the percentile rather than seeing an opaque platform average. */
+  sampleIds?: string[];
   observedAt?: number;
   observationWindow?: { startedAt: number; finishedAt: number };
   filtering: CampaignDurationFilteringProvenance;
@@ -192,13 +215,95 @@ function evidenceCompletionDuration(
   return metric.value;
 }
 
+function observedTargetId(
+  run: CampaignDurationRunRecord,
+): string | Extract<CampaignDurationExclusionReason, "missing-target" | "incompatible-target"> {
+  const target = run.executionTarget;
+  if (target) {
+    if (
+      target.kind !== "local-device" ||
+      (target.platform !== "android" && target.platform !== "ios") ||
+      target.identity.kind !== "device-serial" ||
+      target.identity.value !== target.targetId
+    ) {
+      return "incompatible-target";
+    }
+    if (run.platform && target.platform !== run.platform) return "incompatible-target";
+    const serial = run.serial?.trim();
+    if (serial && serial !== target.targetId) return "incompatible-target";
+    return target.targetId;
+  }
+  const serial = run.serial?.trim();
+  return serial ? serial : "missing-target";
+}
+
+function frozenDurationCohort(
+  run: CampaignDurationRunRecord,
+):
+  | { testId: string; action: string }
+  | Extract<CampaignDurationExclusionReason, "missing-test" | "incompatible-test"> {
+  const cohorts = new Map<string, { testId: string; action: string }>();
+  for (const artifact of run.artifacts ?? []) {
+    if (artifact.kind !== "frozen-inputs" || !artifact.data || typeof artifact.data !== "object") {
+      continue;
+    }
+    const data = artifact.data as Record<string, unknown>;
+    let candidate: { testId: string; action: string } | undefined;
+    if (Object.prototype.hasOwnProperty.call(data, "durationCohort")) {
+      const cohort = data.durationCohort;
+      if (!cohort || typeof cohort !== "object" || Array.isArray(cohort)) {
+        return "incompatible-test";
+      }
+      const projection = cohort as Record<string, unknown>;
+      if (
+        typeof projection.testId !== "string" ||
+        !projection.testId.trim() ||
+        typeof projection.action !== "string" ||
+        !projection.action.trim()
+      ) {
+        return "incompatible-test";
+      }
+      candidate = { testId: projection.testId.trim(), action: projection.action.trim() };
+    } else if (
+      data.kind === "combine-cell" &&
+      typeof data.testId === "string" &&
+      data.testId.trim() &&
+      typeof data.durationCohortAction === "string" &&
+      data.durationCohortAction.trim()
+    ) {
+      // v1 Combine runs predate the generic frozen duration-cohort projection.
+      candidate = {
+        testId: data.testId.trim(),
+        action: data.durationCohortAction.trim(),
+      };
+    }
+    if (!candidate) continue;
+    cohorts.set(JSON.stringify([candidate.testId, candidate.action]), candidate);
+  }
+  if (!cohorts.size) return "missing-test";
+  if (cohorts.size !== 1) return "incompatible-test";
+  return [...cohorts.values()][0]!;
+}
+
 function sampleFor(
   run: CampaignDurationRunRecord,
-  input: Pick<CampaignDurationEstimateInput, "platform" | "action" | "durationSource">,
+  input: Pick<CampaignDurationEstimateInput, "platform" | "action" | "durationSource" | "cohort">,
 ): AcceptedSample | CampaignDurationExclusionReason {
   if (!run.platform) return "missing-platform";
   if (run.platform !== input.platform) return "platform-mismatch";
-  if (run.action !== input.action) return "action-mismatch";
+  if (input.cohort) {
+    const targetId = observedTargetId(run);
+    if (targetId === "missing-target" || targetId === "incompatible-target") return targetId;
+    if (targetId !== input.cohort.targetId) return "target-mismatch";
+    const frozenCohort = frozenDurationCohort(run);
+    if (frozenCohort === "missing-test" || frozenCohort === "incompatible-test") {
+      return frozenCohort;
+    }
+    if (frozenCohort.testId !== input.cohort.testId) return "test-mismatch";
+    if (frozenCohort.action !== input.cohort.action) return "action-mismatch";
+  } else if (run.action !== input.action) {
+    return "action-mismatch";
+  }
   if (uncertain(run.review, run.outcome)) return "uncertain";
   if (!terminalSuccess(run.status)) {
     return ["queued", "running", "paused"].includes(run.status)
@@ -214,6 +319,30 @@ function sampleFor(
   const observedAt =
     input.durationSource === "evidence-completion" ? run.evidence!.finishedAt! : run.finishedAt!;
   return { id: run.id, durationMs: duration, observedAt };
+}
+
+function normalizedCohort(
+  cohort: CampaignCapacityDurationCohort | undefined,
+  platform: CampaignDurationPlatform,
+  action: string,
+): CampaignCapacityDurationCohort | undefined {
+  if (!cohort) return undefined;
+  const targetId = cohort.targetId.trim();
+  const testId = cohort.testId.trim();
+  const cohortAction = cohort.action.trim();
+  if (!targetId || !testId || !cohortAction) {
+    throw new Error("Campaign duration cohort requires targetId, testId, and action");
+  }
+  if (cohort.platform !== "android" && cohort.platform !== "ios") {
+    throw new Error("Campaign duration cohort platform must be Android or iOS");
+  }
+  if (cohort.platform !== platform) {
+    throw new Error("Campaign duration cohort platform must match the requested platform");
+  }
+  if (cohortAction !== action) {
+    throw new Error("Campaign duration cohort action must match the requested action");
+  }
+  return { targetId, platform: cohort.platform, testId, action: cohortAction };
 }
 
 function percentile(values: readonly number[], quantile: number): number {
@@ -266,12 +395,13 @@ export function estimateCampaignDuration(
   if (durationSource !== "run-wall-clock" && durationSource !== "evidence-completion") {
     throw new Error("Campaign duration source must be run-wall-clock or evidence-completion");
   }
+  const cohort = normalizedCohort(rawInput.cohort, rawInput.platform, action);
 
   const excludedByReason: Partial<Record<CampaignDurationExclusionReason, number>> = {};
   const accepted: AcceptedSample[] = [];
   const acceptedRunIds = new Set<string>();
   for (const run of rawInput.runs) {
-    const sample = sampleFor(run, { platform: rawInput.platform, action, durationSource });
+    const sample = sampleFor(run, { platform: rawInput.platform, action, durationSource, cohort });
     if (typeof sample === "string") {
       excludedByReason[sample] = (excludedByReason[sample] ?? 0) + 1;
     } else if (acceptedRunIds.has(sample.id)) {
@@ -306,6 +436,7 @@ export function estimateCampaignDuration(
     durationSource,
     requestedPlatform: rawInput.platform,
     requestedAction: action,
+    ...(cohort ? { requestedCohort: structuredClone(cohort) } : {}),
     totalRecords: rawInput.runs.length,
     acceptedBeforeSampleCap: accepted.length,
     excludedByReason,
@@ -318,6 +449,7 @@ export function estimateCampaignDuration(
     schemaVersion: 1 as const,
     platform: rawInput.platform,
     action,
+    ...(cohort ? { cohort: structuredClone(cohort) } : {}),
     checkedAt,
     minSamples,
     maxAgeMs,
@@ -335,12 +467,29 @@ export function estimateCampaignDuration(
     ...base,
     status: fresh ? "current" : "stale",
     observedAt,
+    sampleIds: capped.map((sample) => sample.id),
     observationWindow: { startedAt: earliestObservation, finishedAt: observedAt },
     candidates: {
       p50: candidate(p50, "observed-p50", observedAt, capped.length, maxAgeMs),
       p95: candidate(p95, "observed-p95", observedAt, capped.length, maxAgeMs),
     },
   };
+}
+
+/** Derive a timing estimate whose sample set is bound to one physical target
+ * and frozen Test/action. The generic platform/action function remains useful
+ * for diagnostics, but local deadline admission must use this stricter form. */
+export function estimateCampaignDurationForCohort(
+  input: Omit<CampaignDurationEstimateInput, "platform" | "action"> & {
+    cohort: CampaignCapacityDurationCohort;
+  },
+): CampaignDurationEstimate {
+  return estimateCampaignDuration({
+    ...input,
+    platform: input.cohort.platform,
+    action: input.cohort.action,
+    cohort: input.cohort,
+  });
 }
 
 /**
@@ -354,4 +503,32 @@ export function campaignDurationInputForPreflight(
 ): ObservedCampaignDurationInput | undefined {
   const selected = estimate.candidates?.[percentile];
   return selected ? { ...selected } : undefined;
+}
+
+/**
+ * Materialize a bounded, serializable target/Test cohort evidence record for
+ * deadline admission. Stale evidence is intentionally returned so callers can
+ * show its provenance, while admission itself refuses it at its own clock.
+ */
+export function campaignCohortDurationEvidenceForPreflight(
+  estimate: CampaignDurationEstimate,
+  percentile: "p50" | "p95",
+): CampaignCapacityCohortDurationEvidence | undefined {
+  const duration = campaignDurationInputForPreflight(estimate, percentile);
+  const cohort = estimate.cohort;
+  const observationWindow = estimate.observationWindow;
+  const sampleIds = estimate.sampleIds;
+  if (!duration || !cohort || !observationWindow || !sampleIds?.length) return undefined;
+  return {
+    schemaVersion: 1,
+    cohort: structuredClone(cohort),
+    duration,
+    measurement: {
+      estimator: "campaign-duration-estimate",
+      recordSource: estimate.filtering.recordSource,
+      durationSource: estimate.filtering.durationSource,
+      sampleIds: [...sampleIds],
+      observationWindow: { ...observationWindow },
+    },
+  };
 }

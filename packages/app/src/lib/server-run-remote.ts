@@ -1,9 +1,16 @@
 import type {
   AppMapCapturePolicy,
+  AppMapCombineCellTargetBinding,
   AppMapCombinePreflight,
   AppMapTest,
   AppMapScenarioTestEdit,
+  CampaignCapacityCohortDurationEstimateRequest,
+  CampaignCapacityCohortDurationEstimateResponse,
   CombineCampaign,
+  LocalAgentDeviceExecutionTargetRef,
+  LocalCampaignAdmissionRequest,
+  LocalCampaignAdmissionPreflightRequest,
+  LocalCampaignAdmissionPreflightResponse,
   LocaleRunAnalysisReport,
   LocaleRunPackManifest,
   MatrixExpansion,
@@ -92,7 +99,7 @@ export type LocaleMatrixInput = {
   flowId?: string;
   serial?: string;
   platform?: string;
-  targetKind: "browser" | "device";
+  targetKind?: "browser" | "device";
   browserTargetId?: string;
   locales?: string[];
   /** Scanned switcher/language profile id (e.g. grok-ios). */
@@ -113,6 +120,15 @@ export type LocaleMatrixInput = {
   title?: string;
   preset?: "grok";
   projectId?: string;
+  /** Optional explicit local execution lane for each locale case. This is
+   * transport-only: the caller must provide the matching shared admission. */
+  caseTargetBindings?: Array<{
+    caseIndex: number;
+    locale: string;
+    executionTarget: LocalAgentDeviceExecutionTargetRef;
+  }>;
+  /** Same target/Test cohort deadline evidence used by Combine. */
+  localAdmission?: LocalCampaignAdmissionRequest;
 };
 
 /**
@@ -161,8 +177,8 @@ export function buildLocaleMatrixInput(input: {
   recipe?: string;
   appMapId?: string;
   flowId?: string;
-  serial: string;
-  targetKind: "browser" | "device";
+  serial?: string;
+  targetKind?: "browser" | "device";
   platform?: string;
   locales: string[];
   scope?: LocaleMatrixInput["scope"];
@@ -170,11 +186,22 @@ export function buildLocaleMatrixInput(input: {
   projectId: string;
   preset?: "grok";
   profileId?: string;
+  caseTargetBindings?: LocaleMatrixInput["caseTargetBindings"];
+  localAdmission?: LocalCampaignAdmissionRequest;
 }): LocaleMatrixInput {
-  const target =
-    input.targetKind === "browser"
-      ? { targetKind: "browser" as const, browserTargetId: input.serial }
-      : { targetKind: "device" as const, platform: input.platform, serial: input.serial };
+  const hasExplicitCaseTargets = input.caseTargetBindings !== undefined;
+  if (!hasExplicitCaseTargets && (!input.serial?.trim() || !input.targetKind)) {
+    throw new Error("A legacy locale matrix start needs a selected serial and target kind");
+  }
+  const target = hasExplicitCaseTargets
+    ? {}
+    : input.targetKind === "browser"
+      ? { targetKind: "browser" as const, browserTargetId: input.serial!.trim() }
+      : {
+          targetKind: "device" as const,
+          platform: input.platform,
+          serial: input.serial!.trim(),
+        };
   const source =
     input.appMapId?.trim() && input.flowId?.trim()
       ? { appMapId: input.appMapId.trim(), flowId: input.flowId.trim() }
@@ -188,6 +215,12 @@ export function buildLocaleMatrixInput(input: {
       scope: { ...input.scope, locales },
       title: input.title,
       projectId: input.projectId,
+      ...(input.caseTargetBindings === undefined
+        ? {}
+        : { caseTargetBindings: structuredClone(input.caseTargetBindings) }),
+      ...(input.localAdmission === undefined
+        ? {}
+        : { localAdmission: structuredClone(input.localAdmission) }),
     };
   }
   return {
@@ -198,6 +231,12 @@ export function buildLocaleMatrixInput(input: {
     ...(input.profileId ? { profileId: input.profileId } : {}),
     title: input.title,
     projectId: input.projectId,
+    ...(input.caseTargetBindings === undefined
+      ? {}
+      : { caseTargetBindings: structuredClone(input.caseTargetBindings) }),
+    ...(input.localAdmission === undefined
+      ? {}
+      : { localAdmission: structuredClone(input.localAdmission) }),
   };
 }
 
@@ -273,8 +312,10 @@ export async function enqueueOptionMatrix(
     testId?: string;
     combineId?: string;
     capture?: AppMapCapturePolicy;
-    serial: string;
-    targetKind: "browser" | "device";
+    /** Legacy one-target execution. Omit only when `cellTargetBindings` is
+     * present: a bound local campaign must never fall back to this target. */
+    serial?: string;
+    targetKind?: "browser" | "device";
     platform?: string;
     variableIds?: string[];
     selected?: Record<string, string[]>;
@@ -288,6 +329,12 @@ export async function enqueueOptionMatrix(
       values: Record<string, string>;
       targetProfileId: string;
     }>;
+    /** Explicit target ownership for every selected cell. An empty array is
+     * intentionally still serialized so the server can reject it explicitly. */
+    cellTargetBindings?: AppMapCombineCellTargetBinding[];
+    /** Generic, provenance-backed local deadline request. This is the same
+     * protocol value used by Combine campaigns and locale matrix callers. */
+    localAdmission?: LocalCampaignAdmissionRequest;
   },
 ): Promise<{
   batch: {
@@ -302,10 +349,19 @@ export async function enqueueOptionMatrix(
   matrix: { id: string };
   campaign?: CombineCampaign;
 }> {
-  const target =
-    input.targetKind === "browser"
-      ? { targetKind: "browser" as const, browserTargetId: input.serial }
-      : { targetKind: "device" as const, platform: input.platform, serial: input.serial };
+  const usesExplicitBindings = input.cellTargetBindings !== undefined;
+  if (!usesExplicitBindings && (!input.serial?.trim() || !input.targetKind)) {
+    throw new Error("A legacy Combine start needs a selected serial and target kind");
+  }
+  const target = usesExplicitBindings
+    ? {}
+    : input.targetKind === "browser"
+      ? { targetKind: "browser" as const, browserTargetId: input.serial!.trim() }
+      : {
+          targetKind: "device" as const,
+          platform: input.platform,
+          serial: input.serial!.trim(),
+        };
   return request("/jobs/combine", {
     method: "POST",
     body: JSON.stringify({
@@ -322,8 +378,48 @@ export async function enqueueOptionMatrix(
       executionMode: input.executionMode,
       selectedCellIds: input.selectedCellIds,
       cellRuntimeProfiles: input.cellRuntimeProfiles,
+      ...(input.cellTargetBindings === undefined
+        ? {}
+        : { cellTargetBindings: structuredClone(input.cellTargetBindings) }),
+      ...(input.localAdmission === undefined
+        ? {}
+        : { localAdmission: structuredClone(input.localAdmission) }),
       ...target,
     }),
+  });
+}
+
+/** Exact public estimator input/output for concrete target/Test/action cohorts,
+ * never a platform average, provider promise, or Combine-specific variant. */
+export type CampaignDurationCohortEstimateRemoteInput =
+  CampaignCapacityCohortDurationEstimateRequest;
+export type CampaignDurationCohortEstimateRemoteResult =
+  CampaignCapacityCohortDurationEstimateResponse;
+
+/** Ask the server to derive measured evidence from immutable persisted runs.
+ * This endpoint neither takes a target lease nor writes a scheduling record. */
+export async function estimateCampaignDurationCohortsRemote(
+  request: ServerRequest,
+  input: CampaignDurationCohortEstimateRemoteInput,
+): Promise<CampaignDurationCohortEstimateRemoteResult> {
+  return request("/campaign-duration/cohorts/estimate", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Exact public, read-only admission input/output, reusable by locale and future
+ * farms. Start repeats this check under its admission lock before reservation. */
+export type LocalCampaignAdmissionPreflightRemoteInput = LocalCampaignAdmissionPreflightRequest;
+export type LocalCampaignAdmissionPreflightRemoteResult = LocalCampaignAdmissionPreflightResponse;
+
+export async function preflightLocalCampaignAdmissionRemote(
+  request: ServerRequest,
+  input: LocalCampaignAdmissionPreflightRemoteInput,
+): Promise<LocalCampaignAdmissionPreflightRemoteResult> {
+  return request("/jobs/local-admission/preflight", {
+    method: "POST",
+    body: JSON.stringify(input),
   });
 }
 

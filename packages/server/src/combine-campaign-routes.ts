@@ -31,6 +31,8 @@ import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { JobRouteContext } from "./job-routes.js";
 import {
   admitAndStageLocalCombineCampaign,
+  localCampaignAdmissionRequestForActiveWorkItems,
+  localCampaignAdmissionWorkItemsForCombine,
   type LocalCombineCampaignAdmission,
 } from "./local-combine-campaign-admission.js";
 
@@ -181,10 +183,15 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           ownerId: currentOperationContext()!.actorId,
         });
       if (localAdmission) {
+        const admissionRequest = localCampaignAdmissionRequestForActiveWorkItems({
+          request: localAdmission.request,
+          activeWorkItems: localCampaignAdmissionWorkItemsForCombine(toQueue),
+          knownWorkItems: localCampaignAdmissionWorkItemsForCombine(prepared.selectedCells),
+        });
         const admitted = await admitAndStageLocalCombineCampaign({
           scope,
           cells: toQueue,
-          request: localAdmission.request,
+          request: admissionRequest,
           runtime: {
             listDevices: runtime.listDevices ?? listDevices,
             listDeviceLeases: runtime.listDeviceLeases ?? listDeviceLeases,
@@ -192,6 +199,12 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
             assertTargetControl: runtime.assertTargetControl ?? assertTargetControl,
             admitTargetControl: runtime.admitTargetControl ?? admitTargetControl,
             releaseDeviceLease: runtime.releaseDeviceLease ?? releaseDeviceLease,
+            ...(runtime.verifyCampaignDurationCohortEvidence
+              ? {
+                  verifyCampaignDurationCohortEvidence:
+                    runtime.verifyCampaignDurationCohortEvidence,
+                }
+              : {}),
           },
           stage: stageCells,
         });

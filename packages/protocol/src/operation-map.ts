@@ -32,6 +32,8 @@ import type {
   TargetWorkerStatus,
 } from "./target-runtime.js";
 import type {
+  CampaignCapacityCohortDurationEstimateRequest,
+  CampaignCapacityCohortDurationEstimateResponse,
   LocalCampaignCapacityPreflight,
   LocalCampaignCapacityPreflightInput,
 } from "./campaign-capacity-plan.js";
@@ -39,6 +41,10 @@ import type { IosSessionOperationLifecycle, TargetRuntimeReadiness } from "./tar
 import type { RunReview } from "./run-review.js";
 import type { CampaignRepairOperationMap } from "./run-repair-operations.js";
 import type { RunShareOperationMap } from "./run-share.js";
+import type {
+  LocalCampaignAdmissionPreflightRequest,
+  LocalCampaignAdmissionPreflightResponse,
+} from "./combine-campaign.js";
 import type { ActivityExport } from "./activity.js";
 import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import type { CorpusOperationId } from "./corpus-operation-definitions.js";
@@ -681,6 +687,14 @@ type SpecificOperationMap = {
   "campaign.capacity.preflight": {
     input: LocalCampaignCapacityPreflightInput;
     output: { preflight: LocalCampaignCapacityPreflight };
+  };
+  "campaign.duration.cohorts.estimate": {
+    input: CampaignCapacityCohortDurationEstimateRequest;
+    output: CampaignCapacityCohortDurationEstimateResponse;
+  };
+  "campaign.local-admission.preflight": {
+    input: LocalCampaignAdmissionPreflightRequest;
+    output: LocalCampaignAdmissionPreflightResponse;
   };
   "lease.list": {
     input: { status?: "active" | "all" };

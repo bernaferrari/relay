@@ -1,8 +1,43 @@
 import type {
-  CampaignCapacityDurationInput,
+  CampaignCapacityCohortDurationEvidence,
   LocalCampaignCapacityPreflight,
+  LocalCampaignCapacityTargetCriticalPathPreflight,
 } from "./campaign-capacity-plan.js";
 import type { ExecutionTargetRef, LocalAgentDeviceExecutionTargetRef } from "./execution-target.js";
+
+/**
+ * Shared, serialized local-deadline request. Every selected target ×
+ * Test/action cohort must contribute fresh immutable timing evidence; callers
+ * must never reconstruct sample ids or fall back to a platform average.
+ */
+export type LocalCampaignAdmissionRequest = {
+  deadlineMs: number;
+  durationEvidence: CampaignCapacityCohortDurationEvidence[];
+  setupHeadroomMs?: number;
+  recoveryHeadroomMs?: number;
+};
+
+/** One independently staged local campaign case. The action is the stable
+ * frozen Test identity (not a generated wrapper recipe id), so timing evidence
+ * can survive variable values and recompilation without becoming anonymous. */
+export type LocalCampaignAdmissionWorkItem = {
+  id: string;
+  target: LocalAgentDeviceExecutionTargetRef;
+  testId: string;
+  action: string;
+};
+
+/** Read-only generic admission check for any local campaign (Combine, locale
+ * matrix, or a future device-farm adapter). It carries no lease intent. */
+export type LocalCampaignAdmissionPreflightRequest = {
+  workItems: LocalCampaignAdmissionWorkItem[];
+  request: LocalCampaignAdmissionRequest;
+};
+
+export type LocalCampaignAdmissionPreflightResponse = {
+  preflight: LocalCampaignCapacityPreflight;
+  targetPreflights: LocalCampaignCapacityTargetCriticalPathPreflight[];
+};
 
 export type CombineCampaignCaseStatus =
   | "pending"
@@ -82,19 +117,11 @@ export type CombineCampaign = {
     title?: string;
     /** Immutable admission evidence captured before any Combine jobs queued. */
     localAdmission?: {
-      request: {
-        deadlineMs: number;
-        duration: LocalCampaignCapacityPreflight["input"]["duration"];
-        /** Required for a mixed Android/iOS campaign so one platform's timing
-         * is never silently used as the other platform's SLA. */
-        durationsByPlatform?: Partial<Record<"android" | "ios", CampaignCapacityDurationInput>>;
-        setupHeadroomMs?: number;
-        recoveryHeadroomMs?: number;
-      };
+      request: LocalCampaignAdmissionRequest;
       preflight: LocalCampaignCapacityPreflight;
       /** Per-bound-target checks preserve target affinity rather than
        * pretending that same-platform work can move between devices. */
-      targetPreflights?: LocalCampaignCapacityPreflight[];
+      targetPreflights?: LocalCampaignCapacityTargetCriticalPathPreflight[];
       /** Exact local execution targets that were admitted. */
       targets: LocalAgentDeviceExecutionTargetRef[];
     };

@@ -2,8 +2,10 @@ import type { Accessor } from "solid-js";
 import { humanError } from "./human-error";
 import type {
   AppMapCapturePolicy,
+  AppMapCombineCellTargetBinding,
   CompatibilityMatrix,
   LocaleRunAnalysisReport,
+  LocalCampaignAdmissionRequest,
 } from "@relay/protocol";
 import { toast } from "../context/toast";
 import type { CompatibilityReport, DeviceInfo, JobInfo, LogLine, RecipeInfo } from "./api-types";
@@ -15,6 +17,8 @@ import {
   inferLocaleMatrix,
   inferOptionMatrix,
   enqueueOptionMatrix,
+  estimateCampaignDurationCohortsRemote,
+  preflightLocalCampaignAdmissionRemote,
   saveVariableRemote,
   removeVariableRemote,
   saveTestRemote,
@@ -34,6 +38,8 @@ import {
   replayRecordedRun,
   retryJob,
   type ExportedPack,
+  type CampaignDurationCohortEstimateRemoteInput,
+  type LocalCampaignAdmissionPreflightRemoteInput,
 } from "./server-run-remote";
 import { privateValuesForRun } from "./private-variables";
 
@@ -270,18 +276,25 @@ export function createServerRunController(deps: RunControllerDependencies) {
       values: Record<string, string>;
       targetProfileId: string;
     }>;
+    /** Presence selects the explicit local-campaign transport path, even if
+     * the array is empty. That lets the server return a precise binding error
+     * instead of silently selecting the current device. */
+    cellTargetBindings?: AppMapCombineCellTargetBinding[];
+    localAdmission?: LocalCampaignAdmissionRequest;
   }): Promise<{ jobId: string | null; campaignId?: string } | null> {
     if (deps.health() !== "online") {
       toast("Relay isn’t connected — can’t run yet", "warning");
       return null;
     }
+    const usesExplicitBindings = input.cellTargetBindings !== undefined;
     const serial = deps.selectedDevice() ?? undefined;
-    if (!serial) {
+    if (!usesExplicitBindings && !serial) {
       toast("Choose a ready device first", "warning");
       return null;
     }
-    const targetPlatform =
-      deps.devices().find((device) => device.serial === serial)?.platform ?? "android";
+    const targetPlatform = serial
+      ? (deps.devices().find((device) => device.serial === serial)?.platform ?? "android")
+      : undefined;
     try {
       const data = await enqueueOptionMatrix(deps.request, {
         appMapId: input.appMapId,
@@ -289,9 +302,16 @@ export function createServerRunController(deps: RunControllerDependencies) {
         testId: input.testId,
         combineId: input.combineId,
         capture: input.capture,
-        serial,
-        targetKind: targetPlatform === "browser" ? "browser" : "device",
-        platform: targetPlatform === "browser" ? undefined : targetPlatform,
+        ...(usesExplicitBindings
+          ? {
+              cellTargetBindings: input.cellTargetBindings,
+              ...(input.localAdmission ? { localAdmission: input.localAdmission } : {}),
+            }
+          : {
+              serial,
+              targetKind: targetPlatform === "browser" ? "browser" : "device",
+              platform: targetPlatform === "browser" ? undefined : targetPlatform,
+            }),
         variableIds: input.variableIds,
         selected: input.selected,
         strategy: input.strategy,
@@ -352,6 +372,24 @@ export function createServerRunController(deps: RunControllerDependencies) {
 
   async function preflightCombine(input: Parameters<typeof preflightCombineRemote>[1]) {
     return preflightCombineRemote(deps.request, input);
+  }
+
+  /** These two reads deliberately bypass run-start to let the Combine surface
+   * show measured evidence and a non-mutating local capacity result first. */
+  async function estimateCampaignDurationCohorts(input: CampaignDurationCohortEstimateRemoteInput) {
+    if (deps.health() !== "online") {
+      throw new Error("Relay is not connected to read local timing evidence");
+    }
+    return estimateCampaignDurationCohortsRemote(deps.request, input);
+  }
+
+  async function preflightLocalCampaignAdmission(
+    input: LocalCampaignAdmissionPreflightRemoteInput,
+  ) {
+    if (deps.health() !== "online") {
+      throw new Error("Relay is not connected to inspect local campaign capacity");
+    }
+    return preflightLocalCampaignAdmissionRemote(deps.request, input);
   }
 
   async function removeCombine(input: Parameters<typeof removeCombineRemote>[1]) {
@@ -543,6 +581,8 @@ export function createServerRunController(deps: RunControllerDependencies) {
     editTest,
     saveCombine,
     preflightCombine,
+    estimateCampaignDurationCohorts,
+    preflightLocalCampaignAdmission,
     removeCombine,
     combineCampaign: {
       get: getCombineCampaign,

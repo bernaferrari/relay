@@ -152,6 +152,10 @@ export function stagePreparedAppMapCombineCells(
             values: cell.values,
             targetProfileId: cell.targetProfileId,
             executionTarget: target,
+            /** Stable timing cohort identity. Wrapper recipe ids can change
+             * when a Combine world is recompiled, so duration admission keys
+             * completed runs to the immutable App Map Test instead. */
+            durationCohortAction: `app-map:${cell.childIntent.sourcePlan.appMapId}:test:${cell.testId}`,
             outerIntentDigest: cell.outerIntent.digest,
             childIntentDigest: digestAppMapTestExecutionValue(cell.childIntent),
             wrapperGraphDigest: cell.outerIntent.wrapper.recipeGraphDigest,

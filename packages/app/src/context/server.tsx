@@ -104,8 +104,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
     const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
     const [recipesLoaded, setRecipesLoaded] = createSignal(false);
-    // Reopen the last App Map without implying hardware control or recording.
-    // App Maps and recipes remain independent selections.
+    // Reopen the last App Map without implying hardware control; maps and recipes remain independent.
     const [selectedAppMapId, setSelectedAppMapIdState] = createSignal<string | null>(null);
     function setSelectedAppMapId(id: string | null): void {
       setSelectedAppMapIdState(id);
@@ -137,9 +136,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
     const [liveFrame, setLiveFrame] = createSignal<Frame | null>(null);
     const [liveCaptureIssue, setLiveCaptureIssue] = createSignal<string | null>(null);
-    // Observation is shareable, control is exclusive. Keep those states
-    // separate so a successful screenshot poll cannot turn a view-only target
-    // back into a misleading green “Live” state.
+    // Observation is shareable, control exclusive; screenshots cannot make a view-only target green.
     const [controlIssue, setControlIssue] = createSignal<string | null>(null);
     const [conflictingLeaseId, setConflictingLeaseId] = createSignal<string | null>(null);
     const [takingControlOfSelectedDevice, setTakingControlOfSelectedDevice] = createSignal(false);
@@ -267,7 +264,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       selectedDevice,
       setLiveCaptureIssue,
     });
-
     const {
       redactionPolicy,
       evidenceCollectionPolicy,
@@ -917,6 +913,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       editTest,
       saveCombine,
       preflightCombine,
+      estimateCampaignDurationCohorts,
+      preflightLocalCampaignAdmission,
       removeCombine,
       runRecipeAcrossLocales: runRecipeAcrossLocalesRemote,
       runAppMapConnection: runAppMapConnectionRemote,
@@ -949,7 +947,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]),
       notify: platform.notify,
     });
-
     const selectedAppMap = createMemo(
       () => appMaps().find((appMap) => appMap.id === selectedAppMapId()) ?? null,
     );
@@ -1101,6 +1098,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       editTest,
       saveCombine,
       preflightCombine,
+      estimateCampaignDurationCohorts,
+      preflightLocalCampaignAdmission,
       removeCombine,
       runRecipeAcrossLocalesRemote,
       runAppMapConnectionRemote,

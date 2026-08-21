@@ -5,6 +5,7 @@ import {
 } from "./app-map-commands.js";
 import { appMapRunPlanCommandDescriptors } from "./app-map-run-plan-commands.js";
 import { authoringSessionCommandDescriptors } from "./authoring-session-commands.js";
+import { campaignCapacityCommandDescriptors } from "./campaign-capacity-commands.js";
 import {
   commandPath as path,
   mappedOperation as mapped,
@@ -94,48 +95,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("device-pool.save", path("device-pool save")),
   mapped("device-pool.preflight", path("device-pool preflight", ["poolId"])),
   mapped("target-worker.list", path("target worker list")),
-  mapped(
-    "campaign.capacity.preflight",
-    path("campaign capacity preflight", [], undefined, {
-      summary: "Read-only preflight for a local Android and iOS campaign",
-      inputHelp: [
-        {
-          name: "targets",
-          type: "array",
-          required: true,
-          description: "Explicit target IDs and platforms to consider",
-        },
-        {
-          name: "workItems",
-          type: "number",
-          required: true,
-          description: "Total work items in the campaign",
-        },
-        {
-          name: "workItemsByPlatform",
-          type: "object",
-          required: true,
-          description: "Required Android and iOS partition of the campaign",
-        },
-        {
-          name: "duration",
-          type: "object",
-          required: true,
-          description: "Measured or supplied per-work-item duration and provenance",
-        },
-        {
-          name: "deadlineMs",
-          type: "number",
-          required: true,
-          description: "Campaign deadline in milliseconds",
-        },
-      ],
-      note: "This only reports currently usable local capacity; it never takes a lease or queues a job.",
-      examples: [
-        'relay campaign capacity preflight --input \'{"targets":[{"targetId":"android-1","platform":"android"},{"targetId":"ios-1","platform":"ios"}],"workItems":40,"workItemsByPlatform":{"android":20,"ios":20},"duration":{"workItemDurationMs":6000,"provenance":"supplied"},"deadlineMs":180000}\'',
-      ],
-    }),
-  ),
+  ...campaignCapacityCommandDescriptors,
   mapped(
     "lease.list",
     path(
@@ -381,7 +341,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: [
         'relay combine run grok-ios language-x-settings --input \'{"serial":"<device>","platform":"android"}\'',
       ],
-      note: "Each Combine cell needs an explicit saved targetProfileId. Relay preflights every selected cell offline before it touches a device. Bind profiles with cellRuntimeProfiles; missing or foreign bindings return 409 and queue nothing.",
+      note: "Each Combine cell needs an explicit saved targetProfileId in cellRuntimeProfiles. For a local multi-target campaign, pass cellTargetBindings plus the shared localAdmission object; it contains only measured target × Test/action evidence and never implies provider/cloud capacity. Missing, foreign, stale, or infeasible bindings return 409 and queue nothing.",
       behavior: "job-start-watch",
     }),
     path("combine run", ["appMapId", "combineId"], undefined, {
@@ -391,11 +351,17 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         { name: "combineId", type: "string", description: "Saved Combine" },
       ],
       inputHelp: [
-        { name: "serial", type: "string", description: "Device serial" },
+        {
+          name: "serial",
+          type: "string",
+          description:
+            "Legacy one-target device serial. Omit it when cellTargetBindings is supplied; Relay will not infer a local target.",
+        },
         {
           name: "platform",
           type: "android | ios",
-          description: "Required for a device Combine so each cell binds before discovery",
+          description:
+            "Required with the legacy serial path. Each explicit local target binding carries its own platform.",
         },
         {
           name: "selected",
@@ -419,6 +385,18 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           type: "array",
           description:
             "Explicit {testId, values, targetProfileId} bindings for every selected Test × world cell",
+        },
+        {
+          name: "cellTargetBindings",
+          type: "array",
+          description:
+            "Explicit [{testId, values, target}] local execution targets for every selected cell. A target is a versioned local-device Android/iOS reference; provider sessions are not capacity.",
+        },
+        {
+          name: "localAdmission",
+          type: "object",
+          description:
+            "Shared LocalCampaignAdmissionRequest: {deadlineMs, durationEvidence, setupHeadroomMs?, recoveryHeadroomMs?}. Evidence must be fresh observed p50/p95 data for every bound target × Test/action cohort.",
         },
         {
           name: "selectedCellIds",

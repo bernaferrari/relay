@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS } from "@relay/protocol";
 import type { JobInfo } from "./api-types.js";
 import { createServerRunController } from "./server-run-controller.js";
 import type { ServerRequest } from "./server-matrix-remote.js";
@@ -65,4 +66,100 @@ test("single-Test execution remembers and selects the exact queued compiler root
     remembered.map((job) => job.id),
     ["job-1"],
   );
+});
+
+test("explicit local Combine bindings run without a globally selected device", async () => {
+  let requestBody: Record<string, unknown> | undefined;
+  const request: ServerRequest = async <T>(path: string, init?: RequestInit) => {
+    assert.equal(path, "/jobs/combine");
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return {
+      batch: {
+        id: "campaign-1",
+        title: "Settings",
+        worlds: ["Italian"],
+        recipeId: "app-map:settings:test:settings:root",
+      },
+      jobs: [],
+      matrix: { id: "campaign-1" },
+      campaign: { id: "campaign-1" },
+    } as T;
+  };
+  const controller = createServerRunController({
+    request,
+    health: () => "online",
+    devices: () => [],
+    recipes: () => [],
+    matrices: () => [],
+    selectedDevice: () => null,
+    selectedJobId: () => null,
+    prodAccountMatch: () => "",
+    projectId: () => "project",
+    projectVariables: () => [],
+    activeJob: () => null,
+    queuedJobs: () => [],
+    captureBeforeRun: async () => undefined,
+    appendLog: () => undefined,
+    setSelectedJobId: () => undefined,
+    setSelectedAction: () => undefined,
+    setError: () => undefined,
+    refreshJobs: async () => undefined,
+    rememberJob: () => undefined,
+  });
+  const localAdmission = {
+    deadlineMs: 120_000,
+    durationEvidence: [
+      {
+        schemaVersion: 1 as const,
+        cohort: {
+          targetId: "ipad-1",
+          platform: "ios" as const,
+          testId: "settings",
+          action: "app-map:settings:test:settings",
+        },
+        duration: {
+          workItemDurationMs: 10_000,
+          provenance: "observed-p50" as const,
+          observedAt: 100,
+          sampleCount: 5,
+          maxAgeMs: MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS,
+        },
+        measurement: {
+          estimator: "campaign-duration-estimate" as const,
+          recordSource: "persisted-runs" as const,
+          durationSource: "run-wall-clock" as const,
+          sampleIds: ["1", "2", "3", "4", "5"],
+          observationWindow: { startedAt: 1, finishedAt: 100 },
+        },
+      },
+    ],
+  };
+
+  const result = await controller.runPathAcrossVariables({
+    appMapId: "settings",
+    combineId: "language",
+    cellRuntimeProfiles: [
+      { testId: "settings", values: { language: "it" }, targetProfileId: "ios-profile" },
+    ],
+    cellTargetBindings: [
+      {
+        testId: "settings",
+        values: { language: "it" },
+        target: {
+          schemaVersion: 1,
+          kind: "local-device",
+          provider: { key: "relay.local.agent-device", scope: "local" },
+          targetId: "ipad-1",
+          platform: "ios",
+          identity: { kind: "device-serial", value: "ipad-1" },
+        },
+      },
+    ],
+    localAdmission,
+  });
+
+  assert.deepEqual(result, { jobId: null, campaignId: "campaign-1" });
+  assert.equal(requestBody?.serial, undefined);
+  assert.deepEqual(requestBody?.localAdmission, localAdmission);
+  assert.equal((requestBody?.cellTargetBindings as unknown[])?.length, 1);
 });

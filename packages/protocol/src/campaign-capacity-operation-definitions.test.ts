@@ -4,8 +4,14 @@ import { campaignCapacityOperationDefinitions } from "./campaign-capacity-operat
 
 function campaignCapacityDefinition() {
   const definitions = campaignCapacityOperationDefinitions;
-  assert.equal(definitions.length, 1);
+  assert.equal(definitions.length, 3);
   return definitions[0]!;
+}
+
+function localCampaignAdmissionDefinition() {
+  const definitions = campaignCapacityOperationDefinitions;
+  assert.equal(definitions.length, 3);
+  return definitions[2]!;
 }
 
 const validInput = {
@@ -96,4 +102,52 @@ test("campaign capacity preflight validates exact local target and duration evid
     () => definition.output.parse({}),
     /campaign capacity preflight response preflight must be an object/,
   );
+});
+
+test("local admission transport requires a canonical local AgentDevice target", () => {
+  const definition = localCampaignAdmissionDefinition();
+  const input = {
+    workItems: [
+      {
+        id: "locale-it",
+        testId: "settings",
+        action: "app-map:settings:test:settings",
+        target: {
+          schemaVersion: 1,
+          kind: "local-device" as const,
+          provider: { key: "relay.local.agent-device", scope: "local" as const },
+          targetId: "pixel-1",
+          platform: "android" as const,
+          identity: { kind: "device-serial" as const, value: "pixel-1" },
+        },
+      },
+    ],
+    request: { deadlineMs: 180_000, durationEvidence: [] },
+  };
+  assert.deepEqual(definition.input.parse(input), input);
+
+  for (const target of [
+    {
+      ...input.workItems[0]!.target,
+      provider: { key: "example.device-farm", scope: "remote" },
+    },
+    {
+      ...input.workItems[0]!.target,
+      identity: { kind: "device-serial", value: "another-pixel" },
+    },
+    {
+      kind: "local-device",
+      targetId: "pixel-1",
+      platform: "android",
+    },
+  ]) {
+    assert.throws(
+      () =>
+        definition.input.parse({
+          ...input,
+          workItems: [{ ...input.workItems[0]!, target }],
+        }),
+      /canonical local-device target/,
+    );
+  }
 });

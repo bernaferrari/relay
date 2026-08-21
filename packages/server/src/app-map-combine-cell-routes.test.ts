@@ -19,9 +19,86 @@ import {
   updateCombineCampaign,
   waitForJobCompletion,
 } from "@relay/core";
-import type { CombineCampaign, DeviceLease } from "@relay/protocol";
+import type {
+  CampaignCapacityCohortDurationEvidence,
+  CombineCampaign,
+  DeviceLease,
+} from "@relay/protocol";
 import { startServer } from "./index.js";
 import { assertTargetControl } from "./access-control.js";
+
+function cohortEvidence(
+  target: { targetId: string; platform: "android" | "ios" },
+  observedAt: number,
+  workItemDurationMs = 1_000,
+) {
+  const testId = "script-only";
+  return {
+    schemaVersion: 1 as const,
+    cohort: {
+      targetId: target.targetId,
+      platform: target.platform,
+      testId,
+      action: `app-map:store:test:${testId}`,
+    },
+    duration: {
+      workItemDurationMs,
+      provenance: "observed-p95" as const,
+      observedAt,
+      sampleCount: 20,
+      maxAgeMs: 60_000,
+    },
+    measurement: {
+      estimator: "campaign-duration-estimate" as const,
+      recordSource: "persisted-runs" as const,
+      durationSource: "run-wall-clock" as const,
+      sampleIds: Array.from(
+        { length: 20 },
+        (_, index) => `${target.targetId}:script-only:${index}`,
+      ),
+      observationWindow: { startedAt: Math.max(0, observedAt - 1_000), finishedAt: observedAt },
+    },
+  };
+}
+
+function localAdmission(input: {
+  deadlineMs: number;
+  targets: Array<{ targetId: string; platform: "android" | "ios" }>;
+  observedAt: number;
+  workItemDurationMs?: number;
+  setupHeadroomMs?: number;
+  recoveryHeadroomMs?: number;
+}) {
+  const targets = new Map(
+    input.targets.map((target) => [`${target.platform}:${target.targetId}`, target]),
+  );
+  return {
+    deadlineMs: input.deadlineMs,
+    durationEvidence: [...targets.values()].map((target) =>
+      cohortEvidence(target, input.observedAt, input.workItemDurationMs),
+    ),
+    ...(input.setupHeadroomMs === undefined ? {} : { setupHeadroomMs: input.setupHeadroomMs }),
+    ...(input.recoveryHeadroomMs === undefined
+      ? {}
+      : { recoveryHeadroomMs: input.recoveryHeadroomMs }),
+  };
+}
+
+async function verifySyntheticCohortEvidence(input: {
+  evidence: readonly CampaignCapacityCohortDurationEvidence[];
+}): Promise<Map<string, CampaignCapacityCohortDurationEvidence>> {
+  return new Map(
+    input.evidence.map((evidence) => [
+      JSON.stringify([
+        evidence.cohort.targetId,
+        evidence.cohort.platform,
+        evidence.cohort.testId,
+        evidence.cohort.action,
+      ]),
+      structuredClone(evidence),
+    ]),
+  );
+}
 
 test("Combine start prepares cells offline and refuses missing bindings without discovery", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-combine-cell-"));
@@ -32,6 +109,7 @@ test("Combine start prepares cells offline and refuses missing bindings without 
     host: "127.0.0.1",
     port: 0,
     jobRouteRuntime: {
+      verifyCampaignDurationCohortEvidence: verifySyntheticCohortEvidence,
       async listDevices() {
         calls.listDevices += 1;
         return listDevices();
@@ -265,6 +343,7 @@ test("Combine admission binds cells across local Android and iOS before one job 
     host: "127.0.0.1",
     port: 0,
     jobRouteRuntime: {
+      verifyCampaignDurationCohortEvidence: verifySyntheticCohortEvidence,
       async listDevices() {
         calls.devices += 1;
         return [
@@ -358,36 +437,18 @@ test("Combine admission binds cells across local Android and iOS before one job 
           target: localExecutionTargetRef({ targetId: "ipad-b", platform: "ios" }),
         },
       ],
-      localAdmission: {
+      localAdmission: localAdmission({
         deadlineMs: 10_000,
-        duration: {
-          workItemDurationMs: 1_000,
-          provenance: "observed-p95",
-          observedAt,
-          sampleCount: 20,
-          maxAgeMs: 60_000,
-        },
-        durationsByPlatform: {
-          android: {
-            workItemDurationMs: 1_000,
-            provenance: "observed-p95",
-            observedAt,
-            sampleCount: 20,
-            maxAgeMs: 60_000,
-          },
-          ios: {
-            workItemDurationMs: 1_000,
-            provenance: "observed-p95",
-            observedAt,
-            sampleCount: 20,
-            maxAgeMs: 60_000,
-          },
-        },
+        targets: [
+          { targetId: "pixel-a", platform: "android" },
+          { targetId: "ipad-b", platform: "ios" },
+        ],
+        observedAt,
         setupHeadroomMs: 500,
         recoveryHeadroomMs: 500,
-      },
+      }),
     });
-    const jobs = (result.jobs as Array<{ serial?: string }>) ?? [];
+    const jobs = (result.jobs as Array<{ id?: string; serial?: string }>) ?? [];
     assert.deepEqual(jobs.map((job) => job.serial).sort(), ["ipad-b", "pixel-a"]);
     const admission = result.admission as {
       preflight: {
@@ -432,6 +493,11 @@ test("Combine admission binds cells across local Android and iOS before one job 
       campaign.execution?.localAdmission?.preflight.deadline.achievableWithCurrentCapacity,
       true,
     );
+    for (const job of jobs) {
+      if (!job.id) throw new Error("multi-target admission did not create a job id");
+      cancelJob(job.id);
+    }
+    await Promise.all(jobs.map((job) => waitForJobCompletion(job.id!)));
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
@@ -450,6 +516,7 @@ test("Combine admission reuses a caller-controlled local lease during initial qu
     host: "127.0.0.1",
     port: 0,
     jobRouteRuntime: {
+      verifyCampaignDurationCohortEvidence: verifySyntheticCohortEvidence,
       async listDevices() {
         return [
           {
@@ -512,16 +579,11 @@ test("Combine admission reuses a caller-controlled local lease during initial qu
           target: localExecutionTargetRef({ targetId: "pixel-1", platform: "android" }),
         },
       ],
-      localAdmission: {
+      localAdmission: localAdmission({
         deadlineMs: 10_000,
-        duration: {
-          workItemDurationMs: 1_000,
-          provenance: "observed-p95",
-          observedAt: Date.now(),
-          sampleCount: 20,
-          maxAgeMs: 60_000,
-        },
-      },
+        targets: [{ targetId: "pixel-1", platform: "android" }],
+        observedAt: Date.now(),
+      }),
     });
     assert.equal(
       (result.admission as { preflight: { deadline: { achievableWithCurrentCapacity: boolean } } })
@@ -530,6 +592,10 @@ test("Combine admission reuses a caller-controlled local lease during initial qu
     );
     assert.equal((result.jobs as unknown[]).length, 1);
     assert.deepEqual(calls, { controls: 1, releases: 0 });
+    const queuedJobId = (result.jobs as Array<{ id?: string }>)[0]?.id;
+    if (!queuedJobId) throw new Error("initial local admission did not create a job id");
+    cancelJob(queuedJobId);
+    await waitForJobCompletion(queuedJobId);
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
@@ -538,36 +604,59 @@ test("Combine admission reuses a caller-controlled local lease during initial qu
   }
 });
 
-test("a passed pilot resumes on its retained caller lease through local admission", async () => {
+test("a pilot persists full cohort evidence, then resumes with only its pending target cohort", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-combine-pilot-resume-"));
   const previous = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
-  const targetId = "pilot-resume-pixel";
-  const existing = admissionLease(targetId);
-  const calls = { controls: 0, releases: 0 };
+  const pilotTargetId = "pilot-resume-pixel";
+  const coverageTargetId = "pilot-resume-ipad";
+  const existingByTarget = new Map(
+    [pilotTargetId, coverageTargetId].map((targetId) => [targetId, admissionLease(targetId)]),
+  );
+  const calls = { controls: [] as string[], releases: 0, verifiedCohorts: [] as string[][] };
   const server = await startServer({
     host: "127.0.0.1",
     port: 0,
     jobRouteRuntime: {
+      async verifyCampaignDurationCohortEvidence(input) {
+        calls.verifiedCohorts.push(input.evidence.map((evidence) => evidence.cohort.targetId));
+        return verifySyntheticCohortEvidence(input);
+      },
       async listDevices() {
         return [
           {
-            id: targetId,
-            serial: targetId,
+            id: pilotTargetId,
+            serial: pilotTargetId,
             name: "Pilot resume Pixel",
             kind: "Physical device",
             booted: true,
             platform: "android" as const,
           },
+          {
+            id: coverageTargetId,
+            serial: coverageTargetId,
+            name: "Pilot resume iPad",
+            kind: "Physical device",
+            booted: true,
+            platform: "ios" as const,
+          },
         ];
       },
       async listDeviceLeases() {
-        return [existing];
+        return [...existingByTarget.values()];
       },
       listTargetWorkers() {
         return [
           {
-            workerId: `local:android:target:${targetId}`,
+            workerId: `local:android:target:${pilotTargetId}`,
+            capacity: 1,
+            active: 0,
+            queued: 0,
+            activeTargets: [],
+            queuedTargets: [],
+          },
+          {
+            workerId: `local:ios:target:${coverageTargetId}`,
             capacity: 1,
             active: 0,
             queued: 0,
@@ -576,9 +665,12 @@ test("a passed pilot resumes on its retained caller lease through local admissio
           },
         ];
       },
-      async admitTargetControl() {
-        calls.controls += 1;
-        return { lease: existing, createdByThisCall: false };
+      async admitTargetControl(_scope, targetId) {
+        if (!targetId) throw new Error("target id is required");
+        const lease = existingByTarget.get(targetId);
+        if (!lease) throw new Error(`unexpected target ${targetId}`);
+        calls.controls.push(targetId);
+        return { lease, createdByThisCall: false };
       },
       async releaseDeviceLease() {
         calls.releases += 1;
@@ -596,34 +688,37 @@ test("a passed pilot resumes on its retained caller lease through local admissio
       actorKind: "human",
     });
     await saveLocaleCombine(client, {
-      en: { targetId, platform: "android" },
-      it: { targetId, platform: "android" },
-      fr: { targetId, platform: "android" },
+      en: { targetId: pilotTargetId, platform: "android" },
+      it: { targetId: coverageTargetId, platform: "ios" },
+      fr: { targetId: coverageTargetId, platform: "ios" },
     });
     const observedAt = Date.now();
-    const target = localExecutionTargetRef({ targetId, platform: "android" });
-    const admission = {
+    const pilotTarget = localExecutionTargetRef({ targetId: pilotTargetId, platform: "android" });
+    const coverageTarget = localExecutionTargetRef({
+      targetId: coverageTargetId,
+      platform: "ios",
+    });
+    const admission = localAdmission({
       deadlineMs: 10_000,
-      duration: {
-        workItemDurationMs: 1_000,
-        provenance: "observed-p95" as const,
-        observedAt,
-        sampleCount: 20,
-        maxAgeMs: 60_000,
-      },
-    };
+      targets: [
+        { targetId: pilotTargetId, platform: "android" },
+        { targetId: coverageTargetId, platform: "ios" },
+      ],
+      observedAt,
+    });
     const pilot = await client.invoke("job.combine.start", {
       appMapId: "store",
       combineId: "locales",
       executionMode: "pilot",
       selected: { language: ["en", "it"] },
       cellTargetBindings: [
-        { testId: "script-only", values: { language: "en" }, target },
-        { testId: "script-only", values: { language: "it" }, target },
+        { testId: "script-only", values: { language: "en" }, target: pilotTarget },
+        { testId: "script-only", values: { language: "it" }, target: coverageTarget },
       ],
       localAdmission: admission,
     });
     const created = pilot.campaign as CombineCampaign;
+    assert.equal(created.execution?.localAdmission?.request.durationEvidence.length, 2);
     const pilotJobId = created.cases.find((item) => item.phase === "pilot")?.jobId;
     if (!pilotJobId) throw new Error("pilot did not create a job");
     cancelJob(pilotJobId);
@@ -646,8 +741,11 @@ test("a passed pilot resumes on its retained caller lease through local admissio
       batchId: created.id,
       reviewed: true,
     });
-    assert.equal((resumed.jobs as unknown[]).length, 1);
-    assert.deepEqual(calls, { controls: 2, releases: 0 });
+    const resumedJobs = (resumed.jobs as Array<{ id?: string }>) ?? [];
+    assert.equal(resumedJobs.length, 1);
+    assert.deepEqual(calls.controls, [pilotTargetId, coverageTargetId]);
+    assert.equal(calls.releases, 0);
+    assert.deepEqual(calls.verifiedCohorts, [[pilotTargetId], [coverageTargetId]]);
     const campaign = resumed.campaign as CombineCampaign;
     assert.equal(campaign.cases.find((item) => item.phase === "pilot")?.status, "passed");
     assert.ok(
@@ -655,6 +753,10 @@ test("a passed pilot resumes on its retained caller lease through local admissio
         campaign.cases.find((item) => item.phase === "coverage")?.status ?? "",
       ),
     );
+    const coverageJobId = resumedJobs[0]?.id;
+    if (!coverageJobId) throw new Error("coverage resume did not create a job id");
+    cancelJob(coverageJobId);
+    await waitForJobCompletion(coverageJobId);
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
@@ -672,6 +774,7 @@ test("Combine rejects an infeasible deadline before acquiring any lease or queue
     host: "127.0.0.1",
     port: 0,
     jobRouteRuntime: {
+      verifyCampaignDurationCohortEvidence: verifySyntheticCohortEvidence,
       async listDevices() {
         return [
           {
@@ -757,32 +860,14 @@ test("Combine rejects an infeasible deadline before acquiring any lease or queue
             target: localExecutionTargetRef({ targetId: "ipad-b", platform: "ios" }),
           },
         ],
-        localAdmission: {
+        localAdmission: localAdmission({
           deadlineMs: 500,
-          duration: {
-            workItemDurationMs: 1_000,
-            provenance: "observed-p95",
-            observedAt: Date.now(),
-            sampleCount: 20,
-            maxAgeMs: 60_000,
-          },
-          durationsByPlatform: {
-            android: {
-              workItemDurationMs: 1_000,
-              provenance: "observed-p95",
-              observedAt: Date.now(),
-              sampleCount: 20,
-              maxAgeMs: 60_000,
-            },
-            ios: {
-              workItemDurationMs: 1_000,
-              provenance: "observed-p95",
-              observedAt: Date.now(),
-              sampleCount: 20,
-              maxAgeMs: 60_000,
-            },
-          },
-        },
+          targets: [
+            { targetId: "pixel-a", platform: "android" },
+            { targetId: "ipad-b", platform: "ios" },
+          ],
+          observedAt: Date.now(),
+        }),
       }),
       (error: unknown) =>
         error instanceof ApiError &&

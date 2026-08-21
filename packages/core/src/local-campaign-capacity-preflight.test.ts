@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { DeviceLease, TargetRuntimeReadiness } from "@relay/protocol";
-import { preflightLocalCampaignCapacity } from "./local-campaign-capacity-preflight.js";
+import type {
+  CampaignCapacityCohortDurationEvidence,
+  DeviceLease,
+  TargetRuntimeReadiness,
+} from "@relay/protocol";
+import {
+  preflightLocalCampaignCapacity,
+  preflightLocalCampaignTargetCriticalPath,
+} from "./local-campaign-capacity-preflight.js";
 import type { ListedDevice } from "./workspace-devices.js";
 
 function device(
@@ -54,6 +61,38 @@ function lease(serial: string, expiresAt: number): DeviceLease {
     status: "leased",
     leasedAt: 1,
     expiresAt,
+  };
+}
+
+function cohortEvidence(input: {
+  targetId: string;
+  platform: "android" | "ios";
+  testId: string;
+  action: string;
+  workItemDurationMs: number;
+}): CampaignCapacityCohortDurationEvidence {
+  return {
+    schemaVersion: 1,
+    cohort: {
+      targetId: input.targetId,
+      platform: input.platform,
+      testId: input.testId,
+      action: input.action,
+    },
+    duration: {
+      workItemDurationMs: input.workItemDurationMs,
+      provenance: "observed-p95",
+      observedAt: 1_000,
+      sampleCount: 5,
+      maxAgeMs: 1_000,
+    },
+    measurement: {
+      estimator: "campaign-duration-estimate",
+      recordSource: "persisted-runs",
+      durationSource: "run-wall-clock",
+      sampleIds: Array.from({ length: 5 }, (_, index) => `${input.testId}:${index}`),
+      observationWindow: { startedAt: 900, finishedAt: 1_000 },
+    },
   };
 }
 
@@ -205,4 +244,53 @@ test("a supplied or stale measurement never becomes a deadline SLA", () => {
   assert.equal(stale.deadline.capacity, "within-budget");
   assert.equal(stale.deadline.assurance, "measurement-stale");
   assert.equal(stale.deadline.achievableWithCurrentCapacity, false);
+});
+
+test("keeps heterogeneous slow-Test evidence visible on a concrete iPad serial path", () => {
+  const target = { targetId: "ipad-slow", platform: "ios" as const };
+  const preflight = preflightLocalCampaignTargetCriticalPath({
+    target,
+    workItems: [
+      {
+        workItemId: "quick",
+        evidence: cohortEvidence({
+          ...target,
+          testId: "quick-tour",
+          action: "app-map:settings:test:quick-tour",
+          workItemDurationMs: 100,
+        }),
+      },
+      {
+        workItemId: "deep",
+        evidence: cohortEvidence({
+          ...target,
+          testId: "deep-tour",
+          action: "app-map:settings:test:deep-tour",
+          workItemDurationMs: 2_000,
+        }),
+      },
+    ],
+    deadlineMs: 2_050,
+    devices: [device(target.targetId, target.platform)],
+    leases: [],
+    workers: [],
+    scheduledTargetIds: [target.targetId],
+    at: 1_000,
+  });
+
+  assert.equal(preflight.scheduled, true);
+  assert.equal(preflight.criticalPath.estimatedWorkDurationMs, 2_100);
+  assert.equal(preflight.deadline.achievableWithCurrentCapacity, false);
+  assert.deepEqual(
+    preflight.criticalPath.workItems.map((item) => [
+      item.workItemId,
+      item.evidence.cohort.testId,
+      item.evidence.duration.workItemDurationMs,
+      item.evidence.measurement.sampleIds.length,
+    ]),
+    [
+      ["quick", "quick-tour", 100, 5],
+      ["deep", "deep-tour", 2_000, 5],
+    ],
+  );
 });

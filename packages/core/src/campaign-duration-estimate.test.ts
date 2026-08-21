@@ -3,8 +3,10 @@ import test from "node:test";
 import type { EvidenceChannel, EvidenceManifest } from "@relay/protocol";
 import type { CampaignDurationRunRecord } from "./campaign-duration-estimate.js";
 import {
+  campaignCohortDurationEvidenceForPreflight,
   campaignDurationInputForPreflight,
   estimateCampaignDuration,
+  estimateCampaignDurationForCohort,
 } from "./campaign-duration-estimate.js";
 import { preflightLocalCampaignCapacity } from "./local-campaign-capacity-preflight.js";
 import type { ListedDevice } from "./workspace-devices.js";
@@ -253,4 +255,60 @@ test("a stale observation can size a plan but cannot turn the deadline into a cu
   assert.equal(preflight.deadline.capacity, "within-budget");
   assert.equal(preflight.deadline.assurance, "measurement-stale");
   assert.equal(preflight.deadline.achievableWithCurrentCapacity, false);
+});
+
+test("derives locale timing only from the immutable per-target frozen cohort", () => {
+  const cohort = {
+    targetId: "pixel-locale",
+    platform: "android" as const,
+    testId: "app-map:settings:flow:locale",
+    action: "app-map:settings:flow:locale",
+  };
+  const records = [100, 200, 300, 400, 500].map((durationMs, index) =>
+    run(`locale-${index}`, durationMs, NOW - 500 + index * 100, {
+      // Locale wrapper ids intentionally rotate per matrix; their stable
+      // timing identity is the frozen cohort, not this transient action.
+      action: `locale-wrapper-${index}`,
+      serial: cohort.targetId,
+      executionTarget: {
+        schemaVersion: 1,
+        kind: "local-device",
+        provider: { key: "relay.local.agent-device", scope: "local" },
+        targetId: cohort.targetId,
+        platform: cohort.platform,
+        identity: { kind: "device-serial", value: cohort.targetId },
+      },
+      artifacts: [
+        {
+          kind: "frozen-inputs",
+          data: {
+            kind: "locale-matrix",
+            durationCohort: { testId: cohort.testId, action: cohort.action },
+          },
+        },
+      ],
+    }),
+  );
+
+  const estimate = estimateCampaignDurationForCohort({
+    cohort,
+    runs: records,
+    source: "persisted-runs",
+    at: NOW,
+    maxAgeMs: 1_000,
+    minSamples: 5,
+  });
+
+  assert.equal(estimate.status, "current");
+  assert.deepEqual(estimate.sampleIds, [
+    "locale-4",
+    "locale-3",
+    "locale-2",
+    "locale-1",
+    "locale-0",
+  ]);
+  const evidence = campaignCohortDurationEvidenceForPreflight(estimate, "p95");
+  assert.deepEqual(evidence?.cohort, cohort);
+  assert.equal(evidence?.duration.workItemDurationMs, 480);
+  assert.deepEqual(evidence?.measurement.sampleIds, estimate.sampleIds);
 });

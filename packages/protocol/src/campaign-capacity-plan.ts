@@ -166,6 +166,111 @@ export type CampaignCapacityDurationInput = {
   maxAgeMs?: number;
 };
 
+/**
+ * The immutable identity of the work represented by a timing measurement.
+ * A platform-wide average is deliberately not this: deadline admission needs
+ * to know both the physical lane and the Test/action which produced a sample.
+ */
+export type CampaignCapacityDurationCohort = {
+  targetId: string;
+  platform: "android" | "ios";
+  testId: string;
+  action: string;
+};
+
+/** A measured duration is the only kind that can prove a deadline. */
+export type CampaignCapacityObservedDurationInput = CampaignCapacityDurationInput & {
+  provenance: "observed-p50" | "observed-p95";
+  observedAt: number;
+  sampleCount: number;
+  maxAgeMs: number;
+};
+
+/** Where the bounded timing cohort came from. It makes a serialized admission
+ * independently reviewable without giving a platform aggregate more authority
+ * than its concrete target/Test samples deserve. */
+export type CampaignCapacityCohortDurationMeasurement = {
+  estimator: "campaign-duration-estimate";
+  recordSource: "persisted-runs" | "run-summaries" | "mixed-read-only-records";
+  durationSource: "run-wall-clock" | "evidence-completion";
+  /** Exact, de-duplicated terminal run ids used by the percentile calculation. */
+  sampleIds: string[];
+  observationWindow: { startedAt: number; finishedAt: number };
+};
+
+/**
+ * A conservative duration candidate tied to one physical target and Test /
+ * frozen action. Local deadline admission rejects anything that cannot be
+ * matched to a selected cell's complete cohort key.
+ */
+export type CampaignCapacityCohortDurationEvidence = {
+  schemaVersion: 1;
+  cohort: CampaignCapacityDurationCohort;
+  duration: CampaignCapacityObservedDurationInput;
+  measurement: CampaignCapacityCohortDurationMeasurement;
+};
+
+/** A local device's app/process state changes quickly. Clients may request a
+ * shorter freshness window, never a longer one that would over-promise a new
+ * deadline from an old observation. The server enforces this shared bound. */
+export const MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS = 60 * 60 * 1_000;
+
+/** A bounded request for estimates derived only from completed, immutable
+ * target/Test/action run cohorts. It is intentionally separate from capacity
+ * admission: reading this evidence neither leases a target nor reserves a
+ * scheduler slot. */
+export type CampaignCapacityCohortDurationEstimateRequest = {
+  cohorts: CampaignCapacityDurationCohort[];
+  /** How long an observation remains eligible for a deadline proof. The
+   * server applies a conservative policy ceiling in addition to this value. */
+  maxAgeMs: number;
+  /** Defaults to the estimator's conservative p95 cohort minimum. */
+  minSamples?: number;
+  /** Bounds the newest successful samples considered for each cohort. */
+  maxSamples?: number;
+  /** Which observed percentile should be materialized as admission evidence. */
+  percentile?: "p50" | "p95";
+  /** Wall-clock work is the safe default; evidence completion is available
+   * only when every accepted run has sufficient immutable evidence. */
+  durationSource?: "run-wall-clock" | "evidence-completion";
+};
+
+/** Public diagnostic for a read-only timing calculation. It carries enough
+ * provenance to explain why an estimate is unavailable without exposing a
+ * platform-wide substitute as deadline evidence. */
+export type CampaignCapacityCohortDurationEstimate = {
+  schemaVersion: 1;
+  cohort: CampaignCapacityDurationCohort;
+  checkedAt: number;
+  status: "current" | "stale" | "insufficient-samples";
+  minSamples: number;
+  maxAgeMs: number;
+  sampleCount: number;
+  observedAt?: number;
+  observationWindow?: { startedAt: number; finishedAt: number };
+  candidates?: {
+    p50: CampaignCapacityObservedDurationInput;
+    p95: CampaignCapacityObservedDurationInput;
+  };
+  filtering: {
+    recordSource: "persisted-runs" | "run-summaries" | "mixed-read-only-records";
+    durationSource: "run-wall-clock" | "evidence-completion";
+    totalRecords: number;
+    acceptedBeforeSampleCap: number;
+    excludedByReason: Partial<Record<string, number>>;
+    sampleCap: number;
+    omittedBySampleCap: number;
+  };
+  /** Directly serializable only when enough compatible persisted evidence
+   * exists. Its sample ids are re-verified again at admission time. */
+  evidence?: CampaignCapacityCohortDurationEvidence;
+};
+
+export type CampaignCapacityCohortDurationEstimateResponse = {
+  checkedAt: number;
+  estimates: CampaignCapacityCohortDurationEstimate[];
+};
+
 /** Read-only request for sizing independent local Android/iOS work. */
 export type LocalCampaignCapacityPreflightInput = {
   targets: LocalCampaignCapacityTargetInput[];
@@ -233,5 +338,29 @@ export type LocalCampaignCapacityPreflight = {
   targets: LocalCampaignCapacityTargetFact[];
   deadline: LocalCampaignCapacityDeadlineAssessment;
   plan: CampaignCapacityPlan;
+  assumptions: string[];
+};
+
+/** A target-affine cell on one serial critical path. */
+export type LocalCampaignCapacityCriticalPathWorkItem = {
+  workItemId: string;
+  evidence: CampaignCapacityCohortDurationEvidence;
+};
+
+/**
+ * The deadline proof for one concrete target. Unlike the generic capacity
+ * preflight, this keeps every Test/action measurement visible and sums them
+ * on the target's serial lane.
+ */
+export type LocalCampaignCapacityTargetCriticalPathPreflight = {
+  checkedAt: number;
+  target: LocalCampaignCapacityTargetFact;
+  criticalPath: {
+    workItems: LocalCampaignCapacityCriticalPathWorkItem[];
+    estimatedWorkDurationMs: number;
+  };
+  /** True only if this target survived the campaign-wide target/host capacity snapshot. */
+  scheduled: boolean;
+  deadline: LocalCampaignCapacityDeadlineAssessment;
   assumptions: string[];
 };

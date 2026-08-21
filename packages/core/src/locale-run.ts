@@ -6,15 +6,13 @@
  * select row), and runs each case as a normal job. Exporting those runs as a
  * pack lives in locale-run-pack.ts.
  */
-import { createHash, randomUUID } from "node:crypto";
-import type { ActionSpec, AppMap, RecipeStep, TargetProfile } from "@relay/protocol";
+import { createHash } from "node:crypto";
+import type { ActionSpec, AppMap, RecipeStep } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { resolveLanguageOptions, listLanguageProfilesSync } from "./language-profiles.js";
 import { extractSwitcherOptionsFromNodes } from "./switcher-option-rows.js";
-import { currentOperationContext } from "./operation-context.js";
-import { freezeRecipeGraph, readRecipe, type Recipe } from "./recipes.js";
-import { prepareRunMatrix, redactRunMatrix, type PreparedRunMatrix } from "./run-matrix.js";
-import { enqueueJob, type EnqueueJobInput, type TestJob } from "./session.js";
+import type { Recipe } from "./recipes.js";
+import { prepareRunMatrix, type PreparedRunMatrix } from "./run-matrix.js";
 
 /** Matrix list values cannot be blank (zip strips empties). */
 const NONE = "-";
@@ -54,40 +52,6 @@ export type LocaleRunScope = {
   restoreAtEnd?: boolean;
   screenshotEachLocale?: boolean;
 };
-
-export type LocaleRunRequest = {
-  recipeId: string;
-  /** In-memory compiled body (App Map flow). Skips the recipe store. */
-  compiledBody?: Recipe;
-  compiledGraph?: Record<string, Recipe>;
-  targetId: string;
-  platform?: "android" | "ios";
-  targetKind?: "device" | "browser";
-  browserTargetId?: string;
-  targetProfile?: TargetProfile;
-  scope: LocaleRunScope;
-  title?: string;
-  projectId?: string;
-  ownerId?: string;
-  seed?: number;
-};
-
-export type LocaleRunBatch = {
-  id: string;
-  recipeId: string;
-  bodyRecipeId: string;
-  title: string;
-  createdAt: number;
-  locales: string[];
-  matrix: PreparedRunMatrix;
-  jobs: TestJob[];
-  composedRecipeId: string;
-};
-
-function requiredText(value: unknown, label: string): string {
-  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`);
-  return value.trim();
-}
 
 function normalizeLocales(locales: string[]): string[] {
   const next = [...new Set(locales.map((locale) => locale.trim()).filter(Boolean))];
@@ -707,98 +671,6 @@ export async function prepareLocaleRunMatrix(
   return { locales, matrix };
 }
 
-export async function startLocaleRecipeRun(input: LocaleRunRequest): Promise<LocaleRunBatch> {
-  const recipeId = requiredText(input.recipeId, "recipeId");
-  const targetId = requiredText(input.targetId, "targetId");
-  const body = input.compiledBody ?? (await readRecipe(recipeId));
-  if (!body) throw new Error(`recipe not found: ${recipeId}`);
-  const scope = completeTaughtLocaleScope(input.scope);
-  if (!scope.entryPath?.length && !scope.languagePath?.length) {
-    throw new Error("Record how you open this list");
-  }
-
-  const batchId = randomUUID();
-  const prepared = await prepareLocaleRunMatrix(scope, input.seed);
-  const { root, graph: seedGraph } = composeLocaleRunRecipes({
-    body,
-    scope,
-    batchId,
-  });
-
-  const bodyGraph = await freezeRecipeGraph(body, input.compiledGraph ?? {});
-  const recipeGraph: Record<string, Recipe> = {
-    ...bodyGraph,
-    ...seedGraph,
-    [root.id]: root,
-  };
-
-  const operation = currentOperationContext();
-  const projectId = input.projectId?.trim() || operation?.projectId || "default";
-  const ownerId = input.ownerId?.trim() || operation?.actorId;
-  const title = input.title?.trim() || `${body.title} · locales`;
-
-  const safeMatrix = redactRunMatrix(prepared.matrix, [
-    {
-      id: "locale",
-      name: "locale",
-      scope: "shared",
-      source: "list",
-      values: prepared.locales,
-    },
-  ]);
-
-  const jobs = prepared.matrix.cases.map((item) => {
-    const locale = item.values.locale ?? `case-${item.index + 1}`;
-    const enqueue: EnqueueJobInput = {
-      recipe: root.id,
-      title: `${title} · ${locale}`,
-      serial: input.targetKind === "browser" ? undefined : targetId,
-      platform: input.platform,
-      targetKind: input.targetKind ?? "device",
-      browserTargetId: input.browserTargetId,
-      targetProfile: input.targetProfile,
-      variables: item.values,
-      recipeSnapshot: root,
-      recipeGraph,
-      batchId,
-      caseIndex: item.index,
-      caseCount: prepared.matrix.cases.length,
-      projectId,
-      ownerId,
-      artifacts: [
-        {
-          kind: "frozen-inputs",
-          capturedAt: prepared.matrix.createdAt,
-          data: {
-            matrixId: prepared.matrix.id,
-            localeRunBatchId: batchId,
-            seed: prepared.matrix.seed,
-            caseIndex: item.index,
-            caseCount: prepared.matrix.cases.length,
-            locale,
-            values: safeMatrix.cases[item.index]?.values ?? item.values,
-            provenance: safeMatrix.cases[item.index]?.provenance ?? item.provenance,
-            kind: "locale-matrix",
-          },
-        },
-      ],
-    };
-    return enqueueJob(enqueue);
-  });
-
-  return {
-    id: batchId,
-    recipeId: root.id,
-    bodyRecipeId: body.id,
-    title,
-    createdAt: Date.now(),
-    locales: prepared.locales,
-    matrix: safeMatrix,
-    jobs,
-    composedRecipeId: root.id,
-  };
-}
-
 export function defaultGrokLocaleScope(locales: string[]): LocaleRunScope {
   const normalized = normalizeLocales(locales);
   const profile = listLanguageProfilesSync().find((item) => item.id === "grok-ios");
@@ -842,3 +714,18 @@ export function localeRunDigest(scope: LocaleRunScope, recipeId: string): string
     .digest("hex")
     .slice(0, 16);
 }
+
+// Job construction and durable staging intentionally live separately from
+// locale composition/teaching. That lets a server admit explicit per-cell
+// targets atomically without duplicating recipe construction policy.
+export {
+  prepareLocaleRecipeRun,
+  stagePreparedLocaleRecipeRun,
+  startLocaleRecipeRun,
+  type LocaleRunBatch,
+  type LocaleRunCaseTargetBinding,
+  type LocaleRunPreparationRequest,
+  type LocaleRunRequest,
+  type PreparedLocaleRecipeRun,
+  type StagedLocaleRecipeRun,
+} from "./locale-run-execution.js";

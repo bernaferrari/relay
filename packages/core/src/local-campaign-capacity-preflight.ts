@@ -1,12 +1,17 @@
 import type {
+  CampaignCapacityCohortDurationEvidence,
   CampaignCapacityDurationInput,
   CampaignCapacityMeasurementAssurance,
+  CampaignCapacityObservedDurationInput,
   CampaignCapacityTarget,
   CampaignCapacityWorker,
   DeviceLease,
+  LocalCampaignCapacityCriticalPathWorkItem,
   LocalCampaignCapacityPreflight,
   LocalCampaignCapacityPreflightInput,
   LocalCampaignCapacityTargetFact,
+  LocalCampaignCapacityTargetCriticalPathPreflight,
+  LocalCampaignCapacityTargetInput,
   TargetWorkerStatus,
 } from "@relay/protocol";
 import { planCampaignCapacity } from "./campaign-capacity-plan.js";
@@ -22,6 +27,18 @@ type LocalCampaignCapacityPreflightFacts = {
 
 export type PreflightLocalCampaignCapacityInput = LocalCampaignCapacityPreflightInput &
   LocalCampaignCapacityPreflightFacts;
+
+export type PreflightLocalCampaignTargetCriticalPathInput = {
+  target: LocalCampaignCapacityTargetInput;
+  workItems: readonly LocalCampaignCapacityCriticalPathWorkItem[];
+  deadlineMs: number;
+  setupHeadroomMs?: number;
+  recoveryHeadroomMs?: number;
+  /** Target ids which survived the one campaign-wide worker/host snapshot.
+   * Without this fence, two individually healthy iPads could both claim a
+   * shared host slot that only one of them actually owns. */
+  scheduledTargetIds?: readonly string[];
+} & LocalCampaignCapacityPreflightFacts;
 
 type TargetAvailability = Pick<LocalCampaignCapacityTargetFact, "availability" | "reason">;
 
@@ -47,19 +64,10 @@ function checkedSum(left: number, right: number, label: string): number {
   return sum;
 }
 
-function normalizedInput(
-  input: LocalCampaignCapacityPreflightInput,
-): LocalCampaignCapacityPreflightInput {
-  if (!Array.isArray(input.targets) || input.targets.length === 0) {
-    throw new Error("Campaign capacity preflight requires at least one target");
-  }
-  requireNonNegativeSafeInteger(input.workItems, "Campaign workItems");
-  requireNonNegativeSafeInteger(input.deadlineMs, "Campaign deadlineMs");
-  const setupHeadroomMs = input.setupHeadroomMs ?? 0;
-  const recoveryHeadroomMs = input.recoveryHeadroomMs ?? 0;
-  requireNonNegativeSafeInteger(setupHeadroomMs, "Campaign setupHeadroomMs");
-  requireNonNegativeSafeInteger(recoveryHeadroomMs, "Campaign recoveryHeadroomMs");
-  const duration = input.duration;
+function normalizedDuration(
+  rawDuration: CampaignCapacityDurationInput,
+): CampaignCapacityDurationInput {
+  const duration = { ...rawDuration };
   requirePositiveSafeInteger(duration.workItemDurationMs, "Campaign workItemDurationMs");
   if (
     duration.provenance !== "observed-p50" &&
@@ -80,6 +88,22 @@ function normalizedInput(
     requirePositiveSafeInteger(duration.sampleCount, "Campaign duration sampleCount");
     requireNonNegativeSafeInteger(duration.maxAgeMs, "Campaign duration maxAgeMs");
   }
+  return duration;
+}
+
+function normalizedInput(
+  input: LocalCampaignCapacityPreflightInput,
+): LocalCampaignCapacityPreflightInput {
+  if (!Array.isArray(input.targets) || input.targets.length === 0) {
+    throw new Error("Campaign capacity preflight requires at least one target");
+  }
+  requireNonNegativeSafeInteger(input.workItems, "Campaign workItems");
+  requireNonNegativeSafeInteger(input.deadlineMs, "Campaign deadlineMs");
+  const setupHeadroomMs = input.setupHeadroomMs ?? 0;
+  const recoveryHeadroomMs = input.recoveryHeadroomMs ?? 0;
+  requireNonNegativeSafeInteger(setupHeadroomMs, "Campaign setupHeadroomMs");
+  requireNonNegativeSafeInteger(recoveryHeadroomMs, "Campaign recoveryHeadroomMs");
+  const duration = normalizedDuration(input.duration);
   let partitionedWorkItems = 0;
   for (const platform of ["android", "ios"] as const) {
     const count = input.workItemsByPlatform[platform];
@@ -108,6 +132,119 @@ function normalizedInput(
     ...(setupHeadroomMs ? { setupHeadroomMs } : {}),
     ...(recoveryHeadroomMs ? { recoveryHeadroomMs } : {}),
   };
+}
+
+function nonEmptyString(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim())
+    throw new Error(`${label} must be a non-empty string`);
+  return value.trim();
+}
+
+function normalizedCriticalPathEvidence(input: {
+  target: LocalCampaignCapacityTargetInput;
+  workItems: readonly LocalCampaignCapacityCriticalPathWorkItem[];
+}): LocalCampaignCapacityCriticalPathWorkItem[] {
+  if (!input.workItems.length) {
+    throw new Error("Campaign target critical path requires at least one work item");
+  }
+  const targetId = nonEmptyString(input.target.targetId, "Campaign critical path targetId");
+  if (input.target.platform !== "android" && input.target.platform !== "ios") {
+    throw new Error("Campaign critical path target must be Android or iOS");
+  }
+  const seenItems = new Set<string>();
+  return input.workItems.map((rawItem) => {
+    const workItemId = nonEmptyString(rawItem.workItemId, "Campaign critical path workItemId");
+    if (seenItems.has(workItemId)) {
+      throw new Error(`Campaign target critical path work item ${workItemId} is duplicated`);
+    }
+    seenItems.add(workItemId);
+    const evidence = structuredClone(rawItem.evidence) as CampaignCapacityCohortDurationEvidence;
+    if (evidence.schemaVersion !== 1) {
+      throw new Error("Campaign cohort duration evidence has an unsupported schema version");
+    }
+    const cohortTargetId = nonEmptyString(
+      evidence.cohort?.targetId,
+      "Campaign cohort duration targetId",
+    );
+    if (cohortTargetId !== targetId || evidence.cohort.platform !== input.target.platform) {
+      throw new Error(
+        `Campaign cohort duration for ${workItemId} does not match ${input.target.platform}:${targetId}`,
+      );
+    }
+    nonEmptyString(evidence.cohort.testId, "Campaign cohort duration testId");
+    nonEmptyString(evidence.cohort.action, "Campaign cohort duration action");
+    const duration = normalizedDuration(evidence.duration);
+    if (duration.provenance === "supplied") {
+      throw new Error("Campaign target critical path requires observed cohort duration evidence");
+    }
+    const observedDuration: CampaignCapacityObservedDurationInput = {
+      workItemDurationMs: duration.workItemDurationMs,
+      provenance: duration.provenance,
+      observedAt: duration.observedAt!,
+      sampleCount: duration.sampleCount!,
+      maxAgeMs: duration.maxAgeMs!,
+    };
+    const measurement = evidence.measurement;
+    if (measurement?.estimator !== "campaign-duration-estimate") {
+      throw new Error("Campaign cohort duration evidence must identify its estimator");
+    }
+    if (
+      measurement.recordSource !== "persisted-runs" &&
+      measurement.recordSource !== "run-summaries" &&
+      measurement.recordSource !== "mixed-read-only-records"
+    ) {
+      throw new Error("Campaign cohort duration evidence has an unsupported record source");
+    }
+    if (
+      measurement.durationSource !== "run-wall-clock" &&
+      measurement.durationSource !== "evidence-completion"
+    ) {
+      throw new Error("Campaign cohort duration evidence has an unsupported duration source");
+    }
+    const sampleIds = measurement.sampleIds;
+    if (!Array.isArray(sampleIds) || !sampleIds.length) {
+      throw new Error("Campaign cohort duration evidence requires measured sample ids");
+    }
+    const normalizedSampleIds = sampleIds.map((sampleId) =>
+      nonEmptyString(sampleId, "Campaign cohort duration sample id"),
+    );
+    if (new Set(normalizedSampleIds).size !== normalizedSampleIds.length) {
+      throw new Error("Campaign cohort duration evidence sample ids must be unique");
+    }
+    if (observedDuration.sampleCount !== normalizedSampleIds.length) {
+      throw new Error(
+        "Campaign cohort duration evidence sampleCount must equal its measured sample ids",
+      );
+    }
+    const window = measurement.observationWindow;
+    if (!window)
+      throw new Error("Campaign cohort duration evidence requires an observation window");
+    requireNonNegativeSafeInteger(window.startedAt, "Campaign cohort observation window start");
+    requireNonNegativeSafeInteger(window.finishedAt, "Campaign cohort observation window finish");
+    if (window.finishedAt < window.startedAt || observedDuration.observedAt !== window.finishedAt) {
+      throw new Error(
+        "Campaign cohort duration observation window must end at its observed measurement time",
+      );
+    }
+    return {
+      workItemId,
+      evidence: {
+        ...evidence,
+        cohort: {
+          targetId: cohortTargetId,
+          platform: evidence.cohort.platform,
+          testId: evidence.cohort.testId.trim(),
+          action: evidence.cohort.action.trim(),
+        },
+        duration: observedDuration,
+        measurement: {
+          ...measurement,
+          sampleIds: normalizedSampleIds,
+          observationWindow: { ...window },
+        },
+      },
+    };
+  });
 }
 
 function availabilityFor(
@@ -283,6 +420,115 @@ export function preflightLocalCampaignCapacity(
       "Queued or staged work reserves its target and shared-host capacity; its unbounded drain time is not included in a new deadline estimate.",
       "Setup and recovery headroom are reserved once on the campaign critical path, not multiplied by every work item.",
       "A supplied or stale duration can size work, but cannot make the deadline achievable with current capacity.",
+    ],
+  };
+}
+
+/**
+ * Preflight the real serial critical path for one explicitly bound target.
+ * The generic capacity planner remains the source of target/worker/host facts;
+ * this layer deliberately sums heterogeneous Test/action cohorts instead of
+ * pretending that a platform-wide average describes a slow device or path.
+ */
+export function preflightLocalCampaignTargetCriticalPath(
+  rawInput: PreflightLocalCampaignTargetCriticalPathInput,
+): LocalCampaignCapacityTargetCriticalPathPreflight {
+  const checkedAt = rawInput.at ?? Date.now();
+  requireNonNegativeSafeInteger(checkedAt, "Campaign target critical path preflight time");
+  const target: LocalCampaignCapacityTargetInput = {
+    targetId: nonEmptyString(rawInput.target.targetId, "Campaign critical path targetId"),
+    platform: rawInput.target.platform,
+  };
+  if (target.platform !== "android" && target.platform !== "ios") {
+    throw new Error("Campaign critical path target must be Android or iOS");
+  }
+  requireNonNegativeSafeInteger(rawInput.deadlineMs, "Campaign deadlineMs");
+  const setupHeadroomMs = rawInput.setupHeadroomMs ?? 0;
+  const recoveryHeadroomMs = rawInput.recoveryHeadroomMs ?? 0;
+  requireNonNegativeSafeInteger(setupHeadroomMs, "Campaign setupHeadroomMs");
+  requireNonNegativeSafeInteger(recoveryHeadroomMs, "Campaign recoveryHeadroomMs");
+  const workItems = normalizedCriticalPathEvidence({ target, workItems: rawInput.workItems });
+  const estimatedWorkDurationMs = workItems.reduce(
+    (total, item) =>
+      checkedSum(
+        total,
+        item.evidence.duration.workItemDurationMs,
+        "Campaign target critical-path work duration",
+      ),
+    0,
+  );
+  const longestWorkItemDuration = Math.max(
+    ...workItems.map((item) => item.evidence.duration.workItemDurationMs),
+  );
+  // The nested generic preflight is used exclusively for one current target
+  // lane's readiness/worker/host facts. Its equal-duration plan is not reused
+  // as this deadline estimate; `estimatedWorkDurationMs` above is exact for
+  // the target's serial cell order.
+  const capacity = preflightLocalCampaignCapacity({
+    targets: [target],
+    workItems: 1,
+    workItemsByPlatform: { [target.platform]: 1 },
+    duration: workItems.find(
+      (item) => item.evidence.duration.workItemDurationMs === longestWorkItemDuration,
+    )!.evidence.duration,
+    deadlineMs: rawInput.deadlineMs,
+    ...(setupHeadroomMs ? { setupHeadroomMs } : {}),
+    ...(recoveryHeadroomMs ? { recoveryHeadroomMs } : {}),
+    devices: rawInput.devices,
+    leases: rawInput.leases,
+    workers: rawInput.workers,
+    at: checkedAt,
+  });
+  const scheduledInSingleTargetSnapshot = capacity.plan.slots.some(
+    (slot) => slot.targetId === target.targetId && slot.platform === target.platform,
+  );
+  const scheduledInCampaignSnapshot =
+    rawInput.scheduledTargetIds === undefined ||
+    rawInput.scheduledTargetIds.map((targetId) => targetId.trim()).includes(target.targetId);
+  const scheduled = scheduledInSingleTargetSnapshot && scheduledInCampaignSnapshot;
+  const reservedHeadroomMs = checkedSum(
+    setupHeadroomMs,
+    recoveryHeadroomMs,
+    "Campaign target critical-path headroom",
+  );
+  const workBudgetMs = Math.max(0, rawInput.deadlineMs - reservedHeadroomMs);
+  const estimatedParallelDurationMs = checkedSum(
+    estimatedWorkDurationMs,
+    reservedHeadroomMs,
+    "Campaign target critical-path duration",
+  );
+  const assurance = workItems.every(
+    (item) => durationAssurance(item.evidence.duration, checkedAt) === "measured-current",
+  )
+    ? "measured-current"
+    : "measurement-stale";
+  const withinBudget = scheduled && estimatedWorkDurationMs <= workBudgetMs;
+  const targetFact = capacity.targets[0];
+  if (!targetFact) throw new Error("Campaign critical path target facts are unavailable");
+
+  return {
+    checkedAt,
+    target: structuredClone(targetFact),
+    criticalPath: {
+      workItems: workItems.map((item) => structuredClone(item)),
+      estimatedWorkDurationMs,
+    },
+    scheduled,
+    deadline: {
+      requestedMs: rawInput.deadlineMs,
+      reservedHeadroomMs,
+      workBudgetMs,
+      estimatedParallelDurationMs,
+      capacity: withinBudget ? "within-budget" : "outside-budget",
+      assurance,
+      achievableWithCurrentCapacity: withinBudget && assurance === "measured-current",
+    },
+    assumptions: [
+      "Every work item is serial on this concrete target; the critical path sums its exact target/Test/action duration evidence.",
+      "Each timing evidence record carries its estimator, source clock, bounded sample ids, and observation window.",
+      "The target must survive both its direct readiness/worker snapshot and the campaign-wide target/host slot snapshot.",
+      "This preflight did not acquire a lease, reserve a target, or enqueue work.",
+      "Setup and recovery headroom are reserved once on this target's critical path.",
     ],
   };
 }

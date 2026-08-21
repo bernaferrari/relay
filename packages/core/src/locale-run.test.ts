@@ -13,7 +13,9 @@ import {
   localeRunScopeFromTeach,
   completeTaughtLocaleScope,
   prepareLocaleRunMatrix,
+  prepareLocaleRecipeRun,
   recordedLocalePreludeFromMap,
+  stagePreparedLocaleRecipeRun,
   startLocaleRecipeRun,
   type LocaleRunScope,
 } from "./locale-run.js";
@@ -610,6 +612,117 @@ test("startLocaleRecipeRun accepts a compiled App Map body without a recipe stor
         (step) => step.kind === "screenshot" && step.caption === "locale:{{locale}} before body",
       ),
     );
+  } finally {
+    if (previous.workspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous.workspace;
+    if (previous.recipes === undefined) delete process.env.RELAY_RECIPES_DIR;
+    else process.env.RELAY_RECIPES_DIR = previous.recipes;
+    if (previous.tests === undefined) delete process.env.RELAY_TESTS_DIR;
+    else process.env.RELAY_TESTS_DIR = previous.tests;
+    if (previous.state === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous.state;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("prepared locale runs require exact per-case local bindings and preserve them in staged evidence", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-locale-stage-"));
+  const previous = {
+    workspace: process.env.RELAY_WORKSPACE_ROOT,
+    recipes: process.env.RELAY_RECIPES_DIR,
+    tests: process.env.RELAY_TESTS_DIR,
+    state: process.env.RELAY_STATE_DIR,
+  };
+  process.env.RELAY_WORKSPACE_ROOT = directory;
+  process.env.RELAY_RECIPES_DIR = join(directory, "recipes");
+  process.env.RELAY_TESTS_DIR = join(directory, "tests");
+  process.env.RELAY_STATE_DIR = join(directory, "state");
+  try {
+    const prepared = await runWithOperationContext(
+      {
+        schemaVersion: 1,
+        actorId: "human:test",
+        actorKind: "human",
+        organizationId: "local",
+        projectId: "default",
+        operationId: "job.locale-matrix.start",
+        requestId: "locale-stage-prepare",
+        idempotencyKey: "locale-stage-prepare",
+        issuedAt: Date.now(),
+      },
+      () =>
+        prepareLocaleRecipeRun({
+          recipeId: body.id,
+          compiledBody: body,
+          compiledGraph: { [body.id]: body },
+          scope: {
+            locales: ["en", "it"],
+            languagePath: [{ kind: "tap", target: { text: "App Language" } }],
+            restoreAtEnd: false,
+          },
+        }),
+    );
+    assert.throws(
+      () =>
+        stagePreparedLocaleRecipeRun({
+          prepared,
+          targetBindings: [],
+        }),
+      /cover every case/,
+    );
+    const target = (targetId: string) =>
+      ({
+        schemaVersion: 1 as const,
+        kind: "local-device" as const,
+        provider: { key: "relay.local.agent-device" as const, scope: "local" as const },
+        targetId,
+        platform: "android" as const,
+        identity: { kind: "device-serial" as const, value: targetId },
+      }) as const;
+    const staged = await runWithOperationContext(
+      {
+        schemaVersion: 1,
+        actorId: "human:test",
+        actorKind: "human",
+        organizationId: "local",
+        projectId: "default",
+        operationId: "job.locale-matrix.start",
+        requestId: "locale-stage-jobs",
+        idempotencyKey: "locale-stage-jobs",
+        issuedAt: Date.now(),
+      },
+      () =>
+        stagePreparedLocaleRecipeRun({
+          prepared,
+          targetBindings: prepared.cases.map((item) => ({
+            caseIndex: item.caseIndex,
+            locale: item.locale,
+            executionTarget: target(`pixel-${item.caseIndex + 1}`),
+          })),
+        }),
+    );
+    try {
+      assert.deepEqual(
+        staged.jobs.map((job) => job.executionTarget?.targetId),
+        ["pixel-1", "pixel-2"],
+      );
+      const frozen = staged.jobs[1]!.artifacts.find(
+        (artifact) => artifact.kind === "frozen-inputs",
+      );
+      assert.ok(frozen, "staged locale job retains frozen inputs");
+      const frozenData = frozen.data as {
+        executionTarget?: unknown;
+        targetBinding?: unknown;
+      };
+      assert.deepEqual(frozenData.executionTarget, target("pixel-2"));
+      assert.deepEqual(frozenData.targetBinding, {
+        schemaVersion: 1,
+        caseIndex: 1,
+        locale: "it",
+      });
+    } finally {
+      staged.rollback();
+    }
   } finally {
     if (previous.workspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previous.workspace;

@@ -423,6 +423,10 @@ test("legacy flow locale commands are internal and Combine is the public workflo
   assert.match(optionStart.paths[0]?.examples?.[0] ?? "", /platform/);
   assert.match(optionStart.paths[0]?.note ?? "", /targetProfileId/u);
   assert.match(optionStart.paths[0]?.note ?? "", /cellRuntimeProfiles/u);
+  assert.match(optionStart.paths[0]?.note ?? "", /localAdmission/u);
+  const combineRun = optionStart.paths.find((path) => path.command === "combine run");
+  assert.ok(combineRun?.inputHelp?.some((item) => item.name === "cellTargetBindings"));
+  assert.ok(combineRun?.inputHelp?.some((item) => item.name === "localAdmission"));
 });
 
 test("App Map vocabulary resolves to canonical granular operations", () => {

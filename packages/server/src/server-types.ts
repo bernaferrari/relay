@@ -2,6 +2,7 @@ import type http from "node:http";
 import type { AuthoringRuntime, captureScreenshot } from "@relay/core";
 import type { ExternalIdentityVerifier } from "./external-identity.js";
 import type { AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
+import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";
 import type { JobRouteRuntime } from "./job-routes.js";
 import type { RunRouteRuntime } from "./run-routes.js";
 import type { StepRunRouteRuntime } from "./step-run-route.js";
@@ -22,6 +23,8 @@ export type StartServerOptions = {
   /** Test seam for target observation without starting a device daemon. */
   captureTargetScreenshot?: typeof captureScreenshot;
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>;
+  /** Test seam for read-only persisted-run cohort duration estimation. */
+  campaignDurationRuntime?: CampaignDurationRouteRuntime;
   /** Test seam for proving blocked Test runs do not touch a target or queue work. */
   appMapTestRunRuntime?: Partial<AppMapTestRunRouteRuntime>;
   /** Test seam for retry/replay/resume intent ordering. */

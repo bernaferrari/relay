@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS } from "@relay/protocol";
 import {
   buildLocaleMatrixInput,
   enqueueAppMapFlow,
   enqueueMatrix,
+  enqueueOptionMatrix,
   enqueueRecipe,
+  estimateCampaignDurationCohortsRemote,
   exportRunMatrixPack,
+  preflightLocalCampaignAdmissionRemote,
   removeCombineRemote,
   removeVariableRemote,
   retryJob,
@@ -104,6 +108,183 @@ test("a run-to-screen request keeps its explicit flow boundary", async () => {
   });
 });
 
+test("explicit local Combine transport never falls back to a selected serial", async () => {
+  let requestBody: Record<string, unknown> | undefined;
+  const request = async <T>(_path: string, init?: RequestInit): Promise<T> => {
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return {
+      batch: { id: "batch-1", title: "Locale settings", worlds: ["Italian"], recipeId: "root" },
+      jobs: [],
+      matrix: { id: "batch-1" },
+    } as T;
+  };
+  const localAdmission = {
+    deadlineMs: 180_000,
+    durationEvidence: [
+      {
+        schemaVersion: 1 as const,
+        cohort: {
+          targetId: "pixel-1",
+          platform: "android" as const,
+          testId: "settings",
+          action: "app-map:settings:test:settings",
+        },
+        duration: {
+          workItemDurationMs: 12_000,
+          provenance: "observed-p95" as const,
+          observedAt: 100,
+          sampleCount: 5,
+          maxAgeMs: MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS,
+        },
+        measurement: {
+          estimator: "campaign-duration-estimate" as const,
+          recordSource: "persisted-runs" as const,
+          durationSource: "run-wall-clock" as const,
+          sampleIds: ["run-1", "run-2", "run-3", "run-4", "run-5"],
+          observationWindow: { startedAt: 1, finishedAt: 100 },
+        },
+      },
+    ],
+    setupHeadroomMs: 10_000,
+  };
+
+  await enqueueOptionMatrix(request, {
+    appMapId: "map-1",
+    combineId: "language-settings",
+    projectId: "default",
+    cellRuntimeProfiles: [
+      { testId: "settings", values: { language: "it" }, targetProfileId: "profile-1" },
+    ],
+    cellTargetBindings: [
+      {
+        testId: "settings",
+        values: { language: "it" },
+        target: {
+          schemaVersion: 1,
+          kind: "local-device",
+          provider: { key: "relay.local.agent-device", scope: "local" },
+          targetId: "pixel-1",
+          platform: "android",
+          identity: { kind: "device-serial", value: "pixel-1" },
+        },
+      },
+    ],
+    localAdmission,
+  });
+
+  assert.equal(requestBody?.serial, undefined);
+  assert.equal(requestBody?.browserTargetId, undefined);
+  assert.deepEqual(requestBody?.cellTargetBindings, [
+    {
+      testId: "settings",
+      values: { language: "it" },
+      target: {
+        schemaVersion: 1,
+        kind: "local-device",
+        provider: { key: "relay.local.agent-device", scope: "local" },
+        targetId: "pixel-1",
+        platform: "android",
+        identity: { kind: "device-serial", value: "pixel-1" },
+      },
+    },
+  ]);
+  assert.deepEqual(requestBody?.localAdmission, localAdmission);
+});
+
+test("read-only local evidence and admission previews preserve exact cohorts", async () => {
+  const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
+    calls.push({ path, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+    return { checkedAt: 100, estimates: [], preflight: {}, targetPreflights: [] } as T;
+  };
+  const cohort = {
+    targetId: "pixel-1",
+    platform: "android" as const,
+    testId: "settings",
+    action: "app-map:settings:test:settings",
+  };
+  const localAdmission = {
+    deadlineMs: 180_000,
+    durationEvidence: [
+      {
+        schemaVersion: 1 as const,
+        cohort,
+        duration: {
+          workItemDurationMs: 12_000,
+          provenance: "observed-p95" as const,
+          observedAt: 100,
+          sampleCount: 5,
+          maxAgeMs: MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS,
+        },
+        measurement: {
+          estimator: "campaign-duration-estimate" as const,
+          recordSource: "persisted-runs" as const,
+          durationSource: "run-wall-clock" as const,
+          sampleIds: ["1", "2", "3", "4", "5"],
+          observationWindow: { startedAt: 1, finishedAt: 100 },
+        },
+      },
+    ],
+  };
+  await estimateCampaignDurationCohortsRemote(request, {
+    cohorts: [cohort],
+    maxAgeMs: MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS,
+    percentile: "p95",
+    minSamples: 5,
+  });
+  await preflightLocalCampaignAdmissionRemote(request, {
+    workItems: [
+      {
+        id: 'settings:{"language":"it"}',
+        target: {
+          schemaVersion: 1,
+          kind: "local-device",
+          provider: { key: "relay.local.agent-device", scope: "local" },
+          targetId: "pixel-1",
+          platform: "android",
+          identity: { kind: "device-serial", value: "pixel-1" },
+        },
+        testId: "settings",
+        action: cohort.action,
+      },
+    ],
+    request: localAdmission,
+  });
+
+  assert.deepEqual(calls, [
+    {
+      path: "/campaign-duration/cohorts/estimate",
+      body: {
+        cohorts: [cohort],
+        maxAgeMs: MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS,
+        percentile: "p95",
+        minSamples: 5,
+      },
+    },
+    {
+      path: "/jobs/local-admission/preflight",
+      body: {
+        workItems: [
+          {
+            id: 'settings:{"language":"it"}',
+            target: {
+              schemaVersion: 1,
+              kind: "local-device",
+              provider: { key: "relay.local.agent-device", scope: "local" },
+              targetId: "pixel-1",
+              platform: "android",
+              identity: { kind: "device-serial", value: "pixel-1" },
+            },
+            testId: "settings",
+            action: cohort.action,
+          },
+        ],
+        request: localAdmission,
+      },
+    },
+  ]);
+});
+
 test("taught locale scope is enqueued instead of the Grok language profile", () => {
   const scope = {
     locales: ["en", "it"],
@@ -130,6 +311,63 @@ test("taught locale scope is enqueued instead of the Grok language profile", () 
   assert.deepEqual(body.scope?.languageOptions?.en, { identifier: "lang.en" });
   assert.equal(body.scope?.languagePath, undefined);
   assert.equal(JSON.stringify(body.scope).includes("App Language"), false);
+});
+
+test("locale matrix transport preserves explicit case targets and shared local admission", () => {
+  const localAdmission = {
+    deadlineMs: 180_000,
+    durationEvidence: [
+      {
+        schemaVersion: 1 as const,
+        cohort: {
+          targetId: "ipad-1",
+          platform: "ios" as const,
+          testId: "settings",
+          action: "app-map:settings:test:settings",
+        },
+        duration: {
+          workItemDurationMs: 12_000,
+          provenance: "observed-p95" as const,
+          observedAt: 100,
+          sampleCount: 5,
+          maxAgeMs: MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS,
+        },
+        measurement: {
+          estimator: "campaign-duration-estimate" as const,
+          recordSource: "persisted-runs" as const,
+          durationSource: "run-wall-clock" as const,
+          sampleIds: ["1", "2", "3", "4", "5"],
+          observationWindow: { startedAt: 1, finishedAt: 100 },
+        },
+      },
+    ],
+  };
+  const body = buildLocaleMatrixInput({
+    appMapId: "settings",
+    flowId: "main",
+    locales: ["it"],
+    projectId: "default",
+    caseTargetBindings: [
+      {
+        caseIndex: 0,
+        locale: "it",
+        executionTarget: {
+          schemaVersion: 1,
+          kind: "local-device",
+          provider: { key: "relay.local.agent-device", scope: "local" },
+          targetId: "ipad-1",
+          platform: "ios",
+          identity: { kind: "device-serial", value: "ipad-1" },
+        },
+      },
+    ],
+    localAdmission,
+  });
+
+  assert.equal(body.serial, undefined);
+  assert.equal(body.targetKind, undefined);
+  assert.deepEqual(body.localAdmission, localAdmission);
+  assert.equal(body.caseTargetBindings?.[0]?.executionTarget.targetId, "ipad-1");
 });
 
 test("UI enqueue payload includes picker nav taps before locale select", () => {

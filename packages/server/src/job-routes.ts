@@ -49,11 +49,14 @@ import {
   assertJobExecutionTargetRouteControl,
   assertPersistedRunExecutionTargetRouteControl,
 } from "./execution-target-route-control.js";
+import { preflightLocalCampaignAdmission } from "./local-combine-campaign-admission.js";
 import { handleCombineStartRoute } from "./combine-start-route.js";
 import { HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
 import { handleCombineCampaignRoute } from "./combine-campaign-routes.js";
 import { handleLocaleMatrixRoute } from "./locale-matrix-routes.js";
+import type { verifyCampaignDurationCohortEvidence } from "./campaign-duration-cohort-evidence.js";
+import type { LocalCampaignAdmissionPreflightRequest } from "@relay/protocol";
 
 export type JobRouteRuntime = {
   getJob: typeof getJob;
@@ -63,6 +66,9 @@ export type JobRouteRuntime = {
   listDeviceLeases: typeof listDeviceLeases;
   listTargetWorkers: typeof listTargetWorkers;
   releaseDeviceLease: typeof releaseDeviceLease;
+  /** Optional test seam. Normal local admission re-derives cohort evidence
+   * from persisted project runs when this is not supplied. */
+  verifyCampaignDurationCohortEvidence?: typeof verifyCampaignDurationCohortEvidence;
   enqueueJob: typeof enqueueJob;
   captureSnapshot: typeof captureSnapshot;
   retryJob: typeof retryJob;
@@ -98,6 +104,30 @@ export type JobRouteContext = {
 export async function handleJobRoute(context: JobRouteContext): Promise<boolean> {
   const { method, pathname, url, request: req, response: res, scope } = context;
   const runtime = { ...defaultJobRouteRuntime, ...context.runtime };
+  if (method === "POST" && pathname === "/jobs/local-admission/preflight") {
+    const body = (await parseJsonBody(req)) as LocalCampaignAdmissionPreflightRequest;
+    const preflight = await preflightLocalCampaignAdmission({
+      scope,
+      workItems: body.workItems,
+      request: body.request,
+      runtime: {
+        listDevices: runtime.listDevices,
+        listDeviceLeases: runtime.listDeviceLeases,
+        listTargetWorkers: runtime.listTargetWorkers,
+        assertTargetControl: runtime.assertTargetControl,
+        admitTargetControl: runtime.admitTargetControl,
+        releaseDeviceLease: runtime.releaseDeviceLease,
+        ...(runtime.verifyCampaignDurationCohortEvidence
+          ? {
+              verifyCampaignDurationCohortEvidence: runtime.verifyCampaignDurationCohortEvidence,
+            }
+          : {}),
+      },
+      actorId: currentOperationContext()?.actorId ?? scope.subject,
+    });
+    json(res, 200, preflight);
+    return true;
+  }
   if (method === "GET" && pathname === "/jobs") {
     const limit = parseLimit(url.searchParams.get("limit"), 50);
     const activeJobs = getActiveJobs().filter(
@@ -424,7 +454,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     return true;
   }
 
-  if (await handleLocaleMatrixRoute(context)) return true;
+  if (await handleLocaleMatrixRoute({ ...context, runtime })) return true;
   if (method === "POST" && pathname === "/jobs/compatibility-matrix") {
     json(
       res,
