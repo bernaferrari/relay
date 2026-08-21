@@ -15,6 +15,7 @@ import {
 import { assertIosSessionOperationLifecycle } from "./ios-session-lifecycle.js";
 import { isExecutionTargetRef } from "./execution-target.js";
 import { createTargetRecoveryOperationParsers } from "./target-recovery-operation-parsers.js";
+import { authoringRawOptimizationOperationDefinition } from "./authoring-raw-optimization-operation.js";
 import { runRepairOperationDefinitions } from "./run-repair-operations.js";
 import { runShareOperationDefinitions } from "./run-share.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
@@ -23,6 +24,7 @@ import { campaignCapacityOperationDefinitions } from "./campaign-capacity-operat
 import { createCorpusOperationDefinitions } from "./corpus-operation-definitions.js";
 import { createDiscoveryOperationDefinitions } from "./discovery-operation-definitions.js";
 import { combineOperationDefinitions } from "./combine-operation-definitions.js";
+import { localeMatrixOperationDefinitions } from "./locale-matrix-operation-definitions.js";
 import { createOperationBuilders } from "./operation-builders.js";
 import type {
   ActionSummary,
@@ -1259,12 +1261,10 @@ const authoringSessionResponseParser: RuntimeParser<AuthoringSessionResponse> = 
   description: "authoring session response",
   parse: parseAuthoringSessionResponse,
 };
-
 const authoringSessionListParser: RuntimeParser<AuthoringSessionListResponse> = {
   description: "authoring session list response",
   parse: parseAuthoringSessionListResponse,
 };
-
 const authoringSessionListInputParser = objectParser<OperationInput<"authoring.session.list">>(
   "authoring session list input",
   (input) => {
@@ -1775,6 +1775,7 @@ export const operationDefinitions = [
       lease: "exclusive",
     },
   ),
+  authoringRawOptimizationOperationDefinition,
   command(
     "authoring.take.trim",
     "Trim Authoring Take",
@@ -1919,19 +1920,7 @@ export const operationDefinitions = [
     progress: true,
     cancellable: true,
   }),
-  command(
-    "job.locale-matrix.start",
-    "Run a map path across locales",
-    "POST",
-    "/jobs/locale-matrix",
-    {
-      category: "execution",
-      progress: true,
-      cancellable: true,
-      lease: "exclusive",
-      targetCapabilities: ["tap", "snapshot", "screenshot", "launch"],
-    },
-  ),
+  ...localeMatrixOperationDefinitions,
   query(
     "job.locale-matrix.export",
     "Export locale-run screenshot pack",

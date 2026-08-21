@@ -4,6 +4,7 @@ import type {
   AppMapCapturePolicy,
   AppMapCombineCellTargetBinding,
   CompatibilityMatrix,
+  LocaleMatrixMaterializationInput,
   LocaleRunAnalysisReport,
   LocalCampaignAdmissionRequest,
 } from "@relay/protocol";
@@ -34,12 +35,14 @@ import {
   enqueueRecipe,
   loadMatrixReport,
   loadMatrixAnalysis,
+  materializeLocaleMatrix,
   exportRunMatrixPack,
   replayRecordedRun,
   retryJob,
   type ExportedPack,
   type CampaignDurationCohortEstimateRemoteInput,
   type LocalCampaignAdmissionPreflightRemoteInput,
+  type LocaleMatrixInput,
 } from "./server-run-remote";
 import { privateValuesForRun } from "./private-variables";
 
@@ -392,6 +395,20 @@ export function createServerRunController(deps: RunControllerDependencies) {
     return preflightLocalCampaignAdmissionRemote(deps.request, input);
   }
 
+  /** Get the target-free, frozen locale cases before rendering or submitting
+   * any per-case local-device assignment. Active device selection is never an
+   * input to this read path. */
+  async function materializeLocaleMatrixPlan(input: LocaleMatrixMaterializationInput) {
+    if (deps.health() !== "online") {
+      throw new Error("Relay is not connected to materialize a locale matrix");
+    }
+    const { projectId: _ignoredProjectId, ...source } = input;
+    return materializeLocaleMatrix(deps.request, {
+      ...source,
+      projectId: deps.projectId(),
+    });
+  }
+
   async function removeCombine(input: Parameters<typeof removeCombineRemote>[1]) {
     return removeCombineRemote(deps.request, input);
   }
@@ -423,33 +440,61 @@ export function createServerRunController(deps: RunControllerDependencies) {
       title?: string;
       appMapId?: string;
       flowId?: string;
-      scope?: import("./server-run-remote").LocaleMatrixInput["scope"];
+      testId?: string;
+      variableId?: string;
+      expectedAppMapRevision?: number;
+      scope?: LocaleMatrixInput["scope"];
+      /** Presence chooses target-affine local campaign mode, even when the
+       * list is empty. That prevents a missing row from falling back to the
+       * globally selected serial. */
+      caseTargetBindings?: LocaleMatrixInput["caseTargetBindings"];
+      localAdmission?: LocalCampaignAdmissionRequest;
     },
-  ): Promise<void> {
+  ): Promise<{ batchId: string; jobIds: string[] } | null> {
     if (deps.health() !== "online") {
       toast("Relay isn’t connected — can’t run yet", "warning");
-      return;
+      return null;
     }
-    const serial = deps.selectedDevice() ?? undefined;
-    if (!serial) {
+    const usesExplicitCaseTargets = options?.caseTargetBindings !== undefined;
+    const serial = usesExplicitCaseTargets ? undefined : (deps.selectedDevice() ?? undefined);
+    if (!usesExplicitCaseTargets && !serial) {
       toast("Choose a ready device first", "warning");
-      return;
+      return null;
     }
-    const targetPlatform =
-      deps.devices().find((device) => device.serial === serial)?.platform ?? "android";
+    const targetPlatform = serial
+      ? (deps.devices().find((device) => device.serial === serial)?.platform ?? "android")
+      : undefined;
     const title = options?.title ?? deps.recipes().find((recipe) => recipe.id === id)?.title ?? id;
-    deps.appendLog(`enqueue locale matrix ${id} × ${locales.join(", ")} on ${serial}…`, "info");
+    const targetLabel = usesExplicitCaseTargets
+      ? `${options?.caseTargetBindings?.length ?? 0} explicit local case targets`
+      : serial!;
+    deps.appendLog(
+      `enqueue locale matrix ${id} × ${locales.join(", ")} on ${targetLabel}…`,
+      "info",
+    );
     try {
-      await deps.captureBeforeRun(`before · locales · ${id}`, id).catch(() => undefined);
+      if (!usesExplicitCaseTargets) {
+        await deps.captureBeforeRun(`before · locales · ${id}`, id).catch(() => undefined);
+      }
       const data = await enqueueLocaleMatrix(
         deps.request,
         buildLocaleMatrixInput({
           recipe: options?.appMapId ? undefined : id,
           appMapId: options?.appMapId,
           flowId: options?.flowId,
-          serial,
-          targetKind: targetPlatform === "browser" ? "browser" : "device",
-          platform: targetPlatform === "browser" ? undefined : targetPlatform,
+          testId: options?.testId,
+          variableId: options?.variableId,
+          expectedAppMapRevision: options?.expectedAppMapRevision,
+          ...(usesExplicitCaseTargets
+            ? {
+                caseTargetBindings: options?.caseTargetBindings,
+                ...(options?.localAdmission ? { localAdmission: options.localAdmission } : {}),
+              }
+            : {
+                serial,
+                targetKind: targetPlatform === "browser" ? "browser" : "device",
+                platform: targetPlatform === "browser" ? undefined : targetPlatform,
+              }),
           locales,
           scope: options?.scope,
           preset: options?.preset,
@@ -462,12 +507,14 @@ export function createServerRunController(deps: RunControllerDependencies) {
       toast(`Running ${title} across ${data.batch.locales.length} locales`, "success");
       void deps.notify?.("Relay", `Running ${title} across ${data.batch.locales.length} locales`);
       void deps.refreshJobs();
+      return { batchId: data.batch.id, jobIds: data.jobs.map((job) => job.id) };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const readable = humanError(error, "Could not run this Test across locales");
       deps.appendLog(message, "error");
       toast(readable, "error");
       deps.setError(readable);
+      return null;
     }
   }
 
@@ -589,7 +636,10 @@ export function createServerRunController(deps: RunControllerDependencies) {
       resume: resumeCombineCampaign,
       cancel: cancelCombineCampaign,
     },
-    runRecipeAcrossLocales,
+    localeMatrix: {
+      materialize: materializeLocaleMatrixPlan,
+      run: runRecipeAcrossLocales,
+    },
     runAppMapConnection,
     runAppMapFlow,
     runCompatibilityMatrix,

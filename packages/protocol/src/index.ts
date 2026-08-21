@@ -30,6 +30,7 @@ export * from "./artifact-ref.js";
 export * from "./discovery-contract.js";
 export * from "./corpus-contract.js";
 export * from "./locale-pack-contract.js";
+export * from "./locale-matrix-materialization.js";
 export * from "./app-map-canvas.js";
 export * from "./ios-mutation-terminality-contract.js";
 import type { ResourceEventPayload } from "./coordination.js";

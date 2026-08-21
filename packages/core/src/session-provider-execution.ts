@@ -7,7 +7,11 @@
  * local target/client path. Once inside that boundary, the coordinator only
  * receives a Device facade supplied by the registered driver.
  */
-import type { TargetDefinition } from "@relay/protocol";
+import {
+  executionTargetRefKey,
+  type ExecutionTargetRef,
+  type TargetDefinition,
+} from "@relay/protocol";
 import { openApp, rememberedTargetApplication, resetDeviceClient, type Device } from "./device.js";
 import { createDeviceForTarget } from "./device-factory.js";
 import { getBrowserDevice } from "./browser-target.js";
@@ -17,17 +21,18 @@ import type { TestJob } from "./session-contract.js";
 import { resolveSessionDeviceMeta } from "./session-job-support.js";
 import { executionTargetRefForJob } from "./target-driver.js";
 import {
-  assertProviderTargetExecutionAdmission,
+  createProviderTargetExecutionPlan,
   currentTargetDriverRegistry,
-  withProviderTargetExecution,
+  withProviderTargetExecutionPlan,
+  type ProviderTargetExecutionPlan,
   type TargetDriverRegistry,
 } from "./target-driver-registry.js";
 import { preflightTarget, readTarget } from "./targets.js";
 
-/** A runtime driver implementation cannot cross a job transport or
- * persistence boundary. Capturing it at admission also prevents a queued job
- * from resolving against a later request's ambient provider registry. */
+/** A registry snapshot is only an admission input. Once validation succeeds,
+ * the immutable plan below owns the exact driver reference used at execution. */
 const providerDriverRegistriesByJob = new WeakMap<TestJob, TargetDriverRegistry>();
+const providerExecutionPlansByJob = new WeakMap<TestJob, ProviderTargetExecutionPlan>();
 
 /** The only provider-specific state visible to the generic job lifecycle. */
 export type ProviderSessionExecution = Readonly<{
@@ -46,6 +51,7 @@ export type PreparedSessionTarget = Readonly<{
 }>;
 
 export function captureProviderDriverRegistry(job: TestJob): void {
+  providerExecutionPlansByJob.delete(job);
   providerDriverRegistriesByJob.set(job, currentTargetDriverRegistry());
 }
 
@@ -53,19 +59,41 @@ function providerDriverRegistryForJob(job: TestJob): TargetDriverRegistry {
   return providerDriverRegistriesByJob.get(job) ?? currentTargetDriverRegistry();
 }
 
+function requireProviderExecutionPlan(
+  job: TestJob,
+  target: Extract<ExecutionTargetRef, { kind: "provider-session" }>,
+): ProviderTargetExecutionPlan {
+  const plan = providerExecutionPlansByJob.get(job);
+  if (!plan) {
+    throw new Error(
+      "Provider execution plan is missing; the job was not admitted for this process",
+    );
+  }
+  if (executionTargetRefKey(plan.target) !== executionTargetRefKey(target)) {
+    throw new Error("Provider execution plan does not match the job's frozen execution target");
+  }
+  return plan;
+}
+
 /** Reject an unsupported provider before scheduler staging, durable assignment
  * writes, or local target reservations can occur. */
 export function assertProviderTargetJobAdmission(job: TestJob): void {
   const target = executionTargetRefForJob(job);
   if (target.kind !== "provider-session") return;
-  assertProviderTargetExecutionAdmission(target, providerDriverRegistryForJob(job));
+  const existing = providerExecutionPlansByJob.get(job);
+  if (existing) {
+    requireProviderExecutionPlan(job, target);
+    return;
+  }
+  const plan = createProviderTargetExecutionPlan(target, providerDriverRegistryForJob(job));
+  providerExecutionPlansByJob.set(job, plan);
+  providerDriverRegistriesByJob.delete(job);
 }
 
-function recordProviderExecutionBoundary(job: TestJob): void {
-  const target = executionTargetRefForJob(job);
-  if (target.kind !== "provider-session") {
-    throw new Error("Provider execution boundary requires a provider-session target");
-  }
+function recordProviderExecutionBoundary(
+  job: TestJob,
+  target: ProviderTargetExecutionPlan["target"],
+): void {
   // The canonical frozen ref and operation lease are persisted independently
   // in the run and durable assignment. This artifact makes the concrete
   // control/capture boundary inspectable without serializing a driver or
@@ -102,19 +130,16 @@ export async function runProviderTargetJobIfNeeded(
 ): Promise<boolean> {
   const target = executionTargetRefForJob(job);
   if (target.kind !== "provider-session") return false;
-  await withProviderTargetExecution(
-    target,
-    async (providerExecution) => {
-      recordProviderExecutionBoundary(job);
-      await operation(
-        Object.freeze({
-          device: providerExecution.control.device,
-          deviceName: `${target.provider.key}:${target.targetId}`,
-        }),
-      );
-    },
-    providerDriverRegistryForJob(job),
-  );
+  const plan = requireProviderExecutionPlan(job, target);
+  await withProviderTargetExecutionPlan(plan, async (providerExecution) => {
+    recordProviderExecutionBoundary(job, plan.target);
+    await operation(
+      Object.freeze({
+        device: providerExecution.control.device,
+        deviceName: `${plan.target.provider.key}:${plan.target.targetId}`,
+      }),
+    );
+  });
   return true;
 }
 

@@ -2,10 +2,13 @@ import http from "node:http";
 import {
   appMapTestExecutionSourceFromJob,
   appMapTestExecutionSourceFromRun,
+  captureHumanInterventionReproof,
+  captureScreenshot,
   captureSnapshot,
   cancelActiveJob,
   cancelJob,
   currentOperationContext,
+  cleanupScreenshot,
   enqueueJob,
   exportLocaleRunPackFromBatchId,
   freezeRecipeExecution,
@@ -28,7 +31,6 @@ import {
   retryJob,
   replayPersistedRun,
   readPersistedRun,
-  recordHumanInterventionReproof,
   listDeviceLeases,
   listDevices,
   listTargetWorkers,
@@ -57,6 +59,7 @@ import { HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js
 import { recordAudit, type RequestContext } from "./security.js";
 import { handleCombineCampaignRoute } from "./combine-campaign-routes.js";
 import { handleLocaleMatrixRoute } from "./locale-matrix-routes.js";
+import { sendHumanInterventionReproofEvidence } from "./human-intervention-reproof-evidence.js";
 import type { verifyCampaignDurationCohortEvidence } from "./campaign-duration-cohort-evidence.js";
 import {
   assertExecutionTargetRef,
@@ -76,7 +79,9 @@ export type JobRouteRuntime = {
    * from persisted project runs when this is not supplied. */
   verifyCampaignDurationCohortEvidence?: typeof verifyCampaignDurationCohortEvidence;
   enqueueJob: typeof enqueueJob;
+  captureScreenshot: typeof captureScreenshot;
   captureSnapshot: typeof captureSnapshot;
+  cleanupScreenshot: typeof cleanupScreenshot;
   retryJob: typeof retryJob;
   replayPersistedRun: typeof replayPersistedRun;
   resumeJob: (id: string) => TestJob | Promise<TestJob>;
@@ -91,7 +96,9 @@ const defaultJobRouteRuntime: JobRouteRuntime = {
   listTargetWorkers,
   releaseDeviceLease,
   enqueueJob,
+  captureScreenshot,
   captureSnapshot,
+  cleanupScreenshot,
   retryJob,
   replayPersistedRun,
   resumeJob,
@@ -150,6 +157,26 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       // `active` is compatibility-only; `activeJobs` is the truthful capacity-aware view.
       active: activeJobs.length ? summarizeJob(activeJobs.at(-1)!) : null,
       activeJobs: activeJobs.map(summarizeJob),
+    });
+    return true;
+  }
+
+  const humanReproofEvidenceMatch = matchPath(
+    pathname,
+    "/jobs/:id/human-intervention-reproof/evidence/:sha256",
+  );
+  if (method === "GET" && humanReproofEvidenceMatch) {
+    const job = runtime.getJob(humanReproofEvidenceMatch.id!);
+    assertJobAccess(scope, job);
+    await sendHumanInterventionReproofEvidence({
+      response: res,
+      artifacts: job.artifacts,
+      sha256: humanReproofEvidenceMatch.sha256!,
+    });
+    recordAudit(scope, {
+      action: "job.human-intervention-reproof.evidence.read",
+      resource: `${job.id}:${humanReproofEvidenceMatch.sha256}`,
+      result: "allow",
     });
     return true;
   }
@@ -226,22 +253,31 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     if (humanInterventionNeedsReproof(paused)) {
       const operation = currentOperationContext();
       if (!operation) throw new HttpError(400, "Actor-aware operation context is required");
-      const targetId = paused.browserTargetId ?? paused.serial;
-      if (!targetId || paused.targetContext.kind !== "device") {
+      if (paused.targetContext.kind !== "device") {
         throw new HttpError(409, "The intervened target cannot be re-proven");
       }
+      const targetId = paused.targetContext.serial;
       try {
-        const snapshot = await runtime.captureSnapshot({ serial: targetId, includeVisual: true });
-        recordHumanInterventionReproof(paused, operation, {
-          capturedAt: snapshot.capturedAt,
-          inspectable: snapshot.inspectable,
-          source: snapshot.source,
-          foregroundApp: snapshot.foregroundApp,
-          bindingState: snapshot.bindingState,
-          screenIdentity: snapshot.screenIdentity,
-          visualFingerprint: snapshot.visualFingerprint,
-          readiness: snapshot.readiness,
-          nodeCount: snapshot.nodes.length,
+        await captureHumanInterventionReproof({
+          job: paused,
+          operation,
+          targetId,
+          capture: {
+            captureSnapshot: () =>
+              runtime.captureSnapshot({ serial: targetId, includeVisual: true }),
+            ...(paused.targetContext.platform === "ios"
+              ? {
+                  captureScreenshot: () =>
+                    runtime.captureScreenshot({
+                      serial: targetId,
+                      caption: "human intervention reproof",
+                      ephemeral: true,
+                      includeScreenMatch: false,
+                    }),
+                  cleanupScreenshot: runtime.cleanupScreenshot,
+                }
+              : {}),
+          },
         });
       } catch (error) {
         if (error instanceof HumanInterventionReproofUnavailableError) {
@@ -250,7 +286,9 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
             jobId: paused.id,
             targetId,
             recovery:
-              "Keep the run paused. Capture a fresh current accessibility snapshot with named controls after the human repair, then resume.",
+              paused.targetContext.platform === "ios"
+                ? "Keep the run paused. Capture coherent screenshots around a fresh current accessibility snapshot after the human repair, then resume."
+                : "Keep the run paused. Capture a fresh current accessibility snapshot with named controls after the human repair, then resume.",
           });
         }
         throw new HttpError(

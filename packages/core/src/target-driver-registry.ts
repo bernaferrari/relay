@@ -24,6 +24,7 @@ import {
 } from "./target-driver.js";
 
 type TargetDriverBoundCapability = "control" | "capture" | "recovery";
+type ProviderSessionExecutionTarget = Extract<ExecutionTargetRef, { kind: "provider-session" }>;
 
 function providerRegistryKey(provider: ExecutionTargetProvider): string {
   return JSON.stringify([provider.scope, provider.key]);
@@ -44,8 +45,9 @@ function unavailable(
 
 /**
  * An explicit set of drivers available to one execution host. A duplicate
- * registration is an error rather than an implicit replacement so a process
- * cannot silently swap a provider adapter while jobs are queued.
+ * registration is an error rather than an implicit replacement. Host rotation
+ * is deliberately an unregister/register operation; admitted jobs retain an
+ * exact driver plan while later admissions see the replacement.
  */
 export class TargetDriverRegistry {
   readonly #drivers = new Map<string, TargetDriver>();
@@ -111,9 +113,9 @@ export const defaultTargetDriverRegistry = new TargetDriverRegistry([
 
 const targetDriverRegistries = new AsyncLocalStorage<TargetDriverRegistry>();
 
-/** Execute one request/admission under a host-selected driver registry. Jobs
- * capture this registry at admission, so later scheduler execution cannot
- * accidentally resolve against a different ambient provider set. */
+/** Execute one request/admission under a host-selected driver registry. Queue
+ * admission converts this ambient registry into an exact driver plan, so later
+ * scheduler execution cannot resolve against a replacement provider driver. */
 export function runWithTargetDriverRegistry<T>(
   registry: TargetDriverRegistry,
   operation: () => Promise<T>,
@@ -165,6 +167,80 @@ export type ProviderTargetExecutionSession = Readonly<{
   capture: TargetDriverSession;
 }>;
 
+/**
+ * A process-local admission record for one provider job. The target is cloned
+ * and frozen, and `driver` is the exact object whose control/capture
+ * availability passed at queue admission. Registry rotation affects later
+ * admissions only; it can never replace this driver's queued work.
+ */
+export type ProviderTargetExecutionPlan = Readonly<{
+  target: ProviderSessionExecutionTarget;
+  driver: TargetDriver;
+  capabilities: readonly ["control", "capture"];
+}>;
+
+const admittedProviderExecutionPlans = new WeakSet<ProviderTargetExecutionPlan>();
+const providerExecutionCapabilities = Object.freeze(["control", "capture"] as const);
+
+function freezeProviderSessionTarget(target: ExecutionTargetRef): ProviderSessionExecutionTarget {
+  if (target.kind !== "provider-session") {
+    throw new Error("Provider execution plans require a provider-session target");
+  }
+  const clone = structuredClone(target);
+  return Object.freeze({
+    ...clone,
+    provider: Object.freeze({ ...clone.provider }),
+    identity: Object.freeze({ ...clone.identity }),
+  }) as ProviderSessionExecutionTarget;
+}
+
+/** Freeze the exact provider driver that passed control and capture admission.
+ * The plan is runtime-only: callers must not persist a driver or credentials. */
+export function createProviderTargetExecutionPlan(
+  target: ExecutionTargetRef,
+  registry = currentTargetDriverRegistry(),
+): ProviderTargetExecutionPlan {
+  const driver = assertProviderTargetExecutionAdmission(target, registry);
+  const plan = Object.freeze({
+    target: freezeProviderSessionTarget(target),
+    driver,
+    capabilities: providerExecutionCapabilities,
+  }) as ProviderTargetExecutionPlan;
+  admittedProviderExecutionPlans.add(plan);
+  return plan;
+}
+
+function assertAdmittedProviderExecutionPlan(plan: ProviderTargetExecutionPlan): void {
+  if (!admittedProviderExecutionPlans.has(plan)) {
+    throw new Error("Provider execution plan was not admitted by this Relay process");
+  }
+  if (
+    plan.driver.provider.key !== plan.target.provider.key ||
+    plan.driver.provider.scope !== plan.target.provider.scope
+  ) {
+    throw unavailable(plan.target, "control", "provider-mismatch");
+  }
+}
+
+/** Enter an already-admitted plan without consulting a mutable registry. A
+ * retired plan may run through its admitted driver, or fail its own capability
+ * check; it can never be redirected to a replacement under the same key. */
+export async function withProviderTargetExecutionPlan<T>(
+  plan: ProviderTargetExecutionPlan,
+  operation: (session: ProviderTargetExecutionSession) => Promise<T>,
+): Promise<T> {
+  assertAdmittedProviderExecutionPlan(plan);
+  requireCapability(plan.target, plan.driver, "control");
+  requireCapability(plan.target, plan.driver, "capture");
+  return await plan.driver.control.withTarget(plan.target, async (control) => {
+    assertSessionOwnsTarget(plan.target, control, "control");
+    return await plan.driver.capture.withTarget(plan.target, async (capture) => {
+      assertSessionOwnsTarget(plan.target, capture, "capture");
+      return await operation(Object.freeze({ driver: plan.driver, control, capture }));
+    });
+  });
+}
+
 function assertSessionOwnsTarget(
   target: ExecutionTargetRef,
   session: TargetDriverSession,
@@ -191,14 +267,10 @@ export async function withProviderTargetExecution<T>(
   operation: (session: ProviderTargetExecutionSession) => Promise<T>,
   registry = currentTargetDriverRegistry(),
 ): Promise<T> {
-  const driver = assertProviderTargetExecutionAdmission(target, registry);
-  return await driver.control.withTarget(target, async (control) => {
-    assertSessionOwnsTarget(target, control, "control");
-    return await driver.capture.withTarget(target, async (capture) => {
-      assertSessionOwnsTarget(target, capture, "capture");
-      return await operation(Object.freeze({ driver, control, capture }));
-    });
-  });
+  return await withProviderTargetExecutionPlan(
+    createProviderTargetExecutionPlan(target, registry),
+    operation,
+  );
 }
 
 /** Provider recovery is intentionally capability-scoped. A driver that can

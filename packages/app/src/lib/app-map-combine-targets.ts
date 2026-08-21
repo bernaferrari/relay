@@ -2,67 +2,21 @@ import type {
   AppMapCombineCellTargetBinding,
   LocalAgentDeviceExecutionTargetRef,
 } from "@relay/protocol";
+import { sameAppMapCombineCellValues } from "@relay/protocol";
 import {
-  EXECUTION_TARGET_REF_VERSION,
-  executionTargetRefKey,
-  LOCAL_AGENT_DEVICE_PROVIDER_KEY,
-  sameAppMapCombineCellValues,
-} from "@relay/protocol";
-import type { DeviceInfo } from "./api-types";
-import { presentTarget, targetIsReady } from "./target-presentation";
+  isBoundLocalExecutionTargetReady,
+  localExecutionTargetOptions,
+  type LocalExecutionTargetOption,
+} from "./local-execution-targets";
 
 export type CombineCellTargetIdentity = Pick<AppMapCombineCellTargetBinding, "testId" | "values">;
 
 /** A visible attached-device choice. Provider sessions deliberately never
  * appear here: Relay has no configured provider capacity to admit today. */
-export type LocalCombineTargetOption = {
-  target: LocalAgentDeviceExecutionTargetRef;
-  label: string;
-  detail: string;
-  ready: boolean;
-};
+export type LocalCombineTargetOption = LocalExecutionTargetOption;
 
-function localTargetRef(device: DeviceInfo): LocalAgentDeviceExecutionTargetRef | undefined {
-  if (device.platform !== "android" && device.platform !== "ios") return undefined;
-  const targetId = device.serial.trim();
-  if (!targetId) return undefined;
-  return {
-    schemaVersion: EXECUTION_TARGET_REF_VERSION,
-    kind: "local-device",
-    provider: { key: LOCAL_AGENT_DEVICE_PROVIDER_KEY, scope: "local" },
-    targetId,
-    platform: device.platform,
-    identity: { kind: "device-serial", value: targetId },
-  };
-}
-
-/** List only locally attached Android/iOS execution lanes. A remote provider
- * cannot be made selectable merely because its name resembles a serial. */
-export function localCombineTargetOptions(
-  devices: readonly DeviceInfo[],
-  online: boolean,
-): LocalCombineTargetOption[] {
-  return devices
-    .flatMap((device) => {
-      const target = localTargetRef(device);
-      if (!target) return [];
-      const presented = presentTarget(device);
-      return [
-        {
-          target,
-          label: `${presented.displayName} · ${presented.platformLabel}`,
-          detail: `${presented.statusLabel} · ${target.targetId}`,
-          ready: targetIsReady(device, online),
-        },
-      ];
-    })
-    .sort(
-      (left, right) =>
-        Number(right.ready) - Number(left.ready) ||
-        left.label.localeCompare(right.label) ||
-        left.target.targetId.localeCompare(right.target.targetId),
-    );
-}
+/** Backward-compatible Combine vocabulary for the generic local target list. */
+export const localCombineTargetOptions = localExecutionTargetOptions;
 
 export function combineCellTargetBindingFor(
   bindings: readonly AppMapCombineCellTargetBinding[],
@@ -81,10 +35,9 @@ export function isBoundLocalCombineTargetReady(
   binding: AppMapCombineCellTargetBinding | undefined,
   targets: readonly LocalCombineTargetOption[],
 ): boolean {
-  if (!binding) return false;
-  const selected = executionTargetRefKey(binding.target);
-  return targets.some(
-    (target) => target.ready && executionTargetRefKey(target.target) === selected,
+  return isBoundLocalExecutionTargetReady(
+    binding?.target.kind === "local-device" ? binding.target : undefined,
+    targets,
   );
 }
 

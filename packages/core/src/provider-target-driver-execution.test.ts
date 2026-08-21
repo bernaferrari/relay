@@ -12,7 +12,7 @@ import { createDeterministicProviderTestDriver } from "./deterministic-provider-
 import { runWithOperationContext } from "./operation-context.js";
 import type { Recipe } from "./recipes.js";
 import { readPersistedRun } from "./runs.js";
-import { runJobSync } from "./session.js";
+import { prepareJobBatch, runJobSync, waitForJobCompletion } from "./session.js";
 import { TargetDriverRegistry, runWithTargetDriverRegistry } from "./target-driver-registry.js";
 
 test("a registered provider session executes through driver control and capture without legacy device fallback", async () => {
@@ -140,6 +140,94 @@ test("a registered provider session executes through driver control and capture 
   } finally {
     setLocalDeviceProvider(undefined);
     setCloudDeviceProvider(undefined);
+    resetDurableWorkerAssignmentStoreForTests();
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    if (previousAutomaticVisualEvidence === undefined)
+      delete process.env.RELAY_AUTO_VISUAL_EVIDENCE;
+    else process.env.RELAY_AUTO_VISUAL_EVIDENCE = previousAutomaticVisualEvidence;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a queued provider job keeps its admitted driver after the registry rotates", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-provider-driver-rotation-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  const previousAutomaticVisualEvidence = process.env.RELAY_AUTO_VISUAL_EVIDENCE;
+  process.env.RELAY_STATE_DIR = join(root, "state");
+  process.env.RELAY_RUNS_DIR = join(root, "runs");
+  process.env.RELAY_AUTO_VISUAL_EVIDENCE = "0";
+  resetDurableWorkerAssignmentStoreForTests();
+
+  const admitted = createDeterministicProviderTestDriver();
+  const replacement = createDeterministicProviderTestDriver();
+  const registry = new TargetDriverRegistry([admitted.driver]);
+  const target = admitted.target("provider-session-rotation", "ios");
+  const recipe: Recipe = {
+    id: "provider-queued-rotation",
+    title: "Provider queued rotation",
+    source: "builtin",
+    steps: [{ kind: "screenshot", caption: "admitted driver capture" }],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  let localFactoryCalls = 0;
+  setLocalDeviceProvider({
+    kind: "device",
+    create: () => {
+      localFactoryCalls += 1;
+      throw new Error("a rotated provider registry must not fall back locally");
+    },
+  });
+
+  try {
+    const batch = runWithTargetDriverRegistry(registry, () =>
+      runWithOperationContext(
+        {
+          schemaVersion: 1,
+          actorId: "agent:provider-driver-rotation",
+          actorKind: "agent",
+          organizationId: "org-provider-driver-rotation",
+          projectId: "project-provider-driver-rotation",
+          operationId: "job.start",
+          requestId: crypto.randomUUID(),
+          idempotencyKey: crypto.randomUUID(),
+          issuedAt: Date.now(),
+        },
+        () =>
+          prepareJobBatch([
+            {
+              input: {
+                recipe: recipe.id,
+                recipeSnapshot: recipe,
+                recipeGraph: { [recipe.id]: recipe },
+                executionTarget: target,
+                projectId: "project-provider-driver-rotation",
+                ownerId: "agent:provider-driver-rotation",
+              },
+            },
+          ]),
+      ),
+    );
+
+    assert.equal(registry.unregister(target.provider), true);
+    registry.register(replacement.driver);
+    const [job] = batch.commit();
+    assert.ok(job);
+    const completed = await waitForJobCompletion(job.id);
+
+    assert.equal(completed.status, "ok");
+    assert.equal(localFactoryCalls, 0);
+    assert.ok(
+      admitted.events.includes(`capture.screenshot:${target.targetId}`),
+      "the driver selected at admission runs the queued job",
+    );
+    assert.equal(replacement.events.length, 0, "the replacement driver never receives queued work");
+  } finally {
+    setLocalDeviceProvider(undefined);
     resetDurableWorkerAssignmentStoreForTests();
     if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previousState;

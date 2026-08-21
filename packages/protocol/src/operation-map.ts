@@ -8,6 +8,7 @@
 import type {
   AuthoringEvidence,
   AuthoringInteraction,
+  AuthoringRawOptimizationProposalResponse,
   AuthoringSessionListResponse,
   AuthoringSessionResponse,
   CommitAuthoringSessionInput,
@@ -52,6 +53,10 @@ import type { CorpusOperationId } from "./corpus-operation-definitions.js";
 import type { CombineOperationId } from "./combine-operation-definitions.js";
 import type { OperationRecord, ProjectRole } from "./operation-contract.js";
 import type { ExecutionTargetRef } from "./execution-target.js";
+import type {
+  LocaleMatrixMaterialization,
+  LocaleMatrixMaterializationInput,
+} from "./locale-matrix-materialization.js";
 
 export type RedactionPolicyDto = {
   enabled: boolean;
@@ -645,6 +650,10 @@ type SpecificOperationMap = {
     input: { sessionId: string };
     output: AuthoringSessionResponse;
   };
+  "authoring.take.optimization.get": {
+    input: { sessionId: string };
+    output: AuthoringRawOptimizationProposalResponse;
+  };
   "authoring.take.trim": {
     input: TrimAuthoringTakeInput;
     output: AuthoringSessionResponse;
@@ -724,6 +733,10 @@ type SpecificOperationMap = {
   "campaign.local-admission.preflight": {
     input: LocalCampaignAdmissionPreflightRequest;
     output: LocalCampaignAdmissionPreflightResponse;
+  };
+  "job.locale-matrix.materialize": {
+    input: LocaleMatrixMaterializationInput;
+    output: LocaleMatrixMaterialization;
   };
   "lease.list": {
     input: { status?: "active" | "all" };

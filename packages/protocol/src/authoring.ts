@@ -464,6 +464,13 @@ export type AuthoringRawOptimizationProposal = {
   }>;
 };
 
+/** Read-only result for the deterministic raw-recording review queue. A null
+ * proposal means this Take predates raw capture (or has no Take), rather than
+ * inviting a caller to infer or reconstruct private historical input. */
+export type AuthoringRawOptimizationProposalResponse = {
+  proposal: AuthoringRawOptimizationProposal | null;
+};
+
 export type AuthoringTake = {
   id: string;
   state: "recording" | "reviewing" | "committed" | "discarded";
@@ -677,6 +684,13 @@ export function summarizeAuthoringSession(session: AuthoringSession): AuthoringS
 
 export function summarizeAuthoringOperationResult(operationId: string, result: unknown): unknown {
   if (operationId === "authoring.session.get") return result;
+  if (operationId === "authoring.take.optimization.get") {
+    try {
+      return parseAuthoringRawOptimizationProposalResponse(result);
+    } catch {
+      return result;
+    }
+  }
   if (operationId === "authoring.session.list") {
     try {
       return {
@@ -728,6 +742,97 @@ export function parseAuthoringSessionListResponse(value: unknown): AuthoringSess
   const input = object(value, "authoring session list response");
   if (!Array.isArray(input.sessions)) throw new TypeError("sessions must be an array");
   return { sessions: input.sessions.map(parseAuthoringSession) };
+}
+
+function nonNegativeInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`${label} must be a non-negative integer`);
+  }
+  return value;
+}
+
+function uniqueNonEmptyStrings(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new TypeError(`${label} must be an array of non-empty strings`);
+  }
+  const strings = value.map((item) => item.trim());
+  if (new Set(strings).size !== strings.length) {
+    throw new TypeError(`${label} must not contain duplicates`);
+  }
+  return strings;
+}
+
+/** Parse and project the deliberately small review payload. This is kept
+ * separate from full session parsing so a future raw-event field can never
+ * accidentally become part of the optimization API response. */
+export function parseAuthoringRawOptimizationProposalResponse(
+  value: unknown,
+): AuthoringRawOptimizationProposalResponse {
+  const input = object(value, "authoring raw optimization response");
+  if (input.proposal === null) return { proposal: null };
+  const proposal = object(input.proposal, "authoring raw optimization proposal");
+  if (proposal.schemaVersion !== 1) {
+    throw new TypeError("authoring raw optimization proposal schemaVersion must be 1");
+  }
+  if (proposal.kind !== "authoring-raw-optimization") {
+    throw new TypeError("authoring raw optimization proposal kind is unsupported");
+  }
+  if (proposal.reviewOnly !== true) {
+    throw new TypeError("authoring raw optimization proposal must be review-only");
+  }
+  const captureVersion = proposal.captureVersion;
+  if (captureVersion !== 1 && captureVersion !== AUTHORING_RAW_CAPTURE_VERSION) {
+    throw new TypeError("authoring raw optimization proposal captureVersion is unsupported");
+  }
+  if (!Array.isArray(proposal.suggestions)) {
+    throw new TypeError("authoring raw optimization proposal suggestions must be an array");
+  }
+  const suggestions = proposal.suggestions.map((value, index) => {
+    const suggestion = object(value, `authoring raw optimization suggestion ${index + 1}`);
+    let kind: AuthoringRawOptimizationProposal["suggestions"][number]["kind"];
+    if (suggestion.kind === "review-observe-only" || suggestion.kind === "review-wait") {
+      kind = suggestion.kind;
+    } else {
+      throw new TypeError(`authoring raw optimization suggestion ${index + 1} kind is unsupported`);
+    }
+    const reason = nonEmpty(
+      suggestion.reason,
+      `authoring raw optimization suggestion ${index + 1} reason`,
+    );
+    if (reason.length > 480) {
+      throw new TypeError(`authoring raw optimization suggestion ${index + 1} reason is too long`);
+    }
+    return {
+      kind,
+      rawEventId: nonEmpty(
+        suggestion.rawEventId,
+        `authoring raw optimization suggestion ${index + 1} rawEventId`,
+      ),
+      actionId: nonEmpty(
+        suggestion.actionId,
+        `authoring raw optimization suggestion ${index + 1} actionId`,
+      ),
+      reason,
+    };
+  });
+  return {
+    proposal: {
+      schemaVersion: 1,
+      kind: "authoring-raw-optimization",
+      reviewOnly: true,
+      takeId: nonEmpty(proposal.takeId, "authoring raw optimization proposal takeId"),
+      captureVersion,
+      baseRevision: nonNegativeInteger(
+        proposal.baseRevision,
+        "authoring raw optimization proposal baseRevision",
+      ),
+      sourceEventIds: uniqueNonEmptyStrings(
+        proposal.sourceEventIds,
+        "authoring raw optimization proposal sourceEventIds",
+      ),
+      suggestions,
+    },
+  };
 }
 
 function canonicalJson(value: unknown): string {

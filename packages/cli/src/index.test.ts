@@ -787,6 +787,101 @@ test("combine run carries the shared explicit local-admission contract unchanged
   assert.equal(started?.input.combineId, "languages");
 });
 
+test("locale matrix CLI materializes first and starts exact target-affine restore cases", async () => {
+  const planInput = {
+    recipe: "settings",
+    scope: {
+      locales: ["en", "it"],
+      entryPath: [{ kind: "tap", target: { label: "Settings" } }],
+      restoreLocale: "en",
+    },
+  };
+  const materialization = {
+    schemaVersion: 1,
+    materializedAt: 1,
+    source: { kind: "recipe", recipeId: "settings" },
+    scope: planInput.scope,
+    cases: [
+      { caseIndex: 0, locale: "en" },
+      { caseIndex: 1, locale: "it" },
+      { caseIndex: 2, locale: "en" },
+    ],
+    durationCohort: { testId: "settings", action: "settings" },
+  };
+  const localAdmission = {
+    deadlineMs: 180_000,
+    durationEvidence: [
+      {
+        schemaVersion: 1,
+        cohort: { targetId: "ipad-1", platform: "ios", testId: "settings", action: "settings" },
+        duration: {
+          workItemDurationMs: 12_000,
+          provenance: "observed-p95",
+          observedAt: 100,
+          sampleCount: 5,
+          maxAgeMs: MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS,
+        },
+        measurement: {
+          estimator: "campaign-duration-estimate",
+          recordSource: "persisted-runs",
+          durationSource: "run-wall-clock",
+          sampleIds: ["1", "2", "3", "4", "5"],
+          observationWindow: { startedAt: 1, finishedAt: 100 },
+        },
+      },
+    ],
+  };
+  const target = {
+    schemaVersion: 1,
+    kind: "local-device",
+    provider: { key: "relay.local.agent-device", scope: "local" },
+    targetId: "ipad-1",
+    platform: "ios",
+    identity: { kind: "device-serial", value: "ipad-1" },
+  };
+  const calls: Array<{ operationId: OperationId; input: Record<string, unknown> }> = [];
+  const client: OperationInvoker = {
+    async invoke(operationId, input) {
+      calls.push({ operationId, input: input as Record<string, unknown> });
+      if (operationId === "job.locale-matrix.materialize") return materialization;
+      if (operationId === "job.locale-matrix.start") {
+        return { jobs: [{ id: "locale-job", status: "queued" }] };
+      }
+      if (operationId === "job.get") return { job: { id: "locale-job", status: "ok" } };
+      throw new Error(`unexpected ${operationId}`);
+    },
+    events: async () => {},
+  };
+  const planIo = capture();
+  const planCode = await runCli(
+    ["locale", "matrix", "plan", "--input", JSON.stringify(planInput), "--json"],
+    { streams: planIo.streams, createClient: () => client, registerSignalHandlers: false, env: {} },
+  );
+  assert.equal(planCode, ExitCode.success);
+  assert.deepEqual(calls[0], { operationId: "job.locale-matrix.materialize", input: planInput });
+
+  const runIo = capture();
+  const runInput = {
+    recipe: "settings",
+    locales: ["en", "it"],
+    scope: materialization.scope,
+    caseTargetBindings: materialization.cases.map((item) => ({
+      ...item,
+      executionTarget: target,
+    })),
+    localAdmission,
+  };
+  const runCode = await runCli(
+    ["locale", "matrix", "run", "--input", JSON.stringify(runInput), "--json"],
+    { streams: runIo.streams, createClient: () => client, registerSignalHandlers: false, env: {} },
+  );
+  assert.equal(runCode, ExitCode.success);
+  const started = calls.find((call) => call.operationId === "job.locale-matrix.start");
+  assert.deepEqual(started?.input.caseTargetBindings, runInput.caseTargetBindings);
+  assert.deepEqual(started?.input.localAdmission, localAdmission);
+  assert.equal(started?.input.serial, undefined);
+});
+
 test("combine run waits for later cases and fails when any locale fails", async () => {
   const io = capture();
   const polled: string[] = [];

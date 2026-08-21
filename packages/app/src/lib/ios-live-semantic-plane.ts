@@ -10,11 +10,31 @@ export type IosLiveSemanticPlane = {
   state: "current" | "stale" | "unproven" | "in-flight" | "unavailable" | "cooldown";
   /** Only current proof may decorate pixels or drive a semantic action. */
   overlaysEnabled: boolean;
-  /** A bounded background/query attempt is permitted, never required. */
-  permitsAutomaticProbe: boolean;
+  /** Only stale or unproven facts earn another background XCTest query. */
+  automaticProbeNeeded: boolean;
+  /** An explicit refresh or screen-change event may query while XCTest is idle. */
+  permitsRefresh: boolean;
   proofAt?: number;
   nextProbeAt?: number;
 };
+
+type SemanticReadinessSource = {
+  serial?: string;
+  readiness?: { semanticControl?: TargetRuntimeCapabilityReadiness };
+};
+
+/** A snapshot from another target must never refresh the selected target's AX plane. */
+export function selectedTargetSemanticReadiness(input: {
+  target?: SemanticReadinessSource | null;
+  snapshot?: SemanticReadinessSource | null;
+}): TargetRuntimeCapabilityReadiness | undefined {
+  const { target, snapshot } = input;
+  const snapshotBelongsToTarget =
+    Boolean(target) && (!snapshot?.serial || snapshot.serial === target?.serial);
+  return snapshotBelongsToTarget
+    ? (snapshot?.readiness?.semanticControl ?? target?.readiness?.semanticControl)
+    : target?.readiness?.semanticControl;
+}
 
 export function iosLiveSemanticPlane(input: {
   readiness?: TargetRuntimeCapabilityReadiness;
@@ -29,10 +49,22 @@ export function iosLiveSemanticPlane(input: {
     input.invalidatedAt !== undefined && (proofAt === undefined || proofAt < input.invalidatedAt);
 
   if (readiness?.state === "proven" && readiness.freshness === "current" && !invalidatedLocally) {
-    return { state: "current", overlaysEnabled: true, permitsAutomaticProbe: true, proofAt };
+    return {
+      state: "current",
+      overlaysEnabled: true,
+      automaticProbeNeeded: false,
+      permitsRefresh: true,
+      proofAt,
+    };
   }
   if (readiness?.state === "proven" || readiness?.freshness === "stale" || invalidatedLocally) {
-    return { state: "stale", overlaysEnabled: false, permitsAutomaticProbe: true, proofAt };
+    return {
+      state: "stale",
+      overlaysEnabled: false,
+      automaticProbeNeeded: true,
+      permitsRefresh: true,
+      proofAt,
+    };
   }
   // Relay's bounded wait expired, but the native XCTest traversal is still
   // running. This must be separate from a failed runner: a second automatic
@@ -42,27 +74,44 @@ export function iosLiveSemanticPlane(input: {
     readiness?.state === "unavailable" &&
     (readiness.reason === "probe-in-flight" || readiness.lastError?.reason === "probe-in-flight")
   ) {
-    return { state: "in-flight", overlaysEnabled: false, permitsAutomaticProbe: false };
+    return {
+      state: "in-flight",
+      overlaysEnabled: false,
+      automaticProbeNeeded: false,
+      permitsRefresh: false,
+    };
   }
   if (readiness?.state === "unavailable" && readiness.nextProbeAt !== undefined) {
     return readiness.nextProbeAt > now
       ? {
           state: "cooldown",
           overlaysEnabled: false,
-          permitsAutomaticProbe: false,
+          automaticProbeNeeded: false,
+          permitsRefresh: false,
           nextProbeAt: readiness.nextProbeAt,
         }
       : {
           state: "unavailable",
           overlaysEnabled: false,
-          permitsAutomaticProbe: false,
+          automaticProbeNeeded: false,
+          permitsRefresh: false,
           nextProbeAt: readiness.nextProbeAt,
         };
   }
   if (readiness?.state === "unavailable") {
-    return { state: "unavailable", overlaysEnabled: false, permitsAutomaticProbe: false };
+    return {
+      state: "unavailable",
+      overlaysEnabled: false,
+      automaticProbeNeeded: false,
+      permitsRefresh: false,
+    };
   }
-  return { state: "unproven", overlaysEnabled: false, permitsAutomaticProbe: true };
+  return {
+    state: "unproven",
+    overlaysEnabled: false,
+    automaticProbeNeeded: true,
+    permitsRefresh: true,
+  };
 }
 
 /** Short label for a low-priority glass hint. Avoid frame-rate or readiness

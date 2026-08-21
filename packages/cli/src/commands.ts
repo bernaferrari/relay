@@ -328,12 +328,66 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("job.matrix.start", path("job matrix start")),
   mapped("job.compatibility-matrix.start", path("job compatibility-matrix start")),
   mapped("job.soak.start", path("job soak start")),
-  {
-    operationId: "job.locale-matrix.start",
-    exclusion: "internal",
-    reason:
-      "Flow-based locale matrices are legacy compatibility; use a saved Language Variable × graph Test Combine.",
-  },
+  mapped(
+    "job.locale-matrix.materialize",
+    path("locale matrix plan", [], undefined, {
+      summary: "Materialize the exact locale cases before assigning local targets",
+      inputHelp: [
+        {
+          name: "recipe | appMapId + flowId",
+          type: "string",
+          required: true,
+          description: "Project-owned saved recipe or App Map flow to run",
+        },
+        {
+          name: "scope",
+          type: "object",
+          description:
+            "Taught locale scope. The response freezes normalized cases, including a final restore case when applicable.",
+        },
+      ],
+      examples: [
+        'relay locale matrix plan --input \'{"recipe":"settings","scope":{"locales":["en","it"],"entryPath":[{"kind":"tap","target":{"label":"Settings"}}],"restoreLocale":"en"}}\'',
+      ],
+      note: "This is target-free and read-only. Bind every returned case index before a local device-farm start; a restore locale can repeat an earlier visible language.",
+    }),
+    path("job locale-matrix materialize"),
+  ),
+  mapped(
+    "job.locale-matrix.start",
+    path("locale matrix run", [], undefined, {
+      summary: "Run a materialized locale matrix",
+      inputHelp: [
+        {
+          name: "scope",
+          type: "object",
+          required: true,
+          description: "Send the exact scope returned by locale matrix plan",
+        },
+        {
+          name: "caseTargetBindings",
+          type: "array",
+          description:
+            "Optional explicit [{caseIndex, locale, executionTarget}] local-device bindings for every materialized case. When present, Relay never uses a selected serial.",
+        },
+        {
+          name: "localAdmission",
+          type: "object",
+          description:
+            "Required with explicit caseTargetBindings. It contains fresh server-derived target × Test/action timing evidence and a deadline.",
+        },
+        {
+          name: "serial",
+          type: "string",
+          description:
+            "Deliberate legacy single-device mode only; omit it for explicit case targets.",
+        },
+      ],
+      note: "First run locale matrix plan and bind every returned case, including restore. Missing, foreign, stale, or infeasible local bindings return 409 and queue nothing.",
+      behavior: "job-start-watch",
+    }),
+    path("job locale-matrix start", [], undefined, { behavior: "job-start-watch" }),
+  ),
   mapped(
     "job.combine.start",
     path("job combine start", [], undefined, {

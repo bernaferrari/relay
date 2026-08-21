@@ -13,6 +13,16 @@ import {
 
 type ImageRotation = "none" | "left" | "right";
 
+/** Enabling overlays after a pixels-only mode needs one tree, but a fresh
+ * snapshot already has that tree and must not requeue XCTest. */
+export function accessibilityOverlaySnapshotNeeded(input: {
+  collectionEnabled: boolean;
+  liveViewActive: boolean;
+  hasSnapshot: boolean;
+}): boolean {
+  return input.collectionEnabled && input.liveViewActive && !input.hasSnapshot;
+}
+
 /** Accessibility overlay collection and hit testing for the mirrored device. */
 export function useDeviceStageAccessibility(options: {
   liveViewActive: Accessor<boolean>;
@@ -98,9 +108,11 @@ export function useDeviceStageAccessibility(options: {
     const mode = server.accessibilityMode();
     if (!accessibilityHoverEnabled(mode) || !semanticOverlaysEnabled()) clearHover();
     if (
-      accessibilityCollectionEnabled(mode) &&
-      options.liveViewActive() &&
-      semanticOverlaysEnabled()
+      accessibilityOverlaySnapshotNeeded({
+        collectionEnabled: accessibilityCollectionEnabled(mode),
+        liveViewActive: options.liveViewActive(),
+        hasSnapshot: Boolean(server.snapshot()),
+      })
     ) {
       options.refreshSnapshot(0);
     }

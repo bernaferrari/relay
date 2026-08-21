@@ -163,3 +163,120 @@ test("explicit local Combine bindings run without a globally selected device", a
   assert.deepEqual(requestBody?.localAdmission, localAdmission);
   assert.equal((requestBody?.cellTargetBindings as unknown[])?.length, 1);
 });
+
+test("explicit locale target intent never consults the selected serial, including an invalidated plan", async () => {
+  let requestBody: Record<string, unknown> | undefined;
+  let captures = 0;
+  const request: ServerRequest = async <T>(path: string, init?: RequestInit) => {
+    assert.equal(path, "/jobs/locale-matrix");
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return {
+      batch: {
+        id: "locale-1",
+        title: "Settings",
+        locales: ["en", "it", "en"],
+        recipeId: "settings",
+      },
+      jobs: [],
+      matrix: { id: "locale-1" },
+    } as T;
+  };
+  const controller = createServerRunController({
+    request,
+    health: () => "online",
+    devices: () => [],
+    recipes: () => [],
+    matrices: () => [],
+    selectedDevice: () => {
+      throw new Error("explicit locale mode must not read selected serial");
+    },
+    selectedJobId: () => null,
+    prodAccountMatch: () => "",
+    projectId: () => "project",
+    projectVariables: () => [],
+    activeJob: () => null,
+    queuedJobs: () => [],
+    captureBeforeRun: async () => {
+      captures += 1;
+    },
+    appendLog: () => undefined,
+    setSelectedJobId: () => undefined,
+    setSelectedAction: () => undefined,
+    setError: () => undefined,
+    refreshJobs: async () => undefined,
+    rememberJob: () => undefined,
+  });
+  const localAdmission = {
+    deadlineMs: 180_000,
+    durationEvidence: [
+      {
+        schemaVersion: 1 as const,
+        cohort: {
+          targetId: "ipad-1",
+          platform: "ios" as const,
+          testId: "settings",
+          action: "settings",
+        },
+        duration: {
+          workItemDurationMs: 12_000,
+          provenance: "observed-p95" as const,
+          observedAt: 100,
+          sampleCount: 5,
+          maxAgeMs: MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS,
+        },
+        measurement: {
+          estimator: "campaign-duration-estimate" as const,
+          recordSource: "persisted-runs" as const,
+          durationSource: "run-wall-clock" as const,
+          sampleIds: ["1", "2", "3", "4", "5"],
+          observationWindow: { startedAt: 1, finishedAt: 100 },
+        },
+      },
+    ],
+  };
+  const target = {
+    schemaVersion: 1 as const,
+    kind: "local-device" as const,
+    provider: { key: "relay.local.agent-device" as const, scope: "local" as const },
+    targetId: "ipad-1",
+    platform: "ios" as const,
+    identity: { kind: "device-serial" as const, value: "ipad-1" },
+  };
+
+  await controller.localeMatrix.run("settings", ["en", "it"], {
+    scope: {
+      locales: ["en", "it"],
+      entryPath: [{ kind: "tap" }],
+      restoreLocale: "en",
+    },
+    caseTargetBindings: [
+      { caseIndex: 0, locale: "en", executionTarget: target },
+      { caseIndex: 1, locale: "it", executionTarget: target },
+      { caseIndex: 2, locale: "en", executionTarget: target },
+    ],
+    localAdmission,
+  });
+
+  assert.equal(captures, 0);
+  assert.equal(requestBody?.serial, undefined);
+  assert.equal(requestBody?.targetKind, undefined);
+  assert.equal(requestBody?.browserTargetId, undefined);
+  assert.deepEqual(requestBody?.localAdmission, localAdmission);
+  assert.equal((requestBody?.caseTargetBindings as unknown[])?.length, 3);
+
+  // A stale explicit plan is blocked by the admission surface before it gets
+  // here. Keep this transport boundary fail-closed too: the empty explicit
+  // binding list is still an explicit-mode request, never a selected serial.
+  await controller.localeMatrix.run("settings", ["fr"], {
+    scope: {
+      locales: ["fr"],
+      entryPath: [{ kind: "tap" }],
+      restoreLocale: "en",
+    },
+    caseTargetBindings: [],
+  });
+
+  assert.equal(captures, 0);
+  assert.equal(requestBody?.serial, undefined);
+  assert.deepEqual(requestBody?.caseTargetBindings, []);
+});

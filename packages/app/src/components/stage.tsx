@@ -55,7 +55,10 @@ import { useDeviceStagePicker } from "./use-device-stage-picker";
 import { useDeviceStageLiveFrame } from "../lib/use-device-stage-live-frame";
 import { useDeviceStageKeyboard } from "../lib/use-device-stage-keyboard";
 import { refreshLiveDeviceEvidence } from "../lib/live-device-refresh";
-import { iosLiveSemanticPlane } from "../lib/ios-live-semantic-plane";
+import {
+  iosLiveSemanticPlane,
+  selectedTargetSemanticReadiness,
+} from "../lib/ios-live-semantic-plane";
 import { useDeviceStageLiveGesture } from "./use-device-stage-live-gesture";
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
@@ -219,6 +222,7 @@ export function DeviceStage(_props: {
     stageElement: () => stageEl,
     showTapFeedback,
     onInteractionSuccess: () => {
+      invalidateIosSemanticOverlay();
       if (videoFailed()) void tickLiveFrame();
       scheduleLiveSnapshot();
     },
@@ -249,15 +253,8 @@ export function DeviceStage(_props: {
     targetIsPhysicalIos(currentDevice()) &&
     (server.appleDeviceSetup()?.setup.iosLivePreview?.backend ?? "go-ios-auto") ===
       "agent-device-png";
-  const semanticReadiness = () => {
-    const device = currentDevice();
-    const snapshot = server.snapshot();
-    const snapshotBelongsToDevice =
-      Boolean(device) && (!snapshot?.serial || snapshot.serial === device?.serial);
-    return snapshotBelongsToDevice
-      ? (snapshot?.readiness?.semanticControl ?? device?.readiness?.semanticControl)
-      : device?.readiness?.semanticControl;
-  };
+  const semanticReadiness = () =>
+    selectedTargetSemanticReadiness({ target: currentDevice(), snapshot: server.snapshot() });
   const iosSemanticPlane = createMemo(() =>
     targetIsPhysicalIos(currentDevice())
       ? iosLiveSemanticPlane({
@@ -268,11 +265,13 @@ export function DeviceStage(_props: {
   );
   const semanticOverlaysEnabled = () =>
     !targetIsPhysicalIos(currentDevice()) || iosSemanticPlane()?.overlaysEnabled === true;
-  const semanticAutomaticProbeAllowed = () =>
-    !targetIsPhysicalIos(currentDevice()) || iosSemanticPlane()?.permitsAutomaticProbe === true;
-  const invalidateIosSemanticOverlay = () => {
+  const semanticAutomaticProbeNeeded = () =>
+    !targetIsPhysicalIos(currentDevice()) || iosSemanticPlane()?.automaticProbeNeeded === true;
+  const semanticRefreshAllowed = () =>
+    !targetIsPhysicalIos(currentDevice()) || iosSemanticPlane()?.permitsRefresh === true;
+  function invalidateIosSemanticOverlay(): void {
     if (targetIsPhysicalIos(currentDevice())) setSemanticOverlayInvalidatedAt(Date.now());
-  };
+  }
   const livePaused = () =>
     !liveViewActive() ||
     !tabVisible() ||
@@ -301,7 +300,7 @@ export function DeviceStage(_props: {
     // A failed XCTest probe publishes a cooldown. It is a safety rail, not a
     // background polling schedule: pixels remain live and explicit Recover
     // owns the next repair attempt.
-    if (!semanticAutomaticProbeAllowed()) return;
+    if (!semanticRefreshAllowed()) return;
     if (iosFrameSharesSemanticSession() && frameRequestsInFlight > 0) {
       snapQueued = true;
       return;
@@ -481,7 +480,7 @@ export function DeviceStage(_props: {
       usesScreenshotPreview(),
       physicalIosRecording(),
       accessibilityCollectionEnabled(server.accessibilityMode()),
-      semanticAutomaticProbeAllowed(),
+      semanticAutomaticProbeNeeded(),
     );
     if (!policy.pollSnapshot && !policy.pollFallbackFrame) return;
 
@@ -751,7 +750,7 @@ export function DeviceStage(_props: {
       server.clearLiveCaptureIssue();
       if (iosSetupState() === "needs-setup") setIosSetupCheck((check) => check + 1);
       await tickLiveFrame();
-      if (semanticAutomaticProbeAllowed()) await tickLiveSnapshot();
+      if (semanticRefreshAllowed()) await tickLiveSnapshot();
       return;
     }
     server.clearLiveCaptureIssue();

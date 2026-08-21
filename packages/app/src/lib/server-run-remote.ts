@@ -11,6 +11,9 @@ import type {
   LocalCampaignAdmissionRequest,
   LocalCampaignAdmissionPreflightRequest,
   LocalCampaignAdmissionPreflightResponse,
+  LocaleMatrixMaterialization,
+  LocaleMatrixMaterializationInput,
+  LocaleMatrixMaterializedScope,
   LocaleRunAnalysisReport,
   LocaleRunPackManifest,
   MatrixExpansion,
@@ -93,33 +96,12 @@ export async function enqueueMatrix(
   });
 }
 
-export type LocaleMatrixInput = {
-  recipe?: string;
-  appMapId?: string;
-  flowId?: string;
+export type LocaleMatrixInput = LocaleMatrixMaterializationInput & {
   serial?: string;
   platform?: string;
   targetKind?: "browser" | "device";
   browserTargetId?: string;
-  locales?: string[];
-  /** Scanned switcher/language profile id (e.g. grok-ios). */
-  profileId?: string;
-  scope?: {
-    locales: string[];
-    app?: string;
-    entryPath?: unknown[];
-    languagePath?: unknown[];
-    languageOptions?: Record<
-      string,
-      string | { label?: string; identifier?: string; text?: string }
-    >;
-    restoreLocale?: string;
-    restoreAtEnd?: boolean;
-    screenshotEachLocale?: boolean;
-  };
   title?: string;
-  preset?: "grok";
-  projectId?: string;
   /** Optional explicit local execution lane for each locale case. This is
    * transport-only: the caller must provide the matching shared admission. */
   caseTargetBindings?: Array<{
@@ -177,11 +159,14 @@ export function buildLocaleMatrixInput(input: {
   recipe?: string;
   appMapId?: string;
   flowId?: string;
+  testId?: string;
+  variableId?: string;
+  expectedAppMapRevision?: number;
   serial?: string;
   targetKind?: "browser" | "device";
   platform?: string;
   locales: string[];
-  scope?: LocaleMatrixInput["scope"];
+  scope?: LocaleMatrixMaterializedScope;
   title?: string;
   projectId: string;
   preset?: "grok";
@@ -203,9 +188,24 @@ export function buildLocaleMatrixInput(input: {
           serial: input.serial!.trim(),
         };
   const source =
-    input.appMapId?.trim() && input.flowId?.trim()
-      ? { appMapId: input.appMapId.trim(), flowId: input.flowId.trim() }
-      : { recipe: input.recipe?.trim() || "" };
+    input.appMapId?.trim() && input.testId?.trim() && input.variableId?.trim()
+      ? {
+          appMapId: input.appMapId.trim(),
+          testId: input.testId.trim(),
+          variableId: input.variableId.trim(),
+          ...(input.expectedAppMapRevision !== undefined
+            ? { expectedAppMapRevision: input.expectedAppMapRevision }
+            : {}),
+        }
+      : input.appMapId?.trim() && input.flowId?.trim()
+        ? {
+            appMapId: input.appMapId.trim(),
+            flowId: input.flowId.trim(),
+            ...(input.expectedAppMapRevision !== undefined
+              ? { expectedAppMapRevision: input.expectedAppMapRevision }
+              : {}),
+          }
+        : { recipe: input.recipe?.trim() || "" };
   if (input.scope) {
     const locales = input.scope.locales.length ? input.scope.locales : input.locales;
     return {
@@ -215,6 +215,8 @@ export function buildLocaleMatrixInput(input: {
       scope: { ...input.scope, locales },
       title: input.title,
       projectId: input.projectId,
+      ...(input.preset ? { preset: input.preset } : {}),
+      ...(input.profileId ? { profileId: input.profileId } : {}),
       ...(input.caseTargetBindings === undefined
         ? {}
         : { caseTargetBindings: structuredClone(input.caseTargetBindings) }),
@@ -238,6 +240,19 @@ export function buildLocaleMatrixInput(input: {
       ? {}
       : { localAdmission: structuredClone(input.localAdmission) }),
   };
+}
+
+/** Resolve the complete, frozen locale case list before any target is bound.
+ * This is deliberately separate from enqueue: it cannot inspect a device,
+ * reserve capacity, or turn an active UI selection into an implicit target. */
+export async function materializeLocaleMatrix(
+  request: ServerRequest,
+  input: LocaleMatrixMaterializationInput,
+): Promise<LocaleMatrixMaterialization> {
+  return request("/jobs/locale-matrix/materialize", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function inferLocaleMatrix(

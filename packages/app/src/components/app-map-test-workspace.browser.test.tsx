@@ -7,6 +7,7 @@ import type {
   AppMapScenarioTest,
   AppMapScenarioTestEdit,
   AppMapTest,
+  LocaleMatrixMaterialization,
 } from "@relay/protocol";
 import type { JobInfo } from "../lib/api-types";
 
@@ -80,6 +81,150 @@ function fixture(): AppMap {
     updatedAt: 1,
   };
 }
+
+test("a saved App Map Test opens Locale Matrix from its language Variable, not Corpus", async () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const scenario: AppMapScenarioTest = {
+    kind: "scenario",
+    id: "checkout-locale",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    name: "Checkout locale smoke",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        kind: "script",
+        id: "assert-checkout",
+        intent: "Check checkout",
+        binding: { status: "resolved", kind: "script", source: "return true" },
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const map = fixture();
+  map.tests[scenario.id] = scenario;
+  map.variables.language = {
+    id: "language",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    name: "Language",
+    kind: "language",
+    apply: {
+      kind: "list",
+      entryPath: [{ kind: "tap", target: { identifier: "settings.language" } }],
+      exitPath: [{ kind: "back" }],
+    },
+    options: [
+      { id: "en", identifier: "locale.en", label: "English" },
+      { id: "it", identifier: "locale.it", label: "Italiano" },
+    ],
+    restoreId: "en",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const materialization: LocaleMatrixMaterialization = {
+    schemaVersion: 1,
+    materializedAt: 1,
+    source: {
+      kind: "app-map-test",
+      appMapId: "checkout",
+      testId: scenario.id,
+      variableId: "language",
+      appMapRevision: 1,
+      recipeId: "app-map:checkout:test:checkout-locale:root:r1",
+    },
+    scope: {
+      locales: ["en", "it"],
+      entryPath: [{ kind: "tap", target: { identifier: "settings.language" } }],
+      exitPath: [{ kind: "back" }],
+      languageOptions: {
+        en: { identifier: "locale.en" },
+        it: { identifier: "locale.it" },
+      },
+      restoreLocale: "en",
+      restoreAtEnd: true,
+      screenshotEachLocale: true,
+    },
+    cases: [
+      { caseIndex: 0, locale: "en" },
+      { caseIndex: 1, locale: "it" },
+      { caseIndex: 2, locale: "en" },
+    ],
+    durationCohort: {
+      testId: "app-map:checkout:test:checkout-locale:variable:language",
+      action: "app-map:checkout:test:checkout-locale",
+    },
+  };
+  const materialize = vi.fn(async () => materialization);
+  const run = vi.fn(async () => ({ batchId: "locale-app-map-test", jobIds: [] }));
+  serverMock.current = {
+    selectedAppMap: () => map,
+    isOffline: () => false,
+    health: () => "online",
+    devices: () => [],
+    selectedDevice: () => null,
+    liveFrame: () => null,
+    liveCaptureIssue: () => null,
+    appleDeviceSetup: () => null,
+    jobs: () => [],
+    persistedRuns: () => [],
+    pollLiveFrame: async () => undefined,
+    loadRunDetail: async () => undefined,
+    frameUrlForPersisted: () => "",
+    refreshAppMaps: async () => undefined,
+    refreshJobs: async () => undefined,
+    runAction: async () => undefined,
+    cancelJob: async () => undefined,
+    localeMatrix: { materialize, run },
+    estimateCampaignDurationCohorts: async () => ({ checkedAt: 1, estimates: [] }),
+    preflightLocalCampaignAdmission: async () => ({}),
+  };
+
+  const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
+  try {
+    await settle();
+    expect(root.querySelector("[data-app-map-test-locale-matrix]")).not.toBeNull();
+    expect(root.textContent).toContain("Run this Test across languages");
+    expect(root.textContent).toContain("Saved App Map Test");
+    expect(root.querySelector<HTMLSelectElement>("[data-locale-matrix-variable]")?.value).toBe(
+      "language",
+    );
+    expect(materialize).toHaveBeenCalledWith({
+      appMapId: "checkout",
+      testId: scenario.id,
+      variableId: "language",
+    });
+
+    const start = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Run on selected device"),
+    );
+    if (!start) throw new Error("expected App Map Test Locale Matrix start control");
+    start.click();
+    await settle();
+
+    expect(run).toHaveBeenCalledWith(
+      materialization.source.recipeId,
+      ["en", "it"],
+      expect.objectContaining({
+        appMapId: "checkout",
+        testId: scenario.id,
+        variableId: "language",
+        expectedAppMapRevision: 1,
+        scope: materialization.scope,
+      }),
+    );
+    expect(JSON.stringify(materialize.mock.calls)).not.toMatch(/corpus/iu);
+    expect(JSON.stringify(run.mock.calls)).not.toMatch(/corpus/iu);
+  } finally {
+    dispose();
+    root.remove();
+  }
+});
 
 test("scenario editor creates and edits stable intent without inventing a runnable binding", async () => {
   document.body.replaceChildren();

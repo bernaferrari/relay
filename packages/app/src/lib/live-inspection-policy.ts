@@ -48,11 +48,11 @@ export function liveInspectionPolicy(
   videoFailed: boolean,
   captureSuspended = false,
   collectAccessibility = true,
-  semanticAutomaticProbeAllowed = true,
+  automaticSemanticProbeNeeded = true,
 ) {
   return {
     pollSnapshot:
-      interacting && collectAccessibility && !captureSuspended && semanticAutomaticProbeAllowed,
+      interacting && collectAccessibility && !captureSuspended && automaticSemanticProbeNeeded,
     pollFallbackFrame: interacting && videoFailed && !captureSuspended,
   };
 }

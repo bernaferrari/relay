@@ -1,17 +1,11 @@
 import {
-  AppMapCompileError,
   analyzeLocaleRunBatch,
-  applyRecordedLocalePrelude,
-  compileAppMapFlow,
-  completeTaughtLocaleScope,
   currentOperationContext,
-  defaultGrokLocaleScope,
   exportLocaleRunPackFromBatchId,
   inferLocaleOptionsFromTeach,
   listDeviceLeases,
   listDevices,
   listTargetWorkers,
-  localeRunScopeFromLanguageProfile,
   localeRunScopeFromTeach,
   prepareLocaleRecipeRun,
   readAppMap,
@@ -23,7 +17,6 @@ import {
   summarizeJob,
   type LocaleRunCaseTargetBinding,
   type LocaleRunScope,
-  type Recipe,
 } from "@relay/core";
 import { assertExecutionTargetRef, type LocalCampaignAdmissionRequest } from "@relay/protocol";
 import { admitTargetControl, assertTargetControl } from "./access-control.js";
@@ -34,12 +27,26 @@ import {
   type LocalCampaignAdmission,
   type LocalCampaignAdmissionWorkItem,
 } from "./local-combine-campaign-admission.js";
-import { recordAudit } from "./security.js";
+import {
+  materializeLocaleMatrixExecution,
+  type LocaleMatrixRouteInput,
+} from "./locale-matrix-materialization.js";
 
 type LocaleMatrixCaseTargetBindingInput = {
   caseIndex?: unknown;
   locale?: unknown;
   executionTarget?: unknown;
+};
+
+type LocaleMatrixStartBody = LocaleMatrixRouteInput & {
+  serial?: string;
+  platform?: "android" | "ios";
+  targetKind?: "device" | "browser";
+  browserTargetId?: string;
+  /** Explicit, frozen local target for every generated locale case. */
+  caseTargetBindings?: LocaleMatrixCaseTargetBindingInput[];
+  /** Required with explicit bindings; each cohort must be fresh and exact. */
+  localAdmission?: LocalCampaignAdmissionRequest;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -51,6 +58,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function explicitLocaleTargetBindings(input: {
   bindings: unknown;
   prepared: Awaited<ReturnType<typeof prepareLocaleRecipeRun>>;
+  targetPlatform?: "android" | "ios";
 }): LocaleRunCaseTargetBinding[] {
   if (!Array.isArray(input.bindings)) {
     throw new HttpError(400, "caseTargetBindings must be an array", {
@@ -116,6 +124,21 @@ function explicitLocaleTargetBindings(input: {
         },
       );
     }
+    if (
+      input.targetPlatform !== undefined &&
+      binding.executionTarget.platform !== input.targetPlatform
+    ) {
+      throw new HttpError(
+        409,
+        `Locale profile requires an ${input.targetPlatform} target, but case ${caseIndex + 1} is bound to ${binding.executionTarget.platform}.`,
+        {
+          code: "LOCALE_PROFILE_TARGET_PLATFORM_MISMATCH",
+          requiredPlatform: input.targetPlatform,
+          target: binding.executionTarget,
+          recovery: `Rebind every locale case to a local ${input.targetPlatform} target for this taught profile.`,
+        },
+      );
+    }
     seen.add(caseIndex);
     result.push({
       caseIndex,
@@ -147,6 +170,18 @@ export async function handleLocaleMatrixRoute(context: JobRouteContext): Promise
         }
       : {}),
   };
+
+  if (method === "POST" && pathname === "/jobs/locale-matrix/materialize") {
+    const body = (await parseJsonBody(req)) as LocaleMatrixRouteInput;
+    try {
+      const materialized = await materializeLocaleMatrixExecution({ scope, body });
+      json(res, 200, materialized.materialization);
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(400, error instanceof Error ? error.message : String(error));
+    }
+    return true;
+  }
 
   if (method === "POST" && pathname === "/jobs/locale-matrix/infer") {
     const body = (await parseJsonBody(req)) as {
@@ -212,32 +247,22 @@ export async function handleLocaleMatrixRoute(context: JobRouteContext): Promise
   }
 
   if (method === "POST" && pathname === "/jobs/locale-matrix") {
-    const body = (await parseJsonBody(req)) as {
-      recipe?: string;
-      appMapId?: string;
-      flowId?: string;
-      serial?: string;
-      platform?: "android" | "ios";
-      targetKind?: "device" | "browser";
-      browserTargetId?: string;
-      /** Explicit, frozen local target for every generated locale case. */
-      caseTargetBindings?: LocaleMatrixCaseTargetBindingInput[];
-      /** Required with explicit bindings; each cohort must be fresh and exact. */
-      localAdmission?: LocalCampaignAdmissionRequest;
-      scope?: LocaleRunScope;
-      locales?: string[];
-      /** Switcher/language profile id (e.g. grok-ios). Preferred over preset. */
-      profileId?: string;
-      title?: string;
-      seed?: number;
-      projectId?: string;
-      preset?: "grok";
-    };
-    if (!body.recipe && !(body.appMapId?.trim() && body.flowId?.trim())) {
-      throw new HttpError(400, "recipe or appMapId+flowId is required");
-    }
-    if (!scope.localTrusted) {
-      throw new HttpError(403, "Locale matrix jobs require a project-owned recipe store");
+    const body = (await parseJsonBody(req)) as LocaleMatrixStartBody;
+    const appMapSource = Boolean(
+      body.appMapId?.trim() &&
+      (body.flowId?.trim() || (body.testId?.trim() && body.variableId?.trim())),
+    );
+    if (appMapSource) {
+      if (
+        !Number.isSafeInteger(body.expectedAppMapRevision) ||
+        (body.expectedAppMapRevision as number) < 0
+      ) {
+        throw new HttpError(409, "Start an App Map locale matrix from a fresh materialized plan.", {
+          code: "LOCALE_APP_MAP_MATERIALIZATION_REQUIRED",
+          recovery:
+            "Refresh the Locale Matrix plan so Relay can freeze the current App Map revision before admission.",
+        });
+      }
     }
     const hasExplicitCaseTargets = body.caseTargetBindings !== undefined;
     if (hasExplicitCaseTargets && !body.localAdmission) {
@@ -258,116 +283,66 @@ export async function handleLocaleMatrixRoute(context: JobRouteContext): Promise
           "Bind every generated locale case explicitly so Relay can prove target-affine deadline capacity.",
       });
     }
-    const targetId = body.browserTargetId ?? body.serial;
-    let platform: "android" | "ios" | undefined;
-    if (!hasExplicitCaseTargets) {
-      if (!targetId) throw new HttpError(400, "serial or browserTargetId is required");
-      await runtime.assertTargetControl(scope, targetId);
-      platform =
-        body.platform ??
-        (body.browserTargetId ? undefined : await resolveJobDevicePlatform(targetId));
-      if (!body.browserTargetId && !platform) {
-        throw new HttpError(
-          400,
-          `Cannot tell if ${targetId} is iOS or Android. Connect the device, or pass platform.`,
-        );
-      }
-    }
-    if (body.projectId?.trim() && body.projectId.trim() !== scope.projectId) {
-      recordAudit(scope, { action: "run.locale-matrix", resource: "project", result: "deny" });
-      throw new HttpError(403, "Project is outside the authenticated scope");
-    }
-
-    let runScope = body.scope;
-    if (!runScope) {
-      const locales = body.locales?.length ? body.locales : ["en"];
-      const profileId = body.profileId?.trim() || (body.preset === "grok" ? "grok-ios" : "");
-      if (profileId) {
-        try {
-          const profileScope = await localeRunScopeFromLanguageProfile(profileId, locales);
-          runScope = {
-            locales: profileScope.locales,
-            ...(profileScope.app ? { app: profileScope.app } : {}),
-            ...(profileScope.relaunch !== undefined ? { relaunch: profileScope.relaunch } : {}),
-            ...(profileScope.entryPath
-              ? { entryPath: profileScope.entryPath as LocaleRunScope["entryPath"] }
-              : {}),
-            ...(profileScope.languagePath
-              ? { languagePath: profileScope.languagePath as LocaleRunScope["languagePath"] }
-              : {}),
-            ...(profileScope.languageOptions
-              ? { languageOptions: profileScope.languageOptions }
-              : {}),
-            ...(profileScope.restoreLocale ? { restoreLocale: profileScope.restoreLocale } : {}),
-            ...(profileScope.restoreAtEnd !== undefined
-              ? { restoreAtEnd: profileScope.restoreAtEnd }
-              : {}),
-            ...(profileScope.screenshotEachLocale !== undefined
-              ? { screenshotEachLocale: profileScope.screenshotEachLocale }
-              : {}),
-          };
-        } catch (error) {
-          if (profileId === "grok-ios" || body.preset === "grok") {
-            runScope = defaultGrokLocaleScope(locales);
-          } else {
-            throw new HttpError(400, error instanceof Error ? error.message : String(error));
-          }
-        }
-      } else {
-        runScope = { locales, screenshotEachLocale: true };
-      }
-    }
-    if (!runScope) throw new HttpError(400, "locale scope is required");
-
     try {
-      let recipeId = body.recipe?.trim() ?? "";
-      let compiledBody: Recipe | undefined;
-      let compiledGraph: Record<string, Recipe> | undefined;
-      if (body.appMapId?.trim() && body.flowId?.trim()) {
-        const map = await readAppMap(scope.projectId, body.appMapId.trim());
-        if (!map) throw new HttpError(404, `App Map ${body.appMapId} not found`);
-        const prelude = recordedLocalePreludeFromMap(map, { bodyFlowId: body.flowId.trim() });
-        const explicitNav = Boolean(
-          body.scope?.entryPath?.length || body.scope?.languagePath?.length,
-        );
-        runScope = applyRecordedLocalePrelude(runScope, prelude, explicitNav ? "fill" : "replace");
-        let plan;
-        try {
-          plan = compileAppMapFlow(map, body.flowId.trim());
-        } catch (error) {
-          if (error instanceof AppMapCompileError) {
-            throw new HttpError(409, error.message);
-          }
-          throw error;
+      const materialized = await materializeLocaleMatrixExecution({ scope, body });
+      const { recipeId, compiledBody, compiledGraph, runScope, durationCohort, targetPlatform } =
+        materialized;
+      const browserTargetId = body.browserTargetId?.trim();
+      const targetId = browserTargetId || body.serial?.trim();
+      let platform: "android" | "ios" | undefined;
+      if (!hasExplicitCaseTargets) {
+        if (!targetId) throw new HttpError(400, "serial or browserTargetId is required");
+        if (body.targetKind === "browser" && !browserTargetId) {
+          throw new HttpError(400, "A browser locale target requires browserTargetId.");
         }
-        compiledGraph = Object.fromEntries(
-          Object.values(plan.recipes).map((compiled) => [
-            compiled.id,
+        if (browserTargetId) {
+          // A browser cannot stand in for an iOS- or Android-bound locale
+          // contract. In particular, never let a caller attach `platform:ios`
+          // to a browser id to make the target look compatible.
+          if (targetPlatform) {
+            throw new HttpError(
+              409,
+              `Locale profile requires a local ${targetPlatform} target, but ${targetId} is a browser target.`,
+              {
+                code: "LOCALE_PROFILE_TARGET_PLATFORM_MISMATCH",
+                requiredPlatform: targetPlatform,
+                recovery: `Select a local ${targetPlatform} target for this taught profile.`,
+              },
+            );
+          }
+        } else {
+          // Platform is an observed property of a serial, never caller
+          // authority. Resolve it without the optional explicit hint so a
+          // request cannot relabel Android as iOS (or vice versa).
+          platform = await resolveJobDevicePlatform(targetId);
+          if (!platform) {
+            throw new HttpError(
+              400,
+              `Cannot determine whether ${targetId} is iOS or Android. Connect the device and try again.`,
+            );
+          }
+          if (body.platform && body.platform !== platform) {
+            throw new HttpError(409, `Target ${targetId} is ${platform}, not ${body.platform}.`, {
+              code: "LOCALE_TARGET_PLATFORM_MISMATCH",
+              actualPlatform: platform,
+              recovery:
+                "Refresh the selected device; Relay derives its platform from the connected target.",
+            });
+          }
+        }
+        if (targetPlatform && platform !== targetPlatform) {
+          throw new HttpError(
+            409,
+            `Locale profile requires an ${targetPlatform} target, but ${targetId} is ${platform ?? "not a local mobile target"}.`,
             {
-              id: compiled.id,
-              title: compiled.title,
-              ...(compiled.description ? { description: compiled.description } : {}),
-              source: "custom" as const,
-              steps: compiled.steps,
-              createdAt: map.createdAt,
-              updatedAt: map.updatedAt,
+              code: "LOCALE_PROFILE_TARGET_PLATFORM_MISMATCH",
+              requiredPlatform: targetPlatform,
+              recovery: `Select a local ${targetPlatform} target for this taught profile.`,
             },
-          ]),
-        );
-        compiledBody = compiledGraph[plan.rootRecipeId];
-        recipeId = plan.rootRecipeId;
+          );
+        }
+        await runtime.assertTargetControl(scope, targetId);
       }
-      const durationCohort =
-        body.appMapId?.trim() && body.flowId?.trim()
-          ? {
-              testId: `app-map:${body.appMapId.trim()}:flow:${body.flowId.trim()}`,
-              action: `app-map:${body.appMapId.trim()}:flow:${body.flowId.trim()}`,
-            }
-          : { testId: recipeId, action: recipeId };
-      runScope = completeTaughtLocaleScope(runScope, {
-        profileId: body.profileId,
-        preset: body.preset,
-      });
       let batch;
       let admission: LocalCampaignAdmission | undefined;
       let acceptedAdmission: LocalCampaignAdmission | undefined;
@@ -386,6 +361,7 @@ export async function handleLocaleMatrixRoute(context: JobRouteContext): Promise
         const targetBindings = explicitLocaleTargetBindings({
           bindings: body.caseTargetBindings,
           prepared,
+          ...(targetPlatform ? { targetPlatform } : {}),
         });
         const workItems: LocalCampaignAdmissionWorkItem[] = targetBindings.map((binding) => ({
           id: `locale:${binding.caseIndex}`,
@@ -469,8 +445,10 @@ export async function handleLocaleMatrixRoute(context: JobRouteContext): Promise
           ...(compiledBody ? { compiledBody, compiledGraph } : {}),
           targetId: targetId!,
           platform,
-          targetKind: body.targetKind ?? (body.browserTargetId ? "browser" : "device"),
-          browserTargetId: body.browserTargetId,
+          // The target reference determines its kind. Never trust a caller's
+          // `targetKind` label to turn a device serial into a browser target.
+          targetKind: browserTargetId ? "browser" : "device",
+          browserTargetId,
           scope: runScope,
           title: body.title,
           seed: body.seed,

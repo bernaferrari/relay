@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AUTHORING_SESSION_STATES,
+  parseAuthoringRawOptimizationProposalResponse,
   parseAuthoringSession,
   serializeAuthoringSession,
   summarizeAuthoringOperationResult,
@@ -201,4 +202,59 @@ test("agent mutation output summarizes a take without repeating evidence or sema
   assert.deepEqual(summarizeAuthoringOperationResult("authoring.session.get", { session: value }), {
     session: value,
   });
+});
+
+test("raw optimization output is a small immutable review payload", () => {
+  const response = parseAuthoringRawOptimizationProposalResponse({
+    proposal: {
+      schemaVersion: 1,
+      kind: "authoring-raw-optimization",
+      reviewOnly: true,
+      takeId: "take-a",
+      captureVersion: 2,
+      baseRevision: 4,
+      sourceEventIds: ["raw-1", "raw-2"],
+      suggestions: [
+        {
+          kind: "review-wait",
+          rawEventId: "raw-2",
+          actionId: "action-2",
+          reason: "Review whether this recorded wait is still required by the current target.",
+          privateValue: "must not be projected",
+        },
+      ],
+    },
+  });
+  assert.deepEqual(response, {
+    proposal: {
+      schemaVersion: 1,
+      kind: "authoring-raw-optimization",
+      reviewOnly: true,
+      takeId: "take-a",
+      captureVersion: 2,
+      baseRevision: 4,
+      sourceEventIds: ["raw-1", "raw-2"],
+      suggestions: [
+        {
+          kind: "review-wait",
+          rawEventId: "raw-2",
+          actionId: "action-2",
+          reason: "Review whether this recorded wait is still required by the current target.",
+        },
+      ],
+    },
+  });
+  assert.deepEqual(parseAuthoringRawOptimizationProposalResponse({ proposal: null }), {
+    proposal: null,
+  });
+  assert.throws(
+    () =>
+      parseAuthoringRawOptimizationProposalResponse({
+        proposal: {
+          ...response.proposal,
+          reviewOnly: false,
+        },
+      }),
+    /review-only/u,
+  );
 });

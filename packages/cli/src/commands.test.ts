@@ -67,6 +67,7 @@ test("all plan-035 authoring operations have friendly command paths", () => {
     "authoring.session.start",
     "authoring.session.interact",
     "authoring.session.stop",
+    "authoring.take.optimization.get",
     "authoring.take.trim",
     "authoring.take.reorder",
     "authoring.take.replace",
@@ -401,16 +402,28 @@ test("authoring interaction aliases construct explicit session inputs", () => {
   );
 });
 
-test("legacy flow locale commands are internal and Combine is the public workflow", () => {
+test("locale matrix plan and explicit target-affine run commands are public alongside Combine", () => {
   const start = mappedCommandDescriptors.find(
     (descriptor) => descriptor.operationId === "job.locale-matrix.start",
+  );
+  const materialize = mappedCommandDescriptors.find(
+    (descriptor) => descriptor.operationId === "job.locale-matrix.materialize",
   );
   const infer = mappedCommandDescriptors.find(
     (descriptor) => descriptor.operationId === "job.locale-matrix.infer",
   );
-  assert.equal(start, undefined);
+  assert.ok(start && !("exclusion" in start));
+  assert.ok(materialize && !("exclusion" in materialize));
   assert.equal(infer, undefined);
-  assert.throws(() => resolveCommand(["job", "locale-matrix", "start"]), /Invalid job command/);
+  assert.equal(
+    resolveCommand(["locale", "matrix", "plan"]).operationId,
+    "job.locale-matrix.materialize",
+  );
+  assert.equal(resolveCommand(["locale", "matrix", "run"]).operationId, "job.locale-matrix.start");
+  const localeRun = start.paths.find((path) => path.command === "locale matrix run");
+  assert.ok(localeRun?.inputHelp?.some((item) => item.name === "caseTargetBindings"));
+  assert.ok(localeRun?.inputHelp?.some((item) => item.name === "localAdmission"));
+  assert.match(localeRun?.note ?? "", /restore/u);
   assert.equal(
     resolveCommand(["combine", "analyze", "batch-1"]).operationId,
     "job.locale-matrix.analysis",
@@ -463,6 +476,11 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
     ],
     [["device", "recover", "ipad-1"], "target.recover", { serial: "ipad-1" }],
     [["proposal", "record", "proposal-1"], "authoring.session.start", { sessionId: "proposal-1" }],
+    [
+      ["proposal", "optimize", "proposal-1"],
+      "authoring.take.optimization.get",
+      { sessionId: "proposal-1" },
+    ],
     [["proposal", "accept", "proposal-1"], "authoring.session.commit", { sessionId: "proposal-1" }],
     [["run", "watch", "job-1"], "job.get", { jobId: "job-1" }],
     [["activity", "follow"], "event.stream", {}],

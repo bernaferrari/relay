@@ -14,6 +14,7 @@ import {
   isBlankScreenshot,
   listDevices,
   observeVisualScreenFingerprint,
+  proposeAuthoringRawOptimizations,
   runRecipeStep,
   runWithTargetContext,
   type AuthoringRuntime,
@@ -618,6 +619,18 @@ export async function handleAuthoringRoute(input: {
         await authoringSessions.cancel(created.id, authoringRuntime).catch(() => undefined);
         throw error;
       }
+      return true;
+    }
+
+    const optimizationMatch = matchPath(
+      pathname,
+      "/authoring-sessions/:sessionId/optimization-proposal",
+    );
+    if (method === "GET" && optimizationMatch) {
+      const session = await authoringSessions.get(optimizationMatch.sessionId!);
+      json(response, 200, {
+        proposal: session.take ? (proposeAuthoringRawOptimizations(session.take) ?? null) : null,
+      });
       return true;
     }
 

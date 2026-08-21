@@ -59,6 +59,7 @@ import { assertTargetControl } from "./access-control.js";
 import { requireScopedAppMapTestExecution } from "./app-map-test-execution-guard.js";
 import { applyRebasableAppMapMutation } from "./app-map-route-mutations.js";
 import { assertEnqueueExecutionTargetRouteControl } from "./execution-target-route-control.js";
+import { sendHumanInterventionReproofEvidence } from "./human-intervention-reproof-evidence.js";
 import { recordAudit, resolveCommandActor, type RequestContext } from "./security.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
 
@@ -507,6 +508,25 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   }
 
   const signalsMatch = matchPath(pathname, "/runs/:id/signals");
+  const humanReproofEvidenceMatch = matchPath(
+    pathname,
+    "/runs/:id/human-intervention-reproof/evidence/:sha256",
+  );
+  if (method === "GET" && humanReproofEvidenceMatch) {
+    const run = await readPersistedRun(humanReproofEvidenceMatch.id!);
+    assertRunAccess(scope, run);
+    await sendHumanInterventionReproofEvidence({
+      response,
+      artifacts: run.artifacts,
+      sha256: humanReproofEvidenceMatch.sha256!,
+    });
+    recordAudit(scope, {
+      action: "run.human-intervention-reproof.evidence.read",
+      resource: `${run.id}:${humanReproofEvidenceMatch.sha256}`,
+      result: "allow",
+    });
+    return true;
+  }
   const evidenceMatch = matchPath(pathname, "/runs/:id/evidence");
   if (method === "GET" && evidenceMatch) {
     const run = await readPersistedRun(evidenceMatch.id!);

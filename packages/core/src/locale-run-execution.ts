@@ -138,7 +138,7 @@ export async function prepareLocaleRecipeRun(
   const body = input.compiledBody ?? (await readRecipe(recipeId));
   if (!body) throw new Error(`recipe not found: ${recipeId}`);
   const scope = completeTaughtLocaleScope(input.scope);
-  if (!scope.entryPath?.length && !scope.languagePath?.length) {
+  if (!scope.appLocale?.trim() && !scope.entryPath?.length && !scope.languagePath?.length) {
     throw new Error("Record how you open this list");
   }
 

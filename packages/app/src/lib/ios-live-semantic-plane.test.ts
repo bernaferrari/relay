@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { iosLiveSemanticPlane } from "./ios-live-semantic-plane";
+import { iosLiveSemanticPlane, selectedTargetSemanticReadiness } from "./ios-live-semantic-plane";
 
 test("only a current proven accessibility fact enables semantic overlays", () => {
   assert.deepEqual(
@@ -13,7 +13,13 @@ test("only a current proven accessibility fact enables semantic overlays", () =>
       },
       now: 120,
     }),
-    { state: "current", overlaysEnabled: true, permitsAutomaticProbe: true, proofAt: 100 },
+    {
+      state: "current",
+      overlaysEnabled: true,
+      automaticProbeNeeded: false,
+      permitsRefresh: true,
+      proofAt: 100,
+    },
   );
 });
 
@@ -42,7 +48,8 @@ test("a transient unavailable XCTest probe has a no-poll cooldown", () => {
   assert.deepEqual(iosLiveSemanticPlane({ readiness, now: 150 }), {
     state: "cooldown",
     overlaysEnabled: false,
-    permitsAutomaticProbe: false,
+    automaticProbeNeeded: false,
+    permitsRefresh: false,
     nextProbeAt: 200,
   });
   assert.equal(iosLiveSemanticPlane({ readiness, now: 200 }).state, "unavailable");
@@ -66,7 +73,8 @@ test("an in-flight accessibility read never starts a competing automatic probe",
     assert.deepEqual(iosLiveSemanticPlane({ readiness, now: 200 }), {
       state: "in-flight",
       overlaysEnabled: false,
-      permitsAutomaticProbe: false,
+      automaticProbeNeeded: false,
+      permitsRefresh: false,
     });
   }
 });
@@ -75,6 +83,56 @@ test("an iPad with no proof does not look like current control", () => {
   assert.deepEqual(iosLiveSemanticPlane({ now: 1 }), {
     state: "unproven",
     overlaysEnabled: false,
-    permitsAutomaticProbe: true,
+    automaticProbeNeeded: true,
+    permitsRefresh: true,
   });
+});
+
+test("only stale or unproven iOS semantics request another automatic probe", () => {
+  const current = iosLiveSemanticPlane({
+    readiness: {
+      mode: "accessibility",
+      state: "proven",
+      freshness: "current",
+      proof: { at: 100, observedNodeCount: 1 },
+    },
+  });
+  const stale = iosLiveSemanticPlane({
+    readiness: {
+      mode: "accessibility",
+      state: "proven",
+      freshness: "stale",
+      proof: { at: 100, observedNodeCount: 1 },
+    },
+  });
+  assert.equal(current.automaticProbeNeeded, false);
+  assert.equal(current.permitsRefresh, true, "a deliberate refresh stays available");
+  assert.equal(stale.automaticProbeNeeded, true);
+  assert.equal(stale.permitsRefresh, true);
+});
+
+test("semantic readiness never borrows a snapshot from another target", () => {
+  const targetReadiness = {
+    semanticControl: {
+      mode: "accessibility" as const,
+      state: "proven" as const,
+      freshness: "current" as const,
+      proof: { at: 10, observedNodeCount: 1 },
+    },
+  };
+  const foreignReadiness = {
+    semanticControl: {
+      mode: "accessibility" as const,
+      state: "unavailable" as const,
+      freshness: "unproven" as const,
+      reason: "probe-failed" as const,
+    },
+  };
+  assert.equal(
+    selectedTargetSemanticReadiness({
+      target: { serial: "ipad-a", readiness: targetReadiness },
+      snapshot: { serial: "ipad-b", readiness: foreignReadiness },
+    }),
+    targetReadiness.semanticControl,
+  );
 });

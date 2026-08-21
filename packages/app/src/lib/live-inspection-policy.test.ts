@@ -83,8 +83,24 @@ test("an in-flight iPad AX read stops only semantic polling while pixels keep re
       lastError: { at: 100, reason: "probe-in-flight", durationMs: 8_000 },
     },
   });
-  assert.deepEqual(liveInspectionPolicy(true, true, false, true, plane.permitsAutomaticProbe), {
+  assert.deepEqual(liveInspectionPolicy(true, true, false, true, plane.automaticProbeNeeded), {
     pollSnapshot: false,
     pollFallbackFrame: true,
+  });
+});
+
+test("a current iPad proof stops automatic AX polling without disabling deliberate refresh", () => {
+  const plane = iosLiveSemanticPlane({
+    readiness: {
+      mode: "accessibility",
+      state: "proven",
+      freshness: "current",
+      proof: { at: 100, observedNodeCount: 1 },
+    },
+  });
+  assert.equal(plane.permitsRefresh, true);
+  assert.deepEqual(liveInspectionPolicy(true, false, false, true, plane.automaticProbeNeeded), {
+    pollSnapshot: false,
+    pollFallbackFrame: false,
   });
 });

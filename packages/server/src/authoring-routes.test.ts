@@ -600,6 +600,94 @@ test("Authoring Sessions share local target control but keep mutation actor-owne
   }
 });
 
+test("raw Take optimization is a scoped read-only proposal with no device access", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-authoring-optimization-"));
+  const previous = {
+    state: process.env.RELAY_STATE_DIR,
+    recipes: process.env.RELAY_RECIPES_DIR,
+    tests: process.env.RELAY_TESTS_DIR,
+  };
+  process.env.RELAY_STATE_DIR = join(root, "state");
+  process.env.RELAY_RECIPES_DIR = join(root, "recipes");
+  process.env.RELAY_TESTS_DIR = join(root, "tests");
+  let nativeCalls = 0;
+  let observationCalls = 0;
+  const runtime: AuthoringRuntime = {
+    async observe() {
+      observationCalls += 1;
+      return {
+        capturedAt: Date.now(),
+        targetId: "device-optimization",
+        fingerprint: "authoring-source",
+        bounds: { width: 1_080, height: 2_400 },
+        nodes: [{ role: "button", label: "Continue" }],
+        screenshot: { data: Buffer.from("authoring-source"), mime: "image/png" },
+      };
+    },
+    async execute() {
+      nativeCalls += 1;
+    },
+    async replay() {},
+  };
+  const server = await startServer({ host: "127.0.0.1", port: 0, authoringRuntime: runtime });
+  const client = new RelayClient({
+    url: `http://127.0.0.1:${server.port}`,
+    auth: { type: "none" },
+    organizationId: "local",
+    projectId: "project-optimization",
+    actorId: "human:author",
+    actorKind: "human",
+  });
+  try {
+    const appMap = await client.invoke("app-map.create", {
+      appMapId: "optimization-map",
+      name: "Optimization map",
+    });
+    const lease = await client.lease({
+      poolId: "authoring",
+      deviceSerial: "device-optimization",
+      expiresAt: Date.now() + 60_000,
+    });
+    const begun = await client.invoke("authoring.session.begin", {
+      appMapId: appMap.appMap.id,
+      target: { kind: "device", platform: "android", targetId: "device-optimization" },
+      leaseId: lease.lease.id,
+      expectedAppMapRevision: appMap.appMap.revision,
+    });
+    await client.interactAuthoringSession(begun.session.id, {
+      kind: "observe",
+      label: "Private generated copy that must never leave the raw source",
+    });
+    const before = await client.authoringSession(begun.session.id);
+    const observationsBeforeReview = observationCalls;
+    const proposal = await client.invoke("authoring.take.optimization.get", {
+      sessionId: begun.session.id,
+    });
+    const after = await client.authoringSession(begun.session.id);
+
+    assert.equal(nativeCalls, 0, "an observation-only recorded action has no native input");
+    assert.equal(observationCalls, observationsBeforeReview, "review must not read the target");
+    assert.equal(proposal.proposal?.reviewOnly, true);
+    assert.equal(proposal.proposal?.takeId, before.session.take?.id);
+    assert.equal(proposal.proposal?.baseRevision, before.session.take?.currentRevision);
+    assert.deepEqual(
+      proposal.proposal?.suggestions.map((suggestion) => suggestion.kind),
+      ["review-observe-only"],
+    );
+    assert.equal(JSON.stringify(proposal).includes("Private generated copy"), false);
+    assert.deepEqual(after.session.take, before.session.take, "review must not mutate the Take");
+  } finally {
+    await server.close();
+    if (previous.state === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous.state;
+    if (previous.recipes === undefined) delete process.env.RELAY_RECIPES_DIR;
+    else process.env.RELAY_RECIPES_DIR = previous.recipes;
+    if (previous.tests === undefined) delete process.env.RELAY_TESTS_DIR;
+    else process.env.RELAY_TESTS_DIR = previous.tests;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("atomic authoring begin preserves the device failure instead of masking it as a state error", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-authoring-begin-error-"));
   const previous = {

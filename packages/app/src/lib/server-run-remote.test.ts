@@ -9,6 +9,7 @@ import {
   enqueueRecipe,
   estimateCampaignDurationCohortsRemote,
   exportRunMatrixPack,
+  materializeLocaleMatrix,
   preflightLocalCampaignAdmissionRemote,
   removeCombineRemote,
   removeVariableRemote,
@@ -313,6 +314,44 @@ test("taught locale scope is enqueued instead of the Grok language profile", () 
   assert.equal(JSON.stringify(body.scope).includes("App Language"), false);
 });
 
+test("a scoped App Map Test start keeps its source revision and profile constraint", () => {
+  const body = buildLocaleMatrixInput({
+    appMapId: "settings-map",
+    testId: "settings-smoke",
+    variableId: "language",
+    expectedAppMapRevision: 12,
+    locales: ["en"],
+    scope: {
+      locales: ["en"],
+      entryPath: [{ kind: "tap", target: { identifier: "settings.language" } }],
+      exitPath: [{ kind: "back" }],
+    },
+    profileId: "grok-ios",
+    preset: "grok",
+    projectId: "default",
+    caseTargetBindings: [],
+  });
+  assert.deepEqual(body, {
+    appMapId: "settings-map",
+    testId: "settings-smoke",
+    variableId: "language",
+    expectedAppMapRevision: 12,
+    locales: ["en"],
+    scope: {
+      locales: ["en"],
+      entryPath: [{ kind: "tap", target: { identifier: "settings.language" } }],
+      exitPath: [{ kind: "back" }],
+    },
+    title: undefined,
+    projectId: "default",
+    preset: "grok",
+    profileId: "grok-ios",
+    caseTargetBindings: [],
+  });
+  assert.equal(body.serial, undefined);
+  assert.equal(body.targetKind, undefined);
+});
+
 test("locale matrix transport preserves explicit case targets and shared local admission", () => {
   const localAdmission = {
     deadlineMs: 180_000,
@@ -368,6 +407,43 @@ test("locale matrix transport preserves explicit case targets and shared local a
   assert.equal(body.targetKind, undefined);
   assert.deepEqual(body.localAdmission, localAdmission);
   assert.equal(body.caseTargetBindings?.[0]?.executionTarget.targetId, "ipad-1");
+});
+
+test("locale materialization reads the canonical target-free restore plan before assignment", async () => {
+  let call: { path: string; init?: RequestInit } | undefined;
+  const expected = {
+    schemaVersion: 1 as const,
+    materializedAt: 10,
+    source: { kind: "recipe" as const, recipeId: "settings" },
+    scope: {
+      locales: ["en", "it"],
+      entryPath: [{ kind: "tap", target: { label: "Settings" } }],
+      restoreLocale: "en",
+    },
+    cases: [
+      { caseIndex: 0, locale: "en" },
+      { caseIndex: 1, locale: "it" },
+      { caseIndex: 2, locale: "en" },
+    ],
+    durationCohort: { testId: "settings", action: "settings" },
+  };
+  const result = await materializeLocaleMatrix(
+    async <T>(path: string, init?: RequestInit) => {
+      call = { path, init };
+      return expected as T;
+    },
+    {
+      recipe: "settings",
+      scope: expected.scope,
+    },
+  );
+  assert.deepEqual(result, expected);
+  assert.equal(call?.path, "/jobs/locale-matrix/materialize");
+  assert.equal(call?.init?.method, "POST");
+  assert.deepEqual(JSON.parse(String(call?.init?.body)), {
+    recipe: "settings",
+    scope: expected.scope,
+  });
 });
 
 test("UI enqueue payload includes picker nav taps before locale select", () => {

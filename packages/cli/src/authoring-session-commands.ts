@@ -307,6 +307,17 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
     }),
   ),
   mapped(
+    "authoring.take.optimization.get",
+    path("take optimize", ["sessionId"]),
+    path("proposal optimize", ["sessionId"], undefined, {
+      summary: "Review non-destructive raw-recording optimization suggestions",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+      note: "Suggestions never modify the Take. Apply reviewed edits explicitly, then replay to verify them.",
+    }),
+  ),
+  mapped(
     "authoring.take.trim",
     path("take trim", ["sessionId"]),
     path("proposal trim", ["sessionId"], undefined, {

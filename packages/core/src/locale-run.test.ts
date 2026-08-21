@@ -132,6 +132,29 @@ test("composeLocaleRunRecipes wraps body with language switch and helpers", () =
   );
 });
 
+test("Android appLocale scopes need no picker path and set locale before the Test body", async () => {
+  const scope: LocaleRunScope = {
+    locales: ["en", "it"],
+    app: "com.example.app",
+    appLocale: "com.example.app",
+    restoreAtEnd: false,
+    screenshotEachLocale: false,
+  };
+  const { root } = composeLocaleRunRecipes({ body, scope, batchId: "app-locale" });
+  assert.deepEqual(root.steps.slice(0, 3), [
+    { kind: "app", action: "set-locale", app: "com.example.app", locale: "{{locale}}" },
+    { kind: "app", action: "open", app: "com.example.app", relaunch: true },
+    { kind: "sleep", ms: 1200 },
+  ]);
+  assert.equal(
+    root.steps.some((step) => step.kind === "branch"),
+    false,
+  );
+  await assert.doesNotReject(() =>
+    prepareLocaleRecipeRun({ recipeId: body.id, compiledBody: body, scope }),
+  );
+});
+
 test("prepareLocaleRunMatrix zips locale fields and restores English at end", async () => {
   const prepared = await prepareLocaleRunMatrix(defaultGrokLocaleScope(["en", "pt-BR", "es"]), 42);
   // Profile adds restore-en at end; unknown "es" keeps tag as label fallback.

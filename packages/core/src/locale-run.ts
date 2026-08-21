@@ -7,6 +7,7 @@
  * pack lives in locale-run-pack.ts.
  */
 import { createHash } from "node:crypto";
+import { materializeLocaleMatrixCases, normalizeLocaleMatrixLocales } from "@relay/protocol";
 import type { ActionSpec, AppMap, RecipeStep } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { resolveLanguageOptions, listLanguageProfilesSync } from "./language-profiles.js";
@@ -35,9 +36,14 @@ export type LocaleNavStep =
 export type LocaleRunScope = {
   locales: string[];
   app?: string;
+  /** Android's native per-app locale mutation. Unlike a picker path, this
+   * changes locale before the app launches and has no accessibility tap. */
+  appLocale?: string;
   relaunch?: boolean;
   entryPath?: LocaleNavStep[];
   languagePath?: LocaleNavStep[];
+  /** Recorded route from a list Variable back to the Test's source state. */
+  exitPath?: LocaleNavStep[];
   languageOptions?: Record<
     string,
     | string
@@ -52,13 +58,6 @@ export type LocaleRunScope = {
   restoreAtEnd?: boolean;
   screenshotEachLocale?: boolean;
 };
-
-function normalizeLocales(locales: string[]): string[] {
-  const next = [...new Set(locales.map((locale) => locale.trim()).filter(Boolean))];
-  if (!next.length) throw new Error("at least one locale is required");
-  if (next.length > 250) throw new Error("at most 250 locales per run");
-  return next;
-}
 
 function optionForLocale(
   scope: LocaleRunScope,
@@ -207,6 +206,9 @@ export function completeTaughtLocaleScope(
   opts?: { profileId?: string; preset?: "grok" },
 ): LocaleRunScope {
   const hasNav = Boolean(scope.entryPath?.length || scope.languagePath?.length);
+  // Android's first-party app locale API is already a complete, target-owned
+  // apply contract. Do not manufacture an unrelated Grok picker around it.
+  if (scope.appLocale?.trim()) return scope;
   const wantGrok = opts?.preset === "grok" || opts?.profileId === "grok-ios";
   if (hasNav) {
     if (scope.app?.trim() || !wantGrok) return scope;
@@ -493,9 +495,14 @@ export function composeLocaleRunRecipes(input: {
 }): { root: Recipe; graph: Record<string, Recipe> } {
   const scope = input.scope;
   const app = scope.app?.trim();
+  const appLocale = scope.appLocale?.trim();
   const at = Date.now();
   const prelude: RecipeStep[] = [];
-  if (app) {
+  if (appLocale) {
+    prelude.push({ kind: "app", action: "set-locale", app: appLocale, locale: "{{locale}}" });
+    prelude.push({ kind: "app", action: "open", app: appLocale, relaunch: true });
+    prelude.push({ kind: "sleep", ms: 1200 });
+  } else if (app) {
     prelude.push({
       kind: "app",
       action: "open",
@@ -504,8 +511,10 @@ export function composeLocaleRunRecipes(input: {
     });
     prelude.push({ kind: "sleep", ms: 1200 });
   }
-  prelude.push(...navStepsToRecipe(scope.entryPath, app));
-  prelude.push(...navStepsToRecipe(scope.languagePath, app));
+  if (!appLocale) {
+    prelude.push(...navStepsToRecipe(scope.entryPath, app));
+    prelude.push(...navStepsToRecipe(scope.languagePath, app));
+  }
 
   const tapIdentifier: Recipe = {
     id: "__locale_tap_identifier",
@@ -549,19 +558,22 @@ export function composeLocaleRunRecipes(input: {
     updatedAt: at,
   };
 
-  const select: RecipeStep[] = [
-    {
-      kind: "branch",
-      input: "{{locale_identifier}}",
-      operator: "not-equals",
-      expected: NONE,
-      thenRecipeId: "__locale_tap_identifier",
-      elseRecipeId: "__locale_tap_label_or_text",
-    },
-    { kind: "sleep", ms: 900 },
-  ];
+  const select: RecipeStep[] = appLocale
+    ? []
+    : [
+        {
+          kind: "branch",
+          input: "{{locale_identifier}}",
+          operator: "not-equals",
+          expected: NONE,
+          thenRecipeId: "__locale_tap_identifier",
+          elseRecipeId: "__locale_tap_label_or_text",
+        },
+        { kind: "sleep", ms: 900 },
+      ];
 
   const bodySteps: RecipeStep[] = [];
+  if (!appLocale) bodySteps.push(...navStepsToRecipe(scope.exitPath, app));
   if (scope.screenshotEachLocale !== false) {
     bodySteps.push({ kind: "screenshot", caption: "locale:{{locale}} before body" });
   }
@@ -571,7 +583,7 @@ export function composeLocaleRunRecipes(input: {
   }
 
   const restoreSteps: RecipeStep[] = [];
-  if (scope.restoreAfterEach && scope.restoreLocale) {
+  if (scope.restoreAfterEach && scope.restoreLocale && !appLocale) {
     restoreSteps.push(...navStepsToRecipe(scope.languagePath, app));
     const option = optionForLocale(scope, scope.restoreLocale);
     restoreSteps.push({
@@ -585,6 +597,7 @@ export function composeLocaleRunRecipes(input: {
             : { label: scope.restoreLocale },
     });
     restoreSteps.push({ kind: "sleep", ms: 700 });
+    restoreSteps.push(...navStepsToRecipe(scope.exitPath, app));
   }
 
   const root: Recipe = {
@@ -617,23 +630,18 @@ export async function prepareLocaleRunMatrix(
   locales: string[];
   matrix: PreparedRunMatrix;
 }> {
-  const locales = normalizeLocales(scope.locales);
+  const cases = materializeLocaleMatrixCases({
+    locales: scope.locales,
+    restoreLocale: scope.restoreLocale,
+    restoreAtEnd: scope.restoreAtEnd,
+  });
+  const locales = cases.map((item) => item.locale);
   const labels: string[] = [];
   const identifiers: string[] = [];
   const texts: string[] = [];
   for (const locale of locales) {
     const option = optionForLocale(scope, locale);
     labels.push(option.label?.trim() || NONE);
-    identifiers.push(option.identifier?.trim() || NONE);
-    texts.push(option.text?.trim() || NONE);
-  }
-
-  const restoreAtEnd = scope.restoreAtEnd !== false && scope.restoreLocale?.trim();
-  const restore = restoreAtEnd ? scope.restoreLocale!.trim() : undefined;
-  if (restore && locales[locales.length - 1] !== restore) {
-    locales.push(restore);
-    const option = optionForLocale(scope, restore);
-    labels.push(option.label?.trim() || restore);
     identifiers.push(option.identifier?.trim() || NONE);
     texts.push(option.text?.trim() || NONE);
   }
@@ -672,7 +680,7 @@ export async function prepareLocaleRunMatrix(
 }
 
 export function defaultGrokLocaleScope(locales: string[]): LocaleRunScope {
-  const normalized = normalizeLocales(locales);
+  const normalized = normalizeLocaleMatrixLocales(locales);
   const profile = listLanguageProfilesSync().find((item) => item.id === "grok-ios");
   if (!profile) {
     return {
