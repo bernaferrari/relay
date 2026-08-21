@@ -40,7 +40,8 @@ test('Linux coverage exhaustively classifies the public catalog', () => {
 test('Linux coverage report has the expected classification counts', () => {
   assert.deepEqual(LINUX_PLATFORM_COVERAGE_CLASSIFICATION_SUMMARY, {
     capabilityDenial: 11,
-    // focus moved contract -> live in #1925: the replay now runs it on real hardware.
+    // focus (#1925) is live via the replay; type runs there too but GTK4 blocks a tree-level
+    // assertion, so its claim stays contract-tier (see the manifest entry).
     contract: 19,
     gap: 18,
     live: 6,

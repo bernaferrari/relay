@@ -4,17 +4,17 @@ import { handleTouchInteractionCommands } from './interaction-touch.ts';
 import { captureSnapshotForSession } from './interaction-snapshot.ts';
 import { refSnapshotFlagGuardResponse } from './interaction-flags.ts';
 import { dispatchGetViaRuntime, dispatchIsViaRuntime } from '../selector-runtime.ts';
-import { createInteractionRuntime } from './interaction-runtime.ts';
 import { finalizeTouchInteraction } from './interaction-common.ts';
-import { errorResponse, noActiveSessionError, requireCommandSupported } from './response.ts';
+import { expireRefFrame } from '../ref-frame.ts';
+import { errorResponse, noActiveSessionError } from './response.ts';
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
 import { normalizeError } from '@agent-device/kernel/errors';
-import { successText } from '../../utils/success-text.ts';
 import {
   ensureAndroidBlockingSystemDialogReady,
   recoverAndroidBlockingSystemDialog,
 } from '../android-system-dialog.ts';
 import { dispatchGestureViaRuntime, dispatchSwipeViaRuntime } from './interaction-gesture.ts';
+import { resolveBoundTypeTextRuntime, type BoundTypeTextExecutor } from '../type-text-runtime.ts';
 
 export async function handleInteractionCommands(
   params: InteractionHandlerParams,
@@ -61,12 +61,18 @@ async function dispatchTypeViaRuntime(
   const { sessionName, sessionStore } = params;
   const session = sessionStore.get(sessionName);
   if (!session) return noActiveSessionError();
-  const unsupported = requireCommandSupported(PUBLIC_COMMANDS.type, session.device);
-  if (unsupported) return unsupported;
+  // R41: exact-owner facts admission replaces the capability bucket, and the one binding made
+  // here is the only way this request's text can reach a device.
+  const bound = await resolveBoundTypeTextRuntime({
+    device: session.device,
+    inspectFacts: params.inspectFacts,
+    bindDevice: params.bindDevice,
+  });
+  if (!bound.ok) return bound.response;
   const recordingRecovery = await recoverAndroidRecordingDialogForType(session);
   if (recordingRecovery.response) return recordingRecovery.response;
 
-  return await runTypeTextViaRuntime(params, session, recordingRecovery.warning);
+  return await runTypeTextViaRuntime(params, session, bound.typeText, recordingRecovery.warning);
 }
 
 type AndroidRecordingDialogRecovery = {
@@ -95,15 +101,12 @@ async function recoverAndroidRecordingDialogForType(
 }
 
 async function runTypeTextViaRuntime(
-  params: InteractionHandlerParams & {
-    captureSnapshotForSession: typeof captureSnapshotForSession;
-  },
+  params: InteractionHandlerParams,
   session: SessionState,
+  boundTypeText: BoundTypeTextExecutor,
   recordingRecoveryWarning?: string,
 ): Promise<DaemonResponse> {
-  const { req, sessionName, sessionStore } = params;
-  const text = (req.positionals ?? []).join(' ');
-  const runtime = createInteractionRuntime(params);
+  const { req, sessionStore } = params;
   const actionStartedAt = Date.now();
   try {
     const readiness = await ensureAndroidBlockingSystemDialogReady({
@@ -111,23 +114,21 @@ async function runTypeTextViaRuntime(
       command: req.command,
       phase: 'before-command',
     });
-    const result = await runtime.interactions.typeText(text, {
-      session: sessionName,
-      requestId: req.meta?.requestId,
-      delayMs: req.flags?.delayMs,
-    });
+    // ADR 0014 side-effect seam: the entry mutates the focused field; expire the frame before
+    // executing so a later step cannot reuse it. R41: the bound executor already validates and
+    // composes the retired leaf's exact result, so nothing here re-validates or re-formats it.
+    expireRefFrame(session);
+    const result = await boundTypeText(
+      req.positionals ?? [],
+      params.contextFromFlags(req.flags, session.appBundleId, session.trace?.outPath),
+    );
     await ensureAndroidBlockingSystemDialogReady({
       session,
       command: req.command,
       phase: 'after-command',
     });
     const actionFinishedAt = Date.now();
-    const responseData: Record<string, unknown> = {
-      ...(result.backendResult ?? {}),
-      text: result.text,
-      delayMs: result.delayMs,
-      ...successText(result.message ?? `Typed ${Array.from(result.text).length} chars`),
-    };
+    const responseData: Record<string, unknown> = { ...result };
     appendTypeReadinessWarnings(responseData, recordingRecoveryWarning, readiness);
     return finalizeTouchInteraction({
       session,
