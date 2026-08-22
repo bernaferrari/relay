@@ -9,6 +9,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runCmdStreaming, runCmdSync } from '../../src/utils/exec.ts';
+import {
+  checkLockfileInstallSync,
+  STALE_NODE_MODULES_MESSAGE,
+  type LockfileInstallSyncResult,
+} from './lockfile-install-sync.ts';
 import { parseScriptArgs } from '../lib/cli-args.ts';
 import { runEntrypoint } from '../lib/cli-entrypoint.ts';
 import {
@@ -184,9 +189,21 @@ export async function runChecks(
   plan: CheckPlan,
   pkg: PackageJson,
   args: Args,
-  options: { cwd?: string; execute?: CommandExecutor; changedFiles?: readonly string[] } = {},
+  options: {
+    cwd?: string;
+    execute?: CommandExecutor;
+    changedFiles?: readonly string[];
+    checkLockfileSync?: (cwd: string) => LockfileInstallSyncResult;
+  } = {},
 ): Promise<number> {
   const cwd = options.cwd ?? repoRoot;
+  const checkLockfileSync = options.checkLockfileSync ?? checkLockfileInstallSync;
+  // Fail before any gate can misdiagnose a stale worktree install (#1956).
+  const lockfileSync = checkLockfileSync(cwd);
+  if (lockfileSync.status === 'out-of-sync') {
+    reportStaleInstall(lockfileSync.reason, cwd);
+    return 1;
+  }
   const execute = options.execute ?? streamingExecutor;
   const runnable = plan.checks.map(getCheckSpec).filter((spec: CheckSpec) => spec.localRunnable);
   const skipped = plan.checks.map(getCheckSpec).filter((spec: CheckSpec) => !spec.localRunnable);
@@ -210,6 +227,17 @@ export async function runChecks(
   }
   process.stdout.write('\ncheck:affected: all runnable checks passed.\n');
   return 0;
+}
+
+function reportStaleInstall(reason: 'install-missing' | 'stale', cwd: string): void {
+  process.stderr.write(`\ncheck:affected: ${STALE_NODE_MODULES_MESSAGE}\n`);
+  process.stderr.write(
+    reason === 'install-missing'
+      ? '(no node_modules/.pnpm/lock.yaml found — this checkout was never installed)\n'
+      : '(node_modules/.pnpm/lock.yaml disagrees with pnpm-lock.yaml)\n',
+  );
+  process.stderr.write(`Worktree: ${cwd}\n`);
+  process.stderr.write('Run `pnpm install --frozen-lockfile` in this worktree, then retry.\n');
 }
 
 // Where a check the local run skips is authoritative. A parked check has no automatic
