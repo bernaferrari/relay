@@ -79,6 +79,7 @@ const valueFlags = new Set([
   "--input",
   "--input-file",
   "--file",
+  "--dir",
   "--mark",
   "--in",
   "--lens",
@@ -281,6 +282,19 @@ function readInput(tokens: ParsedTokens, env: Environment): Record<string, unkno
   return parseInput(contents);
 }
 
+function applySurveyDir(
+  operationId: string,
+  input: Record<string, unknown>,
+  tokens: ParsedTokens,
+): Record<string, unknown> {
+  const dir = tokens.values.get("--dir");
+  if (dir === undefined) return input;
+  if (operationId !== "target.scroll-survey.capture") {
+    throw new UsageError("--dir is only valid on device survey");
+  }
+  return { ...input, dir };
+}
+
 function screenshotOutput(
   tokens: ParsedTokens,
   output: OutputMode,
@@ -388,10 +402,14 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (rawInput === undefined && inputFile === undefined) {
       throw new UsageError("operation invoke requires --input <json> or --input-file <path>");
     }
-    const input = confirmedReviewedOriginInput(
+    const input = applySurveyDir(
       operationId,
-      readInput(tokens, env),
-      tokens.switches.has("--confirm"),
+      confirmedReviewedOriginInput(
+        operationId,
+        readInput(tokens, env),
+        tokens.switches.has("--confirm"),
+      ),
+      tokens,
     );
     return {
       config: {
@@ -418,6 +436,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   const resource = resolveResourceCommand(tokens.positionals, input);
   if (resource) {
     screenshotOutput(tokens, output, false);
+    applySurveyDir("", {}, tokens);
     return {
       config: {
         connection,
@@ -440,12 +459,16 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (!matched) throw new UsageError("--mark requires <x>,<y> in the same units as a tap");
   }
   const resolved = resolveCommand(tokens.positionals, input);
-  resolved.input = applyCombineRunFlags(
+  resolved.input = applySurveyDir(
     resolved.operationId,
-    confirmedReviewedOriginInput(
+    applyCombineRunFlags(
       resolved.operationId,
-      resolved.input,
-      tokens.switches.has("--confirm"),
+      confirmedReviewedOriginInput(
+        resolved.operationId,
+        resolved.input,
+        tokens.switches.has("--confirm"),
+      ),
+      tokens,
     ),
     tokens,
   );

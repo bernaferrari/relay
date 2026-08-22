@@ -205,7 +205,11 @@ test("device survey exposes the canonical scroll-survey operation and bounded in
   const help = descriptor.paths.find((candidate) => candidate.command === "device survey");
   assert.equal(help?.inputHelp?.[0]?.name, "maxScrolls");
   assert.match(help?.inputHelp?.[0]?.type ?? "", /1-12/u);
+  assert.equal(help?.inputHelp?.[1]?.name, "dir");
   assert.match(help?.note ?? "", /exclusive lease/u);
+  assert.match(help?.note ?? "", /--dir/u);
+  assert.match(help?.note ?? "", /megabytes/u);
+  assert.ok(help?.examples?.some((example) => example.includes("--dir")));
 });
 
 test("iPad observation and recovery help exposes the proof-first lifecycle", () => {

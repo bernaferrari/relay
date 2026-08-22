@@ -328,6 +328,116 @@ test("screenshot file modes reject malformed image payloads", async () => {
   }
 });
 
+test("device survey --dir persists frames and prints a digest without base64", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-cli-survey-"));
+  const dir = join(root, "frames");
+  const nodes = [
+    { identifier: "language", label: "Language", type: "cell", hittable: true },
+    { identifier: "data", label: "Data Controls", type: "cell", hittable: true },
+  ];
+  const survey = {
+    status: "stopped",
+    reason: "limit-reached",
+    frames: [
+      {
+        index: 0,
+        offsetY: 0,
+        appendedHeight: 20,
+        screenshot: { base64: pngBase64, width: 10, height: 20, capturedAt: 1 },
+        snapshot: {
+          serial: "pixel-9",
+          capturedAt: 2,
+          nodes,
+          interactive: nodes,
+          inspectable: true,
+          source: "sdk",
+          screenIdentity: { fingerprint: "abc" },
+        },
+      },
+      {
+        index: 1,
+        offsetY: 20,
+        appendedHeight: 20,
+        screenshot: { base64: pngBase64, width: 10, height: 20, capturedAt: 3 },
+        snapshot: {
+          serial: "pixel-9",
+          capturedAt: 4,
+          nodes,
+          interactive: nodes,
+          inspectable: true,
+          source: "sdk",
+          screenIdentity: { fingerprint: "def" },
+        },
+      },
+    ],
+    diagnosticFrames: [],
+    mergedNodes: [],
+    restoredStartViewport: true,
+    message: "Relay reached the configured survey limit.",
+    stitched: { base64: pngBase64, width: 10, height: 40, mime: "image/png" },
+  };
+  try {
+    const io = capture();
+    const calls: Array<{ operationId: OperationId; input: unknown }> = [];
+    const code = await runCli(
+      ["device", "survey", "pixel-9", "--dir", dir, "--input", '{"maxScrolls":6}', "--json"],
+      {
+        streams: io.streams,
+        createClient: () => ({
+          async invoke(operationId, input) {
+            calls.push({ operationId, input });
+            return survey;
+          },
+          events: async () => {},
+        }),
+        registerSignalHandlers: false,
+        env: {},
+      },
+    );
+
+    assert.equal(code, ExitCode.success);
+    assert.deepEqual(calls, [
+      {
+        operationId: "target.scroll-survey.capture",
+        input: { serial: "pixel-9", maxScrolls: 6, dir },
+      },
+    ]);
+    const terminal = JSON.parse(io.stdout()) as { result: Record<string, unknown> };
+    assert.deepEqual(terminal.result, {
+      status: "stopped",
+      reason: "limit-reached",
+      frameCount: 2,
+      dir,
+      paths: [
+        { png: join(dir, "00.png"), json: join(dir, "00.json") },
+        { png: join(dir, "01.png"), json: join(dir, "01.json") },
+      ],
+    });
+    assert.doesNotMatch(io.stdout(), /base64/u);
+    assert.doesNotMatch(io.stdout(), new RegExp(pngBase64));
+    assert.deepEqual(await readFile(join(dir, "00.png")), Buffer.from(pngBase64, "base64"));
+    const persisted = JSON.parse(await readFile(join(dir, "01.json"), "utf8")) as {
+      snapshot: { nodes: unknown[] };
+    };
+    assert.deepEqual(persisted.snapshot.nodes, nodes);
+
+    const blocked = join(root, "blocked");
+    await writeFile(blocked, "not a directory");
+    const failed = capture();
+    const failedCode = await runCli(["device", "survey", "pixel-9", "--dir", blocked, "--json"], {
+      streams: failed.streams,
+      createClient: () => ({ invoke: async () => survey, events: async () => {} }),
+      registerSignalHandlers: false,
+      env: {},
+    });
+    assert.equal(failedCode, ExitCode.validation);
+    assert.match(JSON.parse(failed.stdout()).error.message, /Could not create survey directory/);
+    assert.doesNotMatch(failed.stdout(), /base64/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("root and family help are useful without creating a client", async () => {
   const cases = [
     {
@@ -369,6 +479,9 @@ test("root and family help are useful without creating a client", async () => {
         /device interact <serial>/,
         /active exclusive lease owned by the same --actor/,
         /relay lease create 00008110 --actor agent:mapper/,
+        /device survey <serial>/,
+        /--dir/,
+        /megabytes/,
       ],
     },
     {

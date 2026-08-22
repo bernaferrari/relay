@@ -88,12 +88,18 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
           type: "integer (1-12)",
           description: "Maximum downward scrolls; defaults to 4",
         },
+        {
+          name: "dir",
+          type: "string",
+          description:
+            "Folder for sibling 00.png / 00.json frames (full unsummarized tree). Prefer --dir over inline --json.",
+        },
       ],
       examples: [
-        "relay device survey emulator-5554 --json",
-        "relay device survey 00008110 --input '{\"maxScrolls\":6}' --json",
+        "relay device survey emulator-5554 --dir ./survey --json",
+        "relay device survey 00008110 --dir ./survey --input '{\"maxScrolls\":6}' --json",
       ],
-      note: "Requires an exclusive lease. Relay keeps every original PNG + accessibility snapshot, stops at uncertain seams, and restores the starting viewport.",
+      note: "Requires an exclusive lease. Relay keeps every original PNG + accessibility snapshot, stops at uncertain seams, and restores the starting viewport. Without --dir, --json stdout includes every viewport as base64 and can be megabytes.",
     }),
   ),
   mapped(
