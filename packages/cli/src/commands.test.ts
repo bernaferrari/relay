@@ -434,8 +434,8 @@ test("locale matrix plan and explicit target-affine run commands are public alon
   assert.ok(optionStart && !("exclusion" in optionStart));
   assert.match(optionStart.paths[0]?.examples?.[0] ?? "", /combine run|variableIds|combineId/);
   assert.match(optionStart.paths[0]?.examples?.[0] ?? "", /platform/);
-  assert.match(optionStart.paths[0]?.note ?? "", /targetProfileId/u);
-  assert.match(optionStart.paths[0]?.note ?? "", /cellRuntimeProfiles/u);
+  assert.match(optionStart.paths[0]?.note ?? "", /--cell|--all|one cell/u);
+  assert.match(optionStart.paths[0]?.note ?? "", /default serial|fills missing/u);
   assert.match(optionStart.paths[0]?.note ?? "", /localAdmission/u);
   const combineRun = optionStart.paths.find((path) => path.command === "combine run");
   assert.ok(combineRun?.inputHelp?.some((item) => item.name === "cellTargetBindings"));

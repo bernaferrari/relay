@@ -356,6 +356,25 @@ test("gives run agents one revision-pinned graph Test operation", () => {
     surfaceCapture: { forceRecaptureScreenIds: ["voice-library"] },
   };
   assert.deepEqual(tool("app-map.test.run").inputSchema.parse(scopedRunInput), scopedRunInput);
+  const worldsInput = {
+    ...input,
+    in: { language: ["ja", "pt"] },
+    lens: "visual" as const,
+    cell: "ja",
+  };
+  assert.deepEqual(tool("app-map.test.run").inputSchema.parse(worldsInput), worldsInput);
+  assert.throws(() =>
+    tool("app-map.test.run").inputSchema.parse({
+      ...input,
+      in: {},
+    }),
+  );
+  assert.throws(() =>
+    tool("app-map.test.run").inputSchema.parse({
+      ...input,
+      lens: "screenshots",
+    }),
+  );
   assert.deepEqual(
     tool("app-map.test.compile").inputSchema.parse({
       appMapId: "checkout",
@@ -584,7 +603,7 @@ test("the locale profile exposes only the canonical Language Variable campaign",
 });
 
 test("marks App Map Combine execution as a per-cell runtime profile contract", () => {
-  assert.match(tool("job.combine.start").description, /cellRuntimeProfiles/u);
+  assert.match(tool("job.combine.start").description, /one cell/u);
   assert.match(tool("job.combine.start").description, /app-map\.test\.run/u);
 });
 

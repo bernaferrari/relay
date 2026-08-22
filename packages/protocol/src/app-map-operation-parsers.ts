@@ -339,6 +339,49 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
           fail("Test run startup mode", "must be cold or verified-checkpoint");
         }
       }
+      if (input.in !== undefined) {
+        const worlds = record(input.in, "Test run in");
+        const entries = Object.entries(worlds);
+        if (!entries.length) fail("Test run in", "must name at least one Variable");
+        for (const [variableId, rawValueIds] of entries) {
+          string(variableId, "Test run in Variable");
+          if (!Array.isArray(rawValueIds) || rawValueIds.length === 0) {
+            fail(`Test run in ${variableId}`, "must be a non-empty array of value ids");
+          }
+          const valueIds = rawValueIds as unknown[];
+          const seen = new Set<string>();
+          for (const [index, valueId] of valueIds.entries()) {
+            const id = string(valueId, `Test run in ${variableId} ${index}`);
+            if (seen.has(id)) {
+              fail(`Test run in ${variableId}`, `contains duplicate value id ${id}`);
+            }
+            seen.add(id);
+          }
+        }
+      }
+      if (input.lens !== undefined) {
+        const lens = string(input.lens, "Test run lens");
+        if (
+          lens !== "visual" &&
+          lens !== "smoke" &&
+          lens !== "every-screen" &&
+          lens !== "failures-only" &&
+          lens !== "final-screen" &&
+          lens !== "none"
+        ) {
+          fail(
+            "Test run lens",
+            "must be visual, smoke, every-screen, failures-only, final-screen, or none",
+          );
+        }
+      }
+      if (input.executionMode !== undefined) {
+        const mode = string(input.executionMode, "Test run executionMode");
+        if (mode !== "pilot" && mode !== "all") {
+          fail("Test run executionMode", "must be pilot or all");
+        }
+      }
+      if (input.cell !== undefined) string(input.cell, "Test run cell");
     },
   );
 

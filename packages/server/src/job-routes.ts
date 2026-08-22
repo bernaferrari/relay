@@ -87,7 +87,7 @@ export type JobRouteRuntime = {
   resumeJob: (id: string) => TestJob | Promise<TestJob>;
 };
 
-const defaultJobRouteRuntime: JobRouteRuntime = {
+export const defaultJobRouteRuntime: JobRouteRuntime = {
   getJob,
   assertTargetControl,
   admitTargetControl,

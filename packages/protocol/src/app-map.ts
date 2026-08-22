@@ -403,7 +403,8 @@ export type AppMapCapturePolicy =
 export type AppMapTest = AppMapScenarioTest;
 
 /** Explicit runtime evidence profile for one Test × world cell.
- * Coverage must name every selected cell; a single compatible profile is never inferred. */
+ * Absent a binding, start/preflight inherit a default target profile when the
+ * caller supplied a default target and a compatible saved profile exists. */
 export type AppMapCombineCellRuntimeProfile = {
   testId: string;
   /** Canonical variable-id → value-id map. Ordering is not identity. */
@@ -435,7 +436,7 @@ export type AppMapCombine = AppMapEntity & {
    * by a visual sweep and a fast no-screenshot smoke matrix. */
   captures?: Record<string, AppMapCapturePolicy>;
   strategy?: CaseExpansionStrategy;
-  /** Persisted per-cell target-profile bindings. Absent a binding, the cell cannot run. */
+  /** Persisted per-cell target-profile overrides. Missing cells inherit a default. */
   cellRuntimeProfiles?: AppMapCombineCellRuntimeProfile[];
 };
 

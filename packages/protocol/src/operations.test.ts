@@ -361,6 +361,84 @@ test("graph Test runs require an exact revision and explicit target", () => {
   );
 });
 
+test("graph Test runs accept optional Combine worlds and a capture lens", () => {
+  const input = {
+    appMapId: "map-1",
+    testId: "checkout",
+    expectedRevision: 7,
+    target: { kind: "device" as const, platform: "android" as const, targetId: "phone-1" },
+    in: { language: ["ja", "pt"] },
+    lens: "visual" as const,
+    executionMode: "pilot" as const,
+    cell: "ja",
+  };
+  assert.deepEqual(operationDefinition("app-map.test.run").input.parse(input), input);
+  assert.deepEqual(
+    operationDefinition("app-map.test.run").input.parse({
+      appMapId: "map-1",
+      testId: "checkout",
+      expectedRevision: 7,
+      target: input.target,
+      lens: "failures-only",
+    }),
+    {
+      appMapId: "map-1",
+      testId: "checkout",
+      expectedRevision: 7,
+      target: input.target,
+      lens: "failures-only",
+    },
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        in: {},
+      }),
+    /at least one Variable/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        in: { language: [] },
+      }),
+    /non-empty array/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        in: { "": ["ja"] },
+      }),
+    /Variable/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        in: { language: ["ja", "ja"] },
+      }),
+    /duplicate value id ja/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        lens: "screenshots",
+      }),
+    /visual, smoke/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        executionMode: "blast",
+      }),
+    /pilot or all/u,
+  );
+});
+
 test("graph Test compilation can preview a verified checkpoint without changing the saved Test", () => {
   const input = {
     appMapId: "map-1",

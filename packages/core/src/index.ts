@@ -115,6 +115,7 @@ export * from "./app-map-combine-cell-target-binding.js";
 export * from "./app-map-combine-cell-intent.js";
 export * from "./app-map-combine-cell-wrapper.js";
 export * from "./app-map-combine-cell-prepare.js";
+export * from "./app-map-combine-from-test.js";
 export * from "./app-map-combine-cell-run.js";
 export * from "./app-map-compiler.js";
 export * from "./app-map-run-history.js";

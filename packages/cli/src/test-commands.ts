@@ -136,7 +136,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
   mapped(
     "app-map.test.run",
     path("test run", ["appMapId", "testId"], undefined, {
-      summary: "Run one exact saved graph-native Test revision",
+      summary: "Run one Test, or this Test in selected Variable values as a Combine",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
         { name: "testId", type: "string", description: "Graph-native Test identifier" },
@@ -172,15 +172,38 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
           description:
             'Explicit startup: { mode: "cold" } runs the saved baseline; { mode: "verified-checkpoint", screenId: "settings" } first proves the live screen and runs its suffix. A checkpoint mismatch stops for review — it never falls back to a cold relaunch.',
         },
+        {
+          name: "in",
+          type: "object",
+          description:
+            "Variable id → value ids. `relay test run map test --in language=ja,pt` upserts a Combine and starts a campaign. Omit it to run the Test once.",
+        },
+        {
+          name: "lens",
+          type: "visual | smoke | every-screen | failures-only | final-screen | none",
+          description:
+            "Capture lens for the Combine. visual is every-screen; smoke is failures-only.",
+        },
+        {
+          name: "cell",
+          type: "string",
+          description: "Run one world, for example --cell ja. Default without --all is one cell.",
+        },
+        {
+          name: "executionMode",
+          type: "pilot | all",
+          description: "Pilot is the default. Pass --all to run every selected world.",
+        },
       ],
       examples: [
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
+        'relay test run grok-ios settings-tour --in language=ja,pt --lens visual --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
         'relay test run grok-ios settings-tour --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"},"targetProfileId":"ipad-pt-BR"}\'',
         'relay test run grok-ios settings-tour --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"},"startup":{"mode":"verified-checkpoint","screenId":"settings"}}\'',
         'relay test run grok relay-40 --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"android","targetId":"DEVICE"},"surfaceCapture":{"forceRecaptureScreenIds":["voice"]}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"browser","platform":"browser","targetId":"checkout-web"}}\'',
       ],
-      note: "The revision and target are mandatory. A paused job resumes its existing plan; a new run uses only the startup policy supplied here. Relay never turns a checkpoint mismatch into an implicit cold retry or relaunch.",
+      note: "The revision and target are mandatory. Without --in this is one Test run. With --in, Relay upserts the Combine, fills default target bindings, and starts one cell unless --all is set. A paused job resumes its existing plan; a new run uses only the startup policy supplied here. Relay never turns a checkpoint mismatch into an implicit cold retry or relaunch.",
       behavior: "job-start-watch",
     }),
   ),

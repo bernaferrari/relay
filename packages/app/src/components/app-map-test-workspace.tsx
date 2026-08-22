@@ -26,7 +26,7 @@ import { appMapTestCheckpointOptions } from "../lib/app-map-test-startup-policy"
 import { Icon } from "./icon";
 import { AppMapTestProposalReview } from "./app-map-test-proposal-review";
 import { AppMapTestPreflight } from "./app-map-test-preflight";
-import { AppMapTestLocaleMatrix } from "./app-map-test-locale-matrix";
+import { AppMapTestCombineStrip } from "./app-map-test-combine-strip";
 import { createAppMapTestDocumentSession } from "./app-map-test-document-session";
 import {
   RailStrip,
@@ -521,10 +521,9 @@ export function AppMapTestWorkspace(props: {
                 />
                 <Show when={selectedTest()}>
                   {(test) => (
-                    <AppMapTestLocaleMatrix
-                      appMapId={appMap()!.id}
+                    <AppMapTestCombineStrip
+                      map={appMap()!}
                       test={test()}
-                      variables={Object.values(appMap()!.variables ?? {})}
                       ready={saveState() === "saved"}
                     />
                   )}

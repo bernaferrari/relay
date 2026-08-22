@@ -43,6 +43,7 @@ import {
   localExecutionTargetRef,
   type LocalExecutionTarget,
 } from "./app-map-combine-cell-target-binding.js";
+import { synthesizeCombineCellRuntimeProfiles } from "./app-map-combine-from-test.js";
 import type { Recipe } from "./recipes.js";
 import type { PreparedRunMatrix } from "./run-matrix.js";
 
@@ -516,6 +517,8 @@ export async function prepareAppMapCombineCells(input: {
   rejectUnselectedBindings?: boolean;
   /** Backward-compatible single local target. It is expanded to every cell. */
   target?: { targetId: string; platform: "android" | "ios" | "browser" };
+  /** Optional explicit profile used when synthesizing missing cell bindings. */
+  defaultTargetProfileId?: string;
   compileOptions?: AppMapTestCompileOptions;
 }): Promise<PreparedAppMapCombine> {
   const tests = input.combine.testIds.map((id) => {
@@ -562,7 +565,13 @@ export async function prepareAppMapCombineCells(input: {
     matrix,
     variableIds: input.combine.variableIds,
   });
-  const bindings = input.cellRuntimeProfiles ?? input.combine.cellRuntimeProfiles ?? [];
+  const bindings = synthesizeCombineCellRuntimeProfiles({
+    cells,
+    bindings: input.cellRuntimeProfiles ?? input.combine.cellRuntimeProfiles ?? [],
+    map: input.map,
+    target: input.target,
+    explicitProfileId: input.defaultTargetProfileId,
+  });
   const assessed = assessAppMapCombineCellBindings({
     cells,
     bindings,

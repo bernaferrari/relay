@@ -34,6 +34,7 @@ import {
   type ReviewedDocumentOriginLedger,
   type ReviewedDocumentOriginProjection,
 } from "./reviewed-document-origin.js";
+import type { CombineLensInput } from "./app-map-combine-id.js";
 import type {
   AppMapCompiledTest,
   AppMapScenarioTestEdit,
@@ -516,6 +517,16 @@ export type AppMapOperationMap = {
       /** Explicit startup behavior. Verified checkpoint performs a fresh
        * destination proof and never falls back to an app relaunch. */
       startup?: AppMapTestStartup;
+      /** Variable id → selected value ids. When present, Relay upserts a
+       * Combine for this Test × those worlds and starts a campaign. */
+      in?: Record<string, string[]>;
+      /** Capture lens for the upserted Combine. Visual/smoke aliases or a raw
+       * capture-policy name. Screenshots are never a Variable. */
+      lens?: CombineLensInput;
+      /** Default is one cell. `all` is explicit. */
+      executionMode?: "pilot" | "all";
+      /** World or cell selector used with `in` to run one cell. */
+      cell?: string;
     };
     output: {
       planIdentity: {
@@ -526,6 +537,9 @@ export type AppMapOperationMap = {
       };
       plan: AppMapCompiledTest;
       job: AppMapJobSummary;
+      jobs?: AppMapJobSummary[];
+      combine?: { id: string; revision: number };
+      campaign?: { id: string; selectedCellIds: string[] };
     };
   };
   "app-map.combine.save": {

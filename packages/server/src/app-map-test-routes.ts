@@ -262,19 +262,24 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     const combine = appMap.combines[comboPreflight.combineId!];
     if (!combine) throw new HttpError(404, `Combine  not found`);
     const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(appMap);
+    const serial = body.serial?.trim();
+    const devices = serial ? await listDevices().catch(() => []) : [];
+    const device = serial ? devices.find((candidate) => candidate.serial === serial) : undefined;
     const preflight = await preflightAppMapCombine(
       appMap,
       combine,
       {
         ...(body.selected ? { selected: body.selected } : {}),
         ...(body.strategy ? { strategy: body.strategy } : {}),
+        ...(serial && device?.platform
+          ? { target: { targetId: serial, platform: device.platform } }
+          : serial
+            ? { target: { targetId: serial, platform: "android" } }
+            : {}),
       },
       { reviewedDocumentOrigins },
     );
-    const serial = body.serial?.trim();
     if (serial) {
-      const devices = await listDevices().catch(() => []);
-      const device = devices.find((candidate) => candidate.serial === serial);
       const state = !device
         ? "missing"
         : device.connectionState === "offline" ||

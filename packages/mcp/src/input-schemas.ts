@@ -770,6 +770,7 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       executionMode: z.enum(["pilot", "all"]).optional(),
       pilotCaseIndex: z.number().int().nonnegative().optional(),
       selectedCellIds: z.array(identifier("Combine cell identifier")).optional(),
+      cell: identifier("World or Combine cell selector").optional(),
       cellRuntimeProfiles: z
         .array(
           z

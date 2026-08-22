@@ -48,8 +48,44 @@ export const appMapTestRunInputSchema = z
       .describe(
         "Explicit startup policy. A checkpoint mismatch stops for review; it never falls back to a cold relaunch.",
       ),
+    in: z
+      .record(
+        identifier("Variable identifier"),
+        z.array(identifier("Variable value identifier")).min(1),
+      )
+      .optional()
+      .describe(
+        "Variable id → selected value ids. Upserts a Combine for this Test × those worlds and starts a campaign.",
+      ),
+    lens: z
+      .enum(["visual", "smoke", "every-screen", "failures-only", "final-screen", "none"])
+      .optional()
+      .describe("Capture lens. visual is every-screen; smoke is failures-only."),
+    executionMode: z.enum(["pilot", "all"]).optional(),
+    cell: identifier("World or Combine cell selector").optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    if (input.in === undefined) return;
+    const entries = Object.entries(input.in);
+    if (!entries.length) {
+      context.addIssue({
+        code: "custom",
+        message: "in must name at least one Variable",
+        path: ["in"],
+      });
+      return;
+    }
+    for (const [variableId, valueIds] of entries) {
+      if (new Set(valueIds).size !== valueIds.length) {
+        context.addIssue({
+          code: "custom",
+          message: `in.${variableId} must not repeat a value identifier`,
+          path: ["in", variableId],
+        });
+      }
+    }
+  });
 
 export const appMapTestCompileInputSchema = z
   .object({

@@ -1,5 +1,6 @@
 import type http from "node:http";
 import {
+  AppMapCombineWorldError,
   AppMapCompileError,
   AppMapTestCompileError,
   activeReviewedDocumentOriginsForAppMap,
@@ -22,7 +23,9 @@ import {
   referencedRuntimeInputs,
   redactRunMatrix,
   resolveJobDevicePlatform,
+  saveAppMapCombine,
   sensitiveInputNames,
+  upsertAppMapCombineFromTest,
   type Recipe,
 } from "@relay/core";
 import type {
@@ -32,7 +35,10 @@ import type {
   TargetProfile,
 } from "@relay/protocol";
 import { assertTargetControl, targetLeaseBelongsToCaller } from "./access-control.js";
+import { executeCombineStart } from "./combine-start-route.js";
+import { applyAppMapMutation } from "./app-map-route-mutations.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
+import { defaultJobRouteRuntime } from "./job-routes.js";
 import type { RequestContext } from "./security.js";
 
 type ObservedTarget = {
@@ -285,6 +291,86 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     }
     const test = map.tests[testMatch.testId!];
     if (!test) throw new HttpError(404, `Test ${testMatch.testId} not found`);
+
+    if (body.in) {
+      let upserted;
+      try {
+        upserted = upsertAppMapCombineFromTest({
+          map,
+          testId: test.id,
+          selected: body.in,
+          ...(body.lens ? { lens: body.lens } : {}),
+        });
+      } catch (error) {
+        if (error instanceof AppMapCombineWorldError) {
+          throw new HttpError(409, error.message, { code: error.code });
+        }
+        throw error;
+      }
+      const saved = await applyAppMapMutation(
+        input.scope,
+        map.id,
+        body.expectedRevision,
+        undefined,
+        (current, context) => saveAppMapCombine(current, upserted.combine, context),
+      );
+      let compiled;
+      try {
+        compiled = compileAppMapTest(saved, saved.tests[test.id] ?? test, {
+          forceRecaptureSurfaceScreenIds: body.surfaceCapture?.forceRecaptureScreenIds,
+          entryCheckpointScreenId:
+            body.startup?.mode === "verified-checkpoint" ? body.startup.screenId : undefined,
+          reviewedDocumentOrigins: await activeReviewedDocumentOriginsForAppMap(saved),
+        });
+      } catch (error) {
+        if (error instanceof AppMapTestCompileError) {
+          throw new HttpError(409, error.message, {
+            code: error.code,
+            testId: error.testId,
+            stepId: error.stepId,
+            diagnostics: error.diagnostics,
+          });
+        }
+        throw new HttpError(409, error instanceof Error ? error.message : String(error));
+      }
+      const started = await executeCombineStart(input.scope, defaultJobRouteRuntime, {
+        appMapId: saved.id,
+        combineId: upserted.combine.id,
+        serial: body.target.kind === "device" ? body.target.targetId : undefined,
+        browserTargetId: body.target.kind === "browser" ? body.target.targetId : undefined,
+        platform: body.target.platform === "browser" ? undefined : body.target.platform,
+        targetKind: body.target.kind,
+        selected: body.in,
+        capture: upserted.capture,
+        executionMode: body.executionMode ?? "pilot",
+        cell: body.cell,
+        defaultTargetProfileId: body.targetProfileId,
+        title: upserted.combine.name,
+      });
+      const job = started.jobs[0];
+      if (!job) throw new HttpError(500, "Combine start returned no jobs");
+      json(input.response, 202, {
+        planIdentity: {
+          appMapId: compiled.plan.appMapId,
+          appMapRevision: compiled.plan.appMapRevision,
+          testId: compiled.plan.test.id,
+          rootRecipeId: compiled.plan.rootRecipeId,
+        },
+        plan: compiled.plan,
+        job,
+        jobs: started.jobs,
+        combine: { id: upserted.combine.id, revision: saved.revision },
+        ...(started.campaign
+          ? {
+              campaign: {
+                id: started.campaign.id,
+                selectedCellIds: started.selectedCellIds,
+              },
+            }
+          : {}),
+      });
+      return true;
+    }
 
     const targetId = body.target.targetId.trim();
     const requestedTarget = { targetId, platform: body.target.platform };

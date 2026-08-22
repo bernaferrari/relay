@@ -393,13 +393,14 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     path("job combine start", [], undefined, {
       summary: "Run every selected Variable value × every selected Test",
       examples: [
-        'relay combine run grok-ios language-x-settings --input \'{"serial":"<device>","platform":"android"}\'',
+        'relay combine run grok-ios language-x-settings --cell ja --input \'{"serial":"<device>","platform":"ios"}\'',
+        'relay combine run grok-ios language-x-settings --all --input \'{"serial":"<device>","platform":"ios"}\'',
       ],
-      note: "Each Combine cell needs an explicit saved targetProfileId in cellRuntimeProfiles. For a local multi-target campaign, pass cellTargetBindings plus the shared localAdmission object; it contains only measured target × Test/action evidence and never implies provider/cloud capacity. Missing, foreign, stale, or infeasible bindings return 409 and queue nothing.",
+      note: "Default is one cell. Pass --cell to choose a world, or --all to run every selected cell. A default serial/target fills missing cell bindings. Per-cell cellRuntimeProfiles and cellTargetBindings remain overrides. For a local multi-target campaign, pass cellTargetBindings plus the shared localAdmission object. Missing Variable, empty selection, or a Variable that cannot apply still return 409 and queue nothing.",
       behavior: "job-start-watch",
     }),
     path("combine run", ["appMapId", "combineId"], undefined, {
-      summary: "Run a saved Combine (Variables × Tests)",
+      summary: "Run one cell of a saved Combine (Variables × Tests)",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
         { name: "combineId", type: "string", description: "Saved Combine" },
@@ -431,8 +432,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         {
           name: "executionMode",
           type: "pilot | all",
-          description:
-            "Pilot runs one representative case and persists the rest for reviewed resume",
+          description: "Pilot is the default. Pass --all to run every selected world.",
         },
         {
           name: "cellRuntimeProfiles",
@@ -456,6 +456,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           name: "selectedCellIds",
           type: "array",
           description: "Optional subset of cell IDs to queue after offline preparation",
+        },
+        {
+          name: "cell",
+          type: "string",
+          description: "World selector such as ja. Default without --all is one cell.",
         },
       ],
       behavior: "job-start-watch",

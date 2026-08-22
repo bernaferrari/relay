@@ -4,10 +4,12 @@ import type {
   AppMapCombine,
   AppMapCombineCellRuntimeProfile,
   AppMapCombineCellTargetBinding,
+  CombineCampaign,
 } from "@relay/protocol";
 import { executionTargetRefKey } from "@relay/protocol";
 import {
   AppMapCombineCellContractError,
+  AppMapCombineWorldError,
   AppMapCompileError,
   activeReviewedDocumentOriginsForAppMap,
   combineCampaignCaseFromPreparedCell,
@@ -15,6 +17,7 @@ import {
   currentOperationContext,
   prepareAppMapCombineCells,
   readAppMap,
+  resolveCombineCellSelector,
   stagePreparedAppMapCombineCells,
   summarizeJob,
   updateCombineCampaign,
@@ -59,6 +62,28 @@ type CombineStartRequest = {
   capture?: AppMapCapturePolicy;
   executionMode?: "all" | "pilot";
   pilotCaseIndex?: number;
+  cell?: string;
+  defaultTargetProfileId?: string;
+};
+
+export type CombineStartResult = {
+  batch: {
+    id: string;
+    recipeId: string;
+    composedRecipeId: string;
+    title: string;
+    worlds: string[];
+    createdAt: number;
+  };
+  matrix: unknown;
+  cells: unknown;
+  jobs: ReturnType<typeof summarizeJob>[];
+  selectedCellIds: string[];
+  admission?: {
+    preflight: LocalCombineCampaignAdmission["preflight"];
+    targetPreflights: LocalCombineCampaignAdmission["targetPreflights"];
+  };
+  campaign?: CombineCampaign;
 };
 
 export type CombineStartRouteContext = {
@@ -103,8 +128,15 @@ function ephemeralCombineFromTest(input: {
  * because its campaign record is a transaction boundary, not a single job.
  */
 export async function handleCombineStartRoute(context: CombineStartRouteContext): Promise<void> {
-  const { request, response, scope, runtime } = context;
-  const body = (await parseJsonBody(request)) as CombineStartRequest;
+  const body = (await parseJsonBody(context.request)) as CombineStartRequest;
+  json(context.response, 202, await executeCombineStart(context.scope, context.runtime, body));
+}
+
+export async function executeCombineStart(
+  scope: RequestContext,
+  runtime: JobRouteRuntime,
+  body: CombineStartRequest,
+): Promise<CombineStartResult> {
   if (!body.appMapId?.trim()) {
     throw new HttpError(400, "appMapId is required");
   }
@@ -150,9 +182,6 @@ export async function handleCombineStartRoute(context: CombineStartRouteContext)
         capture: body.capture,
         cellRuntimeProfiles: body.cellRuntimeProfiles,
       });
-  if (body.executionMode === "pilot" && !combine) {
-    throw new HttpError(400, "Pilot mode requires a saved Combine");
-  }
   let staged: ReturnType<typeof stagePreparedAppMapCombineCells> | undefined;
   let admission: LocalCombineCampaignAdmission | undefined;
   let persistedCampaignId: string | undefined;
@@ -167,6 +196,7 @@ export async function handleCombineStartRoute(context: CombineStartRouteContext)
         cellRuntimeProfiles: body.cellRuntimeProfiles ?? scopedCombine.cellRuntimeProfiles,
         cellTargetBindings: body.cellTargetBindings,
         selectedCellIds: body.selectedCellIds,
+        defaultTargetProfileId: body.defaultTargetProfileId,
         ...(targetId
           ? {
               target: {
@@ -178,8 +208,23 @@ export async function handleCombineStartRoute(context: CombineStartRouteContext)
         compileOptions: { reviewedDocumentOrigins },
       }),
     );
-    const selectedToQueue =
-      body.executionMode === "pilot" ? prepared.selectedCells.slice(0, 1) : prepared.selectedCells;
+    let selectedCells = prepared.selectedCells;
+    if (body.cell?.trim()) {
+      try {
+        const selected = new Set(resolveCombineCellSelector(prepared.cells, body.cell));
+        selectedCells = prepared.cells.filter((cell) => selected.has(cell.cellId));
+      } catch (error) {
+        if (error instanceof AppMapCombineWorldError) {
+          throw new HttpError(409, error.message, { code: error.code });
+        }
+        throw error;
+      }
+      if (!selectedCells.length) {
+        throw new HttpError(409, `Unknown Combine cell ${body.cell.trim()}.`);
+      }
+    }
+    const isPilotRun = body.executionMode !== "all";
+    const selectedToQueue = isPilotRun ? selectedCells.slice(0, 1) : selectedCells;
     if (!selectedToQueue.length) {
       throw new HttpError(400, "No selected Combine cells to queue");
     }
@@ -222,14 +267,13 @@ export async function handleCombineStartRoute(context: CombineStartRouteContext)
         ownerId: currentOperationContext()!.actorId,
       });
     if (body.localAdmission) {
-      const admissionRequest =
-        body.executionMode === "pilot"
-          ? localCampaignAdmissionRequestForActiveWorkItems({
-              request: body.localAdmission,
-              activeWorkItems: localCampaignAdmissionWorkItemsForCombine(selectedToQueue),
-              knownWorkItems: localCampaignAdmissionWorkItemsForCombine(prepared.selectedCells),
-            })
-          : body.localAdmission;
+      const admissionRequest = isPilotRun
+        ? localCampaignAdmissionRequestForActiveWorkItems({
+            request: body.localAdmission,
+            activeWorkItems: localCampaignAdmissionWorkItemsForCombine(selectedToQueue),
+            knownWorkItems: localCampaignAdmissionWorkItemsForCombine(prepared.selectedCells),
+          })
+        : body.localAdmission;
       const admitted = await admitAndStageLocalCombineCampaign({
         scope,
         cells: selectedToQueue,
@@ -274,8 +318,7 @@ export async function handleCombineStartRoute(context: CombineStartRouteContext)
       );
       const cases = prepared.cells.map((cell, index) => {
         const job = jobByCell.get(cell.cellId);
-        const isPilot =
-          body.executionMode === "pilot" && cell.cellId === selectedToQueue[0]?.cellId;
+        const isPilot = isPilotRun && cell.cellId === selectedToQueue[0]?.cellId;
         return combineCampaignCaseFromPreparedCell(cell, {
           index,
           phase: isPilot ? "pilot" : "coverage",
@@ -310,7 +353,7 @@ export async function handleCombineStartRoute(context: CombineStartRouteContext)
                     },
             }
           : {}),
-        status: body.executionMode === "pilot" ? ("pilot-running" as const) : ("running" as const),
+        status: isPilotRun ? ("pilot-running" as const) : ("running" as const),
         createdAt: at,
         updatedAt: at,
         cases,
@@ -356,7 +399,7 @@ export async function handleCombineStartRoute(context: CombineStartRouteContext)
     // From this point the campaign owns normal job cancellation/finalization
     // rather than this admission transaction's compensation path.
     persistedCampaignId = undefined;
-    json(response, 202, {
+    return {
       batch: {
         id: queued.batchId,
         recipeId: selectedToQueue[0]!.recipeSnapshot.id,
@@ -368,6 +411,7 @@ export async function handleCombineStartRoute(context: CombineStartRouteContext)
       matrix: prepared.matrix,
       cells: prepared.cellStates,
       jobs: queued.jobs.map((job) => summarizeJob(job)),
+      selectedCellIds: selectedToQueue.map((cell) => cell.cellId),
       ...(acceptedAdmission
         ? {
             admission: {
@@ -377,7 +421,7 @@ export async function handleCombineStartRoute(context: CombineStartRouteContext)
           }
         : {}),
       ...(campaign ? { campaign } : {}),
-    });
+    };
   } catch (error) {
     const cleanupErrors: string[] = [];
     try {

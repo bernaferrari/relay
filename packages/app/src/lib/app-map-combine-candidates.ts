@@ -1,4 +1,4 @@
-import type { AppMap, AppMapTest } from "@relay/protocol";
+import { combineIdFor, type AppMap, type AppMapTest } from "@relay/protocol";
 import type { CombineTestColumn } from "./app-map-combine-presentation";
 
 export type TestCandidate = CombineTestColumn & { source: "test"; test: AppMapTest };
@@ -7,17 +7,7 @@ export function savedTestId(candidate: TestCandidate): string {
   return candidate.test.id;
 }
 
-/** The `matrix-` prefix is a storage key, not chrome: saved combines already
- * carry it, so renaming it would orphan them. */
-export function combineIdFor(variableIds: string[], testIds: string[]): string {
-  const slug = [...variableIds, "to", ...testIds]
-    .join("-")
-    .toLocaleLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 80);
-  return `matrix-${slug || "run"}`;
-}
+export { combineIdFor };
 
 /** Combines select saved graph Tests only. Map flows and groups are map
  * structure, never implicit Test-conversion candidates. */

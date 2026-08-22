@@ -425,6 +425,7 @@ test("Combine admission binds cells across local Android and iOS before one job 
       appMapId: "store",
       combineId: "locales",
       selected: { language: ["en", "it"] },
+      executionMode: "all",
       cellTargetBindings: [
         {
           testId: "script-only",

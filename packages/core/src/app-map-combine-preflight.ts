@@ -11,6 +11,7 @@ import {
   assessAppMapCombineCellBindings,
   enumerateAppMapCombineCells,
 } from "./app-map-combine-cell-prepare.js";
+import { synthesizeCombineCellRuntimeProfiles } from "./app-map-combine-from-test.js";
 import {
   assertOptionSandwichReady,
   composeOptionRunRecipes,
@@ -87,6 +88,8 @@ export async function preflightAppMapCombine(
   overrides: {
     selected?: Record<string, string[]>;
     strategy?: "zip" | "cartesian" | "pairwise";
+    target?: { targetId: string; platform: string };
+    defaultTargetProfileId?: string;
   } = {},
   compileOptions: AppMapTestCompileOptions = {},
 ): Promise<AppMapCombinePreflight> {
@@ -245,7 +248,13 @@ export async function preflightAppMapCombine(
       });
       const assessed = assessAppMapCombineCellBindings({
         cells: enumerated,
-        bindings: effectiveCombine.cellRuntimeProfiles ?? [],
+        bindings: synthesizeCombineCellRuntimeProfiles({
+          cells: enumerated,
+          bindings: effectiveCombine.cellRuntimeProfiles ?? [],
+          map,
+          target: overrides.target,
+          explicitProfileId: overrides.defaultTargetProfileId,
+        }),
         knownTests: new Set(effectiveCombine.testIds),
         knownValues: Object.fromEntries(
           variables.map((variable) => [

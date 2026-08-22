@@ -17,6 +17,7 @@ export * from "./run-review.js";
 export * from "./campaign-repair.js";
 export * from "./combine-campaign.js";
 export * from "./app-map-combine-cell.js";
+export * from "./app-map-combine-id.js";
 export * from "./navigation-proof.js";
 export * from "./graph-exploration.js";
 export * from "./run-share.js";

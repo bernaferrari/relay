@@ -75,6 +75,9 @@ const valueFlags = new Set([
   "--input-file",
   "--file",
   "--mark",
+  "--in",
+  "--lens",
+  "--cell",
 ]);
 const switchFlags = new Set([
   "-h",
@@ -88,7 +91,9 @@ const switchFlags = new Set([
   "--force",
   "--preview",
   "--confirm",
+  "--all",
 ]);
+const repeatableValueFlags = new Set(["--in"]);
 
 const reviewedOriginConfirmationOperations = new Set([
   "app-map.scroll-surface.origin.review",
@@ -135,6 +140,11 @@ function tokenize(argv: readonly string[]): ParsedTokens {
     if (!valueFlags.has(name)) throw new UsageError(`Unknown option: ${name}`);
     const value = equals >= 0 ? token.slice(equals + 1) : argv[++index];
     if (!value || value.startsWith("--")) throw new UsageError(`${name} requires a value`);
+    if (repeatableValueFlags.has(name)) {
+      const existing = values.get(name);
+      values.set(name, existing ? `${existing}\u0000${value}` : value);
+      continue;
+    }
     values.set(name, value);
   }
   return { positionals, values, switches };
@@ -161,6 +171,59 @@ function booleanEnv(value: string | undefined, fallback: boolean): boolean {
   if (value === "1" || value === "true") return true;
   if (value === "0" || value === "false") return false;
   throw new UsageError("RELAY_WAIT must be true, false, 1, or 0");
+}
+
+function parseInFlags(raw: string | undefined): Record<string, string[]> {
+  if (raw === undefined) return {};
+  const worlds: Record<string, string[]> = {};
+  for (const token of raw.split("\u0000")) {
+    const equals = token.indexOf("=");
+    if (equals < 1) {
+      throw new UsageError("--in requires variableId=value[,value]");
+    }
+    const variableId = token.slice(0, equals).trim();
+    const valueIds = token
+      .slice(equals + 1)
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (!variableId || !valueIds.length) {
+      throw new UsageError("--in requires variableId=value[,value]");
+    }
+    worlds[variableId] = [...(worlds[variableId] ?? []), ...valueIds];
+  }
+  return worlds;
+}
+
+function applyCombineRunFlags(
+  operationId: string,
+  input: Record<string, unknown>,
+  tokens: ParsedTokens,
+): Record<string, unknown> {
+  const worlds = parseInFlags(tokens.values.get("--in"));
+  const lens = tokens.values.get("--lens");
+  const cell = tokens.values.get("--cell");
+  const all = tokens.switches.has("--all");
+  const usesWorlds = Object.keys(worlds).length > 0;
+  if (lens && operationId !== "app-map.test.run" && operationId !== "job.combine.start") {
+    throw new UsageError("--lens is only valid on test run or combine run");
+  }
+  if (usesWorlds && operationId !== "app-map.test.run") {
+    throw new UsageError("--in is only valid on test run");
+  }
+  if (cell && operationId !== "app-map.test.run" && operationId !== "job.combine.start") {
+    throw new UsageError("--cell is only valid on test run or combine run");
+  }
+  if (all && operationId !== "app-map.test.run" && operationId !== "job.combine.start") {
+    throw new UsageError("--all is only valid on test run or combine run");
+  }
+  if (!usesWorlds && !lens && !cell && !all) return input;
+  const next = { ...input };
+  if (usesWorlds) next.in = worlds;
+  if (lens) next.lens = lens;
+  if (cell) next.cell = cell;
+  if (all) next.executionMode = "all";
+  return next;
 }
 
 function parseInput(rawInput: string | undefined): Record<string, unknown> {
@@ -354,10 +417,14 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (!matched) throw new UsageError("--mark requires <x>,<y> in the same units as a tap");
   }
   const resolved = resolveCommand(tokens.positionals, input);
-  resolved.input = confirmedReviewedOriginInput(
+  resolved.input = applyCombineRunFlags(
     resolved.operationId,
-    resolved.input,
-    tokens.switches.has("--confirm"),
+    confirmedReviewedOriginInput(
+      resolved.operationId,
+      resolved.input,
+      tokens.switches.has("--confirm"),
+    ),
+    tokens,
   );
   const preview = tokens.switches.has("--preview");
   if (mark) {

@@ -138,7 +138,7 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "job.locale-matrix.analysis":
     " The same findings without writing a pack, keyed to the frame of each case. Use this to read a matrix or combine batch while it is still running; export only when a person needs the folder.",
   "job.combine.start":
-    " Run a saved Variable × Test Combine. Every selected cell needs an explicit cellRuntimeProfiles binding (testId, values, targetProfileId). Relay prepares every cell offline and returns 409 without queueing if any binding is missing, foreign, or blocked. A single Test without Variables still uses app-map.test.run.",
+    " Run a saved Variable × Test Combine. Default is one cell; pass executionMode all or selectedCellIds to run more. A default serial/target fills missing cell bindings. A single Test with --in worlds uses app-map.test.run. Never start locale-matrix; never invent a Variable for screenshots.",
   "app-map.scroll-surface.origin.inspect":
     " Offline audit only: it reads the signed immutable first PNG/tree evidence and lifecycle; it never resolves, leases, or controls a target.",
   "app-map.scroll-surface.origin.review":

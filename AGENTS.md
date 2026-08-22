@@ -96,9 +96,9 @@ export RELAY_ACTOR_ID=agent:grok-ios-mapper
 
 Same three words in the UI and the CLI:
 
-- **Variable** = a list (Language). Teach 1–2 rows, infer the rest. `relay variable save`
-- **Test** = what you run once (path, or open-every-row tour). `relay test run grok-ios settings-tour`
-- **Combine** = the visible grid of every selected variable value × the test. Click one cell or `relay combine run` — do **not** fire all cells unless the human asked (15 locales).
+- **Variable** = a list you apply and undo (Language is just the first kind). Teach 1–2 rows, infer the rest. `relay variable save`
+- **Test** = go here, click there, finish. `relay test run grok-ios settings-tour`
+- **Combine** = selected Variable values × selected Tests. From the Test: `relay test run grok-ios settings-tour --in language=ja,pt --lens visual`. From a saved grid: `relay combine run grok-ios language-x-settings --cell ja`. Default is one cell. `--all` is explicit. Do **not** fire all cells unless asked. Capture is a lens (`visual` / `smoke`), never a Variable.
 
 Tour seek reaches the origin screen (fingerprint, then mapped row overlap, then Back/Settings/prelude) before walking rows. Tour back is label-overlap, not nav title — Grok child sheets often keep header “Settings”.
 

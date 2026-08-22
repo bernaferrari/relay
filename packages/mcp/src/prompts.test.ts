@@ -177,6 +177,7 @@ test("lists the curated Relay prompts with required scoped arguments", async () 
 test("every profile advertises only prompts whose required tools it exposes", async () => {
   assert.deepEqual(relayMcpPrompts[3].requiredOperationIds, [
     "target.screenshot.capture",
+    "app-map.test.run",
     "app-map.combine.save",
     "app-map.combine.preflight",
     "lease.list",
@@ -453,7 +454,9 @@ test("matrix prompt keeps App Map Combine execution behind the per-cell profile 
     );
     assert.match(text, /Variables and graph-native scenario Tests/);
     assert.match(text, /relay_app_map_combine_preflight/);
-    assert.match(text, /cellRuntimeProfiles/);
+    assert.match(text, /--in language=ja,pt/);
+    assert.match(text, /--lens visual/);
+    assert.match(text, /Never start locale-matrix/);
     assert.match(text, /relay_app_map_test_run/);
     assert.match(text, /relay_job_combine_start/);
     assert.match(text, /App Language destinations that open OS Settings/);

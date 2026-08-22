@@ -628,7 +628,7 @@ test("execution gate accepts a wrapper job from an outer Combine cell intent", (
   }
 });
 
-test("prepare fails closed without queueing when a cell has no binding", async () => {
+test("prepare fails closed without queueing when a cell has no binding and no default target", async () => {
   const map = localeMap();
   map.combines.locales!.cellRuntimeProfiles = [
     { testId: "script-only", values: { language: "en" }, targetProfileId: "pixel-en" },
@@ -638,7 +638,6 @@ test("prepare fails closed without queueing when a cell has no binding", async (
       prepareAppMapCombineCells({
         map,
         combine: map.combines.locales!,
-        target: { targetId: "pixel-1", platform: "android" },
       }),
     (error: unknown) =>
       error instanceof AppMapCombineCellContractError &&

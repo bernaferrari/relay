@@ -10,6 +10,7 @@ import {
   type EventEnvelope,
   type OperationId,
 } from "@relay/protocol";
+import { parseCli } from "./config.js";
 import { ExitCode } from "./errors.js";
 import { runCli } from "./index.js";
 import type { OperationInvoker } from "./invoke.js";
@@ -553,6 +554,67 @@ test("job watch --no-wait gets the job exactly once", async () => {
     operationId: "job.get",
     result: running,
   });
+});
+
+test("test run --in and --lens send Combine worlds on the same Test operation", async () => {
+  const parsed = parseCli(
+    [
+      "test",
+      "run",
+      "grok-ios",
+      "settings-tour",
+      "--in",
+      "language=ja,pt",
+      "--lens",
+      "visual",
+      "--input",
+      '{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"ipad"}}',
+    ],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command !== "invoke") throw new Error("expected invoke");
+  assert.equal(parsed.operationId, "app-map.test.run");
+  assert.deepEqual(parsed.input.in, { language: ["ja", "pt"] });
+  assert.equal(parsed.input.lens, "visual");
+  assert.equal(parsed.input.executionMode, undefined);
+});
+
+test("combine run --cell selects one world and --all is explicit", async () => {
+  const cell = parseCli(
+    ["combine", "run", "map", "languages", "--cell", "ja", "--input", '{"serial":"phone"}'],
+    {},
+  );
+  assert.equal(cell.command, "invoke");
+  if (cell.command !== "invoke") throw new Error("expected invoke");
+  assert.equal(cell.operationId, "job.combine.start");
+  assert.equal(cell.input.cell, "ja");
+  assert.equal(cell.input.executionMode, undefined);
+  const all = parseCli(
+    ["combine", "run", "map", "languages", "--all", "--input", '{"serial":"phone"}'],
+    {},
+  );
+  assert.equal(all.command, "invoke");
+  if (all.command !== "invoke") throw new Error("expected invoke");
+  assert.equal(all.input.executionMode, "all");
+});
+
+test("test run without --in stays a single Test run", async () => {
+  const parsed = parseCli(
+    [
+      "test",
+      "run",
+      "grok-ios",
+      "settings-tour",
+      "--input",
+      '{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"ipad"}}',
+    ],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command !== "invoke") throw new Error("expected invoke");
+  assert.equal(parsed.input.in, undefined);
+  assert.equal(parsed.input.lens, undefined);
 });
 
 test("test run starts the canonical exact Test operation and watches its job", async () => {
