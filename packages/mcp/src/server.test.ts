@@ -147,6 +147,72 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
       "serial",
     ]);
     assert.deepEqual(screenshot.inputSchema.required, ["serial"]);
+    const snapshot = tools.find(({ name }) => name === "relay_target_snapshot_capture");
+    assert.ok(snapshot);
+    assert.deepEqual(Object.keys(snapshot.inputSchema.properties ?? {}).sort(), [
+      "confirm",
+      "full",
+      "serial",
+    ]);
+    assert.match(snapshot.description ?? "", /digest/i);
+    assert.match(snapshot.description ?? "", /full/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("snapshot capture returns a digest unless full is requested", async () => {
+  const snapshot = {
+    serial: "ipad-1",
+    bounds: { width: 834, height: 1112 },
+    inspectable: true,
+    interactive: [],
+    tree: "Button · Ask",
+    screenIdentity: { fingerprint: "abcdef0123456789deadbeef" },
+    nodes: [
+      {
+        type: "Button",
+        identifier: "navigation.tab.ask",
+        label: "Ask",
+        hittable: false,
+        rect: { x: 331, y: 22, width: 44, height: 38 },
+      },
+    ],
+  };
+  const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
+  const session = await connectMcp({
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      return snapshot;
+    },
+  });
+  try {
+    const digest = callResult(
+      await session.request("tools/call", {
+        name: "relay_target_snapshot_capture",
+        arguments: { serial: "ipad-1" },
+      }),
+    );
+    const digestResult = digest.structuredContent?.result as {
+      nodes?: unknown;
+      nodeCount?: number;
+    };
+    assert.equal(digestResult.nodes, undefined);
+    assert.equal(digestResult.nodeCount, 1);
+
+    const full = callResult(
+      await session.request("tools/call", {
+        name: "relay_target_snapshot_capture",
+        arguments: { serial: "ipad-1", full: true },
+      }),
+    );
+    const fullResult = full.structuredContent?.result as { nodes?: unknown[]; nodeCount?: number };
+    assert.deepEqual(fullResult.nodes, snapshot.nodes);
+    assert.equal(fullResult.nodeCount, undefined);
+    assert.deepEqual(calls, [
+      { operationId: "target.snapshot.capture", input: { serial: "ipad-1" } },
+      { operationId: "target.snapshot.capture", input: { serial: "ipad-1", full: true } },
+    ]);
   } finally {
     await session.close();
   }

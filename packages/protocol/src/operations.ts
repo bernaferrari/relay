@@ -596,22 +596,28 @@ const runEvidenceInputParser = objectParser<OperationInput<"run.evidence.get">>(
   },
 );
 
+function optionalQueryBoolean(value: unknown, label: string): void {
+  if (value === undefined) return;
+  if (value === true || value === false) return;
+  if (value === "true" || value === "false" || value === "1" || value === "0") return;
+  fail(label, "must be a boolean");
+}
+
 const targetInputParser = objectParser<OperationRecord>("target operation", (input) => {
   string(input.serial, "target serial");
   if (input.previewX !== undefined) number(input.previewX, "previewX");
   if (input.previewY !== undefined) number(input.previewY, "previewY");
   if (input.preview !== undefined) boolean(input.preview, "preview");
-  if (input.visual !== undefined && input.visual !== true && input.visual !== false) {
-    if (
-      input.visual !== "true" &&
-      input.visual !== "false" &&
-      input.visual !== "1" &&
-      input.visual !== "0"
-    ) {
-      fail("visual", "must be a boolean");
-    }
-  }
+  optionalQueryBoolean(input.visual, "visual");
 });
+
+const targetSnapshotInputParser = objectParser<OperationInput<"target.snapshot.capture">>(
+  "target snapshot input",
+  (input) => {
+    targetInputParser.parse(input);
+    optionalQueryBoolean(input.full, "full");
+  },
+);
 
 function assertIosMutationAttemptDiagnostic(
   value: unknown,
@@ -1393,7 +1399,7 @@ export const operationDefinitions = [
     category: "evidence",
     targetCapabilities: ["snapshot"],
     lease: "shared",
-    input: targetInputParser,
+    input: targetSnapshotInputParser,
     output: targetSnapshotOutputParser,
   }),
   query("target.screenshot.capture", "Capture target screenshot", "/screenshot", {

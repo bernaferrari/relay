@@ -511,6 +511,19 @@ test("graph Test proposals accept only bounded semantic edit batches", () => {
   );
 });
 
+test("snapshot input accepts optional full and stays valid when omitted", () => {
+  const parse = operationDefinition("target.snapshot.capture").input.parse;
+  assert.deepEqual(parse({ serial: "ipad-1" }), { serial: "ipad-1" });
+  assert.deepEqual(parse({ serial: "ipad-1", full: true }), { serial: "ipad-1", full: true });
+  assert.deepEqual(parse({ serial: "ipad-1", full: false, visual: true }), {
+    serial: "ipad-1",
+    full: false,
+    visual: true,
+  });
+  assert.deepEqual(parse({ serial: "ipad-1", full: "true" }), { serial: "ipad-1", full: "true" });
+  assert.throws(() => parse({ serial: "ipad-1", full: "yes" }), /full/);
+});
+
 test("screenshot preview coordinates accept query-string numbers", () => {
   assert.deepEqual(
     operationDefinition("target.screenshot.capture").input.parse({

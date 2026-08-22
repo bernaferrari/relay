@@ -9,6 +9,7 @@ import {
   summarizeAuthoringOperationResult,
   summarizeExecutionOperationResult,
   summarizeTargetOperationResult,
+  wantsFullSnapshotTree,
   type OperationId,
 } from "@relay/protocol";
 import * as z from "zod/v4";
@@ -365,16 +366,17 @@ async function invokeRelayTool(
 
   if (descriptor.operationId === "target.screenshot.capture") return screenshotResult(result);
   try {
-    const summarized = summarizeTargetOperationResult(
+    const inner = summarizeExecutionOperationResult(
       descriptor.operationId,
-      summarizeExecutionOperationResult(
+      summarizeAppMapOperationResult(
         descriptor.operationId,
-        summarizeAppMapOperationResult(
-          descriptor.operationId,
-          summarizeAuthoringOperationResult(descriptor.operationId, result),
-        ),
+        summarizeAuthoringOperationResult(descriptor.operationId, result),
       ),
     );
+    const summarized =
+      descriptor.operationId === "target.snapshot.capture" && wantsFullSnapshotTree(operationInput)
+        ? inner
+        : summarizeTargetOperationResult(descriptor.operationId, inner);
     const fallback =
       descriptor.operationId === "run.replay.offline"
         ? compactOfflineReplayToolResult(summarized)

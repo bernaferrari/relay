@@ -403,6 +403,13 @@ function runtimeReadinessSummary(value: unknown): Record<string, unknown> | unde
   return result;
 }
 
+/** CLI/MCP presentation flag: keep the raw snapshot (including `nodes`) when set. */
+export function wantsFullSnapshotTree(input: unknown): boolean {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return false;
+  const full = (input as { full?: unknown }).full;
+  return full === true || full === "true" || full === "1";
+}
+
 export function summarizeTargetOperationResult(operationId: string, result: unknown): unknown {
   if (operationId === "target.snapshot.capture") {
     if (!result || typeof result !== "object" || Array.isArray(result)) return result;

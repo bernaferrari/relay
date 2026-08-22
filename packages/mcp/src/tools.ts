@@ -124,7 +124,7 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "target.do":
     " Ground then interact in one call. Prefer this for NL taps (Menu, Appearance). Requires exclusive lease.",
   "target.snapshot.capture":
-    " Step 1 of a tap when you need identifiers or labels. The accessibility tree may be missing. Screenshot plus a point tap still works. Do not retry snapshot in a loop.",
+    " Default JSON is a digest (app, header, controls, nodeCount). Pass full:true for the accessibility tree nodes. The tree may still be missing — screenshot plus a point tap still works. Do not retry snapshot in a loop.",
   "target.recover":
     " Repair the runner without rebooting the device. A missing XCTest session is not a failed launch.",
   "step.run":

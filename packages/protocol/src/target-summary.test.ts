@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { summarizeTargetOperationResult } from "./target-summary.js";
+import { summarizeTargetOperationResult, wantsFullSnapshotTree } from "./target-summary.js";
+
+test("full snapshot presentation is opt-in", () => {
+  assert.equal(wantsFullSnapshotTree({ serial: "ipad" }), false);
+  assert.equal(wantsFullSnapshotTree({ serial: "ipad", full: true }), true);
+  assert.equal(wantsFullSnapshotTree({ serial: "ipad", full: "true" }), true);
+  assert.equal(wantsFullSnapshotTree({ serial: "ipad", full: false }), false);
+});
 
 test("device command summaries hide stopped simulators without hiding physical hardware", () => {
   const result = summarizeTargetOperationResult("target.devices.list", {

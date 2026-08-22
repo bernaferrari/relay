@@ -5,6 +5,7 @@ import {
   summarizeAuthoringOperationResult,
   summarizeExecutionOperationResult,
   summarizeTargetOperationResult,
+  wantsFullSnapshotTree,
 } from "@relay/protocol";
 import type { OutputMode } from "./config.js";
 import { parseCli } from "./config.js";
@@ -19,7 +20,7 @@ import {
   validateOperationId,
 } from "./invoke.js";
 import { CliOutput, type OutputStreams } from "./output.js";
-import { emitScreenshot } from "./screenshot.js";
+import { emitScreenshot, emitSnapshotFile } from "./screenshot.js";
 import { runDbCommand } from "./db-commands.js";
 
 export type CliDependencies = {
@@ -130,17 +131,16 @@ function startedJobIds(response: unknown): string[] {
   throw new Error("Malformed execution response: expected one or more jobs");
 }
 
-function summarizeResult(operationId: string, result: unknown): unknown {
-  return summarizeTargetOperationResult(
+function summarizeResult(operationId: string, result: unknown, input?: unknown): unknown {
+  const inner = summarizeExecutionOperationResult(
     operationId,
-    summarizeExecutionOperationResult(
+    summarizeAppMapOperationResult(
       operationId,
-      summarizeAppMapOperationResult(
-        operationId,
-        summarizeAuthoringOperationResult(operationId, result),
-      ),
+      summarizeAuthoringOperationResult(operationId, result),
     ),
   );
+  if (operationId === "target.snapshot.capture" && wantsFullSnapshotTree(input)) return inner;
+  return summarizeTargetOperationResult(operationId, inner);
 }
 
 function failureMessage(value: unknown, fallback: string): string {
@@ -156,14 +156,14 @@ function failureMessage(value: unknown, fallback: string): string {
 
 /** Transport success is not operation success. Keep shell scripts and agents
  * from treating a structured `{ ok: false }` result or failed job as a pass. */
-function assertOperationSucceeded(operationId: string, result: unknown): void {
+function assertOperationSucceeded(operationId: string, result: unknown, input?: unknown): void {
   if (!result || typeof result !== "object") return;
   if ("ok" in result && result.ok === false) {
     const error = "error" in result ? result.error : undefined;
     throw new CliError(
       failureMessage(error, `${operationId} did not complete successfully`),
       ExitCode.validation,
-      summarizeResult(operationId, result),
+      summarizeResult(operationId, result, input),
     );
   }
   if ("job" in result && result.job && typeof result.job === "object" && "status" in result.job) {
@@ -172,7 +172,7 @@ function assertOperationSucceeded(operationId: string, result: unknown): void {
       throw new CliError(
         "Operation cancelled",
         ExitCode.cancellation,
-        summarizeResult(operationId, result),
+        summarizeResult(operationId, result, input),
       );
     }
     if (status === "error") {
@@ -180,7 +180,7 @@ function assertOperationSucceeded(operationId: string, result: unknown): void {
       throw new CliError(
         failureMessage(error, `${operationId} failed`),
         ExitCode.validation,
-        summarizeResult(operationId, result),
+        summarizeResult(operationId, result, input),
       );
     }
   }
@@ -244,12 +244,12 @@ export async function runCli(
           output,
           dependencies.pollIntervalMs ?? 250,
         );
-        assertOperationSucceeded(operationId, result);
-        output.result(operationId, summarizeResult(operationId, result));
+        assertOperationSucceeded(operationId, result, parsed.input);
+        output.result(operationId, summarizeResult(operationId, result, parsed.input));
       } else if (parsed.behavior === "job-start-watch" && parsed.config.wait) {
         output.progress(operationId, "invoking");
         const started = await invokeOperation(client, operationId, parsed.input, abort.signal);
-        output.snapshot(operationId, summarizeResult(operationId, started));
+        output.snapshot(operationId, summarizeResult(operationId, started, parsed.input));
         const jobIds = startedJobIds(started);
         const results: unknown[] = [];
         for (const jobId of jobIds) {
@@ -278,11 +278,16 @@ export async function runCli(
       } else {
         output.progress(operationId, "invoking");
         const result = await invokeOperation(client, operationId, parsed.input, abort.signal);
-        assertOperationSucceeded(operationId, result);
+        assertOperationSucceeded(operationId, result, parsed.input);
         if (parsed.behavior === "screenshot") {
           await emitScreenshot(operationId, result, parsed.screenshotOutput, output);
+        } else if (
+          operationId === "target.snapshot.capture" &&
+          parsed.screenshotOutput.kind === "file"
+        ) {
+          await emitSnapshotFile(operationId, result, parsed.screenshotOutput, output);
         } else {
-          output.result(operationId, summarizeResult(operationId, result));
+          output.result(operationId, summarizeResult(operationId, result, parsed.input));
         }
       }
       return ExitCode.success;

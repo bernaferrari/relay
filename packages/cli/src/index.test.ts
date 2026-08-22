@@ -228,6 +228,78 @@ test("App Map resource commands use declared read-only routes", async () => {
   }
 });
 
+const snapshotTree = {
+  serial: "pixel-9",
+  bounds: { width: 834, height: 1112 },
+  inspectable: true,
+  interactive: [],
+  tree: "Button · Ask",
+  screenIdentity: { fingerprint: "abcdef0123456789deadbeef" },
+  nodes: [
+    {
+      type: "Button",
+      identifier: "navigation.tab.ask",
+      label: "Ask",
+      hittable: false,
+      rect: { x: 331, y: 22, width: 44, height: 38 },
+    },
+  ],
+};
+
+test("device snapshot --json defaults to a digest and --full keeps nodes", async () => {
+  const digestIo = capture();
+  const digestCode = await runCli(["device", "snapshot", "pixel-9", "--json"], {
+    streams: digestIo.streams,
+    createClient: () => ({ invoke: async () => snapshotTree, events: async () => {} }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(digestCode, ExitCode.success);
+  const digest = JSON.parse(digestIo.stdout()).result as {
+    nodes?: unknown;
+    nodeCount?: number;
+    controls?: unknown;
+  };
+  assert.equal(digest.nodes, undefined);
+  assert.equal(digest.nodeCount, 1);
+  assert.ok(Array.isArray(digest.controls));
+
+  const fullIo = capture();
+  const fullCode = await runCli(["device", "snapshot", "pixel-9", "--json", "--full"], {
+    streams: fullIo.streams,
+    createClient: () => ({ invoke: async () => snapshotTree, events: async () => {} }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(fullCode, ExitCode.success);
+  const full = JSON.parse(fullIo.stdout()).result as { nodes?: unknown[]; nodeCount?: number };
+  assert.deepEqual(full.nodes, snapshotTree.nodes);
+  assert.equal(full.nodeCount, undefined);
+});
+
+test("device snapshot --file writes the full snapshot JSON", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-cli-snapshot-"));
+  const file = join(root, "tree.json");
+  try {
+    const io = capture();
+    const code = await runCli(["device", "snapshot", "pixel-9", "--file", file, "--json"], {
+      streams: io.streams,
+      createClient: () => ({ invoke: async () => snapshotTree, events: async () => {} }),
+      registerSignalHandlers: false,
+      env: {},
+    });
+    assert.equal(code, ExitCode.success);
+    assert.deepEqual(JSON.parse(await readFile(file, "utf8")), snapshotTree);
+    assert.ok(Array.isArray(JSON.parse(await readFile(file, "utf8")).nodes));
+    const terminal = JSON.parse(io.stdout());
+    assert.equal(terminal.result.file, file);
+    assert.equal(terminal.result.mime, "application/json");
+    assert.equal(JSON.parse(io.stdout()).result.nodes, undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("screenshot output writes validated PNG files without leaking base64", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-cli-screenshot-"));
   const file = join(root, "screen.png");
@@ -369,6 +441,8 @@ test("root and family help are useful without creating a client", async () => {
         /device interact <serial>/,
         /active exclusive lease owned by the same --actor/,
         /relay lease create 00008110 --actor agent:mapper/,
+        /digest/,
+        /--full/,
       ],
     },
     {

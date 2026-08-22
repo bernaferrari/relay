@@ -126,6 +126,23 @@ test("marks delete and dangerous operations as destructive and confirmation-requ
   assert.doesNotMatch(tool("target.list").description, /confirm: true/);
 });
 
+test("maps snapshot capture to a digest-by-default tool with an explicit full tree", () => {
+  const snapshot = tool("target.snapshot.capture");
+  assert.equal(snapshot.name, "relay_target_snapshot_capture");
+  assert.match(snapshot.description, /digest/i);
+  assert.match(snapshot.description, /app/);
+  assert.match(snapshot.description, /header/);
+  assert.match(snapshot.description, /controls/);
+  assert.match(snapshot.description, /nodeCount/);
+  assert.match(snapshot.description, /full/);
+  assert.deepEqual(snapshot.inputSchema.parse({ serial: "device-1" }), { serial: "device-1" });
+  assert.deepEqual(snapshot.inputSchema.parse({ serial: "device-1", full: true }), {
+    serial: "device-1",
+    full: true,
+  });
+  assert.throws(() => snapshot.inputSchema.parse({ serial: "device-1", full: "true" }));
+});
+
 test("maps screenshot capture to its stable Relay tool descriptor", () => {
   const screenshot = tool("target.screenshot.capture");
   assert.deepEqual(

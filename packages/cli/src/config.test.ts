@@ -409,7 +409,27 @@ test("screenshot output flags reject ambiguous or unrelated use", () => {
   assert.equal(snapshot.command, "invoke");
   if (snapshot.command === "invoke") {
     assert.equal(snapshot.input.visual, true);
+    assert.equal(snapshot.input.full, undefined);
+    assert.deepEqual(snapshot.screenshotOutput, { kind: "default" });
   }
+  const fullSnapshot = parseCli(["device", "snapshot", "pixel-9", "--full"], {});
+  assert.equal(fullSnapshot.command, "invoke");
+  if (fullSnapshot.command === "invoke") {
+    assert.equal(fullSnapshot.input.full, true);
+    assert.equal(fullSnapshot.input.visual, true);
+  }
+  const snapshotFile = parseCli(["device", "snapshot", "pixel-9", "--file", "tree.json"], {});
+  assert.equal(snapshotFile.command, "invoke");
+  if (snapshotFile.command === "invoke") {
+    assert.equal(snapshotFile.input.full, true);
+    assert.deepEqual(snapshotFile.screenshotOutput, {
+      kind: "file",
+      path: "tree.json",
+      force: false,
+    });
+  }
+  assert.throws(() => parseCli(["device", "screenshot", "pixel-9", "--full"], {}), /only valid/);
+  assert.throws(() => parseCli(["device", "snapshot", "pixel-9", "--binary"], {}), /only valid/);
   const teach = parseCli(
     [
       "map",

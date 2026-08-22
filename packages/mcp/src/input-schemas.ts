@@ -99,7 +99,15 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "target.devices.list": z.object({ phase: z.literal("android").optional() }).strict(),
   "target.boot": z.object(targetReference).strict(),
   "target.authorize": z.object(targetReference).strict(),
-  "target.snapshot.capture": z.object(targetReference).strict(),
+  "target.snapshot.capture": z
+    .object({
+      ...targetReference,
+      full: z
+        .boolean()
+        .optional()
+        .describe("Return the full accessibility tree. Default is a digest."),
+    })
+    .strict(),
   "target.screenshot.capture": z.object(targetReference).strict(),
   "target.recover": z
     .object({

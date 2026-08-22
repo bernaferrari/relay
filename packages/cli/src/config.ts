@@ -94,6 +94,7 @@ const switchFlags = new Set([
   "--no-wait",
   "--binary",
   "--force",
+  "--full",
   "--preview",
   "--confirm",
   "--all",
@@ -281,18 +282,35 @@ function readInput(tokens: ParsedTokens, env: Environment): Record<string, unkno
   return parseInput(contents);
 }
 
+function applySnapshotPresentation(
+  operationId: string,
+  input: Record<string, unknown>,
+  tokens: ParsedTokens,
+): Record<string, unknown> {
+  const wantsFull = tokens.switches.has("--full");
+  const wantsFile = tokens.values.has("--file");
+  if (wantsFull && operationId !== "target.snapshot.capture") {
+    throw new UsageError("--full is only valid on snapshot commands");
+  }
+  if (operationId !== "target.snapshot.capture" || (!wantsFull && !wantsFile)) return input;
+  return { ...input, full: true };
+}
+
 function screenshotOutput(
   tokens: ParsedTokens,
   output: OutputMode,
-  eligible: boolean,
+  allowed: { file?: boolean; binary?: boolean },
 ): ScreenshotOutput {
   const file = tokens.values.get("--file");
   const binary = tokens.switches.has("--binary");
   const force = tokens.switches.has("--force");
   if (!file && !binary && !force) return { kind: "default" };
-  if (!eligible) {
+  if (binary && !allowed.binary) {
+    throw new UsageError("--binary is only valid on screenshot or --preview commands");
+  }
+  if ((file || force) && !allowed.file) {
     throw new UsageError(
-      "--file, --binary, and --force are only valid on screenshot or --preview commands",
+      "--file and --force are only valid on screenshot, snapshot, or --preview commands",
     );
   }
   if (file && binary) throw new UsageError("Use only one of --file or --binary");
@@ -388,10 +406,14 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (rawInput === undefined && inputFile === undefined) {
       throw new UsageError("operation invoke requires --input <json> or --input-file <path>");
     }
-    const input = confirmedReviewedOriginInput(
+    const input = applySnapshotPresentation(
       operationId,
-      readInput(tokens, env),
-      tokens.switches.has("--confirm"),
+      confirmedReviewedOriginInput(
+        operationId,
+        readInput(tokens, env),
+        tokens.switches.has("--confirm"),
+      ),
+      tokens,
     );
     return {
       config: {
@@ -406,18 +428,18 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       operationId,
       input,
       ...(operationId === "target.screenshot.capture" ? { behavior: "screenshot" as const } : {}),
-      screenshotOutput: screenshotOutput(
-        tokens,
-        output,
-        operationId === "target.screenshot.capture",
-      ),
+      screenshotOutput: screenshotOutput(tokens, output, {
+        file:
+          operationId === "target.screenshot.capture" || operationId === "target.snapshot.capture",
+        binary: operationId === "target.screenshot.capture",
+      }),
     };
   }
 
   const input = readInput(tokens, env);
   const resource = resolveResourceCommand(tokens.positionals, input);
   if (resource) {
-    screenshotOutput(tokens, output, false);
+    screenshotOutput(tokens, output, {});
     return {
       config: {
         connection,
@@ -440,12 +462,16 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (!matched) throw new UsageError("--mark requires <x>,<y> in the same units as a tap");
   }
   const resolved = resolveCommand(tokens.positionals, input);
-  resolved.input = applyCombineRunFlags(
+  resolved.input = applySnapshotPresentation(
     resolved.operationId,
-    confirmedReviewedOriginInput(
+    applyCombineRunFlags(
       resolved.operationId,
-      resolved.input,
-      tokens.switches.has("--confirm"),
+      confirmedReviewedOriginInput(
+        resolved.operationId,
+        resolved.input,
+        tokens.switches.has("--confirm"),
+      ),
+      tokens,
     ),
     tokens,
   );
@@ -487,12 +513,15 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     input: resolved.input,
     commandPath: resolved.commandPath,
     ...(resolved.behavior ? { behavior: resolved.behavior } : {}),
-    screenshotOutput: screenshotOutput(
-      tokens,
-      output,
-      resolved.operationId === "target.screenshot.capture" ||
+    screenshotOutput: screenshotOutput(tokens, output, {
+      file:
+        resolved.operationId === "target.screenshot.capture" ||
+        resolved.operationId === "target.snapshot.capture" ||
         (resolved.operationId === "target.interact" && preview),
-    ),
+      binary:
+        resolved.operationId === "target.screenshot.capture" ||
+        (resolved.operationId === "target.interact" && preview),
+    }),
     ...(resolved.operationId === "target.interact" && preview
       ? { behavior: "screenshot" as const }
       : {}),

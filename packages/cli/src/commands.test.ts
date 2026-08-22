@@ -209,16 +209,27 @@ test("device survey exposes the canonical scroll-survey operation and bounded in
 });
 
 test("iPad observation and recovery help exposes the proof-first lifecycle", () => {
-  const observe = mappedCommandDescriptors
-    .find((descriptor) => descriptor.operationId === "target.snapshot.capture")
-    ?.paths.find((candidate) => candidate.command === "device observe");
+  const snapshot = mappedCommandDescriptors.find(
+    (descriptor) => descriptor.operationId === "target.snapshot.capture",
+  );
+  const observe = snapshot?.paths.find((candidate) => candidate.command === "device observe");
+  const deviceSnapshot = snapshot?.paths.find(
+    (candidate) => candidate.command === "device snapshot",
+  );
   const recover = mappedCommandDescriptors
     .find((descriptor) => descriptor.operationId === "target.recover")
     ?.paths.find((candidate) => candidate.command === "device recover");
 
-  assert.match(observe?.summary ?? "", /when available/i);
-  assert.match(observe?.note ?? "", /Read-only/i);
-  assert.match(observe?.note ?? "", /pixels/i);
+  for (const help of [observe, deviceSnapshot]) {
+    assert.match(help?.summary ?? "", /digest/i);
+    assert.match(help?.summary ?? "", /--full|--file/);
+    assert.match(help?.note ?? "", /digest/i);
+    assert.match(help?.note ?? "", /--full/);
+    assert.match(help?.note ?? "", /--file/);
+    assert.match(help?.note ?? "", /Read-only/i);
+    assert.match(help?.note ?? "", /pixels/i);
+    assert.ok(help?.inputHelp?.some((field) => field.name === "full"));
+  }
   assert.match(recover?.summary ?? "", /only when necessary/i);
   assert.match(recover?.note ?? "", /first proves/i);
   assert.match(recover?.note ?? "", /never resets the app/i);

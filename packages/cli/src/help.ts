@@ -31,8 +31,9 @@ const globalOptions = `Global options:
   --timeout <ms>                   Request timeout (env RELAY_TIMEOUT_MS)
   --wait | --no-wait               Wait policy (env RELAY_WAIT)
 
-Screenshot output:
-  --file <path>                    Save screenshot PNG to a file
+Screenshot and snapshot output:
+  --file <path>                    Save screenshot PNG or snapshot JSON to a file
+  --full                           On snapshot: return the full accessibility tree
   --binary                         Write raw PNG bytes to stdout
   --force                          Overwrite an existing --file target
   --mark <x>,<y>                   Draw a tap preview ring on a screenshot (no tap)

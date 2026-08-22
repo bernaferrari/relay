@@ -76,3 +76,39 @@ export async function emitScreenshot(
     ...(typeof source.path === "string" ? { sourcePath: source.path } : {}),
   });
 }
+
+export async function emitSnapshotFile(
+  operationId: string,
+  result: unknown,
+  destination: Extract<ScreenshotOutput, { kind: "file" }>,
+  output: CliOutput,
+): Promise<void> {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    throw new CliError("Malformed snapshot response: expected an object", ExitCode.validation);
+  }
+  const body = `${JSON.stringify(result, null, 2)}\n`;
+  try {
+    await writeFile(destination.path, body, { flag: destination.force ? "w" : "wx" });
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "EEXIST"
+    ) {
+      throw new CliError(
+        `Snapshot file already exists: ${destination.path}. Use --force to overwrite it.`,
+        ExitCode.conflict,
+      );
+    }
+    throw new CliError(
+      `Could not write snapshot file ${destination.path}: ${error instanceof Error ? error.message : String(error)}`,
+      ExitCode.validation,
+    );
+  }
+  output.result(operationId, {
+    file: destination.path,
+    bytes: Buffer.byteLength(body),
+    mime: "application/json",
+  });
+}

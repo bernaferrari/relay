@@ -384,7 +384,7 @@ type SpecificOperationMap = {
   "target.actions.list": { input: Record<string, never>; output: { actions: ActionSummary[] } };
   "target.devices.list": { input: Record<string, never>; output: { devices: DeviceSummary[] } };
   "target.snapshot.capture": {
-    input: { serial: string; visual?: boolean };
+    input: { serial: string; visual?: boolean; full?: boolean };
     output: {
       nodes: unknown[];
       interactive: unknown[];

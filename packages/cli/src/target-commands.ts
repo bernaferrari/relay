@@ -45,9 +45,23 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       ["serial"],
       { visual: true },
       {
-        summary: "Read the current screen and accessibility structure when available",
+        summary:
+          "Read the current screen. Default JSON is a digest; --full or --file returns the accessibility tree",
         argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
-        note: "Read-only. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
+        inputHelp: [
+          {
+            name: "full",
+            type: "boolean",
+            description:
+              "Return the full snapshot tree (nodes) instead of the digest; also set by --full or --file",
+          },
+        ],
+        examples: [
+          "relay device observe 00008110 --json",
+          "relay device observe 00008110 --json --full",
+          "relay device observe 00008110 --file tree.json",
+        ],
+        note: "Read-only. Default --json is a digest (app, header, controls, nodeCount). --full or --file is the tree. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
       },
     ),
     path(
@@ -55,9 +69,23 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       ["serial"],
       { visual: true },
       {
-        summary: "Read the current screen and accessibility structure when available",
+        summary:
+          "Read the current screen. Default JSON is a digest; --full or --file returns the accessibility tree",
         argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
-        note: "Read-only. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
+        inputHelp: [
+          {
+            name: "full",
+            type: "boolean",
+            description:
+              "Return the full snapshot tree (nodes) instead of the digest; also set by --full or --file",
+          },
+        ],
+        examples: [
+          "relay device snapshot emulator-5554 --json",
+          "relay device snapshot emulator-5554 --json --full",
+          "relay device snapshot emulator-5554 --file tree.json",
+        ],
+        note: "Read-only. Default --json is a digest (app, header, controls, nodeCount). --full or --file is the tree. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
       },
     ),
   ),
