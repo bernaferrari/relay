@@ -319,10 +319,13 @@ function surveyDirForce(operationId: string, tokens: ParsedTokens): boolean {
   );
 }
 
+const forceTargets = "screenshot, snapshot, --preview, or survey --dir";
+
 function screenshotOutput(
   tokens: ParsedTokens,
   output: OutputMode,
   allowed: { file?: boolean; binary?: boolean },
+  operationId = "",
 ): ScreenshotOutput {
   const file = tokens.values.get("--file");
   const binary = tokens.switches.has("--binary");
@@ -333,16 +336,15 @@ function screenshotOutput(
     throw new UsageError("--binary is only valid on screenshot or --preview commands");
   }
   if (file && !allowed.file) {
-    throw new UsageError(
-      "--file and --force are only valid on screenshot, snapshot, or --preview commands",
-    );
+    throw new UsageError(`--file and --force are only valid on ${forceTargets}`);
   }
   if (file && binary) throw new UsageError("Use only one of --file or --binary");
   if (force && !file && !dir) {
+    if (operationId === "target.scroll-survey.capture") {
+      throw new UsageError("--force requires --dir <path>");
+    }
     if (!allowed.file) {
-      throw new UsageError(
-        "--file and --force are only valid on screenshot, snapshot, or --preview commands",
-      );
+      throw new UsageError(`--file and --force are only valid on ${forceTargets}`);
     }
     throw new UsageError("--force requires --file <path>");
   }
@@ -464,11 +466,17 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       operationId,
       input,
       ...(operationId === "target.screenshot.capture" ? { behavior: "screenshot" as const } : {}),
-      screenshotOutput: screenshotOutput(tokens, output, {
-        file:
-          operationId === "target.screenshot.capture" || operationId === "target.snapshot.capture",
-        binary: operationId === "target.screenshot.capture",
-      }),
+      screenshotOutput: screenshotOutput(
+        tokens,
+        output,
+        {
+          file:
+            operationId === "target.screenshot.capture" ||
+            operationId === "target.snapshot.capture",
+          binary: operationId === "target.screenshot.capture",
+        },
+        operationId,
+      ),
       ...(surveyDirForce(operationId, tokens) ? { surveyForce: true } : {}),
     };
   }
@@ -556,15 +564,20 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     input: resolved.input,
     commandPath: resolved.commandPath,
     ...(resolved.behavior ? { behavior: resolved.behavior } : {}),
-    screenshotOutput: screenshotOutput(tokens, output, {
-      file:
-        resolved.operationId === "target.screenshot.capture" ||
-        resolved.operationId === "target.snapshot.capture" ||
-        (resolved.operationId === "target.interact" && preview),
-      binary:
-        resolved.operationId === "target.screenshot.capture" ||
-        (resolved.operationId === "target.interact" && preview),
-    }),
+    screenshotOutput: screenshotOutput(
+      tokens,
+      output,
+      {
+        file:
+          resolved.operationId === "target.screenshot.capture" ||
+          resolved.operationId === "target.snapshot.capture" ||
+          (resolved.operationId === "target.interact" && preview),
+        binary:
+          resolved.operationId === "target.screenshot.capture" ||
+          (resolved.operationId === "target.interact" && preview),
+      },
+      resolved.operationId,
+    ),
     ...(resolved.operationId === "target.interact" && preview
       ? { behavior: "screenshot" as const }
       : {}),

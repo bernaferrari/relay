@@ -1,4 +1,4 @@
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { presentPersistedSnapshot } from "@relay/protocol";
 import { CliError, ExitCode } from "./errors.js";
@@ -70,6 +70,9 @@ export async function persistScrollSurvey(
         `Survey directory is not empty: ${root}. Use --force to overwrite it.`,
         ExitCode.conflict,
       );
+    }
+    if (existing.length > 0 && options.force) {
+      await rm(root, { recursive: true, force: true });
     }
   } catch (error) {
     if (error instanceof CliError) throw error;

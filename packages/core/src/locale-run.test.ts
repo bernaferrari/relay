@@ -174,6 +174,92 @@ test("Android appLocale stay is explicit and skips the default relaunch", () => 
   );
 });
 
+test("Android appLocale stay re-proves destination through a module-rooted Test", () => {
+  const leaf: Recipe = {
+    ...body,
+    id: "data-controls-leaf",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "data-controls",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+        recovery: { strategy: "back" },
+      },
+    ],
+  };
+  const compiled: Recipe = {
+    ...body,
+    id: "data-controls-test",
+    steps: [{ kind: "module", recipeId: leaf.id }],
+  };
+  const { root } = composeLocaleRunRecipes({
+    body: compiled,
+    bodyGraph: { [compiled.id]: compiled, [leaf.id]: leaf },
+    scope: {
+      locales: ["he"],
+      app: "com.example.app",
+      appLocale: "com.example.app",
+      relaunch: false,
+      restoreAtEnd: false,
+      screenshotEachLocale: false,
+    },
+    batchId: "app-locale-stay-module",
+  });
+  assert.deepEqual(
+    root.steps.filter((step) => step.kind === "expect-screen"),
+    [
+      {
+        kind: "expect-screen",
+        id: "data-controls-stay",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+      },
+    ],
+  );
+});
+
+test("prepareLocaleRecipeRun stay follows the frozen child graph", async () => {
+  const leaf: Recipe = {
+    ...body,
+    id: "data-controls-leaf",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "data-controls",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+      },
+    ],
+  };
+  const compiled: Recipe = {
+    ...body,
+    id: "data-controls-test",
+    steps: [{ kind: "module", recipeId: leaf.id }],
+  };
+  const prepared = await prepareLocaleRecipeRun({
+    recipeId: compiled.id,
+    compiledBody: compiled,
+    compiledGraph: { [compiled.id]: compiled, [leaf.id]: leaf },
+    scope: {
+      locales: ["he"],
+      app: "com.example.app",
+      appLocale: "com.example.app",
+      relaunch: false,
+      restoreAtEnd: false,
+      screenshotEachLocale: false,
+    },
+  });
+  assert.ok(
+    prepared.recipeSnapshot.steps.some(
+      (step) => step.kind === "expect-screen" && step.id === "data-controls-stay",
+    ),
+  );
+});
+
 test("Android appLocale stay re-proves the Test destination when it has identity", () => {
   const destination: Recipe = {
     ...body,

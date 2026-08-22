@@ -416,6 +416,11 @@ test("device survey --dir maps onto the scroll-survey operation input", () => {
     assert.equal(forced.surveyForce, true);
     assert.deepEqual(forced.input, { serial: "ipad-1", dir: "/tmp/survey" });
   }
+
+  assert.throws(
+    () => parseCli(["device", "survey", "ipad-1", "--force"], {}),
+    /--force requires --dir/,
+  );
 });
 
 test("screenshot output flags reject ambiguous or unrelated use", () => {

@@ -491,6 +491,7 @@ function navStepsToRecipe(steps: LocaleNavStep[] | undefined, app?: string): Rec
 
 export function composeLocaleRunRecipes(input: {
   body: Recipe;
+  bodyGraph?: Record<string, Recipe>;
   scope: LocaleRunScope;
   batchId: string;
 }): { root: Recipe; graph: Record<string, Recipe> } {
@@ -498,6 +499,12 @@ export function composeLocaleRunRecipes(input: {
   const app = scope.app?.trim();
   const appLocale = scope.appLocale?.trim();
   const at = Date.now();
+  const stayGraph: Record<string, Recipe> = {
+    ...Object.fromEntries(
+      Object.entries(input.bodyGraph ?? {}).map(([id, recipe]) => [id, structuredClone(recipe)]),
+    ),
+    [input.body.id]: structuredClone(input.body),
+  };
   const prelude: RecipeStep[] = [];
   if (appLocale) {
     prelude.push({ kind: "app", action: "set-locale", app: appLocale, locale: "{{locale}}" });
@@ -505,10 +512,7 @@ export function composeLocaleRunRecipes(input: {
       prelude.push({ kind: "app", action: "open", app: appLocale, relaunch: true });
       prelude.push({ kind: "sleep", ms: 1200 });
     } else {
-      const stayCheck = stayAppLocaleDestinationCheck(
-        { [input.body.id]: input.body },
-        input.body.id,
-      );
+      const stayCheck = stayAppLocaleDestinationCheck(stayGraph, input.body.id);
       if (stayCheck) prelude.push(stayCheck);
     }
   } else if (app) {
@@ -622,8 +626,8 @@ export function composeLocaleRunRecipes(input: {
   return {
     root,
     graph: {
+      ...stayGraph,
       [root.id]: root,
-      [input.body.id]: structuredClone(input.body),
       [tapIdentifier.id]: tapIdentifier,
       [tapLabel.id]: tapLabel,
       [tapText.id]: tapText,

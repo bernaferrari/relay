@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -93,6 +93,29 @@ test("persist fails clearly when the destination cannot be created or written", 
       message: /Could not create survey directory/u,
       exitCode: ExitCode.validation,
     });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("force replaces leftover survey frames instead of mixing generations", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-survey-persist-replace-"));
+  try {
+    await persistScrollSurvey(
+      root,
+      survey([frame(0, "Language"), frame(1, "Data Controls"), frame(2, "Appearance")]),
+    );
+    assert.deepEqual(await readdir(root).then((names) => names.sort()), [
+      "00.json",
+      "00.png",
+      "01.json",
+      "01.png",
+      "02.json",
+      "02.png",
+    ]);
+    const digest = await persistScrollSurvey(root, survey([frame(0, "Language")]), { force: true });
+    assert.equal(digest.frameCount, 1);
+    assert.deepEqual(await readdir(root).then((names) => names.sort()), ["00.json", "00.png"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

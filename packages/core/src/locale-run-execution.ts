@@ -145,8 +145,13 @@ export async function prepareLocaleRecipeRun(
   const id = randomUUID();
   const createdAt = Date.now();
   const preparedMatrix = await prepareLocaleRunMatrix(scope, input.seed);
-  const { root, graph: seedGraph } = composeLocaleRunRecipes({ body, scope, batchId: id });
   const bodyGraph = await freezeRecipeGraph(body, input.compiledGraph ?? {});
+  const { root, graph: seedGraph } = composeLocaleRunRecipes({
+    body,
+    bodyGraph,
+    scope,
+    batchId: id,
+  });
   const recipeGraph: Record<string, Recipe> = {
     ...bodyGraph,
     ...seedGraph,
