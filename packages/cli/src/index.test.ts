@@ -289,8 +289,15 @@ test("device snapshot --file writes the full snapshot JSON", async () => {
       env: {},
     });
     assert.equal(code, ExitCode.success);
-    assert.deepEqual(JSON.parse(await readFile(file, "utf8")), snapshotTree);
-    assert.ok(Array.isArray(JSON.parse(await readFile(file, "utf8")).nodes));
+    const written = JSON.parse(await readFile(file, "utf8")) as {
+      serial?: string;
+      defaults?: { enabled?: boolean };
+      nodes?: unknown[];
+    };
+    assert.equal(written.serial, "pixel-9");
+    assert.equal(written.defaults?.enabled, true);
+    assert.ok(Array.isArray(written.nodes));
+    assert.equal((written.nodes?.[0] as { label?: string }).label, "Ask");
     const terminal = JSON.parse(io.stdout());
     assert.equal(terminal.result.file, file);
     assert.equal(terminal.result.mime, "application/json");

@@ -67,9 +67,10 @@ test("persist writes numbered png+json siblings and keeps the full snapshot tree
       snapshot: { nodes: unknown[] };
     };
     assert.equal(first.snapshot.nodes.length, 2);
+    assert.deepEqual(second.snapshot.defaults, { enabled: true, visible: true });
     assert.deepEqual(second.snapshot.nodes, [
-      { identifier: "row-1", label: "Data Controls", type: "cell", hittable: true },
-      { identifier: "extra", label: "full-tree-1", type: "statictext" },
+      { type: "cell", label: "Data Controls", identifier: "row-1", hittable: true },
+      { type: "statictext", label: "full-tree-1", identifier: "extra" },
     ]);
     assert.doesNotMatch(JSON.stringify(digest), /base64/u);
     assert.doesNotMatch(await readFile(join(dir, "00.json"), "utf8"), /base64/u);

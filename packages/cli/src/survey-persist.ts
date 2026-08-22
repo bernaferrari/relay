@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
+import { presentPersistedSnapshot } from "@relay/protocol";
 import { CliError, ExitCode } from "./errors.js";
 import { screenshotPng } from "./screenshot.js";
 
@@ -91,7 +92,7 @@ export async function persistScrollSurvey(
         ...(typeof screenshot.height === "number" ? { height: screenshot.height } : {}),
         ...(typeof screenshot.capturedAt === "number" ? { capturedAt: screenshot.capturedAt } : {}),
       },
-      snapshot,
+      snapshot: presentPersistedSnapshot(snapshot),
     };
     try {
       await writeFile(pngPath, png);

@@ -61,7 +61,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
           "relay device observe 00008110 --json --full",
           "relay device observe 00008110 --file tree.json",
         ],
-        note: "Read-only. Default --json is a digest (app, header, controls, nodeCount). --full or --file is the tree. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
+        note: "Read-only. Default --json is a digest (app, header, controls, nodeCount). --full prints the raw tree. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
       },
     ),
     path(
@@ -85,7 +85,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
           "relay device snapshot emulator-5554 --json --full",
           "relay device snapshot emulator-5554 --file tree.json",
         ],
-        note: "Read-only. Default --json is a digest (app, header, controls, nodeCount). --full or --file is the tree. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
+        note: "Read-only. Default --json is a digest (app, header, controls, nodeCount). --full prints the raw tree. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
       },
     ),
   ),

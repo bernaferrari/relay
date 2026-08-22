@@ -1,5 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { Buffer } from "node:buffer";
+import { presentPersistedSnapshot } from "@relay/protocol";
 import type { ScreenshotOutput } from "./config.js";
 import { CliError, ExitCode } from "./errors.js";
 import type { CliOutput } from "./output.js";
@@ -86,7 +87,16 @@ export async function emitSnapshotFile(
   if (!result || typeof result !== "object" || Array.isArray(result)) {
     throw new CliError("Malformed snapshot response: expected an object", ExitCode.validation);
   }
-  const body = `${JSON.stringify(result, null, 2)}\n`;
+  const raw = result as Record<string, unknown>;
+  const presented = presentPersistedSnapshot(result);
+  const body = `${JSON.stringify(
+    {
+      ...(typeof raw.serial === "string" ? { serial: raw.serial } : {}),
+      ...presented,
+    },
+    null,
+    2,
+  )}\n`;
   try {
     await writeFile(destination.path, body, { flag: destination.force ? "w" : "wx" });
   } catch (error) {
