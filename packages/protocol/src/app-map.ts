@@ -373,6 +373,8 @@ export type VariableApply =
        * a system language picker while keeping the Variable explicit. */
       kind: "appLocale";
       app: string;
+      /** Default true. Stay on the current screen only when explicitly false. */
+      relaunch?: boolean;
     }
   | {
       kind: "toggle";

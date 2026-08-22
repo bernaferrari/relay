@@ -99,6 +99,18 @@ test("Android appLocale Variables need no picker route and are target-constraine
   });
 });
 
+test("an explicit stay appLocale Variable does not relaunch the locale matrix", () => {
+  const result = localeMatrixScopeFromAppMapLanguageVariable({
+    map: map(
+      variable({
+        apply: { kind: "appLocale", app: "com.example.app", relaunch: false },
+      }),
+    ),
+    variableId: "language",
+  });
+  assert.equal(result.scope.relaunch, false);
+});
+
 test("a list Variable without a saved return is not a compatible Test locale source", () => {
   assert.throws(
     () =>

@@ -64,6 +64,26 @@ export type ResolvedVariableApply = {
   exit: VariableNavStep[];
 };
 
+/** App-locale Variables relaunch by default. Stay is explicit. */
+export function appLocaleShouldRelaunch(apply: { relaunch?: boolean }): boolean {
+  return apply.relaunch !== false;
+}
+
+export function appLocaleRecipeSteps(input: {
+  app: string;
+  locale: string;
+  relaunch?: boolean;
+}): RecipeStep[] {
+  const steps: RecipeStep[] = [
+    { kind: "app", action: "set-locale", app: input.app, locale: input.locale },
+  ];
+  if (appLocaleShouldRelaunch(input)) {
+    steps.push({ kind: "app", action: "open", app: input.app, relaunch: true });
+    steps.push({ kind: "sleep", ms: 1200 });
+  }
+  return steps;
+}
+
 function recipeStepsFromConnectionActions(
   actions: AppMap["connections"][string]["actions"],
 ): import("@relay/protocol").RecipeStep[] {
@@ -508,17 +528,15 @@ export function composeOptionRunRecipes(input: {
 
   for (const set of input.request.sets) {
     if (set.apply.kind === "appLocale") {
-      steps.push({
-        kind: "app",
-        action: "set-locale",
-        app: set.apply.app,
-        locale: `{{${set.id}}}`,
-      });
-      if (!appLaunched) {
-        steps.push({ kind: "app", action: "open", app: set.apply.app, relaunch: true });
-        steps.push({ kind: "sleep", ms: 1200 });
-        appLaunched = true;
-      }
+      const relaunch = appLocaleShouldRelaunch(set.apply);
+      steps.push(
+        ...appLocaleRecipeSteps({
+          app: set.apply.app,
+          locale: `{{${set.id}}}`,
+          relaunch: relaunch && !appLaunched,
+        }),
+      );
+      if (relaunch && !appLaunched) appLaunched = true;
       steps.push({ kind: "device", action: "keyboard-dismiss" });
       steps.push({ kind: "sleep", ms: 250 });
       continue;
@@ -565,14 +583,13 @@ export function composeOptionRunRecipes(input: {
     for (const set of [...input.request.sets].reverse()) {
       if (!set.restoreId?.trim()) continue;
       if (set.apply.kind === "appLocale") {
-        steps.push({
-          kind: "app",
-          action: "set-locale",
-          app: set.apply.app,
-          locale: set.restoreId.trim(),
-        });
-        steps.push({ kind: "app", action: "open", app: set.apply.app, relaunch: true });
-        steps.push({ kind: "sleep", ms: 1200 });
+        steps.push(
+          ...appLocaleRecipeSteps({
+            app: set.apply.app,
+            locale: set.restoreId.trim(),
+            relaunch: appLocaleShouldRelaunch(set.apply),
+          }),
+        );
         continue;
       }
       if (set.apply.kind === "list") {

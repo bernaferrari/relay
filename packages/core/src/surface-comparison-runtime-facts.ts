@@ -1,18 +1,13 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { parseAndroidLocaleOutput } from "./android-locale-tags.js";
 import { captureAndroidForegroundApp } from "./android-ui-snapshot.js";
 import { inspectAndroidApp, type AndroidAppBuild } from "./device.js";
 import type { TestJob } from "./session-contract.js";
 
 const execFileAsync = promisify(execFile);
 
-export function parseAndroidLocaleOutput(output: string): string | undefined {
-  const listed = output.match(/\[([^\]]*)\]/u)?.[1]?.trim();
-  const locale = listed?.split(",")[0]?.trim();
-  if (locale) return locale;
-  const direct = output.trim().match(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/u)?.[0];
-  return direct || undefined;
-}
+export { parseAndroidLocaleOutput } from "./android-locale-tags.js";
 
 type RuntimeFactDependencies = {
   foreground?: (serial: string) => Promise<string | undefined>;

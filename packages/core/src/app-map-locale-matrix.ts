@@ -79,6 +79,7 @@ export function localeMatrixScopeFromAppMapLanguageVariable(input: {
         locales,
         app: variable.apply.app,
         appLocale: variable.apply.app,
+        ...(variable.apply.relaunch === false ? { relaunch: false } : {}),
         ...(restoreId ? { restoreLocale: restoreId } : {}),
         restoreAtEnd: true,
         screenshotEachLocale: variable.screenshotEach !== false,

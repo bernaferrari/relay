@@ -500,8 +500,10 @@ export function composeLocaleRunRecipes(input: {
   const prelude: RecipeStep[] = [];
   if (appLocale) {
     prelude.push({ kind: "app", action: "set-locale", app: appLocale, locale: "{{locale}}" });
-    prelude.push({ kind: "app", action: "open", app: appLocale, relaunch: true });
-    prelude.push({ kind: "sleep", ms: 1200 });
+    if (scope.relaunch !== false) {
+      prelude.push({ kind: "app", action: "open", app: appLocale, relaunch: true });
+      prelude.push({ kind: "sleep", ms: 1200 });
+    }
   } else if (app) {
     prelude.push({
       kind: "app",

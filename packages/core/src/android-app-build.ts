@@ -8,6 +8,11 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
+  androidLocaleTagCandidates,
+  androidLocaleTagsCompatible,
+  parseAndroidLocaleOutput,
+} from "./android-locale-tags.js";
+import {
   cooperativeCheckpoint,
   getExecutingJobId,
   raceCancel,
@@ -79,30 +84,92 @@ export async function inspectAndroidApp(packageName: string): Promise<AndroidApp
   }
 }
 
-/** Set one app's locale through Android's public LocaleManager shell surface. */
-export async function setAndroidAppLocale(packageName: string, locale: string): Promise<void> {
+export type AndroidAdbCommand = (args: string[]) => Promise<{ stdout?: string; stderr?: string }>;
+
+export type SetAndroidAppLocaleOptions = {
+  /** Test seam. Production talks to the selected device through adb. */
+  command?: AndroidAdbCommand;
+  /** Optional accessibility-tree language. Tests fake this; production can omit it. */
+  readTreeLanguage?: () => Promise<string | undefined>;
+};
+
+function defaultAdbCommand(args: string[]): Promise<{ stdout?: string; stderr?: string }> {
+  return execFileAsync("adb", androidAdbArgs(args));
+}
+
+async function readAppLocale(
+  command: AndroidAdbCommand,
+  packageName: string,
+): Promise<string | undefined> {
+  try {
+    const result = await command(["shell", "cmd", "locale", "get-app-locales", packageName]);
+    return parseAndroidLocaleOutput(String(result.stdout ?? ""));
+  } catch {
+    return undefined;
+  }
+}
+
+function observedLocaleMatches(
+  observed: string | undefined,
+  requested: string,
+): boolean | undefined {
+  if (!observed?.trim()) return undefined;
+  return androidLocaleTagsCompatible(observed, requested);
+}
+
+/** Set one app's locale through Android's public LocaleManager shell surface.
+ * When the requested tag fails or the observed language does not change,
+ * retry the product-owned he/iw and id/in aliases. */
+export async function setAndroidAppLocale(
+  packageName: string,
+  locale: string,
+  options: SetAndroidAppLocaleOptions = {},
+): Promise<void> {
   requireAndroidBuildControl(packageName);
   if (!BCP_47_TAG.test(locale)) {
     throw new Error(`app locale is not a BCP-47 language tag: ${locale}`);
   }
   await cooperativeCheckpoint();
   throwIfCancelled();
-  await mutateCurrentTarget(() =>
-    raceCancel(
-      execFileAsync(
-        "adb",
-        androidAdbArgs([
-          "shell",
-          "cmd",
-          "locale",
-          "set-app-locales",
-          packageName,
-          "--locales",
-          locale,
-        ]),
-      ),
-    ),
-  );
+  const command = options.command ?? defaultAdbCommand;
+  const beforeLocale = await readAppLocale(command, packageName);
+  const beforeTree = await options.readTreeLanguage?.();
+  let lastError: Error | undefined;
+  for (const tag of androidLocaleTagCandidates(locale)) {
+    try {
+      await mutateCurrentTarget(() =>
+        raceCancel(
+          command(["shell", "cmd", "locale", "set-app-locales", packageName, "--locales", tag]),
+        ),
+      );
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      continue;
+    }
+    const afterLocale = await readAppLocale(command, packageName);
+    const afterTree = await options.readTreeLanguage?.();
+    const localeMatch = observedLocaleMatches(afterLocale, locale);
+    const treeMatch = observedLocaleMatches(afterTree, locale);
+    if (localeMatch === true || treeMatch === true) return;
+    const localeUnchanged =
+      afterLocale !== undefined &&
+      beforeLocale !== undefined &&
+      androidLocaleTagsCompatible(afterLocale, beforeLocale) &&
+      !androidLocaleTagsCompatible(afterLocale, locale);
+    const treeUnchanged =
+      afterTree !== undefined &&
+      beforeTree !== undefined &&
+      androidLocaleTagsCompatible(afterTree, beforeTree) &&
+      !androidLocaleTagsCompatible(afterTree, locale);
+    if (localeMatch === false || treeMatch === false || localeUnchanged || treeUnchanged) {
+      lastError = new Error(
+        `app locale ${locale} did not take` + (tag !== locale ? ` (tried ${tag})` : ""),
+      );
+      continue;
+    }
+    return;
+  }
+  throw lastError ?? new Error(`app locale ${locale} did not take`);
 }
 
 /** Install, update, or uninstall a known local Android APK. iOS and browser

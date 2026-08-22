@@ -140,6 +140,11 @@ test("screen and connection commands use granular App Map operations", () => {
   );
 });
 
+test("variable help says appLocale relaunches by default and stay is explicit", () => {
+  const help = renderHelp("variable");
+  assert.match(help, /appLocale Variables relaunch the app by default; stay is explicit/u);
+});
+
 test("authoring vocabulary exposes Variables, Tests, and saved Combines", () => {
   for (const command of [
     "variable list",
