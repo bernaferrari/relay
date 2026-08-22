@@ -308,6 +308,31 @@ extension RunnerTests {
     XCTAssertFalse(result.repaired)
     XCTAssertEqual(result.textEntryRoute, "synthesized-first-responder-replacement")
   }
+
+  func testCommonPrefixLengthWalksTheExpectedPrefixOnly() {
+    XCTAssertEqual(Self.commonPrefixLength("hardware-keyboard", "hardware-keyboard"), 17)
+    XCTAssertEqual(Self.commonPrefixLength("h", "hardware-keyboard"), 1)
+    XCTAssertEqual(Self.commonPrefixLength("ha", "hardware-keyboard"), 2)
+    XCTAssertEqual(Self.commonPrefixLength("", "hardware-keyboard"), 0)
+    // Divergence stops the count: the app transformed the input, and the walk must not
+    // resume matching after the first differing character.
+    XCTAssertEqual(Self.commonPrefixLength("hx", "hardware-keyboard"), 1)
+    XCTAssertEqual(Self.commonPrefixLength("hardware-keyboarx", "hardware-keyboard"), 15)
+  }
+
+  func testCommitCadenceLogLineEmitsLengthsOnlyNeverContents() {
+    // Sentinel secret: even when the polled field holds credential-shaped content, the only
+    // channel into runner.log is this line, and its inputs are lengths. The exact-equality
+    // assert fails if any content-bearing parameter or interpolation is ever added.
+    let secret = "hunter2-typed-credential"
+    let line = Self.commitCadenceLogLine(
+      elapsedMs: 42,
+      observedLen: secret.count,
+      expectedPrefixLen: 8
+    )
+    XCTAssertEqual(line, "[DEBUG-1874] poll t=42ms observedLen=24 expectedPrefixLen=8")
+    XCTAssertFalse(line.contains(secret))
+  }
 #endif
 #endif
 }
