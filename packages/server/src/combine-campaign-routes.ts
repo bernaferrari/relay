@@ -26,7 +26,7 @@ import {
 } from "@relay/protocol";
 import { admitTargetControl, assertTargetControl } from "./access-control.js";
 import { combineCellContractHttpError } from "./app-map-combine-runtime-contract.js";
-import { queuedAppMapTestTargetProfile } from "./app-map-run-routes.js";
+import { queuedAppMapTestTargetProfile } from "./app-map-test-target-profile.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { JobRouteContext } from "./job-routes.js";
 import {

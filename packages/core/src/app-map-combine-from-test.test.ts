@@ -265,6 +265,47 @@ test("missing cell bindings still fail when no default target is supplied", asyn
   );
 });
 
+test("equally ranked same-target profiles stay unbound even with a default target", async () => {
+  const profiles = [
+    { id: "pixel-en", name: "Pixel · English", targetId: "pixel-1", platform: "android" },
+    { id: "pixel-english", name: "Pixel · English", targetId: "pixel-1", platform: "android" },
+  ];
+  assert.equal(
+    compatibleDefaultTargetProfileId({
+      profiles,
+      target: { targetId: "pixel-1", platform: "android" },
+      values: { language: "en" },
+    }),
+    undefined,
+  );
+  const map = localeMap();
+  map.screenVariants["home-en"]!.targetProfile = {
+    ...map.screenVariants["home-en"]!.targetProfile,
+    id: "pixel-en",
+    name: "Pixel · English",
+  };
+  map.screenVariants["home-it"]!.targetProfile = {
+    ...map.screenVariants["home-it"]!.targetProfile,
+    id: "pixel-english",
+    name: "Pixel · English",
+    targetId: "pixel-1",
+    platform: "android",
+  };
+  map.combines.locales!.cellRuntimeProfiles = [];
+  map.combines.locales!.selected = { language: ["en"] };
+  await assert.rejects(
+    () =>
+      prepareAppMapCombineCells({
+        map,
+        combine: map.combines.locales!,
+        target: { targetId: "pixel-1", platform: "android" },
+      }),
+    (error: unknown) =>
+      error instanceof AppMapCombineCellContractError &&
+      error.issues.some((item) => item.code === "missing-binding"),
+  );
+});
+
 test("compatible profile ranking prefers the same device and matching value tokens", () => {
   const profiles = [
     { id: "pixel-en", name: "Pixel · English", targetId: "pixel-1", platform: "android" },

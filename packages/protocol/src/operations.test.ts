@@ -437,6 +437,22 @@ test("graph Test runs accept optional Combine worlds and a capture lens", () => 
       }),
     /pilot or all/u,
   );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        startup: { mode: "verified-checkpoint", screenId: "settings" },
+      }),
+    /cannot be combined with in/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        surfaceCapture: { forceRecaptureScreenIds: ["voice"] },
+      }),
+    /cannot be combined with in/u,
+  );
 });
 
 test("graph Test compilation can preview a verified checkpoint without changing the saved Test", () => {

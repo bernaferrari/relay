@@ -138,7 +138,7 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "job.locale-matrix.analysis":
     " The same findings without writing a pack, keyed to the frame of each case. Use this to read a matrix or combine batch while it is still running; export only when a person needs the folder.",
   "job.combine.start":
-    " Run a saved Variable × Test Combine. Default is one cell; pass executionMode all or selectedCellIds to run more. A default serial/target fills missing cell bindings. A single Test with --in worlds uses app-map.test.run. Never start locale-matrix; never invent a Variable for screenshots.",
+    " Run a saved Variable × Test Combine. Default is one cell. Pass executionMode all to run every selected world. cell or selectedCellIds names the worlds to queue and those named cells run. A default serial/target fills missing cell bindings. A single Test with in worlds uses app-map.test.run. Never start locale-matrix; never invent a Variable for screenshots.",
   "app-map.scroll-surface.origin.inspect":
     " Offline audit only: it reads the signed immutable first PNG/tree evidence and lifecycle; it never resolves, leases, or controls a target.",
   "app-map.scroll-surface.origin.review":

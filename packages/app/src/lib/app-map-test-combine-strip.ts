@@ -2,6 +2,7 @@ import {
   capturePolicyForLens,
   combineIdFor,
   combineLensName,
+  variableCanApply,
   type AppMapCapturePolicy,
   type AppMapScenarioTest,
   type AppMapVariable,
@@ -20,22 +21,7 @@ import {
 
 export type TestCombineLens = CombineLensName;
 
-/** A Variable can apply when it has a way to apply and undo. */
-export function variableCanApply(variable: Pick<AppMapVariable, "apply" | "options">): boolean {
-  if (variable.apply.kind === "toggle") return true;
-  if (!variable.options.length) return false;
-  if (variable.apply.kind === "appLocale") return true;
-  if (variable.apply.kind !== "list") return false;
-  const opens = Boolean(
-    variable.apply.inConnectionId?.trim() ||
-    variable.apply.entryPath?.length ||
-    variable.apply.pickerPath?.length,
-  );
-  const returns = Boolean(
-    variable.apply.outConnectionId?.trim() || variable.apply.exitPath?.length,
-  );
-  return opens && returns;
-}
+export { variableCanApply };
 
 export function applyableVariables(variables: readonly AppMapVariable[]): AppMapVariable[] {
   return variables.filter(variableCanApply);

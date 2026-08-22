@@ -375,6 +375,12 @@ test("gives run agents one revision-pinned graph Test operation", () => {
       lens: "screenshots",
     }),
   );
+  assert.throws(() =>
+    tool("app-map.test.run").inputSchema.parse({
+      ...worldsInput,
+      startup: { mode: "verified-checkpoint", screenId: "settings" },
+    }),
+  );
   assert.deepEqual(
     tool("app-map.test.compile").inputSchema.parse({
       appMapId: "checkout",
@@ -604,6 +610,8 @@ test("the locale profile exposes only the canonical Language Variable campaign",
 
 test("marks App Map Combine execution as a per-cell runtime profile contract", () => {
   assert.match(tool("job.combine.start").description, /one cell/u);
+  assert.match(tool("job.combine.start").description, /executionMode all/u);
+  assert.doesNotMatch(tool("job.combine.start").description, /selectedCellIds to run more/u);
   assert.match(tool("job.combine.start").description, /app-map\.test\.run/u);
 });
 

@@ -273,9 +273,7 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
         ...(body.strategy ? { strategy: body.strategy } : {}),
         ...(serial && device?.platform
           ? { target: { targetId: serial, platform: device.platform } }
-          : serial
-            ? { target: { targetId: serial, platform: "android" } }
-            : {}),
+          : {}),
       },
       { reviewedDocumentOrigins },
     );

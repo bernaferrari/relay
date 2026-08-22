@@ -6,6 +6,7 @@ import type {
   AppMapCombineCellState,
   AppMapCombinePreflightIssue,
   AppMapCompiledRuntimeTargetProfile,
+  AppMapCompiledTest,
   AppMapScenarioTest,
   ExecutionTargetRef,
 } from "@relay/protocol";
@@ -70,6 +71,7 @@ export type PreparedAppMapCombineCell = {
   /** Immutable location that this cell was explicitly bound to before queueing. */
   executionTarget: LocalExecutionTarget;
   selectedRuntimeTargetProfile: AppMapCompiledRuntimeTargetProfile;
+  plan: AppMapCompiledTest;
   staticInputs: CombineCellStaticInputs;
   wrapperInputs: CombineCellWrapperInputs;
   childIntent: ReturnType<typeof createAppMapTestExecutionIntent>;
@@ -496,6 +498,7 @@ async function prepareOneCell(input: {
     targetProfileId: selectedRuntimeTargetProfile.id,
     executionTarget: structuredClone(input.target),
     selectedRuntimeTargetProfile,
+    plan,
     staticInputs,
     wrapperInputs,
     childIntent,

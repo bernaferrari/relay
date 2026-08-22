@@ -4,6 +4,7 @@ import type {
   AppMapCombine,
   AppMapCombineCellRuntimeProfile,
   AppMapCombineCellTargetBinding,
+  AppMapCompiledTest,
   CombineCampaign,
 } from "@relay/protocol";
 import { executionTargetRefKey } from "@relay/protocol";
@@ -27,7 +28,7 @@ import {
   combineCellContractHttpError,
   requireSingleTestUseAppMapTestRun,
 } from "./app-map-combine-runtime-contract.js";
-import { queuedAppMapTestTargetProfile } from "./app-map-run-routes.js";
+import { queuedAppMapTestTargetProfile } from "./app-map-test-target-profile.js";
 import { HttpError, json, parseJsonBody } from "./http.js";
 import type { JobRouteRuntime } from "./job-routes.js";
 import {
@@ -79,6 +80,7 @@ export type CombineStartResult = {
   cells: unknown;
   jobs: ReturnType<typeof summarizeJob>[];
   selectedCellIds: string[];
+  plan: AppMapCompiledTest;
   admission?: {
     preflight: LocalCombineCampaignAdmission["preflight"];
     targetPreflights: LocalCombineCampaignAdmission["targetPreflights"];
@@ -170,7 +172,12 @@ export async function executeCombineStart(
     throw new HttpError(400, "platform is required so Relay can bind each cell before discovery.");
   }
   const scopedCombine = combine
-    ? combine
+    ? body.capture
+      ? {
+          ...combine,
+          captures: Object.fromEntries(combine.testIds.map((id) => [id, body.capture!])),
+        }
+      : combine
     : ephemeralCombineFromTest({
         mapId: map.id,
         organizationId: map.organizationId,
@@ -223,7 +230,8 @@ export async function executeCombineStart(
         throw new HttpError(409, `Unknown Combine cell ${body.cell.trim()}.`);
       }
     }
-    const isPilotRun = body.executionMode !== "all";
+    const namedCells = Boolean(body.cell?.trim()) || Boolean(body.selectedCellIds?.length);
+    const isPilotRun = body.executionMode !== "all" && !namedCells;
     const selectedToQueue = isPilotRun ? selectedCells.slice(0, 1) : selectedCells;
     if (!selectedToQueue.length) {
       throw new HttpError(400, "No selected Combine cells to queue");
@@ -412,6 +420,7 @@ export async function executeCombineStart(
       cells: prepared.cellStates,
       jobs: queued.jobs.map((job) => summarizeJob(job)),
       selectedCellIds: selectedToQueue.map((cell) => cell.cellId),
+      plan: selectedToQueue[0]!.plan,
       ...(acceptedAdmission
         ? {
             admission: {

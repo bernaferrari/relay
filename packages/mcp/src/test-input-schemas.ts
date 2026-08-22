@@ -67,6 +67,21 @@ export const appMapTestRunInputSchema = z
   .strict()
   .superRefine((input, context) => {
     if (input.in === undefined) return;
+    if (input.startup !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "startup cannot be combined with in; run the Test once or omit startup",
+        path: ["startup"],
+      });
+    }
+    if (input.surfaceCapture !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "surfaceCapture cannot be combined with in; run the Test once or omit surfaceCapture",
+        path: ["surfaceCapture"],
+      });
+    }
     const entries = Object.entries(input.in);
     if (!entries.length) {
       context.addIssue({

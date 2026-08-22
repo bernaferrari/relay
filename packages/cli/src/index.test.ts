@@ -580,6 +580,44 @@ test("test run --in and --lens send Combine worlds on the same Test operation", 
   assert.equal(parsed.input.executionMode, undefined);
 });
 
+test("combine run --lens maps onto the Combine capture policy", async () => {
+  const parsed = parseCli(
+    [
+      "combine",
+      "run",
+      "map",
+      "languages",
+      "--lens",
+      "smoke",
+      "--all",
+      "--input",
+      '{"serial":"phone"}',
+    ],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command !== "invoke") throw new Error("expected invoke");
+  assert.equal(parsed.operationId, "job.combine.start");
+  assert.deepEqual(parsed.input.capture, { mode: "failures-only" });
+  assert.equal(parsed.input.lens, undefined);
+  assert.equal(parsed.input.executionMode, "all");
+});
+
+test("test run --lens --cell --all without --in are usage errors", async () => {
+  assert.throws(
+    () => parseCli(["test", "run", "grok-ios", "settings-tour", "--lens", "visual"], {}),
+    /--lens requires --in/,
+  );
+  assert.throws(
+    () => parseCli(["test", "run", "grok-ios", "settings-tour", "--cell", "ja"], {}),
+    /--cell requires --in/,
+  );
+  assert.throws(
+    () => parseCli(["test", "run", "grok-ios", "settings-tour", "--all"], {}),
+    /--all requires --in/,
+  );
+});
+
 test("combine run --cell selects one world and --all is explicit", async () => {
   const cell = parseCli(
     ["combine", "run", "map", "languages", "--cell", "ja", "--input", '{"serial":"phone"}'],

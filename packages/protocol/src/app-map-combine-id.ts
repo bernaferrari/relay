@@ -1,7 +1,6 @@
-import type { AppMapCapturePolicy } from "./app-map.js";
+import type { AppMapCapturePolicy, AppMapVariable } from "./app-map.js";
 
-/** The `matrix-` prefix is a storage key, not chrome: saved Combines already
- * carry it, so renaming it would orphan them. */
+/** Do not rename; existing Combine ids use this prefix. */
 export function combineIdFor(variableIds: readonly string[], testIds: readonly string[]): string {
   const slug = [...variableIds, "to", ...testIds]
     .join("-")
@@ -43,4 +42,20 @@ export function combineLensName(
   if (mode === "every-screen") return "visual";
   if (mode === "failures-only") return "smoke";
   return mode;
+}
+
+export function variableCanApply(variable: Pick<AppMapVariable, "apply" | "options">): boolean {
+  if (variable.apply.kind === "toggle") return true;
+  if (!variable.options.length) return false;
+  if (variable.apply.kind === "appLocale") return true;
+  if (variable.apply.kind !== "list") return false;
+  const opens = Boolean(
+    variable.apply.inConnectionId?.trim() ||
+    variable.apply.entryPath?.length ||
+    variable.apply.pickerPath?.length,
+  );
+  const returns = Boolean(
+    variable.apply.outConnectionId?.trim() || variable.apply.exitPath?.length,
+  );
+  return opens && returns;
 }

@@ -1,4 +1,9 @@
-import type { ActorKind, ServerConnection } from "@relay/protocol";
+import {
+  capturePolicyForLens,
+  isCombineLensInput,
+  type ActorKind,
+  type ServerConnection,
+} from "@relay/protocol";
 import { readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { resolveCommand, resolveResourceCommand, type CommandBehavior } from "./commands.js";
@@ -205,6 +210,11 @@ function applyCombineRunFlags(
   const cell = tokens.values.get("--cell");
   const all = tokens.switches.has("--all");
   const usesWorlds = Object.keys(worlds).length > 0;
+  const inputIn =
+    input.in && typeof input.in === "object" && !Array.isArray(input.in)
+      ? (input.in as Record<string, unknown>)
+      : undefined;
+  const hasIn = usesWorlds || Boolean(inputIn && Object.keys(inputIn).length);
   if (lens && operationId !== "app-map.test.run" && operationId !== "job.combine.start") {
     throw new UsageError("--lens is only valid on test run or combine run");
   }
@@ -217,10 +227,23 @@ function applyCombineRunFlags(
   if (all && operationId !== "app-map.test.run" && operationId !== "job.combine.start") {
     throw new UsageError("--all is only valid on test run or combine run");
   }
+  if (operationId === "app-map.test.run" && !hasIn) {
+    if (lens) throw new UsageError("--lens requires --in variableId=value[,value]");
+    if (cell) throw new UsageError("--cell requires --in variableId=value[,value]");
+    if (all) throw new UsageError("--all requires --in variableId=value[,value]");
+  }
   if (!usesWorlds && !lens && !cell && !all) return input;
   const next = { ...input };
   if (usesWorlds) next.in = worlds;
-  if (lens) next.lens = lens;
+  if (lens) {
+    if (!isCombineLensInput(lens)) {
+      throw new UsageError(
+        "--lens must be visual, smoke, every-screen, failures-only, final-screen, or none",
+      );
+    }
+    if (operationId === "job.combine.start") next.capture = capturePolicyForLens(lens);
+    else next.lens = lens;
+  }
   if (cell) next.cell = cell;
   if (all) next.executionMode = "all";
   return next;

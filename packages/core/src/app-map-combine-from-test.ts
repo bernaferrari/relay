@@ -3,15 +3,15 @@ import {
   combineIdFor,
   compareUtf8Bytewise,
   sameAppMapCombineCellValues,
+  variableCanApply,
   type AppMap,
   type AppMapCapturePolicy,
   type AppMapCombine,
   type AppMapCombineCellRuntimeProfile,
-  type AppMapVariable,
   type CombineLensInput,
 } from "@relay/protocol";
 
-export { capturePolicyForLens, combineIdFor };
+export { capturePolicyForLens, combineIdFor, variableCanApply };
 
 export class AppMapCombineWorldError extends Error {
   constructor(
@@ -26,23 +26,6 @@ export class AppMapCombineWorldError extends Error {
     super(message);
     this.name = "AppMapCombineWorldError";
   }
-}
-
-/** A Variable can apply when it has a way to apply and undo. */
-export function variableCanApply(variable: Pick<AppMapVariable, "apply" | "options">): boolean {
-  if (variable.apply.kind === "toggle") return true;
-  if (!variable.options.length) return false;
-  if (variable.apply.kind === "appLocale") return true;
-  if (variable.apply.kind !== "list") return false;
-  const opens = Boolean(
-    variable.apply.inConnectionId?.trim() ||
-    variable.apply.entryPath?.length ||
-    variable.apply.pickerPath?.length,
-  );
-  const returns = Boolean(
-    variable.apply.outConnectionId?.trim() || variable.apply.exitPath?.length,
-  );
-  return opens && returns;
 }
 
 export function assertCombineWorlds(map: AppMap, worlds: Record<string, string[]>): void {
