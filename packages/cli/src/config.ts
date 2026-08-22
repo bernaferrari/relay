@@ -79,6 +79,7 @@ const valueFlags = new Set([
   "--input",
   "--input-file",
   "--file",
+  "--dir",
   "--mark",
   "--in",
   "--lens",
@@ -296,6 +297,19 @@ function applySnapshotPresentation(
   return { ...input, full: true };
 }
 
+function applySurveyDir(
+  operationId: string,
+  input: Record<string, unknown>,
+  tokens: ParsedTokens,
+): Record<string, unknown> {
+  const dir = tokens.values.get("--dir");
+  if (dir === undefined) return input;
+  if (operationId !== "target.scroll-survey.capture") {
+    throw new UsageError("--dir is only valid on device survey");
+  }
+  return { ...input, dir };
+}
+
 function screenshotOutput(
   tokens: ParsedTokens,
   output: OutputMode,
@@ -406,12 +420,16 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (rawInput === undefined && inputFile === undefined) {
       throw new UsageError("operation invoke requires --input <json> or --input-file <path>");
     }
-    const input = applySnapshotPresentation(
+    const input = applySurveyDir(
       operationId,
-      confirmedReviewedOriginInput(
+      applySnapshotPresentation(
         operationId,
-        readInput(tokens, env),
-        tokens.switches.has("--confirm"),
+        confirmedReviewedOriginInput(
+          operationId,
+          readInput(tokens, env),
+          tokens.switches.has("--confirm"),
+        ),
+        tokens,
       ),
       tokens,
     );
@@ -440,6 +458,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   const resource = resolveResourceCommand(tokens.positionals, input);
   if (resource) {
     screenshotOutput(tokens, output, {});
+    applySurveyDir("", {}, tokens);
     return {
       config: {
         connection,
@@ -462,14 +481,18 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (!matched) throw new UsageError("--mark requires <x>,<y> in the same units as a tap");
   }
   const resolved = resolveCommand(tokens.positionals, input);
-  resolved.input = applySnapshotPresentation(
+  resolved.input = applySurveyDir(
     resolved.operationId,
-    applyCombineRunFlags(
+    applySnapshotPresentation(
       resolved.operationId,
-      confirmedReviewedOriginInput(
+      applyCombineRunFlags(
         resolved.operationId,
-        resolved.input,
-        tokens.switches.has("--confirm"),
+        confirmedReviewedOriginInput(
+          resolved.operationId,
+          resolved.input,
+          tokens.switches.has("--confirm"),
+        ),
+        tokens,
       ),
       tokens,
     ),

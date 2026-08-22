@@ -373,6 +373,44 @@ test("resource commands and App Map aliases parse with explicit behavior", () =>
   assert.throws(() => parseCli(["activity", "follow", "--json"], {}), /stream; use --ndjson/);
 });
 
+test("device survey --dir maps onto the scroll-survey operation input", () => {
+  const parsed = parseCli(
+    ["device", "survey", "ipad-1", "--dir", "/tmp/survey", "--input", '{"maxScrolls":6}'],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command === "invoke") {
+    assert.equal(parsed.operationId, "target.scroll-survey.capture");
+    assert.deepEqual(parsed.input, { serial: "ipad-1", maxScrolls: 6, dir: "/tmp/survey" });
+  }
+
+  const invoked = parseCli(
+    [
+      "operation",
+      "invoke",
+      "target.scroll-survey.capture",
+      "--input",
+      '{"serial":"ipad-1"}',
+      "--dir",
+      "./frames",
+    ],
+    {},
+  );
+  assert.equal(invoked.command, "invoke");
+  if (invoked.command === "invoke") {
+    assert.deepEqual(invoked.input, { serial: "ipad-1", dir: "./frames" });
+  }
+
+  assert.throws(
+    () => parseCli(["device", "screenshot", "pixel-9", "--dir", "/tmp/survey"], {}),
+    /only valid on device survey/,
+  );
+  assert.throws(
+    () => parseCli(["activity", "list", "--dir", "/tmp/survey"], {}),
+    /only valid on device survey/,
+  );
+});
+
 test("screenshot output flags reject ambiguous or unrelated use", () => {
   const file = parseCli(["device", "screenshot", "pixel-9", "--file", "shot.png"], {});
   assert.equal(file.command, "invoke");

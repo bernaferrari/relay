@@ -21,6 +21,7 @@ import {
 } from "./invoke.js";
 import { CliOutput, type OutputStreams } from "./output.js";
 import { emitScreenshot, emitSnapshotFile } from "./screenshot.js";
+import { persistScrollSurvey } from "./survey-persist.js";
 import { runDbCommand } from "./db-commands.js";
 
 export type CliDependencies = {
@@ -286,6 +287,11 @@ export async function runCli(
           parsed.screenshotOutput.kind === "file"
         ) {
           await emitSnapshotFile(operationId, result, parsed.screenshotOutput, output);
+        } else if (
+          parsed.operationId === "target.scroll-survey.capture" &&
+          typeof parsed.input.dir === "string"
+        ) {
+          output.result(operationId, await persistScrollSurvey(parsed.input.dir, result));
         } else {
           output.result(operationId, summarizeResult(operationId, result, parsed.input));
         }
