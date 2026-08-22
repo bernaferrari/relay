@@ -52,6 +52,14 @@ test("disabled or hidden nodes write the exception", () => {
   assert.equal(presented.app, undefined);
 });
 
+test("a non-hittable node keeps hittable false on the review tree", () => {
+  const presented = presentAccessibilityNode(
+    { label: "Appearance", hittable: false, bundleId: "ai.x.grok" },
+    { app: "ai.x.grok", enabled: true, visible: true },
+  );
+  assert.equal(presented.hittable, false);
+});
+
 test("inferAccessibilityApp prefers treeApp then the dominant non-chrome bundle", () => {
   assert.equal(
     inferAccessibilityApp({ treeApp: "ai.x.grok" }, [{ bundleId: "com.android.systemui" }]),
@@ -73,7 +81,12 @@ test("presentPersistedSnapshot hoists defaults and keeps a full node list", () =
     capturedAt: 1,
     inspectable: true,
     nodes: [
-      { type: "android.widget.TextView", label: "Data Controls", bundleId: "ai.x.grok", enabled: true },
+      {
+        type: "android.widget.TextView",
+        label: "Data Controls",
+        bundleId: "ai.x.grok",
+        enabled: true,
+      },
       { type: "android.widget.TextView", label: "14:30", bundleId: "com.android.systemui" },
     ],
   });

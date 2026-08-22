@@ -19,6 +19,7 @@ import type {
 } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
 import { freezeRecipeGraph, readRecipe } from "./recipes.js";
+import { stayAppLocaleDestinationCheck } from "./stay-app-locale-destination.js";
 import { prepareRunMatrix, redactRunMatrix, type PreparedRunMatrix } from "./run-matrix.js";
 import { enqueueJob, type EnqueueJobInput, type TestJob } from "./session.js";
 import { currentOperationContext } from "./operation-context.js";
@@ -539,6 +540,10 @@ export function composeOptionRunRecipes(input: {
       if (relaunch && !appLaunched) appLaunched = true;
       steps.push({ kind: "device", action: "keyboard-dismiss" });
       steps.push({ kind: "sleep", ms: 250 });
+      if (!relaunch) {
+        const stayCheck = stayAppLocaleDestinationCheck(graph, input.body.id);
+        if (stayCheck) steps.push(stayCheck);
+      }
       continue;
     }
     if (set.apply.kind === "toggle") {

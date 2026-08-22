@@ -409,6 +409,13 @@ test("device survey --dir maps onto the scroll-survey operation input", () => {
     () => parseCli(["activity", "list", "--dir", "/tmp/survey"], {}),
     /only valid on device survey/,
   );
+
+  const forced = parseCli(["device", "survey", "ipad-1", "--dir", "/tmp/survey", "--force"], {});
+  assert.equal(forced.command, "invoke");
+  if (forced.command === "invoke") {
+    assert.equal(forced.surveyForce, true);
+    assert.deepEqual(forced.input, { serial: "ipad-1", dir: "/tmp/survey" });
+  }
 });
 
 test("screenshot output flags reject ambiguous or unrelated use", () => {
@@ -467,6 +474,8 @@ test("screenshot output flags reject ambiguous or unrelated use", () => {
     });
   }
   assert.throws(() => parseCli(["device", "screenshot", "pixel-9", "--full"], {}), /only valid/);
+  assert.throws(() => parseCli(["activity", "list", "--full"], {}), /only valid/);
+  assert.throws(() => parseCli(["variable", "list", "grok-android", "--full"], {}), /only valid/);
   assert.throws(() => parseCli(["device", "snapshot", "pixel-9", "--binary"], {}), /only valid/);
   const teach = parseCli(
     [

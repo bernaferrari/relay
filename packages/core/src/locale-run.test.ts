@@ -174,6 +174,47 @@ test("Android appLocale stay is explicit and skips the default relaunch", () => 
   );
 });
 
+test("Android appLocale stay re-proves the Test destination when it has identity", () => {
+  const destination: Recipe = {
+    ...body,
+    id: "data-controls",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "data-controls",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+        recovery: { strategy: "back" },
+      },
+    ],
+  };
+  const { root } = composeLocaleRunRecipes({
+    body: destination,
+    scope: {
+      locales: ["he"],
+      app: "com.example.app",
+      appLocale: "com.example.app",
+      relaunch: false,
+      restoreAtEnd: false,
+      screenshotEachLocale: false,
+    },
+    batchId: "app-locale-stay-proof",
+  });
+  assert.deepEqual(
+    root.steps.filter((step) => step.kind === "expect-screen"),
+    [
+      {
+        kind: "expect-screen",
+        id: "data-controls-stay",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+      },
+    ],
+  );
+});
+
 test("prepareLocaleRunMatrix zips locale fields and restores English at end", async () => {
   const prepared = await prepareLocaleRunMatrix(defaultGrokLocaleScope(["en", "pt-BR", "es"]), 42);
   // Profile adds restore-en at end; unknown "es" keeps tag as label fallback.

@@ -167,7 +167,9 @@ export async function setAndroidAppLocale(
       );
       continue;
     }
-    return;
+    lastError = new Error(
+      `app locale ${locale} could not be observed` + (tag !== locale ? ` (tried ${tag})` : ""),
+    );
   }
   throw lastError ?? new Error(`app locale ${locale} did not take`);
 }

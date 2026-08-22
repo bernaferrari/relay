@@ -39,6 +39,7 @@ export type ParsedCli =
       commandPath?: string;
       behavior?: CommandBehavior;
       screenshotOutput: ScreenshotOutput;
+      surveyForce?: boolean;
     }
   | {
       config: GlobalConfig;
@@ -310,6 +311,14 @@ function applySurveyDir(
   return { ...input, dir };
 }
 
+function surveyDirForce(operationId: string, tokens: ParsedTokens): boolean {
+  return (
+    operationId === "target.scroll-survey.capture" &&
+    tokens.values.has("--dir") &&
+    tokens.switches.has("--force")
+  );
+}
+
 function screenshotOutput(
   tokens: ParsedTokens,
   output: OutputMode,
@@ -318,17 +327,26 @@ function screenshotOutput(
   const file = tokens.values.get("--file");
   const binary = tokens.switches.has("--binary");
   const force = tokens.switches.has("--force");
+  const dir = tokens.values.get("--dir");
   if (!file && !binary && !force) return { kind: "default" };
   if (binary && !allowed.binary) {
     throw new UsageError("--binary is only valid on screenshot or --preview commands");
   }
-  if ((file || force) && !allowed.file) {
+  if (file && !allowed.file) {
     throw new UsageError(
       "--file and --force are only valid on screenshot, snapshot, or --preview commands",
     );
   }
   if (file && binary) throw new UsageError("Use only one of --file or --binary");
-  if (force && !file) throw new UsageError("--force requires --file <path>");
+  if (force && !file && !dir) {
+    if (!allowed.file) {
+      throw new UsageError(
+        "--file and --force are only valid on screenshot, snapshot, or --preview commands",
+      );
+    }
+    throw new UsageError("--force requires --file <path>");
+  }
+  if (force && !file && dir) return { kind: "default" };
   if (binary && output !== "human") {
     throw new UsageError("--binary cannot be combined with --json or --ndjson");
   }
@@ -451,6 +469,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
           operationId === "target.screenshot.capture" || operationId === "target.snapshot.capture",
         binary: operationId === "target.screenshot.capture",
       }),
+      ...(surveyDirForce(operationId, tokens) ? { surveyForce: true } : {}),
     };
   }
 
@@ -459,6 +478,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   if (resource) {
     screenshotOutput(tokens, output, {});
     applySurveyDir("", {}, tokens);
+    applySnapshotPresentation("", {}, tokens);
     return {
       config: {
         connection,
@@ -548,6 +568,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     ...(resolved.operationId === "target.interact" && preview
       ? { behavior: "screenshot" as const }
       : {}),
+    ...(surveyDirForce(resolved.operationId, tokens) ? { surveyForce: true } : {}),
   };
 }
 

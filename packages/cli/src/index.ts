@@ -291,7 +291,12 @@ export async function runCli(
           parsed.operationId === "target.scroll-survey.capture" &&
           typeof parsed.input.dir === "string"
         ) {
-          output.result(operationId, await persistScrollSurvey(parsed.input.dir, result));
+          output.result(
+            operationId,
+            await persistScrollSurvey(parsed.input.dir, result, {
+              force: parsed.surveyForce === true,
+            }),
+          );
         } else {
           output.result(operationId, summarizeResult(operationId, result, parsed.input));
         }

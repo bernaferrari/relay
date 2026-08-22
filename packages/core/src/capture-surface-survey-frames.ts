@@ -4,7 +4,16 @@ import { writeFrameTree } from "./run-frame-tree.js";
 import type { ScrollSurveyResult } from "./scrollable-survey-types.js";
 import type { TestJob } from "./session-contract.js";
 
-const UNUSABLE_SURVEY_REASONS = new Set(["inspection-unavailable", "missing-page-anchor"]);
+const UNUSABLE_SURVEY_REASONS = new Set([
+  "inspection-unavailable",
+  "missing-page-anchor",
+  "screen-changed",
+  "scroll-failed",
+  "restore-failed",
+  "start-viewport-unproven",
+  "seam-ambiguous",
+  "dimension-changed",
+]);
 
 export function captureSurfaceSurveyFailure(input: { screenTitle: string; reason: string }): Error {
   return new Error(

@@ -20,7 +20,7 @@ function frame(index: number, label: string) {
       capturedAt: index + 2,
       nodes: [
         { identifier: `row-${index}`, label, type: "cell", hittable: true },
-        { identifier: "extra", label: `full-tree-${index}`, type: "statictext" },
+        { identifier: "extra", label: `full-tree-${index}`, type: "statictext", hittable: false },
       ],
       interactive: [{ identifier: `row-${index}`, label }],
       inspectable: true,
@@ -43,7 +43,7 @@ function survey(frames = [frame(0, "Language"), frame(1, "Data Controls")]) {
   };
 }
 
-test("persist writes numbered png+json siblings and keeps the full snapshot tree", async () => {
+test("persist writes numbered png+json siblings and keeps the review tree", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-survey-persist-"));
   const dir = join(root, "frames");
   try {
@@ -64,13 +64,13 @@ test("persist writes numbered png+json siblings and keeps the full snapshot tree
       snapshot: { nodes: unknown[] };
     };
     const second = JSON.parse(await readFile(join(dir, "01.json"), "utf8")) as {
-      snapshot: { nodes: unknown[] };
+      snapshot: { defaults?: unknown; nodes: unknown[] };
     };
     assert.equal(first.snapshot.nodes.length, 2);
     assert.deepEqual(second.snapshot.defaults, { enabled: true, visible: true });
     assert.deepEqual(second.snapshot.nodes, [
       { type: "cell", label: "Data Controls", identifier: "row-1", hittable: true },
-      { type: "statictext", label: "full-tree-1", identifier: "extra" },
+      { type: "statictext", label: "full-tree-1", identifier: "extra", hittable: false },
     ]);
     assert.doesNotMatch(JSON.stringify(digest), /base64/u);
     assert.doesNotMatch(await readFile(join(dir, "00.json"), "utf8"), /base64/u);
@@ -93,6 +93,27 @@ test("persist fails clearly when the destination cannot be created or written", 
       message: /Could not create survey directory/u,
       exitCode: ExitCode.validation,
     });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("persist refuses a non-empty dest unless force is set", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-survey-persist-force-"));
+  try {
+    await persistScrollSurvey(root, survey([frame(0, "Language")]));
+    await assert.rejects(() => persistScrollSurvey(root, survey([frame(0, "Language")])), {
+      message: /not empty/u,
+      exitCode: ExitCode.conflict,
+    });
+    const digest = await persistScrollSurvey(root, survey([frame(0, "Appearance")]), {
+      force: true,
+    });
+    assert.equal(digest.frameCount, 1);
+    const written = JSON.parse(await readFile(join(root, "00.json"), "utf8")) as {
+      snapshot: { nodes: Array<{ label?: string; hittable?: boolean }> };
+    };
+    assert.equal(written.snapshot.nodes[0]?.label, "Appearance");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

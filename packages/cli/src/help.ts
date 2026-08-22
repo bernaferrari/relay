@@ -33,9 +33,9 @@ const globalOptions = `Global options:
 
 Screenshot and snapshot output:
   --file <path>                    Save screenshot PNG or snapshot JSON to a file
-  --full                           On snapshot: return the full accessibility tree
+  --full                           On snapshot stdout: print the raw accessibility tree
   --binary                         Write raw PNG bytes to stdout
-  --force                          Overwrite an existing --file target
+  --force                          Overwrite an existing --file target or a non-empty survey --dir
   --mark <x>,<y>                   Draw a tap preview ring on a screenshot (no tap)
   --preview                        On interact: show selection overlay, do not tap`;
 

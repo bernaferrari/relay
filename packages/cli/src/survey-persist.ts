@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { presentPersistedSnapshot } from "@relay/protocol";
 import { CliError, ExitCode } from "./errors.js";
@@ -43,10 +43,11 @@ function framePng(screenshot: Record<string, unknown>, index: number): Buffer {
 }
 
 /** Write each original viewport as sibling 00.png / 00.json files. The JSON
- * keeps the unsummarized snapshot tree; stdout should only print the digest. */
+ * is a review tree (defaults + overrides); stdout stays a digest. */
 export async function persistScrollSurvey(
   dir: string,
   result: unknown,
+  options: { force?: boolean } = {},
 ): Promise<SurveyPersistDigest> {
   const requested = dir.trim();
   if (!requested) fail("Survey --dir must be a non-empty folder path");
@@ -60,6 +61,28 @@ export async function persistScrollSurvey(
   }
   if (!Array.isArray(body.frames) || body.frames.length === 0) {
     fail("Malformed scroll survey response: expected frames");
+  }
+
+  try {
+    const existing = await readdir(root);
+    if (existing.length > 0 && !options.force) {
+      throw new CliError(
+        `Survey directory is not empty: ${root}. Use --force to overwrite it.`,
+        ExitCode.conflict,
+      );
+    }
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    const missing =
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "ENOENT";
+    if (!missing) {
+      fail(
+        `Could not create survey directory ${root}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   try {

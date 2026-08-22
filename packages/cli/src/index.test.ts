@@ -297,7 +297,9 @@ test("device snapshot --file writes the full snapshot JSON", async () => {
     assert.equal(written.serial, "pixel-9");
     assert.equal(written.defaults?.enabled, true);
     assert.ok(Array.isArray(written.nodes));
-    assert.equal((written.nodes?.[0] as { label?: string }).label, "Ask");
+    const firstNode = written.nodes?.[0] as { label?: string; hittable?: boolean } | undefined;
+    assert.equal(firstNode?.label, "Ask");
+    assert.equal(firstNode?.hittable, false);
     const terminal = JSON.parse(io.stdout());
     assert.equal(terminal.result.file, file);
     assert.equal(terminal.result.mime, "application/json");
@@ -499,6 +501,28 @@ test("device survey --dir persists frames and prints a digest without base64", a
       snapshot: { nodes: unknown[] };
     };
     assert.deepEqual(persisted.snapshot.nodes, nodes);
+
+    const conflict = capture();
+    const conflictCode = await runCli(["device", "survey", "pixel-9", "--dir", dir, "--json"], {
+      streams: conflict.streams,
+      createClient: () => ({ invoke: async () => survey, events: async () => {} }),
+      registerSignalHandlers: false,
+      env: {},
+    });
+    assert.equal(conflictCode, ExitCode.conflict);
+    assert.match(JSON.parse(conflict.stdout()).error.message, /not empty/);
+
+    const forced = capture();
+    const forcedCode = await runCli(
+      ["device", "survey", "pixel-9", "--dir", dir, "--force", "--json"],
+      {
+        streams: forced.streams,
+        createClient: () => ({ invoke: async () => survey, events: async () => {} }),
+        registerSignalHandlers: false,
+        env: {},
+      },
+    );
+    assert.equal(forcedCode, ExitCode.success);
 
     const blocked = join(root, "blocked");
     await writeFile(blocked, "not a directory");

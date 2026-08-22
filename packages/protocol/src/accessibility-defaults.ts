@@ -1,4 +1,4 @@
-/** Fields every node inherits unless it writes an override — Figma-style. */
+/** Fields every node inherits unless it writes an override. */
 export const accessibilityNodeDefaults = {
   enabled: true,
   visible: true,
@@ -60,7 +60,8 @@ export function presentAccessibilityNode(
   if (typeof source.value === "string" && source.value && source.value !== source.label) {
     out.value = source.value;
   }
-  if (typeof source.identifier === "string" && source.identifier) out.identifier = source.identifier;
+  if (typeof source.identifier === "string" && source.identifier)
+    out.identifier = source.identifier;
   const app = nodeApp(source);
   if (app && app !== defaults.app) out.app = app;
   if (source.rect) out.rect = source.rect;
@@ -68,6 +69,7 @@ export function presentAccessibilityNode(
   if (source.visibleToUser === false && defaults.visible) out.visible = false;
   if (source.visible === false && defaults.visible) out.visible = false;
   if (source.hittable === true) out.hittable = true;
+  if (source.hittable === false) out.hittable = false;
   if (source.hiddenContentBelow === true) out.hiddenContentBelow = true;
   if (typeof source.depth === "number") out.depth = source.depth;
   return out;

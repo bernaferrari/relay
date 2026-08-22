@@ -46,14 +46,14 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       { visual: true },
       {
         summary:
-          "Read the current screen. Default JSON is a digest; --full or --file returns the accessibility tree",
+          "Read the current screen. Default JSON is a digest; --full prints the raw tree; --file writes a review tree",
         argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
         inputHelp: [
           {
             name: "full",
             type: "boolean",
             description:
-              "Return the full snapshot tree (nodes) instead of the digest; also set by --full or --file",
+              "Return the raw snapshot tree (nodes) on stdout instead of the digest; set by --full",
           },
         ],
         examples: [
@@ -70,14 +70,14 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       { visual: true },
       {
         summary:
-          "Read the current screen. Default JSON is a digest; --full or --file returns the accessibility tree",
+          "Read the current screen. Default JSON is a digest; --full prints the raw tree; --file writes a review tree",
         argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
         inputHelp: [
           {
             name: "full",
             type: "boolean",
             description:
-              "Return the full snapshot tree (nodes) instead of the digest; also set by --full or --file",
+              "Return the raw snapshot tree (nodes) on stdout instead of the digest; set by --full",
           },
         ],
         examples: [
@@ -120,7 +120,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
           name: "dir",
           type: "string",
           description:
-            "Folder for sibling 00.png / 00.json frames (full unsummarized tree). Prefer --dir over inline --json.",
+            "Folder for sibling 00.png / 00.json frames (review tree: defaults + overrides). Prefer --dir over inline --json. Refuses a non-empty dest unless --force.",
         },
       ],
       examples: [

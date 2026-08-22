@@ -131,7 +131,21 @@ test("a requested full-surface survey that cannot run is a visible failure", () 
     () => assertCaptureSurfaceSurveyUsable(survey(1, "inspection-unavailable"), step),
     /inspection-unavailable/u,
   );
+  for (const reason of [
+    "screen-changed",
+    "scroll-failed",
+    "restore-failed",
+    "start-viewport-unproven",
+    "seam-ambiguous",
+    "dimension-changed",
+  ] as const) {
+    assert.throws(
+      () => assertCaptureSurfaceSurveyUsable(survey(1, reason), step),
+      new RegExp(reason, "u"),
+    );
+  }
   assert.doesNotThrow(() => assertCaptureSurfaceSurveyUsable(survey(1, "end-of-content"), step));
+  assert.doesNotThrow(() => assertCaptureSurfaceSurveyUsable(survey(1, "limit-reached"), step));
 });
 
 test("Combine visual capture-surface surveys after arrival and fails closed", async () => {

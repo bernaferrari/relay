@@ -260,6 +260,51 @@ test("an appLocale Variable stays on screen only when relaunch is explicitly fal
   );
 });
 
+test("a stay appLocale Variable re-proves the Test destination when it has identity", () => {
+  const destination: Recipe = {
+    ...body,
+    id: "data-controls",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "data-controls",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+        recovery: { strategy: "back" },
+      },
+    ],
+  };
+  const { root } = composeOptionRunRecipes({
+    body: destination,
+    request: {
+      sets: [
+        {
+          id: "language",
+          name: "Language",
+          kind: "language",
+          apply: { kind: "appLocale", app: "ai.x.grok", relaunch: false },
+          options: [{ id: "he" }],
+        },
+      ],
+      screenshotEach: false,
+    },
+    batchId: "app-locale-stay-proof",
+  });
+  assert.deepEqual(
+    root.steps.filter((step) => step.kind === "expect-screen"),
+    [
+      {
+        kind: "expect-screen",
+        id: "data-controls-stay",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+      },
+    ],
+  );
+});
+
 test("a mapped suite cold-launches once then warms every generated setup", () => {
   const setup: Recipe = {
     ...body,

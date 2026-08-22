@@ -79,6 +79,50 @@ test("set-locale accepts an alias observation without another write", async () =
   assert.deepEqual(sets, ["he"]);
 });
 
+test("set-locale retries remaining aliases when the write cannot be observed", async () => {
+  const sets: string[] = [];
+  await runWithTargetContext({ kind: "device", platform: "android", serial: "pixel" }, () =>
+    setAndroidAppLocale("com.example", "he", {
+      command: async (args) => {
+        const { action, locale } = localeArgs(args);
+        if (action === "get") {
+          return {
+            stdout: sets.at(-1) === "iw" ? "Locales for app for user 0 are [iw]" : "[]",
+          };
+        }
+        if (action === "set") {
+          sets.push(locale ?? "");
+          return { stdout: "" };
+        }
+        throw new Error(`unexpected adb ${args.join(" ")}`);
+      },
+    }),
+  );
+  assert.deepEqual(sets, ["he", "iw"]);
+});
+
+test("set-locale fails closed when neither locale nor tree can be observed", async () => {
+  const sets: string[] = [];
+  await assert.rejects(
+    () =>
+      runWithTargetContext({ kind: "device", platform: "android", serial: "pixel" }, () =>
+        setAndroidAppLocale("com.example", "he", {
+          command: async (args) => {
+            const { action, locale } = localeArgs(args);
+            if (action === "get") return { stdout: "[]" };
+            if (action === "set") {
+              sets.push(locale ?? "");
+              return { stdout: "" };
+            }
+            throw new Error(`unexpected adb ${args.join(" ")}`);
+          },
+        }),
+      ),
+    /could not be observed/,
+  );
+  assert.deepEqual(sets, ["he", "iw"]);
+});
+
 test("set-locale fails closed when no candidate takes", async () => {
   await assert.rejects(
     () =>

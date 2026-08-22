@@ -211,6 +211,7 @@ test("device survey exposes the canonical scroll-survey operation and bounded in
   assert.equal(help?.inputHelp?.[0]?.name, "maxScrolls");
   assert.match(help?.inputHelp?.[0]?.type ?? "", /1-12/u);
   assert.equal(help?.inputHelp?.[1]?.name, "dir");
+  assert.match(help?.inputHelp?.[1]?.description ?? "", /review tree/u);
   assert.match(help?.note ?? "", /exclusive lease/u);
   assert.match(help?.note ?? "", /--dir/u);
   assert.match(help?.note ?? "", /megabytes/u);
@@ -231,13 +232,21 @@ test("iPad observation and recovery help exposes the proof-first lifecycle", () 
 
   for (const help of [observe, deviceSnapshot]) {
     assert.match(help?.summary ?? "", /digest/i);
-    assert.match(help?.summary ?? "", /--full|--file/);
+    assert.match(help?.summary ?? "", /--full prints the raw tree/);
+    assert.match(help?.summary ?? "", /--file writes a review tree/);
     assert.match(help?.note ?? "", /digest/i);
     assert.match(help?.note ?? "", /--full/);
     assert.match(help?.note ?? "", /--file/);
     assert.match(help?.note ?? "", /Read-only/i);
     assert.match(help?.note ?? "", /pixels/i);
-    assert.ok(help?.inputHelp?.some((field) => field.name === "full"));
+    assert.ok(
+      help?.inputHelp?.some(
+        (field) => field.name === "full" && /set by --full/.test(field.description),
+      ),
+    );
+    assert.ok(
+      help?.inputHelp?.every((field) => field.name !== "full" || !/--file/.test(field.description)),
+    );
   }
   assert.match(recover?.summary ?? "", /only when necessary/i);
   assert.match(recover?.note ?? "", /first proves/i);
