@@ -1,8 +1,6 @@
 import { AppError } from '@agent-device/kernel/errors';
 import { emitDiagnostic } from '../utils/diagnostics.ts';
 import { cleanupAppleXctracePerfCapture } from '../platforms/apple/core/perf-xctrace.ts';
-import { cleanupAndroidNativePerfSession } from '../platforms/android/perf.ts';
-import { stopAndroidSnapshotHelperSessionForDevice } from '../platforms/android/snapshot-helper.ts';
 import { cleanupRetainedMaterializedPathsForSession } from './materialized-path-registry.ts';
 import { stopSessionAudioProbe } from './audio-probe.ts';
 import type { SessionState } from './types.ts';
@@ -10,6 +8,12 @@ import type { SessionStore } from './session-store.ts';
 import { forceCleanupSessionAppLog } from './app-log-session-resource.ts';
 import { appLogResourceStore } from './app-log-resource-store.ts';
 import { finishLiveScreenRecording } from './screen-recording-session-resource.ts';
+
+// Android cleanup helpers stay behind dynamic imports: every teardown caller pays this module's
+// graph, while the helpers only matter when the corresponding capture actually ran on the session.
+// Each import sits inside its sole caller, next to the existing guard, matching register-builtins'
+// interactor lazy pattern; the seam is pinned by
+// src/daemon/__tests__/session-teardown-import-closure.test.ts.
 
 export { stopSessionAudioProbe } from './audio-probe.ts';
 
@@ -37,12 +41,15 @@ export async function stopSessionApplePerfCapture(session: SessionState): Promis
 export async function stopSessionAndroidNativePerfCapture(session: SessionState): Promise<void> {
   const active = session.nativePerf?.android;
   if (!active) return;
+  const { cleanupAndroidNativePerfSession } = await import('../platforms/android/perf.ts');
   await cleanupAndroidNativePerfSession(session.device, active);
   session.nativePerf = { ...(session.nativePerf ?? {}), android: undefined };
 }
 
 export async function stopSessionAndroidSnapshotHelper(session: SessionState): Promise<void> {
   if (session.device.platform !== 'android') return;
+  const { stopAndroidSnapshotHelperSessionForDevice } =
+    await import('../platforms/android/snapshot-helper.ts');
   await stopAndroidSnapshotHelperSessionForDevice(session.device);
 }
 
