@@ -992,3 +992,99 @@ test("campaign resume queues one pending selected cell and leaves a passed pilot
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a named cell persists only that selection; an unnamed pilot keeps the full grid", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-combine-named-cell-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      async listDevices() {
+        return [
+          {
+            id: "pixel-1",
+            serial: "pixel-1",
+            name: "Pixel",
+            kind: "Physical device",
+            booted: true,
+            platform: "android" as const,
+          },
+        ];
+      },
+      async assertTargetControl(scope, targetId) {
+        return assertTargetControl(scope, targetId);
+      },
+    },
+  });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await saveLocaleCombine(client);
+    const named = await client.invoke("job.combine.start", {
+      appMapId: "store",
+      combineId: "locales",
+      serial: "pixel-1",
+      platform: "android",
+      selected: { language: ["en", "it"] },
+      cell: "it",
+    });
+    const namedCampaign = named.campaign as CombineCampaign;
+    const namedSelected = namedCampaign.execution?.selectedCellIds ?? [];
+    assert.equal(namedSelected.length, 1);
+    assert.equal(
+      namedCampaign.cases.find((item) => item.cellId === namedSelected[0])?.values.language,
+      "it",
+    );
+    assert.equal(
+      namedCampaign.cases.some((item) => item.phase === "pilot"),
+      false,
+    );
+    const namedLive = await client.invoke("job.combine.campaign.get", {
+      batchId: namedCampaign.id,
+    });
+    assert.equal((namedLive.campaign as CombineCampaign).status, "running");
+    for (const job of (named.jobs as Array<{ id?: string }>) ?? []) {
+      if (job.id) {
+        cancelJob(job.id);
+        await waitForJobCompletion(job.id);
+      }
+    }
+    const resumedNamed = await client.invoke("job.combine.campaign.resume", {
+      batchId: namedCampaign.id,
+      reviewed: true,
+    });
+    assert.equal(((resumedNamed.jobs as unknown[]) ?? []).length, 0);
+
+    const pilot = await client.invoke("job.combine.start", {
+      appMapId: "store",
+      combineId: "locales",
+      serial: "pixel-1",
+      platform: "android",
+      selected: { language: ["en", "it"] },
+      executionMode: "pilot",
+    });
+    const pilotCampaign = pilot.campaign as CombineCampaign;
+    assert.equal(pilotCampaign.execution?.selectedCellIds?.length, 2);
+    assert.equal(pilotCampaign.cases.filter((item) => item.phase === "pilot").length, 1);
+    assert.equal(pilotCampaign.status, "pilot-running");
+    for (const job of (pilot.jobs as Array<{ id?: string }>) ?? []) {
+      if (job.id) {
+        cancelJob(job.id);
+        await waitForJobCompletion(job.id);
+      }
+    }
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -375,7 +375,9 @@ export async function executeCombineStart(
         ],
         execution: {
           selected: body.selected ?? combine.selected,
-          selectedCellIds: prepared.selectedCellIds,
+          selectedCellIds: isPilotRun
+            ? prepared.selectedCellIds
+            : selectedToQueue.map((cell) => cell.cellId),
           strategy: body.strategy ?? combine.strategy,
           seed: prepared.matrix.seed,
           title: body.title?.trim() || combine.name,
