@@ -100,6 +100,9 @@ function assertVariableApply(apply: VariableApply, label: string): void {
   }
   if (apply.kind === "appLocale") {
     requiredText(apply.app, `${label}.app`);
+    if (apply.relaunch !== undefined && typeof apply.relaunch !== "boolean") {
+      appMapFail("invalid-map", `${label}.relaunch must be a boolean`);
+    }
     return;
   }
   if (apply.kind === "toggle") {

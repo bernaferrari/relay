@@ -155,6 +155,25 @@ test("Android appLocale scopes need no picker path and set locale before the Tes
   );
 });
 
+test("Android appLocale stay is explicit and skips the default relaunch", () => {
+  const { root } = composeLocaleRunRecipes({
+    body,
+    scope: {
+      locales: ["he"],
+      app: "com.example.app",
+      appLocale: "com.example.app",
+      relaunch: false,
+      restoreAtEnd: false,
+      screenshotEachLocale: false,
+    },
+    batchId: "app-locale-stay",
+  });
+  assert.deepEqual(
+    root.steps.filter((step) => step.kind === "app"),
+    [{ kind: "app", action: "set-locale", app: "com.example.app", locale: "{{locale}}" }],
+  );
+});
+
 test("prepareLocaleRunMatrix zips locale fields and restores English at end", async () => {
   const prepared = await prepareLocaleRunMatrix(defaultGrokLocaleScope(["en", "pt-BR", "es"]), 42);
   // Profile adds restore-en at end; unknown "es" keeps tag as label fallback.

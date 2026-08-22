@@ -107,6 +107,116 @@ test("wrapper helpers for a-b and a_b cannot overwrite each other", () => {
   assert.equal(composed.graph[child.id]?.steps.length, 0);
 });
 
+test("appLocale Combine cells relaunch by default and stay only when asked", () => {
+  const destination: Recipe = {
+    id: "child-root",
+    title: "Child",
+    source: "custom",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "data-controls",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+        recovery: { strategy: "back" },
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const relaunch = composeAppMapCombineCellWrapper({
+    cellId: "c" + "c".repeat(32),
+    childRootId: destination.id,
+    childGraph: { [destination.id]: destination },
+    sets: [
+      {
+        id: "language",
+        name: "Language",
+        kind: "language",
+        apply: { kind: "appLocale", app: "com.example" },
+        options: [{ id: "he" }],
+        restoreId: "en",
+      },
+    ],
+    at: 1,
+  });
+  assert.deepEqual(
+    relaunch.root.steps.filter((step) => step.kind === "app"),
+    [
+      {
+        kind: "app",
+        action: "set-locale",
+        app: "com.example",
+        locale: `{{${relaunch.prefixes.language}}}`,
+      },
+      { kind: "app", action: "open", app: "com.example", relaunch: true },
+      { kind: "app", action: "set-locale", app: "com.example", locale: "en" },
+      { kind: "app", action: "open", app: "com.example", relaunch: true },
+    ],
+  );
+
+  const stay = composeAppMapCombineCellWrapper({
+    cellId: "c" + "d".repeat(32),
+    childRootId: destination.id,
+    childGraph: { [destination.id]: destination },
+    sets: [
+      {
+        id: "language",
+        name: "Language",
+        kind: "language",
+        apply: { kind: "appLocale", app: "com.example", relaunch: false },
+        options: [{ id: "he" }],
+        restoreId: "en",
+      },
+    ],
+    at: 1,
+  });
+  assert.deepEqual(
+    stay.root.steps.filter((step) => step.kind === "app" || step.kind === "expect-screen"),
+    [
+      {
+        kind: "app",
+        action: "set-locale",
+        app: "com.example",
+        locale: `{{${stay.prefixes.language}}}`,
+      },
+      {
+        kind: "expect-screen",
+        id: "data-controls-stay",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+      },
+      { kind: "app", action: "set-locale", app: "com.example", locale: "en" },
+    ],
+  );
+
+  const noIdentity: Recipe = {
+    ...destination,
+    steps: [{ kind: "screenshot", caption: "body" }],
+  };
+  const stayWithoutIdentity = composeAppMapCombineCellWrapper({
+    cellId: "c" + "e".repeat(32),
+    childRootId: noIdentity.id,
+    childGraph: { [noIdentity.id]: noIdentity },
+    sets: [
+      {
+        id: "language",
+        name: "Language",
+        kind: "language",
+        apply: { kind: "appLocale", app: "com.example", relaunch: false },
+        options: [{ id: "he" }],
+      },
+    ],
+    at: 1,
+  });
+  assert.equal(
+    stayWithoutIdentity.root.steps.some((step) => step.kind === "expect-screen"),
+    false,
+  );
+});
+
 test("wrapper reachable child graph must match the frozen child recipes exactly", () => {
   const childRoot: Recipe = {
     id: "child-root",

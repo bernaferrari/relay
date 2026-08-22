@@ -233,6 +233,33 @@ test("an Android app-language Variable uses stable locale ids instead of picker 
   ]);
 });
 
+test("an appLocale Variable stays on screen only when relaunch is explicitly false", () => {
+  const { root } = composeOptionRunRecipes({
+    body,
+    request: {
+      sets: [
+        {
+          id: "language",
+          name: "Language",
+          kind: "language",
+          apply: { kind: "appLocale", app: "ai.x.grok", relaunch: false },
+          options: [{ id: "he" }],
+          restoreId: "en",
+        },
+      ],
+      screenshotEach: false,
+    },
+    batchId: "app-locale-stay",
+  });
+  assert.deepEqual(
+    root.steps.filter((step) => step.kind === "app"),
+    [
+      { kind: "app", action: "set-locale", app: "ai.x.grok", locale: "{{language}}" },
+      { kind: "app", action: "set-locale", app: "ai.x.grok", locale: "en" },
+    ],
+  );
+});
+
 test("a mapped suite cold-launches once then warms every generated setup", () => {
   const setup: Recipe = {
     ...body,

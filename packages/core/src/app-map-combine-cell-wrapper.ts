@@ -1,6 +1,12 @@
 import type { AppMap, RecipeStep, VariableRow } from "@relay/protocol";
 import { appMapCombineCellVariablePrefix } from "./app-map-combine-cell.js";
-import { assertOptionSandwichReady, navStepsToRecipe, type OptionRunSet } from "./option-run.js";
+import {
+  appLocaleRecipeSteps,
+  appLocaleShouldRelaunch,
+  assertOptionSandwichReady,
+  navStepsToRecipe,
+  type OptionRunSet,
+} from "./option-run.js";
 import type { Recipe } from "./recipes.js";
 
 const NONE = "-";
@@ -86,6 +92,40 @@ function targetsForOptionRow(row: VariableRow): import("@relay/protocol").StepTa
   if (label) candidates.push({ label });
   if (text) candidates.push({ text });
   return candidates;
+}
+
+function firstChildExpectScreen(
+  graph: Record<string, Recipe>,
+  rootId: string,
+  seen = new Set<string>(),
+): Extract<RecipeStep, { kind: "expect-screen" }> | undefined {
+  if (seen.has(rootId)) return undefined;
+  seen.add(rootId);
+  const recipe = graph[rootId];
+  if (!recipe) return undefined;
+  for (const step of recipe.steps) {
+    if (step.kind === "expect-screen") return structuredClone(step);
+    if (step.kind === "module" && step.recipeId) {
+      const nested = firstChildExpectScreen(graph, step.recipeId, seen);
+      if (nested) return nested;
+    }
+  }
+  return undefined;
+}
+
+/** Stay applies must re-prove the Test destination. Missing identity is not
+ * a new screen — the runner fails closed instead of inventing one. */
+export function stayAppLocaleDestinationCheck(
+  graph: Record<string, Recipe>,
+  childRootId: string,
+): RecipeStep | undefined {
+  const destination = firstChildExpectScreen(graph, childRootId);
+  if (!destination) return undefined;
+  const { recovery: _recovery, repairCheckpoint: _repair, ...check } = destination;
+  return {
+    ...check,
+    id: destination.id ? `${destination.id}-stay` : "stay-destination",
+  };
 }
 
 function restoreListSteps(set: OptionRunSet): RecipeStep[] {
@@ -191,19 +231,21 @@ export function composeAppMapCombineCellWrapper(input: {
     }
     Object.assign(graph, helpers);
     if (set.apply.kind === "appLocale") {
-      steps.push({
-        kind: "app",
-        action: "set-locale",
-        app: set.apply.app,
-        locale: `{{${prefix}}}`,
-      });
-      if (!appLaunched) {
-        steps.push({ kind: "app", action: "open", app: set.apply.app, relaunch: true });
-        steps.push({ kind: "sleep", ms: 1200 });
-        appLaunched = true;
-      }
+      const relaunch = appLocaleShouldRelaunch(set.apply);
+      steps.push(
+        ...appLocaleRecipeSteps({
+          app: set.apply.app,
+          locale: `{{${prefix}}}`,
+          relaunch: relaunch && !appLaunched,
+        }),
+      );
+      if (relaunch && !appLaunched) appLaunched = true;
       steps.push({ kind: "device", action: "keyboard-dismiss" });
       steps.push({ kind: "sleep", ms: 250 });
+      if (!relaunch) {
+        const stayCheck = stayAppLocaleDestinationCheck(graph, input.childRootId);
+        if (stayCheck) steps.push(stayCheck);
+      }
       continue;
     }
     if (set.apply.kind === "toggle") {
@@ -220,14 +262,13 @@ export function composeAppMapCombineCellWrapper(input: {
   for (const set of [...input.sets].reverse()) {
     if (!set.restoreId?.trim()) continue;
     if (set.apply.kind === "appLocale") {
-      steps.push({
-        kind: "app",
-        action: "set-locale",
-        app: set.apply.app,
-        locale: set.restoreId.trim(),
-      });
-      steps.push({ kind: "app", action: "open", app: set.apply.app, relaunch: true });
-      steps.push({ kind: "sleep", ms: 1200 });
+      steps.push(
+        ...appLocaleRecipeSteps({
+          app: set.apply.app,
+          locale: set.restoreId.trim(),
+          relaunch: appLocaleShouldRelaunch(set.apply),
+        }),
+      );
       continue;
     }
     if (set.apply.kind === "list") {
