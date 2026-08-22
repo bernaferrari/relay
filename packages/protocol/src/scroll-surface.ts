@@ -127,7 +127,11 @@ export type SemanticRevealPlan = ScrollSurfaceSemanticIndex & {
 
 /** Stable graph-Test binding. A viewport is the conservative default; a full
  * surface pins an immutable baseline capture while retaining the logical id
- * used by later recaptures and repair proposals. */
+ * used by later recaptures and repair proposals.
+ *
+ * Bind a destination with `captureMode: "full-surface"`, `surfaceId`, and
+ * `baselineCaptureId`. Combine lens `visual` / `every-screen` then surveys
+ * after arrival instead of one viewport. */
 export type ScrollSurfaceTestBinding = {
   screenId: string;
   variantId: string;

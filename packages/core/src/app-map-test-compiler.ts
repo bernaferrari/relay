@@ -221,7 +221,14 @@ export function compileAppMapScenarioTest(
       (surface) =>
         surface.id === binding.surfaceId && surface.captureId === binding.baselineCaptureId,
     );
-    if (!baseline) return undefined;
+    if (!baseline) {
+      fail(
+        "missing-reference",
+        test,
+        test.steps[0]!,
+        `Test ${test.id} binds ${screenId} as full-surface but ${binding.surfaceId}/${binding.baselineCaptureId} is not on variant ${binding.variantId}`,
+      );
+    }
     const baselineCompletedAndRestored =
       baseline.status === "completed" &&
       baseline.reason === "end-of-content" &&

@@ -21,6 +21,7 @@ import {
   observeScreenIdentity,
   observeVisualScreenFingerprint,
 } from "./screen-identity.js";
+import { writeFrameTree } from "./run-frame-tree.js";
 import { attachScreenshotPayload, captureScreenshot } from "./workspace-capture.js";
 import {
   awaitStableDestinationEvidence,
@@ -70,6 +71,9 @@ export async function captureRecipeScreenshot(
     ...(readable ? { nodes: readable } : {}),
     ...(screenshot.base64 ? { base64: screenshot.base64 } : {}),
   });
+  if (ctx.job && screenshot.framePath && readable?.length) {
+    await writeFrameTree(ctx.job, screenshot.framePath, readable);
+  }
 }
 
 async function frameNodes(

@@ -29,6 +29,7 @@ import {
   type CombineCellWrapperInputs,
 } from "./app-map-combine-cell-wrapper.js";
 import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
+import { compileOptionsForVisualSurface } from "./combine-visual-surface.js";
 import { createAppMapTestExecutionIntent } from "./app-map-test-execution-intent.js";
 import { loadFrozenRawAccessibilityEvidence } from "./frozen-raw-accessibility.js";
 import { compileAppMapTest } from "./map-work.js";
@@ -417,13 +418,14 @@ async function prepareOneCell(input: {
     targetProfileId: input.binding.targetProfileId,
     target: { targetId: input.target.targetId, platform: input.target.platform },
   });
+  const effectiveTest = {
+    ...test,
+    ...(input.combine.captures?.[test.id] ? { capture: input.combine.captures[test.id] } : {}),
+  };
   const compiled = compileAppMapTest(
     input.map,
-    {
-      ...test,
-      ...(input.combine.captures?.[test.id] ? { capture: input.combine.captures[test.id] } : {}),
-    },
-    input.compileOptions,
+    effectiveTest,
+    compileOptionsForVisualSurface(effectiveTest, input.compileOptions),
   );
   const plan = {
     ...compiled.plan,

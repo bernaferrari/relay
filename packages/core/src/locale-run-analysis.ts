@@ -13,6 +13,8 @@ import type {
   LocaleRunPackFrame,
 } from "@relay/protocol";
 import { analyzeCorpus } from "./corpus-report.js";
+import { corpusControls } from "./corpus-screen-analysis.js";
+import type { SnapshotNode } from "./device.js";
 import type { FrameObservation } from "./frame-observation.js";
 
 export type LocaleRunPackCapture = {
@@ -25,6 +27,8 @@ export type LocaleRunPackCapture = {
   /** Digest of the PNG: two identical rasters mean the locale never applied. */
   sha256?: string;
   observation?: FrameObservation;
+  /** Raw snapshot nodes. Frame-observation control lists are not a tree. */
+  nodes?: SnapshotNode[];
 };
 
 export type LocaleRunPackAnalysis = {
@@ -46,7 +50,11 @@ function screenFor(capture: LocaleRunPackCapture, compareText: boolean): CorpusS
   // Combine cases differ by state, not by language. Comparing their copy would
   // report every intended difference as a translation defect, so those packs
   // keep the frames and lose the labels: presence is all that is comparable.
-  const controls = compareText ? (observation?.controls ?? []) : [];
+  const controls = compareText
+    ? capture.nodes?.length
+      ? corpusControls(capture.nodes)
+      : (observation?.controls ?? [])
+    : [];
   return {
     id: `${capture.jobId}:${canonicalKey}`,
     canonicalKey,
@@ -124,7 +132,7 @@ export function analyzeLocaleRunPack(input: {
       path: capture.packPath,
       canonicalKey,
       ...(caption ? { caption } : {}),
-      inspected: Boolean(capture.observation?.controls.length),
+      inspected: Boolean(capture.nodes?.length || capture.observation?.controls.length),
     });
   }
 
