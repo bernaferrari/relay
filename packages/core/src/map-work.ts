@@ -9,6 +9,7 @@ import { compileAppMapScenarioTest } from "./app-map-test-compiler.js";
 import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
 export { AppMapTestCompileError } from "./app-map-test-compiler.js";
 export type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
+import { compileOptionsForVisualSurface } from "./combine-visual-surface.js";
 import type { Recipe } from "./recipes.js";
 
 /** Compile the only supported Test contract: graph-native scenario intent. */
@@ -33,13 +34,14 @@ export function compileAppMapCombine(
   for (const testId of combine.testIds) {
     const test = map.tests?.[testId];
     if (!test) throw new Error(`Test ${testId} is missing`);
+    const effectiveTest = {
+      ...test,
+      ...(combine.captures?.[testId] ? { capture: combine.captures[testId] } : {}),
+    };
     const compiled = compileAppMapTest(
       map,
-      {
-        ...test,
-        ...(combine.captures?.[testId] ? { capture: combine.captures[testId] } : {}),
-      },
-      options,
+      effectiveTest,
+      compileOptionsForVisualSurface(effectiveTest, options),
     );
     Object.assign(graph, compiled.graph);
     modules.push({

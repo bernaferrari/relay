@@ -144,11 +144,11 @@ test("an exported locale pack carries findings beside the frames that produced t
     assert.deepEqual(pack.manifest.analysisCoverage, { frames: 2, inspectedFrames: 2 });
     assert.equal(
       pack.manifest.byCanonicalKey[finding!.canonicalKey]?.["pt-BR"],
-      "pt-br/001-001.png",
+      "pt-br/screenshots/001-001.png",
     );
     assert.deepEqual(pack.manifest.cases[1]?.captures, [
       {
-        path: "pt-br/001-001.png",
+        path: "pt-br/screenshots/001-001.png",
         canonicalKey: "frame-001",
         caption: "settings",
         inspected: true,
@@ -164,6 +164,9 @@ test("an exported locale pack carries findings beside the frames that produced t
     assert.match(html, /1 finding \(0 critical\) against en/);
     const readme = await readFile(join(pack.rootDir, "README.md"), "utf8");
     assert.match(readme, /Frames read: 2 of 2/);
+    await assert.rejects(
+      readFile(join(pack.rootDir, "en", "accessibility", "001-001.json"), "utf8"),
+    );
   } finally {
     if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
@@ -288,6 +291,50 @@ test("a combine over a language variable is still compared as translations", () 
   const report = analyzeLocaleRunJobs("batch-combine-language", jobs);
 
   assert.equal(report.analysis.findings.at(0)?.code, "POSSIBLE_UNTRANSLATED_TEXT");
+});
+
+test("export copies a raw tree next to each PNG and does not treat control lists as the tree", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-locale-tree-"));
+  const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = directory;
+  try {
+    const runDir = join(directory, "runs", "en");
+    await mkdir(join(runDir, "frames"), { recursive: true });
+    await writeFile(join(runDir, "frames", "001.png"), "raster-en");
+    await writeFile(
+      join(runDir, "frames", "001.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: "relay.frame-tree",
+        nodes: [
+          {
+            identifier: "delete-account",
+            label: "Delete Account",
+            type: "Button",
+            rect: { x: 0, y: 400, width: 140, height: 44 },
+          },
+        ],
+      }),
+    );
+    const job = localeCase({
+      locale: "en",
+      runDir,
+      controls: [row("settings.language", "App Language")],
+    });
+    const pack = await exportLocaleRunPack({ batchId: "batch-tree", jobs: [job] });
+    const png = join(pack.rootDir, "en", "screenshots", "001-001.png");
+    const tree = JSON.parse(
+      await readFile(join(pack.rootDir, "en", "accessibility", "001-001.json"), "utf8"),
+    ) as { nodes: Array<{ identifier?: string }> };
+    assert.equal(await readFile(png, "utf8"), "raster-en");
+    assert.equal(tree.nodes[0]?.identifier, "delete-account");
+    assert.equal(pack.manifest.cases[0]?.frames[0], "en/screenshots/001-001.png");
+    assert.equal(pack.manifest.cases[0]?.captures?.[0]?.inspected, true);
+  } finally {
+    if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("a combine pack keeps its frames without reading state changes as translations", async () => {

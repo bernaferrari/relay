@@ -15,6 +15,7 @@ import type {
   LocaleRunPackManifest,
 } from "@relay/protocol";
 import { frameObservations } from "./frame-observation.js";
+import { readFrameTreeNodes } from "./run-frame-tree.js";
 import {
   analyzeLocaleRunPack,
   localeRunCanonicalKey,
@@ -407,7 +408,9 @@ export async function exportLocaleRunPack(input: {
   for (const job of input.jobs) {
     const locale = artifactLocale(job);
     const localeDir = join(rootDir, slugCorpusPathSegment(locale));
-    await mkdir(localeDir, { recursive: true });
+    const screenshotDir = join(localeDir, "screenshots");
+    const accessibilityDir = join(localeDir, "accessibility");
+    await mkdir(screenshotDir, { recursive: true });
     const frames: string[] = [];
     const evidence = evidenceFrameNames(job);
     const observations = frameObservations(job);
@@ -436,10 +439,20 @@ export async function exportLocaleRunPack(input: {
         for (const [index, name] of entries.entries()) {
           const destName = `${String(index + 1).padStart(3, "0")}-${name}`;
           const bytes = await readFile(join(frameDir, name));
-          await writeFile(join(localeDir, destName), bytes);
-          const packPath = `${slugCorpusPathSegment(locale)}/${destName}`;
+          await writeFile(join(screenshotDir, destName), bytes);
+          const packPath = `${slugCorpusPathSegment(locale)}/screenshots/${destName}`;
           frames.push(packPath);
           const observation = observations.get(name);
+          const nodes = await readFrameTreeNodes(job.runDir, `frames/${name}`);
+          if (nodes?.length) {
+            await mkdir(accessibilityDir, { recursive: true });
+            const treeName = destName.replace(/\.png$/iu, ".json");
+            await writeFile(
+              join(accessibilityDir, treeName),
+              `${JSON.stringify({ schemaVersion: 1, kind: "relay.frame-tree", nodes }, null, 2)}\n`,
+              "utf8",
+            );
+          }
           captures.push({
             locale,
             jobId: job.id,
@@ -447,6 +460,7 @@ export async function exportLocaleRunPack(input: {
             packPath,
             sha256: createHash("sha256").update(bytes).digest("hex"),
             ...(observation ? { observation } : {}),
+            ...(nodes?.length ? { nodes } : {}),
           });
         }
       } catch {
@@ -504,7 +518,7 @@ export async function exportLocaleRunPack(input: {
       `Findings: ${analysis.findings.length} (${analysis.critical} critical) against ${analysis.baselineLocale}`,
       `Frames read: ${coverage.inspectedFrames} of ${coverage.frames} carried a UI tree`,
       "",
-      "Open index.html for a portable visual report. Each folder is one matrix case; frames are ordered screenshots from that run.",
+      "Open index.html for a portable visual report. Each folder is one matrix case: screenshots/ are the rasters, accessibility/ holds the raw tree beside each PNG when one was captured.",
       "manifest.json carries the same findings under `analysis`, and `byCanonicalKey` maps each one to the frame it came from.",
       "",
     ].join("\n"),

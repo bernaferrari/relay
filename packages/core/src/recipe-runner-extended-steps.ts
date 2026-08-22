@@ -2,13 +2,21 @@ import type { Device } from "./device.js";
 import { replaceText, scrollDown, scrollUp, sleep, snapshot, typeText } from "./device.js";
 import { cooperativeCheckpoint } from "./control.js";
 import { now } from "./events.js";
-import { captureScrollableSurveyForTarget } from "./scrollable-survey.js";
+import {
+  captureScrollableSurveyForTarget,
+  type ScrollSurveyTargetInput,
+} from "./scrollable-survey.js";
 import {
   captureSurfaceBaselineDisposition,
   loadFrozenDocumentOriginForCaptureSurface,
 } from "./capture-surface-frozen-origin.js";
+import {
+  assertCaptureSurfaceSurveyUsable,
+  persistCaptureSurfaceSurveyFrames,
+} from "./capture-surface-survey-frames.js";
 import { persistLogicalScrollSurface } from "./logical-scroll-surface.js";
 import { listPersistedRuns } from "./runs.js";
+import type { ScrollSurveyResult } from "./scrollable-survey-types.js";
 import {
   findReusableSurfaceComparison,
   surfaceComparisonNeedsRecapture,
@@ -364,9 +372,15 @@ export function frozenCaptureSurfaceTargetProfile(
   return profile;
 }
 
+export type CaptureSurfaceStepDependencies = {
+  captureSurvey?: (input: ScrollSurveyTargetInput) => Promise<ScrollSurveyResult>;
+  persistSurface?: typeof persistLogicalScrollSurface;
+};
+
 export async function runCaptureSurfaceStep(
   step: Extract<RecipeStep, { kind: "capture-surface" }>,
   ctx: RecipeStepContext,
+  dependencies: CaptureSurfaceStepDependencies = {},
 ): Promise<void> {
   const job = ctx.job;
   if (!job) throw new Error("capture-surface requires a frozen device target profile");
@@ -482,7 +496,7 @@ export async function runCaptureSurfaceStep(
           },
         }
       : undefined;
-  const survey = await captureScrollableSurveyForTarget({
+  const survey = await (dependencies.captureSurvey ?? captureScrollableSurveyForTarget)({
     serial,
     ...(step.maxScrolls === undefined ? {} : { maxScrolls: step.maxScrolls }),
     ...(initialCapture ? { initialCapture } : {}),
@@ -492,7 +506,9 @@ export async function runCaptureSurfaceStep(
         }
       : {}),
   });
-  const surface = await persistLogicalScrollSurface({
+  await persistCaptureSurfaceSurveyFrames(job, step, survey);
+  assertCaptureSurfaceSurveyUsable(survey, step);
+  const surface = await (dependencies.persistSurface ?? persistLogicalScrollSurface)({
     survey,
     targetProfile,
     surfaceId: step.surfaceId,
