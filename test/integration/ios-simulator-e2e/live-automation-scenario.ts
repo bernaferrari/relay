@@ -237,7 +237,7 @@ async function assertClearStateLaunchUrl(context: LiveContext): Promise<void> {
   await assertElementText(context, 'id="automation-event-payload"', '{"source":"deep-link"}');
 }
 
-async function acceptDeepLinkConfirmationIfPresent(context: LiveContext): Promise<void> {
+export async function acceptDeepLinkConfirmationIfPresent(context: LiveContext): Promise<void> {
   const destination = await runStep(
     context,
     'wait for deep-link destination before inspecting system UI',
@@ -246,7 +246,10 @@ async function acceptDeepLinkConfirmationIfPresent(context: LiveContext): Promis
   );
   if (destination.status === 0) return;
 
-  const alert = await runStep(context, 'inspect delayed deep-link system alert', ['alert', 'get']);
+  const alert = await runStep(context, 'inspect delayed deep-link system alert', ['alert', 'get'], {
+    allowFailure: true,
+  });
+  if (alert.status !== 0) return;
   const alertInfo = alert.json?.data;
   assert.match(String(alertInfo?.message), /^Open in\b/, JSON.stringify(alert.json));
   assert.ok(
