@@ -36,6 +36,14 @@ extension RunnerTests {
     let code: String
     let message: String
     let hint: String
+    let qualityReasonCode: String?
+
+    init(code: String, message: String, hint: String, qualityReasonCode: String? = nil) {
+      self.code = code
+      self.message = message
+      self.hint = hint
+      self.qualityReasonCode = qualityReasonCode
+    }
   }
 
   // MARK: - Snapshot Entry
