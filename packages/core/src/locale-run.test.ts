@@ -155,6 +155,94 @@ test("Android appLocale scopes need no picker path and set locale before the Tes
   );
 });
 
+test("Android appLocale stays when a module-rooted Test names a destination", () => {
+  const leaf: Recipe = {
+    ...body,
+    id: "data-controls-leaf",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "data-controls",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+        recovery: { strategy: "back" },
+      },
+    ],
+  };
+  const compiled: Recipe = {
+    ...body,
+    id: "data-controls-test",
+    steps: [{ kind: "module", recipeId: leaf.id }],
+  };
+  const { root } = composeLocaleRunRecipes({
+    body: compiled,
+    bodyGraph: { [compiled.id]: compiled, [leaf.id]: leaf },
+    scope: {
+      locales: ["he"],
+      app: "com.example.app",
+      appLocale: "com.example.app",
+      restoreAtEnd: false,
+      screenshotEachLocale: false,
+    },
+    batchId: "app-locale-stay-default",
+  });
+  assert.equal(
+    root.steps.some((step) => step.kind === "app" && step.action === "open"),
+    false,
+  );
+  assert.deepEqual(
+    root.steps.filter((step) => step.kind === "expect-screen"),
+    [
+      {
+        kind: "expect-screen",
+        id: "data-controls-stay",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+      },
+    ],
+  );
+});
+
+test("Android appLocale relaunches when apply.relaunch is explicit true", () => {
+  const destination: Recipe = {
+    ...body,
+    id: "data-controls",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "data-controls",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+        recovery: { strategy: "back" },
+      },
+    ],
+  };
+  const { root } = composeLocaleRunRecipes({
+    body: destination,
+    scope: {
+      locales: ["he"],
+      app: "com.example.app",
+      appLocale: "com.example.app",
+      relaunch: true,
+      restoreAtEnd: false,
+      screenshotEachLocale: false,
+    },
+    batchId: "app-locale-relaunch-explicit",
+  });
+  assert.ok(
+    root.steps.some(
+      (step) => step.kind === "app" && step.action === "open" && step.relaunch === true,
+    ),
+  );
+  assert.equal(
+    root.steps.some((step) => step.kind === "expect-screen"),
+    false,
+  );
+});
+
 test("Android appLocale stay is explicit and skips the default relaunch", () => {
   const { root } = composeLocaleRunRecipes({
     body,

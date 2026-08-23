@@ -20,6 +20,19 @@ function firstChildExpectScreen(
   return undefined;
 }
 
+/** Stay when the Test names a destination. Relaunch only if stay cannot be
+ * proved — we cannot stay on a screen we cannot name. */
+export function appLocaleShouldRelaunch(
+  apply: { relaunch?: boolean },
+  graph?: Record<string, Recipe>,
+  childRootId?: string,
+): boolean {
+  if (apply.relaunch === true) return true;
+  if (apply.relaunch === false) return false;
+  if (!graph || !childRootId) return true;
+  return firstChildExpectScreen(graph, childRootId) === undefined;
+}
+
 /** Stay applies must re-prove the Test destination. Missing identity is not
  * a new screen — the runner fails closed instead of inventing one. */
 export function stayAppLocaleDestinationCheck(

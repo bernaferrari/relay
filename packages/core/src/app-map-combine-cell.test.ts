@@ -107,10 +107,10 @@ test("wrapper helpers for a-b and a_b cannot overwrite each other", () => {
   assert.equal(composed.graph[child.id]?.steps.length, 0);
 });
 
-test("appLocale Combine cells relaunch by default and stay only when asked", () => {
-  const destination: Recipe = {
-    id: "child-root",
-    title: "Child",
+function destinationLeaf(id = "data-controls-leaf"): Recipe {
+  return {
+    id,
+    title: "Leaf",
     source: "custom",
     steps: [
       {
@@ -125,10 +125,72 @@ test("appLocale Combine cells relaunch by default and stay only when asked", () 
     createdAt: 1,
     updatedAt: 1,
   };
-  const relaunch = composeAppMapCombineCellWrapper({
+}
+
+test("appLocale Combine stays when a module-rooted Test names a destination", () => {
+  const leaf = destinationLeaf();
+  const compiled: Recipe = {
+    id: "child-root",
+    title: "Child",
+    source: "custom",
+    steps: [{ kind: "module", recipeId: leaf.id }],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const stay = composeAppMapCombineCellWrapper({
     cellId: "c" + "c".repeat(32),
-    childRootId: destination.id,
-    childGraph: { [destination.id]: destination },
+    childRootId: compiled.id,
+    childGraph: { [compiled.id]: compiled, [leaf.id]: leaf },
+    sets: [
+      {
+        id: "language",
+        name: "Language",
+        kind: "language",
+        apply: { kind: "appLocale", app: "com.example" },
+        options: [{ id: "he" }],
+        restoreId: "en",
+      },
+    ],
+    at: 1,
+  });
+  assert.equal(
+    stay.root.steps.some((step) => step.kind === "app" && step.action === "open"),
+    false,
+  );
+  assert.deepEqual(
+    stay.root.steps.filter((step) => step.kind === "app" || step.kind === "expect-screen"),
+    [
+      {
+        kind: "app",
+        action: "set-locale",
+        app: "com.example",
+        locale: `{{${stay.prefixes.language}}}`,
+      },
+      {
+        kind: "expect-screen",
+        id: "data-controls-stay",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+      },
+      { kind: "app", action: "set-locale", app: "com.example", locale: "en" },
+    ],
+  );
+});
+
+test("appLocale Combine relaunches when the child Test has no destination identity", () => {
+  const noIdentity: Recipe = {
+    id: "child-root",
+    title: "Child",
+    source: "custom",
+    steps: [{ kind: "screenshot", caption: "body" }],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const relaunch = composeAppMapCombineCellWrapper({
+    cellId: "c" + "d".repeat(32),
+    childRootId: noIdentity.id,
+    childGraph: { [noIdentity.id]: noIdentity },
     sets: [
       {
         id: "language",
@@ -155,9 +217,69 @@ test("appLocale Combine cells relaunch by default and stay only when asked", () 
       { kind: "app", action: "open", app: "com.example", relaunch: true },
     ],
   );
+  assert.equal(
+    relaunch.root.steps.some((step) => step.kind === "expect-screen"),
+    false,
+  );
+});
 
+test("appLocale Combine relaunches when apply.relaunch is explicit true", () => {
+  const leaf = destinationLeaf();
+  const compiled: Recipe = {
+    id: "child-root",
+    title: "Child",
+    source: "custom",
+    steps: [{ kind: "module", recipeId: leaf.id }],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const relaunch = composeAppMapCombineCellWrapper({
+    cellId: "c" + "e".repeat(32),
+    childRootId: compiled.id,
+    childGraph: { [compiled.id]: compiled, [leaf.id]: leaf },
+    sets: [
+      {
+        id: "language",
+        name: "Language",
+        kind: "language",
+        apply: { kind: "appLocale", app: "com.example", relaunch: true },
+        options: [{ id: "he" }],
+        restoreId: "en",
+      },
+    ],
+    at: 1,
+  });
+  assert.ok(
+    relaunch.root.steps.some(
+      (step) => step.kind === "app" && step.action === "open" && step.relaunch === true,
+    ),
+  );
+  assert.equal(
+    relaunch.root.steps.some((step) => step.kind === "expect-screen"),
+    false,
+  );
+});
+
+test("explicit stay fail-closes without inventing a destination identity", () => {
+  const destination: Recipe = {
+    id: "child-root",
+    title: "Child",
+    source: "custom",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "data-controls",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+        recovery: { strategy: "back" },
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
   const stay = composeAppMapCombineCellWrapper({
-    cellId: "c" + "d".repeat(32),
+    cellId: "c" + "f".repeat(32),
     childRootId: destination.id,
     childGraph: { [destination.id]: destination },
     sets: [
@@ -197,7 +319,7 @@ test("appLocale Combine cells relaunch by default and stay only when asked", () 
     steps: [{ kind: "screenshot", caption: "body" }],
   };
   const stayWithoutIdentity = composeAppMapCombineCellWrapper({
-    cellId: "c" + "e".repeat(32),
+    cellId: "c" + "a".repeat(32),
     childRootId: noIdentity.id,
     childGraph: { [noIdentity.id]: noIdentity },
     sets: [
@@ -213,6 +335,10 @@ test("appLocale Combine cells relaunch by default and stay only when asked", () 
   });
   assert.equal(
     stayWithoutIdentity.root.steps.some((step) => step.kind === "expect-screen"),
+    false,
+  );
+  assert.equal(
+    stayWithoutIdentity.root.steps.some((step) => step.kind === "app" && step.action === "open"),
     false,
   );
 });

@@ -19,7 +19,10 @@ import type {
 } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
 import { freezeRecipeGraph, readRecipe } from "./recipes.js";
-import { stayAppLocaleDestinationCheck } from "./stay-app-locale-destination.js";
+import {
+  appLocaleShouldRelaunch,
+  stayAppLocaleDestinationCheck,
+} from "./stay-app-locale-destination.js";
 import { prepareRunMatrix, redactRunMatrix, type PreparedRunMatrix } from "./run-matrix.js";
 import { enqueueJob, type EnqueueJobInput, type TestJob } from "./session.js";
 import { currentOperationContext } from "./operation-context.js";
@@ -28,6 +31,8 @@ import {
   localeNavFromConnectionActions,
   localeNavFromRecipeSteps,
 } from "./locale-run.js";
+
+export { appLocaleShouldRelaunch };
 
 const NONE = "-";
 // One language sweep commonly exceeds 32 locales. Keep a hard safety bound,
@@ -64,11 +69,6 @@ export type ResolvedVariableApply = {
   entry: VariableNavStep[];
   exit: VariableNavStep[];
 };
-
-/** App-locale Variables relaunch by default. Stay is explicit. */
-export function appLocaleShouldRelaunch(apply: { relaunch?: boolean }): boolean {
-  return apply.relaunch !== false;
-}
 
 export function appLocaleRecipeSteps(input: {
   app: string;
@@ -529,7 +529,7 @@ export function composeOptionRunRecipes(input: {
 
   for (const set of input.request.sets) {
     if (set.apply.kind === "appLocale") {
-      const relaunch = appLocaleShouldRelaunch(set.apply);
+      const relaunch = appLocaleShouldRelaunch(set.apply, graph, input.body.id);
       steps.push(
         ...appLocaleRecipeSteps({
           app: set.apply.app,
@@ -592,7 +592,7 @@ export function composeOptionRunRecipes(input: {
           ...appLocaleRecipeSteps({
             app: set.apply.app,
             locale: set.restoreId.trim(),
-            relaunch: appLocaleShouldRelaunch(set.apply),
+            relaunch: appLocaleShouldRelaunch(set.apply, graph, input.body.id),
           }),
         );
         continue;

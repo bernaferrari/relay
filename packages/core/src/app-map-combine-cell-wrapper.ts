@@ -200,7 +200,7 @@ export function composeAppMapCombineCellWrapper(input: {
     }
     Object.assign(graph, helpers);
     if (set.apply.kind === "appLocale") {
-      const relaunch = appLocaleShouldRelaunch(set.apply);
+      const relaunch = appLocaleShouldRelaunch(set.apply, graph, input.childRootId);
       steps.push(
         ...appLocaleRecipeSteps({
           app: set.apply.app,
@@ -235,7 +235,7 @@ export function composeAppMapCombineCellWrapper(input: {
         ...appLocaleRecipeSteps({
           app: set.apply.app,
           locale: set.restoreId.trim(),
-          relaunch: appLocaleShouldRelaunch(set.apply),
+          relaunch: appLocaleShouldRelaunch(set.apply, graph, input.childRootId),
         }),
       );
       continue;

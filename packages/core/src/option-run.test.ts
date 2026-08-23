@@ -233,6 +233,104 @@ test("an Android app-language Variable uses stable locale ids instead of picker 
   ]);
 });
 
+test("an appLocale Variable stays when a module-rooted Test names a destination", () => {
+  const leaf: Recipe = {
+    ...body,
+    id: "data-controls-leaf",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "data-controls",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+        recovery: { strategy: "back" },
+      },
+    ],
+  };
+  const compiled: Recipe = {
+    ...body,
+    id: "data-controls-test",
+    steps: [{ kind: "module", recipeId: leaf.id }],
+  };
+  const { root } = composeOptionRunRecipes({
+    body: compiled,
+    bodyGraph: { [compiled.id]: compiled, [leaf.id]: leaf },
+    request: {
+      sets: [
+        {
+          id: "language",
+          name: "Language",
+          kind: "language",
+          apply: { kind: "appLocale", app: "ai.x.grok" },
+          options: [{ id: "he" }],
+          restoreId: "en",
+        },
+      ],
+      screenshotEach: false,
+    },
+    batchId: "app-locale-stay-default",
+  });
+  assert.equal(
+    root.steps.some((step) => step.kind === "app" && step.action === "open"),
+    false,
+  );
+  assert.deepEqual(
+    root.steps.filter((step) => step.kind === "expect-screen"),
+    [
+      {
+        kind: "expect-screen",
+        id: "data-controls-stay",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+      },
+    ],
+  );
+});
+
+test("an appLocale Variable relaunches when apply.relaunch is explicit true", () => {
+  const destination: Recipe = {
+    ...body,
+    id: "data-controls",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "data-controls",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "a".repeat(64),
+        recovery: { strategy: "back" },
+      },
+    ],
+  };
+  const { root } = composeOptionRunRecipes({
+    body: destination,
+    request: {
+      sets: [
+        {
+          id: "language",
+          name: "Language",
+          kind: "language",
+          apply: { kind: "appLocale", app: "ai.x.grok", relaunch: true },
+          options: [{ id: "he" }],
+        },
+      ],
+      screenshotEach: false,
+    },
+    batchId: "app-locale-relaunch-explicit",
+  });
+  assert.ok(
+    root.steps.some(
+      (step) => step.kind === "app" && step.action === "open" && step.relaunch === true,
+    ),
+  );
+  assert.equal(
+    root.steps.some((step) => step.kind === "expect-screen"),
+    false,
+  );
+});
+
 test("an appLocale Variable stays on screen only when relaunch is explicitly false", () => {
   const { root } = composeOptionRunRecipes({
     body,

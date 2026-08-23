@@ -111,6 +111,18 @@ test("an explicit stay appLocale Variable does not relaunch the locale matrix", 
   assert.equal(result.scope.relaunch, false);
 });
 
+test("an explicit relaunch appLocale Variable keeps relaunch true on the locale matrix", () => {
+  const result = localeMatrixScopeFromAppMapLanguageVariable({
+    map: map(
+      variable({
+        apply: { kind: "appLocale", app: "com.example.app", relaunch: true },
+      }),
+    ),
+    variableId: "language",
+  });
+  assert.equal(result.scope.relaunch, true);
+});
+
 test("a list Variable without a saved return is not a compatible Test locale source", () => {
   assert.throws(
     () =>

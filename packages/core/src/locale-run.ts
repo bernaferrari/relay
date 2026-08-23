@@ -14,7 +14,10 @@ import { resolveLanguageOptions, listLanguageProfilesSync } from "./language-pro
 import { extractSwitcherOptionsFromNodes } from "./switcher-option-rows.js";
 import type { Recipe } from "./recipes.js";
 import { prepareRunMatrix, type PreparedRunMatrix } from "./run-matrix.js";
-import { stayAppLocaleDestinationCheck } from "./stay-app-locale-destination.js";
+import {
+  appLocaleShouldRelaunch,
+  stayAppLocaleDestinationCheck,
+} from "./stay-app-locale-destination.js";
 
 /** Matrix list values cannot be blank (zip strips empties). */
 const NONE = "-";
@@ -508,7 +511,7 @@ export function composeLocaleRunRecipes(input: {
   const prelude: RecipeStep[] = [];
   if (appLocale) {
     prelude.push({ kind: "app", action: "set-locale", app: appLocale, locale: "{{locale}}" });
-    if (scope.relaunch !== false) {
+    if (appLocaleShouldRelaunch(scope, stayGraph, input.body.id)) {
       prelude.push({ kind: "app", action: "open", app: appLocale, relaunch: true });
       prelude.push({ kind: "sleep", ms: 1200 });
     } else {
