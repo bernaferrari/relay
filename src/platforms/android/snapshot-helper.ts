@@ -1,18 +1,19 @@
 export { parseAndroidSnapshotHelperManifest } from './snapshot-helper-artifact.ts';
 export { captureAndroidSnapshotWithHelper } from './snapshot-helper-capture.ts';
+export { captureAndroidSnapshotWithHelperSession } from './snapshot-helper-session.ts';
 export {
-  captureAndroidSnapshotWithHelperSession,
-  getAndroidSnapshotHelperSessionDeviceKey,
-  isAndroidSnapshotHelperRetirementUnconfirmedError,
   resetAndroidSnapshotHelperSessions,
   stopAndroidSnapshotHelperSession,
   stopAndroidSnapshotHelperSessionForDevice,
-} from './snapshot-helper-session.ts';
+} from './snapshot-helper-session-lifecycle.ts';
+export {
+  getAndroidSnapshotHelperSessionDeviceKey,
+  isAndroidSnapshotHelperRetirementUnconfirmedError,
+} from './snapshot-helper-retirement.ts';
 export {
   ensureAndroidSnapshotHelper,
   forgetAndroidSnapshotHelperInstall,
 } from './snapshot-helper-install.ts';
-export { ANDROID_SNAPSHOT_HELPER_WAIT_FOR_IDLE_TIMEOUT_MS } from './snapshot-helper-types.ts';
 
 export type {
   AndroidAdbExecutor,

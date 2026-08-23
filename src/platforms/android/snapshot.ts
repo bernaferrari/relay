@@ -29,10 +29,15 @@ import {
 import { buildAndroidSnapshotClickabilityEvidence } from './snapshot-clickability.ts';
 import { resolveAndroidAdbProvider, type AndroidAdbProvider } from './adb-executor.ts';
 import { sleep } from './adb.ts';
+import { buildAndroidSnapshotHelperCaptureOptions } from './snapshot-helper-capture.ts';
+import {
+  ANDROID_SNAPSHOT_HELPER_CAPTURE_TIMEOUT_MS,
+  ANDROID_SNAPSHOT_HELPER_COMMAND_TIMEOUT_MS,
+  type AndroidHelperSessionScope,
+} from './snapshot-helper-types.ts';
 import {
   captureAndroidSnapshotWithHelper,
   captureAndroidSnapshotWithHelperSession,
-  ANDROID_SNAPSHOT_HELPER_WAIT_FOR_IDLE_TIMEOUT_MS,
   ensureAndroidSnapshotHelper,
   forgetAndroidSnapshotHelperInstall,
   getAndroidSnapshotHelperSessionDeviceKey,
@@ -63,8 +68,6 @@ import {
 } from './snapshot-presentation.ts';
 
 const HELPER_INSTALL_TIMEOUT_MS = 30_000;
-const HELPER_CAPTURE_TIMEOUT_MS = 5_000;
-const HELPER_COMMAND_TIMEOUT_MS = 30_000;
 /**
  * A content verdict means the capture mechanism worked but sampled a screen
  * mid-transition, which resolves on its own within a frame or two. Sampling
@@ -78,7 +81,7 @@ export type AndroidSnapshotOptions = SnapshotOptions & {
   signal?: AbortSignal;
   helperArtifact?: AndroidSnapshotHelperArtifact;
   helperInstallPolicy?: AndroidSnapshotHelperInstallPolicy;
-  helperSessionScope?: 'command' | 'daemon-session';
+  helperSessionScope?: AndroidHelperSessionScope;
   helperAdb?: AndroidAdbExecutor | AndroidAdbProvider;
   includeHiddenContentHints?: boolean;
   androidPresentation?: AndroidSnapshotPresentationOptions;
@@ -368,20 +371,13 @@ async function captureAndroidUiHierarchyFromHelper(params: {
   helperDeviceKey: string;
 }): Promise<AndroidSnapshotHelperOutput> {
   const { signal, adb, adbProvider, artifact, helperDeviceKey } = params;
-  const captureOptions = {
+  const captureOptions = buildAndroidSnapshotHelperCaptureOptions({
     adb,
     adbProvider,
+    artifact,
     deviceKey: helperDeviceKey,
-    helperVersion: artifact.manifest.version,
-    helperVersionCode: artifact.manifest.versionCode,
-    helperSha256: artifact.manifest.sha256,
-    packageName: artifact.manifest.packageName,
-    instrumentationRunner: artifact.manifest.instrumentationRunner,
-    waitForIdleTimeoutMs: ANDROID_SNAPSHOT_HELPER_WAIT_FOR_IDLE_TIMEOUT_MS,
-    timeoutMs: HELPER_CAPTURE_TIMEOUT_MS,
-    commandTimeoutMs: HELPER_COMMAND_TIMEOUT_MS,
     signal,
-  };
+  });
   try {
     const sessionCapture = await withDiagnosticTimer(
       'android_snapshot_helper_session_capture',
@@ -389,7 +385,7 @@ async function captureAndroidUiHierarchyFromHelper(params: {
       {
         packageName: artifact.manifest.packageName,
         version: artifact.manifest.version,
-        timeoutMs: HELPER_CAPTURE_TIMEOUT_MS,
+        timeoutMs: ANDROID_SNAPSHOT_HELPER_CAPTURE_TIMEOUT_MS,
       },
     );
     if (sessionCapture) return sessionCapture;
@@ -411,8 +407,8 @@ async function captureAndroidUiHierarchyFromHelper(params: {
     {
       packageName: artifact.manifest.packageName,
       version: artifact.manifest.version,
-      timeoutMs: HELPER_CAPTURE_TIMEOUT_MS,
-      commandTimeoutMs: HELPER_COMMAND_TIMEOUT_MS,
+      timeoutMs: ANDROID_SNAPSHOT_HELPER_CAPTURE_TIMEOUT_MS,
+      commandTimeoutMs: ANDROID_SNAPSHOT_HELPER_COMMAND_TIMEOUT_MS,
     },
   );
 }

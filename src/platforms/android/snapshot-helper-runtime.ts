@@ -2,7 +2,7 @@ import { normalizeError } from '@agent-device/kernel/errors';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { sleep } from './adb.ts';
 import type { AndroidAdbExecutor } from './adb-executor.ts';
-import { stopAndroidSnapshotHelperSession } from './snapshot-helper-session.ts';
+import { stopAndroidSnapshotHelperSession } from './snapshot-helper-session-lifecycle.ts';
 
 const HELPER_RUNTIME_RESET_DELAY_MS = 150;
 const HELPER_RUNTIME_RESET_TIMEOUT_MS = 2_000;
@@ -15,11 +15,16 @@ export async function retireAndroidSnapshotHelperAfterContentFailure(params: {
   cause: unknown;
 }): Promise<void> {
   const retiredPersistentSession = await stopAndroidSnapshotHelperSession(params.deviceKey, {
+    // Content failure is a recovery path, not a clean release: the helper answered with output we
+    // could not trust, so the next capture must meet a runtime that was reset. The session stop
+    // owns that reset, so it is required here rather than layered on afterwards.
+    resetRuntime: true,
     signal: params.signal,
     cause: params.cause,
   });
   params.signal?.throwIfAborted();
   if (!retiredPersistentSession) {
+    // The suspect helper ran one-shot, so no session stop reset the runtime for us.
     await resetAndroidSnapshotHelperRuntime(params.adb, params.packageName);
   }
 }
