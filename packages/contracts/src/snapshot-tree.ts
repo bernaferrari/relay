@@ -31,9 +31,7 @@ export function findSnapshotAncestor<T>(
   return null;
 }
 
-/**
- * Returns the nearest ancestor matching `predicate`; false means keep walking.
- */
+/** Returns the nearest ancestor matching `predicate`; false means keep walking. */
 export function findNearestAncestor(
   nodes: SnapshotNode[],
   node: SnapshotNode,
