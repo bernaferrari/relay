@@ -1,4 +1,5 @@
 import type { Rect } from '@agent-device/kernel/snapshot';
+import type { AndroidSnapshotPresentationBudget } from './snapshot-presentation.ts';
 import {
   hasMeaningfulLabel,
   hasPositiveRect,
@@ -18,26 +19,43 @@ import {
  * derivation, which builds a second projection from the same tree; a pruner that edited
  * `node.children` in place made the tree depend on which projection ran first.
  */
-export function collectAndroidHiddenNodes(root: AndroidUiHierarchy): ReadonlySet<AndroidNode> {
+export function collectAndroidHiddenNodes(
+  root: AndroidUiHierarchy,
+  presentationBudget?: AndroidSnapshotPresentationBudget,
+): ReadonlySet<AndroidNode> {
   const hidden = new Set<AndroidNode>();
-  collectInvisibleSubtrees(root, hidden);
-  collectInactiveApplicationWindows(root, hidden);
-  collectCoveredSubtrees(root, { footprintMemo: new WeakMap(), hidden });
+  collectInvisibleSubtrees(root, hidden, presentationBudget);
+  collectInactiveApplicationWindows(root, hidden, presentationBudget);
+  collectCoveredSubtrees(root, {
+    footprintMemo: new WeakMap(),
+    hidden,
+    presentationBudget,
+  });
   return hidden;
 }
 
-function collectInvisibleSubtrees(node: AndroidNode, hidden: Set<AndroidNode>): void {
+function collectInvisibleSubtrees(
+  node: AndroidNode,
+  hidden: Set<AndroidNode>,
+  presentationBudget?: AndroidSnapshotPresentationBudget,
+): void {
   for (const child of node.children) {
+    presentationBudget?.check('work');
     if (child.visibleToUser === false) {
       hidden.add(child);
       continue;
     }
-    collectInvisibleSubtrees(child, hidden);
+    collectInvisibleSubtrees(child, hidden, presentationBudget);
   }
 }
 
 /** The children of `node` this projection still shows, in document order. */
-function retainedChildren(node: AndroidNode, hidden: ReadonlySet<AndroidNode>): AndroidNode[] {
+function retainedChildren(
+  node: AndroidNode,
+  hidden: ReadonlySet<AndroidNode>,
+  presentationBudget?: AndroidSnapshotPresentationBudget,
+): AndroidNode[] {
+  presentationBudget?.check('work');
   return node.children.filter((child) => !hidden.has(child) && child.visibleToUser !== false);
 }
 
@@ -52,6 +70,7 @@ type AndroidFootprint = {
 type AndroidTreePruneState = {
   footprintMemo: WeakMap<AndroidNode, AndroidFootprint>;
   hidden: Set<AndroidNode>;
+  presentationBudget?: AndroidSnapshotPresentationBudget;
 };
 
 type AndroidCoveringCandidate = {
@@ -73,7 +92,7 @@ function hasDirectOcclusionEvidence(node: AndroidNode): boolean {
 
 /** Evidence the node is a real surface because it contains something an agent could drive. */
 function hasDescendantOcclusionEvidence(node: AndroidNode, state: AndroidTreePruneState): boolean {
-  return retainedChildren(node, state.hidden).some(
+  return retainedChildren(node, state.hidden, state.presentationBudget).some(
     (child) => subtreeFootprint(child, state).hasAgentTarget,
   );
 }
@@ -90,6 +109,7 @@ function hasDescendantOcclusionEvidence(node: AndroidNode, state: AndroidTreePru
  * counts toward what a covered sibling has.
  */
 function subtreeFootprint(node: AndroidNode, state: AndroidTreePruneState): AndroidFootprint {
+  state.presentationBudget?.check('work');
   const cached = state.footprintMemo.get(node);
   if (cached !== undefined) return cached;
   const footprint = hasPositiveRect(node)
@@ -119,7 +139,7 @@ function childrenFootprint(node: AndroidNode, state: AndroidTreePruneState): And
     shows: [],
     hasAgentTarget: isAgentTarget(node),
   };
-  for (const child of retainedChildren(node, state.hidden)) {
+  for (const child of retainedChildren(node, state.hidden, state.presentationBudget)) {
     const childFootprint = subtreeFootprint(child, state);
     footprint.hasAgentTarget ||= childFootprint.hasAgentTarget;
     footprint.paints.push(...childFootprint.paints);
@@ -138,7 +158,11 @@ function paintsOwnBox(node: AndroidNode, hidden: ReadonlySet<AndroidNode>): bool
 }
 
 /** Fraction of the covered rects' union that lies under the covering rects' union. */
-function unionCoverage(coveringRects: Rect[], coveredRects: Rect[]): number {
+function unionCoverage(
+  coveringRects: Rect[],
+  coveredRects: Rect[],
+  presentationBudget?: AndroidSnapshotPresentationBudget,
+): number {
   const xs = compressedEdges([...coveringRects, ...coveredRects], (rect) => [
     rect.x,
     rect.x + rect.width,
@@ -147,14 +171,20 @@ function unionCoverage(coveringRects: Rect[], coveredRects: Rect[]): number {
     rect.y,
     rect.y + rect.height,
   ]);
-  const covering = markCells(coveringRects, xs, ys);
-  const covered = markCells(coveredRects, xs, ys);
+  const xIndex = createEdgeIndex(xs, presentationBudget);
+  const yIndex = createEdgeIndex(ys, presentationBudget);
+  const covering = markCells(coveringRects, xIndex, yIndex, presentationBudget);
+  const covered = markCells(coveredRects, xIndex, yIndex, presentationBudget);
+  const rows = ys.length - 1;
+  const columns = xs.length - 1;
+  presentationBudget?.consume(columns * rows);
   let coveredArea = 0;
   let overlapArea = 0;
-  for (let column = 0; column < xs.length - 1; column += 1) {
+  for (let column = 0; column < columns; column += 1) {
+    presentationBudget?.check('work');
     const width = xs[column + 1]! - xs[column]!;
-    for (let row = 0; row < ys.length - 1; row += 1) {
-      const cell = column * (ys.length - 1) + row;
+    for (let row = 0; row < rows; row += 1) {
+      const cell = column * rows + row;
       if (!covered[cell]) continue;
       const area = width * (ys[row + 1]! - ys[row]!);
       coveredArea += area;
@@ -168,15 +198,34 @@ function compressedEdges(rects: Rect[], edgesOf: (rect: Rect) => [number, number
   return [...new Set(rects.flatMap(edgesOf))].sort((left, right) => left - right);
 }
 
-function markCells(rects: Rect[], xs: number[], ys: number[]): Uint8Array {
-  const rows = ys.length - 1;
-  const cells = new Uint8Array((xs.length - 1) * rows);
+function createEdgeIndex(
+  edges: number[],
+  presentationBudget?: AndroidSnapshotPresentationBudget,
+): ReadonlyMap<number, number> {
+  presentationBudget?.consume(edges.length);
+  return new Map(edges.map((edge, index) => [edge, index]));
+}
+
+function markCells(
+  rects: Rect[],
+  xIndex: ReadonlyMap<number, number>,
+  yIndex: ReadonlyMap<number, number>,
+  presentationBudget?: AndroidSnapshotPresentationBudget,
+): Uint8Array {
+  const rows = yIndex.size - 1;
+  const columns = xIndex.size - 1;
+  const cellCount = columns * rows;
+  presentationBudget?.consume(cellCount);
+  const cells = new Uint8Array(cellCount);
   for (const rect of rects) {
-    const firstColumn = xs.indexOf(rect.x);
-    const lastColumn = xs.indexOf(rect.x + rect.width);
-    const firstRow = ys.indexOf(rect.y);
-    const lastRow = ys.indexOf(rect.y + rect.height);
+    presentationBudget?.check('work');
+    const firstColumn = xIndex.get(rect.x)!;
+    const lastColumn = xIndex.get(rect.x + rect.width)!;
+    const firstRow = yIndex.get(rect.y)!;
+    const lastRow = yIndex.get(rect.y + rect.height)!;
     for (let column = firstColumn; column < lastColumn; column += 1) {
+      presentationBudget?.check('work');
+      presentationBudget?.consume(lastRow - firstRow);
       cells.fill(1, column * rows + firstRow, column * rows + lastRow);
     }
   }
@@ -195,10 +244,11 @@ function isPresentationLeaf(node: AndroidNode, hidden: ReadonlySet<AndroidNode>)
 }
 
 function collectCoveredSubtrees(node: AndroidNode, state: AndroidTreePruneState): void {
-  for (const child of retainedChildren(node, state.hidden)) {
+  state.presentationBudget?.check('work');
+  for (const child of retainedChildren(node, state.hidden, state.presentationBudget)) {
     collectCoveredSubtrees(child, state);
   }
-  const siblings = retainedChildren(node, state.hidden);
+  const siblings = retainedChildren(node, state.hidden, state.presentationBudget);
   if (siblings.length < 2) return;
   const coveringCandidates = siblings
     .map((sibling) => coveringCandidateOf(sibling, state))
@@ -237,10 +287,11 @@ function isCoveredByHigherDrawingOrderSibling(
   const shows = subtreeFootprint(node, state).shows;
   const coveredRects = shows.length > 0 ? shows : [node.rect];
   for (const candidate of coveringCandidates) {
+    state.presentationBudget?.check('work');
     if (candidate.node === node || candidate.drawingOrder <= node.drawingOrder) {
       continue;
     }
-    if (unionCoverage(candidate.footprint, coveredRects) >= 0.9) {
+    if (unionCoverage(candidate.footprint, coveredRects, state.presentationBudget) >= 0.9) {
       return true;
     }
   }
@@ -266,8 +317,9 @@ function coveringCandidateOf(
 function collectInactiveApplicationWindows(
   root: AndroidUiHierarchy,
   hidden: Set<AndroidNode>,
+  presentationBudget?: AndroidSnapshotPresentationBudget,
 ): void {
-  const windows = retainedChildren(root, hidden).filter(isAndroidWindowRoot);
+  const windows = retainedChildren(root, hidden, presentationBudget).filter(isAndroidWindowRoot);
   if (windows.length < 2) return;
 
   // Android can keep stale application windows in the accessibility tree after drawer and
@@ -279,7 +331,8 @@ function collectInactiveApplicationWindows(
   if (foregroundApplicationWindows.length === 0) return;
   const foregroundLayer = highestAndroidWindowLayer(foregroundApplicationWindows);
 
-  for (const window of retainedChildren(root, hidden)) {
+  for (const window of retainedChildren(root, hidden, presentationBudget)) {
+    presentationBudget?.check('work');
     if (!isAndroidApplicationWindow(window)) continue;
     const keep =
       isAndroidForegroundWindow(window) &&
