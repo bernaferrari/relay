@@ -1,6 +1,5 @@
 import type { AppMap } from "@relay/protocol";
 import { createMemo, Show, type Accessor, type Setter } from "solid-js";
-import { useRecipeDraft } from "../context/recipe-draft";
 import { useServer } from "../context/server";
 import { useAppMapAgentExploration } from "../lib/use-app-map-agent-exploration";
 import { useAppMapProposalReview } from "../lib/use-app-map-proposal-review";
@@ -18,7 +17,6 @@ export function useAppMapContextPanels(options: {
   openDevicePicker: () => void;
 }) {
   const server = useServer();
-  const draft = useRecipeDraft();
   const surfaceOpen = (candidate: Exclude<ContextSurface, null>) => options.surface() === candidate;
   const setSurfaceOpen = (candidate: Exclude<ContextSurface, null>, open: boolean) =>
     options.setSurface((current) => (open ? candidate : current === candidate ? null : current));
@@ -83,16 +81,10 @@ export function useAppMapContextPanels(options: {
       </Show>
       <Show when={historyOpen()}>
         <AppMapHistoryPanel
-          loading={draft.historyLoading()}
-          entries={draft.savedHistory()}
           activity={Object.values(options.activeAppMap()?.activity ?? {}).sort(
             (left, right) => right.at - left.at,
           )}
           onClose={() => setHistoryOpen(false)}
-          onRestore={(updatedAt) => {
-            void draft.restoreSavedHistory(updatedAt);
-            setHistoryOpen(false);
-          }}
         />
       </Show>
     </>

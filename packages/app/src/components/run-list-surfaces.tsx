@@ -20,10 +20,13 @@ export function RunStepList(props: {
   onSelect: (index: number) => void;
 }) {
   const server = useServer();
-  const snapshot = () =>
-    props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
+  const snapshot = () => props.job.recipeSnapshot;
   const nodes = createMemo(() =>
-    executionMoments({ recipe: snapshot(), job: props.job, recipes: server.recipes() }),
+    executionMoments({
+      recipe: snapshot(),
+      job: props.job,
+      recipes: snapshot() ? [snapshot()!] : [],
+    }),
   );
   return (
     <div class="grid content-start">
@@ -108,7 +111,6 @@ export function RunRow(props: {
   onOpen: () => void;
 }) {
   const server = useServer();
-  const recipe = () => server.recipes().find((item) => item.id === props.job.action);
   const targetName = () => {
     if (props.job.targetProfile?.name) return props.job.targetProfile.name;
     const target = server.devices().find((device) => device.serial === props.job.serial);
@@ -117,8 +119,8 @@ export function RunRow(props: {
   const outcome = () => runOutcomeChip(props.job);
   const status = () => props.batch?.status ?? outcome().label;
   const title = () =>
-    props.batch?.title ?? props.job.title ?? recipe()?.title ?? titleize(props.job.action);
-  const glyphSteps = () => (props.job.recipeSnapshot ?? recipe())?.steps ?? [];
+    props.batch?.title ?? props.job.title ?? props.job.recipeSnapshot?.title ?? titleize(props.job.action);
+  const glyphSteps = () => props.job.recipeSnapshot?.steps ?? [];
   const passed = () => props.batch?.tone === "pass" || (!props.batch && outcome().tone === "pass");
   const active = () =>
     props.batch?.tone === "active" ||

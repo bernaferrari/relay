@@ -61,6 +61,7 @@ export function AppMapTestCombineStrip(props: {
   const sentence = createMemo(() =>
     testCombineSentence({
       testName: props.test.name,
+      variableNames: selectedVariable() ? [selectedVariable()!.name] : [],
       worlds: projection().worlds,
       lens: lens(),
     }),

@@ -1,6 +1,6 @@
 import type { AppMap, AppMapCanvasState } from "@relay/protocol";
 import { createMemo, type Accessor } from "solid-js";
-import { useRecipeDraft } from "../context/recipe-draft";
+import { useAppMapExecution } from "../context/app-map-execution";
 import {
   appMapRunReadiness,
   appMapRunTarget,
@@ -18,9 +18,9 @@ export function useAppMapWorkspaceRun(options: {
   selectedConnectionId: Accessor<string | null>;
   onRunStarting: () => void;
 }) {
-  const draft = useRecipeDraft();
+  const execution = useAppMapExecution();
   const readinessSteps = createMemo(() =>
-    recipeStepsForRunReadiness(draft.steps(), options.activeAppMap()?.connections),
+    recipeStepsForRunReadiness(execution.steps(), options.activeAppMap()?.connections),
   );
   const baseReadiness = createMemo(() =>
     appMapRunReadiness({

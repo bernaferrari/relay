@@ -9,7 +9,6 @@ import type {
   DiscoverySession,
 } from "@relay/protocol";
 import { toast } from "../context/toast";
-import type { RecipeInfo } from "./api-types";
 import type { ServerRequest } from "./server-matrix-remote";
 import {
   approveDiscoverySuggestion as approveDiscoverySuggestionRemote,
@@ -23,7 +22,6 @@ import {
   getDiscoverySuggestion,
   listDiscoverySessions,
   renameDiscoverySession,
-  promoteDiscoveryPath,
   setDiscoveryStatus,
   startDiscoveryExplore,
   type DiscoveryApprovalOutcome,
@@ -38,7 +36,6 @@ type DiscoveryControllerDependencies = {
   setDiscoverySessions: (sessions: DiscoverySession[]) => void;
   activeDiscoverySessionId: Accessor<string | null>;
   setActiveDiscoverySessionId: (id: string | null) => void;
-  refreshRecipes: () => Promise<void>;
 };
 
 export function createServerDiscoveryController(deps: DiscoveryControllerDependencies) {
@@ -107,19 +104,6 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
     return session;
   }
 
-  async function promoteDiscoveryPathRemote(input: {
-    sessionId: string;
-    transitionIds: string[];
-    recipeId: string;
-    title: string;
-    transitionLabels?: Record<string, string>;
-  }): Promise<{ recipe: RecipeInfo; warnings: string[] }> {
-    const data = await promoteDiscoveryPath(deps.request, input);
-    await deps.refreshRecipes();
-    toast(`Saved test “${data.recipe.title}”`, "success");
-    return data;
-  }
-
   async function discoverySuggestion(id: string): Promise<{
     screenId: string;
     control: DiscoveryControl;
@@ -171,7 +155,6 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
     startDiscoveryExplore: startDiscoveryExploreRemote,
     cancelDiscoveryExplore: cancelDiscoveryExploreRemote,
     discoveryScreenUrl,
-    promoteDiscoveryPath: promoteDiscoveryPathRemote,
     discoverySuggestion,
     loadDiscoveryCoverage,
     loadDiscoveryJourney,

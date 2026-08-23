@@ -19,6 +19,10 @@ export type LocalSchedule = {
   updatedAt: number;
   nextRunAt: number;
   lastRunAt?: number;
+  /** Last scheduler admission failure. Kept on the schedule so unattended
+   * failures remain visible through the existing list API. */
+  lastFailureAt?: number;
+  lastFailure?: string;
 };
 
 /**
@@ -77,6 +81,10 @@ async function readAllSchedules(): Promise<LocalSchedule[]> {
           updatedAt: Number(item.updatedAt) || Date.now(),
           nextRunAt: Number(item.nextRunAt) || Date.now(),
           ...(typeof item.lastRunAt === "number" ? { lastRunAt: item.lastRunAt } : {}),
+          ...(typeof item.lastFailureAt === "number" ? { lastFailureAt: item.lastFailureAt } : {}),
+          ...(typeof item.lastFailure === "string" && item.lastFailure.trim()
+            ? { lastFailure: item.lastFailure }
+            : {}),
         },
       ];
     });
@@ -165,12 +173,35 @@ export async function markScheduleRun(id: string, at = Date.now()): Promise<void
   const schedules = await readAllSchedules();
   const current = schedules.find((item) => item.id === id);
   if (!current) return;
+  const { lastFailure: _lastFailure, lastFailureAt: _lastFailureAt, ...cleared } = current;
+  await writeSchedules([
+    ...schedules.filter((item) => item.id !== id),
+    {
+      ...cleared,
+      lastRunAt: at,
+      nextRunAt: at + current.intervalMinutes * 60_000,
+      updatedAt: at,
+    },
+  ]);
+}
+
+/** Record a failed occurrence and advance its deadline exactly once. A broken
+ * schedule therefore stays visible without being retried every scheduler poll. */
+export async function markScheduleFailure(
+  id: string,
+  error: string,
+  at = Date.now(),
+): Promise<void> {
+  const schedules = await readAllSchedules();
+  const current = schedules.find((item) => item.id === id);
+  if (!current) return;
   await writeSchedules([
     ...schedules.filter((item) => item.id !== id),
     {
       ...current,
-      lastRunAt: at,
       nextRunAt: at + current.intervalMinutes * 60_000,
+      lastFailureAt: at,
+      lastFailure: error.trim() || "Scheduled run failed",
       updatedAt: at,
     },
   ]);

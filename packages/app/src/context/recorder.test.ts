@@ -13,7 +13,6 @@ import {
   selectProjectedAuthoringSession,
   semanticTapNode,
   stableLiveTapStep,
-  supersededReviewSessionIds,
 } from "./recorder";
 
 test("a buffered type never follows an iOS outcome-unknown keyboard command", () => {
@@ -365,7 +364,7 @@ test("a failed authoring attempt does not remain the active recorder", () => {
   );
 });
 
-test("a locally completed session closes immediately while a stale refresh is in flight", () => {
+test("a server-archived session cannot own the recorder after a stale refresh", () => {
   const reviewing: AuthoringSession = {
     schemaVersion: 1,
     id: "reviewing",
@@ -374,48 +373,21 @@ test("a locally completed session closes immediately while a stale refresh is in
     actorId: "human:me",
     actorKind: "human",
     appMapId: "map-a",
-    state: "reviewing",
+    state: "cancelled",
     target: { kind: "device", platform: "ios", targetId: "ipad" },
     leaseId: "lease-one",
     expectedAppMapRevision: 1,
     createdAt: 1,
     updatedAt: 2,
+    archive: { reason: "committed", archivedAt: 2 },
   };
   assert.equal(
     selectProjectedAuthoringSession([reviewing], {
       appMapId: "map-a",
       targetId: "ipad",
       actorId: "human:me",
-      dismissedSessionIds: new Set([reviewing.id]),
     }),
     null,
-  );
-});
-
-test("leaving the newest review also dismisses superseded reviews for that map and device", () => {
-  const review = (id: string, targetId: string, updatedAt: number): AuthoringSession => ({
-    schemaVersion: 1,
-    id,
-    organizationId: "local",
-    projectId: "default",
-    actorId: "human:me",
-    actorKind: "human",
-    appMapId: "map-a",
-    state: "reviewing",
-    target: { kind: "device", platform: "android", targetId },
-    leaseId: `lease-${id}`,
-    expectedAppMapRevision: 1,
-    createdAt: 1,
-    updatedAt,
-  });
-  const newest = review("new", "android-a", 30);
-
-  assert.deepEqual(
-    supersededReviewSessionIds(
-      [review("old", "android-a", 20), review("other", "android-b", 10), newest],
-      newest,
-    ),
-    ["old", "new"],
   );
 });
 

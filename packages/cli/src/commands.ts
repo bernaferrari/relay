@@ -547,26 +547,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
 
-  ...(
-    [
-      "recipe.list",
-      "recipe.get",
-      "recipe.create",
-      "recipe.update",
-      "recipe.delete",
-      "recipe.yaml.get",
-      "recipe.import",
-      "recipe.evidence.create",
-      "recipe.history.list",
-      "recipe.history.restore",
-      "recipe.stability.get",
-    ] as const
-  ).map((operationId) => ({
-    operationId,
-    exclusion: "internal" as const,
-    reason: "Compiled recipe storage is internal; people and agents author App Map flows.",
-  })),
-
   ...runEvidenceCommandDescriptors,
   mapped(
     "run.repair.list",

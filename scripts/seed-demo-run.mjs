@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Seed realistic demo runs for a recipe so Runs/replay surfaces have real
+ * Seed realistic immutable Test runs so Runs/replay surfaces have real
  * multi-step evidence to show (frames, traces, durations, a failure).
  *
  * Writes schema-v5 run directories under runs/ exactly like core/runs.ts
- * (run.json + report-manifest.json + log.txt + digest-matched .complete),
+ * (run.json + log.txt + digest-matched .complete),
  * rendering phone-sized PNG frames with the system Chrome via playwright-core.
  *
- * Usage: node scripts/seed-demo-run.mjs [recipeId]
+ * Usage: node scripts/seed-demo-run.mjs [testId]
  * Requires the Relay API on http://localhost:8787 (pnpm dev:serve).
  */
 import { createRequire } from "node:module";
@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const API = process.env.RELAY_API ?? "http://localhost:8787";
-const RECIPE_ID = process.argv[2] ?? "custom-my-test-recipe-mrd3mexa";
+const TEST_ID = process.argv[2] ?? "demo-sign-in";
 const RUNS_ROOT = process.env.RELAY_RUNS_DIR ?? join(ROOT, "runs");
 
 const coreRequire = createRequire(join(ROOT, "packages/core/package.json"));
@@ -118,7 +118,6 @@ async function writeRun(payload, pngs) {
   const run = { ...payload, dir };
   const json = JSON.stringify(run, null, 2);
   await writeFile(join(dir, "run.json"), json, "utf8");
-  await writeFile(join(dir, "report-manifest.json"), json, "utf8");
   await writeFile(join(dir, "log.txt"), run.logs.join("\n"), "utf8");
   await writeFile(
     join(dir, ".complete"),
@@ -169,17 +168,24 @@ function basePayload(recipe, { id, queuedAt, startedAt, finishedAt }) {
 }
 
 async function main() {
-  const response = await fetch(`${API}/recipes`).catch(() => null);
-  if (!response?.ok) {
+  const health = await fetch(`${API}/health`).catch(() => null);
+  if (!health?.ok) {
     console.error(`Relay API unreachable at ${API} — start it with: pnpm dev:serve`);
     process.exit(1);
   }
-  const { recipes } = await response.json();
-  const recipe = recipes.find((entry) => entry.id === RECIPE_ID);
-  if (!recipe) {
-    console.error(`Recipe ${RECIPE_ID} not found.`);
-    process.exit(1);
-  }
+  // Compiled Recipe is private execution IR. A seeded run may retain its
+  // immutable snapshot, but the script never reads or mutates a Recipe store.
+  const recipe = {
+    id: `app-map:demo:test:${TEST_ID}:root:r1`,
+    title: "Sign in",
+    source: "custom",
+    steps: [
+      { kind: "tap", target: { label: "Sign in" } },
+      { kind: "expect", target: { text: "Welcome back" }, condition: "visible" },
+    ],
+    createdAt: 0,
+    updatedAt: 0,
+  };
 
   console.log(`Rendering frames with system Chrome…`);
   const browser = await chromium.launch({ channel: "chrome", headless: true }).catch(() =>

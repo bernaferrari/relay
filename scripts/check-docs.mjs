@@ -5,6 +5,13 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const readmePath = resolve(repositoryRoot, "README.md");
 const packagePath = resolve(repositoryRoot, "package.json");
+const publicContractPaths = [
+  "docs/PRODUCT_FLOWS.md",
+  "docs/RECORDING_FORMAT.md",
+  "docs/ENTERPRISE_READINESS.md",
+  "docs/OPENCODE_REFERENCE.md",
+  "packages/mcp/README.md",
+];
 
 function bashBlocks(markdown) {
   return [...markdown.matchAll(/```bash\s*\n([\s\S]*?)```/g)].map((match) => match[1]);
@@ -30,9 +37,10 @@ function documentedPnpmScripts(markdown) {
   return scripts;
 }
 
-const [readme, packageSource] = await Promise.all([
+const [readme, packageSource, ...publicContracts] = await Promise.all([
   readFile(readmePath, "utf8"),
   readFile(packagePath, "utf8"),
+  ...publicContractPaths.map((path) => readFile(resolve(repositoryRoot, path), "utf8")),
 ]);
 const packageJson = JSON.parse(packageSource);
 const violations = [];
@@ -57,12 +65,27 @@ for (const block of bashBlocks(readme)) {
   }
 }
 
+const legacyPublicTerms = [
+  [
+    /(?:recipe library|saved journeys?|run matrices|run-matrix|modifier values)/iu,
+    "legacy product vocabulary",
+  ],
+  [/\b\d+-operation\s+`?full`?\s+catalog/iu, "a hard-coded operation catalog count"],
+];
+for (const [index, source] of publicContracts.entries()) {
+  for (const [pattern, label] of legacyPublicTerms) {
+    if (pattern.test(source)) {
+      violations.push(`${publicContractPaths[index]} contains ${label}`);
+    }
+  }
+}
+
 if (violations.length) {
   console.error("Documentation verification failed:");
   for (const violation of violations) console.error(`- ${violation}`);
   process.exitCode = 1;
 } else {
   console.log(
-    `Documentation verification passed: ${localLinks(readme).length} local links and ${documentedPnpmScripts(readme).size} root commands checked.`,
+    `Documentation verification passed: ${localLinks(readme).length} local links, ${documentedPnpmScripts(readme).size} root commands, and ${publicContractPaths.length} public contracts checked.`,
   );
 }

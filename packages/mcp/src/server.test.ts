@@ -144,6 +144,8 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
     assert.ok(screenshot);
     assert.deepEqual(Object.keys(screenshot.inputSchema.properties ?? {}).sort(), [
       "confirm",
+      "previewX",
+      "previewY",
       "serial",
     ]);
     assert.deepEqual(screenshot.inputSchema.required, ["serial"]);
@@ -153,6 +155,7 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
       "confirm",
       "full",
       "serial",
+      "visual",
     ]);
     assert.match(snapshot.description ?? "", /digest/i);
     assert.match(snapshot.description ?? "", /full/);
@@ -863,7 +866,10 @@ async function mcpSwitcherTransportTrace(
           operationId === "switcher-profile.scan"
             ? "relay_switcher_profile_scan"
             : "relay_language_profile_scan",
-        arguments: {},
+        arguments:
+          operationId === "switcher-profile.scan"
+            ? { serial: "ipad-1", app: "Grok", kind: "language" }
+            : { serial: "ipad-1", app: "Grok" },
       }),
     );
     assert.equal(result.isError, true);

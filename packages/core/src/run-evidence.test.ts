@@ -6,6 +6,7 @@ import test from "node:test";
 import type { Device } from "./device.js";
 import {
   initializeRunEvidence,
+  runEvidenceFinalizationDevice,
   startRunEvidence as startRunEvidenceWithoutContext,
   stopRunEvidence as stopRunEvidenceWithoutContext,
   withTimeout,
@@ -442,5 +443,70 @@ test("deferred evidence preserves source capture time and is chronologically res
     events.every(
       (item, index) => index === 0 || events[index - 1]!.monotonicMs <= item.monotonicMs,
     ),
+  );
+});
+
+test("cancelled evidence keeps buffered observations without querying the destroyed session", async () => {
+  const job = {
+    id: "cancelled-buffered-evidence",
+    action: "cancelled",
+    platform: "android",
+    targetContext: testTarget,
+    status: "cancelled",
+    queuedAt: 1,
+    startedAt: 2,
+    finishedAt: 20,
+    attempts: 1,
+    logs: [],
+    steps: [],
+    frames: [{ path: "frames/001.png", caption: "last observation", capturedAt: 10, bytes: 5 }],
+    glyphs: [],
+    kind: "Replay",
+    tone: "acc",
+    title: "Cancelled evidence",
+    artifacts: [
+      {
+        kind: "ui-tree",
+        capturedAt: 9,
+        data: { phase: "after", nodes: [{ label: "Last known state" }] },
+      },
+    ],
+    resolvedInputs: {},
+    evidencePolicy: { schemaVersion: 1, sensitive: {} },
+  } as TestJob;
+  const handle = initializeRunEvidence(job);
+  job.startedAt = handle.startedAt;
+  job.finishedAt = handle.startedAt + 20;
+  job.frames[0]!.capturedAt = handle.startedAt + 10;
+  job.artifacts[0]!.capturedAt = handle.startedAt + 9;
+  handle.logsStarted = true;
+  handle.performanceStarted = true;
+  handle.manifest.channels.logs.status = "captured";
+  handle.manifest.channels.performance.status = "captured";
+  let deadAdapterQueries = 0;
+  const destroyed = new Proxy(
+    {},
+    {
+      get() {
+        deadAdapterQueries += 1;
+        throw new Error("destroyed session was queried");
+      },
+    },
+  ) as Device;
+
+  await stopRunEvidence(
+    handle,
+    job,
+    runEvidenceFinalizationDevice(job.status, destroyed),
+    () => undefined,
+  );
+
+  assert.equal(deadAdapterQueries, 0);
+  assert.equal(job.evidence?.channels.screenshot.entries, 1);
+  assert.equal(job.evidence?.channels["ui-tree"].entries, 1);
+  assert.equal(job.evidence?.channels.logs.status, "partial");
+  assert.equal(
+    job.evidence?.events.find((event) => event.kind === "run.finished")?.at,
+    job.finishedAt,
   );
 });

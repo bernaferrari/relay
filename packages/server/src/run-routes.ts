@@ -262,6 +262,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
             writtenAt: run.writtenAt,
             artifactCount: run.artifacts.length,
             artifactBytes: run.frames.reduce((sum, frame) => sum + (frame.bytes ?? 0), 0),
+            storageBytes: 0,
             pinned: false,
             retentionClass: "standard" as const,
           }));

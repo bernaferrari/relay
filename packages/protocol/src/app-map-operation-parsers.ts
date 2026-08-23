@@ -1,4 +1,5 @@
 import type { AppMap } from "./app-map.js";
+import { validateAppMapRunInput } from "./app-map-operation-run-parser.js";
 import { createAppMapReviewedOriginParsers } from "./app-map-reviewed-origin-parsers.js";
 import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import type { OperationRecord, RuntimeParser } from "./operation-contract.js";
@@ -92,33 +93,7 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
       if (input.throughConnectionId !== undefined) {
         string(input.throughConnectionId, "App Map flow run throughConnectionId");
       }
-      if (input.serial !== undefined) string(input.serial, "App Map flow run serial");
-      if (input.browserTargetId !== undefined) {
-        string(input.browserTargetId, "App Map flow run browserTargetId");
-      }
-      if (
-        input.platform !== undefined &&
-        input.platform !== "android" &&
-        input.platform !== "ios"
-      ) {
-        fail("App Map flow run platform", "must be android or ios");
-      }
-      if (
-        input.targetKind !== undefined &&
-        input.targetKind !== "device" &&
-        input.targetKind !== "browser"
-      ) {
-        fail("App Map flow run targetKind", "must be device or browser");
-      }
-      if (input.variables !== undefined) {
-        for (const [name, value] of Object.entries(record(input.variables, "App Map variables"))) {
-          if (Array.isArray(value)) {
-            value.forEach((item) => string(item, `App Map variable ${name}`));
-          } else {
-            string(value, `App Map variable ${name}`);
-          }
-        }
-      }
+      validateAppMapRunInput(input, dependencies, "App Map flow run");
     },
   );
 
@@ -137,33 +112,7 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     (input) => {
       string(input.appMapId, "App Map connection run appMapId");
       string(input.connectionId, "App Map connection run connectionId");
-      if (input.serial !== undefined) string(input.serial, "App Map connection run serial");
-      if (input.browserTargetId !== undefined) {
-        string(input.browserTargetId, "App Map connection run browserTargetId");
-      }
-      if (
-        input.platform !== undefined &&
-        input.platform !== "android" &&
-        input.platform !== "ios"
-      ) {
-        fail("App Map connection run platform", "must be android or ios");
-      }
-      if (
-        input.targetKind !== undefined &&
-        input.targetKind !== "device" &&
-        input.targetKind !== "browser"
-      ) {
-        fail("App Map connection run targetKind", "must be device or browser");
-      }
-      if (input.variables !== undefined) {
-        for (const [name, value] of Object.entries(record(input.variables, "App Map variables"))) {
-          if (Array.isArray(value)) {
-            value.forEach((item) => string(item, `App Map variable ${name}`));
-          } else {
-            string(value, `App Map variable ${name}`);
-          }
-        }
-      }
+      validateAppMapRunInput(input, dependencies, "App Map connection run");
     },
   );
 

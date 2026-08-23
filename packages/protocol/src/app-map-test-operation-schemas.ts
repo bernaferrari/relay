@@ -5,7 +5,7 @@ import {
   natural,
   stepTarget,
   text,
-} from "./input-schema-primitives.js";
+} from "./operation-schema-primitives.js";
 
 const forceRecaptureScreenIds = z
   .array(identifier("Full-surface screen identifier to recapture"))
@@ -20,8 +20,8 @@ const forceRecaptureScreenIds = z
   });
 
 /** The offline preview and the queued run share one evidence-scope vocabulary.
- * Keeping it here makes the MCP contract as strict as the protocol contract,
- * rather than silently dropping a selected profile at the transport boundary. */
+ * Keeping it here makes every transport as strict as the protocol contract,
+ * rather than silently dropping a selected profile at a presentation boundary. */
 export const appMapTestRunInputSchema = z
   .object({
     appMapId: identifier("App Map identifier"),

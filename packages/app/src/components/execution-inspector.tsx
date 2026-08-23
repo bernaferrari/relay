@@ -31,14 +31,13 @@ function stateTone(state: ExecutionMomentState): string {
 export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: string) => void }) {
   const server = useServer();
   const workbench = useWorkbench();
-  const recipe = createMemo(
-    () =>
-      props.job.recipeSnapshot ??
-      server.recipes().find((item) => item.id === props.job.action) ??
-      null,
-  );
+  const recipe = createMemo(() => props.job.recipeSnapshot ?? null);
   const moments = createMemo(() =>
-    executionMoments({ recipe: recipe(), job: props.job, recipes: server.recipes() }),
+    executionMoments({
+      recipe: recipe(),
+      job: props.job,
+      recipes: recipe() ? [recipe()!] : [],
+    }),
   );
   const state = createMemo(() => executionStateForJob(props.job.status));
   const total = createMemo(() =>
@@ -59,16 +58,14 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
     () =>
       focusedTrace()?.title ??
       (focusedRecipeStep()
-        ? sentenceForStep(focusedRecipeStep()!, server.recipes())
+        ? sentenceForStep(focusedRecipeStep()!, recipe() ? [recipe()!] : [])
         : `Step ${focusedIndex() + 1}`),
   );
 
   createEffect(() => {
     const index = currentIndex();
-    server.selectedRecipeId();
-    // Recipe selection seeds the draft and initially focuses its first step in
-    // a microtask. Follow it so opening a completed run lands on the observed
-    // (usually failed) moment across the list, device, and inspector.
+    // Opening a completed run lands on the observed (usually failed) moment
+    // across the list, device, and inspector.
     queueMicrotask(() => workbench.focusStep(index));
   });
 

@@ -11,7 +11,7 @@ import { UsageError } from "./errors.js";
 
 const familyGroups = [
   ["App Map", ["map", "screen", "connect", "flow"]],
-  ["Author", ["variable", "test", "combine", "proposal", "routine", "case-stack"]],
+  ["Author", ["variable", "test", "combine", "proposal", "session", "routine", "case-stack"]],
   ["Explore", ["discovery"]],
   ["Operate", ["device", "run", "activity", "pack"]],
   ["Automation", ["schedule", "matrix"]],
@@ -31,6 +31,8 @@ const globalOptions = `Global options:
   --quiet                          Suppress stderr diagnostics
   --timeout <ms>                   Request timeout (env RELAY_TIMEOUT_MS)
   --wait | --no-wait               Wait policy (env RELAY_WAIT)
+  --target current                 Resolve the only connected target for Test run
+  --revision current               Resolve the latest saved App Map revision for Test run
 
 Screenshot and snapshot output:
   --file <path>                    Save screenshot PNG or snapshot JSON to a file

@@ -97,7 +97,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
   mapped(
     "app-map.test.compile",
     path("test compile", ["appMapId", "testId"], undefined, {
-      summary: "Validate and inspect deterministic recipes plus step provenance",
+      summary: "Validate and inspect the deterministic Test plan plus step provenance",
       inputHelp: [
         {
           name: "entryCheckpointScreenId",
@@ -196,6 +196,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
         },
       ],
       examples: [
+        "relay test run checkout smoke --target current --revision current",
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
         'relay test run grok-ios settings-tour --in language=ja,pt --lens visual --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
         'relay test run grok-ios settings-tour --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"},"targetProfileId":"ipad-pt-BR"}\'',
@@ -203,7 +204,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
         'relay test run grok relay-40 --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"android","targetId":"DEVICE"},"surfaceCapture":{"forceRecaptureScreenIds":["voice"]}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"browser","platform":"browser","targetId":"checkout-web"}}\'',
       ],
-      note: "The revision and target are mandatory. Without --in this is one Test run. With --in, Relay upserts the Combine, fills default target bindings, and starts one cell unless --all is set. A paused job resumes its existing plan; a new run uses only the startup policy supplied here. Relay never turns a checkpoint mismatch into an implicit cold retry or relaunch.",
+      note: "The run always freezes an exact revision and target. A person with one connected local device may resolve both explicitly with --target current --revision current; Relay prints the resolved facts before execution. Without --in this is one Test run. With --in, Relay upserts the Combine, fills default target bindings, and starts one cell unless --all is set. A paused job resumes its existing plan; a new run uses only the startup policy supplied here. Relay never turns a checkpoint mismatch into an implicit cold retry or relaunch.",
       behavior: "job-start-watch",
     }),
   ),

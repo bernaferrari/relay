@@ -18,6 +18,8 @@ import type {
   TrimAuthoringTakeInput,
 } from "./authoring.js";
 import type { ScreenIdentityObservation } from "./app-map.js";
+import type { EventEnvelope } from "./coordination.js";
+import type { RecipeStep } from "./recipes.js";
 import type {
   VisualBaseline,
   VisualComparison,
@@ -49,8 +51,7 @@ import type {
 } from "./combine-campaign.js";
 import type { ActivityExport } from "./activity.js";
 import type { AppMapOperationMap } from "./app-map-operation-map.js";
-import type { CorpusOperationId } from "./corpus-operation-definitions.js";
-import type { CombineOperationId } from "./combine-operation-definitions.js";
+import type { OperationFamilyMap } from "./operation-family-map.js";
 import type { OperationRecord, ProjectRole } from "./operation-contract.js";
 import type { ExecutionTargetRef } from "./execution-target.js";
 import type {
@@ -103,6 +104,7 @@ export type RunSummaryDto = JobSummaryDto & {
   writtenAt: number;
   artifactCount: number;
   artifactBytes: number;
+  storageBytes: number;
   pinned: boolean;
   retentionClass: "standard" | "protected";
 };
@@ -360,7 +362,7 @@ export type HealthSummary = {
 
 type SpecificOperationMap = {
   "system.health.get": { input: Record<string, never>; output: HealthSummary };
-  "event.stream": { input: Record<string, never>; output: OperationRecord };
+  "event.stream": { input: Record<string, never>; output: EventEnvelope };
   "activity.export": {
     input: Record<string, never>;
     output: { export: ActivityExport };
@@ -382,7 +384,10 @@ type SpecificOperationMap = {
     output: { policy: EvidenceCollectionPolicyDto };
   };
   "target.actions.list": { input: Record<string, never>; output: { actions: ActionSummary[] } };
-  "target.devices.list": { input: Record<string, never>; output: { devices: DeviceSummary[] } };
+  "target.devices.list": {
+    input: { phase?: "android" };
+    output: { devices: DeviceSummary[] };
+  };
   "target.snapshot.capture": {
     input: { serial: string; visual?: boolean; full?: boolean };
     output: {
@@ -422,7 +427,7 @@ type SpecificOperationMap = {
       readiness?: TargetRuntimeReadiness;
     };
   };
-  "step.run": { input: OperationRecord; output: StepRunResult };
+  "step.run": { input: { step: RecipeStep; serial: string }; output: StepRunResult };
   "target.scroll-survey.capture": {
     input: { serial: string; maxScrolls?: number };
     output: {
@@ -615,6 +620,9 @@ type SpecificOperationMap = {
       appMapId?: string;
       targetId?: string;
       activeOnly?: boolean;
+      /** Archived sessions contain immutable audit evidence and are returned
+       * only when a caller explicitly asks for history. */
+      includeHistory?: boolean;
     };
     output: AuthoringSessionListResponse;
   };
@@ -761,90 +769,7 @@ type SpecificOperationMap = {
   CampaignRepairOperationMap &
   RunShareOperationMap;
 
-type GenericOperationId =
-  | "system.doctor.get"
-  | "system.audit.list"
-  | "activity.list"
-  | "workspace.apple-device.update"
-  | "target.list"
-  | "target.create"
-  | "target.delete"
-  | "target.preflight"
-  | "target.open"
-  | "target.boot"
-  | "target.authorize"
-  | "target.interact"
-  | "target.ground"
-  | "target.do"
-  | "target.ui.describe"
-  | "target.ui.back"
-  | "target.ui.scrollCollect"
-  | "target.touch"
-  | "target.key"
-  | "target.scroll"
-  | "target.video.start"
-  | "target.stream.open"
-  | "action.run"
-  | "recipe.list"
-  | "recipe.get"
-  | "recipe.create"
-  | "recipe.update"
-  | "recipe.delete"
-  | "recipe.yaml.get"
-  | "recipe.import"
-  | "recipe.evidence.create"
-  | "recipe.history.list"
-  | "recipe.history.restore"
-  | "recipe.stability.get"
-  | "schedule.list"
-  | "schedule.create"
-  | "schedule.delete"
-  | "matrix.list"
-  | "matrix.create"
-  | "matrix.update"
-  | "matrix.delete"
-  | "matrix.import"
-  | "matrix.resolve"
-  | "presence.list"
-  | "presence.upsert"
-  | "presence.clear"
-  | "discovery.list"
-  | "discovery.create"
-  | "discovery.get"
-  | "discovery.rename"
-  | "discovery.status.update"
-  | "discovery.capture"
-  | "discovery.interact"
-  | "discovery.here"
-  | "discovery.do"
-  | "discovery.suggestion"
-  | "discovery.coverage"
-  | "discovery.journey"
-  | "discovery.export"
-  | "discovery.promote"
-  | "discovery.start"
-  | "discovery.cancel"
-  | CorpusOperationId
-  | "job.locale-matrix.start"
-  | "job.locale-matrix.export"
-  | "job.locale-matrix.analysis"
-  | "job.locale-matrix.infer"
-  | CombineOperationId
-  | "job.retry"
-  | "run.replay"
-  | "job.active.cancel"
-  | "job.matrix.start"
-  | "job.compatibility-matrix.start"
-  | "job.soak.start"
-  | "run.catalog.rebuild"
-  | "run.retention.apply"
-  | "run.pin.update";
-
-type GenericOperationMap = {
-  [Id in GenericOperationId]: { input: OperationRecord; output: OperationRecord };
-};
-
-export type RelayOperationMap = SpecificOperationMap & GenericOperationMap;
+export type RelayOperationMap = SpecificOperationMap & OperationFamilyMap;
 export type OperationId = keyof RelayOperationMap;
 export type OperationInput<Id extends OperationId> = RelayOperationMap[Id]["input"];
 export type OperationOutput<Id extends OperationId> = RelayOperationMap[Id]["output"];

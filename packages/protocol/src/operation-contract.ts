@@ -31,6 +31,15 @@ export type RuntimeParser<T> = {
   parse(value: unknown): T;
 };
 
+/**
+ * One input contract serves programmatic callers, the HTTP boundary, and agent
+ * presentation. Adapters may add transport-only fields (for example MCP's
+ * confirmation bit), but they may not maintain a second operation schema.
+ */
+export type OperationInputContract<T> = RuntimeParser<T> & {
+  readonly presentation: z.ZodObject;
+};
+
 export type OperationTransport = {
   method: "GET" | "POST" | "PUT" | "DELETE";
   path: string;
@@ -42,7 +51,7 @@ export type OperationDefinition<Id extends string = string, Input = unknown, Out
   label: string;
   category: OperationCategory;
   mode: OperationMode;
-  input: RuntimeParser<Input>;
+  input: OperationInputContract<Input>;
   output: RuntimeParser<Output>;
   idempotency: OperationIdempotency;
   targetCapabilities: readonly string[];
@@ -56,3 +65,4 @@ export type OperationDefinition<Id extends string = string, Input = unknown, Out
 };
 
 export type OperationRecord = Record<string, unknown>;
+import type * as z from "zod/v4";

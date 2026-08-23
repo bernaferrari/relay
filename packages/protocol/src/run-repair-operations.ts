@@ -47,13 +47,6 @@ function number(value: unknown, label: string): number {
   return value;
 }
 
-const operationRecordParser = {
-  description: "operation record",
-  parse(value: unknown) {
-    return record(value, this.description);
-  },
-};
-
 function objectParser<T extends OperationRecord>(
   description: string,
   validate?: (input: OperationRecord) => void,
@@ -68,8 +61,7 @@ function objectParser<T extends OperationRecord>(
   };
 }
 
-const { command, query } =
-  createOperationBuilders<keyof CampaignRepairOperationMap>(operationRecordParser);
+const { command, query } = createOperationBuilders<CampaignRepairOperationMap>();
 
 const runRepairInputParser = objectParser<CampaignRepairOperationMap["run.repair.get"]["input"]>(
   "run repair input",

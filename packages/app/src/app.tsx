@@ -3,7 +3,7 @@ import { ThemeProvider, type ThemeAppliedDetail } from "@relay/ui/theme/context"
 import { PlatformProvider, type Platform } from "./context/platform";
 import { ServerProvider } from "./context/server";
 import { CommandProvider } from "./context/command";
-import { RecipeDraftProvider } from "./context/recipe-draft";
+import { AppMapExecutionProvider } from "./context/app-map-execution";
 import { WorkbenchProvider } from "./context/workbench";
 import { RecorderProvider } from "./context/recorder";
 import { Layout } from "./components/layout";
@@ -31,15 +31,13 @@ export function AppBaseProviders(
         onThemeApplied={props.onThemeApplied}
       >
         <ServerProvider>
-          {/* Temporary compiled-IR bridge for App Map stage evidence. Product
-              Test authoring reads/writes graph-native contracts instead. */}
-          <RecipeDraftProvider>
+          <AppMapExecutionProvider>
             <WorkbenchProvider>
               <RecorderProvider>
                 <CommandProvider>{props.children}</CommandProvider>
               </RecorderProvider>
             </WorkbenchProvider>
-          </RecipeDraftProvider>
+          </AppMapExecutionProvider>
         </ServerProvider>
       </ThemeProvider>
     </PlatformProvider>

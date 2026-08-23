@@ -306,7 +306,7 @@ test("loopback retains local trust while an external bearer remains remotely sco
       projectId: "mobile",
     });
 
-    const localOnly = await fetch(`${baseUrl}/recipes`, {
+    const localOnly = await fetch(`${baseUrl}/discovery`, {
       headers: {
         Authorization: "Bearer verified-opaque-credential",
         "x-project-id": "mobile",

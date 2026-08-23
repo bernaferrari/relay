@@ -245,6 +245,44 @@ test("state machine permits only explicit lifecycle edges", () => {
   }
 });
 
+test("a replacement review archives the older Take durably while retaining its evidence history", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let first = await createReadySession(store, runtime, appMapId);
+    first = await store.start(first.id, runtime);
+    first = await store.interact(first.id, { kind: "observe", label: "First review" }, runtime);
+    first = await store.stop(first.id, runtime);
+    const firstEvidence = structuredClone(first.take!.revisions.at(-1)!.evidence);
+
+    let replacement = await createReadySession(store, runtime, appMapId);
+    replacement = await store.start(replacement.id, runtime);
+    replacement = await store.interact(
+      replacement.id,
+      { kind: "observe", label: "Replacement review" },
+      runtime,
+    );
+    replacement = await store.stop(replacement.id, runtime);
+
+    const restartedStore = new AuthoringSessionStore();
+    const archived = await restartedStore.get(first.id);
+    assert.deepEqual(archived.archive, {
+      reason: "superseded",
+      archivedAt: archived.updatedAt,
+      supersededBySessionId: replacement.id,
+    });
+    assert.deepEqual(archived.take?.revisions.at(-1)?.evidence, firstEvidence);
+    assert.deepEqual(
+      (await restartedStore.list("project-a")).map((session) => session.id),
+      [replacement.id],
+    );
+    assert.deepEqual(
+      (await restartedStore.list("project-a", { includeHistory: true }))
+        .map((session) => session.id)
+        .sort(),
+      [first.id, replacement.id].sort(),
+    );
+  });
+});
+
 test("recorded pauses ignore scheduling noise, stay readable, and bound forgotten recordings", () => {
   assert.equal(recordedPauseDuration(199), 0);
   assert.equal(recordedPauseDuration(224), 200);

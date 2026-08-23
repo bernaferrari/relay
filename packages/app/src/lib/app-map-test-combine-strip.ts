@@ -182,6 +182,7 @@ export function testCombineStripRunInput(input: {
 
 export function testCombineSentence(input: {
   testName: string;
+  variableNames?: readonly string[];
   worlds: readonly CombineWorld[];
   lens: TestCombineLens;
 }): string {
@@ -195,7 +196,8 @@ export function testCombineSentence(input: {
           ? `${values[0]} and ${values[1]}`
           : `${values.length} selected values`;
   const lensLabel = input.lens === "smoke" ? "smoke" : "visual";
-  return `Run ${input.testName} in ${worldLabel} as a ${lensLabel}.`;
+  const variableLabel = input.variableNames?.filter(Boolean).join(" × ") || "selection";
+  return `Combine Variable ${variableLabel} × Test ${input.testName} in ${worldLabel} · ${lensLabel} lens`;
 }
 
 export { combineLensName, type CombineLensInput };

@@ -574,13 +574,30 @@ export async function handleAuthoringRoute(input: {
       const appMapId = query.get("appMapId");
       const targetId = query.get("targetId");
       const activeOnly = query.get("activeOnly") === "true";
+      const includeHistory = query.get("includeHistory") === "true";
       const activeStates = new Set(["preparing", "ready", "recording", "reviewing", "committing"]);
-      const sessions = (await authoringSessions.list(scope.projectId)).filter(
+      const candidates = (await authoringSessions.list(scope.projectId, { includeHistory })).filter(
         (session) =>
           (!appMapId || session.appMapId === appMapId) &&
           (!targetId || session.target.targetId === targetId) &&
           (!activeOnly || activeStates.has(session.state)),
       );
+      // Defensive deduplication for sessions written by an older Relay or a
+      // concurrent replacement: the live view has one actionable review per
+      // actor/map/target. Explicit history remains complete and immutable.
+      const newestReviewByScope = new Map<string, string>();
+      if (!includeHistory) {
+        for (const session of candidates) {
+          if (session.state !== "reviewing" || session.archive) continue;
+          const key = `${session.actorId}\0${session.appMapId}\0${session.target.targetId}`;
+          if (!newestReviewByScope.has(key)) newestReviewByScope.set(key, session.id);
+        }
+      }
+      const sessions = candidates.filter((session) => {
+        if (includeHistory || session.state !== "reviewing" || session.archive) return true;
+        const key = `${session.actorId}\0${session.appMapId}\0${session.target.targetId}`;
+        return newestReviewByScope.get(key) === session.id;
+      });
       json(response, 200, { sessions });
       return true;
     }

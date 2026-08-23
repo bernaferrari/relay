@@ -1,9 +1,10 @@
 import { createOperationBuilders } from "./operation-builders.js";
-import type { OperationId } from "./operation-map.js";
+import type { OperationId, RelayOperationMap } from "./operation-map.js";
 import { localeMatrixMaterializationOperationDefinition } from "./locale-matrix-materialization-operation.js";
-import { operationRecordParser } from "./operation-parser-primitives.js";
 
-const { command } = createOperationBuilders<"job.locale-matrix.start">(operationRecordParser);
+const { command } = createOperationBuilders<
+  Pick<RelayOperationMap, "job.locale-matrix.start">
+>();
 
 /** Locale planning and execution stay together so the public start contract
  * cannot drift from its read-only materialization prerequisite. */

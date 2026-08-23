@@ -1,6 +1,6 @@
 import type { AppMapCanvasState } from "@relay/protocol";
 import { createEffect, createSignal, type Accessor, type Setter } from "solid-js";
-import { useRecipeDraft } from "../context/recipe-draft";
+import { useAppMapExecution } from "../context/app-map-execution";
 import { useRecorder } from "../context/recorder";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
@@ -46,7 +46,7 @@ export function useAppMapCaptureActions(options: {
   openLiveDevice: () => void;
 }) {
   const server = useServer();
-  const draft = useRecipeDraft();
+  const execution = useAppMapExecution();
   const recorder = useRecorder();
   const [busy, setBusy] = createSignal(false);
   const [waitingForTarget, setWaitingForTarget] = createSignal(false);
@@ -122,7 +122,7 @@ export function useAppMapCaptureActions(options: {
       }
       const node = buildCanvasGraphTree(
         next.graph ?? options.graph(),
-        draft.steps(),
+        execution.steps(),
         next.groups ?? options.groups(),
       ).nodes.find((candidate) => candidate.id === captured.screen.id);
       if (node) options.selectNode(node);

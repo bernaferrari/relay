@@ -33,6 +33,7 @@ import { redactPrivateValue } from "./private-inputs.js";
 import { classifyRunOutcome } from "./outcomes.js";
 import {
   initializeRunEvidence,
+  runEvidenceFinalizationDevice,
   startRunEvidence,
   stopRunEvidence,
   type RunEvidenceHandle,
@@ -97,6 +98,14 @@ const jobRegistry = new JobRegistry<TestJob>(MAX_JOBS);
 const jobCompletions = new WeakMap<TestJob, { promise: Promise<void>; resolve: () => void }>();
 const activeJobIds = new Set<string>();
 const scheduler = new TargetWorkerScheduler();
+
+function isJobCancellation(error: unknown): boolean {
+  return (
+    error instanceof JobCancelledError ||
+    (error instanceof Error && error.name === "JobCancelledError")
+  );
+}
+
 export function listJobs(limit = 50): TestJob[] {
   return jobRegistry.list(limit);
 }
@@ -539,7 +548,10 @@ async function runRecipeSteps(
       finishStep(ts, "ok");
     } catch (err) {
       // A failure frame remains useful when passive-step evidence is suppressed.
-      if (!isTargetUnavailableError(err)) {
+      // Cancellation hard-stops the native session before it reaches this
+      // boundary. Preserve already-buffered evidence instead of issuing a
+      // fresh query against the destroyed adapter.
+      if (!isJobCancellation(err) && !isTargetUnavailableError(err)) {
         await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
       }
       finishStep(ts, "error", `✗ ${err instanceof Error ? err.message : String(err)}`);
@@ -600,10 +612,7 @@ async function executeJobOnTarget(
       await cooperativeCheckpoint(id);
     } catch (error) {
       job.startedAt = now();
-      if (
-        error instanceof JobCancelledError ||
-        (error instanceof Error && error.name === "JobCancelledError")
-      ) {
+      if (isJobCancellation(error)) {
         finalizeCancelled(job);
       } else {
         const message =
@@ -676,7 +685,12 @@ async function executeJobOnTarget(
       ? reserveTargetControl(job.targetContext.serial, job.id)
       : () => undefined;
   const finishEvidence = async () => {
-    await stopRunEvidence(evidence, job, device, pushLog);
+    await stopRunEvidence(
+      evidence,
+      job,
+      runEvidenceFinalizationDevice(job.status, device),
+      pushLog,
+    );
   };
 
   try {
@@ -784,16 +798,16 @@ async function executeJobOnTarget(
       healed: job.healed,
     });
   } catch (err) {
-    if (
-      err instanceof JobCancelledError ||
-      (err instanceof Error && err.name === "JobCancelledError")
-    ) {
-      await finishEvidence();
+    if (isJobCancellation(err)) {
       pushLog("==> CANCELLED");
       for (const s of job.steps) {
         if (s.status === "running" || !s.finishedAt) finishStep(s, "error", "✗ cancelled");
       }
       finalizeCancelled(job, primary());
+      // The terminal timestamp must exist before the buffered evidence
+      // timeline closes, and cancellation must never query a hard-stopped
+      // native session.
+      await finishEvidence();
       await commitTerminalRun(job, pushLog);
       return;
     }

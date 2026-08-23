@@ -81,6 +81,18 @@ import {
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
 
+/** A manual checkpoint without an authored deadline must not own a target
+ * lane forever when a run is left unattended. */
+export const DEFAULT_HUMAN_CHECKPOINT_TIMEOUT_MS = 15 * 60_000;
+const MAX_HUMAN_CHECKPOINT_TIMEOUT_MS = 24 * 60 * 60_000;
+
+function boundedHumanCheckpointTimeoutMs(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_HUMAN_CHECKPOINT_TIMEOUT_MS;
+  }
+  return Math.max(1, Math.min(Math.floor(value), MAX_HUMAN_CHECKPOINT_TIMEOUT_MS));
+}
+
 async function runRequiredRecipeStep(
   device: Device,
   step: RecipeStep,
@@ -414,6 +426,9 @@ async function runRequiredRecipeStep(
     case "pause": {
       if (!job) throw new Error("pause: no job to pause (standalone step execution)");
       const checkpointStartedAt = now();
+      const checkpointTimeoutMs = boundedHumanCheckpointTimeoutMs(
+        step.timeoutMs ?? ctx.defaultHumanCheckpointTimeoutMs,
+      );
       const reason = step.reason ?? "other";
       const resumeLabel = step.resumeLabel ?? "Continue test";
       log(`⏸ ${step.message}`);
@@ -424,7 +439,7 @@ async function runRequiredRecipeStep(
         reason,
         resumeLabel,
         since: checkpointStartedAt,
-        ...(step.timeoutMs !== undefined ? { timeoutMs: step.timeoutMs } : {}),
+        timeoutMs: checkpointTimeoutMs,
         ...(step.verifyAfter
           ? {
               verifyAfter: {
@@ -441,7 +456,7 @@ async function runRequiredRecipeStep(
           reason,
           message: step.message,
           resumeLabel,
-          ...(step.timeoutMs !== undefined ? { timeoutMs: step.timeoutMs } : {}),
+          timeoutMs: checkpointTimeoutMs,
         },
       });
       requestPause(job.id);
@@ -456,7 +471,22 @@ async function runRequiredRecipeStep(
       // Blocks until resumeJob (POST /jobs/:id/resume) calls requestResume.
       // On cancel, throws JobCancelledError and propagates up — never sets running.
       try {
-        await cooperativeCheckpointWithTimeout(job.id, step.timeoutMs);
+        await cooperativeCheckpointWithTimeout(job.id, checkpointTimeoutMs);
+      } catch (error) {
+        if (!(error instanceof Error && error.name === "JobCancelledError")) {
+          job.artifacts.push({
+            kind: "human-intervention-expired",
+            capturedAt: now(),
+            data: {
+              reason,
+              message: step.message,
+              waitedMs: now() - checkpointStartedAt,
+              timeoutMs: checkpointTimeoutMs,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
+        }
+        throw error;
       } finally {
         // A timeout or cancellation must also wake the cooperative waiter.
         requestResume(job.id);

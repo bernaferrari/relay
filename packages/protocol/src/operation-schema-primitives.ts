@@ -1,8 +1,9 @@
 /**
- * Shared Zod building blocks for Relay's MCP input schemas.
+ * Shared Zod building blocks for Relay operation input schemas.
  *
  * Operation and Test schemas both describe the same device vocabulary, so these
- * primitives live here rather than being copied per schema file.
+ * primitives live with the canonical operation descriptor rather than being
+ * copied by individual transports.
  */
 import * as z from "zod/v4";
 
@@ -12,7 +13,8 @@ export const identifier = (description: string) => text(description);
 export const unknownRecord = z.record(z.string(), z.unknown());
 export const empty = z.object({}).strict();
 export const open = z.object({}).catchall(z.unknown());
-export const tapPoint = z.object({ x: z.number(), y: z.number() }).strict();
+const coordinate = z.coerce.number();
+export const tapPoint = z.object({ x: coordinate, y: coordinate }).strict();
 
 export const targetReference = {
   serial: identifier("Connected device or managed target identifier"),
@@ -56,8 +58,8 @@ export const pointAnchorTarget = z
 
 export const point = z
   .object({
-    x: z.number(),
-    y: z.number(),
+    x: coordinate,
+    y: coordinate,
     anchor: z
       .object({
         horizontal: z.enum(["left", "center", "right"]),

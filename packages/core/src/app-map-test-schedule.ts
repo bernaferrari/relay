@@ -18,6 +18,7 @@ import type {
   StepTarget,
 } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
+import { selectEquivalentDirectConnection } from "./app-map-route-cost.js";
 
 type Schedule = NonNullable<AppMapCompiledTest["executionSchedule"]>;
 type CheckMetadata = NonNullable<RecipeStep["check"]>;
@@ -168,7 +169,7 @@ function exactReadyReverseConnection(
         candidate.destination.screenId === sourceScreenId,
     )
     .sort((left, right) => left.id.localeCompare(right.id));
-  return matches.length === 1 ? matches[0] : undefined;
+  return selectEquivalentDirectConnection(map, matches) ?? undefined;
 }
 
 function ownerApp(map: AppMap, screenId: string): string | undefined {

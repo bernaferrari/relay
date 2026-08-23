@@ -110,6 +110,7 @@ test("run reports finalize once at a terminal atomic commit point", async () => 
     assert.equal(persisted.schemaVersion, 5);
     assert.equal(persisted.retryOf, "immutable-source-run");
     await access(join(run.runDir!, ".complete"));
+    await assert.rejects(access(join(run.runDir!, "report-manifest.json")));
     const onDisk = JSON.parse(await readFile(join(run.runDir!, "run.json"), "utf8"));
     assert.deepEqual(onDisk, JSON.parse(JSON.stringify(persisted)));
 

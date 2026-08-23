@@ -1,13 +1,17 @@
-import { operationDefinition, type OperationId } from "@relay/protocol";
 import * as z from "zod/v4";
 import {
   appMapTestCompileInputSchema,
   appMapTestRunInputSchema,
   graphTest,
-  testCapturePolicy,
   testSemanticEdits,
-} from "./test-input-schemas.js";
-import { reviewedDocumentOriginInputSchemas } from "./reviewed-document-origin-input-schemas.js";
+} from "./app-map-test-operation-schemas.js";
+import { reviewedDocumentOriginOperationSchemas } from "./reviewed-document-origin-operation-schemas.js";
+import { appMapAuthoringOperationSchemas } from "./app-map-authoring-operation-schemas.js";
+import { executionOperationSchemas } from "./execution-operation-schemas.js";
+import { observationOperationSchemas } from "./observation-operation-schemas.js";
+import { workspaceOperationSchemas } from "./workspace-operation-schemas.js";
+import { coreTargetOperationInputSchemas } from "./core-target-operation-input-schemas.js";
+import { combineStartOperationInputSchemas } from "./combine-start-operation-input-schema.js";
 import {
   authoringInteraction,
   authoringTarget,
@@ -24,13 +28,19 @@ import {
   targetReference,
   text,
   unknownRecord,
-} from "./input-schema-primitives.js";
+} from "./operation-schema-primitives.js";
 
 export type RelayOperationInputSchema = z.ZodObject;
 export type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
 
-const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
-  ...reviewedDocumentOriginInputSchemas,
+export const operationInputSchemas = {
+  ...reviewedDocumentOriginOperationSchemas,
+  ...workspaceOperationSchemas,
+  ...appMapAuthoringOperationSchemas,
+  ...observationOperationSchemas,
+  ...executionOperationSchemas,
+  ...coreTargetOperationInputSchemas,
+  ...combineStartOperationInputSchemas,
   "system.audit.list": z.object({ limit: z.number().int().positive().optional() }).strict(),
   "locale-finding.known.add": z
     .object({
@@ -99,22 +109,6 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "target.devices.list": z.object({ phase: z.literal("android").optional() }).strict(),
   "target.boot": z.object(targetReference).strict(),
   "target.authorize": z.object(targetReference).strict(),
-  "target.snapshot.capture": z
-    .object({
-      ...targetReference,
-      full: z
-        .boolean()
-        .optional()
-        .describe("Return the full accessibility tree. Default is a digest."),
-    })
-    .strict(),
-  "target.screenshot.capture": z.object(targetReference).strict(),
-  "target.recover": z
-    .object({
-      ...targetReference,
-      reason: z.enum(["connect", "observe", "control", "record", "auto"]).optional(),
-    })
-    .strict(),
   "lease.list": z.object({ status: z.enum(["active", "all"]).optional() }).strict(),
   "target.app.launch": z
     .object({
@@ -297,6 +291,7 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       leaseId: identifier("Exact active lease being handed off"),
       expiresAt: natural("New lease expiration timestamp").optional(),
       reason: text("Why control is being handed to this actor"),
+      confirm: z.literal(true),
     })
     .strict(),
   "lease.release": z.object({ leaseId: identifier("Target lease identifier") }).strict(),
@@ -390,7 +385,7 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
         .optional(),
       interaction: z
         .discriminatedUnion("kind", [
-          z.object({ kind: z.literal("point"), x: z.number(), y: z.number() }).strict(),
+          z.object({ kind: z.literal("point"), x: z.coerce.number(), y: z.coerce.number() }).strict(),
           z
             .object({
               kind: z.literal("label"),
@@ -503,6 +498,7 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
     .object({
       appMapId: identifier("App Map identifier"),
       flowId: identifier("Saved flow identifier"),
+      throughConnectionId: identifier("Last Connection to replay").optional(),
       serial: identifier("Connected device serial").optional(),
       platform: z.enum(["android", "ios"]).optional(),
       targetKind: z.enum(["device", "browser"]).optional(),
@@ -768,82 +764,6 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
     .object({ full: z.boolean().optional(), limit: z.number().int().positive().optional() })
     .strict(),
   "job.get": z.object({ jobId: identifier("Job identifier") }).strict(),
-  "job.combine.start": z
-    .object({
-      appMapId: identifier("App Map identifier"),
-      testId: identifier("Test identifier to run once").optional(),
-      combineId: identifier("Saved Combine identifier").optional(),
-      variableIds: z.array(identifier("Variable identifier")).optional(),
-      selected: z.record(z.string(), z.array(z.string())).optional(),
-      strategy: z.enum(["zip", "cartesian", "pairwise"]).optional(),
-      serial: identifier("Connected device serial").optional(),
-      platform: z.enum(["android", "ios"]).optional(),
-      targetKind: z.enum(["device", "browser"]).optional(),
-      browserTargetId: identifier("Managed browser target identifier").optional(),
-      title: z.string().optional(),
-      seed: z.number().int().optional(),
-      capture: testCapturePolicy.optional(),
-      executionMode: z.enum(["pilot", "all"]).optional(),
-      pilotCaseIndex: z.number().int().nonnegative().optional(),
-      selectedCellIds: z.array(identifier("Combine cell identifier")).optional(),
-      cell: identifier("World or Combine cell selector").optional(),
-      cellRuntimeProfiles: z
-        .array(
-          z
-            .object({
-              testId: identifier("Test identifier"),
-              values: z.record(z.string(), z.string()),
-              targetProfileId: identifier("Saved runtime profile identifier"),
-            })
-            .strict(),
-        )
-        .optional(),
-    })
-    .strict()
-    .superRefine((input, context) => {
-      if (!input.testId && !input.combineId) {
-        context.addIssue({
-          code: "custom",
-          message: "Choose exactly one testId or combineId",
-          path: ["testId"],
-        });
-      }
-      if ([input.testId, input.combineId].filter(Boolean).length > 1) {
-        context.addIssue({
-          code: "custom",
-          message: "Choose only one testId or combineId",
-          path: ["testId"],
-        });
-      }
-      if (!input.serial && !input.browserTargetId) {
-        context.addIssue({
-          code: "custom",
-          message: "Choose serial or browserTargetId",
-          path: ["serial"],
-        });
-      }
-      if (input.serial && input.browserTargetId) {
-        context.addIssue({
-          code: "custom",
-          message: "Choose only one serial or browserTargetId",
-          path: ["serial"],
-        });
-      }
-      if (input.serial && input.targetKind === "browser") {
-        context.addIssue({
-          code: "custom",
-          message: "A serial target must use targetKind device",
-          path: ["targetKind"],
-        });
-      }
-      if (input.browserTargetId && input.targetKind === "device") {
-        context.addIssue({
-          code: "custom",
-          message: "A browserTargetId must use targetKind browser",
-          path: ["targetKind"],
-        });
-      }
-    }),
   "job.combine.campaign.get": z
     .object({ batchId: identifier("Combine campaign identifier") })
     .strict(),
@@ -856,9 +776,6 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "job.combine.campaign.cancel": z
     .object({ batchId: identifier("Combine campaign identifier") })
     .strict(),
-  "job.start": z
-    .object({ action: identifier("Action or App Map identifier"), serial: z.string().optional() })
-    .catchall(z.unknown()),
   "job.retry": z.object({ jobId: identifier("Job identifier") }).strict(),
   "job.cancel": z.object({ jobId: identifier("Job identifier") }).strict(),
   "job.pause": z.object({ jobId: identifier("Job identifier") }).strict(),
@@ -877,27 +794,15 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       seed: z.number().int().optional(),
     })
     .strict(),
-};
+} as const satisfies Readonly<Record<string, RelayOperationInputSchema>>;
 
-/**
- * MCP schemas are presentation contracts. Relay's protocol parser remains the
- * authority and is run again immediately before invocation.
- */
-export function relayOperationInputSchema(operationId: OperationId): RelayOperationInputSchema {
-  const schema = schemas[operationId];
-  if (schema) return schema;
-  return operationDefinition(operationId).input.description === "empty object" ? empty : open;
-}
+export type OperationSchemaId = keyof typeof operationInputSchemas;
+export type OperationSchemaInput<Id extends OperationSchemaId> = z.output<
+  (typeof operationInputSchemas)[Id]
+>;
 
-export function relayToolInputSchema(
-  operationId: OperationId,
-  requiresConfirmation: boolean,
-): RelayToolInputSchema {
-  const directSchema = relayOperationInputSchema(operationId).extend({
-    confirm: requiresConfirmation
-      ? z.literal(true).describe("Explicit approval for this protected operation")
-      : z.literal(true).optional().describe("Optional explicit approval"),
-  });
-
-  return directSchema;
+export function operationInputSchema(operationId: string): RelayOperationInputSchema {
+  const schema = operationInputSchemas[operationId as OperationSchemaId];
+  if (!schema) throw new Error(`Missing input schema for registered operation ${operationId}`);
+  return schema;
 }

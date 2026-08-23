@@ -1,0 +1,86 @@
+import * as z from "zod/v4";
+import {
+  identifier,
+  targetReference,
+} from "./operation-schema-primitives.js";
+
+const queryBoolean = z
+  .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+  .transform((value) => value === true || value === "true" || value === "1");
+
+export const executionTargetInputSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      schemaVersion: z.literal(1),
+      kind: z.literal("local-device"),
+      provider: z
+        .object({ key: z.literal("relay.local.agent-device"), scope: z.literal("local") })
+        .strict(),
+      targetId: identifier("Target identifier"),
+      platform: z.enum(["android", "ios"]),
+      identity: z
+        .object({ kind: z.literal("device-serial"), value: identifier("Device serial") })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      schemaVersion: z.literal(1),
+      kind: z.literal("local-browser"),
+      provider: z
+        .object({ key: z.literal("relay.local.browser"), scope: z.literal("local") })
+        .strict(),
+      targetId: identifier("Target identifier"),
+      platform: z.literal("browser"),
+      identity: z
+        .object({ kind: z.literal("browser-target"), value: identifier("Browser target") })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      schemaVersion: z.literal(1),
+      kind: z.literal("provider-session"),
+      provider: z.object({ key: identifier("Provider key"), scope: z.literal("remote") }).strict(),
+      targetId: identifier("Target identifier"),
+      platform: z.enum(["android", "ios"]),
+      identity: z
+        .object({ kind: z.literal("provider-session"), value: identifier("Provider session") })
+        .strict(),
+    })
+    .strict(),
+]);
+
+/** Exact schemas for core target observations and the generic execution entry point. */
+export const coreTargetOperationInputSchemas = {
+  "target.snapshot.capture": z
+    .object({
+      ...targetReference,
+      full: queryBoolean
+        .optional()
+        .describe("Return the full accessibility tree. Default is a digest."),
+      visual: queryBoolean.optional(),
+    })
+    .strict(),
+  "target.screenshot.capture": z
+    .object({
+      ...targetReference,
+      previewX: z.coerce.number().optional(),
+      previewY: z.coerce.number().optional(),
+    })
+    .strict(),
+  "target.recover": z
+    .object({
+      ...targetReference,
+      reason: z.enum(["connect", "observe", "control", "record", "auto"]).optional(),
+      recoveryFenceAssignmentId: identifier("Interrupted durable assignment identifier").optional(),
+    })
+    .strict(),
+  "job.start": z
+    .object({
+      recipe: identifier("Private compiled Test or action identifier"),
+      serial: z.string().optional(),
+      executionTarget: executionTargetInputSchema.optional(),
+    })
+    .catchall(z.unknown()),
+} as const satisfies Readonly<Record<string, z.ZodType>>;

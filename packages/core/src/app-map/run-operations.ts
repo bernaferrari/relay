@@ -1,4 +1,4 @@
-import type { TargetProfile } from "@relay/protocol";
+import type { ConnectionExecutionObservation, TargetProfile } from "@relay/protocol";
 import type { AppMap, AppMapMutationContext, TargetResultOutcome } from "./model.js";
 import { appMapFail } from "./errors.js";
 import { mutateAppMap } from "./mutation.js";
@@ -12,6 +12,7 @@ export type RecordAppMapRunInput = {
   startedAt: number;
   finishedAt: number;
   connectionId?: string;
+  connectionObservations?: ConnectionExecutionObservation[];
   evidenceIds: string[];
 };
 
@@ -70,6 +71,9 @@ export function recordAppMapRun(
         targetProfile: structuredClone(input.targetProfile),
         outcome: input.outcome,
         ...(input.connectionId ? { connectionId: input.connectionId } : {}),
+        ...(input.connectionObservations?.length
+          ? { connectionObservations: structuredClone(input.connectionObservations) }
+          : {}),
         evidenceIds: [...input.evidenceIds],
         finishedAt: input.finishedAt,
         createdAt: input.startedAt,

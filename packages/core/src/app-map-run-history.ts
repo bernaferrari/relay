@@ -1,4 +1,8 @@
-import type { AppMapCompiledFlow, TargetProfile } from "@relay/protocol";
+import type {
+  AppMapCompiledFlow,
+  ConnectionExecutionObservation,
+  TargetProfile,
+} from "@relay/protocol";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { listPersistedRuns, type PersistedRun } from "./runs.js";
 import { recordAppMapRun } from "./app-map/run-operations.js";
@@ -44,6 +48,56 @@ function failedConnectionId(run: PersistedRun, plan: AppMapCompiledFlow): string
   )?.connectionId;
 }
 
+export function connectionObservationsFromPersistedRun(
+  run: PersistedRun,
+): ConnectionExecutionObservation[] {
+  const latestByCheck = new Map<string, ConnectionExecutionObservation>();
+  for (const artifact of run.artifacts ?? []) {
+    if (
+      artifact.kind !== "campaign-check-result" ||
+      !artifact.data ||
+      typeof artifact.data !== "object" ||
+      Array.isArray(artifact.data)
+    ) {
+      continue;
+    }
+    const data = artifact.data as Record<string, unknown>;
+    const checkId = typeof data.id === "string" ? data.id.trim() : "";
+    const dependencies = data.transitionDependencies;
+    const startedAt = data.startedAt;
+    const finishedAt = data.finishedAt;
+    const status = data.status;
+    if (
+      !checkId ||
+      !Array.isArray(dependencies) ||
+      dependencies.length !== 1 ||
+      data.cleanup !== undefined ||
+      (status !== "passed" && status !== "failed") ||
+      !Number.isSafeInteger(startedAt) ||
+      !Number.isSafeInteger(finishedAt) ||
+      (finishedAt as number) < (startedAt as number)
+    ) {
+      continue;
+    }
+    const dependency = dependencies[0];
+    const connectionId =
+      dependency && typeof dependency === "object" && !Array.isArray(dependency)
+        ? (dependency as Record<string, unknown>).connectionId
+        : undefined;
+    if (typeof connectionId !== "string" || !connectionId.trim()) continue;
+    latestByCheck.set(checkId, {
+      connectionId: connectionId.trim(),
+      outcome: status,
+      durationMs: (finishedAt as number) - (startedAt as number),
+      observedAt: finishedAt as number,
+    });
+  }
+  return [...latestByCheck.values()].sort(
+    (left, right) =>
+      left.connectionId.localeCompare(right.connectionId) || left.observedAt - right.observedAt,
+  );
+}
+
 /** Reconcile a durable report into its App Map. Safe to call after restarts:
  * an already projected run is a successful no-op. */
 export async function projectPersistedAppMapRun(run: PersistedRun): Promise<boolean> {
@@ -70,6 +124,7 @@ export async function projectPersistedAppMapRun(run: PersistedRun): Promise<bool
         startedAt: run.startedAt ?? run.queuedAt,
         finishedAt,
         ...(outcome === "passed" ? {} : { connectionId: failedConnectionId(run, plan) }),
+        connectionObservations: connectionObservationsFromPersistedRun(run),
         evidenceIds: [`run:${run.id}`],
       },
       {

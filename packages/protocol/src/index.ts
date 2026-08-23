@@ -5,6 +5,7 @@ export * from "./activity.js";
 export * from "./authoring.js";
 export * from "./collaboration.js";
 export * from "./app-map.js";
+export * from "./connection-execution.js";
 export {
   APP_MAP_GET_LISTS,
   appMapGetListForCommandPath,
@@ -210,6 +211,8 @@ export type RunSummary = JobSummary & {
   writtenAt: number;
   artifactCount: number;
   artifactBytes: number;
+  /** Total bytes in the immutable committed run directory. */
+  storageBytes: number;
   pinned: boolean;
   retentionClass: "standard" | "protected";
 };
@@ -359,6 +362,7 @@ export function parseRunSummary(value: unknown): RunSummary {
     frameCount: numberValue(input.frameCount, "run summary frameCount"),
     artifactCount: numberValue(input.artifactCount, "run summary artifactCount"),
     artifactBytes: numberValue(input.artifactBytes, "run summary artifactBytes"),
+    storageBytes: numberValue(input.storageBytes, "run summary storageBytes"),
     pinned: Boolean(input.pinned),
     retentionClass: input.retentionClass === "protected" ? "protected" : "standard",
   };

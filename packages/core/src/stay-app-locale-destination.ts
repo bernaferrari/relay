@@ -39,8 +39,24 @@ function lastProductExpectScreen(
   return last;
 }
 
-/** Stay when the Test names a destination. Relaunch only if stay cannot be
- * proved — we cannot stay on a screen we cannot name. */
+function stayIdentity(step: ExpectScreen): string | undefined {
+  const fingerprint = step.fingerprint?.trim();
+  return fingerprint || undefined;
+}
+
+/** Stay is proved only when the compiled Test names a product destination
+ * with identity. A title without a fingerprint is not a place we can stay. */
+export function stayAppLocaleCanBeProved(
+  graph: Record<string, Recipe>,
+  childRootId: string,
+): boolean {
+  const destination = lastProductExpectScreen(graph, childRootId);
+  return Boolean(destination && stayIdentity(destination));
+}
+
+/** Stay when the Test names a destination we can prove. Relaunch only if stay
+ * cannot be proved — or when relaunch is explicit. Explicit stay still does
+ * not invent identity. */
 export function appLocaleShouldRelaunch(
   apply: { relaunch?: boolean },
   graph?: Record<string, Recipe>,
@@ -49,7 +65,7 @@ export function appLocaleShouldRelaunch(
   if (apply.relaunch === true) return true;
   if (apply.relaunch === false) return false;
   if (!graph || !childRootId) return true;
-  return lastProductExpectScreen(graph, childRootId) === undefined;
+  return !stayAppLocaleCanBeProved(graph, childRootId);
 }
 
 /** Stay applies must re-prove the Test destination. Missing identity is not
@@ -59,7 +75,7 @@ export function stayAppLocaleDestinationCheck(
   childRootId: string,
 ): RecipeStep | undefined {
   const destination = lastProductExpectScreen(graph, childRootId);
-  if (!destination) return undefined;
+  if (!destination || !stayIdentity(destination)) return undefined;
   const { recovery: _recovery, repairCheckpoint: _repair, ...check } = destination;
   return {
     ...check,

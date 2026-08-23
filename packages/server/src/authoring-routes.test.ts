@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -559,6 +559,30 @@ test("Authoring Sessions share local target control but keep mutation actor-owne
     assert.equal(response.session.actorId, "human:author");
     assert.equal(response.session.target.targetId, "device-a");
     assert.equal((await owner.authoringSessions()).sessions[0]?.id, response.session.id);
+    const archivedId = "archived-authoring-review";
+    await writeFile(
+      join(process.env.RELAY_STATE_DIR!, "authoring-sessions", `${archivedId}.json`),
+      JSON.stringify({
+        ...response.session,
+        id: archivedId,
+        state: "cancelled",
+        updatedAt: response.session.updatedAt + 1,
+        archive: {
+          reason: "superseded",
+          archivedAt: response.session.updatedAt + 1,
+          supersededBySessionId: response.session.id,
+        },
+      }),
+    );
+    assert.deepEqual(
+      (await owner.authoringSessions()).sessions.map((session) => session.id),
+      [response.session.id],
+    );
+    assert.deepEqual(
+      (await owner.authoringSessions({ includeHistory: true })).sessions.map((session) => session.id),
+      [archivedId, response.session.id],
+    );
+    assert.equal((await observer.authoringSession(archivedId)).session.archive?.reason, "superseded");
     assert.equal(
       (
         await owner.authoringSessions({

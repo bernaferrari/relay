@@ -260,6 +260,64 @@ test("appLocale Combine relaunches when apply.relaunch is explicit true", () => 
   );
 });
 
+test("default stay when the Test names a product expect-screen", () => {
+  const destination: Recipe = {
+    id: "child-root",
+    title: "Child",
+    source: "custom",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "relay-source-home",
+        screenId: "home",
+        screenTitle: "Home",
+        fingerprint: "h".repeat(64),
+      },
+      {
+        kind: "expect-screen",
+        id: "relay-destination-data",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "d".repeat(64),
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const stay = composeAppMapCombineCellWrapper({
+    cellId: "c" + "e".repeat(32),
+    childRootId: destination.id,
+    childGraph: { [destination.id]: destination },
+    sets: [
+      {
+        id: "language",
+        name: "Language",
+        kind: "language",
+        apply: { kind: "appLocale", app: "ai.x.grok" },
+        options: [{ id: "ja" }],
+        restoreId: "en",
+      },
+    ],
+    at: 1,
+  });
+  assert.equal(
+    stay.root.steps.some((step) => step.kind === "app" && step.action === "open"),
+    false,
+  );
+  assert.deepEqual(
+    stay.root.steps.filter((step) => step.kind === "expect-screen"),
+    [
+      {
+        kind: "expect-screen",
+        id: "relay-destination-data-stay",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint: "d".repeat(64),
+      },
+    ],
+  );
+});
+
 test("explicit stay fail-closes without inventing a destination identity", () => {
   const destination: Recipe = {
     id: "child-root",

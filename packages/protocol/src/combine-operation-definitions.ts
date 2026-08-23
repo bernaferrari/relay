@@ -1,5 +1,5 @@
 import { createOperationBuilders } from "./operation-builders.js";
-import { operationRecordParser } from "./operation-parser-primitives.js";
+import type { RelayOperationMap } from "./operation-map.js";
 
 export type CombineOperationId =
   | "job.combine.start"
@@ -9,7 +9,8 @@ export type CombineOperationId =
   | "job.combine.campaign.resume"
   | "job.combine.campaign.cancel";
 
-const { command, query } = createOperationBuilders<CombineOperationId>(operationRecordParser);
+const { command, query } =
+  createOperationBuilders<Pick<RelayOperationMap, CombineOperationId>>();
 
 export const combineOperationDefinitions = [
   command("job.combine.start", "Run state combinations × tests", "POST", "/jobs/combine", {

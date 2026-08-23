@@ -68,13 +68,28 @@ test("the strip projects selected worlds as rows of this Test", () => {
   );
   assert.equal(strip.column.id, "settings-tour");
   assert.equal(strip.combineId, "matrix-language-to-settings-tour");
-  assert.match(
-    testCombineSentence({
-      testName: "Settings tour",
-      worlds: strip.worlds,
+  const sentence = testCombineSentence({
+    testName: "Settings tour",
+    variableNames: [variable.name],
+    worlds: strip.worlds,
+    lens: "visual",
+  });
+  assert.match(sentence, /Variable/u);
+  assert.match(sentence, /Test/u);
+  assert.match(sentence, /Combine/u);
+  assert.match(sentence, /lens/u);
+  assert.match(sentence, /visual/u);
+  assert.equal(
+    sentence,
+    "Combine Variable Language × Test Settings tour in JA and PT · visual lens",
+  );
+  assert.deepEqual(
+    testCombineStripRunInput({
+      selected: { language: ["ja", "pt"] },
       lens: "visual",
+      cell: "ja",
     }),
-    /Run Settings tour in JA and PT as a visual/u,
+    { in: { language: ["ja", "pt"] }, lens: "visual", cell: "ja" },
   );
 });
 

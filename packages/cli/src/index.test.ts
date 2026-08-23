@@ -631,7 +631,12 @@ test("root and family help are useful without creating a client", async () => {
   const cases = [
     {
       argv: ["--help"],
-      matches: [/App Map\s+map, screen, connect, flow/, /device screenshot <serial>/, /--binary/],
+      matches: [
+        /App Map\s+map, screen, connect, flow/,
+        /Author\s+variable, test, combine, proposal, session/,
+        /device screenshot <serial>/,
+        /--binary/,
+      ],
     },
     {
       argv: ["session", "--help"],
@@ -881,7 +886,77 @@ test("test run --in and --lens send Combine worlds on the same Test operation", 
   assert.equal(parsed.operationId, "app-map.test.run");
   assert.deepEqual(parsed.input.in, { language: ["ja", "pt"] });
   assert.equal(parsed.input.lens, "visual");
+  assert.equal(parsed.input.cell, undefined);
   assert.equal(parsed.input.executionMode, undefined);
+});
+
+test("test run --in --lens --cell matches the desktop one-cell run input", () => {
+  const parsed = parseCli(
+    [
+      "test",
+      "run",
+      "grok-android-manual-v2",
+      "data-controls-tour",
+      "--in",
+      "language=ja",
+      "--lens",
+      "visual",
+      "--cell",
+      "ja",
+      "--input",
+      '{"expectedRevision":12,"target":{"kind":"device","platform":"android","targetId":"pixel"}}',
+    ],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command !== "invoke") throw new Error("expected invoke");
+  assert.deepEqual(
+    {
+      in: parsed.input.in,
+      lens: parsed.input.lens,
+      cell: parsed.input.cell,
+    },
+    { in: { language: ["ja"] }, lens: "visual", cell: "ja" },
+  );
+  assert.equal(parsed.input.executionMode, undefined);
+  const all = parseCli(
+    [
+      "test",
+      "run",
+      "grok-android-manual-v2",
+      "data-controls-tour",
+      "--in",
+      "language=ja,pt",
+      "--lens",
+      "smoke",
+      "--all",
+      "--input",
+      '{"expectedRevision":12,"target":{"kind":"device","platform":"android","targetId":"pixel"}}',
+    ],
+    {},
+  );
+  assert.equal(all.command, "invoke");
+  if (all.command !== "invoke") throw new Error("expected invoke");
+  assert.equal(all.input.executionMode, "all");
+  assert.equal(all.input.lens, "smoke");
+});
+
+test("test run --help names Variable, Test, Combine, lens, and --all", async () => {
+  const io = capture();
+  const code = await runCli(["test", "run", "--help"], {
+    streams: io.streams,
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(code, ExitCode.success);
+  const help = io.stdout();
+  assert.match(help, /Variable/u);
+  assert.match(help, /Test/u);
+  assert.match(help, /Combine/u);
+  assert.match(help, /lens/u);
+  assert.match(help, /--all/u);
+  assert.match(help, /visual/u);
+  assert.match(help, /smoke/u);
 });
 
 test("combine run --lens maps onto the Combine capture policy", async () => {
@@ -1023,6 +1098,54 @@ test("test run starts the canonical exact Test operation and watches its job", a
     { operationId: "job.get", input: { jobId: "work-job" } },
   ]);
   assert.match(io.stdout(), /"ok":true/);
+});
+
+test("test run resolves one connected target and current revision before invoking", async () => {
+  const io = capture();
+  const calls: Array<{ operationId: OperationId; input: unknown }> = [];
+  const client: OperationInvoker = {
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      if (operationId === "app-map.get") return { appMap: { id: "checkout", revision: 12 } };
+      if (operationId === "target.devices.list") {
+        return {
+          devices: [
+            { id: "pixel", serial: "pixel", name: "Pixel", platform: "android", booted: true },
+          ],
+        };
+      }
+      if (operationId === "app-map.test.run") return { job: { id: "job-12", status: "queued" } };
+      return { job: { id: "job-12", status: "ok" } };
+    },
+    events: async () => {},
+  };
+
+  const code = await runCli(
+    ["test", "run", "checkout", "smoke", "--target", "current", "--revision", "current", "--json"],
+    {
+      streams: io.streams,
+      createClient: () => client,
+      registerSignalHandlers: false,
+      pollIntervalMs: 0,
+      env: {},
+    },
+  );
+
+  assert.equal(code, ExitCode.success);
+  assert.deepEqual(calls.slice(0, 3), [
+    { operationId: "app-map.get", input: { appMapId: "checkout" } },
+    { operationId: "target.devices.list", input: {} },
+    {
+      operationId: "app-map.test.run",
+      input: {
+        appMapId: "checkout",
+        testId: "smoke",
+        expectedRevision: 12,
+        target: { kind: "device", platform: "android", targetId: "pixel" },
+      },
+    },
+  ]);
+  assert.match(io.stderr(), /Resolved Test run revision 12 on pixel/);
 });
 
 test("flow run starts once, then watches that execution job", async () => {

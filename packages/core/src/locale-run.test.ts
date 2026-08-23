@@ -771,7 +771,7 @@ test("startLocaleRecipeRun freezes screenshot-each-locale steps and export copie
         actorKind: "human",
         organizationId: "local",
         projectId: "default",
-        operationId: "recipe.create",
+        operationId: "system.internal",
         requestId: "locale-run-test",
         idempotencyKey: "locale-run-test",
         issuedAt: Date.now(),

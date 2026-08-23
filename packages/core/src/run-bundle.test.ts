@@ -53,7 +53,6 @@ async function fixture(root: string): Promise<{ runDir: string; files: string[] 
       ".complete",
       "frames/001.png",
       "log.txt",
-      "report-manifest.json",
       "run.json",
       "video/run.mp4",
     ],

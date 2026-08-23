@@ -1,3 +1,5 @@
+import { operationInputContract } from "./operation-builders.js";
+
 export type RunOutcome =
   | "passed"
   | "product-failure"
@@ -194,7 +196,7 @@ export const runShareOperationDefinitions = [
     label: "List signed Run shares",
     category: "evidence",
     mode: "query",
-    input: runShareListInputParser,
+    input: operationInputContract("run.share.list", runShareListInputParser),
     output: runShareListOutputParser,
     idempotency: "inherent",
     targetCapabilities: [],
@@ -205,23 +207,12 @@ export const runShareOperationDefinitions = [
     cancellable: false,
     transport: { method: "GET", path: "/runs/:runId/shares" },
   },
-  ...[
-    {
-      id: "run.share.create" as const,
-      label: "Create signed Run share",
-      path: "/runs/:runId/shares",
-      input: runShareCreateInputParser,
-      output: runShareCreateOutputParser,
-    },
-    {
-      id: "run.share.revoke" as const,
-      label: "Revoke signed Run share",
-      path: "/runs/:runId/shares/:shareId/revoke",
-      input: runShareRevokeInputParser,
-      output: runShareRevokeOutputParser,
-    },
-  ].map((definition) => ({
-    ...definition,
+  {
+    id: "run.share.create",
+    label: "Create signed Run share",
+    path: "/runs/:runId/shares",
+    input: operationInputContract("run.share.create", runShareCreateInputParser),
+    output: runShareCreateOutputParser,
     version: 1 as const,
     category: "evidence" as const,
     mode: "command" as const,
@@ -232,6 +223,27 @@ export const runShareOperationDefinitions = [
     minimumRole: "admin" as const,
     progress: false,
     cancellable: false,
-    transport: { method: "POST" as const, path: definition.path },
-  })),
+    transport: { method: "POST" as const, path: "/runs/:runId/shares" },
+  },
+  {
+    id: "run.share.revoke",
+    label: "Revoke signed Run share",
+    path: "/runs/:runId/shares/:shareId/revoke",
+    input: operationInputContract("run.share.revoke", runShareRevokeInputParser),
+    output: runShareRevokeOutputParser,
+    version: 1 as const,
+    category: "evidence" as const,
+    mode: "command" as const,
+    idempotency: "optional" as const,
+    targetCapabilities: [],
+    lease: "none" as const,
+    confirmation: "confirm" as const,
+    minimumRole: "admin" as const,
+    progress: false,
+    cancellable: false,
+    transport: {
+      method: "POST" as const,
+      path: "/runs/:runId/shares/:shareId/revoke",
+    },
+  },
 ] as const;

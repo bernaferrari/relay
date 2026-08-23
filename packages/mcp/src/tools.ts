@@ -1,5 +1,6 @@
 import { operationDefinitions, type OperationDefinition, type OperationId } from "@relay/protocol";
-import { relayToolInputSchema, type RelayToolInputSchema } from "./input-schemas.js";
+import * as z from "zod/v4";
+type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
 
 export const relayMcpProfiles = [
   "control",
@@ -32,24 +33,6 @@ export const relayMcpExclusions = [
     reason:
       "Complete project activity can be multi-megabyte; export it as an app or CLI artifact instead of returning it inline to an agent.",
   },
-  ...(
-    [
-      "recipe.list",
-      "recipe.get",
-      "recipe.create",
-      "recipe.update",
-      "recipe.delete",
-      "recipe.yaml.get",
-      "recipe.import",
-      "recipe.evidence.create",
-      "recipe.history.list",
-      "recipe.history.restore",
-      "recipe.stability.get",
-    ] as const
-  ).map((operationId) => ({
-    operationId,
-    reason: "Compiled recipe storage is internal; agents author and run App Map flows.",
-  })),
   ...(["job.locale-matrix.start", "job.locale-matrix.infer"] as const).map((operationId) => ({
     operationId,
     reason:
@@ -153,6 +136,9 @@ function toolDescriptor(
   definition: OperationDefinition<Exclude<OperationId, ExcludedOperationId>>,
 ): RelayMcpToolDescriptor {
   const requiresConfirmation = definition.confirmation !== "none";
+  const presentation = Object.hasOwn(definition.input.presentation.shape, "confirmation")
+    ? definition.input.presentation.omit({ confirmation: true })
+    : definition.input.presentation;
   const requirements = [
     `Project role: ${definition.minimumRole}.`,
     definition.targetCapabilities.length
@@ -177,12 +163,22 @@ function toolDescriptor(
       openWorldHint: false,
     }),
     requiresConfirmation,
-    inputSchema: relayToolInputSchema(definition.id, requiresConfirmation),
+    inputSchema: presentation.extend({
+      confirm: requiresConfirmation
+        ? z.literal(true).describe("Explicit approval for this protected operation")
+        : z.literal(true).optional().describe("Optional explicit approval"),
+    }),
   });
 }
 
 export const relayMcpTools: readonly RelayMcpToolDescriptor[] = Object.freeze(
-  operationDefinitions.filter(isToolOperation).map(toolDescriptor),
+  operationDefinitions
+    .filter((definition) => isToolOperation(definition as OperationDefinition<OperationId>))
+    .map((definition) =>
+      toolDescriptor(
+        definition as OperationDefinition<Exclude<OperationId, ExcludedOperationId>>,
+      ),
+    ),
 );
 
 const controlOperations = [

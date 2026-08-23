@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMap, AppMapCombine, AppMapScenarioTest } from "@relay/protocol";
+import type {
+  AppMap,
+  AppMapCombine,
+  AppMapMutationContext,
+  AppMapScenarioTest,
+  AppMapVariable,
+  Connection,
+  Screen,
+} from "@relay/protocol";
+import {
+  addAppMapScreen,
+  connectAppMapScreens,
+  saveAppMapCombine,
+  saveAppMapTest,
+  saveAppMapVariable,
+} from "./app-map.js";
 import { appMapCombineCellId } from "./app-map-combine-cell.js";
 import {
   AppMapCombineCellContractError,
@@ -13,6 +28,12 @@ import {
   upsertAppMapCombineFromTest,
   variableCanApply,
 } from "./app-map-combine-from-test.js";
+import { compileAppMapTest } from "./map-work.js";
+import {
+  appLocaleShouldRelaunch,
+  stayAppLocaleCanBeProved,
+  stayAppLocaleDestinationCheck,
+} from "./stay-app-locale-destination.js";
 
 function scope(id: string) {
   return { organizationId: "org", projectId: "project", appMapId: "settings", id };
@@ -352,4 +373,215 @@ test("a cell selector picks one world without firing the rest", () => {
     () => resolveCombineCellSelector(cells, "fr"),
     (error: unknown) => error instanceof AppMapCombineWorldError && error.code === "unknown-value",
   );
+});
+
+function emptyGrokMap(): AppMap {
+  return {
+    schemaVersion: 1,
+    id: "grok-android-manual-v2",
+    organizationId: "org",
+    projectId: "project",
+    name: "Grok Android",
+    revision: 0,
+    notes: {},
+    groups: {},
+    screens: {},
+    screenVariants: {},
+    connections: {},
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function grokContext(map: AppMap, eventId: string): AppMapMutationContext {
+  return {
+    expectedRevision: map.revision,
+    eventId,
+    actorId: "operator:xai",
+    actorKind: "human",
+    at: map.updatedAt + 1,
+  };
+}
+
+function grokScreen(id: string, title: string, fingerprint: string): Screen {
+  return {
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "grok-android-manual-v2",
+    id,
+    title,
+    identity: { schemaVersion: 1, fingerprint },
+    variantIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function grokConnection(
+  id: string,
+  fromScreenId: string,
+  toScreenId: string,
+  label: string,
+): Connection {
+  return {
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "grok-android-manual-v2",
+    id,
+    fromScreenId,
+    destination: { kind: "screen", screenId: toScreenId },
+    label,
+    state: "ready",
+    actions: [{ id: `${id}-tap`, kind: "tap", target: { label } }],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+test("a Grok-shaped App Map persists Language × Data Controls through save operations", () => {
+  let map = emptyGrokMap();
+  map = addAppMapScreen(
+    map,
+    { screen: grokScreen("home", "Home", "a".repeat(64)) },
+    grokContext(map, "add-home"),
+  );
+  map = addAppMapScreen(
+    map,
+    { screen: grokScreen("settings", "Settings", "b".repeat(64)) },
+    grokContext(map, "add-settings"),
+  );
+  map = addAppMapScreen(
+    map,
+    { screen: grokScreen("data-controls", "Data Controls", "c".repeat(64)) },
+    grokContext(map, "add-data-controls"),
+  );
+  map = connectAppMapScreens(
+    map,
+    grokConnection("open-settings", "home", "settings", "Settings"),
+    grokContext(map, "connect-settings"),
+  );
+  map = connectAppMapScreens(
+    map,
+    grokConnection("open-data-controls", "settings", "data-controls", "Data Controls"),
+    grokContext(map, "connect-data-controls"),
+  );
+
+  const language: AppMapVariable = {
+    organizationId: map.organizationId,
+    projectId: map.projectId,
+    appMapId: map.id,
+    id: "language",
+    name: "Language",
+    kind: "language",
+    apply: { kind: "appLocale", app: "ai.x.grok" },
+    options: [
+      { id: "en", label: "English" },
+      { id: "ja", label: "日本語" },
+      { id: "pt", label: "Português" },
+    ],
+    createdAt: map.updatedAt + 1,
+    updatedAt: map.updatedAt + 1,
+  };
+  map = saveAppMapVariable(map, language, grokContext(map, "save-language"));
+
+  const broken: AppMapVariable = {
+    ...language,
+    id: "untitled-list",
+    name: "Untitled list",
+    apply: { kind: "list", entryPath: [{ kind: "tap", target: { label: "Open" } }] },
+    options: [{ id: "row", label: "Row" }],
+  };
+  map = saveAppMapVariable(map, broken, grokContext(map, "save-broken"));
+
+  const tour: AppMapScenarioTest = {
+    organizationId: map.organizationId,
+    projectId: map.projectId,
+    appMapId: map.id,
+    id: "data-controls-tour",
+    name: "Data Controls",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "open-settings",
+        kind: "instruction",
+        intent: "Open Settings",
+        binding: { status: "resolved", kind: "connections", connectionIds: ["open-settings"] },
+      },
+      {
+        id: "open-data-controls",
+        kind: "instruction",
+        intent: "Open Data Controls",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-data-controls"],
+        },
+      },
+      {
+        id: "on-data-controls",
+        kind: "validation",
+        intent: "On Data Controls",
+        binding: {
+          status: "resolved",
+          kind: "assertion",
+          assertion: { kind: "screen", screenId: "data-controls" },
+        },
+      },
+    ],
+    createdAt: map.updatedAt + 1,
+    updatedAt: map.updatedAt + 1,
+  };
+  map = saveAppMapTest(map, tour, grokContext(map, "save-tour"));
+
+  assert.equal(map.variables.language?.apply.kind, "appLocale");
+  assert.equal(
+    map.variables.language?.apply.kind === "appLocale" ? map.variables.language.apply.app : "",
+    "ai.x.grok",
+  );
+  assert.equal(variableCanApply(map.variables.language!), true);
+  assert.equal(variableCanApply(map.variables["untitled-list"]!), false);
+  assert.throws(
+    () =>
+      upsertAppMapCombineFromTest({
+        map,
+        testId: tour.id,
+        selected: { "untitled-list": ["row"] },
+      }),
+    (error: unknown) => error instanceof AppMapCombineWorldError && error.code === "cannot-apply",
+  );
+
+  const upserted = upsertAppMapCombineFromTest({
+    map,
+    testId: tour.id,
+    selected: { language: ["en", "ja"] },
+    lens: "visual",
+    now: map.updatedAt + 1,
+  });
+  assert.equal(upserted.created, true);
+  assert.deepEqual(upserted.combine.variableIds, ["language"]);
+  assert.deepEqual(upserted.combine.testIds, [tour.id]);
+  assert.deepEqual(upserted.combine.selected, { language: ["en", "ja"] });
+  assert.deepEqual(upserted.combine.captures, { [tour.id]: { mode: "every-screen" } });
+  map = saveAppMapCombine(map, upserted.combine, grokContext(map, "save-combine"));
+  assert.equal(map.combines[upserted.combine.id]?.id, upserted.combine.id);
+  assert.equal(map.combines[upserted.combine.id]?.name.includes("Language"), true);
+  assert.equal(map.combines[upserted.combine.id]?.name.includes("Data Controls"), true);
+
+  const compiled = compileAppMapTest(map, map.tests[tour.id]!);
+  assert.equal(stayAppLocaleCanBeProved(compiled.graph, compiled.root.id), true);
+  assert.equal(appLocaleShouldRelaunch({}, compiled.graph, compiled.root.id), false);
+  const stay = stayAppLocaleDestinationCheck(compiled.graph, compiled.root.id);
+  assert.equal(stay?.kind === "expect-screen" ? stay.screenId : undefined, "data-controls");
+  assert.equal(stay?.kind === "expect-screen" ? stay.fingerprint : undefined, "c".repeat(64));
 });

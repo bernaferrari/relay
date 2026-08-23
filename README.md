@@ -32,12 +32,13 @@ device fleet, or buy organization-wide SSO, quotas, and published service-level 
 
 ## Start locally
 
-Relay's fastest path is the desktop app. You need Node.js 24 or newer, `pnpm`, and Vite+ (`vp`).
+Relay's fastest path is the desktop app. You need Node.js 24 or newer and Corepack. The workspace
+installs its pinned pnpm and Vite+ versions, so no global `vp` command is required.
 Android work also needs `adb`; physical iOS control needs the local Apple developer tooling used by
 [agent-device](https://oss.callstack.com/agent-device/docs/quick-start).
 
 ```bash
-vp install
+corepack pnpm install --frozen-lockfile
 pnpm doctor
 pnpm dev:desktop
 ```
@@ -103,6 +104,7 @@ pnpm ensure:serve
 pnpm relay device list --json
 pnpm relay map list --json
 pnpm relay test compile <map-id> <test-id> --json
+pnpm relay test run <map-id> <test-id> --target current --revision current
 ```
 
 The CLI does not silently start another server. Use `pnpm relay --help` or family help such as
@@ -157,7 +159,8 @@ pnpm test:golden          # skips cleanly when no supported target is available
 pnpm test:golden:require  # fails unless the real-device path succeeds
 ```
 
-If setup behaves unexpectedly, run `vp env doctor`.
+If setup behaves unexpectedly, run `pnpm doctor`. To inspect a running Relay service separately,
+run `pnpm server:doctor`.
 
 ## More documentation
 

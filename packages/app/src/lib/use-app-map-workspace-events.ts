@@ -1,5 +1,4 @@
 import { type Accessor, type Setter } from "solid-js";
-import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { toast } from "../context/toast";
 import { createAppMapEventOrchestration } from "../components/app-map-events";
@@ -40,7 +39,6 @@ export function useAppMapWorkspaceEvents(options: {
   onClearContextSurface: () => void;
   onClearSelection: () => void;
 }) {
-  const draft = useRecipeDraft();
   const recorder = useRecorder();
 
   createAppMapEventOrchestration({
@@ -54,8 +52,8 @@ export function useAppMapWorkspaceEvents(options: {
     onCloseDevicePanel: options.onCloseDevice,
     onRunMap: options.onRun,
     onUndoRequest: (event, shouldRedo) => {
-      const canUndo = options.historyCanUndo() || draft.canUndo();
-      const canRedo = options.historyCanRedo() || draft.canRedo();
+      const canUndo = options.historyCanUndo();
+      const canRedo = options.historyCanRedo();
       if (shouldRedo ? !canRedo : !canUndo) return;
       event.preventDefault();
       if (shouldRedo) options.onRedo();

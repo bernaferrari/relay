@@ -3,6 +3,7 @@ import test from "node:test";
 import type { Recipe } from "./recipes.js";
 import {
   appLocaleShouldRelaunch,
+  stayAppLocaleCanBeProved,
   stayAppLocaleDestinationCheck,
 } from "./stay-app-locale-destination.js";
 
@@ -30,6 +31,7 @@ test("stay proves the last product expect-screen after a Home source", () => {
       fingerprint,
     },
   ]);
+  assert.equal(stayAppLocaleCanBeProved({ [tour.id]: tour }, tour.id), true);
   assert.equal(appLocaleShouldRelaunch({}, { [tour.id]: tour }, tour.id), false);
   assert.deepEqual(stayAppLocaleDestinationCheck({ [tour.id]: tour }, tour.id), {
     kind: "expect-screen",
@@ -83,5 +85,40 @@ test("source-only graphs cannot stay and relaunch by default", () => {
     },
   ]);
   assert.equal(appLocaleShouldRelaunch({}, { [setup.id]: setup }, setup.id), true);
+  assert.equal(stayAppLocaleCanBeProved({ [setup.id]: setup }, setup.id), false);
   assert.equal(stayAppLocaleDestinationCheck({ [setup.id]: setup }, setup.id), undefined);
+});
+
+test("a named destination without identity cannot stay and does not invent one", () => {
+  const nameless = recipe("tour", [
+    {
+      kind: "expect-screen",
+      id: "relay-destination-data",
+      screenId: "data-controls",
+      screenTitle: "Data Controls",
+      fingerprint: "",
+    },
+  ]);
+  assert.equal(stayAppLocaleCanBeProved({ [nameless.id]: nameless }, nameless.id), false);
+  assert.equal(appLocaleShouldRelaunch({}, { [nameless.id]: nameless }, nameless.id), true);
+  assert.equal(stayAppLocaleDestinationCheck({ [nameless.id]: nameless }, nameless.id), undefined);
+  assert.equal(
+    appLocaleShouldRelaunch({ relaunch: false }, { [nameless.id]: nameless }, nameless.id),
+    false,
+  );
+});
+
+test("explicit relaunch wins even when stay can be proved", () => {
+  const tour = recipe("tour", [
+    {
+      kind: "expect-screen",
+      id: "relay-destination-data",
+      screenId: "data-controls",
+      screenTitle: "Data Controls",
+      fingerprint,
+    },
+  ]);
+  assert.equal(stayAppLocaleCanBeProved({ [tour.id]: tour }, tour.id), true);
+  assert.equal(appLocaleShouldRelaunch({ relaunch: true }, { [tour.id]: tour }, tour.id), true);
+  assert.equal(appLocaleShouldRelaunch({ relaunch: false }, { [tour.id]: tour }, tour.id), false);
 });

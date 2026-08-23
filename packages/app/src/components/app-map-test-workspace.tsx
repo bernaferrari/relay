@@ -207,6 +207,9 @@ export function AppMapTestWorkspace(props: {
       return;
     }
     if (testRun.requiresTargetProfileSelection() || !testRun.targetProfileMatchesSelectedDevice()) {
+      document
+        .querySelector<HTMLDetailsElement>("[data-test-run-options]")
+        ?.setAttribute("open", "");
       queueMicrotask(() => document.getElementById("test-runtime-profile")?.focus());
       return;
     }

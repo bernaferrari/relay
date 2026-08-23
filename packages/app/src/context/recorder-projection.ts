@@ -211,14 +211,13 @@ export function selectProjectedAuthoringSession(
     appMapId: string | null;
     targetId: string | null;
     actorId: string;
-    dismissedSessionIds?: ReadonlySet<string>;
   },
 ): AuthoringSession | null {
   const relevant = sessions
     .filter(
       (session) =>
         session.appMapId === input.appMapId &&
-        !input.dismissedSessionIds?.has(session.id) &&
+        !session.archive &&
         // Failed attempts remain in Activity, but they no longer own the
         // recorder or their expired lease after the workspace recovers.
         !["committed", "cancelled", "failed"].includes(session.state) &&
@@ -232,20 +231,4 @@ export function selectProjectedAuthoringSession(
     relevant.find((session) => session.state === "recording") ??
     null
   );
-}
-
-export function supersededReviewSessionIds(
-  sessions: readonly AuthoringSession[],
-  current: AuthoringSession,
-): string[] {
-  return sessions
-    .filter(
-      (session) =>
-        session.state === "reviewing" &&
-        session.actorId === current.actorId &&
-        session.appMapId === current.appMapId &&
-        session.target.targetId === current.target.targetId &&
-        session.updatedAt <= current.updatedAt,
-    )
-    .map((session) => session.id);
 }

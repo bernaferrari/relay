@@ -70,7 +70,9 @@ export function dropConnection(draft: AppMap, connectionId: string): void {
   const flow = Object.values(draft.flows).find((item) => item.connectionIds.includes(connectionId));
   if (flow) appMapFail("in-use", `Connection ${connectionId} is used by flow ${flow.id}`);
   const result = Object.values(draft.targetResults).find(
-    (item) => item.connectionId === connectionId,
+    (item) =>
+      item.connectionId === connectionId ||
+      item.connectionObservations?.some((observation) => observation.connectionId === connectionId),
   );
   if (result) {
     appMapFail("in-use", `Connection ${connectionId} is referenced by target result ${result.id}`);

@@ -4,6 +4,7 @@ import {
   type AuthoringRawOptimizationProposalResponse,
 } from "./authoring.js";
 import type { OperationDefinition, RuntimeParser } from "./operation-contract.js";
+import { operationInputContract } from "./operation-builders.js";
 import { objectParser } from "./operation-parser-primitives.js";
 
 const input = objectParser<{ sessionId: string }>(
@@ -18,14 +19,17 @@ const output: RuntimeParser<AuthoringRawOptimizationProposalResponse> = {
 
 /** An offline review surface over immutable redacted raw capture. It cannot
  * initiate device work or apply an edit to the Take it describes. */
-export const authoringRawOptimizationOperationDefinition: OperationDefinition<"authoring.take.optimization.get"> =
-  {
+export const authoringRawOptimizationOperationDefinition: OperationDefinition<
+  "authoring.take.optimization.get",
+  { sessionId: string },
+  AuthoringRawOptimizationProposalResponse
+> = {
     id: "authoring.take.optimization.get",
     version: 1,
     label: "Get Raw Take Optimization Review",
     category: "authoring",
     mode: "query",
-    input,
+    input: operationInputContract("authoring.take.optimization.get", input),
     output,
     idempotency: "inherent",
     targetCapabilities: [],
@@ -35,4 +39,4 @@ export const authoringRawOptimizationOperationDefinition: OperationDefinition<"a
     progress: false,
     cancellable: false,
     transport: { method: "GET", path: "/authoring-sessions/:sessionId/optimization-proposal" },
-  };
+};

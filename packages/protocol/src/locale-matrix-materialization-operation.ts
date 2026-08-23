@@ -1,12 +1,11 @@
 /** Runtime contract for the target-free locale matrix materialization read. */
 import { createOperationBuilders } from "./operation-builders.js";
-import type { OperationInput, OperationOutput } from "./operation-map.js";
+import type { OperationInput, OperationOutput, RelayOperationMap } from "./operation-map.js";
 import {
   boolean,
   fail,
   number,
   objectParser,
-  operationRecordParser,
   record,
   string,
 } from "./operation-parser-primitives.js";
@@ -155,8 +154,9 @@ const outputParser = objectParser<OperationOutput<LocaleMatrixMaterializationOpe
   },
 );
 
-const { command } =
-  createOperationBuilders<LocaleMatrixMaterializationOperationId>(operationRecordParser);
+const { command } = createOperationBuilders<
+  Pick<RelayOperationMap, LocaleMatrixMaterializationOperationId>
+>();
 
 /** POST is deliberate because materialization accepts a full taught scope, but
  * it is an idempotent read with no target capabilities or lease. */

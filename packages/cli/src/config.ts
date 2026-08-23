@@ -40,6 +40,8 @@ export type ParsedCli =
       behavior?: CommandBehavior;
       screenshotOutput: ScreenshotOutput;
       surveyForce?: boolean;
+      currentTarget?: boolean;
+      currentRevision?: boolean;
     }
   | {
       config: GlobalConfig;
@@ -85,6 +87,8 @@ const valueFlags = new Set([
   "--in",
   "--lens",
   "--cell",
+  "--target",
+  "--revision",
 ]);
 const switchFlags = new Set([
   "-h",
@@ -509,6 +513,20 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (!matched) throw new UsageError("--mark requires <x>,<y> in the same units as a tap");
   }
   const resolved = resolveCommand(tokens.positionals, input);
+  const targetShortcut = tokens.values.get("--target");
+  const revisionShortcut = tokens.values.get("--revision");
+  if (targetShortcut !== undefined && targetShortcut !== "current") {
+    throw new UsageError("--target currently accepts only 'current'");
+  }
+  if (revisionShortcut !== undefined && revisionShortcut !== "current") {
+    throw new UsageError("--revision currently accepts only 'current'");
+  }
+  if (
+    (targetShortcut !== undefined || revisionShortcut !== undefined) &&
+    resolved.operationId !== "app-map.test.run"
+  ) {
+    throw new UsageError("--target current and --revision current are only valid on test run");
+  }
   resolved.input = applySurveyDir(
     resolved.operationId,
     applySnapshotPresentation(
@@ -582,6 +600,8 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       ? { behavior: "screenshot" as const }
       : {}),
     ...(surveyDirForce(resolved.operationId, tokens) ? { surveyForce: true } : {}),
+    ...(targetShortcut === "current" ? { currentTarget: true } : {}),
+    ...(revisionShortcut === "current" ? { currentRevision: true } : {}),
   };
 }
 

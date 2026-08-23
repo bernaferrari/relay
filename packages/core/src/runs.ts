@@ -27,6 +27,7 @@ import {
 } from "./redaction.js";
 import {
   catalogRunDirectory,
+  catalogSurfaceComparisons,
   catalogSummaries,
   indexRun,
   rebuildRunCatalog,
@@ -334,14 +335,19 @@ function persistedExecutionProvenance(job: TestJob): PersistedExecutionProvenanc
 }
 
 async function readCompletedRun(dir: string): Promise<PersistedRun | null> {
-  if (!existsSync(join(dir, COMPLETE_MARKER))) return null;
   try {
     const raw = await readFile(join(dir, "run.json"), "utf8");
+    const parsed = JSON.parse(raw) as PersistedRun;
+    // Pre-v5 runs did not have an atomic commit marker. They remain readable
+    // as historical single-manifest runs, while every current run must pass
+    // the marker digest before it is exposed.
+    if (parsed.schemaVersion === undefined || parsed.schemaVersion < 5) return parsed;
+    if (!existsSync(join(dir, COMPLETE_MARKER))) return null;
     const marker = JSON.parse(await readFile(join(dir, COMPLETE_MARKER), "utf8")) as {
       digest?: string;
     };
     if (marker.digest !== createHash("sha256").update(raw).digest("hex")) return null;
-    return JSON.parse(raw) as PersistedRun;
+    return parsed;
   } catch {
     return null;
   }
@@ -369,7 +375,6 @@ async function persistRunOnce(job: TestJob): Promise<PersistedRun> {
   const token = randomUUID();
   const temporary = {
     run: join(dir, `.run.json.${token}.tmp`),
-    manifest: join(dir, `.report-manifest.json.${token}.tmp`),
     log: join(dir, `.log.txt.${token}.tmp`),
     marker: join(dir, `.complete.${token}.tmp`),
   };
@@ -378,7 +383,6 @@ async function persistRunOnce(job: TestJob): Promise<PersistedRun> {
   try {
     await Promise.all([
       writeFile(temporary.run, json, { encoding: "utf8", flag: "wx" }),
-      writeFile(temporary.manifest, json, { encoding: "utf8", flag: "wx" }),
       writeFile(temporary.log, payload.logs.join("\n"), { encoding: "utf8", flag: "wx" }),
       writeFile(temporary.marker, JSON.stringify({ schemaVersion: 1, id: job.id, digest }), {
         encoding: "utf8",
@@ -387,7 +391,6 @@ async function persistRunOnce(job: TestJob): Promise<PersistedRun> {
     ]);
     await Promise.all(Object.values(temporary).map(syncPath));
     await rename(temporary.run, join(dir, "run.json"));
-    await rename(temporary.manifest, join(dir, "report-manifest.json"));
     await rename(temporary.log, join(dir, "log.txt"));
     await syncPath(dir);
     // The marker is the commit point. Readers ignore schema-v5 manifests until
@@ -443,13 +446,8 @@ export async function listPersistedRuns(
     try {
       const st = await stat(dir);
       if (!st.isDirectory()) continue;
-      const raw = await readFile(join(dir, "run.json"), "utf8");
-      let parsed = JSON.parse(raw) as PersistedRun;
-      if (parsed.schemaVersion >= 5) {
-        const committed = await readCompletedRun(dir);
-        if (!committed) continue;
-        parsed = committed;
-      }
+      const parsed = await readCompletedRun(dir);
+      if (!parsed) continue;
       if (actionPrefix && !parsed.action.startsWith(actionPrefix)) continue;
       parsed.dir = dir;
       runs.push(parsed);
@@ -484,13 +482,8 @@ export async function readPersistedRun(idOrDir: string): Promise<PersistedRun | 
   try {
     const indexed = await catalogRunDirectory(root, needle);
     if (indexed) {
-      const raw = await readFile(join(indexed, "run.json"), "utf8");
-      let parsed = JSON.parse(raw) as PersistedRun;
-      if (parsed.schemaVersion >= 5) {
-        const committed = await readCompletedRun(indexed);
-        if (!committed) return null;
-        parsed = committed;
-      }
+      const parsed = await readCompletedRun(indexed);
+      if (!parsed) return null;
       parsed.dir = indexed;
       return parsed;
     }
@@ -501,9 +494,8 @@ export async function readPersistedRun(idOrDir: string): Promise<PersistedRun | 
     if (!match) {
       for (const entry of entries) {
         try {
-          const raw = await readFile(join(root, entry, "run.json"), "utf8");
-          const parsed = JSON.parse(raw) as Pick<PersistedRun, "id">;
-          if (parsed.id === needle) {
+          const parsed = await readCompletedRun(join(root, entry));
+          if (parsed?.id === needle) {
             match = entry;
             break;
           }
@@ -514,18 +506,40 @@ export async function readPersistedRun(idOrDir: string): Promise<PersistedRun | 
     }
     if (!match) return null;
     const dir = join(root, match);
-    const raw = await readFile(join(dir, "run.json"), "utf8");
-    let parsed = JSON.parse(raw) as PersistedRun;
-    if (parsed.schemaVersion >= 5) {
-      const committed = await readCompletedRun(dir);
-      if (!committed) return null;
-      parsed = committed;
-    }
+    const parsed = await readCompletedRun(dir);
+    if (!parsed) return null;
     parsed.dir = dir;
     return parsed;
   } catch {
     return null;
   }
+}
+
+export async function indexedReusableSurfaceComparisons(cacheKey: string) {
+  const indexed = await catalogSurfaceComparisons(runsRoot(), cacheKey);
+  const candidates = await Promise.all(
+    indexed.map(async (candidate) => {
+      // The catalog only tells us where to look. Re-read the canonical manifest
+      // and verify its commit digest before its evidence is eligible for reuse.
+      const run = await readPersistedRun(candidate.runId);
+      const artifact = run?.artifacts.find((item) => {
+        if (item.kind !== "logical-scroll-surface-result" || item.capturedAt !== candidate.artifactCapturedAt) {
+          return false;
+        }
+        const data = item.data as { cache?: { key?: unknown } };
+        return data.cache?.key === cacheKey;
+      });
+      if (!run || !artifact) return null;
+      return {
+        runId: run.id,
+        status: run.status,
+        at: run.writtenAt,
+        artifactCapturedAt: artifact.capturedAt,
+        data: artifact.data,
+      };
+    }),
+  );
+  return candidates.filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);
 }
 
 /**
@@ -602,14 +616,12 @@ async function reviewPersistedRunOnce(
   const token = randomUUID();
   const temporary = {
     run: join(run.dir, `.run.json.review.${token}.tmp`),
-    manifest: join(run.dir, `.report-manifest.json.review.${token}.tmp`),
     marker: join(run.dir, `.complete.review.${token}.tmp`),
   };
   const digest = createHash("sha256").update(json).digest("hex");
   try {
     await Promise.all([
       writeFile(temporary.run, json, { encoding: "utf8", flag: "wx" }),
-      writeFile(temporary.manifest, json, { encoding: "utf8", flag: "wx" }),
       writeFile(temporary.marker, JSON.stringify({ schemaVersion: 1, id: next.id, digest }), {
         encoding: "utf8",
         flag: "wx",
@@ -617,7 +629,6 @@ async function reviewPersistedRunOnce(
     ]);
     await Promise.all(Object.values(temporary).map(syncPath));
     await rename(temporary.run, join(run.dir, "run.json"));
-    await rename(temporary.manifest, join(run.dir, "report-manifest.json"));
     await rename(temporary.marker, join(run.dir, COMPLETE_MARKER));
     await syncPath(run.dir);
     await indexRun(root, next as unknown as Record<string, unknown>).catch(() => undefined);

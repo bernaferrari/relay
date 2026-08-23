@@ -180,7 +180,7 @@ export function authenticatedBrowserOrigin(origin: string | undefined): string |
 
 /** Workspace assets do not carry project ownership yet. Keep them on the local
  * control plane until their stores can enforce ownership instead of pretending
- * a bearer token makes a global recipe, target, or discovery project-safe. */
+ * a bearer token makes a global target or discovery project-safe. */
 export function isLocalWorkspacePath(pathname: string): boolean {
   return [
     "/actions",
@@ -188,7 +188,6 @@ export function isLocalWorkspacePath(pathname: string): boolean {
     "/devices",
     "/targets",
     "/target-profiles",
-    "/recipes",
     "/discovery",
     "/settings/privacy",
     "/settings/evidence",

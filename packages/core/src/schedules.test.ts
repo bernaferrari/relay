@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   deleteSchedule,
   listSchedules,
+  markScheduleFailure,
   markScheduleRun,
   resolveScheduledTargetProfile,
   saveSchedule,
@@ -53,6 +54,35 @@ test("local schedules persist and advance after a run", async () => {
     assert.equal(updated?.nextRunAt, 3_601_000);
     await deleteSchedule(saved.id);
     assert.deepEqual(await listSchedules(), []);
+  } finally {
+    process.chdir(cwd);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("scheduled admission failures stay visible until a successful occurrence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-schedule-failures-"));
+  const cwd = process.cwd();
+  process.chdir(root);
+  try {
+    const saved = await saveSchedule({
+      recipeId: "combine",
+      targetKind: "device",
+      targetId: "device-1",
+      platform: "android",
+      intervalMinutes: 10,
+    });
+    await markScheduleFailure(saved.id, "missing private Variable", 2_000);
+    const [failed] = await listSchedules();
+    assert.equal(failed?.lastFailureAt, 2_000);
+    assert.equal(failed?.lastFailure, "missing private Variable");
+    assert.equal(failed?.nextRunAt, 602_000);
+
+    await markScheduleRun(saved.id, 3_000);
+    const [recovered] = await listSchedules();
+    assert.equal(recovered?.lastFailureAt, undefined);
+    assert.equal(recovered?.lastFailure, undefined);
+    assert.equal(recovered?.lastRunAt, 3_000);
   } finally {
     process.chdir(cwd);
     await rm(root, { recursive: true, force: true });

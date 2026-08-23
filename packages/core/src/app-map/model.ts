@@ -36,6 +36,7 @@ export {
   type AppMapVariable,
   type AppMapVariableKind,
   type Connection,
+  type ConnectionExecutionObservation,
   type ConnectionDestination,
   type ConnectionNavigationContract,
   type ConnectionNavigationTarget,

@@ -3,13 +3,12 @@ import { humanError } from "./human-error";
 import type {
   AppMapCapturePolicy,
   AppMapCombineCellTargetBinding,
-  CompatibilityMatrix,
   LocaleMatrixMaterializationInput,
   LocaleRunAnalysisReport,
   LocalCampaignAdmissionRequest,
 } from "@relay/protocol";
 import { toast } from "../context/toast";
-import type { CompatibilityReport, DeviceInfo, JobInfo, LogLine, RecipeInfo } from "./api-types";
+import type { CompatibilityReport, DeviceInfo, JobInfo, LogLine } from "./api-types";
 import type { ServerRequest } from "./server-matrix-remote";
 import {
   enqueueAppMapFlow,
@@ -31,8 +30,6 @@ import {
   resumeCombineCampaignRemote,
   cancelCombineCampaignRemote,
   buildLocaleMatrixInput,
-  enqueueMatrix,
-  enqueueRecipe,
   loadMatrixReport,
   loadMatrixAnalysis,
   materializeLocaleMatrix,
@@ -50,15 +47,10 @@ type RunControllerDependencies = {
   request: ServerRequest;
   health: Accessor<string>;
   devices: Accessor<DeviceInfo[]>;
-  recipes: Accessor<RecipeInfo[]>;
-  matrices: Accessor<CompatibilityMatrix[]>;
   selectedDevice: Accessor<string | null>;
   selectedJobId: Accessor<string | null>;
-  prodAccountMatch: Accessor<string>;
   projectId: () => string;
   projectVariables: Accessor<import("@relay/protocol").TestData[]>;
-  activeJob: Accessor<JobInfo | null>;
-  queuedJobs: Accessor<JobInfo[]>;
   captureBeforeRun: (label: string, actionId: string) => Promise<unknown>;
   appendLog: (text: string, level?: LogLine["level"], jobId?: string) => void;
   setSelectedJobId: (id: string) => void;
@@ -161,50 +153,6 @@ export function createServerRunController(deps: RunControllerDependencies) {
       toast(readable, "warning");
       deps.setError(readable);
       return null;
-    }
-  }
-
-  async function runRecipe(id: string, repetitions = 1): Promise<void> {
-    if (deps.health() !== "online") {
-      toast("Relay isn’t connected — can’t run yet", "warning");
-      return;
-    }
-    const serial = deps.selectedDevice() ?? undefined;
-    const targetPlatform =
-      deps.devices().find((device) => device.serial === serial)?.platform ?? "android";
-    const queuedBefore = deps.queuedJobs().length;
-    const willQueue = Boolean(deps.activeJob()) || queuedBefore > 0;
-    deps.appendLog(`enqueue recipe ${id}${serial ? ` on ${serial}` : ""}…`, "info");
-    try {
-      await deps.captureBeforeRun(`before · ${id}`, id).catch(() => undefined);
-      const data = await enqueueRecipe(deps.request, {
-        recipe: id,
-        ...(serial ? { serial } : {}),
-        ...(targetPlatform === "browser"
-          ? { targetKind: "browser" as const, browserTargetId: serial }
-          : { targetKind: "device" as const, platform: targetPlatform }),
-        repetitions,
-        projectId: deps.projectId(),
-        ...(deps.prodAccountMatch() ? { prodAccountMatch: deps.prodAccountMatch() } : {}),
-      });
-      if (data.jobs[0]) deps.setSelectedJobId(data.jobs[0].id);
-      const title = deps.recipes().find((recipe) => recipe.id === id)?.title ?? id;
-      if (repetitions > 1) {
-        toast(`Queued ${repetitions} frozen trials for ${title}`, "success");
-        void deps.notify?.("Relay", `Queued ${repetitions} trials for ${title}`);
-      } else if (willQueue) {
-        toast(`Queued ${title} — position ${queuedBefore + 1}`, "info");
-        void deps.notify?.("Relay", `Queued ${title} — position ${queuedBefore + 1}`);
-      } else {
-        toast(`Running ${title}`, "success");
-        void deps.notify?.("Relay", `Running ${title}`);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const readable = humanError(error, "Could not run this Test");
-      deps.appendLog(message, "error");
-      toast(readable, "error");
-      deps.setError(readable);
     }
   }
 
@@ -464,7 +412,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
     const targetPlatform = serial
       ? (deps.devices().find((device) => device.serial === serial)?.platform ?? "android")
       : undefined;
-    const title = options?.title ?? deps.recipes().find((recipe) => recipe.id === id)?.title ?? id;
+    const title = options?.title ?? id;
     const targetLabel = usesExplicitCaseTargets
       ? `${options?.caseTargetBindings?.length ?? 0} explicit local case targets`
       : serial!;
@@ -515,37 +463,6 @@ export function createServerRunController(deps: RunControllerDependencies) {
       toast(readable, "error");
       deps.setError(readable);
       return null;
-    }
-  }
-
-  async function runCompatibilityMatrix(
-    recipeId: string,
-    matrixId: string,
-    repetitions = 1,
-  ): Promise<void> {
-    if (deps.health() !== "online") {
-      toast("Relay isn’t connected — can’t run yet", "warning");
-      return;
-    }
-    const matrix = deps.matrices().find((item) => item.id === matrixId);
-    try {
-      const data = await enqueueMatrix(deps.request, {
-        recipe: recipeId,
-        matrixId,
-        repetitions,
-        ...(deps.prodAccountMatch() ? { prodAccountMatch: deps.prodAccountMatch() } : {}),
-      });
-      if (data.jobs[0]) deps.setSelectedJobId(data.jobs[0].id);
-      toast(
-        `Queued ${data.jobs.length} ${data.jobs.length === 1 ? "run" : "runs"} across ${data.matrix.profiles.length} target${data.matrix.profiles.length === 1 ? "" : "s"}${matrix ? ` · ${matrix.name}` : ""}`,
-        "success",
-      );
-      await deps.refreshJobs();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const readable = humanError(error, "Could not run this compatibility matrix");
-      deps.appendLog(message, "error");
-      toast(readable, "error");
     }
   }
 
@@ -618,7 +535,6 @@ export function createServerRunController(deps: RunControllerDependencies) {
   }
 
   return {
-    runRecipe,
     inferLocaleOptionsFromDevice,
     inferVariableFromDevice,
     runPathAcrossVariables,
@@ -642,7 +558,6 @@ export function createServerRunController(deps: RunControllerDependencies) {
     },
     runAppMapConnection,
     runAppMapFlow,
-    runCompatibilityMatrix,
     loadCompatibilityReport,
     matrixEvidence,
     retrySelectedJob,

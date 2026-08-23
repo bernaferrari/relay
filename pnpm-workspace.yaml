@@ -16,6 +16,7 @@ catalog:
 overrides:
   vite: "catalog:"
   "@xhmikosr/decompress": "^10.2.1"
+  "file-type": "21.3.2"
   # electron-builder 26.15.3 still resolves these vulnerable transitives. Keep
   # the compatible patched floors explicit until its dependency graph catches up.
   "brace-expansion@^1.1.0": "1.1.18"

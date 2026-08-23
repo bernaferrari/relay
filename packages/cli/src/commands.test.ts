@@ -46,6 +46,14 @@ test("legacy Corpus sessions are not a second public locale workflow", () => {
   assert.throws(() => resolveCommand(["corpus", "create"]), /Unknown command/);
 });
 
+test("compiled Recipe storage has no public CLI namespace", () => {
+  assert.deepEqual(
+    cliOperationDescriptors.filter(({ operationId }) => operationId.startsWith("recipe.")),
+    [],
+  );
+  assert.throws(() => resolveCommand(["recipe", "list"]), /Unknown command/);
+});
+
 test("every friendly path resolves with its declared arguments", () => {
   for (const descriptor of mappedCommandDescriptors) {
     for (const candidate of descriptor.paths) {
@@ -205,7 +213,7 @@ test("Test help exposes graph creation, semantic edits, and the required run tar
   assert.match(help, /target \(object, required\)/);
   assert.match(help, /forceRecaptureScreenIds/);
   assert.match(help, /"kind":"browser","platform":"browser"/);
-  assert.match(help, /revision and target are mandatory/);
+  assert.match(help, /freezes an exact revision and target/);
   assert.match(help, /eventId/);
   assert.match(help, /relay test save checkout smoke/);
   assert.match(help, /relay test run checkout smoke/);

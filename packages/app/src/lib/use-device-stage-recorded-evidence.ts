@@ -6,7 +6,7 @@ import {
   type Accessor,
   type Setter,
 } from "solid-js";
-import { useRecipeDraft } from "../context/recipe-draft";
+import { useAppMapExecution } from "../context/app-map-execution";
 import { useRecorder } from "../context/recorder";
 import { useServer, type RecipeStep } from "../context/server";
 import { useWorkbench } from "../context/workbench";
@@ -37,26 +37,26 @@ export function useDeviceStageRecordedEvidence(options: {
   const server = useServer();
   const recorder = useRecorder();
   const workbench = useWorkbench();
-  const draft = useRecipeDraft();
+  const execution = useAppMapExecution();
 
   const focusedStep = createMemo(() => {
     const index = workbench.focusedIndex();
     if (index == null || index < 0) return null;
-    const step = draft.steps()[index];
+    const step = execution.steps()[index];
     return {
       index,
-      title: step ? sentenceForStep(step, server.recipes()) : `Step ${index + 1}`,
+      title: step ? sentenceForStep(step) : `Step ${index + 1}`,
     };
   });
   const focusedPlanStep = () => {
     const index = workbench.focusedIndex() ?? 0;
-    return index < 0 ? undefined : draft.steps()[index];
+    return index < 0 ? undefined : execution.steps()[index];
   };
   const plannedFocus = createMemo(() => {
     const explicit = focusedStep();
     if (explicit) return explicit;
-    const first = draft.steps()[0];
-    return first ? { index: 0, title: sentenceForStep(first, server.recipes()) } : null;
+    const first = execution.steps()[0];
+    return first ? { index: 0, title: sentenceForStep(first) } : null;
   });
 
   const [stepPlayback, setStepPlayback] = createSignal<{
@@ -66,7 +66,7 @@ export function useDeviceStageRecordedEvidence(options: {
   } | null>(null);
   const recordedEvidenceSrc = createMemo(() => {
     const playback = stepPlayback();
-    const step = playback?.step ?? draft.steps()[workbench.focusedIndex() ?? 0];
+    const step = playback?.step ?? execution.steps()[workbench.focusedIndex() ?? 0];
     const screenshot = step?.evidence?.screenshot;
     return screenshot ? server.recordingEvidenceUrl(screenshot.recipeId, screenshot.id) : "";
   });
@@ -122,7 +122,7 @@ export function useDeviceStageRecordedEvidence(options: {
 
   const focusedEvidenceHighlight = createMemo(() => {
     if (!recordedEvidenceSrc() || displayImageSrc() !== recordedEvidenceSrc()) return undefined;
-    const step = draft.steps()[workbench.focusedIndex() ?? 0];
+    const step = execution.steps()[workbench.focusedIndex() ?? 0];
     if (step?.kind !== "tap" || !step.evidence || defaultStrategy(step.target) === "point") {
       return undefined;
     }
@@ -177,7 +177,7 @@ export function useDeviceStageRecordedEvidence(options: {
   createEffect(() => {
     const request = workbench.previewRequest();
     if (!request) return;
-    const step = draft.steps()[request.index];
+    const step = execution.steps()[request.index];
     if (!step) return;
     if (workbench.focusedIndex() !== request.index) workbench.focusStep(request.index);
     if (step.evidence?.screenshot) options.setStageView("recorded");
@@ -196,10 +196,13 @@ export function useDeviceStageRecordedEvidence(options: {
     endpoint: DeviceStageSwipeEndpoint,
     point: { x: number; y: number },
   ): void {
-    const index = workbench.focusedIndex() ?? (draft.steps().length ? 0 : undefined);
-    const step = index == null ? undefined : draft.steps()[index];
+    const index = workbench.focusedIndex() ?? (execution.steps().length ? 0 : undefined);
+    const step = index == null ? undefined : execution.steps()[index];
     if (index == null || step?.kind !== "swipe") return;
-    draft.updateStep(index, { ...step, [endpoint]: { ...step[endpoint], ...point } });
+    void execution.updateConnectionStep(index, {
+      ...step,
+      [endpoint]: { ...step[endpoint], ...point },
+    });
   }
 
   const recordedCoordinateEditable = createMemo(() => {
@@ -268,7 +271,7 @@ export function useDeviceStageRecordedEvidence(options: {
 
   function chooseRecordedNode(): void {
     const index = workbench.focusedIndex();
-    const step = index == null ? undefined : draft.steps()[index];
+    const step = index == null ? undefined : execution.steps()[index];
     const node = recordedHoverNode();
     if (
       index == null ||
@@ -303,13 +306,13 @@ export function useDeviceStageRecordedEvidence(options: {
       recordedNodeMatches(candidate, node),
     );
     if (alreadyInScope) {
-      draft.updateStep(index, { ...step, target });
+      void execution.updateConnectionStep(index, { ...step, target });
       setRecordedHoverNode(null);
       return;
     }
 
     const [selected, ...ancestors] = recordedNodeHierarchy(step.evidence, node);
-    draft.updateStep(index, {
+    void execution.updateConnectionStep(index, {
       ...step,
       target,
       evidence: {
@@ -334,7 +337,7 @@ export function useDeviceStageRecordedEvidence(options: {
   };
   function moveRecordedCoordinate(element: HTMLImageElement, clientX: number, clientY: number) {
     const index = workbench.focusedIndex();
-    const step = index == null ? undefined : draft.steps()[index];
+    const step = index == null ? undefined : execution.steps()[index];
     if (
       index == null ||
       !recordedCoordinateEditable() ||
@@ -352,7 +355,7 @@ export function useDeviceStageRecordedEvidence(options: {
     const y = Math.round(
       Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)) * bounds.height,
     );
-    draft.updateStep(index, {
+    void execution.updateConnectionStep(index, {
       ...step,
       target: {
         ...step.target,

@@ -69,7 +69,6 @@ test("a replay gap requests one scoped refresh of every live projection", () => 
   assert.equal(projection.accepted, true);
   assert.deepEqual(projection.refresh, [
     "devices",
-    "recipes",
     "appMaps",
     "jobs",
     "runs",

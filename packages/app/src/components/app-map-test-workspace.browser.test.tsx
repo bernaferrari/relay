@@ -171,7 +171,9 @@ test("a saved App Map Test opens a Combine strip, not Locale Matrix chrome", asy
     expect(root.querySelector("[data-app-map-test-combine-strip]")).not.toBeNull();
     expect(root.textContent).toContain("Whole page");
     expect(root.textContent).toContain("Capture the full scrolling screen.");
-    expect(root.textContent).toMatch(/Run Checkout locale smoke in English as a visual/);
+    expect(root.textContent).toMatch(
+      /Combine Variable Language × Test Checkout locale smoke in English · visual lens/,
+    );
 
     root.querySelector<HTMLButtonElement>("[data-test-combine-value='it']")?.click();
     await settle();
@@ -1293,11 +1295,13 @@ test("offline preflight blocks device control but leaves an inspectable repair r
     selectedAppMap: () => map,
     isOffline: () => false,
     health: () => "online",
-    devices: () => [],
-    selectedDevice: () => null,
+    devices: () => [
+      { serial: "ipad-1", name: "Design iPad", platform: "ios", connectionState: "connected" },
+    ],
+    selectedDevice: () => "ipad-1",
     liveFrame: () => null,
     liveCaptureIssue: () => null,
-    appleDeviceSetup: () => null,
+    appleDeviceSetup: () => ({ setup: {}, checks: [] }),
     jobs: () => [],
     persistedRuns: () => [],
     pollLiveFrame: async () => undefined,
@@ -1380,7 +1384,7 @@ test("offline preflight blocks device control but leaves an inspectable repair r
   const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
   await settle();
   [...root.querySelectorAll<HTMLButtonElement>("button")]
-    .find((button) => button.textContent?.includes("Check offline"))!
+    .find((button) => button.textContent?.includes("Run test"))!
     .click();
   await settle();
 

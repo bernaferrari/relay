@@ -1,11 +1,31 @@
 import { RelayClient } from "@relay/client";
 
-export type ActionMeta = {
+export type AppMapSummary = {
   id: string;
-  title: string;
-  description?: string;
-  category?: string;
-  requiresProdMatch?: boolean;
+  name: string;
+  revision: number;
+};
+
+export type GraphTestSummary = {
+  id: string;
+  name: string;
+  intent?: string;
+};
+
+export type VariableSummary = { id: string; name: string; options: Array<{ id: string }> };
+export type CombineSummary = {
+  id: string;
+  name: string;
+  variableIds: string[];
+  testIds: string[];
+  selected?: Record<string, string[]>;
+  captures?: Record<string, { mode: string }>;
+};
+
+export type AppMapDetails = AppMapSummary & {
+  tests: Record<string, GraphTestSummary>;
+  variables: Record<string, VariableSummary>;
+  combines: Record<string, CombineSummary>;
 };
 
 export type ListedDevice = {
@@ -27,7 +47,8 @@ export type DeviceClient = {
   mode: "http";
   baseUrl?: string;
   listDevices: () => Promise<ListedDevice[]>;
-  listActions: () => Promise<ActionMeta[]>;
+  listAppMaps: () => Promise<AppMapSummary[]>;
+  getAppMap: (appMapId: string) => Promise<AppMapDetails>;
   listJobs: () => Promise<TestJob[]>;
   selectDevice: (serial: string | null) => Promise<void>;
   snapshot: (serial: string) => Promise<{
@@ -36,10 +57,16 @@ export type DeviceClient = {
     tree: string;
   }>;
   screenshot: (serial: string) => Promise<{ path: string; bytes: number }>;
-  runAction: (opts: {
-    action: string;
-    serial?: string;
+  runTest: (opts: {
+    appMapId: string;
+    testId: string;
+    expectedRevision: number;
+    target: { kind: "device"; platform: "android" | "ios"; targetId: string };
+    in?: Record<string, string[]>;
+    lens?: "every-screen" | "failures-only" | "final-screen" | "none";
+    executionMode?: "pilot" | "all";
     onLog?: (line: string) => void;
+    timeoutMs?: number;
   }) => Promise<{ ok: boolean; error?: string; result?: unknown; status?: string }>;
   cancel: (jobId?: string) => Promise<void>;
   pause: (jobId?: string) => Promise<void>;
@@ -84,9 +111,13 @@ function httpClient(baseUrl: string): DeviceClient {
       const data = await relay.invoke("target.devices.list", {});
       return data.devices as ListedDevice[];
     },
-    async listActions() {
-      const data = await relay.invoke("target.actions.list", {});
-      return data.actions as ActionMeta[];
+    async listAppMaps() {
+      const data = await relay.invoke("app-map.list", {});
+      return data.appMaps as AppMapSummary[];
+    },
+    async getAppMap(appMapId) {
+      const data = await relay.invoke("app-map.get", { appMapId });
+      return data.appMap as unknown as AppMapDetails;
     },
     async listJobs() {
       const data = await relay.invoke("job.list", { limit: 50 });
@@ -101,37 +132,25 @@ function httpClient(baseUrl: string): DeviceClient {
     async screenshot(serial) {
       return relay.invoke("target.screenshot.capture", { serial });
     },
-    async runAction(opts) {
-      // Async job so cancel/pause work against the same server process
-      const { job: rawJob } = await relay.invoke("job.start", {
-        recipe: opts.action,
-        ...(opts.serial ? { serial: opts.serial } : {}),
+    async runTest(opts) {
+      const { job: rawJob } = await relay.invoke("app-map.test.run", {
+        appMapId: opts.appMapId,
+        testId: opts.testId,
+        expectedRevision: opts.expectedRevision,
+        target: opts.target,
+        ...(opts.in ? { in: opts.in } : {}),
+        ...(opts.lens ? { lens: opts.lens } : {}),
+        ...(opts.executionMode ? { executionMode: opts.executionMode } : {}),
       });
-      const job = rawJob as TestJob;
-      let seen = 0;
-      for (;;) {
-        const data = await relay.invoke("job.get", { jobId: job.id });
-        const current = data.job as TestJob;
-        if (opts.onLog && current.logs) {
-          const fresh = current.logs.slice(seen);
-          for (const line of fresh) opts.onLog(line);
-          seen = current.logs.length;
-        }
-        if (
-          current.status === "ok" ||
-          current.status === "error" ||
-          current.status === "healed" ||
-          current.status === "cancelled"
-        ) {
-          return {
-            ok: current.status === "ok" || current.status === "healed",
-            error: current.error,
-            result: current.result,
-            status: current.status,
-          };
-        }
-        await new Promise((r) => setTimeout(r, 120));
-      }
+      return pollJobUntilTerminal({
+        jobId: (rawJob as TestJob).id,
+        load: async (jobId) => {
+          const data = await relay.invoke("job.get", { jobId });
+          return data.job as TestJob;
+        },
+        onLog: opts.onLog,
+        timeoutMs: opts.timeoutMs,
+      });
     },
     async cancel(jobId) {
       if (jobId) {
@@ -157,6 +176,43 @@ function httpClient(baseUrl: string): DeviceClient {
       return null;
     },
   };
+}
+
+const terminalStatuses = new Set(["ok", "error", "healed", "cancelled"]);
+
+export async function pollJobUntilTerminal(input: {
+  jobId: string;
+  load: (jobId: string) => Promise<TestJob>;
+  onLog?: (line: string) => void;
+  timeoutMs?: number;
+  pollMs?: number;
+  wait?: (milliseconds: number) => Promise<void>;
+}): Promise<{ ok: boolean; error?: string; result?: unknown; status?: string }> {
+  const timeoutMs = input.timeoutMs ?? 180_000;
+  const pollMs = input.pollMs ?? 250;
+  const wait =
+    input.wait ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const deadline = Date.now() + timeoutMs;
+  let seen = 0;
+  for (;;) {
+    const current = await input.load(input.jobId);
+    if (input.onLog && current.logs) {
+      for (const line of current.logs.slice(seen)) input.onLog(line);
+      seen = current.logs.length;
+    }
+    if (terminalStatuses.has(current.status)) {
+      return {
+        ok: current.status === "ok" || current.status === "healed",
+        error: current.error,
+        result: current.result,
+        status: current.status,
+      };
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for Test job ${input.jobId} after ${timeoutMs}ms`);
+    }
+    await wait(pollMs);
+  }
 }
 
 export async function createClient(serverUrl?: string): Promise<DeviceClient> {

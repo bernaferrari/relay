@@ -152,7 +152,10 @@ export function RunsWorkspace(props: {
    */
   function selectRunStep(index: number): void {
     setSelectedRunStep(index);
-    if (server.selectedRecipeId() === selected()?.action) workbench.focusStep(index);
+    const selectedRun = selected();
+    if (selectedRun && appMapIdForJob(selectedRun) === server.selectedAppMapId()) {
+      workbench.focusStep(index);
+    }
   }
   createEffect(() => {
     const run = selected();
@@ -321,12 +324,9 @@ export function RunsWorkspace(props: {
     cancelJob: (id) => server.cancelJob(id),
   });
   const reviewCounts = createMemo(() => (selected() ? runReviewCounts(selected()!) : null));
-  const selectedRecipe = createMemo(() => {
-    const job = selected();
-    return job?.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === job?.action);
-  });
+  const selectedExecution = createMemo(() => selected()?.recipeSnapshot);
   const reviewCompletion = createMemo(() =>
-    selected() ? runCompletion(selected()!, selectedRecipe()?.steps.length ?? 0) : null,
+    selected() ? runCompletion(selected()!, selectedExecution()?.steps.length ?? 0) : null,
   );
   const selectedAppMapId = createMemo(() => (selected() ? appMapIdForJob(selected()!) : null));
   const selectedAppMapAvailable = createMemo(() => {
@@ -560,9 +560,7 @@ export function RunsWorkspace(props: {
                   <div class="grid min-w-0 gap-1">
                     <span class={eyebrow}>Execution review</span>
                     <strong class="line-clamp-2 text-display/[1.15] font-semibold tracking-[-0.025em] text-text-strong">
-                      {job().title ??
-                        server.recipes().find((r) => r.id === job().action)?.title ??
-                        job().action}
+                      {job().title ?? job().recipeSnapshot?.title ?? job().action}
                     </strong>
                   </div>
                   <div class="flex shrink-0 items-center gap-0.5">

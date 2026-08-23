@@ -52,6 +52,14 @@ import {
   finishAuthoringRecording,
   recordAuthoringInteraction,
 } from "./authoring-recording-lifecycle.js";
+import {
+  abandonedAuthoringSessions,
+  archiveSupersededAuthoringReviews,
+  authoringRecoveryScopes,
+  listedAuthoringSessions,
+  publishAuthoringCommittedEvent,
+  publishAuthoringSessionEvent,
+} from "./authoring-session-review-lifecycle.js";
 
 export type CapturedAuthoringObservation = {
   capturedAt: number;
@@ -161,32 +169,6 @@ function assertOwner(session: AuthoringSession): void {
   if (session.actorId !== operation.actorId) {
     throw new AuthoringStateError("Only the owning actor can mutate this Authoring Session");
   }
-}
-
-function sessionEvent(session: AuthoringSession): void {
-  publish({
-    type: "resource.updated",
-    at: session.updatedAt,
-    projectId: session.projectId,
-    resource: "recording-session",
-    resourceId: session.id,
-    revision: session.take?.currentRevision ?? 0,
-  });
-}
-
-function committedEvent(session: AuthoringSession): void {
-  if (!session.committedConnectionId) {
-    throw new Error("Committed Authoring Session has no graph connection");
-  }
-  publish({
-    type: "authoring.committed",
-    at: session.updatedAt,
-    projectId: session.projectId,
-    sessionId: session.id,
-    appMapId: session.appMapId,
-    connectionId: session.committedConnectionId,
-    revision: session.expectedAppMapRevision,
-  });
 }
 
 async function atomicSessionWrite(session: AuthoringSession): Promise<void> {
@@ -372,8 +354,8 @@ export class AuthoringSessionStore {
   readonly #queue = new KeyedSerialQueue();
   readonly #recordingReadyAt = new Map<string, number>();
 
-  async list(projectId = context().projectId): Promise<AuthoringSession[]> {
-    return (await this.#all()).filter((item) => item.projectId === projectId);
+  async list(projectId = context().projectId, options: { includeHistory?: boolean } = {}): Promise<AuthoringSession[]> {
+    return listedAuthoringSessions(await this.#all(), projectId, options.includeHistory);
   }
 
   async #all(): Promise<AuthoringSession[]> {
@@ -395,20 +377,7 @@ export class AuthoringSessionStore {
   }
 
   async recoveryScopes(): Promise<AuthoringRecoveryScope[]> {
-    const scopes = new Map<string, AuthoringRecoveryScope>();
-    for (const session of await this.#all()) {
-      if (!["preparing", "recording", "committing"].includes(session.state)) continue;
-      const scope = {
-        organizationId: session.organizationId,
-        projectId: session.projectId,
-      };
-      scopes.set(`${scope.organizationId}\0${scope.projectId}`, scope);
-    }
-    return [...scopes.values()].sort(
-      (left, right) =>
-        left.organizationId.localeCompare(right.organizationId) ||
-        left.projectId.localeCompare(right.projectId),
-    );
+    return authoringRecoveryScopes(await this.#all());
   }
 
   async get(id: string): Promise<AuthoringSession> {
@@ -455,7 +424,7 @@ export class AuthoringSessionStore {
       updatedAt: at,
     };
     await atomicSessionWrite(session);
-    sessionEvent(session);
+    publishAuthoringSessionEvent(session);
     await this.#pruneAbandoned(operation.projectId);
     return clone(session);
   }
@@ -463,13 +432,9 @@ export class AuthoringSessionStore {
   async #pruneAbandoned(projectId: string): Promise<void> {
     const configured = Number(process.env.RELAY_ABANDONED_AUTHORING_LIMIT ?? 100);
     const limit = Number.isSafeInteger(configured) && configured >= 0 ? configured : 100;
-    const abandoned = (await this.#all()).filter(
-      (session) =>
-        session.projectId === projectId &&
-        (session.state === "cancelled" || session.state === "failed"),
-    );
+    const abandoned = abandonedAuthoringSessions(await this.#all(), projectId, limit);
     await Promise.all(
-      abandoned.slice(limit).map((session) => rm(pathFor(session.id), { force: true })),
+      abandoned.map((session) => rm(pathFor(session.id), { force: true })),
     );
   }
 
@@ -629,7 +594,7 @@ export class AuthoringSessionStore {
 
   async stop(id: string, runtime: AuthoringRuntime): Promise<AuthoringSession> {
     try {
-      return await this.#mutate(id, async (session) => {
+      const stopped = await this.#mutate(id, async (session) => {
         assertOwner(session);
         requireState(session, "recording");
         session = await finishAuthoringRecording(session, runtime, recordingLifecycleDependencies);
@@ -642,6 +607,12 @@ export class AuthoringSessionStore {
         session.take = { ...session.take!, state: "reviewing", updatedAt: session.updatedAt };
         return attachLiveDemonstrationAttempt(session);
       });
+      if (stopped.state === "reviewing")
+        await archiveSupersededAuthoringReviews({
+          replacement: stopped, sessions: await this.#all(),
+          mutate: async (id, operation) => { await this.#mutate(id, async (session) => operation(session)); },
+        });
+      return stopped;
     } finally {
       this.#recordingReadyAt.delete(id);
     }
@@ -1006,6 +977,7 @@ export class AuthoringSessionStore {
       session.expectedAppMapRevision = committedRevision!;
       session.committedConnectionId = committedConnectionId;
       session.take = { ...take, state: "committed", updatedAt: session.updatedAt };
+      session.archive = { reason: "committed", archivedAt: session.updatedAt };
       return session;
     });
   }
@@ -1018,6 +990,7 @@ export class AuthoringSessionStore {
       session.take = session.take
         ? { ...session.take, state: "discarded", updatedAt: session.updatedAt }
         : undefined;
+      session.archive = { reason: "discarded", archivedAt: session.updatedAt };
       return session;
     });
   }
@@ -1042,6 +1015,7 @@ export class AuthoringSessionStore {
         session = transition(session, "cancelled");
         if (session.take) {
           session.take = { ...session.take, state: "discarded", updatedAt: session.updatedAt };
+          session.archive = { reason: "discarded", archivedAt: session.updatedAt };
         }
         return session;
       });
@@ -1130,8 +1104,8 @@ export class AuthoringSessionStore {
           await recovery.releaseLease(next).catch(() => undefined);
         }
         await atomicSessionWrite(next);
-        if (next.state === "committed") committedEvent(next);
-        else sessionEvent(next);
+        if (next.state === "committed") publishAuthoringCommittedEvent(next);
+        else publishAuthoringSessionEvent(next);
         return next;
       });
       if (session) recovered.push(session);
@@ -1150,8 +1124,8 @@ export class AuthoringSessionStore {
       await atomicSessionWrite(next);
       if (next.state === "recording") this.#recordingReadyAt.set(id, now());
       else if (current.state === "recording") this.#recordingReadyAt.delete(id);
-      if (current.state !== "committed" && next.state === "committed") committedEvent(next);
-      else sessionEvent(next);
+      if (current.state !== "committed" && next.state === "committed") publishAuthoringCommittedEvent(next);
+      else publishAuthoringSessionEvent(next);
       return clone(next);
     });
   }

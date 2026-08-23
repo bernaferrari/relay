@@ -16,9 +16,8 @@ export function RunBrowser(props: {
     const needle = query().trim().toLocaleLowerCase();
     if (!needle) return props.rows;
     return props.rows.filter((job) => {
-      const recipe = server.recipes().find((item) => item.id === job.action);
       const status = runOutcomeChip(job);
-      return [job.title, recipe?.title, titleize(job.action), status.label]
+      return [job.title, job.recipeSnapshot?.title, titleize(job.action), status.label]
         .filter(Boolean)
         .some((value) => value!.toLocaleLowerCase().includes(needle));
     });
@@ -57,7 +56,6 @@ export function RunBrowser(props: {
       <nav class="min-h-0 flex-1 overflow-y-auto p-2" aria-label="Saved runs">
         <For each={filteredRows()}>
           {(job) => {
-            const recipe = () => server.recipes().find((item) => item.id === job.action);
             const status = () => runOutcomeChip(job);
             return (
               <button
@@ -84,7 +82,7 @@ export function RunBrowser(props: {
                 />
                 <span class="min-w-0">
                   <strong class="block truncate text-caption font-medium text-[var(--text-strong)]">
-                    {job.title ?? recipe()?.title ?? titleize(job.action)}
+                    {job.title ?? job.recipeSnapshot?.title ?? titleize(job.action)}
                   </strong>
                   <small class="mt-1 flex items-center gap-1.5 text-micro text-[var(--text-weak)]">
                     <span>{status().label}</span>

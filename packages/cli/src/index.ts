@@ -9,7 +9,7 @@ import {
 } from "@relay/protocol";
 import type { OutputMode } from "./config.js";
 import { parseCli } from "./config.js";
-import { classifyError, CliError, ExitCode } from "./errors.js";
+import { classifyError, CliError, ExitCode, UsageError } from "./errors.js";
 import { renderHelp } from "./help.js";
 import {
   createClient,
@@ -212,6 +212,69 @@ function firstPositional(argv: readonly string[]): string | undefined {
   return undefined;
 }
 
+function object(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new UsageError(`Malformed ${label} response`);
+  }
+  return value as Record<string, unknown>;
+}
+
+async function resolveCurrentTestRunInput(
+  client: OperationInvoker,
+  parsed: Extract<ReturnType<typeof parseCli>, { command: "invoke" }>,
+  signal: AbortSignal,
+  output: CliOutput,
+): Promise<Record<string, unknown>> {
+  if (!parsed.currentTarget && !parsed.currentRevision) return parsed.input;
+  const appMapId = parsed.input.appMapId;
+  if (typeof appMapId !== "string" || !appMapId) {
+    throw new UsageError("test run shortcuts require an App Map id");
+  }
+  const next = { ...parsed.input };
+  if (parsed.currentRevision) {
+    const response = object(
+      await invokeOperation(client, "app-map.get", { appMapId }, signal),
+      "app-map.get",
+    );
+    const appMap = object(response.appMap, "app-map.get appMap");
+    if (typeof appMap.revision !== "number") {
+      throw new UsageError("The current App Map has no numeric revision");
+    }
+    next.expectedRevision = appMap.revision;
+  }
+  if (parsed.currentTarget) {
+    const response = object(
+      await invokeOperation(client, "target.devices.list", {}, signal),
+      "target.devices.list",
+    );
+    const devices = Array.isArray(response.devices)
+      ? response.devices.filter((value) => value && typeof value === "object")
+      : [];
+    if (devices.length !== 1) {
+      throw new UsageError(
+        devices.length
+          ? `--target current is ambiguous: ${devices.length} targets are connected`
+          : "--target current found no connected target",
+      );
+    }
+    const device = object(devices[0], "connected target");
+    const targetId =
+      typeof device.serial === "string"
+        ? device.serial
+        : typeof device.id === "string"
+          ? device.id
+          : undefined;
+    if (!targetId || (device.platform !== "android" && device.platform !== "ios")) {
+      throw new UsageError("The connected target is not a runnable Android or iOS device");
+    }
+    next.target = { kind: "device", platform: device.platform, targetId };
+  }
+  const target = next.target && typeof next.target === "object" ? next.target : undefined;
+  const targetId = target && "targetId" in target ? String(target.targetId) : "explicit target";
+  output.heartbeat(`Resolved Test run revision ${next.expectedRevision} on ${targetId}`);
+  return next;
+}
+
 export async function runCli(
   argv: readonly string[],
   dependencies: CliDependencies = {},
@@ -257,23 +320,22 @@ export async function runCli(
         if (abort.signal.aborted) throw abortError();
         output.result(operationId, {});
       } else if (parsed.behavior === "job-watch" && parsed.config.wait) {
+        const input = await resolveCurrentTestRunInput(client, parsed, abort.signal, output);
         const result = await watchJob(
           client,
           operationId,
-          parsed.input,
+          input,
           abort.signal,
           output,
           dependencies.pollIntervalMs ?? 250,
         );
-        assertOperationSucceeded(operationId, result, parsed.input, commandPath);
-        output.result(operationId, summarizeResult(operationId, result, parsed.input, commandPath));
+        assertOperationSucceeded(operationId, result, input, commandPath);
+        output.result(operationId, summarizeResult(operationId, result, input, commandPath));
       } else if (parsed.behavior === "job-start-watch" && parsed.config.wait) {
+        const input = await resolveCurrentTestRunInput(client, parsed, abort.signal, output);
         output.progress(operationId, "invoking");
-        const started = await invokeOperation(client, operationId, parsed.input, abort.signal);
-        output.snapshot(
-          operationId,
-          summarizeResult(operationId, started, parsed.input, commandPath),
-        );
+        const started = await invokeOperation(client, operationId, input, abort.signal);
+        output.snapshot(operationId, summarizeResult(operationId, started, input, commandPath));
         const jobIds = startedJobIds(started);
         const results: unknown[] = [];
         for (const jobId of jobIds) {
@@ -300,9 +362,10 @@ export async function runCli(
               },
         );
       } else {
+        const input = await resolveCurrentTestRunInput(client, parsed, abort.signal, output);
         output.progress(operationId, "invoking");
-        const result = await invokeOperation(client, operationId, parsed.input, abort.signal);
-        assertOperationSucceeded(operationId, result, parsed.input, commandPath);
+        const result = await invokeOperation(client, operationId, input, abort.signal);
+        assertOperationSucceeded(operationId, result, input, commandPath);
         if (parsed.behavior === "screenshot") {
           await emitScreenshot(operationId, result, parsed.screenshotOutput, output);
         } else if (
@@ -312,19 +375,16 @@ export async function runCli(
           await emitSnapshotFile(operationId, result, parsed.screenshotOutput, output);
         } else if (
           parsed.operationId === "target.scroll-survey.capture" &&
-          typeof parsed.input.dir === "string"
+          typeof input.dir === "string"
         ) {
           output.result(
             operationId,
-            await persistScrollSurvey(parsed.input.dir, result, {
+            await persistScrollSurvey(input.dir, result, {
               force: parsed.surveyForce === true,
             }),
           );
         } else {
-          output.result(
-            operationId,
-            summarizeResult(operationId, result, parsed.input, commandPath),
-          );
+          output.result(operationId, summarizeResult(operationId, result, input, commandPath));
         }
       }
       return ExitCode.success;

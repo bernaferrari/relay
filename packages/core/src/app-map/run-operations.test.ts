@@ -35,9 +35,28 @@ function fixture(): AppMap {
         createdAt: at,
         updatedAt: at,
       },
+      settings: {
+        ...scope,
+        id: "settings",
+        title: "Settings",
+        variantIds: [],
+        createdAt: at,
+        updatedAt: at,
+      },
     },
     screenVariants: {},
-    connections: {},
+    connections: {
+      "open-settings": {
+        ...scope,
+        id: "open-settings",
+        fromScreenId: "start",
+        destination: { kind: "screen", screenId: "settings" },
+        state: "ready",
+        actions: [],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
     caseStacks: {},
     variables: {},
     tests: {},
@@ -73,6 +92,14 @@ test("projects one completed target execution with actor-visible activity", () =
       outcome: "passed",
       startedAt: at + 10,
       finishedAt: at + 20,
+      connectionObservations: [
+        {
+          connectionId: "open-settings",
+          outcome: "passed",
+          durationMs: 8,
+          observedAt: at + 18,
+        },
+      ],
       evidenceIds: ["run:run-1"],
     },
     {
@@ -93,6 +120,14 @@ test("projects one completed target execution with actor-visible activity", () =
     runId: "run-1",
     targetProfile: profile,
     outcome: "passed",
+    connectionObservations: [
+      {
+        connectionId: "open-settings",
+        outcome: "passed",
+        durationMs: 8,
+        observedAt: at + 18,
+      },
+    ],
     evidenceIds: ["run:run-1"],
     finishedAt: at + 20,
   });

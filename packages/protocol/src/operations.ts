@@ -26,6 +26,7 @@ import { createDiscoveryOperationDefinitions } from "./discovery-operation-defin
 import { combineOperationDefinitions } from "./combine-operation-definitions.js";
 import { localeMatrixOperationDefinitions } from "./locale-matrix-operation-definitions.js";
 import { createOperationBuilders } from "./operation-builders.js";
+import { validateOperationDefinitions as validateDefinitions } from "./operation-definition-validation.js";
 import type {
   ActionSummary,
   DeviceSummary,
@@ -37,6 +38,7 @@ import type {
   OperationId,
   OperationInput,
   OperationOutput,
+  RelayOperationMap,
   RedactionPolicyDto,
   RevisionedDto,
   ScrollSurveyStopReasonDto,
@@ -57,11 +59,9 @@ import {
   number,
   objectFieldParser,
   objectParser,
-  operationRecordParser,
   record,
   string,
 } from "./operation-parser-primitives.js";
-export { operationRecordParser } from "./operation-parser-primitives.js";
 export {
   projectRoleAllows,
   projectRoles,
@@ -486,6 +486,7 @@ const runsParser = objectParser<OperationOutput<"run.list">>("runs response", (i
     number(run.writtenAt, "run summary writtenAt");
     number(run.artifactCount, "run summary artifactCount");
     number(run.artifactBytes, "run summary artifactBytes");
+    number(run.storageBytes, "run summary storageBytes");
     boolean(run.pinned, "run summary pinned");
   }
 });
@@ -610,6 +611,10 @@ const targetInputParser = objectParser<OperationRecord>("target operation", (inp
   if (input.preview !== undefined) boolean(input.preview, "preview");
   optionalQueryBoolean(input.visual, "visual");
 });
+
+const targetScreenshotInputParser = objectParser<
+  OperationInput<"target.screenshot.capture">
+>("target screenshot input", (input) => targetInputParser.parse(input));
 
 const targetSnapshotInputParser = objectParser<OperationInput<"target.snapshot.capture">>(
   "target snapshot input",
@@ -767,38 +772,6 @@ const targetAppLocalesOutputParser = objectParser<OperationOutput<"target.app.lo
     for (const locale of input.locales) string(locale, "target app locale");
   },
 );
-
-const recipeRefParser = objectParser<OperationRecord>("recipe reference", (input) => {
-  string(input.recipeId, "recipeId");
-});
-
-const recipeWriteParser = objectParser<OperationRecord>("recipe write", (input) => {
-  if (input.recipeId !== undefined) string(input.recipeId, "recipeId");
-  number(input.expectedRevision, "expectedRevision");
-  string(input.title, "title");
-  if (!Array.isArray(input.steps)) fail("steps", "must be an array");
-});
-
-const recipeImportParser = objectParser<OperationRecord>("recipe import", (input) => {
-  string(input.yaml, "yaml");
-});
-
-const recipeEvidenceParser = objectParser<OperationRecord>("recipe evidence", (input) => {
-  string(input.recipeId, "recipeId");
-  string(input.evidenceId, "evidenceId");
-  string(input.mime, "mime");
-  string(input.base64, "base64");
-});
-
-const recipeHistoryRestoreParser = objectParser<OperationRecord>(
-  "recipe history restore",
-  (input) => {
-    string(input.recipeId, "recipeId");
-    number(input.updatedAt, "updatedAt");
-  },
-);
-
-const genericObjectOutputParser = objectParser<OperationRecord>("operation response");
 
 const startJobInputParser = objectParser<OperationInput<"job.start">>("job input", (input) => {
   string(input.recipe, "job recipe");
@@ -1053,7 +1026,7 @@ const generationOutputParser = objectParser<GenerationResultDto>("generation res
   }
 });
 
-const authoringSessionRefParser = objectParser<OperationRecord>(
+const authoringSessionRefParser = objectParser<{ sessionId: string }>(
   "authoring session input",
   assertAuthoringSessionRef,
 );
@@ -1284,10 +1257,10 @@ const authoringSessionListInputParser = objectParser<OperationInput<"authoring.s
   },
 );
 
-const { command, query } = createOperationBuilders<OperationId>(operationRecordParser);
-const discoveryOperationDefinitions = createDiscoveryOperationDefinitions(operationRecordParser);
-const corpusOperationDefinitions = createCorpusOperationDefinitions(operationRecordParser);
-const appMapOperationDefinitions = createAppMapOperationDefinitions(operationRecordParser, {
+const { command, query } = createOperationBuilders<RelayOperationMap>();
+const discoveryOperationDefinitions = createDiscoveryOperationDefinitions();
+const corpusOperationDefinitions = createCorpusOperationDefinitions();
+const appMapOperationDefinitions = createAppMapOperationDefinitions({
   boolean,
   emptyInputParser,
   fail,
@@ -1298,6 +1271,10 @@ const appMapOperationDefinitions = createAppMapOperationDefinitions(operationRec
   record,
   string,
 });
+
+type ExactOperationDefinition = {
+  [Id in OperationId]: OperationDefinition<Id, OperationInput<Id>, OperationOutput<Id>>;
+}[OperationId];
 
 export const operationDefinitions = [
   query("system.health.get", "Get Relay health", "/health", {
@@ -1406,7 +1383,7 @@ export const operationDefinitions = [
     category: "evidence",
     targetCapabilities: ["screenshot"],
     lease: "shared",
-    input: targetInputParser,
+    input: targetScreenshotInputParser,
     output: screenshotParser,
   }),
   command(
@@ -1451,31 +1428,26 @@ export const operationDefinitions = [
     category: "target",
     targetCapabilities: ["tap"],
     lease: "exclusive",
-    input: targetInputParser,
   }),
   command("target.ground", "Ground a text or structured target", "POST", "/ground", {
     category: "target",
     targetCapabilities: ["snapshot", "screenshot"],
     lease: "shared",
-    input: targetInputParser,
   }),
   command("target.do", "Ground a text target then interact", "POST", "/do", {
     category: "target",
     targetCapabilities: ["tap", "snapshot", "screenshot"],
     lease: "exclusive",
-    input: targetInputParser,
   }),
   query("target.ui.describe", "Describe target UI context", "/target/ui", {
     category: "target",
     targetCapabilities: ["snapshot"],
     lease: "shared",
-    input: targetInputParser,
   }),
   command("target.ui.back", "Sheet-aware back / dismiss toward parent", "POST", "/target/ui/back", {
     category: "target",
     targetCapabilities: ["tap"],
     lease: "exclusive",
-    input: targetInputParser,
   }),
   command(
     "target.ui.scrollCollect",
@@ -1486,33 +1458,28 @@ export const operationDefinitions = [
       category: "target",
       targetCapabilities: ["scroll", "snapshot"],
       lease: "exclusive",
-      input: targetInputParser,
     },
   ),
   command("target.touch", "Send target touch", "POST", "/device/touch", {
     category: "target",
     targetCapabilities: ["tap"],
     lease: "exclusive",
-    input: targetInputParser,
   }),
   command("target.key", "Send target key", "POST", "/device/key", {
     category: "target",
     targetCapabilities: ["type"],
     lease: "exclusive",
-    input: targetInputParser,
   }),
   command("target.scroll", "Scroll target", "POST", "/device/scroll", {
     category: "target",
     targetCapabilities: ["scroll"],
     lease: "exclusive",
-    input: targetInputParser,
   }),
   command("target.video.start", "Start target video", "POST", "/device/video", {
     category: "evidence",
     minimumRole: "runner",
     targetCapabilities: ["recording"],
     lease: "shared",
-    input: targetInputParser,
   }),
   query("target.stream.open", "Stream live target video", "/device/stream", {
     category: "target",
@@ -1608,75 +1575,6 @@ export const operationDefinitions = [
     category: "execution",
     progress: true,
     cancellable: true,
-  }),
-  query("recipe.list", "List executable recipes", "/recipes", {
-    category: "authoring",
-    input: emptyInputParser,
-    output: genericObjectOutputParser,
-  }),
-  query("recipe.get", "Get executable recipe", "/recipes/:recipeId", {
-    category: "authoring",
-    input: recipeRefParser,
-    output: genericObjectOutputParser,
-  }),
-  command("recipe.create", "Create executable recipe", "POST", "/recipes", {
-    category: "authoring",
-    input: recipeWriteParser,
-    output: genericObjectOutputParser,
-  }),
-  command("recipe.update", "Update executable recipe", "PUT", "/recipes/:recipeId", {
-    category: "authoring",
-    input: recipeWriteParser,
-    output: genericObjectOutputParser,
-  }),
-  command("recipe.delete", "Delete executable recipe", "DELETE", "/recipes/:recipeId", {
-    category: "authoring",
-    confirmation: "confirm",
-    input: recipeRefParser,
-    output: okParser,
-  }),
-  query("recipe.yaml.get", "Get recipe YAML", "/recipes/:recipeId/yaml", {
-    category: "authoring",
-    input: recipeRefParser,
-    output: genericObjectOutputParser,
-  }),
-  command("recipe.import", "Import recipe YAML", "POST", "/recipes/import", {
-    category: "authoring",
-    input: recipeImportParser,
-    output: genericObjectOutputParser,
-  }),
-  command(
-    "recipe.evidence.create",
-    "Attach recipe evidence",
-    "POST",
-    "/recipes/:recipeId/evidence",
-    {
-      category: "evidence",
-      input: recipeEvidenceParser,
-      output: genericObjectOutputParser,
-    },
-  ),
-  query("recipe.history.list", "List recipe history", "/recipes/:recipeId/history", {
-    category: "authoring",
-    input: recipeRefParser,
-    output: genericObjectOutputParser,
-  }),
-  command(
-    "recipe.history.restore",
-    "Restore recipe history",
-    "POST",
-    "/recipes/:recipeId/history",
-    {
-      category: "authoring",
-      confirmation: "confirm",
-      input: recipeHistoryRestoreParser,
-      output: genericObjectOutputParser,
-    },
-  ),
-  query("recipe.stability.get", "Get recipe stability", "/recipes/:recipeId/stability", {
-    category: "evidence",
-    input: recipeRefParser,
-    output: genericObjectOutputParser,
   }),
   query("workspace.variables.get", "Get project variables", "/project/variables", {
     input: emptyInputParser,
@@ -2051,7 +1949,6 @@ export const operationDefinitions = [
     lease: "exclusive",
     progress: true,
     cancellable: true,
-    input: targetInputParser,
     output: stepRunOutputParser,
   }),
   command("generation.create", "Generate test data", "POST", "/generate", {
@@ -2059,7 +1956,7 @@ export const operationDefinitions = [
     input: generationInputParser,
     output: generationOutputParser,
   }),
-] as const satisfies readonly OperationDefinition<OperationId>[];
+] as const satisfies readonly ExactOperationDefinition[];
 
 export function operationDefinition<Id extends OperationId>(
   id: Id,
@@ -2072,29 +1969,7 @@ export function operationDefinition<Id extends OperationId>(
 export function validateOperationDefinitions(
   definitions: readonly OperationDefinition[] = operationDefinitions,
 ): void {
-  const ids = new Set<string>();
-  const transports = new Set<string>();
-  for (const definition of definitions) {
-    if (ids.has(definition.id)) throw new Error(`Duplicate operation id: ${definition.id}`);
-    ids.add(definition.id);
-    const route = `${definition.transport.method} ${definition.transport.path}`;
-    if (transports.has(route)) throw new Error(`Duplicate operation transport: ${route}`);
-    transports.add(route);
-    if (definition.version !== 1) throw new Error(`${definition.id} has an unsupported version`);
-    if (!definition.label.trim()) throw new Error(`${definition.id} is missing a label`);
-    if (!projectRoles.includes(definition.minimumRole)) {
-      throw new Error(`${definition.id} has an unsupported minimum role`);
-    }
-    if (definition.cancellable && !definition.progress) {
-      throw new Error(`${definition.id} is cancellable but does not report progress`);
-    }
-    if (definition.mode === "query" && definition.confirmation !== "none") {
-      throw new Error(`${definition.id} is a query that requires confirmation`);
-    }
-    if (definition.lease !== "none" && definition.targetCapabilities.length === 0) {
-      throw new Error(`${definition.id} requires a lease without a target capability`);
-    }
-  }
+  validateDefinitions(definitions);
 }
 
 export type OperationManifestItem = Omit<OperationDefinition, "input" | "output"> & {

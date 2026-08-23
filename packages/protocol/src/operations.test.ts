@@ -14,12 +14,40 @@ import {
   REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
   REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
 } from "./reviewed-document-origin.js";
+import { operationInputSchemas } from "./operation-input-schemas.js";
+import { operationOutputSchemas } from "./operation-output-schemas.js";
 
 test("operation descriptors have unique IDs, transports, and complete safety metadata", () => {
   assert.doesNotThrow(() => validateOperationDefinitions());
   assert.equal(
     new Set(operationDefinitions.map((item) => item.id)).size,
     operationDefinitions.length,
+  );
+});
+
+test("registered descriptors and schema-first registries stay in exact parity", () => {
+  const registeredIds = operationDefinitions.map(({ id }) => id).sort();
+  assert.deepEqual(Object.keys(operationInputSchemas).sort(), registeredIds);
+
+  const schemaBackedOutputIds = operationDefinitions
+    .filter(({ id, output }) => output.description === `${id} output`)
+    .map(({ id }) => id)
+    .sort();
+  assert.deepEqual(Object.keys(operationOutputSchemas).sort(), schemaBackedOutputIds);
+  assert.throws(
+    () => operationDefinition("target.create").output.parse({ target: { id: "target-1" } }),
+    /invalid_type|expected/u,
+  );
+});
+
+test("compiled Recipe storage is absent from the public operation registry", () => {
+  assert.deepEqual(
+    operationDefinitions.filter(({ id }) => id.startsWith("recipe.")),
+    [],
+  );
+  assert.deepEqual(
+    operationDefinitions.filter(({ transport }) => transport.path.startsWith("/recipes")),
+    [],
   );
 });
 
@@ -522,7 +550,7 @@ test("snapshot input accepts optional full and stays valid when omitted", () => 
     full: false,
     visual: true,
   });
-  assert.deepEqual(parse({ serial: "ipad-1", full: "true" }), { serial: "ipad-1", full: "true" });
+  assert.deepEqual(parse({ serial: "ipad-1", full: "true" }), { serial: "ipad-1", full: true });
   assert.throws(() => parse({ serial: "ipad-1", full: "yes" }), /full/);
 });
 
@@ -533,7 +561,7 @@ test("screenshot preview coordinates accept query-string numbers", () => {
       previewX: "540",
       previewY: "1275",
     }),
-    { serial: "RQCY104BG8X", previewX: "540", previewY: "1275" },
+    { serial: "RQCY104BG8X", previewX: 540, previewY: 1275 },
   );
   assert.doesNotThrow(() =>
     operationDefinition("target.screenshot.capture").input.parse({

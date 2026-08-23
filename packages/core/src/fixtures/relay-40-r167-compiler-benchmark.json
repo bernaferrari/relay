@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "appMapId": "grok-android-manual-v2",
+  "appMapRevision": 167,
+  "testId": "relay-40-fresh-v2",
+  "authoredSteps": 39,
+  "source": "codex/plan-efficiency isolated compiler proof",
+  "before": {
+    "executableOperations": 308,
+    "operationCounts": {
+      "expect-screen": 121,
+      "screenshot": 85,
+      "tap": 50,
+      "key": 24,
+      "reveal": 22,
+      "capture-surface": 4,
+      "app": 2
+    }
+  },
+  "after": {
+    "executableOperations": 225,
+    "operationCounts": {
+      "expect-screen": 87,
+      "screenshot": 36,
+      "tap": 50,
+      "key": 24,
+      "reveal": 22,
+      "capture-surface": 4,
+      "app": 2
+    }
+  },
+  "protectedEvidence": {
+    "mutationOperationsBefore": 98,
+    "mutationOperationsAfter": 98,
+    "fullSurfaceCapturesBefore": 4,
+    "fullSurfaceCapturesAfter": 4,
+    "intentionalTerminalFramesAfter": 36
+  }
+}

@@ -2,7 +2,7 @@
  * Interactive TUI for app testing — keyboard nav, Enter to select.
  */
 import { theme, banner, colorStatus, hint } from "./theme.js";
-import { selectIndex, confirm, promptText, statusLine, type SelectItem } from "./select.js";
+import { selectIndex, confirm, statusLine, type SelectItem } from "./select.js";
 import { createClient, type DeviceClient } from "./client.js";
 
 export type TuiOptions = {
@@ -23,7 +23,7 @@ type MenuId =
 async function pickDevice(client: DeviceClient, title = "Select device"): Promise<string | null> {
   const devices = await client.listDevices();
   if (devices.length === 0) {
-    console.log(theme.error("\n  No Android devices. Connect a phone (adb devices).\n"));
+    console.log(theme.error("\n  No targets found. Connect an Android or iOS device.\n"));
     return null;
   }
   if (devices.length === 1) {
@@ -41,62 +41,90 @@ async function pickDevice(client: DeviceClient, title = "Select device"): Promis
   return devices[i]!.serial;
 }
 
-async function runActionFlow(client: DeviceClient, serial: string): Promise<void> {
-  const actions = await client.listActions();
-  const play = actions.filter((a) => a.category === "play-store");
-  const grok = actions.filter((a) => a.category === "grok");
-  const ordered = [...play, ...grok];
-
-  const items: SelectItem[] = [];
-  if (play.length) {
-    items.push({ label: "── Play Store ──", disabled: true });
-    for (const a of play) {
-      items.push({
-        label: a.title,
-        description: a.id,
-        value: a.id,
-      });
-    }
+async function runTestFlow(client: DeviceClient, serial: string, platform: "android" | "ios") {
+  const appMaps = await client.listAppMaps();
+  if (!appMaps.length) {
+    console.log(theme.muted("\n  No App Maps yet. Create one in the desktop app or CLI.\n"));
+    return;
   }
-  if (grok.length) {
-    items.push({ label: "── Grok ──", disabled: true });
-    for (const a of grok) {
-      items.push({
-        label: a.title,
-        description: a.id,
-        value: a.id,
-      });
-    }
-  }
-
-  // Fallback if categories empty but actions exist
-  if (items.filter((x) => !x.disabled).length === 0) {
-    for (const a of ordered) {
-      items.push({ label: a.title, description: a.id, value: a.id });
-    }
-  }
-
-  const i = await selectIndex({
-    title: "Run test action",
-    items,
+  const mapIndex = await selectIndex({
+    title: "Choose App Map",
+    items: appMaps.map((map) => ({ label: map.name, description: map.id, value: map.id })),
     cancelable: true,
   });
-  if (i === null) return;
+  if (mapIndex === null) return;
+  const appMap = await client.getAppMap(appMaps[mapIndex]!.id);
+  const tests = Object.values(appMap.tests);
+  if (!tests.length) {
+    console.log(theme.muted(`\n  ${appMap.name} has no Tests yet.\n`));
+    return;
+  }
+  const testIndex = await selectIndex({
+    title: `Run a Test · ${appMap.name}`,
+    items: tests.map((test) => ({
+      label: test.name,
+      description: test.intent ?? test.id,
+      value: test.id,
+    })),
+    cancelable: true,
+  });
+  if (testIndex === null) return;
+  const test = tests[testIndex]!;
 
-  const picked = items[i]!;
-  const action = ordered.find((a) => a.id === picked.value) ?? ordered[0];
-  if (!action) return;
-
-  if (action.requiresProdMatch && !process.env.PROD_ACCOUNT_MATCH?.trim()) {
-    const match = await promptText("PROD_ACCOUNT_MATCH (e.g. gmail.com)");
-    if (!match) {
-      console.log(theme.error("  PROD_ACCOUNT_MATCH required — aborted.\n"));
-      return;
+  const combines = Object.values(appMap.combines).filter((combine) =>
+    combine.testIds.includes(test.id),
+  );
+  let worlds: Record<string, string[]> | undefined;
+  let lens: "every-screen" | "failures-only" | "final-screen" | "none" | undefined;
+  let executionMode: "pilot" | "all" | undefined;
+  if (combines.length) {
+    const combineIndex = await selectIndex({
+      title: `Coverage · ${test.name}`,
+      items: [
+        { label: "Run Test once", description: "No Variables", value: "once" },
+        ...combines.map((combine) => ({
+          label: combine.name,
+          description: "Saved Variable coverage",
+          value: combine.id,
+        })),
+      ],
+      cancelable: true,
+    });
+    if (combineIndex === null) return;
+    const combine = combineIndex > 0 ? combines[combineIndex - 1] : undefined;
+    if (combine) {
+      worlds = Object.fromEntries(
+        combine.variableIds.map((variableId) => {
+          const variable = appMap.variables[variableId];
+          return [
+            variableId,
+            combine.selected?.[variableId] ?? variable?.options.map((option) => option.id) ?? [],
+          ];
+        }),
+      );
+      const captureMode = combine.captures?.[test.id]?.mode;
+      if (
+        captureMode === "every-screen" ||
+        captureMode === "failures-only" ||
+        captureMode === "final-screen" ||
+        captureMode === "none"
+      ) {
+        lens = captureMode;
+      }
+      const scopeIndex = await selectIndex({
+        title: `Run ${combine.name}`,
+        items: [
+          { label: "Pilot one cell", description: "Fast confidence check", value: "pilot" },
+          { label: "Run all selected cells", description: "Complete Combine", value: "all" },
+        ],
+        cancelable: true,
+      });
+      if (scopeIndex === null) return;
+      executionMode = scopeIndex === 1 ? "all" : "pilot";
     }
-    process.env.PROD_ACCOUNT_MATCH = match;
   }
 
-  console.log(theme.primary(`\n  → Running ${theme.bold(action.id)} on ${serial}`));
+  console.log(theme.primary(`\n  → Running ${theme.bold(test.name)} on ${serial}`));
   console.log(
     `  ${hint([
       ["ctrl+c", "cancel job"],
@@ -112,9 +140,14 @@ async function runActionFlow(client: DeviceClient, serial: string): Promise<void
 
   let result: { ok: boolean; error?: string; status?: string };
   try {
-    result = await client.runAction({
-      action: action.id,
-      serial,
+    result = await client.runTest({
+      appMapId: appMap.id,
+      testId: test.id,
+      expectedRevision: appMap.revision,
+      target: { kind: "device", platform, targetId: serial },
+      ...(worlds ? { in: worlds } : {}),
+      ...(lens ? { lens } : {}),
+      ...(executionMode ? { executionMode } : {}),
       onLog: (line) => console.log(theme.muted(`  ${line}`)),
     });
   } finally {
@@ -122,11 +155,11 @@ async function runActionFlow(client: DeviceClient, serial: string): Promise<void
   }
 
   if (result.status === "cancelled") {
-    console.log(theme.error(`\n  ✕ CANCELLED  ${action.id}\n`));
+    console.log(theme.error(`\n  ✕ CANCELLED  ${test.name}\n`));
   } else if (result.ok) {
-    console.log(theme.success(`\n  ✓ DONE  ${action.id}\n`));
+    console.log(theme.success(`\n  ✓ DONE  ${test.name}\n`));
   } else {
-    console.log(theme.error(`\n  ✕ FAIL  ${action.id}: ${result.error ?? "unknown"}\n`));
+    console.log(theme.error(`\n  ✕ FAIL  ${test.name}: ${result.error ?? "unknown"}\n`));
   }
 }
 
@@ -144,9 +177,13 @@ export async function runApp(opts: TuiOptions = {}): Promise<void> {
     ]),
   ]);
 
-  let serial = await pickDevice(client, "Connected devices");
+  let serial = await pickDevice(client, "Connected targets");
   if (!serial) return;
   await client.selectDevice(serial);
+  let platform: "android" | "ios" =
+    (await client.listDevices()).find((device) => device.serial === serial)?.platform === "ios"
+      ? "ios"
+      : "android";
   console.log(theme.success(`  ✓ Using ${serial}\n`));
 
   let lastMenu = 0;
@@ -161,7 +198,7 @@ export async function runApp(opts: TuiOptions = {}): Promise<void> {
     }
 
     const menu: Array<SelectItem & { id: MenuId }> = [
-      { id: "run", label: "Run test action", description: "pick a flow and execute" },
+      { id: "run", label: "Run Test", description: "App Map → Test → evidence" },
       { id: "snapshot", label: "UI snapshot", description: "inspector tree" },
       { id: "screenshot", label: "Screenshot", description: "save device frame" },
       { id: "history", label: "Job history", description: "recent runs" },
@@ -200,6 +237,11 @@ export async function runApp(opts: TuiOptions = {}): Promise<void> {
       if (next) {
         serial = next;
         await client.selectDevice(serial);
+        platform =
+          (await client.listDevices()).find((device) => device.serial === serial)?.platform ===
+          "ios"
+            ? "ios"
+            : "android";
         console.log(theme.success(`  ✓ Device ${serial}\n`));
       }
       continue;
@@ -278,7 +320,7 @@ export async function runApp(opts: TuiOptions = {}): Promise<void> {
     }
 
     if (item.id === "run") {
-      await runActionFlow(client, serial);
+      await runTestFlow(client, serial, platform);
     }
   }
 

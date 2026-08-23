@@ -49,10 +49,13 @@ export function RunReplayStage(props: {
   const [liveVideoAttempt, setLiveVideoAttempt] = createSignal(0);
   let liveVideoRetryTimer: number | undefined;
   const cycleSpeed = () => setSpeed((current) => (current >= 8 ? 1 : current * 2));
-  const snapshot = () =>
-    props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
+  const snapshot = () => props.job.recipeSnapshot;
   const nodes = createMemo(() =>
-    executionMoments({ recipe: snapshot(), job: props.job, recipes: server.recipes() }),
+    executionMoments({
+      recipe: snapshot(),
+      job: props.job,
+      recipes: snapshot() ? [snapshot()!] : [],
+    }),
   );
   const count = () => Math.max(nodes().length, 1);
   const index = () => Math.max(0, Math.min(props.selectedIndex, count() - 1));

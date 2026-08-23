@@ -615,6 +615,21 @@ export function assertTargetResult(
   )
     appMapFail("invalid-map", `${label}.outcome is unsupported`);
   if (result.connectionId !== undefined) identifier(result.connectionId, `${label}.connectionId`);
+  if (result.connectionObservations !== undefined) {
+    if (!Array.isArray(result.connectionObservations)) {
+      appMapFail("invalid-map", `${label}.connectionObservations must be an array`);
+    }
+    result.connectionObservations.forEach((observation, index) => {
+      const item = `${label}.connectionObservations[${index}]`;
+      objectValue(observation, item);
+      identifier(observation.connectionId, `${item}.connectionId`);
+      if (observation.outcome !== "passed" && observation.outcome !== "failed") {
+        appMapFail("invalid-map", `${item}.outcome is unsupported`);
+      }
+      safeInteger(observation.durationMs, `${item}.durationMs`);
+      finiteTimestamp(observation.observedAt, `${item}.observedAt`);
+    });
+  }
   stringArray(result.evidenceIds, `${label}.evidenceIds`);
   if (result.finishedAt !== undefined) finiteTimestamp(result.finishedAt, `${label}.finishedAt`);
 }

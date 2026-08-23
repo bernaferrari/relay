@@ -1,5 +1,6 @@
 import { createOperationBuilders } from "./operation-builders.js";
-import type { OperationDefinition, OperationRecord, RuntimeParser } from "./operation-contract.js";
+import type { OperationDefinition } from "./operation-contract.js";
+import type { RelayOperationMap } from "./operation-map.js";
 
 export type DiscoveryOperationId =
   | "discovery.list"
@@ -19,10 +20,10 @@ export type DiscoveryOperationId =
   | "discovery.start"
   | "discovery.cancel";
 
-export function createDiscoveryOperationDefinitions(
-  defaultParser: RuntimeParser<OperationRecord>,
-): readonly OperationDefinition<DiscoveryOperationId>[] {
-  const { command, query } = createOperationBuilders<DiscoveryOperationId>(defaultParser);
+export function createDiscoveryOperationDefinitions() {
+  const { command, query } = createOperationBuilders<
+    Pick<RelayOperationMap, DiscoveryOperationId>
+  >();
   return [
     query("discovery.list", "List Discovery Maps", "/discovery", { category: "discovery" }),
     command("discovery.create", "Create Discovery Map", "POST", "/discovery", {
@@ -124,5 +125,5 @@ export function createDiscoveryOperationDefinitions(
         category: "discovery",
       },
     ),
-  ];
+  ] as const;
 }

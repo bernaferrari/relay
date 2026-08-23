@@ -1,99 +1,170 @@
 import {
   buildTargetProfiles,
-  enqueueJob,
   freezeRecipeGraph,
   listDevices,
   listSchedules,
   listTargets,
+  markScheduleFailure,
   markScheduleRun,
+  prepareJobBatch,
   prepareRunMatrix,
+  publish,
   readProjectVariables,
   readRecipe,
+  redactText,
   referencedVariableIds,
   resolveScheduledTargetProfile,
   runWithOperationContext,
   sensitiveInputNames,
 } from "@relay/core";
 
-export async function runDueSchedules(at = Date.now()): Promise<void> {
-  const schedules = await listSchedules();
+export type SchedulerRuntime = {
+  listSchedules: typeof listSchedules;
+  listDevices: typeof listDevices;
+  listTargets: typeof listTargets;
+  readRecipe: typeof readRecipe;
+  freezeRecipeGraph: typeof freezeRecipeGraph;
+  readProjectVariables: typeof readProjectVariables;
+  prepareRunMatrix: typeof prepareRunMatrix;
+  prepareJobBatch: typeof prepareJobBatch;
+  markScheduleRun: typeof markScheduleRun;
+  markScheduleFailure: typeof markScheduleFailure;
+};
+
+const defaultRuntime: SchedulerRuntime = {
+  listSchedules,
+  listDevices,
+  listTargets,
+  readRecipe,
+  freezeRecipeGraph,
+  readProjectVariables,
+  prepareRunMatrix,
+  prepareJobBatch,
+  markScheduleRun,
+  markScheduleFailure,
+};
+
+/** The server owns one scheduler process. This fence also protects direct
+ * test/administrative polls from admitting the same occurrence concurrently. */
+const activeScheduleAdmissions = new Set<string>();
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export async function runDueSchedules(
+  at = Date.now(),
+  runtime: SchedulerRuntime = defaultRuntime,
+): Promise<void> {
+  const schedules = await runtime.listSchedules();
   const targetProfiles = buildTargetProfiles({
-    devices: await listDevices().catch(() => []),
-    targets: await listTargets(),
+    devices: await runtime.listDevices().catch(() => []),
+    targets: await runtime.listTargets(),
     observedAt: at,
   });
   for (const schedule of schedules) {
     if (!schedule.enabled || schedule.nextRunAt > at) continue;
+    if (activeScheduleAdmissions.has(schedule.id)) continue;
+    activeScheduleAdmissions.add(schedule.id);
+    let staged: ReturnType<typeof prepareJobBatch> | undefined;
     try {
-      const recipe = await readRecipe(schedule.recipeId);
+      const recipe = await runtime.readRecipe(schedule.recipeId);
       if (!recipe || recipe.quarantined) {
-        await markScheduleRun(schedule.id, at);
-        continue;
+        throw new Error(
+          recipe
+            ? `Scheduled Test ${schedule.recipeId} is quarantined`
+            : `Scheduled Test ${schedule.recipeId} was not found`,
+        );
       }
-      const recipeGraph = await freezeRecipeGraph(recipe);
-      const variables = await readProjectVariables(schedule.projectId);
-      const matrix = await prepareRunMatrix({
+      const recipeGraph = await runtime.freezeRecipeGraph(recipe);
+      const variables = await runtime.readProjectVariables(schedule.projectId);
+      // The schedule's persisted due time identifies this occurrence. Poll
+      // timing must not change its seed or idempotency provenance.
+      const scheduledAt = schedule.nextRunAt;
+      const matrix = await runtime.prepareRunMatrix({
         variables: variables.value,
         dataIds: referencedVariableIds(recipeGraph, variables.value),
         repetitions: schedule.repetitions,
-        seed: at,
+        seed: scheduledAt,
       });
       const targetProfile = resolveScheduledTargetProfile(schedule, targetProfiles);
-      for (const item of matrix.cases) {
-        runWithOperationContext(
-          {
-            schemaVersion: 1,
-            actorId: "system:scheduler",
-            actorKind: "system",
-            organizationId: "local",
-            projectId: schedule.projectId,
-            operationId: "job.create",
-            requestId: `schedule:${schedule.id}:${at}:${item.index}`,
-            idempotencyKey: `schedule:${schedule.id}:${at}:${item.index}`,
-            issuedAt: at,
-          },
-          () =>
-            enqueueJob({
-              recipe: schedule.recipeId,
-              recipeSnapshot: recipe,
-              recipeGraph,
-              ...(schedule.targetKind === "browser"
-                ? { targetKind: "browser" as const, browserTargetId: schedule.targetId }
-                : {
-                    targetKind: "device" as const,
-                    serial: schedule.targetId,
-                    platform: schedule.platform === "ios" ? "ios" : "android",
-                  }),
-              variables: item.values,
-              sensitiveInputNames: sensitiveInputNames(variables.value, item.values),
-              ...(targetProfile ? { targetProfile } : {}),
-              batchId: matrix.id,
-              caseIndex: item.index,
-              caseCount: matrix.cases.length,
-              artifacts: [
-                {
-                  kind: "schedule",
-                  capturedAt: at,
-                  data: {
-                    scheduleId: schedule.id,
-                    matrixId: matrix.id,
-                    provenance: item.provenance,
-                    targetProfile: targetProfile ?? null,
-                    targetProfileStatus: targetProfile ? "observed" : "unavailable",
-                  },
-                },
-              ],
-              projectId: schedule.projectId,
-              ownerId: "scheduler",
-            }),
+      const contexts = matrix.cases.map((item) => ({
+        schemaVersion: 1 as const,
+        actorId: "system:scheduler",
+        actorKind: "system" as const,
+        organizationId: "local",
+        projectId: schedule.projectId,
+        operationId: "job.create",
+        requestId: `schedule:${schedule.id}:${scheduledAt}:${item.index}`,
+        idempotencyKey: `schedule:${schedule.id}:${scheduledAt}:${item.index}`,
+        issuedAt: at,
+      }));
+      const inputs = matrix.cases.map((item, index) => ({
+        operationContext: contexts[index]!,
+        input: {
+          recipe: schedule.recipeId,
+          recipeSnapshot: recipe,
+          recipeGraph,
+          ...(schedule.targetKind === "browser"
+            ? { targetKind: "browser" as const, browserTargetId: schedule.targetId }
+            : {
+                targetKind: "device" as const,
+                serial: schedule.targetId,
+                platform: schedule.platform === "ios" ? ("ios" as const) : ("android" as const),
+              }),
+          variables: item.values,
+          sensitiveInputNames: sensitiveInputNames(variables.value, item.values),
+          ...(targetProfile ? { targetProfile } : {}),
+          batchId: matrix.id,
+          caseIndex: item.index,
+          caseCount: matrix.cases.length,
+          artifacts: [
+            {
+              kind: "schedule",
+              capturedAt: at,
+              data: {
+                scheduleId: schedule.id,
+                scheduledAt,
+                matrixId: matrix.id,
+                provenance: item.provenance,
+                targetProfile: targetProfile ?? null,
+                targetProfileStatus: targetProfile ? "observed" : "unavailable",
+              },
+            },
+          ],
+          projectId: schedule.projectId,
+          ownerId: "scheduler",
+        },
+      }));
+      if (!contexts[0]) throw new Error("Scheduled Test produced no cases");
+      staged = runWithOperationContext(contexts[0], () => runtime.prepareJobBatch(inputs));
+      // All fallible batch activation happens before advancing the occurrence.
+      // Dispatch is the scheduler's idempotent, no-throw queue transfer.
+      staged.activate();
+      await runtime.markScheduleRun(schedule.id, at);
+      staged.dispatch();
+    } catch (error) {
+      try {
+        staged?.rollback();
+      } catch (rollbackError) {
+        error = new Error(
+          `${messageOf(error)}; scheduled batch rollback failed: ${messageOf(rollbackError)}`,
         );
       }
-      // Preparation and queueing succeeded. A missing private input or other
-      // expansion failure must remain due so it is visible and recoverable.
-      await markScheduleRun(schedule.id, at);
-    } catch {
+      const failure = redactText(messageOf(error));
+      try {
+        await runtime.markScheduleFailure(schedule.id, failure, at);
+      } catch (recordError) {
+        publish({
+          type: "error",
+          at,
+          message: `Scheduled Test ${schedule.id} failed (${failure}) and its failure record could not be persisted: ${redactText(messageOf(recordError))}`,
+          where: "server.scheduler",
+        });
+      }
       // One bad schedule must not prevent other due schedules from queueing.
-      continue;
+    } finally {
+      activeScheduleAdmissions.delete(schedule.id);
     }
   }
 }

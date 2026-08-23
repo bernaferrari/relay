@@ -38,17 +38,6 @@ test("maps every tool-eligible operation exactly once", () => {
       "event.stream",
       "target.stream.open",
       "activity.export",
-      "recipe.list",
-      "recipe.get",
-      "recipe.create",
-      "recipe.update",
-      "recipe.delete",
-      "recipe.yaml.get",
-      "recipe.import",
-      "recipe.evidence.create",
-      "recipe.history.list",
-      "recipe.history.restore",
-      "recipe.stability.get",
       "job.locale-matrix.start",
       "job.locale-matrix.infer",
       "discovery.promote",
@@ -72,6 +61,14 @@ test("maps every tool-eligible operation exactly once", () => {
   );
   assert.equal(
     relayMcpTools.some(({ name }) => name === "relay_activity_export"),
+    false,
+  );
+  assert.equal(
+    operationDefinitions.some(({ id }) => id.startsWith("recipe.")),
+    false,
+  );
+  assert.equal(
+    relayMcpTools.some(({ operationId }) => operationId.startsWith("recipe.")),
     false,
   );
 });
@@ -140,7 +137,10 @@ test("maps snapshot capture to a digest-by-default tool with an explicit full tr
     serial: "device-1",
     full: true,
   });
-  assert.throws(() => snapshot.inputSchema.parse({ serial: "device-1", full: "true" }));
+  assert.deepEqual(snapshot.inputSchema.parse({ serial: "device-1", full: "true" }), {
+    serial: "device-1",
+    full: true,
+  });
 });
 
 test("maps screenshot capture to its stable Relay tool descriptor", () => {

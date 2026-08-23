@@ -77,6 +77,16 @@ export type ReusableSurfaceComparison = {
   provenance: SurfaceComparisonCacheProvenance & { status: "hit" };
 };
 
+/** A rebuildable catalog projection. Its payload is still validated as full
+ * immutable evidence before reuse. */
+export type IndexedSurfaceComparisonCandidate = {
+  runId: string;
+  status: string;
+  at: number;
+  artifactCapturedAt: number;
+  data: unknown;
+};
+
 export type SurfaceComparisonNeedsRecapture = {
   schemaVersion: 1;
   status: "needs-recapture";
@@ -249,6 +259,7 @@ export function findReusableSurfaceComparison(input: {
     Pick<PersistedRun, "id" | "status" | "finishedAt" | "writtenAt" | "artifacts">
   >;
   currentArtifacts?: TestJob["artifacts"];
+  indexedCandidates?: readonly IndexedSurfaceComparisonCandidate[];
   currentRunId?: string;
   at: number;
 }): ReusableSurfaceComparison | null {
@@ -266,6 +277,20 @@ export function findReusableSurfaceComparison(input: {
         status: "ok",
         at: artifact.capturedAt,
         artifact,
+      })),
+    );
+  }
+  if (input.indexedCandidates) {
+    candidates.push(
+      ...input.indexedCandidates.map((candidate) => ({
+        runId: candidate.runId,
+        status: candidate.status,
+        at: candidate.at,
+        artifact: {
+          kind: "logical-scroll-surface-result",
+          capturedAt: candidate.artifactCapturedAt,
+          data: candidate.data,
+        },
       })),
     );
   }

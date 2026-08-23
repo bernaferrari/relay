@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { For, createSignal } from "solid-js";
 import type { AppMapTestStartup } from "@relay/protocol";
 import type { JobInfo } from "../lib/api-types";
 import {
@@ -48,6 +48,8 @@ export {
 } from "../lib/app-map-test-run-state";
 
 export function AppMapTestRunControl(props: TestRunControlProps) {
+  const [optionsOpen, setOptionsOpen] = createSignal(false);
+  let optionsSummary: HTMLElement | undefined;
   const active = () => isActiveTestRun(props.job);
   const finished = () => isFinishedTestRun(props.job);
   const busy = () => props.launchState === "preparing" || props.launchState === "canceling";
@@ -106,125 +108,172 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
     props.onTargetProfileChange?.(event.currentTarget.value || undefined);
   }
 
-  // One row, so the primary action can live in the single workspace bar instead of
-  // the status strip the old screen stacked under it.
+  function closeOptions(): void {
+    setOptionsOpen(false);
+    queueMicrotask(() => optionsSummary?.focus());
+  }
+
+  // Status and the one primary action stay in the workspace bar. Everything that
+  // scopes or inspects a run is progressive disclosure: useful to an expert, but
+  // not a second prerequisite checklist for a first run. The run action itself
+  // still performs the same automatic offline preflight before device control.
   return (
-    <div class="flex min-w-0 flex-wrap items-center gap-2" data-test-run-actions>
-      {props.onCheckOffline ? (
-        <Button
-          size="sm"
-          variant="secondary"
-          class="shrink-0"
-          disabled={busy() || active() || props.checkingOffline}
-          aria-busy={props.checkingOffline}
-          onClick={props.onCheckOffline}
-        >
-          <Icon name="check" size={13} />
-          {props.checkingOffline ? "Checking…" : "Check offline"}
-        </Button>
-      ) : null}
-      {props.freshEvidenceAvailable ? (
-        <label class="flex min-h-9 shrink-0 items-center gap-1.5 text-caption text-text-base">
-          <input
-            type="checkbox"
-            class="size-3.5 accent-icon-interactive-base"
-            checked={Boolean(props.freshEvidence)}
-            disabled={busy() || active() || props.checkingOffline}
-            onChange={(event) => props.onFreshEvidenceChange?.(event.currentTarget.checked)}
-          />
-          Capture fresh evidence
-        </label>
-      ) : null}
-      {canChooseTargetProfile() ? (
-        <label
-          class="flex min-h-11 min-w-0 items-center gap-1 rounded-md border border-border-weak-base bg-surface-base px-2 text-caption text-text-base"
-          title="Scope the next offline proof to one saved target profile. This does not change the Test or device."
-        >
-          <span class="text-text-weak">Evidence</span>
-          <select
-            id="test-runtime-profile"
-            data-test-runtime-profile
-            aria-label="Runtime target profile for offline evidence"
-            class="min-w-0 max-w-52 cursor-pointer bg-transparent text-base font-medium text-text-base outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
-            value={props.targetProfileId ?? ""}
-            disabled={busy() || active() || finished() || props.checkingOffline}
-            onChange={selectTargetProfile}
-          >
-            <option value="">Choose profile…</option>
-            <For each={targetProfileOptions()}>
-              {(profile) => <option value={profile.id}>{profile.label}</option>}
-            </For>
-          </select>
-        </label>
-      ) : null}
-      {props.targetProfileNotice ? (
-        <span
-          data-test-runtime-profile-notice
-          class="max-w-[28ch] text-caption/[1.3] text-text-weak"
-          title={props.targetProfileNotice}
-        >
-          {props.targetProfileNotice}
-        </span>
-      ) : null}
-      {props.startup ? (
-        canChooseStartup() ? (
-          <div class="flex min-w-0 max-w-[36rem] flex-wrap items-center gap-x-2 gap-y-0.5">
-            <label
-              class="flex min-h-11 min-w-0 items-center gap-1 rounded-md border border-border-weak-base bg-surface-base px-2 text-caption text-text-base"
-              title={startupCopy().detail}
-            >
-              <span class="text-text-weak">Start</span>
-              <select
-                aria-label="Test startup policy"
-                data-test-startup-policy
-                class="min-w-0 max-w-40 cursor-pointer bg-transparent text-caption font-medium text-text-base outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
-                value={startupValue()}
-                disabled={busy() || active() || finished() || props.checkingOffline}
-                onChange={selectStartup}
-              >
-                <option value="cold">Cold baseline</option>
-                <optgroup label="Verified checkpoint">
-                  <For each={checkpointOptions()}>
-                    {(option) => (
-                      <option value={`checkpoint:${option.screenId}`}>
-                        Verified · {option.label}
-                      </option>
-                    )}
-                  </For>
-                </optgroup>
-              </select>
-            </label>
-            <span
-              data-test-startup-policy-detail
-              class="max-w-[42ch] text-caption/[1.3] text-text-weak"
-            >
-              {startup().mode === "verified-checkpoint"
-                ? "Mismatch stops for review. Relay never falls back to a cold relaunch."
-                : "Cold baseline runs the saved beginning. A new run must choose this policy again."}
-            </span>
-          </div>
-        ) : (
-          <span
-            data-test-startup-policy
-            class="shrink-0 text-caption text-text-weak"
-            title={startupCopy().detail}
-          >
-            Start · {startupCopy().label}
-          </span>
-        )
-      ) : null}
+    <div
+      class="flex min-w-0 flex-wrap items-center justify-end gap-2 max-[560px]:w-full"
+      data-test-run-actions
+    >
       {status() ? (
         <span
           id="test-run-control-status"
-          class="max-w-[26ch] truncate text-right text-caption/[1.3] text-text-weak"
+          class="max-w-[26ch] truncate text-right text-caption/[1.3] text-text-weak max-[560px]:max-w-none max-[560px]:flex-1 max-[560px]:text-left"
           role="status"
           aria-live="polite"
         >
           {status()}
         </span>
       ) : null}
+      <details
+        class="group relative shrink-0"
+        data-test-run-options
+        open={optionsOpen()}
+        onToggle={(event) => setOptionsOpen(event.currentTarget.open)}
+      >
+        <summary
+          ref={(element) => (optionsSummary = element)}
+          tabindex={0}
+          class="flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-base transition-[color,background-color,transform] duration-hover marker:hidden hover:bg-surface-base-hover hover:text-text-strong active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus motion-reduce:transition-none [&::-webkit-details-marker]:hidden"
+          aria-controls="test-run-options-panel"
+          aria-expanded={optionsOpen()}
+        >
+          <Icon name="sliders" size={14} />
+          Run options
+          <Icon
+            name="chevron-down"
+            size={13}
+            class="text-icon-weak transition-transform duration-hover group-open:rotate-180 motion-reduce:transition-none"
+          />
+        </summary>
+        <div
+          id="test-run-options-panel"
+          class="absolute top-[calc(100%+6px)] right-0 z-50 grid max-h-[min(70dvh,32rem)] w-[min(22rem,calc(100vw-1rem))] gap-3 overflow-y-auto rounded-lg bg-surface-raised-stronger-non-alpha p-3 text-left shadow-md"
+          aria-label="Run options"
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            event.stopPropagation();
+            closeOptions();
+          }}
+        >
+          {props.onCheckOffline ? (
+            <div class="grid gap-1.5 border-b border-border-weak-base pb-3">
+              <Button
+                size="md"
+                variant="secondary"
+                class="w-full"
+                disabled={busy() || active() || props.checkingOffline}
+                aria-busy={props.checkingOffline}
+                onClick={props.onCheckOffline}
+              >
+                <Icon name="check" size={13} />
+                {props.checkingOffline ? "Checking…" : "Check offline"}
+              </Button>
+              <p class="m-0 text-caption/[1.4] text-text-weak">
+                Inspect the frozen plan without controlling the selected target. Run performs this
+                check automatically.
+              </p>
+            </div>
+          ) : null}
+          {props.freshEvidenceAvailable ? (
+            <label class="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 text-body text-text-base">
+              <input
+                type="checkbox"
+                class="size-4 accent-icon-interactive-base"
+                checked={Boolean(props.freshEvidence)}
+                disabled={busy() || active() || props.checkingOffline}
+                onChange={(event) => props.onFreshEvidenceChange?.(event.currentTarget.checked)}
+              />
+              <span class="grid gap-0.5">
+                <span class="font-medium text-text-strong">Capture fresh evidence</span>
+                <span class="text-caption/[1.35] text-text-weak">
+                  Refresh full-page evidence during this run.
+                </span>
+              </span>
+            </label>
+          ) : null}
+          {canChooseTargetProfile() ? (
+            <label
+              class="grid min-h-11 min-w-0 gap-1.5 text-caption text-text-base"
+              title="Scope the next offline proof to one saved target profile. This does not change the Test or device."
+            >
+              <span class="font-medium text-text-strong">Evidence profile</span>
+              <select
+                id="test-runtime-profile"
+                data-test-runtime-profile
+                class="min-h-11 min-w-0 w-full cursor-pointer rounded-md border border-border-weak-base bg-surface-base px-2 text-base font-medium text-text-base outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+                value={props.targetProfileId ?? ""}
+                disabled={busy() || active() || finished() || props.checkingOffline}
+                onChange={selectTargetProfile}
+              >
+                <option value="">Choose profile…</option>
+                <For each={targetProfileOptions()}>
+                  {(profile) => <option value={profile.id}>{profile.label}</option>}
+                </For>
+              </select>
+            </label>
+          ) : null}
+          {props.targetProfileNotice ? (
+            <p
+              data-test-runtime-profile-notice
+              class="m-0 text-caption/[1.4] text-text-weak"
+              title={props.targetProfileNotice}
+            >
+              {props.targetProfileNotice}
+            </p>
+          ) : null}
+          {props.startup ? (
+            canChooseStartup() ? (
+              <label class="grid min-h-11 min-w-0 gap-1.5 text-caption text-text-base">
+                <span class="font-medium text-text-strong">Start from</span>
+                <select
+                  aria-label="Test startup policy"
+                  data-test-startup-policy
+                  class="min-h-11 min-w-0 w-full cursor-pointer rounded-md border border-border-weak-base bg-surface-base px-2 text-base font-medium text-text-base outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+                  value={startupValue()}
+                  disabled={busy() || active() || finished() || props.checkingOffline}
+                  onChange={selectStartup}
+                >
+                  <option value="cold">Cold baseline</option>
+                  <optgroup label="Verified checkpoint">
+                    <For each={checkpointOptions()}>
+                      {(option) => (
+                        <option value={`checkpoint:${option.screenId}`}>
+                          Verified · {option.label}
+                        </option>
+                      )}
+                    </For>
+                  </optgroup>
+                </select>
+                <span data-test-startup-policy-detail class="text-caption/[1.4] text-text-weak">
+                  {startup().mode === "verified-checkpoint"
+                    ? "Mismatch stops for review. Relay never falls back to a cold relaunch."
+                    : "Cold baseline runs the saved beginning. A new run must choose this policy again."}
+                </span>
+              </label>
+            ) : (
+              <p
+                data-test-startup-policy
+                class="m-0 text-caption/[1.4] text-text-weak"
+                title={startupCopy().detail}
+              >
+                Start from{" "}
+                <strong class="font-medium text-text-strong">{startupCopy().label}</strong>
+              </p>
+            )
+          ) : null}
+        </div>
+      </details>
       <Button
-        size="sm"
+        size="md"
         class="shrink-0"
         variant={active() ? "danger" : "primary"}
         disabled={busy() || (Boolean(props.blockedReason) && !props.onResolveBlocked)}

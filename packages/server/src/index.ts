@@ -112,7 +112,7 @@ import { handleSettingsRoute } from "./settings-routes.js";
 import { handleTargetRoute } from "./target-routes.js";
 import { handleManualTargetRoute } from "./manual-target-routes.js";
 import { handleControlPlaneRoute } from "./control-plane-routes.js";
-import { handleRecipeRoute } from "./recipe-routes.js";
+import { handleWorkspaceRoute } from "./workspace-routes.js";
 import { handleInteractionRoute } from "./interaction-routes.js";
 import { handleStepRunRoute, type StepRunRouteRuntime } from "./step-run-route.js";
 import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";
@@ -523,7 +523,7 @@ async function handleRequest(
       return;
     }
 
-    if (await handleRecipeRoute({ method, pathname, url, request: req, response: res, scope })) {
+    if (await handleWorkspaceRoute({ method, pathname, url, request: req, response: res, scope })) {
       return;
     }
 

@@ -18,6 +18,24 @@ describe("classifyRunOutcome", () => {
     );
   });
 
+  it("keeps infrastructure causal when lower layers also report assertion text", () => {
+    assert.deepEqual(
+      classifyRunOutcome({
+        status: "error",
+        error: "expect-screen: assertion failed because device session connection was lost",
+      }),
+      { outcome: "harness-failure", failureCategory: "environment" },
+    );
+    assert.deepEqual(
+      classifyRunOutcome({
+        status: "error",
+        error: "semantic assertion: target could not be evaluated",
+        errorCode: "INTERNAL",
+      }),
+      { outcome: "harness-failure", failureCategory: "harness-defect" },
+    );
+  });
+
   it("preserves uncertainty and cancellation as distinct outcomes", () => {
     assert.deepEqual(
       classifyRunOutcome({ status: "error", error: "judge uncertain: insufficient evidence" }),

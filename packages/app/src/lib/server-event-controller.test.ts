@@ -37,7 +37,6 @@ test("a burst of job events causes one effective job refresh", async () => {
   const ignore = async () => undefined;
   const refreshers = {
     devices: ignore,
-    recipes: ignore,
     appMaps: ignore,
     jobs: refreshJobs,
     runs: ignore,

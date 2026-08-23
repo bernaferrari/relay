@@ -1,6 +1,6 @@
 import type { AppMap, AppMapCanvasState, CanvasNote, ScreenVariant } from "@relay/protocol";
 import type { Accessor, Setter } from "solid-js";
-import { useRecipeDraft } from "../context/recipe-draft";
+import { useAppMapExecution } from "../context/app-map-execution";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { humanError } from "./human-error";
@@ -36,7 +36,7 @@ export function useAppMapCanvasPersistence(options: {
   history: CanvasHistory;
 }) {
   const server = useServer();
-  const draft = useRecipeDraft();
+  const execution = useAppMapExecution();
   let mutationQueue = Promise.resolve();
 
   function persistCanvas(
@@ -50,13 +50,13 @@ export function useAppMapCanvasPersistence(options: {
     mutationQueue = mutationQueue
       .then(async () => {
         let appMap = await server.loadAppMap(appMapId);
-        const projectedGraph = ensureCanvasGraph(value, draft.steps());
+        const projectedGraph = ensureCanvasGraph(value, execution.steps());
         const projectedChanges = planAppMapProjection({
           appMap,
           graph: projectedGraph,
           positions: value.positions,
           groups: value.groups ?? [],
-          recipeSteps: draft.steps(),
+          recipeSteps: execution.steps(),
           ...(variantsByScreen ? { variantsByScreen } : {}),
           ...(restore ? { restore } : {}),
         });
@@ -135,10 +135,7 @@ export function useAppMapCanvasPersistence(options: {
 
   const undo = () => {
     const entry = options.history.undo();
-    if (!entry) {
-      draft.undo();
-      return;
-    }
+    if (!entry) return;
     persistMetadata(structuredClone(entry.before), {
       before: options.canvasState(),
       recordHistory: false,
@@ -147,10 +144,7 @@ export function useAppMapCanvasPersistence(options: {
   };
   const redo = () => {
     const entry = options.history.redo();
-    if (!entry) {
-      draft.redo();
-      return;
-    }
+    if (!entry) return;
     persistMetadata(structuredClone(entry.after), {
       before: options.canvasState(),
       recordHistory: false,

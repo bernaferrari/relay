@@ -526,8 +526,8 @@ function RunRow(props: { job: JobInfo; onOpen: (id: string) => void }) {
   const server = useServer();
   const selected = () => server.selectedJobId() === props.job.id;
   const title = () =>
-    server.recipes().find((item) => item.id === props.job.action)?.title ??
     props.job.title ??
+    props.job.recipeSnapshot?.title ??
     titleize(props.job.action);
   return (
     <button

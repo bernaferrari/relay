@@ -9,6 +9,7 @@ import type {
 } from "./connection-navigation.js";
 import type { TargetProfile } from "./target-contract.js";
 import type { ExecutionTargetRef } from "./execution-target.js";
+import type { ConnectionExecutionObservation } from "./connection-execution.js";
 import type { ScreenConsolidationPreview } from "./screen-consolidation.js";
 import type {
   LogicalScrollSurface,
@@ -622,6 +623,7 @@ export type TargetResultReference = AppMapEntity & {
   targetProfile: TargetProfile;
   outcome: TargetResultOutcome;
   connectionId?: string;
+  connectionObservations?: ConnectionExecutionObservation[];
   evidenceIds: string[];
   finishedAt?: number;
 };

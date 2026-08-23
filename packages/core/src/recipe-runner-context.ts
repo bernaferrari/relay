@@ -271,6 +271,8 @@ export type RecipeStepContext = {
   moduleStack?: string[];
   recipeGraph?: Readonly<Record<string, Recipe>>;
   runtime?: RecipeRuntimeState;
+  /** Host policy/test seam for manual steps that omit an authored deadline. */
+  defaultHumanCheckpointTimeoutMs?: number;
   /** Test seam and provider override for pixel-only destination identity. */
   observeVisualFingerprint?: () => Promise<string | undefined>;
 };

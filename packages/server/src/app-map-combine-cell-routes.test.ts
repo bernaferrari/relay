@@ -993,6 +993,67 @@ test("campaign resume queues one pending selected cell and leaves a passed pilot
   }
 });
 
+test("Combine start without --all queues one pilot cell", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-combine-default-pilot-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      async listDevices() {
+        return [
+          {
+            id: "pixel-1",
+            serial: "pixel-1",
+            name: "Pixel",
+            kind: "Physical device",
+            booted: true,
+            platform: "android" as const,
+          },
+        ];
+      },
+      async assertTargetControl(scope, targetId) {
+        return assertTargetControl(scope, targetId);
+      },
+    },
+  });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await saveLocaleCombine(client);
+    const started = await client.invoke("job.combine.start", {
+      appMapId: "store",
+      combineId: "locales",
+      serial: "pixel-1",
+      platform: "android",
+      selected: { language: ["en", "it", "fr"] },
+    });
+    const campaign = started.campaign as CombineCampaign;
+    assert.equal(((started.jobs as unknown[]) ?? []).length, 1);
+    assert.equal(campaign.cases.filter((item) => item.phase === "pilot").length, 1);
+    assert.equal(campaign.status, "pilot-running");
+    assert.equal(campaign.execution?.selectedCellIds?.length, 3);
+    for (const job of (started.jobs as Array<{ id?: string }>) ?? []) {
+      if (job.id) {
+        cancelJob(job.id);
+        await waitForJobCompletion(job.id);
+      }
+    }
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a named cell persists only that selection; an unnamed pilot keeps the full grid", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-combine-named-cell-"));
   const previous = process.env.RELAY_STATE_DIR;

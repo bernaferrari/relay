@@ -7,6 +7,7 @@ import type {
 } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
 import { compileAppMapConnection, screenExpectation } from "./app-map-compiler.js";
+import { selectEquivalentDirectConnection } from "./app-map-route-cost.js";
 
 function authoredSteps(action: ActionSpec): RecipeStep[] {
   return action.kind === "recorded" || action.kind === "steps" ? action.steps : [];
@@ -73,9 +74,7 @@ function explicitReviewedConnection(
       candidate.destination.kind === "screen" &&
       candidate.destination.screenId === destinationScreenId,
   );
-  if (candidates.length === 0) return undefined;
-  if (candidates.length !== 1) return null;
-  return candidates[0]!;
+  return selectEquivalentDirectConnection(map, candidates) as ScreenConnection | undefined | null;
 }
 
 function compileReviewedConnection(
@@ -135,8 +134,11 @@ function explicitReviewedAncestorInverse(
       pathScreens.slice(targetIndex, currentIndex).includes(candidate.destination.screenId),
   );
   if (candidates.length === 0) return { status: "absent" };
-  if (candidates.length !== 1) return { status: "ambiguous" };
-  const connection = candidates[0]!;
+  const connection = selectEquivalentDirectConnection(map, candidates) as
+    | ScreenConnection
+    | undefined
+    | null;
+  if (!connection) return { status: "ambiguous" };
   // When a path revisits the same logical screen, consume through its earliest
   // still-required occurrence. The frozen destination proof makes this jump
   // safe; using the later occurrence would only replay redundant edges.

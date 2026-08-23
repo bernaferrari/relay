@@ -549,6 +549,17 @@ function assertRunReferences(map: AppMap): void {
         `Target result ${result.id} references missing connection ${result.connectionId}`,
       );
     }
+    for (const observation of result.connectionObservations ?? []) {
+      if (
+        !map.connections[observation.connectionId] &&
+        !archivedConnectionIds.has(observation.connectionId)
+      ) {
+        appMapFail(
+          "missing-reference",
+          `Target result ${result.id} observes missing connection ${observation.connectionId}`,
+        );
+      }
+    }
   }
 }
 

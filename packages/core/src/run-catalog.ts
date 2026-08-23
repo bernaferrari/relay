@@ -6,6 +6,14 @@ import type { RunReview, RunSummary } from "@relay/protocol";
 
 type CatalogRecord = RunSummary & { dir: string };
 
+export type CatalogSurfaceComparison = {
+  runId: string;
+  at: number;
+  artifactCapturedAt: number;
+};
+
+const SURFACE_COMPARISON_KEY = /^surface-comparison-v1-[a-f0-9]{64}$/;
+
 function database(root: string): DatabaseSync {
   const db = new DatabaseSync(join(root, ".catalog.sqlite"));
   db.exec(`
@@ -30,17 +38,30 @@ function database(root: string): DatabaseSync {
       frame_count INTEGER NOT NULL,
       artifact_count INTEGER NOT NULL,
       artifact_bytes INTEGER NOT NULL,
+      storage_bytes INTEGER NOT NULL DEFAULT 0,
       evidence_complete INTEGER,
       pinned INTEGER NOT NULL DEFAULT 0,
       retention_class TEXT NOT NULL DEFAULT 'standard'
     );
     CREATE INDEX IF NOT EXISTS runs_written_at ON runs(written_at DESC);
-    PRAGMA user_version=1;
+    CREATE TABLE IF NOT EXISTS surface_comparisons (
+      cache_key TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      artifact_captured_at INTEGER NOT NULL,
+      run_written_at INTEGER NOT NULL,
+      PRIMARY KEY (cache_key, run_id, artifact_captured_at)
+    );
+    CREATE INDEX IF NOT EXISTS surface_comparisons_exact_key
+      ON surface_comparisons(cache_key, run_written_at DESC, artifact_captured_at DESC);
   `);
   const columns = db.prepare("PRAGMA table_info(runs)").all() as Array<{ name?: string }>;
   if (!columns.some((column) => column.name === "review_json")) {
     db.exec("ALTER TABLE runs ADD COLUMN review_json TEXT");
   }
+  if (!columns.some((column) => column.name === "storage_bytes")) {
+    db.exec("ALTER TABLE runs ADD COLUMN storage_bytes INTEGER NOT NULL DEFAULT 0");
+  }
+  db.exec("PRAGMA user_version=2");
   return db;
 }
 
@@ -64,14 +85,60 @@ function rowToRecord(row: Record<string, unknown>): CatalogRecord {
     writtenAt: Number(row.written_at),
     artifactCount: Number(row.artifact_count),
     artifactBytes: Number(row.artifact_bytes),
+    storageBytes: Number(row.storage_bytes),
     ...(row.evidence_complete == null ? {} : { evidenceComplete: Boolean(row.evidence_complete) }),
     pinned: Boolean(row.pinned),
     retentionClass: row.retention_class === "protected" ? "protected" : "standard",
   };
 }
 
+async function committedDirectoryBytes(directory: string): Promise<number> {
+  let total = 0;
+  const visit = async (path: string): Promise<void> => {
+    const entries = await readdir(path, { withFileTypes: true });
+    for (const entry of entries) {
+      const child = join(path, entry.name);
+      if (entry.isDirectory()) {
+        await visit(child);
+        continue;
+      }
+      if (!entry.isFile()) {
+        throw new Error(`run directory contains unsupported entry: ${child}`);
+      }
+      total += (await stat(child)).size;
+      if (!Number.isSafeInteger(total)) throw new Error("run directory byte count is unsafe");
+    }
+  };
+  await visit(directory);
+  return total;
+}
+
+function indexedSurfaceComparisons(run: Record<string, unknown>): Array<{
+  key: string;
+  capturedAt: number;
+}> {
+  if (!Array.isArray(run.artifacts)) return [];
+  const indexed: Array<{ key: string; capturedAt: number }> = [];
+  for (const artifact of run.artifacts) {
+    if (!artifact || typeof artifact !== "object") continue;
+    const item = artifact as { kind?: unknown; capturedAt?: unknown; data?: unknown };
+    if (item.kind !== "logical-scroll-surface-result" || !item.data || typeof item.data !== "object") {
+      continue;
+    }
+    const cache = (item.data as { cache?: unknown }).cache;
+    if (!cache || typeof cache !== "object") continue;
+    const key = (cache as { key?: unknown }).key;
+    if (typeof key !== "string" || !SURFACE_COMPARISON_KEY.test(key)) continue;
+    const capturedAt = typeof item.capturedAt === "number" ? item.capturedAt : 0;
+    if (!Number.isFinite(capturedAt)) continue;
+    indexed.push({ key, capturedAt });
+  }
+  return indexed;
+}
+
 export async function indexRun(root: string, run: Record<string, unknown>): Promise<void> {
   await mkdir(root, { recursive: true });
+  const storageBytes = await committedDirectoryBytes(String(run.dir));
   const db = database(root);
   try {
     const artifacts = Array.isArray(run.artifacts) ? run.artifacts : [];
@@ -113,8 +180,8 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
       INSERT INTO runs (
         id, dir, action, title, status, outcome, review_json, platform, serial, batch_id,
         queued_at, started_at, finished_at, duration_ms, written_at, frame_count,
-        artifact_count, artifact_bytes, evidence_complete
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        artifact_count, artifact_bytes, storage_bytes, evidence_complete
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         dir=excluded.dir, action=excluded.action, title=excluded.title, status=excluded.status,
         outcome=excluded.outcome, review_json=excluded.review_json, platform=excluded.platform, serial=excluded.serial,
@@ -122,6 +189,7 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
         finished_at=excluded.finished_at, duration_ms=excluded.duration_ms,
         written_at=excluded.written_at, frame_count=excluded.frame_count,
         artifact_count=excluded.artifact_count, artifact_bytes=excluded.artifact_bytes,
+        storage_bytes=excluded.storage_bytes,
         evidence_complete=excluded.evidence_complete
     `).run(
       String(run.id),
@@ -142,8 +210,50 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
       Number(run.frameCount ?? frames.length),
       artifacts.length,
       artifactBytes,
+      storageBytes,
       evidence?.finishedAt ? 1 : 0,
     );
+    db.prepare("DELETE FROM surface_comparisons WHERE run_id=?").run(String(run.id));
+    const insertSurfaceComparison = db.prepare(`
+      INSERT INTO surface_comparisons(cache_key, run_id, artifact_captured_at, run_written_at)
+      VALUES (?, ?, ?, ?)
+    `);
+    for (const comparison of indexedSurfaceComparisons(run)) {
+      insertSurfaceComparison.run(
+        comparison.key,
+        String(run.id),
+        comparison.capturedAt,
+        Number(run.writtenAt),
+      );
+    }
+  } finally {
+    db.close();
+  }
+}
+
+/** Exact-key accelerator for reusable immutable surface evidence. The canonical
+ * run manifest remains authoritative; callers reload the selected immutable
+ * manifest before considering its artifact. */
+export async function catalogSurfaceComparisons(
+  root: string,
+  cacheKey: string,
+): Promise<CatalogSurfaceComparison[]> {
+  if (!SURFACE_COMPARISON_KEY.test(cacheKey)) return [];
+  await mkdir(root, { recursive: true });
+  const db = database(root);
+  try {
+    const rows = db
+      .prepare(
+        `SELECT run_id, artifact_captured_at, run_written_at
+         FROM surface_comparisons WHERE cache_key=?
+         ORDER BY run_written_at DESC, artifact_captured_at DESC LIMIT 32`,
+      )
+      .all(cacheKey) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      runId: String(row.run_id),
+      at: Number(row.run_written_at),
+      artifactCapturedAt: Number(row.artifact_captured_at),
+    }));
   } finally {
     db.close();
   }
@@ -204,6 +314,7 @@ export async function rebuildRunCatalog(
   await mkdir(root, { recursive: true });
   const db = database(root);
   db.exec("DELETE FROM runs");
+  db.exec("DELETE FROM surface_comparisons");
   db.close();
   let indexed = 0;
   let incomplete = 0;
@@ -251,13 +362,13 @@ export async function applyRunRetention(
   >;
   const records = rows.map(rowToRecord);
   const cutoff = policy.maxAgeDays ? Date.now() - policy.maxAgeDays * 86_400_000 : -Infinity;
-  let total = records.reduce((sum, run) => sum + run.artifactBytes, 0);
+  let total = records.reduce((sum, run) => sum + run.storageBytes, 0);
   const candidates: CatalogRecord[] = [];
   for (const run of records) {
     if (run.pinned || run.retentionClass === "protected") continue;
     if (run.writtenAt < cutoff || (policy.maxBytes !== undefined && total > policy.maxBytes)) {
       candidates.push(run);
-      total -= run.artifactBytes;
+      total -= run.storageBytes;
     }
   }
   const deleted: string[] = [];
@@ -267,6 +378,7 @@ export async function applyRunRetention(
       const directory = resolve(run.dir);
       if (resolve(root, basename(directory)) !== directory) continue;
       await rm(directory, { recursive: true, force: true });
+      db.prepare("DELETE FROM surface_comparisons WHERE run_id=?").run(run.id);
       db.prepare("DELETE FROM runs WHERE id=?").run(run.id);
       await writeFile(
         audit,
@@ -287,14 +399,17 @@ export async function applyRunRetention(
 export async function runStorageHealth(root: string): Promise<{
   totalRuns: number;
   artifactBytes: number;
+  storageBytes: number;
   incomplete: number;
   lastIntegrityCheck?: number;
 }> {
   await mkdir(root, { recursive: true });
   const db = database(root);
   const totals = db
-    .prepare("SELECT COUNT(*) AS total, COALESCE(SUM(artifact_bytes),0) AS bytes FROM runs")
-    .get() as { total: number; bytes: number };
+    .prepare(
+      "SELECT COUNT(*) AS total, COALESCE(SUM(artifact_bytes),0) AS artifact_bytes, COALESCE(SUM(storage_bytes),0) AS storage_bytes FROM runs",
+    )
+    .get() as { total: number; artifact_bytes: number; storage_bytes: number };
   const checked = db
     .prepare("SELECT value FROM metadata WHERE key='last_integrity_check'")
     .get() as { value: string } | undefined;
@@ -311,7 +426,8 @@ export async function runStorageHealth(root: string): Promise<{
   }
   return {
     totalRuns: Number(totals.total),
-    artifactBytes: Number(totals.bytes),
+    artifactBytes: Number(totals.artifact_bytes),
+    storageBytes: Number(totals.storage_bytes),
     incomplete,
     ...(checked ? { lastIntegrityCheck: Number(checked.value) } : {}),
   };

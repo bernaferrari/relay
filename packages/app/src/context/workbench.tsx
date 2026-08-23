@@ -1,16 +1,17 @@
 import { createSignal, createEffect, createMemo, on } from "solid-js";
 import { createSimpleContext } from "@relay/ui/context/helper";
 import { useServer, type JobInfo, type PersistedRun, type TraceStep } from "./server";
-import { useRecipeDraft } from "./recipe-draft";
+import { useAppMapExecution } from "./app-map-execution";
+import { appMapIdForJob } from "../lib/run-presentation";
 
 /**
  * Internal execution/evidence state shared by the App Map stage and Runs.
- * Recipe rows are compiled compatibility IR, not a product authoring model.
+ * Execution rows are a read projection of canonical App Map Connections.
  * Their annotation source is, in priority order:
  *   1. step-through results (the debugger: row ▶ / Auto-continue),
  *   2. an explicitly selected run chip (past job or disk run),
  *   3. the live job currently executing this recipe.
- * Any compatibility-buffer edit clears annotations back to idle.
+ * Any canonical Connection projection change clears annotations back to idle.
  */
 
 export type RowAnno = {
@@ -64,7 +65,7 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
   gate: false,
   init: () => {
     const server = useServer();
-    const draft = useRecipeDraft();
+    const execution = useAppMapExecution();
 
     // ── Auto-continue (persisted) ────────────────────────────────────────
     const [autoContinue, setAutoContinueState] = createSignal(loadAutoContinue());
@@ -99,7 +100,7 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
      */
     async function runFrom(index: number, options?: { continue?: boolean }): Promise<void> {
       if (running()) return;
-      const steps = draft.steps();
+      const steps = execution.steps();
       if (index < 0 || index >= steps.length) return;
       const cont = options?.continue ?? autoContinue();
       const token = ++runSeq;
@@ -160,10 +161,19 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
     // ── Run chips (history strip) ────────────────────────────────────────
     const [selectedChipId, setSelectedChipId] = createSignal<string | null>(null);
 
+    const belongsToSelectedMap = (run: JobInfo | PersistedRun): boolean => {
+      const appMapId = server.selectedAppMapId();
+      if (!appMapId) return false;
+      return (
+        run.action === appMapId ||
+        run.matrixCase?.appMapId === appMapId ||
+        appMapIdForJob(run) === appMapId
+      );
+    };
+
     const chips = createMemo<RunChip[]>(() => {
-      const r = server.selectedRecipe();
-      if (!r) return [];
-      const jobs = server.jobs().filter((j) => j.action === r.id);
+      if (!server.selectedAppMapId()) return [];
+      const jobs = server.jobs().filter(belongsToSelectedMap);
       const liveIds = new Set(jobs.map((j) => j.id));
       const rows: RunChip[] = jobs.map((j) => ({
         kind: "live" as const,
@@ -172,7 +182,7 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
         job: j,
       }));
       for (const run of server.persistedRuns()) {
-        if (run.action !== r.id || liveIds.has(run.id)) continue;
+        if (!belongsToSelectedMap(run) || liveIds.has(run.id)) continue;
         rows.push({ kind: "disk", id: run.id, ts: run.writtenAt, run });
       }
       rows.sort((a, b) => b.ts - a.ts);
@@ -190,14 +200,16 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
       setSelectedChipId((cur) => (cur === id ? null : id));
     }
 
-    /** The job currently executing/paused for the selected recipe, if any. */
+    /** The job currently executing/paused for the selected App Map, if any. */
     const activeLiveJob = createMemo(() => {
-      const r = server.selectedRecipe();
-      if (!r) return null;
       return (
         server
           .jobs()
-          .find((j) => j.action === r.id && (j.status === "running" || j.status === "paused")) ??
+          .find(
+            (job) =>
+              belongsToSelectedMap(job) &&
+              (job.status === "running" || job.status === "paused"),
+          ) ??
         null
       );
     });
@@ -256,24 +268,23 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
 
     // Any edit to the steps (manual, recorded, or switching recipes) clears
     // annotations back to idle — stale results on changed steps lie.
-    createEffect(on(draft.steps, () => clearAnnotations(), { defer: true }));
+    createEffect(on(execution.steps, () => clearAnnotations(), { defer: true }));
 
     // ── Step ↔ frame focus (Figma selection: one index lights both sides) ─
     const [focusedIndex, setFocusedIndex] = createSignal<number | null>(null);
     const [previewRequest, setPreviewRequest] = createSignal<StepPreviewRequest | null>(null);
     let previewToken = 0;
 
-    // New test selected → focus first step so the artboard always shows *something*.
-    // Map switches keep their own canvas focus; recipe draft drives workbench focus.
+    // New App Map selected → focus its first projected Connection action.
     createEffect(
-      on(server.selectedRecipeId, (id) => {
+      on(server.selectedAppMapId, (id) => {
         if (!id) {
           setFocusedIndex(null);
           return;
         }
-        // Defer so draft has reseeded from the new recipe.
+        // Defer so the canonical document projection has loaded.
         queueMicrotask(() => {
-          const n = draft.steps().length;
+          const n = execution.steps().length;
           if (n > 0) focusStep(0);
           else setFocusedIndex(null);
         });
@@ -285,7 +296,7 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
      * expand is a separate affordance so users never “lose” the list context.
      */
     function focusStep(i: number | null): void {
-      const count = draft.steps().length;
+      const count = execution.steps().length;
       const next =
         i == null || count === 0 || !Number.isFinite(i)
           ? null
@@ -295,7 +306,7 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
     }
 
     function previewStep(index: number): void {
-      if (index < 0 || index >= draft.steps().length) return;
+      if (index < 0 || index >= execution.steps().length) return;
       setPreviewRequest({ index, token: ++previewToken });
     }
 

@@ -1,7 +1,7 @@
 import { createMemo, createSignal } from "solid-js";
 import type { AuthoringInteraction, AuthoringSession, AuthoringVideoClip } from "@relay/protocol";
 import { createSimpleContext } from "@relay/ui/context/helper";
-import { useServer, type RecipeStep } from "./server";
+import { useServer } from "./server";
 import { nodeAtPoint, targetFromStrategy, type PickStrategy } from "../lib/snapshot";
 import { sentenceForStep } from "../lib/step-sentence";
 import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
@@ -27,7 +27,6 @@ import {
   selectProjectedAuthoringSession,
   sessionRevision,
   snapshotFromAuthoringSession,
-  supersededReviewSessionIds,
   type CapturedMapScreen,
   type CapturedStartScreen,
 } from "./recorder-projection";
@@ -47,7 +46,6 @@ export {
   projectTake,
   selectProjectedAuthoringSession,
   snapshotFromAuthoringSession,
-  supersededReviewSessionIds,
 } from "./recorder-projection";
 export type {
   CapturedMapScreen,
@@ -79,9 +77,6 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     const [interacting, setInteracting] = createSignal(false);
     const [localArming, setLocalArming] = createSignal(false);
     const [pendingGroup, setPendingGroup] = createSignal("");
-    const [dismissedSessionIds, setDismissedSessionIds] = createSignal<ReadonlySet<string>>(
-      new Set(),
-    );
     const [pendingSourceScreenId, setPendingSourceScreenId] = createSignal<string>();
     const [pendingConnectionId, setPendingTransitionId] = createSignal<string>();
 
@@ -90,7 +85,6 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         appMapId: server.selectedAppMapId(),
         targetId: server.selectedDevice(),
         actorId: server.actorId(),
-        dismissedSessionIds: dismissedSessionIds(),
       }),
     );
     const ownsActiveSession = () => activeSession()?.actorId === server.actorId();
@@ -403,7 +397,6 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       if (!session || !ownsActiveSession() || session.state !== "recording") return;
       const stopped = await server.stopAuthoringSession(session.id);
       if (stopped.state === "cancelled") {
-        setDismissedSessionIds((current) => new Set([...current, stopped.id]));
         setInteracting(false);
         toast("Nothing recorded · returned to the map", "info");
         return;
@@ -649,54 +642,34 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     ): Promise<AuthoringSession | null> {
       const session = activeSession();
       if (!session || session.state !== "reviewing" || !ownsActiveSession()) return null;
-      // Close local review immediately; slow iOS map refreshes must not make a
-      // successful approval look ignored. Restore it only on persistence failure.
-      const dismissedIds = supersededReviewSessionIds(server.authoringSessions(), session);
-      setDismissedSessionIds((current) => new Set([...current, ...dismissedIds]));
-      try {
-        const committed = await server.commitAuthoringSession(session.id, input);
-        setPendingSourceScreenId(undefined);
-        setPendingTransitionId(undefined);
-        setPendingGroup("");
-        toast(
-          "Path kept on the map · record another, capture a screenshot, or run the path",
-          "success",
-        );
-        return committed;
-      } catch (error) {
-        setDismissedSessionIds((current) => {
-          const next = new Set(current);
-          for (const id of dismissedIds) next.delete(id);
-          return next;
-        });
-        throw error;
-      }
+      const committed = await server.commitAuthoringSession(session.id, input);
+      setPendingSourceScreenId(undefined);
+      setPendingTransitionId(undefined);
+      setPendingGroup("");
+      toast(
+        "Path kept on the map · record another, capture a screenshot, or run the path",
+        "success",
+      );
+      return committed;
     }
 
     async function discardTake(): Promise<void> {
       const session = activeSession();
-      // Always clear local review chrome first so Discard never leaves the
-      // person stuck on a dead review panel if the server call fails or the
-      // session is no longer owned by this actor.
-      setPendingSourceScreenId(undefined);
-      setPendingTransitionId(undefined);
-      setPendingGroup("");
       if (!session) {
         toast("Nothing left to discard", "info");
         return;
       }
-      const dismissedIds = supersededReviewSessionIds(server.authoringSessions(), session);
-      setDismissedSessionIds((current) => new Set([...current, ...dismissedIds]));
       if (!ownsActiveSession()) {
-        // This is stale local presentation state, not a user-facing failure.
-        // Clear it quietly instead of exposing internal session ownership.
+        toast("Only the recording owner can discard this Take", "info");
         return;
       }
       try {
         if (session.state === "reviewing") await server.discardAuthoringSession(session.id);
         else await server.cancelAuthoringSession(session.id);
+        setPendingSourceScreenId(undefined);
+        setPendingTransitionId(undefined);
+        setPendingGroup("");
       } catch (error) {
-        // Keep it dismissed locally so the map is usable; surface the failure.
         toast(humanError(error), "warning");
       }
     }
@@ -834,22 +807,6 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       return false;
     }
 
-    async function forkRecipe(recipe: {
-      title: string;
-      description?: string;
-      steps: RecipeStep[];
-    }): Promise<void> {
-      const saved = await server.saveRecipeRemote({
-        title: `${recipe.title} (copy)`,
-        description: recipe.description,
-        steps: recipe.steps,
-      });
-      if (saved) {
-        server.setSelectedRecipeId(saved.id);
-        toast(`Created a copy of “${recipe.title}”`, "success");
-      }
-    }
-
     return {
       interacting,
       setInteracting,
@@ -882,7 +839,6 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       feedTypeKey,
       flushType,
       recordPick,
-      forkRecipe,
     };
   },
 });

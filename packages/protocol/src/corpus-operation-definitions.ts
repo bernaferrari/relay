@@ -1,5 +1,6 @@
 import { createOperationBuilders } from "./operation-builders.js";
-import type { OperationDefinition, OperationRecord, RuntimeParser } from "./operation-contract.js";
+import type { OperationDefinition } from "./operation-contract.js";
+import type { RelayOperationMap } from "./operation-map.js";
 
 /**
  * Corpus sweeps, the switchers that drive them, and the findings they produce.
@@ -30,10 +31,9 @@ export type CorpusOperationId =
   | "switcher-profile.scan"
   | "switcher-profile.save";
 
-export function createCorpusOperationDefinitions(
-  defaultParser: RuntimeParser<OperationRecord>,
-): readonly OperationDefinition<CorpusOperationId>[] {
-  const { command, query } = createOperationBuilders<CorpusOperationId>(defaultParser);
+export function createCorpusOperationDefinitions() {
+  const { command, query } =
+    createOperationBuilders<Pick<RelayOperationMap, CorpusOperationId>>();
   return [
     query("corpus.list", "List corpus sessions", "/corpus", { category: "corpus" }),
     command("corpus.create", "Create corpus session", "POST", "/corpus", {
@@ -128,5 +128,5 @@ export function createCorpusOperationDefinitions(
     command("language-profile.save", "Save language profile", "POST", "/language-profiles", {
       category: "corpus",
     }),
-  ];
+  ] as const;
 }

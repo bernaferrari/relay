@@ -4,15 +4,14 @@ import {
   type AppMapParserDependencies,
 } from "./app-map-operation-parsers.js";
 import { createOperationBuilders } from "./operation-builders.js";
-import type { OperationDefinition, OperationRecord, RuntimeParser } from "./operation-contract.js";
+import type { OperationDefinition } from "./operation-contract.js";
 
 type AppMapOperationId = keyof AppMapOperationMap;
 
 export function createAppMapOperationDefinitions(
-  defaultParser: RuntimeParser<OperationRecord>,
   parserDependencies: AppMapParserDependencies,
-): readonly OperationDefinition<AppMapOperationId>[] {
-  const { command, query } = createOperationBuilders<AppMapOperationId>(defaultParser);
+) {
+  const { command, query } = createOperationBuilders<AppMapOperationMap>();
   const { emptyInputParser, okParser } = parserDependencies;
   const {
     appMapCommitParser,
@@ -630,5 +629,5 @@ export function createAppMapOperationDefinitions(
         confirmation: "confirm",
       },
     ),
-  ];
+  ] as const;
 }

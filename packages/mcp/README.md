@@ -51,7 +51,7 @@ deliberately.
 Relay advertises a role-sized tool set instead of sending every operation to every agent. Select one
 with `--profile <name>` or `RELAY_MCP_PROFILE`; the default is the compact `control` profile.
 Choose `test` when one agent should read, create, propose, compile, run, cancel, and inspect evidence
-for graph-native Tests without loading the 184-operation `full` catalog.
+for graph-native Tests without loading the complete `full` catalog.
 
 | Profile   | Intended use                                                               |
 | --------- | -------------------------------------------------------------------------- |
@@ -81,7 +81,7 @@ Agents and people use the same scenario-only Test contract:
 3. Compile and resolve every blocker against its authored step before running.
 4. Run the exact saved revision on an explicit Target, then inspect the terminal run and immutable
    evidence rather than inferring success from the request.
-5. Repair the failed Test step or mapped Connection, compile again, and rerun only affected run-matrix
+5. Repair the failed Test step or mapped Connection, compile again, and rerun only affected Combine
    values when prior passing evidence remains valid.
 
 Connections and Flows are reusable navigation evidence, not alternate Test formats. Full-surface

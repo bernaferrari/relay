@@ -225,11 +225,11 @@ test("authenticated network service cannot read unowned workspace assets", async
   process.env.RELAY_REDACTION_MODE = "on";
   const server = await startServer({ host: "0.0.0.0", port: 0, token });
   try {
-    const response = await fetch(`http://127.0.0.1:${server.port}/recipes`, {
+    const response = await fetch(`http://127.0.0.1:${server.port}/discovery`, {
       headers: {
         Authorization: `Bearer ${token}`,
         "x-project-id": "project-a",
-        ...operationHeaders("recipe.list", "configured-service"),
+        ...operationHeaders("discovery.list", "configured-service"),
       },
     });
     assert.equal(response.status, 403);
@@ -252,6 +252,38 @@ test("authenticated network service cannot read unowned workspace assets", async
     else process.env.RELAY_REDACTION_MODE = previous.redaction;
     if (previous.role === undefined) delete process.env.RELAY_AUTH_ROLE;
     else process.env.RELAY_AUTH_ROLE = previous.role;
+  }
+});
+
+test("legacy Recipe authoring and evidence routes are absent", async () => {
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  const baseUrl = `http://127.0.0.1:${server.port}`;
+  const requests: Array<{ method: string; path: string }> = [
+    { method: "GET", path: "/recipes" },
+    { method: "POST", path: "/recipes" },
+    { method: "GET", path: "/recipes/legacy" },
+    { method: "PUT", path: "/recipes/legacy" },
+    { method: "DELETE", path: "/recipes/legacy" },
+    { method: "GET", path: "/recipes/legacy/yaml" },
+    { method: "POST", path: "/recipes/import" },
+    { method: "POST", path: "/recipes/legacy/evidence" },
+    { method: "GET", path: "/recipes/legacy/evidence/image" },
+    { method: "GET", path: "/recipes/legacy/history" },
+    { method: "POST", path: "/recipes/legacy/history" },
+    { method: "GET", path: "/recipes/legacy/stability" },
+  ];
+  try {
+    for (const request of requests) {
+      const response = await fetch(`${baseUrl}${request.path}`, {
+        method: request.method,
+        ...(request.method === "POST" || request.method === "PUT"
+          ? { headers: { "content-type": "application/json" }, body: "{}" }
+          : {}),
+      });
+      assert.equal(response.status, 404, `${request.method} ${request.path}`);
+    }
+  } finally {
+    await server.close();
   }
 });
 

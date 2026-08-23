@@ -14,5 +14,8 @@
     "@types/node": "^26.1.2",
     "tsx": "^4.23.6",
     "typescript": "catalog:"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
   }
 }

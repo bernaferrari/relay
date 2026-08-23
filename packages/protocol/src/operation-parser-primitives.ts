@@ -36,13 +36,6 @@ export function boolean(value: unknown, label: string): boolean {
   return value;
 }
 
-export const operationRecordParser: RuntimeParser<OperationRecord> = {
-  description: "JSON object",
-  parse(value) {
-    return record(value, "operation value");
-  },
-};
-
 export const emptyInputParser: RuntimeParser<Record<string, never>> = {
   description: "empty object",
   parse(value) {

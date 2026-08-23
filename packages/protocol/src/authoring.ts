@@ -515,6 +515,14 @@ export type AuthoringSession = {
   error?: string;
   commitTransactionId?: string;
   committedConnectionId?: string;
+  /** Terminal review disposition. This is server-owned so another renderer
+   * cannot revive an already decided or replaced Take after a refresh. */
+  archive?: {
+    reason: "committed" | "discarded" | "superseded";
+    archivedAt: number;
+    /** The newer session that made this review non-actionable. */
+    supersededBySessionId?: string;
+  };
 };
 
 export type CreateAuthoringSessionInput = {
@@ -559,6 +567,7 @@ export type AuthoringSessionSummary = {
   sourceScreenId?: string;
   committedConnectionId?: string;
   error?: string;
+  archive?: AuthoringSession["archive"];
   take?: {
     id: string;
     state: AuthoringTake["state"];
@@ -628,6 +637,7 @@ export function summarizeAuthoringSession(session: AuthoringSession): AuthoringS
       ? { committedConnectionId: session.committedConnectionId }
       : {}),
     ...(session.error ? { error: session.error } : {}),
+    ...(session.archive ? { archive: structuredClone(session.archive) } : {}),
     ...(take
       ? {
           take: {

@@ -1,12 +1,11 @@
 import { createOperationBuilders } from "./operation-builders.js";
 import { isExecutionTargetRef } from "./execution-target.js";
-import type { OperationInput, OperationOutput } from "./operation-map.js";
+import type { OperationInput, OperationOutput, RelayOperationMap } from "./operation-map.js";
 import {
   fail,
   number,
   objectFieldParser,
   objectParser,
-  operationRecordParser,
   record,
   string,
 } from "./operation-parser-primitives.js";
@@ -171,7 +170,9 @@ const localCampaignAdmissionPreflightOutputParser = objectParser<
  * The capacity descriptor stays outside the monolithic registry, while
  * `operations.ts` remains the one place that composes every public operation.
  */
-const { command } = createOperationBuilders<CampaignCapacityOperationId>(operationRecordParser);
+const { command } = createOperationBuilders<
+  Pick<RelayOperationMap, CampaignCapacityOperationId>
+>();
 
 export const campaignCapacityOperationDefinitions = [
   command(

@@ -40,6 +40,16 @@ export type RunEvidenceHandle = {
   manifest: EvidenceManifest;
 };
 
+/** Cancellation tears down the native control session before terminal
+ * persistence. Never reuse that adapter for collector finalization; the
+ * handle still folds buffered frames, trees, actions, and command attempts. */
+export function runEvidenceFinalizationDevice(
+  status: TestJob["status"],
+  device: Device | undefined,
+): Device | undefined {
+  return status === "cancelled" ? undefined : device;
+}
+
 export function initializeRunEvidence(job: TestJob): RunEvidenceHandle {
   const startedAt = now();
   const handle: RunEvidenceHandle = {
@@ -698,7 +708,7 @@ export async function stopRunEvidence(
   trees.finishedAt = now();
   handle.manifest.finishedAt = now();
   event(handle, "input", "run.finished", undefined, undefined, {
-    at: handle.manifest.finishedAt,
+    at: job.finishedAt ?? handle.manifest.finishedAt,
   });
   resequenceChronologically(handle.manifest);
   const input = channel(handle, "input");

@@ -151,7 +151,13 @@ export type JobInfo = Omit<import("@relay/protocol").JobSummary, "status" | "fra
 
 export type PersistedRun = Omit<
   import("@relay/protocol").RunSummary,
-  "queuedAt" | "frameCount" | "artifactCount" | "artifactBytes" | "pinned" | "retentionClass"
+  | "queuedAt"
+  | "frameCount"
+  | "artifactCount"
+  | "artifactBytes"
+  | "storageBytes"
+  | "pinned"
+  | "retentionClass"
 > & {
   schemaVersion?: number;
   id: string;
@@ -208,6 +214,8 @@ export type LocalSchedule = {
   updatedAt: number;
   nextRunAt: number;
   lastRunAt?: number;
+  lastFailureAt?: number;
+  lastFailure?: string;
 };
 
 export type LogLine = {

@@ -4467,7 +4467,7 @@ describe("runRecipeStep conversational evidence", () => {
     }
   });
 
-  it("times out an abandoned human checkpoint without leaving a waiter behind", async () => {
+  it("applies a bounded default to an unattended checkpoint and releases its waiter", async () => {
     const owner = {
       id: "human-checkpoint-timeout-test",
       status: "running",
@@ -4479,12 +4479,17 @@ describe("runRecipeStep conversational evidence", () => {
         () =>
           runRecipeStep(
             stubDevice({}),
-            { kind: "pause", message: "Approve the sign-in", reason: "consent", timeoutMs: 25 },
-            { log: () => {}, job: owner },
+            { kind: "pause", message: "Approve the sign-in", reason: "consent" },
+            { log: () => {}, job: owner, defaultHumanCheckpointTimeoutMs: 25 },
           ),
         /human checkpoint timed out/,
       );
       assert.equal(owner.waitingFor, undefined);
+      assert.deepEqual(
+        owner.artifacts.map((artifact) => artifact.kind),
+        ["human-intervention-requested", "human-intervention-expired"],
+      );
+      assert.equal((owner.artifacts[0]?.data as { timeoutMs?: number }).timeoutMs, 25);
     } finally {
       clearControl(owner.id);
     }

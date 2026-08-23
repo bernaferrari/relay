@@ -239,6 +239,28 @@ test("event follow retains its command path and rejects single-object JSON outpu
   );
 });
 
+test("Test run accepts explicit current target and revision shortcuts", () => {
+  const parsed = parseCli(
+    ["test", "run", "checkout", "smoke", "--target", "current", "--revision", "current"],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command !== "invoke") return;
+  assert.equal(parsed.operationId, "app-map.test.run");
+  assert.equal(parsed.currentTarget, true);
+  assert.equal(parsed.currentRevision, true);
+  assert.deepEqual(parsed.input, { appMapId: "checkout", testId: "smoke" });
+
+  assert.throws(
+    () => parseCli(["map", "list", "--target", "current"], {}),
+    /only valid on test run/,
+  );
+  assert.throws(
+    () => parseCli(["test", "run", "checkout", "smoke", "--revision", "latest"], {}),
+    /accepts only 'current'/,
+  );
+});
+
 test("friendly aliases and lifecycle commands construct operation inputs", () => {
   const cases = [
     [["screen", "list", "map-1"], "app-map.get", { appMapId: "map-1" }],

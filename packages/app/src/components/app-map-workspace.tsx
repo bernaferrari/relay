@@ -1,6 +1,6 @@
 import { Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { AppMapCanvasState, ConnectionPresentation } from "@relay/protocol";
-import { useRecipeDraft } from "../context/recipe-draft";
+import { useAppMapExecution } from "../context/app-map-execution";
 import { useRecorder } from "../context/recorder";
 import { useServer } from "../context/server";
 import { useWorkbench } from "../context/workbench";
@@ -45,11 +45,9 @@ import { useAppMapConnectionBehaviors } from "../lib/use-app-map-connection-beha
 import { useAppMapFlowSetup } from "../lib/use-app-map-flow-setup";
 import {
   connectionPathTitle,
-  recordedActionFromConnection,
   entryFlowsForScreen,
   listReusableBehaviors,
   selectedFlowSetupSummary,
-  stepsForConnectionIds,
 } from "../lib/app-map-workspace-helpers";
 import { createAppMapCanvasHistory } from "../lib/app-map-canvas-history";
 import { useAppMapDocumentProjection } from "../lib/use-app-map-document-projection";
@@ -89,20 +87,20 @@ export function AppMapWorkspace(props: {
   navigatorOpen?: boolean;
 }) {
   const server = useServer();
-  const draft = useRecipeDraft();
+  const execution = useAppMapExecution();
   const recorder = useRecorder();
   const workbench = useWorkbench();
   const [canvasState, setCanvasState] = createSignal<AppMapCanvasState>(EMPTY_APP_MAP_CANVAS_STATE);
   const workspaceView = () => props.view;
   const setWorkspaceView = (view: MapCanvasView) => props.onView(view);
   const [contextSurface, setContextSurface] = createSignal<AppMapContextSurface>(null);
-  const graph = createMemo(() => ensureCanvasGraph(canvasState(), draft.steps()));
+  const graph = createMemo(() => ensureCanvasGraph(canvasState(), execution.steps()));
   const groups = () => canvasState().groups ?? [];
   const activeFlow = createMemo(() => graph().flows[0] ?? null);
   const activeAppMap = createMemo(() =>
     server.appMaps().find((candidate) => candidate.id === server.selectedAppMapId()),
   );
-  const tree = createMemo(() => buildCanvasGraphTree(graph(), draft.steps(), groups()));
+  const tree = createMemo(() => buildCanvasGraphTree(graph(), execution.steps(), groups()));
   const hasMap = () => tree().nodes.length > 0;
   const {
     selectedDevice,
@@ -125,14 +123,16 @@ export function AppMapWorkspace(props: {
     const job = mapRunJob();
     return projectAppMapRun({
       graph: graph(),
-      recipeSteps: job?.recipeSnapshot?.steps ?? draft.steps(),
+      recipeSteps: job?.recipeSnapshot?.steps ?? execution.steps(),
       job,
     });
   });
   const [view, setView] = createSignal<CanvasViewport>({ x: 72, y: 68, scale: 0.78 });
   const canvasGrid = createMemo(() => canvasGridForScale(view().scale));
   const canvasGridVisual = createMemo(() => canvasGridPresentation(view(), canvasGrid()));
-  const connections = createMemo(() => canvasConnections(tree(), draft.steps(), canvasState()));
+  const connections = createMemo(() =>
+    canvasConnections(tree(), execution.steps(), canvasState()),
+  );
   const [selectedNodeIds, setSelectedNodeIds] = createSignal<string[]>([]);
   const [selectedNodeId, setSelectedNodeIdValue] = createSignal<string | null>(null);
   const setSelectedNodeId = (id: string | null) => {
@@ -163,7 +163,7 @@ export function AppMapWorkspace(props: {
   });
   const media = screenMediaResolvers({
     server,
-    steps: () => draft.steps(),
+    steps: execution.steps,
     nodeFor: (screenId) => tree().nodes.find((candidate) => candidate.id === screenId),
     appMap: activeAppMap,
     capturedUrls: capturedScreenUrls,
@@ -405,7 +405,6 @@ export function AppMapWorkspace(props: {
 
   const selectStep = (index: number) => {
     workbench.focusStep(index);
-    draft.setExpandedStep(index);
   };
   const selectNode = (node: MapTreeNode, event?: MouseEvent) => {
     if (canvasGestures.nodeSelectionSuppressed()) return;
@@ -514,10 +513,11 @@ export function AppMapWorkspace(props: {
     await saveReusableBehaviorBase(
       connection,
       [
-        recordedActionFromConnection(
-          connection,
-          stepsForConnectionIds(draft.steps(), connection.stepIds),
-        ),
+        {
+          id: `steps-${crypto.randomUUID()}`,
+          kind: "steps",
+          steps: execution.connectionSteps(connection.id),
+        },
       ],
       connectionPathTitle(connection, tree().nodes, titleFor),
     );
@@ -743,7 +743,7 @@ export function AppMapWorkspace(props: {
                         ? connectionStepsFromActions(
                             activeAppMap()!.connections[connection.id]!.actions,
                           )
-                        : draft.steps(),
+                        : execution.steps(),
                     )
                   }
                   onSelectNode={selectNode}
@@ -966,7 +966,7 @@ export function AppMapWorkspace(props: {
                       }}
                       replay={{
                         state: replayStateFor(connection()),
-                        canEditActions: draft
+                        canEditActions: execution
                           .steps()
                           .some((step) => step.id === connection().stepId),
                         ...(replayErrorFor(connection())
@@ -976,7 +976,7 @@ export function AppMapWorkspace(props: {
                         onRewrite: () => recordConnection(connection()),
                         onSaveReusable: () => void saveReusableBehavior(connection()),
                         onSelectStep: () => {
-                          const index = draft
+                          const index = execution
                             .steps()
                             .findIndex((step) => step.id === connection().stepId);
                           if (index < 0) return;

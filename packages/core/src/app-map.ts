@@ -25,6 +25,11 @@ export {
   updateAppMapConnection,
 } from "./app-map/connection-operations.js";
 export { previewRoutineImpact } from "./app-map/routine-operations.js";
+export {
+  connectionRouteCost,
+  selectEquivalentDirectConnection,
+  type ConnectionRouteCost,
+} from "./app-map-route-cost.js";
 export { recordAppMapRun, type RecordAppMapRunInput } from "./app-map/run-operations.js";
 export {
   approveAppMapProposal,

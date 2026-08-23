@@ -15,7 +15,7 @@ import {
   persistCaptureSurfaceSurveyFrames,
 } from "./capture-surface-survey-frames.js";
 import { persistLogicalScrollSurface } from "./logical-scroll-surface.js";
-import { listPersistedRuns } from "./runs.js";
+import { indexedReusableSurfaceComparisons } from "./runs.js";
 import type { ScrollSurveyResult } from "./scrollable-survey-types.js";
 import {
   findReusableSurfaceComparison,
@@ -405,7 +405,8 @@ export async function runCaptureSurfaceStep(
   if (!step.forceRecapture && !baselineRequiresRecapture && cacheIdentity) {
     const cached = findReusableSurfaceComparison({
       identity: cacheIdentity,
-      runs: await listPersistedRuns(200),
+      runs: [],
+      indexedCandidates: await indexedReusableSurfaceComparisons(cacheKey!),
       currentArtifacts: job.artifacts,
       currentRunId: job.id,
       at: evaluatedAt,

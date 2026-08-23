@@ -108,6 +108,10 @@ export type CombineCampaign = {
     at: number;
     appMapRevision: number;
     actorId?: string;
+    /** Present only when an approved repair reopened a causal subset. */
+    causalRepairProposalIds?: string[];
+    affectedCheckIds?: string[];
+    affectedCellIds?: string[];
   }>;
   execution?: {
     selected?: Record<string, string[]>;

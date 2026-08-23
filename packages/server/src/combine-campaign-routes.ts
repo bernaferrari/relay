@@ -13,6 +13,7 @@ import {
   pendingSelectedCombineCampaignCells,
   prepareAppMapCombineCells,
   projectCombineCampaign,
+  reconcileCausalCombineRerun,
   readAppMap,
   readCombineCampaign,
   releaseDeviceLease,
@@ -124,7 +125,20 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         compileOptions: { reviewedDocumentOrigins },
       });
       const preparedById = new Map(prepared.cells.map((cell) => [cell.cellId, cell]));
-      for (const item of projected.cases) {
+      const causalRerun = reconcileCausalCombineRerun(
+        projected,
+        map,
+        prepared.cells.map((cell) => ({
+          cellId: cell.cellId,
+          testId: cell.testId,
+          childIntentDigest: digestAppMapTestExecutionValue(cell.childIntent),
+          outerIntentDigest: cell.outerIntent.digest,
+          wrapperGraphDigest: cell.outerIntent.wrapper.recipeGraphDigest,
+          staticInputDigest: digestAppMapTestExecutionValue(cell.staticInputs),
+        })),
+      );
+      const resumeCampaign = causalRerun.campaign;
+      for (const item of resumeCampaign.cases) {
         const preparedCell = preparedById.get(item.cellId);
         if (!preparedCell) {
           throw new HttpError(409, `Campaign cell ${item.cellId} is no longer on this Combine.`, {
@@ -158,14 +172,14 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           );
         }
       }
-      const pending = pendingSelectedCombineCampaignCells(projected);
+      const pending = pendingSelectedCombineCampaignCells(resumeCampaign);
       if (!pending.length) {
         json(response, 200, { campaign: projected, jobs: [], cells: prepared.cellStates });
         return true;
       }
       const toQueue = pending.map((item) => preparedById.get(item.cellId)!);
       resumedCellIds = new Set(toQueue.map((cell) => cell.cellId));
-      const localAdmission = projected.execution.localAdmission;
+      const localAdmission = resumeCampaign.execution.localAdmission;
       const stageCells = (acceptedAdmission?: LocalCombineCampaignAdmission) =>
         stagePreparedAppMapCombineCells({
           cells: toQueue,
@@ -240,7 +254,7 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         latestRevision: map.revision,
         updatedAt: at,
         status: "running",
-        cases: current.cases.map((item) => {
+        cases: resumeCampaign.cases.map((item) => {
           const job = jobByCell.get(item.cellId);
           return job ? { ...item, status: "queued" as const, jobId: job.id } : item;
         }),
@@ -251,6 +265,13 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
             at,
             appMapRevision: map.revision,
             actorId: currentOperationContext()!.actorId,
+            ...(causalRerun.proposalIds.length
+              ? {
+                  causalRepairProposalIds: causalRerun.proposalIds,
+                  affectedCheckIds: causalRerun.affectedCheckIds,
+                  affectedCellIds: causalRerun.affectedCellIds,
+                }
+              : {}),
           },
         ],
       }));
