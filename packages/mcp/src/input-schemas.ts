@@ -311,7 +311,15 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       idempotencyKey: z.string().optional(),
     })
     .strict(),
-  "app-map.get": z.object({ appMapId: identifier("App Map identifier") }).strict(),
+  "app-map.get": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      list: z
+        .enum(["variables", "tests", "combines"])
+        .optional()
+        .describe("Return only that catalog instead of the full map summary"),
+    })
+    .strict(),
   "app-map.create": z
     .object({ appMapId: identifier("App Map identifier"), name: text("App Map name") })
     .strict(),

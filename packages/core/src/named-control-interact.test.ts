@@ -352,6 +352,77 @@ test("preview falls back to an explicit point when the tree is empty", () => {
   assert.deepEqual(resolution?.point, { x: 78, y: 88 });
 });
 
+test("preview errors for an off-screen labeled control", () => {
+  const nodes = [
+    {
+      type: "Application",
+      hittable: true,
+      rect: { x: 0, y: 0, width: 400, height: 800 },
+    },
+    {
+      type: "Button",
+      label: "Privacy",
+      enabled: true,
+      hittable: true,
+      rect: { x: 20, y: 1200, width: 200, height: 44 },
+    },
+  ];
+  assert.throws(
+    () => resolveInteractPreview(nodes, { kind: "label", label: "Privacy" }),
+    /off-screen.*will not tap/u,
+  );
+});
+
+test("preview errors for a non-hittable labeled control", () => {
+  const about = {
+    type: "Button",
+    label: "About",
+    enabled: true,
+    hittable: false,
+    rect: { x: 20, y: 70, width: 200, height: 44 },
+  };
+  assert.throws(
+    () => resolveInteractPreview([about], { kind: "label", label: "About" }),
+    /not hittable.*will not tap/u,
+  );
+});
+
+test("preview of an on-screen hittable label still succeeds", () => {
+  const back = {
+    type: "Button",
+    label: "Back",
+    enabled: true,
+    hittable: true,
+    rect: { x: 20, y: 70, width: 60, height: 36 },
+  };
+  const resolution = resolveInteractPreview([back], { kind: "label", label: "Back" });
+  assert.equal(resolution?.method, "label");
+  assert.deepEqual(resolution?.point, { x: 50, y: 88 });
+});
+
+test("preview of an explicit point still succeeds", () => {
+  const resolution = resolveInteractPreview([], { kind: "point", x: 78, y: 88 });
+  assert.equal(resolution?.method, "point");
+  assert.deepEqual(resolution?.point, { x: 78, y: 88 });
+});
+
+test("preview uses a caller point when the labeled control is not hittable", () => {
+  const about = {
+    type: "Button",
+    label: "About",
+    enabled: true,
+    hittable: false,
+    rect: { x: 20, y: 70, width: 200, height: 44 },
+  };
+  const resolution = resolveInteractPreview([about], {
+    kind: "label",
+    label: "About",
+    point: { x: 78, y: 88 },
+  });
+  assert.equal(resolution?.method, "point");
+  assert.deepEqual(resolution?.point, { x: 78, y: 88 });
+});
+
 test("interactOnDevice fails closed when identifier matches nothing", async () => {
   const device = stubDevice([
     {

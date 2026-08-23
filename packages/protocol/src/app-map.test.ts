@@ -219,3 +219,115 @@ test("App Map summaries expose complete Variable values and Combine evidence pol
     settings: { mode: "every-screen" },
   });
 });
+
+test("App Map list presentations return only the requested catalog", () => {
+  const scope = {
+    organizationId: "local",
+    projectId: "project-1",
+    appMapId: "map-1",
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const appMap = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "local",
+    projectId: "project-1",
+    name: "Grok",
+    revision: 4,
+    notes: {},
+    groups: {},
+    screens: {
+      home: {
+        ...scope,
+        id: "home",
+        title: "Home",
+        variantIds: [],
+      },
+    },
+    screenVariants: {},
+    connections: {
+      open: {
+        ...scope,
+        id: "open",
+        fromScreenId: "home",
+        destination: { kind: "end" },
+        state: "draft",
+        actions: [],
+      },
+    },
+    caseStacks: {},
+    variables: {
+      language: {
+        ...scope,
+        id: "language",
+        name: "Language",
+        kind: "language",
+        apply: { kind: "appLocale", app: "ai.x.grok" },
+        options: [{ id: "en-US", label: "English" }],
+      },
+    },
+    tests: {
+      settings: {
+        ...scope,
+        id: "settings",
+        name: "Settings sweep",
+        kind: "scenario",
+        intentSchemaVersion: 1,
+        steps: [],
+      },
+    },
+    combines: {
+      matrix: {
+        ...scope,
+        id: "matrix",
+        name: "Locales × settings",
+        variableIds: ["language"],
+        testIds: ["settings"],
+      },
+    },
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 1,
+    updatedAt: 2,
+  } satisfies AppMap;
+
+  const variables = summarizeAppMapOperationResult(
+    "app-map.get",
+    { appMap },
+    {
+      commandPath: "variable list",
+    },
+  ) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(variables).sort(), ["counts", "variables"]);
+  assert.equal(Array.isArray(variables.variables), true);
+  assert.equal("screens" in variables, false);
+  assert.equal("connections" in variables, false);
+  assert.deepEqual(variables.counts, { variables: 1 });
+
+  const tests = summarizeAppMapOperationResult("app-map.get", { appMap }, { list: "tests" }) as {
+    tests: unknown[];
+    screens?: unknown;
+  };
+  assert.equal(Object.keys(tests).join(), "tests");
+  assert.equal(tests.tests.length, 1);
+  assert.equal(tests.screens, undefined);
+
+  const combines = summarizeAppMapOperationResult(
+    "app-map.get",
+    { appMap },
+    { input: { list: "combines" } },
+  ) as { combines: unknown[] };
+  assert.equal(Object.keys(combines).join(), "combines");
+  assert.equal(combines.combines.length, 1);
+
+  const full = summarizeAppMapOperationResult("app-map.get", { appMap }) as {
+    appMap: { screens: unknown[]; connections: unknown[] };
+  };
+  assert.ok(full.appMap.screens.length > 0);
+  assert.ok(full.appMap.connections.length > 0);
+});

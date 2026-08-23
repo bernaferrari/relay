@@ -5,7 +5,14 @@ export * from "./activity.js";
 export * from "./authoring.js";
 export * from "./collaboration.js";
 export * from "./app-map.js";
-export { summarizeAppMapOperationResult } from "./app-map-summary.js";
+export {
+  APP_MAP_GET_LISTS,
+  appMapGetListForCommandPath,
+  appMapGetListFromInput,
+  resolveAppMapGetList,
+  summarizeAppMapOperationResult,
+} from "./app-map-summary.js";
+export type { AppMapGetList, AppMapSummaryPresentation } from "./app-map-summary.js";
 export type { DegradedAppMapRef } from "./app-map-operation-map.js";
 export * from "./scroll-surface.js";
 export * from "./reviewed-document-origin.js";

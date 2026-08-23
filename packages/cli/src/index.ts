@@ -132,12 +132,18 @@ function startedJobIds(response: unknown): string[] {
   throw new Error("Malformed execution response: expected one or more jobs");
 }
 
-function summarizeResult(operationId: string, result: unknown, input?: unknown): unknown {
+function summarizeResult(
+  operationId: string,
+  result: unknown,
+  input?: unknown,
+  commandPath?: string,
+): unknown {
   const inner = summarizeExecutionOperationResult(
     operationId,
     summarizeAppMapOperationResult(
       operationId,
       summarizeAuthoringOperationResult(operationId, result),
+      { commandPath, input },
     ),
   );
   if (operationId === "target.snapshot.capture" && wantsFullSnapshotTree(input)) return inner;
@@ -157,14 +163,19 @@ function failureMessage(value: unknown, fallback: string): string {
 
 /** Transport success is not operation success. Keep shell scripts and agents
  * from treating a structured `{ ok: false }` result or failed job as a pass. */
-function assertOperationSucceeded(operationId: string, result: unknown, input?: unknown): void {
+function assertOperationSucceeded(
+  operationId: string,
+  result: unknown,
+  input?: unknown,
+  commandPath?: string,
+): void {
   if (!result || typeof result !== "object") return;
   if ("ok" in result && result.ok === false) {
     const error = "error" in result ? result.error : undefined;
     throw new CliError(
       failureMessage(error, `${operationId} did not complete successfully`),
       ExitCode.validation,
-      summarizeResult(operationId, result, input),
+      summarizeResult(operationId, result, input, commandPath),
     );
   }
   if ("job" in result && result.job && typeof result.job === "object" && "status" in result.job) {
@@ -218,6 +229,7 @@ export async function runCli(
       return ExitCode.success;
     }
     operationId = parsed.command === "invoke" ? parsed.operationId : parsed.resourceId;
+    const commandPath = "commandPath" in parsed ? parsed.commandPath : undefined;
     const abort = new AbortController();
     const cancel = () => abort.abort();
     if (dependencies.registerSignalHandlers !== false) {
@@ -245,12 +257,15 @@ export async function runCli(
           output,
           dependencies.pollIntervalMs ?? 250,
         );
-        assertOperationSucceeded(operationId, result, parsed.input);
-        output.result(operationId, summarizeResult(operationId, result, parsed.input));
+        assertOperationSucceeded(operationId, result, parsed.input, commandPath);
+        output.result(operationId, summarizeResult(operationId, result, parsed.input, commandPath));
       } else if (parsed.behavior === "job-start-watch" && parsed.config.wait) {
         output.progress(operationId, "invoking");
         const started = await invokeOperation(client, operationId, parsed.input, abort.signal);
-        output.snapshot(operationId, summarizeResult(operationId, started, parsed.input));
+        output.snapshot(
+          operationId,
+          summarizeResult(operationId, started, parsed.input, commandPath),
+        );
         const jobIds = startedJobIds(started);
         const results: unknown[] = [];
         for (const jobId of jobIds) {
@@ -279,7 +294,7 @@ export async function runCli(
       } else {
         output.progress(operationId, "invoking");
         const result = await invokeOperation(client, operationId, parsed.input, abort.signal);
-        assertOperationSucceeded(operationId, result, parsed.input);
+        assertOperationSucceeded(operationId, result, parsed.input, commandPath);
         if (parsed.behavior === "screenshot") {
           await emitScreenshot(operationId, result, parsed.screenshotOutput, output);
         } else if (
@@ -298,7 +313,10 @@ export async function runCli(
             }),
           );
         } else {
-          output.result(operationId, summarizeResult(operationId, result, parsed.input));
+          output.result(
+            operationId,
+            summarizeResult(operationId, result, parsed.input, commandPath),
+          );
         }
       }
       return ExitCode.success;

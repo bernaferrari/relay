@@ -4,7 +4,6 @@
 import {
   findClick,
   pressNamedControl,
-  resolveNamedControl,
   type NamedControlResolution,
   pressMatchingText,
   pressKey,
@@ -18,6 +17,12 @@ import {
   type IosMutationAttemptDiagnostic,
   type SnapshotNode,
 } from "./device.js";
+import {
+  explicitPointResolution,
+  resolveNamedControlOutcome,
+  resolveSnapshotTargetRevealDirection,
+  type NamedControlTarget,
+} from "./device-target-resolution.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { verifyIosScreenChanged } from "./ios-app-launch.js";
 import { annotateTapPreview } from "./tap-preview.js";
@@ -150,39 +155,124 @@ async function namedOrMiss(
   }
 }
 
+function namedPreviewTarget(input: InteractInput): NamedControlTarget | undefined {
+  switch (input.kind) {
+    case "identifier":
+      return { identifier: input.identifier };
+    case "label":
+      return { label: input.label };
+    case "find":
+      return { label: input.query, text: input.query };
+    case "text-match":
+      return { text: input.match, label: input.match };
+    default:
+      return undefined;
+  }
+}
+
+function previewControlLabel(input: InteractInput): string {
+  switch (input.kind) {
+    case "identifier":
+      return `Identifier “${input.identifier}”`;
+    case "label":
+      return `Label “${input.label}”`;
+    case "find":
+      return `Find “${input.query}”`;
+    case "text-match":
+      return `Text match “${input.match}”`;
+    default:
+      return "Control";
+  }
+}
+
+function previewUnusableControlError(
+  input: InteractInput,
+  reason: "offscreen" | "unhittable",
+): Error {
+  const why = reason === "offscreen" ? "is off-screen" : "is not hittable";
+  return new Error(
+    `${previewControlLabel(input)} ${why} and will not tap. Scroll it into view or preview an explicit point.`,
+  );
+}
+
+function previewMatchedNode(
+  nodes: SnapshotNode[],
+  target: NamedControlTarget,
+  resolution: NamedControlResolution,
+): SnapshotNode | undefined {
+  const byBounds = nodes.find(
+    (node) =>
+      node.rect &&
+      node.rect.x === resolution.bounds.x &&
+      node.rect.y === resolution.bounds.y &&
+      node.rect.width === resolution.bounds.width &&
+      node.rect.height === resolution.bounds.height,
+  );
+  if (byBounds) return byBounds;
+  return nodes.find((node) => {
+    if (target.identifier) {
+      return (
+        node.identifier?.trim().toLocaleLowerCase() === target.identifier.trim().toLocaleLowerCase()
+      );
+    }
+    if (target.label)
+      return (node.label ?? "").toLocaleLowerCase().includes(target.label.toLocaleLowerCase());
+    if (target.text) {
+      return [node.label, node.value, node.identifier].some((value) =>
+        value?.toLocaleLowerCase().includes(target.text!.toLocaleLowerCase()),
+      );
+    }
+    return false;
+  });
+}
+
+function resolveNamedInteractPreview(
+  nodes: SnapshotNode[],
+  input: InteractInput,
+  target: NamedControlTarget,
+): NamedControlResolution | undefined {
+  // A preview mark on an off-screen or unhittable control will not tap.
+  const userPoint =
+    "point" in input && input.point ? explicitPointResolution(input.point) : undefined;
+  const outcome = resolveNamedControlOutcome(nodes, target);
+  if (outcome.status === "resolved") {
+    const node = previewMatchedNode(nodes, target, outcome.resolution);
+    const offscreen =
+      node?.visibleToUser === false ||
+      resolveSnapshotTargetRevealDirection(nodes, target) !== undefined;
+    const unhittable = node?.hittable === false;
+    if (offscreen || unhittable) {
+      if (userPoint) return userPoint;
+      throw previewUnusableControlError(
+        input,
+        unhittable && !offscreen ? "unhittable" : "offscreen",
+      );
+    }
+    return outcome.resolution;
+  }
+  if (outcome.status === "offscreen" || outcome.status === "unhittable") {
+    if (userPoint) return userPoint;
+    throw previewUnusableControlError(input, outcome.status);
+  }
+  return userPoint;
+}
+
 export function resolveInteractPreview(
   nodes: SnapshotNode[],
   input: InteractInput,
 ): NamedControlResolution | undefined {
   switch (input.kind) {
     case "identifier":
-      return resolveNamedControl(nodes, {
-        identifier: input.identifier,
-        ...optionalInteractPoint(input.point),
-      });
     case "label":
-      return resolveNamedControl(nodes, {
-        label: input.label,
-        ...optionalInteractPoint(input.point),
-      });
+    case "find":
+    case "text-match":
+      return resolveNamedInteractPreview(nodes, input, namedPreviewTarget(input)!);
     case "point":
       return {
         method: "point",
         point: { x: input.x, y: input.y },
         bounds: { x: input.x, y: input.y, width: 1, height: 1 },
       };
-    case "find":
-      return resolveNamedControl(nodes, {
-        label: input.query,
-        text: input.query,
-        ...optionalInteractPoint(input.point),
-      });
-    case "text-match":
-      return resolveNamedControl(nodes, {
-        text: input.match,
-        label: input.match,
-        ...optionalInteractPoint(input.point),
-      });
     case "swipe":
       return {
         method: "point",

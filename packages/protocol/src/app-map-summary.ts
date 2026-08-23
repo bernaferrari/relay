@@ -1,6 +1,49 @@
 import type { AppMap, AppMapEntity } from "./app-map.js";
 
-export function summarizeAppMapOperationResult(operationId: string, result: unknown): unknown {
+export const APP_MAP_GET_LISTS = ["variables", "tests", "combines"] as const;
+export type AppMapGetList = (typeof APP_MAP_GET_LISTS)[number];
+
+export type AppMapSummaryPresentation = {
+  list?: AppMapGetList;
+  commandPath?: string;
+  input?: unknown;
+};
+
+const commandPathLists: Record<string, AppMapGetList> = {
+  "variable list": "variables",
+  "state-set list": "variables",
+  "test list": "tests",
+  "combine list": "combines",
+  "run-matrix list": "combines",
+};
+
+export function appMapGetListForCommandPath(
+  commandPath: string | undefined,
+): AppMapGetList | undefined {
+  return commandPath ? commandPathLists[commandPath] : undefined;
+}
+
+export function appMapGetListFromInput(input: unknown): AppMapGetList | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const list = (input as { list?: unknown }).list;
+  return list === "variables" || list === "tests" || list === "combines" ? list : undefined;
+}
+
+export function resolveAppMapGetList(
+  presentation?: AppMapSummaryPresentation,
+): AppMapGetList | undefined {
+  return (
+    presentation?.list ??
+    appMapGetListFromInput(presentation?.input) ??
+    appMapGetListForCommandPath(presentation?.commandPath)
+  );
+}
+
+export function summarizeAppMapOperationResult(
+  operationId: string,
+  result: unknown,
+  presentation?: AppMapSummaryPresentation,
+): unknown {
   if (!operationId.startsWith("app-map.")) return result;
   if (!result || typeof result !== "object" || Array.isArray(result)) return result;
   if (operationId === "app-map.list") {
@@ -52,6 +95,73 @@ export function summarizeAppMapOperationResult(operationId: string, result: unkn
   const byId = <T extends AppMapEntity>(values: Record<string, T>): T[] =>
     Object.values(values).sort((left, right) => left.id.localeCompare(right.id));
 
+  const variables = byId(map.variables ?? {}).map((set) => ({
+    id: set.id,
+    name: set.name,
+    kind: set.kind,
+    optionCount: set.options.length,
+    options: set.options.map((option) => ({
+      id: option.id,
+      ...(option.label ? { label: option.label } : {}),
+      ...(option.text ? { text: option.text } : {}),
+      ...(option.identifier ? { identifier: option.identifier } : {}),
+    })),
+    sandwich:
+      set.apply.kind === "list"
+        ? {
+            in: Boolean(set.apply.inConnectionId || set.apply.entryPath?.length),
+            list: set.options.length > 0,
+            out: Boolean(set.apply.outConnectionId || set.apply.exitPath?.length),
+          }
+        : { toggle: true },
+  }));
+  const tests = byId(map.tests ?? {}).map((work) => ({
+    id: work.id,
+    name: work.name,
+    kind: work.kind,
+    ...(work.capture ? { capture: work.capture } : {}),
+    stepCount: work.steps.length,
+  }));
+  const combines = byId(map.combines ?? {}).map((combine) => ({
+    id: combine.id,
+    name: combine.name,
+    formula: [
+      ...combine.variableIds.map((id) => map.variables?.[id]?.name ?? id),
+      ...combine.testIds.map((id) => map.tests?.[id]?.name ?? id),
+    ].join(" × "),
+    variableIds: combine.variableIds,
+    testIds: combine.testIds,
+    ...(combine.selected ? { selected: combine.selected } : {}),
+    selectedCounts: Object.fromEntries(
+      combine.variableIds.map((id) => [
+        id,
+        combine.selected?.[id]?.length ?? map.variables?.[id]?.options.length ?? 0,
+      ]),
+    ),
+    ...(combine.captures ? { captures: combine.captures } : {}),
+    strategy: combine.strategy ?? (combine.variableIds.length > 1 ? "cartesian" : "zip"),
+  }));
+  const counts = {
+    screens: Object.keys(map.screens).length,
+    variants: Object.keys(map.screenVariants).length,
+    connections: Object.keys(map.connections).length,
+    groups: Object.keys(map.groups).length,
+    caseStacks: Object.keys(map.caseStacks).length,
+    variables: Object.keys(map.variables ?? {}).length,
+    tests: Object.keys(map.tests ?? {}).length,
+    combines: Object.keys(map.combines ?? {}).length,
+    routines: Object.keys(map.routines).length,
+    flows: Object.keys(map.flows).length,
+    runs: Object.keys(map.runs).length,
+    targetResults: Object.keys(map.targetResults).length,
+    proposals: Object.keys(map.proposals).length,
+  };
+
+  const list = operationId === "app-map.get" ? resolveAppMapGetList(presentation) : undefined;
+  if (list === "variables") return { variables, counts: { variables: counts.variables } };
+  if (list === "tests") return { tests };
+  if (list === "combines") return { combines };
+
   return {
     ...(result as Record<string, unknown>),
     appMap: {
@@ -95,67 +205,10 @@ export function summarizeAppMapOperationResult(operationId: string, result: unkn
         ...(flow.setup ? { setup: flow.setup } : {}),
         connectionIds: flow.connectionIds,
       })),
-      variables: byId(map.variables ?? {}).map((set) => ({
-        id: set.id,
-        name: set.name,
-        kind: set.kind,
-        optionCount: set.options.length,
-        options: set.options.map((option) => ({
-          id: option.id,
-          ...(option.label ? { label: option.label } : {}),
-          ...(option.text ? { text: option.text } : {}),
-          ...(option.identifier ? { identifier: option.identifier } : {}),
-        })),
-        sandwich:
-          set.apply.kind === "list"
-            ? {
-                in: Boolean(set.apply.inConnectionId || set.apply.entryPath?.length),
-                list: set.options.length > 0,
-                out: Boolean(set.apply.outConnectionId || set.apply.exitPath?.length),
-              }
-            : { toggle: true },
-      })),
-      tests: byId(map.tests ?? {}).map((work) => ({
-        id: work.id,
-        name: work.name,
-        kind: work.kind,
-        ...(work.capture ? { capture: work.capture } : {}),
-        stepCount: work.steps.length,
-      })),
-      combines: byId(map.combines ?? {}).map((combine) => ({
-        id: combine.id,
-        name: combine.name,
-        formula: [
-          ...combine.variableIds.map((id) => map.variables?.[id]?.name ?? id),
-          ...combine.testIds.map((id) => map.tests?.[id]?.name ?? id),
-        ].join(" × "),
-        variableIds: combine.variableIds,
-        testIds: combine.testIds,
-        ...(combine.selected ? { selected: combine.selected } : {}),
-        selectedCounts: Object.fromEntries(
-          combine.variableIds.map((id) => [
-            id,
-            combine.selected?.[id]?.length ?? map.variables?.[id]?.options.length ?? 0,
-          ]),
-        ),
-        ...(combine.captures ? { captures: combine.captures } : {}),
-        strategy: combine.strategy ?? (combine.variableIds.length > 1 ? "cartesian" : "zip"),
-      })),
-      counts: {
-        screens: Object.keys(map.screens).length,
-        variants: Object.keys(map.screenVariants).length,
-        connections: Object.keys(map.connections).length,
-        groups: Object.keys(map.groups).length,
-        caseStacks: Object.keys(map.caseStacks).length,
-        variables: Object.keys(map.variables ?? {}).length,
-        tests: Object.keys(map.tests ?? {}).length,
-        combines: Object.keys(map.combines ?? {}).length,
-        routines: Object.keys(map.routines).length,
-        flows: Object.keys(map.flows).length,
-        runs: Object.keys(map.runs).length,
-        targetResults: Object.keys(map.targetResults).length,
-        proposals: Object.keys(map.proposals).length,
-      },
+      variables,
+      tests,
+      combines,
+      counts,
       createdAt: map.createdAt,
       updatedAt: map.updatedAt,
     },

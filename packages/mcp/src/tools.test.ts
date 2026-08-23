@@ -230,6 +230,19 @@ test("exposes app launch as one high-intent leased target tool", () => {
   });
 });
 
+test("app-map.get accepts an optional list presentation field", () => {
+  assert.deepEqual(tool("app-map.get").inputSchema.parse({ appMapId: "checkout" }), {
+    appMapId: "checkout",
+  });
+  assert.deepEqual(
+    tool("app-map.get").inputSchema.parse({ appMapId: "checkout", list: "variables" }),
+    { appMapId: "checkout", list: "variables" },
+  );
+  assert.throws(() =>
+    tool("app-map.get").inputSchema.parse({ appMapId: "checkout", list: "screens" }),
+  );
+});
+
 test("gives agents exact schemas for App Map metadata and Case Stacks", () => {
   assert.deepEqual(
     tool("app-map.update").inputSchema.parse({

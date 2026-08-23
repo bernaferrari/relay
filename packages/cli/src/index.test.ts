@@ -309,6 +309,92 @@ test("device snapshot --file writes the full snapshot JSON", async () => {
   }
 });
 
+test("variable list stdout is the catalog only; map get still includes topology", async () => {
+  const scope = {
+    organizationId: "local",
+    projectId: "project-1",
+    appMapId: "grok-android",
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const appMap = {
+    schemaVersion: 1,
+    id: "grok-android",
+    organizationId: "local",
+    projectId: "project-1",
+    name: "Grok",
+    revision: 4,
+    notes: {},
+    groups: {},
+    screens: {
+      home: { ...scope, id: "home", title: "Home", variantIds: [] },
+    },
+    screenVariants: {},
+    connections: {
+      open: {
+        ...scope,
+        id: "open",
+        fromScreenId: "home",
+        destination: { kind: "end" },
+        state: "draft",
+        actions: [],
+      },
+    },
+    caseStacks: {},
+    variables: {
+      language: {
+        ...scope,
+        id: "language",
+        name: "Language",
+        kind: "language",
+        apply: { kind: "appLocale", app: "ai.x.grok" },
+        options: [{ id: "en-US", label: "English" }],
+      },
+    },
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 1,
+    updatedAt: 2,
+  };
+
+  const listIo = capture();
+  const listCode = await runCli(["variable", "list", "grok-android", "--json"], {
+    streams: listIo.streams,
+    createClient: () => ({ invoke: async () => ({ appMap }), events: async () => {} }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(listCode, ExitCode.success);
+  const listed = JSON.parse(listIo.stdout()).result as Record<string, unknown>;
+  assert.equal("screens" in listed, false);
+  assert.equal("connections" in listed, false);
+  assert.ok(Array.isArray(listed.variables));
+  assert.equal(JSON.stringify(listed).includes('"screens"'), false);
+  assert.equal(JSON.stringify(listed).includes('"connections"'), false);
+
+  const getIo = capture();
+  const getCode = await runCli(["map", "get", "grok-android", "--json"], {
+    streams: getIo.streams,
+    createClient: () => ({ invoke: async () => ({ appMap }), events: async () => {} }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(getCode, ExitCode.success);
+  const got = JSON.parse(getIo.stdout()).result as {
+    appMap?: { screens?: unknown[]; connections?: unknown[] };
+  };
+  assert.ok(Array.isArray(got.appMap?.screens));
+  assert.ok(Array.isArray(got.appMap?.connections));
+  assert.ok((got.appMap?.screens?.length ?? 0) > 0);
+  assert.ok((got.appMap?.connections?.length ?? 0) > 0);
+});
+
 test("screenshot output writes validated PNG files without leaking base64", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-cli-screenshot-"));
   const file = join(root, "screen.png");

@@ -4,6 +4,7 @@ import {
   operationDefinition,
   parseAuthoringSessionResponse,
   REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
+  appMapGetListFromInput,
   summarizeAppMapOperationResult,
   summarizeAuthoringSession,
   summarizeAuthoringOperationResult,
@@ -344,7 +345,12 @@ async function invokeRelayTool(
     );
   }
 
-  const operationInput = confirmedInput(descriptor.operationId, input, confirmed);
+  const presented = confirmedInput(descriptor.operationId, input, confirmed);
+  const list = appMapGetListFromInput(presented);
+  const operationInput =
+    descriptor.operationId === "app-map.get" && list
+      ? Object.fromEntries(Object.entries(presented).filter(([key]) => key !== "list"))
+      : presented;
 
   try {
     operationDefinition(descriptor.operationId).input.parse(operationInput);
@@ -371,6 +377,7 @@ async function invokeRelayTool(
       summarizeAppMapOperationResult(
         descriptor.operationId,
         summarizeAuthoringOperationResult(descriptor.operationId, result),
+        { list, input: presented },
       ),
     );
     const summarized =

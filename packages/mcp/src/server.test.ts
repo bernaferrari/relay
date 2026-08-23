@@ -218,6 +218,90 @@ test("snapshot capture returns a digest unless full is requested", async () => {
   }
 });
 
+test("app-map.get list returns only that catalog and does not send list to the server", async () => {
+  const appMap = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "local",
+    projectId: "project-1",
+    name: "Grok",
+    revision: 4,
+    notes: {},
+    groups: {},
+    screens: {
+      home: {
+        organizationId: "local",
+        projectId: "project-1",
+        appMapId: "map-1",
+        id: "home",
+        title: "Home",
+        variantIds: [],
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    },
+    screenVariants: {},
+    connections: {},
+    caseStacks: {},
+    variables: {
+      language: {
+        organizationId: "local",
+        projectId: "project-1",
+        appMapId: "map-1",
+        id: "language",
+        name: "Language",
+        kind: "language",
+        apply: { kind: "appLocale", app: "ai.x.grok" },
+        options: [{ id: "en-US", label: "English" }],
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    },
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
+  const session = await connectMcp({
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      return { appMap };
+    },
+  });
+  try {
+    const listed = callResult(
+      await session.request("tools/call", {
+        name: "relay_app_map_get",
+        arguments: { appMapId: "map-1", list: "variables" },
+      }),
+    );
+    const listedResult = listed.structuredContent?.result as Record<string, unknown>;
+    assert.equal("screens" in listedResult, false);
+    assert.ok(Array.isArray(listedResult.variables));
+    assert.deepEqual(calls, [{ operationId: "app-map.get", input: { appMapId: "map-1" } }]);
+
+    const full = callResult(
+      await session.request("tools/call", {
+        name: "relay_app_map_get",
+        arguments: { appMapId: "map-1" },
+      }),
+    );
+    const fullResult = full.structuredContent?.result as {
+      appMap?: { screens?: unknown[] };
+    };
+    assert.ok(Array.isArray(fullResult.appMap?.screens));
+  } finally {
+    await session.close();
+  }
+});
+
 test("invokes representative read, write, and confirmed operations with exact input", async () => {
   const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
   const signals: AbortSignal[] = [];
