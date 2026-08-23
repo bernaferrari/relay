@@ -6,13 +6,14 @@ import {
   type CommandPathDescriptor,
 } from "./commands.js";
 import { dbHelp } from "./db-commands.js";
+import { packHelp } from "./pack-check.js";
 import { UsageError } from "./errors.js";
 
 const familyGroups = [
   ["App Map", ["map", "screen", "connect", "flow"]],
   ["Author", ["variable", "test", "combine", "proposal", "routine", "case-stack"]],
   ["Explore", ["discovery"]],
-  ["Operate", ["device", "run", "activity"]],
+  ["Operate", ["device", "run", "activity", "pack"]],
   ["Automation", ["schedule", "matrix"]],
   ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],
   ["System", ["generation", "system", "db"]],
@@ -57,6 +58,7 @@ function familyNames(): Set<string> {
   return new Set([
     ...friendlyPaths().map(({ descriptor }) => descriptor.command.split(" ")[0]!),
     "db",
+    "pack",
   ]);
 }
 
@@ -147,6 +149,7 @@ function renderDetails(descriptor: CommandPathDescriptor): string {
 
 function renderFamilyHelp(family: string): string {
   if (family === "db") return dbHelp();
+  if (family === "pack") return packHelp();
   if (family === "operation") {
     return `Relay operation commands
 

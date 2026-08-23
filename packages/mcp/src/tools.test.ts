@@ -626,9 +626,14 @@ test("the locale profile exposes only the canonical Language Variable campaign",
     "job.combine.start",
     "job.locale-matrix.analysis",
     "target.screenshot.capture",
+    "target.scroll-survey.capture",
+    "app-map.test.run",
   ] as const) {
     assert.ok(locale.has(operationId), `locale profile is missing ${operationId}`);
   }
+  assert.match(tool("target.scroll-survey.capture").description, /--dir/u);
+  assert.match(tool("target.scroll-survey.capture").description, /pack check/u);
+  assert.match(tool("target.scroll-survey.capture").description, /Do not dump base64/u);
   // A sweep drives a real device; authoring the App Map is a different task.
   assert.equal(locale.has("app-map.proposal.submit"), false);
   assert.equal(locale.has("authoring.session.create"), false);

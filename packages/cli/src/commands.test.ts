@@ -145,6 +145,21 @@ test("variable help says appLocale relaunches by default and stay is explicit", 
   assert.match(help, /appLocale Variables relaunch the app by default; stay is explicit/u);
 });
 
+test("pack check and locale apply help name the Data Controls pack and test-run apply path", () => {
+  const pack = renderHelp("pack");
+  assert.match(pack, /relay pack check <dir> --against <locale>/u);
+  assert.match(pack, /runs\/2026-08-22_grok-data-controls-supported-locales --against en/u);
+  assert.match(pack, /--baseline/u);
+
+  const device = renderHelp("device");
+  assert.match(device, /relay variable save/u);
+  assert.match(device, /relay test run <map> <test> --in language=<tag>/u);
+
+  const combine = renderHelp("combine");
+  assert.match(combine, /screenshots\/ plus accessibility\/\*\.json/u);
+  assert.match(combine, /relay pack check <dir> --against en/u);
+});
+
 test("authoring vocabulary exposes Variables, Tests, and saved Combines", () => {
   for (const command of [
     "variable list",

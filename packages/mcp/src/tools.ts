@@ -125,6 +125,8 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Ground then interact in one call. Prefer this for NL taps (Menu, Appearance). Requires exclusive lease.",
   "target.snapshot.capture":
     " Default JSON is a digest (app, header, controls, nodeCount). Pass full:true for the accessibility tree nodes. The tree may still be missing — screenshot plus a point tap still works. Do not retry snapshot in a loop.",
+  "target.scroll-survey.capture":
+    " Persist frames with the CLI: relay device survey <serial> --dir <folder>. Do not dump base64 in the tool result. Then compare the folder with relay pack check <dir> --against en.",
   "target.recover":
     " Repair the runner without rebooting the device. A missing XCTest session is not a failed launch.",
   "step.run":
@@ -362,6 +364,7 @@ const localeOperations = [
   "target.list",
   "target.screenshot.capture",
   "target.snapshot.capture",
+  "target.scroll-survey.capture",
   "target.recover",
   "lease.list",
   "lease.create",
@@ -373,6 +376,7 @@ const localeOperations = [
   "app-map.test.edit",
   "app-map.test.propose",
   "app-map.test.compile",
+  "app-map.test.run",
   "app-map.combine.save",
   "app-map.combine.preflight",
   "workspace.variables.get",

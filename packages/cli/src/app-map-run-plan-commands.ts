@@ -39,6 +39,18 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
             ],
           },
         })}'`,
+        `relay variable save grok-android language --input '${JSON.stringify({
+          expectedRevision: 4,
+          variable: {
+            name: "Language",
+            kind: "language",
+            apply: { kind: "appLocale", app: "ai.x.grok" },
+            options: [
+              { id: "en", label: "English" },
+              { id: "ja", label: "日本語" },
+            ],
+          },
+        })}'`,
       ],
       note: "A Variable changes one reusable dimension. A Combine multiplies one or more Variables by one or more Tests. appLocale Variables relaunch the app by default; stay is explicit (apply.relaunch: false).",
     }),

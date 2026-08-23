@@ -162,7 +162,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         { name: "package", type: "string", description: "Android package name" },
       ],
       examples: ["relay device app-locales emulator-5554 com.example.app --json"],
-      note: "Reads the installed app's locale configuration dynamically; the result is not a hard-coded language list.",
+      note: "List only. Apply a tag with an appLocale Variable (`relay variable save`) then `relay test run <map> <test> --in language=<tag>`. Combine export writes screenshots plus accessibility JSON.",
     }),
   ),
   mapped(
