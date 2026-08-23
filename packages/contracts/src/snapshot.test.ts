@@ -74,10 +74,9 @@ test('findNearestAncestor adapts a predicate to the shared tree walk', () => {
     { ref: 'e20', index: 20, parentIndex: 10, type: 'Cell' },
   ];
 
-  assert.equal(
-    findNearestAncestor(nodes, nodes[1]!, (ancestor) => ancestor.type === 'Window')?.index,
-    10,
-  );
+  const isWindow = (ancestor: SnapshotNode) => ancestor.type === 'Window';
+
+  assert.equal(findNearestAncestor(nodes, nodes[1]!, isWindow)?.index, 10);
 });
 
 test('snapshot tree and scroll semantics identify nodes through their stable indexes', () => {
