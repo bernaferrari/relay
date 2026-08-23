@@ -445,13 +445,15 @@ test("graph Test runs accept optional Combine worlds and a capture lens", () => 
       }),
     /cannot be combined with in/u,
   );
-  assert.throws(
-    () =>
-      operationDefinition("app-map.test.run").input.parse({
-        ...input,
-        surfaceCapture: { forceRecaptureScreenIds: ["voice"] },
-      }),
-    /cannot be combined with in/u,
+  assert.deepEqual(
+    operationDefinition("app-map.test.run").input.parse({
+      ...input,
+      surfaceCapture: { forceRecaptureScreenIds: ["voice"] },
+    }),
+    {
+      ...input,
+      surfaceCapture: { forceRecaptureScreenIds: ["voice"] },
+    },
   );
 });
 

@@ -92,6 +92,7 @@ export * from "./locale-run-pack.js";
 export * from "./option-run.js";
 export * from "./tour.js";
 export * from "./map-work.js";
+export * from "./combine-visual-surface.js";
 export * from "./language-profiles.js";
 export * from "./switcher-option-rows.js";
 export * from "./switcher-profiles.js";

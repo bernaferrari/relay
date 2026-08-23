@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapCombine, AppMapScenarioTest, Screen } from "@relay/protocol";
 import {
+  applyFullSurfaceDestinationBindings,
   compileOptionsForVisualSurface,
+  fullSurfaceBindingForScreen,
   impliedForceRecaptureSurfaceScreenIds,
 } from "./combine-visual-surface.js";
 import { compileAppMapCombine, compileAppMapTest } from "./map-work.js";
@@ -271,6 +273,25 @@ test("every-screen without a full-surface binding stays a viewport screenshot", 
     ),
     true,
   );
+});
+
+test("a named destination with a frozen surface becomes a run-scoped full-surface binding", () => {
+  const { map, test } = fixture();
+  assert.equal(fullSurfaceBindingForScreen(map, "long-list")?.captureMode, "full-surface");
+  const overlaid = applyFullSurfaceDestinationBindings(map, [test.id], ["long-list"]);
+  assert.deepEqual(overlaid.tests[test.id]?.surfaceBindings, [
+    {
+      screenId: "long-list",
+      variantId: "long-list-en",
+      captureMode: "full-surface",
+      reason: "Capture the full scrolling screen.",
+      surfaceId: "long-list-surface",
+      baselineCaptureId: "long-list-baseline",
+      compare: "visual-and-semantic",
+      repair: "propose-recapture",
+    },
+  ]);
+  assert.equal(map.tests[test.id]?.surfaceBindings, undefined);
 });
 
 test("a full-surface binding whose frozen surface is missing fails closed", () => {

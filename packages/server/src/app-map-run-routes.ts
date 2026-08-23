@@ -213,6 +213,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         targetKind: body.target.kind,
         selected: body.in,
         capture: upserted.capture,
+        ...(body.surfaceCapture ? { surfaceCapture: body.surfaceCapture } : {}),
         executionMode: body.executionMode ?? "pilot",
         cell: body.cell,
         defaultTargetProfileId: body.targetProfileId,

@@ -509,8 +509,9 @@ export type AppMapOperationMap = {
       /** Optional explicit saved profile scope. Relay binds it to this exact
        * target before control, then preflights the same frozen plan it queues. */
       targetProfileId?: string;
-      /** Run-scoped evidence policy. Only the selected full-surface bindings
-       * bypass the exact comparison cache; the saved Test remains unchanged. */
+      /** Run-scoped evidence policy. Named screens are bound as full-surface
+       * for this run so Combine `visual` surveys after arrival. The saved Test
+       * stays unchanged. */
       surfaceCapture?: {
         forceRecaptureScreenIds: string[];
       };

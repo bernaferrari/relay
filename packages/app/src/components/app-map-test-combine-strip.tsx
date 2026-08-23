@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { AppMap, AppMapScenarioTest } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
+import { Switch } from "@relay/ui/switch";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { cn } from "../lib/cn";
@@ -10,6 +11,8 @@ import {
   applyableVariables,
   projectTestCombineStrip,
   testCombineSentence,
+  testCombineStripRunInput,
+  testDestinationScreenId,
   type TestCombineLens,
 } from "../lib/app-map-test-combine-strip";
 import {
@@ -30,6 +33,7 @@ export function AppMapTestCombineStrip(props: {
   const [variableId, setVariableId] = createSignal("");
   const [selectedIds, setSelectedIds] = createSignal<string[]>([]);
   const [lens, setLens] = createSignal<TestCombineLens>("visual");
+  const [wholePage, setWholePage] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   createEffect(() => {
     const available = candidates();
@@ -64,6 +68,21 @@ export function AppMapTestCombineStrip(props: {
   const selectedDevice = createMemo(() =>
     server.devices().find((device) => device.serial === server.selectedDevice()),
   );
+  const destinationScreenId = createMemo(() => testDestinationScreenId(props.map, props.test));
+
+  function combineRunInput(input: { cell?: string; executionMode?: "pilot" | "all" }) {
+    if (wholePage() && !destinationScreenId()) {
+      toast("This Test has no destination screen to capture as a whole page.", "warning");
+      return undefined;
+    }
+    return testCombineStripRunInput({
+      selected: selected(),
+      lens: lens(),
+      wholePage: wholePage(),
+      destinationScreenId: destinationScreenId(),
+      ...input,
+    });
+  }
 
   function toggleValue(id: string): void {
     setSelectedIds((current) =>
@@ -97,6 +116,8 @@ export function AppMapTestCombineStrip(props: {
       toast("Choose at least one value.", "warning");
       return;
     }
+    const combine = combineRunInput({ cell: world.values[variable.id]?.id ?? world.id });
+    if (!combine) return;
     setBusy(true);
     try {
       await server.runAction("app-map.test.run", {
@@ -104,9 +125,7 @@ export function AppMapTestCombineStrip(props: {
         testId: props.test.id,
         expectedRevision: props.map.revision,
         target: { kind: "device", platform, targetId: device.serial },
-        in: selected(),
-        lens: lens(),
-        cell: world.values[variable.id]?.id ?? world.id,
+        ...combine,
       });
       toast(`Running ${props.test.name} in ${world.label}`, "success");
       window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
@@ -135,6 +154,10 @@ export function AppMapTestCombineStrip(props: {
       toast("Choose at least one value.", "warning");
       return;
     }
+    const combine = combineRunInput({
+      executionMode: projection().cells.length > 1 ? "all" : "pilot",
+    });
+    if (!combine) return;
     setBusy(true);
     try {
       await server.runAction("app-map.test.run", {
@@ -142,9 +165,7 @@ export function AppMapTestCombineStrip(props: {
         testId: props.test.id,
         expectedRevision: props.map.revision,
         target: { kind: "device", platform, targetId: device.serial },
-        in: selected(),
-        lens: lens(),
-        executionMode: projection().cells.length > 1 ? "all" : "pilot",
+        ...combine,
       });
       toast(
         projection().cells.length === 1
@@ -272,6 +293,21 @@ export function AppMapTestCombineStrip(props: {
               )}
             </For>
           </div>
+        </div>
+        <div class="flex items-start justify-between gap-4">
+          <div class="grid min-w-0 gap-px">
+            <span id="app-map-test-combine-whole-page" class={testEditorSection}>
+              Whole page
+            </span>
+            <span class={testEditorHint}>Capture the full scrolling screen.</span>
+          </div>
+          <Switch
+            class="mt-0.5 shrink-0"
+            checked={wholePage()}
+            aria-labelledby="app-map-test-combine-whole-page"
+            data-test-combine-whole-page
+            onCheckedChange={setWholePage}
+          />
         </div>
         <Show
           when={props.ready}

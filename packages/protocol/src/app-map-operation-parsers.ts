@@ -343,12 +343,6 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
         if (input.startup !== undefined) {
           fail("Test run startup", "cannot be combined with in; run the Test once or omit startup");
         }
-        if (input.surfaceCapture !== undefined) {
-          fail(
-            "Test run surfaceCapture",
-            "cannot be combined with in; run the Test once or omit surfaceCapture",
-          );
-        }
         const worlds = record(input.in, "Test run in");
         const entries = Object.entries(worlds);
         if (!entries.length) fail("Test run in", "must name at least one Variable");

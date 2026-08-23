@@ -7,6 +7,8 @@ import {
   testCombineCaptureForLens,
   testCombineLensFromPolicy,
   testCombineSentence,
+  testCombineStripRunInput,
+  testDestinationScreenId,
   variableCanApply,
 } from "./app-map-test-combine-strip";
 
@@ -71,5 +73,74 @@ test("the strip projects selected worlds as rows of this Test", () => {
       lens: "visual",
     }),
     /Run Settings tour in JA and PT as a visual/u,
+  );
+});
+
+test("Whole page binds the last destination as a full-surface recapture", () => {
+  const map = {
+    connections: {
+      open: {
+        destination: { kind: "screen" as const, screenId: "long-list" },
+      },
+    },
+  };
+  const test = {
+    steps: [
+      {
+        id: "open",
+        kind: "instruction" as const,
+        intent: "Open the list",
+        binding: {
+          status: "resolved" as const,
+          kind: "connections" as const,
+          connectionIds: ["open"],
+        },
+      },
+    ],
+  };
+  assert.equal(testDestinationScreenId(map, test), "long-list");
+  assert.equal(
+    testDestinationScreenId(
+      { connections: {} },
+      {
+        steps: [],
+        surfaceBindings: [
+          {
+            screenId: "settings",
+            variantId: "settings-en",
+            captureMode: "full-surface",
+            reason: "Settings scrolls.",
+            compare: "visual-and-semantic",
+            repair: "propose-recapture",
+          },
+        ],
+      },
+    ),
+    "settings",
+  );
+  assert.deepEqual(
+    testCombineStripRunInput({
+      selected: { language: ["ja"] },
+      lens: "visual",
+      cell: "ja",
+      wholePage: false,
+      destinationScreenId: "long-list",
+    }),
+    { in: { language: ["ja"] }, lens: "visual", cell: "ja" },
+  );
+  assert.deepEqual(
+    testCombineStripRunInput({
+      selected: { language: ["ja"] },
+      lens: "visual",
+      cell: "ja",
+      wholePage: true,
+      destinationScreenId: "long-list",
+    }),
+    {
+      in: { language: ["ja"] },
+      lens: "visual",
+      cell: "ja",
+      surfaceCapture: { forceRecaptureScreenIds: ["long-list"] },
+    },
   );
 });

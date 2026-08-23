@@ -101,6 +101,16 @@ test("a saved App Map Test opens a Combine strip, not Locale Matrix chrome", asy
         binding: { status: "resolved", kind: "script", source: "return true" },
       },
     ],
+    surfaceBindings: [
+      {
+        screenId: "checkout",
+        variantId: "checkout-en",
+        captureMode: "full-surface",
+        reason: "Checkout is longer than one viewport.",
+        compare: "visual-and-semantic",
+        repair: "propose-recapture",
+      },
+    ],
     createdAt: 1,
     updatedAt: 1,
   };
@@ -159,6 +169,8 @@ test("a saved App Map Test opens a Combine strip, not Locale Matrix chrome", asy
     expect(root.querySelector("[data-app-map-test-locale-matrix]")).toBeNull();
     expect(root.textContent).not.toContain("Run this Test across languages");
     expect(root.querySelector("[data-app-map-test-combine-strip]")).not.toBeNull();
+    expect(root.textContent).toContain("Whole page");
+    expect(root.textContent).toContain("Capture the full scrolling screen.");
     expect(root.textContent).toMatch(/Run Checkout locale smoke in English as a visual/);
 
     root.querySelector<HTMLButtonElement>("[data-test-combine-value='it']")?.click();
@@ -182,6 +194,82 @@ test("a saved App Map Test opens a Combine strip, not Locale Matrix chrome", asy
       }),
     );
     expect(runAction.mock.calls[0]?.[1]).not.toHaveProperty("executionMode", "all");
+    expect(runAction.mock.calls[0]?.[1]).not.toHaveProperty("surfaceCapture");
+
+    root.querySelector<HTMLInputElement>("[data-test-combine-whole-page] input")?.click();
+    await settle();
+    cells[1]!.click();
+    await settle();
+    expect(runAction).toHaveBeenCalledTimes(2);
+    expect(runAction.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        in: { language: ["en", "it"] },
+        lens: "visual",
+        cell: "it",
+        surfaceCapture: { forceRecaptureScreenIds: ["checkout"] },
+      }),
+    );
+  } finally {
+    dispose();
+    root.remove();
+  }
+});
+
+test("without an applyable Variable the strip tells the operator to create one", async () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const scenario: AppMapScenarioTest = {
+    kind: "scenario",
+    id: "checkout-locale",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    name: "Checkout locale smoke",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        kind: "script",
+        id: "assert-checkout",
+        intent: "Check checkout",
+        binding: { status: "resolved", kind: "script", source: "return true" },
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const map = fixture();
+  map.tests[scenario.id] = scenario;
+  serverMock.current = {
+    selectedAppMap: () => map,
+    isOffline: () => false,
+    health: () => "online",
+    devices: () => [],
+    selectedDevice: () => null,
+    liveFrame: () => null,
+    liveCaptureIssue: () => null,
+    appleDeviceSetup: () => null,
+    jobs: () => [],
+    persistedRuns: () => [],
+    pollLiveFrame: async () => undefined,
+    loadRunDetail: async () => undefined,
+    frameUrlForPersisted: () => "",
+    refreshAppMaps: async () => undefined,
+    refreshJobs: async () => undefined,
+    runAction: async () => ({ job: { id: "unused" } }),
+    cancelJob: async () => undefined,
+    estimateCampaignDurationCohorts: async () => ({ checkedAt: 1, estimates: [] }),
+    preflightLocalCampaignAdmission: async () => ({}),
+  };
+
+  const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
+  try {
+    await settle();
+    expect(root.querySelector("[data-app-map-test-locale-matrix]")).toBeNull();
+    expect(root.textContent).not.toContain("Run this Test across languages");
+    expect(root.textContent).not.toMatch(/run across languages/i);
+    expect(root.querySelector("[data-app-map-test-combine-strip]")).not.toBeNull();
+    expect(root.textContent).toContain("Create a Variable");
   } finally {
     dispose();
     root.remove();

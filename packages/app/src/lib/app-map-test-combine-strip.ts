@@ -18,6 +18,7 @@ import {
   type CombineVariable,
   type CombineWorld,
 } from "./app-map-combine-presentation";
+import { flattenScenarioSteps } from "./app-map-test-editor-tree";
 
 export type TestCombineLens = CombineLensName;
 
@@ -74,6 +75,58 @@ export function projectTestCombineStrip(input: {
       input.variables.map((variable) => variable.id),
       [input.test.id],
     ),
+  };
+}
+
+/** Last expect-screen / last bound screen. Combine Whole page binds this. */
+export function testDestinationScreenId(
+  map: {
+    connections: Record<string, { destination?: { kind?: string; screenId?: string } }>;
+  },
+  test: Pick<AppMapScenarioTest, "steps" | "surfaceBindings">,
+): string | undefined {
+  let last: string | undefined;
+  for (const { step } of flattenScenarioSteps(test.steps)) {
+    if (step.binding.status !== "resolved") continue;
+    if (step.kind === "instruction" && step.binding.kind === "connections") {
+      for (const id of step.binding.connectionIds) {
+        const destination = map.connections[id]?.destination;
+        if (destination?.kind === "screen") last = destination.screenId;
+      }
+    } else if (
+      step.kind === "validation" &&
+      step.binding.kind === "assertion" &&
+      step.binding.assertion.kind === "screen"
+    ) {
+      last = step.binding.assertion.screenId;
+    }
+  }
+  return last ?? test.surfaceBindings?.at(-1)?.screenId;
+}
+
+export function testCombineStripRunInput(input: {
+  selected: Record<string, string[]>;
+  lens: TestCombineLens;
+  cell?: string;
+  executionMode?: "pilot" | "all";
+  wholePage?: boolean;
+  destinationScreenId?: string;
+}): {
+  in: Record<string, string[]>;
+  lens: TestCombineLens;
+  cell?: string;
+  executionMode?: "pilot" | "all";
+  surfaceCapture?: { forceRecaptureScreenIds: string[] };
+} {
+  const destination = input.destinationScreenId?.trim();
+  return {
+    in: input.selected,
+    lens: input.lens,
+    ...(input.cell ? { cell: input.cell } : {}),
+    ...(input.executionMode ? { executionMode: input.executionMode } : {}),
+    ...(input.wholePage && destination
+      ? { surfaceCapture: { forceRecaptureScreenIds: [destination] } }
+      : {}),
   };
 }
 

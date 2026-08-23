@@ -27,5 +27,4 @@ export type {
   TraceStep,
 } from "./lib/api-types";
 export { CommandProvider, useCommand, type Command } from "./context/command";
-export { LocaleMatrixStart } from "./components/locale-matrix-start";
 export type { ThemeAppliedDetail } from "@relay/ui/theme/context";

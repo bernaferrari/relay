@@ -13,6 +13,7 @@ import {
   AppMapCombineWorldError,
   AppMapCompileError,
   activeReviewedDocumentOriginsForAppMap,
+  applyFullSurfaceDestinationBindings,
   combineCampaignCaseFromPreparedCell,
   createCombineCampaign,
   currentOperationContext,
@@ -61,6 +62,7 @@ type CombineStartRequest = {
   seed?: number;
   projectId?: string;
   capture?: AppMapCapturePolicy;
+  surfaceCapture?: { forceRecaptureScreenIds: string[] };
   executionMode?: "all" | "pilot";
   pilotCaseIndex?: number;
   cell?: string;
@@ -156,9 +158,9 @@ export async function executeCombineStart(
   if (!targetId && !hasExplicitCellTargets) {
     throw new HttpError(400, "serial or browserTargetId is required");
   }
-  const map = await readAppMap(scope.projectId, body.appMapId.trim());
-  if (!map) throw new HttpError(404, `App Map ${body.appMapId} not found`);
-  const combine = body.combineId?.trim() ? map.combines?.[body.combineId.trim()] : undefined;
+  const loaded = await readAppMap(scope.projectId, body.appMapId.trim());
+  if (!loaded) throw new HttpError(404, `App Map ${body.appMapId} not found`);
+  const combine = body.combineId?.trim() ? loaded.combines?.[body.combineId.trim()] : undefined;
   if (body.combineId?.trim() && !combine) {
     throw new HttpError(404, `Combination ${body.combineId} not found`);
   }
@@ -179,9 +181,9 @@ export async function executeCombineStart(
         }
       : combine
     : ephemeralCombineFromTest({
-        mapId: map.id,
-        organizationId: map.organizationId,
-        projectId: map.projectId,
+        mapId: loaded.id,
+        organizationId: loaded.organizationId,
+        projectId: loaded.projectId,
         testId: body.testId!.trim(),
         variableIds: body.variableIds ?? [],
         selected: body.selected,
@@ -189,6 +191,12 @@ export async function executeCombineStart(
         capture: body.capture,
         cellRuntimeProfiles: body.cellRuntimeProfiles,
       });
+  const forceRecaptureScreenIds = body.surfaceCapture?.forceRecaptureScreenIds ?? [];
+  const map = applyFullSurfaceDestinationBindings(
+    loaded,
+    scopedCombine.testIds,
+    forceRecaptureScreenIds,
+  );
   let staged: ReturnType<typeof stagePreparedAppMapCombineCells> | undefined;
   let admission: LocalCombineCampaignAdmission | undefined;
   let persistedCampaignId: string | undefined;
@@ -212,7 +220,12 @@ export async function executeCombineStart(
               },
             }
           : {}),
-        compileOptions: { reviewedDocumentOrigins },
+        compileOptions: {
+          reviewedDocumentOrigins,
+          ...(forceRecaptureScreenIds.length
+            ? { forceRecaptureSurfaceScreenIds: forceRecaptureScreenIds }
+            : {}),
+        },
       }),
     );
     let selectedCells = prepared.selectedCells;
