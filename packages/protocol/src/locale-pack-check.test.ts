@@ -111,3 +111,66 @@ test("a complete locale with only brand English is ok", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("a combine-export tree uses <locale>/accessibility/*.json", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-locale-pack-export-"));
+  try {
+    await mkdir(join(dir, "en", "accessibility"), { recursive: true });
+    await mkdir(join(dir, "he", "accessibility"), { recursive: true });
+    await writeFile(
+      join(dir, "en", "accessibility", "001-001.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        kind: "relay.frame-tree",
+        nodes: [{ label: "Data Controls" }, { label: "Delete Account" }, { label: "Grok" }],
+      })}\n`,
+    );
+    await writeFile(
+      join(dir, "he", "accessibility", "001-001.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        kind: "relay.frame-tree",
+        nodes: [{ label: "בקרת נתונים" }, { label: "Grok" }],
+      })}\n`,
+    );
+
+    const report = await checkLocalePack(dir, "en");
+
+    assert.equal(report.ok, true);
+    assert.deepEqual(report.locales, ["en", "he"]);
+    assert.deepEqual(report.digest.find((row) => row.locale === "he")?.leftoverEnglish, []);
+    assert.equal(
+      report.findings.some(
+        (finding) => finding.code === "leftover-english" && finding.string === "Grok",
+      ),
+      false,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a locale-named tree at the pack root is accepted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-locale-pack-root-"));
+  try {
+    await writeFile(
+      join(dir, "en.json"),
+      `${JSON.stringify({
+        nodes: [{ label: "Data Controls" }, { label: "Grok" }],
+      })}\n`,
+    );
+    await writeFile(
+      join(dir, "ja.json"),
+      `${JSON.stringify({
+        snapshot: { nodes: [{ label: "データ管理" }, { label: "Grok" }] },
+      })}\n`,
+    );
+
+    const report = await checkLocalePack(dir, "en");
+
+    assert.equal(report.ok, true);
+    assert.deepEqual(report.locales, ["en", "ja"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

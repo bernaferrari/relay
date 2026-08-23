@@ -8,7 +8,9 @@ import {
   testCombineLensFromPolicy,
   testCombineSentence,
   testCombineStripRunInput,
+  testDestinationHasFullSurfaceBinding,
   testDestinationScreenId,
+  testWholePageAvailability,
   variableCanApply,
 } from "./app-map-test-combine-strip";
 
@@ -142,5 +144,68 @@ test("Whole page binds the last destination as a full-surface recapture", () => 
       cell: "ja",
       surfaceCapture: { forceRecaptureScreenIds: ["long-list"] },
     },
+  );
+});
+
+test("Whole page is not ready without a frozen full-surface binding", () => {
+  const steps = [
+    {
+      id: "open",
+      kind: "instruction" as const,
+      intent: "Open the list",
+      binding: {
+        status: "resolved" as const,
+        kind: "connections" as const,
+        connectionIds: ["open"],
+      },
+    },
+  ];
+  const viewportOnly = {
+    screens: {},
+    screenVariants: {},
+    connections: {
+      open: { destination: { kind: "screen" as const, screenId: "long-list" } },
+    },
+  };
+  assert.deepEqual(testWholePageAvailability(viewportOnly, { steps }), {
+    destinationScreenId: "long-list",
+    ready: false,
+  });
+  assert.equal(testDestinationHasFullSurfaceBinding(viewportOnly, {}, "long-list"), false);
+  assert.equal(
+    testDestinationHasFullSurfaceBinding(
+      viewportOnly,
+      {
+        surfaceBindings: [
+          {
+            screenId: "long-list",
+            variantId: "long-list-en",
+            captureMode: "full-surface",
+            reason: "The list scrolls.",
+            compare: "visual-and-semantic",
+            repair: "propose-recapture",
+          },
+        ],
+      },
+      "long-list",
+    ),
+    true,
+  );
+  assert.equal(
+    testWholePageAvailability(
+      {
+        screens: {
+          "long-list": { variantIds: ["long-list-en"] },
+        } as never,
+        screenVariants: {
+          "long-list-en": {
+            scrollSurfaces: [{ capturePolicy: { captureMode: "full-surface" } }],
+          },
+        } as never,
+        connections: viewportOnly.connections,
+      },
+      { steps },
+    ).ready,
+    true,
   );
 });

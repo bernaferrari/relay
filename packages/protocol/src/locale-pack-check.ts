@@ -1,8 +1,9 @@
 /**
- * Offline check of a Combine evidence folder (accessibility/*.json).
+ * Offline check of a Combine evidence folder.
  *
- * Agents persist trees with `device survey --dir`; this compares each locale
- * to one baseline so nobody writes Python to ask whether a slot is in the tree.
+ * Reads top-level accessibility/*.json (Data Controls pack) or
+ * <locale>/accessibility/*.json (combine export). Root survey --dir
+ * 00.json files are not a pack unless they name a locale.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -78,6 +79,17 @@ function hasSlotInventory(value: unknown): boolean {
   return Array.isArray(value.slots.found) || Array.isArray(value.slots.missing);
 }
 
+function collectNodeLabels(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const labels: string[] = [];
+  for (const node of value) {
+    if (!isRecord(node)) continue;
+    const text = trimText(node.label);
+    if (text) labels.push(text);
+  }
+  return labels;
+}
+
 function collectStrings(value: unknown): string[] {
   if (!isRecord(value)) return [];
   const labels: string[] = [];
@@ -87,12 +99,11 @@ function collectStrings(value: unknown): string[] {
       if (text) labels.push(text);
     }
   }
-  if (labels.length === 0 && Array.isArray(value.nodes)) {
-    for (const node of value.nodes) {
-      if (!isRecord(node)) continue;
-      const text = trimText(node.label);
-      if (text) labels.push(text);
-    }
+  if (labels.length === 0) {
+    labels.push(...collectNodeLabels(value.nodes));
+  }
+  if (labels.length === 0 && isRecord(value.snapshot)) {
+    labels.push(...collectNodeLabels(value.snapshot.nodes));
   }
   return [...new Set(labels)];
 }
@@ -131,45 +142,93 @@ function mergeLocale(current: LocaleDocument | undefined, next: LocaleDocument):
   };
 }
 
-async function readAccessibilityDocuments(dir: string): Promise<LocaleDocument[]> {
-  const folder = join(dir, "accessibility");
-  let names: string[];
+type LocatedAccessibilityFile = {
+  name: string;
+  path: string;
+  localeHint?: string;
+};
+
+function isMissingDir(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT",
+  );
+}
+
+async function jsonNamesIn(folder: string): Promise<string[] | undefined> {
   try {
-    names = (await readdir(folder)).filter((name) => name.endsWith(".json")).sort();
+    return (await readdir(folder)).filter((name) => name.endsWith(".json")).sort();
   } catch (error) {
-    const missing =
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      (error as { code?: unknown }).code === "ENOENT";
+    if (isMissingDir(error)) return undefined;
     throw new Error(
-      missing
+      `Could not read pack folder ${folder}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function discoverAccessibilityFiles(dir: string): Promise<LocatedAccessibilityFile[]> {
+  const topLevel = await jsonNamesIn(join(dir, "accessibility"));
+  if (topLevel?.length) {
+    return topLevel.map((name) => ({ name, path: join(dir, "accessibility", name) }));
+  }
+
+  let entries: Array<{ name: string; isDirectory(): boolean }>;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    throw new Error(
+      isMissingDir(error)
         ? `Pack folder has no accessibility/*.json: ${dir}`
         : `Could not read pack folder ${dir}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  if (names.length === 0) throw new Error(`Pack folder has no accessibility/*.json: ${dir}`);
 
+  const perLocale: LocatedAccessibilityFile[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === "accessibility") continue;
+    const nested = await jsonNamesIn(join(dir, entry.name, "accessibility"));
+    if (!nested?.length) continue;
+    for (const name of nested) {
+      perLocale.push({
+        name,
+        path: join(dir, entry.name, "accessibility", name),
+        localeHint: entry.name.toLowerCase(),
+      });
+    }
+  }
+  if (perLocale.length) return perLocale;
+
+  const root = await jsonNamesIn(dir);
+  if (root?.length) {
+    return root.map((name) => ({ name, path: join(dir, name) }));
+  }
+  throw new Error(`Pack folder has no accessibility/*.json: ${dir}`);
+}
+
+async function readAccessibilityDocuments(dir: string): Promise<LocaleDocument[]> {
+  const files = await discoverAccessibilityFiles(dir);
   const byLocale = new Map<string, LocaleDocument>();
-  for (const name of names) {
-    const path = join(folder, name);
+  for (const file of files) {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
+      parsed = JSON.parse(await readFile(file.path, "utf8")) as unknown;
     } catch (error) {
       throw new Error(
-        `Could not read ${basename(path)}: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not read ${basename(file.path)}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
     const locale =
       (isRecord(parsed) ? trimText(parsed.locale)?.toLowerCase() : undefined) ??
-      localeFromFileName(name);
+      localeFromFileName(file.name) ??
+      file.localeHint;
     if (!locale) {
-      throw new Error(`Accessibility file ${name} has no locale field or locale in its name`);
+      throw new Error(`Accessibility file ${file.name} has no locale field or locale in its name`);
     }
     const document: LocaleDocument = {
       locale,
-      file: name,
+      file: file.name,
       slots: collectSlotIds(parsed),
       strings: collectStrings(parsed),
       hasSlots: hasSlotInventory(parsed),
@@ -177,6 +236,7 @@ async function readAccessibilityDocuments(dir: string): Promise<LocaleDocument[]
     };
     byLocale.set(locale, mergeLocale(byLocale.get(locale), document));
   }
+  if (byLocale.size === 0) throw new Error(`Pack folder has no accessibility/*.json: ${dir}`);
   return [...byLocale.values()].sort((left, right) => left.locale.localeCompare(right.locale));
 }
 
@@ -194,7 +254,7 @@ export async function checkLocalePack(
   const baselineDocument = documents.find((document) => document.locale === baselineLocale);
   if (!baselineDocument) {
     throw new Error(
-      `Baseline locale ${baselineLocale} is not in ${root}/accessibility (${locales.join(", ") || "none"})`,
+      `Baseline locale ${baselineLocale} is not in ${root} (${locales.join(", ") || "none"})`,
     );
   }
 

@@ -104,6 +104,56 @@ export function testDestinationScreenId(
   return last ?? test.surfaceBindings?.at(-1)?.screenId;
 }
 
+type WholePageMap = {
+  connections: Record<string, { destination?: { kind?: string; screenId?: string } }>;
+  screens?: Record<string, { variantIds?: string[] }>;
+  screenVariants?: Record<
+    string,
+    { scrollSurfaces?: Array<{ capturePolicy?: { captureMode?: string } }> }
+  >;
+};
+
+/** Whole page recapture 409s unless this destination already has a frozen
+ * full-surface capture or the Test already bound one. */
+export function testDestinationHasFullSurfaceBinding(
+  map: WholePageMap,
+  test: Pick<AppMapScenarioTest, "surfaceBindings">,
+  screenId: string,
+): boolean {
+  if (
+    test.surfaceBindings?.some(
+      (binding) => binding.screenId === screenId && binding.captureMode === "full-surface",
+    )
+  ) {
+    return true;
+  }
+  const screen = map.screens?.[screenId];
+  if (!screen) return false;
+  for (const variantId of screen.variantIds ?? []) {
+    const variant = map.screenVariants?.[variantId];
+    if (
+      variant?.scrollSurfaces?.some(
+        (surface) => surface.capturePolicy?.captureMode === "full-surface",
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function testWholePageAvailability(
+  map: WholePageMap,
+  test: Pick<AppMapScenarioTest, "steps" | "surfaceBindings">,
+): { destinationScreenId?: string; ready: boolean } {
+  const destinationScreenId = testDestinationScreenId(map, test);
+  if (!destinationScreenId) return { ready: false };
+  return {
+    destinationScreenId,
+    ready: testDestinationHasFullSurfaceBinding(map, test, destinationScreenId),
+  };
+}
+
 export function testCombineStripRunInput(input: {
   selected: Record<string, string[]>;
   lens: TestCombineLens;

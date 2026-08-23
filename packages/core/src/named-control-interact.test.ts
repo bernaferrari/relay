@@ -387,6 +387,26 @@ test("preview errors for a non-hittable labeled control", () => {
   );
 });
 
+test("preview prefers the rect-equal node over a substring sibling", () => {
+  const caption = {
+    type: "StaticText",
+    label: "About Grok",
+    enabled: true,
+    hittable: false,
+    rect: { x: 20, y: 20, width: 200, height: 20 },
+  };
+  const about = {
+    type: "Button",
+    label: "About",
+    enabled: true,
+    hittable: true,
+    rect: { x: 20, y: 70, width: 200, height: 44 },
+  };
+  const resolution = resolveInteractPreview([caption, about], { kind: "label", label: "About" });
+  assert.equal(resolution?.method, "label");
+  assert.deepEqual(resolution?.bounds, about.rect);
+});
+
 test("preview of an on-screen hittable label still succeeds", () => {
   const back = {
     type: "Button",

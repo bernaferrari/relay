@@ -21,6 +21,8 @@ import {
   explicitPointResolution,
   resolveNamedControlOutcome,
   resolveSnapshotTargetRevealDirection,
+  snapshotLabelMatches,
+  snapshotTextMatches,
   type NamedControlTarget,
 } from "./device-target-resolution.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
@@ -195,6 +197,38 @@ function previewUnusableControlError(
   );
 }
 
+function previewNodeMatchesNamedTarget(
+  node: SnapshotNode,
+  target: NamedControlTarget,
+  method: NamedControlResolution["method"],
+): boolean {
+  if (method === "identifier" && target.identifier) {
+    return (
+      node.identifier?.trim().toLocaleLowerCase() === target.identifier.trim().toLocaleLowerCase()
+    );
+  }
+  if (method === "label" && target.label) {
+    return snapshotLabelMatches(target.label, node.label);
+  }
+  if (method === "text" && target.text) {
+    return [node.label, node.value, node.identifier].some((value) =>
+      snapshotTextMatches(target.text!, value),
+    );
+  }
+  if (target.identifier) {
+    return (
+      node.identifier?.trim().toLocaleLowerCase() === target.identifier.trim().toLocaleLowerCase()
+    );
+  }
+  if (target.label) return snapshotLabelMatches(target.label, node.label);
+  if (target.text) {
+    return [node.label, node.value, node.identifier].some((value) =>
+      snapshotTextMatches(target.text!, value),
+    );
+  }
+  return false;
+}
+
 function previewMatchedNode(
   nodes: SnapshotNode[],
   target: NamedControlTarget,
@@ -209,21 +243,7 @@ function previewMatchedNode(
       node.rect.height === resolution.bounds.height,
   );
   if (byBounds) return byBounds;
-  return nodes.find((node) => {
-    if (target.identifier) {
-      return (
-        node.identifier?.trim().toLocaleLowerCase() === target.identifier.trim().toLocaleLowerCase()
-      );
-    }
-    if (target.label)
-      return (node.label ?? "").toLocaleLowerCase().includes(target.label.toLocaleLowerCase());
-    if (target.text) {
-      return [node.label, node.value, node.identifier].some((value) =>
-        value?.toLocaleLowerCase().includes(target.text!.toLocaleLowerCase()),
-      );
-    }
-    return false;
-  });
+  return nodes.find((node) => previewNodeMatchesNamedTarget(node, target, resolution.method));
 }
 
 function resolveNamedInteractPreview(

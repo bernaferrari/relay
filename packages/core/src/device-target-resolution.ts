@@ -64,7 +64,7 @@ export function snapshotLabelMatches(query: string, live: string | undefined): b
   return /^[\s]*[,:;–—([{/-]/u.test(normalizedLive.slice(normalizedQuery.length));
 }
 
-function snapshotTextMatches(query: string, live: string | undefined): boolean {
+export function snapshotTextMatches(query: string, live: string | undefined): boolean {
   const normalizedQuery = normalizeSemanticText(query);
   const normalizedLive = normalizeSemanticText(live);
   return Boolean(normalizedQuery && normalizedLive?.includes(normalizedQuery));

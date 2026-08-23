@@ -393,6 +393,11 @@ test("gives run agents one revision-pinned graph Test operation", () => {
     cell: "ja",
   };
   assert.deepEqual(tool("app-map.test.run").inputSchema.parse(worldsInput), worldsInput);
+  const wholePageWorlds = {
+    ...worldsInput,
+    surfaceCapture: { forceRecaptureScreenIds: ["voice-library"] },
+  };
+  assert.deepEqual(tool("app-map.test.run").inputSchema.parse(wholePageWorlds), wholePageWorlds);
   assert.throws(() =>
     tool("app-map.test.run").inputSchema.parse({
       ...input,
@@ -633,7 +638,10 @@ test("the locale profile exposes only the canonical Language Variable campaign",
   }
   assert.match(tool("target.scroll-survey.capture").description, /--dir/u);
   assert.match(tool("target.scroll-survey.capture").description, /pack check/u);
+  assert.match(tool("target.scroll-survey.capture").description, /accessibility\/\*\.json/u);
+  assert.match(tool("target.scroll-survey.capture").description, /not a survey --dir folder/u);
   assert.match(tool("target.scroll-survey.capture").description, /Do not dump base64/u);
+  assert.doesNotMatch(tool("target.scroll-survey.capture").description, /Then compare the folder/u);
   // A sweep drives a real device; authoring the App Map is a different task.
   assert.equal(locale.has("app-map.proposal.submit"), false);
   assert.equal(locale.has("authoring.session.create"), false);

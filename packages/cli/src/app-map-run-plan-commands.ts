@@ -52,7 +52,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
           },
         })}'`,
       ],
-      note: "A Variable changes one reusable dimension. A Combine multiplies one or more Variables by one or more Tests. appLocale Variables relaunch the app by default; stay is explicit (apply.relaunch: false).",
+      note: "A Variable changes one reusable dimension. A Combine multiplies one or more Variables by one or more Tests. appLocale Variables stay when the compiled Test has an expect-screen; they relaunch if stay cannot be proved. apply.relaunch: true still relaunches.",
     }),
     path("state-set save", ["appMapId", "variableId"], undefined, {
       summary: "Alias of variable save",

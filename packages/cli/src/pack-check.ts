@@ -17,7 +17,7 @@ Examples:
   relay pack check runs/2026-08-22_grok-data-controls-supported-locales --against en
   relay pack check runs/2026-08-22_grok-data-controls-supported-locales --baseline en --json
 
-Reads accessibility/*.json (strings / slots / nodes). Missing baseline slots fail the command.
+Reads accessibility/*.json or <locale>/accessibility/*.json (strings / slots / nodes). Missing baseline slots fail the command.
 Grok, X, and Imagine left in English are not leftover copy.
 `;
 }

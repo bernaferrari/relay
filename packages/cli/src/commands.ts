@@ -514,7 +514,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     path("combine export", ["batchId"], undefined, {
       summary: "Export a Combine screenshot pack",
       examples: ["relay combine export <batch-id>"],
-      note: "Writes each locale's screenshots/ plus accessibility/*.json under the pack folder. Check a survey folder with `relay pack check <dir> --against en`.",
+      note: "Writes <locale>/screenshots/ plus <locale>/accessibility/*.json. Check that pack, or a Data Controls folder with top-level accessibility/*.json, with `relay pack check <dir> --against en`.",
     }),
     path("run-matrix export", ["batchId"], undefined, {
       summary: "Alias of combine export",

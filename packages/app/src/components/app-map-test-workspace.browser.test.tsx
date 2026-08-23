@@ -215,6 +215,109 @@ test("a saved App Map Test opens a Combine strip, not Locale Matrix chrome", asy
   }
 });
 
+test("Whole page is disabled when the destination has no frozen full-page capture", async () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const scenario: AppMapScenarioTest = {
+    kind: "scenario",
+    id: "checkout-locale",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    name: "Checkout locale smoke",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "open",
+        kind: "instruction",
+        intent: "Open checkout",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open"],
+        },
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const map = fixture();
+  map.tests[scenario.id] = scenario;
+  map.connections.open = {
+    id: "open",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    fromScreenId: "home",
+    destination: { kind: "screen", screenId: "checkout" },
+    state: "ready",
+    actions: [],
+    createdAt: 1,
+    updatedAt: 1,
+  } as AppMap["connections"][string];
+  map.variables.language = {
+    id: "language",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    name: "Language",
+    kind: "language",
+    apply: {
+      kind: "list",
+      entryPath: [{ kind: "tap", target: { identifier: "settings.language" } }],
+      exitPath: [{ kind: "back" }],
+    },
+    options: [{ id: "en", identifier: "locale.en", label: "English" }],
+    restoreId: "en",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const runAction = vi.fn(async (_operationId: string, _input?: unknown) => ({
+    job: { id: "combine-cell" },
+  }));
+  serverMock.current = {
+    selectedAppMap: () => map,
+    isOffline: () => false,
+    health: () => "online",
+    devices: () => [
+      { serial: "ipad-1", name: "iPad", platform: "ios", connectionState: "connected" },
+    ],
+    selectedDevice: () => "ipad-1",
+    liveFrame: () => null,
+    liveCaptureIssue: () => null,
+    appleDeviceSetup: () => null,
+    jobs: () => [],
+    persistedRuns: () => [],
+    pollLiveFrame: async () => undefined,
+    loadRunDetail: async () => undefined,
+    frameUrlForPersisted: () => "",
+    refreshAppMaps: async () => undefined,
+    refreshJobs: async () => undefined,
+    runAction,
+    cancelJob: async () => undefined,
+    estimateCampaignDurationCohorts: async () => ({ checkedAt: 1, estimates: [] }),
+    preflightLocalCampaignAdmission: async () => ({}),
+  };
+
+  const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
+  try {
+    await settle();
+    expect(root.textContent).toContain("This destination has no frozen full-page capture.");
+    const toggle = root.querySelector<HTMLInputElement>("[data-test-combine-whole-page] input");
+    expect(toggle?.disabled).toBe(true);
+    toggle?.click();
+    await settle();
+    root.querySelector<HTMLButtonElement>("[data-test-combine-cell]")?.click();
+    await settle();
+    expect(runAction).toHaveBeenCalledTimes(1);
+    expect(runAction.mock.calls[0]?.[1]).not.toHaveProperty("surfaceCapture");
+  } finally {
+    dispose();
+    root.remove();
+  }
+});
+
 test("without an applyable Variable the strip tells the operator to create one", async () => {
   document.body.replaceChildren();
   const root = document.createElement("div");

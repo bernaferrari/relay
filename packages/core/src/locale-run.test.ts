@@ -155,6 +155,59 @@ test("Android appLocale scopes need no picker path and set locale before the Tes
   );
 });
 
+test("Android appLocale stay proves the last product screen, not the Home source", () => {
+  const fingerprint = "a".repeat(64);
+  const compiled: Recipe = {
+    ...body,
+    id: "data-controls-test",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "relay-source-home",
+        screenId: "home",
+        screenTitle: "Home",
+        fingerprint,
+      },
+      { kind: "tap", target: { label: "Data Controls" } },
+      {
+        kind: "expect-screen",
+        id: "relay-destination-open-data",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint,
+        recovery: { strategy: "back" },
+      },
+    ],
+  };
+  const { root } = composeLocaleRunRecipes({
+    body: compiled,
+    scope: {
+      locales: ["he"],
+      app: "com.example.app",
+      appLocale: "com.example.app",
+      restoreAtEnd: false,
+      screenshotEachLocale: false,
+    },
+    batchId: "app-locale-stay-last-destination",
+  });
+  assert.equal(
+    root.steps.some((step) => step.kind === "app" && step.action === "open"),
+    false,
+  );
+  assert.deepEqual(
+    root.steps.filter((step) => step.kind === "expect-screen"),
+    [
+      {
+        kind: "expect-screen",
+        id: "relay-destination-open-data-stay",
+        screenId: "data-controls",
+        screenTitle: "Data Controls",
+        fingerprint,
+      },
+    ],
+  );
+});
+
 test("Android appLocale stays when a module-rooted Test names a destination", () => {
   const leaf: Recipe = {
     ...body,

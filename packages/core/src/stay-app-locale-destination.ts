@@ -1,23 +1,42 @@
 import type { RecipeStep } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
 
-function firstChildExpectScreen(
+type ExpectScreen = Extract<RecipeStep, { kind: "expect-screen" }>;
+
+function isRecoveryOnlyRecipeId(id: string): boolean {
+  return id.includes(":confirm:") || id.includes(":proposed-cold-recovery:");
+}
+
+/** Source / warm / recovery-only checks are not the product destination. */
+function isProductExpectScreen(step: ExpectScreen, recipeId: string): boolean {
+  if (isRecoveryOnlyRecipeId(recipeId)) return false;
+  const id = step.id ?? "";
+  if (id.startsWith("relay-source-")) return false;
+  if (id.endsWith(":warm")) return false;
+  return true;
+}
+
+function lastProductExpectScreen(
   graph: Record<string, Recipe>,
   rootId: string,
   seen = new Set<string>(),
-): Extract<RecipeStep, { kind: "expect-screen" }> | undefined {
+): ExpectScreen | undefined {
   if (seen.has(rootId)) return undefined;
   seen.add(rootId);
   const recipe = graph[rootId];
   if (!recipe) return undefined;
+  let last: ExpectScreen | undefined;
   for (const step of recipe.steps) {
-    if (step.kind === "expect-screen") return structuredClone(step);
+    if (step.kind === "expect-screen" && isProductExpectScreen(step, rootId)) {
+      last = structuredClone(step);
+      continue;
+    }
     if (step.kind === "module" && step.recipeId) {
-      const nested = firstChildExpectScreen(graph, step.recipeId, seen);
-      if (nested) return nested;
+      const nested = lastProductExpectScreen(graph, step.recipeId, seen);
+      if (nested) last = nested;
     }
   }
-  return undefined;
+  return last;
 }
 
 /** Stay when the Test names a destination. Relaunch only if stay cannot be
@@ -30,7 +49,7 @@ export function appLocaleShouldRelaunch(
   if (apply.relaunch === true) return true;
   if (apply.relaunch === false) return false;
   if (!graph || !childRootId) return true;
-  return firstChildExpectScreen(graph, childRootId) === undefined;
+  return lastProductExpectScreen(graph, childRootId) === undefined;
 }
 
 /** Stay applies must re-prove the Test destination. Missing identity is not
@@ -39,7 +58,7 @@ export function stayAppLocaleDestinationCheck(
   graph: Record<string, Recipe>,
   childRootId: string,
 ): RecipeStep | undefined {
-  const destination = firstChildExpectScreen(graph, childRootId);
+  const destination = lastProductExpectScreen(graph, childRootId);
   if (!destination) return undefined;
   const { recovery: _recovery, repairCheckpoint: _repair, ...check } = destination;
   return {

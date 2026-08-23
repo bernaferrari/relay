@@ -12,7 +12,7 @@ import {
   projectTestCombineStrip,
   testCombineSentence,
   testCombineStripRunInput,
-  testDestinationScreenId,
+  testWholePageAvailability,
   type TestCombineLens,
 } from "../lib/app-map-test-combine-strip";
 import {
@@ -68,11 +68,19 @@ export function AppMapTestCombineStrip(props: {
   const selectedDevice = createMemo(() =>
     server.devices().find((device) => device.serial === server.selectedDevice()),
   );
-  const destinationScreenId = createMemo(() => testDestinationScreenId(props.map, props.test));
+  const wholePageAvailability = createMemo(() => testWholePageAvailability(props.map, props.test));
+  const destinationScreenId = createMemo(() => wholePageAvailability().destinationScreenId);
+  createEffect(() => {
+    if (!wholePageAvailability().ready && wholePage()) setWholePage(false);
+  });
 
   function combineRunInput(input: { cell?: string; executionMode?: "pilot" | "all" }) {
     if (wholePage() && !destinationScreenId()) {
       toast("This Test has no destination screen to capture as a whole page.", "warning");
+      return undefined;
+    }
+    if (wholePage() && !wholePageAvailability().ready) {
+      toast("This destination has no frozen full-page capture to recapture.", "warning");
       return undefined;
     }
     return testCombineStripRunInput({
@@ -299,11 +307,18 @@ export function AppMapTestCombineStrip(props: {
             <span id="app-map-test-combine-whole-page" class={testEditorSection}>
               Whole page
             </span>
-            <span class={testEditorHint}>Capture the full scrolling screen.</span>
+            <span class={testEditorHint}>
+              {wholePageAvailability().ready
+                ? "Capture the full scrolling screen."
+                : destinationScreenId()
+                  ? "This destination has no frozen full-page capture."
+                  : "This Test has no destination screen to capture as a whole page."}
+            </span>
           </div>
           <Switch
             class="mt-0.5 shrink-0"
             checked={wholePage()}
+            disabled={!wholePageAvailability().ready}
             aria-labelledby="app-map-test-combine-whole-page"
             data-test-combine-whole-page
             onCheckedChange={setWholePage}

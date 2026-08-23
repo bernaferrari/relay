@@ -140,15 +140,20 @@ test("screen and connection commands use granular App Map operations", () => {
   );
 });
 
-test("variable help says appLocale relaunches by default and stay is explicit", () => {
+test("variable help says appLocale stays when the Test can name a screen", () => {
   const help = renderHelp("variable");
-  assert.match(help, /appLocale Variables relaunch the app by default; stay is explicit/u);
+  assert.match(
+    help,
+    /appLocale Variables stay when the compiled Test has an expect-screen; they relaunch if stay cannot be proved/u,
+  );
+  assert.match(help, /apply\.relaunch: true still relaunches/u);
 });
 
 test("pack check and locale apply help name the Data Controls pack and test-run apply path", () => {
   const pack = renderHelp("pack");
   assert.match(pack, /relay pack check <dir> --against <locale>/u);
   assert.match(pack, /runs\/2026-08-22_grok-data-controls-supported-locales --against en/u);
+  assert.match(pack, /<locale>\/accessibility\/\*\.json/u);
   assert.match(pack, /--baseline/u);
 
   const device = renderHelp("device");
@@ -156,8 +161,10 @@ test("pack check and locale apply help name the Data Controls pack and test-run 
   assert.match(device, /relay test run <map> <test> --in language=<tag>/u);
 
   const combine = renderHelp("combine");
-  assert.match(combine, /screenshots\/ plus accessibility\/\*\.json/u);
+  assert.match(combine, /<locale>\/screenshots\/ plus <locale>\/accessibility\/\*\.json/u);
   assert.match(combine, /relay pack check <dir> --against en/u);
+  assert.match(combine, /top-level accessibility\/\*\.json/u);
+  assert.doesNotMatch(combine, /Check a survey folder/u);
 });
 
 test("authoring vocabulary exposes Variables, Tests, and saved Combines", () => {
