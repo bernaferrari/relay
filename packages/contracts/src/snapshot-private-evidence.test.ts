@@ -4,7 +4,7 @@ import {
   attachSnapshotClickabilityEvidence,
   copySnapshotClickabilityEvidence,
   readSnapshotClickabilityEvidence,
-} from './snapshot-clickability.ts';
+} from './snapshot-private-evidence.ts';
 
 test('retains exact evidence without adding enumerable snapshot or node fields', () => {
   const node = { index: 0, identifier: 'save' };

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test, vi } from 'vitest';
 import {
   readSnapshotClickabilityEvidence,
+  readSnapshotOcclusionContextEvidence,
   type SnapshotClickabilityEvidence,
 } from '@agent-device/contracts/capture';
 import { snapshotAndroid } from '../snapshot.ts';
@@ -12,6 +13,7 @@ import type { AndroidAdbExecutor } from '../snapshot-helper.ts';
 import { ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT } from '../../../__tests__/test-utils/android-snapshot-helper.ts';
 import { resetAndroidSnapshotHelperInstallCache } from '../snapshot-helper-install.ts';
 import { resetAndroidSnapshotHelperSessions } from '../snapshot-helper-session-lifecycle.ts';
+import { androidSnapshotPublicationInput } from '../snapshot-capture.ts';
 
 vi.mock('../../../utils/exec.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../utils/exec.ts')>();
@@ -91,7 +93,9 @@ test('snapshotAndroid captures the hierarchy once and retains clickability off-w
     helperArtifact: ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
     raw: true,
   });
-  const evidence = readSnapshotClickabilityEvidence(result);
+  const publication = androidSnapshotPublicationInput(result);
+  const evidence = readSnapshotClickabilityEvidence(publication);
+  const occlusionContext = readSnapshotOcclusionContextEvidence(publication);
 
   assert.equal(hierarchyCaptures, 1);
   assert.equal(evidence?.kind, 'exact');
@@ -103,7 +107,18 @@ test('snapshotAndroid captures the hierarchy once and retains clickability off-w
     ],
     [false, true, false],
   );
+  assert.ok(occlusionContext);
+  assert.equal(occlusionContext?.nodes.length, result.nodes.length);
+  assert.deepEqual(
+    [...occlusionContext.sourceIndexByNodeIndex],
+    [
+      [0, 0],
+      [1, 1],
+      [2, 2],
+    ],
+  );
   assert.equal(JSON.stringify(result).includes('clickable'), false);
+  assert.equal(JSON.stringify(result).includes('sourceIndexByNodeIndex'), false);
 });
 
 function helperOutput(): string {

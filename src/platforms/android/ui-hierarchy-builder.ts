@@ -2,10 +2,16 @@ import {
   type AndroidSystemChromeProvenance,
   isAndroidSystemChromeWindowResourceId,
 } from '@agent-device/contracts/android-system-chrome';
+import type { AndroidSiblingOrderEvidence } from '@agent-device/contracts/capture';
 import { isScrollableType, normalizeSnapshotScope } from '@agent-device/contracts/snapshot';
 import type { RawSnapshotNode, Rect, SnapshotOptions } from '@agent-device/kernel/snapshot';
 import { isPositiveFiniteRect, pickLargestRect } from '@agent-device/kernel/rect';
-import { isAgentTarget, type AndroidNode, type AndroidUiHierarchy } from './ui-hierarchy-node.ts';
+import {
+  isAgentTarget,
+  readAndroidSiblingOrder,
+  type AndroidNode,
+  type AndroidUiHierarchy,
+} from './ui-hierarchy-node.ts';
 import { collectAndroidHiddenNodes } from './ui-hierarchy-visibility.ts';
 import { scopePresentedAndroidSnapshot } from './ui-hierarchy-scope.ts';
 import { isCollectionContainerType, shouldIncludeAndroidNode } from './ui-hierarchy-inclusion.ts';
@@ -36,6 +42,11 @@ export type AndroidUiHierarchySnapshotOptions = SnapshotOptions & {
 export type AndroidBuiltSnapshot = {
   nodes: AndroidRawSnapshotNode[];
   sourceNodes: AndroidUiHierarchy[];
+  occlusionContext: {
+    nodes: readonly AndroidRawSnapshotNode[];
+    sourceIndexByNodeIndex: ReadonlyMap<number, number>;
+    androidSiblingOrderByNodeIndex: ReadonlyMap<number, AndroidSiblingOrderEvidence>;
+  };
   truncated?: boolean;
   analysis: AndroidSnapshotAnalysis;
 };
@@ -48,7 +59,7 @@ type AndroidSnapshotBuildState = {
   options: AndroidUiHierarchySnapshotOptions;
   analysis: AndroidSnapshotAnalysis;
   interactiveDescendantMemo: Map<AndroidNode, boolean>;
-  /** Subtrees the regular projection hides (invisible / stale window / covered). Empty for raw. */
+  /** Subtrees the regular projection hides (invisible / stale window). Empty for raw. */
   hidden: ReadonlySet<AndroidNode>;
   /** Largest helper-reported application/window frame, used as the regular viewport fallback. */
   viewport?: Rect;
@@ -80,7 +91,7 @@ export function buildUiHierarchySnapshot(
     analysis,
     interactiveDescendantMemo: new Map(),
     // C3: raw is the acquired tree (normalization only); regular additionally hides what Android
-    // marks invisible, stale application windows, and covered same-window surfaces.
+    // marks invisible and stale application windows. Daemon publication alone owns occlusion.
     hidden: new Set(),
     presentationBudget,
     presentationNodes: [],
@@ -102,6 +113,10 @@ export function buildUiHierarchySnapshot(
         presentationBudget,
       );
     }
+    const occlusionContextNodes = state.nodes;
+    const sourceIndexBySourceNode = new Map(
+      state.sourceNodes.map((sourceNode, index) => [sourceNode, index]),
+    );
     const { nodes, sourceNodes } = scope
       ? scopePresentedAndroidSnapshot(
           state,
@@ -111,7 +126,24 @@ export function buildUiHierarchySnapshot(
           presentationBudget,
         )
       : state;
-    const snapshot = { nodes, sourceNodes, analysis: state.analysis };
+    const snapshot = {
+      nodes,
+      sourceNodes,
+      occlusionContext: {
+        nodes: occlusionContextNodes,
+        sourceIndexByNodeIndex: new Map(
+          sourceNodes.flatMap((sourceNode, index) => {
+            const sourceIndex = sourceIndexBySourceNode.get(sourceNode);
+            const nodeIndex = nodes[index]?.index;
+            return sourceIndex === undefined || nodeIndex === undefined
+              ? []
+              : [[nodeIndex, sourceIndex] as const];
+          }),
+        ),
+        androidSiblingOrderByNodeIndex: collectAndroidSiblingOrders(state.sourceNodes),
+      },
+      analysis: state.analysis,
+    };
     return state.truncated ? { ...snapshot, truncated: true } : snapshot;
   } catch (error) {
     if (isAndroidSnapshotPresentationFailure(error)) {
@@ -120,6 +152,24 @@ export function buildUiHierarchySnapshot(
     }
     throw error;
   }
+}
+
+function collectAndroidSiblingOrders(
+  sourceNodes: readonly AndroidNode[],
+): ReadonlyMap<number, AndroidSiblingOrderEvidence> {
+  const groupByParent = new Map<AndroidNode, number>();
+  const orders = new Map<number, AndroidSiblingOrderEvidence>();
+  for (const [index, sourceNode] of sourceNodes.entries()) {
+    const siblingOrder = readAndroidSiblingOrder(sourceNode);
+    if (!siblingOrder) continue;
+    let group = groupByParent.get(siblingOrder.parent);
+    if (group === undefined) {
+      group = groupByParent.size;
+      groupByParent.set(siblingOrder.parent, group);
+    }
+    orders.set(index, { group, order: siblingOrder.order });
+  }
+  return orders;
 }
 
 /**

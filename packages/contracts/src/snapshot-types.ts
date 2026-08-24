@@ -64,7 +64,7 @@ export type AndroidSnapshotBackendMetadata = {
     workUnits: number;
     maxWorkUnits?: number;
   };
-  /** API 23 helper output carries no `drawing-order`; covered same-window surfaces are not pruned. */
+  /** API 23 exposes no sibling drawing order, so same-window occlusion fails conservative. */
   occlusionScanUnavailable?: boolean;
 };
 export type FindLocator = 'any' | 'text' | 'label' | 'value' | 'role' | 'id';

@@ -5,7 +5,11 @@ import {
 import type { Rect } from '@agent-device/kernel/snapshot';
 import { parseBounds } from '@agent-device/kernel/bounds';
 import { decodeXmlCharacterReferences } from '@agent-device/xml';
-import type { AndroidNode, AndroidUiHierarchy } from './ui-hierarchy-node.ts';
+import {
+  attachAndroidSiblingOrder,
+  type AndroidNode,
+  type AndroidUiHierarchy,
+} from './ui-hierarchy-node.ts';
 
 export type { AndroidUiHierarchy } from './ui-hierarchy-node.ts';
 export { buildUiHierarchySnapshot } from './ui-hierarchy-builder.ts';
@@ -260,7 +264,28 @@ export function parseUiHierarchyTree(xml: string): AndroidUiHierarchy {
     }
     const attrs = readAndroidUiNodeMetadata(token);
     const parent = stack[stack.length - 1]!;
-    const node: AndroidUiHierarchy = {
+    const node = normalizeAndroidUiHierarchyNode(attrs, parent.depth + 1, parent);
+    parent.children.push(node);
+    if (!token.endsWith('/>')) {
+      stack.push(node);
+    }
+    match = tokenRegex.exec(xml);
+  }
+  return root;
+}
+
+/**
+ * The one anti-corruption boundary from helper/API-specific metadata to presentation input.
+ * Acquisition-only facts such as API-24 `drawingOrder` deliberately stop here, so adding a helper
+ * or Android-version difference cannot silently change snapshot membership downstream.
+ */
+function normalizeAndroidUiHierarchyNode(
+  attrs: AndroidUiNodeMetadata,
+  depth: number,
+  parent: AndroidNode,
+): AndroidUiHierarchy {
+  return attachAndroidSiblingOrder(
+    {
       type: attrs.className,
       label: attrs.text || attrs.desc,
       value: attrs.text,
@@ -270,7 +295,6 @@ export function parseUiHierarchyTree(xml: string): AndroidUiHierarchy {
       enabled: attrs.enabled,
       focused: attrs.focused,
       visibleToUser: attrs.visibleToUser,
-      drawingOrder: attrs.drawingOrder,
       clickable: attrs.clickable === true,
       focusable: attrs.focusable === true,
       scrollable: attrs.scrollable,
@@ -282,15 +306,10 @@ export function parseUiHierarchyTree(xml: string): AndroidUiHierarchy {
       windowActive: attrs.windowActive,
       windowFocused: attrs.windowFocused,
       windowRect: attrs.windowRect,
-      depth: parent.depth + 1,
+      depth,
       parentIndex: undefined,
       children: [],
-    };
-    parent.children.push(node);
-    if (!token.endsWith('/>')) {
-      stack.push(node);
-    }
-    match = tokenRegex.exec(xml);
-  }
-  return root;
+    },
+    attrs.drawingOrder === undefined ? undefined : { parent, order: attrs.drawingOrder },
+  );
 }
