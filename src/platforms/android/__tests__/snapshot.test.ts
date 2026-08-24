@@ -360,7 +360,7 @@ test('snapshotAndroid reports helper-side truncation on the public snapshot resu
   assert.equal(result.androidSnapshot.helperTruncated, true);
 });
 
-test('snapshotAndroid discloses an unavailable occlusion scan when the helper tree carries no drawing-order (API 23)', async () => {
+test('snapshotAndroid discloses unavailable sibling order for API 23 helper trees', async () => {
   const captured: string[] = [];
   const helperAdb: AndroidAdbExecutor = async (args) => {
     if (args.includes('--show-versioncode')) return installedHelperProbe;
