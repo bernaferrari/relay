@@ -127,6 +127,110 @@ test('recorded-target resolution keeps the matched domain from the alternative t
   assert.equal(permissive.matchCount, 3);
 });
 
+/**
+ * Counts whole-array traversals of the snapshot tree: `for...of` passes through
+ * the iterator, plus every array scan layered on top of them. The scan list is
+ * the whole surface, not just the methods the resolver happens to use today, so
+ * a regression that reintroduces a full pass through `flatMap`/`forEach`/
+ * `reduce`/`some` cannot slip past a counter that only watches `filter`/`map`.
+ * Functions are bound to the target so a counted traversal cannot re-enter the
+ * proxy.
+ */
+const SCAN_METHODS = [
+  'filter',
+  'map',
+  'flatMap',
+  'forEach',
+  'reduce',
+  'reduceRight',
+  'some',
+  'every',
+  'find',
+  'findIndex',
+  'findLast',
+  'findLastIndex',
+  'includes',
+  'indexOf',
+] as const;
+type ScanMethod = (typeof SCAN_METHODS)[number];
+type ScanPasses = { iterated: number } & Record<ScanMethod, number>;
+
+function observeTreeTraversals(nodes: SnapshotNode[]): {
+  observed: SnapshotNode[];
+  passes: ScanPasses;
+} {
+  const passes = Object.fromEntries([
+    ['iterated', 0],
+    ...SCAN_METHODS.map((method) => [method, 0]),
+  ]) as ScanPasses;
+  const observed = new Proxy(nodes, {
+    get(target, property) {
+      if (property === Symbol.iterator) passes.iterated += 1;
+      for (const method of SCAN_METHODS) if (property === method) passes[method] += 1;
+      const value = Reflect.get(target, property) as unknown;
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return { observed, passes };
+}
+
+test('recorded-target resolution adds no second matching pass per selector alternative', () => {
+  const nodes: SnapshotNode[] = [
+    { ...saveNode, ref: 'e1', label: 'Decoy', identifier: undefined, depth: 1 },
+    { ...saveNode, ref: 'e2', label: 'Decoy', identifier: undefined, depth: 1 },
+    { ...saveNode, ref: 'e4', label: 'Save', identifier: 'save', depth: 1 },
+  ];
+
+  const resolved = observeTreeTraversals(nodes);
+  resolveRecordedTarget('id="missing" || id="save"', resolved.observed, policy());
+  // One matching pass per alternative tried, and no further pass rebuilding the
+  // winner's matched-node domain that the deciding pass already collected.
+  assert.deepEqual(resolved.passes, {
+    iterated: 2,
+    filter: 0,
+    map: 0,
+    flatMap: 0,
+    forEach: 0,
+    reduce: 0,
+    reduceRight: 0,
+    some: 0,
+    every: 0,
+    find: 0,
+    findIndex: 0,
+    findLast: 0,
+    findLastIndex: 0,
+    includes: 0,
+    indexOf: 0,
+  });
+
+  const unresolved = observeTreeTraversals(nodes);
+  resolveRecordedTarget('label="Decoy"', unresolved.observed, policy());
+  // The ambiguous leg reports that same domain instead of re-listing the chain's
+  // matches: one matching pass, no second one. The `map` is the deciding pass's
+  // own lazily-built visibility index. The `flatMap`s are NOT that pass — they
+  // are four whole-tree viewport-rect scans per ambiguous candidate, charged by
+  // `isNodeVisibleOnScreen` because the caller passes no precomputed viewport
+  // rects. They scale with the candidate count and predate this change; they are
+  // pinned here so the number cannot grow unnoticed, and are tracked separately.
+  assert.deepEqual(unresolved.passes, {
+    iterated: 1,
+    filter: 0,
+    map: 1,
+    flatMap: 8,
+    forEach: 0,
+    reduce: 0,
+    reduceRight: 0,
+    some: 0,
+    every: 0,
+    find: 0,
+    findIndex: 0,
+    findLast: 0,
+    findLastIndex: 0,
+    includes: 0,
+    indexOf: 0,
+  });
+});
+
 test('recorded-target resolution applies requireRect to both winner and domain', () => {
   const rectless: SnapshotNode = { ...saveNode, label: 'Ghost row', rect: undefined };
   const required = resolveRecordedTarget('label="Ghost row"', [rectless], policy());
