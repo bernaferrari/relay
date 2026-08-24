@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { isMacOs, type DeviceInfo } from '@agent-device/kernel/device';
 import { AppError, asAppError } from '@agent-device/kernel/errors';
 import { runAppleToolCommand } from '../tool-provider.ts';
@@ -7,6 +8,14 @@ const RUNNER_PRODUCT_REPAIR_FAILURE_REASONS = new Set([
   'RUNNER_PRODUCT_MISSING',
   'RUNNER_PRODUCT_REPAIR_FAILED',
 ]);
+
+const AD_HOC_RESIGN_ARGS = [
+  '--force',
+  // Designated requirements must be regenerated for the ad-hoc identity.
+  '--preserve-metadata=identifier,entitlements,flags,runtime',
+  '--sign',
+  '-',
+] as const;
 
 export async function repairMacOsRunnerProductsIfNeeded(
   device: DeviceInfo,
@@ -39,22 +48,50 @@ export async function repairMacOsRunnerProductsIfNeeded(
     if (await hasValidCodeSignature(productPath)) {
       continue;
     }
-    await runAppleToolCommand('codesign', ['--remove-signature', productPath], {
-      allowFailure: true,
-    });
-    try {
-      await runAppleToolCommand('codesign', ['--force', '--sign', '-', productPath]);
-    } catch (error) {
-      const appError = asAppError(error, 'COMMAND_FAILED');
-      throw new AppError('COMMAND_FAILED', 'Failed to repair macOS runner product signature', {
-        reason: 'RUNNER_PRODUCT_REPAIR_FAILED',
-        productPath,
-        xctestrunPath,
-        error: appError.message,
-        details: appError.details,
-      });
-    }
+    await resignRunnerProduct(productPath, xctestrunPath);
   }
+}
+
+async function resignRunnerProduct(productPath: string, xctestrunPath: string): Promise<void> {
+  try {
+    const frameworksPath = path.join(productPath, 'Contents', 'Frameworks');
+    const embeddedCodePaths = fs.existsSync(frameworksPath)
+      ? fs
+          .readdirSync(frameworksPath)
+          .sort()
+          .map((itemName) => path.join(frameworksPath, itemName))
+      : [];
+    for (const embeddedCodePath of embeddedCodePaths) {
+      await runAppleToolCommand('codesign', [...AD_HOC_RESIGN_ARGS, embeddedCodePath]);
+    }
+    await runAppleToolCommand('codesign', [...AD_HOC_RESIGN_ARGS, productPath]);
+  } catch (error) {
+    const appError = asAppError(error, 'COMMAND_FAILED');
+    throw repairFailure(productPath, xctestrunPath, appError.message, appError.details);
+  }
+
+  if (!(await hasValidCodeSignature(productPath))) {
+    throw repairFailure(
+      productPath,
+      xctestrunPath,
+      'Product still fails code signature verification after re-signing',
+    );
+  }
+}
+
+function repairFailure(
+  productPath: string,
+  xctestrunPath: string,
+  error: string,
+  details?: unknown,
+): AppError {
+  return new AppError('COMMAND_FAILED', 'Failed to repair macOS runner product signature', {
+    reason: 'RUNNER_PRODUCT_REPAIR_FAILED',
+    productPath,
+    xctestrunPath,
+    error,
+    details,
+  });
 }
 
 export function isExpectedRunnerRepairFailure(error: unknown): boolean {
