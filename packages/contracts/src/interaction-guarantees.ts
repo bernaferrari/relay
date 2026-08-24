@@ -78,9 +78,9 @@ export const INTERACTION_PATH_IDS = [
   'runtime-selector',
   'runtime-ref',
   'target-drag',
-  'direct-ios-selector',
   'native-ref',
   'coordinate',
+  'maestro-direct-selector',
   'maestro-non-hittable-fallback',
 ] as const;
 
@@ -296,69 +296,6 @@ export const INTERACTION_DISPATCH_PATHS: Record<InteractionPathId, InteractionPa
       },
     },
   },
-  'direct-ios-selector': {
-    description:
-      'Simple press selectors on iOS are sent to the XCTest runner, which queries and taps natively without a daemon tree capture. Fill deliberately resolves through the runtime tree so AX-hostile text inputs carry typed target evidence into coordinate entry.',
-    commands: ['press'],
-    guarantees: {
-      disambiguation: {
-        kind: 'delegated',
-        to: 'runtime-selector',
-        via: 'RunnerSelectorMatchPolicy.swift#classifyDirectSelectorCandidates rejects multiple raw exact matches before hittability; AMBIGUOUS_MATCH then falls back to runtime structural-equivalence classification for non-maestro dispatches',
-      },
-      occlusion: {
-        kind: 'delegated',
-        to: 'runtime-selector',
-        via: 'runner ELEMENT_NOT_FOUND/AMBIGUOUS_MATCH fall back to tree-based resolution (isDirectIosSelectorFallbackError delegateSemanticFailures; non-maestro dispatches only) — XCTest skips covered/non-hittable matches, so the runtime path raises the covered-element refusal with its hint',
-      },
-      parentOwnedTouchPoint: {
-        kind: 'waived',
-        reason:
-          'gap: the direct runner path has the matched element but no daemon snapshot tree from which to classify independently interactive descendants.',
-        trackingIssue: PARENT_OWNED_TOUCH_POINT_GAP_ISSUE,
-      },
-      offscreen: {
-        // Decision: TapPointPolicy (pure geometry, parity-tested against the
-        // TS twin isTapPointInsideViewport). onScreenWindowFrame stays the
-        // impure frame getter feeding it.
-        kind: 'runner',
-        via: 'RunnerTapPointPolicy.swift#TapPointPolicy',
-        parityTable: 'contracts/fixtures/tap-point-policy.json',
-      },
-      nonHittable: {
-        kind: 'delegated',
-        to: 'runtime-selector',
-        via: 'runner ELEMENT_NOT_FOUND (non-hittable matches are skipped runner-side) falls back to tree-based resolution (isDirectIosSelectorFallbackError delegateSemanticFailures; non-maestro dispatches only), which promotes to a hittable ancestor or annotates targetHittable/hint',
-      },
-      responseConstruction: SHARED_RESPONSE_CONSTRUCTION,
-      responseIdentity: {
-        kind: 'waived',
-        reason: 'gap: refLabel/selectorChain are absent on the direct path.',
-        trackingIssue: GAPS_UMBRELLA_ISSUE,
-      },
-      verifyEvidence: {
-        kind: 'delegated',
-        to: 'runtime-selector',
-        via: '--verify disables the direct path when the descriptor post-action observation trait supports verify evidence',
-      },
-      settleObservation: {
-        kind: 'delegated',
-        to: 'runtime-selector',
-        via: '--settle disables the direct path when the descriptor post-action observation trait supports settle observation — settling needs the tree-based baseline and captures',
-      },
-      errorTaxonomy: {
-        kind: 'delegated',
-        to: 'runtime-selector',
-        via: 'runner ELEMENT_NOT_FOUND/AMBIGUOUS_MATCH fall back to tree-based resolution (isDirectIosSelectorFallbackError delegateSemanticFailures; non-maestro dispatches only), which attaches the shared no-match diagnostics, ambiguous shape, and hints',
-      },
-      // No daemon tree, so only the not-observed marker — no counts or
-      // candidates, and no parity table (that would imply runtime parity).
-      resolutionDisclosure: {
-        kind: 'runtime',
-        via: 'src/daemon/handlers/interaction-touch-response.ts#buildInteractionResponseData',
-      },
-    },
-  },
   'native-ref': {
     // WEB-ONLY in production: apple/android backends never define
     // tapTarget/fillTarget/hoverTarget - the sole wiring is the web provider's
@@ -366,7 +303,7 @@ export const INTERACTION_DISPATCH_PATHS: Record<InteractionPathId, InteractionPa
     // 2026-07-04 while designing the #1088 retirement experiment, which this
     // finding dissolved: there is no iOS runner round trip to retire.
     description:
-      'click @ref / fill @ref / hover @ref dispatch to backend.tapTarget/fillTarget/hoverTarget (web provider clickRef/fillRef/hoverRef only; no mobile backend implements these) without runtime resolution when no non-default options are set. A zero-round-trip preflight (preflightNativeRefInteraction) runs the shared guards against the stored session snapshot node first; no snapshot / no usable rect makes the preflight a no-op.',
+      'click @ref / fill @ref / hover @ref dispatch through the bound touch operation, whose web runtime owner selects clickRef/fillRef/hoverRef internally; no mobile owner advertises native-ref support. The route bypasses runtime resolution when no non-default options are set. A zero-round-trip preflight (preflightNativeRefInteraction) runs the shared guards against the stored session snapshot node first; no snapshot / no usable rect makes the preflight a no-op.',
     commands: ['click', 'fill', 'hover'],
     guarantees: {
       disambiguation: {
@@ -474,10 +411,67 @@ export const INTERACTION_DISPATCH_PATHS: Record<InteractionPathId, InteractionPa
       },
     },
   },
+  'maestro-direct-selector': {
+    description:
+      'An explicit Maestro-compatible simple-selector click completed as an XCTest element tap. This path is selected only when the runner was allowed to use the non-hittable coordinate fallback but reported that it did not use it.',
+    commands: ['click'],
+    guarantees: {
+      disambiguation: {
+        kind: 'waived',
+        reason:
+          'Intentional: Maestro replay uses its expected-point compatibility scan rather than runtime structural-equivalence-or-reject semantics.',
+      },
+      occlusion: {
+        kind: 'waived',
+        reason:
+          'Intentional: the direct element-tap outcome relies on XCTest hittability instead of the daemon snapshot occlusion classifier.',
+      },
+      parentOwnedTouchPoint: {
+        kind: 'waived',
+        reason:
+          'gap: the runner has the matched element but no daemon snapshot tree from which to exclude independently interactive descendants.',
+        trackingIssue: PARENT_OWNED_TOUCH_POINT_GAP_ISSUE,
+      },
+      offscreen: {
+        kind: 'waived',
+        reason:
+          'Intentional: successful direct element taps rely on XCTest hittability instead of the daemon viewport rule.',
+      },
+      nonHittable: {
+        kind: 'inapplicable',
+        reason:
+          'A non-hittable candidate that succeeds does so through the separate maestro-non-hittable-fallback path.',
+      },
+      responseConstruction: SHARED_RESPONSE_CONSTRUCTION,
+      responseIdentity: {
+        kind: 'waived',
+        reason:
+          'gap: the fused runner request does not return daemon refLabel or selectorChain fields.',
+        trackingIssue: GAPS_UMBRELLA_ISSUE,
+      },
+      verifyEvidence: {
+        kind: 'inapplicable',
+        reason: 'The eligibility gate excludes --verify from this replay-only route.',
+      },
+      settleObservation: {
+        kind: 'inapplicable',
+        reason: 'The eligibility gate excludes --settle from this replay-only route.',
+      },
+      errorTaxonomy: {
+        kind: 'waived',
+        reason: 'gap: Maestro preserves the runner-native direct-selector error shapes.',
+        trackingIssue: GAPS_UMBRELLA_ISSUE,
+      },
+      resolutionDisclosure: {
+        kind: 'runtime',
+        via: 'src/daemon/handlers/interaction-touch-response.ts#buildInteractionResponseData',
+      },
+    },
+  },
   'maestro-non-hittable-fallback': {
     description:
       'Replay-only coordinate fallback for non-hittable elements (allowNonHittableCoordinateFallback), matching Maestro semantics.',
-    commands: ['press', 'fill'],
+    commands: ['press', 'click', 'fill'],
     guarantees: {
       disambiguation: {
         kind: 'waived',

@@ -26,6 +26,11 @@ test('every dispatch path classifies every guarantee', () => {
   }
 });
 
+test('direct Maestro clicks and executed coordinate fallbacks are distinct narrow paths', () => {
+  assert.deepEqual(INTERACTION_DISPATCH_PATHS['maestro-direct-selector'].commands, ['click']);
+  assert.ok(INTERACTION_DISPATCH_PATHS['maestro-non-hittable-fallback'].commands.includes('click'));
+});
+
 test('runtime enforcement entries reference real exported symbols', async () => {
   for (const [pathId, contract] of Object.entries(INTERACTION_DISPATCH_PATHS)) {
     for (const [guarantee, enforcement] of Object.entries(contract.guarantees)) {
@@ -158,8 +163,9 @@ test('acknowledged gaps are visible and bounded', () => {
   // updates it here with a linked issue. It is the diffable debt list
   // (umbrella: https://github.com/callstack/agent-device/issues/1081).
   assert.deepEqual(gaps.sort(), [
-    'direct-ios-selector/parentOwnedTouchPoint',
-    'direct-ios-selector/responseIdentity',
+    'maestro-direct-selector/errorTaxonomy',
+    'maestro-direct-selector/parentOwnedTouchPoint',
+    'maestro-direct-selector/responseIdentity',
     'maestro-non-hittable-fallback/errorTaxonomy',
     'maestro-non-hittable-fallback/parentOwnedTouchPoint',
   ]);
