@@ -1,11 +1,11 @@
+import type { EnsureReadyInput } from '@agent-device/contracts/device-readiness-runtime';
+import type { NetworkDumpInput } from '@agent-device/contracts/network-runtime';
+import type { DeviceBinding, RuntimeOperationFact } from '@agent-device/contracts/platform-runtime';
 import type {
-  DeviceBinding,
-  NetworkDumpInput,
   PlatformRuntimeHost,
   PlatformRuntimeOperations,
   PlatformRuntimeOwner,
-  EnsureReadyInput,
-} from '@agent-device/contracts/platform';
+} from '@agent-device/contracts/platform-runtime-operations';
 import {
   applicationLifecycleOperationFacts,
   availableApplicationLifecycleOperations,
@@ -33,6 +33,12 @@ import {
   typeTextRuntimeOperationFacts,
 } from '@agent-device/contracts/type-text-runtime';
 import { viewportRuntimeOperationFacts } from '@agent-device/contracts/viewport-runtime';
+import { backRuntimeOperationFacts } from '@agent-device/contracts/back-runtime';
+import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
+import { bindAdmittedLocalInteractorOperations } from '@agent-device/contracts/interactor-operation-catalog';
+import { keyboardRuntimeOperationFacts } from '@agent-device/contracts/keyboard-runtime';
+import { orientationRuntimeOperationFacts } from '@agent-device/contracts/orientation-runtime';
+import { tvRemoteRuntimeOperationFacts } from '@agent-device/contracts/tv-remote-runtime';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { createAndroidAppLogRuntime } from './logs/runtime.ts';
 import { dumpAndroidNetworkTraffic } from './network/runtime.ts';
@@ -159,6 +165,20 @@ function androidTouchFact(device: DeviceInfo) {
   return device.kind === 'simulator' ? focusKindUnavailable : available;
 }
 
+const tvRemoteUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-device-kind',
+  hint: 'tv-remote is supported only on Android TV targets.',
+} as const);
+/**
+ * Parity with the retired `androidPlugin` closure: the TV-target gate, whose hint fired
+ * regardless of device kind (the closure never distinguished the synthetic `simulator` row from
+ * a real non-TV device), so both refuse with the identical hint text.
+ */
+function androidTvRemoteFact(device: DeviceInfo): RuntimeOperationFact {
+  return device.kind !== 'simulator' && device.target === 'tv' ? available : tvRemoteUnavailable;
+}
+
 export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): PlatformRuntimeOwner {
   const appLogs = createAndroidAppLogRuntime(host);
   const inspectFacts = async (device: Parameters<typeof appLogs.inspectFacts>[0]) => {
@@ -196,6 +216,17 @@ export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): Platfor
         // synthetic `simulator` row is the only Android kind without a live read.
         ...elementTextRuntimeOperationFacts({
           readTextAtPoint: device.kind === 'simulator' ? elementTextKindUnavailable : available,
+        }),
+        ...backRuntimeOperationFacts({ back: androidTouchFact(device) }),
+        ...homeRuntimeOperationFacts({ home: androidTouchFact(device) }),
+        ...orientationRuntimeOperationFacts({ orientation: androidTouchFact(device) }),
+        ...tvRemoteRuntimeOperationFacts({ tvRemote: androidTvRemoteFact(device) }),
+        // The only owner with a live IME status read; dismiss/enter share every other
+        // interaction cell's kind gate (parity with the retired `keyboard` bucket).
+        ...keyboardRuntimeOperationFacts({
+          status: androidTouchFact(device),
+          dismiss: androidTouchFact(device),
+          enter: androidTouchFact(device),
         }),
         ensureReady: available,
         bootTarget: available,
@@ -278,6 +309,12 @@ export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): Platfor
                 resolveInteractor: host.localInteractors.resolve,
               })
             : {}),
+          ...bindAdmittedLocalInteractorOperations({
+            device: request.device,
+            signal: request.scope.signal,
+            resolveInteractor: host.localInteractors.resolve,
+            facts: facts.operations,
+          }),
           ensureReady: async (input: EnsureReadyInput) =>
             await ensureAndroidReady(
               host,

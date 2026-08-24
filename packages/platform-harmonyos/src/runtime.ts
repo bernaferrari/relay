@@ -1,19 +1,23 @@
+import type { DeviceBinding, RuntimeOperationFact } from '@agent-device/contracts/platform-runtime';
 import type {
-  DeviceBinding,
   PlatformRuntimeHost,
   PlatformRuntimeOperations,
   PlatformRuntimeOwner,
-  RuntimeOperationFact,
-} from '@agent-device/contracts/platform';
+} from '@agent-device/contracts/platform-runtime-operations';
 import {
   applicationLifecycleOperationFacts,
   availableApplicationLifecycleOperations,
 } from '@agent-device/contracts/application-lifecycle-runtime';
+import { backRuntimeOperationFacts } from '@agent-device/contracts/back-runtime';
 import { elementTextRuntimeOperationFacts } from '@agent-device/contracts/element-text-runtime';
 import {
   bindLocalFocusInteractor,
   focusRuntimeOperationFacts,
 } from '@agent-device/contracts/focus-runtime';
+import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
+import { bindAdmittedLocalInteractorOperations } from '@agent-device/contracts/interactor-operation-catalog';
+import { keyboardRuntimeOperationFacts } from '@agent-device/contracts/keyboard-runtime';
+import { orientationRuntimeOperationFacts } from '@agent-device/contracts/orientation-runtime';
 import { localRuntimeOwner } from '@agent-device/contracts/platform-runtime';
 import {
   bindLocalScreenshotInteractor,
@@ -24,6 +28,7 @@ import {
   bindLocalSnapshotInteractor,
   snapshotRuntimeOperationFacts,
 } from '@agent-device/contracts/snapshot-runtime';
+import { tvRemoteRuntimeOperationFacts } from '@agent-device/contracts/tv-remote-runtime';
 import {
   bindLocalTypeTextInteractor,
   typeTextRuntimeOperationFacts,
@@ -142,6 +147,24 @@ function harmonyFocusFact(device: DeviceInfo): RuntimeOperationFact {
   return device.kind === 'emulator' || device.kind === 'device' ? available : focusKindUnavailable;
 }
 
+/**
+ * `orientation` and `tv-remote` never carried a HarmonyOS capability bucket: the family is absent
+ * from `HARMONYOS_SUPPORTED_COMMANDS` for both, so both are unavailable unconditionally — even
+ * though the interactor's own `setOrientation` is technically callable, admission never reached it.
+ */
+const harmonyPlatformLeafUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-platform-leaf',
+} as const);
+
+/** Android's live IME status read has no HarmonyOS counterpart (parity with the retired leaf,
+ * which rejected `status`/`get` on every non-Android family). */
+const harmonyKeyboardStatusUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-platform-leaf',
+  hint: 'keyboard status/get is not available through the public HarmonyOS HDC API; use keyboard dismiss or enter',
+} as const);
+
 export function createHarmonyPlatformRuntime(host: PlatformRuntimeHost): PlatformRuntimeOwner {
   const appLogs = createHarmonyAppLogRuntime(host);
   const inspectFacts = async (device: Parameters<typeof appLogs.inspectFacts>[0]) => {
@@ -187,6 +210,15 @@ export function createHarmonyPlatformRuntime(host: PlatformRuntimeHost): Platfor
         // HarmonyOS has no point-read tool: `get` answers from the captured tree, which is what
         // the legacy dispatch already did after its Apple-runner attempt failed.
         ...elementTextRuntimeOperationFacts({ readTextAtPoint: elementTextUnavailable }),
+        ...backRuntimeOperationFacts({ back: harmonyFocusFact(device) }),
+        ...homeRuntimeOperationFacts({ home: harmonyFocusFact(device) }),
+        ...orientationRuntimeOperationFacts({ orientation: harmonyPlatformLeafUnavailable }),
+        ...tvRemoteRuntimeOperationFacts({ tvRemote: harmonyPlatformLeafUnavailable }),
+        ...keyboardRuntimeOperationFacts({
+          status: harmonyKeyboardStatusUnavailable,
+          dismiss: harmonyFocusFact(device),
+          enter: harmonyFocusFact(device),
+        }),
         ensureReady: available,
         bootTarget: unavailable,
         bootTargetHeadless: unavailable,
@@ -262,6 +294,12 @@ export function createHarmonyPlatformRuntime(host: PlatformRuntimeHost): Platfor
                 resolveInteractor: host.localInteractors.resolve,
               })
             : {}),
+          ...bindAdmittedLocalInteractorOperations({
+            device: request.device,
+            signal: request.scope.signal,
+            resolveInteractor: host.localInteractors.resolve,
+            facts: facts.operations,
+          }),
           listApps: async (input: { device: DeviceInfo; filter: 'all' | 'user-installed' }) =>
             await host.appInventory.harmonyos.listApps(
               input.device,

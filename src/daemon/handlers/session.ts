@@ -1,8 +1,8 @@
 import { dispatchCommand } from '../../core/dispatch.ts';
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
 import type { AndroidAdbExecutor } from '../../platforms/android/adb-executor.ts';
-import { publicPlatformString, type DeviceInfo } from '@agent-device/kernel/device';
-import type { DaemonInvokeFn, DaemonRequest, DaemonResponse, SessionState } from '../types.ts';
+import { publicPlatformString } from '@agent-device/kernel/device';
+import type { DaemonInvokeFn, DaemonRequest, DaemonResponse } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
 import { contextFromFlags } from '../context.ts';
 import { handleReleaseMaterializedPathsCommand } from './session-app-source-deployment.ts';
@@ -14,9 +14,9 @@ import { requireRuntimeBinding, requireRuntimeFacts } from './session-runtime-ad
 import { handleOpenCommand } from './session-open.ts';
 import { composeOpenWithInitialSnapshot } from './session-open-foreground.ts';
 import {
-  resolveAndroidPackageForOpen,
-  resolveSessionAppBundleIdForTarget,
-} from '../../platform-runtime-open-target.ts';
+  handleKeyboardCommand,
+  handleTriggerAppEventCommand,
+} from './session-selector-dispatch.ts';
 import { handleCloseCommand } from './session-close.ts';
 import { handleSessionAppDeploymentCommand } from './session-app-deployment-route.ts';
 import { runBatchCommands } from './session-batch.ts';
@@ -27,9 +27,7 @@ import { handleSessionReplayCommands } from './session-replay.ts';
 import { handleSessionScriptPublication } from './session-script-publication.ts';
 import { handleDoctorCommand } from './session-doctor.ts';
 import { handlePrepareCommand } from './session-prepare.ts';
-import { resolveRefFrameEffect } from '../daemon-command-registry.ts';
 import type { DescriptorSessionRouteCommandName } from '../../core/command-descriptor/registry.ts';
-import { expireRefFrame } from '../ref-frame.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import type { LeaseLifecycleProvider } from '@agent-device/contracts/device';
 import type {
@@ -41,69 +39,6 @@ import type { DeviceClaimReconciler } from '../device-claims.ts';
 import type { AppLogAdmissionLedger } from '../app-log-admission-ledger.ts';
 import type { ScreenRecordingAdmissionLedger } from '../screen-recording-admission-ledger.ts';
 import type { PlatformRequestScope } from '@agent-device/contracts/platform';
-
-// fallow-ignore-next-line complexity
-async function runSessionOrSelectorDispatch(params: {
-  req: DaemonRequest;
-  sessionName: string;
-  logPath: string;
-  sessionStore: SessionStore;
-  command: string;
-  positionals: string[];
-  recordPositionals?: string[];
-  deriveNextSession?: (
-    session: SessionState,
-    result: Record<string, unknown> | void,
-    device: DeviceInfo,
-  ) => Promise<SessionState> | SessionState;
-}): Promise<DaemonResponse> {
-  const {
-    req,
-    sessionName,
-    logPath,
-    sessionStore,
-    command,
-    positionals,
-    recordPositionals,
-    deriveNextSession,
-  } = params;
-  const session = sessionStore.get(sessionName);
-  const flags = req.flags ?? {};
-  const guard = requireSessionOrExplicitSelector(command, session, flags);
-  if (guard) return guard;
-
-  const device = await resolveCommandDevice({
-    session,
-    flags,
-    ensureReady: true,
-  });
-  const unsupported = requireCommandSupported(command, device);
-  if (unsupported) return unsupported;
-
-  // ADR 0014 side-effect seam for session/selector-route leaves (keyboard
-  // dismiss/enter/return, push, trigger-app-event). Expire the frame before the
-  // dispatch when the classification says this request mutates; keyboard
-  // status/get resolve to `preserve` and leave the frame untouched.
-  if (session && resolveRefFrameEffect(req) === 'may-invalidate') {
-    expireRefFrame(session);
-  }
-
-  const result = await dispatchCommand(device, command, positionals, req.flags?.out, {
-    ...contextFromFlags(logPath, req.flags, session?.appBundleId, session?.trace?.outPath),
-  });
-  if (session) {
-    const nextSession = deriveNextSession
-      ? await deriveNextSession(session, result, device)
-      : session;
-    recordSessionAction(sessionStore, nextSession, req, command, result ?? {}, {
-      positionals: recordPositionals ?? positionals,
-    });
-    if (nextSession !== session) {
-      sessionStore.set(sessionName, nextSession);
-    }
-  }
-  return { ok: true, data: result ?? {} };
-}
 
 // fallow-ignore-next-line complexity
 async function handleClipboardCommand(params: {
@@ -251,59 +186,6 @@ const handleSessionReplayCommandGroup: SessionCommandHandler = async ({
     retainDeviceExecutionLock,
     throwIfCanceled,
   });
-
-async function handleKeyboardCommand(params: SessionCommandParams): Promise<DaemonResponse> {
-  const { req, sessionName, logPath, sessionStore } = params;
-  const session = sessionStore.get(sessionName);
-  const keyboardAction = req.positionals?.[0]?.trim().toLowerCase();
-  const needsForegroundIosApp =
-    keyboardAction === 'dismiss' || keyboardAction === 'enter' || keyboardAction === 'return';
-  if (!session && needsForegroundIosApp) {
-    const flags = req.flags ?? {};
-    const normalizedPlatform = flags.platform;
-    if (normalizedPlatform === 'ios') {
-      return errorResponse(
-        'SESSION_NOT_FOUND',
-        'iOS keyboard action requires an active session so the target app stays foregrounded. Run open first.',
-      );
-    }
-  }
-  return await runSessionOrSelectorDispatch({
-    req,
-    sessionName,
-    logPath,
-    sessionStore,
-    command: PUBLIC_COMMANDS.keyboard,
-    positionals: req.positionals ?? [],
-  });
-}
-
-async function handleTriggerAppEventCommand(params: SessionCommandParams): Promise<DaemonResponse> {
-  const { req, sessionName, logPath, sessionStore } = params;
-  return await runSessionOrSelectorDispatch({
-    req,
-    sessionName,
-    logPath,
-    sessionStore,
-    command: PUBLIC_COMMANDS.triggerAppEvent,
-    positionals: req.positionals ?? [],
-    deriveNextSession: async (session, result) => {
-      const eventUrl = typeof result?.eventUrl === 'string' ? result.eventUrl : undefined;
-      const nextAppBundleId = eventUrl
-        ? ((await resolveSessionAppBundleIdForTarget(
-            session.device,
-            eventUrl,
-            session.appBundleId,
-            resolveAndroidPackageForOpen,
-          )) ?? session.appBundleId)
-        : session.appBundleId;
-      return {
-        ...session,
-        appBundleId: nextAppBundleId,
-      };
-    },
-  });
-}
 
 /**
  * Descriptor-driven exhaustive dispatch table for the daemon's `session`
