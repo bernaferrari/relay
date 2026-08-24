@@ -3,13 +3,16 @@
 // so a rule that stopped matching would look exactly like a rule being obeyed.
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { listSourceFiles } from './check.ts';
 import { readDirectNamedExports, readNamedExports, readReExportSources } from './facade-exports.ts';
 import {
   checkPackageBoundaries,
+  facadeEntryFiles,
   checkPackageInternalSites,
   checkRootSites,
   readWorkspacePackages,
@@ -137,6 +140,48 @@ test('specifier sites carry 1-based lines for static and dynamic imports', () =>
   );
 });
 
+test('readWorkspacePackages reads tracked manifests only', () => {
+  // R11's own committed-state property, and the source-level half of the #1965 review finding.
+  // `readWorkspacePackages` used to enumerate `packages/` with `readdirSync`, so an uncommitted
+  // scratch package contributed a name, export targets, and dependency edges to every rule built
+  // on it — R11 could fail on work a contributor had not committed. Filtering the OUTPUT of
+  // façade discovery hides that from one caller; this closes it for all of them.
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'package-boundaries-tracked-manifests-'));
+  const committed = path.join(repo, 'packages/committed');
+  fs.mkdirSync(path.join(committed, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(committed, 'package.json'),
+    JSON.stringify({ name: '@agent-device/committed', exports: { '.': './src/index.ts' } }),
+  );
+  fs.writeFileSync(path.join(committed, 'src/index.ts'), 'export const a = 1;\n');
+  execFileSync('git', ['init', '-q'], { cwd: repo });
+  execFileSync('git', ['add', '.'], { cwd: repo });
+  execFileSync(
+    'git',
+    ['-c', 'user.name=Gate', '-c', 'user.email=gate@example.test', 'commit', '-qm', 'base'],
+    { cwd: repo },
+  );
+
+  const scratch = path.join(repo, 'packages/scratch');
+  fs.mkdirSync(path.join(scratch, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(scratch, 'package.json'),
+    JSON.stringify({
+      name: '@agent-device/scratch',
+      exports: { '.': './src/index.ts' },
+      dependencies: { '@agent-device/committed': 'workspace:*' },
+    }),
+  );
+  fs.writeFileSync(path.join(scratch, 'src/index.ts'), 'export const b = 2;\n');
+
+  const names = readWorkspacePackages(repo).map((pkg) => pkg.name);
+  assert.deepEqual(names, ['@agent-device/committed']);
+  assert.ok(
+    !names.includes('@agent-device/scratch'),
+    'an uncommitted package directory is not part of the committed state R11 describes',
+  );
+});
+
 test('every workspace package façade names its exports explicitly (no bare `export *`)', () => {
   // #1574 built a hand-maintained pin table (`facade-symbols.ts`, 816 symbols across every
   // workspace-package façade) plus a ~200-line star-chain resolver (`readFacadeExports`) whose
@@ -144,17 +189,17 @@ test('every workspace package façade names its exports explicitly (no bare `exp
   // the façade file itself IS the pin — a widening shows up in the diff of the file that grew,
   // not in a table two files away that only a gate failure would surface. This structural gate is
   // what keeps that property true: every façade a package manifest declares (`exportTargets`),
-  // plus every file under a `packages/*/src/facades/` directory, must parse through
+  // plus every production file under a `src/facades/` directory, must parse through
   // `readNamedExports` without hitting the bare-`export *`/`export default` rejection it already
   // implements — reusing that check rather than writing a second, regex-based one that would have
   // to independently rediscover every export form to be trustworthy.
-  const packages = readWorkspacePackages(repoRoot);
-  const facadeFiles = new Set<string>(packages.flatMap((pkg) => [...pkg.exportTargets.values()]));
-  for (const file of listSourceFiles()) {
-    if (file.includes('/src/facades/')) facadeFiles.add(file);
-  }
-  assert.ok(facadeFiles.size > 0, 'expected at least one workspace package façade to check');
-  for (const file of [...facadeFiles].sort()) {
+  //
+  // The façade set comes from `facadeEntryFiles`, the single owner of "what is an entry surface".
+  // The ADR-0019 eager-closure budget table consumes the same function, so a file this gate holds
+  // to an explicit export list is necessarily a file that gate holds to a loading-shape budget.
+  const facadeFiles = facadeEntryFiles(repoRoot);
+  assert.ok(facadeFiles.length > 0, 'expected at least one workspace package façade to check');
+  for (const file of facadeFiles) {
     const source = fs.readFileSync(path.join(repoRoot, file), 'utf8');
     try {
       readNamedExports(source);
