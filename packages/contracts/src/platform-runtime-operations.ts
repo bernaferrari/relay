@@ -24,6 +24,7 @@ import type { HomeRuntimeOperations } from './home-runtime.ts';
 import type { OrientationRuntimeOperations } from './orientation-runtime.ts';
 import type { TvRemoteRuntimeOperations } from './tv-remote-runtime.ts';
 import type { KeyboardRuntimeOperations } from './keyboard-runtime.ts';
+import type { TouchRuntimeOperations } from './touch-runtime.ts';
 import type {
   DeviceReadinessRuntimeHost,
   DeviceReadinessRuntimeOperations,
@@ -65,6 +66,7 @@ export type PlatformRuntimeOperations = AppLogRuntimeOperations &
   OrientationRuntimeOperations &
   TvRemoteRuntimeOperations &
   KeyboardRuntimeOperations &
+  TouchRuntimeOperations &
   DeviceReadinessRuntimeOperations &
   DeviceShutdownRuntimeOperations &
   ApplicationLifecycleRuntimeOperations;
@@ -93,6 +95,79 @@ export const tvRemoteRuntimeUse = defineUse({ required: ['tvRemote'] });
 export const keyboardStatusUse = defineUse({ required: ['keyboardStatus'] });
 export const keyboardDismissUse = defineUse({ required: ['keyboardDismiss'] });
 export const keyboardEnterUse = defineUse({ required: ['keyboardEnter'] });
+export const tapPointUse = defineUse({ required: ['tapPoint'] });
+export const capturedTapUse = defineUse({
+  required: ['captureSnapshot', 'tapPoint'],
+  preferred: ['tapRef'],
+  conditional: ['tapElementSelector'],
+});
+export const longPressPointUse = defineUse({ required: ['longPressPoint'] });
+export const capturedLongPressUse = defineUse({
+  required: ['captureSnapshot', 'longPressPoint'],
+});
+export const hoverPointUse = defineUse({ required: ['hoverPoint'] });
+export const capturedHoverUse = defineUse({
+  required: ['captureSnapshot', 'hoverPoint'],
+  preferred: ['hoverRef'],
+});
+export const fillPointUse = defineUse({ required: ['fillPoint'] });
+export const capturedFillUse = defineUse({
+  required: ['captureSnapshot', 'fillPoint'],
+  preferred: ['fillRef'],
+});
+
+export const clickRuntimeUses = Object.freeze([tapPointUse, capturedTapUse] as const);
+export const pressRuntimeUses = clickRuntimeUses;
+export const longPressRuntimeUses = Object.freeze([
+  longPressPointUse,
+  capturedLongPressUse,
+] as const);
+export const hoverRuntimeUses = Object.freeze([hoverPointUse, capturedHoverUse] as const);
+export const fillRuntimeUses = Object.freeze([fillPointUse, capturedFillUse] as const);
+
+export type TouchRuntimePlan =
+  | Readonly<{ kind: 'tap-point'; use: typeof tapPointUse }>
+  | Readonly<{ kind: 'captured-tap'; use: typeof capturedTapUse }>
+  | Readonly<{
+      kind: 'long-press-point';
+      use: typeof longPressPointUse;
+    }>
+  | Readonly<{
+      kind: 'captured-long-press';
+      use: typeof capturedLongPressUse;
+    }>
+  | Readonly<{ kind: 'hover-point'; use: typeof hoverPointUse }>
+  | Readonly<{
+      kind: 'captured-hover';
+      use: typeof capturedHoverUse;
+    }>
+  | Readonly<{ kind: 'fill-point'; use: typeof fillPointUse }>
+  | Readonly<{ kind: 'captured-fill'; use: typeof capturedFillUse }>;
+
+export function resolveTouchRuntimePlan(
+  command: 'click' | 'press' | 'fill' | 'longpress' | 'hover',
+  requiresCapture: boolean,
+): TouchRuntimePlan {
+  switch (command) {
+    case 'click':
+    case 'press':
+      return requiresCapture
+        ? { kind: 'captured-tap', use: capturedTapUse }
+        : { kind: 'tap-point', use: tapPointUse };
+    case 'fill':
+      return requiresCapture
+        ? { kind: 'captured-fill', use: capturedFillUse }
+        : { kind: 'fill-point', use: fillPointUse };
+    case 'longpress':
+      return requiresCapture
+        ? { kind: 'captured-long-press', use: capturedLongPressUse }
+        : { kind: 'long-press-point', use: longPressPointUse };
+    case 'hover':
+      return requiresCapture
+        ? { kind: 'captured-hover', use: capturedHoverUse }
+        : { kind: 'hover-point', use: hoverPointUse };
+  }
+}
 const captureSnapshotWithCustomActionsUse = defineUse({
   required: ['captureSnapshot', 'captureSnapshotWithCustomActions'],
 });

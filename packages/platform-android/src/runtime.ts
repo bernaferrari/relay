@@ -18,7 +18,7 @@ import {
   bindLocalFocusInteractor,
   focusRuntimeOperationFacts,
 } from '@agent-device/contracts/focus-runtime';
-import { localRuntimeOwner } from '@agent-device/contracts/platform-runtime';
+import { localRuntimeOwner, whenAdmitted } from '@agent-device/contracts/platform-runtime';
 import {
   bindLocalScreenshotInteractor,
   screenshotRuntimeOperationFacts,
@@ -32,6 +32,10 @@ import {
   bindLocalTypeTextInteractor,
   typeTextRuntimeOperationFacts,
 } from '@agent-device/contracts/type-text-runtime';
+import {
+  bindLocalTouchInteractor,
+  touchRuntimeOperationFacts,
+} from '@agent-device/contracts/touch-runtime';
 import { viewportRuntimeOperationFacts } from '@agent-device/contracts/viewport-runtime';
 import { backRuntimeOperationFacts } from '@agent-device/contracts/back-runtime';
 import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
@@ -65,6 +69,10 @@ const focusKindUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-device-kind',
   hint: 'focus is supported on Android emulators and physical devices.',
+} as const);
+const hoverUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-platform-leaf',
 } as const);
 const headlessUnavailable = Object.freeze({
   available: false,
@@ -212,6 +220,16 @@ export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): Platfor
         // Text entry shares focus's cell: adb drives both, and only the synthetic `simulator`
         // row has no device behind it (parity with the retired `type` bucket).
         ...typeTextRuntimeOperationFacts({ type: androidTouchFact(device) }),
+        ...touchRuntimeOperationFacts({
+          tap: androidTouchFact(device),
+          tapRef: focusKindUnavailable,
+          longPress: androidTouchFact(device),
+          hover: hoverUnavailable,
+          hoverRef: focusKindUnavailable,
+          fill: androidTouchFact(device),
+          fillRef: focusKindUnavailable,
+          tapElementSelector: focusKindUnavailable,
+        }),
         // uiautomator reads text at a point through the same adb path the snapshot uses, so the
         // synthetic `simulator` row is the only Android kind without a live read.
         ...elementTextRuntimeOperationFacts({
@@ -302,6 +320,16 @@ export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): Platfor
                 resolveInteractor: host.localInteractors.resolve,
               })
             : {}),
+          ...whenAdmitted(facts.operations.tapPoint, () =>
+            bindLocalTouchInteractor({
+              facts: facts.operations,
+              device: request.device,
+              signal: request.scope.signal,
+              resolveInteractor: host.localInteractors.resolve,
+              pause: async (milliseconds) =>
+                await host.clock.sleep(milliseconds, request.scope.signal),
+            }),
+          ),
           ...(facts.operations.readTextAtPoint.available
             ? bindElementTextRuntime({
                 device: request.device,
