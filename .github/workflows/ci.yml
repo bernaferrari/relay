@@ -28,8 +28,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Text-only assertions run before the toolchain setup, so a grep failure does
-  # not wait on an install.
+  # The Swift trailing-comma assertion is text-only and runs before the toolchain setup, so a
+  # grep failure does not wait on an install. The DI-seams check below needs a real TypeScript
+  # runtime (#1976 / PR #2006), so it runs after Setup toolchain instead.
   lint:
     name: Lint & Format
     runs-on: ubuntu-latest
@@ -38,22 +39,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      # #1976: ripgrep is never installed on ubuntu-latest, so `rg` failed with "command not
+      # found" (exit 127) on every run, and `if rg ...; then ... fi` cannot distinguish that
+      # from "no matches" (exit 1) — both read as false, so the step passed without the
+      # assertion ever executing. Rewritten against `grep`, which every runner ships, with the
+      # match/no-match/error exit codes handled explicitly so a broken scan fails loudly instead
+      # of silently passing.
       - name: Disallow trailing commas before closing parenthesis in Swift
         run: |
-          if rg -nU --glob '*.swift' ',\s*\n\s*\)' apple/runner; then
-            echo "Found trailing commas before ')' in Swift files. This syntax requires Swift 6.1+ and breaks older Xcode toolchains."
+          mapfile -d '' -t swift_files < <(git ls-files -z -- 'apple/runner' | grep -z '\.swift$')
+          if [ "${#swift_files[@]}" -eq 0 ]; then
+            echo "No apple/runner/*.swift files are tracked; the trailing-comma check has nothing to scan." >&2
             exit 1
           fi
-
-      - name: Fail if test-only DI seams reappear in production code
-        run: |
-          if rg '\?\s*:\s*typeof\s+' src/ --glob '!**/__tests__/**' --glob '!*.test.ts'; then
-            echo "Found test-only DI seams (optional typeof params) in production code."
+          set +e
+          grep -PzoH ',\s*\n\s*\)' "${swift_files[@]}"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "Found trailing commas before ')' in Swift files. This syntax requires Swift 6.1+ and breaks older Xcode toolchains."
+            exit 1
+          elif [ "$status" -ne 1 ]; then
+            echo "grep exited $status while scanning apple/runner for trailing commas; treating an unreadable scan as a failure instead of a silent pass."
             exit 1
           fi
 
       - name: Setup toolchain
         uses: ./.github/actions/setup-node-pnpm
+
+      # Same false-green shape as the Swift check above (#1976). An earlier revision of this
+      # gate (PR #2006, first review pass) fixed the exit-code handling but kept the ban/allow
+      # decision as a regex that exempted matches by the *spelling* of the typeof target
+      # (`typeof fetch` always passed, SCREAMING_SNAKE_CASE targets always passed) — a name-based
+      # semantic allowlist that would silently pass a new, genuinely test-only `typeof fetch` seam
+      # anywhere in the tree while banning an equally legitimate seam under any other name.
+      # scripts/di-seams instead checks each match against an explicit, typed, per-site allowlist
+      # (scripts/di-seams/approved.ts) keyed by (file, field, typeof-target): a triple is exempt
+      # only because it was individually reviewed and named, never because of how it is spelled.
+      # The gate fails just as hard on a stale approval (one whose triple no longer matches
+      # anything) as on an unapproved seam, so the allowlist can't drift out of sync with the code
+      # it describes. See scripts/di-seams/model.ts and its tests.
+      - name: Fail if test-only DI seams reappear in production code
+        uses: ./.github/actions/run-gate
+        with: { gate: di-seams }
 
       - name: Run oxlint
         uses: ./.github/actions/run-gate
