@@ -1,16 +1,19 @@
 import type {
   DeviceBinding,
-  CaptureSnapshotInput,
+  RuntimeFacts,
+  RuntimeOperationFact,
+  RuntimeOperationUnavailability,
+} from '@agent-device/contracts/platform-runtime';
+import type {
   PlatformRuntimeHost,
   PlatformRuntimeOperations,
   PlatformRuntimeOwner,
-  RuntimeFacts,
-  RuntimeOperationUnavailability,
-} from '@agent-device/contracts/platform';
+} from '@agent-device/contracts/platform-runtime-operations';
 import {
   applicationLifecycleOperationFacts,
   availableApplicationLifecycleOperations,
 } from '@agent-device/contracts/application-lifecycle-runtime';
+import { backRuntimeOperationFacts } from '@agent-device/contracts/back-runtime';
 import {
   bindElementTextRuntime,
   elementTextRuntimeOperationFacts,
@@ -19,6 +22,8 @@ import {
   bindLocalFocusInteractor,
   focusRuntimeOperationFacts,
 } from '@agent-device/contracts/focus-runtime';
+import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
+import { bindAdmittedLocalInteractorOperations } from '@agent-device/contracts/interactor-operation-catalog';
 import { localRuntimeOwner, sameRuntimeOwner } from '@agent-device/contracts/platform-runtime';
 import { createUnavailablePlatformRuntimeFacts } from '@agent-device/contracts/platform-runtime-unavailable';
 import {
@@ -28,6 +33,7 @@ import {
 import {
   captureSnapshotSignal,
   snapshotRuntimeOperationFacts,
+  type CaptureSnapshotInput,
 } from '@agent-device/contracts/snapshot-runtime';
 import {
   bindLocalTypeTextInteractor,
@@ -81,6 +87,17 @@ const snapshotCustomActionsUnavailable = unavailableLinuxRuntimeFact(
   'unsupported-platform-leaf',
   'Re-run without --actions, or target an iOS simulator.',
 );
+const backKindUnavailable = unavailableLinuxRuntimeFact(
+  'unsupported-device-kind',
+  'back is supported only for the Linux desktop device.',
+);
+const homeKindUnavailable = unavailableLinuxRuntimeFact(
+  'unsupported-device-kind',
+  'home is supported only for the Linux desktop device.',
+);
+// `orientation`, `tv-remote`, and every keyboard action never carried a Linux capability bucket
+// at all (the retired descriptors declared `linux: {}`), so they are unavailable unconditionally.
+const linuxPlatformLeafUnavailable = unsupportedPlatformLeaf;
 export function createLinuxPlatformRuntime(host: PlatformRuntimeHost): PlatformRuntimeOwner {
   return Object.freeze({
     owner: linuxOwner,
@@ -111,40 +128,38 @@ export function createLinuxPlatformRuntime(host: PlatformRuntimeHost): PlatformR
           ...(facts.operations.captureSnapshot.available
             ? linuxSnapshotOperations(host, request)
             : {}),
-          ...(facts.operations.captureScreenshot.available
-            ? bindLocalScreenshotInteractor({
-                device: request.device,
-                signal: request.scope.signal,
-                resolveInteractor: host.localInteractors.resolve,
-              })
-            : {}),
-          ...(facts.operations.focusPoint.available
-            ? bindLocalFocusInteractor({
-                device: request.device,
-                signal: request.scope.signal,
-                resolveInteractor: host.localInteractors.resolve,
-              })
-            : {}),
-          ...(facts.operations.typeText.available
-            ? bindLocalTypeTextInteractor({
-                device: request.device,
-                signal: request.scope.signal,
-                resolveInteractor: host.localInteractors.resolve,
-              })
-            : {}),
-          ...(facts.operations.readTextAtPoint.available
-            ? bindElementTextRuntime({
-                device: request.device,
-                signal: request.scope.signal,
-                resolveInteractor: host.localInteractors.resolve,
-              })
-            : {}),
+          ...linuxInteractionOperations(host, request, facts),
         }),
         [Symbol.asyncDispose]: async () => undefined,
       }) satisfies DeviceBinding<PlatformRuntimeOperations>;
     },
     shutdown: async () => undefined,
   });
+}
+
+/** The five desktop-interactor operations, each independently gated by its own admitted fact. */
+function linuxInteractionOperations(
+  host: PlatformRuntimeHost,
+  request: Parameters<PlatformRuntimeOwner['bind']>[0],
+  facts: RuntimeFacts<PlatformRuntimeOperations>,
+): Partial<DeviceBinding<PlatformRuntimeOperations>['operations']> {
+  const resolver = {
+    device: request.device,
+    signal: request.scope.signal,
+    resolveInteractor: host.localInteractors.resolve,
+  };
+  return {
+    ...(facts.operations.captureScreenshot.available
+      ? bindLocalScreenshotInteractor(resolver)
+      : {}),
+    ...(facts.operations.focusPoint.available ? bindLocalFocusInteractor(resolver) : {}),
+    ...(facts.operations.typeText.available ? bindLocalTypeTextInteractor(resolver) : {}),
+    ...(facts.operations.readTextAtPoint.available ? bindElementTextRuntime(resolver) : {}),
+    ...bindAdmittedLocalInteractorOperations({
+      ...resolver,
+      facts: facts.operations,
+    }),
+  };
 }
 
 function linuxFacts(device: DeviceInfo): RuntimeFacts<PlatformRuntimeOperations> {
@@ -159,6 +174,13 @@ function linuxFacts(device: DeviceInfo): RuntimeFacts<PlatformRuntimeOperations>
     focus: focusKindUnavailable,
     typeText: typeKindUnavailable,
     elementText: elementTextKindUnavailable,
+    back: backKindUnavailable,
+    home: homeKindUnavailable,
+    orientation: linuxPlatformLeafUnavailable,
+    tvRemote: linuxPlatformLeafUnavailable,
+    keyboardStatus: linuxPlatformLeafUnavailable,
+    keyboardDismiss: linuxPlatformLeafUnavailable,
+    keyboardEnter: linuxPlatformLeafUnavailable,
     readiness: unsupportedPlatformLeaf,
     lifecycle: applicationLifecycleOperationFacts({
       resolveOpenTarget: openTarget,
@@ -177,29 +199,37 @@ function linuxFacts(device: DeviceInfo): RuntimeFacts<PlatformRuntimeOperations>
     operations: {
       ...unavailable.operations,
       ...snapshotRuntimeOperationFacts({
-        capture: device.kind === 'device' ? supported : snapshotKindUnavailable,
+        capture: linuxDesktopFact(device, snapshotKindUnavailable),
         customActions: snapshotCustomActionsUnavailable,
-        withoutActiveApp: device.kind === 'device' ? supported : snapshotKindUnavailable,
+        withoutActiveApp: linuxDesktopFact(device, snapshotKindUnavailable),
       }),
       ...screenshotRuntimeOperationFacts({
-        capture: device.kind === 'device' ? supported : screenshotKindUnavailable,
+        capture: linuxDesktopFact(device, screenshotKindUnavailable),
       }),
       // Parity with the retired `focus` capability bucket (`{ device: true }`): the desktop is
       // the only Linux cell with a pointer to drive.
-      ...focusRuntimeOperationFacts({
-        focus: device.kind === 'device' ? supported : focusKindUnavailable,
-      }),
+      ...focusRuntimeOperationFacts({ focus: linuxDesktopFact(device, focusKindUnavailable) }),
       // Text entry shares focus's cell: ydotool drives both on the desktop device only.
-      ...typeTextRuntimeOperationFacts({
-        type: device.kind === 'device' ? supported : typeKindUnavailable,
-      }),
+      ...typeTextRuntimeOperationFacts({ type: linuxDesktopFact(device, typeKindUnavailable) }),
       // The Linux read is value-first (AXValue/title/description) where the captured tree is
       // label-first, so the desktop row genuinely reads differently from its snapshot text.
       ...elementTextRuntimeOperationFacts({
-        readTextAtPoint: device.kind === 'device' ? supported : elementTextKindUnavailable,
+        readTextAtPoint: linuxDesktopFact(device, elementTextKindUnavailable),
       }),
+      // Parity with the retired `back`/`home` capability bucket (`{ device: true }`): the desktop
+      // is the only Linux cell with a target to drive.
+      ...backRuntimeOperationFacts({ back: linuxDesktopFact(device, backKindUnavailable) }),
+      ...homeRuntimeOperationFacts({ home: linuxDesktopFact(device, homeKindUnavailable) }),
     },
   });
+}
+
+/** Every desktop-interactor cell reads the same way: only the Linux `device` kind has one. */
+function linuxDesktopFact(
+  device: DeviceInfo,
+  whenUnavailable: RuntimeOperationUnavailability,
+): RuntimeOperationFact {
+  return device.kind === 'device' ? supported : whenUnavailable;
 }
 
 function linuxSnapshotOperations(
