@@ -566,6 +566,7 @@ export function AppMapWorkspace(props: {
     onRecordConnection: recordConnection,
     onRemoveConnection: removeConnection,
     onRemoveScreen: removeScreen,
+    onZoomStep: zoom,
     onCancelMarquee: canvasGestures.cancelMarquee,
     onClearContextSurface: () => setContextSurface(null),
     onClearSelection: () => {

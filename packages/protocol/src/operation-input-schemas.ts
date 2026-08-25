@@ -22,6 +22,7 @@ import {
   natural,
   open,
   point,
+  queryBoolean,
   sessionReference,
   stepTarget,
   tapPoint,
@@ -42,49 +43,6 @@ export const operationInputSchemas = {
   ...coreTargetOperationInputSchemas,
   ...combineStartOperationInputSchemas,
   "system.audit.list": z.object({ limit: z.number().int().positive().optional() }).strict(),
-  "locale-finding.known.add": z
-    .object({
-      finding: z
-        .object({
-          id: z.string().min(1),
-          code: z.enum([
-            "SCREEN_MISSING",
-            "POSSIBLE_LOCALE_NOT_APPLIED",
-            "CONTROL_MISSING",
-            "POSSIBLE_UNTRANSLATED_TEXT",
-            "POSSIBLE_TEXT_CLIPPED",
-          ]),
-          canonicalKey: z.string().min(1),
-          screenLabel: z.string().min(1),
-          locale: z.string().min(1),
-          detail: z.string().min(1),
-          stableKey: z.string().min(1).optional(),
-        })
-        .passthrough(),
-      scope: z
-        .enum(["locale", "control"])
-        .optional()
-        .describe("Locale only by default; control applies across locales when safely supported"),
-      note: z.string().min(1).optional().describe("Required for control-wide acceptance"),
-    })
-    .strict()
-    .superRefine((input, context) => {
-      if (input.scope !== "control") return;
-      if (input.finding.code !== "POSSIBLE_UNTRANSLATED_TEXT" || !input.finding.stableKey) {
-        context.addIssue({
-          code: "custom",
-          message: "control scope requires a stable untranslated-text finding",
-          path: ["scope"],
-        });
-      }
-      if (!input.note?.trim()) {
-        context.addIssue({
-          code: "custom",
-          message: "control scope requires a reason",
-          path: ["note"],
-        });
-      }
-    }),
   "workspace.privacy.update": z.object({ enabled: z.boolean() }).strict(),
   "workspace.evidence.update": z
     .object({
@@ -133,19 +91,42 @@ export const operationInputSchemas = {
         "replace",
       ]),
       preview: z.boolean().optional().describe("If true, resolve or annotate only — no commit tap"),
-      identifier: z.string().min(1).optional(),
-      label: z.string().min(1).optional(),
-      text: z.string().optional(),
-      x: z.number().optional(),
-      y: z.number().optional(),
-      from: tapPoint.optional(),
-      to: tapPoint.optional(),
+      identifier: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Required when kind is 'identifier': accessibility identifier to tap"),
+      label: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Required when kind is 'label': accessibility label to tap"),
+      text: z
+        .string()
+        .optional()
+        .describe(
+          "Required when kind is 'type' or 'replace': text to type (type) or replace the target's content with (replace)",
+        ),
+      x: z
+        .number()
+        .optional()
+        .describe("Required when kind is 'point': x coordinate in captured viewport pixels"),
+      y: z
+        .number()
+        .optional()
+        .describe("Required when kind is 'point': y coordinate in captured viewport pixels"),
+      from: tapPoint
+        .optional()
+        .describe("Required when kind is 'swipe': swipe start point { x, y }"),
+      to: tapPoint.optional().describe("Required when kind is 'swipe': swipe end point { x, y }"),
       durationMs: z.number().int().positive().optional(),
       ref: z.string().min(1).optional(),
       query: z.string().min(1).optional(),
       match: z.string().min(1).optional(),
-      key: z.enum(["enter", "backspace", "back", "home"]).optional(),
-      point: tapPoint.optional(),
+      key: z
+        .enum(["enter", "backspace", "back", "home"])
+        .optional()
+        .describe("Required when kind is 'key': which system key to send"),
       target: z
         .object({
           identifier: z.string().min(1).optional(),
@@ -738,7 +719,9 @@ export const operationInputSchemas = {
   "discovery.coverage": z
     .object({ sessionId: identifier("Discovery session identifier") })
     .strict(),
-  "discovery.journey": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
+  "discovery.exploration-timeline": z
+    .object({ sessionId: identifier("Discovery session identifier") })
+    .strict(),
   "discovery.do": z
     .object({
       sessionId: identifier("Discovery session identifier"),
@@ -749,19 +732,8 @@ export const operationInputSchemas = {
   "discovery.interact": z
     .object({ sessionId: identifier("Discovery session identifier"), kind: z.string() })
     .catchall(z.unknown()),
-  "corpus.rename": z
-    .object({ sessionId: identifier("Corpus session identifier"), name: text("Corpus name") })
-    .strict(),
-  "corpus.status.update": z
-    .object({
-      sessionId: identifier("Corpus session identifier"),
-      status: z.enum(["draft", "running", "paused", "complete", "stopped", "failed"]),
-    })
-    .strict(),
-  "corpus.start": z.object({ sessionId: identifier("Corpus session identifier") }).strict(),
-  "corpus.cancel": z.object({ sessionId: identifier("Corpus session identifier") }).strict(),
   "job.list": z
-    .object({ full: z.boolean().optional(), limit: z.number().int().positive().optional() })
+    .object({ full: queryBoolean.optional(), limit: z.coerce.number().int().positive().optional() })
     .strict(),
   "job.get": z.object({ jobId: identifier("Job identifier") }).strict(),
   "job.combine.campaign.get": z

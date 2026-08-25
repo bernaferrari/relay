@@ -11,6 +11,7 @@ import {
   resolveRunShareToken,
   revokeRunShare,
 } from "./run-shares.js";
+import { loadRedactionPolicy } from "./redaction.js";
 
 function run(input: {
   id: string;
@@ -29,6 +30,9 @@ function run(input: {
     platform: "android",
     status: input.outcome === "product-failure" ? "error" : "ok",
     ...(input.outcome ? { outcome: input.outcome } : {}),
+    ...(input.outcome === "product-failure"
+      ? { error: "Element not found: Bearer secret-token-123" }
+      : {}),
     ...(input.batchId ? { batchId: input.batchId } : {}),
     ...(input.caseIndex !== undefined ? { caseIndex: input.caseIndex, caseCount: 2 } : {}),
     attempts: 1,
@@ -57,6 +61,9 @@ function run(input: {
 test("creates a durable signed batch share and projects only bounded report evidence", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-run-share-"));
   const at = 10_000;
+  const previousMode = process.env.RELAY_REDACTION_MODE;
+  process.env.RELAY_REDACTION_MODE = "on";
+  await loadRedactionPolicy();
   const first = run({
     id: "run-a",
     batchId: "batch-a",
@@ -99,6 +106,9 @@ test("creates a durable signed batch share and projects only bounded report evid
     );
     assert.equal("logs" in report.runs[0]!, false);
     assert.equal("resolvedInputs" in report.runs[0]!, false);
+    assert.equal("errorHeadline" in report.runs[0]!, false);
+    assert.match(report.runs[1]!.errorHeadline!, /Element not found/u);
+    assert.doesNotMatch(report.runs[1]!.errorHeadline!, /secret-token-123/u);
     assert.equal("serial" in report.runs[0]!, false);
 
     const [body, signature] = created.token.split(".");
@@ -110,6 +120,9 @@ test("creates a durable signed batch share and projects only bounded report evid
       /private log|hidden/u,
     );
   } finally {
+    if (previousMode === undefined) delete process.env.RELAY_REDACTION_MODE;
+    else process.env.RELAY_REDACTION_MODE = previousMode;
+    await loadRedactionPolicy();
     await rm(root, { recursive: true, force: true });
   }
 });

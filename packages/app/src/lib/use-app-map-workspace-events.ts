@@ -36,6 +36,7 @@ export function useAppMapWorkspaceEvents(options: {
   onRemoveConnection: (connection: CanvasConnection) => void;
   onRemoveScreen: (node: MapTreeNode) => void;
   onCancelMarquee: () => boolean;
+  onZoomStep: (delta: number) => void;
   onClearContextSurface: () => void;
   onClearSelection: () => void;
 }) {
@@ -73,7 +74,8 @@ export function useAppMapWorkspaceEvents(options: {
       }
       const connection = options.selectedConnection();
       if (connection) options.onRecordConnection(connection);
-      else if (options.hereScreenId() || options.selectedNode()) options.onRecordFromHere();
+      else if (options.hereScreenId() || options.selectedNode())
+        options.onRecordFromHere();
       else toast("Select a screen or path to record", "info");
     },
     onDeleteSelection: () => {
@@ -85,6 +87,7 @@ export function useAppMapWorkspaceEvents(options: {
       const node = options.selectedNode();
       if (node) options.onRemoveScreen(node);
     },
+    onZoomStep: options.onZoomStep,
     onEscape: () => {
       if (options.onCancelMarquee()) return;
       if (options.contextSurfaceOpen()) {

@@ -1,5 +1,4 @@
 import { Show, createEffect, createSignal, on, onCleanup } from "solid-js";
-import { panelSectionLabel } from "../lib/ui";
 import type { CanvasNote } from "@relay/protocol";
 import { IconButton } from "@relay/ui/icon-button";
 import type { MapTreeNode } from "../lib/app-map-tree";
@@ -27,6 +26,41 @@ import {
  * neighbour. */
 const SCREEN_CARD_LABEL_WIDTH = 240;
 
+/**
+ * The one empty-screenshot object, shared by canvas frames and grid tiles:
+ * icon tile plus a guidance line, drawn against --map-canvas-backdrop so an
+ * empty frame and a filled one read as the same letterboxed thing. `size`
+ * tunes the tile between compact canvas frames and roomy grid tiles.
+ */
+export function EmptyScreenshot(props: { size?: "compact" | "roomy"; hint?: string }) {
+  const compact = props.size === "compact";
+  return (
+    <div
+      class={cn(
+        "grid justify-items-center gap-1.5 px-4 text-center",
+        compact ? "max-w-[160px]" : "max-w-[176px]",
+      )}
+    >
+      <span
+        class={cn(
+          "grid place-items-center rounded-xl bg-[color-mix(in_srgb,var(--text-invert-strong)_10%,transparent)]",
+          compact ? "size-8" : "size-9",
+        )}
+      >
+        <Icon name="camera" size={compact ? 14 : 15} />
+      </span>
+      <span class="pt-0.5 text-caption font-medium text-[var(--text-invert-strong)]">
+        No screenshot
+      </span>
+      <Show when={props.hint}>
+        {(hint) => (
+          <span class="text-micro/[1.35] text-[var(--text-invert-weak)]">{hint()}</span>
+        )}
+      </Show>
+    </div>
+  );
+}
+
 /** Presentation-only canvas objects. They deliberately receive callbacks
  * instead of knowing about the graph document or recorder state. */
 export function CanvasNoteCard(props: {
@@ -39,7 +73,7 @@ export function CanvasNoteCard(props: {
   let textAtFocus = props.note.text;
   return (
     <article
-      class="absolute w-[220px] overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--border-strong-base)_74%,transparent)] bg-[color-mix(in_srgb,var(--surface-base)_96%,var(--product-accent-soft))] shadow-[0_8px_26px_rgb(0_0_0/18%)]"
+      class="absolute w-[220px] overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--border-strong-base)_74%,transparent)] bg-[color-mix(in_srgb,var(--surface-base)_96%,var(--product-accent-soft))] shadow-[var(--map-elevation-panel)]"
       style={{ transform: `translate3d(${props.note.x}px, ${props.note.y}px, 0)` }}
     >
       <header class="flex h-8 items-center justify-between border-b border-[color-mix(in_srgb,var(--border-weak-base)_82%,transparent)] px-1">
@@ -132,20 +166,24 @@ export function ScreenCard(props: {
     !props.here &&
     screenCardStartMarkerVisible(props.title, props.isFlowStart);
   const showsRunStatus = () => !props.editing && props.runState && props.runState !== "idle";
+  // Each state owns its own channel: run outcomes colour the ring, selection
+  // is the only solid blue ring, "running" pulses instead so a live frame can
+  // never be mistaken for the selected one, and "here" is just its pulse dot —
+  // no ring, so it cannot collide with "passed" green.
   const frameStateClass = () =>
     props.runState === "failed"
       ? "ring-2 ring-[var(--icon-critical-base)]"
       : props.runState === "running"
-        ? "ring-2 ring-[var(--text-interactive-base)]"
+        ? "ring-2 ring-[var(--text-interactive-base)] motion-safe:animate-pulse"
         : props.runState === "healed"
           ? "ring-2 ring-[var(--icon-warning-base)]"
           : props.runState === "passed"
             ? "ring-2 ring-[var(--icon-success-base)]"
-            : props.selected
-              ? "ring-2 ring-[var(--text-interactive-base)] shadow-[0_8px_20px_rgb(0_0_0/8%)]"
-              : props.here
-                ? "ring-2 ring-[var(--icon-success-base)] shadow-[0_8px_20px_rgb(0_0_0/8%)]"
-                : "ring-1 ring-[color-mix(in_srgb,var(--border-strong-base)_55%,transparent)] group-hover/screen:ring-[var(--border-strong-base)] group-hover/screen:shadow-[0_8px_20px_rgb(0_0_0/7%)]";
+            : props.here
+              ? ""
+              : props.selected
+                ? "ring-2 ring-[var(--text-interactive-base)] shadow-[var(--map-elevation-card)]"
+                : "ring-1 ring-[color-mix(in_srgb,var(--border-strong-base)_55%,transparent)] group-hover/screen:ring-[var(--border-strong-base)] group-hover/screen:shadow-[var(--map-elevation-card)]";
   return (
     <article
       role="group"
@@ -153,13 +191,13 @@ export function ScreenCard(props: {
       tabIndex={0}
       aria-label={`${props.title} screen${props.qualifier ? `, ${props.qualifier}` : ""}${props.connectionOrigin ? ", origin of selected path" : props.here ? ", here" : ""}${props.selected ? ", selected" : ""}`}
       data-app-map-screen-id={props.node.id}
-      data-app-map-here={props.here ? "true" : undefined}
-      data-app-map-connection-origin={props.connectionOrigin ? "true" : undefined}
-      data-tip="Click to inspect · Enter opens details"
       class={cn(
-        "group/screen absolute grid w-[240px] grid-rows-[24px_var(--screen-frame-height)] gap-[6px] overflow-visible text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--map-canvas)]",
+        "group/screen absolute grid w-[240px] grid-rows-[24px_var(--screen-frame-height)] gap-[6px] overflow-visible text-left outline-none",
+        "shadow-[var(--focus-ring-canvas)] focus-visible:rounded-xl motion-safe:focus-visible:animate-pulse",
         (props.selected || props.here) && "z-20",
       )}
+      data-app-map-connection-origin={props.connectionOrigin ? "true" : undefined}
+      data-tip="Click to inspect · Enter opens details"
       style={{
         transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)`,
         height: `${props.geometry.height}px`,
@@ -209,9 +247,8 @@ export function ScreenCard(props: {
       >
         <div
           role="toolbar"
+          class="absolute top-[30px] z-30 flex items-center gap-0.5 rounded-xl border border-[color-mix(in_srgb,var(--border-strong-base)_42%,transparent)] bg-[var(--map-control-surface)] p-[3px] shadow-[var(--map-elevation-chip)]"
           aria-label={`${props.title} screen actions`}
-          data-app-map-screen-actions
-          class="absolute top-[30px] z-30 flex items-center gap-0.5 rounded-xl border border-[color-mix(in_srgb,var(--border-strong-base)_42%,transparent)] bg-[var(--map-control-surface)] p-[3px] shadow-[0_4px_14px_rgb(0_0_0/10%)]"
           style={{ left: `${props.geometry.frameLeft + props.geometry.frameWidth + 10}px` }}
         >
           <IconButton
@@ -361,7 +398,7 @@ export function ScreenCard(props: {
           <div
             data-screen-frame
             class={cn(
-              "grid min-h-0 place-items-center overflow-hidden rounded-xl bg-[var(--background-base)] text-center transition-[box-shadow,transform] duration-hover",
+              "grid min-h-0 place-items-center overflow-hidden rounded-xl bg-[var(--map-canvas-backdrop)] text-center shadow-[var(--map-elevation-card)] transition-[box-shadow,transform] duration-hover",
               frameStateClass(),
             )}
             style={{
@@ -369,26 +406,14 @@ export function ScreenCard(props: {
               "justify-self": "center",
             }}
           >
-            <div class="grid max-w-[168px] justify-items-center gap-2 text-[var(--text-weak)] transition-colors duration-hover group-hover/screen:text-[var(--text-base)]">
-              <span class="grid size-8 place-items-center rounded-xl bg-[var(--surface-base-hover)]">
-                <Icon name="camera" size={14} />
-              </span>
-              <span class={panelSectionLabel}>No screenshot</span>
-            </div>
+            <EmptyScreenshot size="compact" />
           </div>
         }
       >
         {(src) => (
           <div
             data-screen-frame
-            class={cn(
-              "min-h-0 overflow-hidden rounded-xl bg-[oklch(0.12_0.01_270)] transition-[box-shadow,transform] duration-hover",
-              frameStateClass(),
-            )}
-            style={{
-              width: `${props.geometry.frameWidth}px`,
-              "justify-self": "center",
-            }}
+            class="min-h-0 overflow-hidden rounded-xl bg-[var(--map-canvas-backdrop)] shadow-[var(--map-elevation-card)] transition-[box-shadow,transform] duration-hover"
           >
             <div
               class="relative mx-auto min-h-0"
@@ -423,7 +448,7 @@ export function ScreenCard(props: {
                             <Show when={rect}>
                               {(value) => (
                                 <div
-                                  class="absolute rounded border-2 border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%),0_0_12px_color-mix(in_srgb,var(--text-interactive-base)_36%,transparent)]"
+                                  class="absolute rounded border-2 border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)]"
                                   style={{
                                     left: `${value().x * 100}%`,
                                     top: `${value().y * 100}%`,
@@ -434,7 +459,7 @@ export function ScreenCard(props: {
                               )}
                             </Show>
                             <span
-                              class="absolute size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--background-base)] bg-[var(--text-interactive-base)] shadow-[0_1px_5px_rgb(0_0_0/34%)]"
+                              class="absolute size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--background-base)] bg-[var(--text-interactive-base)] shadow-[var(--map-elevation-chip)]"
                               style={{
                                 left: `${point.x * 100}%`,
                                 top: `${point.y * 100}%`,

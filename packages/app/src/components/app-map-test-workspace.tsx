@@ -380,6 +380,7 @@ export function AppMapTestWorkspace(props: {
               variant="secondary"
               size="sm"
               class="shrink-0"
+              data-proposal-review-opener
               onClick={() => setProposalReviewOpen(true)}
             >
               <Icon name="sparkle" size={13} /> {repairReviewLabel()}

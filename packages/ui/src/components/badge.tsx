@@ -1,6 +1,7 @@
 import { type ComponentProps, splitProps } from "solid-js";
+import "./badge.css";
 
-export type BadgeVariant = "default" | "primary" | "success" | "warning" | "error";
+export type BadgeVariant = "neutral" | "success" | "warning" | "danger";
 
 export interface BadgeProps extends ComponentProps<"span"> {
   variant?: BadgeVariant;
@@ -12,7 +13,7 @@ export function Badge(props: BadgeProps) {
     <span
       {...rest}
       data-component="badge"
-      data-variant={split.variant || "default"}
+      data-variant={split.variant || "neutral"}
       classList={{
         ...split.classList,
         [split.class ?? ""]: !!split.class,

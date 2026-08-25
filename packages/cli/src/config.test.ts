@@ -324,6 +324,18 @@ test("generic invocation still requires explicit object input", () => {
   );
 });
 
+test("operation invoke rejects friendly-command-only flags instead of dropping them", () => {
+  for (const argv of [
+    ["operation", "invoke", "app-map.test.run", "--input", "{}", "--in", "language=de"],
+    ["operation", "invoke", "app-map.test.run", "--input", "{}", "--lens", "visual"],
+    ["operation", "invoke", "app-map.test.run", "--input", "{}", "--cell", "de"],
+    ["operation", "invoke", "app-map.test.run", "--input", "{}", "--all"],
+    ["operation", "invoke", "app-map.test.run", "--in", "language=de", "--lens", "visual"],
+  ]) {
+    assert.throws(() => parseCli(argv, {}), /only supported by friendly commands/);
+  }
+});
+
 test("input files preserve multiline values and cannot conflict with inline JSON", () => {
   const root = mkdtempSync(join(tmpdir(), "relay-cli-input-"));
   const path = join(root, "input.json");

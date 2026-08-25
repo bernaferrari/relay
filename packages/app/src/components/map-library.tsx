@@ -14,11 +14,16 @@ import { copyStack, mono } from "../lib/ui";
 import { RelayMark } from "./relay-mark";
 import { Icon, type IconName } from "./icon";
 
-export type MapLibraryArea = "tests" | "runs";
+/** "maps" is the product word for this tab; "tests" is the pre-rename
+ * spelling still found in stored/URL state, normalized on read. */
+export type MapLibraryArea = "maps" | "runs";
+export function normalizeMapLibraryArea(value: string): MapLibraryArea {
+  return value === "runs" ? "runs" : "maps";
+}
 type RunFilter = "all" | "attention" | "active";
 
 const AREA_TABS: { id: MapLibraryArea; label: string }[] = [
-  { id: "tests", label: "Maps" },
+  { id: "maps", label: "Maps" },
   { id: "runs", label: "Runs" },
 ];
 
@@ -198,7 +203,7 @@ export function MapLibrary(props: {
         </div>
       </div>
 
-      <Show when={props.area === "tests"}>
+      <Show when={props.area === "maps"}>
         <div class="mb-1.5 shrink-0 px-2.5">
           <label class="group/library-search relative flex h-10 w-full items-center gap-2 rounded-lg bg-[var(--background-deep)] px-2.5 text-text-weaker shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-colors focus-within:bg-[var(--background-base)] focus-within:text-text-interactive-base">
             <Icon name="search" size={14} />
@@ -325,7 +330,7 @@ export function MapLibrary(props: {
       </Show>
 
       <footer class="shrink-0 border-t border-border-weak-base p-1.5">
-        <Show when={props.area === "tests" && !recorder.recording()}>
+        <Show when={props.area === "maps" && !recorder.recording()}>
           {/* Creating a board is instant; recording is a contextual action on
               the board once a device is involved. */}
           <button

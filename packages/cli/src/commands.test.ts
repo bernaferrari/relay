@@ -37,15 +37,6 @@ test("friendly command paths are unique", () => {
   assert.equal(new Set(paths).size, paths.length);
 });
 
-test("legacy Corpus sessions are not a second public locale workflow", () => {
-  const corpus = cliOperationDescriptors.filter(({ operationId }) =>
-    operationId.startsWith("corpus."),
-  );
-  assert.ok(corpus.length > 0);
-  assert.ok(corpus.every((descriptor) => "exclusion" in descriptor));
-  assert.throws(() => resolveCommand(["corpus", "create"]), /Unknown command/);
-});
-
 test("compiled Recipe storage has no public CLI namespace", () => {
   assert.deepEqual(
     cliOperationDescriptors.filter(({ operationId }) => operationId.startsWith("recipe.")),
@@ -157,32 +148,18 @@ test("variable help says appLocale stays when the Test can name a screen", () =>
   assert.match(help, /apply\.relaunch: true still relaunches/u);
 });
 
-test("pack check and locale apply help name the Data Controls pack and test-run apply path", () => {
-  const pack = renderHelp("pack");
-  assert.match(pack, /relay pack check <dir> --against <locale>/u);
-  assert.match(pack, /runs\/2026-08-22_grok-data-controls-supported-locales --against en/u);
-  assert.match(pack, /<locale>\/accessibility\/\*\.json/u);
-  assert.match(pack, /--baseline/u);
-
+test("device and Combine help name the Test-run apply path and evidence folder", () => {
   const device = renderHelp("device");
   assert.match(device, /relay variable save/u);
   assert.match(device, /relay test run <map> <test> --in language=<tag>/u);
 
   const combine = renderHelp("combine");
   assert.match(combine, /<locale>\/screenshots\/ plus <locale>\/accessibility\/\*\.json/u);
-  assert.match(combine, /relay pack check <dir> --against en/u);
-  assert.match(combine, /top-level accessibility\/\*\.json/u);
-  assert.doesNotMatch(combine, /Check a survey folder/u);
+  assert.match(combine, /portable review folder/u);
 });
 
 test("authoring vocabulary exposes Variables, Tests, and saved Combines", () => {
-  for (const command of [
-    "variable list",
-    "state-set list",
-    "test list",
-    "combine list",
-    "run-matrix list",
-  ]) {
+  for (const command of ["variable list", "test list", "combine list"]) {
     const resolved = resolveCommand([...command.split(" "), "grok-android"]);
     assert.equal(resolved.operationId, "app-map.get", command);
     assert.deepEqual(resolved.input, { appMapId: "grok-android" }, command);
@@ -192,17 +169,6 @@ test("authoring vocabulary exposes Variables, Tests, and saved Combines", () => 
     commandPath: "combine preflight",
     input: { appMapId: "grok-android", combineId: "locale-x-tour" },
   });
-  // The pre-rename spellings still resolve, so saved scripts keep working.
-  assert.deepEqual(
-    resolveCommand(["run-matrix", "dry-run", "grok-android", "locale-x-tour"], {
-      serial: "pixel-9",
-    }),
-    {
-      operationId: "app-map.combine.preflight",
-      commandPath: "run-matrix dry-run",
-      input: { appMapId: "grok-android", combineId: "locale-x-tour", serial: "pixel-9" },
-    },
-  );
 });
 
 test("Test help exposes graph creation, semantic edits, and the required run target", () => {
@@ -461,31 +427,10 @@ test("authoring interaction aliases construct explicit session inputs", () => {
   );
 });
 
-test("locale matrix plan and explicit target-affine run commands are public alongside Combine", () => {
-  const start = mappedCommandDescriptors.find(
-    (descriptor) => descriptor.operationId === "job.locale-matrix.start",
-  );
-  const materialize = mappedCommandDescriptors.find(
-    (descriptor) => descriptor.operationId === "job.locale-matrix.materialize",
-  );
-  const infer = mappedCommandDescriptors.find(
-    (descriptor) => descriptor.operationId === "job.locale-matrix.infer",
-  );
-  assert.ok(start && !("exclusion" in start));
-  assert.ok(materialize && !("exclusion" in materialize));
-  assert.equal(infer, undefined);
-  assert.equal(
-    resolveCommand(["locale", "matrix", "plan"]).operationId,
-    "job.locale-matrix.materialize",
-  );
-  assert.equal(resolveCommand(["locale", "matrix", "run"]).operationId, "job.locale-matrix.start");
-  const localeRun = start.paths.find((path) => path.command === "locale matrix run");
-  assert.ok(localeRun?.inputHelp?.some((item) => item.name === "caseTargetBindings"));
-  assert.ok(localeRun?.inputHelp?.some((item) => item.name === "localAdmission"));
-  assert.match(localeRun?.note ?? "", /restore/u);
+test("Combine analysis has one direct public command", () => {
   assert.equal(
     resolveCommand(["combine", "analyze", "batch-1"]).operationId,
-    "job.locale-matrix.analysis",
+    "job.combine.analysis",
   );
   const optionStart = mappedCommandDescriptors.find(
     (descriptor) => descriptor.operationId === "job.combine.start",
@@ -563,11 +508,6 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       "job.combine.start",
       { appMapId: "grok-ios", combineId: "language-x-settings" },
     ],
-    [
-      ["run-matrix", "run", "grok-ios", "language-x-settings"],
-      "job.combine.start",
-      { appMapId: "grok-ios", combineId: "language-x-settings" },
-    ],
   ] as const;
 
   for (const [argv, operationId, input] of cases) {
@@ -580,10 +520,6 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
   assert.equal(resolveCommand(["activity", "follow"]).behavior, "event-stream");
   assert.equal(
     resolveCommand(["test", "run", "grok-ios", "settings-tour"]).behavior,
-    "job-start-watch",
-  );
-  assert.equal(
-    resolveCommand(["run-matrix", "run", "grok-ios", "language-x-settings"]).behavior,
     "job-start-watch",
   );
 });
@@ -627,4 +563,17 @@ test("declared read-only resources build encoded paths", () => {
     () => resolveResourceCommand(["activity", "list"], { limit: 0 }),
     /positive integer/,
   );
+});
+
+test("root help documents exit codes, --confirm, and the machine envelopes", () => {
+  const help = renderHelp();
+  for (const code of ["0", "2", "3", "4", "5", "6", "7", "8", "9"]) {
+    assert.ok(new RegExp(`^  ${code}  `, "m").test(help), `exit code ${code} documented`);
+  }
+  assert.match(help, /5 {2}validation \(client-side input problem/u);
+  assert.match(help, /9 {2}operation failed/u);
+  assert.match(help, /--confirm/u);
+  assert.match(help, /-h, --help/u);
+  assert.match(help, /"type":"result","ok":true/u);
+  assert.match(help, /"type":"error","ok":false/u);
 });

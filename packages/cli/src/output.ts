@@ -104,6 +104,20 @@ export class CliOutput {
     this.streams.stderr.write(`${message}\n`);
   }
 
+  /** One-time notice that a watched job is paused and who can unblock it.
+   * JSON/ndjson get it as a stderr progress event; humans get plain text. */
+  pausedHint(jobId: string): void {
+    if (this.quiet) return;
+    const hint = `Job ${jobId} is paused. Resume with: relay job resume ${jobId} (MCP: relay_job_resume)`;
+    if (this.mode === "human") {
+      this.streams.stderr.write(`${hint}\n`);
+      return;
+    }
+    this.streams.stderr.write(
+      `${JSON.stringify({ type: "progress", phase: "paused", message: hint })}\n`,
+    );
+  }
+
   snapshot(operationId: string, snapshot: unknown): void {
     if (this.mode === "ndjson") {
       line(this.streams.stdout, { type: "snapshot", operationId, snapshot });

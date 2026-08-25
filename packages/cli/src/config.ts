@@ -441,8 +441,26 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (action !== "invoke" || !operationId || extra.length > 0) {
       throw new UsageError("Expected: relay operation invoke <operationId> --input <json>");
     }
+    // These flags only exist on friendly commands; dropping them silently here
+    // would make an agent believe a Combine lens/cell was applied when it was not.
+    for (const friendlyOnly of ["--in", "--lens", "--cell", "--all"] as const) {
+      if (tokens.values.has(friendlyOnly) || tokens.switches.has(friendlyOnly)) {
+        throw new UsageError(
+          `${friendlyOnly} is only supported by friendly commands, not 'operation invoke'. Put it in the operation --input JSON.`,
+        );
+      }
+    }
     if (rawInput === undefined && inputFile === undefined) {
       throw new UsageError("operation invoke requires --input <json> or --input-file <path>");
+    }
+    // These flags only exist on friendly commands; dropping them silently here
+    // would make an agent believe a Combine lens/cell was applied when it was not.
+    for (const friendlyOnly of ["--in", "--lens", "--cell", "--all"] as const) {
+      if (tokens.values.has(friendlyOnly) || tokens.switches.has(friendlyOnly)) {
+        throw new UsageError(
+          `${friendlyOnly} is only supported by friendly commands, not 'operation invoke'. Put it in the operation --input JSON.`,
+        );
+      }
     }
     const input = applySurveyDir(
       operationId,

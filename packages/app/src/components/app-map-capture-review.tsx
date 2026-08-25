@@ -20,11 +20,11 @@ import type { RecordedNodeEvidence } from "@relay/protocol";
 import { softTruncate } from "../lib/human-error";
 
 const controlButton =
-  "grid min-h-11 min-w-11 place-items-center rounded-lg px-1.5 text-caption text-[var(--text-base)] transition-colors duration-press hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35";
+  "grid min-h-11 min-w-11 place-items-center rounded-lg px-1.5 text-caption text-[var(--text-base)] transition-colors duration-press hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] disabled:cursor-not-allowed disabled:opacity-35";
 const primaryButton =
-  "inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-hover hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
+  "inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-hover hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.96] motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] disabled:cursor-not-allowed disabled:opacity-35";
 const secondaryButton =
-  "inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-caption font-medium text-[var(--text-base)] transition-colors duration-press hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]";
+  "inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-caption font-medium text-[var(--text-base)] transition-colors duration-press hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]";
 const reviewEvidenceShell =
   "relative overflow-hidden rounded-2xl bg-[var(--phone-screen)] shadow-[0_0_0_1px_var(--border-weak-base),0_24px_54px_-32px_color-mix(in_srgb,var(--surface-float-base)_72%,transparent)]";
 

@@ -1,7 +1,7 @@
 import { For, Show, createMemo } from "solid-js";
 import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import { cn } from "../lib/cn";
-import { executionMoments, stepGlyph } from "../lib/execution-moments";
+import { executionMoments, stepGlyph, type ExecutionMoment } from "../lib/execution-moments";
 import { fmtAgo, fmtDur, titleize } from "../lib/job";
 import { presentTarget } from "../lib/target-presentation";
 import { formatStepDuration, runStateDot } from "../lib/run-review-presentation";
@@ -21,6 +21,13 @@ export function RunStepList(props: {
 }) {
   const server = useServer();
   const snapshot = () => props.job.recipeSnapshot;
+  const persisted = Boolean(props.job.persisted || props.job.runDir);
+  const stepThumbSrc = (frame: NonNullable<ExecutionMoment["frame"]>): string | null => {
+    if (frame.base64) return `data:${frame.mime || "image/png"};base64,${frame.base64}`;
+    return persisted
+      ? server.frameUrlForPersisted(props.job as unknown as PersistedRun, frame)
+      : null;
+  };
   const nodes = createMemo(() =>
     executionMoments({
       recipe: snapshot(),
@@ -46,7 +53,7 @@ export function RunStepList(props: {
               <button
                 type="button"
                 class={cn(
-                  "relative grid min-h-16 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-[background-color,transform] duration-hover active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
+                  "relative grid min-h-16 w-full grid-cols-[32px_32px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-[background-color,transform] duration-hover active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
                   active()
                     ? "bg-[color-mix(in_srgb,var(--text-interactive-base)_11%,var(--background-base))]"
                     : "hover:bg-[var(--surface-base)]",
@@ -67,6 +74,29 @@ export function RunStepList(props: {
                 >
                   {node.index + 1}
                 </span>
+                <Show
+                  when={node.frame}
+                  fallback={
+                    <span class="grid size-8 place-items-center rounded-lg bg-surface-base" aria-hidden="true">
+                      <Icon name="camera" size={13} class="text-text-weaker/50" />
+                    </span>
+                  }
+                >
+                  {(frame) => (
+                    <img
+                      src={stepThumbSrc(frame()) ?? undefined}
+                      alt=""
+                      aria-hidden="true"
+                      loading="lazy"
+                      decoding="async"
+                      class={cn(
+                        "size-8 rounded-lg border border-border-weak-base object-cover",
+                        node.state === "failed" && "opacity-55",
+                        node.state === "planned" && !active() && "opacity-30",
+                      )}
+                    />
+                  )}
+                </Show>
                 <span class="min-w-0 pr-2">
                   <span class="flex min-w-0 items-center gap-1.5 text-micro font-medium text-text-weaker">
                     <Icon name={kind() ? kindIcon(kind()!) : "bolt"} size={11} class="shrink-0" />

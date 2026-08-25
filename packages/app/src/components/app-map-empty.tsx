@@ -75,9 +75,12 @@ export function EmptyAppMap(props: {
     >
       <div class="pointer-events-none absolute inset-0 app-map-grid" aria-hidden="true" />
 
-      <Show when={!props.deviceOpen}>
+      {/* The checklist stays mounted while the device is open — it reflows
+          into a rail beside the stage instead, so the capture-stage guidance
+          survives opening the device. */}
+      <Show when={onboarding.visible()}>
         <Show
-          when={onboarding.visible()}
+          when={props.deviceOpen}
           fallback={
             <div class="pointer-events-none absolute inset-0 grid place-items-center px-8 text-center">
               <div class="grid max-w-[420px] justify-items-center gap-3">
@@ -131,8 +134,13 @@ export function EmptyAppMap(props: {
             </div>
           }
         >
-          <div class="absolute inset-0 grid place-items-center p-4">
-            <FirstTestChecklist {...onboarding.checklistProps()} />
+          <div
+            class="absolute inset-y-4 left-4 z-30 max-[720px]:inset-x-2 max-[720px]:top-2 max-[720px]:bottom-2"
+            data-first-test-rail=""
+          >
+            <div class="app-map-panel-scroll min-h-0 w-[min(320px,calc(100vw-48px))] overflow-y-auto overscroll-contain">
+              <FirstTestChecklist {...onboarding.checklistProps()} rail />
+            </div>
           </div>
         </Show>
       </Show>

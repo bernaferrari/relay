@@ -20,3 +20,8 @@ test("errors map to stable exit codes", () => {
     ExitCode.cancellation,
   );
 });
+
+test("operation failure stays distinct from validation", () => {
+  assert.equal(ExitCode.validation, 5);
+  assert.equal(ExitCode.operationFailure, 9);
+});

@@ -837,6 +837,39 @@ test("job watch prints an unchanged heartbeat only once", async () => {
   assert.equal(io.stderr().match(/recipe: Wi-Fi/g)?.length, 1);
 });
 
+test("job watch emits a one-time paused hint naming job resume and backs off polling", async () => {
+  const io = capture();
+  const responses = [
+    { job: { id: "abc", status: "running" } },
+    { job: { id: "abc", status: "paused" } },
+    { job: { id: "abc", status: "paused" } },
+    { job: { id: "abc", status: "paused" } },
+    { job: { id: "abc", status: "ok" } },
+  ];
+  const code = await runCli(["job", "watch", "abc", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke() {
+        return responses.shift();
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    pollIntervalMs: 0,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  // One hint per stream surface, despite three paused polls.
+  assert.equal(io.stderr().match(/job resume abc/g)?.length, 1);
+  assert.match(io.stderr(), /relay_job_resume/);
+  const progressEvents = io
+    .stderr()
+    .split("\n")
+    .filter((lineText) => lineText.startsWith("{") && lineText.includes('"phase":"paused"'));
+  assert.equal(progressEvents.length, 1);
+});
+
 test("job watch --no-wait gets the job exactly once", async () => {
   const io = capture();
   let calls = 0;
@@ -1314,101 +1347,6 @@ test("combine run carries the shared explicit local-admission contract unchanged
   assert.equal(started?.input.combineId, "languages");
 });
 
-test("locale matrix CLI materializes first and starts exact target-affine restore cases", async () => {
-  const planInput = {
-    recipe: "settings",
-    scope: {
-      locales: ["en", "it"],
-      entryPath: [{ kind: "tap", target: { label: "Settings" } }],
-      restoreLocale: "en",
-    },
-  };
-  const materialization = {
-    schemaVersion: 1,
-    materializedAt: 1,
-    source: { kind: "recipe", recipeId: "settings" },
-    scope: planInput.scope,
-    cases: [
-      { caseIndex: 0, locale: "en" },
-      { caseIndex: 1, locale: "it" },
-      { caseIndex: 2, locale: "en" },
-    ],
-    durationCohort: { testId: "settings", action: "settings" },
-  };
-  const localAdmission = {
-    deadlineMs: 180_000,
-    durationEvidence: [
-      {
-        schemaVersion: 1,
-        cohort: { targetId: "ipad-1", platform: "ios", testId: "settings", action: "settings" },
-        duration: {
-          workItemDurationMs: 12_000,
-          provenance: "observed-p95",
-          observedAt: 100,
-          sampleCount: 5,
-          maxAgeMs: MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS,
-        },
-        measurement: {
-          estimator: "campaign-duration-estimate",
-          recordSource: "persisted-runs",
-          durationSource: "run-wall-clock",
-          sampleIds: ["1", "2", "3", "4", "5"],
-          observationWindow: { startedAt: 1, finishedAt: 100 },
-        },
-      },
-    ],
-  };
-  const target = {
-    schemaVersion: 1,
-    kind: "local-device",
-    provider: { key: "relay.local.agent-device", scope: "local" },
-    targetId: "ipad-1",
-    platform: "ios",
-    identity: { kind: "device-serial", value: "ipad-1" },
-  };
-  const calls: Array<{ operationId: OperationId; input: Record<string, unknown> }> = [];
-  const client: OperationInvoker = {
-    async invoke(operationId, input) {
-      calls.push({ operationId, input: input as Record<string, unknown> });
-      if (operationId === "job.locale-matrix.materialize") return materialization;
-      if (operationId === "job.locale-matrix.start") {
-        return { jobs: [{ id: "locale-job", status: "queued" }] };
-      }
-      if (operationId === "job.get") return { job: { id: "locale-job", status: "ok" } };
-      throw new Error(`unexpected ${operationId}`);
-    },
-    events: async () => {},
-  };
-  const planIo = capture();
-  const planCode = await runCli(
-    ["locale", "matrix", "plan", "--input", JSON.stringify(planInput), "--json"],
-    { streams: planIo.streams, createClient: () => client, registerSignalHandlers: false, env: {} },
-  );
-  assert.equal(planCode, ExitCode.success);
-  assert.deepEqual(calls[0], { operationId: "job.locale-matrix.materialize", input: planInput });
-
-  const runIo = capture();
-  const runInput = {
-    recipe: "settings",
-    locales: ["en", "it"],
-    scope: materialization.scope,
-    caseTargetBindings: materialization.cases.map((item) => ({
-      ...item,
-      executionTarget: target,
-    })),
-    localAdmission,
-  };
-  const runCode = await runCli(
-    ["locale", "matrix", "run", "--input", JSON.stringify(runInput), "--json"],
-    { streams: runIo.streams, createClient: () => client, registerSignalHandlers: false, env: {} },
-  );
-  assert.equal(runCode, ExitCode.success);
-  const started = calls.find((call) => call.operationId === "job.locale-matrix.start");
-  assert.deepEqual(started?.input.caseTargetBindings, runInput.caseTargetBindings);
-  assert.deepEqual(started?.input.localAdmission, localAdmission);
-  assert.equal(started?.input.serial, undefined);
-});
-
 test("combine run waits for later cases and fails when any locale fails", async () => {
   const io = capture();
   const polled: string[] = [];
@@ -1447,7 +1385,7 @@ test("combine run waits for later cases and fails when any locale fails", async 
   );
 
   assert.deepEqual(polled, ["green", "red"]);
-  assert.equal(code, ExitCode.validation);
+  assert.equal(code, ExitCode.operationFailure);
   assert.equal(JSON.parse(io.stdout()).error.message, "Japanese case failed");
 });
 
@@ -1717,14 +1655,14 @@ test("structured operation failures use a non-zero exit instead of a false succe
     env: {},
   });
 
-  assert.equal(code, ExitCode.validation);
+  assert.equal(code, ExitCode.operationFailure);
   assert.deepEqual(JSON.parse(io.stdout()), {
     type: "error",
     ok: false,
     operationId: "step.run",
     error: {
       message: "the system Copy action did not appear",
-      exitCode: ExitCode.validation,
+      exitCode: ExitCode.operationFailure,
       details: { ok: false, error: "the system Copy action did not appear", logs: [] },
     },
   });
@@ -1763,43 +1701,6 @@ test("structured recovery is machine-readable and useful in the human CLI", asyn
   assert.match(io.stderr(), /Try: relay lease create ipad-1 --actor agent:mapper/u);
 });
 
-test("iOS switcher scan stops retain the exact review package in CLI JSON", async () => {
-  const io = capture();
-  const details = {
-    code: "IOS_MUTATION_OUTCOME_UNKNOWN",
-    iosMutation: {
-      nativeAttempts: 1,
-      operation: "press",
-      retry: { attempts: 0, decision: "blocked", reason: "native-command-outcome-unknown" },
-    },
-    switcherScan: {
-      status: "interrupted",
-      repair: {
-        terminal: true,
-        nextAction: "capture-current-screen-before-any-retry",
-      },
-    },
-  };
-  const code = await runCli(
-    ["operation", "invoke", "switcher-profile.scan", "--input", "{}", "--json"],
-    {
-      streams: io.streams,
-      createClient: () => ({
-        invoke: async () => {
-          throw new ApiError(409, "The iOS press may already have reached the device.", details);
-        },
-        events: async () => {},
-      }),
-      registerSignalHandlers: false,
-      env: {},
-    },
-  );
-
-  assert.equal(code, ExitCode.conflict);
-  assert.deepEqual(JSON.parse(io.stdout()).error.details, details);
-  assert.match(io.stderr(), /Capture the current screen|may already have reached/u);
-});
-
 test("failed watched jobs use a non-zero exit", async () => {
   const io = capture();
   const code = await runCli(["job", "watch", "failed-job", "--json"], {
@@ -1815,7 +1716,7 @@ test("failed watched jobs use a non-zero exit", async () => {
     env: {},
   });
 
-  assert.equal(code, ExitCode.validation);
+  assert.equal(code, ExitCode.operationFailure);
   assert.equal(JSON.parse(io.stdout()).error.message, "destination screen differed");
 });
 
@@ -1859,7 +1760,7 @@ test("failed watched jobs emit a bounded summary with durable evidence pointers"
   });
 
   const terminal = JSON.parse(io.stdout());
-  assert.equal(code, ExitCode.validation);
+  assert.equal(code, ExitCode.operationFailure);
   assert.ok(terminal.error.message.length <= 4_000);
   assert.ok(io.stdout().length < 20_000);
   assert.equal(terminal.error.details.job.resources.run, "/runs/failed-large");

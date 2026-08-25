@@ -94,17 +94,21 @@ export function AppMapMinimap(props: {
               type="button"
               class={minimapControl}
               aria-label="Zoom out"
-              data-tip="Zoom out"
+              data-tip="Zoom out · −"
               onClick={props.onZoomOut}
             >
               −
             </button>
-            <ZoomMenu scale={props.scale} onFit={props.onFit} onZoomTo={props.onZoomTo} />
+            <ZoomMenu
+              scale={props.scale}
+              onFit={props.onFit}
+              onZoomTo={props.onZoomTo}
+            />
             <button
               type="button"
               class={minimapControl}
               aria-label="Zoom in"
-              data-tip="Zoom in"
+              data-tip="Zoom in · +"
               onClick={props.onZoomIn}
             >
               +
@@ -151,7 +155,11 @@ export function AppMapMinimap(props: {
                   rx="2.2"
                   fill="var(--text-interactive-base)"
                   fill-opacity={group.selected ? 0.13 : 0.055}
-                  stroke={group.selected ? "var(--text-interactive-base)" : "var(--text-weak)"}
+                  stroke={
+                    group.selected
+                      ? "var(--text-interactive-base)"
+                      : "var(--text-weak)"
+                  }
                   stroke-opacity={group.selected ? 0.55 : 0.24}
                   stroke-width={group.selected ? 1.15 : 0.65}
                   vector-effect="non-scaling-stroke"
@@ -165,7 +173,11 @@ export function AppMapMinimap(props: {
                     class={edgeColor(edge.state, edge.selected)}
                     stroke="currentColor"
                     stroke-opacity={
-                      edge.selected ? 0.95 : !edge.state || edge.state === "idle" ? 0.28 : 0.68
+                      edge.selected
+                        ? 0.95
+                        : !edge.state || edge.state === "idle"
+                          ? 0.28
+                          : 0.68
                     }
                     stroke-width={edge.selected ? 1.2 : 0.6}
                     fill="none"
@@ -191,7 +203,8 @@ export function AppMapMinimap(props: {
                 // as a squatter mark at the same density as the cards near them.
                 const size = () => ({
                   width: markSize().width * (node.kind === "screen" ? 1 : 1.1),
-                  height: markSize().height * (node.kind === "screen" ? 1 : 0.5),
+                  height:
+                    markSize().height * (node.kind === "screen" ? 1 : 0.5),
                 });
                 return (
                   <rect
@@ -202,8 +215,14 @@ export function AppMapMinimap(props: {
                     height={size().height}
                     rx={Math.min(size().width, size().height) / 4}
                     fill="currentColor"
-                    fill-opacity={node.selected ? 1 : node.kind === "screen" ? 0.9 : 0.62}
-                    stroke={node.selected ? "var(--text-interactive-base)" : "var(--map-canvas)"}
+                    fill-opacity={
+                      node.selected ? 1 : node.kind === "screen" ? 0.9 : 0.62
+                    }
+                    stroke={
+                      node.selected
+                        ? "var(--text-interactive-base)"
+                        : "var(--map-canvas)"
+                    }
                     stroke-width={node.selected ? 1.5 : 0.65}
                     vector-effect="non-scaling-stroke"
                   />
@@ -238,11 +257,15 @@ export function AppMapMinimap(props: {
         <span class="min-w-9 text-center font-mono text-micro tabular-nums text-[var(--text-weak)]">
           {Math.round(props.scale * 100)}%
         </span>
-        <button type="button" class={compactControl} aria-label="Zoom in" onClick={props.onZoomIn}>
+        <button
+          type="button"
+          class={compactControl}
+          aria-label="Zoom in"
+          onClick={props.onZoomIn}
+        >
           +
         </button>
         <button
-          type="button"
           class={`${compactControl} w-auto px-2 text-micro`}
           aria-label="Fit map"
           onClick={props.onFit}
@@ -258,14 +281,21 @@ export function AppMapMinimap(props: {
  * The zoom readout is the control, not a caption beside one. Tabular figures
  * keep the button from twitching between 55% and 100% while a person zooms.
  */
-function ZoomMenu(props: { scale: number; onFit: () => void; onZoomTo: (scale: number) => void }) {
+function ZoomMenu(props: {
+  scale: number;
+  onFit: () => void;
+  onZoomTo: (scale: number) => void;
+}) {
   const [open, setOpen] = createSignal(false);
   let anchor: HTMLDivElement | undefined;
+  let trigger: HTMLButtonElement | undefined;
   const dismiss = (event: PointerEvent) => {
     if (anchor && !anchor.contains(event.target as Node)) setOpen(false);
   };
   const escape = (event: KeyboardEvent) => {
-    if (event.key === "Escape") setOpen(false);
+    if (!open() || event.key !== "Escape") return;
+    setOpen(false);
+    trigger?.focus();
   };
   document.addEventListener("pointerdown", dismiss, true);
   document.addEventListener("keydown", escape);
@@ -276,11 +306,25 @@ function ZoomMenu(props: { scale: number; onFit: () => void; onZoomTo: (scale: n
   const choose = (run: () => void) => {
     run();
     setOpen(false);
+    queueMicrotask(() => trigger?.focus());
+  };
+  const cycle = (event: KeyboardEvent & { currentTarget: HTMLElement }) => {
+    const options = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>(
+        "[role='menuitem'], [role='menuitemradio']",
+      ),
+    );
+    const index = options.indexOf(document.activeElement as HTMLElement);
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    const next = (index + step + options.length) % options.length;
+    event.preventDefault();
+    options[next]?.focus();
   };
   return (
     <div class="relative" ref={(element) => (anchor = element)}>
       <button
         type="button"
+        ref={(element) => (trigger = element)}
         class={cn(
           minimapControl,
           "w-auto gap-0.5 px-1.5 font-mono tabular-nums",
@@ -289,43 +333,59 @@ function ZoomMenu(props: { scale: number; onFit: () => void; onZoomTo: (scale: n
         aria-label="Zoom"
         aria-haspopup="menu"
         aria-expanded={open()}
-        data-tip="Zoom"
+        data-tip="Zoom · = / − keys or menu"
         onClick={() => setOpen((value) => !value)}
       >
         {Math.round(props.scale * 100)}%
       </button>
       <Show when={open()}>
-        <div
-          role="menu"
-          aria-label="Zoom"
-          class="absolute top-[calc(100%+6px)] right-0 z-[var(--z-popover)] grid w-36 gap-px rounded-lg bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)] backdrop-blur-[14px]"
-        >
-          <button
-            type="button"
-            role="menuitem"
-            class={zoomMenuItem}
-            onClick={() => choose(props.onFit)}
+        {(menu) => (
+          <div
+            // Focus moves into the menu on open so Arrow keys work immediately.
+            ref={(element) =>
+              queueMicrotask(() =>
+                element
+                  .querySelector<HTMLElement>("[role='menuitem']")
+                  ?.focus(),
+              )
+            }
+            role="menu"
+            aria-label="Zoom"
+            class="absolute top-[calc(100%+6px)] right-0 z-[var(--z-popover)] grid w-36 gap-px rounded-lg bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)] backdrop-blur-[14px]"
+            onKeyDown={cycle}
           >
-            Fit map
-          </button>
-          <span class="my-0.5 h-px bg-[var(--map-divider)]" aria-hidden="true" />
-          <For each={[0.5, 1, 2]}>
-            {(scale) => (
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={Math.round(props.scale * 100) === scale * 100}
-                class={zoomMenuItem}
-                onClick={() => choose(() => props.onZoomTo(scale))}
-              >
-                <span class="font-mono tabular-nums">{scale * 100}%</span>
-                <Show when={Math.round(props.scale * 100) === scale * 100}>
-                  <span class="ml-auto text-[var(--text-interactive-base)]">✓</span>
-                </Show>
-              </button>
-            )}
-          </For>
-        </div>
+            <button
+              type="button"
+              role="menuitem"
+              class={zoomMenuItem}
+              onClick={() => choose(props.onFit)}
+            >
+              Fit map
+            </button>
+            <span
+              class="my-0.5 h-px bg-[var(--map-divider)]"
+              aria-hidden="true"
+            />
+            <For each={[0.5, 1, 2]}>
+              {(scale) => (
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={Math.round(props.scale * 100) === scale * 100}
+                  class={zoomMenuItem}
+                  onClick={() => choose(() => props.onZoomTo(scale))}
+                >
+                  <span class="font-mono tabular-nums">{scale * 100}%</span>
+                  <Show when={Math.round(props.scale * 100) === scale * 100}>
+                    <span class="ml-auto text-[var(--text-interactive-base)]">
+                      ✓
+                    </span>
+                  </Show>
+                </button>
+              )}
+            </For>
+          </div>
+        )}
       </Show>
     </div>
   );
@@ -340,17 +400,24 @@ function nodeColor(node: AppMapMinimapNode): string {
   return stateColor(node.state, node.selected);
 }
 
-function edgeColor(state: AppMapRunPresentationState | undefined, selected: boolean): string {
+function edgeColor(
+  state: AppMapRunPresentationState | undefined,
+  selected: boolean,
+): string {
   return stateColor(state, selected);
 }
 
-function stateColor(state: AppMapRunPresentationState | undefined, selected: boolean): string {
+function stateColor(
+  state: AppMapRunPresentationState | undefined,
+  selected: boolean,
+): string {
   // "blocked" is mostly the resting state of a map nobody has replayed yet, so it
   // shares the neutral ink. Painting it critical turned a freshly authored
   // 44-screen map into a solid red overview.
   if (state === "failed") return "text-[var(--icon-critical-base)]";
   if (state === "passed") return "text-[var(--icon-success-base)]";
-  if (state === "running" || state === "healed") return "text-[var(--icon-warning-base)]";
+  if (state === "running" || state === "healed")
+    return "text-[var(--icon-warning-base)]";
   if (selected) return "text-[var(--text-interactive-base)]";
   return "text-[var(--text-weak)]";
 }

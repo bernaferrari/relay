@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Show, onCleanup, onMount } from "solid-js";
 import { panelEmptyNote, panelSectionLabel } from "../lib/ui";
 import type { AppMap, MapGroup } from "@relay/protocol";
 import { IconButton } from "@relay/ui/icon-button";
@@ -8,7 +8,10 @@ import { cn } from "../lib/cn";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
 import { useAppMapScrollSurface } from "../lib/use-app-map-scroll-surface";
 import { Icon } from "./icon";
-import { OrientedScreenshot, type ScreenshotOrientationEvidence } from "./oriented-screenshot";
+import {
+  OrientedScreenshot,
+  type ScreenshotOrientationEvidence,
+} from "./oriented-screenshot";
 import { LogicalScrollSurfaceViewer } from "./logical-scroll-surface-viewer";
 import { ReviewedDocumentOriginControl } from "./reviewed-document-origin-control";
 import { ScrollSurfaceCaptureAction } from "./scroll-surface-capture-action";
@@ -35,6 +38,19 @@ export function ScreenInspector(props: {
   onRemove: () => void;
   onClose: () => void;
 }) {
+  let panel: HTMLElement | undefined;
+  // Opening Details hands focus into the panel so Escape closes it and a
+  // screen reader lands inside; closing hands focus back to the opener.
+  onMount(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    panel?.focus({ preventScroll: true });
+    onCleanup(() => opener?.focus?.({ preventScroll: true }));
+  });
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    event.stopPropagation();
+    props.onClose();
+  };
   const scrollSurface = useAppMapScrollSurface({
     activeAppMap: () => props.appMap,
     screenId: () => props.node?.id,
@@ -59,6 +75,9 @@ export function ScreenInspector(props: {
     <Show when={props.node}>
       {(_node) => (
         <aside
+          ref={(element) => (panel = element)}
+          tabIndex={-1}
+          onKeyDown={onKeyDown}
           id={`app-map-screen-details-${_node().id}`}
           data-app-map-screen-inspector
           class="app-map-panel-scroll absolute top-16 right-3 z-30 max-h-[calc(100%-144px)] w-[min(304px,calc(100%-24px))] touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:max-h-[min(70%,540px)] max-[720px]:w-auto"
@@ -78,7 +97,9 @@ export function ScreenInspector(props: {
                 data-tip="Rename screen · F2"
                 onClick={props.onRename}
               >
-                <strong class="block truncate font-semibold">{props.title}</strong>
+                <strong class="block truncate font-semibold">
+                  {props.title}
+                </strong>
               </button>
             </div>
             <IconButton
@@ -95,7 +116,13 @@ export function ScreenInspector(props: {
             <div class="flex h-[88px] items-center justify-center overflow-hidden rounded-lg border border-[var(--border-weak-base)] bg-[var(--background-deep)] p-1.5">
               <Show
                 when={props.image}
-                fallback={<Icon name="smartphone" size={18} class="text-[var(--text-weaker)]" />}
+                fallback={
+                  <Icon
+                    name="smartphone"
+                    size={18}
+                    class="text-[var(--text-weaker)]"
+                  />
+                }
               >
                 {(image) => (
                   <OrientedScreenshot
@@ -112,7 +139,9 @@ export function ScreenInspector(props: {
                 <i
                   class={cn(
                     "size-1.5 rounded-full",
-                    props.image ? "bg-[var(--text-interactive-base)]" : "bg-[var(--text-weaker)]",
+                    props.image
+                      ? "bg-[var(--text-interactive-base)]"
+                      : "bg-[var(--text-weaker)]",
                   )}
                   aria-hidden="true"
                 />
@@ -143,7 +172,10 @@ export function ScreenInspector(props: {
                           : "text-[var(--text-interactive-base)]",
                   )}
                 >
-                  <i class="size-1.5 rounded-full bg-current" aria-hidden="true" />
+                  <i
+                    class="size-1.5 rounded-full bg-current"
+                    aria-hidden="true"
+                  />
                   <span>{props.runState}</span>
                 </div>
               </Show>
@@ -169,10 +201,14 @@ export function ScreenInspector(props: {
                     class="min-h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-2.5 text-micro text-[var(--text-strong)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)]"
                     value={capture().selectedVariantId}
                     disabled={capture().busy}
-                    onChange={(event) => capture().onSelectVariant?.(event.currentTarget.value)}
+                    onChange={(event) =>
+                      capture().onSelectVariant?.(event.currentTarget.value)
+                    }
                   >
                     <For each={capture().variants}>
-                      {(variant) => <option value={variant.id}>{variant.label}</option>}
+                      {(variant) => (
+                        <option value={variant.id}>{variant.label}</option>
+                      )}
                     </For>
                   </select>
                 </Show>
@@ -230,10 +266,15 @@ export function ScreenInspector(props: {
                 <select
                   id="screen-flow-setup"
                   class="h-9 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-2.5 text-caption text-[var(--text-strong)] outline-none transition-colors hover:border-[var(--border-strong-base)] focus-visible:border-[var(--border-focus)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--border-focus)_24%,transparent)]"
-                  value={flowSetup().mixed ? "__mixed__" : (flowSetup().routineId ?? "")}
+                  value={
+                    flowSetup().mixed
+                      ? "__mixed__"
+                      : (flowSetup().routineId ?? "")
+                  }
                   onChange={(event) => {
                     const value = event.currentTarget.value;
-                    if (value !== "__mixed__") props.onFlowSetup(value || undefined);
+                    if (value !== "__mixed__")
+                      props.onFlowSetup(value || undefined);
                   }}
                 >
                   <Show when={flowSetup().mixed}>
@@ -243,7 +284,9 @@ export function ScreenInspector(props: {
                   </Show>
                   <option value="">Check this screen is open</option>
                   <For each={flowSetup().routines}>
-                    {(routine) => <option value={routine.id}>{routine.name}</option>}
+                    {(routine) => (
+                      <option value={routine.id}>{routine.name}</option>
+                    )}
                   </For>
                 </select>
               </section>
@@ -261,14 +304,15 @@ export function ScreenInspector(props: {
               when={props.connections.length}
               fallback={
                 <p class={panelEmptyNote}>
-                  Nothing leads out of this screen yet. Record a step from here to add the first
-                  path.
+                  Nothing leads out of this screen yet. Record a step from here
+                  to add the first path.
                 </p>
               }
             >
               <For each={props.connections}>
                 {(connection) => {
-                  const targetTitle = () => props.titleForScreen(connection.toScreenId);
+                  const targetTitle = () =>
+                    props.titleForScreen(connection.toScreenId);
                   return (
                     <button
                       type="button"
@@ -285,12 +329,22 @@ export function ScreenInspector(props: {
                         )}
                       >
                         <Icon
-                          name={connection.state === "needs-recording" ? "clock" : "arrow-right"}
+                          name={
+                            connection.state === "needs-recording"
+                              ? "clock"
+                              : "arrow-right"
+                          }
                           size={10}
                         />
                       </span>
-                      <span class="min-w-0 flex-1 truncate">{targetTitle()}</span>
-                      <Icon name="arrow-right" size={11} class="text-[var(--text-weak)]" />
+                      <span class="min-w-0 flex-1 truncate">
+                        {targetTitle()}
+                      </span>
+                      <Icon
+                        name="arrow-right"
+                        size={11}
+                        class="text-[var(--text-weak)]"
+                      />
                     </button>
                   );
                 }}
@@ -345,7 +399,9 @@ export function GroupInspector(props: {
                 <Icon name="group" size={12} />
               </span>
               <div class="min-w-0">
-                <span class="block text-micro font-medium text-[var(--text-weak)]">Group</span>
+                <span class="block text-micro font-medium text-[var(--text-weak)]">
+                  Group
+                </span>
                 <strong class="mt-0.5 block truncate text-caption font-semibold text-[var(--text-strong)]">
                   {group().name}
                 </strong>
@@ -372,7 +428,8 @@ export function GroupInspector(props: {
             </div>
           </header>
           <p class="m-0 px-3 py-2.5 text-micro/[1.45] text-[var(--text-weak)]">
-            {props.screens.length} {props.screens.length === 1 ? "screen" : "screens"}. Groups only
+            {props.screens.length}{" "}
+            {props.screens.length === 1 ? "screen" : "screens"}. Groups only
             organize the canvas; they do not affect runs.
           </p>
           <div class="border-t border-[var(--border-weak-base)] px-2 py-2">
@@ -391,7 +448,11 @@ export function GroupInspector(props: {
                       <Icon name="smartphone" size={10} />
                     </span>
                     <span class="min-w-0 flex-1 truncate">{screen.title}</span>
-                    <Icon name="arrow-right" size={11} class="text-[var(--text-weak)]" />
+                    <Icon
+                      name="arrow-right"
+                      size={11}
+                      class="text-[var(--text-weak)]"
+                    />
                   </button>
                 )}
               </For>

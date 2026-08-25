@@ -5,6 +5,7 @@ import { cn } from "../lib/cn";
 import { humanizeTitle } from "../lib/humanize-identifier";
 import { AppMapScrollSurfaceBadge } from "./app-map-scroll-surface-badge";
 import { Icon } from "./icon";
+import { EmptyScreenshot } from "./app-map-canvas-cards";
 import { OrientedScreenshot, type ScreenshotOrientationEvidence } from "./oriented-screenshot";
 
 export type AppMapScreenState =
@@ -50,9 +51,10 @@ export function AppMapScreenTile(props: {
           and filled the rest with nothing, so a grid of phone screens read as a
           grid of empty cards. The grid sets one ratio for every tile in it
           (`--screen-media-aspect`), which keeps a row's baselines aligned while
-          letting the screenshot fill the frame it is in. */}
-      <div class="relative grid aspect-[var(--screen-media-aspect,0.5)] place-items-center overflow-hidden rounded-xl bg-[var(--background-base)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-shadow duration-hover group-hover:shadow-[inset_0_0_0_1px_var(--border-strong-base),0_8px_20px_rgb(0_0_0/7%)]">
-        <Show when={image()} fallback={<EmptyScreenImage />}>
+          letting the screenshot fill the frame it is in. The letterbox paints
+          --map-canvas-backdrop, the same near-black the canvas frames use. */}
+      <div class="relative grid aspect-[var(--screen-media-aspect,0.5)] place-items-center overflow-hidden rounded-xl bg-[var(--map-canvas-backdrop)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-shadow duration-hover group-hover:shadow-[inset_0_0_0_1px_var(--border-strong-base),var(--map-elevation-card)]">
+        <Show when={image()} fallback={<EmptyScreenshot size="roomy" hint="Open on the map to save one" />}>
           <OrientedScreenshot
             src={image()}
             alt=""
@@ -70,7 +72,7 @@ export function AppMapScreenTile(props: {
         <Show when={props.screen.handoff}>
           {(handoff) => (
             <span
-              class="absolute top-2 left-2 inline-flex min-h-6 items-center gap-1 rounded-full bg-[var(--surface-base)] px-2 text-micro font-semibold text-[var(--text-base)] shadow-[0_1px_5px_rgb(0_0_0/12%)]"
+              class="absolute top-2 left-2 inline-flex min-h-6 items-center gap-1 rounded-full bg-[var(--surface-base)] px-2 text-micro font-semibold text-[var(--text-base)] shadow-[var(--map-elevation-chip)]"
               title={`Owned by ${handoff().ownerApp} · returns with ${handoff().returnAction}`}
             >
               <Icon name="external" size={10} /> Handoff
@@ -132,18 +134,6 @@ export function AppMapScreenTile(props: {
   );
 }
 
-function EmptyScreenImage() {
-  return (
-    <div class="grid max-w-[170px] justify-items-center gap-2 px-4 text-center text-[var(--text-weak)] transition-colors duration-hover group-hover:text-[var(--text-base)]">
-      <span class="grid size-9 place-items-center rounded-xl bg-[var(--surface-base-hover)]">
-        <Icon name="camera" size={15} />
-      </span>
-      <span class="text-caption font-medium text-[var(--text-base)]">No screenshot</span>
-      <span class="text-micro/[1.35]">Open on the map to save one</span>
-    </div>
-  );
-}
-
 function metaLabel(props: {
   screen: Screen;
   incoming: number;
@@ -158,7 +148,7 @@ function metaLabel(props: {
 
 function statePill(state: AppMapScreenState): string {
   return cn(
-    "inline-flex min-h-5 items-center gap-1 rounded-full bg-[var(--background-base)] px-1.5 text-micro font-semibold shadow-[0_1px_5px_rgb(0_0_0/16%)]",
+    "inline-flex min-h-5 items-center gap-1 rounded-full bg-[var(--background-base)] px-1.5 text-micro font-semibold shadow-[var(--map-elevation-chip)]",
     state === "passed"
       ? "text-[var(--icon-success-base)]"
       : state === "failed"

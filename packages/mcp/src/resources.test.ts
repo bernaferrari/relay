@@ -296,8 +296,33 @@ test("discovers excluded profile operations without eagerly exposing their tools
           role: string;
           profiles: string[];
         }>;
+        availablePrompts: Array<{
+          name: string;
+          title: string;
+          description: string;
+          unlockedByProfiles: string[];
+        }>;
       };
     };
+    assert.ok(
+      envelope.data.availablePrompts.length >= 1,
+      "operations resource lists the prompt registry",
+    );
+    for (const available of envelope.data.availablePrompts) {
+      assert.ok(available.name.length > 0);
+      assert.ok(available.title.length > 0);
+      assert.ok(available.description.length > 0);
+      assert.ok(
+        available.unlockedByProfiles.includes("full"),
+        `${available.name} unlocks under the full profile`,
+      );
+    }
+    assert.ok(
+      envelope.data.availablePrompts.some(({ unlockedByProfiles }) =>
+        unlockedByProfiles.includes("map"),
+      ),
+      "at least one prompt is reachable from the map profile",
+    );
     assert.equal(envelope.truncated, false);
     assert.equal(envelope.data.activeProfile, "map");
     assert.deepEqual(

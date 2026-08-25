@@ -5,10 +5,14 @@ export const ExitCode = {
   usage: 2,
   connection: 3,
   auth: 4,
+  /** Client-side input problems only: bad arguments, malformed payloads. */
   validation: 5,
   conflict: 6,
   cancellation: 7,
   server: 8,
+  /** The operation ran on the server and reported failure (`{ ok: false }` or
+   * job status `error`). Distinct from 5 so agents retry/report differently. */
+  operationFailure: 9,
 } as const;
 
 export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];

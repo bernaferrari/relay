@@ -18,6 +18,7 @@ export function createCampaignRepairActions(options: {
   const [repairingCheckId, setRepairingCheckId] = createSignal<string | undefined>();
   const [loadingRepairCheckId, setLoadingRepairCheckId] = createSignal<string | undefined>();
   const [proposingRepairCheckId, setProposingRepairCheckId] = createSignal<string | undefined>();
+  const [readyProposalTestId, setReadyProposalTestId] = createSignal<string | undefined>();
   const [repairTarget, setRepairTarget] = createSignal<CampaignRepairTarget>();
 
   async function retryFailedCheck(runId: string, checkId: string): Promise<void> {
@@ -65,8 +66,10 @@ export function createCampaignRepairActions(options: {
         ...action.fixedInput,
         reason: reason.trim(),
       });
-      options.toast("Repair proposal is ready for review", "success");
-      options.onOpenTest(target.source.testId!);
+      // The reviewer stays on the run report; the proposal is one click away
+      // instead of yanking them into the test editor mid-review.
+      options.toast("Repair proposal is ready — review it in the test editor", "success");
+      setReadyProposalTestId(target.source.testId!);
     } catch (error) {
       options.toast(humanError(error, "Could not create repair proposal"), "error");
     } finally {
@@ -104,6 +107,7 @@ export function createCampaignRepairActions(options: {
   return {
     repairingCheckId,
     loadingRepairCheckId,
+    readyProposalTestId,
     proposingRepairCheckId,
     repairTarget,
     retryFailedCheck,

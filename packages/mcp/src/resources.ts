@@ -18,6 +18,7 @@ import {
   type RelayMcpProfile,
   type RelayMcpToolDescriptor,
 } from "./tools.js";
+import { relayMcpPrompts, relayMcpPromptsForTools } from "./prompts.js";
 
 export const relayMcpResourceByteLimit = 32_768;
 export const relayMcpResourceMimeType = "application/json";
@@ -449,6 +450,17 @@ export function registerRelayResources(
           ({ operationId }) => !active.has(operationId),
         ),
         excludedOperations: relayMcpExclusions,
+        availablePrompts: relayMcpPrompts.map(({ name, title, description }) => ({
+          name,
+          title,
+          description,
+          unlockedByProfiles: relayMcpProfiles.filter(
+            (id) =>
+              relayMcpPromptsForTools(relayMcpToolsForProfile(id)).some(
+                (available) => available.name === name,
+              ),
+          ),
+        })),
         guidance:
           "Choose one task profile at server startup. Use full only for deliberate low-level access.",
       };

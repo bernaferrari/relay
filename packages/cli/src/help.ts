@@ -6,14 +6,13 @@ import {
   type CommandPathDescriptor,
 } from "./commands.js";
 import { dbHelp } from "./db-commands.js";
-import { packHelp } from "./pack-check.js";
 import { UsageError } from "./errors.js";
 
 const familyGroups = [
   ["App Map", ["map", "screen", "connect", "flow"]],
   ["Author", ["variable", "test", "combine", "proposal", "session", "routine", "case-stack"]],
   ["Explore", ["discovery"]],
-  ["Operate", ["device", "run", "activity", "pack"]],
+  ["Operate", ["device", "run", "activity"]],
   ["Automation", ["schedule", "matrix"]],
   ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],
   ["System", ["generation", "system", "db"]],
@@ -40,7 +39,24 @@ Screenshot and snapshot output:
   --binary                         Write raw PNG bytes to stdout
   --force                          Overwrite an existing --file target or a non-empty survey --dir
   --mark <x>,<y>                   Draw a tap preview ring on a screenshot (no tap)
-  --preview                        On interact: show selection overlay, do not tap`;
+  --preview                        On interact: show selection overlay, do not tap
+  --confirm                        Confirm a reviewed-origin or destructive operation
+  -h, --help                       Print help for the root or the given family
+
+Exit codes:
+  0  success
+  2  usage (bad arguments; also Unknown option)
+  3  connection (server unreachable, timeout)
+  4  auth (401/403)
+  5  validation (client-side input problem: bad flags, malformed payload)
+  6  conflict (lease required, stale revision)
+  7  cancelled (SIGINT/SIGTERM)
+  8  server error (the call did not run to a verdict)
+  9  operation failed (it ran and reported failure: { ok: false } or job status error)
+
+Machine envelopes (--json / --ndjson):
+  success: {"type":"result","ok":true,"operationId":"...","result":{...}}
+  failure: {"type":"error","ok":false,"operationId":"...","error":{"message":"...","exitCode":9,"details":{...}}}`;
 
 type FriendlyPath = {
   descriptor: CommandPathDescriptor;
@@ -60,7 +76,6 @@ function familyNames(): Set<string> {
   return new Set([
     ...friendlyPaths().map(({ descriptor }) => descriptor.command.split(" ")[0]!),
     "db",
-    "pack",
   ]);
 }
 
@@ -151,7 +166,6 @@ function renderDetails(descriptor: CommandPathDescriptor): string {
 
 function renderFamilyHelp(family: string): string {
   if (family === "db") return dbHelp();
-  if (family === "pack") return packHelp();
   if (family === "operation") {
     return `Relay operation commands
 

@@ -29,7 +29,7 @@ import { RunBrowser } from "./run-browser";
 import { CompatibilityReportPanel } from "./compatibility-report-panel";
 import { RunRow, RunStepList } from "./run-list-surfaces";
 import { RunReplayStage } from "./run-replay-stage";
-import { RunMatrixReview } from "./run-matrix-review";
+import { CombineReview } from "./combine-review";
 import { RunShareMenu } from "./run-share-menu";
 import { VisualDiffReview } from "./visual-diff-review";
 import { RunsRefreshControl } from "./runs-refresh-control";
@@ -46,11 +46,11 @@ import {
   summarizeRunBatch,
 } from "../lib/runs-workspace-helpers";
 import {
-  isRunMatrixJob,
-  projectRunMatrix,
-  stepIndexForMatrixCapture,
-} from "../lib/run-matrix-review";
-import { useRunCombinePackActions } from "../lib/use-run-combine-pack-actions";
+  isCombineJob,
+  projectCombineReview,
+  stepIndexForCombineCapture,
+} from "../lib/combine-review";
+import { useCombinePackActions } from "../lib/use-run-combine-pack-actions";
 
 export function RunsWorkspace(props: {
   onOpenMap: (id: string) => void;
@@ -70,7 +70,7 @@ export function RunsWorkspace(props: {
     | "network"
     | "logs"
     | "performance"
-    | "matrix"
+    | "combine"
     | "compatibility"
   >("timeline");
   const [runEvidence, setRunEvidence] = createSignal<RunEvidenceQuery | null>(null);
@@ -82,9 +82,9 @@ export function RunsWorkspace(props: {
   const [visualLoading, setVisualLoading] = createSignal(false);
   const [approvingVisualBaseline, setApprovingVisualBaseline] = createSignal(false);
   const [visualPolicyBusy, setVisualPolicyBusy] = createSignal(false);
-  const [matrixExporting, setMatrixExporting] = createSignal(false);
-  const [openMatrixWhenReady, setOpenMatrixWhenReady] = createSignal(false);
-  const [matrixReport, setMatrixReport] = createSignal<
+  const [combineExporting, setCombineExporting] = createSignal(false);
+  const [openCombineWhenReady, setOpenCombineWhenReady] = createSignal(false);
+  const [compatibilityReport, setCompatibilityReport] = createSignal<
     import("@relay/protocol").CompatibilityReport | null
   >(null);
   const [regressionSignals, setRegressionSignals] = createSignal<
@@ -129,11 +129,11 @@ export function RunsWorkspace(props: {
   const selected = createMemo(() => rows().find((row) => row.id === selectedId()) ?? null, null, {
     equals: runsEqualForSelection,
   });
-  const selectedMatrixRows = createMemo(() => {
+  const selectedCombineRuns = createMemo(() => {
     const job = selected();
-    if (!job?.batchId || !isRunMatrixJob(job)) return [];
+    if (!job?.batchId || !isCombineJob(job)) return [];
     // Persisted list rows omit frozen inputs until their detail is loaded. Once
-    // the selected run proves this is a matrix, include every sibling so the
+    // the selected run proves this is a Combine, include every sibling so the
     // detail-loading effect below can hydrate the complete review.
     return rows().filter((row) => row.batchId === job.batchId);
   });
@@ -143,7 +143,7 @@ export function RunsWorkspace(props: {
     const loaded = rows().filter((row) => row.batchId === job.batchId).length;
     return Math.max(loaded, job.caseCount ?? 1);
   });
-  const selectedMatrixReview = createMemo(() => projectRunMatrix(selectedMatrixRows()));
+  const selectedCombineReview = createMemo(() => projectCombineReview(selectedCombineRuns()));
   /**
    * A run report owns its local replay cursor, but when the corresponding
    * test is open it must also advance the shared workbench selection. This
@@ -169,7 +169,7 @@ export function RunsWorkspace(props: {
     else setRegressionSignals([]);
   });
   createEffect(() => {
-    for (const run of selectedMatrixRows()) {
+    for (const run of selectedCombineRuns()) {
       const needsDetail =
         (run.frameCount ?? 0) > (run.frames?.length ?? 0) ||
         (!run.matrixCase && !run.artifacts?.length);
@@ -181,9 +181,9 @@ export function RunsWorkspace(props: {
     }
   });
   createEffect(() => {
-    if (!openMatrixWhenReady() || (selectedMatrixReview()?.rows.length ?? 0) < 2) return;
-    setTab("matrix");
-    setOpenMatrixWhenReady(false);
+    if (!openCombineWhenReady() || (selectedCombineReview()?.rows.length ?? 0) < 2) return;
+    setTab("combine");
+    setOpenCombineWhenReady(false);
   });
   createEffect(() => {
     const job = selected();
@@ -216,7 +216,7 @@ export function RunsWorkspace(props: {
       })
       .finally(() => setVisualLoading(false));
   });
-  async function reviewCurrentVisual(action: VisualReviewAction): Promise<void> {
+  async function reviewCurrentVisual(action: VisualReviewAction, note?: string): Promise<void> {
     const job = selected();
     if (!job?.persisted || approvingVisualBaseline()) return;
     const comparison = durableVisualComparison();
@@ -226,7 +226,7 @@ export function RunsWorkspace(props: {
     }
     setApprovingVisualBaseline(true);
     try {
-      const decision = await server.reviewVisualRun(job.id, comparison.id, action);
+      const decision = await server.reviewVisualRun(job.id, comparison.id, action, note);
       if (decision) {
         setVisualDecision(decision);
         if (action === "approve-new-baseline") {
@@ -286,14 +286,14 @@ export function RunsWorkspace(props: {
     setSelectedId(job.id);
     server.setSelectedJobId(job.id);
     selectRunStep(initialRunReviewStep(job));
-    setOpenMatrixWhenReady(
+    setOpenCombineWhenReady(
       Boolean(job.batchId && rows().filter((row) => row.batchId === job.batchId).length > 1),
     );
     setTab(
       job.batchId &&
         rows().filter((row) => row.batchId === job.batchId).length > 1 &&
-        isRunMatrixJob(job)
-        ? "matrix"
+        isCombineJob(job)
+        ? "combine"
         : "timeline",
     );
     if (!job.steps?.length && !requestedDetails.has(job.id)) {
@@ -303,27 +303,34 @@ export function RunsWorkspace(props: {
         .finally(() => requestedDetails.delete(job.id));
     }
   };
-  const openMatrixCapture = (job: JobInfo, frameIndex: number) => {
+  const openCombineCapture = (job: JobInfo, frameIndex: number) => {
     setSelectedId(job.id);
     server.setSelectedJobId(job.id);
-    selectRunStep(stepIndexForMatrixCapture(job, frameIndex));
+    selectRunStep(stepIndexForCombineCapture(job, frameIndex));
     setTab("timeline");
   };
   const {
-    retryProblems: retryProblemMatrixRuns,
-    exportPack: exportSelectedMatrix,
-    stopPending: stopMatrixRuns,
-  } = useRunCombinePackActions({
-    review: selectedMatrixReview,
-    rows: selectedMatrixRows,
-    exporting: matrixExporting,
-    setExporting: setMatrixExporting,
+    retryProblems: retryProblemCombineRuns,
+    exportPack: exportSelectedCombine,
+    stopPending: stopCombineRuns,
+  } = useCombinePackActions({
+    review: selectedCombineReview,
+    rows: selectedCombineRuns,
+    exporting: combineExporting,
+    setExporting: setCombineExporting,
     runPathAcrossVariables: server.runPathAcrossVariables,
     retryFrozen: server.retrySelectedJob,
-    exportEvidence: (batchId) => server.matrixEvidence.export(batchId),
+    exportEvidence: (batchId) => server.combineEvidence.export(batchId),
     cancelJob: (id) => server.cancelJob(id),
   });
   const reviewCounts = createMemo(() => (selected() ? runReviewCounts(selected()!) : null));
+  const visualPendingCount = createMemo(() => {
+    const comparison = durableVisualComparison();
+    if (!comparison?.baseline) return null;
+    return comparison.diff.frames.filter(
+      (frame) => frame.code === "FRAME_CHANGED" && frame.approved && frame.latest,
+    ).length;
+  });
   const selectedExecution = createMemo(() => selected()?.recipeSnapshot);
   const reviewCompletion = createMemo(() =>
     selected() ? runCompletion(selected()!, selectedExecution()?.steps.length ?? 0) : null,
@@ -351,7 +358,7 @@ export function RunsWorkspace(props: {
     const requestedRun = rows().find((row) => row.id === requested)!;
     setSelectedId(requested);
     selectRunStep(initialRunReviewStep(requestedRun));
-    setOpenMatrixWhenReady(
+    setOpenCombineWhenReady(
       Boolean(
         requestedRun.batchId &&
         rows().filter((row) => row.batchId === requestedRun.batchId).length > 1,
@@ -360,18 +367,18 @@ export function RunsWorkspace(props: {
     setTab(
       requestedRun.batchId &&
         rows().filter((row) => row.batchId === requestedRun.batchId).length > 1 &&
-        isRunMatrixJob(requestedRun)
-        ? "matrix"
+        isCombineJob(requestedRun)
+        ? "combine"
         : "timeline",
     );
   });
   createEffect(() => {
     const job = selected();
     if (tab() !== "compatibility" || !job?.batchId || !job.targetProfile) {
-      setMatrixReport(null);
+      setCompatibilityReport(null);
       return;
     }
-    void server.loadCompatibilityReport(job.batchId).then(setMatrixReport);
+    void server.loadCompatibilityReport(job.batchId).then(setCompatibilityReport);
   });
   const baseline = () => {
     const current = selected();
@@ -400,7 +407,7 @@ export function RunsWorkspace(props: {
               Run history
             </h2>
             <p class="mt-0.5 text-caption text-text-weak">
-              Every path and matrix run, including screenshot evidence.
+              Every path and Combine run, including screenshot evidence.
             </p>
           </div>
           <RunsRefreshControl
@@ -413,7 +420,7 @@ export function RunsWorkspace(props: {
       <div
         class={cn(
           selected()
-            ? tab() === "matrix"
+            ? tab() === "combine"
               ? "grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-hidden"
               : "grid min-h-0 min-w-0 flex-1 grid-cols-[216px_minmax(420px,1.35fr)_minmax(390px,0.85fr)] overflow-hidden max-[1180px]:grid-cols-[minmax(360px,1.25fr)_minmax(390px,0.75fr)] max-[700px]:grid-cols-1 max-[700px]:overflow-y-auto"
             : "mx-auto grid w-full max-w-[1080px] min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5",
@@ -508,13 +515,13 @@ export function RunsWorkspace(props: {
             </For>
           </div>
         </Show>
-        <Show when={selected() && tab() !== "matrix"}>
+        <Show when={selected() && tab() !== "combine"}>
           <RunBrowser rows={rows()} selectedId={selectedId()} onSelect={openRun} />
         </Show>
         <Show when={selected()}>
           {(job) => (
             <Show
-              when={tab() === "matrix" && selectedMatrixReview()}
+              when={tab() === "combine" && selectedCombineReview()}
               fallback={
                 <RunReplayStage
                   job={job()}
@@ -535,24 +542,24 @@ export function RunsWorkspace(props: {
               }
             >
               {(review) => (
-                <RunMatrixReview
+                <CombineReview
                   review={review()}
-                  onOpen={openMatrixCapture}
-                  onRetryProblems={() => void retryProblemMatrixRuns()}
-                  onExport={() => void exportSelectedMatrix()}
+                  onOpen={openCombineCapture}
+                  onRetryProblems={() => void retryProblemCombineRuns()}
+                  onExport={() => void exportSelectedCombine()}
                   onClose={() => {
                     setSelectedId(null);
                     const url = new URL(window.location.href);
                     url.searchParams.delete("run");
                     window.history.replaceState({}, "", url);
                   }}
-                  exporting={matrixExporting()}
+                  exporting={combineExporting()}
                 />
               )}
             </Show>
           )}
         </Show>
-        <Show when={tab() !== "matrix" ? selected() : null}>
+        <Show when={tab() !== "combine" ? selected() : null}>
           {(job) => (
             <aside class="flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-[var(--border-weak-base)] bg-[var(--background-base)]">
               <header class="grid shrink-0 gap-2.5 px-5 pt-4 pb-3.5">
@@ -790,27 +797,32 @@ export function RunsWorkspace(props: {
                         {reviewCounts()!.network}
                       </span>
                     ) : null}
+                    {id === "visual" && (visualPendingCount() ?? 0) > 0 ? (
+                      <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-caption/4 text-text-interactive-base">
+                        {visualPendingCount()!}
+                      </span>
+                    ) : null}
                   </button>
                 ))}
-                <Show when={selectedMatrixReview() && selectedMatrixRows().length > 1}>
+                <Show when={selectedCombineReview() && selectedCombineRuns().length > 1}>
                   <button
                     type="button"
                     role="tab"
-                    id="run-report-tab-matrix"
+                    id="run-report-tab-combine"
                     aria-controls="run-report-panel"
-                    aria-selected={tab() === "matrix"}
-                    tabindex={tab() === "matrix" ? 0 : -1}
+                    aria-selected={tab() === "combine"}
+                    tabindex={tab() === "combine" ? 0 : -1}
                     class={cn(
                       "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
-                      tab() === "matrix" &&
+                      tab() === "combine" &&
                         "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}
-                    onClick={() => setTab("matrix")}
+                    onClick={() => setTab("combine")}
                     onKeyDown={onReportTabKeyDown}
                   >
                     Combine
                     <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-micro/4 tabular-nums text-text-interactive-base">
-                      {selectedMatrixRows().length}
+                      {selectedCombineRuns().length}
                     </span>
                   </button>
                 </Show>
@@ -872,18 +884,38 @@ export function RunsWorkspace(props: {
                       </section>
                     )}
                   </Show>
-                  <Show when={regressionSignals().some((signal) => signal.material)}>
+                  <Show
+                    when={regressionSignals().some(
+                      (signal) => signal.material && signal.direction === "regression",
+                    )}
+                  >
                     <section class="mt-3 rounded-xl border border-border-weak-base p-3">
                       <strong class="text-caption font-semibold text-text-strong">
                         Material regressions
                       </strong>
                       <div class="mt-2 grid gap-1.5">
                         {regressionSignals()
-                          .filter((signal) => signal.material)
+                          .filter((signal) => signal.material && signal.direction === "regression")
                           .map((signal) => (
                             <span class="text-micro text-text-weak">
                               {signal.metric.id} · +{signal.delta?.toFixed(0)} {signal.metric.unit}{" "}
                               · baseline {signal.baseline?.median.toFixed(0)} (
+                              {signal.baseline?.sampleCount})
+                            </span>
+                          ))}
+                      </div>
+                    </section>
+                  </Show>
+                  <Show when={regressionSignals().some((signal) => signal.material && signal.direction === "improvement")}>
+                    <section class="mt-2 rounded-xl border border-border-weak-base p-3 opacity-75">
+                      <strong class="text-caption font-semibold text-text-weak">Improved</strong>
+                      <div class="mt-2 grid gap-1.5">
+                        {regressionSignals()
+                          .filter((signal) => signal.material && signal.direction === "improvement")
+                          .map((signal) => (
+                            <span class="text-micro text-text-weaker">
+                              {signal.metric.id} · −{Math.abs(signal.delta ?? 0).toFixed(0)}{" "}
+                              {signal.metric.unit} · baseline {signal.baseline?.median.toFixed(0)} (
                               {signal.baseline?.sampleCount})
                             </span>
                           ))}
@@ -982,7 +1014,7 @@ export function RunsWorkspace(props: {
                           job().status,
                           job().frames ?? [],
                         )}
-                        onReview={(action) => void reviewCurrentVisual(action)}
+                        onReview={(action, note) => void reviewCurrentVisual(action, note)}
                         onPolicyChange={(regions) => void updateVisualPolicy(regions)}
                       />
                     </Show>
@@ -1002,7 +1034,7 @@ export function RunsWorkspace(props: {
                           : ""
                     }
                     onOpenFrame={(index) => {
-                      selectRunStep(stepIndexForMatrixCapture(job(), index));
+                      selectRunStep(stepIndexForCombineCapture(job(), index));
                       setTab("timeline");
                     }}
                     onOpenTest={props.onOpenTest}
@@ -1018,7 +1050,7 @@ export function RunsWorkspace(props: {
                 <Show when={tab() === "performance"}>
                   <RunPerformanceEvidence evidence={runEvidence()} loading={runEvidenceLoading()} />
                 </Show>
-                <Show when={tab() === "matrix" && selectedMatrixReview()}>
+                <Show when={tab() === "combine" && selectedCombineReview()}>
                   {(review) => (
                     <div class="grid gap-3">
                       <div class="grid gap-1 rounded-xl border border-border-weak-base bg-surface-base px-3 py-3">
@@ -1030,7 +1062,7 @@ export function RunsWorkspace(props: {
                         </p>
                       </div>
                       <Show when={review().active > 0}>
-                        <Button variant="danger" size="sm" onClick={() => void stopMatrixRuns()}>
+                        <Button variant="danger" size="sm" onClick={() => void stopCombineRuns()}>
                           <Icon name="square" size={11} /> Stop remaining runs
                         </Button>
                       </Show>
@@ -1039,7 +1071,7 @@ export function RunsWorkspace(props: {
                 </Show>
                 <Show when={tab() === "compatibility"}>
                   <CompatibilityReportPanel
-                    report={matrixReport()}
+                    report={compatibilityReport()}
                     selectedProfileId={job().targetProfile?.id ?? ""}
                   />
                 </Show>

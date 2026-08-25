@@ -23,7 +23,6 @@ import { CliOutput, type OutputStreams } from "./output.js";
 import { emitScreenshot, emitSnapshotFile } from "./screenshot.js";
 import { persistScrollSurvey } from "./survey-persist.js";
 import { runDbCommand } from "./db-commands.js";
-import { runPackCommand } from "./pack-check.js";
 
 export type CliDependencies = {
   env?: Record<string, string | undefined>;
@@ -77,6 +76,8 @@ function jobStatus(response: unknown): string {
   return response.job.status;
 }
 
+const pausedPollIntervalMs = 5_000;
+
 async function watchJob(
   client: OperationInvoker,
   operationId: string,
@@ -87,6 +88,7 @@ async function watchJob(
 ): Promise<unknown> {
   output.progress(operationId, "watching");
   let lastHeartbeat = "";
+  let pausedHintShown = false;
   while (true) {
     const result = await invokeOperation(client, operationId, input, signal);
     if (signal.aborted) throw abortError();
@@ -95,8 +97,13 @@ async function watchJob(
     if (terminalJobStatuses.has(status)) return result;
     const job =
       result && typeof result === "object" && "job" in result
-        ? (result as { job?: { logs?: unknown; lastLogs?: unknown } }).job
+        ? (result.job as Record<string, unknown> | undefined)
         : undefined;
+    const jobId = job && "id" in job && typeof job.id === "string" ? job.id : undefined;
+    if (status === "paused" && !pausedHintShown) {
+      pausedHintShown = true;
+      output.pausedHint(jobId ?? operationId);
+    }
     const rawLogs = Array.isArray(job?.logs)
       ? job.logs
       : Array.isArray(job?.lastLogs)
@@ -108,7 +115,9 @@ async function watchJob(
       lastHeartbeat = last;
       output.heartbeat(last.length > 120 ? `${last.slice(0, 117)}…` : last);
     }
-    await waitForPoll(pollIntervalMs, signal);
+    // A paused job needs a human (or an explicit resume); polling at the tight
+    // interactive interval only burns requests against an unchanged state.
+    await waitForPoll(status === "paused" ? pausedPollIntervalMs : pollIntervalMs, signal);
   }
 }
 
@@ -163,7 +172,9 @@ function failureMessage(value: unknown, fallback: string): string {
 }
 
 /** Transport success is not operation success. Keep shell scripts and agents
- * from treating a structured `{ ok: false }` result or failed job as a pass. */
+ * from treating a structured `{ ok: false }` result or failed job as a pass.
+ * These are server-reported failures (exit 9), not client-side input problems
+ * (exit 5): the request parsed and ran, so retrying or reporting differs. */
 function assertOperationSucceeded(
   operationId: string,
   result: unknown,
@@ -175,7 +186,7 @@ function assertOperationSucceeded(
     const error = "error" in result ? result.error : undefined;
     throw new CliError(
       failureMessage(error, `${operationId} did not complete successfully`),
-      ExitCode.validation,
+      ExitCode.operationFailure,
       summarizeResult(operationId, result, input, commandPath),
     );
   }
@@ -192,7 +203,7 @@ function assertOperationSucceeded(
       const error = "error" in result.job ? result.job.error : undefined;
       throw new CliError(
         failureMessage(error, `${operationId} failed`),
-        ExitCode.validation,
+        ExitCode.operationFailure,
         summarizeResult(operationId, result, input),
       );
     }
@@ -285,13 +296,6 @@ export async function runCli(
   try {
     if (firstPositional(argv) === "db") {
       return await runDbCommand(argv, streams, dependencies.env ?? process.env);
-    }
-    if (firstPositional(argv) === "pack") {
-      return await runPackCommand(
-        argv,
-        streams,
-        dependencies.env?.INIT_CWD?.trim() || process.cwd(),
-      );
     }
     const parsed = parseCli(argv, dependencies.env ?? process.env);
     output = new CliOutput(parsed.config.output, parsed.config.quiet, streams);

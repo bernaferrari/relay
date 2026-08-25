@@ -11,7 +11,7 @@ import { DeviceSettingsPanel } from "../components/device-settings-panel";
 import { PrivacySettingsPanel } from "../components/privacy-settings-panel";
 import { AboutSettingsPanel } from "../components/settings/about-settings-panel";
 import { MatricesSettingsPanel } from "../components/settings/matrices-settings-panel";
-import { RecipesSettingsPanel } from "../components/settings/recipes-settings-panel";
+import { AccountsSettingsPanel } from "../components/settings/accounts-settings-panel";
 import { ServerSettingsPanel } from "../components/settings/server-settings-panel";
 import { TargetsSettingsPanel } from "../components/settings/targets-settings-panel";
 
@@ -22,14 +22,14 @@ export type SettingsSection =
   | "devices"
   | "privacy"
   | "server"
-  | "recipes"
+  | "accounts"
   | "about";
 
 const SECTIONS = [
   ["targets", "Browser targets"],
   ["matrices", "Test environments"],
   ["devices", "Mobile devices"],
-  ["recipes", "Accounts"],
+  ["accounts", "Accounts"],
   ["privacy", "Privacy & evidence"],
   ["server", "Connection"],
   ["appearance", "Appearance"],
@@ -45,9 +45,18 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
 
   onMount(() => {
     setSection(props.initialSection ?? "appearance");
-    void server.refreshTargets();
-    void server.refreshTargetProfiles();
-    void server.refreshMatrices();
+    void Promise.all([
+      server.refreshTargets(),
+      server.refreshTargetProfiles(),
+      server.refreshMatrices(),
+      server.refreshDevices(),
+    ]).then(() => {
+      // A fresh install has nothing to look at under Appearance; the one thing
+      // it must do first is point Relay at a target or device.
+      if (!props.initialSection && server.targets().length === 0 && server.devices().length === 0) {
+        setSection("targets");
+      }
+    });
     onCleanup(cmd.pushModal());
     if (dialogRef) onCleanup(trapFocus(dialogRef));
   });
@@ -135,8 +144,8 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
               <ServerSettingsPanel />
             </Show>
 
-            <Show when={section() === "recipes"}>
-              <RecipesSettingsPanel />
+            <Show when={section() === "accounts"}>
+              <AccountsSettingsPanel />
             </Show>
 
             <Show when={section() === "about"}>

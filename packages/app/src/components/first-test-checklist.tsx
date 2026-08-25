@@ -1,5 +1,6 @@
 import { For, Show, createSignal } from "solid-js";
 import { Button } from "@relay/ui/button";
+import { cn } from "../lib/cn";
 import type {
   FirstTestChecklistState,
   FirstTestStage,
@@ -21,6 +22,9 @@ export type FirstTestChecklistProps = {
   canSaveStartScreen: boolean;
   onTargetAction: () => void;
   onShowLiveDevice: () => void;
+  /** Rail presentation: a narrow column beside the live-device stage, so the
+   * capture-stage guidance survives opening the device instead of unmounting. */
+  rail?: boolean;
   onSaveStartScreen: () => void;
   onCreateStarter: (kind: "screen-check" | "blank") => void;
   onRecord: () => void;
@@ -99,7 +103,10 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
 
   return (
     <section
-      class="first-test-checklist min-w-0 w-[min(100%,390px)] rounded-2xl border border-[var(--map-divider)] bg-[var(--map-control-surface)] p-4 text-left shadow-[var(--map-elevation-panel)]"
+      class={cn(
+        "first-test-checklist rounded-2xl border border-[var(--map-divider)] bg-[var(--map-control-surface)] p-4 text-left shadow-[var(--map-elevation-panel)]",
+        props.rail ? "w-[min(100%,320px)]" : "min-w-0 w-[min(100%,390px)]",
+      )}
       aria-labelledby="first-test-checklist-title"
     >
       <header class="flex min-w-0 items-start justify-between gap-3">
@@ -126,14 +133,20 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
       </header>
 
       <ol
-        class="mt-4 mb-0 grid list-none grid-cols-4 gap-1 p-0"
+        class={cn(
+          "mt-4 mb-0 grid list-none gap-1 p-0",
+          props.rail ? "grid-cols-1 gap-1.5" : "grid-cols-4",
+        )}
         aria-label="First useful test progress"
       >
         <For each={STEPS}>
           {(step) => {
             const status = () => stepStatus(props.state, step.id);
             return (
-              <li class="min-w-0" aria-current={status() === "current" ? "step" : undefined}>
+              <li
+                class="min-w-0"
+                classList={{ "flex items-center gap-2": props.rail }}
+              >
                 <div class="flex items-center gap-1">
                   <span
                     class="grid size-5 shrink-0 place-items-center rounded-full border text-micro"
@@ -159,7 +172,10 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
                   </Show>
                 </div>
                 <span
-                  class="mt-1.5 block truncate text-micro font-medium"
+                  class={cn(
+                    "truncate text-micro font-medium",
+                    props.rail ? "" : "mt-1.5 block",
+                  )}
                   classList={{
                     "text-[var(--text-strong)]": status() !== "upcoming",
                     "text-[var(--text-weaker)]": status() === "upcoming",

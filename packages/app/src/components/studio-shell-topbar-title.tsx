@@ -6,7 +6,7 @@ import { displayTitle } from "../lib/job";
  * label elsewhere. Kept out of studio-shell so the rename affordance's own
  * escape/commit behaviour lives next to the field it belongs to. */
 export function ShellTopbarTitle(props: {
-  area: "tests" | "runs";
+  area: "maps" | "runs";
   name: string;
   disabled: boolean;
   onNameInput: (value: string) => void;
@@ -18,7 +18,7 @@ export function ShellTopbarTitle(props: {
   return (
     <div class={shellTopbarTitle}>
       <Show
-        when={props.area === "tests"}
+        when={props.area === "maps"}
         fallback={
           props.area === "runs" ? (
             <strong class="max-w-full truncate px-2 text-body font-medium text-[var(--text-base)]">

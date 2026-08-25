@@ -41,7 +41,7 @@ export function VisualDiffReview(props: {
   current: PersistedRun;
   decision: VisualReviewDecision | null;
   loading: boolean;
-  onReview: (action: VisualReviewAction) => void;
+  onReview: (action: VisualReviewAction, note?: string) => void;
   onPolicyChange: (regions: VisualRegion[]) => void;
   baselineApprovalAllowed: boolean;
   approving?: boolean;
@@ -235,19 +235,39 @@ export function VisualDiffReview(props: {
   );
 }
 
+/** Draft notes survive remounts while the reviewer compares screens; the
+ * authoritative copy travels with the recorded review decision. */
+const decisionNotes = new Map<string, string>();
+
 function VisualReviewActions(props: {
   comparison: VisualComparison | null;
   decision: VisualReviewDecision | null;
   busy?: boolean;
-  onReview: (action: VisualReviewAction) => void;
+  onReview: (action: VisualReviewAction, note?: string) => void;
 }) {
-  const actions: Array<{ action: VisualReviewAction; label: string; primary?: boolean }> = [
-    { action: "keep-baseline", label: "Keep expected look" },
+  const [note, setNote] = createSignal(decisionNotes.get(props.comparison?.id ?? "") ?? "");
+  const persistNote = (value: string) => {
+    setNote(value);
+    const id = props.comparison?.id;
+    if (id) decisionNotes.set(id, value);
+  };
+  const actions: Array<{
+    action: VisualReviewAction;
+    label: string;
+    primary?: boolean;
+    destructive?: boolean;
+  }> = [
+    { action: "keep-baseline", label: "Keep expected look", primary: true },
     { action: "fix-connection", label: "Fix path" },
     { action: "retry", label: "Retry" },
     { action: "mark-expected-variation", label: "Expected variation" },
-    { action: "approve-new-baseline", label: "Save as expected look", primary: true },
+    {
+      action: "approve-new-baseline",
+      label: "Save as expected look",
+      destructive: true,
+    },
   ];
+  const [confirming, setConfirming] = createSignal<VisualReviewAction | null>(null);
   return (
     <div class="grid gap-2 rounded-xl border border-border-weak-base bg-surface-base p-2.5">
       <div class="flex items-center justify-between gap-3 px-0.5">
@@ -255,27 +275,63 @@ function VisualReviewActions(props: {
           What should Relay do with this visual change?
         </span>
       </div>
+        <label class="grid gap-1 px-0.5 text-micro font-medium text-text-weak">
+          Decision note (saved with the review)
+          <textarea
+            class="min-h-16 resize-y rounded-lg border border-border-weak-base bg-surface-base px-2.5 py-2 text-caption/[1.45] font-normal text-text-base focus-visible:border-border-strong-focus focus-visible:outline-none"
+            value={note()}
+            onInput={(event) => persistNote(event.currentTarget.value)}
+            placeholder="Optional: why this look is or is not correct."
+          />
+        </label>
       <div
         class="flex flex-wrap justify-end gap-1.5"
         role="group"
         aria-label="Visual review decision"
       >
         <For each={actions}>
-          {(item) => (
-            <button
-              type="button"
-              class={cn(
-                "min-h-10 rounded-lg px-2.5 text-caption font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] disabled:cursor-wait disabled:opacity-50",
-                item.primary
-                  ? "bg-surface-interactive-base text-text-on-interactive hover:bg-surface-interactive-hover"
-                  : "border border-border-weak-base bg-background-base text-text-base hover:bg-surface-base-hover",
-              )}
-              disabled={props.busy || !props.comparison}
-              onClick={() => props.onReview(item.action)}
-            >
-              {props.busy && item.primary ? "Saving…" : item.label}
-            </button>
-          )}
+          {(item) => {
+            const isConfirming = () => confirming() === item.action;
+            return (
+              <Show
+                when={!item.destructive || isConfirming()}
+                fallback={
+                  <button
+                    type="button"
+                    class="min-h-10 rounded-lg border border-[var(--icon-critical-base)] bg-background-base px-2.5 text-caption font-semibold text-text-critical-base transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] disabled:cursor-wait disabled:opacity-50"
+                    disabled={props.busy || !props.comparison}
+                    onClick={() => setConfirming(item.action)}
+                  >
+                    Save as expected look…
+                  </button>
+                }
+              >
+                <button
+                  type="button"
+                  class={cn(
+                    "min-h-10 rounded-lg px-2.5 text-caption font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] disabled:cursor-wait disabled:opacity-50",
+                    item.primary
+                      ? "bg-surface-interactive-base text-text-on-interactive hover:bg-surface-interactive-hover"
+                      : "border border-border-weak-base bg-background-base text-text-base hover:bg-surface-base-hover",
+                  )}
+                  disabled={props.busy || !props.comparison}
+                  onClick={() => {
+                    if (item.destructive && !isConfirming()) {
+                      setConfirming(item.action);
+                      return;
+                    }
+                    props.onReview(item.action, note().trim() || undefined);
+                  }}
+                >
+                  {props.busy && item.primary
+                    ? "Saving…"
+                    : item.destructive && isConfirming()
+                      ? "Confirm: replace expected look"
+                      : item.label}
+                </button>
+              </Show>
+            );
+          }}
         </For>
       </div>
       <Show when={props.decision}>
@@ -303,7 +359,23 @@ function DiffCanvas(props: {
   const [split, setSplit] = createSignal(50);
   const [tool, setTool] = createSignal<"compare" | "ignore" | null>(null);
   const [draft, setDraft] = createSignal<VisualRegion | null>(null);
+  const [baseSize, setBaseSize] = createSignal<{ width: number; height: number } | null>(null);
+  const [currentSize, setCurrentSize] = createSignal<{ width: number; height: number } | null>(
+    null,
+  );
   let stage: HTMLDivElement | undefined;
+
+  /** Pixel dimensions decide whether a pixel-level overlay comparison is even
+   * meaningful; different resolutions would produce misleading blends. */
+  const resolutionMismatch = createMemo(() => {
+    const base = baseSize();
+    const current = currentSize();
+    return (
+      base !== null &&
+      current !== null &&
+      (base.width !== current.width || base.height !== current.height)
+    );
+  });
 
   const point = (event: PointerEvent) => {
     const bounds = stage!.getBoundingClientRect();
@@ -437,18 +509,38 @@ function DiffCanvas(props: {
             src={props.currentSrc}
             alt="Current captured screen"
             draggable={false}
+            onLoad={(event) => {
+              const image = event.currentTarget;
+              setCurrentSize({ width: image.naturalWidth, height: image.naturalHeight });
+            }}
           />
-          <div
-            class="pointer-events-none absolute inset-0 overflow-hidden"
-            style={{ "clip-path": `inset(0 ${100 - split()}% 0 0)` }}
+          <Show
+            when={!resolutionMismatch()}
+            fallback={
+              <span
+                class="pointer-events-none absolute inset-x-0 bottom-2 z-20 mx-auto w-fit rounded bg-background-deep/80 px-1.5 py-1 text-micro font-medium text-text-warning-base"
+                role="status"
+              >
+                Resolution differs from the expected look — overlay comparison is disabled.
+              </span>
+            }
           >
-            <img
-              class="h-full w-full object-fill"
-              src={props.baselineSrc}
-              alt="Expected look screen"
-              draggable={false}
-            />
-          </div>
+            <div
+              class="pointer-events-none absolute inset-0 overflow-hidden"
+              style={{ "clip-path": `inset(0 ${100 - split()}% 0 0)` }}
+            >
+              <img
+                class="h-full w-full object-contain"
+                src={props.baselineSrc}
+                alt="Expected look screen"
+                draggable={false}
+                onLoad={(event) => {
+                  const image = event.currentTarget;
+                  setBaseSize({ width: image.naturalWidth, height: image.naturalHeight });
+                }}
+              />
+            </div>
+          </Show>
           <For each={[...props.regions, ...(draft() ? [draft()!] : [])]}>
             {(region) => (
               <span
@@ -467,7 +559,7 @@ function DiffCanvas(props: {
               />
             )}
           </For>
-          <Show when={!tool()}>
+          <Show when={!tool() && !resolutionMismatch()}>
             <span
               class="pointer-events-none absolute inset-y-0 z-10 w-px bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
               style={{ left: `${split()}%` }}

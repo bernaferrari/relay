@@ -33,35 +33,11 @@ export const relayMcpExclusions = [
     reason:
       "Complete project activity can be multi-megabyte; export it as an app or CLI artifact instead of returning it inline to an agent.",
   },
-  ...(["job.locale-matrix.start", "job.locale-matrix.infer"] as const).map((operationId) => ({
-    operationId,
-    reason:
-      "Flow-based locale matrices are internal compatibility; agents use a saved Language Variable × graph Test Combine.",
-  })),
   {
     operationId: "discovery.promote",
     reason:
-      "App Map is truth. Explore proposes edges; Keep accepts them. YAML recipe promote is not an MCP tool.",
+      "App Map is truth. Explore proposes edges; Keep accepts them. Direct execution-plan promotion is not an MCP tool.",
   },
-  ...(
-    [
-      "corpus.list",
-      "corpus.create",
-      "corpus.get",
-      "corpus.rename",
-      "corpus.status.update",
-      "corpus.start",
-      "corpus.cancel",
-      "corpus.coverage",
-      "corpus.analysis",
-      "corpus.export",
-      "corpus.screen.get",
-    ] as const
-  ).map((operationId) => ({
-    operationId,
-    reason:
-      "Legacy Corpus sessions are not an agent authoring surface; use a Language Variable × graph Test Combine and its durable job analysis.",
-  })),
 ] as const satisfies readonly { operationId: OperationId; reason: string }[];
 
 type ExcludedOperationId = (typeof relayMcpExclusions)[number]["operationId"];
@@ -109,7 +85,7 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "target.snapshot.capture":
     " Default JSON is a digest (app, header, controls, nodeCount). Pass full:true for the accessibility tree nodes. The tree may still be missing — screenshot plus a point tap still works. Do not retry snapshot in a loop.",
   "target.scroll-survey.capture":
-    " Persist frames with the CLI: relay device survey <serial> --dir <folder>. Do not dump base64 in the tool result. Pack check a Combine evidence folder with accessibility/*.json (Data Controls pack layout), not a survey --dir folder: relay pack check <dir> --against en.",
+    " Persist frames with the CLI: relay device survey <serial> --dir <folder>. Do not dump base64 in the tool result. A survey directory is raw capture evidence; use Combine export when a person needs a portable review folder.",
   "target.recover":
     " Repair the runner without rebooting the device. A missing XCTest session is not a failed launch.",
   "step.run":
@@ -118,18 +94,18 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     ' Only after TARGET_CONTROL_LEASE_REQUIRED. Pass poolId "local", deviceSerial, and confirm:true. Local trusted servers often mint a lease on first control.',
   "discovery.start":
     " Starts the server-owned explore job. Poll relay_discovery_get. Each identity-changing interact becomes one pending proposal. Do not self-approve.",
-  "job.locale-matrix.export":
-    " Writes the pack and returns its findings: the same codes as relay_corpus_analysis, each with the frame it came from. Read those before opening screenshots by hand.",
-  "job.locale-matrix.analysis":
-    " The same findings without writing a pack, keyed to the frame of each case. Use this to read a matrix or combine batch while it is still running; export only when a person needs the folder.",
+  "job.combine.analysis":
+    " Read durable findings from the current Combine evidence without writing a pack. Each finding names its source frame; export only when a person needs a portable folder.",
   "job.combine.start":
-    " Run a saved Variable × Test Combine. Default is one cell. Pass executionMode all to run every selected world. cell or selectedCellIds names the worlds to queue and those named cells run. A default serial/target fills missing cell bindings. A single Test with in worlds uses app-map.test.run. Never start locale-matrix; never invent a Variable for screenshots.",
+    " Run a saved Variable × Test Combine. Default is one cell. Pass executionMode all to run every selected world. cell or selectedCellIds names the worlds to queue and those named cells run. A default serial/target fills missing cell bindings. A single Test with in worlds uses app-map.test.run. Never invent a Variable for screenshots.",
+  "app-map.test.run":
+    " Without `in`: runs one saved Test once (expectedRevision + target are required). With `in`: upserts a Combine for this Test × the selected worlds and runs one cell — pass executionMode:'all' to run every world instead; `cell` or `selectedCellIds` names which. Never invent a Variable for screenshots.",
   "app-map.scroll-surface.origin.inspect":
     " Offline audit only: it reads the signed immutable first PNG/tree evidence and lifecycle; it never resolves, leases, or controls a target.",
   "app-map.scroll-surface.origin.review":
     " Offline authority decision only: inspect first, pass assertion reviewed-document-top and confirm:true. It never captures or controls a target.",
   "app-map.scroll-surface.origin.revoke":
-    " Offline authority decision only: pass assertion revoke-reviewed-document-origin and confirm:true. Revocation is durable and blocks compiled recipes without controlling a target.",
+    " Offline authority decision only: pass assertion revoke-reviewed-document-origin and confirm:true. Revocation is durable and blocks compiled execution plans without controlling a target.",
 };
 
 function toolDescriptor(
@@ -175,9 +151,7 @@ export const relayMcpTools: readonly RelayMcpToolDescriptor[] = Object.freeze(
   operationDefinitions
     .filter((definition) => isToolOperation(definition as OperationDefinition<OperationId>))
     .map((definition) =>
-      toolDescriptor(
-        definition as OperationDefinition<Exclude<OperationId, ExcludedOperationId>>,
-      ),
+      toolDescriptor(definition as OperationDefinition<Exclude<OperationId, ExcludedOperationId>>),
     ),
 );
 
@@ -194,6 +168,7 @@ const controlOperations = [
   "target.recover",
   "target.app.launch",
   "target.ui.describe",
+  "action.run",
   "lease.list",
   "lease.create",
   "lease.release",
@@ -219,7 +194,7 @@ const observeOperations = [
   "run.get",
   "run.replay.offline",
   "run.evidence.get",
-  "job.locale-matrix.analysis",
+  "job.combine.analysis",
 ] as const satisfies readonly OperationId[];
 
 const mapOperations = [
@@ -245,7 +220,7 @@ const mapOperations = [
   "discovery.do",
   "discovery.suggestion",
   "discovery.coverage",
-  "discovery.journey",
+  "discovery.exploration-timeline",
   "target.ground",
   "target.do",
   "app-map.observations.propose",
@@ -333,8 +308,7 @@ const runOperations = [
   "job.combine.campaign.get",
   "job.combine.campaign.resume",
   "job.combine.campaign.cancel",
-  "job.locale-matrix.export",
-  "job.locale-matrix.analysis",
+  "job.combine.analysis",
   "run.list",
   "run.get",
   "run.replay.offline",
@@ -350,8 +324,8 @@ const runOperations = [
  * Sweep one app's screens across languages and read what broke.
  *
  * One Language Variable × one graph Test is the canonical campaign. The
- * profile intentionally omits the older Corpus session lifecycle so an agent
- * cannot accidentally create a second source of authoring truth.
+ * profile keeps one App Map/Test/Variable authoring path, so an agent cannot
+ * accidentally create a second source of truth.
  */
 const localeOperations = [
   "system.health.get",
@@ -359,6 +333,8 @@ const localeOperations = [
   "target.devices.list",
   "target.list",
   "target.screenshot.capture",
+  "target.app.launch",
+  "target.app.locales",
   "target.snapshot.capture",
   "target.scroll-survey.capture",
   "target.recover",
@@ -377,19 +353,12 @@ const localeOperations = [
   "app-map.combine.preflight",
   "workspace.variables.get",
   "workspace.variables.update",
-  "language-profile.list",
-  "language-profile.scan",
-  "language-profile.save",
-  "switcher-profile.list",
-  "switcher-profile.scan",
-  "switcher-profile.save",
   "job.combine.start",
   "job.combine.export",
   "job.combine.campaign.get",
   "job.combine.campaign.resume",
   "job.combine.campaign.cancel",
-  "job.locale-matrix.export",
-  "job.locale-matrix.analysis",
+  "job.combine.analysis",
   "job.list",
   "job.get",
   "job.cancel",

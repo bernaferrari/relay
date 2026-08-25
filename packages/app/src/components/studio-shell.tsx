@@ -1,4 +1,5 @@
 import {
+  For,
   Show,
   Suspense,
   createEffect,
@@ -51,6 +52,7 @@ import { matchLiveScreen } from "../lib/app-map-live-location";
 import type { AppMapRunReadiness as GraphRunReadiness } from "../lib/app-map-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 import { MapModeSwitch, type MapMode } from "./map-mode-switch";
+import { normalizeMapLibraryArea, type MapLibraryArea } from "./map-library";
 import { ShellTopbarTitle } from "./studio-shell-topbar-title";
 import { StudioImportReviewDialog, type ImportReview } from "./studio-import-review-dialog";
 import { StudioAuthoringWorkspace } from "./studio-authoring-workspace";
@@ -63,13 +65,14 @@ import {
   RunsWorkspace,
 } from "./studio-shell-workspaces";
 
-type ProductArea = "tests" | "runs";
-type MapLibraryArea = ProductArea;
+type ProductArea = MapLibraryArea;
 export function StudioShell(props: { onOpenSettings: (section?: SettingsSection) => void }) {
   const server = useServer();
   const recorder = useRecorder();
   const [area, setArea] = createSignal<ProductArea>(
-    new URLSearchParams(window.location.search).has("run") ? "runs" : "tests",
+    normalizeMapLibraryArea(
+      new URLSearchParams(window.location.search).has("run") ? "runs" : "maps",
+    ),
   );
   // Opening Relay should show the map, the way opening Figma shows the canvas.
   // openTest() still moves to Test mode explicitly when someone picks a saved Test.
@@ -85,6 +88,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [query, setQuery] = createSignal("");
   const [navOpen, setNavOpen] = createSignal(false);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
+  const [helpOpen, setHelpOpen] = createSignal(false);
   const [devicePanelOpen, setDevicePanelOpen] = createSignal(readRememberedDevicePanelPreference());
   const [creatingBlankMap, setCreatingBlankMap] = createSignal(false);
   const [graphRunReadiness, setGraphRunReadiness] = createSignal<GraphRunReadiness>({
@@ -276,7 +280,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (area() !== "tests") return;
+      if (area() !== "maps") return;
       const key = event.key.toLowerCase();
       if (key === "d") {
         event.preventDefault();
@@ -361,7 +365,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (section) queueMicrotask(() => setCombineFocusSection(section));
   };
   const openDevicePicker = () => {
-    if (area() === "tests" && !devicePanelOpen()) {
+    if (area() === "maps" && !devicePanelOpen()) {
       window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
     }
     requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("relay:open-device-picker")));
@@ -436,7 +440,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       if (!captured) throw new Error("Relay could not capture the current screen");
       await server.refreshAppMaps();
       server.setSelectedAppMapId(captured.appMap.id);
-      setArea("tests");
+      setArea("maps");
       setMapMode("map");
       setSettingsOpen(false);
       setNavOpen(false);
@@ -478,7 +482,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       await server.refreshAppMaps();
       server.setSelectedAppMapId(result.appMap.id);
       setImportReview(null);
-      setArea("tests");
+      setArea("maps");
       setNavOpen(false);
       toast(`Imported ${displayTitle(result.appMap.name)}`, "success");
     } catch (error) {
@@ -571,7 +575,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
 
   function openMap(id: string): void {
     server.setSelectedAppMapId(id);
-    setArea("tests");
+    setArea("maps");
     setMapMode("map");
     setSettingsOpen(false);
     // The library is for choosing work. Once chosen, give the graph and live
@@ -591,7 +595,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       );
     if (map) {
       server.setSelectedAppMapId(map.id);
-      setArea("tests");
+      setArea("maps");
       setMapMode("test");
       setSettingsOpen(false);
       setNavOpen(false);
@@ -603,7 +607,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   /** New Map is a local blank canvas. It becomes durable only after its first
    * capture or note, so browsing and reopening Relay cannot create drafts. */
   function startNewMap(): void {
-    setArea("tests");
+    setArea("maps");
     server.setSelectedAppMapId(null);
     setSettingsOpen(false);
     setNavOpen(false);
@@ -677,7 +681,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             inert={server.isOffline()}
             aria-hidden={server.isOffline() ? "true" : undefined}
           >
-            <Show when={area() === "tests" && selectedMap()}>
+            <Show when={area() === "maps" && selectedMap()}>
               <MapModeSwitch value={mapMode()} onChange={setMapMode} />
             </Show>
           </div>
@@ -686,7 +690,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             inert={server.isOffline()}
             aria-hidden={server.isOffline() ? "true" : undefined}
           >
-            <Show when={area() === "tests"}>
+            <Show when={area() === "maps"}>
               <DevicePicker
                 liveOpen={devicePanelOpen()}
                 targetSets={server.matrices()}
@@ -702,7 +706,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 onManageTargets={() => props.onOpenSettings("targets")}
               />
             </Show>
-            <Show when={area() === "tests" && selectedMap()}>
+            <Show when={area() === "maps" && selectedMap()}>
               <div class="relative flex items-center gap-1.5">
                 <button
                   type="button"
@@ -813,7 +817,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       role="menuitem"
                       class={cn("flex", chromeMenuItem)}
                       aria-label="Tidy map"
-                      data-tip="Arrange every screen into a compact journey"
+                      data-tip="Arrange every screen into a compact path"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(new CustomEvent("relay:tidy-map"));
@@ -857,7 +861,19 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     </button>
                     <button
                       type="button"
-                      role="menuitem"
+                      class={cn("flex", chromeMenuItem)}
+                      onClick={() => {
+                        setStudioActionsOpen(false);
+                        setHelpOpen(true);
+                      }}
+                    >
+                      <Icon name="info" size={14} /> Help
+                      <kbd class="ml-auto text-micro font-normal text-[var(--text-weaker)]">
+                        ⌘K
+                      </kbd>
+                    </button>
+                    <button
+                      type="button"
                       class={cn("flex", chromeMenuItemDanger)}
                       onClick={() => {
                         setStudioActionsOpen(false);
@@ -905,7 +921,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         </header>
 
         <OfflineGate overlay>
-          <Show when={area() === "tests"}>
+          <Show when={area() === "maps"}>
             <section class={shellStudio}>
               <div
                 class={
@@ -990,7 +1006,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               <RunsWorkspace
                 onOpenMap={openMap}
                 onOpenTest={openTest}
-                onOpenTests={() => setArea("tests")}
+                onOpenTests={() => setArea("maps")}
               />
             </Suspense>
           </Show>
@@ -1023,6 +1039,63 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 }}
               />
             </Suspense>
+          </section>
+        </div>
+      </Show>
+      <Show when={helpOpen()}>
+        <div
+          class={cn(modalScrim, "z-[var(--z-modal-nested)] flex items-center justify-center p-5")}
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setHelpOpen(false);
+          }}
+        >
+          <section
+            class={cn(modalPanel, "w-[min(100%,420px)] outline-none")}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Keyboard shortcuts"
+          >
+            <header class="flex items-center justify-between border-b border-border-weak-base px-4 py-3">
+              <h2 class="m-0 text-title font-medium tracking-tight text-text-strong">
+                Keyboard shortcuts
+              </h2>
+              <button
+                type="button"
+                class={productIconButton}
+                aria-label="Close shortcuts"
+                onClick={() => setHelpOpen(false)}
+              >
+                <Icon name="x" size={14} />
+              </button>
+            </header>
+            <div class="grid gap-0.5 p-3">
+              <For
+                each={[
+                  ["Tools", "V / H / D", "Select, pan (hand), and device"],
+                  ["Pan canvas", "Space + drag", "Temporarily grab the canvas"],
+                  ["Command palette", "⌘K", "Search every command"],
+                  ["Zoom", "+ / −", "Zoom the map in and out"],
+                  ["Undo", "⌘Z", "Undo the last canvas edit"],
+                  ["Redo", "⇧⌘Z", "Redo an undone edit"],
+                ]}
+              >
+                {([name, keys, description]) => (
+                  <div class="flex min-h-9 items-center gap-3 rounded-md px-2 hover:bg-surface-raised-base-hover">
+                    <span class="min-w-0 flex-1">
+                      <span class="block text-caption font-medium text-text-strong">{name}</span>
+                      <span class="block text-micro text-text-weak">{description}</span>
+                    </span>
+                    <kbd class="shrink-0 rounded bg-surface-base px-1.5 py-0.5 font-mono text-micro text-text-weak">
+                      {keys}
+                    </kbd>
+                  </div>
+                )}
+              </For>
+              <p class="m-0 px-2 pt-2 text-micro/[1.5] text-text-weak">
+                Product flows and walkthroughs live in{" "}
+                <code class="font-mono">docs/PRODUCT_FLOWS.md</code>.
+              </p>
+            </div>
           </section>
         </div>
       </Show>

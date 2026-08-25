@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Show, onCleanup, onMount } from "solid-js";
 import type {
   AppMapScenarioTest,
   AppMapScenarioTestEdit,
@@ -7,13 +7,18 @@ import type {
 } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { findScenarioStep } from "../lib/app-map-test-editor-tree";
+import { trapFocus } from "../lib/modal";
 import { Icon } from "./icon";
 
-function bindingSummary(step: AppMapScenarioTestStep, binding = step.binding): string {
+function bindingSummary(
+  step: AppMapScenarioTestStep,
+  binding = step.binding,
+): string {
   if (binding.status === "unresolved") return `Unresolved — ${binding.reason}`;
   if (binding.kind === "connections")
     return `${binding.connectionIds.length} mapped path${binding.connectionIds.length === 1 ? "" : "s"}`;
-  if (binding.kind === "assertion") return `Validation · ${binding.assertion.kind}`;
+  if (binding.kind === "assertion")
+    return `Validation · ${binding.assertion.kind}`;
   if (binding.kind === "extract") return `Extract as {{${binding.as}}}`;
   if (binding.kind === "pause") return `Human checkpoint · ${binding.message}`;
   if (binding.kind === "routine") return `Module · ${binding.routineId}`;
@@ -33,9 +38,14 @@ function editDetails(test: AppMapScenarioTest, edit: AppMapScenarioTestEdit) {
     };
   }
   if (edit.kind === "step.add") {
-    return { title: `Add ${edit.step.kind}`, before: "Not present", after: edit.step.intent };
+    return {
+      title: `Add ${edit.step.kind}`,
+      before: "Not present",
+      after: edit.step.intent,
+    };
   }
-  const current = "stepId" in edit ? findScenarioStep(test.steps, edit.stepId) : undefined;
+  const current =
+    "stepId" in edit ? findScenarioStep(test.steps, edit.stepId) : undefined;
   if (edit.kind === "step.remove") {
     return {
       title: `Remove ${current?.kind ?? "step"}`,
@@ -44,8 +54,14 @@ function editDetails(test: AppMapScenarioTest, edit: AppMapScenarioTestEdit) {
     };
   }
   if (edit.kind === "step.reorder") {
-    const labels = edit.orderedStepIds.map((id) => findScenarioStep(test.steps, id)?.intent ?? id);
-    return { title: "Reorder steps", before: "Current order", after: labels.join(" → ") };
+    const labels = edit.orderedStepIds.map(
+      (id) => findScenarioStep(test.steps, id)?.intent ?? id,
+    );
+    return {
+      title: "Reorder steps",
+      before: "Current order",
+      after: labels.join(" → "),
+    };
   }
   if (edit.kind === "step.unbind") {
     return {
@@ -94,147 +110,193 @@ export function AppMapTestProposalReview(props: {
   onRevert?: (id: string) => void;
   onClose: () => void;
 }) {
+  let panel: HTMLElement | undefined;
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    props.onClose();
+  };
+  onMount(() => {
+    window.addEventListener("keydown", onKeyDown, true);
+    onCleanup(() => window.removeEventListener("keydown", onKeyDown, true));
+    // trapFocus restores focus to the opener when its disposer runs.
+    if (panel) onCleanup(trapFocus(panel));
+  });
   return (
-    <aside
-      class="absolute inset-y-3 right-3 z-50 flex w-[min(440px,calc(100%-24px))] flex-col overflow-hidden rounded-2xl border border-border-strong-base bg-background-base shadow-[var(--shadow-lg)] max-[760px]:inset-2 max-[760px]:w-auto"
-      aria-label="Proposed Test changes"
+    <div
+      class="ui-scrim fixed inset-0 z-[var(--z-scrim)]"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) props.onClose();
+      }}
     >
-      <header class="flex min-h-14 items-center gap-3 border-b border-border-weak-base px-3">
-        <span class="grid size-9 place-items-center rounded-lg bg-[var(--product-accent-soft)] text-text-interactive-base">
-          <Icon name="sparkle" size={15} />
-        </span>
-        <div class="min-w-0 flex-1">
-          <strong class="block text-body">Review Test changes</strong>
-          <span class="block text-caption text-text-weak">
-            Nothing changes until you approve it.
+      <aside
+        ref={(element) => (panel = element)}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Proposed Test changes"
+        tabIndex={-1}
+        class="absolute inset-y-3 right-3 z-[calc(var(--z-scrim)+1)] flex w-[min(440px,calc(100%-24px))] flex-col overflow-hidden rounded-2xl border border-border-strong-base bg-background-base shadow-[var(--shadow-lg)] max-[760px]:inset-2 max-[760px]:w-auto"
+      >
+        <header class="flex min-h-14 items-center gap-3 border-b border-border-weak-base px-3">
+          <span class="grid size-9 place-items-center rounded-lg bg-[var(--product-accent-soft)] text-text-interactive-base">
+            <Icon name="sparkle" size={15} />
           </span>
-        </div>
-        <button
-          type="button"
-          class="grid min-h-11 min-w-11 place-items-center rounded-lg text-text-weak hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-strong-focus"
-          aria-label="Close Test proposal review"
-          onClick={props.onClose}
-        >
-          <Icon name="x" size={14} />
-        </button>
-      </header>
-      <div class="grid min-h-0 gap-3 overflow-y-auto p-3">
-        <For each={props.proposals}>
-          {(proposal) => (
-            <article class="rounded-xl border border-border-weak-base bg-surface-base p-3">
-              <strong class="block text-body text-text-strong">{proposal.title}</strong>
-              <Show when={proposal.description}>
-                <p class="mt-1 text-caption/[1.5] text-text-weak">{proposal.description}</p>
-              </Show>
-              <Show when={proposal.repair}>
-                {(repair) => (
-                  <dl class="mt-3 grid gap-1 rounded-lg bg-background-base p-2.5 text-micro/[1.45]">
-                    <div class="flex justify-between gap-3">
-                      <dt class="text-text-weaker">Repair</dt>
-                      <dd class="m-0 font-medium text-text-strong">
-                        {repair().kind === "retarget"
-                          ? "Use proven selector"
-                          : repair().kind === "accept-current"
-                            ? "Accept current identity"
-                            : "Disable with reason"}
-                      </dd>
-                    </div>
-                    <div class="flex justify-between gap-3">
-                      <dt class="text-text-weaker">Evidence</dt>
-                      <dd class="m-0 text-right text-text-base">
-                        {repair().sourceCheckIds.length} check
-                        {repair().sourceCheckIds.length === 1 ? "" : "s"} ·{" "}
-                        {repair().evidenceFramePaths.length} frame
-                        {repair().evidenceFramePaths.length === 1 ? "" : "s"}
-                      </dd>
-                    </div>
-                    <div class="flex justify-between gap-3">
-                      <dt class="text-text-weaker">Revert</dt>
-                      <dd class="m-0 text-right text-text-base">Frozen inverse retained</dd>
-                    </div>
-                  </dl>
-                )}
-              </Show>
-              <div class="mt-3 grid gap-2">
-                <For
-                  each={
-                    proposal.changes.filter((change) => change.kind === "test.edit") as Array<
-                      Extract<Proposal["changes"][number], { kind: "test.edit" }>
+          <div class="min-w-0 flex-1">
+            <strong class="block text-body">Review Test changes</strong>
+            <span class="block text-caption text-text-weak">
+              Nothing changes until you approve it.
+            </span>
+          </div>
+          <button
+            type="button"
+            class="grid min-h-11 min-w-11 place-items-center rounded-lg text-text-weak hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+            aria-label="Close Test proposal review"
+            onClick={props.onClose}
+          >
+            <Icon name="x" size={14} />
+          </button>
+        </header>
+        <div class="grid min-h-0 gap-3 overflow-y-auto p-3">
+          <For each={props.proposals}>
+            {(proposal) => (
+              <article class="rounded-xl border border-border-weak-base bg-surface-base p-3">
+                <strong class="block text-body text-text-strong">
+                  {proposal.title}
+                </strong>
+                <Show when={proposal.description}>
+                  <p class="mt-1 text-caption/[1.5] text-text-weak">
+                    {proposal.description}
+                  </p>
+                </Show>
+                <Show when={proposal.repair}>
+                  {(repair) => (
+                    <dl class="mt-3 grid gap-1 rounded-lg bg-background-base p-2.5 text-micro/[1.45]">
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-text-weaker">Repair</dt>
+                        <dd class="m-0 font-medium text-text-strong">
+                          {repair().kind === "retarget"
+                            ? "Use proven selector"
+                            : repair().kind === "accept-current"
+                              ? "Accept current identity"
+                              : "Disable with reason"}
+                        </dd>
+                      </div>
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-text-weaker">Evidence</dt>
+                        <dd class="m-0 text-right text-text-base">
+                          {repair().sourceCheckIds.length} check
+                          {repair().sourceCheckIds.length === 1
+                            ? ""
+                            : "s"} · {repair().evidenceFramePaths.length} frame
+                          {repair().evidenceFramePaths.length === 1 ? "" : "s"}
+                        </dd>
+                      </div>
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-text-weaker">Revert</dt>
+                        <dd class="m-0 text-right text-text-base">
+                          Frozen inverse retained
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
+                </Show>
+                <div class="mt-3 grid gap-2">
+                  <For
+                    each={
+                      proposal.changes.filter(
+                        (change) => change.kind === "test.edit",
+                      ) as Array<
+                        Extract<
+                          Proposal["changes"][number],
+                          { kind: "test.edit" }
+                        >
+                      >
+                    }
+                  >
+                    {(change) => (
+                      <For each={change.edits}>
+                        {(edit) => {
+                          const details = editDetails(props.test, edit);
+                          return (
+                            <section class="rounded-lg bg-background-base p-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
+                              <strong class="block text-caption text-text-strong">
+                                {details.title}
+                              </strong>
+                              <div class="mt-2 grid grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)] items-start gap-2 text-caption/[1.45]">
+                                <span class="min-w-0 break-words text-text-weak">
+                                  {details.before}
+                                </span>
+                                <Icon
+                                  name="arrow-right"
+                                  size={11}
+                                  class="mt-0.5 text-text-weaker"
+                                />
+                                <span class="min-w-0 break-words font-medium text-text-strong">
+                                  {details.after}
+                                </span>
+                              </div>
+                            </section>
+                          );
+                        }}
+                      </For>
+                    )}
+                  </For>
+                </div>
+                <Show
+                  when={proposal.status === "pending"}
+                  fallback={
+                    <Button
+                      variant="secondary"
+                      size="lg"
+                      class="mt-3 w-full"
+                      disabled={
+                        Boolean(props.busyId) ||
+                        !proposal.repair ||
+                        Boolean(proposal.repair.reverted)
+                      }
+                      onClick={() => props.onRevert?.(proposal.id)}
                     >
+                      {props.busyId === proposal.id
+                        ? "Reverting…"
+                        : "Revert approved repair"}
+                    </Button>
                   }
                 >
-                  {(change) => (
-                    <For each={change.edits}>
-                      {(edit) => {
-                        const details = editDetails(props.test, edit);
-                        return (
-                          <section class="rounded-lg bg-background-base p-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
-                            <strong class="block text-caption text-text-strong">
-                              {details.title}
-                            </strong>
-                            <div class="mt-2 grid grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)] items-start gap-2 text-caption/[1.45]">
-                              <span class="min-w-0 break-words text-text-weak">
-                                {details.before}
-                              </span>
-                              <Icon name="arrow-right" size={11} class="mt-0.5 text-text-weaker" />
-                              <span class="min-w-0 break-words font-medium text-text-strong">
-                                {details.after}
-                              </span>
-                            </div>
-                          </section>
-                        );
-                      }}
-                    </For>
-                  )}
-                </For>
-              </div>
-              <Show
-                when={proposal.status === "pending"}
-                fallback={
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    class="mt-3 w-full"
-                    disabled={
-                      Boolean(props.busyId) || !proposal.repair || Boolean(proposal.repair.reverted)
-                    }
-                    onClick={() => props.onRevert?.(proposal.id)}
-                  >
-                    {props.busyId === proposal.id ? "Reverting…" : "Revert approved repair"}
-                  </Button>
-                }
-              >
-                <div class="mt-3 grid grid-cols-2 gap-2">
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    disabled={Boolean(props.busyId)}
-                    onClick={() => props.onApprove(proposal.id)}
-                  >
-                    {props.busyId === proposal.id ? "Applying…" : "Approve changes"}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    disabled={Boolean(props.busyId)}
-                    onClick={() => props.onReject(proposal.id)}
-                  >
-                    Reject
-                  </Button>
-                </div>
-              </Show>
-            </article>
-          )}
-        </For>
-        <Show when={props.error}>
-          <p
-            class="m-0 rounded-lg bg-surface-critical-weak p-3 text-caption text-text-critical-base"
-            role="alert"
-          >
-            {props.error}
-          </p>
-        </Show>
-      </div>
-    </aside>
+                  <div class="mt-3 grid grid-cols-2 gap-2">
+                    <Button
+                      variant="primary"
+                      size="lg"
+                      disabled={Boolean(props.busyId)}
+                      onClick={() => props.onApprove(proposal.id)}
+                    >
+                      {props.busyId === proposal.id
+                        ? "Applying…"
+                        : "Approve changes"}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="lg"
+                      disabled={Boolean(props.busyId)}
+                      onClick={() => props.onReject(proposal.id)}
+                    >
+                      Reject
+                    </Button>
+                  </div>
+                </Show>
+              </article>
+            )}
+          </For>
+          <Show when={props.error}>
+            <p
+              class="m-0 rounded-lg bg-surface-critical-weak p-3 text-caption text-text-critical-base"
+              role="alert"
+            >
+              {props.error}
+            </p>
+          </Show>
+        </div>
+      </aside>
+    </div>
   );
 }

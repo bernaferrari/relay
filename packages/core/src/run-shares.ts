@@ -212,6 +212,16 @@ function shareableFrames(run: PersistedRun): PersistedRun["frames"] {
     (frame) => frame.mime === "image/png" || frame.path.toLowerCase().endsWith(".png"),
   );
 }
+/** Bounded, redacted reason a run stopped. Share reports expose status plus
+ * this one headline — never logs, stack traces, or resolved inputs. */
+function errorHeadlineFor(run: PersistedRun): string | undefined {
+  const healthy = run.outcome === "passed" || run.status === "ok";
+  if (healthy) return undefined;
+  const source = [run.error, run.healMessage].find((value) => value?.trim());
+  if (!source) return undefined;
+  const headline = redactText(source.trim().replace(/\s+/gu, " "));
+  return headline.length > 200 ? `${headline.slice(0, 197)}…` : headline;
+}
 
 export async function createRunShare(input: {
   root: string;
@@ -351,6 +361,7 @@ export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]
         ...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
         ...(run.caseIndex !== undefined ? { caseIndex: run.caseIndex } : {}),
         ...(run.caseCount !== undefined ? { caseCount: run.caseCount } : {}),
+        ...(errorHeadlineFor(run) ? { errorHeadline: errorHeadlineFor(run) } : {}),
         frames: shareableFrames(run).map((frame, index) => ({
           index,
           caption: frame.caption || `Screen ${index + 1}`,

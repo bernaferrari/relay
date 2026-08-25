@@ -132,6 +132,27 @@
   --map-elevation-panel:
     0 0 0 1px oklch(0.3 0.02 270 / 0.08), 0 3px 9px oklch(0.25 0.02 270 / 0.06),
     0 22px 54px -28px oklch(0.2 0.02 270 / 0.2);
+  /*
+   * Screenshot frames are letterboxed against a deliberate near-black, so an
+   * empty frame and a filled one read as the same object at every zoom and in
+   * both themes. Never substitute the canvas colour here — the frame would
+   * dissolve into the map.
+   */
+  --map-canvas-backdrop: oklch(0.12 0.01 270);
+  /* Layered stacks, quietest edge first: hairline, contact shadow, ambient
+     lift. Cards sit on the canvas; chips (pills, badges, dots) float above
+     them. Components take one of these two instead of inventing rgb() ladders. */
+  --map-elevation-card:
+    0 0 0 1px oklch(0.3 0.02 270 / 0.07), 0 2px 6px oklch(0.25 0.02 270 / 0.05),
+    0 10px 26px -14px oklch(0.2 0.02 270 / 0.14);
+  --map-elevation-chip:
+    0 0 0 1px oklch(0.3 0.02 270 / 0.08), 0 1px 3px oklch(0.25 0.02 270 / 0.09),
+    0 5px 12px -7px oklch(0.2 0.02 270 / 0.18);
+  /* Keyboard focus on the canvas: a 2px interactive-blue ring held off the
+     object by a 2px canvas-coloured gap. One shadow list so any surface can
+     take it without restating widths and offsets. */
+  --focus-ring-canvas:
+    0 0 0 2px var(--map-canvas), 0 0 0 4px var(--text-interactive-base);
 }
 
 [data-color-scheme="dark"] {
@@ -141,6 +162,11 @@
   --map-divider: oklch(0.82 0.012 280 / 0.1);
   --map-elevation-control: 0 0 0 1px oklch(0.92 0.01 280 / 0.09);
   --map-elevation-panel: 0 0 0 1px oklch(0.92 0.01 280 / 0.11);
+  --map-canvas-backdrop: oklch(0.1 0.01 270);
+  --map-elevation-card: 0 0 0 1px oklch(0.92 0.01 280 / 0.08);
+  --map-elevation-chip: 0 0 0 1px oklch(0.92 0.01 280 / 0.09);
+  --focus-ring-canvas:
+    0 0 0 2px var(--map-canvas), 0 0 0 4px var(--text-interactive-base);
   --map-edge-ready: color-mix(in srgb, var(--text-base) 70%, transparent);
   --map-edge-draft: color-mix(in srgb, var(--text-weak) 58%, transparent);
   --map-edge-return: color-mix(in srgb, var(--text-weak) 42%, transparent);

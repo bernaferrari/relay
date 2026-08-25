@@ -479,45 +479,44 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
           const count = () => props.caseCountFor(connection);
           const source = () => nodeFor(connection.fromScreenId);
           const target = () => nodeFor(connection.toScreenId);
-          const showLabel = () => {
-            return props.connectionLabelMode(connection) === "always";
-          };
-          return (
-            <button
-              type="button"
-              class={cn(
-                "group absolute z-[6] flex min-h-6 max-w-52 items-center gap-1 rounded-md bg-[color-mix(in_srgb,var(--map-canvas)_94%,transparent)] px-1.5 text-micro font-medium text-[var(--text-base)] backdrop-blur-[6px] transition-[background-color,box-shadow,color] duration-hover before:absolute before:-inset-1 before:rounded-lg hover:bg-[var(--background-base)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
-                !showLabel() && "pointer-events-none opacity-0",
-                props.selectedConnectionId === connection.id &&
-                  "bg-[var(--background-base)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]",
-              )}
-              style={{
-                left: `${geometry().labelPoint.x}px`,
-                top: `${geometry().labelPoint.y - 19}px`,
-                transform: "translate(-50%, -50%)",
-              }}
-              aria-label={`Open path from ${source() ? props.titleFor(source()!) : "start screen"} to ${target() ? props.titleFor(target()!) : "next screen"}`}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                selectConnectionAtPointer(connection);
-              }}
-            >
-              <span class="truncate">
-                {humanizeTitle(connection.label ?? "") ||
-                  (connection.state === "needs-recording" ? "Record path" : "Open path")}
-              </span>
-              <Show when={count()}>
-                {(value) => (
-                  <span class="inline-flex items-center gap-1 text-micro font-normal tabular-nums text-[var(--text-weak)]">
-                    <span aria-hidden="true">·</span>{" "}
-                    {value().exact ? value().count : `~${value().count}`}{" "}
-                    {value().count === 1 ? "run" : "runs"}
+          const showLabel = () => props.connectionLabelMode(connection) === "always";
+            return (
+              <Show when={showLabel()}>
+                <button
+                  type="button"
+                  class={cn(
+                    "group absolute z-[6] flex min-h-6 max-w-52 items-center gap-1 rounded-md bg-[color-mix(in_srgb,var(--map-canvas)_94%,transparent)] px-1.5 text-micro font-medium text-[var(--text-base)] backdrop-blur-[6px] transition-[background-color,box-shadow,color] duration-hover before:absolute before:-inset-1 before:rounded-lg hover:bg-[var(--background-base)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
+                    props.selectedConnectionId === connection.id &&
+                      "bg-[var(--background-base)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]",
+                  )}
+                  style={{
+                    left: `${geometry().labelPoint.x}px`,
+                    top: `${geometry().labelPoint.y - 19}px`,
+                    transform: "translate(-50%, -50%)",
+                  }}
+                  aria-label={`Open path from ${source() ? props.titleFor(source()!) : "start screen"} to ${target() ? props.titleFor(target()!) : "next screen"}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    selectConnectionAtPointer(connection);
+                  }}
+                >
+                  <span class="truncate">
+                    {humanizeTitle(connection.label ?? "") ||
+                      (connection.state === "needs-recording" ? "Record path" : "Open path")}
                   </span>
-                )}
+                  <Show when={count()}>
+                    {(value) => (
+                      <span class="inline-flex items-center gap-1 text-micro font-normal tabular-nums text-[var(--text-weak)]">
+                        <span aria-hidden="true">·</span>{" "}
+                        {value().exact ? value().count : `~${value().count}`}{" "}
+                        {value().count === 1 ? "run" : "runs"}
+                      </span>
+                    )}
+                  </Show>
+                </button>
               </Show>
-            </button>
-          );
+            );
         }}
       </For>
 

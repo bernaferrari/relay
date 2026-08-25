@@ -29,7 +29,7 @@ export function shellRootNavVar(open: boolean): Record<string, string> {
 export const shellNav = cn(
   "fixed top-0 bottom-0 left-0 z-[var(--z-shell-rail)] flex min-h-0 w-[var(--shell-nav-width)] flex-col overflow-hidden",
   "border-r border-[var(--border-weak-base)] bg-[var(--background-base)]",
-  "shadow-[18px_0_56px_rgb(0_0_0/32%)] transition-[transform,opacity] duration-panel ease-drawer",
+  "transition-[transform,opacity] duration-panel ease-drawer",
   "will-change-transform",
   // Inner content keeps its width during the collapse so text does not reflow.
   "[&>*]:w-[var(--shell-nav-width)]",
@@ -127,10 +127,7 @@ export const shellAsideDrawer = cn(
 );
 
 export const shellMapWrap = cn(
-  "relative min-h-0 min-w-0 overflow-hidden",
-  "bg-[color-mix(in_srgb,var(--background-deep)_94%,var(--text-interactive-base))]",
-  "before:pointer-events-none before:absolute before:inset-0 before:z-0 before:content-['']",
-  "before:bg-[radial-gradient(circle_at_50%_34%,color-mix(in_srgb,var(--text-interactive-base)_7%,transparent),transparent_48%)]",
+  "relative min-h-0 min-w-0 overflow-hidden bg-[var(--map-canvas)]",
   "[&>*]:relative [&>*]:z-[1]",
 );
 

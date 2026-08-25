@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   canvasOwnsWheel,
   canvasWheelAction,
+  canvasZoomKeyAction,
   isCaptureScreenShortcut,
   shouldIgnoreCanvasShortcut,
 } from "./app-map-events";
@@ -104,4 +105,11 @@ test("screen capture uses the advertised modified shortcut, never plain S", () =
     isCaptureScreenShortcut({ key: "s", metaKey: true, ctrlKey: false, shiftKey: false }),
     false,
   );
+});
+
+test("zoom keys mirror the ctrl-wheel gesture with the same step", () => {
+  assert.deepEqual(canvasZoomKeyAction("="), { kind: "zoom", delta: 0.1 });
+  assert.deepEqual(canvasZoomKeyAction("+"), { kind: "zoom", delta: 0.1 });
+  assert.deepEqual(canvasZoomKeyAction("-"), { kind: "zoom", delta: -0.1 });
+  assert.equal(canvasZoomKeyAction("v"), null);
 });

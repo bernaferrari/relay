@@ -5,8 +5,44 @@ import type { AppMapPrimaryAction } from "../lib/app-map-primary-action";
 import { AppMapPrimaryActionButton } from "./app-map-primary-action-button";
 import { RunsRefreshControl } from "./runs-refresh-control";
 import { OfflineGate } from "./offline-gate";
-import { RunMatrixScreenshotDialog } from "./run-matrix-review";
+import { CombineScreenshotDialog } from "./combine-review";
+import { AppMapTestProposalReview } from "./app-map-test-proposal-review";
+import type { AppMapScenarioTest, Proposal } from "@relay/protocol";
 import { CommandPalette, CommandProvider, useCommand } from "../context/command";
+
+const scenario: AppMapScenarioTest = {
+  id: "checkout",
+  organizationId: "org",
+  projectId: "project",
+  appMapId: "map",
+  kind: "scenario",
+  name: "Checkout",
+  intentSchemaVersion: 1,
+  steps: [],
+  createdAt: 1,
+  updatedAt: 1,
+};
+
+const proposal: Proposal = {
+  id: "proposal",
+  organizationId: "org",
+  projectId: "project",
+  appMapId: "map",
+  baseRevision: 1,
+  title: "Clarify checkout",
+  status: "pending",
+  changes: [
+    {
+      kind: "test.edit",
+      testId: "checkout",
+      edits: [
+        { kind: "step.patch", stepId: "submit", patch: { intent: "Submit the reviewed order" } },
+      ],
+    },
+  ],
+  createdAt: 1,
+  updatedAt: 1,
+};
 
 function installBrowser() {
   document.body.replaceChildren();
@@ -157,7 +193,7 @@ test("offline interruption preserves work, owns focus, reports retry failure, an
   }
 });
 
-test("matrix screenshot dialog traps Tab and returns focus to its opener", async () => {
+test("Combine screenshot dialog traps Tab and returns focus to its opener", async () => {
   const browser = installBrowser();
   try {
     const trigger = browser.window.document.createElement("button");
@@ -169,7 +205,7 @@ test("matrix screenshot dialog traps Tab and returns focus to its opener", async
     render(
       () => (
         <Show when={open()}>
-          <RunMatrixScreenshotDialog
+          <CombineScreenshotDialog
             title="Checkout"
             source="data:image/png;base64,iVBORw0KGgo="
             world="Default"
@@ -251,6 +287,57 @@ test("command palette tracks keyboard selection and restores focus after activat
       new browser.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
     );
     await settle();
+    expect(root.querySelector('[role="dialog"]')).toBeNull();
+    expect(browser.window.document.activeElement).toBe(trigger);
+  } finally {
+    browser.restore();
+  }
+});
+
+test("Test proposal review dialog traps Tab, closes on Escape, and restores focus", async () => {
+  const browser = installBrowser();
+  try {
+    const trigger = browser.window.document.createElement("button");
+    const root = browser.window.document.createElement("div");
+    browser.window.document.body.append(trigger, root);
+    trigger.focus();
+    const [open, setOpen] = createSignal(true);
+    let closes = 0;
+    render(
+      () => (
+        <Show when={open()}>
+          <AppMapTestProposalReview
+            test={scenario}
+            proposals={[proposal]}
+            onApprove={() => undefined}
+            onReject={() => undefined}
+            onClose={() => {
+              closes += 1;
+              setOpen(false);
+            }}
+          />
+        </Show>
+      ),
+      root,
+    );
+    await settle();
+    const dialog = root.querySelector<HTMLElement>('[role="dialog"]')!;
+    const close = dialog.querySelector<HTMLButtonElement>(
+      '[aria-label="Close Test proposal review"]',
+    )!;
+    expect(browser.window.document.activeElement).toBe(close);
+
+    // Shift+Tab from the first focusable wraps back to the last control.
+    close.dispatchEvent(
+      new browser.window.KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }),
+    );
+    expect(dialog.contains(browser.window.document.activeElement)).toBe(true);
+
+    browser.window.document.activeElement!.dispatchEvent(
+      new browser.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    await settle();
+    expect(closes).toBe(1);
     expect(root.querySelector('[role="dialog"]')).toBeNull();
     expect(browser.window.document.activeElement).toBe(trigger);
   } finally {

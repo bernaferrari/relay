@@ -34,25 +34,7 @@ test("maps every tool-eligible operation exactly once", () => {
   );
   assert.deepEqual(
     relayMcpExclusions.map(({ operationId }) => operationId),
-    [
-      "event.stream",
-      "target.stream.open",
-      "activity.export",
-      "job.locale-matrix.start",
-      "job.locale-matrix.infer",
-      "discovery.promote",
-      "corpus.list",
-      "corpus.create",
-      "corpus.get",
-      "corpus.rename",
-      "corpus.status.update",
-      "corpus.start",
-      "corpus.cancel",
-      "corpus.coverage",
-      "corpus.analysis",
-      "corpus.export",
-      "corpus.screen.get",
-    ],
+    ["event.stream", "target.stream.open", "activity.export", "discovery.promote"],
   );
   assert.ok(relayMcpExclusions.every(({ reason }) => reason.trim().length > 0));
   assert.equal(
@@ -468,6 +450,24 @@ test("gives run agents one revision-pinned graph Test operation", () => {
   );
 });
 
+test("app-map.test.run guidance explains the one-Test versus Combine split", () => {
+  const guidance = tool("app-map.test.run").description;
+  assert.match(guidance, /Without `in`/u);
+  assert.match(guidance, /expectedRevision \+ target are required/u);
+  assert.match(guidance, /With `in`/u);
+  assert.match(guidance, /upserts a Combine/u);
+  assert.match(guidance, /executionMode:'all'/u);
+});
+
+test("control profile includes reusable actions; locale profile reads app-declared locales", () => {
+  const control = new Set(
+    relayMcpToolsForProfile("control").map(({ operationId }) => operationId),
+  );
+  assert.ok(control.has("action.run"), "control profile is missing action.run");
+  const locale = new Set(relayMcpToolsForProfile("locale").map(({ operationId }) => operationId));
+  assert.ok(locale.has("target.app.locales"), "locale profile is missing target.app.locales");
+});
+
 test("defines deterministic task profiles with a compact authoring default", () => {
   assert.deepEqual(relayMcpProfiles, [
     "control",
@@ -619,17 +619,15 @@ test("publishes compact discovery metadata for every eligible operation", () => 
   });
 });
 
-test("the locale profile exposes only the canonical Language Variable campaign", () => {
+test("the language profile exposes one canonical Variable × Test Combine", () => {
   const locale = new Set(relayMcpToolsForProfile("locale").map(({ operationId }) => operationId));
   for (const operationId of [
-    "language-profile.scan",
-    "switcher-profile.scan",
     "app-map.variable.save",
     "app-map.test.save",
     "app-map.combine.save",
     "app-map.combine.preflight",
     "job.combine.start",
-    "job.locale-matrix.analysis",
+    "job.combine.analysis",
     "target.screenshot.capture",
     "target.scroll-survey.capture",
     "app-map.test.run",
@@ -637,18 +635,13 @@ test("the locale profile exposes only the canonical Language Variable campaign",
     assert.ok(locale.has(operationId), `locale profile is missing ${operationId}`);
   }
   assert.match(tool("target.scroll-survey.capture").description, /--dir/u);
-  assert.match(tool("target.scroll-survey.capture").description, /pack check/u);
-  assert.match(tool("target.scroll-survey.capture").description, /accessibility\/\*\.json/u);
-  assert.match(tool("target.scroll-survey.capture").description, /not a survey --dir folder/u);
+  assert.match(tool("target.scroll-survey.capture").description, /Combine export/u);
+  assert.match(tool("target.scroll-survey.capture").description, /portable review folder/u);
   assert.match(tool("target.scroll-survey.capture").description, /Do not dump base64/u);
   assert.doesNotMatch(tool("target.scroll-survey.capture").description, /Then compare the folder/u);
   // A sweep drives a real device; authoring the App Map is a different task.
   assert.equal(locale.has("app-map.proposal.submit"), false);
   assert.equal(locale.has("authoring.session.create"), false);
-
-  for (const tool of relayMcpTools) {
-    assert.equal(tool.operationId.startsWith("corpus."), false);
-  }
 });
 
 test("marks App Map Combine execution as a per-cell runtime profile contract", () => {
@@ -656,32 +649,6 @@ test("marks App Map Combine execution as a per-cell runtime profile contract", (
   assert.match(tool("job.combine.start").description, /executionMode all/u);
   assert.doesNotMatch(tool("job.combine.start").description, /selectedCellIds to run more/u);
   assert.match(tool("job.combine.start").description, /app-map\.test\.run/u);
-});
-
-test("locale finding acceptance exposes safe cross-locale scope", () => {
-  const schema = tool("locale-finding.known.add").inputSchema;
-  const finding = {
-    id: "finding-1",
-    code: "POSSIBLE_UNTRANSLATED_TEXT" as const,
-    canonicalKey: "settings",
-    screenLabel: "Settings",
-    locale: "it",
-    detail: "Brand name matches the baseline",
-    stableKey: "structure:row[2]",
-  };
-  assert.deepEqual(schema.parse({ finding, scope: "control", note: "Brand remains English" }), {
-    finding,
-    scope: "control",
-    note: "Brand remains English",
-  });
-  assert.throws(() => schema.parse({ finding, scope: "control" }), /requires a reason/);
-  assert.throws(() =>
-    schema.parse({
-      finding: { ...finding, code: "POSSIBLE_TEXT_CLIPPED" },
-      scope: "control",
-      note: "Looks fine",
-    }),
-  );
 });
 
 test("publishes exact graph Test and one-pass run schemas", () => {

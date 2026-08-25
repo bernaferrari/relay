@@ -1,1 +1,45 @@
-/* Styles live in styles/index.css; this file co-locates the component contract. */
+/* AgentBoard card — elevated content surface.
+   Reads theme custom properties so themes restyle cards without edits here. */
+[data-component="card"] {
+  display: block;
+  min-width: 0;
+  background-color: var(--surface-strong, var(--surface-raised-stronger-non-alpha));
+  border-style: solid;
+  border-width: 1px;
+  border-color: var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  /* Layered shadow: hairline contact + soft ambient lift. */
+  box-shadow:
+    var(--shadow-xs-border-base),
+    0 6px 16px -12px rgb(0 0 0 / 18%);
+
+  &[data-padding="sm"] {
+    padding: calc(var(--spacing) * 2);
+  }
+
+  &[data-padding="md"] {
+    padding: calc(var(--spacing) * 3);
+  }
+
+  &[data-padding="lg"] {
+    padding: calc(var(--spacing) * 4);
+  }
+}
+
+[data-slot="card-title"] {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-large);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-ui);
+  letter-spacing: var(--letter-spacing-tight);
+  color: var(--text-strong);
+  margin: 0;
+}
+
+[data-slot="card-description"] {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-ui);
+  color: var(--text-weak);
+  margin: calc(var(--spacing) * 1) 0 0;
+}

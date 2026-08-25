@@ -126,7 +126,7 @@ export function AppMapDeviceCompanion(props: {
             <span
               class={cn(
                 "size-2 shrink-0 rounded-full bg-[var(--border-selected)]",
-                run().state === "running" && "animate-pulse",
+                run().state === "running" && "motion-safe:animate-pulse",
               )}
               aria-hidden="true"
             />

@@ -1,12 +1,18 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { Button } from "@relay/ui/button";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
 import { cn } from "../lib/cn";
-import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-presentation";
+import {
+  checkedTargetsLabel,
+  connectionStatusLabel,
+} from "../lib/connection-presentation";
 import { describeConnectionPath } from "../lib/connection-action-presentation";
 import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 import { Icon } from "./icon";
-import { ConnectionCaseStack, type ConnectionCaseStackProps } from "./connection-case-stack";
+import {
+  ConnectionCaseStack,
+  type ConnectionCaseStackProps,
+} from "./connection-case-stack";
 
 function RemovePathButton(props: { onClick: () => void }) {
   return (
@@ -37,7 +43,11 @@ export function ConnectionInspector(props: {
     label: string;
     waitMs?: number;
   }>;
-  onChangeWait: (actionId: string, stepId: string | undefined, waitMs: number) => void;
+  onChangeWait: (
+    actionId: string,
+    stepId: string | undefined,
+    waitMs: number,
+  ) => void;
   setup: {
     behaviors: Array<{ id: string; label: string; actionCount: number }>;
     onRecord: () => void;
@@ -58,15 +68,32 @@ export function ConnectionInspector(props: {
   onRemove: () => void;
   onClose: () => void;
 }) {
+  let panel: HTMLElement | undefined;
+  // Opening Path details hands focus into the panel so Escape closes it and a
+  // screen reader lands inside; closing hands focus back to the opener.
+  onMount(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    panel?.focus({ preventScroll: true });
+    onCleanup(() => opener?.focus?.({ preventScroll: true }));
+  });
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    event.stopPropagation();
+    props.onClose();
+  };
   const pending = () => props.connection.state === "needs-recording";
   const [optionsOpen, setOptionsOpen] = createSignal(false);
   const [caseStackOpen, setCaseStackOpen] = createSignal(false);
   const [actionsOpen, setActionsOpen] = createSignal(false);
-  const actionCount = () => props.actionCount ?? props.connection.stepIds.length;
+  const actionCount = () =>
+    props.actionCount ?? props.connection.stepIds.length;
   const verified = () => props.connection.review?.status === "verified";
   const failed = () => props.connection.review?.status === "failed";
   return (
     <aside
+      ref={(element) => (panel = element)}
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
       data-app-map-connection-inspector
       class="absolute top-16 right-3 z-30 max-h-[calc(100%-144px)] w-[min(304px,calc(100%-24px))] overscroll-contain overflow-y-auto rounded-2xl border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] p-3 shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:max-h-[min(70%,540px)] max-[720px]:w-auto"
       onWheel={(event) => event.stopPropagation()}
@@ -88,7 +115,9 @@ export function ConnectionInspector(props: {
                       : "bg-[var(--surface-base-hover)] text-[var(--text-base)]",
             )}
           >
-            {pending() ? "Needs recording" : connectionStatusLabel(props.connection)}
+            {pending()
+              ? "Needs recording"
+              : connectionStatusLabel(props.connection)}
           </span>
           <button
             type="button"
@@ -102,7 +131,8 @@ export function ConnectionInspector(props: {
       </div>
       <div class={cn(copyStack, "mt-1")}>
         <strong class={cn(copyTitle, "block text-body")}>
-          {props.sourceTitle} <span class="text-[var(--text-weak)]">→</span> {props.targetTitle}
+          {props.sourceTitle} <span class="text-[var(--text-weak)]">→</span>{" "}
+          {props.targetTitle}
         </strong>
         <p class={cn(copyDescription, "m-0 text-caption")}>
           {pending()
@@ -153,7 +183,9 @@ export function ConnectionInspector(props: {
                           type="number"
                           min="0"
                           step="0.1"
-                          value={Number(((action.waitMs ?? 0) / 1_000).toFixed(2))}
+                          value={Number(
+                            ((action.waitMs ?? 0) / 1_000).toFixed(2),
+                          )}
                           aria-label="Pause duration in seconds"
                           class="w-10 border-0 bg-transparent p-0 text-right text-micro tabular-nums text-[var(--text-strong)] outline-none"
                           onChange={(event) =>
@@ -183,7 +215,10 @@ export function ConnectionInspector(props: {
         }}
       />
       <Show
-        when={!pending() && (Boolean(props.connection.review) || props.replay.state !== "idle")}
+        when={
+          !pending() &&
+          (Boolean(props.connection.review) || props.replay.state !== "idle")
+        }
       >
         <div class="mt-2 grid gap-1 border-t border-[var(--border-weak-base)] pt-2">
           <div class="flex min-h-8 items-center gap-2 px-0.5">
@@ -197,7 +232,10 @@ export function ConnectionInspector(props: {
                     : "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
               )}
             >
-              <Icon name={failed() ? "alert" : verified() ? "check" : "scan"} size={11} />
+              <Icon
+                name={failed() ? "alert" : verified() ? "check" : "scan"}
+                size={11}
+              />
             </span>
             <span class="min-w-0 flex-1">
               <strong class="block text-micro font-medium text-[var(--text-strong)]">
@@ -258,11 +296,17 @@ export function ConnectionInspector(props: {
             >
               <Icon
                 name={
-                  props.replay.state === "running" ? "refresh" : verified() ? "refresh" : "play"
+                  props.replay.state === "running"
+                    ? "refresh"
+                    : verified()
+                      ? "refresh"
+                      : "play"
                 }
                 size={11}
                 class={
-                  props.replay.state === "running" ? "animate-spin motion-reduce:animate-none" : ""
+                  props.replay.state === "running"
+                    ? "animate-spin motion-reduce:animate-none"
+                    : ""
                 }
               />
               {props.replay.state === "running"
@@ -283,7 +327,10 @@ export function ConnectionInspector(props: {
                 })
               }
             >
-              <Icon name={optionsOpen() ? "chevron-down" : "chevron-right"} size={10} />
+              <Icon
+                name={optionsOpen() ? "chevron-down" : "chevron-right"}
+                size={10}
+              />
               <span>Path options</span>
             </button>
             <Show when={optionsOpen()}>
@@ -322,7 +369,12 @@ export function ConnectionInspector(props: {
         }
       >
         <div class="mt-3 grid gap-2">
-          <Button variant="primary" size="lg" class="w-full" onClick={props.setup.onRecord}>
+          <Button
+            variant="primary"
+            size="lg"
+            class="w-full"
+            onClick={props.setup.onRecord}
+          >
             <Icon name="smartphone" size={12} /> Record on device
           </Button>
           <button
@@ -337,7 +389,10 @@ export function ConnectionInspector(props: {
               })
             }
           >
-            <Icon name={optionsOpen() ? "chevron-down" : "chevron-right"} size={10} />
+            <Icon
+              name={optionsOpen() ? "chevron-down" : "chevron-right"}
+              size={10}
+            />
             <span>Set path behavior</span>
           </button>
           <Show when={optionsOpen()}>
@@ -395,7 +450,8 @@ export function ConnectionInspector(props: {
                           {behavior.label}
                         </strong>
                         <span class="text-micro/[1.25] text-[var(--text-weak)]">
-                          {behavior.actionCount} action{behavior.actionCount === 1 ? "" : "s"}
+                          {behavior.actionCount} action
+                          {behavior.actionCount === 1 ? "" : "s"}
                         </span>
                       </span>
                     </button>

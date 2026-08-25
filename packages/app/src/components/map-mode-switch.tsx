@@ -4,7 +4,7 @@ import { Icon } from "./icon";
 /**
  * Every destination a single map has. Relay used to carry two tab strips forty
  * pixels apart — a document switcher ("Test | Canvas") in the top bar and a
- * floating view strip ("Canvas | Screens | Coverage") over the canvas — which
+ * floating view strip ("Canvas | Screens | Results") over the canvas — which
  * left no honest answer to "which row am I in?". A file has one row of modes.
  *
  * "map" rather than "canvas" as the identifier so the canvas keeps the name the
@@ -18,7 +18,7 @@ export type MapCanvasView = Exclude<MapMode, "test">;
 const MODES = [
   ["map", "map", "Canvas", "The screens and the paths between them"],
   ["screens", "grid", "Screens", "Every screen as a grid"],
-  ["coverage", "check", "Coverage", "What ran, and how it went"],
+  ["coverage", "check", "Results", "What ran, and how it went"],
   ["test", "play", "Test", "Author and run one path"],
 ] as const;
 

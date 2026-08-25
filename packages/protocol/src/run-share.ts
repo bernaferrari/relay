@@ -51,6 +51,8 @@ export type RunShareReportRun = {
   durationMs?: number;
   caseIndex?: number;
   caseCount?: number;
+  /** Redacted, bounded reason a failed run stopped; absent for healthy runs. */
+  errorHeadline?: string;
   frames: RunShareFrame[];
 };
 
