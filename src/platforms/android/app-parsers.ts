@@ -4,8 +4,17 @@ export type AndroidBlockingDialogFocus = {
   raw: string;
 };
 
-const ANDROID_FOCUS_MARKERS = [
-  'mCurrentFocus=Window{',
+/**
+ * The one marker that names the focused WINDOW. A blocking dialog is a window title, so this is the
+ * only line that can carry one: `mFocusedApp=AppWindowToken{…}` names the focused app token and
+ * `mResumedActivity:` names an activity record, and neither can hold "Application Not Responding:
+ * …" (#592).
+ */
+export const ANDROID_FOCUSED_WINDOW_MARKER = 'mCurrentFocus=Window{';
+
+/** The line prefixes a `dumpsys` dump uses to name the focused window or resumed activity. */
+export const ANDROID_FOCUS_MARKERS = [
+  ANDROID_FOCUSED_WINDOW_MARKER,
   'mFocusedApp=AppWindowToken{',
   'mResumedActivity:',
   'ResumedActivity:',
@@ -38,15 +47,36 @@ export function parseAndroidUserInstalledPackages(stdout: string): string[] {
     .filter(Boolean);
 }
 
-export function parseAndroidBlockingDialogFocus(text: string): AndroidBlockingDialogFocus | null {
-  return parseAndroidFocusSegment(text, (segment, raw) =>
-    parseAndroidBlockingDialogFromSegment(segment, raw),
-  );
+/**
+ * What one window dump can say about a blocking system dialog.
+ *
+ * `focusObserved` separates "this dump does not show a blocking dialog" from "this dump does not
+ * show the focused window at all". Only the second is a miss worth spending another `dumpsys`
+ * variant on: a dump that names the focused window and no ANR title has already answered the
+ * question.
+ *
+ * Only {@link ANDROID_FOCUSED_WINDOW_MARKER} sets it, because only that line can carry an ANR
+ * title. The other markers are still parsed — the marker order is unchanged (#592) — but a dump
+ * that names just the focused app token has NOT answered this question and must not suppress the
+ * variant that can.
+ */
+export type AndroidBlockingDialogRead = {
+  focusObserved: boolean;
+  focus: AndroidBlockingDialogFocus | null;
+};
+
+export function readAndroidBlockingDialogFocus(text: string): AndroidBlockingDialogRead {
+  let focusObserved = false;
+  const focus = parseAndroidFocusSegment(text, (segment, raw, marker) => {
+    if (marker === ANDROID_FOCUSED_WINDOW_MARKER) focusObserved = true;
+    return parseAndroidBlockingDialogFromSegment(segment, raw);
+  });
+  return { focusObserved, focus };
 }
 
 function parseAndroidFocusSegment<T>(
   text: string,
-  parse: (segment: string, raw: string) => T | null,
+  parse: (segment: string, raw: string, marker: string) => T | null,
 ): T | null {
   const lines = text.split('\n');
   for (const marker of ANDROID_FOCUS_MARKERS) {
@@ -54,7 +84,7 @@ function parseAndroidFocusSegment<T>(
       const markerIndex = line.indexOf(marker);
       if (markerIndex === -1) continue;
       const raw = line.trim();
-      const parsed = parse(line.slice(markerIndex + marker.length), raw);
+      const parsed = parse(line.slice(markerIndex + marker.length), raw, marker);
       if (parsed) return parsed;
     }
   }

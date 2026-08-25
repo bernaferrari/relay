@@ -20,13 +20,13 @@ vi.mock('../../../core/dispatch.ts', async (importOriginal) => {
 
 vi.mock('../../../platforms/android/snapshot.ts', () => ({ snapshotAndroid: vi.fn() }));
 
-vi.mock('../../../platforms/android/app-lifecycle.ts', async (importOriginal) => {
+vi.mock('../../../platforms/android/window-state.ts', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('../../../platforms/android/app-lifecycle.ts')>();
+    await importOriginal<typeof import('../../../platforms/android/window-state.ts')>();
   return {
     ...actual,
     getAndroidAppState: vi.fn(async () => ({})),
-    getAndroidBlockingDialogFocus: vi.fn(async () => null),
+    getAndroidBlockingDialogObservation: vi.fn(async () => ({ status: 'clear' }) as const),
   };
 });
 
