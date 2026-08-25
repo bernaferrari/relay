@@ -6,23 +6,32 @@ import {
 } from '../utils/host-process.ts';
 
 const DAEMON_COMMAND_PATTERNS = [
-  /(^|[/\s"'=])dist\/src\/daemon\.js($|[\s"'])/,
-  /(^|[/\s"'=])dist\/src\/internal\/daemon\.js($|[\s"'])/,
-  /(^|[/\s"'=])src\/daemon\.ts($|[\s"'])/,
+  /\/dist\/src\/daemon\.js($|[\s"'])/,
+  /\/dist\/src\/internal\/daemon\.js($|[\s"'])/,
+  /\/src\/daemon\.ts($|[\s"'])/,
 ];
 
+/**
+ * Identity is the daemon entry path, never the checkout's directory name: a
+ * git worktree is named after its branch, so a `agent-device` substring gate
+ * classified every worktree daemon as "not ours" (#1545). The pid always
+ * comes from our own daemon.json/daemon.lock alongside the processStartTime
+ * recorded with it. Missing identity must fail closed so a stale PID cannot
+ * be authorized by the path match alone.
+ */
 export function isAgentDeviceDaemonCommand(command: string): boolean {
   const normalized = command.toLowerCase().replaceAll('\\', '/');
-  if (!normalized.includes('agent-device')) return false;
   return DAEMON_COMMAND_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-export function isAgentDeviceDaemonProcess(pid: number, expectedStartTime?: string): boolean {
+export function isAgentDeviceDaemonProcess(
+  pid: number,
+  expectedStartTime: string | undefined,
+): boolean {
+  if (!expectedStartTime) return false;
   if (!isProcessAlive(pid)) return false;
-  if (expectedStartTime) {
-    const actualStartTime = readProcessStartTime(pid);
-    if (!actualStartTime || actualStartTime !== expectedStartTime) return false;
-  }
+  const actualStartTime = readProcessStartTime(pid);
+  if (!actualStartTime || actualStartTime !== expectedStartTime) return false;
   const command = readProcessCommand(pid);
   if (!command) return false;
   return isAgentDeviceDaemonCommand(command);
@@ -44,7 +53,7 @@ export async function stopProcessForTakeover(
   options: {
     termTimeoutMs: number;
     killTimeoutMs: number;
-    expectedStartTime?: string;
+    expectedStartTime: string | undefined;
   },
 ): Promise<void> {
   if (!isAgentDeviceDaemonProcess(pid, options.expectedStartTime)) return;
