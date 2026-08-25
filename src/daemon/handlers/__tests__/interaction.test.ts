@@ -38,13 +38,13 @@ vi.mock('../snapshot-interactor-capture.ts', async () => {
   return { captureSnapshotWithInteractor: fixture.captureSnapshotThroughLegacyDispatchFixture };
 });
 
-vi.mock('../../../platforms/android/app-lifecycle.ts', async (importOriginal) => {
+vi.mock('../../../platforms/android/window-state.ts', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('../../../platforms/android/app-lifecycle.ts')>();
+    await importOriginal<typeof import('../../../platforms/android/window-state.ts')>();
   return {
     ...actual,
     getAndroidAppState: vi.fn(async () => ({})),
-    getAndroidBlockingDialogFocus: vi.fn(async () => null),
+    getAndroidBlockingDialogObservation: vi.fn(async () => ({ status: 'clear' }) as const),
   };
 });
 
@@ -68,17 +68,17 @@ import { dispatchCommand } from '../../../core/dispatch.ts';
 const mockDispatch = vi.mocked(dispatchCommand);
 import {
   getAndroidAppState,
-  getAndroidBlockingDialogFocus,
-} from '../../../platforms/android/app-lifecycle.ts';
+  getAndroidBlockingDialogObservation,
+} from '../../../platforms/android/window-state.ts';
 const mockGetAndroidAppState = vi.mocked(getAndroidAppState);
-const mockGetAndroidBlockingDialogFocus = vi.mocked(getAndroidBlockingDialogFocus);
+const mockGetAndroidBlockingDialogObservation = vi.mocked(getAndroidBlockingDialogObservation);
 beforeEach(() => {
   mockDispatch.mockReset();
   mockDispatch.mockResolvedValue({});
   mockGetAndroidAppState.mockReset();
   mockGetAndroidAppState.mockResolvedValue({});
-  mockGetAndroidBlockingDialogFocus.mockReset();
-  mockGetAndroidBlockingDialogFocus.mockResolvedValue(null);
+  mockGetAndroidBlockingDialogObservation.mockReset();
+  mockGetAndroidBlockingDialogObservation.mockResolvedValue({ status: 'clear' });
   mockRunAppleRunnerCommand.mockReset();
   mockRunAppleRunnerCommand.mockResolvedValue({});
   resetGetRuntimeFixture();
