@@ -21,11 +21,15 @@ import {
   mapManagedAgentBrowserError,
   resolveAgentBrowserTool,
 } from './agent-browser-tool.ts';
-import { cleanupManagedAgentBrowserOrphansForProviderStartup } from './agent-browser-lifecycle.ts';
+import {
+  cleanupManagedAgentBrowserOrphansForProviderStartup,
+  recordManagedAgentBrowserProcesses,
+} from './agent-browser-lifecycle.ts';
+import type { OwnedProcessRecordStore } from '../../utils/owned-process-record.ts';
 
 const AGENT_BROWSER = 'agent-browser';
-// Exported so WEB_BROWSER_SESSION_TEARDOWN_BUDGET_MS (daemon/server/daemon-runtime.ts) can be
-// pinned to it instead of drifting out of sync with a copied number.
+// Exported so daemon shutdown can pin its web-close budget to the ceiling enforced for one
+// `agent-browser` CLI call instead of copying a number that can drift.
 export const AGENT_BROWSER_TIMEOUT_MS = 30_000;
 const AGENT_BROWSER_DOCTOR_HINT =
   'Run `agent-device web setup` to install the managed web backend.';
@@ -34,6 +38,7 @@ type AgentBrowserProviderOptions = {
   session?: string;
   stateDir?: string;
   openWebSessionNames?: () => readonly string[];
+  ownedProcessRecords?: OwnedProcessRecordStore;
 };
 
 export function createAgentBrowserWebProvider(
@@ -233,23 +238,29 @@ async function runAgentBrowserJson(
 ): Promise<unknown> {
   const { session, options, signal } = params;
   const cliArgs = [...args, '--json', ...(session ? ['--session', session] : [])];
-  const result = await runAgentBrowserCommand(cliArgs, options, signal);
-  const parsed = parseAgentBrowserJson(result.stdout, result.stderr, cliArgs, result.exitCode);
-  return unwrapAgentBrowserJson(parsed, result, cliArgs);
+  return await runAgentBrowserCommand(
+    cliArgs,
+    options,
+    (result) => {
+      const parsed = parseAgentBrowserJson(result.stdout, result.stderr, cliArgs, result.exitCode);
+      return unwrapAgentBrowserJson(parsed, result, cliArgs);
+    },
+    signal,
+  );
 }
 
 async function runAgentBrowserCommand(
   cliArgs: string[],
   options: AgentBrowserProviderOptions,
+  interpret: (result: { stdout: string; stderr: string; exitCode: number }) => unknown,
   signal?: AbortSignal,
-): Promise<{
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-}> {
+): Promise<unknown> {
   let stdout = '';
   let stderr = '';
   let exitCode = 0;
+  let commandCompleted = false;
+  let semanticSuccess = false;
+  const status = getManagedAgentBrowserStatus({ stateDir: options.stateDir });
   try {
     await cleanupProviderStartupOrphans(options);
     const tool = await resolveAgentBrowserTool({ stateDir: options.stateDir });
@@ -262,11 +273,78 @@ async function runAgentBrowserCommand(
     stdout = result.stdout;
     stderr = result.stderr;
     exitCode = result.exitCode;
+    commandCompleted = true;
   } catch (error) {
+    await finalizeAgentBrowserProcessRecord({
+      cliArgs,
+      commandCompleted,
+      exitCode,
+      semanticSuccess,
+      options,
+      status,
+    });
     throw mapAgentBrowserRunError(error, cliArgs);
   }
 
-  return { stdout, stderr, exitCode };
+  try {
+    const result = { stdout, stderr, exitCode };
+    const output = interpret(result);
+    semanticSuccess = true;
+    return output;
+  } finally {
+    await finalizeAgentBrowserProcessRecord({
+      cliArgs,
+      commandCompleted,
+      exitCode,
+      semanticSuccess,
+      options,
+      status,
+    });
+  }
+}
+
+async function finalizeAgentBrowserProcessRecord(params: {
+  cliArgs: string[];
+  commandCompleted: boolean;
+  exitCode: number;
+  semanticSuccess: boolean;
+  options: AgentBrowserProviderOptions;
+  status: ReturnType<typeof getManagedAgentBrowserStatus>;
+}): Promise<void> {
+  const store = params.options.ownedProcessRecords;
+  if (!store || !params.status.installed) return;
+  try {
+    const remainingSessions = params.options.openWebSessionNames?.() ?? [];
+    const currentSession = params.options.session?.trim();
+    const otherOpenSessions = remainingSessions.filter((name) => name !== currentSession);
+    if (canClearAgentBrowserRecord(params, otherOpenSessions.length)) {
+      store.clear({ kind: 'daemon' });
+    } else {
+      await recordManagedAgentBrowserProcesses(params.status, store);
+    }
+  } catch (error) {
+    emitDiagnostic({
+      level: 'warn',
+      phase: 'web_agent_browser_process_record_failed',
+      data: { error: error instanceof Error ? error.message : String(error) },
+    });
+  }
+}
+
+function canClearAgentBrowserRecord(
+  params: Pick<
+    Parameters<typeof finalizeAgentBrowserProcessRecord>[0],
+    'cliArgs' | 'commandCompleted' | 'exitCode' | 'semanticSuccess'
+  >,
+  otherOpenSessionCount: number,
+): boolean {
+  return (
+    params.commandCompleted &&
+    params.semanticSuccess &&
+    params.cliArgs[0] === 'close' &&
+    params.exitCode === 0 &&
+    otherOpenSessionCount === 0
+  );
 }
 
 async function cleanupProviderStartupOrphans(options: AgentBrowserProviderOptions): Promise<void> {
@@ -276,6 +354,9 @@ async function cleanupProviderStartupOrphans(options: AgentBrowserProviderOption
   try {
     await cleanupManagedAgentBrowserOrphansForProviderStartup(status, {
       openWebSessionNames: options.openWebSessionNames(),
+      ...(options.ownedProcessRecords === undefined
+        ? {}
+        : { ownedProcessRecords: options.ownedProcessRecords }),
     });
   } catch (error) {
     emitDiagnostic({
