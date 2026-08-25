@@ -191,6 +191,82 @@ function unsupported(
   log(`evidence: ${name} skipped — ${message}`);
 }
 
+/**
+ * One guard per collector attempt: a collector's failure is folded into its
+ * evidence record, never promoted to a test failure. Shared by the start and
+ * stop paths so the swallowing semantics exist exactly once.
+ */
+async function guardedCollector(
+  handle: RunEvidenceHandle,
+  name: EvidenceChannel,
+  log: (line: string) => void,
+  collect: () => Promise<void>,
+  unsupportedReason?: string,
+): Promise<void> {
+  if (unsupportedReason !== undefined) {
+    unsupported(handle, name, unsupportedReason, log);
+    return;
+  }
+  try {
+    await collect();
+  } catch (error) {
+    failed(handle, name, error, log);
+  }
+}
+
+type CollectorStartedFlag =
+  | "recordingStarted"
+  | "performanceStarted"
+  | "logsStarted"
+  | "networkStarted"
+  | "audioStarted"
+  | "crashStarted";
+
+type InstrumentedChannel = Exclude<EvidenceChannel, "input" | "screenshot" | "ui-tree">;
+
+const COLLECTOR_STARTED_FLAG: Record<InstrumentedChannel, CollectorStartedFlag> = {
+  video: "recordingStarted",
+  performance: "performanceStarted",
+  logs: "logsStarted",
+  network: "networkStarted",
+  crash: "crashStarted",
+  audio: "audioStarted",
+};
+
+/** Shared tail of every successful collector start: mark the channel
+ * captured at the run's start instant and latch its handle flag. */
+function markCollectorStarted(
+  handle: RunEvidenceHandle,
+  name: InstrumentedChannel,
+  extras: { countEntry?: boolean; message?: string; clearMessage?: boolean } = {},
+): void {
+  const record = channel(handle, name);
+  record.status = "captured";
+  record.startedAt = handle.startedAt;
+  if (extras.countEntry === true) record.entries += 1;
+  if (extras.message !== undefined || extras.clearMessage === true) record.message = extras.message;
+  handle[COLLECTOR_STARTED_FLAG[name]] = true;
+}
+
+/** Persist a dumped capture as a redacted artifact and fold its stats into
+ * the channel record, demoting it to partial when entries were dropped —
+ * the common tail of every stop-path collector. */
+async function persistCaptureArtifact(
+  job: TestJob,
+  record: EvidenceChannelRecord,
+  kind: string,
+  result: unknown,
+  dropped = 0,
+): Promise<void> {
+  const data = redactValue(result);
+  addArtifact(job, { kind, capturedAt: now(), data });
+  record.entries = entryCount(result);
+  record.bytes = byteCount(data);
+  record.dropped = dropped;
+  if (dropped > 0) record.status = "partial";
+  record.finishedAt = now();
+}
+
 export type RunEvidenceOptions = {
   /** A physical Apple target shares one XCTest process for observation and
    * control. Starting simulator-style collectors would block that process and
@@ -303,75 +379,51 @@ export async function startRunEvidence(
 
   await primeAndroidEvidenceSession(job, device, handle, log, options.foregroundAppResolver);
 
-  if (options.physicalIos) {
-    unsupported(handle, "performance", "not available from the physical iOS runner", log);
-  } else
-    try {
-      const performanceResult = await withTimeout(
-        device.observability.perf({ ...base() }),
-        5_000,
-        "performance capture",
-      );
-      const record = channel(handle, "performance");
-      record.status = "captured";
-      record.startedAt = startedAt;
-      record.entries += 1;
-      handle.performanceStarted = true;
-      addArtifact(job, {
-        kind: "performance-start",
-        capturedAt: now(),
-        data: redactValue(performanceResult),
-      });
-      event(handle, "performance", "sample", performanceResult);
-    } catch (error) {
-      failed(handle, "performance", error, log);
-    }
+  await guardedCollector(handle, "performance", log, async () => {
+    const performanceResult = await withTimeout(
+      device.observability.perf({ ...base() }),
+      5_000,
+      "performance capture",
+    );
+    markCollectorStarted(handle, "performance", { countEntry: true });
+    addArtifact(job, {
+      kind: "performance-start",
+      capturedAt: now(),
+      data: redactValue(performanceResult),
+    });
+    event(handle, "performance", "sample", performanceResult);
+  }, options.physicalIos ? "not available from the physical iOS runner" : undefined);
 
-  if (options.physicalIos) {
-    unsupported(handle, "logs", "not available from the physical iOS runner", log);
-  } else
-    try {
-      await withTimeout(
-        device.observability.logs({ ...base(), action: "start" }),
-        5_000,
-        "log capture start",
-        async () => {
-          await device.observability.logs({ ...base(), action: "stop" });
-        },
-      );
-      const record = channel(handle, "logs");
-      record.status = "captured";
-      record.startedAt = startedAt;
-      handle.logsStarted = true;
-      event(handle, "logs", "capture.started");
-    } catch (error) {
-      failed(handle, "logs", error, log);
-    }
+  await guardedCollector(handle, "logs", log, async () => {
+    await withTimeout(
+      device.observability.logs({ ...base(), action: "start" }),
+      5_000,
+      "log capture start",
+      async () => {
+        await device.observability.logs({ ...base(), action: "stop" });
+      },
+    );
+    markCollectorStarted(handle, "logs");
+    event(handle, "logs", "capture.started");
+  }, options.physicalIos ? "not available from the physical iOS runner" : undefined);
 
-  if (options.physicalIos) {
-    unsupported(handle, "network", "requires an instrumented app or proxy on physical iOS", log);
-  } else
-    try {
-      const include = hasSensitiveEvidenceConsent(job.evidencePolicy, "network-body")
-        ? "all"
-        : "summary";
-      await withTimeout(
-        device.observability.network({ ...base(), action: "log", include, limit: 200 }),
-        5_000,
-        "network capture start",
-      );
-      const record = channel(handle, "network");
-      record.status = "captured";
-      record.startedAt = startedAt;
-      record.message = include === "all" ? "request and response bodies consented" : "summary only";
-      handle.networkStarted = true;
-      event(handle, "network", "capture.started", { include });
-    } catch (error) {
-      failed(handle, "network", error, log);
-    }
+  await guardedCollector(handle, "network", log, async () => {
+    const include = hasSensitiveEvidenceConsent(job.evidencePolicy, "network-body")
+      ? "all"
+      : "summary";
+    await withTimeout(
+      device.observability.network({ ...base(), action: "log", include, limit: 200 }),
+      5_000,
+      "network capture start",
+    );
+    markCollectorStarted(handle, "network", {
+      message: include === "all" ? "request and response bodies consented" : "summary only",
+    });
+    event(handle, "network", "capture.started", { include });
+  }, options.physicalIos ? "requires an instrumented app or proxy on physical iOS" : undefined);
 
   if (hasSensitiveEvidenceConsent(job.evidencePolicy, "crash")) {
-    try {
+    await guardedCollector(handle, "crash", log, async () => {
       await withTimeout(
         device.observability.crashes({ action: "start", since: startedAt }),
         5_000,
@@ -380,19 +432,13 @@ export async function startRunEvidence(
           await device.observability.crashes({ action: "dump", since: startedAt });
         },
       );
-      const record = channel(handle, "crash");
-      record.status = "captured";
-      record.startedAt = startedAt;
-      record.message = undefined;
-      handle.crashStarted = true;
+      markCollectorStarted(handle, "crash", { clearMessage: true });
       event(handle, "crash", "capture.started");
-    } catch (error) {
-      failed(handle, "crash", error, log);
-    }
+    });
   }
 
   if (hasSensitiveEvidenceConsent(job.evidencePolicy, "audio")) {
-    try {
+    await guardedCollector(handle, "audio", log, async () => {
       const result = await withTimeout(
         device.observability.audio({
           ...base(),
@@ -406,79 +452,59 @@ export async function startRunEvidence(
           await device.observability.audio({ ...base(), action: "probe", probeAction: "stop" });
         },
       );
-      const record = channel(handle, "audio");
-      record.status = "captured";
-      record.startedAt = startedAt;
-      record.message = undefined;
-      handle.audioStarted = true;
+      markCollectorStarted(handle, "audio", { clearMessage: true });
       addArtifact(job, { kind: "audio-start", capturedAt: now(), data: redactValue(result) });
       event(handle, "audio", "capture.started", result);
-    } catch (error) {
-      failed(handle, "audio", error, log);
-    }
+    });
   }
 
-  if (visualEvidenceAllowed() && !options.physicalIos && !hasStepScopedCampaignEvidence(job)) {
-    try {
-      const runDir = await ensureRunDir(job);
-      const path = join(runDir, "video", "run.mp4");
-      const result = await withTimeout(
-        recordDeviceVideo(device, {
-          ...base(),
-          action: "start",
-          path,
-          fps: 30,
-          // Screenshots carry pixel-level evidence. Medium H.264 keeps the
-          // continuous run review sharp without producing huge device files.
-          quality: "medium",
-          hideTouches: true,
-        }),
-        10_000,
-        "video recorder start",
-        async () => {
-          await recordDeviceVideo(device, { ...base(), action: "stop" });
-        },
-      );
-      if (result && typeof result === "object" && "started" in result && result.started === false) {
-        const warning =
-          "warning" in result && typeof result.warning === "string"
-            ? result.warning
-            : "Video recording is unavailable";
-        const record = channel(handle, "video");
-        record.status = "unsupported";
-        record.message = warning;
-        log(`warn: ${warning}`);
-      } else {
-        handle.recordingStarted = true;
-        const record = channel(handle, "video");
-        record.status = "captured";
-        record.startedAt = startedAt;
-        addArtifact(job, {
-          kind: "video-start",
-          capturedAt: startedAt,
-          data: { path: "video/run.mp4", result: redactValue(result) },
-        });
-        event(handle, "video", "capture.started", { path: "video/run.mp4" });
-        log("evidence: video recording started");
-      }
-    } catch (error) {
-      failed(handle, "video", error, log);
+  const videoUnsupported = visualEvidenceAllowed()
+    ? hasStepScopedCampaignEvidence(job)
+      ? "step-scoped campaign frames already provide reviewable visual evidence"
+      : options.physicalIos
+        ? "full-flow video is unavailable; recorded transitions keep their own takes"
+        : undefined
+    : undefined;
+  await guardedCollector(handle, "video", log, async () => {
+    const runDir = await ensureRunDir(job);
+    const path = join(runDir, "video", "run.mp4");
+    const result = await withTimeout(
+      recordDeviceVideo(device, {
+        ...base(),
+        action: "start",
+        path,
+        fps: 30,
+        // Screenshots carry pixel-level evidence. Medium H.264 keeps the
+        // continuous run review sharp without producing huge device files.
+        quality: "medium",
+        hideTouches: true,
+      }),
+      10_000,
+      "video recorder start",
+      async () => {
+        await recordDeviceVideo(device, { ...base(), action: "stop" });
+      },
+    );
+    if (result && typeof result === "object" && "started" in result && result.started === false) {
+      const warning =
+        "warning" in result && typeof result.warning === "string"
+          ? result.warning
+          : "Video recording is unavailable";
+      const record = channel(handle, "video");
+      record.status = "unsupported";
+      record.message = warning;
+      log(`warn: ${warning}`);
+    } else {
+      markCollectorStarted(handle, "video");
+      addArtifact(job, {
+        kind: "video-start",
+        capturedAt: startedAt,
+        data: { path: "video/run.mp4", result: redactValue(result) },
+      });
+      event(handle, "video", "capture.started", { path: "video/run.mp4" });
+      log("evidence: video recording started");
     }
-  } else if (visualEvidenceAllowed() && hasStepScopedCampaignEvidence(job)) {
-    unsupported(
-      handle,
-      "video",
-      "step-scoped campaign frames already provide reviewable visual evidence",
-      log,
-    );
-  } else if (visualEvidenceAllowed() && options.physicalIos) {
-    unsupported(
-      handle,
-      "video",
-      "full-flow video is unavailable; recorded transitions keep their own takes",
-      log,
-    );
-  }
+  }, videoUnsupported);
 
   return handle;
 }
@@ -490,7 +516,7 @@ async function stopVideoEvidence(
   log: (line: string) => void,
 ): Promise<void> {
   if (!handle.recordingStarted) return;
-  try {
+  await guardedCollector(handle, "video", log, async () => {
     const result = await withTimeout(
       recordDeviceVideo(device, { ...base(), action: "stop" }),
       VIDEO_RECORDER_STOP_TIMEOUT_MS,
@@ -518,9 +544,7 @@ async function stopVideoEvidence(
     });
     event(handle, "video", "capture.stopped", { files });
     log(files.length > 0 ? "evidence: video saved" : "warn: recorder stopped without a video file");
-  } catch (error) {
-    failed(handle, "video", error, log);
-  }
+  });
 }
 
 export async function stopRunEvidence(
@@ -538,7 +562,7 @@ export async function stopRunEvidence(
     await stopVideoEvidence(handle, job, device, log);
 
     if (handle.performanceStarted)
-      try {
+      await guardedCollector(handle, "performance", log, async () => {
         const performanceResult = await withTimeout(
           device.observability.perf({ ...base() }),
           5_000,
@@ -554,34 +578,23 @@ export async function stopRunEvidence(
           data: redactValue(performanceResult),
         });
         event(handle, "performance", "sample", performanceResult);
-      } catch (error) {
-        failed(handle, "performance", error, log);
-      }
+      });
 
     if (handle.logsStarted) {
-      try {
+      await guardedCollector(handle, "logs", log, async () => {
         const result = await withTimeout(
           device.observability.logs({ ...base(), action: "stop" }),
           5_000,
           "log capture stop",
         );
-        const data = redactValue(result);
-        addArtifact(job, { kind: "logs", capturedAt: now(), data });
-        const entries = entryCount(result);
         const record = channel(handle, "logs");
-        record.entries = entries;
-        record.bytes = byteCount(data);
-        record.dropped = droppedCount(result);
-        if (record.dropped > 0) record.status = "partial";
-        record.finishedAt = now();
-        event(handle, "logs", "capture.stopped", { entries });
-      } catch (error) {
-        failed(handle, "logs", error, log);
-      }
+        await persistCaptureArtifact(job, record, "logs", result, droppedCount(result));
+        event(handle, "logs", "capture.stopped", { entries: record.entries });
+      });
     }
 
     if (handle.networkStarted)
-      try {
+      await guardedCollector(handle, "network", log, async () => {
         const result = await withTimeout(
           device.observability.network({
             ...base(),
@@ -594,63 +607,48 @@ export async function stopRunEvidence(
           5_000,
           "network capture",
         );
-        const data = redactValue(result);
-        addArtifact(job, { kind: "network", capturedAt: now(), data });
         const record = channel(handle, "network");
         record.status = "captured";
         record.startedAt = handle.startedAt;
-        record.finishedAt = now();
-        record.entries = entryCount(result);
-        record.bytes = byteCount(data);
-        record.dropped = droppedCount(result);
-        if (record.dropped > 0) record.status = "partial";
+        await persistCaptureArtifact(job, record, "network", result, droppedCount(result));
         event(handle, "network", "capture.stopped", { entries: record.entries });
-      } catch (error) {
-        failed(handle, "network", error, log);
-      }
+      });
 
     if (handle.crashStarted) {
-      try {
+      await guardedCollector(handle, "crash", log, async () => {
         const result = await withTimeout(
           device.observability.crashes({ action: "dump", since: handle.startedAt }),
           10_000,
           "crash diagnostics",
         );
-        const data = redactValue(result);
-        addArtifact(job, { kind: "crash", capturedAt: now(), data });
         const record = channel(handle, "crash");
-        record.entries = result.entries.length;
-        record.bytes = byteCount(data);
-        record.dropped = result.truncated ? 1 : 0;
         record.status = result.truncated ? "partial" : "captured";
-        record.finishedAt = now();
+        await persistCaptureArtifact(
+          job,
+          record,
+          "crash",
+          result,
+          result.truncated ? 1 : 0,
+        );
         event(handle, "crash", "capture.stopped", {
           entries: record.entries,
           truncated: result.truncated,
         });
-      } catch (error) {
-        failed(handle, "crash", error, log);
-      }
+      });
     }
 
     if (handle.audioStarted) {
-      try {
+      await guardedCollector(handle, "audio", log, async () => {
         const result = await withTimeout(
           device.observability.audio({ ...base(), action: "probe", probeAction: "stop" }),
           10_000,
           "audio probe stop",
         );
-        const data = redactValue(result);
-        addArtifact(job, { kind: "audio", capturedAt: now(), data });
         const record = channel(handle, "audio");
-        record.entries = entryCount(result);
-        record.bytes = byteCount(data);
         record.status = "captured";
-        record.finishedAt = now();
+        await persistCaptureArtifact(job, record, "audio", result);
         event(handle, "audio", "capture.stopped", { entries: record.entries });
-      } catch (error) {
-        failed(handle, "audio", error, log);
-      }
+      });
     }
   } else {
     for (const name of ["performance", "logs", "network", "video", "crash", "audio"] as const) {

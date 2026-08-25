@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { TargetCapability, TargetDefinition, TargetPreflight } from "@relay/protocol";
+import type { TargetCapability, TargetDefinition, TargetKind, TargetPreflight } from "@relay/protocol";
 import { chromium } from "playwright-core";
 import { findWorkspaceRoot } from "./workspace-root.js";
 
@@ -29,13 +29,56 @@ function targetRoot(): string {
   return process.env.RELAY_WORKSPACE_ROOT?.trim() || findWorkspaceRoot();
 }
 
+const VALID_TARGET_KINDS: Record<TargetKind, true> = { android: true, ios: true, browser: true };
+
+/** Returns why `value` is not a usable TargetDefinition, or null when it validates. */
+function targetDefinitionProblem(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return "entry is not an object";
+  const entry = value as Record<string, unknown>;
+  if (typeof entry.id !== "string" || entry.id === "") return "id must be a non-empty string";
+  if (typeof entry.name !== "string" || entry.name === "") return "name must be a non-empty string";
+  if (typeof entry.kind !== "string" || !(entry.kind in VALID_TARGET_KINDS)) {
+    return "kind must be one of android, ios, browser";
+  }
+  if (typeof entry.createdAt !== "number") return "createdAt must be a number";
+  if (typeof entry.updatedAt !== "number") return "updatedAt must be a number";
+  if (entry.browser !== undefined) {
+    if (typeof entry.browser !== "object" || entry.browser === null) {
+      return "browser must be an object";
+    }
+    const browser = entry.browser as Record<string, unknown>;
+    if (typeof browser.startUrl !== "string") return "browser.startUrl must be a string";
+  }
+  return null;
+}
+
 export async function listTargets(): Promise<TargetDefinition[]> {
+  let raw: string;
   try {
-    const parsed = JSON.parse(await readFile(targetFile(), "utf8")) as unknown;
-    return Array.isArray(parsed) ? (parsed as TargetDefinition[]) : [];
+    raw = await readFile(targetFile(), "utf8");
   } catch {
+    // A missing or unreadable store simply means no targets yet.
     return [];
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(`targets: ${targetFile()} contains malformed JSON (${reason}); ignoring file contents`);
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    console.warn(`targets: ${targetFile()} does not contain a JSON array; ignoring file contents`);
+    return [];
+  }
+  const targets: TargetDefinition[] = [];
+  parsed.forEach((entry, index) => {
+    const problem = targetDefinitionProblem(entry);
+    if (problem === null) targets.push(entry as TargetDefinition);
+    else console.warn(`targets: ${targetFile()} entry at index ${index} skipped (${problem})`);
+  });
+  return targets;
 }
 
 async function writeTargets(targets: TargetDefinition[]): Promise<void> {

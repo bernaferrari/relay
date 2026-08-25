@@ -371,6 +371,3 @@ export function createLocalAgentDeviceTargetDriver(
   });
 }
 
-/** Default local implementation. It makes no unproven inventory or recovery
- * promise; callers can create a configured driver when those host seams exist. */
-export const localAgentDeviceTargetDriver = createLocalAgentDeviceTargetDriver();

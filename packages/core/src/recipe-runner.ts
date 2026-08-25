@@ -93,6 +93,26 @@ function boundedHumanCheckpointTimeoutMs(value: number | undefined): number {
   return Math.max(1, Math.min(Math.floor(value), MAX_HUMAN_CHECKPOINT_TIMEOUT_MS));
 }
 
+/**
+ * Poll a visible-target condition every ~400ms until it holds or the
+ * deadline passes; the pause checkpoint inside the loop keeps cooperative
+ * cancellation (and pause/resume) escaping ahead of any caller timeout.
+ */
+async function pollUntil(
+  device: Device,
+  deadline: number,
+  predicate: () => Promise<boolean>,
+): Promise<boolean> {
+  while (Date.now() < deadline) {
+    await cooperativeCheckpoint();
+    if (await predicate()) {
+      return true;
+    }
+    await sleep(400, device);
+  }
+  return false;
+}
+
 async function runRequiredRecipeStep(
   device: Device,
   step: RecipeStep,
@@ -160,16 +180,7 @@ async function runRequiredRecipeStep(
       const timeout = Math.min(step.timeoutMs ?? 30_000, MAX_WAIT_MS);
       if (target.identifier || target.ref) {
         const end = Date.now() + timeout;
-        let found = false;
-        while (Date.now() < end) {
-          await cooperativeCheckpoint();
-          if (await targetPresent(device, target)) {
-            found = true;
-            break;
-          }
-          await sleep(400, device);
-        }
-        if (!found) {
+        if (!(await pollUntil(device, end, () => targetPresent(device, target)))) {
           throw new Error(
             `wait-for: timed out waiting for ${describeTarget(target)} (${timeout}ms)`,
           );
@@ -197,16 +208,9 @@ async function runRequiredRecipeStep(
         try {
           if (target.identifier || target.ref) {
             const end = Date.now() + timeout;
-            let found = false;
-            while (Date.now() < end) {
-              await cooperativeCheckpoint();
-              if (await targetPresent(device, target)) {
-                found = true;
-                break;
-              }
-              await sleep(400, device);
+            if (!(await pollUntil(device, end, () => targetPresent(device, target)))) {
+              throw new Error(`timed out waiting for ${describeTarget(target)}`);
             }
-            if (!found) throw new Error(`timed out waiting for ${describeTarget(target)}`);
           } else if (target.label) {
             await waitFor(device, { text: target.label }, timeout);
           } else if (target.text) {
@@ -226,16 +230,7 @@ async function runRequiredRecipeStep(
       } else {
         // condition === "gone": poll until the target no longer resolves.
         const end = Date.now() + timeout;
-        let gone = false;
-        while (Date.now() < end) {
-          await cooperativeCheckpoint();
-          if (!(await targetPresent(device, target))) {
-            gone = true;
-            break;
-          }
-          await sleep(400, device);
-        }
-        if (!gone) {
+        if (!(await pollUntil(device, end, async () => !(await targetPresent(device, target))))) {
           throw new Error(`expect: "${label}" still visible after ${timeoutSec}s`);
         }
       }

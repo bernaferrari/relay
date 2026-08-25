@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
-import { redactText } from "@relay/core";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { collaborationStateRoot, redactText } from "@relay/core";
 import {
   projectRoles,
   type ActorIdentity,
@@ -374,14 +377,123 @@ export type AuditEvent = {
   target?: string;
   result: "allow" | "deny";
 };
-
 const auditEvents: AuditEvent[] = [];
+
+/** Durable audit trail lives next to the control plane state; the in-memory
+ * array stays a bounded hot ring hydrated from SQLite on first use so
+ * /audit keeps serving recent events across restarts. */
+const AUDIT_MEMORY_LIMIT = 1_000;
+const AUDIT_DB_RETAIN = 5_000;
+const AUDIT_DB_NAME = "audit.sqlite";
+
+let auditDatabaseHandle: DatabaseSync | undefined;
+let auditDatabaseRoot: string | undefined;
+let auditDatabaseBroken = false;
+
+type AuditEventRow = {
+  at: number;
+  subject: string;
+  actor_id?: string | null;
+  organization_id: string;
+  project_id: string;
+  action: string;
+  resource?: string | null;
+  target?: string | null;
+  result: string;
+};
+
+function rowToAuditEvent(row: AuditEventRow): AuditEvent {
+  return {
+    at: Number(row.at),
+    subject: row.subject,
+    ...(row.actor_id ? { actorId: row.actor_id } : {}),
+    organizationId: row.organization_id,
+    projectId: row.project_id,
+    action: row.action,
+    ...(row.resource ? { resource: row.resource } : {}),
+    ...(row.target ? { target: row.target } : {}),
+    result: row.result === "deny" ? "deny" : "allow",
+  };
+}
+
+/** Opens (once per state root) the append-only audit database and hydrates the
+ * hot ring from its most recent rows. Any failure degrades to memory-only
+ * auditing instead of breaking request handling or startup. */
+function auditDatabase(): DatabaseSync | undefined {
+  if (auditDatabaseHandle && auditDatabaseRoot === collaborationStateRoot()) {
+    return auditDatabaseHandle;
+  }
+  if (auditDatabaseBroken) return undefined;
+  try {
+    const root = collaborationStateRoot();
+    mkdirSync(root, { recursive: true });
+    const db = new DatabaseSync(join(root, AUDIT_DB_NAME));
+    db.exec("PRAGMA journal_mode = WAL");
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS audit_events (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        at INTEGER NOT NULL,
+        subject TEXT NOT NULL,
+        actor_id TEXT,
+        organization_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        resource TEXT,
+        target TEXT,
+        result TEXT NOT NULL CHECK (result IN ('allow', 'deny'))
+      );
+      CREATE INDEX IF NOT EXISTS audit_events_seq_desc ON audit_events(seq DESC);
+    `);
+    const rows = db
+      .prepare(
+        `SELECT at, subject, actor_id, organization_id, project_id, action,
+                resource, target, result
+         FROM audit_events ORDER BY seq DESC LIMIT ?`,
+      )
+      .all(AUDIT_MEMORY_LIMIT) as Array<AuditEventRow>;
+    auditEvents.push(...rows.map(rowToAuditEvent).reverse());
+    auditDatabaseHandle = db;
+    auditDatabaseRoot = root;
+    return db;
+  } catch {
+    auditDatabaseBroken = true;
+    return undefined;
+  }
+}
+
+function persistAuditEvent(entry: AuditEvent): void {
+  try {
+    const db = auditDatabase();
+    if (!db) return;
+    db.prepare(
+      `INSERT INTO audit_events
+         (at, subject, actor_id, organization_id, project_id, action, resource, target, result)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      entry.at,
+      entry.subject,
+      entry.actorId ?? null,
+      entry.organizationId,
+      entry.projectId,
+      entry.action,
+      entry.resource ?? null,
+      entry.target ?? null,
+      entry.result,
+    );
+    db.prepare(
+      `DELETE FROM audit_events
+       WHERE seq <= (SELECT COALESCE(MAX(seq), 0) - ? FROM audit_events)`,
+    ).run(AUDIT_DB_RETAIN);
+  } catch {
+    // Best-effort durability: an audit-write failure must never fail the request.
+  }
+}
 
 export function recordAudit(
   context: RequestContext,
   event: Omit<AuditEvent, "at" | "subject" | "organizationId" | "projectId">,
 ): void {
-  auditEvents.push({
+  const entry: AuditEvent = {
     at: Date.now(),
     subject: redactText(context.subject),
     organizationId: context.organizationId,
@@ -389,10 +501,17 @@ export function recordAudit(
     ...event,
     ...(event.actorId ? { actorId: redactText(event.actorId) } : {}),
     ...(event.target ? { target: redactText(event.target) } : {}),
-  });
-  if (auditEvents.length > 1_000) auditEvents.splice(0, auditEvents.length - 1_000);
+  };
+  // Open (and hydrate) before pushing so restored history precedes this event.
+  auditDatabase();
+  auditEvents.push(entry);
+  if (auditEvents.length > AUDIT_MEMORY_LIMIT) {
+    auditEvents.splice(0, auditEvents.length - AUDIT_MEMORY_LIMIT);
+  }
+  persistAuditEvent(entry);
 }
 
 export function listAuditEvents(limit = 100): AuditEvent[] {
-  return auditEvents.slice(-Math.max(1, Math.min(limit, 1_000)));
+  auditDatabase();
+  return auditEvents.slice(-Math.max(1, Math.min(limit, AUDIT_MEMORY_LIMIT)));
 }

@@ -49,12 +49,13 @@ import {
   updateVisualComparisonPolicy,
   VISUAL_REVIEW_ACTIONS,
   VisualVerificationError,
+  type PersistedRun,
   visualTargetKey,
   type AppMapTestExecutionIntent,
   type CampaignRepairReconciliation,
   type EnqueueJobInput,
 } from "@relay/core";
-import type { CampaignRepairTarget, OperationInput } from "@relay/protocol";
+import type { CampaignRepairTarget, OperationInput, VisualRegion } from "@relay/protocol";
 import { assertTargetControl } from "./access-control.js";
 import { requireScopedAppMapTestExecution } from "./app-map-test-execution-guard.js";
 import { applyRebasableAppMapMutation } from "./app-map-route-mutations.js";
@@ -111,6 +112,22 @@ function visualVerificationHttpError(error: VisualVerificationError): HttpError 
     code: error.code,
     recovery: error.recovery,
   });
+}
+
+async function loadScopedRun(id: string, scope: RequestContext): Promise<PersistedRun> {
+  const run = await readPersistedRun(id);
+  assertRunAccess(scope, run);
+  return run;
+}
+
+async function guardVisualVerification(handler: () => Promise<void>): Promise<true> {
+  try {
+    await handler();
+  } catch (error) {
+    if (error instanceof VisualVerificationError) throw visualVerificationHttpError(error);
+    throw error;
+  }
+  return true;
 }
 
 function reviewActor(context: RunRouteContext): {
@@ -281,8 +298,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
 
   const repairGetMatch = matchPath(pathname, "/runs/:id/checks/:checkId/repair");
   if (method === "GET" && repairGetMatch) {
-    const run = await readPersistedRun(repairGetMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(repairGetMatch.id!, scope);
     const runs = (await listPersistedRuns(500)).filter((candidate) =>
       runVisibleToScope(scope, candidate),
     );
@@ -308,8 +324,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
 
   const repairRetryMatch = matchPath(pathname, "/runs/:id/checks/:checkId/retry");
   if (method === "POST" && repairRetryMatch) {
-    const run = await readPersistedRun(repairRetryMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(repairRetryMatch.id!, scope);
     await parseJsonBody(request);
     const sourceIntent = await requireScopedAppMapTestExecution(
       appMapTestExecutionSourceFromRun(run),
@@ -364,8 +379,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
       requestedTargets.map((target) => `${target.runId}\u0000${target.checkId}`),
     )) {
       const [runId, checkId] = key.split("\u0000") as [string, string];
-      const sourceRun = await readPersistedRun(runId);
-      assertRunAccess(scope, sourceRun);
+      const sourceRun = await loadScopedRun(runId, scope);
       const repair = buildCampaignRepairTarget(sourceRun, checkId);
       if (!repair) throw new HttpError(404, `Failed check ${checkId} not found in run ${runId}`);
       targets.push(repair);
@@ -438,8 +452,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
 
   const shareRevokeMatch = matchPath(pathname, "/runs/:id/shares/:shareId/revoke");
   if (method === "POST" && shareRevokeMatch) {
-    const run = await readPersistedRun(shareRevokeMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(shareRevokeMatch.id!, scope);
     const actor = reviewActor(context);
     const share = await revokeRunShare({
       root: runsRoot(),
@@ -463,8 +476,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
 
   const sharesMatch = matchPath(pathname, "/runs/:id/shares");
   if (sharesMatch) {
-    const run = await readPersistedRun(sharesMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(sharesMatch.id!, scope);
     const shareScope = {
       projectId: run.projectId ?? "local",
       ...(run.ownerId ? { ownerId: run.ownerId } : {}),
@@ -514,8 +526,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     "/runs/:id/human-intervention-reproof/evidence/:sha256",
   );
   if (method === "GET" && humanReproofEvidenceMatch) {
-    const run = await readPersistedRun(humanReproofEvidenceMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(humanReproofEvidenceMatch.id!, scope);
     await sendHumanInterventionReproofEvidence({
       response,
       artifacts: run.artifacts,
@@ -530,8 +541,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   }
   const evidenceMatch = matchPath(pathname, "/runs/:id/evidence");
   if (method === "GET" && evidenceMatch) {
-    const run = await readPersistedRun(evidenceMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(evidenceMatch.id!, scope);
     const rawLimit = Number(url.searchParams.get("limit") ?? 500);
     const limit = Number.isFinite(rawLimit)
       ? Math.max(1, Math.min(2_000, Math.floor(rawLimit)))
@@ -544,8 +554,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   }
 
   if (method === "GET" && signalsMatch) {
-    const run = await readPersistedRun(signalsMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(signalsMatch.id!, scope);
     if (!run.evidence) {
       json(response, 200, { metrics: [], signals: [], reason: "evidence manifest unavailable" });
       return true;
@@ -577,8 +586,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
 
   const visualPolicyMatch = matchPath(pathname, "/runs/:id/visual-policy");
   if (visualPolicyMatch) {
-    const run = await readPersistedRun(visualPolicyMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(visualPolicyMatch.id!, scope);
     if (method === "GET") {
       json(response, 200, { policy: await getVisualComparisonPolicy(runsRoot(), run) });
       return true;
@@ -590,30 +598,23 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
         pixelThreshold?: unknown;
         regions?: unknown;
       };
-      try {
+      return guardVisualVerification(async () => {
         const policy = await updateVisualComparisonPolicy(runsRoot(), run, {
           expectedRevision: body.expectedRevision as number,
           changeThreshold: body.changeThreshold as number,
           pixelThreshold: body.pixelThreshold as number,
-          regions: body.regions as import("@relay/protocol").VisualRegion[],
+          regions: body.regions as VisualRegion[],
           actor: reviewActor(context),
         });
         const comparison = await compareVisualBaseline(runsRoot(), run);
         json(response, 200, { policy, comparison });
-      } catch (error) {
-        if (error instanceof VisualVerificationError) {
-          throw visualVerificationHttpError(error);
-        }
-        throw error;
-      }
-      return true;
+      });
     }
   }
 
   const visualBaselineFrameMatch = matchPath(pathname, "/runs/:id/visual-baseline-frame/:index");
   if (method === "GET" && visualBaselineFrameMatch) {
-    const run = await readPersistedRun(visualBaselineFrameMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(visualBaselineFrameMatch.id!, scope);
     const baseline = await getVisualBaseline(
       runsRoot(),
       run.action,
@@ -637,8 +638,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
 
   const visualMatch = matchPath(pathname, "/runs/:id/visual-baseline");
   if (visualMatch) {
-    const run = await readPersistedRun(visualMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(visualMatch.id!, scope);
     if (method === "POST") {
       const body = (await parseJsonBody(request)) as { action?: unknown; note?: unknown };
       if (body.action !== "approve-new-baseline") {
@@ -652,7 +652,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
           },
         );
       }
-      try {
+      return guardVisualVerification(async () => {
         const comparison = await compareVisualBaseline(runsRoot(), run);
         const reviewed = await reviewVisualComparison(runsRoot(), run, {
           comparisonId: comparison.id,
@@ -661,36 +661,22 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
           ...(typeof body.note === "string" ? { note: body.note } : {}),
         });
         json(response, 200, { comparison, ...reviewed });
-      } catch (error) {
-        if (error instanceof VisualVerificationError) {
-          throw visualVerificationHttpError(error);
-        }
-        throw error;
-      }
-      return true;
+      });
     }
   }
 
   const visualComparisonMatch = matchPath(pathname, "/runs/:id/visual-comparison");
   if (method === "POST" && visualComparisonMatch) {
-    const run = await readPersistedRun(visualComparisonMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(visualComparisonMatch.id!, scope);
     await parseJsonBody(request);
-    try {
-      json(response, 200, { comparison: await compareVisualBaseline(runsRoot(), run) });
-    } catch (error) {
-      if (error instanceof VisualVerificationError) {
-        throw visualVerificationHttpError(error);
-      }
-      throw error;
-    }
-    return true;
+    return guardVisualVerification(async () =>
+      json(response, 200, { comparison: await compareVisualBaseline(runsRoot(), run) }),
+    );
   }
 
   const visualReviewMatch = matchPath(pathname, "/runs/:id/visual-review");
   if (method === "POST" && visualReviewMatch) {
-    const run = await readPersistedRun(visualReviewMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(visualReviewMatch.id!, scope);
     const body = (await parseJsonBody(request)) as {
       comparisonId?: unknown;
       action?: unknown;
@@ -708,30 +694,23 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
         recovery: `Choose one of: ${VISUAL_REVIEW_ACTIONS.join(", ")}.`,
       });
     }
-    try {
+    return guardVisualVerification(async () =>
       json(
         response,
         200,
         await reviewVisualComparison(runsRoot(), run, {
-          comparisonId: body.comparisonId,
+          comparisonId: body.comparisonId as string,
           action: body.action as (typeof VISUAL_REVIEW_ACTIONS)[number],
           actor: reviewActor(context),
           ...(typeof body.note === "string" ? { note: body.note } : {}),
         }),
-      );
-    } catch (error) {
-      if (error instanceof VisualVerificationError) {
-        throw visualVerificationHttpError(error);
-      }
-      throw error;
-    }
-    return true;
+      ),
+    );
   }
 
   const runReviewMatch = matchPath(pathname, "/runs/:id/review");
   if (method === "POST" && runReviewMatch) {
-    const run = await readPersistedRun(runReviewMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(runReviewMatch.id!, scope);
     const body = (await parseJsonBody(request)) as {
       action?: unknown;
       note?: unknown;
@@ -772,8 +751,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
 
   const pinMatch = matchPath(pathname, "/runs/:id/pin");
   if (method === "POST" && pinMatch) {
-    const run = await readPersistedRun(pinMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(pinMatch.id!, scope);
     const body = (await parseJsonBody(request)) as { pinned?: boolean };
     if (!(await setRunPinned(runsRoot(), pinMatch.id!, body.pinned !== false))) {
       throw new HttpError(404, "Run not found");
@@ -784,32 +762,28 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
 
   const storyMatch = matchPath(pathname, "/runs/:id/story");
   if (method === "GET" && storyMatch) {
-    const run = await readPersistedRun(storyMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(storyMatch.id!, scope);
     json(response, 200, { story: buildRunStory(run) });
     return true;
   }
 
   const offlineReplayMatch = matchPath(pathname, "/runs/:id/replay-offline");
   if (method === "GET" && offlineReplayMatch) {
-    const run = await readPersistedRun(offlineReplayMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(offlineReplayMatch.id!, scope);
     json(response, 200, { report: replayPersistedRunOffline(run) });
     return true;
   }
 
   const persistedMatch = matchPath(pathname, "/runs/:id");
   if (method === "GET" && persistedMatch) {
-    const run = await readPersistedRun(persistedMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(persistedMatch.id!, scope);
     json(response, 200, { run });
     return true;
   }
 
   const frameMatch = matchPath(pathname, "/runs/:id/frames/:file");
   if (method === "GET" && frameMatch) {
-    const run = await readPersistedRun(frameMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(frameMatch.id!, scope);
     const buffer = await readFrameFile(run.dir, frameMatch.file!);
     if (!buffer) throw new HttpError(404, "Frame not found");
     response.writeHead(200, {
@@ -824,8 +798,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
 
   const videoMatch = matchPath(pathname, "/runs/:id/video/:file");
   if (method === "GET" && videoMatch) {
-    const run = await readPersistedRun(videoMatch.id!);
-    assertRunAccess(scope, run);
+    const run = await loadScopedRun(videoMatch.id!, scope);
     const file = runArtifactFile(run.dir, "video", videoMatch.file!);
     if (!file) throw new HttpError(404, "Video not found");
     await streamVideo(request, response, file);

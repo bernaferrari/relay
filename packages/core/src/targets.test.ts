@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -76,6 +76,34 @@ test("managed browser targets preserve an explicit, path-safe id", async () => {
           startUrl: "https://example.test/",
         }),
       /target id/,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("listTargets skips invalid entries but keeps valid ones", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-targets-mixed-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    await mkdir(join(root, ".relay"), { recursive: true });
+    await writeFile(
+      join(root, ".relay", "targets.json"),
+      JSON.stringify([
+        { id: "", name: "Missing id", kind: "browser", createdAt: 1, updatedAt: 1 },
+        { id: "good", name: "Good target", kind: "browser", createdAt: 2, updatedAt: 2 },
+        { id: "bad-kind", name: "Bad kind", kind: "printer", createdAt: 3, updatedAt: 3 },
+        { id: "no-timestamps", name: "No timestamps", kind: "ios" },
+      ]),
+      "utf8",
+    );
+    const targets = await listTargets();
+    assert.deepEqual(
+      targets.map((target) => target.id),
+      ["good"],
     );
   } finally {
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
