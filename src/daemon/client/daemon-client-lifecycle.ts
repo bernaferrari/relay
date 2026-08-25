@@ -3,9 +3,10 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { AppError, normalizeError } from '@agent-device/kernel/errors';
+import { readReplayDivergenceResume } from '@agent-device/contracts/divergence';
 import type { DaemonRequest, DaemonResponse } from '../types.ts';
 import { runCmdDetachedMonitored, type ExecDetachedExit } from '../../utils/exec.ts';
-import { findProjectRoot, readVersion } from '../../utils/version.ts';
+import { readVersion } from '../../utils/version.ts';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { findUnrecoveredRepairCommitFailure } from '../session-store.ts';
 import {
@@ -16,7 +17,7 @@ import {
   type DaemonServerMode,
   type DaemonTransportPreference,
 } from '../config.ts';
-import { computeDaemonCodeSignature } from '../code-signature.ts';
+import { resolveDaemonLaunchSpec, resolveLocalDaemonCodeSignature } from './daemon-launch-spec.ts';
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
 import { shellQuoteIfNeeded } from '../../utils/shell-quote.ts';
 import { sleep } from '../../utils/timeouts.ts';
@@ -180,9 +181,10 @@ async function readReusableLocalDaemon(settings: DaemonClientSettings): Promise<
   if (!existing) return null;
 
   const existingReachable = await canConnectReusableDaemon(existing, settings.transportPreference);
-  if (isReusableDaemonInfo(existing, existingReachable)) return existing;
+  const takeoverReason = await resolveDaemonTakeoverReason(existing, existingReachable);
+  if (!takeoverReason) return existing;
 
-  emitDaemonTakeoverNotice(existing, existingReachable, settings.paths.baseDir);
+  emitDaemonTakeoverNotice(existing, takeoverReason, settings.paths.baseDir);
   await stopDaemonProcessForTakeover(existing);
   removeDaemonInfo(settings.paths.infoPath);
   return null;
@@ -209,29 +211,33 @@ function isDaemonTransportUnavailableError(error: unknown): boolean {
   );
 }
 
-function isReusableDaemonInfo(info: DaemonInfo, reachable: boolean): boolean {
-  return (
-    info.version === readVersion() &&
-    info.codeSignature === resolveLocalDaemonCodeSignature() &&
-    reachable
-  );
+/**
+ * Why this daemon cannot be reused, or `undefined` when it can be.
+ *
+ * One ladder answers both questions, so a daemon can never be reused and
+ * announced as replaced, or replaced without a reason to print. The code
+ * signature is asked for after the version because it is the expensive check
+ * (`resolveLocalDaemonCodeSignature`), and a version mismatch already decides.
+ */
+async function resolveDaemonTakeoverReason(
+  info: DaemonInfo,
+  reachable: boolean,
+): Promise<string | undefined> {
+  if (info.version !== readVersion()) return `version mismatch (client v${readVersion()})`;
+  if (info.codeSignature !== (await resolveLocalDaemonCodeSignature())) {
+    return 'code-signature mismatch';
+  }
+  if (!reachable) return 'unreachable';
+  return undefined;
 }
 
-function emitDaemonTakeoverNotice(info: DaemonInfo, reachable: boolean, stateDir: string): void {
+function emitDaemonTakeoverNotice(info: DaemonInfo, reason: string, stateDir: string): void {
   try {
     const identity = info.version ? `pid ${info.pid}, v${info.version}` : `pid ${info.pid}`;
-    const reason = resolveDaemonTakeoverReason(info, reachable);
     process.stderr.write(`Replacing daemon (${identity}) in ${stateDir}: ${reason}\n`);
   } catch {
     // The takeover notice is best effort; never fail the command on stderr issues.
   }
-}
-
-function resolveDaemonTakeoverReason(info: DaemonInfo, reachable: boolean): string {
-  if (info.version !== readVersion()) return `version mismatch (client v${readVersion()})`;
-  if (info.codeSignature !== resolveLocalDaemonCodeSignature()) return 'code-signature mismatch';
-  if (!reachable) return 'unreachable';
-  return 'not reusable';
 }
 
 async function startLocalDaemon(settings: DaemonClientSettings): Promise<EnsuredDaemon> {
@@ -458,11 +464,8 @@ function surfaceUnrecoveredRepairCommitFailure(
 export function isHeldRepairDivergence(response: DaemonResponse | undefined): boolean {
   if (!response || response.ok) return false;
   if (response.error.code !== 'REPLAY_DIVERGENCE') return false;
-  const divergence = response.error.details?.divergence;
-  if (!divergence || typeof divergence !== 'object') return false;
-  const resume = (divergence as Record<string, unknown>).resume;
-  if (!resume || typeof resume !== 'object') return false;
-  return (resume as Record<string, unknown>).repairSessionHeld === true;
+  const resume = readReplayDivergenceResume(response.error.details?.divergence);
+  return resume?.repairSessionHeld === true;
 }
 
 /**
@@ -607,43 +610,6 @@ function startDaemon(settings: DaemonClientSettings): DaemonStartupLaunch {
     fs.closeSync(stdoutFd);
     fs.closeSync(stderrFd);
   }
-}
-
-type DaemonLaunchSpec = {
-  root: string;
-  distPath: string;
-  distPaths: string[];
-  srcPath: string;
-  useSrc: boolean;
-};
-
-function resolveDaemonLaunchSpec(): DaemonLaunchSpec {
-  const root = findProjectRoot();
-  const distPaths = [
-    path.join(root, 'dist', 'src', 'internal', 'daemon.js'),
-    path.join(root, 'dist', 'src', 'daemon.js'),
-  ];
-  const defaultDistPath = distPaths[0];
-  if (defaultDistPath === undefined) {
-    throw new AppError('COMMAND_FAILED', 'Daemon dist path list is empty');
-  }
-  const distPath = distPaths.find((candidate) => fs.existsSync(candidate)) ?? defaultDistPath;
-  const srcPath = path.join(root, 'src', 'daemon.ts');
-
-  const hasDist = distPaths.some((candidate) => fs.existsSync(candidate));
-  const hasSrc = fs.existsSync(srcPath);
-  if (!hasDist && !hasSrc) {
-    throw new AppError('COMMAND_FAILED', 'Daemon entry not found', { distPaths, srcPath });
-  }
-  const runningFromSource = process.execArgv.includes('--experimental-strip-types');
-  const useSrc = runningFromSource ? hasSrc : !hasDist && hasSrc;
-  return { root, distPath, distPaths, srcPath, useSrc };
-}
-
-function resolveLocalDaemonCodeSignature(): string {
-  const launchSpec = resolveDaemonLaunchSpec();
-  const entryPath = launchSpec.useSrc ? launchSpec.srcPath : launchSpec.distPath;
-  return computeDaemonCodeSignature(entryPath, launchSpec.root);
 }
 
 function describeDaemonEarlyExit(exit: ExecDetachedExit): string {

@@ -176,6 +176,40 @@ export type ReplayDivergenceResume =
     }
   | { allowed: false; from: number; planDigest: string; reason: string; repairSessionHeld?: true };
 
+/**
+ * The `resume` record carried by a divergence-shaped payload, or `undefined`
+ * when the payload does not carry a contract-shaped one.
+ *
+ * Returns the LIVE record rather than a copy: the daemon stamps
+ * `repairSessionHeld` onto it in place (`session-replay-coordinator.ts`)
+ * through this same reader. That is what lets the client key its keep-alive
+ * on the narrowed record too — a payload this reader rejects cannot be
+ * carrying the R7 liveness signal, because the stamp is only ever written to
+ * a record it accepted.
+ *
+ * Every field the returned type declares is checked, the two optional ones
+ * included: this is the owning interface for the shape, so a payload it
+ * accepts cannot type as `repairSessionHeld: true` while carrying something
+ * else. The narrowing is structural and local, like this module's other
+ * wire readers: the divergence façade is pinned at the modules it evaluates,
+ * and `json.ts` is not otherwise one of them.
+ */
+export function readReplayDivergenceResume(
+  divergence: unknown,
+): ReplayDivergenceResume | undefined {
+  const resume = (divergence as Record<string, unknown> | null | undefined)?.resume as
+    | Record<string, unknown>
+    | undefined;
+  if (typeof resume?.allowed !== 'boolean') return undefined;
+  if (!Number.isInteger(resume.from) || typeof resume.planDigest !== 'string') return undefined;
+  if (!resume.allowed && typeof resume.reason !== 'string') return undefined;
+  if (resume.repairSessionHeld !== undefined && resume.repairSessionHeld !== true) return undefined;
+  if (resume.alternateFrom !== undefined && !Number.isInteger(resume.alternateFrom)) {
+    return undefined;
+  }
+  return resume as ReplayDivergenceResume;
+}
+
 export type ReplayDivergenceOverflow = {
   omittedBytes: number;
   artifactPath: string;
