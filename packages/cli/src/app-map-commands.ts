@@ -31,13 +31,11 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
       summary: "List every saved Variable and its available values",
       examples: ["relay variable list grok-android"],
     }),
-    path("state-set list", ["appMapId"]),
     graphTestListPath,
     path("combine list", ["appMapId"], undefined, {
       summary: "List saved Variable × Test plans",
       examples: ["relay combine list grok-android"],
     }),
-    path("run-matrix list", ["appMapId"]),
   ),
   mapped(
     "app-map.create",
@@ -366,7 +364,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         examples: [
           'relay screen origin revoke grok settings settings-en scroll-surface-capture reviewed-origin-1 --confirm --input \'{"expectedRevision":13,"reason":"Disable this origin","assertion":"revoke-reviewed-document-origin"}\'',
         ],
-        note: "Requires an explicit confirmation and the fixed assertion revoke-reviewed-document-origin. Revocation is durable and blocks already-compiled recipes at runtime. It never deletes the approval evidence or controls a device.",
+        note: "Requires an explicit confirmation and the fixed assertion revoke-reviewed-document-origin. Revocation is durable and blocks already-compiled execution plans at runtime. It never deletes the approval evidence or controls a device.",
       },
     ),
   ),
@@ -621,6 +619,26 @@ export const appMapRoutineCommandDescriptors: readonly MappedOperationDescriptor
     }),
   ),
   mapped("app-map.routine.remove", path("routine remove", ["appMapId", "routineId"])),
+  mapped(
+    "app-map.routine.impact",
+    path("routine impact", ["appMapId", "routineId"], undefined, {
+      summary: "Show which connections, flows, and tests use a routine",
+    }),
+  ),
+  mapped(
+    "app-map.diff.impact",
+    path("map diff-impact", ["appMapId"], undefined, {
+      summary: "Map changed source files to affected tests",
+      inputHelp: [
+        {
+          name: "changedFiles",
+          type: "json",
+          required: true,
+          description: "JSON array of changed file paths (e.g. from git diff --name-only)",
+        },
+      ],
+    }),
+  ),
   mapped("app-map.proposal.submit", path("proposal submit", ["appMapId"])),
   mapped(
     "app-map.observations.propose",
