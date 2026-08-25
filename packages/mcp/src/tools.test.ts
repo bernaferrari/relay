@@ -1,4 +1,4 @@
-import { operationDefinitions } from "@relay/protocol";
+import { operationDefinitions, type OperationId } from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -480,6 +480,7 @@ test("defines deterministic task profiles with a compact authoring default", () 
     "locale",
     "review",
     "admin",
+    "proof",
     "full",
   ]);
   assert.equal(defaultRelayMcpProfile, "control");
@@ -602,6 +603,57 @@ test("defines deterministic task profiles with a compact authoring default", () 
   }
 });
 
+test("the proof profile composes the verify-change loop and CLI-parity share tools", () => {
+  const proof = new Set(
+    relayMcpToolsForProfile("proof").map(({ operationId }) => operationId),
+  );
+  for (const operationId of [
+    "app-map.test.run",
+    "job.get",
+    "run.evidence.get",
+    "run.story.get",
+    "run.repair.list",
+    "run.repair.get",
+    "run.repair.propose",
+    "run.share.create",
+    "run.share.list",
+    "run.share.revoke",
+  ] as const) {
+    assert.ok(proof.has(operationId), `proof profile is missing ${operationId}`);
+  }
+  // app-map.routine.impact is owned by a peer wedge; the profile composes it
+  // only once its descriptor lands in the canonical registry.
+  const routineImpactId: string = "app-map.routine.impact";
+  const routineImpactRegistered = operationDefinitions.some(({ id }) => id === routineImpactId);
+  assert.equal(
+    (proof as ReadonlySet<string>).has(routineImpactId),
+    routineImpactRegistered,
+  );
+  // The proof profile proves and shares; it does not author or approve.
+  assert.equal(proof.has("app-map.test.save"), false);
+  assert.equal(proof.has("app-map.proposal.approve"), false);
+});
+
+test("share tools mirror their CLI operation ids with confirmation metadata", () => {
+  for (const [operationId, expectedConfirmation] of [
+    ["run.share.create", true],
+    ["run.share.revoke", true],
+    ["run.share.list", false],
+  ] as const) {
+    const descriptor = relayMcpTools.find((tool) => tool.operationId === operationId);
+    assert.ok(descriptor, `${operationId} is not registered as an MCP tool`);
+    assert.equal(descriptor.name, relayToolName(operationId));
+    assert.equal(descriptor.requiresConfirmation, expectedConfirmation);
+    if (expectedConfirmation) {
+      assert.equal(descriptor.annotations.readOnlyHint, false);
+      assert.match(descriptor.description, /confirm: true/);
+    } else {
+      assert.equal(descriptor.annotations.readOnlyHint, true);
+      assert.equal(descriptor.annotations.idempotentHint, true);
+    }
+  }
+});
+
 test("publishes compact discovery metadata for every eligible operation", () => {
   const catalog = relayMcpOperationCatalog();
   assert.deepEqual(
@@ -615,7 +667,18 @@ test("publishes compact discovery metadata for every eligible operation", () => 
     role: "viewer",
     confirmation: "none",
     capabilities: ["screenshot"],
-    profiles: ["control", "map", "observe", "author", "test", "run", "execute", "locale", "review"],
+    profiles: [
+      "control",
+      "map",
+      "observe",
+      "author",
+      "test",
+      "run",
+      "execute",
+      "locale",
+      "review",
+      "proof",
+    ],
   });
 });
 

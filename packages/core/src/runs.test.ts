@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -346,6 +347,51 @@ test("persisted runs retain bounded non-secret execution provenance", async () =
       "idempotencyKey" in (persisted.executionProvenance as Record<string, unknown>),
       false,
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("sourceRevision freezes into the run manifest and survives reread", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-revision-"));
+  const previous = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = join(root, "runs");
+  const run = job(join(root, "runs", "run"));
+  run.sourceRevision = {
+    vcs: "git",
+    sha: "abc1234def5678",
+    prNumber: 42,
+    branch: "feature/checkout",
+  };
+  try {
+    const persisted = await persistRun(run);
+    assert.deepEqual(persisted.sourceRevision, run.sourceRevision);
+    const onDisk = JSON.parse(await readFile(join(run.runDir!, "run.json"), "utf8"));
+    assert.deepEqual(onDisk.sourceRevision, run.sourceRevision);
+    const reread = await readPersistedRun(run.id);
+    assert.deepEqual(reread?.sourceRevision, run.sourceRevision);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a malformed sourceRevision fails closed on read", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-revision-bad-"));
+  const dir = join(root, "2026-08-25T00-00-00_bad_nodevice_abc1234567890");
+  await mkdir(dir, { recursive: true });
+  const raw = JSON.stringify({
+    id: "bad-revision",
+    action: "evidence-test",
+    schemaVersion: 5,
+    sourceRevision: { vcs: "git", sha: "NOT-A-SHA" },
+  });
+  const digest = createHash("sha256").update(raw).digest("hex");
+  await writeFile(join(dir, "run.json"), raw);
+  await writeFile(join(dir, ".complete"), JSON.stringify({ schemaVersion: 1, digest }));
+  try {
+    assert.equal(await readPersistedRun("bad-revision"), null);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

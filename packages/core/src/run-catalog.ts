@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { basename, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import type { RunReview, RunSummary } from "@relay/protocol";
+import { parseOptionalSourceRevision } from "@relay/protocol";
 
 type CatalogRecord = RunSummary & { dir: string };
 
@@ -58,6 +59,9 @@ function database(root: string): DatabaseSync {
   if (!columns.some((column) => column.name === "review_json")) {
     db.exec("ALTER TABLE runs ADD COLUMN review_json TEXT");
   }
+  if (!columns.some((column) => column.name === "source_revision_json")) {
+    db.exec("ALTER TABLE runs ADD COLUMN source_revision_json TEXT");
+  }
   if (!columns.some((column) => column.name === "storage_bytes")) {
     db.exec("ALTER TABLE runs ADD COLUMN storage_bytes INTEGER NOT NULL DEFAULT 0");
   }
@@ -80,6 +84,13 @@ function rowToRecord(row: Record<string, unknown>): CatalogRecord {
     ...(row.serial ? { serial: String(row.serial) } : {}),
     ...(row.outcome ? { outcome: String(row.outcome) } : {}),
     ...(row.review_json ? { review: JSON.parse(String(row.review_json)) as RunReview } : {}),
+    ...(row.source_revision_json
+      ? {
+          sourceRevision: parseOptionalSourceRevision(
+            JSON.parse(String(row.source_revision_json)),
+          ),
+        }
+      : {}),
     ...(row.batch_id ? { batchId: String(row.batch_id) } : {}),
     frameCount: Number(row.frame_count),
     writtenAt: Number(row.written_at),
@@ -180,8 +191,8 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
       INSERT INTO runs (
         id, dir, action, title, status, outcome, review_json, platform, serial, batch_id,
         queued_at, started_at, finished_at, duration_ms, written_at, frame_count,
-        artifact_count, artifact_bytes, storage_bytes, evidence_complete
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        artifact_count, artifact_bytes, storage_bytes, evidence_complete, source_revision_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         dir=excluded.dir, action=excluded.action, title=excluded.title, status=excluded.status,
         outcome=excluded.outcome, review_json=excluded.review_json, platform=excluded.platform, serial=excluded.serial,
@@ -189,8 +200,8 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
         finished_at=excluded.finished_at, duration_ms=excluded.duration_ms,
         written_at=excluded.written_at, frame_count=excluded.frame_count,
         artifact_count=excluded.artifact_count, artifact_bytes=excluded.artifact_bytes,
-        storage_bytes=excluded.storage_bytes,
-        evidence_complete=excluded.evidence_complete
+        storage_bytes=excluded.storage_bytes, evidence_complete=excluded.evidence_complete,
+        source_revision_json=excluded.source_revision_json
     `).run(
       String(run.id),
       String(run.dir),
@@ -212,6 +223,7 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
       artifactBytes,
       storageBytes,
       evidence?.finishedAt ? 1 : 0,
+      run.sourceRevision == null ? null : JSON.stringify(run.sourceRevision),
     );
     db.prepare("DELETE FROM surface_comparisons WHERE run_id=?").run(String(run.id));
     const insertSurfaceComparison = db.prepare(`

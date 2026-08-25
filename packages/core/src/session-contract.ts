@@ -6,6 +6,7 @@ import type {
   RunOutcome,
   RunReview,
   TargetProfile,
+  SourceRevision,
 } from "@relay/protocol";
 import type { DevicePlatform } from "./device.js";
 import type { OperationContext } from "./operation-context.js";
@@ -48,6 +49,9 @@ export type TestJob = {
   browserTargetId?: string;
   /** Frozen facts used to select this run from a compatibility matrix. */
   targetProfile?: TargetProfile;
+  /** Immutable commit/build binding captured when the run was accepted.
+   * Audit-grade provenance: every proof names the exact source it exercised. */
+  sourceRevision?: SourceRevision;
   /** Scheduler provenance. Optional only when reading older persisted runs. */
   workerId?: string;
   workerCapacity?: number;
@@ -132,6 +136,8 @@ export type EnqueueJobInput = {
   targetKind?: "device" | "browser";
   browserTargetId?: string;
   targetProfile?: TargetProfile;
+  /** Frozen at enqueue time into the run manifest; never rewritten. */
+  sourceRevision?: SourceRevision;
   prodAccountMatch?: string;
   /** retry a failed job — enables heal if success */
   retryOf?: string;

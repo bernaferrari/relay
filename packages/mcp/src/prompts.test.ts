@@ -167,6 +167,17 @@ test("lists the curated Relay prompts with required scoped arguments", async () 
             { name: "goal", required: true },
           ],
         },
+        {
+          name: relayMcpPrompts[5].name,
+          title: relayMcpPrompts[5].title,
+          description: relayMcpPrompts[5].description,
+          arguments: [
+            { name: "projectId", required: true },
+            { name: "commitSha", required: false },
+            { name: "changedFiles", required: false },
+            { name: "appMapId", required: false },
+          ],
+        },
       ],
     );
   } finally {
@@ -193,7 +204,7 @@ test("every profile advertises only prompts whose required tools it exposes", as
   ]);
   assert.equal(
     relayMcpPromptsForTools(relayMcpToolsForProfile("author")).some(
-      ({ name }) => name === relayMcpPromptNames.planRunMatrix,
+      ({ name }) => name === relayMcpPromptNames.planCombine,
     ),
     false,
   );
@@ -287,7 +298,7 @@ test("gets stable prompt snapshots with explicit Relay identities", async () => 
       },
     },
     {
-      name: relayMcpPromptNames.planRunMatrix,
+      name: relayMcpPromptNames.planCombine,
       arguments: {
         projectId,
         targetId: "target-1",
@@ -380,7 +391,7 @@ test("prompt snapshots preserve the observation, authority, and evidence safety 
       },
     },
     {
-      name: relayMcpPromptNames.planRunMatrix,
+      name: relayMcpPromptNames.planCombine,
       arguments: {
         projectId,
         targetId: "target-1",
@@ -443,7 +454,7 @@ test("matrix prompt keeps App Map Combine execution behind the per-cell profile 
   try {
     const { text } = promptText(
       await session.request("prompts/get", {
-        name: relayMcpPromptNames.planRunMatrix,
+        name: relayMcpPromptNames.planCombine,
         arguments: {
           projectId,
           targetId: "target-1",
@@ -456,7 +467,6 @@ test("matrix prompt keeps App Map Combine execution behind the per-cell profile 
     assert.match(text, /relay_app_map_combine_preflight/);
     assert.match(text, /--in language=ja,pt/);
     assert.match(text, /--lens visual/);
-    assert.match(text, /Never start locale-matrix/);
     assert.match(text, /relay_app_map_test_run/);
     assert.match(text, /relay_job_combine_start/);
     assert.match(text, /App Language destinations that open OS Settings/);
@@ -493,6 +503,58 @@ test("graph Test prompt keeps authoring, compilation, execution, and evidence in
     assert.match(text, /relay_run_evidence_get/);
     assert.match(text, /repair the source Test/);
     assert.match(text, /do not replace the whole Test or approve your own proposal/i);
+  } finally {
+    await session.close();
+  }
+});
+
+test("verify-change prompt renders the proof loop with commit and file scope", async () => {
+  const session = await connectMcp("proof");
+  try {
+    const { description, text } = promptText(
+      await session.request("prompts/get", {
+        name: relayMcpPromptNames.verifyChange,
+        arguments: {
+          projectId,
+          commitSha: "9a1c2e4b7d8f0a3b5c6d7e8f9a0b1c2d3e4f5a6b",
+          changedFiles: "packages/app/src/checkout.ts\npackages/core/src/cart.ts",
+          appMapId: "map-1",
+        },
+      }),
+    );
+    assert.equal(description, relayMcpPrompts[5].description);
+    assert.match(text, /at commit 9a1c2e4b7d8f0a3b5c6d7e8f9a0b1c2d3e4f5a6b/);
+    assert.match(text, /restricted to App Map map-1/);
+    assert.match(text, /provided changed files \(2 listed\)/);
+    assert.match(text, /Establish impact/);
+    assert.match(text, /smallest set of saved graph Tests/);
+    assert.match(text, /relay_app_map_test_run/);
+    assert.match(text, /expectedRevision/);
+    assert.match(text, /relay_job_get/);
+    assert.match(text, /relay_run_story_get/);
+    assert.match(text, /repair-proposals/);
+    assert.match(text, /relay_run_repair_list/);
+    assert.match(text, /failure digest/);
+    assert.match(text, /verdict passed \| product-failure \| harness-failure \| uncertain/);
+    assert.match(text, /relay_run_share_create/);
+    assert.match(text, /Rerun only the affected flows after a fix/);
+    assert.match(text, /Never weaken a check to make it pass/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("verify-change prompt renders without optional scope arguments", async () => {
+  const session = await connectMcp("proof");
+  try {
+    const { text } = promptText(
+      await session.request("prompts/get", {
+        name: relayMcpPromptNames.verifyChange,
+        arguments: { projectId },
+      }),
+    );
+    assert.doesNotMatch(text, /at commit/);
+    assert.match(text, /provided changed files \(0 listed\)/);
   } finally {
     await session.close();
   }

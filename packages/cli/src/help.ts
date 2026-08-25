@@ -15,7 +15,7 @@ const familyGroups = [
   ["Operate", ["device", "run", "activity"]],
   ["Automation", ["schedule", "matrix"]],
   ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],
-  ["System", ["generation", "system", "db"]],
+  ["Operate", ["device", "run", "report", "activity"]],
 ] as const;
 
 const globalOptions = `Global options:
@@ -76,6 +76,7 @@ function familyNames(): Set<string> {
   return new Set([
     ...friendlyPaths().map(({ descriptor }) => descriptor.command.split(" ")[0]!),
     "db",
+    "report",
   ]);
 }
 
@@ -166,6 +167,22 @@ function renderDetails(descriptor: CommandPathDescriptor): string {
 
 function renderFamilyHelp(family: string): string {
   if (family === "db") return dbHelp();
+  if (family === "report") {
+    return `Relay report commands
+
+Turn a completed run into a proof report for a pull request: a machine
+verdict (pass / fail / unproven) plus a compact markdown summary suitable
+for GitHub check-run output. \`unproven\` means Relay could not execute
+(no device, no build); it is deliberately distinct from fail.
+
+Usage:
+  relay report emit --run <runId> [--format github-check] [--json]
+
+Exit codes follow operation semantics: 0 pass, 9 fail, 8 unproven.
+
+${globalOptions}
+`;
+  }
   if (family === "operation") {
     return `Relay operation commands
 

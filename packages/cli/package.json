@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@relay/client": "workspace:*",
+    "@relay/core": "workspace:*",
     "@relay/protocol": "workspace:*"
   },
   "devDependencies": {

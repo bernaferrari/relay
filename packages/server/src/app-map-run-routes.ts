@@ -4,7 +4,7 @@ import {
   AppMapCompileError,
   AppMapTestCompileError,
   activeReviewedDocumentOriginsForAppMap,
-  RunMatrixError,
+  CasePlanError,
   buildTargetProfiles,
   compileAppMapConnection,
   compileAppMapFlow,
@@ -16,12 +16,12 @@ import {
   listDeviceLeases,
   listTargets,
   loadFrozenRawAccessibilityEvidence,
-  prepareCaseStackMatrix,
+  prepareCaseStackPlan,
   preflightCompiledAppMapTestOffline,
   readAppMap,
   readProjectVariables,
   referencedRuntimeInputs,
-  redactRunMatrix,
+  redactCasePlan,
   resolveJobDevicePlatform,
   saveAppMapCombine,
   sensitiveInputNames,
@@ -420,6 +420,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       targetKind: body.target.kind,
       browserTargetId: body.target.kind === "browser" ? targetId : undefined,
       ...(targetProfile ? { targetProfile } : {}),
+      ...(body.sourceRevision ? { sourceRevision: body.sourceRevision } : {}),
       artifacts: [
         {
           kind: "app-map-test-execution-intent",
@@ -568,14 +569,14 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
   let matrix;
   try {
     matrix = plan.caseStacks.length
-      ? await prepareCaseStackMatrix({
+      ? await prepareCaseStackPlan({
           variables: definitions.value,
           caseStacks: plan.caseStacks,
           runtimeValues: body.variables,
         })
       : undefined;
   } catch (error) {
-    if (error instanceof RunMatrixError) {
+    if (error instanceof CasePlanError) {
       throw new HttpError(409, error.message, {
         code: error.code,
         recovery:
@@ -592,7 +593,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
   const cases = matrix?.cases ?? [
     { id: "default", name: "Default", index: 0, values: {}, provenance: [] },
   ];
-  const safeMatrix = matrix ? redactRunMatrix(matrix, definitions.value) : undefined;
+  const safeMatrix = matrix ? redactCasePlan(matrix, definitions.value) : undefined;
   const targetProfile = (
     await buildTargetProfiles({
       devices: observedDevices ?? (await listDevices().catch(() => [])),

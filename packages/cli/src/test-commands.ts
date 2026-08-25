@@ -185,6 +185,23 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
             "Capture lens for the Combine. visual is every-screen; smoke is failures-only.",
         },
         {
+          name: "commit",
+          type: "string",
+          description:
+            "Git SHA (7-40 hex) of the code under test. Frozen into the run manifest; falls back to GITHUB_SHA or CI_COMMIT_SHA.",
+        },
+        {
+          name: "pr",
+          type: "number",
+          description: "Pull request number bound to this proof (falls back to CI_PR_NUMBER).",
+        },
+        {
+          name: "branch",
+          type: "string",
+          description:
+            "Branch name for provenance (falls back to GITHUB_REF_NAME or CI_COMMIT_REF_NAME).",
+        },
+        {
           name: "cell",
           type: "string",
           description: "Run one world, for example --cell ja. Default without --all is one cell.",
@@ -197,6 +214,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
       ],
       examples: [
         "relay test run checkout smoke --target current --revision current",
+        "relay test run checkout smoke --commit abc1234 --pr 42 --branch feature/checkout --input '{\"expectedRevision\":7,\"target\":{\"kind\":\"device\",\"platform\":\"ios\",\"targetId\":\"DEVICE\"}}'",
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
         'relay test run grok-ios settings-tour --in language=ja,pt --lens visual --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
         'relay test run grok-ios settings-tour --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"},"targetProfileId":"ipad-pt-BR"}\'',

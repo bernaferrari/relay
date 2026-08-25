@@ -119,6 +119,7 @@ function createManifest(job: TestJob, startedAt: number): EvidenceManifest {
       ...(job.browserTargetId || job.serial ? { id: job.browserTargetId ?? job.serial } : {}),
       ...(job.targetProfile ? { profileId: job.targetProfile.id } : {}),
     },
+    ...(job.sourceRevision ? { sourceRevision: job.sourceRevision } : {}),
     startedAt,
     collectionPolicy: structuredClone(job.evidencePolicy),
     channels: Object.fromEntries(

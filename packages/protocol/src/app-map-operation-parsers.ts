@@ -334,6 +334,26 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
         }
       }
       if (input.cell !== undefined) string(input.cell, "Test run cell");
+      if (input.sourceRevision !== undefined) {
+        const revision = record(input.sourceRevision, "Test run sourceRevision");
+        if (revision.vcs !== "git") fail("Test run sourceRevision vcs", "must be 'git'");
+        const sha = string(revision.sha, "Test run sourceRevision sha");
+        if (!/^[0-9a-f]{7,40}$/.test(sha)) {
+          fail("Test run sourceRevision sha", "must be 7-40 lowercase hex characters");
+        }
+        if (revision.prNumber !== undefined) {
+          const pr = number(revision.prNumber, "Test run sourceRevision prNumber");
+          if (!Number.isInteger(pr) || pr < 1) {
+            fail("Test run sourceRevision prNumber", "must be a positive integer");
+          }
+        }
+        if (revision.branch !== undefined) {
+          string(revision.branch, "Test run sourceRevision branch");
+        }
+        if (revision.artifactDigest !== undefined) {
+          string(revision.artifactDigest, "Test run sourceRevision artifactDigest");
+        }
+      }
     },
   );
 
@@ -507,6 +527,38 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
       }
     },
   );
+
+  const appMapVariableInferParser = objectParser<AppMapOperationInput<"app-map.variable.infer">>("App Map Variable inference", (input) => {
+      string(input.appMapId, "App Map Variable inference appMapId");
+      string(input.variableId, "App Map Variable inference variableId");
+      number(input.expectedRevision, "App Map Variable inference expectedRevision");
+      string(input.leaseId, "App Map Variable inference leaseId");
+      const target = record(input.target, "App Map Variable inference target");
+      if (target.kind !== "device" && target.kind !== "browser") {
+        fail("App Map Variable inference target kind", "must be device or browser");
+      }
+      string(target.targetId, "App Map Variable inference targetId");
+      const taughtRows = Array.isArray(input.taughtRows)
+        ? input.taughtRows
+        : fail("App Map Variable inference taughtRows", "must be an array");
+      if (taughtRows.length === 0)
+        fail("App Map Variable inference taughtRows", "must be non-empty");
+      for (const row of taughtRows) {
+        const taught = record(row, "App Map Variable inference taught row");
+        string(taught.id, "App Map Variable inference taught row id");
+      }
+  });
+  const appMapVariableInferOutputParser = objectParser<AppMapOperationOutput<"app-map.variable.infer">>("App Map Variable inference response", (output) => {
+    string(output.appMapId, "App Map Variable inference response appMapId");
+    number(output.expectedRevision, "App Map Variable inference response expectedRevision");
+    number(output.capturedAt, "App Map Variable inference response capturedAt");
+    record(output.variable, "App Map Variable inference response variable");
+    const mutation = record(output.mutation, "App Map Variable inference response mutation");
+    if (mutation.operationId !== "app-map.variable.save") {
+      fail("App Map Variable inference response mutation operationId", "must be app-map.variable.save");
+    }
+    record(mutation.input, "App Map Variable inference response mutation input");
+  });
 
   const appMapScreenConsolidateParser = objectParser<
     AppMapOperationInput<"app-map.screen.consolidate">
@@ -842,6 +894,8 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     appMapScreenAddParser,
     appMapScreenCaptureOutputParser,
     appMapScreenCaptureParser,
+    appMapVariableInferParser,
+    appMapVariableInferOutputParser,
     appMapScreenConsolidateParser,
     appMapScreenConsolidateOutputParser,
     appMapScrollSurfaceCaptureOutputParser,

@@ -19,6 +19,7 @@
     "./trace": "./src/trace.ts",
     "./runs": "./src/runs.ts",
     "./report": "./src/report.ts",
+    "./proof-report": "./src/proof-report.ts",
     "./doctor": "./src/doctor.ts",
     "./control": "./src/control.ts",
     "./retry": "./src/retry.ts",

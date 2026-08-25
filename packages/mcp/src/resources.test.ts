@@ -245,6 +245,8 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
       [
         relayMcpResourceUris.run,
         relayMcpResourceUris.runEvidence,
+        relayMcpResourceUris.runRepairProposals,
+        "relay://app-maps/{appMapId}/impact",
         relayMcpResourceUris.runOfflineReplay,
         relayMcpResourceUris.repair,
         relayMcpResourceUris.appMap,
@@ -801,6 +803,109 @@ test("reads current target observation metadata without capture side effects", a
       targetId: "device-1",
     });
     assert.deepEqual(calls, ["target.devices.list", "target.list", "authoring.session.list"]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reads the typed destination-repair-proposals artifact for one run", async () => {
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.get": {
+        run: {
+          id: "run-1",
+          status: "product-failure",
+          artifacts: [
+            {
+              kind: "destination-repair-proposals",
+              capturedAt: 123,
+              data: {
+                available: true,
+                proposals: [
+                  {
+                    candidateScreenId: "settings",
+                    confidence: 0.92,
+                    rationale: "fingerprint matches an alias of the reviewed screen",
+                    method: "fingerprint",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", {
+        uri: relayMcpResourceUris.runRepairProposals.replace("{runId}", "run-1"),
+      }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      truncated: boolean;
+      data: Record<string, unknown>;
+    };
+    assert.equal(envelope.truncated, false);
+    assert.deepEqual(envelope.data, {
+      runId: "run-1",
+      available: true,
+      proposals: [
+        {
+          candidateScreenId: "settings",
+          confidence: 0.92,
+          rationale: "fingerprint matches an alias of the reviewed screen",
+          method: "fingerprint",
+        },
+      ],
+    });
+  } finally {
+    await session.close();
+  }
+});
+
+test("degrades unavailable grounding to an explicit zero-proposal resource", async () => {
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.get": {
+        run: {
+          id: "run-1",
+          status: "error",
+          artifacts: [
+            {
+              kind: "destination-repair-proposals",
+              capturedAt: 123,
+              data: { available: false, proposals: [], reason: "grounding-unavailable" },
+            },
+          ],
+        },
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", {
+        uri: relayMcpResourceUris.runRepairProposals.replace("{runId}", "run-1"),
+      }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: { available: boolean; proposals: unknown[]; reason?: string };
+    };
+    assert.equal(envelope.data.available, false);
+    assert.deepEqual(envelope.data.proposals, []);
+    assert.equal(envelope.data.reason, "grounding-unavailable");
+  } finally {
+    await session.close();
+  }
+});
+
+test("runs without a repair-proposals artifact yield ResourceNotFound", async () => {
+  const session = await connectMcp();
+  try {
+    const response = await session.request("resources/read", {
+      uri: relayMcpResourceUris.runRepairProposals.replace("{runId}", "run-1"),
+    });
+    assert.ok(response.error);
   } finally {
     await session.close();
   }

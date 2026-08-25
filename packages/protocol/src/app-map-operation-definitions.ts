@@ -1,5 +1,8 @@
 import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import {
+  createAppMapImpactParsers,
+} from "./app-map-impact-parsers.js";
+import {
   createAppMapOperationParsers,
   type AppMapParserDependencies,
 } from "./app-map-operation-parsers.js";
@@ -13,6 +16,12 @@ export function createAppMapOperationDefinitions(
 ) {
   const { command, query } = createOperationBuilders<AppMapOperationMap>();
   const { emptyInputParser, okParser } = parserDependencies;
+  const {
+    appMapDiffImpactInputParser,
+    appMapDiffImpactOutputParser,
+    appMapRoutineImpactInputParser,
+    appMapRoutineImpactOutputParser,
+  } = createAppMapImpactParsers(parserDependencies);
   const {
     appMapCommitParser,
     appMapCombinePreflightInputParser,
@@ -37,6 +46,8 @@ export function createAppMapOperationDefinitions(
     appMapScreenAddParser,
     appMapScreenCaptureOutputParser,
     appMapScreenCaptureParser,
+    appMapVariableInferOutputParser,
+    appMapVariableInferParser,
     appMapScreenConsolidateParser,
     appMapScreenConsolidateOutputParser,
     appMapScrollSurfaceCaptureOutputParser,
@@ -410,6 +421,19 @@ export function createAppMapOperationDefinitions(
       },
     ),
     command(
+      "app-map.variable.infer",
+      "Infer a reviewable Variable from taught rows on the current target",
+      "POST",
+      "/app-maps/:appMapId/variables/:variableId/infer",
+      {
+        category: "authoring",
+        targetCapabilities: ["snapshot"],
+        lease: "exclusive",
+        input: appMapVariableInferParser,
+        output: appMapVariableInferOutputParser,
+      },
+    ),
+    command(
       "app-map.variable.remove",
       "Remove an App Map variable",
       "POST",
@@ -565,6 +589,26 @@ export function createAppMapOperationDefinitions(
         ]),
         output: appMapOutputParser,
         confirmation: "confirm",
+      },
+    ),
+    query(
+      "app-map.routine.impact",
+      "Preview App Map routine impact",
+      "/app-maps/:appMapId/routines/:routineId/impact",
+      {
+        category: "authoring",
+        input: appMapRoutineImpactInputParser,
+        output: appMapRoutineImpactOutputParser,
+      },
+    ),
+    query(
+      "app-map.diff.impact",
+      "Compute diff-to-flows impact for changed files",
+      "/app-maps/:appMapId/diff-impact",
+      {
+        category: "authoring",
+        input: appMapDiffImpactInputParser,
+        output: appMapDiffImpactOutputParser,
       },
     ),
     command(

@@ -10,6 +10,8 @@ import {
 import type { OperationId } from "@relay/protocol";
 import type { OperationInvoker } from "./server.js";
 import { compactOfflineReplayResource } from "./offline-replay-result.js";
+import { registerDiffImpactResource } from "./diff-impact-resource.js";
+import { registerRepairProposalsResource } from "./repair-proposals-resource.js";
 import {
   relayMcpExclusions,
   relayMcpOperationCatalog,
@@ -38,6 +40,7 @@ export const relayMcpResourceUris = {
   run: "relay://runs/{runId}",
   runEvidence: "relay://runs/{runId}/evidence",
   runOfflineReplay: "relay://runs/{runId}/offline-replay",
+  runRepairProposals: "relay://runs/{runId}/repair-proposals",
   repair: "relay://runs/{runId}/checks/{checkId}/repair",
   authoringSessions: "relay://authoring-sessions",
   authoringSession: "relay://authoring-sessions/{sessionId}",
@@ -149,7 +152,7 @@ function resourceText(
   );
 }
 
-function readResult(
+export function readResult(
   uri: URL,
   projectId: string,
   resource: string,
@@ -167,7 +170,7 @@ function readResult(
   };
 }
 
-function variable(variables: Variables, name: string, uri: URL): string {
+export function variable(variables: Variables, name: string, uri: URL): string {
   const value = variables[name];
   if (typeof value !== "string" || !safeIdentifier.test(value)) {
     throw new ResourceNotFoundError(uri.href, `Unsafe Relay resource identifier in ${uri.href}`);
@@ -535,6 +538,8 @@ export function registerRelayResources(
       }
     },
   );
+  registerRepairProposalsResource(server, { invoker, scope });
+  registerDiffImpactResource(server, { invoker, scope });
   server.registerResource(
     "run-offline-replay",
     new ResourceTemplate(relayMcpResourceUris.runOfflineReplay, { list: undefined }),

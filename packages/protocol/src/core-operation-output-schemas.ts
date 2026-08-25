@@ -102,3 +102,37 @@ export const coreOperationOutputSchemas = {
     })
     .strict(),
 } as const satisfies Readonly<Record<string, z.ZodType>>;
+
+/**
+ * One review-only screen-matching suggestion from destination repair.
+ * Mirrors core's RepairProposal writer; nothing here mutates an App Map.
+ */
+export const destinationRepairProposalSchema = z.object({
+  candidateScreenId: z.string().min(1),
+  /** 0..1 explainable match confidence; proposals arrive sorted descending. */
+  confidence: z.number().min(0).max(1),
+  rationale: z.string(),
+  method: z.enum(["fingerprint", "semantic", "vision"]),
+});
+
+/**
+ * Data payload of the `destination-repair-proposals` run artifact written
+ * after a failed step. An unavailable grounder degrades to an explicit
+ * zero-proposal result instead of pretending to ground pixels.
+ */
+export const destinationRepairProposalsArtifactDataSchema = z.discriminatedUnion("available", [
+  z.object({
+    available: z.literal(true),
+    proposals: z.array(destinationRepairProposalSchema),
+  }),
+  z.object({
+    available: z.literal(false),
+    proposals: z.tuple([]),
+    reason: z.literal("grounding-unavailable"),
+  }),
+]);
+
+export type DestinationRepairProposalsArtifactData = z.output<
+  typeof destinationRepairProposalsArtifactDataSchema
+>;
+

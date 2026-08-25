@@ -89,6 +89,9 @@ const valueFlags = new Set([
   "--cell",
   "--target",
   "--revision",
+  "--commit",
+  "--pr",
+  "--branch",
 ]);
 const switchFlags = new Set([
   "-h",
@@ -254,6 +257,58 @@ function applyCombineRunFlags(
   if (cell) next.cell = cell;
   if (all) next.executionMode = "all";
   return next;
+}
+
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{7,40}$/;
+
+/**
+ * Freeze the proof-layer provenance into `app-map.test.run` input. Flags win
+ * over ambient CI environment so an agent can always pin an exact revision;
+ * absent both, no binding is claimed rather than guessed.
+ */
+function applySourceRevisionFlags(
+  operationId: string,
+  input: Record<string, unknown>,
+  tokens: ParsedTokens,
+  env: Environment,
+): Record<string, unknown> {
+  const commitFlag = tokens.values.get("--commit");
+  const prFlag = tokens.values.get("--pr");
+  const branchFlag = tokens.values.get("--branch");
+  if (
+    (commitFlag !== undefined || prFlag !== undefined || branchFlag !== undefined) &&
+    operationId !== "app-map.test.run"
+  ) {
+    throw new UsageError("--commit, --pr, and --branch are only valid on test run");
+  }
+  const sha = commitFlag?.trim() || env.GITHUB_SHA?.trim() || env.CI_COMMIT_SHA?.trim();
+  const branch =
+    branchFlag?.trim() || env.GITHUB_REF_NAME?.trim() || env.CI_COMMIT_REF_NAME?.trim();
+  const prRaw = prFlag?.trim() || env.CI_PR_NUMBER?.trim();
+  let prNumber: number | undefined;
+  if (prRaw) {
+    const parsed = Number(prRaw);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      throw new UsageError("--pr must be a positive integer");
+    }
+    prNumber = parsed;
+  }
+  if (!sha && !branch && prNumber === undefined) return input;
+  if (sha && !COMMIT_SHA_PATTERN.test(sha)) {
+    throw new UsageError("--commit must be a 7-40 character lowercase git SHA");
+  }
+  const sourceRevision = {
+    vcs: "git" as const,
+    ...(sha ? { sha } : {}),
+    ...(prNumber !== undefined ? { prNumber } : {}),
+    ...(branch ? { branch } : {}),
+  };
+  if (input.sourceRevision !== undefined) {
+    throw new UsageError(
+      "Use either --commit/--pr/--branch or sourceRevision in --input, not both",
+    );
+  }
+  return { ...input, sourceRevision };
 }
 
 function parseInput(rawInput: string | undefined): Record<string, unknown> {
@@ -562,6 +617,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     ),
     tokens,
   );
+  resolved.input = applySourceRevisionFlags(resolved.operationId, resolved.input, tokens, env);
   const preview = tokens.switches.has("--preview");
   if (mark) {
     if (resolved.operationId !== "target.screenshot.capture") {

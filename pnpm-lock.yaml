@@ -296,6 +296,9 @@ importers:
       '@relay/client':
         specifier: workspace:*
         version: link:../client
+      '@relay/core':
+        specifier: workspace:*
+        version: link:../core
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash, createHmac } from "node:crypto";
 import type http from "node:http";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -185,7 +185,7 @@ test("a seventy-screenshot matrix renders as ten screen groups with deferred ima
       createdAt: 1,
       expiresAt: Date.now() + 1_000,
     },
-    totals: { runs: 7, passed: 7, problems: 0, screenshots: 70 },
+    totals: { runs: 7, passed: 7, problems: 0, screenshots: 70, inProgress: 0 },
     runs: Array.from({ length: 7 }, (_, caseIndex) => ({
       id: `run-${caseIndex}`,
       title: `Locale ${caseIndex + 1}`,
@@ -206,4 +206,117 @@ test("a seventy-screenshot matrix renders as ten screen groups with deferred ima
   assert.equal(html.match(/<img /gu)?.length, 70);
   assert.equal(html.match(/loading="lazy"/gu)?.length, 70);
   assert.match(html, /70<\/strong><span>Screenshots/u);
+});
+
+test("share page renders proof block and failed-step drill-in", () => {
+  const report: RunShareReport = {
+    schemaVersion: 1,
+    share: { id: "s1", title: "Proof", createdAt: 1, expiresAt: Date.now() + 60_000 },
+    provenance: {
+      appVersion: "3.1.0",
+      platform: "ios",
+      profileId: "iphone-15",
+      deviceName: "iPhone 15",
+      appMapRevision: 12,
+      sourceRevision: { sha: "deadbeef0000", prNumber: 5 },
+      startedAt: 1_000,
+      completedAt: 61_000,
+    },
+    totals: { runs: 2, passed: 1, problems: 1, screenshots: 2, inProgress: 0 },
+    runs: [
+      {
+        id: "run-ok",
+        title: "Healthy flow",
+        status: "ok",
+        outcome: "passed",
+        frames: [],
+      },
+      {
+        id: "run-bad",
+        title: "Broken flow",
+        status: "error",
+        failureCategory: "locator",
+        errorHeadline: "Element not found",
+        failedStep: { index: 1, total: 4, label: "Tap About phone" },
+        frames: [],
+      },
+    ],
+  };
+  const html = renderRunShareReportHtml(report, "tok");
+  assert.match(html, /What this proves/u);
+  assert.match(html, /App version<\/dt><dd>3\.1\.0<\/dd>/u);
+  assert.match(html, /ios · profile iphone-15 · iPhone 15/u);
+  assert.match(html, /App Map revision<\/dt><dd>r12<\/dd>/u);
+  assert.match(html, /deadbeef0000 \(PR #5\)/u);
+  assert.match(
+    html,
+    /Failed at step 2 of 4: Tap About phone/u,
+  );
+});
+
+test("share page omits proof block without provenance and adds canonical link only with base URL", () => {
+  const report: RunShareReport = {
+    schemaVersion: 1,
+    share: { id: "s1", title: "Plain", createdAt: 1, expiresAt: Date.now() + 60_000 },
+    totals: { runs: 1, passed: 0, problems: 0, screenshots: 0, inProgress: 1 },
+    runs: [{ id: "r1", title: "Running", status: "running", frames: [] }],
+  };
+  const previous = process.env.RELAY_PUBLIC_BASE_URL;
+  delete process.env.RELAY_PUBLIC_BASE_URL;
+  try {
+    const bare = renderRunShareReportHtml(report, "tok");
+    assert.doesNotMatch(bare, /canonical|What this proves/u);
+    assert.match(bare, /In progress<\/span>/u);
+
+    process.env.RELAY_PUBLIC_BASE_URL = "https://proof.example.com";
+    const absolute = renderRunShareReportHtml(report, "tok");
+    assert.match(absolute, /<link rel="canonical" href="https:\/\/proof\.example\.com\/shared\/runs\/tok">/u);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_PUBLIC_BASE_URL;
+    else process.env.RELAY_PUBLIC_BASE_URL = previous;
+  }
+});
+
+test("an expired share renders a 410 tombstone page with no run data", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-public-run-share-expired-"));
+  const previous = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  try {
+    await fixture(root, "english", 0);
+    const created = await authenticated("/runs/english/shares", {
+      expiresInHours: 1,
+      includeBatch: false,
+    });
+
+    // The route classifies on Date.now(), so present a validly-signed token
+    // whose embedded expiry is already in the past: exactly what an aged-out
+    // capability looks like in production.
+    const secret = Buffer.from(
+      (await readFile(join(root, ".run-share-secret"), "utf8")).trim(),
+      "base64url",
+    );
+    const body = Buffer.from(
+      JSON.stringify({ v: 1, id: created.json.share.id, exp: 1 }),
+      "utf8",
+    ).toString("base64url");
+    const signature = createHmac("sha256", secret).update(body).digest("base64url");
+    const expiredToken = `${body}.${signature}`;
+
+    for (const pathname of [
+      `/shared/runs/${expiredToken}`,
+      `/shared/runs/${expiredToken}/report`,
+      `/shared/runs/${expiredToken}/frames/english/0`,
+    ]) {
+      const page = await publicGet(pathname);
+      assert.equal(page.status, 410);
+      const html = page.body.toString();
+      assert.match(String(page.headers["Content-Type"]), /text\/html/u);
+      assert.match(html, /This proof link has expired/u);
+      assert.doesNotMatch(html, /english|Locale review|private log|Settings/u);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
 });

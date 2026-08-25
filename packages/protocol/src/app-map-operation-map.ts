@@ -17,6 +17,7 @@ import type {
   LogicalScrollSurface,
   LogicalScrollSurfaceImport,
   Proposal,
+  RoutineImpactPreview,
   SaveFlowInput,
   SaveRoutineInput,
   Screen,
@@ -35,6 +36,7 @@ import {
   type ReviewedDocumentOriginProjection,
 } from "./reviewed-document-origin.js";
 import type { CombineLensInput } from "./app-map-combine-id.js";
+import type { SourceRevision } from "./source-revision.js";
 import type {
   AppMapCompiledTest,
   AppMapScenarioTestEdit,
@@ -310,8 +312,8 @@ export type AppMapOperationMap = {
       variables?: Record<string, string | string[]>;
     };
     output: {
-      job: OperationRecord;
-      jobs: OperationRecord[];
+      job: AppMapJobSummary;
+      jobs: AppMapJobSummary[];
       plan: AppMapCompiledConnectionRun;
       matrix?: {
         id: string;
@@ -368,8 +370,8 @@ export type AppMapOperationMap = {
       variables?: Record<string, string | string[]>;
     };
     output: {
-      job: OperationRecord;
-      jobs: OperationRecord[];
+      job: AppMapJobSummary;
+      jobs: AppMapJobSummary[];
       plan: AppMapCompiledFlow;
       matrix?: {
         id: string;
@@ -425,6 +427,34 @@ export type AppMapOperationMap = {
       variable: AppMapVariable;
     };
     output: { appMap: AppMap };
+  };
+  "app-map.variable.infer": {
+    input: {
+      appMapId: string;
+      variableId: string;
+      expectedRevision: number;
+      target: AuthoringTarget;
+      leaseId: string;
+      taughtRows: Array<{
+        id: string;
+        identifier?: string;
+        label?: string;
+        text?: string;
+      }>;
+      name?: string;
+      kind?: AppMapVariable["kind"];
+      apply?: AppMapVariable["apply"];
+    };
+    output: {
+      appMapId: string;
+      expectedRevision: number;
+      capturedAt: number;
+      variable: AppMapVariable;
+      mutation: {
+        operationId: "app-map.variable.save";
+        input: AppMapOperationMap["app-map.variable.save"]["input"];
+      };
+    };
   };
   "app-map.variable.remove": {
     input: {
@@ -528,6 +558,9 @@ export type AppMapOperationMap = {
       executionMode?: "pilot" | "all";
       /** World or cell selector used with `in` to run one cell. */
       cell?: string;
+      /** Immutable commit/build binding for the code under test. Frozen into
+       * the run manifest as audit-grade provenance. */
+      sourceRevision?: SourceRevision;
     };
     output: {
       planIdentity: {
@@ -585,6 +618,26 @@ export type AppMapOperationMap = {
   "app-map.routine.remove": {
     input: { appMapId: string; routineId: string; expectedRevision: number; eventId?: string };
     output: { appMap: AppMap };
+  };
+  "app-map.routine.impact": {
+    input: { appMapId: string; routineId: string };
+    output: { impact: RoutineImpactPreview };
+  };
+  "app-map.diff.impact": {
+    input: {
+      appMapId: string;
+      changedFiles: string[];
+      /** v1 diff-to-flows front-matter. Callers supply `{entityId -> sourcePaths}`
+       * until the protocol carries `sourcePaths` natively (see core diff-impact). */
+      sourcePaths?: Record<string, string[]>;
+    };
+    output: {
+      appMapId: string;
+      appMapRevision: number;
+      changedFiles: string[];
+      matchedEntityIds: string[];
+      affectedTestIds: string[];
+    };
   };
   "app-map.proposal.submit": {
     input: { appMapId: string; expectedRevision: number; eventId?: string; proposal: Proposal };

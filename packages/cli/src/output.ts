@@ -129,7 +129,19 @@ export class CliOutput {
       const id = job && typeof job === "object" && "id" in job ? String(job.id) : "job";
       const status =
         job && typeof job === "object" && "status" in job ? String(job.status) : "unknown";
-      this.streams.stderr.write(`${id}: ${status}\n`);
+      let sha: string | undefined;
+      if (job && typeof job === "object" && "sourceRevision" in job) {
+        const revision = job.sourceRevision;
+        if (
+          revision &&
+          typeof revision === "object" &&
+          !Array.isArray(revision) &&
+          typeof (revision as Record<string, unknown>).sha === "string"
+        ) {
+          sha = (revision as Record<string, unknown>).sha as string;
+        }
+      }
+      this.streams.stderr.write(`${id}: ${status}${sha ? ` @ ${sha}` : ""}\n`);
     }
   }
 

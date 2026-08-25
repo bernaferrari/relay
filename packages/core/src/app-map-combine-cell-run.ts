@@ -4,6 +4,7 @@ import { appMapCombineCellExecutionIntentArtifactKind } from "./app-map-combine-
 import type { PreparedAppMapCombineCell } from "./app-map-combine-cell-prepare.js";
 import { digestAppMapTestExecutionValue } from "./app-map-test-execution-intent.js";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
+import type { SourceRevision } from "@relay/protocol";
 import { prepareJobBatch, type EnqueueJobInput, type TestJob } from "./session.js";
 
 type QueuedCombineCellTarget = Extract<
@@ -75,6 +76,8 @@ export type EnqueuePreparedAppMapCombineCellsInput = {
   ) => TargetProfile | undefined;
   projectId?: string;
   ownerId?: string;
+  /** Frozen at enqueue time into every cell manifest as audit provenance. */
+  sourceRevision?: SourceRevision;
 };
 
 export type StagedAppMapCombineCellBatch = {
@@ -114,7 +117,7 @@ export function stagePreparedAppMapCombineCells(
       // The job factory verifies they agree before the job becomes durable.
       executionTarget: structuredClone(target),
       targetProfile: input.queuedTargetProfile?.(cell, target),
-      variables: cell.wrapperInputs,
+      ...(input.sourceRevision ? { sourceRevision: structuredClone(input.sourceRevision) } : {}),
       recipeSnapshot: cell.recipeSnapshot,
       recipeGraph: cell.recipeGraph,
       batchId,

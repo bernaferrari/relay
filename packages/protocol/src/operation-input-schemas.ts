@@ -538,6 +538,26 @@ export const operationInputSchemas = {
       eventId: identifier("Optional idempotent activity event identifier").optional(),
     })
     .strict(),
+  "app-map.routine.impact": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      routineId: identifier("Routine identifier"),
+    })
+    .strict(),
+  "app-map.diff.impact": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      changedFiles: z
+        .array(z.string().min(1))
+        .describe("Repository paths changed by the diff under review"),
+      sourcePaths: z
+        .record(z.string(), z.array(z.string()))
+        .describe(
+          "Optional App Map entity id to repository source paths front-matter",
+        )
+        .optional(),
+    })
+    .strict(),
   "app-map.test.save": z
     .object({
       appMapId: identifier("App Map identifier"),

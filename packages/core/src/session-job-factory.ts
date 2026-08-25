@@ -123,6 +123,7 @@ export function replayInputFromPersistedRun(
     | "projectId"
     | "ownerId"
     | "executionTarget"
+    | "sourceRevision"
   > & { artifacts?: PersistedRun["artifacts"] },
 ): EnqueueJobInput {
   if (!run.recipeSnapshot || !run.recipeGraph) {
@@ -157,6 +158,7 @@ export function replayInputFromPersistedRun(
       recipe: run.action,
       executionTarget,
       ...targetInput,
+      sourceRevision: structuredClone(run.sourceRevision),
       targetProfile: run.targetProfile,
       title: `${run.title ?? run.action} · replay`,
       variables: structuredClone(run.resolvedInputs),
@@ -181,6 +183,7 @@ export function replayInputFromPersistedRun(
       ? { targetKind: "browser" as const, browserTargetId: targetId }
       : { targetKind: "device" as const, serial: targetId, platform }),
     targetProfile: run.targetProfile,
+    ...(run.sourceRevision ? { sourceRevision: structuredClone(run.sourceRevision) } : {}),
     title: `${run.title ?? run.action} · replay`,
     variables: structuredClone(run.resolvedInputs),
     recipeSnapshot: structuredClone(run.recipeSnapshot),
@@ -235,6 +238,7 @@ export function retryInputFromJob(job: TestJob): EnqueueJobInput {
     caseIndex: job.caseIndex,
     caseCount: job.caseCount,
     targetProfile: job.targetProfile,
+    sourceRevision: structuredClone(job.sourceRevision),
     hostWorkerId: job.hostWorkerId,
     hostWorkerCapacity: job.hostWorkerCapacity,
     artifacts: job.artifacts,
@@ -315,6 +319,9 @@ export function createSessionJob(
     targetKind,
     browserTargetId: targetContext.kind === "browser" ? targetContext.targetId : undefined,
     targetProfile: input.targetProfile ?? parent?.targetProfile,
+    sourceRevision: input.sourceRevision
+      ? structuredClone(input.sourceRevision)
+      : parent?.sourceRevision,
     workerId: assignment.workerId,
     workerCapacity: assignment.capacity,
     hostWorkerId: assignment.host?.workerId,

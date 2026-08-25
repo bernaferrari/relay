@@ -4,9 +4,11 @@ import { join } from "node:path";
 import type {
   RunShareCreateResult,
   RunShareReport,
+  RunShareReportProvenance,
   RunShareReportRun,
   RunShareSummary,
 } from "@relay/protocol";
+import { failedStepFromTrace } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
 import { redactText } from "./redaction.js";
 
@@ -16,6 +18,24 @@ const MAX_SHARE_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
 const MIN_SHARE_AGE_MS = 5 * 60 * 1_000;
 const MAX_SHARED_RUNS = 500;
 const TOKEN_VERSION = 1;
+
+/** Absolute public origin for share links. Loopback development stays
+ * path-only; a reverse proxy or desktop host opts in explicitly. Invalid
+ * configuration fails loudly instead of minting broken capability links. */
+export function publicShareBaseUrl(raw = process.env.RELAY_PUBLIC_BASE_URL): string | undefined {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("RELAY_PUBLIC_BASE_URL must be an absolute http(s) URL");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("RELAY_PUBLIC_BASE_URL must be an absolute http(s) URL");
+  }
+  return parsed.origin;
+}
 
 export type RunShareRecord = {
   schemaVersion: 1;
@@ -223,6 +243,11 @@ function errorHeadlineFor(run: PersistedRun): string | undefined {
   return headline.length > 200 ? `${headline.slice(0, 197)}…` : headline;
 }
 
+export function failedStepFor(run: Pick<PersistedRun, "steps">) {
+  return failedStepFromTrace(run);
+}
+
+
 export async function createRunShare(input: {
   root: string;
   run: PersistedRun;
@@ -278,10 +303,13 @@ export async function createRunShare(input: {
   };
   await mutateStore(input.root, (current) => ({ records: [...current, record], value: undefined }));
   const token = await tokenFor(input.root, { v: 1, id: record.id, exp: record.expiresAt });
+  const path = `/shared/runs/${encodeURIComponent(token)}`;
+  const baseUrl = publicShareBaseUrl();
   return {
     share: summaryFor(record, at),
     token,
-    path: `/shared/runs/${encodeURIComponent(token)}`,
+    path,
+    ...(baseUrl ? { url: new URL(path, baseUrl).toString() } : {}),
   };
 }
 
@@ -319,60 +347,100 @@ export async function revokeRunShare(input: {
   });
 }
 
+/** Retention sweep for share records. Deletes every record whose expiry has
+ * passed — including revoked ones, whose audit summary is the only thing this
+ * store keeps. Returns how many records were pruned so startup wiring can log
+ * a bounded line. Run-directory garbage collection is a separate concern and
+ * intentionally out of scope here: it will key off runs retention metadata
+ * (see run-catalog retention planning) rather than share expiries.
+ */
+export async function pruneExpiredShares(root: string, at = Date.now()): Promise<number> {
+  return mutateStore(root, (current) => {
+    const kept = current.filter((record) => record.expiresAt > at);
+    return { records: kept, value: current.length - kept.length };
+  });
+}
+
+export type RunShareTokenResolution =
+  | { state: "active"; record: RunShareRecord }
+  | { state: "expired" }
+  | { state: "invalid" };
+
+/** Authenticate a bearer capability and say how it failed. Only genuinely
+ * aged-out tokens stay distinguishable, so public pages can render an honest
+ * tombstone; every other failure collapses to "invalid" without revealing
+ * whether an id, signature, or record mismatched. */
+export async function resolveRunShareTokenState(
+  root: string,
+  token: string,
+  at = Date.now(),
+): Promise<RunShareTokenResolution> {
+  const parsed = parseToken(token);
+  if (!parsed) return { state: "invalid" };
+  const expected = createHmac("sha256", await readSecret(root))
+    .update(parsed.body)
+    .digest();
+  if (expected.length !== parsed.signature.length || !timingSafeEqual(expected, parsed.signature)) {
+    return { state: "invalid" };
+  }
+  if (parsed.payload.exp <= at) return { state: "expired" };
+  const record = (await readStore(root)).find((candidate) => candidate.id === parsed.payload.id);
+  if (!record || record.revokedAt || record.expiresAt !== parsed.payload.exp) {
+    return { state: "invalid" };
+  }
+  return { state: "active", record };
+}
+
 export async function resolveRunShareToken(
   root: string,
   token: string,
   at = Date.now(),
 ): Promise<RunShareRecord | null> {
-  const parsed = parseToken(token);
-  if (!parsed || parsed.payload.exp <= at) return null;
-  const expected = createHmac("sha256", await readSecret(root))
-    .update(parsed.body)
-    .digest();
-  if (expected.length !== parsed.signature.length || !timingSafeEqual(expected, parsed.signature)) {
-    return null;
-  }
-  const record = (await readStore(root)).find((candidate) => candidate.id === parsed.payload.id);
-  if (
-    !record ||
-    record.revokedAt ||
-    record.expiresAt <= at ||
-    record.expiresAt !== parsed.payload.exp
-  ) {
-    return null;
-  }
-  return record;
+  const resolution = await resolveRunShareTokenState(root, token, at);
+  return resolution.state === "active" ? resolution.record : null;
 }
 
 export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]): RunShareReport {
   const byId = new Map(runs.map((run) => [run.id, run]));
-  const reportRuns: RunShareReportRun[] = record.runIds.flatMap((id) => {
-    const run = byId.get(id);
-    if (!run) return [];
-    return [
-      {
-        id: run.id,
-        title: run.title ?? run.action,
-        status: run.status,
-        ...(run.outcome ? { outcome: run.outcome } : {}),
-        ...(run.platform ? { platform: run.platform } : {}),
-        ...(run.startedAt ? { startedAt: run.startedAt } : {}),
-        ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}),
-        ...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
-        ...(run.caseIndex !== undefined ? { caseIndex: run.caseIndex } : {}),
-        ...(run.caseCount !== undefined ? { caseCount: run.caseCount } : {}),
-        ...(errorHeadlineFor(run) ? { errorHeadline: errorHeadlineFor(run) } : {}),
-        frames: shareableFrames(run).map((frame, index) => ({
-          index,
-          caption: frame.caption || `Screen ${index + 1}`,
-          capturedAt: frame.capturedAt,
-          ...(frame.width ? { width: frame.width } : {}),
-          ...(frame.height ? { height: frame.height } : {}),
-        })),
-      },
-    ];
-  });
-  const passed = reportRuns.filter((run) => run.outcome === "passed" || run.status === "ok").length;
+  const projected: Array<{ run: PersistedRun; report: RunShareReportRun }> = record.runIds.flatMap(
+    (id) => {
+      const run = byId.get(id);
+      if (!run) return [];
+      const failedStep = failedStepFor(run);
+      return [
+        {
+          run,
+          report: {
+            id: run.id,
+            title: run.title ?? run.action,
+            status: run.status,
+            ...(run.outcome ? { outcome: run.outcome } : {}),
+            ...(run.platform ? { platform: run.platform } : {}),
+            ...(run.startedAt ? { startedAt: run.startedAt } : {}),
+            ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}),
+            ...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
+            ...(run.caseIndex !== undefined ? { caseIndex: run.caseIndex } : {}),
+            ...(run.caseCount !== undefined ? { caseCount: run.caseCount } : {}),
+            ...(errorHeadlineFor(run) ? { errorHeadline: errorHeadlineFor(run) } : {}),
+            ...(failedStep ? { failedStep } : {}),
+            ...(run.failureCategory && !isHealthy(run) ? { failureCategory: run.failureCategory } : {}),
+            frames: shareableFrames(run).map((frame, index) => ({
+              index,
+              caption: frame.caption || `Screen ${index + 1}`,
+              capturedAt: frame.capturedAt,
+              ...(frame.width ? { width: frame.width } : {}),
+              ...(frame.height ? { height: frame.height } : {}),
+            })),
+          },
+        },
+      ];
+    },
+  );
+  const reportRuns = projected.map(({ report }) => report);
+  const passed = projected.filter(({ run }) => isHealthy(run)).length;
+  const inProgress = projected.filter(({ run }) =>
+    ["queued", "running", "paused"].includes(run.status),
+  ).length;
   return {
     schemaVersion: 1,
     share: {
@@ -381,12 +449,72 @@ export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]
       createdAt: record.createdAt,
       expiresAt: record.expiresAt,
     },
+    provenance: shareProvenance(projected.map(({ run }) => run)),
     totals: {
       runs: reportRuns.length,
       passed,
-      problems: reportRuns.length - passed,
+      // Non-terminal runs are not verdicts; they surface as a neutral
+      // "In progress" bucket instead of inflating the problem count.
+      problems: reportRuns.length - passed - inProgress,
       screenshots: reportRuns.reduce((total, run) => total + run.frames.length, 0),
+      inProgress,
     },
     runs: reportRuns,
+  };
+}
+
+function isHealthy(run: PersistedRun): boolean {
+  return run.outcome === "passed" || run.status === "ok";
+}
+
+/** One identity block for the whole share. Values come from the primary run
+ * first; matrix cells may only widen what the primary does not record.
+ * Nothing here exposes device identifiers or resolved inputs. */
+function shareProvenance(runs: PersistedRun[]): RunShareReportProvenance | undefined {
+  if (runs.length === 0) return undefined;
+  const primary = runs[0]!;
+  const startedCandidates = runs
+    .map((run) => run.startedAt)
+    .filter((value): value is number => value !== undefined);
+  const completedCandidates = runs
+    .map((run) => run.finishedAt)
+    .filter((value): value is number => value !== undefined);
+  return {
+    ...(primary.appVersion ? { appVersion: primary.appVersion } : {}),
+    ...(primary.platform ? { platform: primary.platform } : {}),
+    ...(primary.targetProfile?.id ? { profileId: primary.targetProfile.id } : {}),
+    ...(primary.deviceName ?? primary.targetProfile?.name
+      ? { deviceName: primary.deviceName ?? primary.targetProfile?.name }
+      : {}),
+    ...shareAppMapRevision(primary),
+    ...shareSourceRevision(primary),
+    ...(startedCandidates.length > 0 ? { startedAt: Math.min(...startedCandidates) } : {}),
+    ...(completedCandidates.length > 0 ? { completedAt: Math.max(...completedCandidates) } : {}),
+  };
+}
+
+/** The App Map revision a Test run was compiled from, projected from its
+ * frozen execution-intent artifact without trusting an unchecked shape. */
+function shareAppMapRevision(run: PersistedRun): RunShareReportProvenance | undefined {
+  for (const artifact of run.artifacts) {
+    if (artifact.kind !== "app-map-test-execution-intent") continue;
+    const data = artifact.data;
+    if (!data || typeof data !== "object") continue;
+    const sourcePlan = "sourcePlan" in data ? data.sourcePlan : undefined;
+    if (!sourcePlan || typeof sourcePlan !== "object") continue;
+    const revision = "appMapRevision" in sourcePlan ? sourcePlan.appMapRevision : undefined;
+    if (typeof revision === "number") return { appMapRevision: revision };
+  }
+  return undefined;
+}
+
+/** The PR-proof identity of the code under test. Relay records it as plain
+ * frozen input names so any CI bridge can attach it without a protocol bump. */
+function shareSourceRevision(run: PersistedRun): RunShareReportProvenance | undefined {
+  const sha = run.resolvedInputs.commit_sha?.trim() || run.resolvedInputs.git_sha?.trim();
+  if (!sha) return undefined;
+  const prNumber = Number.parseInt(run.resolvedInputs.pr_number ?? "", 10);
+  return {
+    sourceRevision: { sha, ...(Number.isSafeInteger(prNumber) ? { prNumber } : {}) },
   };
 }

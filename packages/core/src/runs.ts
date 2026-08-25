@@ -9,6 +9,7 @@ import type { TestJob } from "./session.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
 import {
   assertExecutionTargetRef,
+  parseOptionalSourceRevision,
   type ActorKind,
   type ArtifactRefProjection,
   type EvidenceManifest,
@@ -16,6 +17,7 @@ import {
   type FailureCategory,
   type RunOutcome,
   type RunReview,
+  type SourceRevision,
   type TargetProfile,
 } from "@relay/protocol";
 import { now } from "./events.js";
@@ -109,6 +111,9 @@ export type PersistedRun = {
   evidence?: EvidenceManifest;
   /** Bounded, non-secret identity and causality captured when execution was accepted. */
   executionProvenance?: PersistedExecutionProvenance;
+  /** Immutable commit/build identity frozen at enqueue time. Fail-closed on
+   * parse so a malformed manifest can never pose as audit evidence. */
+  sourceRevision?: SourceRevision;
 };
 
 export type RunArtifact = TestJob["artifacts"][number];
@@ -264,6 +269,7 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     platform: job.targetKind === "browser" ? "browser" : (job.platform ?? "android"),
     executionTarget,
     targetProfile: job.targetProfile,
+    ...(job.sourceRevision ? { sourceRevision: job.sourceRevision } : {}),
     status: job.status,
     healed: job.healed,
     healMessage: job.healMessage,
@@ -338,6 +344,9 @@ async function readCompletedRun(dir: string): Promise<PersistedRun | null> {
   try {
     const raw = await readFile(join(dir, "run.json"), "utf8");
     const parsed = JSON.parse(raw) as PersistedRun;
+    if (parsed.sourceRevision !== undefined) {
+      parsed.sourceRevision = parseOptionalSourceRevision(parsed.sourceRevision);
+    }
     // Pre-v5 runs did not have an atomic commit marker. They remain readable
     // as historical single-manifest runs, while every current run must pass
     // the marker digest before it is exposed.

@@ -593,3 +593,130 @@ test("screenshot output flags reject ambiguous or unrelated use", () => {
     assert.deepEqual(preview.screenshotOutput, { kind: "file", path: "preview.png", force: false });
   }
 });
+
+test("test run freezes --commit/--pr/--branch into sourceRevision", () => {
+  const parsed = parseCli(
+    [
+      "test",
+      "run",
+      "checkout",
+      "smoke",
+      "--commit=abc1234def5678",
+      "--pr",
+      "42",
+      "--branch",
+      "feature/checkout",
+      "--input",
+      '{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"D"}}',
+    ],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command === "invoke") {
+    assert.deepEqual(parsed.input.sourceRevision, {
+      vcs: "git",
+      sha: "abc1234def5678",
+      prNumber: 42,
+      branch: "feature/checkout",
+    });
+  }
+});
+
+test("sourceRevision auto-detects CI environment with flag precedence", () => {
+  const fromEnv = parseCli(
+    [
+      "test",
+      "run",
+      "checkout",
+      "smoke",
+      "--input",
+      '{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"D"}}',
+    ],
+    { GITHUB_SHA: "1234567890abcdef", GITHUB_REF_NAME: "agent-fix" },
+  );
+  if (fromEnv.command === "invoke") {
+    assert.deepEqual(fromEnv.input.sourceRevision, {
+      vcs: "git",
+      sha: "1234567890abcdef",
+      branch: "agent-fix",
+    });
+  }
+
+  // Flags win over ambient environment.
+  const flagWins = parseCli(
+    [
+      "test",
+      "run",
+      "checkout",
+      "smoke",
+      "--commit=aaaaaaaa",
+      "--input",
+      '{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"D"}}',
+    ],
+    { GITHUB_SHA: "1234567890abcdef" },
+  );
+  if (flagWins.command === "invoke") {
+    assert.deepEqual(flagWins.input.sourceRevision, { vcs: "git", sha: "aaaaaaaa" });
+  }
+
+  // No flags and no CI environment claims no binding.
+  const absent = parseCli(
+    [
+      "test",
+      "run",
+      "checkout",
+      "smoke",
+      "--input",
+      '{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"D"}}',
+    ],
+    {},
+  );
+  if (absent.command === "invoke") {
+    assert.equal(absent.input.sourceRevision, undefined);
+  }
+});
+
+test("generic CI variables also feed sourceRevision auto-detection", () => {
+  const parsed = parseCli(
+    [
+      "test",
+      "run",
+      "checkout",
+      "smoke",
+      "--input",
+      '{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"D"}}',
+    ],
+    {
+      CI_COMMIT_SHA: "bbbbbbb22222",
+      CI_COMMIT_REF_NAME: "main",
+      CI_PR_NUMBER: "17",
+    },
+  );
+  if (parsed.command === "invoke") {
+    assert.deepEqual(parsed.input.sourceRevision, {
+      vcs: "git",
+      sha: "bbbbbbb22222",
+      prNumber: 17,
+      branch: "main",
+    });
+  }
+});
+
+test("sourceRevision flags are rejected off test run and on malformed values", () => {
+  assert.throws(
+    () =>
+      parseCli(
+        ["device", "list", "--commit=abc1234"],
+        {},
+      ),
+    /only valid on test run/u,
+  );
+  assert.throws(
+    () => parseCli(["test", "run", "a", "b", "--commit", "ZZZZ"], {}),
+    /lowercase git SHA/u,
+  );
+  assert.throws(
+    () => parseCli(["test", "run", "a", "b", "--pr", "zero"], {}),
+    /positive integer/u,
+  );
+});

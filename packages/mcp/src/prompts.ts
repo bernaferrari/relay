@@ -8,8 +8,9 @@ export const relayMcpPromptNames = {
   mapAppSafely: "relay_map_this_app_safely",
   repairFailedConnection: "relay_repair_this_failed_connection",
   reviewTake: "relay_review_this_take",
-  planRunMatrix: "relay_plan_this_run_matrix",
+  planCombine: "relay_plan_this_combine",
   authorGraphTest: "relay_author_this_graph_test",
+  verifyChange: "relay_verify_this_change",
 } as const;
 
 export type RelayMcpPromptDescriptor = {
@@ -67,7 +68,7 @@ export const relayMcpPrompts = [
     ],
   },
   {
-    name: relayMcpPromptNames.planRunMatrix,
+    name: relayMcpPromptNames.planCombine,
     title: "Plan this Combine",
     description: "Turn a testing goal into one reviewable Variable × Test plan, then run it.",
     requiredOperationIds: [
@@ -106,6 +107,25 @@ export const relayMcpPrompts = [
       "job.cancel",
       "run.get",
       "run.evidence.get",
+    ],
+  },
+  {
+    name: relayMcpPromptNames.verifyChange,
+    title: "Verify this change",
+    description:
+      "Prove one code change on real devices: pick the affected flows, run them, read the proof report, and return a structured verdict.",
+    requiredOperationIds: [
+      "target.devices.list",
+      "target.screenshot.capture",
+      "lease.list",
+      "app-map.get",
+      "app-map.test.run",
+      "job.get",
+      "run.get",
+      "run.evidence.get",
+      "run.story.get",
+      "run.repair.list",
+      "run.repair.propose",
     ],
   },
 ] as const satisfies readonly RelayMcpPromptDescriptor[];
@@ -313,7 +333,7 @@ function registerMatrixPrompt(server: McpServer, scope: RelayPromptScope): void 
           "4. If the required Variable or Test is absent, propose the smallest authoring work first. Otherwise propose one saved Combine ID and ask for explicit user confirmation before saving or running it.",
           "",
           "Save, preflight, and run (only after explicit confirmation):",
-          "5. Re-read the App Map revision. Prefer relay_app_map_test_run with in (Variable id → value ids) and lens (visual or smoke). That upserts the Combine, fills default Target bindings, and starts one cell unless executionMode is all. Equivalent CLI: relay test run <appMapId> <testId> --in language=ja,pt --lens visual. Never start locale-matrix. Never invent a Variable for screenshots — capture is a lens, not a dimension.",
+          "5. Re-read the App Map revision. Prefer relay_app_map_test_run with in (Variable id → value ids) and lens (visual or smoke). That upserts the Combine, fills default Target bindings, and starts one cell unless executionMode is all. Equivalent CLI: relay test run <appMapId> <testId> --in language=ja,pt --lens visual. Never invent a Variable for screenshots — capture is a lens, not a dimension.",
           "6. A saved grid uses relay_job_combine_start (CLI: relay combine run <appMapId> <combineId> --cell ja). Default is one cell / pilot. --all or executionMode all is explicit. A default Target fills missing cell bindings; per-cell cellRuntimeProfiles remain overrides for two devices or two profiles.",
           "7. Call relay_app_map_combine_preflight when reviewing a large grid. Stop on real blockers: missing Variable, empty selection, a Variable that cannot apply, compile failure, device not ready, or missing lease. Do not fail only because every cell was not ticked by hand.",
           "8. A single Test with no Variables still uses relay_app_map_test_run without in. Export the portable screenshot report with relay_job_combine_export only for an existing completed batch. Report the batch ID and exported artifact, never arbitrary filesystem contents.",
@@ -350,7 +370,7 @@ function registerGraphTestPrompt(server: McpServer, scope: RelayPromptScope): vo
           "Read and design (no mutation):",
           `1. Read relay://app-maps/${appMapId}/tests. If it contains ${testId}, read relay://app-maps/${appMapId}/tests/${testId}; if that detail is truncated, read relay://app-maps/${appMapId}/tests/${testId}/outline and continue with /outline/1, /outline/2, or /outline/3 only while remainingStepCount is positive. Verify the App Map, Test, stable step IDs, and revision match this request.`,
           "2. Express the goal with the smallest clear graph using instruction, validation, extraction, manual, module, decision, loop, or script steps. Prefer mapped connections, screens, and routines over scripts. Keep unresolved bindings explicit; never invent an entity ID.",
-          "   For target repair, prefer identifier, then label/text, then coordinates. When a pixel offset is intentional but the control can move, use point.relativeTo with a stable element identifier and 0..1 xRatio/yRatio; use a viewport-pinned point only when no stable element exists. Never use a translated label as the anchor for a locale matrix.",
+          "   For target repair, prefer identifier, then label/text, then coordinates. When a pixel offset is intentional but the control can move, use point.relativeTo with a stable element identifier and 0..1 xRatio/yRatio; use a viewport-pinned point only when no stable element exists. Never use a translated label as a Variable anchor.",
           "3. Present the proposed Test tree, evidence policy, unresolved bindings, and semantic edits. Ask for confirmation before creating or proposing changes.",
           "",
           "Create or propose (only after explicit confirmation):",
@@ -358,10 +378,69 @@ function registerGraphTestPrompt(server: McpServer, scope: RelayPromptScope): vo
           "5. Compile with relay_app_map_test_compile. Report compiler errors against the authored step ID and stop if any binding is unresolved. Check that compiler provenance covers every executable Test step.",
           "",
           "Run and evidence (only after separate run confirmation):",
-          "6. Re-read the App Map revision, verify the explicit Target is connected, then inspect or acquire only its lease. Start exactly this Test with relay_app_map_test_run using appMapId, testId, expectedRevision, and target {kind, platform, targetId}. To run it in other worlds, pass in and lens — never start locale-matrix and never invent a Variable for screenshots.",
+          "6. Re-read the App Map revision, verify the explicit Target is connected, then inspect or acquire only its lease. Start exactly this Test with relay_app_map_test_run using appMapId, testId, expectedRevision, and target {kind, platform, targetId}. To run it in other worlds, pass in and lens — never invent a Variable for screenshots.",
           "7. Follow the returned job ID with relay_job_get. Cancel only when asked or when the user-defined stopping condition is met. Do not infer success from transport success.",
           "8. Read relay_run_get and relay_run_evidence_get with the terminal job ID. Report outcome, failed authored step/provenance, immutable evidence counts, and remaining uncertainty separately.",
           "9. If the run fails, repair the source Test through another reviewed stable-ID proposal or repair its mapped Connection, compile again, and rerun only after confirmation. Never edit immutable run evidence or silently weaken the check.",
+        ].join("\n"),
+        descriptor.description,
+      ),
+  );
+}
+
+function registerVerifyChangePrompt(server: McpServer, scope: RelayPromptScope): void {
+  const descriptor = relayMcpPrompts[5];
+  server.registerPrompt(
+    descriptor.name,
+    {
+      title: descriptor.title,
+      description: descriptor.description,
+      argsSchema: z
+        .object({
+          projectId: projectSchema(scope.projectId),
+          commitSha: z
+            .string()
+            .regex(/^[0-9a-f]{7,40}$/)
+            .optional()
+            .describe("Commit under verification; omit when verifying uncommitted work"),
+          changedFiles: z
+            .string()
+            .max(8000)
+            .optional()
+            .describe(
+              "Changed file paths, one per line; provide when no impact query is available",
+            ),
+          appMapId: relayIdentifier
+            .optional()
+            .describe("Restrict verification to one App Map"),
+        })
+        .strict(),
+    },
+    ({ projectId, commitSha, changedFiles, appMapId }) =>
+      prompt(
+        [
+          `Prove the current change for project ${projectId}${
+            appMapId ? `, restricted to App Map ${appMapId}` : ""
+          }${commitSha ? ` at commit ${commitSha}` : ""}.`,
+          "",
+          sharedSafety(projectId),
+          "",
+          "Scope (no mutation):",
+          `1. Establish impact. If a routine-impact tool is available in this profile, ask it with ${
+            commitSha ? `commit ${commitSha}` : "the change description"
+          }; otherwise use the provided changed files (${
+            changedFiles ? changedFiles.split("\n").filter(Boolean).length : 0
+          } listed) as the input. Never guess flows that neither source names.`,
+          `2. Read ${relayMcpResourceUris.appMaps}${appMapId ? "" : " to find candidate maps"} and relay://app-maps/${appMapId ?? "{appMapId}"}/tests. Select the smallest set of saved graph Tests whose steps traverse the impacted screens and connections. Prefer existing Tests; propose new authoring only if nothing covers the change, and stop for approval before creating anything.`,
+          "",
+          "Run (only after explicit confirmation):",
+          "3. Verify or acquire only the required Target lease without displacing another actor. Run each selected Test once with relay_app_map_test_run using expectedRevision and an explicit target. Do not widen to unrelated Tests to look thorough.",
+          "4. Follow each returned job ID with relay_job_get. Do not infer success from transport success.",
+          "",
+          "Proof and verdict:",
+          `5. For every terminal run, read relay://runs/{runId}, relay_run_evidence_get, and relay_run_story_get. Read relay://runs/{runId}/repair-proposals on failure instead of re-deriving screen mismatches by hand.`,
+          "6. On failure, call relay_run_repair_list and relay_run_repair_propose for the failed check, then return a precise failure digest to the coding agent: failed authored step, expected versus observed destination, repair proposals with confidence, immutable evidence counts, and the exact rerun command. Never weaken a check to make it pass.",
+          "7. Return a structured verdict: verdict passed | product-failure | harness-failure | uncertain, per-run outcomes with run IDs and share links created through relay_run_share_create for reviewers, affected Tests executed, evidence references, and remaining uncertainty. Rerun only the affected flows after a fix — never the whole suite unless asked.",
         ].join("\n"),
         descriptor.description,
       ),
@@ -378,6 +457,7 @@ export function registerRelayPrompts(
   if (available.has(relayMcpPromptNames.repairFailedConnection))
     registerRepairPrompt(server, scope);
   if (available.has(relayMcpPromptNames.reviewTake)) registerReviewPrompt(server, scope);
-  if (available.has(relayMcpPromptNames.planRunMatrix)) registerMatrixPrompt(server, scope);
+  if (available.has(relayMcpPromptNames.planCombine)) registerMatrixPrompt(server, scope);
   if (available.has(relayMcpPromptNames.authorGraphTest)) registerGraphTestPrompt(server, scope);
+  if (available.has(relayMcpPromptNames.verifyChange)) registerVerifyChangePrompt(server, scope);
 }

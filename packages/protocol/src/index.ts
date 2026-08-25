@@ -1,3 +1,8 @@
+export {
+  destinationRepairProposalSchema,
+  destinationRepairProposalsArtifactDataSchema,
+} from "./core-operation-output-schemas.js";
+export type { DestinationRepairProposalsArtifactData } from "./core-operation-output-schemas.js";
 export * from "./recipes.js";
 export * from "./operations.js";
 export * from "./coordination.js";
@@ -34,18 +39,23 @@ export * from "./target-runtime.js";
 export * from "./campaign-capacity-plan.js";
 export * from "./target-summary.js";
 export * from "./accessibility-defaults.js";
-export * from "./target-contract.js";
 export * from "./execution-target.js";
 export * from "./artifact-ref.js";
+export * from "./source-revision.js";
+export * from "./target-contract.js";
 export * from "./discovery-contract.js";
-export * from "./corpus-contract.js";
+export type {
+  CombineEvidenceAnalysis,
+  CombineEvidenceFinding,
+  CombineEvidenceFindingCode,
+} from "./combine-evidence-contract.js";
 export * from "./locale-pack-contract.js";
-export * from "./locale-pack-check.js";
-export * from "./locale-matrix-materialization.js";
 export * from "./app-map-canvas.js";
 export * from "./ios-mutation-terminality-contract.js";
 import type { ResourceEventPayload } from "./coordination.js";
 import type { ServerConnection, TargetProfile, TargetSelector } from "./target-contract.js";
+import type { SourceRevision } from "./source-revision.js";
+import { parseOptionalSourceRevision } from "./source-revision.js";
 export type { RunReview } from "./run-review.js";
 
 export type EvidenceChannel =
@@ -127,6 +137,8 @@ export type EvidenceManifest = {
     profileId?: string;
   };
   startedAt: number;
+  /** Commit/build identity this evidence was collected against. */
+  sourceRevision?: SourceRevision;
   finishedAt?: number;
   collectionPolicy?: EvidenceCollectionPolicy;
   channels: Record<EvidenceChannel, EvidenceChannelRecord>;
@@ -215,8 +227,10 @@ export type RunSummary = JobSummary & {
   storageBytes: number;
   pinned: boolean;
   retentionClass: "standard" | "protected";
+  /** Immutable commit/build binding frozen at enqueue time. Absent on runs
+   * queued before proof-layer provenance existed. */
+  sourceRevision?: SourceRevision;
 };
-
 export type EvidenceMetricStatus = "available" | "insufficient-evidence";
 
 export type EvidenceMetric = {
@@ -365,6 +379,9 @@ export function parseRunSummary(value: unknown): RunSummary {
     storageBytes: numberValue(input.storageBytes, "run summary storageBytes"),
     pinned: Boolean(input.pinned),
     retentionClass: input.retentionClass === "protected" ? "protected" : "standard",
+    ...(input.sourceRevision !== undefined
+      ? { sourceRevision: parseOptionalSourceRevision(input.sourceRevision) }
+      : {}),
   };
 }
 

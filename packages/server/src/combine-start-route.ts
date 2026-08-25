@@ -1,4 +1,5 @@
 import http from "node:http";
+import type { SourceRevision } from "@relay/protocol";
 import type {
   AppMapCapturePolicy,
   AppMapCombine,
@@ -67,6 +68,7 @@ type CombineStartRequest = {
   pilotCaseIndex?: number;
   cell?: string;
   defaultTargetProfileId?: string;
+  sourceRevision?: SourceRevision;
 };
 
 export type CombineStartResult = {
@@ -286,6 +288,7 @@ export async function executeCombineStart(
           }),
         projectId: scope.projectId,
         ownerId: currentOperationContext()!.actorId,
+        sourceRevision: body.sourceRevision,
       });
     if (body.localAdmission) {
       const admissionRequest = isPilotRun

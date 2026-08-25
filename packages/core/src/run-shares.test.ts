@@ -1,17 +1,40 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import type { RunShareRecord } from "./run-shares.js";
 import type { PersistedRun } from "./runs.js";
 import {
   buildRunShareReport,
   createRunShare,
+  failedStepFor,
   listRunShares,
+  publicShareBaseUrl,
+  pruneExpiredShares,
   resolveRunShareToken,
+  resolveRunShareTokenState,
   revokeRunShare,
 } from "./run-shares.js";
 import { loadRedactionPolicy } from "./redaction.js";
+
+function traceStep(
+  title: string,
+  status: PersistedRun["steps"][number]["status"],
+): PersistedRun["steps"][number] {
+  return {
+    id: title,
+    index: 0,
+    kind: "Replay",
+    tone: status === "error" ? "fail" : "acc",
+    title,
+    glyphs: [],
+    startedAt: 0,
+    log: "",
+    frames: [],
+    ...(status ? { status } : {}),
+  };
+}
 
 function run(input: {
   id: string;
@@ -19,6 +42,7 @@ function run(input: {
   caseIndex?: number;
   frames?: number;
   outcome?: PersistedRun["outcome"];
+  status?: PersistedRun["status"];
 }): PersistedRun {
   return {
     schemaVersion: 5,
@@ -27,8 +51,8 @@ function run(input: {
     ownerId: "owner-a",
     action: "settings-tour",
     title: "Settings tour",
+    status: input.status ?? (input.outcome === "product-failure" ? "error" : "ok"),
     platform: "android",
-    status: input.outcome === "product-failure" ? "error" : "ok",
     ...(input.outcome ? { outcome: input.outcome } : {}),
     ...(input.outcome === "product-failure"
       ? { error: "Element not found: Bearer secret-token-123" }
@@ -99,7 +123,13 @@ test("creates a durable signed batch share and projects only bounded report evid
     const record = await resolveRunShareToken(root, created.token, at + 1);
     assert.ok(record);
     const report = buildRunShareReport(record, [second, first]);
-    assert.deepEqual(report.totals, { runs: 2, passed: 1, problems: 1, screenshots: 4 });
+    assert.deepEqual(report.totals, {
+      runs: 2,
+      passed: 1,
+      problems: 1,
+      screenshots: 4,
+      inProgress: 0,
+    });
     assert.deepEqual(
       report.runs.map((item) => item.id),
       ["run-a", "run-b"],
@@ -164,6 +194,246 @@ test("revocation invalidates the bearer capability without deleting its audit su
       (await listRunShares(root, { projectId: "project-a", runId: "run-a" }, at + 3))[0]?.status,
       "revoked",
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+function withEnv(key: string, value: string | undefined): () => void {
+  const previous = process.env[key];
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+  return () => {
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  };
+}
+
+test("createRunShare absolutizes the share link only when a public base URL is configured", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-share-url-"));
+  const sharedRun = run({ id: "run-a", outcome: "passed" });
+  const lifetime = 60 * 60 * 1_000;
+  try {
+    const restoreBase = withEnv("RELAY_PUBLIC_BASE_URL", undefined);
+    const bare = await createRunShare({
+      root,
+      run: sharedRun,
+      relatedRuns: [sharedRun],
+      actorId: "human:a",
+      expiresAt: 10_000 + lifetime,
+      includeBatch: false,
+      at: 10_000,
+    });
+    assert.equal(bare.url, undefined);
+    assert.match(bare.path, /^\/shared\/runs\//u);
+
+    const restoreHttps = withEnv("RELAY_PUBLIC_BASE_URL", "https://proof.example.com");
+    const absolute = await createRunShare({
+      root,
+      run: sharedRun,
+      relatedRuns: [sharedRun],
+      actorId: "human:a",
+      expiresAt: 30_000 + lifetime,
+      includeBatch: false,
+      at: 30_000,
+    });
+    assert.equal(absolute.url, `https://proof.example.com${absolute.path}`);
+
+    const restoreTrailingPath = withEnv(
+      "RELAY_PUBLIC_BASE_URL",
+      "http://relay.internal:8787/prefix",
+    );
+    const prefixed = await createRunShare({
+      root,
+      run: sharedRun,
+      relatedRuns: [sharedRun],
+      actorId: "human:a",
+      expiresAt: 40_000 + lifetime,
+      includeBatch: false,
+      at: 40_000,
+    });
+    assert.equal(prefixed.url, `http://relay.internal:8787${prefixed.path}`);
+
+    assert.throws(() => publicShareBaseUrl("ftp://proof.example.com"), /absolute http\(s\) URL/u);
+    assert.throws(() => publicShareBaseUrl("not-a-url"), /absolute http\(s\) URL/u);
+    restoreTrailingPath();
+    restoreHttps();
+    restoreBase();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("share reports project the proof block and failed-step drill-in from persisted runs", () => {
+  const record: RunShareRecord = {
+    schemaVersion: 1,
+    id: "share-1",
+    runId: "run-a",
+    runIds: ["run-a"],
+    projectId: "project-a",
+    title: "Proof report",
+    createdAt: 1,
+    expiresAt: 10_000,
+    createdBy: "human:a",
+    frameCount: 1,
+  };
+  const failedRun: PersistedRun = {
+    ...run({ id: "run-a", frames: 1 }),
+    status: "error",
+    failureCategory: "locator",
+    appVersion: "2.7.1",
+    deviceName: "Pixel 8",
+    targetProfile: {
+      id: "pixel-8-1080x2400",
+      targetId: "pixel-8",
+      source: "device",
+      platform: "android",
+      name: "Pixel 8",
+      capabilities: [],
+      observedAt: 1,
+    },
+    startedAt: 100,
+    finishedAt: 340,
+    steps: [
+      traceStep("Open settings", "ok"),
+      traceStep("Tap About phone", "error"),
+      traceStep("Read version", "running"),
+    ],
+    artifacts: [
+      {
+        kind: "app-map-test-execution-intent",
+        capturedAt: 1,
+        data: { sourcePlan: { appMapRevision: 42 } },
+      },
+    ],
+    resolvedInputs: { password: "hidden", commit_sha: "abc123def456", pr_number: "17" },
+  };
+  const report = buildRunShareReport(record, [failedRun]);
+
+  assert.deepEqual(report.provenance, {
+    appVersion: "2.7.1",
+    platform: "android",
+    profileId: "pixel-8-1080x2400",
+    deviceName: "Pixel 8",
+    appMapRevision: 42,
+    sourceRevision: { sha: "abc123def456", prNumber: 17 },
+    startedAt: 100,
+    completedAt: 340,
+  });
+  const failedReport = report.runs[0]!;
+  assert.deepEqual(failedReport.failedStep, {
+    index: 1,
+    total: 3,
+    label: "Tap About phone",
+  });
+  assert.equal(failedReport.failureCategory, "locator");
+
+  // Healthy runs never carry drill-in fields.
+  const healthyRecord: RunShareRecord = { ...record, runIds: ["run-b"], runId: "run-b" };
+  const healthyReport = buildRunShareReport(healthyRecord, [
+    {
+      ...run({ id: "run-b", outcome: "passed" }),
+      steps: [traceStep("Only step", "ok")],
+      resolvedInputs: {},
+    },
+  ]);
+  assert.equal(healthyReport.runs[0]?.failedStep, undefined);
+  assert.equal(healthyReport.runs[0]?.failureCategory, undefined);
+  assert.equal(healthyReport.provenance?.sourceRevision, undefined);
+  assert.equal(healthyReport.provenance?.appMapRevision, undefined);
+});
+
+test("totals exclude non-terminal runs from problems and surface them as in progress", () => {
+  const record: RunShareRecord = {
+    schemaVersion: 1,
+    id: "share-1",
+    runId: "run-a",
+    runIds: ["run-a", "run-b", "run-c", "run-d"],
+    projectId: "project-a",
+    title: "Matrix report",
+    createdAt: 1,
+    expiresAt: 10_000,
+    createdBy: "human:a",
+    frameCount: 4,
+  };
+  const report = buildRunShareReport(record, [
+    run({ id: "run-a", outcome: "passed" }),
+    run({ id: "run-b", outcome: "product-failure" }),
+    run({ id: "run-c", status: "running" }),
+    { ...run({ id: "run-d" }), status: "queued" },
+  ]);
+  assert.deepEqual(report.totals, {
+    runs: 4,
+    passed: 1,
+    problems: 1,
+    screenshots: 4,
+    inProgress: 2,
+  });
+});
+
+test("pruneExpiredShares removes expired records and keeps active ones", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-share-prune-"));
+  const at = 30_000;
+  const sharedRun = run({ id: "run-a", frames: 1, outcome: "passed" });
+  try {
+    await createRunShare({
+      root,
+      run: sharedRun,
+      relatedRuns: [sharedRun],
+      actorId: "human:reviewer",
+      expiresAt: at + 60 * 60 * 1_000,
+      includeBatch: false,
+      at,
+    });
+    // Age the only record past its expiry by rewriting the store directly.
+    const store = join(root, ".run-shares.json");
+    const parsed = JSON.parse(await readFile(store, "utf8")) as {
+      shares: Array<{ expiresAt: number }>;
+    };
+    parsed.shares[0]!.expiresAt = at - 1;
+    await writeFile(store, `${JSON.stringify(parsed, null, 2)}\n`);
+
+    assert.equal(await pruneExpiredShares(root, at), 1);
+    assert.equal(await pruneExpiredShares(root, at), 0);
+    assert.deepEqual(await listRunShares(root, { projectId: "project-a" }, at), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("resolveRunShareTokenState distinguishes expired from invalid tokens", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-share-state-"));
+  const at = 40_000;
+  const sharedRun = run({ id: "run-a", frames: 1, outcome: "passed" });
+  try {
+    const created = await createRunShare({
+      root,
+      run: sharedRun,
+      relatedRuns: [sharedRun],
+      actorId: "human:reviewer",
+      expiresAt: at + 60 * 60 * 1_000,
+      includeBatch: false,
+      at,
+    });
+    const active = await resolveRunShareTokenState(root, created.token, at + 1);
+    assert.equal(active.state, "active");
+    if (active.state === "active") assert.equal(active.record.id, created.share.id);
+
+    const expiredAt = created.share.expiresAt;
+    assert.equal((await resolveRunShareTokenState(root, created.token, expiredAt)).state, "expired");
+    assert.equal(
+      (await resolveRunShareTokenState(root, `not-a-token.${created.token}`, at + 1)).state,
+      "invalid",
+    );
+
+    await revokeRunShare({
+      root,
+      id: created.share.id,
+      scope: { projectId: "project-a", ownerId: "owner-a" },
+      actorId: "human:reviewer",
+      at: at + 2,
+    });
+    assert.equal((await resolveRunShareTokenState(root, created.token, at + 3)).state, "invalid");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

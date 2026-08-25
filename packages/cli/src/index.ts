@@ -23,6 +23,7 @@ import { CliOutput, type OutputStreams } from "./output.js";
 import { emitScreenshot, emitSnapshotFile } from "./screenshot.js";
 import { persistScrollSurvey } from "./survey-persist.js";
 import { runDbCommand } from "./db-commands.js";
+import { runReportCommand } from "./report-commands.js";
 
 export type CliDependencies = {
   env?: Record<string, string | undefined>;
@@ -296,6 +297,9 @@ export async function runCli(
   try {
     if (firstPositional(argv) === "db") {
       return await runDbCommand(argv, streams, dependencies.env ?? process.env);
+    }
+    if (firstPositional(argv) === "report") {
+      return await runReportCommand(argv, streams, dependencies.env ?? process.env);
     }
     const parsed = parseCli(argv, dependencies.env ?? process.env);
     output = new CliOutput(parsed.config.output, parsed.config.quiet, streams);

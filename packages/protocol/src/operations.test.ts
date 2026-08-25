@@ -96,6 +96,7 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.case-stack.attach",
       "app-map.case-stack.remove",
       "app-map.variable.save",
+      "app-map.variable.infer",
       "app-map.variable.remove",
       "app-map.test.save",
       "app-map.test.remove",
@@ -109,6 +110,8 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.combine.remove",
       "app-map.routine.save",
       "app-map.routine.remove",
+      "app-map.routine.impact",
+      "app-map.diff.impact",
       "app-map.proposal.submit",
       "app-map.observations.propose",
       "app-map.proposal.approve",
@@ -135,11 +138,9 @@ test("operation roles keep viewing, authoring, execution, and administration dis
   assert.equal(operationDefinition("app-map.scroll-surface.origin.inspect").minimumRole, "viewer");
   assert.equal(operationDefinition("app-map.scroll-surface.origin.review").minimumRole, "author");
   assert.equal(operationDefinition("app-map.scroll-surface.origin.revoke").minimumRole, "author");
-  assert.equal(operationDefinition("corpus.create").minimumRole, "author");
   assert.equal(operationDefinition("job.start").minimumRole, "runner");
   assert.equal(operationDefinition("run.repair.get").minimumRole, "viewer");
   assert.equal(operationDefinition("run.repair.retry").minimumRole, "runner");
-  assert.equal(operationDefinition("corpus.start").minimumRole, "runner");
   assert.equal(operationDefinition("authoring.session.interact").minimumRole, "runner");
   assert.equal(operationDefinition("authoring.take.replay").minimumRole, "runner");
   assert.equal(operationDefinition("target.video.start").minimumRole, "runner");
@@ -196,6 +197,43 @@ test("map teach accepts a point tap without expectedRevision", () => {
   });
   assert.equal(parsed.appMapId, "android-settings-now");
   assert.equal(parsed.fromScreenId, "settings");
+});
+
+test("Variable inference captures one explicit target and returns a reviewable save mutation", () => {
+  const definition = operationDefinition("app-map.variable.infer");
+  assert.equal(definition.transport.path, "/app-maps/:appMapId/variables/:variableId/infer");
+  assert.deepEqual(definition.targetCapabilities, ["snapshot"]);
+  assert.equal(definition.lease, "exclusive");
+  assert.deepEqual(
+    definition.input.parse({
+      appMapId: "settings",
+      variableId: "language",
+      expectedRevision: 4,
+      leaseId: "lease-1",
+      target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+      taughtRows: [{ id: "en", identifier: "language.en" }],
+    }),
+    {
+      appMapId: "settings",
+      variableId: "language",
+      expectedRevision: 4,
+      leaseId: "lease-1",
+      target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+      taughtRows: [{ id: "en", identifier: "language.en" }],
+    },
+  );
+  assert.throws(
+    () =>
+      definition.input.parse({
+        appMapId: "settings",
+        variableId: "language",
+        expectedRevision: 4,
+        leaseId: "lease-1",
+        target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+        taughtRows: [],
+      }),
+    /non-empty|min/u,
+  );
 });
 
 test("screen consolidation validates a read-only preview request", () => {
@@ -387,6 +425,46 @@ test("graph Test runs require an exact revision and explicit target", () => {
       }),
     /expectedRevision/u,
   );
+  const revision = {
+    vcs: "git" as const,
+    sha: "abc1234def5678",
+    prNumber: 42,
+    branch: "feature/checkout",
+  };
+  const withRevision = { ...input, sourceRevision: revision };
+  assert.deepEqual(operationDefinition("app-map.test.run").input.parse(withRevision), withRevision);
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        sourceRevision: { ...revision, vcs: "svn" },
+      }),
+    /vcs/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        sourceRevision: { ...revision, sha: "ABC1234" },
+      }),
+    /sha/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        sourceRevision: { ...revision, sha: "abc12" },
+      }),
+    /sha/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        sourceRevision: { ...revision, prNumber: 0 },
+      }),
+    /prNumber/u,
+  );
 });
 
 test("graph Test runs accept optional Combine worlds and a capture lens", () => {
@@ -550,6 +628,10 @@ test("snapshot input accepts optional full and stays valid when omitted", () => 
     full: false,
     visual: true,
   });
+  assert.deepEqual(parse({ serial: "ipad-1", interactiveOnly: true }), {
+    serial: "ipad-1",
+    interactiveOnly: true,
+  });
   assert.deepEqual(parse({ serial: "ipad-1", full: "true" }), { serial: "ipad-1", full: true });
   assert.throws(() => parse({ serial: "ipad-1", full: "yes" }), /full/);
 });
@@ -604,9 +686,12 @@ test("target capability outputs keep pixel, semantic, and evidence proofs distin
     },
   };
   const output = {
+    capturedAt: 100,
     nodes: [],
     interactive: [],
     inspectable: false,
+    source: "pixels-only",
+    screenIdentity: {},
     tree: "Window · Settings",
     readiness,
   };
@@ -981,7 +1066,7 @@ test("runtime parsers reject malformed input and output", () => {
   );
   assert.throws(
     () => operationDefinition("target.screenshot.capture").output.parse({ path: "shot.png" }),
-    /screenshot bytes/,
+    /screenshot base64/,
   );
   assert.throws(
     () => operationDefinition("system.health.get").output.parse({ ok: true }),

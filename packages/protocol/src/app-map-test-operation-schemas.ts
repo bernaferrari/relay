@@ -3,8 +3,8 @@ import {
   authoringTarget,
   identifier,
   natural,
-  stepTarget,
   text,
+  stepTarget,
 } from "./operation-schema-primitives.js";
 
 const forceRecaptureScreenIds = z
@@ -18,6 +18,20 @@ const forceRecaptureScreenIds = z
       message: "forceRecaptureScreenIds must not repeat a screen identifier",
     });
   });
+
+const shaPattern = /^[0-9a-f]{7,40}$/;
+export const sourceRevisionSchema = z
+  .object({
+    vcs: z.literal("git"),
+    sha: z.string().regex(shaPattern, "must be 7-40 lowercase hex characters"),
+    prNumber: z.number().int().positive().optional(),
+    branch: text("Branch name").optional(),
+    artifactDigest: text("Built artifact digest").optional(),
+  })
+  .strict()
+  .describe(
+    "Immutable commit/build identity frozen with the run as audit-grade evidence",
+  );
 
 /** The offline preview and the queued run share one evidence-scope vocabulary.
  * Keeping it here makes every transport as strict as the protocol contract,
@@ -63,6 +77,7 @@ export const appMapTestRunInputSchema = z
       .describe("Capture lens. visual is every-screen; smoke is failures-only."),
     executionMode: z.enum(["pilot", "all"]).optional(),
     cell: identifier("World or Combine cell selector").optional(),
+    sourceRevision: sourceRevisionSchema.optional(),
   })
   .strict()
   .superRefine((input, context) => {

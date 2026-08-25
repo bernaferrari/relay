@@ -272,6 +272,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
             platform: run.platform,
             serial: run.serial,
             outcome: run.outcome,
+            sourceRevision: run.sourceRevision,
             review: run.review,
             batchId: run.batchId,
             frameCount: run.frameCount ?? run.frames.length,

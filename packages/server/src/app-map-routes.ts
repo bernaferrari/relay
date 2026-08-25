@@ -1,22 +1,26 @@
 import {
   addAppMapScreen,
+  AppMapDomainError,
   attachAppMapCaseStack,
+  computeDiffImpact,
   connectAppMapScreens,
-  commitAppMapChanges,
   createAppMap,
   currentOperationContext,
   deleteAppMap,
+  commitAppMapChanges,
   duplicateAppMap,
+  previewRoutineImpact,
   formatAppMapYaml,
   importAppMap,
   listAppMapCatalog,
+  matchedDiffEntities,
   proposalFromDiscovery,
   readAppMap,
+  parseAppMapYaml,
   readDiscoverySession,
   appMapYamlFilename,
-  parseAppMapYaml,
-  removeAppMapConnection,
   removeAppMapCaseStack,
+  removeAppMapConnection,
   removeAppMapVariable,
   removeAppMapFlow,
   removeAppMapGroup,
@@ -169,6 +173,52 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       (map, context) => commitAppMapChanges(map, body.changes, body.patch, context, body.summary),
     );
     json(response, 200, { appMap });
+    return true;
+  }
+
+  const routineImpact = matchPath(pathname, "/app-maps/:appMapId/routines/:routineId/impact");
+  if (method === "GET" && routineImpact) {
+    const appMap = await readAppMap(scope.projectId, routineImpact.appMapId!);
+    if (!appMap) throw new HttpError(404, `App Map ${routineImpact.appMapId} not found`);
+    try {
+      const impact = previewRoutineImpact(appMap, routineImpact.routineId!);
+      json(response, 200, { impact });
+    } catch (error) {
+      throw new HttpError(
+        error instanceof AppMapDomainError && error.code === "missing-reference" ? 404 : 400,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    return true;
+  }
+
+  const diffImpact = matchPath(pathname, "/app-maps/:appMapId/diff-impact");
+  if (method === "GET" && diffImpact) {
+    const appMap = await readAppMap(scope.projectId, diffImpact.appMapId!);
+    if (!appMap) throw new HttpError(404, `App Map ${diffImpact.appMapId} not found`);
+    // GET inputs arrive as query parameters: repeated `files=` keys collect the
+    // changed paths; a single JSON-encoded `sourcePaths=` carries front-matter.
+    const search = new URL(request.url ?? pathname, "http://relay.local").searchParams;
+    const changedFiles = search.getAll("files").flatMap((value) => value.split(",")).filter(Boolean);
+    let sourcePaths: Record<string, string[]> | undefined;
+    if (search.has("sourcePaths")) {
+      try {
+        sourcePaths = JSON.parse(search.get("sourcePaths")!) as Record<string, string[]>;
+      } catch {
+        throw new HttpError(400, "diff impact sourcePaths must be valid JSON");
+      }
+    }
+    const diffInput = {
+      changedFiles,
+      ...(sourcePaths ? { sourcePaths } : {}),
+    };
+    json(response, 200, {
+      appMapId: appMap.id,
+      appMapRevision: appMap.revision,
+      changedFiles,
+      matchedEntityIds: matchedDiffEntities(appMap, diffInput),
+      affectedTestIds: computeDiffImpact(appMap, diffInput),
+    });
     return true;
   }
 

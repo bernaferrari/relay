@@ -39,6 +39,7 @@ import {
   listActionsWithTrace,
   listAndroidDevicesFast,
   listDevices,
+  publicShareBaseUrl,
   resolveJobDevicePlatform,
   bootDevice,
   requestAndroidAuthorization,
@@ -64,6 +65,7 @@ import {
   reconcilePersistedAppMapRuns,
   recoverCollaborationState,
   recoverDurableWorkerAssignments,
+  pruneExpiredShares,
   acquireRelayStateServerLease,
   beginDurableWorkerServerLifecycle,
   shutdownSessionExecution,
@@ -105,7 +107,6 @@ import {
 } from "./activity-routes.js";
 import { handleAppMapRoute } from "./app-map-routes.js";
 import { handleDiscoveryRoute } from "./discovery-routes.js";
-import { handleCorpusRoute } from "./corpus-routes.js";
 import { handlePresenceRoute } from "./presence-routes.js";
 import { handleAppMapRunRoute, type AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
 import { handleSettingsRoute } from "./settings-routes.js";
@@ -289,17 +290,6 @@ async function handleRequest(
     if (await handlePresenceRoute({ method, pathname, request: req, response: res, scope })) return;
     if (
       await handleDiscoveryRoute({
-        method,
-        pathname,
-        url,
-        request: req,
-        response: res,
-        scope,
-      })
-    )
-      return;
-    if (
-      await handleCorpusRoute({
         method,
         pathname,
         url,
@@ -746,6 +736,9 @@ async function startServerWithStateLease(
   const browserOrigins = opts.browserOrigins
     ? configuredBrowserOrigins(opts.browserOrigins.join(","))
     : configuredBrowserOrigins();
+  // Share links absolutize against this origin. Fail startup on a bad value
+  // rather than minting capability links that cannot be resolved.
+  publicShareBaseUrl();
   // Remote provider adapters are host-owned and intentionally opt-in. Each
   // request runs under this explicit registry; core captures it at admission
   // so a queued job cannot later resolve a provider against ambient defaults.
@@ -791,7 +784,13 @@ async function startServerWithStateLease(
   // reconcile any immutable manifest that committed just before the process
   // stopped so it cannot leave its target/host fence behind.
   await recoverDurableWorkerAssignments();
-  await reconcilePersistedAppMapRuns();
+  // Retention sweep for expired share records. A corrupt or locked store must
+  // never block the server from coming up; the next start retries the sweep.
+  await pruneExpiredShares(runsRoot()).catch((error: unknown) => {
+    console.warn(
+      `Share retention sweep failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
   await pruneIosVideoTakes();
   assertSafeBinding(host, token, externalIdentityVerifier);
   if (!isLoopbackHost(host) && !redaction.enabled) {

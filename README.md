@@ -1,16 +1,39 @@
 # Relay
 
-Relay is a local-first application mapping and verification tool for browser, Android, and iOS
-products. It can work without an application's source code: connect a running target, map the
-screens and transitions that matter, then replay reviewed tests with durable evidence.
+**An AI agent just changed your mobile app. Can you trust what it did?**
 
-Its core loop is deliberately small:
+The agent says it fixed the bug. The diff looks plausible. But nobody replayed the
+critical flow on a real device, so "looks done" ships instead of "proven done."
+
+Relay closes that gap: **prove AI-written mobile code works before merge.**
+Relay is a local-first proof layer for agent-written mobile code. It replays reviewed
+product flows against browsers, Android devices, and iOS devices that *you* attach, then
+attaches immutable evidence—screenshots, UI trees, actions, assertions, failure provenance—
+to the result.
+
+The loop Relay exists to close:
 
 ```text
-Connect a target → map screens and connections → author a Test → run a pilot → inspect evidence
+PR opened
+  → app built
+  → critical flow replayed on YOUR devices
+  → proof attached to the PR
+  → exact failure returned to the agent
+  → fix generated
+  → affected flow rerun
+  → PR passes
 ```
 
-Once that loop is trustworthy, **Variables** and **Combine** let a team apply it across languages,
+Where the loop stands today:
+
+| Loop edge | Status |
+| --- | --- |
+| Authoring (agents propose Tests via MCP/CLI), replay on real targets, repair, evidence, source-revision tagging (`--commit/--pr/--branch`), report emit | **Shipped** |
+| Build ingest automation and GitHub check-run posting from CI | **Pending** |
+
+[docs/PR_PROOF_CI.md](./docs/PR_PROOF_CI.md) shows the copy-paste CI wiring available today.
+
+Once the loop is trustworthy, **Variables** and **Combine** let a team apply it across languages,
 themes, accounts, devices, builds, or other selected states—without turning every case into a
 separate test. A run preserves the map revision, actions, checks, screenshots, UI trees, logs, and
 failure provenance used to produce it.
@@ -46,12 +69,6 @@ pnpm dev:desktop
 The Electron app starts one loopback Relay service for the project. No hosted Relay account or cloud
 provider is involved in that path.
 
-Each packaged macOS build includes Relay's reviewed, pixel-only iOS preview sidecar for its target
-architecture (Apple Silicon or Intel). At startup Relay verifies the native binary and its
-source-provenance manifest before using it; a damaged install tells you to reinstall rather than
-downloading, building, or substituting another capture/control tool. Source checkouts can build the
-same pinned producer deliberately with `pnpm ios-preview:build` when live iOS preview is needed.
-
 With a target connected, the first useful workflow is:
 
 1. In **Device**, select the connected browser, Android, or iOS target and save the first useful screen.
@@ -67,7 +84,7 @@ route. See [Product flows](./docs/PRODUCT_FLOWS.md) for the complete authoring p
 
 | Capability                | What it gives you                                                                                                                                                       |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **App Map**               | A visual, revisioned record of observed Screens and reviewed Connections. Recorded Takes can be trimmed, replayed, and approved before they become navigation evidence. |
+| **App Map**               | Agents propose Screens and Connections; humans review Takes and approve them; Relay proves approved flows by replaying them with evidence. |
 | **Graph-native Tests**    | Intent, checks, extraction, manual checkpoints, decisions, loops, reusable modules, and constrained scripts—all bound to the App Map or explicitly marked unresolved.   |
 | **Variables and Combine** | Reuse a Test across selected language, theme, account, build, device, or model values. Preview the expansion, run one pilot, then resume only untouched cases.          |
 | **Targets**               | A Relay-owned Playwright profile for browsers plus Android and iOS adapters. Target capabilities and unsupported actions are reported explicitly.                       |
@@ -79,19 +96,11 @@ transition; a **Variable** changes one reusable dimension; a **Test** states wha
 a **Combine** runs selected Variables × Tests. This keeps recordings useful as navigation evidence
 without making them a second test format.
 
-## Local, self-managed, and hosted boundaries
+## Local-first, self-managed
 
-| Available now                                                                                                                                                        | Not shipped as a Relay service                                                                                           |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Desktop and CLI workflows against targets you attach, emulate, or otherwise operate.                                                                                 | A Relay-managed cloud-device provider, device rental, or managed fleet scheduler.                                        |
-| Project-scoped local storage, immutable evidence, access roles for configured service tokens, and authenticated remote serving when you operate the server yourself. | Hosted multi-tenant control/data planes, multi-node stores, fleet shards, quotas, or published service-level objectives. |
-| Expiring, revocable, redacted evidence sharing.                                                                                                                      | SSO/OIDC, managed group-to-role provisioning, and enterprise encryption-policy management.                               |
-
-Remote serving is self-managed: non-loopback HTTP requires a bearer token, evidence redaction, and
-an explicit static-token role, organization, and project scope. Browser access is opt-in: set
-`RELAY_ALLOWED_BROWSER_ORIGINS` to the exact Relay-owned HTTP(S) renderer origins, or use bearer
-authentication. Originless Electron and CLI clients keep the local desktop path. It should not be
-read as an offer of a hosted Relay cloud. For an executable remote setup, see
+Relay keeps the control plane and evidence in your project: desktop and CLI workflows run against
+targets you operate, remote serving is self-managed (bearer token, redaction, explicit scopes), and
+evidence sharing is expiring, revocable, and redacted. It is not a hosted cloud-device service—see
 [External identity](./docs/EXTERNAL_IDENTITY.md) and [Enterprise readiness](./docs/ENTERPRISE_READINESS.md).
 
 ## CLI and automation
@@ -185,6 +194,11 @@ pnpm run verify
 `pnpm run verify` includes formatting, linting, type checks, tests, UI-boundary checks, source-size
 ratchets, production app/desktop builds, and a target-native, checksummed iOS preview sidecar.
 CI also builds and verifies both Apple Silicon and Intel sidecars.
+
+The packaged macOS desktop build ships a reviewed, pixel-only iOS preview sidecar per target
+architecture (Apple Silicon or Intel). Relay verifies the native binary and its source-provenance
+manifest at startup; a damaged install asks for a reinstall rather than a substitute tool. Source
+checkouts can build the same pinned producer with `pnpm ios-preview:build`.
 Hardware golden checks are separate because real hardware is not universally available:
 
 ```bash
@@ -202,7 +216,7 @@ run `pnpm server:doctor`.
 - [Recording format](./docs/RECORDING_FORMAT.md)
 - [Evidence metrics](./docs/evidence-metrics.md)
 - [Enterprise readiness](./docs/ENTERPRISE_READINESS.md)
-- [MCP adapter](./packages/mcp/README.md)
+- [PR proof in CI](./docs/PR_PROOF_CI.md)
 
 Relay does not add enterprise-shaped placeholder UI. A capability is considered real only when its
 lifecycle, permissions, failure states, persistence, and evidence are implemented and tested.

@@ -13,6 +13,7 @@ export const relayMcpProfiles = [
   "locale",
   "review",
   "admin",
+  "proof",
   "full",
 ] as const;
 
@@ -106,6 +107,14 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Offline authority decision only: inspect first, pass assertion reviewed-document-top and confirm:true. It never captures or controls a target.",
   "app-map.scroll-surface.origin.revoke":
     " Offline authority decision only: pass assertion revoke-reviewed-document-origin and confirm:true. Revocation is durable and blocks compiled execution plans without controlling a target.",
+  "app-map.routine.impact":
+    " Offline proof-layer read: preview which connections, flows, and sibling routines a Routine change would touch before proposing it. It never controls a target.",
+  "run.share.create":
+    " Mint one expiring signed link that attaches this run's proof report to a PR. The token is returned once; never echo it in logs or prompts.",
+  "run.share.list":
+    " Read active, expired, and revoked links for one run before minting a duplicate.",
+  "run.share.revoke":
+    " Immediately invalidate a signed link. Use when a PR closes or a link leaked.",
 };
 
 function toolDescriptor(
@@ -260,11 +269,11 @@ const testOperations = [
   "app-map.test.save",
   "app-map.test.edit",
   "app-map.test.propose",
-  "app-map.test.compile",
   "app-map.test.run",
   "target.interact",
   "target.recover",
-  "job.list",
+  "app-map.test.compile",
+  "app-map.diff.impact",
   "job.get",
   "job.cancel",
   "job.pause",
@@ -434,6 +443,39 @@ const adminOperations = [
   "run.retention.apply",
 ] as const satisfies readonly OperationId[];
 
+/**
+ * Relay as the proof layer for AI-written code: verify one change by running
+ * the affected flows on real devices, reading the proof report, and turning
+ * a failure into a precise digest the coding agent can fix. Read-heavy by
+ * design; execution reuses app-map.test.run and job tools.
+ */
+const proofOperations = [
+  "system.health.get",
+  "system.doctor.get",
+  "target.devices.list",
+  "target.list",
+  "target.screenshot.capture",
+  "lease.list",
+  "app-map.list",
+  "app-map.get",
+  "app-map.test.run",
+  "app-map.routine.impact",
+  "app-map.diff.impact",
+  "job.list",
+  "job.get",
+  "run.list",
+  "run.get",
+  "run.replay.offline",
+  "run.evidence.get",
+  "run.story.get",
+  "run.repair.list",
+  "run.repair.get",
+  "run.repair.propose",
+  "run.share.create",
+  "run.share.list",
+  "run.share.revoke",
+] as const satisfies readonly OperationId[];
+
 const profileOperations: Record<Exclude<RelayMcpProfile, "full">, ReadonlySet<OperationId>> = {
   control: new Set(controlOperations),
   map: new Set(mapOperations),
@@ -445,6 +487,7 @@ const profileOperations: Record<Exclude<RelayMcpProfile, "full">, ReadonlySet<Op
   locale: new Set(localeOperations),
   review: new Set(reviewOperations),
   admin: new Set(adminOperations),
+  proof: new Set(proofOperations),
 };
 
 function toolInProfile(tool: RelayMcpToolDescriptor, profile: RelayMcpProfile): boolean {
