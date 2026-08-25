@@ -131,6 +131,26 @@ const keyboardUnavailable = vegaUnavailable(
   'unsupported-platform-leaf',
   'keyboard is not supported on Vega OS.',
 );
+const alertUnavailable = vegaUnavailable(
+  'unsupported-platform-leaf',
+  'alert is not supported on Vega OS.',
+);
+const settingsUnavailable = vegaUnavailable(
+  'unsupported-platform-leaf',
+  'settings is not supported on Vega OS.',
+);
+const appEventUnavailable = vegaUnavailable(
+  'unsupported-platform-leaf',
+  'trigger-app-event is not supported on Vega OS.',
+);
+const appSwitcherUnavailable = vegaUnavailable(
+  'unsupported-platform-leaf',
+  'app-switcher is not supported on Vega OS.',
+);
+const clipboardUnavailable = vegaUnavailable(
+  'unsupported-platform-leaf',
+  'clipboard is not supported on Vega OS.',
+);
 const backUnavailable = vegaUnavailable(
   'unsupported-device-kind',
   'back currently supports only Vega Virtual Devices.',
@@ -167,6 +187,15 @@ function vegaFacts(device: DeviceInfo): RuntimeFacts<PlatformRuntimeOperations> 
     home: homeUnavailable,
     orientation: orientationUnavailable,
     tvRemote: tvRemoteUnavailable,
+    readClipboard: clipboardUnavailable,
+    writeClipboard: clipboardUnavailable,
+    appSwitcher: appSwitcherUnavailable,
+    triggerAppEvent: appEventUnavailable,
+    setSetting: settingsUnavailable,
+    readAlert: alertUnavailable,
+    awaitAlert: alertUnavailable,
+    acceptAlert: alertUnavailable,
+    dismissAlert: alertUnavailable,
     keyboardStatus: keyboardUnavailable,
     keyboardDismiss: keyboardUnavailable,
     keyboardEnter: keyboardUnavailable,

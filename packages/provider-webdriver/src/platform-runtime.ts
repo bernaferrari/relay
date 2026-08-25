@@ -24,6 +24,11 @@ import {
 } from '@agent-device/contracts/scroll-runtime';
 import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
 import { bindAdmittedProviderInteractorOperations } from '@agent-device/contracts/interactor-operation-catalog';
+import { appEventRuntimeOperationFacts } from '@agent-device/contracts/app-event-runtime';
+import { alertRuntimeOperationFacts } from '@agent-device/contracts/alert-runtime';
+import { settingsRuntimeOperationFacts } from '@agent-device/contracts/settings-runtime';
+import { appSwitcherRuntimeOperationFacts } from '@agent-device/contracts/app-switcher-runtime';
+import { clipboardRuntimeOperationFacts } from '@agent-device/contracts/clipboard-runtime';
 import { keyboardRuntimeOperationFacts } from '@agent-device/contracts/keyboard-runtime';
 import { orientationRuntimeOperationFacts } from '@agent-device/contracts/orientation-runtime';
 import { tvRemoteRuntimeOperationFacts } from '@agent-device/contracts/tv-remote-runtime';
@@ -65,6 +70,12 @@ import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
 import type { WebDriverDeploymentRuntime } from './runtime-deployment.ts';
 import { bindWebDriverApplicationLifecycle } from './lifecycle.ts';
+import {
+  capabilitySupported,
+  unsupportedCapabilityMessage,
+  type CloudWebDriverOperation,
+  type CloudWebDriverProviderCapabilities,
+} from './capabilities.ts';
 
 type WebDriverPlatformDeploymentRuntime = Pick<
   WebDriverDeploymentRuntime,
@@ -197,6 +208,57 @@ const keyboardUnavailable = Object.freeze({
   hint: 'WebDriver provider runtimes do not expose keyboard actions.',
 } as const);
 
+/**
+ * The interactor's own `readClipboard`/`writeClipboard` call `requireSupport('clipboard.read')` /
+ * `('clipboard.write')`, so a provider whose declared capability map refuses the extension still
+ * refuses at call time. This cell states the seam the same way `back`/`home` do: what the fact
+ * answers is whether this runtime has a reachable interactor to ask at all.
+ */
+const clipboardUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'This WebDriver provider runtime does not expose clipboard access for this device.',
+} as const);
+
+/**
+ * `appSwitcher` calls `requireSupport('appSwitcher')` inside the interactor, so a provider whose
+ * declared capability map refuses the button still refuses at call time. This cell states the
+ * seam the same way `back`/`home` do: whether this runtime has a reachable interactor to ask.
+ */
+const appSwitcherUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'This WebDriver provider runtime does not expose the app switcher for this device.',
+} as const);
+
+/**
+ * The WebDriver interactor's own `setSetting` always throws unsupported (its capability map
+ * declares `settings: unsupported`), so this cell is unavailable unconditionally rather than
+ * gated by interactor reachability — the same shape `tvRemote` takes.
+ */
+/**
+ * Same shape as `settings`: the WebDriver interactor's own alert legs always throw unsupported
+ * (its capability map declares `alert: unsupported`), so this cell is unavailable unconditionally
+ * rather than gated by interactor reachability.
+ */
+const alertUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'WebDriver provider runtimes do not expose native alert handling.',
+} as const);
+
+const settingsUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'WebDriver provider runtimes do not expose device settings.',
+} as const);
+
+const appEventUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'This WebDriver provider runtime does not expose app-event delivery for this device.',
+} as const);
+
 const appStateUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-provider-mode',
@@ -256,6 +318,13 @@ export type WebDriverPlatformRuntimeOptions = Readonly<{
   ownsDevice(device: DeviceInfo): boolean;
   isSessionActive?(device: DeviceInfo): boolean;
   deployment?: WebDriverPlatformDeploymentRuntime;
+  /**
+   * The provider's declared capability map — the same one `webdriver-interactor.ts` refuses
+   * against at call time. Fact generation reads it so an operation this provider declares
+   * unsupported is stated unavailable up front instead of admitted and then thrown out of
+   * (ADR 0019 §2: no stubs that throw `unsupported` after binding).
+   */
+  capabilities: CloudWebDriverProviderCapabilities;
   screenshotAvailable?: boolean;
   snapshotAvailable?: boolean;
   getInteractor?(device: DeviceInfo, runner?: RunnerContext): Interactor | undefined;
@@ -396,6 +465,32 @@ function interactorCell(
   return reachable ? available : whenUnreachable;
 }
 
+/**
+ * Reachability AND the provider's own declaration. `webdriver-interactor.ts` refuses at call time
+ * through `capabilitySupported`, so admission reads the same predicate and the same map: a
+ * provider configured with `capabilityOverrides: { 'clipboard.read': 'unsupported' }` now refuses
+ * at admission, where the caller can see it in `capabilities`, instead of binding and throwing.
+ *
+ * The refusal carries the provider's own note, so the message a caller sees is the one the
+ * capability map author wrote.
+ */
+function declaredCapabilityCell(
+  params: Readonly<{
+    reachable: boolean;
+    capabilities: CloudWebDriverProviderCapabilities;
+    operation: CloudWebDriverOperation;
+    whenUnreachable: RuntimeOperationUnavailability;
+  }>,
+): RuntimeOperationFact {
+  if (!params.reachable) return params.whenUnreachable;
+  if (capabilitySupported(params.capabilities, params.operation)) return available;
+  return Object.freeze({
+    available: false,
+    reason: 'owner-capability-missing',
+    hint: unsupportedCapabilityMessage(params.capabilities, params.operation),
+  } as const);
+}
+
 function webDriverFacts(
   options: Omit<WebDriverPlatformRuntimeOptions, 'host'>,
   device: DeviceInfo,
@@ -421,6 +516,15 @@ function webDriverFacts(
       keyboardStatus: inactiveSession,
       keyboardDismiss: inactiveSession,
       keyboardEnter: inactiveSession,
+      readClipboard: inactiveSession,
+      writeClipboard: inactiveSession,
+      appSwitcher: inactiveSession,
+      triggerAppEvent: inactiveSession,
+      setSetting: inactiveSession,
+      readAlert: inactiveSession,
+      awaitAlert: inactiveSession,
+      acceptAlert: inactiveSession,
+      dismissAlert: inactiveSession,
       lifecycle: applicationLifecycleOperationFacts({
         resolveOpenTarget: inactiveSession,
         prepareApplicationOpen: inactiveSession,
@@ -455,6 +559,15 @@ function webDriverFacts(
     keyboardStatus: keyboardUnavailable,
     keyboardDismiss: keyboardUnavailable,
     keyboardEnter: keyboardUnavailable,
+    readClipboard: clipboardUnavailable,
+    writeClipboard: clipboardUnavailable,
+    appSwitcher: appSwitcherUnavailable,
+    triggerAppEvent: appEventUnavailable,
+    setSetting: settingsUnavailable,
+    readAlert: alertUnavailable,
+    awaitAlert: alertUnavailable,
+    acceptAlert: alertUnavailable,
+    dismissAlert: alertUnavailable,
     lifecycle: webDriverLifecycleFacts(device),
   });
   // Both capture cells need the same reachability: an interactor this provider can drive, on a
@@ -464,6 +577,17 @@ function webDriverFacts(
     reachable && options.snapshotAvailable !== false ? available : snapshotUnavailable;
   const screenshotCell =
     reachable && options.screenshotAvailable !== false ? available : screenshotUnavailable;
+  // One binding of the shared predicate, so every keyed operation below reads the same way.
+  const declared = (
+    operation: CloudWebDriverOperation,
+    whenUnreachable: RuntimeOperationUnavailability,
+  ) =>
+    declaredCapabilityCell({
+      reachable,
+      capabilities: options.capabilities,
+      operation,
+      whenUnreachable,
+    });
   return Object.freeze({
     device: unavailable.device,
     operations: {
@@ -483,14 +607,14 @@ function webDriverFacts(
       // Focus rides the same provider interactor the captures do, so it needs the same
       // reachability and nothing more: this provider drives touch wherever it can drive a capture.
       ...focusRuntimeOperationFacts({ focus: interactorCell(reachable, focusUnavailable) }),
-      ...typeTextRuntimeOperationFacts({ type: interactorCell(reachable, typeUnavailable) }),
+      ...typeTextRuntimeOperationFacts({ type: declared('type', typeUnavailable) }),
       ...touchRuntimeOperationFacts({
-        tap: interactorCell(reachable, focusUnavailable),
+        tap: declared('tap', focusUnavailable),
         tapRef: focusUnavailable,
-        longPress: interactorCell(reachable, focusUnavailable),
+        longPress: declared('longPress', focusUnavailable),
         hover: focusUnavailable,
         hoverRef: focusUnavailable,
-        fill: interactorCell(reachable, typeUnavailable),
+        fill: declared('fill', typeUnavailable),
         fillRef: typeUnavailable,
         tapElementSelector: focusUnavailable,
       }),
@@ -505,19 +629,51 @@ function webDriverFacts(
         targetAuthoredDrag: interactorCell(reachable, gestureUnavailable),
         viewport: interactorCell(reachable, gestureUnavailable),
       }),
-      ...scrollRuntimeOperationFacts({ scroll: interactorCell(reachable, scrollUnavailable) }),
+      ...scrollRuntimeOperationFacts({ scroll: declared('scroll', scrollUnavailable) }),
       // `back`/`home`/`orientation` ride the same reachable interactor; `tvRemote` always throws
       // unsupported in this interactor regardless of reachability (no capability declares it).
-      ...backRuntimeOperationFacts({ back: interactorCell(reachable, backUnavailable) }),
-      ...homeRuntimeOperationFacts({ home: interactorCell(reachable, homeUnavailable) }),
+      ...backRuntimeOperationFacts({ back: declared('back', backUnavailable) }),
+      ...homeRuntimeOperationFacts({ home: declared('home', homeUnavailable) }),
       ...orientationRuntimeOperationFacts({
-        orientation: interactorCell(reachable, orientationUnavailable),
+        orientation: declared('orientation', orientationUnavailable),
       }),
       ...tvRemoteRuntimeOperationFacts({ tvRemote: tvRemoteUnavailable }),
       ...keyboardRuntimeOperationFacts({
         status: keyboardUnavailable,
         dismiss: keyboardUnavailable,
         enter: keyboardUnavailable,
+      }),
+      // Clipboard rides the same reachable interactor `back`/`home` do; the declared-capability
+      // gate stays inside the interactor, where it already lives.
+      //
+      // R55 cell delta, deliberate: the retired `supportsHostOrSimulatorSurface` closure refused
+      // `clipboard` on every provider-owned physical Apple device, because it was a LOCAL-Apple
+      // predicate (host helper or simulator) being applied to a device this provider drives over
+      // Appium — which does expose the clipboard extension. The refusal moves to where it can be
+      // true: the interactor, per session.
+      ...clipboardRuntimeOperationFacts({
+        read: declared('clipboard.read', clipboardUnavailable),
+        write: declared('clipboard.write', clipboardUnavailable),
+      }),
+      ...appSwitcherRuntimeOperationFacts({
+        appSwitcher: declared('appSwitcher', appSwitcherUnavailable),
+      }),
+      // The deep link opens through the same reachable interactor `open` every lifecycle command
+      // drives on this provider.
+      ...appEventRuntimeOperationFacts({
+        triggerAppEvent: interactorCell(reachable, appEventUnavailable),
+      }),
+      ...settingsRuntimeOperationFacts({ setSetting: settingsUnavailable }),
+      // R59 cell delta, deliberate: the retired `supportsAlertSurface` closure ADMITTED `alert` on
+      // a provider-owned physical iOS device (it keyed on `appleOs === 'ios'` alone), and the
+      // handler then drove the LOCAL XCTest runner against a device living in someone else's
+      // cloud. Nothing this provider owns can serve an alert leg, so it states that up front
+      // instead of admitting and failing mid-execution (ADR 0019 §2).
+      ...alertRuntimeOperationFacts({
+        read: alertUnavailable,
+        wait: alertUnavailable,
+        accept: alertUnavailable,
+        dismiss: alertUnavailable,
       }),
       ...viewportRuntimeOperationFacts({ setViewport: viewportUnavailable }),
       ensureReady: available,

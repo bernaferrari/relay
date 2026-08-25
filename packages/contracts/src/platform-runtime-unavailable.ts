@@ -24,6 +24,11 @@ import { homeRuntimeOperationFacts } from './home-runtime.ts';
 import { orientationRuntimeOperationFacts } from './orientation-runtime.ts';
 import { tvRemoteRuntimeOperationFacts } from './tv-remote-runtime.ts';
 import { keyboardRuntimeOperationFacts } from './keyboard-runtime.ts';
+import { clipboardRuntimeOperationFacts } from './clipboard-runtime.ts';
+import { appSwitcherRuntimeOperationFacts } from './app-switcher-runtime.ts';
+import { appEventRuntimeOperationFacts } from './app-event-runtime.ts';
+import { settingsRuntimeOperationFacts } from './settings-runtime.ts';
+import { alertRuntimeOperationFacts } from './alert-runtime.ts';
 import { touchRuntimeOperationFacts } from './touch-runtime.ts';
 
 /**
@@ -53,6 +58,15 @@ export type UnavailablePlatformRuntimeFacts = Readonly<{
   keyboardStatus: RuntimeOperationUnavailability;
   keyboardDismiss: RuntimeOperationUnavailability;
   keyboardEnter: RuntimeOperationUnavailability;
+  readClipboard: RuntimeOperationUnavailability;
+  writeClipboard: RuntimeOperationUnavailability;
+  appSwitcher: RuntimeOperationUnavailability;
+  triggerAppEvent: RuntimeOperationUnavailability;
+  setSetting: RuntimeOperationUnavailability;
+  readAlert: RuntimeOperationUnavailability;
+  awaitAlert: RuntimeOperationUnavailability;
+  acceptAlert: RuntimeOperationUnavailability;
+  dismissAlert: RuntimeOperationUnavailability;
   readiness?: RuntimeOperationUnavailability;
   shutdown?: RuntimeOperationUnavailability;
   lifecycle: ApplicationLifecycleOperationFacts;
@@ -109,6 +123,15 @@ export function createUnavailablePlatformRuntimeFacts(
     keyboardStatus,
     keyboardDismiss,
     keyboardEnter,
+    readClipboard,
+    writeClipboard,
+    appSwitcher,
+    triggerAppEvent,
+    setSetting,
+    readAlert,
+    awaitAlert,
+    acceptAlert,
+    dismissAlert,
     readiness,
     shutdown,
     lifecycle,
@@ -178,6 +201,16 @@ export function createUnavailablePlatformRuntimeFacts(
         dismiss: keyboardDismiss,
         enter: keyboardEnter,
       }),
+      ...clipboardRuntimeOperationFacts({ read: readClipboard, write: writeClipboard }),
+      ...appSwitcherRuntimeOperationFacts({ appSwitcher }),
+      ...appEventRuntimeOperationFacts({ triggerAppEvent }),
+      ...settingsRuntimeOperationFacts({ setSetting }),
+      ...alertRuntimeOperationFacts({
+        read: readAlert,
+        wait: awaitAlert,
+        accept: acceptAlert,
+        dismiss: dismissAlert,
+      }),
       ensureReady: readiness,
       bootTarget: readiness,
       bootTargetHeadless: readiness,
@@ -225,6 +258,24 @@ function freezeUnavailableFacts(
     keyboardStatus: Object.freeze({ ...unavailable.keyboardStatus }),
     keyboardDismiss: Object.freeze({ ...unavailable.keyboardDismiss }),
     keyboardEnter: Object.freeze({ ...unavailable.keyboardEnter }),
+    // Clipboard cells are stated by their owner for the same reason: the surface differs by leaf
+    // and kind (an Apple simulator has one, a physical non-macOS Apple device does not), and read
+    // and write can diverge on a provider whose extension exposes only one half.
+    readClipboard: Object.freeze({ ...unavailable.readClipboard }),
+    writeClipboard: Object.freeze({ ...unavailable.writeClipboard }),
+    // The app switcher is the springboard surface `home` drives, and differs by owner the same
+    // way: an owner states it for its exact leaf rather than inheriting a sibling's gap.
+    appSwitcher: Object.freeze({ ...unavailable.appSwitcher }),
+    // App-event delivery opens a URL on the device, which is not something a transport gap can
+    // speak for: each owner states whether it can open one at all.
+    triggerAppEvent: Object.freeze({ ...unavailable.triggerAppEvent }),
+    // Device settings differ by leaf and kind the way the pasteboard does, and a provider can
+    // own a device without exposing any settings API at all, so each owner states its own cell.
+    setSetting: Object.freeze({ ...unavailable.setSetting }),
+    readAlert: Object.freeze({ ...unavailable.readAlert }),
+    awaitAlert: Object.freeze({ ...unavailable.awaitAlert }),
+    acceptAlert: Object.freeze({ ...unavailable.acceptAlert }),
+    dismissAlert: Object.freeze({ ...unavailable.dismissAlert }),
     lifecycle: applicationLifecycleOperationFacts(unavailable.lifecycle),
   });
 }

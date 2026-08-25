@@ -28,6 +28,11 @@ import type { HomeRuntimeOperations } from './home-runtime.ts';
 import type { OrientationRuntimeOperations } from './orientation-runtime.ts';
 import type { TvRemoteRuntimeOperations } from './tv-remote-runtime.ts';
 import type { KeyboardRuntimeOperations } from './keyboard-runtime.ts';
+import type { ClipboardRuntimeOperations } from './clipboard-runtime.ts';
+import type { AppSwitcherRuntimeOperations } from './app-switcher-runtime.ts';
+import type { AppEventRuntimeOperations } from './app-event-runtime.ts';
+import type { SettingsRuntimeOperations } from './settings-runtime.ts';
+import type { AlertRuntimeOperations } from './alert-runtime.ts';
 import type { TouchRuntimeOperations } from './touch-runtime.ts';
 import type {
   DeviceReadinessRuntimeHost,
@@ -72,6 +77,11 @@ export type PlatformRuntimeOperations = AppLogRuntimeOperations &
   OrientationRuntimeOperations &
   TvRemoteRuntimeOperations &
   KeyboardRuntimeOperations &
+  ClipboardRuntimeOperations &
+  AppSwitcherRuntimeOperations &
+  AppEventRuntimeOperations &
+  SettingsRuntimeOperations &
+  AlertRuntimeOperations &
   TouchRuntimeOperations &
   DeviceReadinessRuntimeOperations &
   DeviceShutdownRuntimeOperations &
@@ -101,6 +111,15 @@ export const tvRemoteRuntimeUse = defineUse({ required: ['tvRemote'] });
 export const keyboardStatusUse = defineUse({ required: ['keyboardStatus'] });
 export const keyboardDismissUse = defineUse({ required: ['keyboardDismiss'] });
 export const keyboardEnterUse = defineUse({ required: ['keyboardEnter'] });
+export const appSwitcherRuntimeUse = defineUse({ required: ['appSwitcher'] });
+export const appEventRuntimeUse = defineUse({ required: ['triggerAppEvent'] });
+export const settingsRuntimeUse = defineUse({ required: ['setSetting'] });
+export const alertReadUse = defineUse({ required: ['readAlert'] });
+export const alertWaitUse = defineUse({ required: ['awaitAlert'] });
+export const alertAcceptUse = defineUse({ required: ['acceptAlert'] });
+export const alertDismissUse = defineUse({ required: ['dismissAlert'] });
+export const clipboardReadUse = defineUse({ required: ['readClipboard'] });
+export const clipboardWriteUse = defineUse({ required: ['writeClipboard'] });
 export const tapPointUse = defineUse({ required: ['tapPoint'] });
 export const capturedTapUse = defineUse({
   required: ['captureSnapshot', 'tapPoint'],
@@ -622,6 +641,28 @@ export const appStateUse = defineUse({ required: ['ensureReady', 'appState'] });
 export const appStateRuntimeUses = Object.freeze([appStateUse] as const);
 
 export const shutdownTargetUse = defineUse({ required: ['shutdownTarget'] });
+
+/**
+ * `clipboard`'s action-selected uses (ADR 0019 §9: one bind per handler). `read` and `write` are
+ * separate cells because an owner can genuinely have one without the other, so the daemon's
+ * `session-clipboard.ts` admits and binds exactly the one the parsed subcommand names.
+ */
+export const clipboardRuntimePlanUses = Object.freeze([
+  clipboardReadUse,
+  clipboardWriteUse,
+] as const);
+
+/**
+ * `alert`'s action-selected uses (ADR 0019 §9: one bind per handler). The four legs differ in
+ * what they do to the device — one observes, one waits, two press a button — so the daemon's
+ * `snapshot-alert.ts` admits and binds exactly the one the parsed subcommand names.
+ */
+export const alertRuntimePlanUses = Object.freeze([
+  alertReadUse,
+  alertWaitUse,
+  alertAcceptUse,
+  alertDismissUse,
+] as const);
 
 /**
  * `keyboard`'s action-selected uses (ADR 0019 §9: one bind per handler). `status` is Android-only

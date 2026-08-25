@@ -38,6 +38,12 @@ import {
   gestureRuntimePlanUses,
   homeRuntimeUse,
   hoverRuntimeUses,
+  appEventRuntimeUse,
+  settingsRuntimeUse,
+  alertRuntimePlanUses,
+  appSwitcherRuntimeUse,
+  tapPointUse,
+  clipboardRuntimePlanUses,
   keyboardRuntimePlanUses,
   longPressRuntimeUses,
   orientationRuntimeUse,
@@ -108,18 +114,10 @@ export type DescriptorCatalogRecord<Group extends CommandCatalogGroup> = {
   ]: Descriptor['name'];
 };
 
-export type DescriptorDispatchCommandName =
-  Extract<(typeof commandDescriptors)[number], { dispatch: object }> extends infer Descriptor
-    ? Descriptor extends { name: infer Name extends string }
-      ? Name
-      : never
-    : never;
-
 /**
  * The literal union of every command whose `daemon.route` is `'session'`.
- * Drives `SESSION_COMMAND_HANDLER_IMPLS` in `src/daemon/handlers/session.ts`
- * (mirrors `DescriptorDispatchCommandName` above): adding a session-routed
- * descriptor without a matching handler table entry is a compile error rather
+ * Drives `SESSION_COMMAND_HANDLER_IMPLS` in `src/daemon/handlers/session.ts`: adding a
+ * session-routed descriptor without a matching handler table entry is a compile error rather
  * than a runtime routing gap caught only by `expectHandlerResponse`.
  */
 export type DescriptorSessionRouteCommandName =
@@ -240,7 +238,6 @@ function readOnlySubactionRecordingEffect(
 
 const APPLE_SIM_AND_DEVICE = { simulator: true, device: true };
 const ANDROID_ALL = { emulator: true, device: true, unknown: true };
-const LINUX_DEVICE = { device: true };
 const LINUX_NONE = {};
 
 // ---------------------------------------------------------------------------
@@ -537,7 +534,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    // R63: `capabilities` executes nothing on a device. It reads one side-effect-free facts
+    // inspection and projects each command's own declared uses against it, so it has no platform
+    // execution path of its own to migrate — which is what `none` states. It is deliberately last
+    // among the command units: it projects the union of every migrated command's facts, so it is
+    // only truthful once that surface is complete.
+    platformExecution: NO_PLATFORM_EXECUTION,
   },
   {
     name: 'doctor',
@@ -654,7 +656,9 @@ export const RAW_COMMAND_DESCRIPTORS = [
     },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    // Wave 6 residue: `events` flushes and reads the session's own event log. It touches no
+    // device at all, so it has no platform execution path to migrate.
+    platformExecution: NO_PLATFORM_EXECUTION,
   },
   {
     name: 'network',
@@ -747,18 +751,15 @@ export const RAW_COMMAND_DESCRIPTORS = [
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     frameworkTier: 'extended',
+    // R55 retires this command's capability bucket and its `dispatch` leaf together: admission is
+    // whichever action-selected fact (`readClipboard`/`writeClipboard`) the parsed subcommand
+    // names, and the only execution is that one bound operation (ADR 0019 §9).
     recordsSessionAction: true,
     recordingEffect: 'observes-app',
     daemon: { route: 'session', refFrameEffect: 'preserve' },
-    capability: {
-      apple: APPLE_SIM_AND_DEVICE,
-      android: ANDROID_ALL,
-      linux: LINUX_DEVICE,
-    },
-    dispatch: {},
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    platformExecution: { kind: 'device-runtime', uses: clipboardRuntimePlanUses },
   },
   {
     name: 'keyboard',
@@ -852,14 +853,16 @@ export const RAW_COMMAND_DESCRIPTORS = [
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/push.ts'] as const } : {}),
     catalog: { group: 'public', key: 'triggerAppEvent' },
     frameworkTier: 'extended',
+    // R57 retires this command's capability bucket and its `dispatch` leaf together: admission is
+    // the owner's `triggerAppEvent` fact, and the only execution is that one bound operation. The
+    // event name, payload, and URL template stay daemon policy (ADR 0019 §2 — a facet input names
+    // no command, request, or CLI flag), so the owner receives a URL to open.
     recordsSessionAction: true,
     recordingEffect: 'mutates-app',
     daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
-    dispatch: {},
-    capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    platformExecution: { kind: 'device-runtime', uses: [appEventRuntimeUse] },
   },
   {
     name: 'open',
@@ -907,7 +910,9 @@ export const RAW_COMMAND_DESCRIPTORS = [
     daemon: { route: 'session', refFrameEffect: 'delegated' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    // Wave 6 residue: every step runs as its own daemon request under its own descriptor, which
+    // is what `refFrameEffect: 'delegated'` already says. `batch` itself reaches no device.
+    platformExecution: NO_PLATFORM_EXECUTION,
   },
   {
     name: 'close',
@@ -997,17 +1002,16 @@ export const RAW_COMMAND_DESCRIPTORS = [
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/alert.ts'] as const } : {}),
     catalog: { group: 'public' },
     frameworkTier: 'core',
+    // R59 retires this command's capability bucket and its Apple `supportsAlertSurface` closure
+    // together: admission is the owner's own alert facts, and the only execution is the one bound
+    // leg the parsed subcommand names. The poll and retry windows moved to the owners with it —
+    // how long a transient sheet takes to appear is family mechanics, not request policy.
     recordsSessionAction: true,
     recordingEffect: alertRecordingEffect,
     daemon: { route: 'snapshot', refFrameEffect: alertRefFrameEffect },
-    capability: {
-      apple: APPLE_SIM_AND_DEVICE,
-      android: ANDROID_ALL,
-      linux: LINUX_NONE,
-    },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    platformExecution: { kind: 'device-runtime', uses: alertRuntimePlanUses },
   },
   {
     name: 'settings',
@@ -1015,18 +1019,16 @@ export const RAW_COMMAND_DESCRIPTORS = [
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/settings.ts'] as const } : {}),
     catalog: { group: 'public' },
     frameworkTier: 'extended',
+    // R58 retires this command's capability bucket, its `dispatch` leaf, and its HarmonyOS
+    // overlay membership together: admission is the owner's `setSetting` fact, and the only
+    // execution is that one bound operation. The macOS setting-name gate stays daemon-side —
+    // it keys on the requested setting, which is not a device fact.
     recordsSessionAction: true,
     recordingEffect: 'mutates-app',
     daemon: { route: 'snapshot', refFrameEffect: 'may-invalidate' },
-    dispatch: {},
-    capability: {
-      apple: APPLE_SIM_AND_DEVICE,
-      android: ANDROID_ALL,
-      linux: LINUX_NONE,
-    },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    platformExecution: { kind: 'device-runtime', uses: [settingsRuntimeUse] },
   },
 
   // -- specialized routes --
@@ -1036,13 +1038,15 @@ export const RAW_COMMAND_DESCRIPTORS = [
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/react-native/index.ts'] as const } : {}),
     catalog: { group: 'public', key: 'reactNative' },
     frameworkTier: 'extended',
+    // R61 retires this command's capability bucket: admission is the owner's own `tapPoint` fact,
+    // which is the one device operation the command executes. The overlay analysis and its
+    // verification capture are daemon policy over an already-migrated snapshot route.
     recordsSessionAction: true,
     recordingEffect: 'mutates-app',
     daemon: { route: 'reactNative', refFrameEffect: 'may-invalidate' },
-    capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    platformExecution: { kind: 'device-runtime', uses: [tapPointUse] },
   },
   {
     name: 'record',
@@ -1370,6 +1374,9 @@ export const RAW_COMMAND_DESCRIPTORS = [
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public', key: 'appSwitcher' },
     frameworkTier: 'extended',
+    // R56 retires this command's capability bucket, its `dispatch` leaf, and its HarmonyOS
+    // overlay membership together: admission is the owner's `appSwitcher` fact, and the only
+    // execution is that one bound operation (ADR 0019 §9).
     recordsSessionAction: true,
     recordingEffect: 'mutates-app',
     // ADR 0014: app-switcher previously reached the generic daemon leaf via the
@@ -1378,15 +1385,9 @@ export const RAW_COMMAND_DESCRIPTORS = [
     // covered by the completeness gate; this is the escape hatch the ADR calls
     // out, not a new specialized route.
     daemon: { route: 'generic', refFrameEffect: 'may-invalidate' },
-    dispatch: {},
-    capability: {
-      apple: APPLE_SIM_AND_DEVICE,
-      android: ANDROID_ALL,
-      linux: LINUX_NONE,
-    },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    platformExecution: { kind: 'device-runtime', uses: [appSwitcherRuntimeUse] },
   },
   {
     name: 'install-from-source',
@@ -1410,7 +1411,10 @@ export const RAW_COMMAND_DESCRIPTORS = [
     recordsSessionAction: false,
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    // Wave 6 residue: this route reads local diagnostics files and has no daemon route, no
+    // platform import, and no injected dispatch — it was `legacy` only because the discriminator
+    // pass had nothing better to say about it.
+    platformExecution: NO_PLATFORM_EXECUTION,
   },
   {
     name: 'daemon',
@@ -1699,18 +1703,6 @@ export function commandSupportsSettleObservation(command: string | undefined): b
 
 export function commandSupportsVerifyEvidence(command: string | undefined): boolean {
   return resolveCommandPostActionObservationSupport(command) === 'settle-and-verify';
-}
-
-/**
- * Whether a command's platform behavior comes from a request-bound device runtime (ADR 0019).
- * Admission for those commands is the owner's exact operation facts, so a route must never also
- * consult a capability bucket for them — and a migrated command has no bucket to consult. Reading
- * the discriminator here rather than naming commands at each route means the next unit's
- * descriptor flip is the whole change.
- */
-export function commandUsesDeviceRuntimeExecution(command: string | undefined): boolean {
-  if (command === undefined) return false;
-  return COMMAND_DESCRIPTOR_BY_NAME.get(command)?.platformExecution.kind === 'device-runtime';
 }
 
 /**

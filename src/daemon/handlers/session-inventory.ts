@@ -1,4 +1,8 @@
-import { isCommandSupportedOnDevice, listCapabilityCommands } from '../../core/capabilities.ts';
+import {
+  commandRuntimeUseRequirements,
+  isCommandSupportedOnDevice,
+  listCapabilityCommands,
+} from '../../core/capabilities.ts';
 import { listDeviceInventory } from '../../request/device-inventory-context.ts';
 import { assertResolvedAppsFilter } from '@agent-device/contracts/device';
 import { AppError, asAppError } from '@agent-device/kernel/errors';
@@ -25,21 +29,17 @@ import {
 } from './session-device-utils.ts';
 import { errorResponse } from './response.ts';
 import { resolveImplicitSessionScope, sessionMatchesScope } from '../session-routing.ts';
-import { appLogAdmissionUse } from '@agent-device/contracts/logs-runtime-plan';
-import { networkAdmissionUse } from '@agent-device/contracts/network-runtime-plan';
 import type {
   BoundDeviceRuntime,
   RuntimeFacts,
-  RuntimeOperationKey,
+  RuntimeOperationFact,
 } from '@agent-device/contracts/platform-runtime';
 import {
   type PlatformRuntimeOperations,
   appsRuntimeUse,
 } from '@agent-device/contracts/platform-runtime-operations';
-import { screenRecordingAdmissionUse } from '@agent-device/contracts/screen-recording-runtime-plan';
 import { ensureAppsRuntimeReady, listAppsFromRuntime } from '../apps-runtime.ts';
 import type { BindDeviceRuntime, InspectDeviceRuntimeFacts } from '../request-runtime-binding.ts';
-import { installFamilyCapabilityAvailable } from './session-install-capability-projection.ts';
 
 export async function handleSessionInventoryCommands(params: {
   req: DaemonRequest;
@@ -60,7 +60,6 @@ export async function handleSessionInventoryCommands(params: {
         sessionName,
         sessionStore,
         inspectFacts: params.inspectFacts,
-        bindDevice: params.bindDevice,
       });
     case 'apps':
       return await handleAppsInventory({
@@ -188,7 +187,6 @@ async function capabilitiesInventoryResponse(params: {
   sessionName: string;
   sessionStore: SessionStore;
   inspectFacts?: InspectDeviceRuntimeFacts;
-  bindDevice?: BindDeviceRuntime;
 }): Promise<DaemonResponse> {
   const resolution = await resolveInventoryCommandDevice({
     ...params,
@@ -203,21 +201,13 @@ async function capabilitiesInventoryResponse(params: {
     params.req.flags,
   );
   // Capability projection is admission-only: every fact-owned command reads this one
-  // side-effect-free exact-device snapshot, never a deleted descriptor capability bucket.
+  // side-effect-free exact-device snapshot, never a deleted descriptor capability bucket, and
+  // never a binding. R63 retired the three `bindDevice` probes that used to answer
+  // `logs`/`network`/`record`: every owner composes a binding's facts with the same function
+  // `inspectFacts` calls, so the probes read back values this snapshot already carries while
+  // costing a device claim on a read-only query. ADR 0019 §6 requires a `none` descriptor to bind
+  // nothing, and `capabilities` is one.
   const facts = await inspectCapabilityFacts(device, params.inspectFacts);
-  const [logsAvailable, networkAvailable, recordingAvailable] = params.bindDevice
-    ? await Promise.all([
-        params
-          .bindDevice(device, appLogAdmissionUse)
-          .then((runtime) => runtime.facts.appLogInspect.available),
-        params
-          .bindDevice(device, networkAdmissionUse)
-          .then((runtime) => runtime.facts.networkDump.available),
-        params
-          .bindDevice(device, screenRecordingAdmissionUse)
-          .then((runtime) => runtime.facts.screenRecordingStart.available),
-      ])
-    : [false, false, false];
   return {
     ok: true,
     data: {
@@ -226,17 +216,9 @@ async function capabilitiesInventoryResponse(params: {
         // A session that already owns an app identity answers appstate itself, so it stays
         // available even when the sessionless runtime probe cannot see a foreground app.
         if (command === 'appstate' && sessionOwnedAppStateAvailable) return true;
-        const installFamilyAvailable = installFamilyCapabilityAvailable(command, facts);
-        if (installFamilyAvailable !== undefined) return installFamilyAvailable;
         const factOwned = factOwnedCapabilityAvailable(command, facts);
         if (factOwned !== undefined) return factOwned;
-        return command === 'logs'
-          ? logsAvailable
-          : command === 'network'
-            ? networkAvailable
-            : command === 'record'
-              ? recordingAvailable
-              : isCommandSupportedOnDevice(command, device);
+        return isCommandSupportedOnDevice(command, device);
       }),
     },
   };
@@ -270,32 +252,45 @@ function hasMacSessionSurface(
 }
 
 /**
- * Every command whose availability is a runtime fact, and the exact operations it needs. A command
- * absent from this record is not fact-owned, so its availability is decided elsewhere.
+ * Whether the exact device admits any of `command`'s declared runtime uses, or `undefined` when
+ * the command is not fact-owned at all.
+ *
+ * R63 reads the requirement straight off the descriptor (`commandRuntimeUseRequirements`), so a
+ * command cannot be migrated in one place and left projecting from a stale list in another —
+ * which is precisely how a real Vega VVD came to advertise `snapshot diff get is wait focus` it
+ * cannot run.
  */
-const factOwnedCapabilityOperations: Readonly<
-  Record<string, readonly RuntimeOperationKey<PlatformRuntimeOperations>[] | undefined>
-> = Object.freeze({
-  apps: ['ensureReady', 'listApps'],
-  appstate: ['ensureReady', 'appState'],
-  shutdown: ['shutdownTarget'],
-  open: ['resolveOpenTarget', 'prepareApplicationOpen', 'openApplication'],
-  close: ['closeApplication', 'finalizeApplicationClose'],
-  prepare: ['prepareAppleRunner'],
-  runtime: ['clearRuntimeHints'],
-  screenshot: ['captureScreenshot'],
-  viewport: ['setViewport'],
-});
-
 function factOwnedCapabilityAvailable(
   command: string,
   facts: RuntimeFacts<PlatformRuntimeOperations> | undefined,
 ): boolean | undefined {
-  const requiredOperations = factOwnedCapabilityOperations[command];
-  if (!requiredOperations) return undefined;
-  return facts
-    ? requiredOperations.every((operation) => facts.operations[operation].available)
-    : false;
+  const declaredUses = commandRuntimeUseRequirements(command);
+  if (!declaredUses) return undefined;
+  if (!facts) return false;
+  // A request names exactly one action, so one fully admitted use is enough. An empty `required`
+  // is not one: `[].every` is vacuously true, and a plan that needs no operation must not read as
+  // proof that the device can run the command.
+  return declaredUses.some(
+    (required) =>
+      required.length > 0 && required.every((operation) => hasAvailableFact(facts, operation)),
+  );
+}
+
+/**
+ * Descriptor execution metadata is structurally validated as string arrays, not as keys of the
+ * concrete facts catalog. Keep the projection fail-closed when a descriptor names an operation the
+ * inspected owner does not state, instead of letting an arbitrary property lookup throw out of the
+ * whole `capabilities` response.
+ */
+function hasAvailableFact(
+  facts: RuntimeFacts<PlatformRuntimeOperations>,
+  operation: string,
+): boolean {
+  if (!Object.hasOwn(facts.operations, operation)) return false;
+  return (
+    (facts.operations as Readonly<Record<string, RuntimeOperationFact>>)[operation]?.available ===
+    true
+  );
 }
 
 async function handleAppsInventory(params: {

@@ -1,11 +1,6 @@
 import type { CommandFlags } from '@agent-device/contracts/command';
 import type { SettleObservation } from '@agent-device/contracts/interaction';
-import {
-  commandSupportsSettleObservation,
-  commandUsesDeviceRuntimeExecution,
-} from '../core/command-descriptor/registry.ts';
-import { dispatchCommand } from '../core/dispatch.ts';
-import { requireCommandSupported } from './handlers/response.ts';
+import { commandSupportsSettleObservation } from '../core/command-descriptor/registry.ts';
 import type { SessionStore } from './session-store.ts';
 import type { DaemonCommandContext } from './context.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from './types.ts';
@@ -39,9 +34,9 @@ export type GenericPlatformExecutionParams = {
 };
 
 /**
- * What actually performs a generic leaf's platform work. Legacy leaves get
- * {@link executeGenericPlatformCommand}; a command migrated onto a request-bound device runtime
- * supplies its own already-admitted, already-bound closure instead (ADR 0019).
+ * What actually performs a generic leaf's platform work: the already-admitted, already-bound
+ * closure the leaf's own runtime resolution supplied (ADR 0019). R58 retired the legacy
+ * alternative, so this is the only shape.
  */
 export type GenericPlatformExecution = (
   params: GenericPlatformExecutionParams,
@@ -288,12 +283,11 @@ async function ensureGenericCommandReady(
   session: SessionState,
   platformCommand: string,
 ): Promise<GenericCommandReadiness> {
-  // A device-runtime command has no capability bucket: its exact owner facts already admitted it
-  // (or refused it) before this route was reached.
-  const unsupported = commandUsesDeviceRuntimeExecution(platformCommand)
-    ? null
-    : requireCommandSupported(platformCommand, session.device, { hint: true });
-  if (unsupported) return { response: unsupported };
+  // No support gate survives here. R56 migrated `app-switcher`, the last generic-route descriptor
+  // with a capability bucket, so every command that reaches this dispatcher was already admitted
+  // (or refused) against its exact owner's facts by `resolveGenericRuntimeExecution` — which fails
+  // closed for anything it has no arm for. A second `requireCommandSupported` call would be a
+  // support authority beside the facts, which ADR 0019 §8 forbids.
   if (
     session.device.platform !== 'android' ||
     isActiveProviderDevice(session.device) ||
@@ -316,13 +310,6 @@ async function ensureGenericCommandReady(
     },
   };
 }
-
-export const executeGenericPlatformCommand: GenericPlatformExecution = async (params) => {
-  const { session, command, positionals, out, dispatchContext } = params;
-  return await dispatchCommand(session.device, command, positionals, out, {
-    ...dispatchContext,
-  });
-};
 
 function recordVisualizationAndAction(params: {
   session: SessionState;

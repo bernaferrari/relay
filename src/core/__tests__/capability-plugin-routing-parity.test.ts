@@ -100,12 +100,6 @@ const SAMPLE_DEVICES: DeviceInfo[] = [
 // (b.2) Independent copies of the per-command supports()/unsupportedHint()
 // contracts. Kept in sync by hand so this oracle stays independent of production.
 // ---------------------------------------------------------------------------
-const isNotMacOs = (device: DeviceInfo): boolean => !isMacOs(device);
-const isMacOsOrAppleSimulator = (device: DeviceInfo): boolean =>
-  isMacOs(device) || device.kind === 'simulator';
-const isIosOs = (device: DeviceInfo): boolean =>
-  device.platform === 'apple' &&
-  (device.appleOs ? device.appleOs === 'ios' : device.target !== 'tv');
 const supportsHostAudioProbe = (device: DeviceInfo): boolean =>
   device.platform === 'web' ||
   (process.platform === 'darwin' &&
@@ -125,16 +119,8 @@ const coreDeviceOnlyPhysicalOperationHint = (device: DeviceInfo): string | undef
 // gains/loses a closure (or whose closure body changes) breaks parity.
 const SUPPORTS_REF: Record<string, (device: DeviceInfo) => boolean> = {
   perf: supportsCoreDevicePhysicalOperation,
-  'app-switcher': isNotMacOs,
-  clipboard: (device) =>
-    device.platform === 'android' ||
-    device.platform === 'linux' ||
-    isMacOs(device) ||
-    device.kind === 'simulator',
-  alert: (device) =>
-    device.platform === 'android' || isIosOs(device) || isMacOsOrAppleSimulator(device),
-  settings: (device) =>
-    device.platform === 'android' || isMacOs(device) || device.kind === 'simulator',
+  // `alert`'s closure left with R59, whose cutover made the owner's own alert facts the whole
+  // admission; the per-leaf verdicts it encoded are pinned in `platform-apple/src/system/`.
   audio: supportsHostAudioProbe,
 };
 const HINT_REF: Record<string, (device: DeviceInfo) => string | undefined> = {
@@ -238,7 +224,7 @@ test('HarmonyOS static capabilities omit runtime-backed command admissions', () 
   // Runtime-backed navigation, keyboard, and touch commands dropped out of the matrix entirely:
   // capability buckets), so they are absent here — not because HarmonyOS admission changed, but
   // because there is no bucket left for `isCommandSupportedOnDevice` to consult at all.
-  assert.deepEqual(availableCommands, ['app-switcher', 'perf', 'settings']);
+  assert.deepEqual(availableCommands, ['perf']);
 });
 
 test('(b.2) unsupportedHint closures are verbatim across the full device matrix', () => {

@@ -1,13 +1,9 @@
 import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
+import { legacyDispatchCapture } from './legacy-snapshot-capture-fixture.ts';
 import { test, expect, vi, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-
-vi.mock('../../core/dispatch.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../core/dispatch.ts')>();
-  return { ...actual, dispatchCommand: vi.fn(async () => ({})) };
-});
 
 vi.mock('../../platforms/apple/core/runner/runner-client.ts', async (importOriginal) => {
   const actual =
@@ -17,11 +13,11 @@ vi.mock('../../platforms/apple/core/runner/runner-client.ts', async (importOrigi
 
 vi.mock('../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
 
-import { dispatchCommand } from '../../core/dispatch.ts';
 import { dispatchApplicationLifecycleEffect } from './application-lifecycle-runtime-fixture.ts';
 import {
   createRequestHandler,
   lifecycleDeviceRuntimeGateway,
+  systemRuntimeSpies,
 } from './test-device-runtime-gateway.ts';
 import type { DaemonRequest, SessionState } from '../types.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
@@ -35,7 +31,6 @@ import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError, retriableForErrorCode } from '@agent-device/kernel/errors';
 import { supportedPlatformsForCommand } from '../../core/capabilities.ts';
 
-const mockDispatch = vi.mocked(dispatchCommand);
 const mockLifecycleEffect = vi.mocked(dispatchApplicationLifecycleEffect);
 
 /**
@@ -86,7 +81,9 @@ function request(command: string, overrides: Partial<DaemonRequest> = {}): Daemo
 }
 
 beforeEach(() => {
-  mockDispatch.mockReset();
+  legacyDispatchCapture.mockReset();
+  systemRuntimeSpies.appSwitcher.mockReset();
+  systemRuntimeSpies.appSwitcher.mockResolvedValue(undefined);
   mockLifecycleEffect.mockReset();
   mockLifecycleEffect.mockResolvedValue(undefined);
 });
@@ -100,23 +97,41 @@ test('retriableForErrorCode is a conservative policy: transient => true, others 
 
 test('UNSUPPORTED_OPERATION errors carry supportedOn derived from the capability matrix', async () => {
   const { sessionStore, handler } = makeHandler();
-  sessionStore.set('typed-error', makeIosSession('typed-error'));
-  mockDispatch.mockRejectedValue(new AppError('UNSUPPORTED_OPERATION', 'nope on this platform'));
+  // `perf` is the subject because the graft reads the CAPABILITY MATRIX, and perf is the command
+  // that still has a row there: its migration is Wave 2, sequenced behind the next major. Its
+  // xctrace collector refuses a non-Apple session in production, so no mocking is needed to reach
+  // a real UNSUPPORTED_OPERATION.
+  sessionStore.set(
+    'typed-error',
+    makeSession('typed-error', {
+      ...TENANT_SESSION_DEFAULTS,
+      device: {
+        platform: 'linux',
+        id: 'local',
+        name: 'Linux Desktop',
+        kind: 'device',
+        target: 'desktop',
+        booted: true,
+      },
+    }),
+  );
 
-  // `app-switcher` routes through the (mocked) generic dispatch and is platform-restricted.
-  const response = await handler(request('app-switcher'));
+  const response = await handler(request('perf', { positionals: ['trace', 'start', 'xctrace'] }));
 
   expect(response.ok).toBe(false);
   if (response.ok) return;
-  const expected = supportedPlatformsForCommand('app-switcher');
-  expect(expected.length).toBeGreaterThan(0); // app-switcher is a platform-restricted command
+  expect(response.error.code).toBe('UNSUPPORTED_OPERATION');
+  const expected = supportedPlatformsForCommand('perf');
+  expect(expected.length).toBeGreaterThan(0); // perf is a platform-restricted command
   expect(response.error.supportedOn).toBe(expected.join(', '));
 });
 
 test('DEVICE_IN_USE errors are flagged retriable; supportedOn stays absent', async () => {
   const { sessionStore, handler } = makeHandler();
   sessionStore.set('typed-error', makeIosSession('typed-error'));
-  mockDispatch.mockRejectedValue(new AppError('DEVICE_IN_USE', 'device busy'));
+  // R56 put `app-switcher` on a bound operation, so the failure is raised where the device work
+  // happens rather than by the retired dispatcher.
+  systemRuntimeSpies.appSwitcher.mockRejectedValue(new AppError('DEVICE_IN_USE', 'device busy'));
 
   const response = await handler(request('app-switcher'));
 
@@ -141,7 +156,7 @@ test('deterministic errors (INVALID_ARGS) are returned with the default shape â€
   expect(response.error.code).toBe('INVALID_ARGS');
   expect('retriable' in response.error).toBe(false);
   expect('supportedOn' in response.error).toBe(false);
-  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
 });
 
 // ADR 0012 decision 6, BLOCKER 2 (second follow-up): a repair-armed `close`
@@ -222,7 +237,7 @@ test('#1391: an ordinary close-time script-save failure surfaces details.reason/
     // Unlike the repair-armed case above, an ordinary session's teardown
     // never withholds on a failed script save â€” it is always torn down.
     expect(sessionStore.get('typed-error')).toBeUndefined();
-    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(legacyDispatchCapture).not.toHaveBeenCalled();
   } finally {
     fs.rmSync(targetPath, { force: true });
   }

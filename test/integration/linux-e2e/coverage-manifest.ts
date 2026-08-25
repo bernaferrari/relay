@@ -154,9 +154,10 @@ export const LINUX_PLATFORM_COVERAGE = {
   [C.install]: gap('No Linux-specific application installation command evidence exists yet'),
   [C.reinstall]: gap('No Linux-specific application reinstallation command evidence exists yet'),
   [C.push]: gap('No Linux-specific push delivery command evidence exists yet'),
-  [C.triggerAppEvent]: denial(
-    'trigger-app-event',
-    'Linux capability declaration rejects native application event delivery',
+  [C.triggerAppEvent]: contract(
+    LINUX_RUNTIME_EVIDENCE.path,
+    LINUX_RUNTIME_EVIDENCE.test,
+    'the exact-owner runtime fact rejects native application event delivery on Linux',
   ),
   [C.open]: live('the existing Linux replay opens gnome-calculator'),
   [C.prepare]: contract(
@@ -175,14 +176,23 @@ export const LINUX_PLATFORM_COVERAGE = {
     'the command-evidence lane observes a non-empty calculator snapshot mutation',
   ),
   [C.wait]: live('the existing Linux replay waits for an observable calculator landmark'),
-  [C.alert]: denial('alert', 'Linux capability declaration rejects native alert operations'),
-  [C.settings]: denial(
-    'settings',
-    'Linux capability declaration rejects native device settings operations',
+  [C.alert]: contract(
+    LINUX_RUNTIME_EVIDENCE.path,
+    LINUX_RUNTIME_EVIDENCE.test,
+    'the exact-owner runtime fact rejects native alert handling on Linux',
   ),
-  [C.reactNative]: denial(
-    'react-native',
-    'Linux capability declaration rejects React Native inspection',
+  [C.settings]: contract(
+    LINUX_RUNTIME_EVIDENCE.path,
+    LINUX_RUNTIME_EVIDENCE.test,
+    'the exact-owner runtime fact rejects native device settings on Linux',
+  ),
+  // R61: no owner fact refuses this command on Linux — its whole device work is one bound
+  // `tapPoint`, the same cell the live click leg uses — so it now runs and reports truthfully
+  // that no React Native overlay is present on a GTK desktop.
+  [C.reactNative]: contract(
+    LINUX_PROVIDER_EVIDENCE.path,
+    LINUX_PROVIDER_EVIDENCE.test,
+    'React Native overlay dismissal binds the same desktop tap the press leg does',
   ),
   [C.record]: gap('No Linux-specific recording command evidence exists yet'),
   [C.trace]: gap('No Linux-specific trace command evidence exists yet'),
@@ -264,9 +274,10 @@ export const LINUX_PLATFORM_COVERAGE = {
     LINUX_RUNTIME_EVIDENCE.test,
     'Linux runtime facts explicitly report viewport changes unavailable',
   ),
-  [C.appSwitcher]: denial(
-    'app-switcher',
-    'Linux capability declaration rejects native app-switcher navigation',
+  [C.appSwitcher]: contract(
+    LINUX_RUNTIME_EVIDENCE.path,
+    LINUX_RUNTIME_EVIDENCE.test,
+    'the exact-owner runtime fact rejects native app-switcher navigation on Linux',
   ),
   [C.installFromSource]: gap('No Linux-specific source-install command evidence exists yet'),
 } satisfies Record<PublicCommand, LinuxPlatformCoverageEntry>;

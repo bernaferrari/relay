@@ -1,67 +1,30 @@
-import { appleOsCapabilities } from './capabilities.ts';
 import type { PlatformPlugin } from '@agent-device/contracts/platform';
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
 import { isAudioProbeSupportedDevice } from '@agent-device/contracts/audio-probe-support';
-import { resolveDeviceAppleOs, type DeviceInfo } from '@agent-device/kernel/device';
+import type { DeviceInfo } from '@agent-device/kernel/device';
 import type { RunnerContext } from '@agent-device/contracts/interaction';
 
 // ---------------------------------------------------------------------------
-// Apple family per-command capability closures. Originally RELOCATED VERBATIM from
-// src/core/command-descriptor/registry.ts (ADR-0009), the
-// AppleOS-axis predicates (`target !== 'tv'` / `platform !== 'macos'` /
-// `isTvOsDevice`) are now READ from the per-`AppleOS` capability table
-// (`apple-os-capabilities.ts`, step d.5) instead of being open-coded. The rewrite is
-// behaviorless: the DEVICE-shaped nuance (simulator vs physical device) stays in the
-// closure — only the OS-axis facts moved to data — and the non-Apple branches are the
-// verbatim verdicts (`appleOsCapabilities` returns `undefined` off the Apple family, so
-// each closure is a no-op on android/linux/web). The table-equivalence gate
-// (apple-os-capabilities table parity + capability-plugin-routing-parity tests) pins
-// every closure byte-for-byte against a verbatim copy of the original predicate across
-// the full {command x sample-device} matrix (iOS/iPadOS/tvOS/macOS/visionOS).
+// Apple family per-command capability closures for the commands still admitted by a capability
+// bucket. Originally RELOCATED VERBATIM from src/core/command-descriptor/registry.ts (ADR-0009).
+//
+// R59/R63 deleted the per-`AppleOS` capability table (`apple-os-capabilities.ts`) along with the
+// closures that read it: every command it served is now admitted from its owner's operation facts
+// (ADR 0019 §8), so the OS-axis predicates live in `packages/platform-apple` rather than here.
+// What remains is DEVICE-shaped nuance (simulator vs physical device, XCTest vs CoreDevice) for
+// unmigrated commands, pinned against the original predicates by
+// `capability-plugin-routing-parity` across the full {command x sample-device} matrix.
 // ---------------------------------------------------------------------------
-
-// `home`/`app-switcher`
-// (was `!isMacOs(device)`). Off Apple (caps undefined) the original was
-// always true — no non-Apple platform is macOS.
-const supportsAppAndDeviceLifecycle = (device: DeviceInfo): boolean => {
-  const caps = appleOsCapabilities(device);
-  return caps ? caps.appAndDeviceLifecycle : true;
-};
 
 const supportsCoreDevicePhysicalOperation = (device: DeviceInfo): boolean =>
   device.platform !== 'apple' ||
   device.kind !== 'device' ||
   device.iosPhysicalDeviceBackend !== 'xctest';
 
-// The Apple arm shared by `clipboard`/`settings` (was `macos || simulator`):
-// reachable on the macOS host directly, on every other Apple OS only on the simulator.
-// Off Apple this preserves the trailing `device.kind === 'simulator'` term verbatim.
-const supportsHostOrSimulatorSurface = (device: DeviceInfo): boolean => {
-  const caps = appleOsCapabilities(device);
-  return caps
-    ? caps.physicalDeviceSurfaces || device.kind === 'simulator'
-    : device.kind === 'simulator';
-};
-
-// Alerts use the host/simulator surface plus physical iOS, whose XCTest path is
-// device-verified. iPadOS/visionOS remain closed until independently verified.
-const supportsAlertSurface = (device: DeviceInfo): boolean =>
-  device.platform === 'android' ||
-  (device.platform === 'apple' && resolveDeviceAppleOs(device) === 'ios') ||
-  supportsHostOrSimulatorSurface(device);
-
 // Per-command support gates the Apple family applies by default, keyed exactly as in
 // the command-descriptor registry (a command absent here has no Apple gate).
 const APPLE_SUPPORTS_BY_DEFAULT: Record<string, (device: DeviceInfo) => boolean> = {
   [PUBLIC_COMMANDS.perf]: supportsCoreDevicePhysicalOperation,
-  [PUBLIC_COMMANDS.appSwitcher]: supportsAppAndDeviceLifecycle,
-  [PUBLIC_COMMANDS.clipboard]: (device) =>
-    device.platform === 'android' ||
-    device.platform === 'linux' ||
-    supportsHostOrSimulatorSurface(device),
-  [PUBLIC_COMMANDS.alert]: supportsAlertSurface,
-  [PUBLIC_COMMANDS.settings]: (device) =>
-    device.platform === 'android' || supportsHostOrSimulatorSurface(device),
   [PUBLIC_COMMANDS.audio]: isAudioProbeSupportedDevice,
 };
 

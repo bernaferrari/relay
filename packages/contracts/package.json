@@ -15,6 +15,14 @@
       "types": "./src/alert-contract.ts",
       "default": "./src/alert-contract.ts"
     },
+    "./alert-runtime": {
+      "types": "./src/alert-runtime.ts",
+      "default": "./src/alert-runtime.ts"
+    },
+    "./android-clipboard-support": {
+      "types": "./src/android-clipboard-support.ts",
+      "default": "./src/android-clipboard-support.ts"
+    },
     "./android-input-ownership": {
       "types": "./src/android-input-ownership.ts",
       "default": "./src/android-input-ownership.ts"
@@ -35,6 +43,10 @@
       "types": "./src/app-deployment-runtime-plan.ts",
       "default": "./src/app-deployment-runtime-plan.ts"
     },
+    "./app-event-runtime": {
+      "types": "./src/app-event-runtime.ts",
+      "default": "./src/app-event-runtime.ts"
+    },
     "./app-inventory-runtime": {
       "types": "./src/app-inventory-runtime.ts",
       "default": "./src/app-inventory-runtime.ts"
@@ -46,6 +58,10 @@
     "./app-state-runtime": {
       "types": "./src/app-state-runtime.ts",
       "default": "./src/app-state-runtime.ts"
+    },
+    "./app-switcher-runtime": {
+      "types": "./src/app-switcher-runtime.ts",
+      "default": "./src/app-switcher-runtime.ts"
     },
     "./apple-multitouch-support": {
       "types": "./src/apple-multitouch-support.ts",
@@ -94,6 +110,10 @@
     "./client": {
       "types": "./src/facades/client.ts",
       "default": "./src/facades/client.ts"
+    },
+    "./clipboard-runtime": {
+      "types": "./src/clipboard-runtime.ts",
+      "default": "./src/clipboard-runtime.ts"
     },
     "./command": {
       "types": "./src/facades/command.ts",
@@ -186,6 +206,10 @@
     "./keyboard-runtime": {
       "types": "./src/keyboard-runtime.ts",
       "default": "./src/keyboard-runtime.ts"
+    },
+    "./local-interactor-operation-set": {
+      "types": "./src/local-interactor-operation-set.ts",
+      "default": "./src/local-interactor-operation-set.ts"
     },
     "./logs-runtime-plan": {
       "types": "./src/logs-runtime-plan.ts",
@@ -294,6 +318,10 @@
     "./settings": {
       "types": "./src/settings.ts",
       "default": "./src/settings.ts"
+    },
+    "./settings-runtime": {
+      "types": "./src/settings-runtime.ts",
+      "default": "./src/settings-runtime.ts"
     },
     "./snapshot": {
       "types": "./src/facades/snapshot.ts",

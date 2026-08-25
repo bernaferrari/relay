@@ -9,9 +9,10 @@ import {
   prepareLifecycleRouteBindingViolations,
   runtimeLifecycleRouteBindingViolations,
   sourceExecutedUsingDeclarationViolations,
+  retiredDispatchProjectionProof,
 } from './runtime-command-cutover-extensions.ts';
 import { recordRuntimeDaemonMechanicsViolations } from './record-runtime-mechanics-policy.ts';
-import { retiredDispatchProjectionViolations } from './runtime-command-cutover-descriptor.ts';
+import { WAVE_6_COMMAND_CUTOVERS } from './runtime-command-cutover-table-wave6.ts';
 
 /**
  * One row per migrated command (ADR 0019 §8). A new command unit adds a row here; the
@@ -30,6 +31,9 @@ import { retiredDispatchProjectionViolations } from './runtime-command-cutover-d
  * leaves follow: back at R42, home at R43, orientation at R44, tv-remote at R45, and the
  * action-selected keyboard at R46.
  * The gesture cluster follows the touch leaves: gesture at R52, scroll at R53, swipe at R54.
+ * Wave 6 closure starts at R55 clipboard, then R56 app-switcher, R57 trigger-app-event,
+ * R58 settings — the arm that retires the legacy dispatcher itself — R59 alert and
+ * R61 react-native.
  */
 export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
   {
@@ -474,7 +478,7 @@ export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
         captureSnapshotWithoutActiveApp: ['selectSnapshotWithoutActiveApp'],
       },
     },
-    extensions: [snapshotRetiredDispatchProjectionProof],
+    extensions: [retiredDispatchProjectionProof('snapshot')],
   },
   {
     rule: 'R33 diff-runtime-cutover',
@@ -508,7 +512,7 @@ export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
         captureSnapshotWithoutActiveApp: ['selectSnapshotWithoutActiveApp'],
       },
     },
-    extensions: [diffRetiredDispatchProjectionProof],
+    extensions: [retiredDispatchProjectionProof('diff')],
   },
   {
     rule: 'R35 find-runtime-cutover',
@@ -1075,19 +1079,8 @@ export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
       },
     },
   },
+  ...WAVE_6_COMMAND_CUTOVERS,
 ];
-
-function snapshotRetiredDispatchProjectionProof(
-  sources: ReadonlyMap<string, string>,
-): UnruledViolation[] {
-  return retiredDispatchProjectionViolations(sources, 'snapshot');
-}
-
-function diffRetiredDispatchProjectionProof(
-  sources: ReadonlyMap<string, string>,
-): UnruledViolation[] {
-  return retiredDispatchProjectionViolations(sources, 'diff');
-}
 
 /** The record mechanics policy predates the row model and reports `path: message`. */
 function recordDaemonMechanicsProof(sources: ReadonlyMap<string, string>): UnruledViolation[] {

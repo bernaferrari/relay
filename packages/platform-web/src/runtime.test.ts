@@ -199,6 +199,32 @@ test.each([
   },
 );
 
+test('clipboard, the app switcher, app events, settings and alerts carry no web bucket', async () => {
+  const binding = await createWebPlatformRuntime(host({ mode: 'transport-composed' })).bind({
+    device,
+    intent: { kind: 'ordinary' },
+    scope: scope(),
+  });
+  for (const operation of [
+    'readClipboard',
+    'writeClipboard',
+    'appSwitcher',
+    'triggerAppEvent',
+    // R58/R59: the retired `settings` and `alert` descriptors declared no web leaf either.
+    'setSetting',
+    'readAlert',
+    'awaitAlert',
+    'acceptAlert',
+    'dismissAlert',
+  ] as const) {
+    expect(binding.facts.operations[operation]).toEqual({
+      available: false,
+      reason: 'unsupported-platform-leaf',
+    });
+    expect(binding.operations[operation]).toBeUndefined();
+  }
+});
+
 test('back/home/orientation/tv-remote/keyboard never carried a web capability bucket', async () => {
   const binding = await createWebPlatformRuntime(host({ mode: 'transport-composed' })).bind({
     device,
@@ -568,8 +594,11 @@ test('diff shares the admitted captureSnapshot fact that live snapshot and diff 
 });
 
 // #1900: `pressRuntimeUses` is literally `clickRuntimeUses` (`platform-runtime-operations.ts`),
-// so the admitted fact backing the live `click` command also backs `press`.
-test('press shares the admitted tapPoint fact that live click and press both require', async () => {
+// so the admitted fact backing the live `click` command also backs `press`. R61 added a third
+// consumer of that same cell: `react-native dismiss-overlay` executes one bound `tapPoint`, so a
+// browser admits it and answers truthfully that no React Native overlay is present — the widening
+// the retired capability bucket had been hiding.
+test('press shares the admitted tapPoint fact that live click, press and react-native require', async () => {
   const binding = await createWebPlatformRuntime(host({ mode: 'transport-composed' })).bind({
     device,
     intent: { kind: 'ordinary' },

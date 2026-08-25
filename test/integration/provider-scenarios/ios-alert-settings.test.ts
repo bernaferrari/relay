@@ -13,6 +13,13 @@ import { unavailableDeploymentSnapshotAndShutdownOperationFacts } from '../../..
 import { createAppLogStartResult, createDurableResourceEnvelope } from '@agent-device/capture-kit';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { createTestAppLogLiveHandle } from '../../../src/__tests__/test-utils/app-log-live-handle.ts';
+import { setIosSetting } from '../../../src/platforms/apple/core/app-settings.ts';
+import {
+  actOnAppleAlert,
+  awaitAppleAlert,
+  readAppleAlert,
+} from '../../../src/platforms/apple/alert.ts';
+import type { AlertRuntimeInput } from '@agent-device/contracts/alert-runtime';
 import { assertFlatToolCall } from './assertions.ts';
 import { PROVIDER_SCENARIO_IOS_SIMULATOR } from './fixtures.ts';
 import { createProviderScenarioHarness } from './harness.ts';
@@ -279,6 +286,27 @@ function createRecordingPlatformRuntimeGateway(params: {
               }),
             );
           },
+          // R58 put `settings` behind the owner's own `setSetting` fact, so the scenario's
+          // gateway states and serves that cell like any other. The Apple leg reuses the local
+          // family's implementation — the same shape Limrun's Android leg takes — so the simctl
+          // argument mapping this scenario asserts still runs through the recorded tool seam.
+          setSetting: async (input) =>
+            await setIosSetting(
+              device,
+              input.setting,
+              input.state,
+              input.appBundleId,
+              input.options,
+            ),
+          // R59 does the same for `alert`: the scenario's gateway states and serves the four
+          // legs, reusing the Apple family's own module so the runner transcript this scenario
+          // scripts — including its retry and poll windows — is what actually runs.
+          readAlert: async (input) => await readAppleAlert(device, {}, alertOptions(input)),
+          awaitAlert: async (input) => await awaitAppleAlert(device, {}, alertOptions(input)),
+          acceptAlert: async (input) =>
+            await actOnAppleAlert(device, {}, 'accept', alertOptions(input)),
+          dismissAlert: async (input) =>
+            await actOnAppleAlert(device, {}, 'dismiss', alertOptions(input)),
           appLogReattach: async () => ({ status: 'missing' }),
           appLogCleanup: async () => ({ status: 'already-missing' }),
           resolveOpenTarget: async (input) => ({
@@ -326,6 +354,11 @@ function recordingRuntimeFacts(device: DeviceInfo): RuntimeFacts<PlatformRuntime
       bootTargetHeadless: unavailableRecording,
       listApps: unavailableRecording,
       ...unavailableDeploymentSnapshotAndShutdownOperationFacts,
+      setSetting: available,
+      readAlert: available,
+      awaitAlert: available,
+      acceptAlert: available,
+      dismissAlert: available,
       ...applicationLifecycleOperationFacts({
         resolveOpenTarget: available,
         prepareApplicationOpen: available,
@@ -338,6 +371,15 @@ function recordingRuntimeFacts(device: DeviceInfo): RuntimeFacts<PlatformRuntime
         configureProviderPortReverse: unavailableRecording,
       }),
     },
+  };
+}
+
+/** The neutral input reduced to the owner-facing option bag the Apple module takes. */
+function alertOptions(input: AlertRuntimeInput) {
+  return {
+    ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+    ...(input.appBundleId === undefined ? {} : { appBundleId: input.appBundleId }),
+    ...(input.surface === undefined ? {} : { surface: input.surface }),
   };
 }
 

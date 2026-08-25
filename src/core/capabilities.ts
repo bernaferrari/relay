@@ -30,7 +30,7 @@ export type CommandCapability = {
 
 const WEB_DEVICE: KindMatrix = { device: true };
 const HARMONYOS_ALL: KindMatrix = { emulator: true, device: true };
-const HARMONYOS_SUPPORTED_COMMANDS = new Set<string>(['perf', 'app-switcher', 'settings']);
+const HARMONYOS_SUPPORTED_COMMANDS = new Set<string>(['perf']);
 const WEB_QUERY_COMMANDS = ['audio'] as const;
 const WEB_SUPPORTED_COMMANDS = new Set<string>(WEB_QUERY_COMMANDS);
 // Built from the additive command-descriptor registry (ADR-0008, Phase 1 step 3).
@@ -108,6 +108,30 @@ export function unsupportedHintForDevice(command: string, device: DeviceInfo): s
   // Counterpart of the `supports()` relocation (Phase 3 step b.2): the hint closure is
   // owned by the family that owns `device.platform`, keyed by command.
   return tryGetPlugin(device.platform)?.capability.unsupportedHintByDefault?.[command]?.(device);
+}
+
+/**
+ * The operation sets a command's declared runtime uses require, or `undefined` for a command
+ * whose admission is not fact-owned (it still carries a capability bucket, or it reaches no
+ * device at all).
+ *
+ * R63 derives this from the descriptors themselves rather than a hand-written map, which is what
+ * makes the capability projection self-maintaining: a unit that migrates a command declares its
+ * uses in one place, and the projection follows in the same commit. The alternative — a second
+ * list — is exactly how the projection drifted into reading "no bucket" as "supported
+ * everywhere" for every command Wave 4-6 migrated.
+ *
+ * An action-selected command answers with several sets. A request names exactly one action, so
+ * the command is available when ANY set is fully admitted.
+ */
+export function commandRuntimeUseRequirements(
+  command: string,
+): readonly (readonly string[])[] | undefined {
+  const descriptor = commandDescriptors.find((candidate) => candidate.name === command);
+  const execution = descriptor?.platformExecution;
+  if (execution?.kind !== 'device-runtime') return undefined;
+  const uses = 'uses' in execution ? execution.uses : [execution.use];
+  return uses.map((use) => use.required);
 }
 
 export function listCapabilityCommands(): string[] {

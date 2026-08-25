@@ -48,10 +48,13 @@ test('Linux coverage report has the expected classification counts', () => {
     // focus (#1925), click, and type remain live via the existing replay. The separate
     // command-evidence lane adds nine generic-command rows without changing that replay. Artifact
     // inventory remains a gap because local Linux screenshot paths are not daemon-downloadable.
-    // Keyboard, orientation, and tv-remote remain fact-owned command-contract rows, not catalog
-    // denials.
-    capabilityDenial: 7,
-    contract: 21,
+    // Keyboard, orientation and tv-remote were already fact-owned command-contract rows rather
+    // than catalog denials; R56 moves app-switcher the same way, for the same reason.
+    // R57 moves trigger-app-event from capability-denial to command-contract: it is fact-owned now.
+    // R58 moves settings from capability-denial to command-contract: it is fact-owned now.
+    // R59/R61 moves alert and react-native from capability-denial to command-contract: it is fact-owned now.
+    capabilityDenial: 2,
+    contract: 26,
     gap: 9,
     live: 17,
     total: 54,
