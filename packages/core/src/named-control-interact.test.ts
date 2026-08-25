@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PNG } from "pngjs";
 import type { Device } from "./device.js";
 import { pressNamedControl } from "./device.js";
 import {
@@ -9,6 +13,8 @@ import {
   resolveInteractPreview,
 } from "./workspace.js";
 import { runWithTargetContext } from "./target-context.js";
+import { IosXCTestSessionUnavailableError } from "./ios-device-adapter.js";
+import { setIosSessionHostRuntimeForTests } from "./workspace-ios-session.js";
 
 function stubDevice(nodes: unknown[]): Device {
   const presses: unknown[] = [];
@@ -99,6 +105,114 @@ test("mouse/CLI interactOnDevice uses explicit point when Home labels collide", 
   assert.deepEqual(device.presses, [
     { platform: "android", serial: "named-control-collide", x: 240, y: 720 },
   ]);
+});
+
+test("iOS identifier taps verify pixels changed by default without any opt-in", async () => {
+  const presses: Array<Record<string, unknown>> = [];
+  const stubDevice = {
+    interactions: {
+      find: async () => ({}),
+      press: async (options: Record<string, unknown>) => {
+        presses.push(options);
+        return {};
+      },
+    },
+    command: { wait: async () => ({}) },
+    capture: {
+      snapshot: async () => ({
+        nodes: [
+          {
+            type: "Button",
+            identifier: "settings",
+            label: "Settings",
+            enabled: true,
+            hittable: true,
+            rect: { x: 20, y: 40, width: 240, height: 44 },
+          },
+        ],
+      }),
+    },
+  } as unknown as Device;
+  // A shell shim stands in for go-ios so the now-default visual proof runs
+  // identically on hosts with and without the vendored binary: it writes the
+  // same frame to every --output path, so the proof must conclude the pixels
+  // never changed and fail closed after dispatching exactly one tap — the old
+  // opt-in gate would have returned success without capturing a single frame.
+  const root = await mkdtemp(join(tmpdir(), "relay-verify-default-on-"));
+  await mkdir(join(root, "bin"), { recursive: true });
+  const bin = join(root, "bin", "ios");
+  await writeFile(
+    bin,
+    [
+      "#!/bin/sh",
+      'OUTPUT_PATH=""',
+      'for arg in "$@"; do',
+      '  case "$arg" in --output=*) OUTPUT_PATH="${arg#--output=}" ;; esac;',
+      "done",
+      'printf "%s" "$FAKE_PNG_B64" | base64 -d > "$OUTPUT_PATH"',
+      "",
+    ].join("\n"),
+  );
+  await chmod(bin, 0o755);
+  const frame = PNG.sync.write(new PNG({ width: 32, height: 48 }));
+  const previousGoIos = process.env.RELAY_GO_IOS_BIN;
+  const previousImage = process.env.FAKE_PNG_B64;
+  const previousState = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_GO_IOS_BIN = bin;
+  process.env.FAKE_PNG_B64 = frame.toString("base64");
+  process.env.RELAY_STATE_DIR = join(root, "state");
+  const restoreRuntime = setIosSessionHostRuntimeForTests({
+    prepareIosRunner: async () => undefined,
+  });
+  try {
+    await assert.rejects(
+      runWithTargetContext(
+        { kind: "device", platform: "ios", serial: "verify-default-on" } as const,
+        () => interact({ kind: "identifier", identifier: "settings" }, { device: stubDevice }),
+      ),
+      /Tap did not change the screen/u,
+    );
+    assert.equal(presses.length, 1, "the tap itself was dispatched exactly once");
+  } finally {
+    restoreRuntime();
+    if (previousGoIos === undefined) delete process.env.RELAY_GO_IOS_BIN;
+    else process.env.RELAY_GO_IOS_BIN = previousGoIos;
+    if (previousImage === undefined) delete process.env.FAKE_PNG_B64;
+    else process.env.FAKE_PNG_B64 = previousImage;
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a bare no-active-session failure on iOS is classified as an XCTest session loss", async () => {
+  const device = {
+    interactions: {
+      type: () => Promise.reject(new Error("no active session for this device")),
+    },
+  } as unknown as Device;
+  const previousGoIos = process.env.RELAY_GO_IOS_BIN;
+  process.env.RELAY_GO_IOS_BIN = "/nonexistent/relay-test-missing-go-ios";
+  const restoreRuntime = setIosSessionHostRuntimeForTests({
+    prepareIosRunner: async () => undefined,
+  });
+  try {
+    await assert.rejects(
+      runWithTargetContext(
+        { kind: "device", platform: "ios", serial: "bare-session-loss" } as const,
+        () => interact({ kind: "type", text: "hello" }, { device }),
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof IosXCTestSessionUnavailableError);
+        assert.match(error.message, /Press Reconnect/i);
+        return true;
+      },
+    );
+  } finally {
+    restoreRuntime();
+    if (previousGoIos === undefined) delete process.env.RELAY_GO_IOS_BIN;
+    else process.env.RELAY_GO_IOS_BIN = previousGoIos;
+  }
 });
 
 test("a uniquely resolved Android label falls back to its exact point", async () => {

@@ -40,6 +40,118 @@ test("uses the XCTest application root as the logical iPad viewport", () => {
   assert.deepEqual(geometry, { rotation: "left", logicalWidth: 1112, logicalHeight: 834 });
 });
 
+test("infers right-hand landscape from a portrait buffer plus landscape-right display", () => {
+  const nodes: SnapshotNode[] = [
+    {
+      index: 0,
+      depth: 0,
+      type: "Application",
+      enabled: true,
+      rect: { x: 0, y: 0, width: 1112, height: 834 },
+    },
+    {
+      index: 1,
+      parentIndex: 0,
+      depth: 1,
+      type: "Window",
+      enabled: true,
+      rect: { x: 0, y: 0, width: 834, height: 1112 },
+    },
+  ];
+
+  assert.deepEqual(inferIosSnapshotGeometry(nodes, "landscapeRight"), {
+    rotation: "right",
+    logicalWidth: 1112,
+    logicalHeight: 834,
+  });
+  assert.deepEqual(inferIosSnapshotGeometry(nodes, "landscapeLeft"), {
+    rotation: "left",
+    logicalWidth: 1112,
+    logicalHeight: 834,
+  });
+});
+
+test("infers upside-down from a portrait interface with an inverted Application root", () => {
+  const nodes: SnapshotNode[] = [
+    {
+      index: 0,
+      depth: 0,
+      type: "Application",
+      enabled: true,
+      rect: { x: 0, y: 0, width: 834, height: 1112 },
+    },
+  ];
+
+  assert.deepEqual(inferIosSnapshotGeometry(nodes, "portraitUpsideDown"), {
+    rotation: "upside-down",
+    logicalWidth: 834,
+    logicalHeight: 1112,
+  });
+  assert.deepEqual(inferIosSnapshotGeometry(nodes, "portrait"), {
+    rotation: "none",
+    logicalWidth: 834,
+    logicalHeight: 1112,
+  });
+});
+
+test("normalizes a sparse Window-less tree from its Application-root aspect alone", () => {
+  // A recovering XCTest session can omit the Window node entirely. The root's
+  // landscape aspect still proves descendants arrived portrait-native.
+  const nodes: SnapshotNode[] = [
+    {
+      index: 0,
+      depth: 0,
+      type: "Application",
+      enabled: true,
+      rect: { x: 0, y: 0, width: 1112, height: 834 },
+    },
+    {
+      index: 1,
+      parentIndex: 0,
+      depth: 1,
+      type: "Button",
+      label: "Settings",
+      enabled: true,
+      rect: { x: 600, y: 498, width: 68.5, height: 87.5 },
+    },
+  ];
+
+  const normalized = normalizeIosSnapshotNodes(nodes);
+  assert.deepEqual(normalized[1]?.rect, { x: 498, y: 165.5, width: 87.5, height: 68.5 });
+});
+
+test("remaps child rects symmetrically for right and upside-down rotations", () => {
+  const application: SnapshotNode = {
+    index: 0,
+    depth: 0,
+    type: "Application",
+    enabled: true,
+    rect: { x: 0, y: 0, width: 1112, height: 834 },
+  };
+  const nativeButton: SnapshotNode = {
+    index: 1,
+    parentIndex: 0,
+    depth: 1,
+    type: "Button",
+    label: "Settings",
+    enabled: true,
+    rect: { x: 600, y: 498, width: 68.5, height: 87.5 },
+  };
+
+  const right = normalizeIosSnapshotNodes(
+    [application, nativeButton],
+    inferIosSnapshotGeometry([application], "landscapeRight"),
+  );
+  assert.deepEqual(right[1]?.rect, { x: 526.5, y: 600, width: 87.5, height: 68.5 });
+
+  const upsideDown = normalizeIosSnapshotNodes([application, nativeButton], {
+    rotation: "upside-down",
+    logicalWidth: 1112,
+    logicalHeight: 834,
+  });
+  assert.deepEqual(upsideDown[1]?.rect, { x: 443.5, y: 248.5, width: 68.5, height: 87.5 });
+});
+
 test("exposes only product-safe iOS inspection failures", async () => {
   const diskImage = await iosInspectionErrorMessage(
     new IosDeveloperDiskImageError("CoreDeviceError 12040: kAMDMobileImageMounterMissingImagePath"),

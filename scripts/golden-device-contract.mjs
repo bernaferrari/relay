@@ -9,6 +9,12 @@ export const REQUIRED_GOLDEN_SCENARIOS = [
   "semanticInput",
   "pointInput",
   "parallelScheduling",
+  // iOS trustworthiness lanes: a runner killed mid-session must reconnect
+  // cleanly, a wedged developer disk image must recover without a reboot,
+  // and control must survive an app → Settings handoff.
+  "runnerKillMidSession",
+  "ddiUnmountRecover",
+  "appHandoffToSettings",
 ];
 
 const LANDSCAPE_ORIENTATIONS = new Set(["landscape-left", "landscape-right"]);
@@ -491,6 +497,35 @@ export function validateGoldenScenarioRecipe(recipe, scenario, minimumOverlapMs)
       if (!hasDelay) {
         fail(
           `Golden parallel scheduling recipe ${recipe.id} needs a sleep of at least ${minimumOverlapMs}ms so independent lanes can be measured.`,
+          "GOLDEN_RECIPE_CONTRACT_INVALID",
+        );
+      }
+      return;
+    }
+    case "runnerKillMidSession":
+    case "ddiUnmountRecover": {
+      // Both recovery lanes must prove control survives the host-side
+      // disruption through the public device command, not a hidden helper.
+      const hasDeviceStep = steps.some((step) => step?.kind === "device");
+      if (!hasDeviceStep) {
+        fail(
+          `Golden ${scenario} recipe ${recipe.id} needs an explicit device step so the recovery is exercised through Relay's public control surface.`,
+          "GOLDEN_RECIPE_CONTRACT_INVALID",
+        );
+      }
+      return;
+    }
+    case "appHandoffToSettings": {
+      // The handoff lane proves semantic control across app boundaries: an
+      // in-app input, then the Settings surface, then proof Relay can still
+      // read named controls there.
+      const hasAppOpen = steps.some(
+        (step) => step?.kind === "app" && step.action === "open",
+      );
+      const hasSettings = steps.some((step) => step?.kind === "settings");
+      if (!hasAppOpen || !hasSettings) {
+        fail(
+          `Golden app-handoff recipe ${recipe.id} needs an explicit app open and a settings step; a single-surface recipe cannot prove the handoff.`,
           "GOLDEN_RECIPE_CONTRACT_INVALID",
         );
       }

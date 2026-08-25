@@ -39,6 +39,8 @@ import {
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { currentVerifiedScreen } from "./recipe-runner-context.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
+import { iosSnapshotInputEpoch } from "./ios-snapshot-flight.js";
+import { currentTargetContext } from "./target-context.js";
 
 function snapshotBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
   let width = 0;
@@ -53,18 +55,34 @@ function snapshotBounds(nodes: SnapshotNode[]): { width: number; height: number 
     : undefined;
 }
 
-const runtimeBoundsCache = new WeakMap<
-  Device,
-  Promise<{ width: number; height: number } | undefined>
->();
+type RuntimeBoundsCacheEntry = {
+  inputEpoch: number;
+  pending: Promise<{ width: number; height: number } | undefined>;
+};
+
+/**
+ * Keyed by (Device, confirmed iOS input epoch). A rotation, tap, or any other
+ * acknowledged mutation advances the fence in ios-snapshot-flight.ts, so the
+ * next resolution re-reads bounds instead of replaying pre-mutation extents.
+ * Manual rotations and device handoffs therefore cannot serve stale bounds.
+ */
+const runtimeBoundsCache = new WeakMap<Device, RuntimeBoundsCacheEntry>();
 
 function runtimeBounds(device: Device): Promise<{ width: number; height: number } | undefined> {
+  let serial = "";
+  try {
+    const context = currentTargetContext();
+    if (context.kind === "device") serial = context.serial;
+  } catch {
+    serial = "";
+  }
+  const inputEpoch = iosSnapshotInputEpoch(serial);
   const cached = runtimeBoundsCache.get(device);
-  if (cached) return cached;
+  if (cached && cached.inputEpoch === inputEpoch) return cached.pending;
   const pending = snapshot(device)
     .then(snapshotBounds)
     .catch(() => undefined);
-  runtimeBoundsCache.set(device, pending);
+  runtimeBoundsCache.set(device, { inputEpoch, pending });
   return pending;
 }
 
@@ -783,7 +801,6 @@ export {
   longPressRecordedTarget,
   readInput,
   resolvePointForDevice,
-  runtimeBoundsCache,
   runVariableScript,
   scrollUp,
   tapRecordedTarget,

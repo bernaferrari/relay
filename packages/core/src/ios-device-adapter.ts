@@ -165,8 +165,14 @@ function iosDeveloperDiskImageMessage(cause: string): string {
   return `Relay could not mount Apple’s developer support image for this iPad${code}. Keep it unlocked and cabled, then let Xcode finish preparing the device. If it remains unavailable, install or update Xcode device support for this iPadOS version, then press Reconnect.`;
 }
 
+/**
+ * The SDK collapses several runner failures into a compact phrase. "no active
+ * session" is the strongest signal; an explicit XCTest mention strengthens
+ * related phrasings but is not required — the runner may never have been
+ * named before the SDK gave up on it.
+ */
 function isIosXCTestSessionUnavailableFailure(message: string): boolean {
-  return /iOS\s+snapshot\s+(?:needs|requires)\s+an\s+active\s+XCTest\s+session|no\s+active\s+XCTest\s+session/i.test(
+  return /no\s+active\s+session|no\s+active\s+XCTest\s+session|snapshot\s+(?:needs|requires)\s+an\s+active\s+XCTest\s+session|xctest\s+session\s+(?:unavailable|not\s+attached)|session\s+is\s+not\s+active/i.test(
     message,
   );
 }

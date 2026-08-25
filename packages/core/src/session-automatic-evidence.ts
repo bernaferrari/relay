@@ -1,16 +1,56 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, unlink } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { base, snapshot, type Device } from "./device.js";
 import { now } from "./events.js";
 import { inferIosSnapshotGeometry, normalizeScreenshotToBounds } from "./ios-geometry.js";
-import { captureIosPngViaGoIos } from "./ios-app-launch.js";
+import { captureIosPngViaGoIos, pixelEvidenceFingerprint } from "./ios-app-launch.js";
+import { readIosDisplayOrientation } from "./ios-device-adapter.js";
 import { visualEvidenceAllowed } from "./redaction.js";
 import type { RecipeRuntimeState } from "./recipe-runner-context.js";
 import { currentVerifiedScreen } from "./recipe-runner-context.js";
 import { ensureRunDir, writeFramePng } from "./runs.js";
+import { targetRuntimeReadiness } from "./target-runtime-readiness.js";
 import type { TestJob } from "./session-contract.js";
 import type { TraceStep } from "./trace.js";
+import type { ScreenshotPayload } from "./workspace-capture.js";
+
+/** Cached rasters stay reusable only while the device pixels are the same
+ * ones this cache captured. A newer observation epoch (any capture that began
+ * after this screenshot's own epoch) or a changed sampled-pixel fingerprint
+ * means the screen may have moved and the raster must be recaptured. */
+async function cachedScreenshotIsFresh(
+  job: TestJob,
+  cached: ScreenshotPayload,
+): Promise<boolean> {
+  if (!job.serial || job.platform !== "ios") return true;
+  // Epoch fence: any pixel capture that began after this cached raster was
+  // taken advanced the target's observation epoch, so the cache is stale by
+  // order alone — no need to sample pixels.
+  const proofAt = targetRuntimeReadiness(
+    { serial: job.serial, platform: "ios" },
+    Date.now(),
+  ).previewPixels.proof?.at;
+  if (proofAt !== undefined && proofAt > cached.capturedAt) return false;
+  try {
+    const sampleDir = await mkdtemp(join(tmpdir(), "relay-evidence-fence-"));
+    try {
+      const samplePath = join(sampleDir, "sample.png");
+      await captureIosPngViaGoIos(job.serial, samplePath);
+      const sample = await readFile(samplePath);
+      return (
+        pixelEvidenceFingerprint(sample) ===
+        pixelEvidenceFingerprint(Buffer.from(cached.base64, "base64"))
+      );
+    } finally {
+      await rm(sampleDir, { recursive: true, force: true });
+    }
+  } catch {
+    // A failed probe is not evidence of change; keep the cache usable.
+    return true;
+  }
+}
 
 export async function captureAutomaticState(
   job: TestJob,
@@ -53,7 +93,7 @@ export async function captureAutomaticState(
   const temporary = join(runDir, "frames", `.capture-${randomUUID()}.png`);
   try {
     const cachedScreenshot = observation?.screenshot;
-    if (cachedScreenshot) {
+    if (cachedScreenshot && (await cachedScreenshotIsFresh(job, cachedScreenshot))) {
       const existing = cachedScreenshot.framePath
         ? job.frames.find((frame) => frame.path === cachedScreenshot.framePath)
         : undefined;
@@ -86,14 +126,15 @@ export async function captureAutomaticState(
       const bounds = geometry
         ? { width: geometry.logicalWidth, height: geometry.logicalHeight }
         : undefined;
-      const orientation =
-        bounds && bounds.width > bounds.height
-          ? "landscape-right"
-          : bounds && bounds.height > bounds.width
-            ? "portrait"
-            : bytes.length > 24 && bytes.readUInt32BE(16) > bytes.readUInt32BE(20)
-              ? "landscape-right"
-              : "portrait";
+      // Orientation comes from real evidence only, matching workspace-capture:
+      // CoreDevice display orientation when bounds exist, else the logical AX
+      // viewport aspect. Guessing every wide PNG into landscape-left turned
+      // correct portrait frames sideways.
+      const orientation = bounds
+        ? job.serial
+          ? await readIosDisplayOrientation(job.serial).catch(() => undefined)
+          : undefined
+        : undefined;
       bytes = normalizeScreenshotToBounds(bytes, bounds, orientation);
     }
     const encoded = bytes.toString("base64");

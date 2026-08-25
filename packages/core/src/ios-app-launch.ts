@@ -195,20 +195,35 @@ function withGoIosDeviceArgs(args: readonly string[]): string[] {
 /**
  * CoreDevice process listing and XCTest launch hang when the developer disk
  * image is wedged. Remount via go-ios; do not reboot the iPad.
+ *
+ * Returns whether the remount succeeded plus the go-ios stderr so callers can
+ * record a truthful failed action when the image could not be mounted.
  */
+export type IosDeveloperDiskImageRemountResult = {
+  ok: boolean;
+  stderr: string;
+};
+
 export async function remountIosDeveloperDiskImage(
   serial: string,
   input: { bin?: string; run?: CommandRunner; timeoutMs?: number } = {},
-): Promise<boolean> {
+): Promise<IosDeveloperDiskImageRemountResult> {
   const run = input.run ?? defaultCommandRunner;
   const timeoutMs = input.timeoutMs ?? 45_000;
   const bin = input.bin ?? (await resolveGoIosBinary());
   await rememberGoIosTunnelInfoPort();
-  await runGoIos(bin, ["image", "unmount", "--udid", serial], Math.min(timeoutMs, 15_000), run);
-  const mounted = await runGoIos(bin, ["image", "auto", "--udid", serial], timeoutMs, run);
-  const text = `${mounted.stdout}\n${mounted.stderr}`;
-  const ok = mounted.exitCode === 0 && /success mounting|image signature/i.test(text);
-  return ok;
+  try {
+    await runGoIos(bin, ["image", "unmount", "--udid", serial], Math.min(timeoutMs, 15_000), run);
+    const mounted = await runGoIos(bin, ["image", "auto", "--udid", serial], timeoutMs, run);
+    const text = `${mounted.stdout}\n${mounted.stderr}`;
+    const ok = mounted.exitCode === 0 && /success mounting|image signature/i.test(text);
+    return { ok, stderr: (mounted.stderr || mounted.stdout).trim() };
+  } catch (error) {
+    return {
+      ok: false,
+      stderr: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export function resolveIosLaunchBundleId(app: string): string {
@@ -451,7 +466,15 @@ export async function killStaleIosTestRunners(
   return killed;
 }
 
-/** Cheap identity for “did the pixels move?” after an XCTest tap. */
+/**
+ * Bounded settle for tap verification: sample up to four frames spread over
+ * ~700ms and stop as soon as two consecutive fingerprints agree. A single
+ * fixed wait either fires too early (mid-transition) or wastes time on
+ * screens that settled instantly.
+ */
+export const IOS_TAP_VERIFY_MAX_FRAMES = 4;
+export const IOS_TAP_VERIFY_STABILITY_WINDOW_MS = 700;
+
 export function pixelEvidenceFingerprint(bytes: Uint8Array): string {
   let hash = bytes.length >>> 0;
   const step = bytes.length > 8_192 ? 97 : 1;
@@ -462,13 +485,52 @@ export function pixelEvidenceFingerprint(bytes: Uint8Array): string {
   return `${bytes.length.toString(16)}-${(hash >>> 0).toString(16)}`;
 }
 
+const IOS_TAP_VERIFY_FRAME_INTERVAL_MS =
+  IOS_TAP_VERIFY_STABILITY_WINDOW_MS / (IOS_TAP_VERIFY_MAX_FRAMES - 1);
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type AfterActionSettle = "stable" | "live";
+
+/**
+ * Capture the after-action frame once the pixels stop moving. Frames are
+ * sampled across the settle budget and the first two consecutive equal
+ * fingerprints win; a screen that never stabilizes is animated/live (cursor,
+ * spinner, video) and callers must treat it as changed rather than dead.
+ * A non-positive budget keeps the legacy single-shot capture.
+ */
+async function captureUntilStable(
+  capture: (path: string) => Promise<CapturedIosVisualRaster>,
+  path: string,
+  budgetMs: number,
+): Promise<{ stability: AfterActionSettle; raster?: CapturedIosVisualRaster }> {
+  if (budgetMs <= 0) {
+    return { stability: "stable", raster: await capture(path) };
+  }
+  const interval = Math.max(1, Math.floor(budgetMs / (IOS_TAP_VERIFY_MAX_FRAMES - 1)));
+  let previous: string | undefined;
+  for (let frame = 0; frame < IOS_TAP_VERIFY_MAX_FRAMES; frame += 1) {
+    if (frame > 0) await delay(interval);
+    const current = await capture(path);
+    const fingerprint = pixelEvidenceFingerprint(current.bytes);
+    if (previous !== undefined && previous === fingerprint) {
+      return { stability: "stable", raster: current };
+    }
+    previous = fingerprint;
+  }
+  return { stability: "live" };
+}
+
+
 export async function verifyIosScreenChanged(
   serial: string,
   act: () => Promise<void>,
   input: {
     run?: CommandRunner;
     bin?: string;
-    /** Default is deliberately modest; this only waits for the one requested action. */
+    /** Total settle budget for the after-action stability poll. */
     settleMs?: number;
     /** Test-only isolation seam; ordinary callers use the system temp directory. */
     temporaryDirectory?: string;
@@ -478,14 +540,14 @@ export async function verifyIosScreenChanged(
 ): Promise<IosVisualVerificationResult> {
   const bin = input.bin ?? (await resolveGoIosBinary());
   const run = input.run ?? defaultCommandRunner;
+  const requestedSettleMs = input.settleMs ?? IOS_TAP_VERIFY_STABILITY_WINDOW_MS;
+  const settleMs = Number.isFinite(requestedSettleMs)
+    ? Math.max(0, Math.min(10_000, Math.floor(requestedSettleMs)))
+    : IOS_TAP_VERIFY_STABILITY_WINDOW_MS;
   const temporaryDirectory = input.temporaryDirectory ?? tmpdir();
   const captureId = randomUUID();
   const beforePath = join(temporaryDirectory, `relay-tap-before-${process.pid}-${captureId}.png`);
   const afterPath = join(temporaryDirectory, `relay-tap-after-${process.pid}-${captureId}.png`);
-  const requestedSettleMs = input.settleMs ?? 280;
-  const settleMs = Number.isFinite(requestedSettleMs)
-    ? Math.max(0, Math.min(10_000, Math.floor(requestedSettleMs)))
-    : 280;
   const startedAt = Date.now();
   const interaction = input.repair
     ? normalizeIosVisualVerificationInteraction(input.repair.interaction)
@@ -542,19 +604,22 @@ export async function verifyIosScreenChanged(
       } finally {
         actionFinishedAt = Date.now();
       }
-
-      if (settleMs > 0) await new Promise((resolve) => setTimeout(resolve, settleMs));
-      try {
-        after = await capture(afterPath);
-      } catch (error) {
-        recordFailure("after-capture", error);
-      }
-
-      if (before && after) {
+      // The after frame is sampled until pixels settle (bounded). A screen
+      // that never stabilizes is animated/live — cursors, spinners, video —
+      // and must not be read as a dead tap.
+      const settled = await captureUntilStable(capture, afterPath, settleMs);
+      after = settled.raster;
+      if (after) {
         try {
           before.fingerprint = pixelEvidenceFingerprint(before.bytes);
           after.fingerprint = pixelEvidenceFingerprint(after.bytes);
-          if (!failure && after.fingerprint === before.fingerprint) {
+          // Equal before/after fingerprints only mean a genuinely dead tap
+          // when the screen had actually settled.
+          if (
+            !failure &&
+            after.fingerprint === before.fingerprint &&
+            settled.stability === "stable"
+          ) {
             recordFailure(
               "fingerprint",
               new Error(

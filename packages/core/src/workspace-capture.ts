@@ -37,7 +37,7 @@ import {
   readIosDisplayOrientation,
 } from "./ios-device-adapter.js";
 import { captureIosPngViaGoIos } from "./ios-app-launch.js";
-import { annotateTapPreview } from "./tap-preview.js";
+import { annotateTapPreview, tapPreviewLogicalBounds } from "./tap-preview.js";
 import {
   inferIosSnapshotGeometry,
   normalizeIosSnapshotNodes,
@@ -714,17 +714,17 @@ export async function captureScreenshot(opts?: {
       Number.isFinite(opts.previewTap.x) &&
       Number.isFinite(opts.previewTap.y)
     ) {
-      const logical =
+      const geometry =
         context.kind === "device" && context.platform === "ios" && context.serial
           ? currentIosSnapshotGeometry(context.serial, pixelCapturedAt)
           : undefined;
-      buf = Buffer.from(
-        annotateTapPreview(
-          buf,
-          opts.previewTap,
-          logical ? { width: logical.logicalWidth, height: logical.logicalHeight } : undefined,
-        ),
-      );
+      const logical = geometry
+        ? tapPreviewLogicalBounds(buf, {
+            width: geometry.logicalWidth,
+            height: geometry.logicalHeight,
+          })
+        : undefined;
+      buf = Buffer.from(annotateTapPreview(buf, opts.previewTap, logical));
       await writeFile(path, buf);
     }
     const base64 = buf.toString("base64");

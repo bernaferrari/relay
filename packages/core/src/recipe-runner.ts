@@ -9,7 +9,6 @@ import {
   isNotFoundOrTimeout,
   readInput,
   resolvePointForDevice,
-  runtimeBoundsCache,
   runVariableScript,
   targetPresent,
   waitForResponseCompletion,
@@ -737,8 +736,9 @@ async function runRequiredRecipeStep(
       else await keyboardAction(device, step.action === "keyboard-dismiss" ? "dismiss" : "enter");
       break;
     case "rotate":
+      // The confirmed rotation advances the iOS input fence, which re-keys
+      // runtimeBoundsCache; no explicit invalidation is needed here.
       await rotateDevice(device, step.orientation);
-      runtimeBoundsCache.delete(device);
       break;
     case "settings": {
       const common = { ...base(), setting: step.setting };

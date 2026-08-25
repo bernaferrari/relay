@@ -615,6 +615,10 @@ describe("runRecipeStep text entry", () => {
         udid: "recipe-runner-ios-test",
         selector: 'id="message-field"',
         text: "x",
+        // iOS fills carry the same non-hittable coordinate-fallback
+        // coordination presses use, so the first attempt can steer the
+        // native adapter instead of paying a second traversal.
+        maestro: { allowNonHittableCoordinateFallback: true },
       },
     ]);
     assert.deepEqual(types, [

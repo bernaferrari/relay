@@ -1117,15 +1117,37 @@ export async function replaceText(
     if (text.length > 0) await typeText(device, text);
     return;
   }
-
+  // The selector fill carries the same non-hittable coordination fields a
+  // press does: the runner can fall back to the snapshot-derived coordinate
+  // in one round-trip instead of paying a second full traversal here.
+  const resolveFillPoint = async (): Promise<{ x: number; y: number } | undefined> => {
+    if (target.point) return target.point;
+    try {
+      const nodes = await snapshot(device);
+      return (
+        resolveSnapshotTargetPoint(nodes, target) ??
+        (target.label || target.text
+          ? resolveSnapshotTargetPoint(nodes, { label: target.label, text: target.text })
+          : undefined)
+      );
+    } catch {
+      return undefined;
+    }
+  };
+  const fillPoint = await resolveFillPoint();
   await replaceTextValue(text, {
     fill: async (value) => {
       try {
         await controlledMutation("fill", () =>
-          nativeDevice(device).interactions.fill({ ...base(), ...interactionTarget, text: value }),
+          nativeDevice(device).interactions.fill({
+            ...base(),
+            ...interactionTarget,
+            ...iosNonHittablePressFields(fillPoint),
+            text: value,
+          }),
         );
       } catch (error) {
-        const point = await iosSnapshotFallbackPoint(device, target, error);
+        const point = await iosSnapshotFallbackPoint(device, target, error, fillPoint);
         await controlledMutation("fill", () =>
           nativeDevice(device).interactions.fill({
             ...base(),
@@ -1465,6 +1487,20 @@ export async function pressMatchingText(device: Device, match: string): Promise<
   }
 
   const { x: tx, y: ty, width: tw, height: th } = textNode!.rect!;
+  // An enclosing row must span (nearly) the full viewport width. The old
+  // absolute `width >= 400` only matched iPad-class geometry; a relative
+  // threshold lets iPhone rows qualify while still rejecting narrow inline
+  // chips. Falls back to the historical absolute floor when no viewport
+  // root is present in the tree.
+  const applicationWidth = nodes.find(
+    (node) => (node.type ?? node.role)?.toLocaleLowerCase() === "application",
+  )?.rect?.width;
+  const windowWidth = nodes.find(
+    (node) => (node.type ?? node.role)?.toLocaleLowerCase() === "window",
+  )?.rect?.width;
+  const viewportWidth = applicationWidth ?? windowWidth;
+  // No viewport root: keep the historical absolute floor of 400pt.
+  const minContainerWidth = viewportWidth === undefined ? 400 : Math.max(400, viewportWidth * 0.9);
   let best: { area: number; x: number; y: number; width: number; height: number } | undefined;
 
   for (const n of nodes) {
@@ -1473,7 +1509,13 @@ export async function pressMatchingText(device: Device, match: string): Promise<
       n.hittable || (selectedPlatform() === "ios" && INTERACTIVE_SNAPSHOT_ROLES.has(role));
     if (!interactive || !n.rect) continue;
     const { x, y, width, height } = n.rect;
-    if (x <= tx && y <= ty && x + width >= tx + tw && y + height >= ty + th && width >= 400) {
+    if (
+      x <= tx &&
+      y <= ty &&
+      x + width >= tx + tw &&
+      y + height >= ty + th &&
+      width >= minContainerWidth
+    ) {
       const area = width * height;
       if (!best || area < best.area) {
         best = { area, x, y, width, height };

@@ -14,6 +14,22 @@ import type { IosSafePreviewProducerProvenance } from "./ios-preview-producer.js
 
 export const IOS_PREVIEW_STALE_AFTER_MS = 8_000;
 
+/**
+ * Cheap content identity for one observed frame (FNV-1a 32). Relay compares
+ * successive fingerprints to tell a stream that is alive but showing an
+ * unchanged screen apart from a stream whose frames actually advance. It is
+ * deliberately a content hash, not a frame counter: a re-encoded duplicate
+ * screen hashes the same, which is exactly the fact consumers need.
+ */
+export function iosPreviewFrameFingerprint(frame: Uint8Array): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < frame.length; index += 1) {
+    hash ^= frame[index]!;
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 /** The small part of ServerResponse needed for bounded latest-frame fanout. */
 export type IosFrameSink = {
   write: (chunk: Uint8Array) => boolean;
@@ -99,6 +115,12 @@ export type IosFrameFanoutDiagnostics = {
   /** Measured across Relay response writes, never advertised as source FPS. */
   writtenFramesPerSecond?: number;
   dropRate?: number;
+  /**
+   * Content fingerprint of the newest published frame. Identical values
+   * across observations mean the stream is alive but the screen has not
+   * advanced; a changing value proves new pixels reached Relay.
+   */
+  lastFrameFingerprint?: string;
 };
 
 type IosFrameSubscriber = {
@@ -128,8 +150,9 @@ export type IosFrameSubscription = {
 export class IosLatestFrameFanout {
   readonly #subscribers = new Map<symbol, IosFrameSubscriber>();
   readonly #now: () => number;
-  #latestPacket: Buffer | undefined;
   #publishedFrames = 0;
+  #lastFrameFingerprint: string | undefined;
+  #latestPacket: Buffer | undefined;
   #offeredFrames = 0;
   #writtenFrames = 0;
   #droppedFrames = 0;
@@ -164,6 +187,9 @@ export class IosLatestFrameFanout {
       pendingFrames,
       ...(rate === undefined ? {} : { writtenFramesPerSecond: rate }),
       ...(dropRate === undefined ? {} : { dropRate }),
+      ...(this.#lastFrameFingerprint === undefined
+        ? {}
+        : { lastFrameFingerprint: this.#lastFrameFingerprint }),
     };
   }
 
@@ -197,6 +223,7 @@ export class IosLatestFrameFanout {
   publish(packet: Buffer): void {
     this.#latestPacket = packet;
     this.#publishedFrames += 1;
+    this.#lastFrameFingerprint = iosPreviewFrameFingerprint(packet);
     for (const [token, subscriber] of this.#subscribers) {
       this.#offer(token, subscriber, packet);
     }
@@ -381,5 +408,7 @@ export function iosLivePreviewMetricHeaders(
     "X-Relay-Ios-Source-Stale-After-Ms": String(diagnostics.staleAfterMs),
     "X-Relay-Ios-Target-Fps": "unadvertised",
     "X-Relay-Ios-Delivery-Strategy": "latest-frame",
+    "X-Relay-Ios-Last-Frame-Fingerprint":
+      diagnostics.fanout.lastFrameFingerprint ?? "unavailable",
   };
 }

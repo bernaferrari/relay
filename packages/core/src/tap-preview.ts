@@ -3,6 +3,8 @@
  */
 import { PNG } from "pngjs";
 
+import { pngDimensions } from "./ios-geometry.js";
+
 export type TapPreviewPoint = { x: number; y: number; label?: string };
 
 export type TapPreviewMark = {
@@ -28,6 +30,29 @@ export function mapTapPreviewToPixels(
     };
   }
   return { x: Math.round(point.x), y: Math.round(point.y), scale: 1 };
+}
+
+/**
+ * Logical interaction space for annotating a raster. The caller supplies the
+ * logical size it already knows (AX geometry, snapshot bounds, recorded
+ * viewport); the measured PNG dimensions confirm the raster really is that
+ * same-aspect interaction space before the mark is trusted 1:1. A Retina
+ * capture (pixels at 2–3× the logical viewport) then scales correctly instead
+ * of painting its ring in the top-left quadrant; Android pixels and taps
+ * share units, so a matching raster stays unscaled.
+ */
+export function tapPreviewLogicalBounds(
+  bytes: Buffer,
+  knownLogical?: { width: number; height: number },
+): { width: number; height: number } | undefined {
+  if (!knownLogical || knownLogical.width <= 0 || knownLogical.height <= 0) return undefined;
+  const dimensions = pngDimensions(bytes);
+  if (!dimensions) return undefined;
+  const aspect = (value: { width: number; height: number }): number =>
+    Math.min(value.width, value.height) / Math.max(value.width, value.height);
+  // Same shape (within ~1%) means points and pixels share one orientation and
+  // only a scale factor differs — exactly what mapTapPreviewToPixels applies.
+  return Math.abs(aspect(dimensions) - aspect(knownLogical)) < 0.01 ? knownLogical : undefined;
 }
 
 function mixPixel(

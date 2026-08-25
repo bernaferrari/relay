@@ -367,7 +367,18 @@ async function runFixtureSuite(api, writer, fixture, options) {
   await runProofReplay(api, writer, fixture, options);
   await captureFixtureEvidence(api, writer, fixture, "after-proof-replay");
   await runRotationScenario(api, writer, fixture);
-  for (const scenario of ["delayedSemanticFallback", "semanticInput", "pointInput"]) {
+  for (const scenario of [
+    "delayedSemanticFallback",
+    "semanticInput",
+    "pointInput",
+    // iOS trustworthiness lanes: runner killed mid-session, wedged DDI
+    // recovery, and app → Settings handoff. Each recipe already proves its
+    // own entrance/exit; recovery acknowledgement evidence is captured by
+    // preflightFixture and the per-scenario captures below.
+    "runnerKillMidSession",
+    "ddiUnmountRecover",
+    "appHandoffToSettings",
+  ]) {
     await runRecipe(api, writer, fixture, scenario, options);
     await captureFixtureEvidence(api, writer, fixture, `after-${scenario}`);
   }

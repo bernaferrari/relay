@@ -23,6 +23,7 @@ import {
   preflightRegisteredBuild,
   openApp,
   recoverTargetRuntime,
+  type TargetRuntimeRecovery,
   readBuild,
   readDevicePool,
   runWithTargetContext,
@@ -35,7 +36,11 @@ import {
   handleCampaignDurationRoute,
   type CampaignDurationRouteRuntime,
 } from "./campaign-duration-routes.js";
-import type { LocalAgentDeviceExecutionTargetRef, OperationInput } from "@relay/protocol";
+import {
+  projectRoleAllows,
+  type LocalAgentDeviceExecutionTargetRef,
+  type OperationInput,
+} from "@relay/protocol";
 import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import { recordAudit, type RequestContext } from "./security.js";
 
@@ -50,7 +55,11 @@ export type TargetRuntimeRouteRuntime = {
     app: string;
     relaunch: boolean;
   }) => Promise<void>;
-  recoverTarget: (serial: string, reason?: string) => ReturnType<typeof recoverTargetRuntime>;
+  recoverTarget: (
+    serial: string,
+    reason?: string,
+    force?: boolean,
+  ) => Promise<TargetRuntimeRecovery>;
   /** Fresh evidence is captured only when the caller explicitly asks to
    * release a stale durable execution fence after recovery. */
   captureScreenshot: typeof captureScreenshot;
@@ -75,10 +84,11 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
       openApp(createDevice(), app, { relaunch }),
     );
   },
-  recoverTarget: (serial, reason) =>
+  recoverTarget: (serial, reason, force) =>
     recoverTargetRuntime(
       serial,
       reason ? new Error(`Recovery requested for ${reason}`) : undefined,
+      { force: force === true },
     ),
   captureScreenshot,
   captureSnapshot,
@@ -255,6 +265,7 @@ export async function handleTargetRuntimeRoute(context: {
       serial?: unknown;
       reason?: unknown;
       recoveryFenceAssignmentId?: unknown;
+      force?: unknown;
     };
     const serial = typeof body.serial === "string" ? body.serial.trim() : "";
     const reason = typeof body.reason === "string" ? body.reason.trim() : undefined;
@@ -270,6 +281,23 @@ export async function handleTargetRuntimeRoute(context: {
         403,
         "Durable recovery-fence release is available only from the local Relay host",
         { code: "DURABLE_RECOVERY_FENCE_LOCAL_ONLY" },
+      );
+    }
+    // Force is the destructive wedge-clearing lane: it restarts Relay's local
+    // helper even when no lock could be verified stale. Gate it like other
+    // privileged maintenance and reject anything but an explicit boolean.
+    const force = body.force === true;
+    if (body.force !== undefined && typeof body.force !== "boolean") {
+      throw new HttpError(400, "force must be a boolean");
+    }
+    if (
+      force &&
+      !projectRoleAllows(scope.role, "admin")
+    ) {
+      throw new HttpError(
+        403,
+        "Forced target recovery is available only to project admins",
+        { code: "TARGET_RECOVERY_FORCE_ADMIN_ONLY" },
       );
     }
     const assignments = recoveryFenceAssignmentId
@@ -320,7 +348,7 @@ export async function handleTargetRuntimeRoute(context: {
       }
     }
     await runtime.assertTargetControl(scope, serial);
-    const recovery = await runtime.recoverTarget(serial, reason);
+    const recovery = await runtime.recoverTarget(serial, reason, force);
     await appendActivity({
       eventType: recovery.ready ? "target.recovery.completed" : "target.recovery.failed",
       resourceKind: "target",

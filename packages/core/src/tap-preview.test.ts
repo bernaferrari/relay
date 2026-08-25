@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PNG } from "pngjs";
-import { annotateTapPreview, annotateVisitedRows, mapTapPreviewToPixels } from "./tap-preview.js";
+import {
+  annotateTapPreview,
+  annotateVisitedRows,
+  mapTapPreviewToPixels,
+  tapPreviewLogicalBounds,
+} from "./tap-preview.js";
 
 function solidPng(width: number, height: number, rgb: [number, number, number]): Buffer {
   const png = new PNG({ width, height });
@@ -40,6 +45,40 @@ test("explicit logical bounds matching the image stay 1:1", () => {
   );
   assert.equal(mapped.x, 78);
   assert.equal(mapped.y, 88);
+});
+
+test("scales a Retina raster against its known logical viewport", () => {
+  // 1668×2224 pixels is an 834×1112-point iPad at 2×. Without the PNG check
+  // wiring, the ring would paint at half scale in the wrong quadrant.
+  const logical = tapPreviewLogicalBounds(solidPng(1668, 2224, [0, 0, 0]), {
+    width: 834,
+    height: 1112,
+  });
+  assert.deepEqual(logical, { width: 834, height: 1112 });
+  const mapped = mapTapPreviewToPixels({ x: 78, y: 88 }, { width: 1668, height: 2224 }, logical);
+  assert.equal(mapped.scale, 2);
+  assert.equal(mapped.x, 156);
+  assert.equal(mapped.y, 176);
+});
+
+test("rejects a raster whose shape cannot be the known logical space", () => {
+  // A portrait raster cannot be a landscape interaction space at any scale;
+  // annotating it with those points would draw fiction.
+  const logical = tapPreviewLogicalBounds(solidPng(1080, 2340, [0, 0, 0]), {
+    width: 1112,
+    height: 834,
+  });
+  assert.equal(logical, undefined);
+});
+
+test("annotating a Retina frame lands its ring on the tapped control", () => {
+  // Logical point (40,40) inside an 80×80-point viewport captured at
+  // 160×160 pixels must paint near pixel (80,80), not (40,40).
+  const original = solidPng(160, 160, [10, 20, 30]);
+  const marked = annotateTapPreview(original, { x: 40, y: 40 }, { width: 80, height: 80 });
+  const before = PNG.sync.read(original);
+  const after = PNG.sync.read(marked);
+  assert.notEqual(after.data[(160 * 80 + 96) << 2], before.data[(160 * 80 + 96) << 2]);
 });
 
 test("preview paints a ring without changing the rest of the frame", () => {

@@ -7,8 +7,21 @@
  */
 import type { SnapshotNode } from "./device.js";
 import type { TargetContext } from "./target-context.js";
+import { recordTargetSemanticFlightSettled } from "./target-runtime-readiness.js";
 
 export const IOS_SNAPSHOT_TIMEOUT_MS = 8_000;
+
+/**
+ * Hard ceiling for an eternally in-flight traversal: roughly twice the daemon
+ * budget. Past it the flight is no longer "slow" — the runner is wedged and
+ * surface as recovery-worthy instead of failing fast forever until a manual
+ * Reconnect.
+ */
+export const IOS_SNAPSHOT_FORCE_EXPIRY_MS = 2 * IOS_SNAPSHOT_TIMEOUT_MS;
+
+/** Extra time a recovery probe may wait for the current traversal to settle
+ * before concluding the tree is slow (not dead) and preserving the session. */
+export const IOS_SNAPSHOT_SETTLE_WAIT_MS = IOS_SNAPSHOT_TIMEOUT_MS;
 
 /** A bounded wait expired while XCTest is still traversing the current
  * accessibility tree. This is distinct from a missing XCTest session: the
@@ -41,6 +54,24 @@ export class IosSnapshotInFlightError extends Error {
 }
 
 /**
+ * The traversal exceeded the hard force-expiry ceiling: XCTest never settled
+ * within twice the daemon budget, so the runner is wedged rather than merely
+ * slow. Unlike a bounded timeout this is recovery-worthy: killing the stuck
+ * runner is authorized and callers must not keep failing fast forever until
+ * someone presses Reconnect by hand.
+ */
+export class IosSnapshotRunnerWedgedError extends Error {
+  readonly code = "IOS_SNAPSHOT_RUNNER_WEDGED";
+
+  constructor(readonly elapsedMs: number) {
+    super(
+      `iOS accessibility has been reading this screen for ${elapsedMs}ms — well past the wait budget. The XCTest runner appears wedged; run Reconnect so Relay can stop it and start a fresh one.`,
+    );
+    this.name = "IosSnapshotRunnerWedgedError";
+  }
+}
+
+/**
  * A native input completed after this tree traversal started. XCTest cannot
  * cancel the old traversal, but its result is historical evidence and must
  * never be handed to a caller asking what the target looks like now.
@@ -57,9 +88,12 @@ export class IosSnapshotStaleAfterInputError extends Error {
   }
 }
 
-/** A tree read is running or exceeded Relay's wait budget, but XCTest itself
+/**
+ * A tree read is running or exceeded Relay's wait budget, but XCTest itself
  * has not been proven unavailable. Callers must not reconnect or start a
- * second tree traversal in response. */
+ * second tree traversal in response. A force-expired (runner-wedged) flight is
+ * deliberately excluded: it is recovery-worthy and must reach the repair path.
+ */
 export function isIosAccessibilityQueryInFlightError(
   error: unknown,
 ): error is IosSnapshotTimedOutError | IosSnapshotInFlightError | IosSnapshotStaleAfterInputError {
@@ -86,9 +120,18 @@ const iosSnapshotFlights = new Map<string, IosSnapshotFlight>();
  */
 const iosSnapshotInputEpochs = new Map<string, number>();
 
+/** One identity representation for flights, input epochs, and input fences.
+ * Both `snapshotIosSingleFlight` and `noteConfirmedIosSnapshotInput` derive
+ * their keys here so a fence can never miss the flight it must guard. */
+export function iosSnapshotTargetKey(serial: string): string {
+  // Match TargetContext's exact identity representation. Validation owns any
+  // normalization before a target reaches this module.
+  return `ios:${serial}`;
+}
+
 function iosSnapshotKey(context: TargetContext): string | undefined {
   return context.kind === "device" && context.platform === "ios"
-    ? `${context.platform}:${context.serial}`
+    ? iosSnapshotTargetKey(context.serial)
     : undefined;
 }
 
@@ -108,6 +151,14 @@ function currentIosSnapshotInputEpoch(key: string): number {
 }
 
 /**
+ * Monotonic per-target counter of confirmed screen-affecting inputs. Caches
+ * keyed on it can never serve pre-rotation or post-tap geometry as current.
+ */
+export function iosSnapshotInputEpoch(serial: string): number {
+  return currentIosSnapshotInputEpoch(iosSnapshotTargetKey(serial));
+}
+
+/**
  * Fence a physical iOS tree after a confirmed native screen-affecting input.
  * The old XCTest request remains the one and only request until it settles;
  * new callers receive a typed in-flight response instead of sharing stale
@@ -115,9 +166,7 @@ function currentIosSnapshotInputEpoch(key: string): number {
  */
 export function noteConfirmedIosSnapshotInput(serial: string): void {
   if (!serial.trim()) return;
-  // Match TargetContext's exact identity representation. Validation owns any
-  // normalization before a target reaches this module.
-  const key = `ios:${serial}`;
+  const key = iosSnapshotTargetKey(serial);
   iosSnapshotInputEpochs.set(key, currentIosSnapshotInputEpoch(key) + 1);
 }
 
@@ -160,7 +209,10 @@ export async function snapshotIosSingleFlight(
   timeoutMs?: number,
 ): Promise<SnapshotNode[]> {
   const key = iosSnapshotKey(context);
-  if (!key) throw new Error("iOS snapshot single-flight requires a connected iOS target");
+  if (!key || context.kind !== "device" || context.platform !== "ios") {
+    throw new Error("iOS snapshot single-flight requires a connected iOS target");
+  }
+  const readinessTarget = { platform: context.platform, serial: context.serial };
   const inputEpoch = currentIosSnapshotInputEpoch(key);
   const existing = iosSnapshotFlights.get(key);
   if (existing) {
@@ -169,7 +221,15 @@ export async function snapshotIosSingleFlight(
     // It cannot answer a post-input assertion, and iOS cannot safely overlap
     // it with a replacement traversal.
     if (existing.inputEpoch !== inputEpoch) throw new IosSnapshotInFlightError(elapsedMs);
-    if (existing.timedOut) throw new IosSnapshotInFlightError(elapsedMs);
+    if (existing.timedOut) {
+      // Past twice the daemon budget this traversal is not merely slow: the
+      // flight is force-expired and surfaced as runner-wedged, which is
+      // recovery-worthy instead of failing fast forever.
+      if (Date.now() - existing.startedAt >= IOS_SNAPSHOT_FORCE_EXPIRY_MS) {
+        throw new IosSnapshotRunnerWedgedError(elapsedMs);
+      }
+      throw new IosSnapshotInFlightError(elapsedMs);
+    }
     // A full tree is a safe superset of an interactive-only tree, so those
     // callers can share work. The inverse is not safe: do not make a full
     // request look complete after an interactive-only SDK response.
@@ -202,8 +262,59 @@ export async function snapshotIosSingleFlight(
   void result.catch(() => {
     flight.timedOut = true;
   });
+  void native.then(
+    (value) => {
+      // The flight settled with a usable tree: update semantic readiness now
+      // instead of letting a probe-in-flight label stick until the TTL.
+      const nodes = (value.nodes ?? []) as SnapshotNode[];
+      recordTargetSemanticFlightSettled(readinessTarget, {
+        nodes,
+        at: Date.now(),
+        durationMs: Math.max(0, Date.now() - startedAt),
+      });
+    },
+    () => undefined,
+  );
+
+  // Hard ceiling at twice the daemon budget: an eternally in-flight traversal
+  // is force-expired and surfaces as runner-wedged, which is recovery-worthy.
+  // Without it every later read fails fast as in-flight forever until a human
+  // presses Reconnect by hand. The lock is released so recovery may start a
+  // fresh traversal; the zombie request itself can never be cancelled.
+  void Promise.race([
+    native,
+    new Promise<never>((_, reject) => {
+      const ceiling = setTimeout(() => {
+        reject(new IosSnapshotRunnerWedgedError(Math.max(0, Date.now() - startedAt)));
+      }, IOS_SNAPSHOT_FORCE_EXPIRY_MS);
+      ceiling.unref?.();
+    }),
+  ])
+    .finally(() => {
+      if (iosSnapshotFlights.get(key) === flight) iosSnapshotFlights.delete(key);
+    })
+    .catch(() => undefined);
 
   return await result;
+}
+
+/**
+ * Wait up to `budgetMs` for the current native traversal to settle. Recovery
+ * uses this to distinguish a slow tree (worth preserving) from a dead runner:
+ * a bounded timeout alone authorizes nothing destructive.
+ */
+export async function waitForIosSnapshotFlightSettle(
+  context: TargetContext,
+  budgetMs = IOS_SNAPSHOT_SETTLE_WAIT_MS,
+): Promise<boolean> {
+  const key = iosSnapshotKey(context);
+  if (!key) return true;
+  const deadline = Date.now() + Math.max(0, budgetMs);
+  while (Date.now() < deadline) {
+    if (!iosSnapshotFlights.has(key)) return true;
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  }
+  return !iosSnapshotFlights.has(key);
 }
 
 /** Normalize only a genuine runner/session absence. A bounded traversal

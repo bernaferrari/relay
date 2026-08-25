@@ -77,6 +77,31 @@ function recipe(id, scenario) {
           { kind: "expect", target: { identifier: "fixture-detail" }, condition: "visible" },
         ],
       };
+    case "runnerKillMidSession":
+    case "ddiUnmountRecover":
+      return {
+        id,
+        title: id,
+        source: "custom",
+        steps: [
+          { kind: "expect", target: { identifier: "fixture-home" }, condition: "visible" },
+          { kind: "device", action: "keyboard-dismiss" },
+          { kind: "expect", target: { identifier: "fixture-detail" }, condition: "visible" },
+        ],
+      };
+    case "appHandoffToSettings":
+      return {
+        id,
+        title: id,
+        source: "custom",
+        steps: [
+          { kind: "expect", target: { identifier: "fixture-home" }, condition: "visible" },
+          { kind: "app", action: "open", app: "com.example.RelayFixture" },
+          { kind: "expect", target: { identifier: "fixture-detail" }, condition: "visible" },
+          { kind: "settings", setting: "appearance", state: "light" },
+          { kind: "expect", target: { identifier: "settings-surface" }, condition: "visible" },
+        ],
+      };
     default:
       throw new Error(`Unknown scenario ${scenario}`);
   }
@@ -96,6 +121,9 @@ function fixture(platform, serial) {
       semanticInput: `${prefix}-semantic`,
       pointInput: `${prefix}-point`,
       parallelScheduling: `${prefix}-parallel`,
+      runnerKillMidSession: `${prefix}-runner-kill`,
+      ddiUnmountRecover: `${prefix}-ddi-recover`,
+      appHandoffToSettings: `${prefix}-handoff`,
     },
   };
 }
@@ -117,6 +145,9 @@ function scenarioFromRecipe(recipeId) {
   if (recipeId.endsWith("-semantic")) return "semanticInput";
   if (recipeId.endsWith("-point")) return "pointInput";
   if (recipeId.endsWith("-parallel")) return "parallelScheduling";
+  if (recipeId.endsWith("-runner-kill")) return "runnerKillMidSession";
+  if (recipeId.endsWith("-ddi-recover")) return "ddiUnmountRecover";
+  if (recipeId.endsWith("-handoff")) return "appHandoffToSettings";
   throw new Error(`Unrecognized test recipe ${recipeId}`);
 }
 

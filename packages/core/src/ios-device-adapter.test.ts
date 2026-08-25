@@ -197,6 +197,11 @@ test("makes an otherwise unexplained XCTest-session failure actionable", async (
   assert.match(error.message, /unlocked/i);
 });
 
+test("classifies a bare no-active-session phrase without an XCTest mention", async () => {
+  const error = await diagnoseIosRunnerError(new Error("no active session for this target"));
+  assert.ok(error instanceof IosXCTestSessionUnavailableError);
+});
+
 test("upgrades an already-normalized XCTest error when the fresh runner log shows DDI", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-ios-normalized-ddi-log-"));
   const previousStateDir = process.env.AGENT_DEVICE_STATE_DIR;

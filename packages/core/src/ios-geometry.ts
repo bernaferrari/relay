@@ -1,14 +1,28 @@
 import { PNG } from "pngjs";
 import type { SnapshotNode } from "./device.js";
 
+export type IosSnapshotRotation = "none" | "left" | "right" | "upside-down";
+
 export type IosSnapshotGeometry = {
-  rotation: "none" | "left";
+  rotation: IosSnapshotRotation;
   logicalWidth: number;
   logicalHeight: number;
 };
 
-/** Detect XCTest's mixed native-portrait and interface-landscape coordinate spaces. */
-export function inferIosSnapshotGeometry(nodes: SnapshotNode[]): IosSnapshotGeometry | undefined {
+/**
+ * Detect XCTest's mixed native-portrait and interface coordinate spaces.
+ *
+ * The depth-0 Application root always speaks the logical interface space, so
+ * its aspect tells us when descendants arrive in the device's native portrait
+ * buffer — even in sparse trees that omit the confirming Window node. The
+ * optional CoreDevice display orientation decides which of the three remap
+ * directions applies; without it a landscape interface can only keep the
+ * historically observed default ("left").
+ */
+export function inferIosSnapshotGeometry(
+  nodes: SnapshotNode[],
+  displayOrientation?: IosDisplayOrientation | string | null,
+): IosSnapshotGeometry | undefined {
   const application = nodes.find(
     (node) =>
       node.depth === 0 &&
@@ -20,39 +34,65 @@ export function inferIosSnapshotGeometry(nodes: SnapshotNode[]): IosSnapshotGeom
   if (!application?.rect) return undefined;
   const logicalWidth = application.rect.width;
   const logicalHeight = application.rect.height;
-  const nativeWindow = nodes.find(
-    (node) =>
-      node.depth === 1 &&
-      node.type === "Window" &&
-      node.rect &&
-      Math.abs(node.rect.width - logicalHeight) <= 2 &&
-      Math.abs(node.rect.height - logicalWidth) <= 2,
+  const orientation = parseIosDisplayOrientation(
+    displayOrientation == null ? undefined : String(displayOrientation),
   );
-  return {
-    rotation: nativeWindow && logicalWidth > logicalHeight ? "left" : "none",
-    logicalWidth,
-    logicalHeight,
-  };
+  const rotation: IosSnapshotRotation =
+    logicalWidth > logicalHeight
+      ? orientation === "landscape-right"
+        ? "right"
+        : "left"
+      : orientation === "portrait-upside-down"
+        ? "upside-down"
+        : "none";
+  return { rotation, logicalWidth, logicalHeight };
 }
 
-/** Normalize XCTest's portrait-buffer child rects into the logical viewport. */
+/** Normalize XCTest child rects from their native buffer into the logical viewport. */
 export function normalizeIosSnapshotNodes(
   nodes: SnapshotNode[],
   geometry = inferIosSnapshotGeometry(nodes),
 ): SnapshotNode[] {
   if (!geometry || geometry.rotation === "none") return nodes;
+  const logicalWidth = geometry.logicalWidth;
+  const logicalHeight = geometry.logicalHeight;
   return nodes.map((node) => {
     if (!node.rect || (node.depth === 0 && node.type === "Application")) return node;
     const rect = node.rect;
-    return {
-      ...node,
-      rect: {
-        x: rect.y,
-        y: geometry.logicalHeight - (rect.x + rect.width),
-        width: rect.height,
-        height: rect.width,
-      },
-    };
+    switch (geometry.rotation) {
+      case "left":
+        return {
+          ...node,
+          rect: {
+            x: rect.y,
+            y: logicalHeight - (rect.x + rect.width),
+            width: rect.height,
+            height: rect.width,
+          },
+        };
+      case "right":
+        return {
+          ...node,
+          rect: {
+            x: logicalWidth - (rect.y + rect.height),
+            y: rect.x,
+            width: rect.height,
+            height: rect.width,
+          },
+        };
+      case "upside-down":
+        return {
+          ...node,
+          rect: {
+            x: logicalWidth - (rect.x + rect.width),
+            y: logicalHeight - (rect.y + rect.height),
+            width: rect.width,
+            height: rect.height,
+          },
+        };
+      case "none":
+        return node;
+    }
   });
 }
 

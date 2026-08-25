@@ -214,7 +214,7 @@ test("a failed go-ios launch is one dispatch even when it mentions a tunnel", as
 test("DDI remount is go-ios image unmount then image auto", async () => {
   const { remountIosDeveloperDiskImage } = await import("./ios-app-launch.js");
   const calls: string[] = [];
-  const ok = await remountIosDeveloperDiskImage("udid-1", {
+  const result = await remountIosDeveloperDiskImage("udid-1", {
     bin: "ios",
     run: async (_file, args) => {
       calls.push(args.join(" "));
@@ -227,10 +227,27 @@ test("DDI remount is go-ios image unmount then image auto", async () => {
       return { exitCode: 1, stdout: "", stderr: "unexpected" };
     },
   });
-  assert.equal(ok, true);
+  assert.deepEqual(result, { ok: true, stderr: '{"msg":"success mounting image"}' });
   assert.ok(calls[0]?.includes("image unmount"));
   assert.ok(calls[1]?.includes("image auto"));
   assert.ok(!calls.some((call) => call.includes("xcrun") || call.includes("devicectl")));
+});
+
+test("a failed DDI remount surfaces go-ios stderr instead of throwing", async () => {
+  const { remountIosDeveloperDiskImage } = await import("./ios-app-launch.js");
+  const result = await remountIosDeveloperDiskImage("udid-1", {
+    bin: "ios",
+    run: async (_file, args) => {
+      if (args[0] === "image" && args[1] === "unmount") {
+        return { exitCode: 0, stdout: "", stderr: '{"msg":"success unmounting image"}' };
+      }
+      return { exitCode: 1, stdout: "", stderr: "ERROR: unable to mount developer image" };
+    },
+  });
+  assert.deepEqual(result, {
+    ok: false,
+    stderr: "ERROR: unable to mount developer image",
+  });
 });
 
 test("go-ios commands pick up RELAY_GO_IOS_TUNNEL_INFO_PORT", async () => {
@@ -578,4 +595,93 @@ test("CoreDevice probe fails immediately when xcrun is stuck", async () => {
     }),
     new RegExp(`timed out after ${IOS_COREDEVICE_PROBE_TIMEOUT_MS}ms`),
   );
+});
+
+test("an animated screen that never settles is treated as changed, not a dead tap", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-ios-tap-live-"));
+  try {
+    let actions = 0;
+    const result = await verifyIosScreenChanged(
+      "udid-1",
+      async () => {
+        actions += 1;
+      },
+      {
+        bin: "ios",
+        // Every frame differs (cursor blink, spinner, video): the poll never
+        // observes two consecutive equal fingerprints.
+        run: screenshotRunner([
+          Buffer.from("before"),
+          Buffer.from("frame-1"),
+          Buffer.from("frame-2"),
+          Buffer.from("frame-3"),
+          Buffer.from("frame-4"),
+        ]),
+        settleMs: 6,
+        temporaryDirectory: directory,
+      },
+    );
+    assert.equal(actions, 1, "visual proof never retries the requested action");
+    assert.equal(result.outcome, "changed", "a live screen must not fail the tap");
+    assert.deepEqual(await relayTapFiles(directory), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("verification stops polling at the first two equal consecutive frames", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-ios-tap-settle-"));
+  try {
+    const result = await verifyIosScreenChanged("udid-1", async () => undefined, {
+      bin: "ios",
+      run: screenshotRunner([
+        Buffer.from("before"),
+        Buffer.from("transitioning"),
+        Buffer.from("settled"),
+        Buffer.from("settled"),
+      ]),
+      settleMs: 6,
+      temporaryDirectory: directory,
+    });
+    assert.equal(result.outcome, "changed");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("equal before and after pixels on a settled screen stay a typed unchanged error", async () => {
+  await withEvidenceState(async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relay-ios-tap-dead-"));
+    try {
+      let failure: unknown;
+      await assert.rejects(
+        verifyIosScreenChanged("udid-1", async () => undefined, {
+          bin: "ios",
+          run: screenshotRunner([
+            Buffer.from("same"),
+            Buffer.from("same"),
+            Buffer.from("same"),
+          ]),
+          settleMs: 6,
+          temporaryDirectory: directory,
+          repair: {
+            interaction: {
+              label: "Label “Settings”",
+              input: { kind: "label", label: "Settings" },
+            },
+          },
+        }),
+        (error) => {
+          failure = error;
+          return /Tap did not change the screen/u.test(
+            error instanceof Error ? error.message : String(error),
+          );
+        },
+      );
+      assert.equal(iosVisualVerificationDiagnostic(failure)?.outcome, "unchanged");
+      assert.equal(iosVisualVerificationDiagnostic(failure)?.failure?.stage, "fingerprint");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

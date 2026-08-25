@@ -8,8 +8,45 @@ import {
   isIosSessionBindingError,
   recoverIosRuntime,
   recoverIosRuntimeSession,
+  recordRepairStep,
   type IosRuntimeRecoveryDependencies,
 } from "./ios-runtime-recovery.js";
+
+test("a watchdog cause routes to the targeted runner kill, not the shared daemon restart", async () => {
+  let restarts = 0;
+  const result = await recoverIosRuntime(
+    {
+      serial: "ipad",
+      cause: new Error("The iOS runner is still finishing a previous command that exceeded its execution watchdog"),
+    },
+    dependencies({
+      restartAgentDevice: async () => {
+        restarts += 1;
+        return true;
+      },
+    }),
+  );
+  assert.equal(restarts, 0);
+  assert.equal(result.actions.some((action) => action.kind === "agent-device"), false);
+});
+
+test("recordRepairStep records failed cleanup without aborting the remaining repair", async () => {
+  const steps: Array<{ stage: string; outcome: string; detail?: string }> = [];
+  const reporter = (step: { stage: string; outcome: string; detail?: string }) => {
+    steps.push(step);
+  };
+  const survived = await recordRepairStep(reporter, "kill-stale-runners", async () => {
+    throw new Error("go-ios could not list processes");
+  });
+  const passed = await recordRepairStep(reporter, "hard-stop-session", async () => "stopped");
+  assert.equal(survived, undefined);
+  assert.equal(passed, "stopped");
+  assert.deepEqual(
+    steps.map(({ outcome }) => outcome),
+    ["failed", "passed"],
+  );
+  assert.match(steps[0]?.detail ?? "", /could not list processes/);
+});
 
 test("trusts a working runner when Apple's bounded health probe times out", async () => {
   const result = await confirmIosRuntimeSession(

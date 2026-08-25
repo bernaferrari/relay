@@ -4,10 +4,14 @@
 import {
   resetDeviceClient,
   createDevice,
-  isIosAccessibilityQueryInFlightError,
   snapshot,
   type Device,
 } from "./device.js";
+import {
+  IOS_SNAPSHOT_SETTLE_WAIT_MS,
+  isIosAccessibilityQueryInFlightError,
+  waitForIosSnapshotFlightSettle,
+} from "./ios-snapshot-flight.js";
 import { getExecutingJobId, hardStopDeviceSession } from "./control.js";
 import {
   IosDeviceAttentionError,
@@ -19,13 +23,19 @@ import {
 import {
   createIosSessionRecoverySingleFlight,
   foreignSessionNameFromError,
+  isIosDeviceLockedMidRun,
+  recordRepairStep,
   recoverIosRuntime,
   recoverIosRuntimeSession,
+  type IosRepairStepReporter,
   type IosRuntimeRecoveryResult,
   type IosRuntimeSessionRecovery,
 } from "./ios-runtime-recovery.js";
 import { androidSnapshotApplication, recoverAndroidInspection } from "./android-ui-snapshot.js";
-import { killStaleIosTestRunners, remountIosDeveloperDiskImage } from "./ios-app-launch.js";
+import {
+  killStaleIosTestRunners,
+  remountIosDeveloperDiskImage,
+} from "./ios-app-launch.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { runTargetMutation } from "./target-control.js";
 import { resolveRuntimeTarget } from "./workspace-devices.js";
@@ -45,8 +55,29 @@ const iosRunnerPreparations = new Map<string, Promise<void>>();
 const iosRunnerFailures = new Map<string, { error: Error; expiresAt: number }>();
 const iosRuntimeRecoveries = new Map<string, Promise<IosRuntimeRecoveryResult>>();
 const runIosRecoverySingleFlight = createIosSessionRecoverySingleFlight<TargetRuntimeRecovery>();
-const IOS_RUNNER_FAILURE_TTL_MS = 10_000;
+const IOS_SESSION_UNAVAILABLE_FAILURE_TTL_MS = 10_000;
+/**
+ * A genuinely locked/passcode-bound iPad cannot be fixed by another screen
+ * poll within seconds. Only concrete attention errors that are NOT a session
+ * unavailability keep the long TTL.
+ */
 const IOS_DEVICE_ATTENTION_FAILURE_TTL_MS = 5 * 60_000;
+
+/**
+ * Key the shared-failure cache on the concrete class, not on the
+ * `IosDeviceAttentionError` base: `IosXCTestSessionUnavailableError` extends
+ * it, but a missing runner session is usually gone within seconds (the next
+ * prepare attempt succeeds), while a locked device needs a human.
+ */
+function iosRunnerFailureTtlMs(error: Error): number {
+  if (
+    error instanceof IosXCTestSessionUnavailableError ||
+    isIosAccessibilityQueryInFlightError(error)
+  ) {
+    return IOS_SESSION_UNAVAILABLE_FAILURE_TTL_MS;
+  }
+  return IOS_DEVICE_ATTENTION_FAILURE_TTL_MS;
+}
 
 /**
  * The only host-repair caller is `recoverTargetRuntime`. Keep preparation
@@ -130,10 +161,11 @@ export type TargetRuntimeRecovery = IosTargetRuntimeRecovery & {
 export async function recoverTargetRuntime(
   serial: string,
   cause?: unknown,
+  opts?: { force?: boolean },
 ): Promise<TargetRuntimeRecovery> {
   return runIosRecoverySingleFlight(serial, () =>
     runTargetMutation(serial, getExecutingJobId(), () =>
-      recoverTargetRuntimeReserved(serial, cause),
+      recoverTargetRuntimeReserved(serial, cause, opts),
     ),
   );
 }
@@ -141,6 +173,7 @@ export async function recoverTargetRuntime(
 async function recoverTargetRuntimeReserved(
   serial: string,
   cause?: unknown,
+  opts?: { force?: boolean },
 ): Promise<TargetRuntimeRecovery> {
   const target = await resolveRuntimeTarget(serial);
   if (target.context.kind === "device" && target.context.platform === "android") {
@@ -228,6 +261,60 @@ async function recoverTargetRuntimeReserved(
           fallback: currentApp === "com.apple.springboard",
         };
       } catch (error) {
+        // A bounded in-flight timeout is not a dead runner: the native
+        // traversal may simply be slow. Re-probe once with an extended budget;
+        // only if that also fails does repair get authorized — and even then
+        // a still-in-flight flight must never trigger runner/testmanagerd
+        // kills (see the repair gate below).
+        if (isIosAccessibilityQueryInFlightError(error)) {
+          try {
+            nodes = await snapshot(device, {
+              interactiveOnly: true,
+              timeoutMs: IOS_SNAPSHOT_SETTLE_WAIT_MS * 2,
+            });
+            const settledControl = hasUsableSemanticAccessibility(nodes);
+            const capturedAt = Date.now();
+            recordTargetSemanticSnapshot(
+              { serial, platform: "ios" },
+              {
+                inspectable: settledControl,
+                nodes,
+                at: capturedAt,
+                durationMs: Math.max(0, capturedAt - startedAt),
+                ...(settledControl
+                  ? {}
+                  : { errorMessage: "Relay did not observe named accessibility controls." }),
+              },
+            );
+            recorded = true;
+            if (!settledControl) {
+              throw new IosXCTestSessionUnavailableError(
+                "The extended accessibility probe completed, but returned no named controls.",
+              );
+            }
+            const currentApp = nodes.find((node) => node.bundleId)?.bundleId;
+            return {
+              ...(currentApp ? { app: currentApp } : {}),
+              fallback: currentApp === "com.apple.springboard",
+            };
+          } catch (settleError) {
+            error = settleError;
+          }
+        }
+        // A wedged session can actually be a locked screen: CoreDevice still
+        // answers while every AX query returns nothing usable. Check the same
+        // cheap passcode signal the runner setup path uses, with one
+        // non-destructive settle-and-reprobe (Android wake-and-retry shape)
+        // before demanding a person. This must surface as attention, not as
+        // a generic unavailable session that invites destructive repair.
+        if (!(error instanceof IosDeviceAttentionError)) {
+          const locked = await isIosDeviceLockedMidRun(serial);
+          if (locked) {
+            throw new IosDeviceAttentionError(
+              "This iPad is locked mid-session. Unlock it and keep it awake until the Automation Running indicator appears, then press Reconnect once.",
+            );
+          }
+        }
         if (!recorded) {
           recordTargetSemanticSnapshot(
             { serial, platform: "ios" },
@@ -256,24 +343,44 @@ async function recoverTargetRuntimeReserved(
         );
       }
     };
-    const repair = async (sessionError: unknown) => {
+    const repair = async (sessionError: unknown, onRepairStep: IosRepairStepReporter) => {
+      // A still-running accessibility traversal proves the runner is alive.
+      // Killing runners or testmanagerd under it would destroy the one healthy
+      // session for a tree that merely reads slowly. Preserve it instead.
+      if (isIosAccessibilityQueryInFlightError(sessionError)) {
+        const settled = await waitForIosSnapshotFlightSettle(target.context);
+        if (!settled) {
+          return {
+            serial,
+            recovered: false,
+            ready: false,
+            actions: [],
+            summary:
+              "The accessibility tree is still being read; Relay preserved the live XCTest session instead of restarting it. Pixels remain usable while the query settles.",
+          } satisfies IosRuntimeRecoveryResult;
+        }
+      }
       const named = foreignSessionNameFromError(sessionError) ?? foreign;
-      // Reconnect commonly runs while the current XCTest runner is perfectly
-      // healthy. Killing it before the first minimal AX proof turns every
-      // reconnect into a costly cold start. Only clean up after that proof
-      // fails (or when an explicit foreign session/hard cause requested it).
-      killed = await killStaleIosTestRunners(serial).catch(() => []);
-      remounted = await remountIosDeveloperDiskImage(serial).catch(() => false);
+      // A watchdog/wedged cause describes a stuck runner process, not host
+      // infrastructure. Route it to the targeted zombie-runner kill instead of
+      // the generic agent-device daemon restart, which would tear down every
+      // other attached device's session for one wedged XCTest runner.
+      const repairCause = cause ?? sessionError;
+      killed =
+        (await recordRepairStep(onRepairStep, "kill-stale-runners", () =>
+          killStaleIosTestRunners(serial),
+        )) ?? [];
       iosRunnerPreparations.delete(serial);
       iosRunnerFailures.delete(serial);
-      await hardStopDeviceSession(
-        target.context,
-        named ? { alsoCloseSessions: [named] } : {},
-      ).catch(() => undefined);
+      await recordRepairStep(onRepairStep, "hard-stop-session", async () => {
+        await hardStopDeviceSession(target.context, named ? { alsoCloseSessions: [named] } : {});
+      });
       resetDeviceClient(target.context);
       // Never force-restart CoreDevice here: that invalidates a freshly started
       // XCTest runner. Kill zombie runners, then prepare again.
-      const host = await recoverIosHostRuntime(serial, cause ?? sessionError, false);
+      // A forced reconnect may clear a wedged owner.json lock that verified
+      // stale-lock cleanup cannot touch; ordinary repair stays non-forced.
+      const host = await recoverIosHostRuntime(serial, repairCause, opts?.force === true);
       device = createDevice();
       if (killed.length) {
         host.actions = [
@@ -286,20 +393,14 @@ async function recoverTargetRuntimeReserved(
         ];
         host.recovered = true;
       }
-      if (remounted) {
-        host.actions = [
-          {
-            kind: "agent-device",
-            status: "completed",
-            detail:
-              "Remounted the iOS developer disk image (DDI was wedged; XCTest launch was hanging).",
-          },
-          ...host.actions,
-        ];
-        host.recovered = true;
-      }
       try {
         await ensureIosRunnerPrepared(device, serial);
+        onRepairStep({
+          stage: "repair",
+          outcome: "passed",
+          durationMs: 0,
+          detail: "Prepared the XCTest runner after cleanup.",
+        });
         host.actions = [
           {
             kind: "agent-device",
@@ -311,6 +412,72 @@ async function recoverTargetRuntimeReserved(
         ];
         host.recovered = true;
       } catch {
+        // AGENTS.md lore: remount DDI only if prepare fails. A wedged
+        // developer disk image hangs XCTest launch; go-ios can unmount and
+        // remount it without touching CoreDevice or rebooting the iPad.
+        onRepairStep({
+          stage: "repair",
+          outcome: "failed",
+          durationMs: 0,
+          detail: "XCTest runner preparation failed after cleanup.",
+        });
+        const { ok: remounted, stderr } = await recordRepairStep(
+          onRepairStep,
+          "remount-developer-disk-image",
+          () => remountIosDeveloperDiskImage(serial),
+          "Remounted the developer disk image after runner preparation failed.",
+        ).then((result) => result ?? { ok: false, stderr: "go-ios remount command failed" });
+
+        if (remounted) {
+          host.actions = [
+            {
+              kind: "agent-device",
+              status: "completed",
+              detail:
+                "Remounted the iOS developer disk image after runner preparation failed (DDI was wedged; XCTest launch was hanging).",
+            },
+            ...host.actions,
+          ];
+          host.recovered = true;
+          // Cached clients still point at the wedged DDI services. Drop them
+          // so ensureIosRunnerPrepared talks to freshly mounted services.
+          resetDeviceClient(target.context);
+          device = createDevice();
+          try {
+            await ensureIosRunnerPrepared(device, serial);
+            onRepairStep({
+              stage: "repair",
+              outcome: "passed",
+              durationMs: 0,
+              detail: "Prepared the XCTest runner after remounting the developer disk image.",
+            });
+            host.actions = [
+              {
+                kind: "agent-device",
+                status: "completed",
+                detail: "Prepared the XCTest runner after remounting the developer disk image.",
+              },
+              ...host.actions,
+            ];
+            host.recovered = true;
+          } catch {
+            onRepairStep({
+              stage: "repair",
+              outcome: "failed",
+              durationMs: 0,
+              detail: "XCTest runner preparation failed even after remounting the DDI.",
+            });
+          }
+        } else {
+          host.actions = [
+            {
+              kind: "agent-device",
+              status: "failed",
+              detail: `Could not remount the iOS developer disk image via go-ios after runner preparation failed${stderr ? `: ${stderr}` : "."}`,
+            },
+            ...host.actions,
+          ];
+        }
         // Screenshot + launch may still work; inspect will report the runner error.
       }
       return host;
@@ -360,11 +527,7 @@ export function ensureIosRunnerPrepared(device: Device, serial: string): Promise
       if (error instanceof IosRunnerSetupError || error instanceof IosDeviceAttentionError) {
         iosRunnerFailures.set(serial, {
           error,
-          expiresAt:
-            Date.now() +
-            (error instanceof IosDeviceAttentionError
-              ? IOS_DEVICE_ATTENTION_FAILURE_TTL_MS
-              : IOS_RUNNER_FAILURE_TTL_MS),
+          expiresAt: Date.now() + iosRunnerFailureTtlMs(error),
         });
       }
       throw error;
@@ -448,8 +611,21 @@ export async function withSession<T>(
                 stage: "preview",
                 outcome: operation === "preview" ? "failed" : "skipped",
               },
-              { stage: "xctest-availability", outcome: "failed" },
-              { stage: "accessibility-query", outcome: "failed" },
+              // Mark a stage failed only when the error class proves it. Any
+              // other failure stays "unknown"-truthful via skipped so a generic
+              // app-binding error cannot masquerade as an Xcode problem.
+              {
+                stage: "xctest-availability",
+                outcome:
+                  error instanceof IosXCTestSessionUnavailableError ||
+                  error instanceof IosRunnerSetupError
+                    ? "failed"
+                    : "skipped",
+              },
+              {
+                stage: "accessibility-query",
+                outcome: isIosAccessibilityQueryInFlightError(error) ? "in-flight" : "skipped",
+              },
               { stage: "repair", outcome: "skipped" },
             ],
           };

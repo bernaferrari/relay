@@ -1,9 +1,16 @@
 import { execFile } from "node:child_process";
-import { readdir, readFile, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { restartAgentDeviceDaemonForSetup } from "./device-setup.js";
+import { captureIosPngViaGoIos, pixelEvidenceFingerprint } from "./ios-app-launch.js";
+import {
+  IosMutationOutcomeUnknownError,
+  runIosMutationOnce,
+  type IosMutationOperation,
+} from "./ios-mutation-policy.js";
 
 const execFileAsync = promisify(execFile);
 const CORE_DEVICE_EXECUTABLE =
@@ -52,6 +59,20 @@ export type IosSessionLifecycleDiagnostic = {
   steps: IosSessionLifecycleStep[];
 };
 
+/**
+ * One bounded cleanup action inside the destructive repair (runner kill, DDI
+ * remount, hard stop). Recorded even when it fails so a swallowed catch can
+ * no longer hide why the runner is still wedged.
+ */
+export type IosRepairStageStep = IosSessionLifecycleStep & { stage: "repair" };
+
+/**
+ * Callback the destructive-repair host uses to surface each bounded cleanup
+ * step (runner kill, DDI remount, hard stop) as a lifecycle step instead of
+ * letting individual failures disappear behind a bare catch.
+ */
+export type IosRepairStepReporter = (step: IosRepairStageStep) => void;
+
 export type IosRuntimeSessionRecovery = IosRuntimeRecoveryResult & {
   session: {
     status: "restored" | "unavailable";
@@ -90,6 +111,40 @@ function probeSteps(outcome: "passed" | "failed", durationMs: number, detail: st
   ] satisfies IosSessionLifecycleStep[];
 }
 
+/**
+ * Run one bounded repair cleanup step, record its outcome as a lifecycle
+ * step, and never let its failure abort the remaining cleanup. The returned
+ * value is the step's own result (`undefined` on failure), so callers keep
+ * their existing fallback behavior while the diagnostic keeps the error.
+ */
+export async function recordRepairStep<T>(
+  reporter: IosRepairStepReporter | undefined,
+  step: string,
+  run: () => Promise<T>,
+  passedDetail?: string,
+): Promise<T | undefined> {
+  const startedAt = Date.now();
+  try {
+    const value = await run();
+    reporter?.({
+      stage: "repair",
+      outcome: "passed",
+      durationMs: elapsed(startedAt),
+      detail: passedDetail ?? "Repair cleanup step completed.",
+    });
+    return value;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    reporter?.({
+      stage: "repair",
+      outcome: "failed",
+      durationMs: elapsed(startedAt),
+      detail,
+    });
+    return undefined;
+  }
+}
+
 /** Share an entire recovery decision, including its destructive repair gate. */
 export function createIosSessionRecoverySingleFlight<T = IosRuntimeSessionRecovery>() {
   const flights = new Map<string, Promise<T>>();
@@ -115,10 +170,18 @@ export function createIosSessionRecoverySingleFlight<T = IosRuntimeSessionRecove
 export async function recoverIosRuntimeSession(
   serial: string,
   inspect: () => Promise<{ app?: string; fallback?: boolean }>,
-  repair: (cause: unknown) => Promise<IosRuntimeRecoveryResult>,
+  repair: (
+    cause: unknown,
+    onRepairStep: IosRepairStepReporter,
+  ) => Promise<IosRuntimeRecoveryResult>,
   diagnose: (error: unknown) => Promise<string>,
+  /** Optional per-cleanup-step accounting inside the one bounded repair. */
+  onRepairStep?: IosRepairStepReporter,
 ): Promise<IosRuntimeSessionRecovery> {
   const steps: IosSessionLifecycleStep[] = [];
+  const onRepairStepOrDefault: IosRepairStepReporter = onRepairStep ?? ((step) => {
+    steps.push(step);
+  });
   const probeStartedAt = Date.now();
   try {
     const restored = await inspect();
@@ -170,7 +233,7 @@ export async function recoverIosRuntimeSession(
     const repairStartedAt = Date.now();
     let host: IosRuntimeRecoveryResult;
     try {
-      host = await repair(cause);
+      host = await repair(cause, onRepairStepOrDefault);
       steps.push({
         stage: "repair",
         outcome: "attempted",
@@ -520,8 +583,14 @@ export async function recoverIosRuntime(
   const removedLock = actions.some(
     (action) => action.kind === "stale-lock" && action.status === "completed",
   );
+  // A watchdog/wedged cause means the runner process itself is stuck; the
+  // targeted zombie-runner kill (host side) owns that repair. Restarting the
+  // shared agent-device daemon for it would tear down every other attached
+  // device's session, so watchdog causes never trigger the generic restart.
   const shouldRestartDaemon =
-    input.force === true || removedLock || isRecoverableIosRuntimeError(input.cause);
+    input.force === true ||
+    removedLock ||
+    (!isIosRunnerWatchdogError(input.cause) && isRecoverableIosRuntimeError(input.cause));
   if (shouldRestartDaemon) {
     const restarted = await deps.restartAgentDevice();
     actions.push({
@@ -607,5 +676,177 @@ async function run(command: string, args: string[], timeoutMs: number): Promise<
       stderr:
         typeof value.stderr === "string" && value.stderr.trim() ? value.stderr : errorText(error),
     };
+  }
+}
+
+const IOS_LOCK_STATE_PROBE_TIMEOUT_MS = 10_000;
+
+/**
+ * Read the same cheap CoreDevice lock signal the runner setup path checks
+ * (`devicectl device info lockState`). Returns `true` only when the device
+ * explicitly reports a required passcode; every other outcome stays
+ * `undefined` so a failed probe never fabricates an attention error.
+ */
+export async function probeIosDeviceLockState(
+  serial: string,
+  input: { run?: typeof run } = {},
+): Promise<boolean | undefined> {
+  const exec = input.run ?? run;
+  const directory = await mkdtemp(join(tmpdir(), "relay-ios-lock-"));
+  const output = join(directory, "lock-state.json");
+  try {
+    const result = await exec(
+      "xcrun",
+      [
+        "devicectl",
+        "device",
+        "info",
+        "lockState",
+        "--device",
+        serial,
+        "--timeout",
+        "8",
+        "--json-output",
+        output,
+      ],
+      IOS_LOCK_STATE_PROBE_TIMEOUT_MS,
+    );
+    if (result.exitCode !== 0) return undefined;
+    const state = parseIosDeviceLockStateFile(await readFile(output, "utf8"));
+    return state?.locked;
+  } catch {
+    return undefined;
+  } finally {
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+function parseIosDeviceLockStateFile(value: string): { locked: boolean } | undefined {
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const result = parsed.result;
+    if (!result || typeof result !== "object") return undefined;
+    const passcodeRequired = (result as Record<string, unknown>).passcodeRequired;
+    return typeof passcodeRequired === "boolean" ? { locked: passcodeRequired } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Mid-run lock detection mirrors Android's wake-and-retry shape: one
+ * non-destructive settle-and-reprobe before demanding a person. Nothing here
+ * sends physical input to a screen Relay cannot currently see.
+ */
+export async function isIosDeviceLockedMidRun(
+  serial: string,
+  input: { run?: typeof run } = {},
+): Promise<boolean> {
+  const first = await probeIosDeviceLockState(serial, input);
+  if (first !== undefined) return first;
+  // One non-destructive settle-and-reprobe before demanding a person.
+  await new Promise<void>((resolveSettle) => {
+    setTimeout(resolveSettle, 400);
+  });
+  const second = await probeIosDeviceLockState(serial, input);
+  return second === true;
+}
+
+/**
+ * Cheap pixel identity for the assisted second look. Capture failures stay
+ * `undefined`: missing evidence must stop the re-dispatch, never fake a match.
+ */
+export async function captureIosPixelFingerprint(
+  serial: string,
+  input: { run?: (file: string, args: readonly string[], timeoutMs: number) => Promise<CommandResult> } = {},
+): Promise<string | undefined> {
+  const directory = await mkdtemp(join(tmpdir(), "relay-ios-second-look-"));
+  const path = join(directory, "frame.png");
+  try {
+    await captureIosPngViaGoIos(serial, path, input.run ? { run: input.run } : {});
+    const bytes = await readFile(path);
+    return pixelEvidenceFingerprint(bytes);
+  } catch {
+    return undefined;
+  } finally {
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+export type IosAssistedSecondLookDiagnostic = {
+  operation: IosMutationOperation;
+  baselineFingerprint?: string;
+  currentFingerprint?: string;
+  matchedBaseline: boolean;
+  /** Exactly one evidence-backed re-dispatch is ever allowed. */
+  redispatched: boolean;
+};
+
+function attachIosAssistedSecondLookDiagnostic(
+  error: unknown,
+  diagnostic: IosAssistedSecondLookDiagnostic,
+): void {
+  if (!error || typeof error !== "object") return;
+  try {
+    Object.defineProperty(error, "iosAssistedSecondLook", {
+      configurable: true,
+      enumerable: true,
+      value: structuredClone(diagnostic),
+    });
+  } catch {
+    // Frozen errors keep their original identity; the caller still sees it thrown.
+  }
+}
+
+/**
+ * Assisted second look after OutcomeUnknown (see ios-mutation-policy.ts):
+ * compare a post-failure pixel fingerprint against the pre-dispatch baseline.
+ * Only when the screen provably did not move may Relay issue exactly ONE
+ * evidence-backed re-dispatch; otherwise this stops exactly as today.
+ * Gated behind the explicit `assistedSecondLook` opt-in — the default
+ * behavior is byte-for-byte the plain exact-once policy.
+ */
+export async function runIosMutationWithAssistedSecondLook<T>(
+  serial: string,
+  operation: IosMutationOperation,
+  op: () => Promise<T>,
+  input: {
+    /** Explicit opt-in. Absent/false preserves today's intervention boundary. */
+    assistedSecondLook?: boolean;
+    /** Test-only seam; production captures real pixels via go-ios. */
+    captureFingerprint?: () => Promise<string | undefined>;
+  } = {},
+): Promise<T> {
+  const capture =
+    input.captureFingerprint ?? (() => captureIosPixelFingerprint(serial));
+  const baseline = await capture();
+  try {
+    return await runIosMutationOnce(serial, operation, op);
+  } catch (error) {
+    if (
+      !(error instanceof IosMutationOutcomeUnknownError) ||
+      input.assistedSecondLook !== true
+    ) {
+      throw error;
+    }
+    const current = await capture();
+    const matchedBaseline = baseline !== undefined && baseline === current;
+    const diagnostic: IosAssistedSecondLookDiagnostic = {
+      operation,
+      ...(baseline !== undefined ? { baselineFingerprint: baseline } : {}),
+      ...(current !== undefined ? { currentFingerprint: current } : {}),
+      matchedBaseline,
+      redispatched: matchedBaseline,
+    };
+    if (!matchedBaseline) {
+      attachIosAssistedSecondLookDiagnostic(error, diagnostic);
+      throw error;
+    }
+    try {
+      return await runIosMutationOnce(serial, operation, op);
+    } catch (retryError) {
+      attachIosAssistedSecondLookDiagnostic(retryError, diagnostic);
+      throw retryError;
+    }
   }
 }

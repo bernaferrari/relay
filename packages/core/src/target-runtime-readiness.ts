@@ -556,6 +556,25 @@ export function recordTargetSemanticProbeInFlight(
   });
 }
 
+/**
+ * The native snapshot flight settled (its `.finally` path). A usable tree is
+ * fresh semantic proof right now: record it immediately instead of leaving
+ * `probe-in-flight` stuck until the readiness TTL expires. Stale or unusable
+ * trees stay with the capture path, which owns their truthful failure labels.
+ */
+export function recordTargetSemanticFlightSettled(
+  target: Pick<RuntimeReadinessTarget, "platform" | "serial">,
+  input: { nodes: readonly SnapshotNode[]; at?: number; durationMs?: number },
+): void {
+  if (!hasUsableSemanticAccessibility(input.nodes)) return;
+  recordTargetRuntimeCapability(target, "semanticControl", "proven", {
+    at: input.at,
+    observedNodeCount: input.nodes.length,
+    ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+  });
+  applyPendingSemanticInvalidation(target);
+}
+
 /** Record one capture's semantic outcome without forcing callers to reason
  * about whether a bounded iOS timeout is a runner failure. */
 export function recordTargetSemanticCapture(

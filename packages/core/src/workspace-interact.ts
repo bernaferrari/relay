@@ -27,7 +27,10 @@ import {
 } from "./device-target-resolution.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { verifyIosScreenChanged } from "./ios-app-launch.js";
-import { annotateTapPreview } from "./tap-preview.js";
+import {
+  annotateTapPreview,
+  tapPreviewLogicalBounds,
+} from "./tap-preview.js";
 import { iosLogicalBoundsForSerial } from "./workspace-capture.js";
 import { resolveRuntimeTarget } from "./workspace-devices.js";
 import {
@@ -38,6 +41,7 @@ import {
 import { rawKey, rawSwipe, rawTap } from "./workspace-android-raw.js";
 import { captureScreenshot, captureSnapshot, type ScreenshotPayload } from "./workspace-capture.js";
 import { invalidateTargetSemanticControl } from "./target-runtime-readiness.js";
+import { IosXCTestSessionUnavailableError, diagnoseIosRunnerError } from "./ios-device-adapter.js";
 
 export type InteractPoint = { x: number; y: number };
 
@@ -92,10 +96,11 @@ function attachIosSessionLifecycle(
 }
 
 /**
- * A healthy iOS accessibility tree can still contain an off-screen SwiftUI
- * control from a previous presentation.  Map teaching is a state-transition
- * operation, so it can opt in to pixel evidence that the tap actually moved
- * the device instead of accepting that stale selector as a successful edge.
+ * Named iOS taps (identifier, label, find, text-match) are visually verified
+ * by default through interact(): pixels must change or the tap fails with the
+ * typed unchanged-screen error. Point taps keep their own always-on proof and
+ * non-iOS/non-tap kinds are never verified. Callers that cannot tolerate a
+ * verification failure opt out with verifyIosScreenChange === false.
  */
 export function canVerifyIosScreenChange(input: InteractInput): boolean {
   return (
@@ -365,7 +370,7 @@ export async function previewInteract(
           ? { bounds: resolution.bounds }
           : {}),
       },
-      serial ? iosLogicalBoundsForSerial(serial) : undefined,
+      serial ? tapPreviewLogicalBounds(buf, iosLogicalBoundsForSerial(serial)) : undefined,
     ),
   );
   return {
@@ -536,10 +541,14 @@ export async function interact(
         ),
       );
     }
+    // Visual transition proof is now the default for named iOS taps: a
+    // stale selector that leaves pixels untouched must surface as the typed
+    // tap-did-not-change error instead of a silent no-op. Callers opt out
+    // explicitly with verifyIosScreenChange === false.
     if (
       context.kind === "device" &&
       context.platform === "ios" &&
-      opts?.verifyIosScreenChange &&
+      opts?.verifyIosScreenChange !== false &&
       canVerifyIosScreenChange(input)
     ) {
       let result: InteractResult | undefined;
@@ -609,9 +618,15 @@ export async function interact(
           : result;
       return afterInput(withLifecycle);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      // A native iOS command that failed mid-flight is wrapped in an
+      // outcome-unknown boundary; classify its underlying cause, not the
+      // wrapper, so a lost runner still reports the actionable class.
+      const underlying =
+        err instanceof Error && err.name === "IosMutationOutcomeUnknownError" && "cause" in err
+          ? (err.cause ?? err)
+          : err;
+      const msg = underlying instanceof Error ? underlying.message : String(underlying);
       const context = currentTargetContext();
-      // No SDK session — raw adb works for coordinate interactions on any app.
       if (
         /no active session/i.test(msg) &&
         context.kind === "device" &&
@@ -635,6 +650,21 @@ export async function interact(
       ) {
         rawSwipe(input.from, input.to, input.durationMs ?? 250, context.serial);
         return afterInput({});
+      }
+      // A bare "no active session" on iOS is the SDK's generic symptom for a
+      // missing XCTest runner, not proof of a physical-device fault. Classify
+      // it so Reconnect and the stage diagnostics see the actionable class,
+      // enriched with any fresh runner-log diagnostic.
+      if (
+        /no active session/i.test(msg) &&
+        context.kind === "device" &&
+        context.platform === "ios"
+      ) {
+        const diagnosed = await diagnoseIosRunnerError(
+          new IosXCTestSessionUnavailableError(msg),
+          context.serial,
+        );
+        throw diagnosed;
       }
       throw err;
     }

@@ -35,6 +35,14 @@ const (
 	defaultTunnelInfoHost      = "127.0.0.1"
 	defaultRelayTunnelInfoPort = 28100
 	shutdownGrace              = 2 * time.Second
+
+	// A transient Instruments hiccup (USB renegotiation, tunnel blip) must not
+	// kill the preview: exit only after this many consecutive capture failures.
+	maxConsecutiveCaptureFailures = 3
+	captureRetryBackoff           = 250 * time.Millisecond
+	// Instruments screenshot polling has no natural rate limit; hammering it
+	// burns USB bandwidth and destabilizes the connection. 10 FPS cap.
+	minFrameInterval = 100 * time.Millisecond
 )
 
 type options struct {
@@ -212,25 +220,50 @@ type screenshotService interface {
 	TakeScreenshot() ([]byte, error)
 }
 
+// captureFrames polls the Instruments screenshot service forever, surviving
+// transient TakeScreenshot errors with a bounded retry/backoff. It exits only
+// after maxConsecutiveCaptureFailures failures in a row or on cancellation.
+// A minimum frame interval caps the poll at ~10 FPS.
 func captureFrames(ctx context.Context, service screenshotService, slot *latestFrame, quality int) error {
+	consecutiveFailures := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
+		frameStart := time.Now()
 		pngBytes, err := service.TakeScreenshot()
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return fmt.Errorf("capture Instruments screenshot: %w", err)
+			consecutiveFailures++
+			if consecutiveFailures >= maxConsecutiveCaptureFailures {
+				return fmt.Errorf("capture Instruments screenshot after %d consecutive attempts: %w",
+					consecutiveFailures, err)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(captureRetryBackoff):
+			}
+			continue
 		}
+		consecutiveFailures = 0
 		jpegBytes, err := pngToJPEG(pngBytes, quality)
 		if err != nil {
 			return err
 		}
 		slot.offer(jpegBytes)
+		// Keep the poll bounded even when captures return instantly.
+		if elapsed := time.Since(frameStart); elapsed < minFrameInterval {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(minFrameInterval - elapsed):
+			}
+		}
 	}
 }
 

@@ -100,6 +100,8 @@ test("drops stale frames for a slow Relay client instead of queueing the device 
   fanout.publish(Buffer.from([3]));
 
   assert.deepEqual(sink.writes, [Buffer.from([1])]);
+  const fingerprint = fanout.diagnostics.lastFrameFingerprint;
+  assert.ok(fingerprint, "the newest frame always carries a content identity");
   assert.deepEqual(fanout.diagnostics, {
     subscribers: 1,
     publishedFrames: 3,
@@ -108,6 +110,7 @@ test("drops stale frames for a slow Relay client instead of queueing the device 
     droppedFrames: 1,
     pendingFrames: 1,
     dropRate: 0.5,
+    lastFrameFingerprint: fingerprint,
   });
   assert.deepEqual(subscription.diagnostics, {
     attachedAt: 1_000,
