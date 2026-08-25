@@ -82,7 +82,18 @@ test("invoke derives path, query, and method from the operation registry", async
       fetch: async (input, init) => {
         requests.push(new Request(input, init));
         if (String(input).includes("/jobs/abc")) {
-          return new Response(JSON.stringify({ job: { id: "abc" } }), { status: 200 });
+          return new Response(
+            JSON.stringify({
+              job: {
+                id: "abc",
+                action: "test.run",
+                status: "queued",
+                queuedAt: 1,
+                frameCount: 0,
+              },
+            }),
+            { status: 200 },
+          );
         }
         if (String(input).includes("/app-maps/checkout/tests/smoke/compile")) {
           return new Response(JSON.stringify({ plan: {}, preflight: {} }), { status: 200 });
