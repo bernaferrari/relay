@@ -25,6 +25,11 @@ import {
 } from '@agent-device/contracts/scroll-runtime';
 import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
 import { bindAdmittedLocalInteractorOperations } from '@agent-device/contracts/interactor-operation-catalog';
+import { alertRuntimeOperationFacts } from '@agent-device/contracts/alert-runtime';
+import { appEventRuntimeOperationFacts } from '@agent-device/contracts/app-event-runtime';
+import { settingsRuntimeOperationFacts } from '@agent-device/contracts/settings-runtime';
+import { appSwitcherRuntimeOperationFacts } from '@agent-device/contracts/app-switcher-runtime';
+import { clipboardRuntimeOperationFacts } from '@agent-device/contracts/clipboard-runtime';
 import { keyboardRuntimeOperationFacts } from '@agent-device/contracts/keyboard-runtime';
 import { orientationRuntimeOperationFacts } from '@agent-device/contracts/orientation-runtime';
 import { localRuntimeOwner, whenAdmitted } from '@agent-device/contracts/platform-runtime';
@@ -270,12 +275,35 @@ export function createHarmonyPlatformRuntime(host: PlatformRuntimeHost): Platfor
         ...elementTextRuntimeOperationFacts({ readTextAtPoint: elementTextUnavailable }),
         ...backRuntimeOperationFacts({ back: harmonyFocusFact(device) }),
         ...homeRuntimeOperationFacts({ home: harmonyFocusFact(device) }),
+        // Parity with the retired `HARMONYOS_SUPPORTED_COMMANDS` overlay, which listed
+        // `app-switcher` for both HarmonyOS kinds: it rides the same hdc-driven key input `home`
+        // does, so it shares that cell.
+        ...appSwitcherRuntimeOperationFacts({ appSwitcher: harmonyFocusFact(device) }),
+        // HarmonyOS never carried a `trigger-app-event` bucket and is absent from the overlay.
+        ...appEventRuntimeOperationFacts({ triggerAppEvent: harmonyPlatformLeafUnavailable }),
+        // Parity with the retired `HARMONYOS_SUPPORTED_COMMANDS` overlay, which listed `settings`
+        // for both HarmonyOS kinds; the hdc-driven settings surface shares the interaction gate.
+        ...settingsRuntimeOperationFacts({ setSetting: harmonyFocusFact(device) }),
+        // R59: the retired `alert` descriptor declared no HarmonyOS leaf and the overlay set
+        // never listed it, so no HarmonyOS cell was ever admitted.
+        ...alertRuntimeOperationFacts({
+          read: harmonyPlatformLeafUnavailable,
+          wait: harmonyPlatformLeafUnavailable,
+          accept: harmonyPlatformLeafUnavailable,
+          dismiss: harmonyPlatformLeafUnavailable,
+        }),
         ...orientationRuntimeOperationFacts({ orientation: harmonyPlatformLeafUnavailable }),
         ...tvRemoteRuntimeOperationFacts({ tvRemote: harmonyPlatformLeafUnavailable }),
         ...keyboardRuntimeOperationFacts({
           status: harmonyKeyboardStatusUnavailable,
           dismiss: harmonyFocusFact(device),
           enter: harmonyFocusFact(device),
+        }),
+        // HarmonyOS never carried a `clipboard` capability bucket and is absent from the
+        // HarmonyOS overlay set, so no clipboard cell was ever admitted here.
+        ...clipboardRuntimeOperationFacts({
+          read: harmonyPlatformLeafUnavailable,
+          write: harmonyPlatformLeafUnavailable,
         }),
         ensureReady: available,
         bootTarget: unavailable,

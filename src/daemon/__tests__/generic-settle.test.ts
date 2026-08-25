@@ -7,21 +7,13 @@ import { activateCompleteRefFrame } from '../ref-frame.ts';
 import { setSessionSnapshot } from '../session-snapshot.ts';
 import type { SessionStore } from '../session-store.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from '../types.ts';
-import { buildSnapshotState } from '../snapshot-state.ts';
+import { buildSnapshotState } from '../../core/snapshot-state.ts';
 
 // #1638 `--settle` on the GENERIC daemon route (scroll/back): the settled diff,
 // its refs, and the ref-frame/generation dance are the same contract the touch
 // commands get — but the baseline is the session's stored pre-action tree, not
 // a resolution, and the observation must run after the deferred-outcome
 // markers. Quiet windows are tuned down so no test waits real time.
-
-vi.mock('../../core/dispatch.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../core/dispatch.ts')>();
-  return {
-    ...actual,
-    dispatchCommand: vi.fn(async () => ({})),
-  };
-});
 
 vi.mock('../handlers/interaction-snapshot.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../handlers/interaction-snapshot.ts')>();
@@ -35,14 +27,9 @@ vi.mock('../handlers/interaction-snapshot.ts', async (importOriginal) => {
   };
 });
 
-import { dispatchCommand } from '../../core/dispatch.ts';
 import { captureSnapshotForSession } from '../handlers/interaction-snapshot.ts';
-import {
-  dispatchGenericCommand,
-  executeGenericPlatformCommand,
-} from '../request-generic-dispatch.ts';
+import { dispatchGenericCommand } from '../request-generic-dispatch.ts';
 
-const mockDispatch = vi.mocked(dispatchCommand);
 const mockCaptureSnapshotForSession = vi.mocked(captureSnapshotForSession);
 
 const BEFORE_NODES = [
@@ -92,24 +79,16 @@ async function emulateCaptureSnapshotForSession(
   session: SessionState,
   flags: CommandFlags | undefined,
   sessionStore: SessionStore,
-  contextFromFlags: (
-    flags: CommandFlags | undefined,
-    appBundleId?: string,
-    traceLogPath?: string,
-  ) => Record<string, unknown>,
   options: { interactiveOnly: boolean },
 ) {
   captureObservations.push({
     postGestureStabilizationPending: session.postGestureStabilization !== undefined,
   });
   const effectiveFlags = { ...(flags ?? {}), snapshotInteractiveOnly: options.interactiveOnly };
-  const snapshotData = (await mockDispatch(
-    session.device,
-    'snapshot',
-    [],
-    effectiveFlags.out,
-    contextFromFlags(effectiveFlags, session.appBundleId, session.trace?.outPath),
-  )) as { nodes?: never[]; backend?: SnapshotBackend };
+  const snapshotData = (await mockDispatch('snapshot')) as {
+    nodes?: never[];
+    backend?: SnapshotBackend;
+  };
   const snapshot = buildSnapshotState(snapshotData ?? {}, effectiveFlags);
   setSessionSnapshot(session, snapshot);
   sessionStore.set(session.name, session);
@@ -118,7 +97,7 @@ async function emulateCaptureSnapshotForSession(
 
 function mockCommandDispatch(snapshots: Array<typeof BEFORE_NODES>) {
   let snapshotCalls = 0;
-  mockDispatch.mockImplementation(async (_device, command) => {
+  mockDispatch.mockImplementation(async (command) => {
     if (command === 'snapshot') {
       const nodes = snapshots[Math.min(snapshotCalls, snapshots.length - 1)];
       snapshotCalls += 1;
@@ -129,6 +108,18 @@ function mockCommandDispatch(snapshots: Array<typeof BEFORE_NODES>) {
 }
 
 const contextFromFlags = () => ({}) as never;
+
+/**
+ * The bound execution `dispatchGenericCommand` runs. R58 retired the legacy dispatcher this file
+ * used to borrow, so the double lives here: these tests are about the settle/stabilization
+ * orchestration around a generic leaf, not about which owner performs it.
+ */
+const platformExecution = vi.fn(
+  async (params: { command: string }) => await mockDispatch(params.command),
+);
+
+/** Stands in for the device work a bound generic leaf performs, keyed by command name. */
+const mockDispatch = vi.fn<(command: string) => Promise<Record<string, unknown>>>(async () => ({}));
 
 function seedSession(sessionName: string, sessionStore: SessionStore): SessionState {
   const session = makeIosSession(sessionName);
@@ -160,7 +151,7 @@ async function dispatchGeneric(params: {
     logPath: '',
     sessionStore: params.sessionStore,
     contextFromFlags,
-    executePlatformCommand: executeGenericPlatformCommand,
+    executePlatformCommand: platformExecution,
   });
 }
 
@@ -175,7 +166,10 @@ beforeEach(() => {
   mockDispatch.mockReset();
   mockDispatch.mockResolvedValue({});
   mockCaptureSnapshotForSession.mockReset();
-  mockCaptureSnapshotForSession.mockImplementation(emulateCaptureSnapshotForSession);
+  mockCaptureSnapshotForSession.mockImplementation(
+    (session, flags, sessionStore, _contextFromFlags, options) =>
+      emulateCaptureSnapshotForSession(session, flags, sessionStore, options),
+  );
 });
 
 test('scroll --settle answers with the settled diff against the stored pre-action tree', async () => {
@@ -228,7 +222,7 @@ test('back --settle answers with the settled diff alongside the command result',
   const sessionStore = makeSessionStore();
   const sessionName = 'generic-settle-back';
   const session = seedSession(sessionName, sessionStore);
-  mockDispatch.mockImplementation(async (_device, command) => {
+  mockDispatch.mockImplementation(async (command) => {
     if (command === 'snapshot') return { nodes: AFTER_NODES, backend: 'xctest' };
     return { action: 'back', mode: 'in-app', message: 'Back' };
   });

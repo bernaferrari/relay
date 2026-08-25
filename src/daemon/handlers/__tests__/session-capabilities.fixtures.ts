@@ -35,12 +35,6 @@ export type CapabilitiesAdmissionRuntimeOptions = Readonly<{
   screenshotAvailable?: boolean;
 }>;
 
-export const legacyCapabilityUses = [
-  { required: [], preferred: ['appLogInspect'] },
-  { required: [], preferred: ['networkDump'] },
-  { required: [], preferred: ['screenRecordingStart'] },
-];
-
 export function createCapabilitiesAdmissionRuntime(options: CapabilitiesAdmissionRuntimeOptions) {
   const uses: Array<{
     required: readonly string[];
@@ -101,6 +95,15 @@ function createAdmissionFacts(
       keyboardStatus: unavailable,
       keyboardDismiss: unavailable,
       keyboardEnter: unavailable,
+      readClipboard: unavailable,
+      writeClipboard: unavailable,
+      appSwitcher: unavailable,
+      triggerAppEvent: unavailable,
+      setSetting: unavailable,
+      readAlert: unavailable,
+      awaitAlert: unavailable,
+      acceptAlert: unavailable,
+      dismissAlert: unavailable,
       ...touchRuntimeOperationFacts({
         tap: unavailable,
         longPress: unavailable,

@@ -82,7 +82,15 @@ test.each([
   expect(binding.operations.focusPoint).toBeTypeOf('function');
   expect(binding.operations.typeText).toBeTypeOf('function');
   // back/home/keyboard dismiss+enter share focus's hdc-driven gate on both real kinds.
-  for (const operation of ['back', 'home', 'keyboardDismiss', 'keyboardEnter'] as const) {
+  for (const operation of [
+    'back',
+    'home',
+    // R56 parity: the retired `HARMONYOS_SUPPORTED_COMMANDS` overlay listed `app-switcher` for
+    // both HarmonyOS kinds, and it rides the same hdc key input `home` does.
+    'appSwitcher',
+    'keyboardDismiss',
+    'keyboardEnter',
+  ] as const) {
     expect(facts.operations[operation]).toEqual({ available: true });
     expect(binding.operations[operation]).toBeTypeOf('function');
   }
@@ -105,6 +113,28 @@ test.each([
     hint: 'keyboard status/get is not available through the public HarmonyOS HDC API; use keyboard dismiss or enter',
   });
   expect(binding.operations.keyboardStatus).toBeUndefined();
+  // R55: HarmonyOS never carried a `clipboard` bucket and is absent from the HarmonyOS overlay
+  // set, so neither half was ever admitted here.
+  for (const operation of [
+    'readClipboard',
+    'writeClipboard',
+    'triggerAppEvent',
+    // R59: `alert` never had a HarmonyOS leaf either — hdc exposes no dialog surface.
+    'readAlert',
+    'awaitAlert',
+    'acceptAlert',
+    'dismissAlert',
+  ] as const) {
+    expect(facts.operations[operation]).toEqual({
+      available: false,
+      reason: 'unsupported-platform-leaf',
+    });
+    expect(binding.operations[operation]).toBeUndefined();
+  }
+  // R58: `settings` is the other way round — the retired overlay set listed it for both HarmonyOS
+  // kinds, so a real kind admits it off the same hdc gate the interaction leaves use.
+  expect(facts.operations.setSetting).toEqual({ available: true });
+  expect(binding.operations.setSetting).toBeTypeOf('function');
   await expect(binding.operations.ensureReady?.({})).resolves.toMatchObject({ booted: true });
   await expect(
     binding.operations.listApps?.({ device: runtimeDevice, filter: 'all' }),
@@ -150,6 +180,15 @@ test('rejects the non-discovered HarmonyOS simulator cell for appstate', async (
     'keyboardStatus',
     'keyboardDismiss',
     'keyboardEnter',
+    'readClipboard',
+    'writeClipboard',
+    'appSwitcher',
+    'triggerAppEvent',
+    'setSetting',
+    'readAlert',
+    'awaitAlert',
+    'acceptAlert',
+    'dismissAlert',
   ] as const) {
     expect(binding.facts.operations[operation].available).toBe(false);
     expect(binding.operations[operation]).toBeUndefined();

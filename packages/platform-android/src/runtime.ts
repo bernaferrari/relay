@@ -14,48 +14,32 @@ import {
   applicationLifecycleOperationFacts,
   availableApplicationLifecycleOperations,
 } from '@agent-device/contracts/application-lifecycle-runtime';
-import {
-  bindElementTextRuntime,
-  elementTextRuntimeOperationFacts,
-} from '@agent-device/contracts/element-text-runtime';
-import {
-  bindLocalFocusInteractor,
-  focusRuntimeOperationFacts,
-} from '@agent-device/contracts/focus-runtime';
+import { elementTextRuntimeOperationFacts } from '@agent-device/contracts/element-text-runtime';
+import { focusRuntimeOperationFacts } from '@agent-device/contracts/focus-runtime';
 import {
   ANDROID_TV_MULTI_TOUCH_UNSUPPORTED_HINT,
   TARGET_AUTHORED_DRAG_UNSUPPORTED_HINT,
 } from '@agent-device/contracts/gesture-admission';
-import {
-  bindLocalGestureInteractor,
-  gestureRuntimeOperationFacts,
-} from '@agent-device/contracts/gesture-runtime';
-import {
-  bindLocalScrollInteractor,
-  scrollRuntimeOperationFacts,
-} from '@agent-device/contracts/scroll-runtime';
-import { localRuntimeOwner, whenAdmitted } from '@agent-device/contracts/platform-runtime';
-import {
-  bindLocalScreenshotInteractor,
-  screenshotRuntimeOperationFacts,
-} from '@agent-device/contracts/screenshot-runtime';
+import { gestureRuntimeOperationFacts } from '@agent-device/contracts/gesture-runtime';
+import { scrollRuntimeOperationFacts } from '@agent-device/contracts/scroll-runtime';
+import { localRuntimeOwner } from '@agent-device/contracts/platform-runtime';
+import { screenshotRuntimeOperationFacts } from '@agent-device/contracts/screenshot-runtime';
 import { selectorObservationRuntimeOperationFacts } from '@agent-device/contracts/selector-observation-runtime';
 import {
   bindLocalSnapshotInteractor,
   snapshotRuntimeOperationFacts,
 } from '@agent-device/contracts/snapshot-runtime';
-import {
-  bindLocalTypeTextInteractor,
-  typeTextRuntimeOperationFacts,
-} from '@agent-device/contracts/type-text-runtime';
-import {
-  bindLocalTouchInteractor,
-  touchRuntimeOperationFacts,
-} from '@agent-device/contracts/touch-runtime';
+import { typeTextRuntimeOperationFacts } from '@agent-device/contracts/type-text-runtime';
+import { touchRuntimeOperationFacts } from '@agent-device/contracts/touch-runtime';
 import { viewportRuntimeOperationFacts } from '@agent-device/contracts/viewport-runtime';
 import { backRuntimeOperationFacts } from '@agent-device/contracts/back-runtime';
 import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
-import { bindAdmittedLocalInteractorOperations } from '@agent-device/contracts/interactor-operation-catalog';
+import { alertRuntimeOperationFacts } from '@agent-device/contracts/alert-runtime';
+import { appEventRuntimeOperationFacts } from '@agent-device/contracts/app-event-runtime';
+import { settingsRuntimeOperationFacts } from '@agent-device/contracts/settings-runtime';
+import { appSwitcherRuntimeOperationFacts } from '@agent-device/contracts/app-switcher-runtime';
+import { clipboardRuntimeOperationFacts } from '@agent-device/contracts/clipboard-runtime';
+import { bindLocalInteractorOperationSet } from '@agent-device/contracts/local-interactor-operation-set';
 import { keyboardRuntimeOperationFacts } from '@agent-device/contracts/keyboard-runtime';
 import { orientationRuntimeOperationFacts } from '@agent-device/contracts/orientation-runtime';
 import { tvRemoteRuntimeOperationFacts } from '@agent-device/contracts/tv-remote-runtime';
@@ -66,6 +50,7 @@ import { bindAndroidScreenRecordingRuntime } from './recording/runtime.ts';
 import { ensureAndroidReady } from './readiness/runtime.ts';
 import { readAndroidAppState } from './app-state.ts';
 import { bindAndroidApplicationLifecycle } from './lifecycle.ts';
+import type { AndroidClipboardShellSupport } from '@agent-device/contracts/android-clipboard-support';
 import {
   androidAppDeploymentFacts,
   createAndroidAppDeploymentOperations,
@@ -219,6 +204,39 @@ function androidTouchFact(device: DeviceInfo) {
   return device.kind === 'simulator' ? focusKindUnavailable : available;
 }
 
+const clipboardShellUnavailable = Object.freeze({
+  available: false,
+  reason: 'owner-capability-missing',
+  hint: 'This Android build ships no shell implementation for the clipboard service, so adb cannot read or write the clipboard on it.',
+} as const);
+
+/**
+ * The probe could not reach the device, so this owner does not know whether the build supports a
+ * shell clipboard. Refusing is the conservative answer and the only honest one: reporting
+ * available would hand the caller a capability execution may immediately reject, which is the
+ * exact failure fact-based admission exists to prevent. Deliberately not cached — the next
+ * inspection asks again.
+ */
+const clipboardShellUnknown = Object.freeze({
+  available: false,
+  reason: 'owner-capability-missing',
+  hint: 'Could not determine whether this Android build supports a shell clipboard: the adb probe did not complete. Retry once the device is reachable.',
+} as const);
+
+/**
+ * `probe-failed` covers both ways this owner can end up without an answer: the probe ran and could
+ * not reach the device, or the host exposes no probe at all. Neither is evidence of support, and
+ * both refuse rather than guess.
+ */
+async function probeClipboardShellSupport(
+  host: PlatformRuntimeHost,
+  device: DeviceInfo,
+): Promise<AndroidClipboardShellSupport> {
+  const probe = host.androidTools?.probeClipboardShellSupport;
+  if (!probe) return 'probe-failed';
+  return await probe.call(host.androidTools, device);
+}
+
 const tvRemoteUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-device-kind',
@@ -235,9 +253,31 @@ function androidTvRemoteFact(device: DeviceInfo): RuntimeOperationFact {
 
 export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): PlatformRuntimeOwner {
   const appLogs = createAndroidAppLogRuntime(host);
+  /**
+   * `cmd clipboard` is not implemented on every Android build. The retired capability bucket
+   * admitted the clipboard on every real Android kind and the leaf discovered the refusal only
+   * once a read or write had already run — a device `capabilities` advertised and execution then
+   * rejected. ADR 0019 §2 requires the opposite, so support is a fact, and the fact needs a probe.
+   *
+   * Cached per device for this owner's lifetime: a build's shell command set cannot change while
+   * the device is up, and admission would otherwise pay an adb round trip per request.
+   */
+  const clipboardShell = new Map<string, AndroidClipboardShellSupport>();
+  const clipboardFact = async (device: DeviceInfo): Promise<RuntimeOperationFact> => {
+    if (device.kind === 'simulator') return clipboardShellUnavailable;
+    const support =
+      clipboardShell.get(device.id) ?? (await probeClipboardShellSupport(host, device));
+    // Only a definitive answer is worth keeping: a build's shell command set cannot change while
+    // the device is up, but a failed probe says nothing about the build and must not become a
+    // verdict this owner repeats for the rest of its life.
+    if (support !== 'probe-failed') clipboardShell.set(device.id, support);
+    if (support === 'supported') return available;
+    return support === 'unsupported' ? clipboardShellUnavailable : clipboardShellUnknown;
+  };
   const inspectFacts = async (device: Parameters<typeof appLogs.inspectFacts>[0]) => {
     const logs = await appLogs.inspectFacts(device);
     const deployment = androidAppDeploymentFacts(device);
+    const clipboardCell = await clipboardFact(device);
     return Object.freeze({
       device: logs.device,
       operations: {
@@ -293,6 +333,24 @@ export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): Platfor
         }),
         ...backRuntimeOperationFacts({ back: androidTouchFact(device) }),
         ...homeRuntimeOperationFacts({ home: androidTouchFact(device) }),
+        // `app-switcher` shares `home`'s cell: one `input keyevent`, admitted wherever the
+        // retired `ANDROID_ALL` bucket admitted it.
+        ...appSwitcherRuntimeOperationFacts({ appSwitcher: androidTouchFact(device) }),
+        // The deep link opens through `am start`, admitted wherever the retired `ANDROID_ALL`
+        // bucket admitted it.
+        ...appEventRuntimeOperationFacts({ triggerAppEvent: androidTouchFact(device) }),
+        // Settings run over adb (`appops`, `settings put`, `pm clear`, …) on every real kind, so
+        // the cell is the retired `ANDROID_ALL` bucket verbatim.
+        ...settingsRuntimeOperationFacts({ setSetting: androidTouchFact(device) }),
+        // R59: Android reads alerts out of the same accessibility dump every interaction cell
+        // depends on and presses their buttons with the same `input tap`, so all four legs take
+        // that cell — the retired `ANDROID_ALL` bucket verbatim.
+        ...alertRuntimeOperationFacts({
+          read: androidTouchFact(device),
+          wait: androidTouchFact(device),
+          accept: androidTouchFact(device),
+          dismiss: androidTouchFact(device),
+        }),
         ...orientationRuntimeOperationFacts({ orientation: androidTouchFact(device) }),
         ...tvRemoteRuntimeOperationFacts({ tvRemote: androidTvRemoteFact(device) }),
         // The only owner with a live IME status read; dismiss/enter share every other
@@ -302,6 +360,9 @@ export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): Platfor
           dismiss: androidTouchFact(device),
           enter: androidTouchFact(device),
         }),
+        // Read and write share one cell: `cmd clipboard` either has a shell implementation on this
+        // build or it has none, and no Android build ships one half of it.
+        ...clipboardRuntimeOperationFacts({ read: clipboardCell, write: clipboardCell }),
         ensureReady: available,
         bootTarget: available,
         bootTargetHeadless: device.kind === 'emulator' ? available : headlessUnavailable,
@@ -349,12 +410,6 @@ export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): Platfor
             await dumpAndroidNetworkTraffic(host, request.device, input, request.scope.signal),
           ...recording,
           ...androidInteractionOperations(host, request, facts),
-          ...bindAdmittedLocalInteractorOperations({
-            device: request.device,
-            signal: request.scope.signal,
-            resolveInteractor: host.localInteractors.resolve,
-            facts: facts.operations,
-          }),
           ensureReady: async (input: EnsureReadyInput) =>
             await ensureAndroidReady(
               host,
@@ -428,20 +483,10 @@ function androidInteractionOperations(
   };
   return {
     ...(facts.operations.captureSnapshot.available ? bindLocalSnapshotInteractor(resolver) : {}),
-    ...(facts.operations.captureScreenshot.available
-      ? bindLocalScreenshotInteractor(resolver)
-      : {}),
-    ...(facts.operations.focusPoint.available ? bindLocalFocusInteractor(resolver) : {}),
-    ...bindLocalGestureInteractor({ ...resolver, facts: facts.operations }),
-    ...(facts.operations.scrollDirection.available ? bindLocalScrollInteractor(resolver) : {}),
-    ...(facts.operations.typeText.available ? bindLocalTypeTextInteractor(resolver) : {}),
-    ...whenAdmitted(facts.operations.tapPoint, () =>
-      bindLocalTouchInteractor({
-        ...resolver,
-        facts: facts.operations,
-        pause: async (milliseconds) => await host.clock.sleep(milliseconds, request.scope.signal),
-      }),
-    ),
-    ...(facts.operations.readTextAtPoint.available ? bindElementTextRuntime(resolver) : {}),
+    ...bindLocalInteractorOperationSet({
+      ...resolver,
+      facts: facts.operations,
+      pause: async (milliseconds) => await host.clock.sleep(milliseconds, request.scope.signal),
+    }),
   };
 }

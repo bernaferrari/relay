@@ -17,6 +17,11 @@ import {
   scrollRuntimeOperationFacts,
 } from '@agent-device/contracts/scroll-runtime';
 import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
+import { appEventRuntimeOperationFacts } from '@agent-device/contracts/app-event-runtime';
+import { settingsRuntimeOperationFacts } from '@agent-device/contracts/settings-runtime';
+import { alertRuntimeOperationFacts } from '@agent-device/contracts/alert-runtime';
+import { appSwitcherRuntimeOperationFacts } from '@agent-device/contracts/app-switcher-runtime';
+import { clipboardRuntimeOperationFacts } from '@agent-device/contracts/clipboard-runtime';
 import { keyboardRuntimeOperationFacts } from '@agent-device/contracts/keyboard-runtime';
 import { orientationRuntimeOperationFacts } from '@agent-device/contracts/orientation-runtime';
 import { bindProviderScreenshotInteractor } from '@agent-device/contracts/screenshot-runtime';
@@ -119,6 +124,21 @@ const keyboardUnavailableIos = Object.freeze({
   available: false,
   reason: 'unsupported-provider-mode',
   hint: 'Limrun iOS direct sessions do not expose keyboard actions.',
+} as const);
+const clipboardUnavailableIos = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'Limrun iOS direct sessions do not expose clipboard access yet.',
+} as const);
+const settingsUnavailableIos = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'Limrun iOS direct sessions do not expose settings changes yet.',
+} as const);
+const appSwitcherUnavailableIos = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'Limrun iOS direct sessions do not expose app switcher yet.',
 } as const);
 
 /**
@@ -237,6 +257,87 @@ export function limrunNavigationOperationFacts(
  * interactor factory `limrunNavigationOperationFacts` above describes; the iOS leg has no tested
  * provider keyboard behavior, so it stays unavailable.
  */
+/**
+ * `clipboard` shares the split its siblings have: the Android leg rides
+ * `session.dependencies.android.createInteractor` — the SAME factory the local Android family
+ * binds, so `cmd clipboard get/set text` reaches the device exactly as it does locally — while
+ * the iOS leg's own `readClipboard`/`writeClipboard` throw, so both cells stay unavailable there
+ * and carry the interactor's wording.
+ */
+export function limrunClipboardOperationFacts(
+  device: DeviceInfo,
+  liveSessionUnavailable?: RuntimeOperationUnavailability,
+) {
+  const cell =
+    liveSessionUnavailable ?? (device.platform === 'android' ? available : clipboardUnavailableIos);
+  return Object.freeze({ ...clipboardRuntimeOperationFacts({ read: cell, write: cell }) });
+}
+
+const alertUnavailableIos = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'Limrun iOS direct sessions do not expose alert inspection yet.',
+} as const);
+
+/**
+ * `alert` splits like every other interaction leaf: the Android leg rides the local family's own
+ * interactor factory, which reads the same accessibility dump it always did; the iOS direct
+ * session has no XCUITest runner to read a sheet from, so all four legs refuse together.
+ */
+export function limrunAlertOperationFacts(
+  device: DeviceInfo,
+  liveSessionUnavailable?: RuntimeOperationUnavailability,
+) {
+  const cell =
+    liveSessionUnavailable ?? (device.platform === 'android' ? available : alertUnavailableIos);
+  return Object.freeze({
+    ...alertRuntimeOperationFacts({ read: cell, wait: cell, accept: cell, dismiss: cell }),
+  });
+}
+
+/**
+ * `app-switcher` splits the same way its siblings do: the Android leg rides
+ * `session.dependencies.android.createInteractor` -- the SAME factory the local Android family
+ * binds -- while the iOS leg's own `appSwitcher` throws.
+ */
+export function limrunAppSwitcherOperationFacts(
+  device: DeviceInfo,
+  liveSessionUnavailable?: RuntimeOperationUnavailability,
+) {
+  const cell =
+    liveSessionUnavailable ??
+    (device.platform === 'android' ? available : appSwitcherUnavailableIos);
+  return Object.freeze({ ...appSwitcherRuntimeOperationFacts({ appSwitcher: cell }) });
+}
+
+/**
+ * `trigger-app-event` is the one system leaf both direct-session legs genuinely serve: each
+ * implements `open`, and a deep link is exactly what that method routes (`openUrl` on iOS, the
+ * local Android interactor's `am start` on Android).
+ */
+export function limrunAppEventOperationFacts(
+  device: DeviceInfo,
+  liveSessionUnavailable?: RuntimeOperationUnavailability,
+) {
+  void device;
+  return Object.freeze({
+    ...appEventRuntimeOperationFacts({ triggerAppEvent: liveSessionUnavailable ?? available }),
+  });
+}
+
+/**
+ * `settings` splits the same way `app-switcher` does: the Android leg rides the local family's
+ * own interactor factory, while the iOS leg's `setSetting` throws.
+ */
+export function limrunSettingsOperationFacts(
+  device: DeviceInfo,
+  liveSessionUnavailable?: RuntimeOperationUnavailability,
+) {
+  const cell =
+    liveSessionUnavailable ?? (device.platform === 'android' ? available : settingsUnavailableIos);
+  return Object.freeze({ ...settingsRuntimeOperationFacts({ setSetting: cell }) });
+}
+
 export function limrunKeyboardOperationFacts(
   device: DeviceInfo,
   liveSessionUnavailable?: RuntimeOperationUnavailability,

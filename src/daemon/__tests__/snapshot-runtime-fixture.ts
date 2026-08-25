@@ -5,6 +5,15 @@ import {
   providerRuntimeOwner,
 } from '@agent-device/contracts/platform-runtime';
 import type { PlatformRuntimeOperations } from '@agent-device/contracts/platform-runtime-operations';
+import { legacyDispatchCapture } from './legacy-snapshot-capture-fixture.ts';
+import {
+  type AlertRuntimeInput,
+  alertRuntimeOperationFacts,
+} from '@agent-device/contracts/alert-runtime';
+import {
+  type SetSettingInput,
+  settingsRuntimeOperationFacts,
+} from '@agent-device/contracts/settings-runtime';
 import {
   type CaptureScreenshotInput,
   screenshotRuntimeOperationFacts,
@@ -14,8 +23,15 @@ import {
   type SnapshotResult,
   snapshotRuntimeOperationFacts,
 } from '@agent-device/contracts/snapshot-runtime';
-import { deviceShape, isIosFamily, type DeviceInfo } from '@agent-device/kernel/device';
-import { dispatchCommand, type DispatchContext } from '../../core/dispatch.ts';
+import {
+  deviceShape,
+  isApplePlatform,
+  isIosFamily,
+  isMacOs,
+  type DeviceInfo,
+} from '@agent-device/kernel/device';
+import { actOnAppleAlert, awaitAppleAlert, readAppleAlert } from '../../platforms/apple/alert.ts';
+import { type DispatchContext } from '../../core/dispatch.ts';
 import { getRequestSignal } from '../../request/cancel.ts';
 import { isActiveProviderDevice } from '../../provider-device-runtime.ts';
 import type { BindDeviceRuntime, InspectDeviceRuntimeFacts } from '../request-runtime-binding.ts';
@@ -28,6 +44,19 @@ import { writeSolidPng } from './screenshot-runtime-fixture.ts';
  * intent here instead of on a legacy dispatch call.
  */
 export const fixtureScreenshotCaptures: CaptureScreenshotInput[] = [];
+
+/**
+ * Every mutation the fixture's bound settings operation received, newest last. The neutral input
+ * is the whole assertion surface now: whether a request reached the owner, and with which setting,
+ * state and resolved app id, is exactly what the retired positional dispatch used to witness.
+ */
+export const fixtureSettingsMutations: SetSettingInput[] = [];
+
+/** Clears both recorders so a suite can assert "the owner was never reached" from a known zero. */
+export function resetSnapshotRuntimeFixture(): void {
+  fixtureScreenshotCaptures.length = 0;
+  fixtureSettingsMutations.length = 0;
+}
 
 /** Request-scoped snapshot seam for handler tests that mock the legacy leaf dispatch. */
 export function snapshotRuntimeFixture(requestId?: string): Readonly<{
@@ -46,6 +75,19 @@ export function snapshotRuntimeFixture(requestId?: string): Readonly<{
       fixtureScreenshotCaptures.push(input);
       writeSolidPng(input.outPath);
     };
+    const setSetting = async (input: SetSettingInput) => {
+      fixtureSettingsMutations.push(input);
+      return {};
+    };
+    // R59: the alert legs delegate to the Apple owner's own module, so the poll and retry windows
+    // these suites exercise are the shipped ones rather than a fixture's imitation of them. The
+    // runner underneath is the suite's own mock.
+    const runnerOptions = { signal: requestSignal };
+    const alertOptions = (input: AlertRuntimeInput) => ({
+      ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+      ...(input.appBundleId === undefined ? {} : { appBundleId: input.appBundleId }),
+      ...(input.surface === undefined ? {} : { surface: input.surface }),
+    });
     return narrowDeviceBinding(
       {
         device,
@@ -58,6 +100,19 @@ export function snapshotRuntimeFixture(requestId?: string): Readonly<{
           captureSnapshotWithCustomActions: captureSnapshot,
           captureSnapshotWithoutActiveApp: captureSnapshot,
           captureScreenshot,
+          setSetting,
+          ...(isApplePlatform(device.platform)
+            ? {
+                readAlert: async (input: AlertRuntimeInput) =>
+                  await readAppleAlert(device, runnerOptions, alertOptions(input)),
+                awaitAlert: async (input: AlertRuntimeInput) =>
+                  await awaitAppleAlert(device, runnerOptions, alertOptions(input)),
+                acceptAlert: async (input: AlertRuntimeInput) =>
+                  await actOnAppleAlert(device, runnerOptions, 'accept', alertOptions(input)),
+                dismissAlert: async (input: AlertRuntimeInput) =>
+                  await actOnAppleAlert(device, runnerOptions, 'dismiss', alertOptions(input)),
+              }
+            : {}),
         },
         [Symbol.asyncDispose]: async () => {},
       },
@@ -66,6 +121,27 @@ export function snapshotRuntimeFixture(requestId?: string): Readonly<{
   };
 
   return { inspectFacts, bindDevice };
+}
+
+/** A physical Apple device that is not the macOS host: the one settings refusal these suites use. */
+function appleHostOrSimulatorOnly(device: DeviceInfo): boolean {
+  return device.platform === 'apple' && device.kind === 'device' && !isMacOs(device);
+}
+
+const settingsUnavailable = {
+  available: false,
+  reason: 'unsupported-platform-leaf',
+  hint: 'settings is supported on Apple simulators and the macOS host, not on physical devices of this OS.',
+} as const;
+
+const alertUnavailable = {
+  available: false,
+  reason: 'unsupported-platform-leaf',
+  hint: 'This fixture models the Apple alert legs only.',
+} as const;
+
+function alertCell(device: DeviceInfo) {
+  return isApplePlatform(device.platform) ? ({ available: true } as const) : alertUnavailable;
 }
 
 async function snapshotFacts(device: DeviceInfo): Promise<RuntimeFacts<PlatformRuntimeOperations>> {
@@ -96,6 +172,22 @@ async function snapshotFacts(device: DeviceInfo): Promise<RuntimeFacts<PlatformR
           isIosFamily(device) && device.kind === 'simulator' ? available : customActionsUnavailable,
         withoutActiveApp: providerOwned || !isIosFamily(device) ? available : activeAppRequired,
       }),
+      // R58: `settings` runs on the snapshot route, so this fixture states its cell too. It
+      // restates only the one refusal these suites exercise — a physical non-macOS Apple device
+      // has no settings surface — and the full Apple cell table is pinned where it belongs, in
+      // `platform-apple/src/system/runtime.test.ts`.
+      ...settingsRuntimeOperationFacts({
+        setSetting: appleHostOrSimulatorOnly(device) ? settingsUnavailable : available,
+      }),
+      // R59: `alert` runs on the snapshot route too. Only the Apple legs are modeled — every
+      // alert suite that reaches this fixture drives an Apple session — and the full per-owner
+      // cell tables are pinned where they belong, in each platform package's runtime test.
+      ...alertRuntimeOperationFacts({
+        read: alertCell(device),
+        wait: alertCell(device),
+        accept: alertCell(device),
+        dismiss: alertCell(device),
+      }),
     },
   };
 }
@@ -119,5 +211,11 @@ async function dispatchFixtureSnapshot(
     snapshotIncludeHiddenContentHints: options.includeHiddenContentHints,
     surface: options.surface,
   };
-  return (await dispatchCommand(device, 'snapshot', [], undefined, context)) as SnapshotResult;
+  return (await legacyDispatchCapture(
+    device,
+    'snapshot',
+    [],
+    undefined,
+    context,
+  )) as SnapshotResult;
 }

@@ -48,6 +48,11 @@ import { backRuntimeOperationFacts } from '@agent-device/contracts/back-runtime'
 import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
 import { orientationRuntimeOperationFacts } from '@agent-device/contracts/orientation-runtime';
 import { tvRemoteRuntimeOperationFacts } from '@agent-device/contracts/tv-remote-runtime';
+import { alertRuntimeOperationFacts } from '@agent-device/contracts/alert-runtime';
+import { appEventRuntimeOperationFacts } from '@agent-device/contracts/app-event-runtime';
+import { settingsRuntimeOperationFacts } from '@agent-device/contracts/settings-runtime';
+import { appSwitcherRuntimeOperationFacts } from '@agent-device/contracts/app-switcher-runtime';
+import { clipboardRuntimeOperationFacts } from '@agent-device/contracts/clipboard-runtime';
 import { keyboardRuntimeOperationFacts } from '@agent-device/contracts/keyboard-runtime';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
@@ -394,6 +399,21 @@ function webRuntimeFacts(
         status: navigationUnavailable,
         dismiss: navigationUnavailable,
         enter: navigationUnavailable,
+      }),
+      // The web backend never carried a `clipboard` capability bucket (`WEB_QUERY_COMMANDS`
+      // lists `audio` alone), so no clipboard cell was ever admitted here.
+      ...clipboardRuntimeOperationFacts({
+        read: navigationUnavailable,
+        write: navigationUnavailable,
+      }),
+      ...appSwitcherRuntimeOperationFacts({ appSwitcher: navigationUnavailable }),
+      ...appEventRuntimeOperationFacts({ triggerAppEvent: navigationUnavailable }),
+      ...settingsRuntimeOperationFacts({ setSetting: navigationUnavailable }),
+      ...alertRuntimeOperationFacts({
+        read: navigationUnavailable,
+        wait: navigationUnavailable,
+        accept: navigationUnavailable,
+        dismiss: navigationUnavailable,
       }),
       ensureReady: readinessUnavailable,
       bootTarget: readinessUnavailable,

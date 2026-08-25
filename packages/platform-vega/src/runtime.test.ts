@@ -179,6 +179,41 @@ test.each([
       });
       expect(binding.operations[operation]).toBeUndefined();
     }
+    // R55/R56: Vega never carried a `clipboard` or `app-switcher` bucket either.
+    for (const operation of ['readClipboard', 'writeClipboard'] as const) {
+      expect(binding.facts.operations[operation]).toMatchObject({
+        available: false,
+        reason: 'unsupported-platform-leaf',
+        hint: 'clipboard is not supported on Vega OS.',
+      });
+      expect(binding.operations[operation]).toBeUndefined();
+    }
+    expect(binding.facts.operations.appSwitcher).toMatchObject({
+      available: false,
+      reason: 'unsupported-platform-leaf',
+      hint: 'app-switcher is not supported on Vega OS.',
+    });
+    expect(binding.operations.appSwitcher).toBeUndefined();
+    expect(binding.facts.operations.triggerAppEvent).toMatchObject({
+      available: false,
+      reason: 'unsupported-platform-leaf',
+      hint: 'trigger-app-event is not supported on Vega OS.',
+    });
+    expect(binding.operations.triggerAppEvent).toBeUndefined();
+    expect(binding.facts.operations.setSetting).toMatchObject({
+      available: false,
+      reason: 'unsupported-platform-leaf',
+      hint: 'settings is not supported on Vega OS.',
+    });
+    expect(binding.operations.setSetting).toBeUndefined();
+    for (const operation of ['readAlert', 'awaitAlert', 'acceptAlert', 'dismissAlert'] as const) {
+      expect(binding.facts.operations[operation]).toMatchObject({
+        available: false,
+        reason: 'unsupported-platform-leaf',
+        hint: 'alert is not supported on Vega OS.',
+      });
+      expect(binding.operations[operation]).toBeUndefined();
+    }
     expectLifecycleFacts(binding, legacy);
   },
 );

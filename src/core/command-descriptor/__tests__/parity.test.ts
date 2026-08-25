@@ -13,7 +13,6 @@ import {
   type DaemonCommandDescriptor,
 } from '../../../daemon/daemon-command-registry.ts';
 import type { DaemonRequest } from '../../../daemon/types.ts';
-import { listRegisteredDispatchCommandNames } from '../../dispatch.ts';
 import { deriveDaemonCommandDescriptors, deriveStructuredBatchCommandNames } from '../derive.ts';
 import {
   commandDescriptors,
@@ -46,13 +45,16 @@ const UNROUTED_PUBLIC_COMMANDS = new Set<string>([PUBLIC_COMMANDS.installFromSou
 // pure control-plane or always-admitted commands; migrated runtime commands are admitted from
 // exact runtime facts and therefore belong to the capability catalog without matrix rows.
 const NO_CAPABILITY_PUBLIC_COMMANDS = new Set<string>([
+  PUBLIC_COMMANDS.alert,
   PUBLIC_COMMANDS.appState,
   PUBLIC_COMMANDS.apps,
+  PUBLIC_COMMANDS.appSwitcher,
   PUBLIC_COMMANDS.artifacts,
   PUBLIC_COMMANDS.back,
   PUBLIC_COMMANDS.batch,
   PUBLIC_COMMANDS.boot,
   PUBLIC_COMMANDS.capabilities,
+  PUBLIC_COMMANDS.clipboard,
   PUBLIC_COMMANDS.close,
   PUBLIC_COMMANDS.devices,
   PUBLIC_COMMANDS.diff,
@@ -73,16 +75,19 @@ const NO_CAPABILITY_PUBLIC_COMMANDS = new Set<string>([
   PUBLIC_COMMANDS.orientation,
   PUBLIC_COMMANDS.prepare,
   PUBLIC_COMMANDS.push,
+  PUBLIC_COMMANDS.reactNative,
   PUBLIC_COMMANDS.record,
   PUBLIC_COMMANDS.reinstall,
   PUBLIC_COMMANDS.replay,
   PUBLIC_COMMANDS.scroll,
+  PUBLIC_COMMANDS.settings,
   PUBLIC_COMMANDS.shutdown,
   PUBLIC_COMMANDS.screenshot,
   PUBLIC_COMMANDS.snapshot,
   PUBLIC_COMMANDS.swipe,
   PUBLIC_COMMANDS.test,
   PUBLIC_COMMANDS.trace,
+  PUBLIC_COMMANDS.triggerAppEvent,
   PUBLIC_COMMANDS.tvRemote,
   PUBLIC_COMMANDS.type,
   PUBLIC_COMMANDS.viewport,
@@ -123,10 +128,6 @@ function readCatalogGroupForTest(descriptor: TestCommandDescriptor): string {
 
 function isDescriptorOnlyCommand(descriptor: TestCommandDescriptor): boolean {
   return !hasDaemonFacet(descriptor) && !hasCapabilityFacet(descriptor) && !descriptor.batchable;
-}
-
-function readDaemonRouteForTest(descriptor: TestCommandDescriptor): string | undefined {
-  return 'daemon' in descriptor ? descriptor.daemon?.route : undefined;
 }
 
 test('derived daemon registry holds its routing invariants', () => {
@@ -196,51 +197,6 @@ test('descriptor-only commands explicitly declare a non-public catalog group', (
     const group = readCatalogGroupForTest(descriptor);
     assert.notEqual(group, 'public', `${descriptor.name} declares a non-public catalog group`);
     assert.equal(publicCommands.has(descriptor.name), false, `${descriptor.name} is not public`);
-  }
-});
-
-test('platform dispatch command list is built from descriptor dispatch facets', () => {
-  const dispatchCommands = commandDescriptors
-    .filter((descriptor) => 'dispatch' in descriptor && descriptor.dispatch !== undefined)
-    .map((descriptor) => descriptor.name)
-    .sort();
-
-  assert.deepEqual(listRegisteredDispatchCommandNames(), dispatchCommands);
-  assert.equal(
-    dispatchCommands.includes('read' as never),
-    false,
-    'the read dispatch alias retired with the selector element-read cutover (#1739)',
-  );
-  assert.equal(
-    dispatchCommands.includes(PUBLIC_COMMANDS.gesture),
-    false,
-    'gesture executes through the typed runtime/backend seam',
-  );
-});
-
-test('generic route commands that reach platform dispatch declare the dispatch facet', () => {
-  const nonDispatchGenericCommands = new Set<string>([
-    PUBLIC_COMMANDS.gesture,
-    PUBLIC_COMMANDS.focus,
-    PUBLIC_COMMANDS.screenshot,
-    // R43 retired scroll's dispatch leaf with its capability bucket: the bound
-    // `scrollDirection` operation is its only execution.
-    PUBLIC_COMMANDS.scroll,
-    PUBLIC_COMMANDS.viewport,
-    PUBLIC_COMMANDS.back,
-    PUBLIC_COMMANDS.home,
-    PUBLIC_COMMANDS.orientation,
-    PUBLIC_COMMANDS.tvRemote,
-  ]);
-
-  for (const descriptor of commandDescriptors) {
-    const route = readDaemonRouteForTest(descriptor);
-    if (route !== 'generic' || nonDispatchGenericCommands.has(descriptor.name)) continue;
-
-    assert.ok(
-      'dispatch' in descriptor && descriptor.dispatch !== undefined,
-      `${descriptor.name} declares dispatch coverage`,
-    );
   }
 });
 

@@ -1,4 +1,5 @@
 import { test, expect, vi, beforeEach } from 'vitest';
+import { legacyDispatchCapture } from '../../__tests__/legacy-snapshot-capture-fixture.ts';
 import { attachRefs } from '@agent-device/kernel/snapshot';
 import { WEB_DESKTOP_DEVICE } from '../../../__tests__/test-utils/device-fixtures.ts';
 import {
@@ -9,7 +10,7 @@ import { makeSessionStore } from '../../../__tests__/test-utils/store-factory.ts
 import { expireRefFrame } from '../../ref-frame.ts';
 import { setSessionSnapshot, STALE_SNAPSHOT_REFS_WARNING } from '../../session-snapshot.ts';
 import { handleInteractionCommands } from '../interaction.ts';
-import { buildSnapshotState } from '../../snapshot-state.ts';
+import { buildSnapshotState } from '../../../core/snapshot-state.ts';
 import {
   contextFromFlags,
   makeSession,
@@ -24,14 +25,6 @@ import {
 const { mockRunAppleRunnerCommand } = vi.hoisted(() => ({
   mockRunAppleRunnerCommand: vi.fn(),
 }));
-
-vi.mock('../../../core/dispatch.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../core/dispatch.ts')>();
-  return {
-    ...actual,
-    dispatchCommand: vi.fn(async () => ({})),
-  };
-});
 
 vi.mock('../snapshot-interactor-capture.ts', async () => {
   const fixture = await import('../../__tests__/legacy-snapshot-capture-fixture.ts');
@@ -64,8 +57,6 @@ import {
   mockReadTextAtPoint,
   resetGetRuntimeFixture,
 } from './interaction-get-runtime-fixture.ts';
-import { dispatchCommand } from '../../../core/dispatch.ts';
-const mockDispatch = vi.mocked(dispatchCommand);
 import {
   getAndroidAppState,
   getAndroidBlockingDialogObservation,
@@ -73,8 +64,8 @@ import {
 const mockGetAndroidAppState = vi.mocked(getAndroidAppState);
 const mockGetAndroidBlockingDialogObservation = vi.mocked(getAndroidBlockingDialogObservation);
 beforeEach(() => {
-  mockDispatch.mockReset();
-  mockDispatch.mockResolvedValue({});
+  legacyDispatchCapture.mockReset();
+  legacyDispatchCapture.mockResolvedValue({});
   mockGetAndroidAppState.mockReset();
   mockGetAndroidAppState.mockResolvedValue({});
   mockGetAndroidBlockingDialogObservation.mockReset();
@@ -103,7 +94,7 @@ test('get text prefers underlying value for text surfaces and avoids recording g
   };
   sessionStore.set(sessionName, session);
 
-  mockDispatch.mockRejectedValue(
+  legacyDispatchCapture.mockRejectedValue(
     new Error('dispatch should not be called for snapshot-derived get text'),
   );
 
@@ -172,7 +163,7 @@ test('get text uses backend read expansion when the resolved node has a rect', a
   });
 
   // The live read now reaches the bound runtime operation, not the legacy `read` dispatch.
-  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
   expect(mockReadTextAtPoint).toHaveBeenCalledTimes(1);
   expect(mockReadTextAtPoint.mock.calls[0]?.[0].point).toEqual({ x: 80, y: 80 });
   expect(response?.ok).toBe(true);
@@ -219,7 +210,7 @@ test('get text answers from the captured tree when the bound owner advertises no
   // Preferred-operation absence is not a failure and not a fallback: the required capture path
   // answers completely, and nothing reaches the legacy dispatcher.
   expect(mockReadTextAtPoint).not.toHaveBeenCalled();
-  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
   expect(response?.ok).toBe(true);
   if (response?.ok) {
     expect(response.data?.text).toBe('preview only');
@@ -259,7 +250,7 @@ test('an eligible direct iOS selector cannot operate before admission', async ()
   if (response && !response.ok) expect(response.error.code).toBe('UNSUPPORTED_OPERATION');
   // The whole point: the fast path never ran.
   expect(mockRunAppleRunnerCommand).not.toHaveBeenCalled();
-  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
 });
 
 // The direct-iOS shortcut is RETIRED (#1739): `get` declares `device-runtime`, so a simple
@@ -270,7 +261,7 @@ test('get text simple iOS id selector resolves through the bound capture, not a 
   const sessionStore = makeSessionStore();
   const sessionName = 'get-text-ios-direct-selector';
   sessionStore.set(sessionName, makeIosSession(sessionName, { appBundleId: 'com.example.app' }));
-  mockDispatch.mockResolvedValue({
+  legacyDispatchCapture.mockResolvedValue({
     backend: 'xctest',
     nodes: [
       {
@@ -327,7 +318,7 @@ test('get text iOS label selector uses snapshot disambiguation instead of runner
   const sessionStore = makeSessionStore();
   const sessionName = 'get-text-ios-label-selector';
   sessionStore.set(sessionName, makeIosSession(sessionName, { appBundleId: 'com.example.app' }));
-  mockDispatch.mockResolvedValue({
+  legacyDispatchCapture.mockResolvedValue({
     backend: 'xctest',
     nodes: [
       {
@@ -387,8 +378,8 @@ test('get text iOS label selector uses snapshot disambiguation instead of runner
 
   expect(response?.ok).toBe(true);
   expect(mockRunAppleRunnerCommand).not.toHaveBeenCalled();
-  expect(mockDispatch).toHaveBeenCalledTimes(1);
-  expect(mockDispatch.mock.calls[0]?.[1]).toBe('snapshot');
+  expect(legacyDispatchCapture).toHaveBeenCalledTimes(1);
+  expect(legacyDispatchCapture.mock.calls[0]?.[1]).toBe('snapshot');
   if (response?.ok) {
     expect(response.data?.text).toBe('General');
     expect(response.data?.selector).toBe('label="General"');
@@ -400,7 +391,7 @@ test('is visible preserves CLI snapshot flags during runtime snapshot capture', 
   const sessionName = 'snapshot-flags';
   sessionStore.set(sessionName, makeSession(sessionName));
 
-  mockDispatch.mockImplementation(async (_device, command) => {
+  legacyDispatchCapture.mockImplementation(async (_device, command) => {
     if (command !== 'snapshot') throw new Error(`unexpected command: ${command}`);
     return {
       nodes: [
@@ -443,7 +434,7 @@ test('is visible preserves CLI snapshot flags during runtime snapshot capture', 
   });
 
   expect(response?.ok).toBe(true);
-  expect(mockDispatch.mock.calls[0]?.[4]).toMatchObject({
+  expect(legacyDispatchCapture.mock.calls[0]?.[4]).toMatchObject({
     snapshotDepth: 2,
     snapshotScope: 'Login',
     snapshotRaw: true,
@@ -458,7 +449,7 @@ test('is visible reuses fresh cached iOS snapshots with rects', async () => {
   const session = makeSession(sessionName);
   session.snapshot = makeVisibleButtonSnapshot('Cached action', 'xctest');
   sessionStore.set(sessionName, session);
-  mockDispatch.mockRejectedValue(new Error('unexpected fresh snapshot'));
+  legacyDispatchCapture.mockRejectedValue(new Error('unexpected fresh snapshot'));
 
   const response = await handleInteractionCommands({
     req: {
@@ -475,7 +466,7 @@ test('is visible reuses fresh cached iOS snapshots with rects', async () => {
   });
 
   expect(response?.ok).toBe(true);
-  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
 });
 
 test('is visible recaptures web snapshots when cached nodes may lack rects', async () => {
@@ -491,7 +482,7 @@ test('is visible recaptures web snapshots when cached nodes may lack rects', asy
     { snapshotInteractiveOnly: false },
   );
   sessionStore.set(sessionName, session);
-  mockDispatch.mockResolvedValue(makeVisibleButtonSnapshot('Submit order', 'web'));
+  legacyDispatchCapture.mockResolvedValue(makeVisibleButtonSnapshot('Submit order', 'web'));
 
   const response = await handleInteractionCommands({
     req: {
@@ -508,7 +499,7 @@ test('is visible recaptures web snapshots when cached nodes may lack rects', asy
   });
 
   expect(response?.ok).toBe(true);
-  expect(mockDispatch.mock.calls[0]?.[4]).toMatchObject({
+  expect(legacyDispatchCapture.mock.calls[0]?.[4]).toMatchObject({
     snapshotIncludeRects: true,
   });
 });
@@ -556,7 +547,7 @@ test('a failing is predicate is COMMAND_FAILED, never a zero-exit pass', async (
   // The session snapshot has no `id=submit`, so the bound capture reports the typed selector
   // failure. Nothing can report a failed assertion as a completed command.
   expect(response?.ok).toBe(false);
-  expect(mockDispatch.mock.calls.filter((call) => call[1] === 'snapshot')).toHaveLength(1);
+  expect(legacyDispatchCapture.mock.calls.filter((call) => call[1] === 'snapshot')).toHaveLength(1);
   if (response?.ok === false) {
     expect(response.error?.code).toBe('COMMAND_FAILED');
   }
@@ -567,7 +558,7 @@ test('is visible passes for list text that inherits viewport visibility from an 
   const sessionName = 'visible-list-item';
   sessionStore.set(sessionName, makeSession(sessionName));
 
-  mockDispatch.mockImplementation(async (_device, command) => {
+  legacyDispatchCapture.mockImplementation(async (_device, command) => {
     if (command !== 'snapshot') throw new Error(`unexpected command: ${command}`);
     return {
       nodes: [
@@ -619,7 +610,7 @@ test('is visible fails for nodes outside the current viewport', async () => {
   const sessionName = 'visible-offscreen';
   sessionStore.set(sessionName, makeSession(sessionName));
 
-  mockDispatch.mockImplementation(async (_device, command) => {
+  legacyDispatchCapture.mockImplementation(async (_device, command) => {
     if (command !== 'snapshot') throw new Error(`unexpected command: ${command}`);
     return {
       nodes: [
@@ -667,7 +658,7 @@ test('is reports Android permission dialog blocker when app content assertion fa
     makeBaseAndroidSession(sessionName, { appBundleId: 'com.example.demo' }),
   );
 
-  mockDispatch.mockImplementation(async (_device, command) => {
+  legacyDispatchCapture.mockImplementation(async (_device, command) => {
     if (command !== 'snapshot') throw new Error(`unexpected command: ${command}`);
     return { nodes: [], backend: 'uiautomator' };
   });
@@ -726,7 +717,7 @@ test('ADR 0014 evidence #17: get text @ref reads the retained frame tree, not a 
     backend: 'xctest',
   });
   sessionStore.set(sessionName, session);
-  mockDispatch.mockRejectedValue(new Error('get text @ref must not recapture'));
+  legacyDispatchCapture.mockRejectedValue(new Error('get text @ref must not recapture'));
 
   // Resolves against the frame tree's @e2 (Continue), never the observation's
   // positional @e2 (Different) — no fall-through by positional coincidence.
@@ -745,7 +736,7 @@ test('ADR 0014 evidence #17: get text @ref reads the retained frame tree, not a 
     expect(missing.error.code).toBe('COMMAND_FAILED');
     expect(missing.error.message).toMatch(/not found/i);
   }
-  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
 });
 
 test('get text @ref warns while the frame is expired (retained evidence still resolves)', async () => {
@@ -756,7 +747,7 @@ test('get text @ref warns while the frame is expired (retained evidence still re
   // retained frame tree and stays fail-open with a warning (ADR 0014).
   expireRefFrame(session);
   sessionStore.set(sessionName, session);
-  mockDispatch.mockRejectedValue(
+  legacyDispatchCapture.mockRejectedValue(
     new Error('dispatch should not be called for snapshot-derived get text'),
   );
 
@@ -774,7 +765,7 @@ test('get text with a pinned stale ref gets the precise warning', async () => {
   const session = makeStaleRefSession(sessionName);
   session.snapshotGeneration = 4;
   sessionStore.set(sessionName, session);
-  mockDispatch.mockRejectedValue(
+  legacyDispatchCapture.mockRejectedValue(
     new Error('dispatch should not be called for snapshot-derived get text'),
   );
 

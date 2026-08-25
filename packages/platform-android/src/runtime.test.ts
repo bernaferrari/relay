@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest';
+import type { AndroidClipboardShellSupport } from '@agent-device/contracts/android-clipboard-support';
 import type {
   DeviceBinding,
   PlatformRuntimeHost,
@@ -32,6 +33,7 @@ test.each([
     stdout: 'mCurrentFocus=Window{1 u0 com.example.app/.MainActivity}',
   }));
   const host = {
+    androidTools: { probeClipboardShellSupport: async () => 'supported' as const },
     commands: {
       which: async () => 'tool',
       run: async () => ({ stdout: '1', stderr: '', exitCode: 0 }),
@@ -156,6 +158,7 @@ test.each([
 test('rejects the non-discovered Android simulator cell for appstate', async () => {
   const runtimeDevice = { ...device, kind: 'simulator' as const };
   const host = {
+    androidTools: { probeClipboardShellSupport: async () => 'supported' as const },
     processTransports: { resolve: async () => ({ mode: 'local' as const }) },
     localInteractors: { resolve: async () => ({}) },
     appState: {
@@ -196,8 +199,14 @@ test('rejects the non-discovered Android simulator cell for appstate', async () 
   expect(binding.operations.appState).toBeUndefined();
 });
 
-function androidNavigationHostFixture() {
+function androidNavigationHostFixture(
+  probeClipboardShellSupport: () => Promise<AndroidClipboardShellSupport> = async () => 'supported',
+) {
   return {
+    androidTools: {
+      probeClipboardShellSupport,
+      runAdb: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
+    },
     processTransports: { resolve: async () => ({ mode: 'local' as const }) },
     appInventory: {
       apple: { listApps: async () => [] },
@@ -289,6 +298,42 @@ test('admits Android tv-remote only for a real TV target', async () => {
   expect(binding.operations.tvRemote).toBeTypeOf('function');
 });
 
+// R55 parity: the retired `clipboard` bucket was `ANDROID_ALL` (emulator/device/unknown) with no
+// Android admission closure, so `cmd clipboard get/set text` is admitted on every real kind and
+// refused only on the synthetic `simulator` row the bucket never listed. (`unknown` is the
+// bucket's name for a device with no declared kind, which `DeviceKind` cannot express.)
+test('admits both clipboard halves and the app switcher on every real Android kind', async () => {
+  for (const kind of ['emulator', 'device'] as const) {
+    const binding = await createAndroidPlatformRuntime(androidNavigationHostFixture()).bind({
+      device: { ...device, id: `android-${kind}`, kind },
+      intent: { kind: 'ordinary' },
+      scope: {
+        signal: new AbortController().signal,
+        diagnostics: { emit: () => {} },
+        progress: { report: () => {} },
+      },
+    });
+    expect(binding.facts.operations.readClipboard).toEqual({ available: true });
+    expect(binding.facts.operations.writeClipboard).toEqual({ available: true });
+    expect(binding.operations.readClipboard).toBeTypeOf('function');
+    expect(binding.operations.writeClipboard).toBeTypeOf('function');
+    // R56: `app-switcher` shares `home`'s cell — one `input keyevent` on every real kind.
+    expect(binding.facts.operations.appSwitcher).toEqual({ available: true });
+    expect(binding.operations.appSwitcher).toBeTypeOf('function');
+    // R57: the deep link opens through `am start` on the same cell.
+    expect(binding.facts.operations.triggerAppEvent).toEqual({ available: true });
+    expect(binding.operations.triggerAppEvent).toBeTypeOf('function');
+    // R58: settings run over adb (`appops`, `settings put`, `pm clear`, …) on that cell too.
+    expect(binding.facts.operations.setSetting).toEqual({ available: true });
+    expect(binding.operations.setSetting).toBeTypeOf('function');
+    // R59: all four alert legs read the same dump and tap with the same `input tap`.
+    for (const operation of ['readAlert', 'awaitAlert', 'acceptAlert', 'dismissAlert'] as const) {
+      expect(binding.facts.operations[operation]).toEqual({ available: true });
+      expect(binding.operations[operation]).toBeTypeOf('function');
+    }
+  }
+});
+
 test('the synthetic Android simulator cell refuses back/home/orientation/keyboard like every other touch operation', async () => {
   const simulatorDevice = { ...device, id: 'android-simulator', kind: 'simulator' as const };
   const binding = await createAndroidPlatformRuntime(androidNavigationHostFixture()).bind({
@@ -310,6 +355,15 @@ test('the synthetic Android simulator cell refuses back/home/orientation/keyboar
     'keyboardStatus',
     'keyboardDismiss',
     'keyboardEnter',
+    'readClipboard',
+    'writeClipboard',
+    'appSwitcher',
+    'triggerAppEvent',
+    'setSetting',
+    'readAlert',
+    'awaitAlert',
+    'acceptAlert',
+    'dismissAlert',
   ] as const) {
     expect(facts.operations[operation].available).toBe(false);
     expect(binding.operations[operation]).toBeUndefined();
@@ -362,6 +416,7 @@ test.each([
   'classifies the Android %s lifecycle denominator against the legacy dispatch cell',
   async (_name, runtimeDevice, legacy) => {
     const host = {
+      androidTools: { probeClipboardShellSupport: async () => 'supported' as const },
       processTransports: { resolve: async () => ({ mode: 'local' as const }) },
       appInventory: {
         apple: { listApps: async () => [] },
@@ -513,6 +568,7 @@ test('binds only the Android gesture tiers the target admitted', async () => {
 
 function gestureHost(): PlatformRuntimeHost {
   return {
+    androidTools: { probeClipboardShellSupport: async () => 'supported' as const },
     processTransports: { resolve: async () => ({ mode: 'local' as const }) },
     appInventory: {
       apple: { listApps: async () => [] },
@@ -523,3 +579,103 @@ function gestureHost(): PlatformRuntimeHost {
     screenRecording: { android: { resolve: async () => ({ mode: 'local' as const }) } },
   } as unknown as PlatformRuntimeHost;
 }
+
+// R55 defect, found on a Pixel 9 Pro XL / Android 36 emulator: the retired bucket admitted both
+// clipboard halves on every real Android kind, `capabilities` advertised `clipboard`, and
+// `clipboard read` then failed with `UNSUPPORTED_OPERATION` from the leaf. Admission now probes
+// the same condition the leaf checks, so a build with no clipboard shell command refuses up front.
+test('refuses both clipboard halves when the build reports no clipboard shell', async () => {
+  const binding = await createAndroidPlatformRuntime(
+    androidNavigationHostFixture(async () => 'unsupported'),
+  ).bind({
+    device: { ...device, id: 'android-no-clipboard-shell', kind: 'device' },
+    intent: { kind: 'ordinary' },
+    scope: {
+      signal: new AbortController().signal,
+      diagnostics: { emit: () => {} },
+      progress: { report: () => {} },
+    },
+  });
+
+  for (const key of ['readClipboard', 'writeClipboard'] as const) {
+    expect(binding.facts.operations[key]).toMatchObject({
+      available: false,
+      reason: 'owner-capability-missing',
+    });
+    // Never admitted, so never bound: nothing can throw `unsupported` after the fact.
+    expect(binding.operations[key]).toBeUndefined();
+  }
+  // The probe is scoped to the clipboard; neighbouring adb-driven cells stay admitted.
+  expect(binding.facts.operations.appSwitcher).toEqual({ available: true });
+});
+
+test.each([['supported'], ['unsupported']] as const)(
+  'caches a definitive %s verdict instead of re-probing per inspection',
+  async (verdict) => {
+    const probe = vi.fn(async () => verdict);
+    const runtime = createAndroidPlatformRuntime(androidNavigationHostFixture(probe));
+    const target = { ...device, id: `android-probe-cache-${verdict}`, kind: 'device' as const };
+
+    await runtime.inspectFacts(target);
+    await runtime.inspectFacts(target);
+
+    expect(probe).toHaveBeenCalledTimes(1);
+  },
+);
+
+// The failure path is the one that recreates the defect if it guesses. A probe that never got an
+// answer must not report the clipboard available — execution would then refuse the very capability
+// `capabilities` advertised — and must not be remembered, or one transport blip decides the
+// question for the owner's whole life.
+test('a failed probe refuses rather than fabricating availability', async () => {
+  const binding = await createAndroidPlatformRuntime(
+    androidNavigationHostFixture(async () => 'probe-failed'),
+  ).bind({
+    device: { ...device, id: 'android-probe-failed', kind: 'device' },
+    intent: { kind: 'ordinary' },
+    scope: {
+      signal: new AbortController().signal,
+      diagnostics: { emit: () => {} },
+      progress: { report: () => {} },
+    },
+  });
+
+  for (const key of ['readClipboard', 'writeClipboard'] as const) {
+    expect(binding.facts.operations[key]).toMatchObject({ available: false });
+    expect(binding.operations[key]).toBeUndefined();
+  }
+  // The refusal says it could not determine support, not that the build lacks it.
+  const fact = binding.facts.operations.readClipboard;
+  expect(fact.available === false && String(fact.hint)).toMatch(/could not determine/i);
+});
+
+test('a failed probe is not cached, so the next inspection asks again', async () => {
+  const probe = vi
+    .fn<() => Promise<AndroidClipboardShellSupport>>()
+    .mockResolvedValueOnce('probe-failed')
+    .mockResolvedValue('supported');
+  const runtime = createAndroidPlatformRuntime(androidNavigationHostFixture(probe));
+  const target = { ...device, id: 'android-probe-retry', kind: 'device' as const };
+
+  const first = await runtime.inspectFacts(target);
+  const second = await runtime.inspectFacts(target);
+
+  expect(first.operations.readClipboard.available).toBe(false);
+  expect(second.operations.readClipboard.available).toBe(true);
+  expect(probe).toHaveBeenCalledTimes(2);
+});
+
+test('a host with no clipboard probe refuses rather than assuming support', async () => {
+  const host = androidNavigationHostFixture();
+  const withoutProbe = { ...host, androidTools: {} } as unknown as PlatformRuntimeHost;
+
+  const facts = await createAndroidPlatformRuntime(withoutProbe).inspectFacts({
+    ...device,
+    id: 'android-no-probe',
+    kind: 'device',
+  });
+
+  // Absence of a probe is absence of evidence, not evidence of support.
+  expect(facts.operations.readClipboard.available).toBe(false);
+  expect(facts.operations.writeClipboard.available).toBe(false);
+});

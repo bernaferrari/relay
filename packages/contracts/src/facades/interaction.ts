@@ -1,6 +1,8 @@
 export {
   ALERT_ACTIONS,
   ALERT_ACTION_RETRY_MS,
+  ALERT_NOT_FOUND_REASON,
+  ALERT_NOT_FOUND_RUNNER_CODE,
   ALERT_POLL_INTERVAL_MS,
   DEFAULT_ALERT_TIMEOUT_MS,
 } from '../alert-contract.ts';
@@ -117,6 +119,7 @@ export {
   TEXT_ENTRY_ROUTES,
 } from '../interactor-types.ts';
 export type {
+  AlertInteractorOptions,
   CloudTextEntryReadiness,
   ElementSelectorKey,
   ElementSelectorTapOptions,

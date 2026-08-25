@@ -6,6 +6,8 @@ import {
   resolveDeferredInteractionOutcome,
   type DeferredOutcomeSnapshotAttempt,
 } from '../deferred-interaction-outcome.ts';
+import type { InteractionRetryTap } from '../interaction-outcome-policy.ts';
+import { countDiagnosticEventsByPhase, withDiagnosticsScope } from '../../utils/diagnostics.ts';
 import type { SessionState } from '../types.ts';
 import {
   deliverySnapshot,
@@ -13,21 +15,14 @@ import {
   pickupSnapshot,
 } from './post-gesture-stabilization-fixtures.ts';
 
-// The one device boundary in this cluster: pending-outcome retries re-dispatch
-// the recorded tap through core dispatch. Everything else runs real.
-vi.mock('../../core/dispatch.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../core/dispatch.ts')>();
-  return {
-    ...actual,
-    dispatchCommand: vi.fn(async () => ({})),
-  };
-});
-const { dispatchCommand } = await import('../../core/dispatch.ts');
-const dispatchMock = vi.mocked(dispatchCommand);
+// The one device boundary in this cluster: a pending-outcome retry re-fires the recorded tap
+// through the seam its caller supplies (R58). Everything else runs real, and a test that omits
+// the seam is exercising a capture route that genuinely cannot tap.
+const retryTap = vi.fn<InteractionRetryTap>(async () => true);
 
 afterEach(() => {
   vi.useRealTimers();
-  dispatchMock.mockClear();
+  retryTap.mockClear();
 });
 
 function scriptedCapture(snapshots: ReturnType<typeof pickupSnapshot>[]): {
@@ -56,6 +51,7 @@ function resolveParams(
     logPath: '/tmp/agent-device-test.log',
     interactiveOnly: false,
     capture,
+    retryTap,
   };
 }
 
@@ -158,8 +154,8 @@ test('an unchanged surface retries the recorded tap once, then settles on the ch
   }
   const result = await pendingResult;
 
-  assert.equal(dispatchMock.mock.calls.length, 1);
-  assert.equal(dispatchMock.mock.calls[0]?.[1], 'press');
+  assert.equal(retryTap.mock.calls.length, 1);
+  assert.deepEqual(retryTap.mock.calls[0]?.[0]?.point, { x: 100, y: 200 });
   assert.equal(
     result?.snapshot.nodes.some((node) => node.identifier === 'shipping-delivery'),
     true,
@@ -181,9 +177,79 @@ test('a changed surface settles immediately with no retry dispatch', async () =>
 
   const result = await resolveDeferredInteractionOutcome(resolveParams(session, capture));
 
-  assert.equal(dispatchMock.mock.calls.length, 0);
+  assert.equal(retryTap.mock.calls.length, 0);
   assert.equal(calls(), 1);
   assert.ok(result?.snapshot);
+  assert.equal(session.pendingInteractionOutcome, undefined);
+});
+
+// R58: the policy owns whether to retry; its caller owns how the tap reaches the device. A
+// capture route that carries no bindings (an internal capture decorating someone else's request)
+// therefore hands no seam, and the retry must report that instead of burning an attempt.
+test('a capture route with no retry seam reports a skip instead of spending an attempt', async () => {
+  const session = makeSession('ios');
+  session.snapshot = pickupSnapshot();
+  markDeferredInteractionOutcome({
+    session,
+    command: 'click',
+    positionals: ['100', '200'],
+    flags: { interactionOutcome: { retryOnNoChange: true } },
+    scheduleOutcomeRetry: true,
+  });
+  const { capture } = scriptedCapture([pickupSnapshot()]);
+
+  const observed = await withDiagnosticsScope({}, async () => {
+    const result = await resolveDeferredInteractionOutcome({
+      ...resolveParams(session, capture),
+      retryTap: undefined,
+    });
+    return {
+      result,
+      skips: countDiagnosticEventsByPhase(['interaction_no_change_retry_skipped']),
+      retries: countDiagnosticEventsByPhase(['interaction_no_change_retry']),
+    };
+  });
+
+  assert.ok(observed.result?.snapshot);
+  assert.equal(retryTap.mock.calls.length, 0);
+  // One skip, no retry: nothing was attempted, so no attempt was spent. The emitted reason
+  // (`device-runtime-unavailable`) is what separates this from a delivered tap the owner refused —
+  // a route that stops forwarding its bindings lands here, not there.
+  assert.equal(observed.skips, 1);
+  assert.equal(observed.retries, 0);
+});
+
+// A retry that dies on the device is the seam's problem, not the caller's: the capture it was
+// decorating still has to answer with the unchanged surface it observed.
+test('a retry tap that throws is reported as a skip rather than failing the capture', async () => {
+  const session = makeSession('android');
+  session.snapshot = pickupSnapshot();
+  markDeferredInteractionOutcome({
+    session,
+    command: 'click',
+    positionals: ['100', '200'],
+    flags: { interactionOutcome: { retryOnNoChange: true } },
+    scheduleOutcomeRetry: true,
+  });
+  const attemptsBefore = session.pendingInteractionOutcome?.attemptsRemaining;
+  const { capture } = scriptedCapture([pickupSnapshot()]);
+  retryTap.mockRejectedValueOnce(new Error('adb: device offline'));
+
+  const observed = await withDiagnosticsScope({}, async () => {
+    const result = await resolveDeferredInteractionOutcome(resolveParams(session, capture));
+    return {
+      result,
+      skips: countDiagnosticEventsByPhase(['interaction_no_change_retry_skipped']),
+      retries: countDiagnosticEventsByPhase(['interaction_no_change_retry']),
+    };
+  });
+
+  assert.ok(observed.result?.snapshot);
+  assert.equal(observed.skips, 1);
+  assert.equal(observed.retries, 0);
+  // The attempt is spent before the device work, so a failing owner cannot be re-attempted from a
+  // full budget by the next capture inside the pending window.
+  assert.equal(attemptsBefore, 2);
   assert.equal(session.pendingInteractionOutcome, undefined);
 });
 
