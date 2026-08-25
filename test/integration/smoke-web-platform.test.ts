@@ -1,14 +1,42 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import path from 'node:path';
 import test from 'node:test';
 import { type CliJsonResult, formatResultDebug, runBuiltCliJson } from './cli-json.ts';
 import { assertPngDimensions, assertPngFile } from './provider-scenarios/assertions.ts';
 import { runCleanupWithCoverageReport } from './web-e2e/coverage-report.ts';
+import { assertNoDaemonLeaks } from './support/daemon-leak-oracle.ts';
+import {
+  inspectManagedAgentBrowserProcesses,
+  summarizeAgentBrowserProcesses,
+  type AgentBrowserProcessSummary,
+} from '../../src/platforms/web/agent-browser-lifecycle.ts';
+import {
+  getManagedAgentBrowserStatus,
+  type AgentBrowserToolStatus,
+} from '../../src/platforms/web/agent-browser-tool.ts';
+import { stopProcessForTakeover } from '../../src/daemon/daemon-process.ts';
+import {
+  expandProcessTree,
+  isProcessAlive,
+  listHostProcesses,
+  stopPidsWithEscalation,
+} from '../../src/utils/host-process.ts';
 
 const TEST_NAME = 'live web platform e2e smoke';
+const SHUTDOWN_TEST_NAME = 'live web platform e2e daemon-shutdown browser cleanup';
 const WEB_E2E_ENABLED = process.env.AGENT_DEVICE_WEB_E2E === '1';
+const WEB_SHUTDOWN_SETTLE_TIMEOUT_MS = 45_000;
+const WEB_SHUTDOWN_SETTLE_POLL_MS = 500;
+const WEB_SHUTDOWN_CLEANUP_TIMEOUT_MS = 5_000;
+// #1868: SIGTERM must close the managed Chrome fleet well before agent-browser's own idle timer
+// would have. The shutdown lane owns this value directly, at a fixed offset above its own poll
+// deadline, rather than the functional smoke test's shortened override or an omitted-env-var
+// assumption about agent-browser's default — so a future change to either stays unable to make
+// this pass for the wrong reason. A pass can then only mean the daemon's shutdown teardown
+// actively closed the browser, not that agent-browser's own idle timer beat this test's own wait.
+const WEB_SHUTDOWN_IDLE_TIMEOUT_MS = WEB_SHUTDOWN_SETTLE_TIMEOUT_MS + 60_000;
 
 type StepRecord = {
   step: string;
@@ -38,9 +66,168 @@ test(
       : 'Set AGENT_DEVICE_WEB_E2E=1 to run the managed web backend smoke.',
   },
   async () => {
-    await runWebSmoke(await createWebSmokeContext());
+    // Shortens agent-browser's own idle-reap window so a leaked fleet from this test doesn't
+    // linger on the runner; the shutdown lane below deliberately omits this override instead.
+    await runWebSmoke(await createWebSmokeContext({ agentBrowserIdleTimeoutMs: '30000' }));
   },
 );
+
+// #1868: teardownSessionResources gained a best-effort web-close step so a daemon shutdown (or
+// an expired-session reap) tells agent-browser to close its Chrome fleet immediately instead of
+// leaving it for agent-browser's own multi-minute idle timer. The unit tests around
+// teardownSessionResources and teardownDaemonSessionForShutdown mock the agent-browser CLI call
+// and prove only that it gets dispatched with the right arguments; this live lane is the one
+// place that proves the whole chain — a real managed browser, a real daemon process, a real
+// SIGTERM — actually ends with zero owned Chrome processes, not just an issued close command.
+test(
+  SHUTDOWN_TEST_NAME,
+  {
+    skip: WEB_E2E_ENABLED
+      ? false
+      : 'Set AGENT_DEVICE_WEB_E2E=1 to run the managed web backend smoke.',
+  },
+  async () => {
+    await runWebShutdownSmoke(
+      await createWebSmokeContext({
+        agentBrowserIdleTimeoutMs: String(WEB_SHUTDOWN_IDLE_TIMEOUT_MS),
+      }),
+    );
+  },
+);
+
+async function runWebShutdownSmoke(context: WebSmokeContext): Promise<void> {
+  // Cleanup authority lives entirely in `finally`, driven by these two, so a failed assertion
+  // above (including the very failure this test exists to catch: processes still alive when the
+  // fix regresses) can never leave a daemon or a Chrome fleet running on the host afterward.
+  let daemonPid: number | undefined;
+  let status: AgentBrowserToolStatus | undefined;
+  try {
+    await runStep(context, 'set up managed web backend', ['web', 'setup', '--json']);
+    await runStep(context, 'open local fixture', ['open', context.url, ...context.common]);
+
+    const stateDir = context.env.AGENT_DEVICE_STATE_DIR;
+    assert.ok(stateDir, 'expected the smoke context to configure a state dir');
+    status = getManagedAgentBrowserStatus({ stateDir });
+
+    const before = await inspectManagedAgentBrowserProcesses(status);
+    assert.ok(
+      before.count > 0,
+      `expected the managed browser fleet to be running after open, found none: ${formatProcessSummary(before)}`,
+    );
+
+    daemonPid = readDaemonPid(stateDir);
+    assert.equal(isProcessAlive(daemonPid), true, 'expected a live daemon before SIGTERM');
+
+    // The scenario #1868 is about: SIGTERM the daemon directly, the way an operator or an
+    // orchestrator shutting the container down would, rather than going through `close`.
+    process.kill(daemonPid, 'SIGTERM');
+
+    const after = await settleManagedBrowserProcesses(status);
+    assert.equal(
+      after.count,
+      0,
+      `expected zero owned Chrome processes after daemon shutdown, found: ${formatProcessSummary(after)}`,
+    );
+    assert.equal(
+      isProcessAlive(daemonPid),
+      false,
+      'expected the daemon process itself to have exited after SIGTERM',
+    );
+
+    // #1781 B1: the daemon leak oracle this fix unblocks wiring to a web lane — no stray
+    // state-dir residue either, on top of the process-level proof above.
+    await assertNoDaemonLeaks({ stateDir, daemonPids: [daemonPid], phase: 'after-shutdown' });
+  } finally {
+    await cleanupWebShutdownSmoke(context, daemonPid, status);
+  }
+}
+
+// Best-effort and independent of how far the `try` block got: a daemon that survived SIGTERM
+// (stopProcessForTakeover escalates to SIGKILL) and a Chrome fleet that outlived it (a forceful
+// reap, not cleanupManagedAgentBrowserOrphans — see forceKillManagedBrowserProcesses) are reaped
+// here regardless of which assertion above failed, or whether none did. Mirrors cleanupWebSmoke's
+// AggregateError shape so a cleanup failure never silently swallows the assertion failure it ran
+// alongside.
+async function cleanupWebShutdownSmoke(
+  context: WebSmokeContext,
+  daemonPid: number | undefined,
+  status: AgentBrowserToolStatus | undefined,
+): Promise<void> {
+  const errors: unknown[] = [];
+  if (daemonPid !== undefined) {
+    try {
+      await stopProcessForTakeover(daemonPid, {
+        termTimeoutMs: WEB_SHUTDOWN_CLEANUP_TIMEOUT_MS,
+        killTimeoutMs: WEB_SHUTDOWN_CLEANUP_TIMEOUT_MS,
+      });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (status) {
+    try {
+      await forceKillManagedBrowserProcesses(status);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    await closeServer(context.server);
+  } catch (error) {
+    errors.push(error);
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) throw new AggregateError(errors, 'web shutdown smoke cleanup failed');
+}
+
+// Deliberately NOT cleanupManagedAgentBrowserOrphans: that function exists to leave an actively
+// used fleet alone, and skips killing anything once it sees activity inside the (here, minutes-
+// long) idle window — precisely the state this test's own fleet is always in. A forced safety-net
+// cleanup needs the opposite property: reap whatever this test's own fleet still owns, regardless
+// of how recently it was used, so a planted regression (no active close on shutdown) cannot leave
+// Chrome processes running on the host just because cleanup honored the same idle guard the
+// regression exploits.
+async function forceKillManagedBrowserProcesses(status: AgentBrowserToolStatus): Promise<void> {
+  const processes = await listHostProcesses({ timeoutMs: WEB_SHUTDOWN_CLEANUP_TIMEOUT_MS });
+  const summary = summarizeAgentBrowserProcesses(processes, status);
+  if (summary.count === 0) return;
+  const signalPids = expandProcessTree(summary.pids, processes).map(
+    (processInfo) => processInfo.pid,
+  );
+  await stopPidsWithEscalation({
+    pids: signalPids,
+    termTimeoutMs: WEB_SHUTDOWN_CLEANUP_TIMEOUT_MS,
+    killTimeoutMs: WEB_SHUTDOWN_CLEANUP_TIMEOUT_MS,
+  });
+}
+
+function readDaemonPid(stateDir: string): number {
+  const info = JSON.parse(readFileSync(path.join(stateDir, 'daemon.json'), 'utf8')) as {
+    pid?: number;
+  };
+  assert.equal(typeof info.pid, 'number', `daemon.json has no pid: ${JSON.stringify(info)}`);
+  return info.pid as number;
+}
+
+async function settleManagedBrowserProcesses(
+  status: AgentBrowserToolStatus,
+): Promise<AgentBrowserProcessSummary> {
+  const deadline = Date.now() + WEB_SHUTDOWN_SETTLE_TIMEOUT_MS;
+  let summary = await inspectManagedAgentBrowserProcesses(status);
+  while (summary.count > 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, WEB_SHUTDOWN_SETTLE_POLL_MS));
+    summary = await inspectManagedAgentBrowserProcesses(status);
+  }
+  return summary;
+}
+
+function formatProcessSummary(summary: AgentBrowserProcessSummary): string {
+  return JSON.stringify({
+    count: summary.count,
+    pids: summary.pids,
+    reasons: summary.processes.map((match) => match.reason),
+  });
+}
 
 async function runWebSmoke(context: WebSmokeContext): Promise<void> {
   let opened = false;
@@ -70,7 +257,9 @@ async function assertWebViewport(context: WebSmokeContext): Promise<void> {
   });
 }
 
-async function createWebSmokeContext(): Promise<WebSmokeContext> {
+async function createWebSmokeContext(
+  options: { agentBrowserIdleTimeoutMs?: string } = {},
+): Promise<WebSmokeContext> {
   const artifactDir = createArtifactDir();
   const stateDir = path.join(artifactDir, 'agent-device-state');
   const agentBrowserConfigPath = path.join(artifactDir, 'agent-browser.json');
@@ -81,7 +270,9 @@ async function createWebSmokeContext(): Promise<WebSmokeContext> {
     AGENT_DEVICE_STATE_DIR: stateDir,
     AGENT_BROWSER_CONFIG: agentBrowserConfigPath,
     AGENT_BROWSER_HEADED: 'false',
-    AGENT_BROWSER_IDLE_TIMEOUT_MS: '30000',
+    ...(options.agentBrowserIdleTimeoutMs === undefined
+      ? {}
+      : { AGENT_BROWSER_IDLE_TIMEOUT_MS: options.agentBrowserIdleTimeoutMs }),
   };
 
   mkdirSync(stateDir, { recursive: true });
