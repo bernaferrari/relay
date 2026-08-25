@@ -79,6 +79,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("workspace.evidence.get", path("policy evidence get")),
   mapped("workspace.evidence.update", path("policy evidence update")),
   mapped("workspace.apple-device.update", path("workspace apple-device update")),
+  mapped("workspace.apple-live-preview.update", path("workspace apple-live-preview update")),
   mapped("workspace.variables.get", path("data variables get")),
   mapped("workspace.variables.update", path("data variables update")),
 
@@ -175,6 +176,44 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("lease.release", path("lease release", ["leaseId"])),
 
   ...appMapAuthoringCommandDescriptors,
+  mapped(
+    "app-map.variable.infer",
+    path("variable infer", ["appMapId", "variableId"], undefined, {
+      summary: "Infer remaining Variable rows from 1-8 taught examples",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "variableId", type: "string", description: "Stable Variable identifier" },
+      ],
+      inputHelp: [
+        { name: "expectedRevision", type: "number", required: true, description: "Current App Map revision" },
+        {
+          name: "target",
+          type: "object",
+          required: true,
+          description: 'Leased control target, e.g. {"kind":"device","platform":"android","targetId":"<serial>"}',
+        },
+        {
+          name: "taughtRows",
+          type: "array",
+          required: true,
+          description: "1-8 already-taught option rows ({id, identifier?, label?, text?}) to infer the rest from",
+        },
+        { name: "leaseId", type: "string", required: true, description: "Actor-owned target lease identifier" },
+        { name: "name", type: "string", description: "Optional Variable display name" },
+        { name: "kind", type: "string", description: "Optional Variable kind (language, account, theme, …)" },
+        { name: "apply", type: "object", description: "Optional reviewed actions that open the value list" },
+      ],
+      examples: [
+        `relay variable infer grok-android language --input '${JSON.stringify({
+          expectedRevision: 4,
+          leaseId: "<lease>",
+          target: { kind: "device", platform: "android", targetId: "<serial>" },
+          taughtRows: [{ id: "en", label: "English" }, { id: "it", label: "Italiano" }],
+        })}'`,
+      ],
+      note: "Requires an active exclusive lease on the target. Taught rows seed inference; the server walks the apply path and reads the remaining options.",
+    }),
+  ),
   ...appMapRunPlanCommandDescriptors,
   ...appMapRoutineCommandDescriptors,
 
@@ -205,53 +244,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("discovery.do", path("discovery do", ["sessionId", "serial"])),
   mapped("discovery.suggestion", path("discovery suggestion", ["sessionId"])),
   mapped("discovery.coverage", path("discovery coverage", ["sessionId"])),
-  mapped("discovery.journey", path("discovery journey", ["sessionId"])),
+  mapped("discovery.exploration-timeline", path("discovery exploration-timeline", ["sessionId"])),
   mapped("discovery.export", path("discovery export", ["sessionId"])),
   mapped("discovery.start", path("discovery start", ["sessionId"])),
   mapped("discovery.cancel", path("discovery cancel", ["sessionId"])),
   mapped("discovery.promote", path("discovery promote", ["sessionId"])),
-
-  ...(
-    [
-      "corpus.list",
-      "corpus.create",
-      "corpus.get",
-      "corpus.rename",
-      "corpus.status.update",
-      "corpus.start",
-      "corpus.cancel",
-      "corpus.coverage",
-      "corpus.analysis",
-      "corpus.export",
-      "corpus.screen.get",
-    ] as const
-  ).map((operationId) => ({
-    operationId,
-    exclusion: "internal" as const,
-    reason:
-      "Legacy Corpus sessions are internal compatibility data; use a Language Variable × graph Test Combine and inspect its run analysis.",
-  })),
-
-  mapped("locale-finding.known.list", path("finding known list")),
-  mapped(
-    "locale-finding.known.add",
-    path("finding known add", [], undefined, {
-      summary: "Accept a reviewed locale finding with explicit scope",
-      note: "Defaults to one locale. Cross-locale control acceptance is limited to stable untranslated controls and requires a note.",
-      examples: [
-        'relay finding known add --input \'{"finding":{...},"scope":"locale"}\'',
-        'relay finding known add --input \'{"finding":{...},"scope":"control","note":"Brand remains English"}\'',
-      ],
-    }),
-  ),
-  mapped("locale-finding.known.remove", path("finding known remove", ["findingId"])),
-
-  mapped("language-profile.list", path("language-profile list")),
-  mapped("language-profile.scan", path("language-profile scan")),
-  mapped("language-profile.save", path("language-profile save")),
-  mapped("switcher-profile.list", path("switcher-profile list")),
-  mapped("switcher-profile.scan", path("switcher-profile scan")),
-  mapped("switcher-profile.save", path("switcher-profile save")),
 
   mapped("job.list", path("job list")),
   mapped(
@@ -329,66 +326,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("job.compatibility-matrix.start", path("job compatibility-matrix start")),
   mapped("job.soak.start", path("job soak start")),
   mapped(
-    "job.locale-matrix.materialize",
-    path("locale matrix plan", [], undefined, {
-      summary: "Materialize the exact locale cases before assigning local targets",
-      inputHelp: [
-        {
-          name: "recipe | appMapId + flowId",
-          type: "string",
-          required: true,
-          description: "Project-owned saved recipe or App Map flow to run",
-        },
-        {
-          name: "scope",
-          type: "object",
-          description:
-            "Taught locale scope. The response freezes normalized cases, including a final restore case when applicable.",
-        },
-      ],
-      examples: [
-        'relay locale matrix plan --input \'{"recipe":"settings","scope":{"locales":["en","it"],"entryPath":[{"kind":"tap","target":{"label":"Settings"}}],"restoreLocale":"en"}}\'',
-      ],
-      note: "This is target-free and read-only. Bind every returned case index before a local device-farm start; a restore locale can repeat an earlier visible language.",
-    }),
-    path("job locale-matrix materialize"),
-  ),
-  mapped(
-    "job.locale-matrix.start",
-    path("locale matrix run", [], undefined, {
-      summary: "Run a materialized locale matrix",
-      inputHelp: [
-        {
-          name: "scope",
-          type: "object",
-          required: true,
-          description: "Send the exact scope returned by locale matrix plan",
-        },
-        {
-          name: "caseTargetBindings",
-          type: "array",
-          description:
-            "Optional explicit [{caseIndex, locale, executionTarget}] local-device bindings for every materialized case. When present, Relay never uses a selected serial.",
-        },
-        {
-          name: "localAdmission",
-          type: "object",
-          description:
-            "Required with explicit caseTargetBindings. It contains fresh server-derived target × Test/action timing evidence and a deadline.",
-        },
-        {
-          name: "serial",
-          type: "string",
-          description:
-            "Deliberate legacy single-device mode only; omit it for explicit case targets.",
-        },
-      ],
-      note: "First run locale matrix plan and bind every returned case, including restore. Missing, foreign, stale, or infeasible local bindings return 409 and queue nothing.",
-      behavior: "job-start-watch",
-    }),
-    path("job locale-matrix start", [], undefined, { behavior: "job-start-watch" }),
-  ),
-  mapped(
     "job.combine.start",
     path("job combine start", [], undefined, {
       summary: "Run every selected Variable value × every selected Test",
@@ -465,10 +402,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ],
       behavior: "job-start-watch",
     }),
-    path("run-matrix run", ["appMapId", "combineId"], undefined, {
-      summary: "Alias of combine run",
-      behavior: "job-start-watch",
-    }),
   ),
   mapped(
     "job.combine.campaign.get",
@@ -500,50 +433,21 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped(
-    "job.combine.infer",
-    path("job combine infer", [], undefined, {
-      summary: "Infer variable rows from taught live-screen rows",
-      examples: [
-        'relay job combine infer --input \'{"appMapId":"<map>","kind":"location","examples":[{"id":"nyc","label":"New York"}],"nodes":[]}\'',
-      ],
-    }),
-    path("job option-matrix infer"),
-  ),
-  mapped(
     "job.combine.export",
     path("combine export", ["batchId"], undefined, {
       summary: "Export a Combine screenshot pack",
       examples: ["relay combine export <batch-id>"],
-      note: "Writes <locale>/screenshots/ plus <locale>/accessibility/*.json. Check that pack, or a Data Controls folder with top-level accessibility/*.json, with `relay pack check <dir> --against en`.",
-    }),
-    path("run-matrix export", ["batchId"], undefined, {
-      summary: "Alias of combine export",
+      note: "Writes <locale>/screenshots/ plus <locale>/accessibility/*.json as a portable review folder.",
     }),
     path("job combine export", ["batchId"], undefined, {
       summary: "Export a Combine screenshot pack",
     }),
-    path("job option-matrix export", ["batchId"]),
-  ),
-  {
-    operationId: "job.locale-matrix.infer",
-    exclusion: "internal",
-    reason:
-      "Locale inference feeds the canonical Variable editor internally; it is not a second CLI authoring workflow.",
-  },
-  mapped(
-    "job.locale-matrix.export",
-    path("job locale-matrix export", ["batchId"], undefined, {
-      summary: "Export locale-run screenshot pack",
-    }),
   ),
   mapped(
-    "job.locale-matrix.analysis",
+    "job.combine.analysis",
     path("combine analyze", ["batchId"], undefined, {
-      summary: "Read locale findings from a Language × Test Combine",
-    }),
-    path("job locale-matrix analysis", ["batchId"], undefined, {
-      summary: "Compatibility alias of combine analyze",
-      note: "Reads the same durable findings without writing a pack.",
+      summary: "Read durable findings from a Variable × Test Combine",
+      note: "Reads the current Combine evidence without writing a pack.",
     }),
   ),
 

@@ -38,7 +38,7 @@ import {
   type SimpleCaptureMode,
   type TestCandidate,
 } from "./app-map-combine-controls";
-import { AppMapStateSetEditor } from "./app-map-state-set-editor";
+import { AppMapVariableEditor } from "./app-map-variable-editor";
 import { useAppMapCombineSectionFocus } from "../lib/use-app-map-combine-section-focus";
 import { AppMapCombineRunStatus } from "./app-map-combine-run-status";
 
@@ -50,6 +50,9 @@ export function AppMapCombine(props: {
   onOpenDevice: () => void;
   combineId?: string;
   focusSection?: CanvasCombineSection;
+  /** Compact rail presentation while the device companion is open; the
+   * editor stays mounted so drafted rows survive. */
+  collapsed?: boolean;
 }) {
   const server = useServer();
   const [selectedVariableIds, setSelectedVariableIds] = createSignal<string[]>([]);
@@ -587,7 +590,8 @@ export function AppMapCombine(props: {
         <Show
           when={!variableEditorOpen()}
           fallback={
-            <AppMapStateSetEditor
+            <AppMapVariableEditor
+              collapsed={props.collapsed}
               variable={variableBeingEdited()}
               onDelete={
                 variableBeingEdited()

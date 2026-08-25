@@ -83,6 +83,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [variablesOpen, setVariablesOpen] = createSignal(false);
   const [combineOpen, setCombineOpen] = createSignal(false);
+  // Combine stays mounted while the device panel is in use so in-progress
+  // drafts (e.g. the variable editor) survive; it just collapses to a rail.
+  const [combineCollapsed, setCombineCollapsed] = createSignal(false);
   const [combineFocusId, setCombineFocusId] = createSignal<string>();
   const [combineFocusSection, setCombineFocusSection] = createSignal<CanvasCombineSection>();
   const [query, setQuery] = createSignal("");
@@ -362,6 +365,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     setCombineFocusId(requestedId);
     setCombineFocusSection(undefined);
     setCombineOpen(true);
+    setCombineCollapsed(false);
     if (section) queueMicrotask(() => setCombineFocusSection(section));
   };
   const openDevicePicker = () => {
@@ -972,7 +976,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </Show>
                 <Show when={combineOpen()}>
                   <aside
-                    class="relative z-[6] flex min-h-0 w-[clamp(420px,40vw,560px)] shrink-0 overflow-hidden border-l border-[var(--border-strong-base)] bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[-12px_0_32px_rgb(0_0_0/10%)] max-[760px]:absolute max-[760px]:inset-y-2 max-[760px]:right-2 max-[760px]:w-[min(560px,calc(100%-16px))] max-[760px]:rounded-2xl max-[760px]:border"
+                    class={cn(
+                      "relative z-[6] flex min-h-0 shrink-0 overflow-hidden border-l border-[var(--border-strong-base)] bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[-12px_0_32px_rgb(0_0_0/10%)] transition-[width] max-[760px]:absolute max-[760px]:inset-y-2 max-[760px]:right-2 max-[760px]:rounded-2xl max-[760px]:border",
+                      combineCollapsed()
+                        ? "w-[44px] max-[760px]:w-[44px]"
+                        : "w-[clamp(420px,40vw,560px)] max-[760px]:w-[min(560px,calc(100%-16px))]",
+                    )}
+                    aria-hidden={combineCollapsed() || undefined}
                     aria-label="Combine"
                     onWheel={(event) => event.stopPropagation()}
                   >
@@ -980,10 +990,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       <AppMapCombine
                         combineId={combineFocusId()}
                         focusSection={combineFocusSection()}
+                        collapsed={combineCollapsed()}
                         onOpenDevice={() => {
-                          setCombineOpen(false);
-                          setCombineFocusId(undefined);
-                          setCombineFocusSection(undefined);
+                          setCombineCollapsed(true);
                           if (!devicePanelOpen()) {
                             window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
                           }

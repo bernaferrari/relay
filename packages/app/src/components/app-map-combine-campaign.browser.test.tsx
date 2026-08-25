@@ -74,6 +74,9 @@ test("keeps untouched campaign cases behind an explicit pilot review boundary", 
 
   expect(root.textContent).toContain("Pilot needs review");
   expect(root.textContent).toContain("1 untouched");
+  expect(root.textContent).toContain(
+    "The first language ran as a pilot. Review its screenshots below — if they look right, confirm and the rest will run.",
+  );
   const resumeButton = [...root.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Resume untouched"),
   );

@@ -12,10 +12,9 @@ const familyGroups = [
   ["App Map", ["map", "screen", "connect", "flow"]],
   ["Author", ["variable", "test", "combine", "proposal", "session", "routine", "case-stack"]],
   ["Explore", ["discovery"]],
-  ["Operate", ["device", "run", "activity"]],
+  ["Operate", ["device", "run", "report", "activity"]],
   ["Automation", ["schedule", "matrix"]],
   ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],
-  ["Operate", ["device", "run", "report", "activity"]],
 ] as const;
 
 const globalOptions = `Global options:

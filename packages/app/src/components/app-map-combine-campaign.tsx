@@ -49,6 +49,10 @@ export function AppMapCombineCampaign(props: {
             </Button>
           </Show>
           <Show when={props.campaign.status === "needs-review"}>
+            <p class="m-0 mb-2 w-full text-micro/[1.45] text-[var(--text-weak)]">
+              The first language ran as a pilot. Review its screenshots below — if they look
+              right, confirm and the rest will run.
+            </p>
             <label class="flex min-h-10 items-center gap-2 rounded-lg border border-[var(--border-base)] px-3 text-micro">
               <input
                 type="checkbox"

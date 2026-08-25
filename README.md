@@ -142,7 +142,7 @@ Device input requires a server-owned lease. When another actor already holds the
 target, the control operation fails closed instead of displacing them:
 
 ```text
-$ pnpm relay device tap <serial> --input '...'
+$ pnpm relay device interact <serial> --input '...'
 relay: This target is currently controlled by another actor
 Recovery: Observation remains available. Wait for the lease to expire or request an explicit,
 audited takeover before sending input.
@@ -213,6 +213,7 @@ run `pnpm server:doctor`.
 
 - [Architecture](./ARCHITECTURE.md)
 - [Product flows](./docs/PRODUCT_FLOWS.md)
+- [Language sweep loop](./docs/LANGUAGE_SWEEP_LOOP.md)
 - [Recording format](./docs/RECORDING_FORMAT.md)
 - [Evidence metrics](./docs/evidence-metrics.md)
 - [Enterprise readiness](./docs/ENTERPRISE_READINESS.md)

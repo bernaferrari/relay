@@ -65,12 +65,23 @@ for graph-native Tests without loading the complete `full` catalog.
 | `locale`  | Language Variables, profiles, Combine campaigns, and analysis              |
 | `review`  | Proposal/take repair, replay, approval, and run-baseline review            |
 | `admin`   | Workspace policy, projects, targets, schedules, matrices, and retention    |
+| `proof`   | Verify one change: affected flows, runs, proof reports, repair proposals, and share links |
 | `full`    | Every canonical Relay operation; intended for trusted orchestration only   |
 
 Tools advertise and take operation fields directly. For example, capture a screenshot with
 `{"serial":"emulator-5554"}`. Wrapped or alternate input envelopes are rejected. Known operation
 contracts expose specific required fields, types, and enums; intentionally generic Relay operations
 remain extensible objects and are still validated by the canonical protocol parser before invocation.
+
+## Agent quickstart: verify one flow across languages
+
+Run the Relay service first (`pnpm ensure:serve`), then configure the adapter with
+`--profile locale` for the language sweep or `--profile control` when direct target
+input is needed. The full loop — open the app, navigate, screenshot, save a Screen,
+teach and infer a Language Variable, then run the Test across every language with
+`app-map.test.run` (`in`) or `job.combine.start` — is documented command by command
+in [docs/LANGUAGE_SWEEP_LOOP.md](../../docs/LANGUAGE_SWEEP_LOOP.md), including which
+evidence each step returns.
 
 ## Graph Test loop
 
@@ -97,6 +108,14 @@ exact failed-check package under `relay://runs/{runId}/checks/{checkId}/repair`,
 `run.repair.propose` / `run.repair.retry` act on it. The `relay_repair_this_failed_connection`
 prompt guides diagnosis and replay of one identified connection; every mutation still goes through
 the lease, revision, and confirmation rules above.
+
+Destination-mismatch repair proposals are also exposed as typed data: when a failed run records a
+`destination-repair-proposals` artifact, `relay://runs/{runId}/repair-proposals` reads it through
+the protocol schema — review-only screen candidates with confidence, rationale, and method, or an
+explicit zero-proposal result with reason `grounding-unavailable`. The
+`relay_verify_this_change` prompt (available from the `proof` profile) walks an agent through the
+full loop: establish impact, select affected Tests, run them once, read the proof report and repair
+proposals on failure, and return a structured verdict with share links for reviewers.
 
 ## Surface and safety model
 
