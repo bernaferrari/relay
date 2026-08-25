@@ -8,7 +8,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test src/*.test.ts"
+    "test": "tsx --test src/*.test.ts",
+    "test:coverage": "tsx --test --experimental-test-coverage src/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

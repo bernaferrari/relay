@@ -28,6 +28,7 @@ import {
   recordDestinationEvidenceTiming,
 } from "./destination-evidence.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
+import type { DestinationRepairHint } from "./repair-proposal.js";
 
 const DEFAULT_EXPECT_TIMEOUT_MS = 5_000;
 const MAX_WAIT_MS = 15 * 60 * 1_000;
@@ -175,6 +176,11 @@ export async function runExpectScreenStep(
   let verifiedObservedAt: number | undefined;
   let verifiedScreenshot: Awaited<ReturnType<typeof captureScreenshot>> | undefined;
   let firstAttempt = true;
+  // Retained from the final attempt so a terminal mismatch can describe what
+  // the device actually showed in its repair hint.
+  let mismatchObservedFingerprint: string | undefined;
+  let mismatchNodeCount = 0;
+  let mismatchResolutionMethod = "a11y";
   do {
     // A recovery mutation makes pixels from the preceding attempt stale.
     const reusable = firstAttempt ? priorObservation : undefined;
@@ -225,6 +231,8 @@ export async function runExpectScreenStep(
       verifiedObservedAt = observedAt;
       break;
     }
+    mismatchObservedFingerprint = observed.fingerprint;
+    mismatchNodeCount = nodes.length;
 
     let visualFingerprint: string | undefined;
     if (verifiedScreenshot) {
@@ -244,6 +252,7 @@ export async function runExpectScreenStep(
         Buffer.from(verifiedScreenshot.base64, "base64"),
       );
     }
+    if (visualFingerprint) mismatchResolutionMethod = "a11y+visual";
     if (screenIdentityMatches(expected, observed.fingerprint, visualFingerprint)) {
       reached = true;
       verifiedNodes = nodes;
@@ -280,6 +289,25 @@ export async function runExpectScreenStep(
   } while (Date.now() < deadline);
 
   if (!reached) {
+    const hint: DestinationRepairHint = {
+      expectedScreenId: step.screenId,
+      expectedScreenTitle: step.screenTitle,
+      ...(step.fingerprint ? { expectedFingerprint: step.fingerprint } : {}),
+      ...(mismatchObservedFingerprint
+        ? { observedFingerprint: mismatchObservedFingerprint }
+        : {}),
+      observedScreenTitle: observedTitle,
+      resolutionMethod: mismatchResolutionMethod,
+      evidence: {
+        ...(verifiedScreenshot?.framePath ? { framePath: verifiedScreenshot.framePath } : {}),
+        nodeCount: mismatchNodeCount,
+      },
+    };
+    (ctx.job?.artifacts ?? ctx.artifacts)?.push({
+      kind: "destination-repair-hint",
+      capturedAt: now(),
+      data: { schemaVersion: 1, ...hint },
+    });
     if (step.returnRequirement) {
       throw new Error(
         `return-edge ${step.returnRequirement.connectionId}: reviewed inverse is required for ${step.returnRequirement.destinationScreenId} → ${step.returnRequirement.fromScreenId} (observed “${observedTitle}”; no Back was attempted)`,

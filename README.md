@@ -112,6 +112,39 @@ The CLI does not silently start another server. Use `pnpm relay --help` or famil
 stdout; waits and diagnostics are written to stderr. The [MCP adapter](./packages/mcp/README.md)
 exposes the same registered operations to capable agents.
 
+### What failures look like
+
+Every command talks to the Relay service over HTTP first. If no service is running on the
+configured URL, the request fails at the network layer and the CLI reports it as a connection
+failure with exit code `3`:
+
+```text
+$ pnpm relay device list --json
+relay: fetch failed
+```
+
+```json
+{"type":"error","ok":false,"operationId":"system.health.get","error":{"message":"fetch failed","exitCode":3}}
+```
+
+(Use `pnpm ensure:serve` to start the local service, then retry.)
+
+Device input requires a server-owned lease. When another actor already holds the lease for the
+target, the control operation fails closed instead of displacing them:
+
+```text
+$ pnpm relay device tap <serial> --input '...'
+relay: This target is currently controlled by another actor
+Recovery: Observation remains available. Wait for the lease to expire or request an explicit,
+audited takeover before sending input.
+```
+
+That response carries code `TARGET_CONTROL_LEASE_CONFLICT`, and the CLI maps every
+`TARGET_CONTROL_LEASE_*` failure to exit code `6` (conflict). When no lease exists at all, the
+server answers `Take control of this target before sending device input`
+(`TARGET_CONTROL_LEASE_REQUIRED`) and suggests the exact command, printed as
+`Try: relay lease create <serial> --actor <actor-id>`.
+
 One Relay server owns each `RELAY_STATE_DIR`. Starting a second server against the same local state
 directory fails before it can recover jobs or touch a device; use `pnpm ensure:serve` to replace the
 local service deliberately, or give an isolated worker its own state directory. A state directory

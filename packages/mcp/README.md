@@ -89,6 +89,15 @@ capture is reserved for stable product-owned pages and keeps its original viewpo
 A cross-app App Language destination should be verified as a reversible OS handoff, captured once,
 and left with Back; it is not a language-list traversal.
 
+## Repair proposals
+
+Failed-check repair is exposed through operations, not a separate tool family: `run.repair.list`
+returns the project's failed-check repair queue (`relay://repairs`), `run.repair.get` reads one
+exact failed-check package under `relay://runs/{runId}/checks/{checkId}/repair`, and
+`run.repair.propose` / `run.repair.retry` act on it. The `relay_repair_this_failed_connection`
+prompt guides diagnosis and replay of one identified connection; every mutation still goes through
+the lease, revision, and confirmation rules above.
+
 ## Surface and safety model
 
 - Resources expose bounded, sanitized project, App Map, Flow, Run, Authoring Session, Target, and

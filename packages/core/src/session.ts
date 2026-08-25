@@ -80,6 +80,8 @@ import {
   requireScopedAppMapTestExecutionSource,
   revalidateAppMapTestExecutionSource,
 } from "./app-map-test-execution-gate.js";
+import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
+import type { AppMap } from "@relay/protocol";
 import {
   acquirePreparedSessionDevice,
   assertProviderTargetJobAdmission,
@@ -88,6 +90,10 @@ import {
   runProviderTargetJobIfNeeded,
   type ProviderSessionExecution,
 } from "./session-provider-execution.js";
+import { createDefaultGrounder } from "./grounding.js";
+import { currentVerifiedScreen } from "./recipe-runner-context.js";
+import { proposeRepair } from "./repair-proposal.js";
+import { readAppMap } from "./collaboration.js";
 export type { EnqueueJobInput, JobErrorCode, JobStatus, TestJob } from "./session-contract.js";
 export { summarizeJob } from "./session-summary.js";
 export { captureAutomaticState } from "./session-automatic-evidence.js";
@@ -554,14 +560,98 @@ async function runRecipeSteps(
       if (!isJobCancellation(err) && !isTargetUnavailableError(err)) {
         await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
       }
-      finishStep(ts, "error", `✗ ${err instanceof Error ? err.message : String(err)}`);
-      setCurrentStep(undefined);
+      await attachDestinationRepairProposals(job, err, runtime).catch(() => {
+        // Proposal generation is advisory: never let it mask the original
+        // step failure propagating from the catch below.
+      });
       throw err;
     }
   }
   finalizeDeferredChecksForJob(job, pushLog, runtime);
   setCurrentStep(undefined);
 }
+
+type DestinationRepairHintArtifact = {
+  schemaVersion: 1;
+  expectedScreenId: string;
+  expectedScreenTitle?: string;
+  expectedFingerprint?: string;
+  observedFingerprint?: string;
+  observedScreenTitle?: string;
+  resolutionMethod?: string;
+};
+
+/**
+ * On a run failure, turn a destination-mismatch repair hint into review-only
+ * proposals from the frozen App Map Test plan's screens. Proposal-only: this
+ * never mutates the App Map, retries navigation, or rewrites steps, and an
+ * unavailable grounder degrades to zero proposals instead of an error.
+ */
+async function attachDestinationRepairProposals(
+  job: TestJob,
+  error: unknown,
+  runtime: RecipeRuntimeState,
+): Promise<void> {
+  if (isJobCancellation(error) || isTargetUnavailableError(error)) return;
+  const hintArtifact = [...job.artifacts]
+    .find(
+      (
+        artifact,
+      ): artifact is {
+        kind: string;
+        capturedAt: number;
+        data: DestinationRepairHintArtifact;
+      } => artifact.kind === "destination-repair-hint",
+    );
+  if (!hintArtifact) return;
+  const intent = parseAppMapTestExecutionIntentArtifact(
+    job.artifacts.find((artifact) => artifact.kind === "app-map-test-execution-intent"),
+  );
+  const appMapId = intent?.sourcePlan.appMapId ?? job.recipeSnapshot?.id;
+  if (!appMapId || !job.projectId) {
+    job.artifacts.push({
+      kind: "destination-repair-proposals",
+      capturedAt: now(),
+      data: { available: false, proposals: [], reason: "grounding-unavailable" },
+    });
+    return;
+  }
+  let map: AppMap | null = null;
+  try {
+    map = await readAppMap(job.projectId, appMapId);
+  } catch {
+    map = null;
+  }
+  const checkpoint = currentVerifiedScreen(runtime);
+  const result = await proposeRepair({
+    failure: {
+      expectedScreenId: hintArtifact.data.expectedScreenId,
+      ...(hintArtifact.data.expectedScreenTitle
+        ? { expectedScreenTitle: hintArtifact.data.expectedScreenTitle }
+        : {}),
+      ...(hintArtifact.data.expectedFingerprint
+        ? { expectedFingerprint: hintArtifact.data.expectedFingerprint }
+        : {}),
+      ...(hintArtifact.data.observedScreenTitle
+        ? { observedScreenTitle: hintArtifact.data.observedScreenTitle }
+        : {}),
+      ...(hintArtifact.data.resolutionMethod
+        ? { resolutionMethod: hintArtifact.data.resolutionMethod }
+        : {}),
+    },
+    map: map ?? { screens: {}, screenVariants: {} },
+    grounder: createDefaultGrounder(),
+    observationAccess: {
+      ...(checkpoint?.nodes ? { nodes: () => Promise.resolve(checkpoint.nodes) } : {}),
+    },
+  });
+  job.artifacts.push({
+    kind: "destination-repair-proposals",
+    capturedAt: now(),
+    data: result,
+  });
+}
+
 async function executeJob(id: string, workerInstanceId?: string): Promise<void> {
   const job = jobRegistry.get(id);
   if (!job) {

@@ -14,7 +14,8 @@
     "preview": "vp preview",
     "check:ui": "node scripts/check-ui-boundaries.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test src/**/*.test.ts && vitest run --config vite.browser-test.config.ts"
+    "test": "tsx --test src/**/*.test.ts && vitest run --config vite.browser-test.config.ts",
+    "test:coverage": "tsx --test --experimental-test-coverage src/**/*.test.ts && node scripts/vitest-coverage.mjs"
   },
   "dependencies": {
     "@relay/client": "workspace:*",

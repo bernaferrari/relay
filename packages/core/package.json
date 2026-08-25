@@ -29,7 +29,6 @@
     "./run-evidence": "./src/run-evidence.ts",
     "./run-observatory": "./src/run-observatory.ts",
     "./offline-run-replay": "./src/offline-run-replay.ts",
-    "./run-matrix": "./src/run-matrix.ts",
     "./matrix-yaml": "./src/matrix-yaml.ts",
     "./schedules": "./src/schedules.ts",
     "./targets": "./src/targets.ts",
@@ -42,7 +41,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test src/*.test.ts src/**/*.test.ts"
+    "test": "tsx --test src/*.test.ts src/**/*.test.ts",
+    "test:coverage": "tsx --test --experimental-test-coverage src/*.test.ts src/**/*.test.ts"
   },
   "dependencies": {
     "@openrouter/ai-sdk-provider": "^3.0.0",
