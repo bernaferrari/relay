@@ -10,6 +10,7 @@ export {
   attachAdbFailureHint,
   classifyAndroidAdbFailure as classifyAdbFailure,
 } from './adb-failure.ts';
+export { runAndroidHostAdb, withAndroidHostAdbTransport } from './adb-host.ts';
 export { createAndroidPortReverseManager } from './adb-port-reverse.ts';
 export {
   createDeviceAdbExecutor,
