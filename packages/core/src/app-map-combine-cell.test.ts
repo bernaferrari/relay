@@ -26,6 +26,7 @@ import { assessAppMapTestExecutionSource } from "./app-map-test-execution-gate.j
 import {
   composeAppMapCombineCellWrapper,
   declaredCombineCellStaticInputs,
+  wrapperInputsForStatic,
 } from "./app-map-combine-cell-wrapper.js";
 import {
   pendingSelectedCombineCampaignCells,
@@ -937,4 +938,45 @@ test("prepare fails closed without queueing when a cell has no binding and no de
       error instanceof AppMapCombineCellContractError &&
       error.issues.some((item) => item.code === "missing-binding"),
   );
+});
+
+test("wrapper inputs resolve the appLocale set-locale template to a BCP-47 tag", async () => {
+  const leaf = destinationLeaf();
+  const child: Recipe = {
+    id: "child-root",
+    title: "Child",
+    source: "custom",
+    steps: [{ kind: "module", recipeId: leaf.id }],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const set = {
+    id: "language",
+    name: "Language",
+    kind: "language",
+    apply: { kind: "appLocale", app: "ai.x.grok" },
+    options: [{ id: "ja" }],
+    restoreId: "en",
+  };
+  const wrapper = composeAppMapCombineCellWrapper({
+    cellId: "cell" + "0".repeat(28),
+    childRootId: child.id,
+    childGraph: { [child.id]: child, [leaf.id]: leaf },
+    sets: [set as never],
+    at: 1,
+  });
+  const wrapperInputs = wrapperInputsForStatic(
+    wrapper.prefixes,
+    declaredCombineCellStaticInputs([set as never], { language: "ja" }),
+  );
+  const localeStep = wrapper.root.steps.find(
+    (step) => step.kind === "app" && step.action === "set-locale",
+  ) as { locale?: string };
+  const prefix = Object.values(wrapper.prefixes)[0]!;
+  assert.match(localeStep.locale!, new RegExp(`\\{\\{${prefix}\\}\\}`));
+  const { resolveRecipeStep } = await import("./recipe-runner-support.js");
+  const resolved = resolveRecipeStep(localeStep as never, wrapperInputs) as { locale?: string };
+  // With wrapper inputs merged into job variables, the template resolves to
+  // the selected value id — a valid BCP-47 tag the runner can apply.
+  assert.equal(resolved.locale, "ja");
 });

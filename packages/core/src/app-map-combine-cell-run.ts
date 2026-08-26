@@ -118,6 +118,10 @@ export function stagePreparedAppMapCombineCells(
       executionTarget: structuredClone(target),
       targetProfile: input.queuedTargetProfile?.(cell, target),
       ...(input.sourceRevision ? { sourceRevision: structuredClone(input.sourceRevision) } : {}),
+      // Wrapper steps reference generated prefixes ({{v0_…}}, {{v0_…_label}});
+      // without these inputs every template stays literal and the appLocale
+      // step fails its BCP-47 check before control begins.
+      variables: { ...cell.wrapperInputs },
       recipeSnapshot: cell.recipeSnapshot,
       recipeGraph: cell.recipeGraph,
       batchId,
