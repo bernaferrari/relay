@@ -94,13 +94,19 @@ extension RunnerTests {
   // indistinguishable from a commit and `type` reported ok over a partially committed field. The
   // CI signature was a field holding "h" out of "hardware-keyboard" with the command successful.
   func testSynthesizedCommitDeadlineIsNotReportedAsACommit() {
+    let clock = CommitWaitClock()
     var observations = 0
     let outcome = Self.awaitSynthesizedCommitOutcome(
       expectedText: "hardware-keyboard",
       placeholder: nil,
-      isExpired: { observations >= 3 },
+      stallBudget: 3,
+      ceiling: 10,
+      now: clock.read,
       observe: { "h" },
-      waitForNextObservation: { observations += 1 }
+      waitForNextObservation: {
+        observations += 1
+        clock.advance(1)
+      }
     )
     XCTAssertEqual(outcome, .notObserved)
     XCTAssertEqual(observations, 3, "a pending prefix must keep polling until the deadline")
@@ -112,7 +118,6 @@ extension RunnerTests {
       let outcome = Self.awaitSynthesizedCommitOutcome(
         expectedText: "hardware-keyboard",
         placeholder: nil,
-        isExpired: { false },
         observe: { observed },
         waitForNextObservation: { polls += 1 }
       )
@@ -129,7 +134,6 @@ extension RunnerTests {
     let outcome = Self.awaitSynthesizedCommitOutcome(
       expectedText: "hardware-keyboard",
       placeholder: nil,
-      isExpired: { false },
       observe: { steps[min(index, steps.count - 1)] },
       waitForNextObservation: { index += 1 }
     )
@@ -141,13 +145,21 @@ extension RunnerTests {
   // landing during the final poll sleep was condemned as never observed — a false failure under
   // exactly the loaded-host timing this wait exists for. Red against that ordering.
   func testCommitLandingDuringTheFinalSleepIsStillObserved() {
+    let clock = CommitWaitClock()
     var polls = 0
     let outcome = Self.awaitSynthesizedCommitOutcome(
       expectedText: "hardware-keyboard",
       placeholder: nil,
-      isExpired: { polls >= 1 },
+      stallBudget: 3,
+      ceiling: 10,
+      now: clock.read,
+      // The value lands during the sleep that takes the clock past the stall budget: the read
+      // happens first, so it is still observed.
       observe: { polls == 0 ? "hardware-" : "hardware-keyboard" },
-      waitForNextObservation: { polls += 1 }
+      waitForNextObservation: {
+        polls += 1
+        clock.advance(9)
+      }
     )
     XCTAssertEqual(outcome, .settled)
   }
@@ -163,7 +175,6 @@ extension RunnerTests {
     let outcome = Self.awaitSynthesizedCommitOutcome(
       expectedText: expectedText,
       placeholder: "0.00",
-      isExpired: { false },
       observe: {
         observations += 1
         return "0.00"
@@ -191,7 +202,6 @@ extension RunnerTests {
       let outcome = Self.awaitSynthesizedCommitOutcome(
         expectedText: testCase.expectedText,
         placeholder: testCase.placeholder,
-        isExpired: { false },
         observe: { testCase.expectedText },
         waitForNextObservation: {}
       )
@@ -219,20 +229,25 @@ extension RunnerTests {
         Self.awaitSynthesizedCommitOutcome(
           expectedText: corruption.expected,
           placeholder: nil,
-          isExpired: { false },
           observe: { corruption.observedAfterDrop },
           waitForNextObservation: {}
         ),
         .settled,
         "append-mode's diverge-trusting outcome must stay unchanged by this fix"
       )
+      let clock = CommitWaitClock()
       var polls = 0
       let outcome = Self.awaitSynthesizedReplacementCommitOutcome(
         expectedText: corruption.expected,
         placeholder: nil,
-        isExpired: { polls >= 2 },
+        stallBudget: 2,
+        ceiling: 10,
+        now: clock.read,
         observe: { corruption.observedAfterDrop },
-        waitForNextObservation: { polls += 1 }
+        waitForNextObservation: {
+          polls += 1
+          clock.advance(1)
+        }
       )
       XCTAssertEqual(outcome, .notObserved, "expected \(corruption.expected), dropped to \(corruption.observedAfterDrop)")
       XCTAssertEqual(polls, 2, "a settled-but-wrong value must be polled until the deadline, not trusted early")
@@ -250,7 +265,6 @@ extension RunnerTests {
     let outcome = Self.awaitSynthesizedReplacementCommitOutcome(
       expectedText: "ada@example",
       placeholder: nil,
-      isExpired: { false },
       observe: { steps[min(index, steps.count - 1)] },
       waitForNextObservation: { index += 1 }
     )
@@ -261,13 +275,19 @@ extension RunnerTests {
   // Same ordering guarantee as `testCommitLandingDuringTheFinalSleepIsStillObserved`: the deadline
   // is checked AFTER an observation, so a match landing during the final poll sleep is still caught.
   func testSynthesizedReplacementCommitLandingDuringTheFinalSleepIsStillObserved() {
+    let clock = CommitWaitClock()
     var polls = 0
     let outcome = Self.awaitSynthesizedReplacementCommitOutcome(
       expectedText: "ada@example",
       placeholder: nil,
-      isExpired: { polls >= 1 },
+      stallBudget: 3,
+      ceiling: 10,
+      now: clock.read,
       observe: { polls == 0 ? "ada@exampl" : "ada@example" },
-      waitForNextObservation: { polls += 1 }
+      waitForNextObservation: {
+        polls += 1
+        clock.advance(9)
+      }
     )
     XCTAssertEqual(outcome, .settled)
   }
@@ -279,7 +299,6 @@ extension RunnerTests {
     let outcome = Self.awaitSynthesizedReplacementCommitOutcome(
       expectedText: "0.00",
       placeholder: "0.00",
-      isExpired: { false },
       observe: {
         observations += 1
         return "0.00"
@@ -416,11 +435,13 @@ extension RunnerTests {
     // poll and the value never becomes "abc" — under the replacement-mode outcome function that is
     // correctly a failure (see `testSynthesizedReplacementCommitCatchesDroppedMiddleCharacters` for
     // why it must NOT be waved through as success), so this call runs the real 3-second deadline
-    // (`TextEntryTiming.synthesizedCommitTimeout`) before returning. That is deliberate here, not a
-    // flake: this test only runs in the nightly XCUITest lane (see `runner-xctest-local-run-gotchas`
-    // memory / ios.yml's `-only-testing:` allowlist), where a few extra seconds is a non-issue, and
-    // the alternative — asserting `nil` on a wiring path that can never actually observe the
-    // expected text — would silently reintroduce the exact bug this fix closes.
+    // (`TextEntryTiming.synthesizedCommitStallTimeout`; a nil read never advances the expected
+    // prefix, so `SynthesizedCommitDeadline` grants it no extra time) before returning. That is
+    // deliberate here, not a flake: this test only runs in the nightly XCUITest lane (see
+    // `runner-xctest-local-run-gotchas` memory / ios.yml's `-only-testing:` allowlist), where a
+    // few extra seconds is a non-issue, and the alternative — asserting `nil` on a wiring path
+    // that can never actually observe the expected text — would silently reintroduce the exact
+    // bug this fix closes.
     XCTAssertEqual(result.failure, .commitNotObserved)
   }
 
