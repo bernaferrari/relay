@@ -23,6 +23,7 @@ import {
   referencedRuntimeInputs,
   redactCasePlan,
   resolveJobDevicePlatform,
+  savedAppMapTargetProfileIdsForTarget,
   saveAppMapCombine,
   sensitiveInputNames,
   upsertAppMapCombineFromTest,
@@ -70,7 +71,7 @@ const defaultTestRunRuntime: AppMapTestRunRouteRuntime = {
   enqueueJob,
 };
 
-function frozenEvidenceTargetProfileForTarget(input: {
+export function frozenEvidenceTargetProfileForTarget(input: {
   target: Pick<OperationInput<"app-map.test.run">["target"], "targetId" | "platform">;
   profiles: AppMapCompiledRuntimeTargetProfile[] | undefined;
 }): AppMapCompiledRuntimeTargetProfile | undefined {
@@ -106,8 +107,7 @@ function frozenEvidenceTargetProfileForTarget(input: {
         code: "TARGET_PROFILE_SELECTION_REQUIRED",
         target: input.target,
         targetProfileCandidates: matching.map((profile) => structuredClone(profile)),
-        recovery:
-          "Select one saved evidence profile for this target, then retry the exact Test revision.",
+        recovery: `Bind an explicit saved targetProfileId for ${input.target.platform}:${input.target.targetId}: ${[...new Set(matching.map((profile) => profile.id))].join(", ")}.`,
       },
     );
   }
@@ -118,8 +118,7 @@ function frozenEvidenceTargetProfileForTarget(input: {
       code: "TARGET_PROFILE_TARGET_MISMATCH",
       target: input.target,
       savedTargets,
-      recovery:
-        "Choose a target captured by this App Map, or capture a saved evidence profile for the selected target before running.",
+      recovery: `No saved runtime profile for target ${input.target.platform}:${input.target.targetId} — capture a screen on this target first.`,
     },
   );
 }
@@ -148,6 +147,25 @@ export function explicitTargetAvailability(
   return "connected";
 }
 
+/** An offline-preflight failure must say which saved profile was bound or
+ * inherited, or name the exact ids that could be bound, or the capture step
+ * when this target has no saved profile at all. */
+export function offlinePreflightProfileRecovery(input: {
+  runtimeTargetProfile: AppMapCompiledRuntimeTargetProfile | undefined;
+  explicit: boolean;
+  candidates: string[];
+  target: { targetId: string; platform: string };
+}): string {
+  const label = `${input.target.platform}:${input.target.targetId}`;
+  if (input.runtimeTargetProfile) {
+    return input.explicit
+      ? "Review the frozen evidence findings, select or recapture the required profile, then retry this exact Test revision."
+      : `Relay inherited the only saved runtime profile for ${label}: ${input.runtimeTargetProfile.id}. Review its frozen evidence findings, then retry this exact Test revision.`;
+  }
+  return input.candidates.length
+    ? `Bind an explicit saved targetProfileId for ${label}: ${input.candidates.join(", ")}, then retry this exact Test revision.`
+    : `No saved runtime profile for target ${label} — capture a screen on this target first.`;
+}
 export type AppMapRunRouteContext = {
   method: string;
   pathname: string;
@@ -301,8 +319,12 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
           code: "TEST_OFFLINE_PREFLIGHT_BLOCKED",
           ...(runtimeTargetProfile ? { runtimeTargetProfile } : {}),
           preflight,
-          recovery:
-            "Review the frozen evidence findings, select or recapture the required profile, then retry this exact Test revision.",
+          recovery: offlinePreflightProfileRecovery({
+            runtimeTargetProfile,
+            explicit: Boolean(targetProfileId),
+            candidates: savedAppMapTargetProfileIdsForTarget(map, requestedTarget),
+            target: requestedTarget,
+          }),
         },
       );
     }

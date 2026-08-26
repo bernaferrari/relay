@@ -20,6 +20,9 @@ export type DestinationRepairHint = {
   expectedScreenTitle?: string;
   expectedFingerprint?: string;
   observedFingerprint?: string;
+  /** Exact recovery command when the observed fingerprint differs but the
+   * expected screen exists: approve the observation as an identity alias. */
+  recovery?: string;
   observedScreenTitle?: string;
   resolutionMethod?: string;
   /** Frozen evidence references for later human review. */

@@ -6,6 +6,7 @@ import type {
   AppMapVariable,
   LogicalScrollSurface,
   TargetProfile,
+  UpdateScreenInput,
 } from "@relay/protocol";
 import {
   AppMapDomainError,
@@ -1340,6 +1341,28 @@ test("all mutations reject stale revisions and duplicate activity IDs", () => {
         context(input, "time-travel", at - 1),
       ),
     /cannot precede/u,
+  );
+});
+
+test("screen update names the nested --input shape when the patch is missing or invalid", () => {
+  const input = mapFixture();
+  const shape = /screen update expects --input \{"expectedRevision":N,"input":\{"patch":\{\.\.\.\}\}\}/u;
+  expectError(
+    "invalid-map",
+    () =>
+      updateAppMapScreen(input, "home", undefined as unknown as UpdateScreenInput, context(input, "flat-body")),
+    shape,
+  );
+  expectError(
+    "invalid-map",
+    () =>
+      updateAppMapScreen(
+        input,
+        "home",
+        {} as UpdateScreenInput,
+        context(input, "missing-patch"),
+      ),
+    shape,
   );
 });
 

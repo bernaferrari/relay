@@ -201,6 +201,40 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
     }),
   ),
   mapped(
+    "app-map.screen.alias-observe",
+    path("screen alias-observe", ["appMapId", "screenId"], undefined, {
+      summary: "Approve the current target screen as the same mapped screen",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "screenId", type: "string", description: "Mapped screen the target is showing" },
+      ],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current App Map revision",
+        },
+        {
+          name: "target",
+          type: "object",
+          required: true,
+          description: "Explicit device or browser target",
+        },
+        {
+          name: "leaseId",
+          type: "string",
+          required: true,
+          description: "Exclusive control lease for the target",
+        },
+      ],
+      examples: [
+        'relay screen alias-observe checkout home --input \'{"expectedRevision":3,"target":{"kind":"device","platform":"android","targetId":"<serial>"},"leaseId":"<lease>"}\'',
+      ],
+      note: "One-command fix when a first run in a new locale reports every screen as unknown: navigate the target to the screen first, then approve its observed fingerprint as an alias of the mapped screen. The primary fingerprint is never replaced; repeats deduplicate; an empty observation fails closed.",
+    }),
+  ),
+  mapped(
     "app-map.scroll-surface.capture",
     path("screen capture-scroll", ["appMapId", "screenId", "variantId"], undefined, {
       summary: "Capture one durable, decomposable full scrollable screen",
@@ -418,7 +452,31 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
       note: "One gesture: tap or swipe → capture destination → connect. Cross-app surfaces require an exact, reversible handoff declaration.",
     }),
   ),
-  mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),
+  mapped(
+    "app-map.screen.update",
+    path("screen update", ["appMapId", "screenId"], undefined, {
+      summary: "Patch one screen's title, identity, position, or variants",
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current App Map revision",
+        },
+        {
+          name: "input",
+          type: "object",
+          required: true,
+          description:
+            'Nested mutation body {"patch":{...}} plus optional upsertVariants and removeVariantIds; a flat {"patch":{...}} is rejected with the expected shape',
+        },
+      ],
+      examples: [
+        'relay screen update checkout home --input \'{"expectedRevision":7,"input":{"patch":{"title":"Home feed"}}}\'',
+      ],
+      note: "Like test save (test) and variable save (variable), the mutation nests under one key — here input.patch beside the top-level expectedRevision.",
+    }),
+  ),
   mapped("app-map.screen.remove", path("screen remove", ["appMapId", "screenId"])),
   mapped(
     "app-map.screen.consolidate",

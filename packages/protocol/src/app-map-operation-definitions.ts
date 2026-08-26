@@ -37,6 +37,8 @@ export function createAppMapOperationDefinitions(parserDependencies: AppMapParse
     appMapRefParser,
     appMapRoutineSaveParser,
     appMapScreenAddParser,
+    appMapScreenAliasObserveParser,
+    appMapScreenAliasObserveOutputParser,
     appMapScreenCaptureOutputParser,
     appMapScreenCaptureParser,
     appMapVariableInferOutputParser,
@@ -137,6 +139,19 @@ export function createAppMapOperationDefinitions(parserDependencies: AppMapParse
         lease: "exclusive",
         input: appMapScreenCaptureParser,
         output: appMapScreenCaptureOutputParser,
+      },
+    ),
+    command(
+      "app-map.screen.alias-observe",
+      "Approve the current target screen as an alias of a mapped screen",
+      "POST",
+      "/app-maps/:appMapId/screens/:screenId/alias-observe",
+      {
+        category: "authoring",
+        targetCapabilities: ["snapshot", "screenshot"],
+        lease: "exclusive",
+        input: appMapScreenAliasObserveParser,
+        output: appMapScreenAliasObserveOutputParser,
       },
     ),
     command(

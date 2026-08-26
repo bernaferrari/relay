@@ -11,6 +11,7 @@ import {
   submitAppMapProposal,
   stabilizeOptionIds,
   type AppMap,
+  observeAppMapScreenAlias,
 } from "@relay/core";
 import type { AuthoringSession, OperationInput, ScreenVariant } from "@relay/protocol";
 import { assertTargetLease } from "./access-control.js";
@@ -237,6 +238,85 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
       if (session) {
         // Screenshot-only capture borrows the Authoring Session observation boundary, but it is
         // not a path proposal. Finish its temporary review before cleanup to avoid phantom reviews.
+        if (!["committed", "cancelled", "failed"].includes(session.state)) {
+          await authoringSessions
+            .cancel(session.id, createAuthoringRuntime())
+            .catch(() => undefined);
+        }
+        await authoringSessions.cleanup(session.id).catch(() => undefined);
+      }
+    }
+    return true;
+  }
+
+  const screenAliasObserve = matchPath(
+    pathname,
+    "/app-maps/:appMapId/screens/:screenId/alias-observe",
+  );
+  if (method === "POST" && screenAliasObserve) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.screen.alias-observe">,
+      "appMapId" | "screenId"
+    >;
+    await assertTargetLease(scope, body.target.targetId, body.leaseId);
+    const current = await readAppMap(scope.projectId, screenAliasObserve.appMapId!);
+    if (!current) throw new HttpError(404, `App Map ${screenAliasObserve.appMapId} not found`);
+    if (!current.screens[screenAliasObserve.screenId!]) {
+      throw new HttpError(404, `Screen ${screenAliasObserve.screenId} does not exist`);
+    }
+    const expectedRevision =
+      current.revision !== body.expectedRevision ? current.revision : body.expectedRevision;
+
+    let session: AuthoringSession | undefined;
+    try {
+      session = await authoringSessions.create({
+        appMapId: current.id,
+        target: body.target,
+        leaseId: body.leaseId,
+        expectedAppMapRevision: expectedRevision,
+      });
+      session = await authoringSessions.capture(session.id, createAuthoringRuntime());
+      const take = currentTakeRevision(session);
+      if (!take?.before) throw new HttpError(502, "The target returned no screen observation");
+      const observation = take.before;
+      let alias: { fingerprint: string; aliasesNow: string[] } | undefined;
+      const persistAlias = (mapRevision: number) =>
+        applyMutation(
+          scope,
+          current.id,
+          mapRevision,
+          body.eventId,
+          (map, context) => {
+            const result = observeAppMapScreenAlias(
+              map,
+              screenAliasObserve.screenId!,
+              observation,
+              context,
+            );
+            alias = result.alias;
+            return result.appMap;
+          },
+        );
+      let appMap: AppMap;
+      try {
+        appMap = await persistAlias(expectedRevision);
+      } catch (error) {
+        if (!(error instanceof HttpError) || error.status !== 409) throw error;
+        const latest = await readAppMap(scope.projectId, current.id);
+        if (!latest) throw error;
+        appMap = await persistAlias(latest.revision);
+      }
+      const identity = appMap.screens[screenAliasObserve.screenId!]?.identity;
+      json(response, 200, {
+        appMap,
+        alias:
+          alias ?? {
+            fingerprint: identity?.fingerprint ?? "",
+            aliasesNow: identity?.aliases ?? [],
+          },
+      });
+    } finally {
+      if (session) {
         if (!["committed", "cancelled", "failed"].includes(session.state)) {
           await authoringSessions
             .cancel(session.id, createAuthoringRuntime())

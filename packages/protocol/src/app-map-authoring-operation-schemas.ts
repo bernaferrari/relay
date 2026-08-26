@@ -43,6 +43,15 @@ export const appMapAuthoringOperationSchemas = {
       position: point.optional(),
     })
     .strict(),
+  "app-map.screen.alias-observe": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      screenId: identifier("Mapped screen the observed target screen is"),
+      ...mutationIdentity,
+      target: authoringTarget,
+      leaseId: identifier("Exclusive control lease"),
+    })
+    .strict(),
   "app-map.scroll-surface.capture": z
     .object({
       appMapId: identifier("App Map identifier"),

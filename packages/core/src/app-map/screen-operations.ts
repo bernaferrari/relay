@@ -9,6 +9,10 @@ import type {
 import { mutateAppMap } from "./mutation.js";
 import { actionOwners } from "./validation.js";
 import { assertAddScreenInput, assertUpdateScreenInput, identifier } from "./validation-shapes.js";
+import { hasCurrentAuthoringSemantics } from "../authoring-observation-proof.js";
+import type { SnapshotNode } from "../device.js";
+import { observeScreenIdentity } from "../screen-identity.js";
+import type { AuthoringObservation } from "@relay/protocol";
 import { recommendScrollSurfaceCapturePolicy } from "../scroll-surface-policy.js";
 
 function scopeFor(map: AppMap) {
@@ -243,6 +247,13 @@ export function updateAppMapScreen(
   input: UpdateScreenInput,
   context: AppMapMutationContext,
 ): AppMap {
+  const patch = (input as { patch?: unknown } | null | undefined)?.patch;
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    appMapFail(
+      "invalid-map",
+      'screen update expects --input {"expectedRevision":N,"input":{"patch":{...}}}',
+    );
+  }
   return mutateAppMap(
     map,
     context,
@@ -270,4 +281,80 @@ export function removeAppMapScreen(
     },
     (draft) => dropScreen(draft, screenId, undefined, context.at),
   );
+}
+
+
+export type AppMapScreenAliasObservationResult = {
+  appMap: AppMap;
+  alias: { fingerprint: string; aliasesNow: string[] };
+};
+
+/**
+ * Approve the target's current screen as the same semantic screen. Observes
+ * it through the same capture path `screen capture` uses and appends the
+ * observed fingerprint to the screen's identity aliases — the designed
+ * mechanism for "approved as the same screen" (see `ScreenIdentity`). This is
+ * the one-command recovery for a first run in a new locale that reports every
+ * mapped screen as unknown: run-time matching compares the freshly observed
+ * fingerprint against the identity fingerprint and its aliases.
+ *
+ * The primary fingerprint is never replaced, repeats deduplicate, a
+ * fingerprint already owned by another screen is rejected, and an empty or
+ * stale observation fails closed instead of guessing.
+ */
+export function observeAppMapScreenAlias(
+  map: AppMap,
+  screenId: string,
+  observation: AuthoringObservation,
+  context: AppMapMutationContext,
+): AppMapScreenAliasObservationResult {
+  identifier(screenId, "screenId");
+  const screen = map.screens[screenId];
+  if (!screen) appMapFail("missing-reference", `Screen ${screenId} does not exist`);
+  if (observation.proof && !hasCurrentAuthoringSemantics(observation.proof)) {
+    appMapFail(
+      "invalid-map",
+      `Screen ${screenId} alias observation is stale; recapture the target screen first`,
+    );
+  }
+  const nodes = observation.nodes ?? [];
+  if (!nodes.length) {
+    appMapFail(
+      "invalid-map",
+      `Screen ${screenId} alias observation is empty; the target returned no accessibility tree`,
+    );
+  }
+  const fingerprint = observeScreenIdentity(nodes.slice(0, 256) as SnapshotNode[]).fingerprint;
+  let aliasesNow: string[] = [];
+  const appMap = mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "screen.updated",
+      subject: { kind: "screen", id: screenId },
+      summary: `Approved an observed alias for screen ${screen.title}`,
+    },
+    (draft) => {
+      const target = draft.screens[screenId]!;
+      const owner = Object.values(draft.screens).find(
+        (candidate) =>
+          candidate.id !== screenId &&
+          (candidate.identity?.fingerprint === fingerprint ||
+            candidate.identity?.aliases?.includes(fingerprint)),
+      );
+      if (owner) {
+        appMapFail("in-use", `Observed fingerprint is already approved for screen ${owner.id}`);
+      }
+      if (!target.identity) {
+        target.identity = { schemaVersion: 1, fingerprint };
+      } else if (target.identity.fingerprint !== fingerprint) {
+        target.identity.aliases = [
+          ...new Set([...(target.identity.aliases ?? []), fingerprint]),
+        ].sort();
+      }
+      target.updatedAt = context.at;
+      aliasesNow = target.identity.aliases ?? [];
+    },
+  );
+  return { appMap, alias: { fingerprint, aliasesNow } };
 }

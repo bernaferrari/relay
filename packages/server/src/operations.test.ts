@@ -53,6 +53,10 @@ test("dynamic canonical routes resolve to their registered operation", () => {
     "app-map.screen.capture",
   );
   assert.equal(
+    findOperationHandler("POST", "/app-maps/onboarding/screens/settings/alias-observe")?.id,
+    "app-map.screen.alias-observe",
+  );
+  assert.equal(
     findOperationHandler(
       "POST",
       "/app-maps/onboarding/screens/settings/variants/settings-ja/scroll-surfaces/capture",

@@ -311,6 +311,43 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     },
   );
 
+  const appMapScreenAliasObserveParser = objectParser<
+    AppMapOperationInput<"app-map.screen.alias-observe">
+  >("App Map screen alias observation", (input) => {
+    string(input.appMapId, "App Map screen alias observation appMapId");
+    string(input.screenId, "App Map screen alias observation screenId");
+    number(input.expectedRevision, "App Map screen alias observation expectedRevision");
+    if (input.eventId !== undefined)
+      string(input.eventId, "App Map screen alias observation eventId");
+    string(input.leaseId, "App Map screen alias observation leaseId");
+    const target = record(input.target, "App Map screen alias observation target");
+    if (target.kind !== "device" && target.kind !== "browser") {
+      fail("App Map screen alias observation target kind", "must be device or browser");
+    }
+    if (
+      target.platform !== "android" &&
+      target.platform !== "ios" &&
+      target.platform !== "browser"
+    ) {
+      fail("App Map screen alias observation target platform", "must be android, ios, or browser");
+    }
+    string(target.targetId, "App Map screen alias observation targetId");
+  });
+
+  const appMapScreenAliasObserveOutputParser = objectParser<
+    AppMapOperationOutput<"app-map.screen.alias-observe">
+  >("App Map screen alias observation response", (output) => {
+    record(output.appMap, "App Map screen alias observation response appMap");
+    const alias = record(output.alias, "App Map screen alias observation response alias");
+    string(alias.fingerprint, "App Map screen alias observation response alias fingerprint");
+    if (!Array.isArray(alias.aliasesNow)) {
+      fail("App Map screen alias observation response alias aliasesNow", "must be an array");
+    }
+    for (const entry of alias.aliasesNow as unknown[]) {
+      string(entry, "App Map screen alias observation response alias aliasesNow entry");
+    }
+  });
+
   const appMapVariableInferParser = objectParser<AppMapOperationInput<"app-map.variable.infer">>(
     "App Map Variable inference",
     (input) => {
@@ -677,6 +714,8 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     appMapScreenAddParser,
     appMapScreenCaptureOutputParser,
     appMapScreenCaptureParser,
+    appMapScreenAliasObserveParser,
+    appMapScreenAliasObserveOutputParser,
     appMapVariableInferParser,
     appMapVariableInferOutputParser,
     appMapScreenConsolidateParser,

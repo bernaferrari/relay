@@ -266,6 +266,24 @@ test("friendly aliases and lifecycle commands construct operation inputs", () =>
     [["screen", "list", "map-1"], "app-map.get", { appMapId: "map-1" }],
     [
       [
+        "screen",
+        "alias-observe",
+        "map-1",
+        "home",
+        "--input",
+        '{"expectedRevision":4,"target":{"kind":"device","platform":"android","targetId":"pixel-9"},"leaseId":"lease-1"}',
+      ],
+      "app-map.screen.alias-observe",
+      {
+        appMapId: "map-1",
+        screenId: "home",
+        expectedRevision: 4,
+        target: { kind: "device", platform: "android", targetId: "pixel-9" },
+        leaseId: "lease-1",
+      },
+    ],
+    [
+      [
         "connection",
         "update",
         "map-1",

@@ -817,6 +817,34 @@ test("full-surface bindings compile one executable capture after reaching the de
   );
 });
 
+test("every-screen capture permits forced recapture without explicit surface bindings", () => {
+  const current = fixture();
+  const work = scenario();
+  work.steps = [work.steps[0]!];
+  work.capture = { mode: "every-screen" };
+
+  const compiled = compileAppMapTest(current, work, {
+    forceRecaptureSurfaceScreenIds: ["cart"],
+  });
+  assert.equal(
+    Object.values(compiled.graph)
+      .flatMap((recipe) => recipe.steps)
+      .some((step) => step.kind === "screenshot"),
+    true,
+  );
+
+  const checkpointed = scenario();
+  checkpointed.steps = [checkpointed.steps[0]!];
+  checkpointed.capture = { mode: "checkpoints", screenIds: ["cart"] };
+  assert.throws(
+    () =>
+      compileAppMapTest(current, checkpointed, {
+        forceRecaptureSurfaceScreenIds: ["cart"],
+      }),
+    /no full-surface binding for cart/u,
+  );
+});
+
 test("a logical surface is captured once even when a later path returns to it", () => {
   const current = fixture();
   const digest = "d".repeat(64);

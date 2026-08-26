@@ -158,6 +158,9 @@ export function stagePreparedAppMapCombineCells(
             testId: cell.testId,
             values: cell.values,
             targetProfileId: cell.targetProfileId,
+            /** Audit: `explicit` per-cell binding, or `inherited` from the
+             * only saved profile matching this cell's concrete target. */
+            targetProfileIdSource: cell.targetProfileIdSource,
             executionTarget: target,
             /** Stable timing cohort identity. Wrapper recipe ids can change
              * when a Combine world is recompiled, so duration admission keys

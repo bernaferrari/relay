@@ -101,6 +101,8 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Run a saved Variable × Test Combine. Default is one cell. Pass executionMode all to run every selected world. cell or selectedCellIds names the worlds to queue and those named cells run. A default serial/target fills missing cell bindings. A single Test with in worlds uses app-map.test.run. Never invent a Variable for screenshots.",
   "app-map.test.run":
     " Without `in`: runs one saved Test once (expectedRevision + target are required). With `in`: upserts a Combine for this Test × the selected worlds and runs one cell — pass executionMode:'all' to run every world instead; `cell` or `selectedCellIds` names which. Never invent a Variable for screenshots.",
+  "app-map.screen.alias-observe":
+    " One-command fix when a run reports an unknown screen in a new locale: navigate the target to that screen first, then approve its observed fingerprint as an alias of the mapped screen. Never replaces the primary fingerprint; repeats deduplicate.",
   "app-map.scroll-surface.origin.inspect":
     " Offline audit only: it reads the signed immutable first PNG/tree evidence and lifecycle; it never resolves, leases, or controls a target.",
   "app-map.scroll-surface.origin.review":
@@ -356,6 +358,7 @@ const localeOperations = [
   "app-map.variable.save",
   "app-map.variable.remove",
   "app-map.test.save",
+  "app-map.screen.alias-observe",
   "app-map.variable.infer",
   "app-map.test.edit",
   "app-map.test.propose",
@@ -392,6 +395,7 @@ const reviewOperations = [
   "app-map.scroll-surface.origin.inspect",
   "app-map.scroll-surface.origin.review",
   "app-map.scroll-surface.origin.revoke",
+  "app-map.screen.alias-observe",
   "app-map.proposal.approve",
   "app-map.proposal.reject",
   "app-map.proposal.revert",

@@ -74,6 +74,7 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.commit",
       "app-map.screen.add",
       "app-map.screen.capture",
+      "app-map.screen.alias-observe",
       "app-map.scroll-surface.capture",
       "app-map.scroll-surface.regenerate",
       "app-map.scroll-surface.origin.inspect",

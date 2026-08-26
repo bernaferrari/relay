@@ -13,6 +13,7 @@ export {
   addAppMapScreen,
   removeAppMapScreen,
   updateAppMapScreen,
+  observeAppMapScreenAlias,
 } from "./app-map/screen-operations.js";
 export {
   consolidateAppMapScreens,

@@ -12,6 +12,8 @@ import { setLocalDeviceProvider } from "./device-factory.js";
 import { resetDurableWorkerAssignmentStoreForTests } from "./durable-worker-assignments.js";
 import { runExpectScreenStep } from "./recipe-runner-screen.js";
 import { observeScreenIdentity } from "./screen-identity.js";
+import { addAppMapScreen } from "./app-map.js";
+import { createAppMap, mutateStoredAppMap, resetControlDatabaseCache } from "./collaboration.js";
 import { runWithTargetContext } from "./target-context.js";
 import type { ScreenshotPayload } from "./workspace-capture.js";
 
@@ -265,6 +267,39 @@ it("a failed expect-screen job carries the repair hint and stub-grounder proposa
     },
   } as unknown as Device;
   setLocalDeviceProvider({ kind: "device", create: () => stubDevice });
+    // Seed the frozen plan's App Map with the expected screen so the repair
+    // attachment can resolve it and name the exact recovery command.
+    const created = await createAppMap({
+      organizationId: "org",
+      projectId: "project",
+      appMapId: "destination-repair-wiring-job",
+      name: "Destination repair wiring",
+    });
+    await mutateStoredAppMap("project", "destination-repair-wiring-job", (map) =>
+      addAppMapScreen(
+        map,
+        {
+          screen: {
+            organizationId: map.organizationId,
+            projectId: map.projectId,
+            appMapId: map.id,
+            id: "home",
+            title: "Home",
+            identity: { schemaVersion: 1, fingerprint: "f".repeat(64) },
+            variantIds: [],
+            createdAt: created.updatedAt,
+            updatedAt: created.updatedAt,
+          },
+        },
+        {
+          expectedRevision: created.revision,
+          eventId: "seed-home-screen",
+          actorId: "agent:runner",
+          actorKind: "agent",
+          at: created.updatedAt,
+        },
+      ),
+    );
 
   try {
     const { enqueueJob, waitForJobCompletion } = await import("./session.js");
@@ -330,6 +365,12 @@ it("a failed expect-screen job carries the repair hint and stub-grounder proposa
       "hint reports what the stub device actually showed",
     );
 
+    assert.equal(
+      hintData.recovery,
+      "relay screen alias-observe destination-repair-wiring-job home",
+      "hint names the exact one-command recovery once the expected screen exists",
+    );
+
     const proposals = job.artifacts.find(
       (artifact) => artifact.kind === "destination-repair-proposals",
     );
@@ -353,6 +394,7 @@ it("a failed expect-screen job carries the repair hint and stub-grounder proposa
     resetDurableWorkerAssignmentStoreForTests();
     if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previousState;
+    resetControlDatabaseCache();
     if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
     else process.env.RELAY_RUNS_DIR = previousRuns;
     if (previousGoIos === undefined) delete process.env.RELAY_GO_IOS_BIN;

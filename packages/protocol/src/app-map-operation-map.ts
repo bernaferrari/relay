@@ -133,6 +133,20 @@ export type AppMapOperationMap = {
       reviewProposalId?: string;
     };
   };
+  "app-map.screen.alias-observe": {
+    input: {
+      appMapId: string;
+      screenId: string;
+      expectedRevision: number;
+      eventId?: string;
+      target: AuthoringTarget;
+      leaseId: string;
+    };
+    output: {
+      appMap: AppMap;
+      alias: { fingerprint: string; aliasesNow: string[] };
+    };
+  };
   "app-map.scroll-surface.capture": {
     input: {
       appMapId: string;

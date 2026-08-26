@@ -171,11 +171,16 @@ export function compileAppMapScenarioTest(
   const scheduledLogicalSurfaces = new Set<string>();
   const scheduledScreenCaptures = new Set<string>();
   const forceRecaptureSurfaceScreenIds = new Set(options.forceRecaptureSurfaceScreenIds ?? []);
+  // An `every-screen` capture policy already promises a full survey of every
+  // surface the Test reaches, so a run may force a fresh survey without an
+  // explicit per-screen binding. Narrower policies still require one, because
+  // the binding names the baseline that a forced recapture replaces.
+  const captureCoversEveryScreen = test.capture?.mode === "every-screen";
   for (const screenId of forceRecaptureSurfaceScreenIds) {
     const binding = test.surfaceBindings?.find(
       (candidate) => candidate.screenId === screenId && candidate.captureMode === "full-surface",
     );
-    if (!binding) {
+    if (!binding && !captureCoversEveryScreen) {
       throw new AppMapTestCompileError(
         "missing-reference",
         test.id,

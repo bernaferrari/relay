@@ -15,6 +15,7 @@ type DestinationRepairHintArtifact = {
   expectedScreenTitle?: string;
   expectedFingerprint?: string;
   observedFingerprint?: string;
+  recovery?: string;
   observedScreenTitle?: string;
   resolutionMethod?: string;
 };
@@ -65,6 +66,17 @@ export async function attachDestinationRepairProposals(
     map = await readAppMap(job.projectId, appMapId);
   } catch {
     map = null;
+  }
+  // The hint says what was expected and observed, but historically never what
+  // to do next. When the expected screen still exists and the observation
+  // genuinely differs, name the one command that approves the observed
+  // fingerprint as an identity alias of that screen.
+  if (
+    map?.screens[hintArtifact.data.expectedScreenId] &&
+    hintArtifact.data.observedFingerprint &&
+    hintArtifact.data.observedFingerprint !== hintArtifact.data.expectedFingerprint
+  ) {
+    hintArtifact.data.recovery = `relay screen alias-observe ${appMapId} ${hintArtifact.data.expectedScreenId}`;
   }
   const checkpoint = currentVerifiedScreen(runtime);
   const result = await proposeRepair({

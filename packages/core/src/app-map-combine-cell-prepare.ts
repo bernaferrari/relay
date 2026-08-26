@@ -69,6 +69,9 @@ export type PreparedAppMapCombineCell = {
   worldLabel: string;
   worldIndex: number;
   targetProfileId: string;
+  /** Audit provenance of `targetProfileId`: bound per-cell, or inherited from
+   * the only saved profile that matches this cell's concrete target. */
+  targetProfileIdSource: "explicit" | "inherited";
   /** Immutable location that this cell was explicitly bound to before queueing. */
   executionTarget: LocalExecutionTarget;
   selectedRuntimeTargetProfile: AppMapCompiledRuntimeTargetProfile;
@@ -132,26 +135,85 @@ export function optionSetsForAppMapCombine(map: AppMap, combine: AppMapCombine):
   });
 }
 
+/** Deduped saved runtime-profile ids that bind to one concrete target, in
+ * stable message order. These are the only ids a failed binding can accept,
+ * so every recovery message lists them instead of hiding them in raw map data. */
+export function savedAppMapTargetProfileIdsForTarget(
+  map: AppMap,
+  target: { targetId: string; platform: string },
+): string[] {
+  const ids = new Set(
+    Object.values(map.screenVariants ?? {})
+      .map((variant) => variant.targetProfile)
+      .filter(
+        (profile) =>
+          profile.id &&
+          profile.targetId === target.targetId &&
+          profile.platform === target.platform,
+      )
+      .map((profile) => profile.id),
+  );
+  return [...ids].sort((left, right) => left.localeCompare(right));
+}
+
+function targetProfileLabel(target: { targetId: string; platform: string }): string {
+  return `${target.platform}:${target.targetId}`;
+}
+
+function unresolvedTargetProfileMessage(
+  target: { targetId: string; platform: string },
+  candidates: string[],
+): string {
+  return candidates.length
+    ? `Multiple saved runtime profiles bind to ${targetProfileLabel(target)}: ${candidates.join(", ")}. Bind an explicit targetProfileId.`
+    : `No saved runtime profile for target ${targetProfileLabel(target)} — capture a screen on this target first.`;
+}
+
+function savedTargetProfileHint(
+  map: AppMap,
+  target: { targetId: string; platform: string },
+): string {
+  const candidates = savedAppMapTargetProfileIdsForTarget(map, target);
+  return candidates.length
+    ? ` Saved runtime profiles for ${targetProfileLabel(target)}: ${candidates.join(", ")}.`
+    : ` No saved runtime profile for target ${targetProfileLabel(target)} — capture a screen on this target first.`;
+}
+
 export function resolveSavedAppMapRuntimeTargetProfile(input: {
   map: AppMap;
-  targetProfileId: string;
+  /** Explicit saved profile id. When omitted or blank, the single saved
+   * profile that binds to `target` is inherited; ambiguity stays an error. */
+  targetProfileId?: string;
   target: { targetId: string; platform: "android" | "ios" | "browser" };
 }): AppMapCompiledRuntimeTargetProfile {
-  const targetProfileId = input.targetProfileId.trim();
+  const targetProfileId = input.targetProfileId?.trim() ?? "";
+  if (!targetProfileId) {
+    const candidates = savedAppMapTargetProfileIdsForTarget(input.map, input.target);
+    if (candidates.length !== 1) {
+      const message = unresolvedTargetProfileMessage(input.target, candidates);
+      throw new AppMapCombineCellContractError(
+        message,
+        [issue("missing-binding", message)],
+        [],
+      );
+    }
+    return resolveSavedAppMapRuntimeTargetProfile({
+      map: input.map,
+      targetProfileId: candidates[0]!,
+      target: input.target,
+    });
+  }
   const profiles = Object.values(input.map.screenVariants)
     .map((variant) => variant.targetProfile)
     .filter((profile) => profile.id === targetProfileId);
   if (!profiles.length) {
+    const message = `Target profile ${targetProfileId} is not saved in this App Map.${savedTargetProfileHint(input.map, input.target)}`;
     throw new AppMapCombineCellContractError(
-      `Target profile ${targetProfileId} is not saved in this App Map.`,
+      message,
       [
-        issue(
-          "mismatched-binding",
-          `Target profile ${targetProfileId} is not saved in this App Map.`,
-          {
-            targetProfileId,
-          },
-        ),
+        issue("mismatched-binding", message, {
+          targetProfileId,
+        }),
       ],
       [],
     );
@@ -161,14 +223,13 @@ export function resolveSavedAppMapRuntimeTargetProfile(input: {
       profile.targetId !== input.target.targetId || profile.platform !== input.target.platform,
   );
   if (mismatched.length) {
+    const message = `Target profile ${targetProfileId} does not bind to ${input.target.platform}:${input.target.targetId}.${savedTargetProfileHint(input.map, input.target)}`;
     throw new AppMapCombineCellContractError(
-      `Target profile ${targetProfileId} does not bind to ${input.target.platform}:${input.target.targetId}`,
+      message,
       [
-        issue(
-          "mismatched-binding",
-          `Target profile ${targetProfileId} does not bind to ${input.target.platform}:${input.target.targetId}`,
-          { targetProfileId },
-        ),
+        issue("mismatched-binding", message, {
+          targetProfileId,
+        }),
       ],
       [],
     );
@@ -204,19 +265,21 @@ export function resolveSavedAppMapRuntimeTargetProfile(input: {
   };
 }
 
-export function enumerateAppMapCombineCells(input: {
-  combine: AppMapCombine;
-  tests: AppMapScenarioTest[];
-  matrix: PreparedCasePlan;
-  variableIds: readonly string[];
-}): Array<{
+export type AppMapCombineEnumeratedCell = {
   cellId: string;
   testId: string;
   testName: string;
   values: Record<string, string>;
   worldLabel: string;
   worldIndex: number;
-}> {
+};
+
+export function enumerateAppMapCombineCells(input: {
+  combine: AppMapCombine;
+  tests: AppMapScenarioTest[];
+  matrix: PreparedCasePlan;
+  variableIds: readonly string[];
+}): AppMapCombineEnumeratedCell[] {
   const cells = [];
   for (const world of input.matrix.cases) {
     const values = canonicalAppMapCombineCellValues(
@@ -390,14 +453,85 @@ export function assessAppMapCombineCellBindings(input: {
   return { issues, states, byCellId };
 }
 
+/** Fill in per-cell runtime profiles that a concrete target already proves.
+ * A cell with an explicit binding keeps it; an unbound cell whose concrete
+ * target has exactly one saved profile inherits it, and any ambiguity fails
+ * closed with the candidate ids named in the message. */
+function completeCellRuntimeProfileBindings(input: {
+  map: AppMap;
+  cells: readonly AppMapCombineEnumeratedCell[];
+  supplied: readonly AppMapCombineCellRuntimeProfile[];
+  synthesized: readonly AppMapCombineCellRuntimeProfile[];
+  targetByCellId: ReadonlyMap<string, LocalExecutionTarget>;
+  fallbackTarget?: LocalExecutionTarget;
+}): {
+  bindings: AppMapCombineCellRuntimeProfile[];
+  inheritedProfileByCellId: Map<string, string>;
+  issues: AppMapCombinePreflightIssue[];
+  unresolvedCellIds: Set<string>;
+} {
+  const bindings = [...input.synthesized];
+  const inheritedProfileByCellId = new Map<string, string>();
+  const issues: AppMapCombinePreflightIssue[] = [];
+  const unresolvedCellIds = new Set<string>();
+  for (const cell of input.cells) {
+    const bound = bindings.find(
+      (binding) =>
+        binding.testId === cell.testId &&
+        sameAppMapCombineCellValues(binding.values, cell.values),
+    );
+    if (bound) {
+      const explicit = input.supplied.some(
+        (binding) =>
+          binding.testId === cell.testId &&
+          sameAppMapCombineCellValues(binding.values, cell.values),
+      );
+      if (!explicit && bound.targetProfileId.trim()) {
+        inheritedProfileByCellId.set(cell.cellId, bound.targetProfileId);
+      }
+      continue;
+    }
+    const cellTarget = input.targetByCellId.get(cell.cellId) ?? input.fallbackTarget;
+    if (!cellTarget) continue;
+    const candidates = savedAppMapTargetProfileIdsForTarget(input.map, {
+      targetId: cellTarget.targetId,
+      platform: cellTarget.platform,
+    });
+    if (candidates.length === 1) {
+      bindings.push({
+        testId: cell.testId,
+        values: { ...cell.values },
+        targetProfileId: candidates[0]!,
+      });
+      inheritedProfileByCellId.set(cell.cellId, candidates[0]!);
+      continue;
+    }
+    unresolvedCellIds.add(cell.cellId);
+    const message =
+      candidates.length > 1
+        ? `Multiple saved runtime profiles bind to ${targetProfileLabel(cellTarget)} for ${cell.testName} · ${cell.worldLabel}: ${candidates.join(", ")}. Bind an explicit targetProfileId.`
+        : `No saved runtime profile for target ${targetProfileLabel(cellTarget)} — capture a screen on this target first.`;
+    issues.push(
+      issue("missing-binding", message, {
+        cellId: cell.cellId,
+        testId: cell.testId,
+        values: cell.values,
+      }),
+    );
+  }
+  return { bindings, inheritedProfileByCellId, issues, unresolvedCellIds };
+}
+
 async function prepareOneCell(input: {
   map: AppMap;
   combine: AppMapCombine;
-  cell: ReturnType<typeof enumerateAppMapCombineCells>[number];
+  cell: AppMapCombineEnumeratedCell;
   binding: AppMapCombineCellRuntimeProfile;
   sets: OptionRunSet[];
   worldValues: Record<string, string>;
   target: LocalExecutionTarget;
+  /** Provenance of the binding's profile id, recorded for audit. */
+  targetProfileIdSource: "explicit" | "inherited";
   compileOptions: AppMapTestCompileOptions;
 }): Promise<PreparedAppMapCombineCell> {
   const test = input.map.tests[input.cell.testId] as AppMapScenarioTest | undefined;
@@ -498,6 +632,7 @@ async function prepareOneCell(input: {
     worldLabel: input.cell.worldLabel,
     worldIndex: input.cell.worldIndex,
     targetProfileId: selectedRuntimeTargetProfile.id,
+    targetProfileIdSource: input.targetProfileIdSource,
     executionTarget: structuredClone(input.target),
     selectedRuntimeTargetProfile,
     plan,
@@ -570,21 +705,13 @@ export async function prepareAppMapCombineCells(input: {
     matrix,
     variableIds: input.combine.variableIds,
   });
-  const bindings = synthesizeCombineCellRuntimeProfiles({
+  const suppliedBindings = input.cellRuntimeProfiles ?? input.combine.cellRuntimeProfiles ?? [];
+  const synthesized = synthesizeCombineCellRuntimeProfiles({
     cells,
-    bindings: input.cellRuntimeProfiles ?? input.combine.cellRuntimeProfiles ?? [],
+    bindings: suppliedBindings,
     map: input.map,
     target: input.target,
     explicitProfileId: input.defaultTargetProfileId,
-  });
-  const assessed = assessAppMapCombineCellBindings({
-    cells,
-    bindings,
-    knownTests: new Set(input.combine.testIds),
-    knownValues: Object.fromEntries(
-      sets.map((set) => [set.id, new Set(set.options.map((option) => option.id))]),
-    ),
-    rejectUnselectedBindings: input.rejectUnselectedBindings === true,
   });
   const fallbackTarget = input.target ? localExecutionTargetRef(input.target) : undefined;
   const assessedTargets = assessAppMapCombineCellTargetBindings({
@@ -597,11 +724,40 @@ export async function prepareAppMapCombineCells(input: {
     ),
     rejectUnselectedBindings: input.rejectUnselectedBindings === true,
   });
+  const completed = completeCellRuntimeProfileBindings({
+    map: input.map,
+    cells,
+    supplied: suppliedBindings,
+    synthesized,
+    targetByCellId: assessedTargets.byCellId,
+    fallbackTarget,
+  });
+  const assessed = assessAppMapCombineCellBindings({
+    cells,
+    bindings: completed.bindings,
+    knownTests: new Set(input.combine.testIds),
+    knownValues: Object.fromEntries(
+      sets.map((set) => [set.id, new Set(set.options.map((option) => option.id))]),
+    ),
+    rejectUnselectedBindings: input.rejectUnselectedBindings === true,
+  });
   const cellStates = assessed.states.map((state) => {
     const target = assessedTargets.byCellId.get(state.cellId);
     return target ? { ...state, target: structuredClone(target) } : state;
   });
-  const issues = [...assessed.issues, ...assessedTargets.issues];
+  const issues = [
+    ...completed.issues,
+    ...assessed.issues.filter(
+      (item) =>
+        !(item.code === "zero-bindings" && completed.issues.length) &&
+        !(
+          item.code === "missing-binding" &&
+          item.cellId !== undefined &&
+          completed.unresolvedCellIds.has(item.cellId)
+        ),
+    ),
+    ...assessedTargets.issues,
+  ];
   if (issues.length) {
     throw new AppMapCombineCellContractError(
       issues[0]?.message ?? "Combine cells are missing explicit runtime profile bindings.",
@@ -646,6 +802,9 @@ export async function prepareAppMapCombineCells(input: {
       sets,
       worldValues: world.values,
       target: assessedTargets.byCellId.get(cell.cellId)!,
+      targetProfileIdSource: completed.inheritedProfileByCellId.has(cell.cellId)
+        ? "inherited"
+        : "explicit",
       compileOptions: input.compileOptions ?? {},
     });
     prepared.push({
