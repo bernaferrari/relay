@@ -13,12 +13,7 @@ import {
   iosNonHittablePressFields,
   nativeDevice,
 } from "./device-dispatch.js";
-import {
-  iosSnapshotFallbackPoint,
-  snapshot,
-  typeText,
-  type Device,
-} from "./device.js";
+import { iosSnapshotFallbackPoint, snapshot, typeText, type Device } from "./device.js";
 import { selectedPlatform, targetIdentity } from "./target-context.js";
 
 export async function replaceText(
@@ -138,4 +133,3 @@ export async function replaceTextValue(
   await adapter.fill("x");
   await adapter.type("\b");
 }
-

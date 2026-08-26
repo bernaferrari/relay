@@ -290,15 +290,10 @@ export async function handleTargetRuntimeRoute(context: {
     if (body.force !== undefined && typeof body.force !== "boolean") {
       throw new HttpError(400, "force must be a boolean");
     }
-    if (
-      force &&
-      !projectRoleAllows(scope.role, "admin")
-    ) {
-      throw new HttpError(
-        403,
-        "Forced target recovery is available only to project admins",
-        { code: "TARGET_RECOVERY_FORCE_ADMIN_ONLY" },
-      );
+    if (force && !projectRoleAllows(scope.role, "admin")) {
+      throw new HttpError(403, "Forced target recovery is available only to project admins", {
+        code: "TARGET_RECOVERY_FORCE_ADMIN_ONLY",
+      });
     }
     const assignments = recoveryFenceAssignmentId
       ? runtime.getDurableWorkerAssignments()

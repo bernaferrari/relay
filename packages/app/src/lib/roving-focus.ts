@@ -15,7 +15,7 @@ export function nextRovingIndex(
 }
 
 /** Move through a dense Combine grid without tabbing every cell. Home/End
- * stay on the current row so a 40-locale matrix does not dump focus. */
+ * stay on the current row so a large Combine does not dump focus. */
 export function nextGridRovingIndex(
   key: string,
   current: number,

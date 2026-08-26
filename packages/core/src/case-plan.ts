@@ -303,10 +303,7 @@ export async function prepareCaseStackPlan(input: {
 }
 
 /** Safe for reports, Activity, and transport. Raw values remain execution-only. */
-export function redactCasePlan(
-  matrix: PreparedCasePlan,
-  variables: TestData[],
-): PreparedCasePlan {
+export function redactCasePlan(matrix: PreparedCasePlan, variables: TestData[]): PreparedCasePlan {
   const privateNames = new Set(
     variables
       .filter((variable) => variable.scope === "private" || variable.sensitive)

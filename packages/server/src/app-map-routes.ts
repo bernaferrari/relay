@@ -199,7 +199,10 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     // GET inputs arrive as query parameters: repeated `files=` keys collect the
     // changed paths; a single JSON-encoded `sourcePaths=` carries front-matter.
     const search = new URL(request.url ?? pathname, "http://relay.local").searchParams;
-    const changedFiles = search.getAll("files").flatMap((value) => value.split(",")).filter(Boolean);
+    const changedFiles = search
+      .getAll("files")
+      .flatMap((value) => value.split(","))
+      .filter(Boolean);
     let sourcePaths: Record<string, string[]> | undefined;
     if (search.has("sourcePaths")) {
       try {

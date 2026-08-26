@@ -10,7 +10,7 @@ import {
 } from "solid-js";
 import { Button } from "@relay/ui/button";
 import { EmptyState } from "./empty-state";
-import type { LocaleRunAnalysisReport } from "@relay/protocol";
+import type { CombineEvidenceAnalysisReport } from "@relay/protocol";
 import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import type { CombineReview as CombineReviewModel, CombineRow } from "../lib/combine-review";
 import { Icon } from "./icon";
@@ -20,14 +20,14 @@ import {
   filterCombineRows,
   pageCombineRows,
 } from "../lib/combine-review";
-import { CombineCell, CombineCellSkeleton, LocaleVerdictLegend } from "./combine-cell";
+import { CombineCell, CombineCellSkeleton, CombineVerdictLegend } from "./combine-cell";
 import {
-  type LocaleCellVerdict,
-  localeCellVerdict,
-  localeVerdictPresentation,
-  summarizeLocaleVerdicts,
+  type CombineCellVerdict,
+  combineCellVerdict,
+  combineVerdictPresentation,
+  summarizeCombineVerdicts,
 } from "../lib/combine-verdict";
-import { localeCellAnalysisIndex } from "../lib/locale-pack-findings";
+import { combineCellAnalysisIndex } from "../lib/combine-evidence-findings";
 import { plural } from "../lib/plural";
 import { modalPanel, modalScrim } from "../lib/ui";
 import { trapFocus } from "../lib/modal";
@@ -47,7 +47,7 @@ export function CombineReview(props: {
   const [visibleCount, setVisibleCount] = createSignal(combineReviewPageSize);
   const [focusedRunId, setFocusedRunId] = createSignal<string | null>(null);
   const [retrying, setRetrying] = createSignal(false);
-  const [verdictFilter, setVerdictFilter] = createSignal<LocaleCellVerdict | null>(null);
+  const [verdictFilter, setVerdictFilter] = createSignal<CombineCellVerdict | null>(null);
   // Findings are read from the batch itself, so the grid can be judged while
   // the sweep is still running. It re-reads as cases land, and a cell the
   // report does not cover keeps reporting "Not checked" rather than a pass.
@@ -56,15 +56,15 @@ export function CombineReview(props: {
       props.review.batchId
         ? { batchId: props.review.batchId, complete: props.review.complete }
         : null,
-    (source: { batchId: string }): Promise<LocaleRunAnalysisReport | null> =>
+    (source: { batchId: string }): Promise<CombineEvidenceAnalysisReport | null> =>
       server.combineEvidence.analyze(source.batchId),
   );
   // `latest` so a refetch mid-sweep does not blank every verdict on screen.
-  const cellAnalysis = createMemo(() => localeCellAnalysisIndex(analysisReport.latest));
+  const cellAnalysis = createMemo(() => combineCellAnalysisIndex(analysisReport.latest));
   const analysisFor = (row: CombineRow, captureIndex: number) =>
     cellAnalysis()(row.job.id, row.captures[captureIndex]?.frame?.path);
   const verdictOf = (row: CombineRow) =>
-    localeCellVerdict({
+    combineCellVerdict({
       status: row.job.status,
       capture: row.captures[selectedCaptureIndex()],
       analysis: analysisFor(row, selectedCaptureIndex()),
@@ -73,7 +73,7 @@ export function CombineReview(props: {
     filterCombineRows(props.review, { query: query(), problemsOnly: problemsOnly() }),
   );
   const tallies = createMemo(() =>
-    summarizeLocaleVerdicts(matchedRows(), selectedCaptureIndex(), analysisFor),
+    summarizeCombineVerdicts(matchedRows(), selectedCaptureIndex(), analysisFor),
   );
   const visibleRows = createMemo(() => {
     const verdict = verdictFilter();
@@ -226,7 +226,7 @@ export function CombineReview(props: {
         </Show>
       </header>
       <Show when={tallies().length > 0}>
-        <LocaleVerdictLegend
+        <CombineVerdictLegend
           tallies={tallies()}
           active={verdictFilter()}
           onSelect={setVerdictFilter}
@@ -342,7 +342,7 @@ export function CombineReview(props: {
             <div class="max-w-[42ch]">
               <strong class="block text-caption text-[var(--text-strong)]">
                 {verdictFilter()
-                  ? `Nothing on this screen is ${localeVerdictPresentation(verdictFilter()!).label.toLocaleLowerCase()}`
+                  ? `Nothing on this screen is ${combineVerdictPresentation(verdictFilter()!).label.toLocaleLowerCase()}`
                   : "No matching values"}
               </strong>
               <p class="m-0 mt-1 text-micro/[1.45] text-[var(--text-weak)]">

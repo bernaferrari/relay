@@ -82,7 +82,6 @@ test("relay db rejects unknown flags with a usage error", async () => {
 });
 
 test("relay db supports --ndjson compact rows and --quiet suppression", async () => {
-  const io = capture();
   const root = await mkdtemp(join(tmpdir(), "relay-db-flags-"));
   try {
     const path = join(root, "control.sqlite");

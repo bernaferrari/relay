@@ -1,19 +1,12 @@
 import type { AppMapOperationMap } from "./app-map-operation-map.js";
-import {
-  createAppMapImpactParsers,
-} from "./app-map-impact-parsers.js";
+import { createAppMapImpactParsers } from "./app-map-impact-parsers.js";
 import {
   createAppMapOperationParsers,
   type AppMapParserDependencies,
 } from "./app-map-operation-parsers.js";
 import { createOperationBuilders } from "./operation-builders.js";
-import type { OperationDefinition } from "./operation-contract.js";
 
-type AppMapOperationId = keyof AppMapOperationMap;
-
-export function createAppMapOperationDefinitions(
-  parserDependencies: AppMapParserDependencies,
-) {
+export function createAppMapOperationDefinitions(parserDependencies: AppMapParserDependencies) {
   const { command, query } = createOperationBuilders<AppMapOperationMap>();
   const { emptyInputParser, okParser } = parserDependencies;
   const {

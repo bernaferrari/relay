@@ -78,7 +78,8 @@ function firstArgument(source, openIndex) {
       depth -= 1;
       continue;
     }
-    if (character === "," && depth === 0) return { argument: source.slice(start, cursor), end: cursor };
+    if (character === "," && depth === 0)
+      return { argument: source.slice(start, cursor), end: cursor };
   }
   return { argument: source.slice(start), end: source.length };
 }
@@ -169,7 +170,8 @@ export function pathPattern(expression) {
   }
 
   const additions = splitTopLevel(source, "+");
-  if (additions.length > 1) return additions.map((part) => pathPattern(part) ?? "__DYNAMIC__").join("");
+  if (additions.length > 1)
+    return additions.map((part) => pathPattern(part) ?? "__DYNAMIC__").join("");
   return null;
 }
 
@@ -188,7 +190,10 @@ function pathPatterns(expression) {
 
 function normalizedSegments(path) {
   const withoutQuery = path.split("?", 1)[0] ?? path;
-  return withoutQuery.replace(/^\/+|\/+$/gu, "").split("/").filter(Boolean);
+  return withoutQuery
+    .replace(/^\/+|\/+$/gu, "")
+    .split("/")
+    .filter(Boolean);
 }
 
 function pathMatches(actual, expected) {
@@ -268,9 +273,7 @@ export async function scanRendererOperationTransport(definitions, root = appSour
   const violations = [];
   for (const file of files) {
     const source = await readFile(file, "utf8");
-    violations.push(
-      ...scanRendererSource(relative(repositoryRoot, file), source, definitions),
-    );
+    violations.push(...scanRendererSource(relative(repositoryRoot, file), source, definitions));
   }
   return violations;
 }

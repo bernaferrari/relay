@@ -7,7 +7,7 @@ import {
   captureScreenshot,
   captureSnapshot,
   cleanupScreenshot,
-  createDevice,
+  createDeviceForTarget,
   describeRecipeStep,
   getBrowserDevice,
   IosMutationOutcomeUnknownError,
@@ -69,7 +69,7 @@ async function deviceFor(session: AuthoringSession) {
   return runWithTargetContext(context, () =>
     session.target.kind === "browser"
       ? getBrowserDevice(session.target.targetId)
-      : Promise.resolve(createDevice()),
+      : Promise.resolve(createDeviceForTarget(context)),
   );
 }
 

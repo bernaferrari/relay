@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { TargetCapability, TargetDefinition, TargetKind, TargetPreflight } from "@relay/protocol";
+import type {
+  TargetCapability,
+  TargetDefinition,
+  TargetKind,
+  TargetPreflight,
+} from "@relay/protocol";
 import { chromium } from "playwright-core";
 import { findWorkspaceRoot } from "./workspace-root.js";
 
@@ -65,7 +70,9 @@ export async function listTargets(): Promise<TargetDefinition[]> {
     parsed = JSON.parse(raw);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    console.warn(`targets: ${targetFile()} contains malformed JSON (${reason}); ignoring file contents`);
+    console.warn(
+      `targets: ${targetFile()} contains malformed JSON (${reason}); ignoring file contents`,
+    );
     return [];
   }
   if (!Array.isArray(parsed)) {

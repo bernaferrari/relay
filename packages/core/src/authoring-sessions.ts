@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, readdir, rename, rm, unlink } from "node:fs/promises";
-import { join } from "node:path";
 import type {
   AuthoringAction,
   AuthoringCaptureContext,
@@ -30,11 +28,15 @@ import {
   observationMatchesExpectedDestination,
 } from "./authoring-session-screen-proof.js";
 export { AuthoringStateError, assertAuthoringTransition } from "./authoring-session-state.js";
-import { serializeAuthoringSession } from "@relay/protocol";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
 import { now, publish } from "./events.js";
 import { KeyedSerialQueue } from "./coordination-store.js";
-import { findWorkspaceRoot } from "./workspace-root.js";
+import {
+  listAuthoringSessionFiles,
+  readAuthoringSession,
+  removeAuthoringSession,
+  writeAuthoringSession,
+} from "./authoring-session-storage.js";
 import { commitAppMapRecording } from "./app-map.js";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { authoringEvidenceExists, persistAuthoringEvidence } from "./authoring-evidence.js";
@@ -122,20 +124,6 @@ export type AuthoringCommitFault = (
   boundary: "before-verify" | "after-verify" | "before-rename" | "after-rename",
 ) => void;
 
-function root(): string {
-  const state = process.env.RELAY_STATE_DIR?.trim() || join(findWorkspaceRoot(), ".relay");
-  return join(state, "authoring-sessions");
-}
-
-function safe(value: string): string {
-  if (!/^[A-Za-z0-9._:-]+$/.test(value)) throw new Error("Invalid Authoring Session id");
-  return value;
-}
-
-function pathFor(id: string): string {
-  return join(root(), `${safe(id)}.json`);
-}
-
 function clone<T>(value: T): T {
   return structuredClone(value);
 }
@@ -168,56 +156,6 @@ function assertOwner(session: AuthoringSession): void {
   }
   if (session.actorId !== operation.actorId) {
     throw new AuthoringStateError("Only the owning actor can mutate this Authoring Session");
-  }
-}
-
-async function atomicSessionWrite(session: AuthoringSession): Promise<void> {
-  await mkdir(root(), { recursive: true, mode: 0o700 });
-  const destination = pathFor(session.id);
-  const staged = `${destination}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    const file = await open(staged, "wx", 0o600);
-    try {
-      await file.writeFile(serializeAuthoringSession(session));
-      await file.sync();
-    } finally {
-      await file.close();
-    }
-    await rename(staged, destination);
-    const directory = await open(root(), "r");
-    try {
-      await directory.sync();
-    } finally {
-      await directory.close();
-    }
-  } finally {
-    await unlink(staged).catch((error: unknown) => {
-      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-    });
-  }
-}
-
-function parseSession(value: unknown): AuthoringSession | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const input = value as Partial<AuthoringSession>;
-  if (
-    input.schemaVersion !== 1 ||
-    typeof input.id !== "string" ||
-    typeof input.projectId !== "string" ||
-    typeof input.actorId !== "string" ||
-    typeof input.state !== "string" ||
-    !input.target ||
-    typeof input.leaseId !== "string"
-  )
-    return null;
-  return input as AuthoringSession;
-}
-
-async function readStoredSession(id: string): Promise<AuthoringSession | null> {
-  try {
-    return parseSession(JSON.parse(await readFile(pathFor(id), "utf8")));
-  } catch {
-    return null;
   }
 }
 
@@ -347,28 +285,26 @@ const recordingLifecycleDependencies = {
   persistEvidence: persistAuthoringEvidence,
   persistObservation,
   nextRevision,
-  writeSession: atomicSessionWrite,
+  writeSession: writeAuthoringSession,
 };
 
 export class AuthoringSessionStore {
   readonly #queue = new KeyedSerialQueue();
   readonly #recordingReadyAt = new Map<string, number>();
 
-  async list(projectId = context().projectId, options: { includeHistory?: boolean } = {}): Promise<AuthoringSession[]> {
+  async list(
+    projectId = context().projectId,
+    options: { includeHistory?: boolean } = {},
+  ): Promise<AuthoringSession[]> {
     return listedAuthoringSessions(await this.#all(), projectId, options.includeHistory);
   }
 
   async #all(): Promise<AuthoringSession[]> {
-    let names: string[];
-    try {
-      names = await readdir(root());
-    } catch {
-      return [];
-    }
+    const names = await listAuthoringSessionFiles();
     const sessions = await Promise.all(
       names
         .filter((name) => name.endsWith(".json"))
-        .map((name) => readStoredSession(name.slice(0, -5))),
+        .map((name) => readAuthoringSession(name.slice(0, -5))),
     );
     return sessions
       .filter((item): item is AuthoringSession => Boolean(item))
@@ -381,7 +317,7 @@ export class AuthoringSessionStore {
   }
 
   async get(id: string): Promise<AuthoringSession> {
-    const session = await readStoredSession(id);
+    const session = await readAuthoringSession(id);
     if (!session) throw new AuthoringStateError("Authoring Session not found");
     const operation = currentOperationContext();
     if (
@@ -423,7 +359,7 @@ export class AuthoringSessionStore {
       createdAt: at,
       updatedAt: at,
     };
-    await atomicSessionWrite(session);
+    await writeAuthoringSession(session);
     publishAuthoringSessionEvent(session);
     await this.#pruneAbandoned(operation.projectId);
     return clone(session);
@@ -433,9 +369,7 @@ export class AuthoringSessionStore {
     const configured = Number(process.env.RELAY_ABANDONED_AUTHORING_LIMIT ?? 100);
     const limit = Number.isSafeInteger(configured) && configured >= 0 ? configured : 100;
     const abandoned = abandonedAuthoringSessions(await this.#all(), projectId, limit);
-    await Promise.all(
-      abandoned.map((session) => rm(pathFor(session.id), { force: true })),
-    );
+    await Promise.all(abandoned.map((session) => removeAuthoringSession(session.id)));
   }
 
   async observe(id: string, runtime: AuthoringRuntime): Promise<AuthoringSession> {
@@ -609,8 +543,11 @@ export class AuthoringSessionStore {
       });
       if (stopped.state === "reviewing")
         await archiveSupersededAuthoringReviews({
-          replacement: stopped, sessions: await this.#all(),
-          mutate: async (id, operation) => { await this.#mutate(id, async (session) => operation(session)); },
+          replacement: stopped,
+          sessions: await this.#all(),
+          mutate: async (id, operation) => {
+            await this.#mutate(id, async (session) => operation(session));
+          },
         });
       return stopped;
     } finally {
@@ -904,7 +841,7 @@ export class AuthoringSessionStore {
       const approvedAfter = await approvedAfterObservation(session, revision, destination);
       session = transition(session, "committing");
       session.commitTransactionId = session.id;
-      await atomicSessionWrite(session);
+      await writeAuthoringSession(session);
       let mapCommitted = false;
       let committedConnectionId: string | undefined;
       let committedRevision: number | undefined;
@@ -969,7 +906,7 @@ export class AuthoringSessionStore {
         if (!mapCommitted) {
           session = transition(session, "reviewing");
           session.error = error instanceof Error ? error.message : String(error);
-          await atomicSessionWrite(session);
+          await writeAuthoringSession(session);
         }
         throw error;
       }
@@ -1035,7 +972,7 @@ export class AuthoringSessionStore {
       ) {
         throw new AuthoringStateError("Only terminal Authoring Sessions can be removed");
       }
-      await rm(pathFor(id), { force: true });
+      await removeAuthoringSession(id);
       publish({
         type: "resource.deleted",
         at: now(),
@@ -1057,7 +994,7 @@ export class AuthoringSessionStore {
     for (const current of sessions) {
       if (!["preparing", "recording", "committing"].includes(current.state)) continue;
       const session = await this.#queue.run(current.id, async () => {
-        let next = await readStoredSession(current.id);
+        let next = await readAuthoringSession(current.id);
         // Recovery can be requested concurrently by startup, an explicit
         // repair, and a reconnecting UI. Re-check after entering the per-session
         // queue because another recovery may have made this session terminal
@@ -1103,7 +1040,7 @@ export class AuthoringSessionStore {
         if (next.state === "committed" || !next.take) {
           await recovery.releaseLease(next).catch(() => undefined);
         }
-        await atomicSessionWrite(next);
+        await writeAuthoringSession(next);
         if (next.state === "committed") publishAuthoringCommittedEvent(next);
         else publishAuthoringSessionEvent(next);
         return next;
@@ -1118,13 +1055,14 @@ export class AuthoringSessionStore {
     operation: (session: AuthoringSession) => Promise<AuthoringSession>,
   ): Promise<AuthoringSession> {
     return this.#queue.run(id, async () => {
-      const current = await readStoredSession(id);
+      const current = await readAuthoringSession(id);
       if (!current) throw new AuthoringStateError("Authoring Session not found");
       const next = await operation(clone(current));
-      await atomicSessionWrite(next);
+      await writeAuthoringSession(next);
       if (next.state === "recording") this.#recordingReadyAt.set(id, now());
       else if (current.state === "recording") this.#recordingReadyAt.delete(id);
-      if (current.state !== "committed" && next.state === "committed") publishAuthoringCommittedEvent(next);
+      if (current.state !== "committed" && next.state === "committed")
+        publishAuthoringCommittedEvent(next);
       else publishAuthoringSessionEvent(next);
       return clone(next);
     });

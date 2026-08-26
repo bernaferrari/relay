@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { proofReportOutputParser } from "@relay/protocol";
 import type { ProofReport } from "@relay/protocol";
 import { buildProofReport, proofVerdict, renderProofReportMarkdown } from "./proof-report.js";
 import type { PersistedRun } from "./runs.js";
@@ -49,7 +48,9 @@ test("verdict matrix: executed-and-held flows pass", () => {
 
 test("verdict matrix: executed-and-broken flows fail", () => {
   assert.equal(
-    proofVerdict(run({ status: "error", outcome: "product-failure", error: "expect-screen: cart empty" })),
+    proofVerdict(
+      run({ status: "error", outcome: "product-failure", error: "expect-screen: cart empty" }),
+    ),
     "fail",
   );
   assert.equal(

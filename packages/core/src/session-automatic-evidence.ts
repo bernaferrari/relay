@@ -20,18 +20,13 @@ import type { ScreenshotPayload } from "./workspace-capture.js";
  * ones this cache captured. A newer observation epoch (any capture that began
  * after this screenshot's own epoch) or a changed sampled-pixel fingerprint
  * means the screen may have moved and the raster must be recaptured. */
-async function cachedScreenshotIsFresh(
-  job: TestJob,
-  cached: ScreenshotPayload,
-): Promise<boolean> {
+async function cachedScreenshotIsFresh(job: TestJob, cached: ScreenshotPayload): Promise<boolean> {
   if (!job.serial || job.platform !== "ios") return true;
   // Epoch fence: any pixel capture that began after this cached raster was
   // taken advanced the target's observation epoch, so the cache is stale by
   // order alone — no need to sample pixels.
-  const proofAt = targetRuntimeReadiness(
-    { serial: job.serial, platform: "ios" },
-    Date.now(),
-  ).previewPixels.proof?.at;
+  const proofAt = targetRuntimeReadiness({ serial: job.serial, platform: "ios" }, Date.now())
+    .previewPixels.proof?.at;
   if (proofAt !== undefined && proofAt > cached.capturedAt) return false;
   try {
     const sampleDir = await mkdtemp(join(tmpdir(), "relay-evidence-fence-"));

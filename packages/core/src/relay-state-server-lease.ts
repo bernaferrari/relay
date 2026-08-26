@@ -15,15 +15,29 @@ import { DatabaseSync } from "node:sqlite";
 import { findWorkspaceRoot } from "./workspace-root.js";
 
 const LEASE_DATABASE_NAME = "relay-server-lease.sqlite";
-const LEASE_SCHEMA_VERSION = 1;
+// Lease documents are a durable ownership contract. Keep their schema stable
+// while the containing SQLite database evolves (for example, audit tables).
+const LEASE_DOCUMENT_SCHEMA_VERSION = 1;
+const LEASE_DATABASE_SCHEMA_VERSION = 2;
+const RECOVERY_AUDIT_SCHEMA_VERSION = 1;
 const LEASE_SLOT = "relay-server";
+const MINIMUM_ABANDONED_LEASE_AGE_MS = 5 * 60_000;
 
 type PersistedRelayServerLease = {
-  schemaVersion: typeof LEASE_SCHEMA_VERSION;
+  schemaVersion: typeof LEASE_DOCUMENT_SCHEMA_VERSION;
   leaseId: string;
   pid: number;
   host: string;
   acquiredAt: number;
+};
+
+type PersistedRelayServerLeaseRecoveryAudit = {
+  schemaVersion: typeof RECOVERY_AUDIT_SCHEMA_VERSION;
+  auditId: string;
+  previousOwner: RelayStateServerLeaseOwner;
+  recoveredAt: number;
+  recoveredByHost: string;
+  reason: "local-hostname-collision-renamed";
 };
 
 export type RelayStateServerLeaseOwner = Readonly<
@@ -87,11 +101,11 @@ function normalizeLease(value: unknown): PersistedRelayServerLease {
     throw new Error("Relay state server lease document is invalid");
   }
   const lease = value as Record<string, unknown>;
-  if (lease.schemaVersion !== LEASE_SCHEMA_VERSION) {
+  if (lease.schemaVersion !== LEASE_DOCUMENT_SCHEMA_VERSION) {
     throw new Error("Relay state server lease schema version is unsupported");
   }
   return {
-    schemaVersion: LEASE_SCHEMA_VERSION,
+    schemaVersion: LEASE_DOCUMENT_SCHEMA_VERSION,
     leaseId: nonEmpty(lease.leaseId, "leaseId"),
     pid: positiveInteger(lease.pid, "pid"),
     host: nonEmpty(lease.host, "host"),
@@ -110,11 +124,22 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-function readLease(database: DatabaseSync): PersistedRelayServerLease | undefined {
+type PersistedRelayServerLeaseRow = Readonly<{
+  document: string;
+  lease: PersistedRelayServerLease;
+}>;
+
+function readLeaseRow(database: DatabaseSync): PersistedRelayServerLeaseRow | undefined {
   const row = database
     .prepare("SELECT document FROM relay_server_state_leases WHERE slot = ?")
     .get(LEASE_SLOT) as { document?: string } | undefined;
-  return row?.document ? normalizeLease(JSON.parse(row.document) as unknown) : undefined;
+  return row?.document
+    ? { document: row.document, lease: normalizeLease(JSON.parse(row.document) as unknown) }
+    : undefined;
+}
+
+function readLease(database: DatabaseSync): PersistedRelayServerLease | undefined {
+  return readLeaseRow(database)?.lease;
 }
 
 function writeLease(database: DatabaseSync, lease: PersistedRelayServerLease): void {
@@ -147,6 +172,34 @@ function closeDatabase(database: DatabaseSync): void {
   }
 }
 
+function initializeLeaseDatabase(database: DatabaseSync): void {
+  database.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = FULL;
+    PRAGMA busy_timeout = 5000;
+  `);
+  const versionRow = database.prepare("PRAGMA user_version").get() as {
+    user_version?: number;
+  };
+  const schemaVersion = Number(versionRow.user_version ?? 0);
+  if (schemaVersion > LEASE_DATABASE_SCHEMA_VERSION) {
+    throw new Error("Relay state server lease database is newer than this Relay build");
+  }
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS relay_server_state_leases (
+      slot TEXT PRIMARY KEY,
+      document TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS relay_server_state_lease_recovery_audit (
+      audit_id TEXT PRIMARY KEY,
+      document TEXT NOT NULL
+    );
+  `);
+  if (schemaVersion < LEASE_DATABASE_SCHEMA_VERSION) {
+    database.exec(`PRAGMA user_version = ${LEASE_DATABASE_SCHEMA_VERSION}`);
+  }
+}
+
 /**
  * Own this state directory until `release()` is called. A same-host dead PID
  * may be reclaimed; a live PID or a foreign host is never overridden. That
@@ -163,7 +216,7 @@ export function acquireRelayStateServerLease(
 ): RelayStateServerLease {
   const path = input.path ?? relayStateServerLeasePath();
   const owner: PersistedRelayServerLease = {
-    schemaVersion: LEASE_SCHEMA_VERSION,
+    schemaVersion: LEASE_DOCUMENT_SCHEMA_VERSION,
     leaseId: randomUUID(),
     pid: positiveInteger(input.pid ?? process.pid, "pid"),
     host: nonEmpty(input.host ?? hostname(), "host"),
@@ -173,25 +226,7 @@ export function acquireRelayStateServerLease(
   const database = new DatabaseSync(path, { timeout: 5_000 });
   let acquired = false;
   try {
-    database.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = FULL;
-      PRAGMA busy_timeout = 5000;
-      CREATE TABLE IF NOT EXISTS relay_server_state_leases (
-        slot TEXT PRIMARY KEY,
-        document TEXT NOT NULL
-      );
-    `);
-    const versionRow = database.prepare("PRAGMA user_version").get() as {
-      user_version?: number;
-    };
-    const schemaVersion = Number(versionRow.user_version ?? 0);
-    if (schemaVersion > LEASE_SCHEMA_VERSION) {
-      throw new Error("Relay state server lease database is newer than this Relay build");
-    }
-    if (schemaVersion < LEASE_SCHEMA_VERSION) {
-      database.exec(`PRAGMA user_version = ${LEASE_SCHEMA_VERSION}`);
-    }
+    initializeLeaseDatabase(database);
     begin(database);
     const existing = readLease(database);
     if (existing) {
@@ -244,23 +279,31 @@ export type RecoverAbandonedLocalRelayStateServerLeaseInput = {
   currentHost?: string;
   now?: number;
   minimumAgeMs?: number;
+  /** `false` is positive evidence that the local Relay port is unoccupied.
+   * Omit it when that evidence cannot be collected; recovery then fails closed. */
   localPortHasListener?: boolean;
+  /** Positive evidence collected by the workspace-local bootstrap process.
+   * Foreign-host recovery is forbidden on shared or unclassified storage. */
+  workspaceFilesystem?: "local" | "shared" | "unknown";
 };
 
 type RelayStateServerLeaseRecoveryRefusalReason =
   | "owner-process-alive"
   | "lease-not-old-enough"
   | "local-port-listener-present"
+  | "local-port-listener-unknown"
   | "foreign-host-not-local-rename"
+  | "workspace-filesystem-not-local"
   | "state-not-workspace-local"
   | "no-existing-lease";
 
 export type RelayStateServerLeaseRecovery =
   | {
       readonly status: "recovered";
-      readonly reason: "local-hostname-collision-renamed" | "aged-dead-local-owner";
+      readonly reason: "local-hostname-collision-renamed";
       readonly previousOwner: RelayStateServerLeaseOwner;
       readonly recoveredAt: number;
+      readonly auditId: string;
     }
   | {
       readonly status: "refused";
@@ -268,19 +311,32 @@ export type RelayStateServerLeaseRecovery =
       readonly owner?: Readonly<PersistedRelayServerLease>;
     };
 
+export type RelayStateServerLeaseRecoveryAudit = Readonly<
+  Omit<PersistedRelayServerLeaseRecoveryAudit, "schemaVersion">
+>;
+
 function isLocalHostnameRenamed(previous: string, current: string): boolean {
-  const base = (host: string): string => host.replace(/-?\d+\.local$/i, "").trim().toLowerCase();
-  const previousBase = base(previous);
-  return previousBase !== "" && previousBase === base(current);
+  const collisionHostname = /^(.+?)(?:-(\d+))?\.local$/i;
+  const previousMatch = collisionHostname.exec(previous.trim());
+  const currentMatch = collisionHostname.exec(current.trim());
+  if (!previousMatch || !currentMatch || previous.toLowerCase() === current.toLowerCase())
+    return false;
+  const previousBase = previousMatch[1]?.toLowerCase();
+  const currentBase = currentMatch[1]?.toLowerCase();
+  // A suffix is deliberately required: equal host bases alone do not prove a
+  // hostname collision and are too weak a reason to take a foreign lease.
+  return (
+    previousBase !== undefined &&
+    previousBase === currentBase &&
+    (previousMatch[2] !== undefined || currentMatch[2] !== undefined)
+  );
 }
 
 /**
- * Reclaim a stale lease left behind by a dead local Relay server before this
- * one starts. Refuses live owners, young leases, and directories whose local
- * port already has a listener; a foreign host is only accepted when its name
- * looks like the local hostname renamed (macOS hostname collisions). The row
- * is removed inside one `BEGIN IMMEDIATE` transaction so a concurrent acquirer
- * never observes a partially reclaimed directory.
+ * Reclaim a stale foreign-host lease only when a local macOS collision rename,
+ * a dead owner PID, sufficient age, and a known-empty local port all agree.
+ * The exact row is compare-and-deleted and its audit record is written in the
+ * same IMMEDIATE transaction. Anything less certain fails closed.
  */
 export function recoverAbandonedLocalRelayStateServerLease(
   input: RecoverAbandonedLocalRelayStateServerLeaseInput = {},
@@ -289,7 +345,10 @@ export function recoverAbandonedLocalRelayStateServerLease(
   const workspaceRoot = input.workspaceRoot ?? findWorkspaceRoot();
   const currentHost = nonEmpty(input.currentHost ?? hostname(), "currentHost");
   const now = timestamp(input.now ?? Date.now(), "now");
-  const minimumAgeMs = timestamp(input.minimumAgeMs ?? 0, "minimumAgeMs");
+  const minimumAgeMs = timestamp(
+    input.minimumAgeMs ?? MINIMUM_ABANDONED_LEASE_AGE_MS,
+    "minimumAgeMs",
+  );
 
   const stateRoot = join(workspaceRoot, ".relay");
   if (dirname(path) !== stateRoot || !path.endsWith(LEASE_DATABASE_NAME)) {
@@ -299,45 +358,106 @@ export function recoverAbandonedLocalRelayStateServerLease(
   mkdirSync(stateRoot, { recursive: true });
   const database = new DatabaseSync(path, { timeout: 5_000 });
   try {
-    database.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = FULL;
-      PRAGMA busy_timeout = 5000;
-      CREATE TABLE IF NOT EXISTS relay_server_state_leases (
-        slot TEXT PRIMARY KEY,
-        document TEXT NOT NULL
-      );
-    `);
+    initializeLeaseDatabase(database);
     begin(database);
-    const existing = readLease(database);
-    if (!existing) {
+    const existingRow = readLeaseRow(database);
+    if (!existingRow) {
       rollback(database);
       return { status: "refused", reason: "no-existing-lease" };
     }
-    const owner = existing;
+    const owner = existingRow.lease;
     const refuse = (
       reason: RelayStateServerLeaseRecoveryRefusalReason,
     ): RelayStateServerLeaseRecovery => {
       rollback(database);
       return { status: "refused", reason, owner };
     };
-    if (isProcessAlive(existing.pid)) return refuse("owner-process-alive");
-    if (now - existing.acquiredAt < minimumAgeMs) return refuse("lease-not-old-enough");
+    if (isProcessAlive(owner.pid)) return refuse("owner-process-alive");
+    if (now - owner.acquiredAt < minimumAgeMs) return refuse("lease-not-old-enough");
     if (input.localPortHasListener === true) return refuse("local-port-listener-present");
-    let recoveryReason: RelayStateServerLeaseRecovery["reason"];
-    if (existing.host === currentHost) {
-      recoveryReason = "aged-dead-local-owner";
-    } else if (isLocalHostnameRenamed(existing.host, currentHost)) {
-      recoveryReason = "local-hostname-collision-renamed";
-    } else {
+    if (input.localPortHasListener !== false) return refuse("local-port-listener-unknown");
+    if (!isLocalHostnameRenamed(owner.host, currentHost)) {
       return refuse("foreign-host-not-local-rename");
     }
-    database.prepare("DELETE FROM relay_server_state_leases WHERE slot = ?").run(LEASE_SLOT);
+    if (input.workspaceFilesystem !== "local") {
+      return refuse("workspace-filesystem-not-local");
+    }
+    const audit: PersistedRelayServerLeaseRecoveryAudit = {
+      schemaVersion: RECOVERY_AUDIT_SCHEMA_VERSION,
+      auditId: randomUUID(),
+      previousOwner: owner,
+      recoveredAt: now,
+      recoveredByHost: currentHost,
+      reason: "local-hostname-collision-renamed",
+    };
+    const deleted = database
+      .prepare("DELETE FROM relay_server_state_leases WHERE slot = ? AND document = ?")
+      .run(LEASE_SLOT, existingRow.document);
+    if (Number(deleted.changes) !== 1) {
+      rollback(database);
+      return { status: "refused", reason: "foreign-host-not-local-rename", owner };
+    }
+    database
+      .prepare(
+        "INSERT INTO relay_server_state_lease_recovery_audit(audit_id, document) VALUES(?, ?)",
+      )
+      .run(audit.auditId, JSON.stringify(audit));
     database.exec("COMMIT");
-    return { status: "recovered", reason: recoveryReason, previousOwner: owner, recoveredAt: now };
+    return {
+      status: "recovered",
+      reason: audit.reason,
+      previousOwner: owner,
+      recoveredAt: now,
+      auditId: audit.auditId,
+    };
   } catch (error) {
     rollback(database);
     throw error;
+  } finally {
+    closeDatabase(database);
+  }
+}
+
+/** Read-only evidence for local bootstrap diagnostics and tests. */
+export function relayStateServerLeaseRecoveryAudit(
+  input: { path?: string } = {},
+): readonly RelayStateServerLeaseRecoveryAudit[] {
+  const path = input.path ?? relayStateServerLeasePath();
+  const database = new DatabaseSync(path, { timeout: 5_000, readOnly: true });
+  try {
+    return (
+      database
+        .prepare("SELECT document FROM relay_server_state_lease_recovery_audit ORDER BY rowid ASC")
+        .all() as unknown as readonly { document: string }[]
+    ).map((row): RelayStateServerLeaseRecoveryAudit => {
+      const value = JSON.parse(row.document) as unknown;
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("Relay state server lease recovery audit document is invalid");
+      }
+      const audit = value as Record<string, unknown>;
+      if (audit.schemaVersion !== RECOVERY_AUDIT_SCHEMA_VERSION) {
+        throw new Error("Relay state server lease recovery audit schema version is unsupported");
+      }
+      const previousOwner = audit.previousOwner;
+      if (!previousOwner || typeof previousOwner !== "object" || Array.isArray(previousOwner)) {
+        throw new Error("Relay state server lease recovery audit previousOwner is invalid");
+      }
+      return {
+        auditId: nonEmpty(audit.auditId, "recovery audit auditId"),
+        previousOwner: normalizeLease({
+          schemaVersion: LEASE_DOCUMENT_SCHEMA_VERSION,
+          ...(previousOwner as Record<string, unknown>),
+        }),
+        recoveredAt: timestamp(audit.recoveredAt, "recovery audit recoveredAt"),
+        recoveredByHost: nonEmpty(audit.recoveredByHost, "recovery audit recoveredByHost"),
+        reason: (() => {
+          if (audit.reason !== "local-hostname-collision-renamed") {
+            throw new Error("Relay state server lease recovery audit reason is invalid");
+          }
+          return "local-hostname-collision-renamed" as const;
+        })(),
+      };
+    });
   } finally {
     closeDatabase(database);
   }

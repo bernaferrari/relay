@@ -9,11 +9,7 @@ import type {
   SnapshotState,
   TraceFrameRef,
 } from "./api-types";
-import type {
-  OperationOutput,
-  StandaloneStepReview,
-  StepRunResult,
-} from "@relay/protocol";
+import type { OperationOutput, StandaloneStepReview, StepRunResult } from "@relay/protocol";
 import { interactionBody, type InteractiveStep } from "./server-interaction";
 import {
   iosInteractionFailure,
@@ -55,7 +51,6 @@ export type CaptureServerDeps = {
   refreshDiscoverySessions: () => Promise<void>;
 };
 
-type ScreenshotResponse = OperationOutput<"target.screenshot.capture">;
 type ScrollSurveyResponse = OperationOutput<"target.scroll-survey.capture">;
 export type DeviceVideoTake = NonNullable<OperationOutput<"target.video.start">["take"]>;
 
@@ -218,11 +213,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
   async function recordIosVideo(action: "start" | "stop"): Promise<DeviceVideoTake | null> {
     const serial = serialFor(deps);
     if (!serial) return null;
-    const result = await (await deps.client()).invoke(
-      "target.video.start",
-      { serial, action },
-      { signal: AbortSignal.timeout(250_000) },
-    );
+    const result = await (
+      await deps.client()
+    ).invoke("target.video.start", { serial, action }, { signal: AbortSignal.timeout(250_000) });
     return result.take;
   }
 
@@ -235,11 +228,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
     const serial = deps.selectedDevice();
     if (!serial) return false;
     try {
-      await (await deps.client()).invoke(
-        "target.touch",
-        { serial, action, x, y },
-        { signal: AbortSignal.timeout(2000) },
-      );
+      await (
+        await deps.client()
+      ).invoke("target.touch", { serial, action, x, y }, { signal: AbortSignal.timeout(2000) });
       return true;
     } catch {
       // The H.264 control stream is optional. The stage falls back to the
@@ -258,7 +249,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
     const serial = deps.selectedDevice();
     if (!serial) return false;
     try {
-      await (await deps.client()).invoke(
+      await (
+        await deps.client()
+      ).invoke(
         "target.scroll",
         { serial, x, y, scrollX, scrollY },
         { signal: AbortSignal.timeout(2000) },
@@ -275,11 +268,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
       const serial = deps.selectedDevice();
       if (!serial) return { status: "failed" } as const;
       try {
-        await (await deps.client()).invoke(
-          "target.key",
-          { serial, ...input },
-          { signal: AbortSignal.timeout(2000) },
-        );
+        await (
+          await deps.client()
+        ).invoke("target.key", { serial, ...input }, { signal: AbortSignal.timeout(2000) });
         return { status: "succeeded" } as const;
       } catch (error) {
         // A current renderer does not ask iOS to use this Android-only
@@ -377,7 +368,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
     try {
       const serial = serialFor(deps);
       if (!serial) throw new Error("Select a device before capturing a screenshot.");
-      const data = await (await deps.client()).invoke("target.screenshot.capture", {
+      const data = await (
+        await deps.client()
+      ).invoke("target.screenshot.capture", {
         serial,
         ...(caption ? { caption } : {}),
         ...(jobId ? { jobId } : {}),
@@ -418,7 +411,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
     if (!serial) return null;
     deps.setBusyCapture(true);
     try {
-      const survey = await (await deps.client()).invoke(
+      const survey = await (
+        await deps.client()
+      ).invoke(
         "target.scroll-survey.capture",
         { serial, maxScrolls: 4 },
         { signal: AbortSignal.timeout(90_000) },
@@ -499,7 +494,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
     try {
       const serial = serialFor(deps);
       if (!serial) throw new Error("Select a device before copying a screenshot.");
-      const data = await (await deps.client()).invoke("target.screenshot.capture", {
+      const data = await (
+        await deps.client()
+      ).invoke("target.screenshot.capture", {
         serial,
         ephemeral: true,
       });
@@ -520,7 +517,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
       // screenshot path, so a five second transport timeout turns setup into
       // a phantom "Loading screen" race.
       if (!serial) return;
-      const data = await (await deps.client()).invoke(
+      const data = await (
+        await deps.client()
+      ).invoke(
         "target.screenshot.capture",
         { serial, ephemeral: true },
         { signal: AbortSignal.timeout(30_000) },
@@ -586,7 +585,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
     try {
       const serial = serialFor(deps);
       if (!serial) return;
-      const data = await (await deps.client()).invoke(
+      const data = await (
+        await deps.client()
+      ).invoke(
         "target.snapshot.capture",
         { serial, ...(options?.interactiveOnly ? { interactiveOnly: true } : {}) },
         // Keep this in lockstep with the screenshot poll. On iOS both calls

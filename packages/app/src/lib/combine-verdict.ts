@@ -9,7 +9,7 @@ import type { CombineCapture, CombineRow } from "./combine-review";
  * the heuristics honest: `confidence: "medium"` findings are phrased as
  * possibilities, because a layout heuristic cannot prove a translation wrong.
  */
-export type LocaleCellVerdict =
+export type CombineCellVerdict =
   | "pass"
   | "not-applied"
   | "clipped"
@@ -22,7 +22,7 @@ export type LocaleCellVerdict =
   | "known";
 
 /** Worst first. A cell shows one verdict, so it must be the one worth acting on. */
-const findingVerdicts: Record<CombineEvidenceFindingCode, LocaleCellVerdict> = {
+const findingVerdicts: Record<CombineEvidenceFindingCode, CombineCellVerdict> = {
   POSSIBLE_LOCALE_NOT_APPLIED: "not-applied",
   POSSIBLE_TEXT_CLIPPED: "clipped",
   POSSIBLE_UNTRANSLATED_TEXT: "untranslated",
@@ -30,7 +30,7 @@ const findingVerdicts: Record<CombineEvidenceFindingCode, LocaleCellVerdict> = {
   CONTROL_MISSING: "missing",
 };
 
-const verdictRank: Record<LocaleCellVerdict, number> = {
+const verdictRank: Record<CombineCellVerdict, number> = {
   failed: 0,
   "not-applied": 1,
   clipped: 2,
@@ -42,17 +42,17 @@ const verdictRank: Record<LocaleCellVerdict, number> = {
   known: 8,
 };
 
-export type LocaleCellAnalysis = {
+export type CombineCellAnalysis = {
   findings: readonly CombineEvidenceFinding[];
   /** Locale each finding was compared against. Shown so a verdict is auditable. */
   baselineLabel?: string;
 };
 
-export type LocaleCellInput = {
+export type CombineCellInput = {
   status: string;
   capture: Pick<CombineCapture, "frame"> | undefined;
   /** Absent until analysis runs. Absent is not the same as clean. */
-  analysis?: LocaleCellAnalysis | undefined;
+  analysis?: CombineCellAnalysis | undefined;
 };
 
 const activeStatuses = new Set(["queued", "running", "paused"]);
@@ -61,27 +61,27 @@ const failedStatuses = new Set(["error", "cancelled"]);
 /**
  * The one verdict a set of findings earns across Combine analysis and review.
  */
-export function worstLocaleVerdict(
+export function worstCombineVerdict(
   findings: readonly CombineEvidenceFinding[],
-): LocaleCellVerdict | undefined {
+): CombineCellVerdict | undefined {
   return findings
     .map((finding) => findingVerdicts[finding.code])
     .sort((left, right) => verdictRank[left] - verdictRank[right])[0];
 }
 
-export function localeCellVerdict(input: LocaleCellInput): LocaleCellVerdict {
+export function combineCellVerdict(input: CombineCellInput): CombineCellVerdict {
   if (failedStatuses.has(input.status)) return "failed";
   if (activeStatuses.has(input.status)) return "pending";
   if (!input.capture?.frame) return "missing";
-  const worst = worstLocaleVerdict(input.analysis?.findings ?? []);
+  const worst = worstCombineVerdict(input.analysis?.findings ?? []);
   if (worst) return worst;
   // A screenshot nobody has inspected is not a pass. Saying so is what makes the
   // grid trustworthy once analysis starts filling it in.
   return input.analysis ? "pass" : "unanalyzed";
 }
 
-export type LocaleVerdictPresentation = {
-  verdict: LocaleCellVerdict;
+export type CombineVerdictPresentation = {
+  verdict: CombineCellVerdict;
   label: string;
   /** One-line explanation for tooltips and the legend. */
   hint: string;
@@ -90,7 +90,7 @@ export type LocaleVerdictPresentation = {
   tone: "pass" | "defect" | "warn" | "neutral" | "progress";
 };
 
-const presentations: Record<LocaleCellVerdict, Omit<LocaleVerdictPresentation, "verdict">> = {
+const presentations: Record<CombineCellVerdict, Omit<CombineVerdictPresentation, "verdict">> = {
   pass: {
     label: "Pass",
     hint: "Compared against the baseline locale with nothing to report.",
@@ -147,13 +147,15 @@ const presentations: Record<LocaleCellVerdict, Omit<LocaleVerdictPresentation, "
   },
 };
 
-export function localeVerdictPresentation(verdict: LocaleCellVerdict): LocaleVerdictPresentation {
+export function combineVerdictPresentation(
+  verdict: CombineCellVerdict,
+): CombineVerdictPresentation {
   return { verdict, ...presentations[verdict] };
 }
 
 /** Legend and filter order: defect-first, so problems are reachable without
  * scanning a forty-row grid. */
-export const localeVerdictOrder: readonly LocaleCellVerdict[] = [
+export const combineVerdictOrder: readonly CombineCellVerdict[] = [
   "not-applied",
   "clipped",
   "untranslated",
@@ -170,35 +172,35 @@ export const localeVerdictOrder: readonly LocaleCellVerdict[] = [
  * a defect the analysis only suspects. Every "POSSIBLE_" code arrives with a
  * confidence, and medium confidence earns a hedge in the copy.
  */
-export function localeFindingHeadline(finding: CombineEvidenceFinding): string {
-  const label = localeVerdictPresentation(findingVerdicts[finding.code]).label;
+export function combineFindingHeadline(finding: CombineEvidenceFinding): string {
+  const label = combineVerdictPresentation(findingVerdicts[finding.code]).label;
   return finding.confidence === "medium" ? `Possible ${label.toLocaleLowerCase()}` : label;
 }
 
-export type LocaleVerdictTally = { verdict: LocaleCellVerdict; count: number };
+export type CombineVerdictTally = { verdict: CombineCellVerdict; count: number };
 
-export function summarizeLocaleVerdicts(
+export function summarizeCombineVerdicts(
   rows: readonly CombineRow[],
   captureIndex: number,
-  analysisFor?: (row: CombineRow, captureIndex: number) => LocaleCellAnalysis | undefined,
-): LocaleVerdictTally[] {
-  const counts = new Map<LocaleCellVerdict, number>();
+  analysisFor?: (row: CombineRow, captureIndex: number) => CombineCellAnalysis | undefined,
+): CombineVerdictTally[] {
+  const counts = new Map<CombineCellVerdict, number>();
   for (const row of rows) {
-    const verdict = localeCellVerdict({
+    const verdict = combineCellVerdict({
       status: row.job.status,
       capture: row.captures[captureIndex],
       analysis: analysisFor?.(row, captureIndex),
     });
     counts.set(verdict, (counts.get(verdict) ?? 0) + 1);
   }
-  return localeVerdictOrder.flatMap((verdict) => {
+  return combineVerdictOrder.flatMap((verdict) => {
     const count = counts.get(verdict) ?? 0;
     return count ? [{ verdict, count }] : [];
   });
 }
 
-export function localeCellDefectCount(tallies: readonly LocaleVerdictTally[]): number {
+export function combineCellDefectCount(tallies: readonly CombineVerdictTally[]): number {
   return tallies
-    .filter(({ verdict }) => localeVerdictPresentation(verdict).tone === "defect")
+    .filter(({ verdict }) => combineVerdictPresentation(verdict).tone === "defect")
     .reduce((total, { count }) => total + count, 0);
 }

@@ -49,13 +49,7 @@ async function fixture(root: string): Promise<{ runDir: string; files: string[] 
   await persistRun(job);
   return {
     runDir,
-    files: [
-      ".complete",
-      "frames/001.png",
-      "log.txt",
-      "run.json",
-      "video/run.mp4",
-    ],
+    files: [".complete", "frames/001.png", "log.txt", "run.json", "video/run.mp4"],
   };
 }
 

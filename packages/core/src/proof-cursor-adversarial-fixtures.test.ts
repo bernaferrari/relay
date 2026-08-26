@@ -13,7 +13,7 @@ import type { TestJob } from "./session.js";
 import { runWithTargetContext } from "./target-context.js";
 
 /**
- * This is deliberately a corpus, not another execution engine. Each seed
+ * This is deliberately a fixture set, not another execution engine. Each seed
  * builds a small frozen App Map plan and runs the production scheduler,
  * preflight, replay, and cursor firewall against it. The diagnostic is kept
  * compact so a failed CI seed is a repair package instead of a giant random
@@ -21,12 +21,16 @@ import { runWithTargetContext } from "./target-context.js";
  */
 
 const at = 1_800_000_000_000;
-const scope = { organizationId: "corpus-org", projectId: "corpus-project", appMapId: "cursor-map" };
+const scope = {
+  organizationId: "fixture-org",
+  projectId: "fixture-project",
+  appMapId: "cursor-map",
+};
 const SEEDS = Array.from({ length: 128 }, (_, seed) => seed);
 
 type Check = NonNullable<RecipeStep["check"]>;
 
-type CorpusDescriptor = {
+type FixtureDescriptor = {
   seed: number;
   repeatedTerminal: boolean;
   alphaHasDirectReturn: boolean;
@@ -37,8 +41,8 @@ type CorpusDescriptor = {
   selectorBlocked: boolean;
 };
 
-type CorpusFixture = {
-  descriptor: CorpusDescriptor;
+type FixtureFixture = {
+  descriptor: FixtureDescriptor;
   map: AppMap;
   graph: Record<string, Recipe>;
   plan: AppMapCompiledTest;
@@ -46,7 +50,7 @@ type CorpusFixture = {
   replayRun: PersistedRun;
 };
 
-function descriptor(seed: number): CorpusDescriptor {
+function descriptor(seed: number): FixtureDescriptor {
   return {
     seed,
     repeatedTerminal: Boolean(seed & 1),
@@ -74,7 +78,7 @@ function screen(id: string, options: { external?: boolean } = {}) {
   };
 }
 
-function corpusMap(input: CorpusDescriptor): AppMap {
+function fixtureMap(input: FixtureDescriptor): AppMap {
   const screens = {
     settings: screen("settings"),
     alpha: screen("alpha"),
@@ -102,7 +106,7 @@ function corpusMap(input: CorpusDescriptor): AppMap {
     id: scope.appMapId,
     organizationId: scope.organizationId,
     projectId: scope.projectId,
-    name: "Proof cursor corpus",
+    name: "Proof cursor fixture",
     revision: 1,
     notes: {},
     groups: {},
@@ -113,11 +117,11 @@ function corpusMap(input: CorpusDescriptor): AppMap {
         id: "settings-en",
         screenId: "settings",
         targetProfile: {
-          id: "corpus-ios",
-          targetId: "corpus-tablet",
+          id: "fixture-ios",
+          targetId: "fixture-tablet",
           source: "device",
           platform: "ios",
-          name: "Corpus tablet",
+          name: "Fixture tablet",
           capabilities: [],
           observedAt: at,
         },
@@ -289,16 +293,16 @@ function checkRecipe(
 /** Two leaves may intentionally converge on the same terminal state. In that
  * narrow case one exact ready inverse proves the return for both leaves; a
  * missing inline Back does not make the second leaf unsafe. */
-function betaHasReviewedReturn(input: CorpusDescriptor): boolean {
+function betaHasReviewedReturn(input: FixtureDescriptor): boolean {
   return (
     !input.betaMissingReturn ||
     (input.repeatedTerminal && !input.alphaHasDirectReturn && input.alphaHasInverseReturn)
   );
 }
 
-function compileFixture(seed: number): CorpusFixture {
+function compileFixture(seed: number): FixtureFixture {
   const input = descriptor(seed);
-  const map = corpusMap(input);
+  const map = fixtureMap(input);
   const alphaTerminal = input.repeatedTerminal ? "repeated" : "alpha";
   const betaTerminal = input.repeatedTerminal ? "repeated" : "beta";
   map.connections.alpha = leaf(map, {
@@ -401,8 +405,8 @@ function compileFixture(seed: number): CorpusFixture {
     appMapId: map.id,
     appMapRevision: map.revision,
     test: {
-      id: `cursor-corpus-${seed}`,
-      name: `Cursor corpus ${seed}`,
+      id: `cursor-fixture-${seed}`,
+      name: `Cursor fixture ${seed}`,
       kind: "scenario",
       intentSchemaVersion: 1,
     },
@@ -449,8 +453,8 @@ function compileFixture(seed: number): CorpusFixture {
       ];
   const evidence = {
     rawObservationsByScreenId: { settings: [duplicateNodes] },
-    rawEvidenceReferencesByScreenId: { settings: [`corpus:${seed}:settings:raw-ax`] },
-  } satisfies NonNullable<CorpusFixture["evidence"]>;
+    rawEvidenceReferencesByScreenId: { settings: [`fixture:${seed}:settings:raw-ax`] },
+  } satisfies NonNullable<FixtureFixture["evidence"]>;
   const replayRun = replayFixture(plan, seed);
   return { descriptor: input, map, graph, plan, evidence, replayRun };
 }
@@ -481,15 +485,15 @@ function replayFixture(plan: AppMapCompiledTest, seed: number): PersistedRun {
   });
   return {
     schemaVersion: 5,
-    id: `cursor-corpus-run-${seed}`,
-    action: "app-map:cursor-corpus",
+    id: `cursor-fixture-run-${seed}`,
+    action: "app-map:cursor-fixture",
     status: "error",
     attempts: 1,
     queuedAt: at,
     logs: [],
     steps: [],
     frames: [],
-    dir: "/offline/cursor-corpus",
+    dir: "/offline/cursor-fixture",
     writtenAt: at + 100,
     artifacts: [
       { kind: "app-map-test-plan", capturedAt: at, data: structuredClone(plan) },
@@ -541,13 +545,13 @@ function replayFixture(plan: AppMapCompiledTest, seed: number): PersistedRun {
         capturedAt: at + 9,
       },
     ],
-    inputDigest: "cursor-corpus",
+    inputDigest: "cursor-fixture",
     resolvedInputs: {},
   };
 }
 
 function compactDiagnostic(input: {
-  fixture: CorpusFixture;
+  fixture: FixtureFixture;
   schedule: ReturnType<typeof proposeAppMapTestExecutionSchedule>;
   preflight: ReturnType<typeof preflightCompiledAppMapTestOffline>;
   replay: ReturnType<typeof replayPersistedRunOffline>;
@@ -593,7 +597,7 @@ function compactDiagnostic(input: {
 }
 
 function assertScheduledProofs(
-  fixture: CorpusFixture,
+  fixture: FixtureFixture,
   schedule: ReturnType<typeof proposeAppMapTestExecutionSchedule>,
 ): void {
   for (const scheduled of schedule.checks.filter((entry) => entry.disposition === "scheduled")) {
@@ -634,7 +638,7 @@ function assertScheduledProofs(
   }
 }
 
-function assertStaticCorpusFixture(fixture: CorpusFixture): void {
+function assertStaticFixtureFixture(fixture: FixtureFixture): void {
   const mapBefore = structuredClone(fixture.map);
   const graphBefore = structuredClone(fixture.graph);
   const planBefore = structuredClone(fixture.plan);
@@ -776,7 +780,7 @@ function assertStaticCorpusFixture(fixture: CorpusFixture): void {
       "offline replay must only propose reviewed repair work",
     );
   } catch (error) {
-    throw new Error(`proof-cursor corpus seed failed: ${explain()}`, { cause: error });
+    throw new Error(`proof-cursor fixture seed failed: ${explain()}`, { cause: error });
   }
 }
 
@@ -798,7 +802,7 @@ function observationOnlyDevice(): Device {
       // a browser target, so a missing raster is captured as unavailable and
       // cannot fall through to adb/go-ios during an offline contract test.
       screenshot: async () => {
-        throw new Error("offline proof-cursor corpus has no pixel source");
+        throw new Error("offline proof-cursor fixture has no pixel source");
       },
     },
   } as unknown as Device;
@@ -830,7 +834,7 @@ async function runRuntimeCheck(
   execute: (recipeId?: string) => Promise<void>,
 ): Promise<void> {
   await runWithTargetContext(
-    { kind: "browser", platform: "browser", targetId: "cursor-corpus" },
+    { kind: "browser", platform: "browser", targetId: "cursor-fixture" },
     () =>
       runCampaignCheck(
         observationOnlyDevice(),
@@ -841,15 +845,15 @@ async function runRuntimeCheck(
   );
 }
 
-test("proof-cursor corpus is deterministic, device-free, and proof-preserving", () => {
+test("proof-cursor fixture is deterministic, device-free, and proof-preserving", () => {
   const first = SEEDS.map((seed) => compileFixture(seed));
   const second = SEEDS.map((seed) => compileFixture(seed));
   assert.deepEqual(
     second.map((fixture) => fixture.descriptor),
     first.map((fixture) => fixture.descriptor),
-    "corpus inputs are seeded and reproducible",
+    "fixture inputs are seeded and reproducible",
   );
-  for (const fixture of first) assertStaticCorpusFixture(fixture);
+  for (const fixture of first) assertStaticFixtureFixture(fixture);
 });
 
 test("cursor firewall blocks unproven warm mutations but permits one exact source-confirmed leaf", async () => {

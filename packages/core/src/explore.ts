@@ -2,7 +2,7 @@
  * Shared explore primitives — sheet-aware back, safe list scroll, chrome filters,
  * and a one-shot "where am I" summary.
  *
- * Used by tree crawls (API id corpus), discovery, locale-run, and agents.
+ * Used by exploration, App Map discovery, and agents.
  * Not a product mode: just the verbs every navigation job needs.
  */
 import {

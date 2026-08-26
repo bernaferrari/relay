@@ -1,4 +1,4 @@
-import { operationDefinitions, type OperationId } from "@relay/protocol";
+import { operationDefinitions } from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -460,9 +460,7 @@ test("app-map.test.run guidance explains the one-Test versus Combine split", () 
 });
 
 test("control profile includes reusable actions; locale profile reads app-declared locales", () => {
-  const control = new Set(
-    relayMcpToolsForProfile("control").map(({ operationId }) => operationId),
-  );
+  const control = new Set(relayMcpToolsForProfile("control").map(({ operationId }) => operationId));
   assert.ok(control.has("action.run"), "control profile is missing action.run");
   const locale = new Set(relayMcpToolsForProfile("locale").map(({ operationId }) => operationId));
   assert.ok(locale.has("target.app.locales"), "locale profile is missing target.app.locales");
@@ -562,7 +560,9 @@ test("defines deterministic task profiles with a compact authoring default", () 
     ),
   );
   assert.ok(
-    relayMcpToolsForProfile("author").some(({ operationId }) => operationId === "app-map.variable.infer"),
+    relayMcpToolsForProfile("author").some(
+      ({ operationId }) => operationId === "app-map.variable.infer",
+    ),
   );
   assert.ok(
     relayMcpToolsForProfile("author").some(
@@ -608,9 +608,7 @@ test("defines deterministic task profiles with a compact authoring default", () 
 });
 
 test("the proof profile composes the verify-change loop and CLI-parity share tools", () => {
-  const proof = new Set(
-    relayMcpToolsForProfile("proof").map(({ operationId }) => operationId),
-  );
+  const proof = new Set(relayMcpToolsForProfile("proof").map(({ operationId }) => operationId));
   for (const operationId of [
     "app-map.test.run",
     "job.get",
@@ -629,10 +627,7 @@ test("the proof profile composes the verify-change loop and CLI-parity share too
   // only once its descriptor lands in the canonical registry.
   const routineImpactId: string = "app-map.routine.impact";
   const routineImpactRegistered = operationDefinitions.some(({ id }) => id === routineImpactId);
-  assert.equal(
-    (proof as ReadonlySet<string>).has(routineImpactId),
-    routineImpactRegistered,
-  );
+  assert.equal((proof as ReadonlySet<string>).has(routineImpactId), routineImpactRegistered);
   // The proof profile proves and shares; it does not author or approve.
   assert.equal(proof.has("app-map.test.save"), false);
   assert.equal(proof.has("app-map.proposal.approve"), false);
@@ -686,7 +681,7 @@ test("publishes compact discovery metadata for every eligible operation", () => 
   });
 });
 
-test("the language profile exposes one canonical Variable × Test Combine", () => {
+test("a language Variable exposes one canonical Variable × Test Combine", () => {
   const locale = new Set(relayMcpToolsForProfile("locale").map(({ operationId }) => operationId));
   for (const operationId of [
     "app-map.variable.save",

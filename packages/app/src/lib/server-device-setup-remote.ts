@@ -48,9 +48,7 @@ export async function loadAppleDeviceSetup(client: RelayClient): Promise<AppleSe
   });
 }
 
-export async function loadAppleSetupPreflight(
-  client: RelayClient,
-): Promise<AppleSetupPreflight> {
+export async function loadAppleSetupPreflight(client: RelayClient): Promise<AppleSetupPreflight> {
   return client.resource<AppleSetupPreflight>("/settings/devices/apple/preflight", {
     signal: AbortSignal.timeout(4_000),
   });

@@ -143,10 +143,7 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
           {(step) => {
             const status = () => stepStatus(props.state, step.id);
             return (
-              <li
-                class="min-w-0"
-                classList={{ "flex items-center gap-2": props.rail }}
-              >
+              <li class="min-w-0" classList={{ "flex items-center gap-2": props.rail }}>
                 <div class="flex items-center gap-1">
                   <span
                     class="grid size-5 shrink-0 place-items-center rounded-full border text-micro"
@@ -172,10 +169,7 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
                   </Show>
                 </div>
                 <span
-                  class={cn(
-                    "truncate text-micro font-medium",
-                    props.rail ? "" : "mt-1.5 block",
-                  )}
+                  class={cn("truncate text-micro font-medium", props.rail ? "" : "mt-1.5 block")}
                   classList={{
                     "text-[var(--text-strong)]": status() !== "upcoming",
                     "text-[var(--text-weaker)]": status() === "upcoming",

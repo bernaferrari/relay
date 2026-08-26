@@ -579,10 +579,15 @@ test("Authoring Sessions share local target control but keep mutation actor-owne
       [response.session.id],
     );
     assert.deepEqual(
-      (await owner.authoringSessions({ includeHistory: true })).sessions.map((session) => session.id),
+      (await owner.authoringSessions({ includeHistory: true })).sessions.map(
+        (session) => session.id,
+      ),
       [archivedId, response.session.id],
     );
-    assert.equal((await observer.authoringSession(archivedId)).session.archive?.reason, "superseded");
+    assert.equal(
+      (await observer.authoringSession(archivedId)).session.archive?.reason,
+      "superseded",
+    );
     assert.equal(
       (
         await owner.authoringSessions({

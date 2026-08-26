@@ -8,16 +8,10 @@
  * steps. Proposals surface through the existing failure/proposal channel for
  * human or agent review.
  */
-import type {
-  AppMap,
-  ScreenIdentityObservation,
-} from "@relay/protocol";
+import type { AppMap } from "@relay/protocol";
 import { StubVisionGrounder, type Grounder } from "./grounding.js";
 import type { SnapshotNode } from "./device.js";
-import {
-  observeScreenIdentity,
-  resolveScreenIdentity,
-} from "./screen-identity.js";
+import { observeScreenIdentity, resolveScreenIdentity } from "./screen-identity.js";
 
 /** Evidence captured by the failing step: what was expected and what was
  * actually observed. Mirrors the `destination-repair-hint` artifact data. */
@@ -70,9 +64,7 @@ type ScreenFingerprints = Map<string, Set<string>>;
  * its aliases, and each Variant's normalized observation. Reads only; the
  * map object is never written.
  */
-function screenFingerprints(
-  map: RepairMapSource,
-): ScreenFingerprints {
+function screenFingerprints(map: RepairMapSource): ScreenFingerprints {
   const index: ScreenFingerprints = new Map();
   const add = (screenId: string, fingerprint: string | undefined): void => {
     if (!fingerprint) return;
@@ -116,10 +108,7 @@ function fingerprintProposals(
  * without any saved observation cannot participate in semantic matching; it
  * can still win through fingerprints or vision.
  */
-function semanticProposals(
-  map: RepairMapSource,
-  observedNodes: SnapshotNode[],
-): RepairProposal[] {
+function semanticProposals(map: RepairMapSource, observedNodes: SnapshotNode[]): RepairProposal[] {
   if (!observedNodes.length) return [];
   const observed = observeScreenIdentity(observedNodes);
   const candidates = Object.values(map.screenVariants)

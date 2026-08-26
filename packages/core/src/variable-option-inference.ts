@@ -1,12 +1,19 @@
-/**
- * Reading switcher option rows out of an accessibility tree.
- *
- * One picker screen, one list of mutually exclusive rows. This half is pure:
- * it takes nodes and returns options, so a scan, a replay and a test all read
- * the same rows without touching a device.
- */
+/** Read mutually-exclusive Variable rows from an accessibility tree. */
 import type { SnapshotNode } from "./device.js";
-import type { SwitcherOption } from "./switcher-profiles.js";
+
+export type VariableOptionCandidate = {
+  id: string;
+  label: string;
+  aliases?: string[];
+  identifier?: string;
+};
+
+export type TaughtVariableRow = {
+  id: string;
+  identifier?: string;
+  label?: string;
+  text?: string;
+};
 
 const CHROME_NOISE =
   /^(settings|search|cancel|done|edit|back|close|general|about|ok|save|add |preferred |reorder|app language|language|appearance|account|environment|theme|suggested languages|other languages|allow grok to access|grok settings|acknowledgements|photos|microphone|camera|siri & search|notifications|live activities|background app refresh|full access|airplane mode|wi-?fi|bluetooth|vpn|sounds|focus|screen time|control center|display & brightness|apple id.*|jonathan .*|multitasking.*|accessibility|wallpaper|apple pencil|touch id.*|battery|privacy.*|app store|wallet.*|passwords|contacts|calendar|notes|reminders|freeform|voice memos|messages|safari|stocks|weather|translate|maps|measure|shortcuts|health|game center|tv provider|developer|1blocker|bible|bitwarden|chrome|documents|drive|gmail|google photos|legacy|testflight|\bx\b)$/i;
@@ -18,8 +25,8 @@ const SPLIT_VIEW_SETTINGS_NOISE =
 export function inferOptionId(label: string, subtitle?: string): string {
   const source = `${subtitle ?? ""} ${label}`.trim();
   // Language heuristics (optional enrichment — unknown labels still get a slug).
-  // Prefer explicit checks for common locales so regex unicode edge-cases cannot
-  // skip the English seed used throughout Corpus/locale-matrix.
+  // Prefer explicit checks for common locales so Unicode edge-cases cannot
+  // destabilize a taught language Variable.
   if (/\benglish\b/i.test(source) || /^en(?:[-_]|$)/i.test(label.trim())) return "en";
   const languageTable: Array<[RegExp, string]> = [
     [/portugu[eê]s\s*\(?\s*brasil\s*\)?|portuguese\s*\(?\s*brazil\s*\)?|\bpt-?br\b/i, "pt-BR"],
@@ -90,7 +97,7 @@ export function inferOptionId(label: string, subtitle?: string): string {
   );
 }
 
-export function extractSwitcherOptionsFromNodes(nodes: SnapshotNode[]): SwitcherOption[] {
+export function extractVariableOptionsFromNodes(nodes: SnapshotNode[]): VariableOptionCandidate[] {
   type Candidate = {
     label: string;
     identifier?: string;
@@ -204,7 +211,7 @@ export function extractSwitcherOptionsFromNodes(nodes: SnapshotNode[]): Switcher
   filtered.sort((left, right) => left.y - right.y || left.x - right.x);
 
   const seenLabel = new Set<string>();
-  const options: SwitcherOption[] = [];
+  const options: VariableOptionCandidate[] = [];
   for (const candidate of filtered) {
     const key = candidate.label.toLocaleLowerCase();
     if (seenLabel.has(key)) continue;
@@ -221,7 +228,7 @@ export function extractSwitcherOptionsFromNodes(nodes: SnapshotNode[]): Switcher
     });
   }
 
-  const byId = new Map<string, SwitcherOption>();
+  const byId = new Map<string, VariableOptionCandidate>();
   for (const option of options) {
     const existing = byId.get(option.id);
     if (!existing) {
@@ -239,4 +246,51 @@ export function extractSwitcherOptionsFromNodes(nodes: SnapshotNode[]): Switcher
     });
   }
   return [...byId.values()];
+}
+
+function taughtRowMatches(taught: TaughtVariableRow, candidate: VariableOptionCandidate): boolean {
+  const identifier = taught.identifier?.trim();
+  if (identifier && candidate.identifier?.trim() === identifier) return true;
+  const label = taught.label?.trim().toLocaleLowerCase();
+  if (label && candidate.label.toLocaleLowerCase() === label) return true;
+  const text = taught.text?.trim().toLocaleLowerCase();
+  if (text && candidate.label.toLocaleLowerCase().includes(text)) return true;
+  return candidate.id.toLocaleLowerCase() === taught.id.trim().toLocaleLowerCase();
+}
+
+/**
+ * Infer every visible Variable option from one or more rows a person selected.
+ * Taught ids win over heuristics, while stable accessibility identifiers win
+ * over localized labels. This is pure; the App Map operation owns capture and
+ * returns the reviewable save mutation.
+ */
+export function inferVariableOptionsFromTeach(input: {
+  nodes: SnapshotNode[];
+  taughtRows: TaughtVariableRow[];
+}): TaughtVariableRow[] {
+  const candidates = extractVariableOptionsFromNodes(input.nodes);
+  const taughtRows = input.taughtRows
+    .map((row) => ({
+      id: row.id.trim(),
+      ...(row.identifier?.trim() ? { identifier: row.identifier.trim() } : {}),
+      ...(row.label?.trim() ? { label: row.label.trim() } : {}),
+      ...(row.text?.trim() ? { text: row.text.trim() } : {}),
+    }))
+    .filter((row) => row.id);
+  const taughtIdByCandidateId = new Map<string, string>();
+  for (const taught of taughtRows) {
+    const candidate = candidates.find((item) => taughtRowMatches(taught, item));
+    if (candidate) taughtIdByCandidateId.set(candidate.id, taught.id);
+  }
+
+  const options: TaughtVariableRow[] = candidates.map((candidate) => ({
+    id: taughtIdByCandidateId.get(candidate.id) ?? candidate.id,
+    label: candidate.label,
+    ...(candidate.identifier ? { identifier: candidate.identifier } : {}),
+  }));
+  for (const taught of taughtRows) {
+    if (options.some((option) => option.id === taught.id)) continue;
+    options.unshift(taught);
+  }
+  return options;
 }

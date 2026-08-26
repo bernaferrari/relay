@@ -9,8 +9,7 @@ export type CombineOperationId =
   | "job.combine.campaign.resume"
   | "job.combine.campaign.cancel";
 
-const { command, query } =
-  createOperationBuilders<Pick<RelayOperationMap, CombineOperationId>>();
+const { command, query } = createOperationBuilders<Pick<RelayOperationMap, CombineOperationId>>();
 
 export const combineOperationDefinitions = [
   command("job.combine.start", "Run state combinations × tests", "POST", "/jobs/combine", {

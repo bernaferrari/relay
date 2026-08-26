@@ -17,7 +17,9 @@ test("a watchdog cause routes to the targeted runner kill, not the shared daemon
   const result = await recoverIosRuntime(
     {
       serial: "ipad",
-      cause: new Error("The iOS runner is still finishing a previous command that exceeded its execution watchdog"),
+      cause: new Error(
+        "The iOS runner is still finishing a previous command that exceeded its execution watchdog",
+      ),
     },
     dependencies({
       restartAgentDevice: async () => {
@@ -27,7 +29,10 @@ test("a watchdog cause routes to the targeted runner kill, not the shared daemon
     }),
   );
   assert.equal(restarts, 0);
-  assert.equal(result.actions.some((action) => action.kind === "agent-device"), false);
+  assert.equal(
+    result.actions.some((action) => action.kind === "agent-device"),
+    false,
+  );
 });
 
 test("recordRepairStep records failed cleanup without aborting the remaining repair", async () => {

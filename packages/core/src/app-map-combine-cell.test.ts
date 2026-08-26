@@ -825,7 +825,7 @@ function localeMap(): AppMap {
   };
 }
 
-test("prepares a locale matrix and a selector-free Test before any target control", async () => {
+test("prepares a language Variable Combine and a selector-free Test before target control", async () => {
   const map = localeMap();
   const prepared = await prepareAppMapCombineCells({
     map,

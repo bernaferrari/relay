@@ -214,7 +214,7 @@ const combineEvidenceAnalysisSchema = z
     affectedScreens: z.number(),
   })
   .strict();
-const localePackFrameSchema = z
+const combineEvidencePackFrameSchema = z
   .object({
     path: z.string(),
     canonicalKey: z.string(),
@@ -222,7 +222,7 @@ const localePackFrameSchema = z
     inspected: z.boolean(),
   })
   .strict();
-const localePackManifestSchema = z
+const combineEvidencePackManifestSchema = z
   .object({
     schemaVersion: z.literal(2),
     batchId: z.string(),
@@ -239,7 +239,7 @@ const localePackManifestSchema = z
           name: z.string(),
           frames: z.array(z.string()),
           expectedFrames: z.number().optional(),
-          captures: z.array(localePackFrameSchema).optional(),
+          captures: z.array(combineEvidencePackFrameSchema).optional(),
         })
         .strict(),
     ),
@@ -248,7 +248,7 @@ const localePackManifestSchema = z
     analysisCoverage: z.object({ frames: z.number(), inspectedFrames: z.number() }).strict(),
   })
   .strict();
-const localeAnalysisSchema = z
+const combineEvidenceAnalysisReportSchema = z
   .object({
     schemaVersion: z.literal(1),
     batchId: z.string(),
@@ -322,7 +322,7 @@ const optionTargetSchema = z
     text: z.string().optional(),
   })
   .strict();
-const localeScopeSchema = z
+const _localeScopeSchema = z
   .object({
     locales: z.array(z.string()),
     app: z.string().optional(),
@@ -338,7 +338,7 @@ const localeScopeSchema = z
     screenshotEachLocale: z.boolean().optional(),
   })
   .strict();
-const inferredLocaleSchema = z
+const _inferredLocaleSchema = z
   .object({
     options: z.array(
       z
@@ -355,7 +355,7 @@ const inferredLocaleSchema = z
   })
   .strict();
 
-const localeMaterializationScopeSchema = z
+const _localeMaterializationScopeSchema = z
   .object({
     locales: z.array(z.string()),
     app: z.string().optional(),
@@ -371,7 +371,7 @@ const localeMaterializationScopeSchema = z
     screenshotEachLocale: z.boolean().optional(),
   })
   .strict();
-const localeMaterializationSchema = z
+const _localeMaterializationSchema = z
   .object({
     schemaVersion: z.literal(1),
     materializedAt: z.number(),
@@ -397,7 +397,7 @@ const localeMaterializationSchema = z
         })
         .strict(),
     ]),
-    scope: localeMaterializationScopeSchema,
+    scope: _localeMaterializationScopeSchema,
     cases: z.array(z.object({ caseIndex: z.number(), locale: z.string() }).strict()),
     durationCohort: z.object({ testId: z.string(), action: z.string() }).strict(),
     targetPlatform: z.enum(["ios", "android"]).optional(),
@@ -540,7 +540,7 @@ const admissionSchema = z
     targetPreflights: z.array(targetPreflightSchema),
   })
   .strict();
-const localeBatchSchema = z
+const _localeBatchSchema = z
   .object({
     id: z.string(),
     recipeId: z.string(),
@@ -582,7 +582,7 @@ const runSummarySchema = jobSummarySchema
   })
   .strict();
 
-const variableSchema = z
+const _variableSchema = z
   .object({
     id: z.string(),
     name: z.string(),
@@ -643,11 +643,11 @@ export const executionOperationOutputSchemas = {
   "job.combine.export": z
     .object({
       rootDir: z.string(),
-      manifest: localePackManifestSchema,
+      manifest: combineEvidencePackManifestSchema,
       jobIds: z.array(z.string()),
     })
     .strict(),
-  "job.combine.analysis": localeAnalysisSchema,
+  "job.combine.analysis": combineEvidenceAnalysisReportSchema,
   "job.combine.campaign.get": z.object({ campaign: combineCampaignSchema }).strict(),
   "job.combine.campaign.resume": z
     .object({

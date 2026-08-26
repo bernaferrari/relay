@@ -151,8 +151,7 @@
   /* Keyboard focus on the canvas: a 2px interactive-blue ring held off the
      object by a 2px canvas-coloured gap. One shadow list so any surface can
      take it without restating widths and offsets. */
-  --focus-ring-canvas:
-    0 0 0 2px var(--map-canvas), 0 0 0 4px var(--text-interactive-base);
+  --focus-ring-canvas: 0 0 0 2px var(--map-canvas), 0 0 0 4px var(--text-interactive-base);
 }
 
 [data-color-scheme="dark"] {
@@ -165,8 +164,7 @@
   --map-canvas-backdrop: oklch(0.1 0.01 270);
   --map-elevation-card: 0 0 0 1px oklch(0.92 0.01 280 / 0.08);
   --map-elevation-chip: 0 0 0 1px oklch(0.92 0.01 280 / 0.09);
-  --focus-ring-canvas:
-    0 0 0 2px var(--map-canvas), 0 0 0 4px var(--text-interactive-base);
+  --focus-ring-canvas: 0 0 0 2px var(--map-canvas), 0 0 0 4px var(--text-interactive-base);
   --map-edge-ready: color-mix(in srgb, var(--text-base) 70%, transparent);
   --map-edge-draft: color-mix(in srgb, var(--text-weak) 58%, transparent);
   --map-edge-return: color-mix(in srgb, var(--text-weak) 42%, transparent);

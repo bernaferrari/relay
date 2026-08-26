@@ -1,8 +1,4 @@
-import type {
-  OperationDefinition,
-  ProjectRole,
-  RuntimeParser,
-} from "./operation-contract.js";
+import type { OperationDefinition, ProjectRole, RuntimeParser } from "./operation-contract.js";
 import { operationInputSchema } from "./operation-input-schemas.js";
 import { operationOutputSchema } from "./operation-output-schemas.js";
 
@@ -17,10 +13,9 @@ type DefinitionOptions<Map extends OperationShapeMap, Id extends Extract<keyof M
   minimumRole?: ProjectRole;
 };
 
-function defaultMinimumRole<
-  Map extends OperationShapeMap,
-  Id extends Extract<keyof Map, string>,
->(options: DefinitionOptions<Map, Id>): ProjectRole {
+function defaultMinimumRole<Map extends OperationShapeMap, Id extends Extract<keyof Map, string>>(
+  options: DefinitionOptions<Map, Id>,
+): ProjectRole {
   if (options.mode !== "command") return "viewer";
   if (options.confirmation === "dangerous" || options.category === "workspace") return "admin";
   if (options.lease === "exclusive") return "runner";
@@ -45,7 +40,8 @@ export function createOperationBuilders<Map extends OperationShapeMap>() {
       input: options.input
         ? operationInputContract(options.id, options.input)
         : operationInputContractFromSchema<Map[SelectedId]["input"]>(options.id),
-      output: options.output ?? operationOutputContractFromSchema<Map[SelectedId]["output"]>(options.id),
+      output:
+        options.output ?? operationOutputContractFromSchema<Map[SelectedId]["output"]>(options.id),
     };
   }
 

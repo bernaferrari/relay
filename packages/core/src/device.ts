@@ -18,7 +18,7 @@ import {
   throwIfCancelled,
 } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
-import { bindNativeDeviceMutations, clearAndroidTextWithAdb } from "./device-mutation-adapter.js";
+import { bindNativeDeviceMutations } from "./device-mutation-adapter.js";
 import { type Device, type SnapshotNode } from "./device-capabilities.js";
 import * as observationDevice from "./device-observation-membrane.js";
 export type { Device, SnapshotNode } from "./device-capabilities.js";
@@ -39,12 +39,7 @@ import {
   targetSessionName,
   type TargetContext,
 } from "./target-context.js";
-import {
-  currentIosDeviceSerial,
-  iosSelectorWasNotDispatched,
-  runIosMutationOnce,
-  type IosMutationOperation,
-} from "./ios-mutation-policy.js";
+import { iosSelectorWasNotDispatched, runIosMutationOnce } from "./ios-mutation-policy.js";
 import { captureIosSnapshot, resetIosSnapshotFlights } from "./ios-snapshot-flight.js";
 export {
   IosMutationOutcomeUnknownError,
@@ -1021,12 +1016,7 @@ export async function pressText(
   }
 }
 
-export {
-  replaceText,
-  replaceTextValue,
-  type TextReplacementAdapter,
-} from "./device-text-entry.js";
-import { replaceText as replaceTextImpl } from "./device-text-entry.js";
+export { replaceText, replaceTextValue, type TextReplacementAdapter } from "./device-text-entry.js";
 
 export async function findClick(
   device: Device,

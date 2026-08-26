@@ -7,7 +7,7 @@ critical flow on a real device, so "looks done" ships instead of "proven done."
 
 Relay closes that gap: **prove AI-written mobile code works before merge.**
 Relay is a local-first proof layer for agent-written mobile code. It replays reviewed
-product flows against browsers, Android devices, and iOS devices that *you* attach, then
+product flows against browsers, Android devices, and iOS devices that _you_ attach, then
 attaches immutable evidence—screenshots, UI trees, actions, assertions, failure provenance—
 to the result.
 
@@ -26,10 +26,10 @@ PR opened
 
 Where the loop stands today:
 
-| Loop edge | Status |
-| --- | --- |
+| Loop edge                                                                                                                                               | Status      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
 | Authoring (agents propose Tests via MCP/CLI), replay on real targets, repair, evidence, source-revision tagging (`--commit/--pr/--branch`), report emit | **Shipped** |
-| Build ingest automation and GitHub check-run posting from CI | **Pending** |
+| Build ingest automation and GitHub check-run posting from CI                                                                                            | **Pending** |
 
 [docs/PR_PROOF_CI.md](./docs/PR_PROOF_CI.md) shows the copy-paste CI wiring available today.
 
@@ -82,14 +82,14 @@ route. See [Product flows](./docs/PRODUCT_FLOWS.md) for the complete authoring p
 
 ## What it does
 
-| Capability                | What it gives you                                                                                                                                                       |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **App Map**               | Agents propose Screens and Connections; humans review Takes and approve them; Relay proves approved flows by replaying them with evidence. |
-| **Graph-native Tests**    | Intent, checks, extraction, manual checkpoints, decisions, loops, reusable modules, and constrained scripts—all bound to the App Map or explicitly marked unresolved.   |
-| **Variables and Combine** | Reuse a Test across selected language, theme, account, build, device, or model values. Preview the expansion, run one pilot, then resume only untouched cases.          |
-| **Targets**               | A Relay-owned Playwright profile for browsers plus Android and iOS adapters. Target capabilities and unsupported actions are reported explicitly.                       |
-| **Evidence and reports**  | Immutable run artifacts, screenshot and UI-tree evidence, logs, failure provenance, visual baselines, and expiring/revocable redacted report links.                     |
-| **People and agents**     | Desktop, CLI, TUI, and MCP use the same operation registry. Device control requires a server-managed lease; observation can be shared.                                  |
+| Capability                | What it gives you                                                                                                                                                     |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **App Map**               | Agents propose Screens and Connections; humans review Takes and approve them; Relay proves approved flows by replaying them with evidence.                            |
+| **Graph-native Tests**    | Intent, checks, extraction, manual checkpoints, decisions, loops, reusable modules, and constrained scripts—all bound to the App Map or explicitly marked unresolved. |
+| **Variables and Combine** | Reuse a Test across selected language, theme, account, build, device, or model values. Preview the expansion, run one pilot, then resume only untouched cases.        |
+| **Targets**               | A Relay-owned Playwright profile for browsers plus Android and iOS adapters. Target capabilities and unsupported actions are reported explicitly.                     |
+| **Evidence and reports**  | Immutable run artifacts, screenshot and UI-tree evidence, logs, failure provenance, visual baselines, and expiring/revocable redacted report links.                   |
+| **People and agents**     | Desktop, CLI, TUI, and MCP use the same operation registry. Device control requires a server-managed lease; observation can be shared.                                |
 
 The product model has five terms: a **Screen** is a product state; a **Connection** is a reviewed
 transition; a **Variable** changes one reusable dimension; a **Test** states what should happen; and
@@ -133,7 +133,12 @@ relay: fetch failed
 ```
 
 ```json
-{"type":"error","ok":false,"operationId":"system.health.get","error":{"message":"fetch failed","exitCode":3}}
+{
+  "type": "error",
+  "ok": false,
+  "operationId": "system.health.get",
+  "error": { "message": "fetch failed", "exitCode": 3 }
+}
 ```
 
 (Use `pnpm ensure:serve` to start the local service, then retry.)

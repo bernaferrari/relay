@@ -371,11 +371,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     async function pollHealth() {
       try {
-        const h = await (await connectedClient()).invoke(
-          "system.health.get",
-          {},
-          { signal: AbortSignal.timeout(8_000) },
-        );
+        const h = await (
+          await connectedClient()
+        ).invoke("system.health.get", {}, { signal: AbortSignal.timeout(8_000) });
         const wasOffline = health() === "offline" || health() === "unknown";
         setHealth("online");
         if (h.runsDir) setRunsRoot(h.runsDir);

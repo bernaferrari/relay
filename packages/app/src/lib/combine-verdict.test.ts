@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CombineEvidenceFinding, CombineEvidenceFindingCode } from "@relay/protocol";
 import {
-  type LocaleCellAnalysis,
-  localeCellDefectCount,
-  localeCellVerdict,
-  localeFindingHeadline,
-  localeVerdictOrder,
-  localeVerdictPresentation,
-  summarizeLocaleVerdicts,
+  type CombineCellAnalysis,
+  combineCellDefectCount,
+  combineCellVerdict,
+  combineFindingHeadline,
+  combineVerdictOrder,
+  combineVerdictPresentation,
+  summarizeCombineVerdicts,
 } from "./combine-verdict";
 import type { CombineRow } from "./combine-review";
 
@@ -34,25 +34,25 @@ const finding = (
 });
 
 test("a captured cell with no analysis is not counted as a pass", () => {
-  assert.equal(localeCellVerdict({ status: "ok", capture: captured }), "unanalyzed");
+  assert.equal(combineCellVerdict({ status: "ok", capture: captured }), "unanalyzed");
 });
 
 test("an analysed cell with no findings passes", () => {
-  const analysis: LocaleCellAnalysis = { findings: [], baselineLabel: "English" };
-  assert.equal(localeCellVerdict({ status: "ok", capture: captured, analysis }), "pass");
+  const analysis: CombineCellAnalysis = { findings: [], baselineLabel: "English" };
+  assert.equal(combineCellVerdict({ status: "ok", capture: captured, analysis }), "pass");
 });
 
 test("the worst finding on a cell decides its verdict", () => {
-  const analysis: LocaleCellAnalysis = {
+  const analysis: CombineCellAnalysis = {
     findings: [finding("POSSIBLE_UNTRANSLATED_TEXT"), finding("POSSIBLE_TEXT_CLIPPED")],
   };
-  assert.equal(localeCellVerdict({ status: "ok", capture: captured, analysis }), "clipped");
+  assert.equal(combineCellVerdict({ status: "ok", capture: captured, analysis }), "clipped");
 
-  const notApplied: LocaleCellAnalysis = {
+  const notApplied: CombineCellAnalysis = {
     findings: [finding("POSSIBLE_TEXT_CLIPPED"), finding("POSSIBLE_LOCALE_NOT_APPLIED")],
   };
   assert.equal(
-    localeCellVerdict({ status: "ok", capture: captured, analysis: notApplied }),
+    combineCellVerdict({ status: "ok", capture: captured, analysis: notApplied }),
     "not-applied",
   );
 });
@@ -66,46 +66,46 @@ test("every protocol finding code maps to a verdict with a presentation", () => 
     "POSSIBLE_TEXT_CLIPPED",
   ];
   for (const code of codes) {
-    const verdict = localeCellVerdict({
+    const verdict = combineCellVerdict({
       status: "ok",
       capture: captured,
       analysis: { findings: [finding(code)] },
     });
     assert.notEqual(verdict, "pass", `${code} must not read as a pass`);
-    assert.ok(localeVerdictOrder.includes(verdict));
+    assert.ok(combineVerdictOrder.includes(verdict));
   }
 });
 
 test("run state outranks any analysis of a stale capture", () => {
-  const analysis: LocaleCellAnalysis = { findings: [] };
-  assert.equal(localeCellVerdict({ status: "error", capture: captured, analysis }), "failed");
-  assert.equal(localeCellVerdict({ status: "running", capture: captured, analysis }), "pending");
+  const analysis: CombineCellAnalysis = { findings: [] };
+  assert.equal(combineCellVerdict({ status: "error", capture: captured, analysis }), "failed");
+  assert.equal(combineCellVerdict({ status: "running", capture: captured, analysis }), "pending");
 });
 
 test("a finished run with no screenshot reports the missing capture", () => {
-  assert.equal(localeCellVerdict({ status: "ok", capture: { frame: undefined } }), "missing");
-  assert.equal(localeCellVerdict({ status: "ok", capture: undefined }), "missing");
+  assert.equal(combineCellVerdict({ status: "ok", capture: { frame: undefined } }), "missing");
+  assert.equal(combineCellVerdict({ status: "ok", capture: undefined }), "missing");
 });
 
 test("medium confidence findings are phrased as possibilities", () => {
   assert.equal(
-    localeFindingHeadline(finding("POSSIBLE_TEXT_CLIPPED", { confidence: "medium" })),
+    combineFindingHeadline(finding("POSSIBLE_TEXT_CLIPPED", { confidence: "medium" })),
     "Possible clipped text",
   );
   assert.equal(
-    localeFindingHeadline(finding("POSSIBLE_TEXT_CLIPPED", { confidence: "high" })),
+    combineFindingHeadline(finding("POSSIBLE_TEXT_CLIPPED", { confidence: "high" })),
     "Clipped text",
   );
 });
 
 test("every verdict has a presentation and a unique place in the legend order", () => {
-  for (const verdict of localeVerdictOrder) {
-    const presentation = localeVerdictPresentation(verdict);
+  for (const verdict of combineVerdictOrder) {
+    const presentation = combineVerdictPresentation(verdict);
     assert.equal(presentation.verdict, verdict);
     assert.ok(presentation.label.length > 0);
     assert.ok(presentation.hint.endsWith("."));
   }
-  assert.equal(new Set(localeVerdictOrder).size, localeVerdictOrder.length);
+  assert.equal(new Set(combineVerdictOrder).size, combineVerdictOrder.length);
 });
 
 test("tallies are defect-first and only include verdicts present in the grid", () => {
@@ -118,7 +118,7 @@ test("tallies are defect-first and only include verdicts present in the grid", (
       missingCaptures: hasFrame ? 0 : 1,
     }) as unknown as CombineRow;
 
-  const tallies = summarizeLocaleVerdicts(
+  const tallies = summarizeCombineVerdicts(
     [row("ok", true), row("ok", true), row("error", true), row("ok", false)],
     0,
   );
@@ -129,5 +129,5 @@ test("tallies are defect-first and only include verdicts present in the grid", (
     { verdict: "unanalyzed", count: 2 },
   ]);
   // "missing" is a warning about capture coverage, not a product defect.
-  assert.equal(localeCellDefectCount(tallies), 1);
+  assert.equal(combineCellDefectCount(tallies), 1);
 });

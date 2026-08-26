@@ -408,7 +408,6 @@ export function iosLivePreviewMetricHeaders(
     "X-Relay-Ios-Source-Stale-After-Ms": String(diagnostics.staleAfterMs),
     "X-Relay-Ios-Target-Fps": "unadvertised",
     "X-Relay-Ios-Delivery-Strategy": "latest-frame",
-    "X-Relay-Ios-Last-Frame-Fingerprint":
-      diagnostics.fanout.lastFrameFingerprint ?? "unavailable",
+    "X-Relay-Ios-Last-Frame-Fingerprint": diagnostics.fanout.lastFrameFingerprint ?? "unavailable",
   };
 }

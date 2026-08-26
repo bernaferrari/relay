@@ -27,6 +27,8 @@ test("only the canonical dispatcher and native adapter own the raw transport", (
     rawDeviceMutationBoundaryPaths.has("packages/core/src/device-mutation-adapter.ts"),
     true,
   );
+  assert.equal(rawDeviceMutationBoundaryPaths.has("packages/core/src/device-dispatch.ts"), true);
+  assert.equal(rawDeviceMutationBoundaryPaths.has("packages/core/src/device-text-entry.ts"), true);
   assert.equal(
     rawDeviceMutationBoundaryPaths.has("packages/core/src/device-capabilities.ts"),
     false,

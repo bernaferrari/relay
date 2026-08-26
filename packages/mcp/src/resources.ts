@@ -457,11 +457,10 @@ export function registerRelayResources(
           name,
           title,
           description,
-          unlockedByProfiles: relayMcpProfiles.filter(
-            (id) =>
-              relayMcpPromptsForTools(relayMcpToolsForProfile(id)).some(
-                (available) => available.name === name,
-              ),
+          unlockedByProfiles: relayMcpProfiles.filter((id) =>
+            relayMcpPromptsForTools(relayMcpToolsForProfile(id)).some(
+              (available) => available.name === name,
+            ),
           ),
         })),
         guidance:

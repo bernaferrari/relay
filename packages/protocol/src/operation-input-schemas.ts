@@ -20,7 +20,6 @@ import {
   empty,
   identifier,
   natural,
-  open,
   point,
   queryBoolean,
   sessionReference,
@@ -367,7 +366,9 @@ export const operationInputSchemas = {
         .optional(),
       interaction: z
         .discriminatedUnion("kind", [
-          z.object({ kind: z.literal("point"), x: z.coerce.number(), y: z.coerce.number() }).strict(),
+          z
+            .object({ kind: z.literal("point"), x: z.coerce.number(), y: z.coerce.number() })
+            .strict(),
           z
             .object({
               kind: z.literal("label"),
@@ -553,9 +554,7 @@ export const operationInputSchemas = {
         .describe("Repository paths changed by the diff under review"),
       sourcePaths: z
         .record(z.string(), z.array(z.string()))
-        .describe(
-          "Optional App Map entity id to repository source paths front-matter",
-        )
+        .describe("Optional App Map entity id to repository source paths front-matter")
         .optional(),
     })
     .strict(),

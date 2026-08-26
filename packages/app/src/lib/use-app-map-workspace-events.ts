@@ -74,8 +74,7 @@ export function useAppMapWorkspaceEvents(options: {
       }
       const connection = options.selectedConnection();
       if (connection) options.onRecordConnection(connection);
-      else if (options.hereScreenId() || options.selectedNode())
-        options.onRecordFromHere();
+      else if (options.hereScreenId() || options.selectedNode()) options.onRecordFromHere();
       else toast("Select a screen or path to record", "info");
     },
     onDeleteSelection: () => {

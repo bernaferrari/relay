@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
 import { Button } from "@relay/ui/button";
 import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import { useWorkbench } from "../context/workbench";
@@ -6,7 +6,6 @@ import { RunSummary } from "./run-summary";
 import { friendlyError, readableFailure } from "../lib/run-failure-presentation";
 import { Icon } from "./icon";
 import { StatusChip, runOutcomeChip } from "./status-chip";
-import { EmptyState } from "./empty-state";
 import { cn } from "../lib/cn";
 import { fmtAgo, fmtDur } from "../lib/job";
 import { persistedAsJob } from "../lib/persisted-run";
@@ -28,7 +27,7 @@ import { canApproveVisualBaseline, hasVisualRunFrames } from "../lib/visual-run-
 import { RunLogsEvidence, RunNetworkEvidence, RunPerformanceEvidence } from "./run-evidence-panels";
 import { RunBrowser } from "./run-browser";
 import { CompatibilityReportPanel } from "./compatibility-report-panel";
-import { RunRow, RunStepList } from "./run-list-surfaces";
+import { RunStepList } from "./run-list-surfaces";
 import { RunReplayStage } from "./run-replay-stage";
 import { CombineReview } from "./combine-review";
 import { RunShareMenu } from "./run-share-menu";
@@ -42,10 +41,8 @@ import {
   runsEqualForSelection,
   evidenceTabForChannel,
   findBaselineRun,
-  RUN_FILTER_TABS,
   RUN_REPORT_TABS,
   type RunFilterId,
-  summarizeRunBatch,
 } from "../lib/runs-workspace-helpers";
 import {
   isCombineJob,
@@ -53,6 +50,7 @@ import {
   stepIndexForCombineCapture,
 } from "../lib/combine-review";
 import { useCombinePackActions } from "../lib/use-run-combine-pack-actions";
+import { RunsHistoryList } from "./runs-history-list";
 
 export function RunsWorkspace(props: {
   onOpenMap: (id: string) => void;
@@ -430,92 +428,17 @@ export function RunsWorkspace(props: {
         )}
       >
         <Show when={!selected()}>
-          <div class={cn("w-full max-w-none", rows().length === 0 && "max-w-[680px] rounded-3xl")}>
-            <Show when={rows().length > 0}>
-              <div class="mb-2.5 flex min-h-10 items-center justify-between gap-3">
-                <div
-                  class="flex items-center gap-1 rounded-xl border border-border-weak-base bg-background-stronger p-1"
-                  role="tablist"
-                  aria-label="Filter runs"
-                >
-                  {RUN_FILTER_TABS.map(([id, label]) => (
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={runFilter() === id}
-                      class={cn(
-                        "min-h-7 rounded-md px-3 text-caption font-medium text-text-weaker transition-[background-color,color,transform] duration-hover active:scale-[0.97]",
-                        runFilter() === id
-                          ? "bg-surface-base-active text-text-strong"
-                          : "hover:bg-surface-base-hover hover:text-text-base",
-                      )}
-                      onClick={() => setRunFilter(id)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div class="flex items-center gap-2">
-                  <Show when={runFilter() === "all" && rows().length > visibleRows().length}>
-                    <button
-                      type="button"
-                      class="rounded-md px-2 py-1 text-micro font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
-                      onClick={() => setHistoryExpanded((expanded) => !expanded)}
-                    >
-                      {historyExpanded() ? "Latest only" : `All ${rows().length}`}
-                    </button>
-                  </Show>
-                  <span class="font-mono text-micro tabular-nums text-text-weaker">
-                    {visibleRows().length}{" "}
-                    {historyExpanded()
-                      ? "runs"
-                      : visibleRows().length === 1
-                        ? "path run"
-                        : "path runs"}
-                  </span>
-                </div>
-              </div>
-            </Show>
-            <For
-              each={visibleRows()}
-              fallback={
-                <Show
-                  when={rows().length === 0}
-                  fallback={
-                    <EmptyState
-                      size="sm"
-                      icon="search"
-                      title={`No ${runFilter()} runs`}
-                      secondaryLabel="Show all runs"
-                      onSecondary={() => setRunFilter("all")}
-                      class="py-14"
-                    />
-                  }
-                >
-                  <EmptyState
-                    size="lg"
-                    icon="wave"
-                    title="No runs yet"
-                    description="Run a path or Combine from an App Map. Screenshot evidence stays attached to the run that created it."
-                    actionLabel="Open maps"
-                    onAction={props.onOpenTests}
-                    class="py-14"
-                  />
-                </Show>
-              }
-            >
-              {(job) => {
-                return (
-                  <RunRow
-                    job={job}
-                    selected={selectedId() === job.id}
-                    batch={summarizeRunBatch(job, rows())}
-                    onOpen={() => openRun(job)}
-                  />
-                );
-              }}
-            </For>
-          </div>
+          <RunsHistoryList
+            rows={rows}
+            visibleRows={visibleRows}
+            selectedId={selectedId}
+            runFilter={runFilter}
+            setRunFilter={setRunFilter}
+            historyExpanded={historyExpanded}
+            setHistoryExpanded={setHistoryExpanded}
+            onOpenRun={openRun}
+            onOpenTests={props.onOpenTests}
+          />
         </Show>
         <Show when={selected() && tab() !== "combine"}>
           <RunBrowser rows={rows()} selectedId={selectedId()} onSelect={openRun} />
@@ -911,7 +834,11 @@ export function RunsWorkspace(props: {
                       </div>
                     </section>
                   </Show>
-                  <Show when={regressionSignals().some((signal) => signal.material && signal.direction === "improvement")}>
+                  <Show
+                    when={regressionSignals().some(
+                      (signal) => signal.material && signal.direction === "improvement",
+                    )}
+                  >
                     <section class="mt-2 rounded-xl border border-border-weak-base p-3 opacity-75">
                       <strong class="text-caption font-semibold text-text-weak">Improved</strong>
                       <div class="mt-2 grid gap-1.5">

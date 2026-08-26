@@ -275,15 +275,15 @@ function VisualReviewActions(props: {
           What should Relay do with this visual change?
         </span>
       </div>
-        <label class="grid gap-1 px-0.5 text-micro font-medium text-text-weak">
-          Decision note (saved with the review)
-          <textarea
-            class="min-h-16 resize-y rounded-lg border border-border-weak-base bg-surface-base px-2.5 py-2 text-caption/[1.45] font-normal text-text-base focus-visible:border-border-strong-focus focus-visible:outline-none"
-            value={note()}
-            onInput={(event) => persistNote(event.currentTarget.value)}
-            placeholder="Optional: why this look is or is not correct."
-          />
-        </label>
+      <label class="grid gap-1 px-0.5 text-micro font-medium text-text-weak">
+        Decision note (saved with the review)
+        <textarea
+          class="min-h-16 resize-y rounded-lg border border-border-weak-base bg-surface-base px-2.5 py-2 text-caption/[1.45] font-normal text-text-base focus-visible:border-border-strong-focus focus-visible:outline-none"
+          value={note()}
+          onInput={(event) => persistNote(event.currentTarget.value)}
+          placeholder="Optional: why this look is or is not correct."
+        />
+      </label>
       <div
         class="flex flex-wrap justify-end gap-1.5"
         role="group"

@@ -10,11 +10,9 @@ import {
   interact,
   previewInteract,
   scrollSurveyOutcomeUnknownDiagnostic,
-  switcherScanOutcomeUnknownDiagnostic,
   type InteractInput,
   type InteractResult,
   type ScrollSurveyOutcomeUnknownDiagnostic,
-  type SwitcherScanOutcomeUnknownDiagnostic,
 } from "@relay/core";
 import { assertTargetControl, assertTargetObservation } from "./access-control.js";
 import { HttpError, json, parseJsonBody } from "./http.js";
@@ -76,8 +74,6 @@ export type IosMutationOutcomeUnknownPayload = Readonly<Record<string, unknown>>
   scrollSurvey?: ScrollSurveyOutcomeUnknownDiagnostic;
   /** Existing App Map source/destination proof, when the error came from Keep replay. */
   connectionProof?: unknown;
-  /** Terminal picker-scan proof, including the current-state capture instruction. */
-  switcherScan?: SwitcherScanOutcomeUnknownDiagnostic;
 };
 
 /**
@@ -97,7 +93,6 @@ export function iosMutationOutcomeUnknownPayload(
   const visualVerification = iosVisualVerificationDiagnostic(error);
   const scrollSurvey = scrollSurveyOutcomeUnknownDiagnostic(error);
   const connectionProof = connectionProofOutcomeUnknownDiagnostic(error);
-  const switcherScan = switcherScanOutcomeUnknownDiagnostic(error);
   return {
     ...details,
     code: "IOS_MUTATION_OUTCOME_UNKNOWN",
@@ -106,7 +101,6 @@ export function iosMutationOutcomeUnknownPayload(
     ...(visualVerification ? { iosVisualVerification: visualVerification } : {}),
     ...(scrollSurvey ? { scrollSurvey } : {}),
     ...(connectionProof ? { connectionProof } : {}),
-    ...(switcherScan ? { switcherScan } : {}),
   };
 }
 

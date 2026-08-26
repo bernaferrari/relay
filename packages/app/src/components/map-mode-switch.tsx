@@ -68,7 +68,7 @@ export function MapModeSwitch(props: { value: MapMode; onChange: (value: MapMode
               window, so the three modes a person is not in give up their labels
               first. The one they are in never does: "where am I" has to stay
               answered without hovering for a tooltip. */}
-          <span class={cn(props.value !== mode && "max-[1180px]:hidden")}>{label}</span>
+          <span class={cn(props.value !== mode && "max-[1320px]:hidden")}>{label}</span>
         </button>
       ))}
     </div>

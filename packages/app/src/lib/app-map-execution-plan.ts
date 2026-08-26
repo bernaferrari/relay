@@ -25,9 +25,7 @@ function orderedConnections(connections: AppMap["connections"]) {
  * the runner-facing projection needed by playback, evidence, and the one-step
  * debugger. Every projected row retains its canonical Connection origin.
  */
-export function appMapExecutionPlan(
-  connections: AppMap["connections"],
-): AppMapExecutionPlan {
+export function appMapExecutionPlan(connections: AppMap["connections"]): AppMapExecutionPlan {
   const steps: RecipeStep[] = [];
   const origins: AppMapExecutionStepOrigin[] = [];
   for (const connection of orderedConnections(connections)) {
@@ -104,4 +102,3 @@ export function connectionUpdateForExecutionStep(input: {
     ),
   };
 }
-

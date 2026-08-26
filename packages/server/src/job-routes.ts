@@ -2,7 +2,7 @@ import http from "node:http";
 import {
   appMapTestExecutionSourceFromJob,
   appMapTestExecutionSourceFromRun,
-  analyzeLocaleRunBatch,
+  analyzeCombineEvidenceBatch,
   captureHumanInterventionReproof,
   captureScreenshot,
   captureSnapshot,
@@ -11,7 +11,7 @@ import {
   currentOperationContext,
   cleanupScreenshot,
   enqueueJob,
-  exportLocaleRunPackFromBatchId,
+  exportCombineEvidencePackFromBatchId,
   freezeRecipeExecution,
   getActiveJob,
   getActiveJobs,
@@ -398,7 +398,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
   const optionExportMatch = matchPath(pathname, "/jobs/combine/:batchId/export");
   if (method === "GET" && optionExportMatch) {
     try {
-      const exported = await exportLocaleRunPackFromBatchId(optionExportMatch.batchId!);
+      const exported = await exportCombineEvidencePackFromBatchId(optionExportMatch.batchId!);
       json(res, 200, {
         rootDir: exported.rootDir,
         manifest: exported.manifest,
@@ -413,7 +413,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
   const combineAnalysisMatch = matchPath(pathname, "/jobs/combine/:batchId/analysis");
   if (method === "GET" && combineAnalysisMatch) {
     try {
-      json(res, 200, await analyzeLocaleRunBatch(combineAnalysisMatch.batchId!));
+      json(res, 200, await analyzeCombineEvidenceBatch(combineAnalysisMatch.batchId!));
     } catch (error) {
       throw new HttpError(404, error instanceof Error ? error.message : String(error));
     }

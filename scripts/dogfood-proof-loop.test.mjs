@@ -59,7 +59,20 @@ test("parseArgs requires map, test, and serial and validates --pr", () => {
   });
   assert.deepEqual(
     parseArgs(
-      ["--map", "m", "--test", "t", "--serial", "s", "--commit", "abc1234", "--pr", "42", "--branch", "feat"],
+      [
+        "--map",
+        "m",
+        "--test",
+        "t",
+        "--serial",
+        "s",
+        "--commit",
+        "abc1234",
+        "--pr",
+        "42",
+        "--branch",
+        "feat",
+      ],
       {},
     ),
     { map: "m", test: "t", serial: "s", commit: "abc1234", pr: 42, branch: "feat" },
@@ -77,9 +90,13 @@ test("parseArgs requires map, test, and serial and validates --pr", () => {
 });
 
 test("resolveCommit prefers flags over GITHUB_SHA and falls back to git HEAD or nothing", () => {
-  const runCommand = (args) => (args[0] === "git" ? "deadbeefcafe1234567890abcdef1234567890ab\n" : "");
+  const runCommand = (args) =>
+    args[0] === "git" ? "deadbeefcafe1234567890abcdef1234567890ab\n" : "";
   assert.equal(resolveCommit({ commit: "abc1234def56789", env: {} }), "abc1234def56789");
-  assert.equal(resolveCommit({ env: { GITHUB_SHA: "1234567890abcdef" }, runCommand }), "1234567890abcdef");
+  assert.equal(
+    resolveCommit({ env: { GITHUB_SHA: "1234567890abcdef" }, runCommand }),
+    "1234567890abcdef",
+  );
   assert.equal(resolveCommit({ env: {}, runCommand }), "deadbeefcafe1234567890abcdef1234567890ab");
   assert.equal(resolveCommit({ env: {}, runCommand: undefined }), undefined);
   assert.throws(
@@ -137,7 +154,11 @@ test("cliResultEnvelope skips progress lines and unwraps to a run id", () => {
 test("assertServerReachable fails closed on transport errors and unhealthy payloads", async () => {
   const health = await assertServerReachable({
     relayUrl: "http://127.0.0.1:8787/",
-    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, version: "9.9" }) }),
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, version: "9.9" }),
+    }),
   });
   assert.equal(health.version, "9.9");
   await assert.rejects(
@@ -272,7 +293,11 @@ test("runProofLoop end-to-end pass writes evidence, shares, and maps the verdict
     inputs: { map: "grok-ios", test: "settings-tour", serial: "ipad-1" },
     relayUrl: "http://127.0.0.1:8787",
     actor: "agent:loop",
-    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, version: "1.0" }) }),
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, version: "1.0" }),
+    }),
     cli,
     outDir: root,
   });
@@ -283,7 +308,14 @@ test("runProofLoop end-to-end pass writes evidence, shares, and maps the verdict
   assert.equal(summary.leaseCreated, true);
   assert.equal(summary.shareLink, "http://127.0.0.1:8787/shared/runs/share-1");
   const runCall = calls.find((args) => args[0] === "test");
-  assert.deepEqual(runCall.slice(0, 6), ["test", "run", "grok-ios", "settings-tour", "--target", "current"]);
+  assert.deepEqual(runCall.slice(0, 6), [
+    "test",
+    "run",
+    "grok-ios",
+    "settings-tour",
+    "--target",
+    "current",
+  ]);
   assert.ok(runCall.includes("--wait"));
   assert.ok(runCall.includes("--json"));
   await readFile(join(root, "proof-report.json"));

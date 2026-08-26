@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
-import { resolve, dirname } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundleServer } from "./bundle-server.mjs";
 
@@ -7,11 +9,17 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const port = 18_000 + Math.floor(Math.random() * 1_000);
 const SERVER_STARTUP_TIMEOUT_MS = 30_000;
 await bundleServer();
+const isolatedWorkspace = await mkdtemp(join(tmpdir(), "relay-desktop-bundle-"));
 const child = spawn(
   process.execPath,
   [resolve(root, "out/server/index.cjs"), "--port", String(port)],
   {
     stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      RELAY_WORKSPACE_ROOT: isolatedWorkspace,
+      RELAY_STATE_DIR: join(isolatedWorkspace, ".relay"),
+    },
   },
 );
 let stderr = "";
@@ -70,4 +78,5 @@ try {
     new Promise((resolveWait) => setTimeout(resolveWait, 1_000)),
   ]);
   if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  await rm(isolatedWorkspace, { recursive: true, force: true });
 }

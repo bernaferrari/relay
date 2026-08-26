@@ -8,7 +8,12 @@ import {
   type McpServer,
 } from "@modelcontextprotocol/server";
 import type { OperationInvoker } from "./server.js";
-import { readResult, relayMcpResourceMimeType, variable, type RelayResourceScope } from "./resources.js";
+import {
+  readResult,
+  relayMcpResourceMimeType,
+  variable,
+  type RelayResourceScope,
+} from "./resources.js";
 
 type UnknownRecord = Record<string, unknown>;
 

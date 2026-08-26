@@ -75,29 +75,26 @@ export async function enqueueOptionMatrix(
           platform: input.platform,
           serial: input.serial!.trim(),
         };
-  return client.invoke(
-    "job.combine.start",
-    {
-      appMapId: input.appMapId,
-      testId: input.testId,
-      combineId: input.combineId,
-      capture: input.capture,
-      variableIds: input.variableIds,
-      selected: input.selected,
-      strategy: input.strategy,
-      title: input.title,
-      executionMode: input.executionMode,
-      selectedCellIds: input.selectedCellIds,
-      cellRuntimeProfiles: input.cellRuntimeProfiles,
-      ...(input.cellTargetBindings === undefined
-        ? {}
-        : { cellTargetBindings: structuredClone(input.cellTargetBindings) }),
-      ...(input.localAdmission === undefined
-        ? {}
-        : { localAdmission: structuredClone(input.localAdmission) }),
-      ...target,
-    } satisfies OperationInput<"job.combine.start">,
-  );
+  return client.invoke("job.combine.start", {
+    appMapId: input.appMapId,
+    testId: input.testId,
+    combineId: input.combineId,
+    capture: input.capture,
+    variableIds: input.variableIds,
+    selected: input.selected,
+    strategy: input.strategy,
+    title: input.title,
+    executionMode: input.executionMode,
+    selectedCellIds: input.selectedCellIds,
+    cellRuntimeProfiles: input.cellRuntimeProfiles,
+    ...(input.cellTargetBindings === undefined
+      ? {}
+      : { cellTargetBindings: structuredClone(input.cellTargetBindings) }),
+    ...(input.localAdmission === undefined
+      ? {}
+      : { localAdmission: structuredClone(input.localAdmission) }),
+    ...target,
+  } satisfies OperationInput<"job.combine.start">);
 }
 
 /** Exact public estimator input/output for concrete target/Test/action cohorts,

@@ -6,6 +6,8 @@ import {
   type DegradedLibraryItem,
   type MapLibraryItem,
 } from "../lib/app-map-library";
+import { type MapLibraryArea } from "../lib/map-library-area";
+export { normalizeMapLibraryArea } from "../lib/map-library-area";
 import { cn } from "../lib/cn";
 import { displayTitle, fmtAgo, fmtDur, titleize } from "../lib/job";
 import { persistedAsJob } from "../lib/persisted-run";
@@ -14,12 +16,6 @@ import { copyStack, mono } from "../lib/ui";
 import { RelayMark } from "./relay-mark";
 import { Icon, type IconName } from "./icon";
 
-/** "maps" is the product word for this tab; "tests" is the pre-rename
- * spelling still found in stored/URL state, normalized on read. */
-export type MapLibraryArea = "maps" | "runs";
-export function normalizeMapLibraryArea(value: string): MapLibraryArea {
-  return value === "runs" ? "runs" : "maps";
-}
 type RunFilter = "all" | "attention" | "active";
 
 const AREA_TABS: { id: MapLibraryArea; label: string }[] = [
@@ -531,9 +527,7 @@ function RunRow(props: { job: JobInfo; onOpen: (id: string) => void }) {
   const server = useServer();
   const selected = () => server.selectedJobId() === props.job.id;
   const title = () =>
-    props.job.title ??
-    props.job.recipeSnapshot?.title ??
-    titleize(props.job.action);
+    props.job.title ?? props.job.recipeSnapshot?.title ?? titleize(props.job.action);
   return (
     <button
       type="button"

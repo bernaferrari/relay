@@ -181,5 +181,8 @@ test("explicit local Combine transport never falls back to a selected serial", a
   );
   assert.equal(body?.serial, undefined);
   assert.equal(body?.browserTargetId, undefined);
-  assert.equal((body?.cellTargetBindings as unknown[]).length, 1);
+  assert.equal(
+    Array.isArray(body?.cellTargetBindings) ? body.cellTargetBindings.length : undefined,
+    1,
+  );
 });

@@ -25,7 +25,6 @@ import type {
   ScreenVariant,
   UpdateScreenInput,
 } from "./app-map.js";
-import type { OperationRecord } from "./operation-contract.js";
 import type { RunReview } from "./run-review.js";
 import {
   REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,

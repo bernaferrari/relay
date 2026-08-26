@@ -1,9 +1,5 @@
 import * as z from "zod/v4";
-import {
-  identifier,
-  queryBoolean,
-  targetReference,
-} from "./operation-schema-primitives.js";
+import { identifier, queryBoolean, targetReference } from "./operation-schema-primitives.js";
 
 export const executionTargetInputSchema = z.discriminatedUnion("kind", [
   z

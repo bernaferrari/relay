@@ -293,9 +293,7 @@ export async function runExpectScreenStep(
       expectedScreenId: step.screenId,
       expectedScreenTitle: step.screenTitle,
       ...(step.fingerprint ? { expectedFingerprint: step.fingerprint } : {}),
-      ...(mismatchObservedFingerprint
-        ? { observedFingerprint: mismatchObservedFingerprint }
-        : {}),
+      ...(mismatchObservedFingerprint ? { observedFingerprint: mismatchObservedFingerprint } : {}),
       observedScreenTitle: observedTitle,
       resolutionMethod: mismatchResolutionMethod,
       evidence: {

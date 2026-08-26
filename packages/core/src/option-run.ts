@@ -26,11 +26,6 @@ import {
 import { prepareCasePlan, redactCasePlan, type PreparedCasePlan } from "./case-plan.js";
 import { enqueueJob, type EnqueueJobInput, type TestJob } from "./session.js";
 import { currentOperationContext } from "./operation-context.js";
-import {
-  defaultGrokLocaleScope,
-  localeNavFromConnectionActions,
-  localeNavFromRecipeSteps,
-} from "./locale-run.js";
 
 export { appLocaleShouldRelaunch };
 
@@ -61,8 +56,6 @@ export type OptionRunRequest = {
   relaunch?: boolean;
   screenshotEach?: boolean;
   restoreAtEnd?: boolean;
-  profileId?: string;
-  preset?: "grok";
 };
 
 export type ResolvedVariableApply = {
@@ -99,12 +92,49 @@ function recipeStepsFromConnectionActions(
   return steps;
 }
 
+/** Recorded execution steps become a Variable's replayable navigation path. */
+function variableNavFromRecipeSteps(steps: readonly RecipeStep[]): VariableNavStep[] {
+  const result: VariableNavStep[] = [];
+  for (const step of steps) {
+    if (step.kind === "tap") {
+      const identifier = step.target.identifier?.trim();
+      const label = step.target.label?.trim();
+      const text = step.target.text?.trim();
+      if (identifier || label || text) {
+        result.push({
+          kind: "tap",
+          target: {
+            ...(identifier ? { identifier } : {}),
+            ...(label ? { label } : {}),
+            ...(text ? { text } : {}),
+          },
+        });
+      }
+    } else if (step.kind === "sleep") {
+      result.push({ kind: "wait", ms: Math.max(0, Math.min(120_000, Math.round(step.ms))) });
+    } else if (step.kind === "key" && step.key === "back") {
+      result.push({ kind: "back" });
+    } else if (step.kind === "scroll") {
+      result.push({
+        kind: "scroll",
+        direction: step.direction,
+        ...(step.amount != null ? { amount: step.amount } : {}),
+      });
+    } else if (step.kind === "swipe") {
+      result.push({ kind: "scroll", direction: step.from.y > step.to.y ? "down" : "up" });
+    } else if (step.kind === "app" && step.action === "open" && step.app?.trim()) {
+      result.push({
+        kind: "openApp",
+        app: step.app.trim(),
+        ...(step.relaunch === true ? { relaunch: true } : {}),
+      });
+    }
+  }
+  return result;
+}
+
 /** Compile In/Out from recorded connections (actions only) or flattened nav. Never invents Grok nav. */
-export function resolveVariableApply(
-  set: OptionRunSet,
-  map?: AppMap,
-  opts?: { profileId?: string; preset?: "grok" },
-): ResolvedVariableApply {
+export function resolveVariableApply(set: OptionRunSet, map?: AppMap): ResolvedVariableApply {
   if (set.apply.kind === "appLocale") return { entry: [], exit: [] };
   if (set.apply.kind === "toggle") throw new Error("toggles are not runnable yet");
   const apply = set.apply;
@@ -119,12 +149,12 @@ export function resolveVariableApply(
       ? recipeSteps.findIndex((step) => step.id === pickId || step.id?.endsWith(pickId))
       : -1;
     if (pickIndex >= 0) {
-      entry = localeNavFromRecipeSteps(recipeSteps.slice(0, pickIndex)) as VariableNavStep[];
+      entry = variableNavFromRecipeSteps(recipeSteps.slice(0, pickIndex));
       if (!apply.outConnectionId?.trim() && !apply.exitPath?.length) {
-        exit = localeNavFromRecipeSteps(recipeSteps.slice(pickIndex + 1)) as VariableNavStep[];
+        exit = variableNavFromRecipeSteps(recipeSteps.slice(pickIndex + 1));
       }
     } else {
-      entry = localeNavFromConnectionActions(connection.actions) as VariableNavStep[];
+      entry = variableNavFromRecipeSteps(recipeSteps);
     }
   } else {
     entry = [...(apply.entryPath ?? []), ...(apply.pickerPath ?? [])];
@@ -132,14 +162,9 @@ export function resolveVariableApply(
   if (apply.outConnectionId?.trim() && map) {
     const connection = map.connections[apply.outConnectionId.trim()];
     if (!connection) throw new Error(`Out path “${apply.outConnectionId}” is missing from the map`);
-    exit = localeNavFromConnectionActions(connection.actions) as VariableNavStep[];
+    exit = variableNavFromRecipeSteps(recipeStepsFromConnectionActions(connection.actions));
   } else if (!exit.length) {
     exit = [...(apply.exitPath ?? [])];
-  }
-  const wantGrok = opts?.preset === "grok" || opts?.profileId === "grok-ios";
-  if (!entry.length && set.kind === "language" && wantGrok) {
-    const grok = defaultGrokLocaleScope(["en"]);
-    entry = [...(grok.entryPath ?? []), ...(grok.languagePath ?? [])] as VariableNavStep[];
   }
   return { entry, exit };
 }
@@ -148,9 +173,8 @@ export function assertOptionSandwichReady(
   set: OptionRunSet,
   map?: AppMap,
   work?: { startScreenId?: string },
-  opts?: { profileId?: string; preset?: "grok" },
 ): ResolvedVariableApply {
-  const resolved = resolveVariableApply(set, map, opts);
+  const resolved = resolveVariableApply(set, map);
   if (set.apply.kind === "appLocale") return resolved;
   if (!resolved.entry.length && !(set.apply.kind === "list" && set.apply.inConnectionId && !map)) {
     if (!resolved.entry.length) {
@@ -551,10 +575,7 @@ export function composeOptionRunRecipes(input: {
     }
     const prefix = sanitizeId(set.id);
     Object.assign(graph, tapHelpers(prefix, at));
-    const resolved = assertOptionSandwichReady(set, input.request.map, undefined, {
-      profileId: input.request.profileId,
-      preset: input.request.preset,
-    });
+    const resolved = assertOptionSandwichReady(set, input.request.map);
     steps.push(...navStepsToRecipe(resolved.entry, app));
     steps.push(...selectSteps(prefix));
     steps.push(...navStepsToRecipe(resolved.exit, app));
@@ -598,10 +619,7 @@ export function composeOptionRunRecipes(input: {
         continue;
       }
       if (set.apply.kind === "list") {
-        const resolved = assertOptionSandwichReady(set, input.request.map, undefined, {
-          profileId: input.request.profileId,
-          preset: input.request.preset,
-        });
+        const resolved = assertOptionSandwichReady(set, input.request.map);
         steps.push(...navStepsToRecipe(resolved.entry, app));
         steps.push(...restoreListSteps(set));
         steps.push(...navStepsToRecipe(resolved.exit, app));
@@ -716,10 +734,7 @@ export async function startOptionRecipeRun(input: {
   const batchId = input.batchId?.trim() || randomUUID();
   const request = { ...input.request, ...(input.map ? { map: input.map } : {}) };
   for (const set of request.sets) {
-    assertOptionSandwichReady(set, request.map, undefined, {
-      profileId: request.profileId,
-      preset: request.preset,
-    });
+    assertOptionSandwichReady(set, request.map);
   }
   const preparedMatrix = await prepareOptionCasePlan(request, input.seed);
   const optimized = optimizeSequentialAppLocaleRestore(request, preparedMatrix);

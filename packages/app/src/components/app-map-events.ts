@@ -16,11 +16,7 @@ export function canvasOwnsWheel(input: {
   hasCanvasContent: boolean;
   insideOverlay: boolean;
 }): boolean {
-  return (
-    input.workspaceView === "map" &&
-    input.hasCanvasContent &&
-    !input.insideOverlay
-  );
+  return input.workspaceView === "map" && input.hasCanvasContent && !input.insideOverlay;
 }
 
 const CANVAS_SHORTCUT_EXCLUSION =
@@ -40,8 +36,7 @@ export function shouldIgnoreCanvasShortcut(
  * Cmd/Ctrl-wheel gesture so every zoom path moves the camera in lockstep:
  * `=`/`+` zooms in, `-` zooms out (same 0.1 step as the minimap stepper). */
 export function canvasZoomKeyAction(key: string): CanvasWheelAction {
-  if (key === "=" || key === "+")
-    return { kind: "zoom", delta: CANVAS_ZOOM_KEY_STEP };
+  if (key === "=" || key === "+") return { kind: "zoom", delta: CANVAS_ZOOM_KEY_STEP };
   if (key === "-") return { kind: "zoom", delta: -CANVAS_ZOOM_KEY_STEP };
   return null;
 }
@@ -50,9 +45,7 @@ export function isCaptureScreenShortcut(
   event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey">,
 ): boolean {
   return (
-    (event.metaKey || event.ctrlKey) &&
-    event.shiftKey &&
-    event.key.toLocaleLowerCase() === "s"
+    (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLocaleLowerCase() === "s"
   );
 }
 
@@ -67,12 +60,7 @@ export function canvasWheelAction(input: {
   metaKey: boolean;
   viewportHeight: number;
 }): CanvasWheelAction {
-  const unit =
-    input.deltaMode === 1
-      ? 16
-      : input.deltaMode === 2
-        ? input.viewportHeight
-        : 1;
+  const unit = input.deltaMode === 1 ? 16 : input.deltaMode === 2 ? input.viewportHeight : 1;
   let deltaX = input.deltaX * unit;
   let deltaY = input.deltaY * unit;
 
@@ -209,19 +197,10 @@ export function createAppMapEventOrchestration(options: {
     window.addEventListener("keydown", onCanvasKey);
     window.addEventListener("keyup", onCanvasKeyUp);
     onCleanup(() => {
-      window.removeEventListener(
-        "relay:device-selected",
-        options.onDeviceSelected,
-      );
-      window.removeEventListener(
-        "relay:toggle-device-panel",
-        onToggleDevicePanel,
-      );
+      window.removeEventListener("relay:device-selected", options.onDeviceSelected);
+      window.removeEventListener("relay:toggle-device-panel", onToggleDevicePanel);
       window.removeEventListener("relay:open-device-panel", onOpenDevicePanel);
-      window.removeEventListener(
-        "relay:close-device-panel",
-        onCloseDevicePanel,
-      );
+      window.removeEventListener("relay:close-device-panel", onCloseDevicePanel);
       window.removeEventListener("relay:run-app-map", onRunMap);
       window.removeEventListener("relay:record-path", onRecordPath);
       window.removeEventListener("relay:capture-screen", onCaptureScreen);

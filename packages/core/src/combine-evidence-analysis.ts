@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
 import type { CombineEvidenceAnalysis, CombineEvidenceFinding } from "@relay/protocol";
-import type { CombineEvidenceControl, CombineEvidenceScreen, CombineEvidenceSession } from "./combine-evidence-session.js";
+import type {
+  CombineEvidenceControl,
+  CombineEvidenceScreen,
+  CombineEvidenceSession,
+} from "./combine-evidence-session.js";
 
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
-
 
 function normalizedEvidenceLabel(value: string | undefined): string {
   return (value ?? "").normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase();
@@ -72,7 +75,7 @@ function localeFamily(locale: string): string {
 }
 
 function evidenceFindingId(parts: string[]): string {
-  return digest(`relay-corpus-finding:v1:${parts.join("\u0000")}`).slice(0, 20);
+  return digest(`relay-fixture-finding:v1:${parts.join("\u0000")}`).slice(0, 20);
 }
 
 /** The platform already gave up on the string: it ends in an ellipsis. */
@@ -149,9 +152,7 @@ function clippedTextFinding(input: {
 /** Explainable checks over locale-stable screen and control evidence. No model
  * call is required, and possible linguistic defects remain explicitly
  * qualified so the report does not overstate certainty. */
-export function analyzeCombineEvidence(
-  session: CombineEvidenceSession,
-): CombineEvidenceAnalysis {
+export function analyzeCombineEvidence(session: CombineEvidenceSession): CombineEvidenceAnalysis {
   const baselineLocale = session.scope.mapLocale ?? session.scope.locales[0]!;
   const groups = new Map<string, CombineEvidenceScreen[]>();
   for (const screen of session.screens) {
@@ -319,4 +320,3 @@ export function analyzeCombineEvidence(
     affectedScreens: new Set(findings.map((finding) => finding.canonicalKey)).size,
   };
 }
-

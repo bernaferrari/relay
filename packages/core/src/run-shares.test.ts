@@ -8,7 +8,6 @@ import type { PersistedRun } from "./runs.js";
 import {
   buildRunShareReport,
   createRunShare,
-  failedStepFor,
   listRunShares,
   publicShareBaseUrl,
   pruneExpiredShares,
@@ -420,7 +419,10 @@ test("resolveRunShareTokenState distinguishes expired from invalid tokens", asyn
     if (active.state === "active") assert.equal(active.record.id, created.share.id);
 
     const expiredAt = created.share.expiresAt;
-    assert.equal((await resolveRunShareTokenState(root, created.token, expiredAt)).state, "expired");
+    assert.equal(
+      (await resolveRunShareTokenState(root, created.token, expiredAt)).state,
+      "expired",
+    );
     assert.equal(
       (await resolveRunShareTokenState(root, `not-a-token.${created.token}`, at + 1)).state,
       "invalid",

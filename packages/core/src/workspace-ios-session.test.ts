@@ -5,14 +5,11 @@ import { resetDeviceClients } from "./device.js";
 import { setLocalDeviceProvider } from "./device-factory.js";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { IosSnapshotTimedOutError, type Device } from "./device.js";
-import {
-  IosDeviceAttentionError,
-  IosXCTestSessionUnavailableError,
-} from "./ios-device-adapter.js";
+import { IosXCTestSessionUnavailableError } from "./ios-device-adapter.js";
 import {
   ensureIosRunnerPrepared,
   lastIosSessionOperationDiagnostic,
@@ -76,9 +73,13 @@ test("a proven session-unavailable class marks xctest availability failed", asyn
   const failure = new IosXCTestSessionUnavailableError("probe did not attach");
   await assert.rejects(
     runWithTargetContext({ kind: "device", platform: "ios", serial: "unavailable-ipad" }, () =>
-      withSession({} as Device, async () => {
-        throw failure;
-      }, "snapshot"),
+      withSession(
+        {} as Device,
+        async () => {
+          throw failure;
+        },
+        "snapshot",
+      ),
     ),
     (error: unknown) => error === failure,
   );
@@ -92,12 +93,16 @@ test("a proven session-unavailable class marks xctest availability failed", asyn
 });
 
 test("an unproven failure keeps session stages skipped instead of claiming Xcode work", async () => {
-  const failure = new Error("already in use by session \"someone-else\"");
+  const failure = new Error('already in use by session "someone-else"');
   await assert.rejects(
     runWithTargetContext({ kind: "device", platform: "ios", serial: "binding-conflict-ipad" }, () =>
-      withSession({} as Device, async () => {
-        throw failure;
-      }, "snapshot"),
+      withSession(
+        {} as Device,
+        async () => {
+          throw failure;
+        },
+        "snapshot",
+      ),
     ),
     (error: unknown) => error === failure,
   );
@@ -238,7 +243,6 @@ test("a slow accessibility query stays in-flight without claiming XCTest is unav
     false,
   );
 });
-
 
 /**
  * A minimal loopback stand-in for the agent-device daemon. `recoverTargetRuntime`

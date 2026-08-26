@@ -214,7 +214,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
       ],
       examples: [
         "relay test run checkout smoke --target current --revision current",
-        "relay test run checkout smoke --commit abc1234 --pr 42 --branch feature/checkout --input '{\"expectedRevision\":7,\"target\":{\"kind\":\"device\",\"platform\":\"ios\",\"targetId\":\"DEVICE\"}}'",
+        'relay test run checkout smoke --commit abc1234 --pr 42 --branch feature/checkout --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
         'relay test run grok-ios settings-tour --in language=ja,pt --lens visual --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
         'relay test run grok-ios settings-tour --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"},"targetProfileId":"ipad-pt-BR"}\'',

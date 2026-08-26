@@ -14,7 +14,7 @@ function isLocalizedRecipeJob(job?: TestJob): boolean {
 }
 
 /**
- * App-locale runs intentionally change visible text, so an English semantic
+ * Language Variable cases intentionally change visible text, so an English semantic
  * fingerprint cannot be the only screen proof. Stable platform identifiers
  * plus near-identical accessibility structure are a strict, language-neutral
  * substitute. Labels alone never qualify: that would make an unrelated

@@ -35,10 +35,7 @@ function timeLabel(at: number): string {
 }
 
 /** Canonical App Map activity. Recipe history is deliberately not an authoring surface. */
-export function AppMapHistoryPanel(props: {
-  activity: ActivityEvent[];
-  onClose: () => void;
-}) {
+export function AppMapHistoryPanel(props: { activity: ActivityEvent[]; onClose: () => void }) {
   const activityRows = createMemo(() => collapseActivity(props.activity).slice(0, 40));
 
   return (

@@ -7,10 +7,10 @@
  */
 import type {
   CombineEvidenceFinding,
-  LocaleRunAnalysisReport,
-  LocaleRunPackManifest,
+  CombineEvidenceAnalysisReport,
+  CombineEvidencePackManifest,
 } from "@relay/protocol";
-import type { LocaleCellAnalysis } from "./combine-verdict";
+import type { CombineCellAnalysis } from "./combine-verdict";
 
 export type PackFinding = CombineEvidenceFinding & {
   /** Pack-relative PNG the finding was observed on, when the frame was kept. */
@@ -37,12 +37,15 @@ export type PackFindingsSummary = {
   unreadFrames: number;
 };
 
-function withFrame(manifest: LocaleRunPackManifest, finding: CombineEvidenceFinding): PackFinding {
+function withFrame(
+  manifest: CombineEvidencePackManifest,
+  finding: CombineEvidenceFinding,
+): PackFinding {
   const frame = manifest.byCanonicalKey[finding.canonicalKey]?.[finding.locale];
   return frame ? { ...finding, frame } : { ...finding };
 }
 
-export function packFindingsSummary(manifest: LocaleRunPackManifest): PackFindingsSummary {
+export function packFindingsSummary(manifest: CombineEvidencePackManifest): PackFindingsSummary {
   const { analysis, analysisCoverage } = manifest;
   return {
     baselineLocale: analysis.baselineLocale,
@@ -55,7 +58,7 @@ export function packFindingsSummary(manifest: LocaleRunPackManifest): PackFindin
 }
 
 /** One entry per matrix case, in pack order, including the clean ones. */
-export function packFindingsByCase(manifest: LocaleRunPackManifest): PackCellFindings[] {
+export function packFindingsByCase(manifest: CombineEvidencePackManifest): PackCellFindings[] {
   const byLocale = new Map<string, PackFinding[]>();
   for (const finding of manifest.analysis.findings) {
     byLocale.set(finding.locale, [
@@ -85,9 +88,9 @@ export function packFindingsByCase(manifest: LocaleRunPackManifest): PackCellFin
  * authored ones. A cell the report does not mention returns nothing, and a
  * verdict of "not checked" is the honest answer for it.
  */
-export function localeCellAnalysisIndex(
-  report: LocaleRunAnalysisReport | null | undefined,
-): (jobId: string, framePath: string | undefined) => LocaleCellAnalysis | undefined {
+export function combineCellAnalysisIndex(
+  report: CombineEvidenceAnalysisReport | null | undefined,
+): (jobId: string, framePath: string | undefined) => CombineCellAnalysis | undefined {
   if (!report) return () => undefined;
   const byLocale = new Map<string, CombineEvidenceFinding[]>();
   for (const finding of report.analysis.findings) {
@@ -115,7 +118,7 @@ export function localeCellAnalysisIndex(
 
 /** Findings observed on one frame, for a screenshot a person already opened. */
 export function packFindingsForFrame(
-  manifest: LocaleRunPackManifest,
+  manifest: CombineEvidencePackManifest,
   framePath: string,
 ): PackFinding[] {
   return manifest.analysis.findings

@@ -14,6 +14,11 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const rawDeviceMutationBoundaryPaths = new Set([
   "packages/core/src/device.ts",
   "packages/core/src/device-mutation-adapter.ts",
+  // These modules are cohesive implementation seams extracted from device.ts.
+  // They still sit below the public workflow boundary and deliberately own
+  // the dispatcher/native transport calls they contain.
+  "packages/core/src/device-dispatch.ts",
+  "packages/core/src/device-text-entry.ts",
 ]);
 
 /**
@@ -36,14 +41,29 @@ const rawSdkBoundaryPaths = new Set([
 ]);
 
 const internalDeviceModuleOwners = new Map([
-  ["device-capabilities", new Set(["packages/core/src/device.ts", "packages/core/src/testing.ts"])],
-  ["device-mutation-adapter", new Set(["packages/core/src/device.ts"])],
+  [
+    "device-capabilities",
+    new Set([
+      "packages/core/src/device.ts",
+      "packages/core/src/device-dispatch.ts",
+      "packages/core/src/testing.ts",
+    ]),
+  ],
+  [
+    "device-mutation-adapter",
+    new Set([
+      "packages/core/src/device.ts",
+      "packages/core/src/device-dispatch.ts",
+      "packages/core/src/device-text-entry.ts",
+    ]),
+  ],
   [
     "device-observation-membrane",
     new Set([
       "packages/core/src/browser-target.ts",
       "packages/core/src/device-factory.ts",
       "packages/core/src/device.ts",
+      "packages/core/src/device-dispatch.ts",
       "packages/core/src/testing.ts",
     ]),
   ],

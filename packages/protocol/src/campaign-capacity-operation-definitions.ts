@@ -170,9 +170,7 @@ const localCampaignAdmissionPreflightOutputParser = objectParser<
  * The capacity descriptor stays outside the monolithic registry, while
  * `operations.ts` remains the one place that composes every public operation.
  */
-const { command } = createOperationBuilders<
-  Pick<RelayOperationMap, CampaignCapacityOperationId>
->();
+const { command } = createOperationBuilders<Pick<RelayOperationMap, CampaignCapacityOperationId>>();
 
 export const campaignCapacityOperationDefinitions = [
   command(

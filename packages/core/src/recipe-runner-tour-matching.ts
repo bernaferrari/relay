@@ -94,7 +94,7 @@ export function tourMappedRowRecoveryMoves(): Array<"up" | "down"> {
 /**
  * A translated child can share labels and layout traits with its parent.
  * Never compensate for a failed return by scrolling: that turns an uncertain
- * Back action into destructive exploration inside the child. Locale runs
+ * Back action into destructive exploration inside the child. Language Variable cases
  * must first re-establish the exact mapped parent; otherwise they stop with
  * evidence for a person or agent to decide how to recover.
  */

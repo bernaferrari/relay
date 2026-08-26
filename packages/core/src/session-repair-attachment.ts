@@ -38,16 +38,15 @@ export async function attachDestinationRepairProposals(
   runtime: RecipeRuntimeState,
 ): Promise<void> {
   if (isJobCancellation(error) || isTargetUnavailableError(error)) return;
-  const hintArtifact = [...job.artifacts]
-    .find(
-      (
-        artifact,
-      ): artifact is {
-        kind: string;
-        capturedAt: number;
-        data: DestinationRepairHintArtifact;
-      } => artifact.kind === "destination-repair-hint",
-    );
+  const hintArtifact = [...job.artifacts].find(
+    (
+      artifact,
+    ): artifact is {
+      kind: string;
+      capturedAt: number;
+      data: DestinationRepairHintArtifact;
+    } => artifact.kind === "destination-repair-hint",
+  );
   if (!hintArtifact) return;
   const intent = parseAppMapTestExecutionIntentArtifact(
     job.artifacts.find((artifact) => artifact.kind === "app-map-test-execution-intent"),
@@ -86,9 +85,7 @@ export async function attachDestinationRepairProposals(
     },
     map: map ?? { screens: {}, screenVariants: {} },
     grounder: createDefaultGrounder(),
-    observationAccess: {
-      ...(checkpoint?.nodes ? { nodes: () => Promise.resolve(checkpoint.nodes) } : {}),
-    },
+    observationAccess: checkpoint?.nodes ? { nodes: () => Promise.resolve(checkpoint.nodes) } : {},
   });
   job.artifacts.push({
     kind: "destination-repair-proposals",

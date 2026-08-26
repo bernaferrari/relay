@@ -123,7 +123,9 @@ export async function resolveRegisteredBuildArtifact(
     }
     const actualSha256 = hash.digest("hex");
     if (expectedSha256 !== undefined && actualSha256 !== expectedSha256) {
-      throw new Error(`Build source sha256 mismatch: expected ${expectedSha256}, got ${actualSha256}`);
+      throw new Error(
+        `Build source sha256 mismatch: expected ${expectedSha256}, got ${actualSha256}`,
+      );
     }
     // Rename only after full verification so failures never leave a
     // half-written artifact at the canonical cache path.

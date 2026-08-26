@@ -114,7 +114,6 @@ const relayToolOutputSchema = z
         iosReview: z
           .object({
             iosMutation: z.record(z.string(), z.unknown()).optional(),
-            switcherScan: z.record(z.string(), z.unknown()).optional(),
           })
           .strict()
           .optional(),

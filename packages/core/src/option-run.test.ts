@@ -949,8 +949,6 @@ test("empty Out still runs; language without In does not invent Grok nav", () =>
   assert.equal(resolved.entry.length, 0);
   assert.equal(resolved.exit.length, 0);
   assert.throws(() => assertOptionSandwichReady(language), /Record how you open this list/);
-  const grokFilled = resolveVariableApply(language, undefined, { preset: "grok" });
-  assert.ok(grokFilled.entry.length > 0);
   const location: OptionRunSet = {
     id: "locations",
     name: "Location",

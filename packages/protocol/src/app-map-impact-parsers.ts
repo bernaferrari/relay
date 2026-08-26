@@ -25,12 +25,20 @@ export function createAppMapImpactParsers(dependencies: AppMapParserDependencies
       }
       for (const usage of impact.directUsages as unknown[]) {
         const entry = record(usage, "routine impact directUsage");
-        if (entry.ownerKind !== "connection" && entry.ownerKind !== "routine" && entry.ownerKind !== "flow") {
+        if (
+          entry.ownerKind !== "connection" &&
+          entry.ownerKind !== "routine" &&
+          entry.ownerKind !== "flow"
+        ) {
           fail("routine impact ownerKind", "must be connection, routine, or flow");
         }
         string(entry.ownerId, "routine impact ownerId");
       }
-      for (const field of ["affectedRoutineIds", "affectedConnectionIds", "affectedFlowIds"] as const) {
+      for (const field of [
+        "affectedRoutineIds",
+        "affectedConnectionIds",
+        "affectedFlowIds",
+      ] as const) {
         const ids = impact[field];
         if (!Array.isArray(ids)) fail(`routine impact ${field}`, "must be an array");
         for (const id of ids as unknown[]) string(id, `routine impact ${field} id`);

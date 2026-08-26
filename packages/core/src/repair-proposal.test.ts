@@ -2,11 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, Screen } from "@relay/protocol";
 import { proposeRepair } from "./repair-proposal.js";
-import type {
-  DestinationRepairHint,
-  DeviceObservationAccess,
-  RepairMapSource,
-} from "./repair-proposal.js";
+import type { DestinationRepairHint, RepairMapSource } from "./repair-proposal.js";
 import { StubVisionGrounder, type Grounder } from "./grounding.js";
 
 const scope = { organizationId: "org", projectId: "project", appMapId: "map" };

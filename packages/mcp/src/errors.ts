@@ -28,11 +28,10 @@ export type RelayMcpRecoveryCommand = {
 /**
  * The inspectable part of a terminal physical-iOS outcome. Keep it separate
  * from generic error text so an MCP agent can see why it must stop before
- * issuing another command, including route-specific proof from a picker scan.
+ * issuing another command.
  */
 export type RelayMcpIosReview = {
   iosMutation?: Record<string, unknown>;
-  switcherScan?: Record<string, unknown>;
 };
 
 export type RelayMcpStructuredError = {
@@ -146,12 +145,7 @@ function recoveryActionFrom(value: unknown): RelayMcpStructuredError["recoveryAc
 
 function iosReviewFrom(body: Record<string, unknown> | undefined): RelayMcpIosReview | undefined {
   const iosMutation = object(body?.iosMutation);
-  const switcherScan = object(body?.switcherScan);
-  if (!iosMutation && !switcherScan) return undefined;
-  return {
-    ...(iosMutation ? { iosMutation } : {}),
-    ...(switcherScan ? { switcherScan } : {}),
-  };
+  return iosMutation ? { iosMutation } : undefined;
 }
 
 export function relayMcpError(operationId: OperationId, error: unknown): RelayMcpStructuredError {

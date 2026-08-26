@@ -398,7 +398,9 @@ const executionTarget = z.discriminatedUnion("kind", [
 ]);
 
 const targetContext = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("device"), platform: z.enum(["android", "ios"]), serial: text }).strict(),
+  z
+    .object({ kind: z.literal("device"), platform: z.enum(["android", "ios"]), serial: text })
+    .strict(),
   z.object({ kind: z.literal("browser"), platform: z.literal("browser"), targetId: text }).strict(),
   z
     .object({
@@ -614,7 +616,9 @@ export const workspaceTargetOperationOutputSchemas = {
     .object({ ok: z.boolean(), checks: z.array(diagnostic), error: z.string().optional() })
     .strict(),
   "system.audit.list": z.object({ events: z.array(auditEvent) }).strict(),
-  "activity.list": z.object({ records: z.array(activityRecord), nextCursor: text.optional() }).strict(),
+  "activity.list": z
+    .object({ records: z.array(activityRecord), nextCursor: text.optional() })
+    .strict(),
   "workspace.apple-device.update": z.object({ setup: deviceSetup }).strict(),
   "workspace.apple-live-preview.update": z.object({ setup: deviceSetup }).strict(),
   "target.list": z.object({ targets: z.array(targetDefinition) }).strict(),
@@ -677,9 +681,7 @@ export const workspaceTargetOperationOutputSchemas = {
         .nullable(),
     })
     .strict(),
-  "target.stream.open": z
-    .object({ contentType: text, stream: z.literal("binary") })
-    .strict(),
+  "target.stream.open": z.object({ contentType: text, stream: z.literal("binary") }).strict(),
   "action.run": actionRunOutput,
   "schedule.list": z.object({ schedules: z.array(schedule) }).strict(),
   "schedule.create": z.object({ schedule }).strict(),

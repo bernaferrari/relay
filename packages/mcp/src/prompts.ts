@@ -119,6 +119,7 @@ export const relayMcpPrompts = [
       "target.screenshot.capture",
       "lease.list",
       "app-map.get",
+      "app-map.diff.impact",
       "app-map.test.run",
       "job.get",
       "run.get",
@@ -126,6 +127,7 @@ export const relayMcpPrompts = [
       "run.story.get",
       "run.repair.list",
       "run.repair.propose",
+      "run.share.create",
     ],
   },
 ] as const satisfies readonly RelayMcpPromptDescriptor[];
@@ -410,9 +412,7 @@ function registerVerifyChangePrompt(server: McpServer, scope: RelayPromptScope):
             .describe(
               "Changed file paths, one per line; provide when no impact query is available",
             ),
-          appMapId: relayIdentifier
-            .optional()
-            .describe("Restrict verification to one App Map"),
+          appMapId: relayIdentifier.optional().describe("Restrict verification to one App Map"),
         })
         .strict(),
     },
@@ -426,15 +426,21 @@ function registerVerifyChangePrompt(server: McpServer, scope: RelayPromptScope):
           sharedSafety(projectId),
           "",
           "Scope (no mutation):",
-          `1. Establish impact. If a routine-impact tool is available in this profile, ask it with ${
-            commitSha ? `commit ${commitSha}` : "the change description"
-          }; otherwise use the provided changed files (${
-            changedFiles ? changedFiles.split("\n").filter(Boolean).length : 0
-          } listed) as the input. Never guess flows that neither source names.`,
+          `1. Establish impact. Derive the changed file paths ${
+            changedFiles
+              ? `from the provided list (${changedFiles.split("\n").filter(Boolean).length} files)`
+              : "from your VCS context (for example git diff --name-only against the base branch)"
+          }, then call the relay_app_map_diff_impact tool with ${
+            appMapId ?? "{appMapId}"
+          } and changedFiles to get the affected Test ids. Never guess flows that neither the tool nor the changed files name.`,
           `2. Read ${relayMcpResourceUris.appMaps}${appMapId ? "" : " to find candidate maps"} and relay://app-maps/${appMapId ?? "{appMapId}"}/tests. Select the smallest set of saved graph Tests whose steps traverse the impacted screens and connections. Prefer existing Tests; propose new authoring only if nothing covers the change, and stop for approval before creating anything.`,
           "",
           "Run (only after explicit confirmation):",
-          "3. Verify or acquire only the required Target lease without displacing another actor. Run each selected Test once with relay_app_map_test_run using expectedRevision and an explicit target. Do not widen to unrelated Tests to look thorough.",
+          `3. Verify or acquire only the required Target lease without displacing another actor. Run each selected Test once with relay_app_map_test_run using expectedRevision and an explicit target${
+            commitSha
+              ? `, and bind the proof to this change by passing sourceRevision {vcs: "git", sha: "${commitSha}"}`
+              : ' (pass sourceRevision {vcs: "git", sha} when verifying committed work so proofs attach to the commit)'
+          }. Do not widen to unrelated Tests to look thorough.`,
           "4. Follow each returned job ID with relay_job_get. Do not infer success from transport success.",
           "",
           "Proof and verdict:",

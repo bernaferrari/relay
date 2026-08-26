@@ -61,8 +61,9 @@ export function parseDevicectlCrashEntries(
   } catch {
     for (const line of output.split(/\r?\n/)) {
       // Text rows look like: `-rw-r--r-- 1 mobile 12345 2026-08-01 12:00:00 MyApp-2026-08-01-120000.ips`
-      const match =
-        /^(\S+\s+){4}(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?)\s+(\S+\.ips)$/u.exec(line.trim());
+      const match = /^(\S+\s+){4}(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?)\s+(\S+\.ips)$/u.exec(
+        line.trim(),
+      );
       if (match?.[2] && match[3]) {
         const at = Date.parse(match[2].replace(" ", "T") + "Z");
         entries.push({
@@ -97,9 +98,7 @@ function collectDevicectlFiles(
     entries.push({
       name,
       ...(typeof record.path === "string" ? { path: record.path } : {}),
-      ...(modifiedAt !== undefined && Number.isFinite(modifiedAt)
-        ? { modifiedAt }
-        : {}),
+      ...(modifiedAt !== undefined && Number.isFinite(modifiedAt) ? { modifiedAt } : {}),
     });
     return;
   }
@@ -300,6 +299,5 @@ export async function captureNativeCrashEvidence(since: number): Promise<CrashEv
  * reliable discriminator available here is the UDID prefix Apple assigns to
  * physical hardware (`00008…` / `0000…-…`). */
 function isPhysicalIosSerial(serial: string): boolean {
-  return /^0000/i.test(serial) || /^[0-9a-f]{40}$/i.test(serial);
+  return serial.startsWith("0000") || /^[0-9a-f]{40}$/i.test(serial);
 }
-

@@ -115,7 +115,13 @@ const campaignPlanSchema: z.ZodType<CampaignCapacityPlan> = z
     workItems: z.number(),
     estimatedWorkItemDurationMs: z.number(),
     slots: z.array(
-      z.object({ targetId: z.string(), platform: z.enum(["android", "ios", "browser"]), workerId: z.string() }).strict(),
+      z
+        .object({
+          targetId: z.string(),
+          platform: z.enum(["android", "ios", "browser"]),
+          workerId: z.string(),
+        })
+        .strict(),
     ),
     excludedTargets: z.array(
       z

@@ -108,10 +108,7 @@ test("rejects non-https remote sources before any download", async () => {
   assert.deepEqual(plainHttp.capabilities, { install: false, launch: false });
   assert.match(plainHttp.checks[0]?.message ?? "", /absolute https/);
 
-  await assert.rejects(
-    resolveRegisteredBuildArtifact("file:///tmp/app.apk"),
-    /absolute http\(s\)/,
-  );
+  await assert.rejects(resolveRegisteredBuildArtifact("file:///tmp/app.apk"), /absolute http\(s\)/);
 });
 
 test("downloads a remote source into the state builds cache and preflights it", async () => {
@@ -165,8 +162,7 @@ test("fails closed when the downloaded bytes do not match the expected sha256", 
   try {
     await assert.rejects(
       resolveRegisteredBuildArtifact(url, { sourceSha256: wrongSha }),
-      (error: unknown) =>
-        error instanceof Error && /sha256 mismatch/.test(error.message),
+      (error: unknown) => error instanceof Error && /sha256 mismatch/.test(error.message),
     );
     // Fail-closed: no verified artifact is ever left in the cache.
     const cacheDirectory = join(process.env.RELAY_STATE_DIR!, "builds");

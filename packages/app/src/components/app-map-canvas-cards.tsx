@@ -53,9 +53,7 @@ export function EmptyScreenshot(props: { size?: "compact" | "roomy"; hint?: stri
         No screenshot
       </span>
       <Show when={props.hint}>
-        {(hint) => (
-          <span class="text-micro/[1.35] text-[var(--text-invert-weak)]">{hint()}</span>
-        )}
+        {(hint) => <span class="text-micro/[1.35] text-[var(--text-invert-weak)]">{hint()}</span>}
       </Show>
     </div>
   );

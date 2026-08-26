@@ -31,9 +31,9 @@ test("renderer observation sessions cannot become a second editable graph", () =
   assert.deepEqual(
     evaluateProductDocumentBoundaries([
       {
-        path: "packages/app/src/components/corpus-results.tsx",
+        path: "packages/app/src/components/fixture-results.tsx",
         lines: 1,
-        source: "import type { CorpusSession } from '@relay/protocol';",
+        source: "import type { FixtureSession } from '@relay/protocol';",
       },
       {
         path: "packages/core/src/app-map/observation-proposal.ts",

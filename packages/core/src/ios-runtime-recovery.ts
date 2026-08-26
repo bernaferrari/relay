@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -179,9 +178,11 @@ export async function recoverIosRuntimeSession(
   onRepairStep?: IosRepairStepReporter,
 ): Promise<IosRuntimeSessionRecovery> {
   const steps: IosSessionLifecycleStep[] = [];
-  const onRepairStepOrDefault: IosRepairStepReporter = onRepairStep ?? ((step) => {
-    steps.push(step);
-  });
+  const onRepairStepOrDefault: IosRepairStepReporter =
+    onRepairStep ??
+    ((step) => {
+      steps.push(step);
+    });
   const probeStartedAt = Date.now();
   try {
     const restored = await inspect();
@@ -758,7 +759,9 @@ export async function isIosDeviceLockedMidRun(
  */
 export async function captureIosPixelFingerprint(
   serial: string,
-  input: { run?: (file: string, args: readonly string[], timeoutMs: number) => Promise<CommandResult> } = {},
+  input: {
+    run?: (file: string, args: readonly string[], timeoutMs: number) => Promise<CommandResult>;
+  } = {},
 ): Promise<string | undefined> {
   const directory = await mkdtemp(join(tmpdir(), "relay-ios-second-look-"));
   const path = join(directory, "frame.png");
@@ -817,16 +820,12 @@ export async function runIosMutationWithAssistedSecondLook<T>(
     captureFingerprint?: () => Promise<string | undefined>;
   } = {},
 ): Promise<T> {
-  const capture =
-    input.captureFingerprint ?? (() => captureIosPixelFingerprint(serial));
+  const capture = input.captureFingerprint ?? (() => captureIosPixelFingerprint(serial));
   const baseline = await capture();
   try {
     return await runIosMutationOnce(serial, operation, op);
   } catch (error) {
-    if (
-      !(error instanceof IosMutationOutcomeUnknownError) ||
-      input.assistedSecondLook !== true
-    ) {
+    if (!(error instanceof IosMutationOutcomeUnknownError) || input.assistedSecondLook !== true) {
       throw error;
     }
     const current = await capture();

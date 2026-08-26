@@ -4,7 +4,7 @@ import {
   connectAppMapScreens,
   currentOperationContext,
   findAppMapCaptureScreen,
-  inferLocaleOptionsFromTeach,
+  inferVariableOptionsFromTeach,
   now,
   readAppMap,
   reviewAppMapScreenCapture,
@@ -39,10 +39,7 @@ import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
 
-  const variableInfer = matchPath(
-    pathname,
-    "/app-maps/:appMapId/variables/:variableId/infer",
-  );
+  const variableInfer = matchPath(pathname, "/app-maps/:appMapId/variables/:variableId/infer");
   if (method === "POST" && variableInfer) {
     const body = (await parseJsonBody(request)) as Omit<
       OperationInput<"app-map.variable.infer">,
@@ -72,14 +69,9 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
       session = await authoringSessions.capture(session.id, createAuthoringRuntime());
       const observation = currentTakeRevision(session)?.before;
       if (!observation) throw new HttpError(502, "The target returned no screen observation");
-      const inferred = inferLocaleOptionsFromTeach({
+      const inferred = inferVariableOptionsFromTeach({
         nodes: observation.nodes as never,
-        examples: body.taughtRows.map((row) => ({
-          locale: row.id,
-          ...(row.identifier ? { identifier: row.identifier } : {}),
-          ...(row.label ? { label: row.label } : {}),
-          ...(row.text ? { text: row.text } : {}),
-        })),
+        taughtRows: body.taughtRows,
       });
       const existing = appMap.variables[variableInfer.variableId!];
       const at = Math.max(now(), appMap.updatedAt);
@@ -97,8 +89,8 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
         kind: body.kind ?? existing?.kind ?? "custom",
         apply: body.apply ?? existing?.apply ?? { kind: "list" as const },
         options: stabilizeOptionIds(
-          inferred.options.map((option) => ({
-            id: option.locale,
+          inferred.map((option) => ({
+            id: option.id,
             ...(option.identifier ? { identifier: option.identifier } : {}),
             ...(option.label ? { label: option.label } : {}),
             ...(option.text ? { text: option.text } : {}),

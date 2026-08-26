@@ -29,9 +29,7 @@ export const sourceRevisionSchema = z
     artifactDigest: text("Built artifact digest").optional(),
   })
   .strict()
-  .describe(
-    "Immutable commit/build identity frozen with the run as audit-grade evidence",
-  );
+  .describe("Immutable commit/build identity frozen with the run as audit-grade evidence");
 
 /** The offline preview and the queued run share one evidence-scope vocabulary.
  * Keeping it here makes every transport as strict as the protocol contract,

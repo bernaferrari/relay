@@ -657,11 +657,7 @@ test("equal before and after pixels on a settled screen stay a typed unchanged e
       await assert.rejects(
         verifyIosScreenChanged("udid-1", async () => undefined, {
           bin: "ios",
-          run: screenshotRunner([
-            Buffer.from("same"),
-            Buffer.from("same"),
-            Buffer.from("same"),
-          ]),
+          run: screenshotRunner([Buffer.from("same"), Buffer.from("same"), Buffer.from("same")]),
           settleMs: 6,
           temporaryDirectory: directory,
           repair: {

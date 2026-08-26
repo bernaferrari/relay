@@ -1,21 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  crashLogEntryIsCandidate,
-  parseDevicectlCrashEntries,
-} from "./crash-evidence.js";
+import { crashLogEntryIsCandidate, parseDevicectlCrashEntries } from "./crash-evidence.js";
 import { runWithTargetContext } from "./target-context.js";
 
 test("crash-log candidates are filtered by extension and modification date", () => {
   const since = Date.parse("2026-08-01T00:00:00Z");
   assert.equal(crashLogEntryIsCandidate("MyApp-2026-08-02-120000.ips", undefined, since), true);
   assert.equal(
-    crashLogEntryIsCandidate("MyApp-2026-07-01-120000.ips", Date.parse("2026-07-01T00:00:00Z"), since),
+    crashLogEntryIsCandidate(
+      "MyApp-2026-07-01-120000.ips",
+      Date.parse("2026-07-01T00:00:00Z"),
+      since,
+    ),
     false,
     "entries older than the window must not be copied",
   );
   assert.equal(
-    crashLogEntryIsCandidate("MyApp-2026-07-01-120000.ips", Date.parse("2026-08-05T00:00:00Z"), since),
+    crashLogEntryIsCandidate(
+      "MyApp-2026-07-01-120000.ips",
+      Date.parse("2026-08-05T00:00:00Z"),
+      since,
+    ),
     true,
   );
   assert.equal(

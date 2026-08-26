@@ -3,7 +3,7 @@
  *
  * A pack of forty locales can only be compared if something remembers what the
  * text on each frame actually said. The runner already holds the tree it used
- * to take the shot, so this records the same locale-stable controls the corpus
+ * to take the shot, so this records the same locale-stable controls the fixture
  * crawl records — no extra device round trip, and nothing at all when the tree
  * was unavailable.
  */

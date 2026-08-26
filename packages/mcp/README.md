@@ -53,20 +53,20 @@ with `--profile <name>` or `RELAY_MCP_PROFILE`; the default is the compact `cont
 Choose `test` when one agent should read, create, propose, compile, run, cancel, and inspect evidence
 for graph-native Tests without loading the complete `full` catalog.
 
-| Profile   | Intended use                                                               |
-| --------- | -------------------------------------------------------------------------- |
-| `control` | Default direct target observation, input, recovery, and lease management   |
-| `map`     | Discovery and observation proposals without full authoring edits           |
-| `observe` | Read-only project, device, App Map, proposal, run, and evidence inspection |
-| `author`  | Default App Map editing, device recording, and proposal creation           |
-| `test`    | Graph Test creation, review, compilation, one-pass runs, and evidence      |
-| `run`     | Test/Combine execution, jobs, and run evidence                             |
-| `execute` | Alias of `run` for execution-focused agents                                |
-| `locale`  | Language Variables, profiles, Combine campaigns, and analysis              |
-| `review`  | Proposal/take repair, replay, approval, and run-baseline review            |
-| `admin`   | Workspace policy, projects, targets, schedules, matrices, and retention    |
+| Profile   | Intended use                                                                              |
+| --------- | ----------------------------------------------------------------------------------------- |
+| `control` | Default direct target observation, input, recovery, and lease management                  |
+| `map`     | Discovery and observation proposals without full authoring edits                          |
+| `observe` | Read-only project, device, App Map, proposal, run, and evidence inspection                |
+| `author`  | Default App Map editing, device recording, and proposal creation                          |
+| `test`    | Graph Test creation, review, compilation, one-pass runs, and evidence                     |
+| `run`     | Test/Combine execution, jobs, and run evidence                                            |
+| `execute` | Alias of `run` for execution-focused agents                                               |
+| `locale`  | Language Variables, profiles, Combine campaigns, and analysis                             |
+| `review`  | Proposal/take repair, replay, approval, and run-baseline review                           |
+| `admin`   | Workspace policy, projects, targets, schedules, matrices, and retention                   |
 | `proof`   | Verify one change: affected flows, runs, proof reports, repair proposals, and share links |
-| `full`    | Every canonical Relay operation; intended for trusted orchestration only   |
+| `full`    | Every canonical Relay operation; intended for trusted orchestration only                  |
 
 Tools advertise and take operation fields directly. For example, capture a screenshot with
 `{"serial":"emulator-5554"}`. Wrapped or alternate input envelopes are rejected. Known operation

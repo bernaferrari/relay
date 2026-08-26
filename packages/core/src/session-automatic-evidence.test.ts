@@ -79,10 +79,7 @@ function runtimeWithCachedRaster(base64: string): RecipeRuntimeState {
 
 /** Install a shell shim as RELAY_GO_IOS_BIN that writes the given bytes to
  * whatever --output path Relay asks for. Returns a restore function. */
-async function withFakeGoIos(
-  nextImage: () => Buffer,
-  run: () => Promise<void>,
-): Promise<void> {
+async function withFakeGoIos(nextImage: () => Buffer, run: () => Promise<void>): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), "relay-fence-bin-"));
   const bin = join(directory, "ios");
   const script = [
@@ -135,10 +132,15 @@ test("cached iOS raster is reused while the sampled pixels still match", async (
     await withFakeGoIos(
       () => fakePng("same-screen"),
       () =>
-        runWithTargetContext(
-          { kind: "device", platform: "ios", serial: "fence-udid-1" },
-          () =>
-            captureAutomaticState(iosJob("fence-udid-1"), device, step("One"), "before", () => {}, runtime),
+        runWithTargetContext({ kind: "device", platform: "ios", serial: "fence-udid-1" }, () =>
+          captureAutomaticState(
+            iosJob("fence-udid-1"),
+            device,
+            step("One"),
+            "before",
+            () => {},
+            runtime,
+          ),
         ),
     );
     assert.equal(screenshotCount(), 0, "unchanged pixels must not force an SDK recapture");
@@ -162,10 +164,15 @@ test("changed pixels behind the same stream force a fresh capture", async () => 
     await withFakeGoIos(
       () => fakePng("moved-on"),
       () =>
-        runWithTargetContext(
-          { kind: "device", platform: "ios", serial: "fence-udid-2" },
-          () =>
-            captureAutomaticState(iosJob("fence-udid-2"), device, step("Two"), "after", () => {}, runtime),
+        runWithTargetContext({ kind: "device", platform: "ios", serial: "fence-udid-2" }, () =>
+          captureAutomaticState(
+            iosJob("fence-udid-2"),
+            device,
+            step("Two"),
+            "after",
+            () => {},
+            runtime,
+          ),
         ),
     );
     assert.equal(screenshotCount(), 0, "go-ios path captures directly without the SDK");
@@ -174,10 +181,7 @@ test("changed pixels behind the same stream force a fresh capture", async () => 
       fakePng("stale-screen").toString("base64"),
       "the observation must hold the new raster, not the stale one",
     );
-    assert.equal(
-      runtime.observation?.screenshot?.base64,
-      fakePng("moved-on").toString("base64"),
-    );
+    assert.equal(runtime.observation?.screenshot?.base64, fakePng("moved-on").toString("base64"));
   } finally {
     resetTargetRuntimeReadiness();
     if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
@@ -208,10 +212,8 @@ test("an advanced observation epoch invalidates the cache without sampling pixel
     await withFakeGoIos(
       () => fakePng("post-epoch"),
       () =>
-        runWithTargetContext(
-          { kind: "device", platform: "ios", serial },
-          () =>
-            captureAutomaticState(iosJob(serial), device, step("After"), "after", () => {}, runtime),
+        runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
+          captureAutomaticState(iosJob(serial), device, step("After"), "after", () => {}, runtime),
         ),
     );
     assert.equal(

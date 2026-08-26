@@ -64,10 +64,7 @@ test("POST /builds accepts local paths and https sources but rejects other schem
     assert.equal(httpsBody.build.sourceUrl, "https://artifacts.example.com/app.apk");
     assert.equal(httpsBody.build.sourceSha256, `a${"b".repeat(63)}`);
 
-    for (const sourceUrl of [
-      "http://artifacts.example.com/app.apk",
-      "file:///tmp/app.apk",
-    ]) {
+    for (const sourceUrl of ["http://artifacts.example.com/app.apk", "file:///tmp/app.apk"]) {
       const rejected = await fetch(`${base}/builds`, {
         method: "POST",
         headers: headers("build.save"),

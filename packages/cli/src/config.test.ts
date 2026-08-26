@@ -704,19 +704,12 @@ test("generic CI variables also feed sourceRevision auto-detection", () => {
 
 test("sourceRevision flags are rejected off test run and on malformed values", () => {
   assert.throws(
-    () =>
-      parseCli(
-        ["device", "list", "--commit=abc1234"],
-        {},
-      ),
+    () => parseCli(["device", "list", "--commit=abc1234"], {}),
     /only valid on test run/u,
   );
   assert.throws(
     () => parseCli(["test", "run", "a", "b", "--commit", "ZZZZ"], {}),
     /lowercase git SHA/u,
   );
-  assert.throws(
-    () => parseCli(["test", "run", "a", "b", "--pr", "zero"], {}),
-    /positive integer/u,
-  );
+  assert.throws(() => parseCli(["test", "run", "a", "b", "--pr", "zero"], {}), /positive integer/u);
 });

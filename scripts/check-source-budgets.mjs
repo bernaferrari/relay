@@ -14,13 +14,13 @@ export const COMPONENT_SOURCE_LIMIT = 700;
  */
 export const grandfatheredSourceLimits = Object.freeze({
   "packages/app/src/components/app-map-capture-review.tsx": 1001,
-  "packages/app/src/components/app-map-workspace.tsx": 1101,
-  "packages/app/src/components/runs-workspace.tsx": 1035,
+  "packages/app/src/components/app-map-workspace.tsx": 1099,
+  "packages/app/src/components/runs-workspace.tsx": 962,
   "packages/app/src/components/stage.tsx": 1386,
-  "packages/app/src/components/studio-shell.tsx": 1031,
+  "packages/app/src/components/studio-shell.tsx": 1024,
   "packages/app/src/components/take-action-editor.tsx": 717,
-  "packages/core/src/authoring-sessions.ts": 1134,
-  "packages/core/src/device.ts": 1425,
+  "packages/core/src/authoring-sessions.ts": 1072,
+  "packages/core/src/device.ts": 1356,
   "packages/protocol/src/operations.ts": 1906,
 });
 
@@ -76,7 +76,7 @@ export function evaluateSourceBudgets(entries, exceptions = grandfatheredSourceL
 
 /**
  * App-side observation records are read models, never editable documents.
- * Converting Discovery/Corpus state into AppMap/CanvasGraph in the renderer
+ * Converting an observation session into AppMap/CanvasGraph in the renderer
  * creates a second authoring truth that bypasses typed proposals and revision
  * checks. Core may project observations into proposals; the app may only
  * render them or invoke the canonical operation boundary.
@@ -85,7 +85,7 @@ export function evaluateProductDocumentBoundaries(entries) {
   const violations = [];
   for (const { path, source = "" } of entries) {
     if (!path.startsWith("packages/app/src/") || !source) continue;
-    const readsObservationDocument = /\b(?:DiscoverySession|CorpusSession)\b/u.test(source);
+    const readsObservationDocument = /\bDiscoverySession\b/u.test(source);
     const authorsMapDocument = /\bCanvasGraph\b/u.test(source);
     if (readsObservationDocument && authorsMapDocument) {
       violations.push(

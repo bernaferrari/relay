@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rm } from "node:fs/promises";
 import { afterEach, test } from "node:test";
 import {
   defineIosMutationTerminalityRegistry,
@@ -17,14 +15,12 @@ import {
   type SnapshotNode,
 } from "./device.js";
 import { clearControl, JobCancelledError, requestCancel, runWithJobControl } from "./control.js";
-import { setLocalDeviceProvider } from "./device-factory.js";
 import { captureFullSurfaceEvidence } from "./discovery-surface.js";
 import { dismissTowardParent } from "./explore.js";
 import { postLoginNotifications } from "./grok.js";
 import { openPhysicalIosApp } from "./ios-app-open.js";
 import { runRecipeStep } from "./recipe-runner.js";
 import { captureScrollableSurvey } from "./scrollable-survey.js";
-import { scanSwitcherPicker } from "./switcher-profiles.js";
 import { runWithTargetContext } from "./target-context.js";
 
 const ios = (serial: string) => ({ kind: "device" as const, platform: "ios" as const, serial });
@@ -36,7 +32,6 @@ const iosCloud = (sessionId: string) => ({
 });
 const roots: string[] = [];
 afterEach(async () => {
-  setLocalDeviceProvider(undefined);
   resetDeviceClients();
   delete process.env.RELAY_WORKSPACE_ROOT;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -358,70 +353,6 @@ async function runGrokNotificationSurface(
   );
 }
 
-function switcherPickerNodes(): SnapshotNode[] {
-  return [
-    {
-      index: 0,
-      depth: 0,
-      type: "Application",
-      label: "Settings",
-      rect: { x: 0, y: 0, width: 390, height: 844 },
-    },
-    button("English"),
-    button("Italiano"),
-    button("Português (Brasil)"),
-  ];
-}
-
-function switcherDevice(nativeDispatches: string[], outcome: "unknown" | "selector-miss"): Device {
-  return {
-    capture: { snapshot: async () => ({ nodes: structuredClone(switcherPickerNodes()) }) },
-    interactions: {
-      press: async () => {
-        nativeDispatches.push("entry-selector");
-        throw new Error(
-          outcome === "unknown" ? "XCTest transport ended" : "Selector did not match an element",
-        );
-      },
-      scroll: async () => {
-        nativeDispatches.push("picker-scroll");
-      },
-      pan: async () => {
-        nativeDispatches.push("picker-swipe");
-      },
-    },
-    command: { wait: async () => undefined },
-  } as unknown as Device;
-}
-
-async function runSwitcherSurface(
-  nativeDispatches: string[],
-  outcome: "unknown" | "selector-miss",
-): Promise<void> {
-  setLocalDeviceProvider({
-    kind: "device",
-    create: () => switcherDevice(nativeDispatches, outcome),
-  });
-  try {
-    await scanSwitcherPicker({
-      serial: `switcher-${outcome}`,
-      app: "com.example.switcher",
-      kind: "language",
-      platform: "ios",
-      openApp: false,
-      save: false,
-      maxScrolls: 1,
-      // Identifier-only chrome is intentionally soft: a proven selector miss
-      // lets the already-open picker continue to scan.
-      entryPath: [{ kind: "tap", target: { identifier: "optional.chrome" } }],
-      pickerPath: [{ kind: "wait", ms: 0 }],
-    });
-  } finally {
-    setLocalDeviceProvider(undefined);
-    resetDeviceClients();
-  }
-}
-
 test("registered public recovery boundaries preserve iOS exact-once terminality", async () => {
   const registry = defineIosMutationTerminalityRegistry([
     {
@@ -650,25 +581,6 @@ test("registered public recovery boundaries preserve iOS exact-once terminality"
                 },
               }),
             ),
-          );
-        },
-      },
-    },
-    {
-      id: "core.switcher.scan-picker",
-      unknown: async () => {
-        const nativeDispatches: string[] = [];
-        return await terminalTrace(nativeDispatches, () =>
-          runSwitcherSurface(nativeDispatches, "unknown"),
-        );
-      },
-      recovery: {
-        expectedStatus: "recovered",
-        expectedNativeDispatches: 2,
-        run: async () => {
-          const nativeDispatches: string[] = [];
-          return await ordinaryTrace(nativeDispatches, "recovered", () =>
-            runSwitcherSurface(nativeDispatches, "selector-miss"),
           );
         },
       },

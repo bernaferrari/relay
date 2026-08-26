@@ -1,14 +1,25 @@
 #!/usr/bin/env node
 /**
- * One Relay HTTP server. Always kill whatever is on the port and start a
- * fresh watched process, so "old server vs new server" cannot linger.
- * Also kills stray `tsx watch --port <RELAY_PORT>` leftovers that no longer
- * hold the listen socket. Pass --reuse to keep a healthy Relay already listening.
+ * Start one fresh watched Relay HTTP server.
+ *
+ * The complete bootstrap is serialized through health readiness. Process
+ * shutdown is limited to immutable identities authorized by preflight; stale
+ * pid files and command substrings never grant signal permission.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  authorizeRelayShutdown,
+  freeAuthorizedRelayProcesses,
+  isProcessAncestor,
+  readProcessRows,
+  relayWatcherArguments,
+  withEnsureServerBootstrapLock,
+} from "./ensure-server-bootstrap.mjs";
+import { prepareLeaseForFreshServer } from "./ensure-server-lease-recovery.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.RELAY_PORT || 8787);
@@ -16,6 +27,7 @@ const healthUrl = `http://127.0.0.1:${port}/health`;
 const stateDir = join(root, ".relay");
 const pidFile = join(stateDir, "server.pid");
 const logFile = join(stateDir, "server.log");
+const lockFile = join(stateDir, "ensure-server-bootstrap.sqlite");
 const reuse = process.argv.includes("--reuse");
 
 async function readHealth() {
@@ -28,95 +40,35 @@ async function readHealth() {
   }
 }
 
-function pidsOnPort() {
+function portListeners() {
   try {
     const out = execFileSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], {
       encoding: "utf8",
     });
-    return [
-      ...new Set(
-        out
-          .split("\n")
-          .map((line) => line.trim())
-          .filter(Boolean),
-      ),
-    ];
-  } catch {
-    return [];
-  }
-}
-
-function pidFilePid() {
-  try {
-    const text = readFileSync(pidFile, "utf8").trim();
-    return /^\d+$/u.test(text) ? [text] : [];
-  } catch {
-    return [];
-  }
-}
-
-/** `tsx watch` leftovers can sit without holding the port after a crashed
- * reload. Killing only lsof listeners left agents fighting ghost watchers. */
-function strayRelayWatchPids() {
-  try {
-    const out = execFileSync("/bin/ps", ["-ax", "-o", "pid=,command="], { encoding: "utf8" });
-    return out.split("\n").flatMap((line) => {
-      const trimmed = line.trim();
-      const space = trimmed.indexOf(" ");
-      if (space < 0) return [];
-      const pid = trimmed.slice(0, space);
-      if (pid === String(process.pid)) return [];
-      const command = trimmed.slice(space + 1);
-      if (!command.includes("tsx") || !command.includes("watch")) return [];
-      if (!command.includes(`--port ${port}`) && !command.includes(`--port=${port}`)) {
-        return [];
-      }
-      return [pid];
-    });
-  } catch {
-    return [];
-  }
-}
-
-function livingPids(pids) {
-  return pids.filter((pid) => {
-    const n = Number(pid);
-    if (!Number.isInteger(n) || n <= 1) return false;
-    try {
-      process.kill(n, 0);
-      return true;
-    } catch {
-      return false;
+    return {
+      known: true,
+      pids: [
+        ...new Set(
+          out
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean),
+        ),
+      ],
+    };
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "status" in error &&
+      error.status === 1 &&
+      "stderr" in error &&
+      String(error.stderr ?? "").trim() === ""
+    ) {
+      return { known: true, pids: [] };
     }
-  });
-}
-
-function relayServerPids() {
-  return livingPids([...new Set([...pidsOnPort(), ...pidFilePid(), ...strayRelayWatchPids()])]);
-}
-
-function stopPids(pids, signal) {
-  for (const pid of pids) {
-    const n = Number(pid);
-    if (!Number.isInteger(n) || n <= 1) continue;
-    try {
-      process.kill(n, signal);
-    } catch {
-      // already gone
-    }
+    return { known: false, pids: [] };
   }
-}
-
-async function freePort() {
-  stopPids(relayServerPids(), "SIGTERM");
-  const deadline = Date.now() + 3_000;
-  while (Date.now() < deadline) {
-    const left = relayServerPids();
-    if (left.length === 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  stopPids(relayServerPids(), "SIGKILL");
-  await new Promise((resolve) => setTimeout(resolve, 200));
 }
 
 function resolveTsx() {
@@ -127,71 +79,129 @@ function resolveTsx() {
   return candidates.find((path) => existsSync(path)) ?? candidates[0];
 }
 
-async function waitForHealth(timeoutMs) {
+async function waitForHealth(timeoutMs, predicate = () => true) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const health = await readHealth();
-    if (health?.ok && health.product === "relay") return health;
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    if (health?.ok && health.product === "relay" && predicate(health)) return health;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 200));
   }
   return null;
 }
 
-if (reuse) {
-  const current = await readHealth();
-  if (current?.ok && current.product === "relay") {
-    process.stdout.write(
-      `${JSON.stringify({
-        status: "already-running",
-        pid: current.pid ?? null,
-        uptimeMs: current.uptimeMs ?? null,
-        port,
-      })}\n`,
-    );
-    process.exit(0);
-  }
+function healthMatchesListener(health, probe) {
+  return (
+    health?.ok === true &&
+    health.product === "relay" &&
+    Number.isSafeInteger(Number(health.pid)) &&
+    probe.known === true &&
+    probe.pids.includes(String(health.pid))
+  );
 }
 
-await freePort();
+async function bootstrap() {
+  const tsx = resolveTsx();
+  if (reuse) {
+    const current = await readHealth();
+    const probe = portListeners();
+    if (healthMatchesListener(current, probe)) {
+      return {
+        status: "already-running",
+        pid: current.pid,
+        uptimeMs: current.uptimeMs ?? null,
+        port,
+      };
+    }
+  }
 
-mkdirSync(stateDir, { recursive: true });
-const tsx = resolveTsx();
-const logFd = openSync(logFile, "a");
-const child = spawn(
-  process.execPath,
-  [
+  const portProbe = portListeners();
+  const currentHealth = await waitForHealth(2_000);
+  const leasePreparation = prepareLeaseForFreshServer({
+    root,
     tsx,
-    "watch",
-    "--clear-screen=false",
-    "--include",
-    "../core/src",
-    "--include",
-    "../protocol/src",
-    "src/index.ts",
-    "--port",
-    String(port),
-  ],
-  {
+    portProbe,
+    currentHost: hostname(),
+    relayHealth: currentHealth,
+  });
+  if (!leasePreparation.allowed) {
+    const refusal = {
+      status: "refused",
+      stage: "relay-state-lease-recovery",
+      recovery: leasePreparation.recovery,
+      port,
+      message: "Refusing to start or stop processes because Relay ownership is uncertain.",
+    };
+    throw Object.assign(new Error(refusal.message), { detail: refusal });
+  }
+  if (leasePreparation.recovery.status === "recovered") {
+    process.stderr.write(
+      `${JSON.stringify({
+        status: "recovered",
+        stage: "relay-state-lease-recovery",
+        recovery: leasePreparation.recovery,
+      })}\n`,
+    );
+  }
+
+  const authorization = authorizeRelayShutdown({
+    root,
+    tsx,
+    port,
+    portProbe,
+    relayHealth: currentHealth,
+    leasePreparation,
+  });
+  await freeAuthorizedRelayProcesses({ authorization, readPortProbe: portListeners });
+  const emptyProbe = portListeners();
+  if (!emptyProbe.known || emptyProbe.pids.length > 0) {
+    throw new Error("Relay port changed before startup; refusing to spawn another server");
+  }
+
+  const logFd = openSync(logFile, "a");
+  const child = spawn(process.execPath, relayWatcherArguments({ tsx, port }), {
     cwd: join(root, "packages/server"),
     detached: true,
     stdio: ["ignore", logFd, logFd],
     env: process.env,
-  },
-);
-writeFileSync(pidFile, `${child.pid}\n`);
-child.unref();
+  });
+  closeSync(logFd);
+  if (!Number.isSafeInteger(child.pid))
+    throw new Error("Relay watcher did not return a process id");
+  writeFileSync(pidFile, `${child.pid}\n`);
+  child.unref();
 
-const started = await waitForHealth(20_000);
-if (!started) {
-  process.stderr.write(`${JSON.stringify({ status: "failed", port, logFile })}\n`);
-  process.exit(1);
+  const started = await waitForHealth(20_000, (health) => {
+    const healthPid = Number(health.pid);
+    return (
+      Number.isSafeInteger(healthPid) &&
+      healthMatchesListener(health, portListeners()) &&
+      isProcessAncestor(child.pid, healthPid, readProcessRows())
+    );
+  });
+  if (!started) {
+    throw Object.assign(new Error("Relay server did not become healthy"), {
+      detail: { status: "failed", port, logFile },
+    });
+  }
+  return { status: "started", pid: started.pid, port, logFile };
 }
-process.stdout.write(
-  `${JSON.stringify({
-    status: "started",
-    pid: started.pid ?? child.pid,
-    port,
-    logFile,
-  })}\n`,
-);
-process.exit(0);
+
+mkdirSync(stateDir, { recursive: true });
+try {
+  const result = await withEnsureServerBootstrapLock({ path: lockFile, operation: bootstrap });
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+} catch (error) {
+  process.stderr.write(
+    `${JSON.stringify(
+      error && typeof error === "object" && "detail" in error
+        ? error.detail
+        : {
+            status: "refused",
+            stage: "server-bootstrap",
+            port,
+            message: String(error?.message ?? error),
+          },
+    )}\n`,
+  );
+  process.exitCode = 1;
+}

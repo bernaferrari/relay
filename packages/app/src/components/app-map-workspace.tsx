@@ -130,9 +130,7 @@ export function AppMapWorkspace(props: {
   const [view, setView] = createSignal<CanvasViewport>({ x: 72, y: 68, scale: 0.78 });
   const canvasGrid = createMemo(() => canvasGridForScale(view().scale));
   const canvasGridVisual = createMemo(() => canvasGridPresentation(view(), canvasGrid()));
-  const connections = createMemo(() =>
-    canvasConnections(tree(), execution.steps(), canvasState()),
-  );
+  const connections = createMemo(() => canvasConnections(tree(), execution.steps(), canvasState()));
   const [selectedNodeIds, setSelectedNodeIds] = createSignal<string[]>([]);
   const [selectedNodeId, setSelectedNodeIdValue] = createSignal<string | null>(null);
   const setSelectedNodeId = (id: string | null) => {

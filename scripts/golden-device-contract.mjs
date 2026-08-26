@@ -519,9 +519,7 @@ export function validateGoldenScenarioRecipe(recipe, scenario, minimumOverlapMs)
       // The handoff lane proves semantic control across app boundaries: an
       // in-app input, then the Settings surface, then proof Relay can still
       // read named controls there.
-      const hasAppOpen = steps.some(
-        (step) => step?.kind === "app" && step.action === "open",
-      );
+      const hasAppOpen = steps.some((step) => step?.kind === "app" && step.action === "open");
       const hasSettings = steps.some((step) => step?.kind === "settings");
       if (!hasAppOpen || !hasSettings) {
         fail(

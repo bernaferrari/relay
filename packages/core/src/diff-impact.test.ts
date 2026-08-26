@@ -37,10 +37,7 @@ function emptyMap(): AppMap {
   };
 }
 
-function instruction(
-  id: string,
-  connectionIds: string[],
-): AppMapScenarioTest["steps"][number] {
+function instruction(id: string, connectionIds: string[]): AppMapScenarioTest["steps"][number] {
   return {
     id,
     kind: "instruction",
@@ -229,9 +226,7 @@ test("matched routine expands through its transitive closure", () => {
       binding: { status: "resolved", kind: "routine", routineId: "sign-in" },
     },
   ]);
-  map.tests.flowWalker = scenarioTest("flow-walker", [
-    instruction("w1", ["checkout"]),
-  ]);
+  map.tests.flowWalker = scenarioTest("flow-walker", [instruction("w1", ["checkout"])]);
   // Changing sign-in's own source touches both the module step that binds it
   // and the flow that reaches it through wrapper → checkout.
   assert.deepEqual(

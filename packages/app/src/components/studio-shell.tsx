@@ -40,12 +40,12 @@ import {
 } from "../lib/shell-layout";
 import { appMapStartupDecision } from "../lib/app-map-startup";
 import { appMapLibraryItem } from "../lib/app-map-library";
+import { normalizeMapLibraryArea, type MapLibraryArea } from "../lib/map-library-area";
 import { appMapPrimaryAction } from "../lib/app-map-primary-action";
 import { matchLiveScreen } from "../lib/app-map-live-location";
 import type { AppMapRunReadiness as GraphRunReadiness } from "../lib/app-map-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 import { MapModeSwitch, type MapMode } from "./map-mode-switch";
-import { normalizeMapLibraryArea, type MapLibraryArea } from "./map-library";
 import { ShellTopbarTitle } from "./studio-shell-topbar-title";
 import { StudioImportReviewDialog, type ImportReview } from "./studio-import-review-dialog";
 import { StudioAuthoringWorkspace } from "./studio-authoring-workspace";
@@ -53,12 +53,7 @@ import { StudioShellShortcutsSheet } from "./studio-shell-shortcuts-sheet";
 import { StudioShellCombineRail } from "./studio-shell-combine-rail";
 import { StudioShellVariablesDialog } from "./studio-shell-variables-dialog";
 import { nextMapTitle, readRememberedDevicePanelPreference } from "../lib/studio-shell-preferences";
-import {
-  DataWorkspace,
-  EmptyAppMap,
-  MapLibrary,
-  RunsWorkspace,
-} from "./studio-shell-workspaces";
+import { EmptyAppMap, MapLibrary, RunsWorkspace } from "./studio-shell-workspaces";
 
 type ProductArea = MapLibraryArea;
 export function StudioShell(props: { onOpenSettings: (section?: SettingsSection) => void }) {
@@ -69,17 +64,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       new URLSearchParams(window.location.search).has("run") ? "runs" : "maps",
     ),
   );
-  // Opening Relay should show the map, the way opening Figma shows the canvas.
-  // openTest() still moves to Test mode explicitly when someone picks a saved Test.
-  // This keeps an empty Test editor from hiding an otherwise useful canvas.
+  // Open on the canvas; choosing a saved Test switches modes explicitly.
   const [mapMode, setMapMode] = createSignal<MapMode>("map");
   const authoringMap = () => mapMode() !== "test";
   // The App Map is the only authoring surface. Device remains one click away.
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [variablesOpen, setVariablesOpen] = createSignal(false);
   const [combineOpen, setCombineOpen] = createSignal(false);
-  // Combine stays mounted while the device panel is in use so in-progress
-  // drafts (e.g. the variable editor) survive; it just collapses to a rail.
+  // Collapse rather than unmount so in-progress Combine drafts survive.
   const [combineCollapsed, setCombineCollapsed] = createSignal(false);
   const [combineFocusId, setCombineFocusId] = createSignal<string>();
   const [combineFocusSection, setCombineFocusSection] = createSignal<CanvasCombineSection>();
@@ -867,9 +859,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       }}
                     >
                       <Icon name="info" size={14} /> Help
-                      <kbd class="ml-auto text-micro font-normal text-[var(--text-weaker)]">
-                        ⌘K
-                      </kbd>
+                      <kbd class="ml-auto text-micro font-normal text-[var(--text-weaker)]">⌘K</kbd>
                     </button>
                     <button
                       type="button"
@@ -1025,6 +1015,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             onConfirm={(conflict) => void confirmImport(conflict)}
           />
         )}
+      </Show>
+      <Show when={helpOpen()}>
+        <StudioShellShortcutsSheet onClose={() => setHelpOpen(false)} />
       </Show>
     </div>
   );

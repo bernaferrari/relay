@@ -1,12 +1,7 @@
 /**
  * One XCTest runner per attached Apple device. Pointer and tree share it.
  */
-import {
-  resetDeviceClient,
-  createDevice,
-  snapshot,
-  type Device,
-} from "./device.js";
+import { resetDeviceClient, createDevice, snapshot, type Device } from "./device.js";
 import {
   IOS_SNAPSHOT_SETTLE_WAIT_MS,
   isIosAccessibilityQueryInFlightError,
@@ -32,10 +27,7 @@ import {
   type IosRuntimeSessionRecovery,
 } from "./ios-runtime-recovery.js";
 import { androidSnapshotApplication, recoverAndroidInspection } from "./android-ui-snapshot.js";
-import {
-  killStaleIosTestRunners,
-  remountIosDeveloperDiskImage,
-} from "./ios-app-launch.js";
+import { killStaleIosTestRunners, remountIosDeveloperDiskImage } from "./ios-app-launch.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { runTargetMutation } from "./target-control.js";
 import { resolveRuntimeTarget } from "./workspace-devices.js";
@@ -220,7 +212,6 @@ async function recoverTargetRuntimeReserved(
     let device = target.device;
     const foreign = foreignSessionNameFromError(cause);
     let killed: string[] = [];
-    let remounted = false;
 
     const withReadiness = (recovery: IosTargetRuntimeRecovery): TargetRuntimeRecovery => ({
       ...recovery,
@@ -260,7 +251,8 @@ async function recoverTargetRuntimeReserved(
           ...(currentApp ? { app: currentApp } : {}),
           fallback: currentApp === "com.apple.springboard",
         };
-      } catch (error) {
+      } catch (caughtError) {
+        let error = caughtError;
         // A bounded in-flight timeout is not a dead runner: the native
         // traversal may simply be slow. Re-probe once with an extended budget;
         // only if that also fails does repair get authorized — and even then

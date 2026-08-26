@@ -1,5 +1,5 @@
 import * as z from "zod/v4";
-import { empty, identifier, natural, text, unknownRecord } from "./operation-schema-primitives.js";
+import { empty, identifier, text } from "./operation-schema-primitives.js";
 
 const targetSelector = z
   .object({

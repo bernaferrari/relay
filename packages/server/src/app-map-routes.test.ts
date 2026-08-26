@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { ApiError, RelayClient } from "@relay/client";
 import {
   createAppMapTestExecutionIntent,
   createDiscoverySession,
   enqueueJob,
+  leaseDevice,
   listDevices,
   materializeLogicalScrollSurfaceImport,
   parseAppMapTestExecutionIntentArtifact,
@@ -16,6 +18,10 @@ import {
   readAuthoringEvidence,
   recordObservedScreen,
   recordObservedTransition,
+  releaseDeviceLease,
+  resetControlDatabaseCache,
+  resetDeviceClients,
+  setLocalDeviceProvider,
   regenerateLogicalScrollSurface,
   setDiscoveryStatus,
 } from "@relay/core";
@@ -56,6 +62,113 @@ test("explicit target preflight distinguishes disconnected and not-ready devices
     ]),
     "not-ready",
   );
+});
+
+test("typed Variable inference captures a target and returns a reviewable App Map mutation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-variable-infer-route-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  resetControlDatabaseCache();
+  const actorId = "agent:variable-infer-route-test";
+  const targetId = "android-variable-fixture";
+  const raster = await readFile(
+    fileURLToPath(new URL("../../app/public/relay-icon.png", import.meta.url)),
+  );
+  setLocalDeviceProvider({
+    kind: "device",
+    create: () =>
+      ({
+        capture: {
+          snapshot: async () => ({
+            nodes: [
+              {
+                index: 1,
+                type: "Cell",
+                label: "English",
+                identifier: "language.en",
+                visibleToUser: true,
+                enabled: true,
+                hittable: true,
+                rect: { x: 0, y: 20, width: 300, height: 44 },
+              },
+              {
+                index: 2,
+                type: "Cell",
+                label: "Italiano",
+                identifier: "language.it",
+                visibleToUser: true,
+                enabled: true,
+                hittable: true,
+                rect: { x: 0, y: 70, width: 300, height: 44 },
+              },
+            ],
+          }),
+          screenshot: async ({ path }: { path: string }) => {
+            await writeFile(path, raster);
+            return { path };
+          },
+        },
+      }) as never,
+  });
+  let server: Awaited<ReturnType<typeof startServer>> | undefined;
+  let leaseId: string | undefined;
+  try {
+    server = await startServer({ host: "127.0.0.1", port: 0 });
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId,
+      actorKind: "agent",
+    });
+    await client.invoke("app-map.create", { appMapId: "settings", name: "Settings" });
+    const lease = await leaseDevice({
+      organizationId: "acme",
+      projectId: "mobile",
+      poolId: "local",
+      deviceSerial: targetId,
+      ownerId: actorId,
+      expiresAt: Date.now() + 60_000,
+    });
+    leaseId = lease.id;
+
+    const proposal = await client.invoke("app-map.variable.infer", {
+      appMapId: "settings",
+      variableId: "language",
+      expectedRevision: 0,
+      target: { kind: "device", platform: "ios", targetId },
+      leaseId,
+      taughtRows: [{ id: "en", identifier: "language.en" }],
+      name: "Language",
+      kind: "language",
+      apply: { kind: "list" },
+    });
+    assert.deepEqual(
+      proposal.variable.options.map((option) => option.id),
+      ["en", "it"],
+    );
+    assert.equal(proposal.mutation.operationId, "app-map.variable.save");
+    assert.equal(
+      (await client.invoke("app-map.get", { appMapId: "settings" })).appMap.variables.language,
+      undefined,
+    );
+
+    const saved = await client.invoke(proposal.mutation.operationId, proposal.mutation.input);
+    assert.deepEqual(
+      saved.appMap.variables.language?.options.map((option) => option.id),
+      ["en", "it"],
+    );
+  } finally {
+    if (leaseId) await releaseDeviceLease(leaseId).catch(() => undefined);
+    if (server) await server.close();
+    setLocalDeviceProvider(undefined);
+    resetDeviceClients();
+    resetControlDatabaseCache();
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("queued Tests preserve the exact viewport-suffixed saved runtime profile", () => {

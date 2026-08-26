@@ -27,7 +27,10 @@ function changedFiles() {
       cwd: repositoryRoot,
       encoding: "utf8",
     });
-    return out.split("\n").map((line) => line.trim()).filter(Boolean);
+    return out
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
   } catch {
     return null;
   }
@@ -88,7 +91,9 @@ async function main() {
   }
 
   if (matchedFiles.length === 0) {
-    console.log("check-coverage: coverage data present but none of the changed files are covered; skipping.");
+    console.log(
+      "check-coverage: coverage data present but none of the changed files are covered; skipping.",
+    );
     return;
   }
 
@@ -97,7 +102,9 @@ async function main() {
     `check-coverage: ${matchedFiles.length} changed file(s), ${linesHit}/${linesFound} lines (${pct.toFixed(2)}%).`,
   );
   if (pct < LINE_THRESHOLD) {
-    console.error(`check-coverage: line coverage ${pct.toFixed(2)}% is below ${LINE_THRESHOLD}% for changed files.`);
+    console.error(
+      `check-coverage: line coverage ${pct.toFixed(2)}% is below ${LINE_THRESHOLD}% for changed files.`,
+    );
     process.exitCode = 1;
   }
 }

@@ -1,7 +1,14 @@
 import { assertIosSessionOperationLifecycle } from "./ios-session-lifecycle.js";
 import type { OperationInput, TargetScreenshotDto, TargetSnapshotDto } from "./operation-map.js";
 import type { OperationRecord } from "./operation-contract.js";
-import { boolean, fail, number, objectParser, record, string } from "./operation-parser-primitives.js";
+import {
+  boolean,
+  fail,
+  number,
+  objectParser,
+  record,
+  string,
+} from "./operation-parser-primitives.js";
 
 export function createTargetCaptureOperationParsers(input: {
   assertTargetRuntimeReadiness(value: unknown, label: string): void;
@@ -68,10 +75,18 @@ export function createTargetCaptureOperationParsers(input: {
         input.assertTargetRuntimeReadiness(value.readiness, "snapshot readiness");
       }
       if (value.iosSessionLifecycle !== undefined) {
-        assertIosSessionOperationLifecycle(value.iosSessionLifecycle, "snapshot iOS session lifecycle");
+        assertIosSessionOperationLifecycle(
+          value.iosSessionLifecycle,
+          "snapshot iOS session lifecycle",
+        );
       }
     },
   );
 
-  return { screenshotParser, targetSnapshotOutputParser, targetScreenshotInputParser, targetSnapshotInputParser };
+  return {
+    screenshotParser,
+    targetSnapshotOutputParser,
+    targetScreenshotInputParser,
+    targetSnapshotInputParser,
+  };
 }

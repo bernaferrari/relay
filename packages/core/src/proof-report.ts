@@ -44,8 +44,7 @@ function failureDigestFor(run: ProofReportInput["run"]): string | undefined {
  * running, deferred to review, uncertain evidence — is unproven, not fail. */
 export function proofVerdict(run: ProofReportInput["run"]): ProofVerdict {
   const executedAndHeld =
-    run.outcome === "passed" ||
-    ((run.status === "ok" || run.status === "healed") && !run.error);
+    run.outcome === "passed" || ((run.status === "ok" || run.status === "healed") && !run.error);
   if (executedAndHeld) return "pass";
   if (run.outcome === "product-failure" || run.outcome === "harness-failure") return "fail";
   if (
@@ -66,10 +65,10 @@ function flowFor(input: ProofReportInput): ProofReportFlow {
     title: input.run.title?.trim() || input.run.id,
     status: run.status,
     ...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
-    ...((() => {
+    ...(() => {
       const digest = failureDigestFor(run);
       return digest ? { failureDigest: digest } : {};
-    })()),
+    })(),
     ...(failedStep && proofVerdict(run) === "fail" ? { failureStep: failedStep } : {}),
     ...(input.sharePath ? { sharePath: input.sharePath } : {}),
   };
@@ -103,6 +102,8 @@ export function renderProofReportMarkdown(report: ProofReport): string {
     return `- ${parts.join(" · ")}`;
   });
   lines.push("");
-  lines.push(`Verdict: **${report.verdict}** (${report.flows.length} flow${report.flows.length === 1 ? "" : "s"})`);
+  lines.push(
+    `Verdict: **${report.verdict}** (${report.flows.length} flow${report.flows.length === 1 ? "" : "s"})`,
+  );
   return `${lines.join("\n")}\n`;
 }

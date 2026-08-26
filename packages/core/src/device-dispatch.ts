@@ -3,7 +3,6 @@ import { bindNativeDeviceMutations } from "./device-mutation-adapter.js";
 import * as observationDevice from "./device-observation-membrane.js";
 import {
   currentIosDeviceSerial,
-  iosSelectorWasNotDispatched,
   runIosMutationOnce,
   type IosMutationOperation,
 } from "./ios-mutation-policy.js";
@@ -34,7 +33,10 @@ export function base() {
  * a shallow merge: `maestro` must be a top-level press field, not nested under
  * `flags`. Optional expectedTapPoint steers the coordinate fallback.
  */
-export function iosNonHittablePressFields(point?: { x: number; y: number }): Record<string, unknown> {
+export function iosNonHittablePressFields(point?: {
+  x: number;
+  y: number;
+}): Record<string, unknown> {
   if (selectedPlatform() !== "ios") return {};
   return {
     maestro: {
@@ -76,4 +78,3 @@ export async function controlledMutation<T>(
   const serial = currentIosDeviceSerial();
   return serial ? runIosMutationOnce(serial, operation, op) : controlled(op);
 }
-

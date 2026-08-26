@@ -282,7 +282,7 @@ test("derives locale timing only from the immutable per-target frozen cohort", (
         {
           kind: "frozen-inputs",
           data: {
-            kind: "locale-matrix",
+            kind: "combine",
             durationCohort: { testId: cohort.testId, action: cohort.action },
           },
         },

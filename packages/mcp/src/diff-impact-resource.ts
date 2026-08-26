@@ -34,9 +34,13 @@ export function registerDiffImpactResource(
     async (uri, variables, context) => {
       const appMapId = variables.appMapId;
       if (typeof appMapId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(appMapId)) {
-        throw new ResourceNotFoundError(uri.href, `Unsafe Relay resource identifier in ${uri.href}`);
+        throw new ResourceNotFoundError(
+          uri.href,
+          `Unsafe Relay resource identifier in ${uri.href}`,
+        );
       }
-      if (uri.hash) throw new ResourceNotFoundError(uri.href, `Unsafe Relay resource URI ${uri.href}`);
+      if (uri.hash)
+        throw new ResourceNotFoundError(uri.href, `Unsafe Relay resource URI ${uri.href}`);
       const search = uri.searchParams;
       const changedFiles = [
         ...new Set(
@@ -47,10 +51,7 @@ export function registerDiffImpactResource(
             .filter(Boolean),
         ),
       ];
-      if (
-        changedFiles.length === 0 ||
-        !changedFiles.every((file) => safeQueryValue.test(file))
-      ) {
+      if (changedFiles.length === 0 || !changedFiles.every((file) => safeQueryValue.test(file))) {
         throw new ResourceNotFoundError(uri.href, `Missing or unsafe files query in ${uri.href}`);
       }
       let sourcePaths: Record<string, string[]> | undefined;

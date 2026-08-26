@@ -4,7 +4,7 @@ import { humanError } from "./human-error";
 import type {
   AppMapCapturePolicy,
   AppMapCombineCellTargetBinding,
-  LocaleRunAnalysisReport,
+  CombineEvidenceAnalysisReport,
   LocalCampaignAdmissionRequest,
   OperationInput,
 } from "@relay/protocol";
@@ -343,7 +343,7 @@ export function createServerCombineController(deps: CombineControllerDependencie
   const combineEvidence = {
     export: async (batchId: string): Promise<ExportedPack> =>
       exportCombinePack(await deps.client(), batchId),
-    analyze: async (batchId: string): Promise<LocaleRunAnalysisReport | null> => {
+    analyze: async (batchId: string): Promise<CombineEvidenceAnalysisReport | null> => {
       try {
         return await loadMatrixAnalysis(await deps.client(), batchId);
       } catch (error) {

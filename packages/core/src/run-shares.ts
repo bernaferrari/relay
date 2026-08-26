@@ -247,7 +247,6 @@ export function failedStepFor(run: Pick<PersistedRun, "steps">) {
   return failedStepFromTrace(run);
 }
 
-
 export async function createRunShare(input: {
   root: string;
   run: PersistedRun;
@@ -423,7 +422,9 @@ export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]
             ...(run.caseCount !== undefined ? { caseCount: run.caseCount } : {}),
             ...(errorHeadlineFor(run) ? { errorHeadline: errorHeadlineFor(run) } : {}),
             ...(failedStep ? { failedStep } : {}),
-            ...(run.failureCategory && !isHealthy(run) ? { failureCategory: run.failureCategory } : {}),
+            ...(run.failureCategory && !isHealthy(run)
+              ? { failureCategory: run.failureCategory }
+              : {}),
             frames: shareableFrames(run).map((frame, index) => ({
               index,
               caption: frame.caption || `Screen ${index + 1}`,
@@ -483,7 +484,7 @@ function shareProvenance(runs: PersistedRun[]): RunShareReportProvenance | undef
     ...(primary.appVersion ? { appVersion: primary.appVersion } : {}),
     ...(primary.platform ? { platform: primary.platform } : {}),
     ...(primary.targetProfile?.id ? { profileId: primary.targetProfile.id } : {}),
-    ...(primary.deviceName ?? primary.targetProfile?.name
+    ...((primary.deviceName ?? primary.targetProfile?.name)
       ? { deviceName: primary.deviceName ?? primary.targetProfile?.name }
       : {}),
     ...shareAppMapRevision(primary),

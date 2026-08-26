@@ -311,7 +311,9 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     },
   );
 
-  const appMapVariableInferParser = objectParser<AppMapOperationInput<"app-map.variable.infer">>("App Map Variable inference", (input) => {
+  const appMapVariableInferParser = objectParser<AppMapOperationInput<"app-map.variable.infer">>(
+    "App Map Variable inference",
+    (input) => {
       string(input.appMapId, "App Map Variable inference appMapId");
       string(input.variableId, "App Map Variable inference variableId");
       number(input.expectedRevision, "App Map Variable inference expectedRevision");
@@ -330,15 +332,21 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
         const taught = record(row, "App Map Variable inference taught row");
         string(taught.id, "App Map Variable inference taught row id");
       }
-  });
-  const appMapVariableInferOutputParser = objectParser<AppMapOperationOutput<"app-map.variable.infer">>("App Map Variable inference response", (output) => {
+    },
+  );
+  const appMapVariableInferOutputParser = objectParser<
+    AppMapOperationOutput<"app-map.variable.infer">
+  >("App Map Variable inference response", (output) => {
     string(output.appMapId, "App Map Variable inference response appMapId");
     number(output.expectedRevision, "App Map Variable inference response expectedRevision");
     number(output.capturedAt, "App Map Variable inference response capturedAt");
     record(output.variable, "App Map Variable inference response variable");
     const mutation = record(output.mutation, "App Map Variable inference response mutation");
     if (mutation.operationId !== "app-map.variable.save") {
-      fail("App Map Variable inference response mutation operationId", "must be app-map.variable.save");
+      fail(
+        "App Map Variable inference response mutation operationId",
+        "must be app-map.variable.save",
+      );
     }
     record(mutation.input, "App Map Variable inference response mutation input");
   });

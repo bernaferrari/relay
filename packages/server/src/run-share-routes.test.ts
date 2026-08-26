@@ -248,10 +248,7 @@ test("share page renders proof block and failed-step drill-in", () => {
   assert.match(html, /ios · profile iphone-15 · iPhone 15/u);
   assert.match(html, /App Map revision<\/dt><dd>r12<\/dd>/u);
   assert.match(html, /deadbeef0000 \(PR #5\)/u);
-  assert.match(
-    html,
-    /Failed at step 2 of 4: Tap About phone/u,
-  );
+  assert.match(html, /Failed at step 2 of 4: Tap About phone/u);
 });
 
 test("share page omits proof block without provenance and adds canonical link only with base URL", () => {
@@ -270,7 +267,10 @@ test("share page omits proof block without provenance and adds canonical link on
 
     process.env.RELAY_PUBLIC_BASE_URL = "https://proof.example.com";
     const absolute = renderRunShareReportHtml(report, "tok");
-    assert.match(absolute, /<link rel="canonical" href="https:\/\/proof\.example\.com\/shared\/runs\/tok">/u);
+    assert.match(
+      absolute,
+      /<link rel="canonical" href="https:\/\/proof\.example\.com\/shared\/runs\/tok">/u,
+    );
   } finally {
     if (previous === undefined) delete process.env.RELAY_PUBLIC_BASE_URL;
     else process.env.RELAY_PUBLIC_BASE_URL = previous;

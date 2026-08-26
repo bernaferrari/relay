@@ -1,5 +1,4 @@
 import { createOperationBuilders } from "./operation-builders.js";
-import type { OperationDefinition } from "./operation-contract.js";
 import type { RelayOperationMap } from "./operation-map.js";
 
 export type DiscoveryOperationId =
@@ -21,9 +20,8 @@ export type DiscoveryOperationId =
   | "discovery.cancel";
 
 export function createDiscoveryOperationDefinitions() {
-  const { command, query } = createOperationBuilders<
-    Pick<RelayOperationMap, DiscoveryOperationId>
-  >();
+  const { command, query } =
+    createOperationBuilders<Pick<RelayOperationMap, DiscoveryOperationId>>();
   return [
     query("discovery.list", "List Discovery Maps", "/discovery", { category: "discovery" }),
     command("discovery.create", "Create Discovery Map", "POST", "/discovery", {

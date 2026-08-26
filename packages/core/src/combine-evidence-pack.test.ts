@@ -6,10 +6,10 @@ import test from "node:test";
 import type { CombineEvidenceControl } from "@relay/protocol";
 import { FRAME_OBSERVATION_KIND, type FrameObservation } from "./frame-observation.js";
 import {
-  analyzeLocaleRunBatch,
-  analyzeLocaleRunJobs,
-  exportLocaleRunPack,
-} from "./locale-run-pack.js";
+  analyzeCombineEvidenceBatch,
+  analyzeCombineEvidenceJobs,
+  exportCombineEvidencePack,
+} from "./combine-evidence-pack.js";
 import type { TestJob } from "./session-contract.js";
 
 function row(stableKey: string, label: string): CombineEvidenceControl {
@@ -49,7 +49,7 @@ function localeCase(input: {
       {
         kind: "frozen-inputs",
         capturedAt: 1,
-        data: { kind: "locale-matrix", locale: input.locale },
+        data: { kind: "combine", locale: input.locale },
       },
       ...(input.controls
         ? [{ kind: FRAME_OBSERVATION_KIND, capturedAt: 2, data: observation }]
@@ -73,7 +73,7 @@ test("a batch is analyzed from its persisted runs once the registry has let go",
       const runDir = join(
         directory,
         "runs",
-        `2026-01-0${index + 1}_locale-run-evicted_serial_${locale}`,
+        `2026-01-0${index + 1}_option-run-evicted_serial_${locale}`,
       );
       await mkdir(join(runDir, "frames"), { recursive: true });
       await writeFile(join(runDir, "frames", "001.png"), `raster-${locale}`);
@@ -92,13 +92,13 @@ test("a batch is analyzed from its persisted runs once the registry has let go",
         JSON.stringify({
           ...job,
           schemaVersion: 4,
-          action: "locale-run-evicted",
+          action: "option-run-evicted",
           runDir: undefined,
         }),
       );
     }
 
-    const report = await analyzeLocaleRunBatch("evicted");
+    const report = await analyzeCombineEvidenceBatch("evicted");
 
     assert.deepEqual(report.locales, ["en", "pt-BR"]);
     assert.deepEqual(report.coverage, { frames: 2, inspectedFrames: 2 });
@@ -113,8 +113,8 @@ test("a batch is analyzed from its persisted runs once the registry has let go",
   }
 });
 
-test("an exported locale pack carries findings beside the frames that produced them", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "relay-locale-pack-"));
+test("an exported Combine pack carries findings beside the frames that produced them", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-combine-evidence-"));
   const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
   process.env.RELAY_WORKSPACE_ROOT = directory;
   try {
@@ -135,7 +135,11 @@ test("an exported locale pack carries findings beside the frames that produced t
       );
     }
 
-    const pack = await exportLocaleRunPack({ batchId: "batch-1", jobs, recipeId: "settings" });
+    const pack = await exportCombineEvidencePack({
+      batchId: "batch-1",
+      jobs,
+      recipeId: "settings",
+    });
 
     const finding = pack.manifest.analysis.findings.at(0);
     assert.equal(finding?.code, "POSSIBLE_UNTRANSLATED_TEXT");
@@ -188,7 +192,7 @@ test("a live batch reports the same findings without writing a pack", () => {
     return job;
   });
 
-  const report = analyzeLocaleRunJobs("batch-live", jobs);
+  const report = analyzeCombineEvidenceJobs("batch-live", jobs);
 
   assert.deepEqual(report.locales, ["en", "pt-BR"]);
   // The launch diagnostic is not an authored screenshot and must not become a
@@ -221,7 +225,7 @@ test("the baseline restore case does not switch a matrix off text comparison", (
       kind: "frozen-inputs",
       capturedAt: 1,
       data: {
-        kind: "locale-matrix",
+        kind: "combine",
         locale,
         values: { locale, locale_label: index === 2 ? locale : "-", locale_identifier: locale },
       },
@@ -232,7 +236,7 @@ test("the baseline restore case does not switch a matrix off text comparison", (
     return job;
   });
 
-  const report = analyzeLocaleRunJobs("batch-restore", jobs);
+  const report = analyzeCombineEvidenceJobs("batch-restore", jobs);
 
   assert.deepEqual(report.locales, ["en", "pt-BR"]);
   assert.equal(report.analysis.findings.at(0)?.code, "POSSIBLE_UNTRANSLATED_TEXT");
@@ -264,7 +268,7 @@ test("a combine that varies state alongside language keeps its labels unread", (
     return job;
   });
 
-  const report = analyzeLocaleRunJobs("batch-state", jobs);
+  const report = analyzeCombineEvidenceJobs("batch-state", jobs);
 
   assert.deepEqual(report.analysis.findings, []);
 });
@@ -288,7 +292,7 @@ test("a combine over a language variable is still compared as translations", () 
     return job;
   });
 
-  const report = analyzeLocaleRunJobs("batch-combine-language", jobs);
+  const report = analyzeCombineEvidenceJobs("batch-combine-language", jobs);
 
   assert.equal(report.analysis.findings.at(0)?.code, "POSSIBLE_UNTRANSLATED_TEXT");
 });
@@ -321,7 +325,7 @@ test("export copies a raw tree next to each PNG and does not treat control lists
       runDir,
       controls: [row("settings.language", "App Language")],
     });
-    const pack = await exportLocaleRunPack({ batchId: "batch-tree", jobs: [job] });
+    const pack = await exportCombineEvidencePack({ batchId: "batch-tree", jobs: [job] });
     const png = join(pack.rootDir, "en", "screenshots", "001-001.png");
     const tree = JSON.parse(
       await readFile(join(pack.rootDir, "en", "accessibility", "001-001.json"), "utf8"),
@@ -357,7 +361,7 @@ test("a combine pack keeps its frames without reading state changes as translati
       jobs.push(job);
     }
 
-    const pack = await exportLocaleRunPack({ batchId: "batch-2", jobs });
+    const pack = await exportCombineEvidencePack({ batchId: "batch-2", jobs });
 
     assert.deepEqual(pack.manifest.analysis.findings, []);
     assert.deepEqual(pack.manifest.locales, ["kids-on", "kids-off"]);

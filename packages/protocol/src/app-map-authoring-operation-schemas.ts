@@ -7,7 +7,6 @@ import {
   point,
   queryBoolean,
   sessionReference,
-  text,
   unknownRecord,
 } from "./operation-schema-primitives.js";
 
@@ -143,7 +142,16 @@ export const appMapAuthoringOperationSchemas = {
         .max(8),
       name: z.string().min(1).optional(),
       kind: z
-        .enum(["language", "location", "account", "theme", "workspace", "build", "toggle", "custom"])
+        .enum([
+          "language",
+          "location",
+          "account",
+          "theme",
+          "workspace",
+          "build",
+          "toggle",
+          "custom",
+        ])
         .optional(),
       apply: unknownRecord.optional(),
     })

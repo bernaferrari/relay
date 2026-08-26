@@ -82,7 +82,9 @@ test("catalog records committed directory bytes and indexes exact reusable surfa
     const summary = (await catalogSummaries(root))[0]!;
     const expectedBytes = (
       await Promise.all(
-        ["run.json", ".complete", "log.txt"].map(async (name) => (await stat(join(dir, name))).size),
+        ["run.json", ".complete", "log.txt"].map(
+          async (name) => (await stat(join(dir, name))).size,
+        ),
       )
     ).reduce((total, bytes) => total + bytes, 0);
     assert.equal(summary.storageBytes, expectedBytes);
@@ -94,7 +96,10 @@ test("catalog records committed directory bytes and indexes exact reusable surfa
       },
     ]);
     const preview = await applyRunRetention(root, { maxBytes: expectedBytes - 1, dryRun: true });
-    assert.deepEqual(preview.candidates.map((candidate) => candidate.id), ["surface-fixture"]);
+    assert.deepEqual(
+      preview.candidates.map((candidate) => candidate.id),
+      ["surface-fixture"],
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

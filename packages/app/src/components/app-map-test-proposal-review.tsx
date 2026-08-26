@@ -10,15 +10,11 @@ import { findScenarioStep } from "../lib/app-map-test-editor-tree";
 import { trapFocus } from "../lib/modal";
 import { Icon } from "./icon";
 
-function bindingSummary(
-  step: AppMapScenarioTestStep,
-  binding = step.binding,
-): string {
+function bindingSummary(step: AppMapScenarioTestStep, binding = step.binding): string {
   if (binding.status === "unresolved") return `Unresolved — ${binding.reason}`;
   if (binding.kind === "connections")
     return `${binding.connectionIds.length} mapped path${binding.connectionIds.length === 1 ? "" : "s"}`;
-  if (binding.kind === "assertion")
-    return `Validation · ${binding.assertion.kind}`;
+  if (binding.kind === "assertion") return `Validation · ${binding.assertion.kind}`;
   if (binding.kind === "extract") return `Extract as {{${binding.as}}}`;
   if (binding.kind === "pause") return `Human checkpoint · ${binding.message}`;
   if (binding.kind === "routine") return `Module · ${binding.routineId}`;
@@ -44,8 +40,7 @@ function editDetails(test: AppMapScenarioTest, edit: AppMapScenarioTestEdit) {
       after: edit.step.intent,
     };
   }
-  const current =
-    "stepId" in edit ? findScenarioStep(test.steps, edit.stepId) : undefined;
+  const current = "stepId" in edit ? findScenarioStep(test.steps, edit.stepId) : undefined;
   if (edit.kind === "step.remove") {
     return {
       title: `Remove ${current?.kind ?? "step"}`,
@@ -54,9 +49,7 @@ function editDetails(test: AppMapScenarioTest, edit: AppMapScenarioTestEdit) {
     };
   }
   if (edit.kind === "step.reorder") {
-    const labels = edit.orderedStepIds.map(
-      (id) => findScenarioStep(test.steps, id)?.intent ?? id,
-    );
+    const labels = edit.orderedStepIds.map((id) => findScenarioStep(test.steps, id)?.intent ?? id);
     return {
       title: "Reorder steps",
       before: "Current order",
@@ -161,13 +154,9 @@ export function AppMapTestProposalReview(props: {
           <For each={props.proposals}>
             {(proposal) => (
               <article class="rounded-xl border border-border-weak-base bg-surface-base p-3">
-                <strong class="block text-body text-text-strong">
-                  {proposal.title}
-                </strong>
+                <strong class="block text-body text-text-strong">{proposal.title}</strong>
                 <Show when={proposal.description}>
-                  <p class="mt-1 text-caption/[1.5] text-text-weak">
-                    {proposal.description}
-                  </p>
+                  <p class="mt-1 text-caption/[1.5] text-text-weak">{proposal.description}</p>
                 </Show>
                 <Show when={proposal.repair}>
                   {(repair) => (
@@ -186,17 +175,14 @@ export function AppMapTestProposalReview(props: {
                         <dt class="text-text-weaker">Evidence</dt>
                         <dd class="m-0 text-right text-text-base">
                           {repair().sourceCheckIds.length} check
-                          {repair().sourceCheckIds.length === 1
-                            ? ""
-                            : "s"} · {repair().evidenceFramePaths.length} frame
+                          {repair().sourceCheckIds.length === 1 ? "" : "s"} ·{" "}
+                          {repair().evidenceFramePaths.length} frame
                           {repair().evidenceFramePaths.length === 1 ? "" : "s"}
                         </dd>
                       </div>
                       <div class="flex justify-between gap-3">
                         <dt class="text-text-weaker">Revert</dt>
-                        <dd class="m-0 text-right text-text-base">
-                          Frozen inverse retained
-                        </dd>
+                        <dd class="m-0 text-right text-text-base">Frozen inverse retained</dd>
                       </div>
                     </dl>
                   )}
@@ -204,13 +190,8 @@ export function AppMapTestProposalReview(props: {
                 <div class="mt-3 grid gap-2">
                   <For
                     each={
-                      proposal.changes.filter(
-                        (change) => change.kind === "test.edit",
-                      ) as Array<
-                        Extract<
-                          Proposal["changes"][number],
-                          { kind: "test.edit" }
-                        >
+                      proposal.changes.filter((change) => change.kind === "test.edit") as Array<
+                        Extract<Proposal["changes"][number], { kind: "test.edit" }>
                       >
                     }
                   >
@@ -257,9 +238,7 @@ export function AppMapTestProposalReview(props: {
                       }
                       onClick={() => props.onRevert?.(proposal.id)}
                     >
-                      {props.busyId === proposal.id
-                        ? "Reverting…"
-                        : "Revert approved repair"}
+                      {props.busyId === proposal.id ? "Reverting…" : "Revert approved repair"}
                     </Button>
                   }
                 >
@@ -270,9 +249,7 @@ export function AppMapTestProposalReview(props: {
                       disabled={Boolean(props.busyId)}
                       onClick={() => props.onApprove(proposal.id)}
                     >
-                      {props.busyId === proposal.id
-                        ? "Applying…"
-                        : "Approve changes"}
+                      {props.busyId === proposal.id ? "Applying…" : "Approve changes"}
                     </Button>
                     <Button
                       variant="secondary"

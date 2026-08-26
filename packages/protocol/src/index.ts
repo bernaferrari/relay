@@ -50,7 +50,7 @@ export type {
   CombineEvidenceFinding,
   CombineEvidenceFindingCode,
 } from "./combine-evidence-contract.js";
-export * from "./locale-pack-contract.js";
+export * from "./combine-evidence-pack-contract.js";
 export * from "./app-map-canvas.js";
 export * from "./ios-mutation-terminality-contract.js";
 import type { ResourceEventPayload } from "./coordination.js";

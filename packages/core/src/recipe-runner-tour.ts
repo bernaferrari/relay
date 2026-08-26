@@ -358,7 +358,7 @@ async function readTourSurface(
 }
 
 /** Recover a known scroll checkpoint before declaring a recorded English row
- * missing. Locale runs use their own order/point matching, so this deliberately
+ * missing. Language Variable cases use order/point matching, so this deliberately
  * works only with the same semantic labels used to author the map. */
 async function recoverMappedTourRows(
   device: Device,

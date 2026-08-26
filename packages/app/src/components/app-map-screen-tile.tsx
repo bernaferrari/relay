@@ -54,7 +54,10 @@ export function AppMapScreenTile(props: {
           letting the screenshot fill the frame it is in. The letterbox paints
           --map-canvas-backdrop, the same near-black the canvas frames use. */}
       <div class="relative grid aspect-[var(--screen-media-aspect,0.5)] place-items-center overflow-hidden rounded-xl bg-[var(--map-canvas-backdrop)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-shadow duration-hover group-hover:shadow-[inset_0_0_0_1px_var(--border-strong-base),var(--map-elevation-card)]">
-        <Show when={image()} fallback={<EmptyScreenshot size="roomy" hint="Open on the map to save one" />}>
+        <Show
+          when={image()}
+          fallback={<EmptyScreenshot size="roomy" hint="Open on the map to save one" />}
+        >
           <OrientedScreenshot
             src={image()}
             alt=""

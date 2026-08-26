@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { TargetRuntimeReadiness } from "@relay/protocol";
 import type { SnapshotNode } from "./api-types";
-import { createServerCapture, type CaptureServerDeps } from "./server-capture";
+import { createServerCapture } from "./server-capture";
 import { canFlushBufferedTypeAfterLiveInput } from "../context/recorder";
 
 function unknownIosMutationError() {
@@ -45,116 +45,116 @@ function createHarness(
 
   const client = {
     invoke: async <T>(id: string, input: Record<string, unknown>): Promise<T> => {
-    const path = (() => {
-      switch (id) {
-        case "target.screenshot.capture": {
-          const query = new URLSearchParams(
-            Object.entries(input).flatMap(([key, value]) =>
-              value === undefined ? [] : [[key, String(value)]],
-            ),
-          );
-          return `/screenshot${query.size ? `?${query}` : ""}`;
+      const path = (() => {
+        switch (id) {
+          case "target.screenshot.capture": {
+            const query = new URLSearchParams(
+              Object.entries(input).flatMap(([key, value]) =>
+                value === undefined ? [] : [[key, String(value)]],
+              ),
+            );
+            return `/screenshot${query.size ? `?${query}` : ""}`;
+          }
+          case "target.snapshot.capture": {
+            const query = new URLSearchParams(
+              Object.entries(input).flatMap(([key, value]) =>
+                value === undefined ? [] : [[key, String(value)]],
+              ),
+            );
+            return `/snapshot${query.size ? `?${query}` : ""}`;
+          }
+          case "target.scroll-survey.capture":
+            return "/capture/scroll-survey";
+          case "target.interact":
+            return "/interact";
+          case "discovery.interact":
+            return `/discovery/${String(input.sessionId)}/interact`;
+          case "step.run":
+            return "/step/run";
+          case "target.touch":
+            return "/device/touch";
+          case "target.key":
+            return "/device/key";
+          case "target.scroll":
+            return "/device/scroll";
+          default:
+            return id;
         }
-        case "target.snapshot.capture": {
-          const query = new URLSearchParams(
-            Object.entries(input).flatMap(([key, value]) =>
-              value === undefined ? [] : [[key, String(value)]],
-            ),
-          );
-          return `/snapshot${query.size ? `?${query}` : ""}`;
-        }
-        case "target.scroll-survey.capture":
-          return "/capture/scroll-survey";
-        case "target.interact":
-          return "/interact";
-        case "discovery.interact":
-          return `/discovery/${String(input.sessionId)}/interact`;
-        case "step.run":
-          return "/step/run";
-        case "target.touch":
-          return "/device/touch";
-        case "target.key":
-          return "/device/key";
-        case "target.scroll":
-          return "/device/scroll";
-        default:
-          return id;
+      })();
+      calls.push(path);
+      requestBodies.push(input);
+      if (id === "target.screenshot.capture") {
+        const readiness = options.screenshotReadiness?.[screenshotReads++];
+        return {
+          serial: "device-1",
+          capturedAt: 123,
+          mime: "image/png",
+          base64: "encoded",
+          bytes: 7,
+          framePath: "/tmp/frame.png",
+          width: 1668,
+          height: 2224,
+          ...(readiness ? { readiness } : {}),
+        } as T;
       }
-    })();
-    calls.push(path);
-    requestBodies.push(input);
-    if (id === "target.screenshot.capture") {
-      const readiness = options.screenshotReadiness?.[screenshotReads++];
-      return {
-        serial: "device-1",
-        capturedAt: 123,
-        mime: "image/png",
-        base64: "encoded",
-        bytes: 7,
-        framePath: "/tmp/frame.png",
-        width: 1668,
-        height: 2224,
-        ...(readiness ? { readiness } : {}),
-      } as T;
-    }
-    if (id === "target.snapshot.capture") {
-      return {
-        serial: "device-1",
-        capturedAt: 123,
-        nodes: [],
-        interactive: [],
-        tree: "Window",
-        bounds: { width: 100, height: 200 },
-        inspectable: true,
-        source: "sdk",
-        screenIdentity: { fingerprint: "screen", nodes: [], volatileSignals: [] },
-        ...(options.inspectionError ? { inspectionError: options.inspectionError } : {}),
-      } as T;
-    }
-    if (id === "target.scroll-survey.capture") {
-      return {
-        status: "completed",
-        reason: "end-of-content",
-        message: "Captured 2 viewports and returned to the starting position.",
-        restoredStartViewport: true,
-        frames: [
-          {
-            index: 0,
-            offsetY: 0,
-            appendedHeight: 0,
-            screenshot: { base64: "first", width: 100, height: 200, capturedAt: 100 },
-            snapshot: {
-              serial: "device-1",
-              capturedAt: 100,
-              nodes: [{ label: "Usage", rect: { x: 10, y: 20, width: 60, height: 24 } }],
-              interactive: [],
-              inspectable: true,
+      if (id === "target.snapshot.capture") {
+        return {
+          serial: "device-1",
+          capturedAt: 123,
+          nodes: [],
+          interactive: [],
+          tree: "Window",
+          bounds: { width: 100, height: 200 },
+          inspectable: true,
+          source: "sdk",
+          screenIdentity: { fingerprint: "screen", nodes: [], volatileSignals: [] },
+          ...(options.inspectionError ? { inspectionError: options.inspectionError } : {}),
+        } as T;
+      }
+      if (id === "target.scroll-survey.capture") {
+        return {
+          status: "completed",
+          reason: "end-of-content",
+          message: "Captured 2 viewports and returned to the starting position.",
+          restoredStartViewport: true,
+          frames: [
+            {
+              index: 0,
+              offsetY: 0,
+              appendedHeight: 0,
+              screenshot: { base64: "first", width: 100, height: 200, capturedAt: 100 },
+              snapshot: {
+                serial: "device-1",
+                capturedAt: 100,
+                nodes: [{ label: "Usage", rect: { x: 10, y: 20, width: 60, height: 24 } }],
+                interactive: [],
+                inspectable: true,
+              },
             },
-          },
-          {
-            index: 1,
-            offsetY: 140,
-            appendedHeight: 140,
-            screenshot: { base64: "second", width: 100, height: 200, capturedAt: 200 },
-            snapshot: {
-              serial: "device-1",
-              capturedAt: 200,
-              nodes: [{ label: "Buy more", rect: { x: 10, y: 80, width: 60, height: 24 } }],
-              interactive: [],
-              inspectable: true,
+            {
+              index: 1,
+              offsetY: 140,
+              appendedHeight: 140,
+              screenshot: { base64: "second", width: 100, height: 200, capturedAt: 200 },
+              snapshot: {
+                serial: "device-1",
+                capturedAt: 200,
+                nodes: [{ label: "Buy more", rect: { x: 10, y: 80, width: 60, height: 24 } }],
+                interactive: [],
+                inspectable: true,
+              },
             },
-          },
-        ],
-        stitched: { base64: "stitched", width: 100, height: 340, mime: "image/png" },
-        mergedNodes: [{ label: "Buy more", rect: { x: 10, y: 220, width: 60, height: 24 } }],
-      } as T;
-    }
-    if (id === "step.run") {
-      return (options.stepResult ?? { ok: true, durationMs: 12, logs: [] }) as T;
-    }
-    if (id === "target.key" && options.keyError) throw options.keyError;
-    if (id === "target.interact" && options.interactError) throw options.interactError;
-    return {} as T;
+          ],
+          stitched: { base64: "stitched", width: 100, height: 340, mime: "image/png" },
+          mergedNodes: [{ label: "Buy more", rect: { x: 10, y: 220, width: 60, height: 24 } }],
+        } as T;
+      }
+      if (id === "step.run") {
+        return (options.stepResult ?? { ok: true, durationMs: 12, logs: [] }) as T;
+      }
+      if (id === "target.key" && options.keyError) throw options.keyError;
+      if (id === "target.interact" && options.interactError) throw options.interactError;
+      return {} as T;
     },
   };
   const capture = createServerCapture({
@@ -367,11 +367,12 @@ test("scroll survey keeps every viewport's accessibility tree and the stitched c
 test("live capture exposes a setup failure without throwing from the polling loop", async () => {
   let issue: string | null = null;
   const capture = createServerCapture({
-    client: async () => ({
-      invoke: async () => {
-        throw new Error("Finish iPad setup in Relay Settings before capturing.");
-      },
-    }) as never,
+    client: async () =>
+      ({
+        invoke: async () => {
+          throw new Error("Finish iPad setup in Relay Settings before capturing.");
+        },
+      }) as never,
     serverUrl: () => "http://localhost:8787",
     selectedDevice: () => "ipad-1",
     selectedDevicePlatform: () => "ios",

@@ -148,7 +148,11 @@ export function failedStepFromTrace(
   const steps = trace.steps ?? [];
   if (steps.length === 0) return undefined;
   const failed = steps.findIndex(
-    (step) => step.status === "error" || step.status === "failed" || step.tone === "fail" || step.tone === "danger",
+    (step) =>
+      step.status === "error" ||
+      step.status === "failed" ||
+      step.tone === "fail" ||
+      step.tone === "danger",
   );
   if (failed < 0) return undefined;
   return { index: failed, total: steps.length, label: steps[failed]?.title || "Unnamed step" };

@@ -27,10 +27,7 @@ import {
 } from "./device-target-resolution.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { verifyIosScreenChanged } from "./ios-app-launch.js";
-import {
-  annotateTapPreview,
-  tapPreviewLogicalBounds,
-} from "./tap-preview.js";
+import { annotateTapPreview, tapPreviewLogicalBounds } from "./tap-preview.js";
 import { iosLogicalBoundsForSerial } from "./workspace-capture.js";
 import { resolveRuntimeTarget } from "./workspace-devices.js";
 import {

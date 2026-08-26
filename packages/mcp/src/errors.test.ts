@@ -10,7 +10,6 @@ test("an iOS terminal code is review-needed even when its mutation diagnostic is
       code: "IOS_MUTATION_OUTCOME_UNKNOWN",
       error: "Refresh and retry the tap.",
       iosMutation: "not-a-structured-diagnostic",
-      switcherScan: { status: "interrupted", phase: "entry-path" },
       recovery: { action: "refresh-and-retry", retryable: true },
       recoveryAction: {
         operationId: "target.interact",
@@ -27,7 +26,6 @@ test("an iOS terminal code is review-needed even when its mutation diagnostic is
       "Review needed: Relay cannot confirm whether the iOS command reached the device. Capture the current screen before any explicit retry or repair.",
     terminal: "review-needed",
     recovery: { action: "none", retryable: false },
-    iosReview: { switcherScan: { status: "interrupted", phase: "entry-path" } },
   });
 });
 

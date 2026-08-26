@@ -752,7 +752,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
 
   const pinMatch = matchPath(pathname, "/runs/:id/pin");
   if (method === "POST" && pinMatch) {
-    const run = await loadScopedRun(pinMatch.id!, scope);
+    await loadScopedRun(pinMatch.id!, scope);
     const body = (await parseJsonBody(request)) as { pinned?: boolean };
     if (!(await setRunPinned(runsRoot(), pinMatch.id!, body.pinned !== false))) {
       throw new HttpError(404, "Run not found");

@@ -485,9 +485,6 @@ export function pixelEvidenceFingerprint(bytes: Uint8Array): string {
   return `${bytes.length.toString(16)}-${(hash >>> 0).toString(16)}`;
 }
 
-const IOS_TAP_VERIFY_FRAME_INTERVAL_MS =
-  IOS_TAP_VERIFY_STABILITY_WINDOW_MS / (IOS_TAP_VERIFY_MAX_FRAMES - 1);
-
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -522,7 +519,6 @@ async function captureUntilStable(
   }
   return { stability: "live" };
 }
-
 
 export async function verifyIosScreenChanged(
   serial: string,

@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type {
   CombineEvidenceFinding,
-  LocaleRunAnalysisReport,
-  LocaleRunPackManifest,
+  CombineEvidenceAnalysisReport,
+  CombineEvidencePackManifest,
 } from "@relay/protocol";
 import {
-  localeCellAnalysisIndex,
+  combineCellAnalysisIndex,
   packFindingsByCase,
   packFindingsForFrame,
   packFindingsSummary,
-} from "./locale-pack-findings";
+} from "./combine-evidence-findings";
 
 function finding(
   input: Partial<CombineEvidenceFinding> & { locale: string },
@@ -28,7 +28,7 @@ function finding(
   };
 }
 
-const manifest: LocaleRunPackManifest = {
+const manifest: CombineEvidencePackManifest = {
   schemaVersion: 2,
   batchId: "batch-1",
   recipeId: "settings",
@@ -91,7 +91,7 @@ test("an opened screenshot can ask which findings were observed on it", () => {
   assert.deepEqual(packFindingsForFrame(manifest, "en/1.png"), []);
 });
 
-const report: LocaleRunAnalysisReport = {
+const report: CombineEvidenceAnalysisReport = {
   schemaVersion: 1,
   batchId: "batch-1",
   locales: ["en", "pt-BR", "it"],
@@ -120,7 +120,7 @@ const report: LocaleRunAnalysisReport = {
 };
 
 test("the grid asks per run and frame, and a clean analysed cell says so", () => {
-  const cell = localeCellAnalysisIndex(report);
+  const cell = combineCellAnalysisIndex(report);
   assert.deepEqual(cell("job-en", "frames/001.png"), { findings: [], baselineLabel: "en" });
   assert.deepEqual(
     cell("job-pt", "frames/001.png")?.findings.map((item) => item.code),
@@ -129,13 +129,13 @@ test("the grid asks per run and frame, and a clean analysed cell says so", () =>
 });
 
 test("a cell the analysis never covered stays unchecked instead of passing", () => {
-  const cell = localeCellAnalysisIndex(report);
+  const cell = combineCellAnalysisIndex(report);
   // No screenshot, no report, and a frame captured without a tree that came
   // back clean: none of those earned a pass.
   assert.equal(cell("job-en", undefined), undefined);
   assert.equal(cell("job-en", "frames/009.png"), undefined);
-  assert.equal(localeCellAnalysisIndex(null)("job-en", "frames/001.png"), undefined);
-  const uninspected = localeCellAnalysisIndex({
+  assert.equal(combineCellAnalysisIndex(null)("job-en", "frames/001.png"), undefined);
+  const uninspected = combineCellAnalysisIndex({
     ...report,
     analysis: { ...report.analysis, findings: [] },
   });
@@ -143,7 +143,7 @@ test("a cell the analysis never covered stays unchecked instead of passing", () 
 });
 
 test("a finding on an uninspected frame is still reported", () => {
-  const cell = localeCellAnalysisIndex(report);
+  const cell = combineCellAnalysisIndex(report);
   assert.deepEqual(
     cell("job-it", "frames/001.png")?.findings.map((item) => item.code),
     ["SCREEN_MISSING"],

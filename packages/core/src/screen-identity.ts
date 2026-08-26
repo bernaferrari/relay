@@ -367,7 +367,7 @@ export function stableLabelKey(value: string | undefined): string | undefined {
 }
 
 /**
- * Locale-stable structural identity for i18n corpus.
+ * Locale-stable structural identity for i18n fixture.
  * Uses role + accessibility identifier + LocalizedStringKey when present.
  * Visible localized labels and values are intentionally excluded so the same
  * Settings page collapses across languages.

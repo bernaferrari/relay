@@ -61,7 +61,7 @@ Environment: RELAY_URL (default ${DEFAULT_RELAY_URL}), RELAY_ACTOR_ID (default $
  * Strict argument parse. `--map`, `--test`, and `--serial` are required;
  * `--pr` must be a positive integer when present.
  */
-export function parseArgs(argv, env = {}) {
+export function parseArgs(argv) {
   const values = new Map();
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
@@ -168,7 +168,9 @@ export function unwrapCliResult(parsed) {
   if (parsed.type === "result" && parsed.ok === true) return parsed.result;
   if (parsed.type === "error") {
     throw new DogfoodError(
-      typeof parsed.error?.message === "string" ? parsed.error.message : "Relay CLI reported an error",
+      typeof parsed.error?.message === "string"
+        ? parsed.error.message
+        : "Relay CLI reported an error",
       { cliExitCode: parsed.error?.exitCode },
     );
   }
@@ -177,7 +179,10 @@ export function unwrapCliResult(parsed) {
 
 /** The persisted run id equals the watched job id (runs.ts freezes job.id). */
 export function extractRunId(payload) {
-  const candidates = [payload?.job?.id, payload?.jobs?.find((job) => typeof job?.id === "string")?.id];
+  const candidates = [
+    payload?.job?.id,
+    payload?.jobs?.find((job) => typeof job?.id === "string")?.id,
+  ];
   const runId = candidates.find((id) => typeof id === "string" && id);
   if (!runId) throw new DogfoodError("Could not find a job/run id in the test run response");
   return runId;
@@ -225,10 +230,9 @@ async function invokeCli(cli, args, label) {
   const outcome = await cli(args);
   if (outcome.code !== 0) {
     const detail = outcome.stderr.trim().split("\n").at(-1) ?? "";
-    throw new DogfoodError(
-      `\`${label}\` exited ${outcome.code}${detail ? `: ${detail}` : ""}`,
-      { cliExitCode: outcome.code },
-    );
+    throw new DogfoodError(`\`${label}\` exited ${outcome.code}${detail ? `: ${detail}` : ""}`, {
+      cliExitCode: outcome.code,
+    });
   }
   return unwrapCliResult(cliResultEnvelope(outcome.stdout));
 }
@@ -239,9 +243,12 @@ export async function assertServerReachable({ relayUrl, fetchImpl }) {
   try {
     response = await fetchImpl(healthUrl);
   } catch (cause) {
-    throw new DogfoodError(`Relay server at ${relayUrl} is unreachable (${cause?.message ?? cause})`, {
-      cause,
-    });
+    throw new DogfoodError(
+      `Relay server at ${relayUrl} is unreachable (${cause?.message ?? cause})`,
+      {
+        cause,
+      },
+    );
   }
   if (!response.ok) {
     throw new DogfoodError(`Relay health check returned HTTP ${response.status}`);
@@ -279,7 +286,7 @@ export async function ensureLease({ serial, actor, cli }) {
   return { leaseId: lease.id, created: true };
 }
 
-export async function emitProofReportArtifacts({ runId, cli, outDir, relayUrl }) {
+export async function emitProofReportArtifacts({ runId, cli, outDir }) {
   const reportOutcome = await cli([
     "report",
     "emit",
@@ -291,9 +298,12 @@ export async function emitProofReportArtifacts({ runId, cli, outDir, relayUrl })
   ]);
   if (reportOutcome.code !== 0) {
     const detail = reportOutcome.stderr.trim().split("\n").at(-1) ?? "";
-    throw new DogfoodError(`report emit exited ${reportOutcome.code}${detail ? `: ${detail}` : ""}`, {
-      cliExitCode: reportOutcome.code,
-    });
+    throw new DogfoodError(
+      `report emit exited ${reportOutcome.code}${detail ? `: ${detail}` : ""}`,
+      {
+        cliExitCode: reportOutcome.code,
+      },
+    );
   }
   const report = parseProofReport(reportOutcome.stdout);
   const reportJsonPath = join(outDir, "proof-report.json");
@@ -345,7 +355,8 @@ export async function createShareLink({ runId, cli }) {
 function shareDisplayLink(share, relayUrl) {
   if (!share) return "(not created)";
   if (share.url) return share.url;
-  if (share.path) return /^https?:\/\//u.test(share.path) ? share.path : new URL(share.path, relayUrl).href;
+  if (share.path)
+    return /^https?:\/\//u.test(share.path) ? share.path : new URL(share.path, relayUrl).href;
   return `(unavailable: ${share.error ?? "unknown reason"})`;
 }
 
@@ -401,9 +412,10 @@ export async function runProofLoop({
   if (!runId) {
     // Nothing executed to a verdict: map the CLI exit code (9 = ran and
     // failed before producing a run, anything else = unproven).
-    const exitCode = runFailure?.cliExitCode === PROOF_EXIT_CODES.fail
-      ? PROOF_EXIT_CODES.fail
-      : PROOF_EXIT_CODES.unproven;
+    const exitCode =
+      runFailure?.cliExitCode === PROOF_EXIT_CODES.fail
+        ? PROOF_EXIT_CODES.fail
+        : PROOF_EXIT_CODES.unproven;
     return {
       exitCode,
       summary: {
@@ -421,7 +433,7 @@ export async function runProofLoop({
   }
 
   await mkdir(outDir, { recursive: true });
-  const emitted = await emitProofReportArtifacts({ runId, cli, outDir, relayUrl });
+  const emitted = await emitProofReportArtifacts({ runId, cli, outDir });
   const share = await createShareLink({ runId, cli });
 
   const summary = {

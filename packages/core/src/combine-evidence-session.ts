@@ -42,7 +42,7 @@ export type CombineEvidenceScreen = {
   fingerprint: string;
   locale: string;
   depth: number;
-  /** Slash-joined path labels from the corpus root (localized). */
+  /** Slash-joined path labels from the fixture root (localized). */
   path: string[];
   /** Stable path keys when available (identifiers / string keys). */
   pathKeys: string[];

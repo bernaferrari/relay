@@ -135,4 +135,3 @@ export const destinationRepairProposalsArtifactDataSchema = z.discriminatedUnion
 export type DestinationRepairProposalsArtifactData = z.output<
   typeof destinationRepairProposalsArtifactDataSchema
 >;
-

@@ -81,7 +81,7 @@ function fixture(): AppMap {
   };
 }
 
-test("a saved App Map Test opens a Combine strip, not Locale Matrix chrome", async () => {
+test("a saved App Map Test opens the canonical Combine strip", async () => {
   document.body.replaceChildren();
   const root = document.createElement("div");
   document.body.append(root);

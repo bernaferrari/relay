@@ -86,9 +86,7 @@ function rowToRecord(row: Record<string, unknown>): CatalogRecord {
     ...(row.review_json ? { review: JSON.parse(String(row.review_json)) as RunReview } : {}),
     ...(row.source_revision_json
       ? {
-          sourceRevision: parseOptionalSourceRevision(
-            JSON.parse(String(row.source_revision_json)),
-          ),
+          sourceRevision: parseOptionalSourceRevision(JSON.parse(String(row.source_revision_json))),
         }
       : {}),
     ...(row.batch_id ? { batchId: String(row.batch_id) } : {}),
@@ -133,7 +131,11 @@ function indexedSurfaceComparisons(run: Record<string, unknown>): Array<{
   for (const artifact of run.artifacts) {
     if (!artifact || typeof artifact !== "object") continue;
     const item = artifact as { kind?: unknown; capturedAt?: unknown; data?: unknown };
-    if (item.kind !== "logical-scroll-surface-result" || !item.data || typeof item.data !== "object") {
+    if (
+      item.kind !== "logical-scroll-surface-result" ||
+      !item.data ||
+      typeof item.data !== "object"
+    ) {
       continue;
     }
     const cache = (item.data as { cache?: unknown }).cache;

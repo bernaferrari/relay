@@ -56,7 +56,11 @@ export function AppMapExplorationTimeline(props: {
         </div>
 
         <Show when={workers().length > 1}>
-          <div class="flex flex-wrap gap-1.5" role="tablist" aria-label="Agent exploration timelines">
+          <div
+            class="flex flex-wrap gap-1.5"
+            role="tablist"
+            aria-label="Agent exploration timelines"
+          >
             <For each={workers()}>
               {(worker) => (
                 <button

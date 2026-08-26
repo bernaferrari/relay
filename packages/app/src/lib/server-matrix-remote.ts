@@ -32,9 +32,7 @@ export async function resolveMatrix(client: MatrixClient, id: string): Promise<M
 }
 
 export async function loadMatrixYaml(client: RelayClient, id: string): Promise<string> {
-  const data = await client.resource<{ yaml: string }>(
-    `/matrices/${encodeURIComponent(id)}/yaml`,
-  );
+  const data = await client.resource<{ yaml: string }>(`/matrices/${encodeURIComponent(id)}/yaml`);
   return data.yaml;
 }
 

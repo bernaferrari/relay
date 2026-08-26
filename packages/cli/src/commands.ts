@@ -185,30 +185,53 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         { name: "variableId", type: "string", description: "Stable Variable identifier" },
       ],
       inputHelp: [
-        { name: "expectedRevision", type: "number", required: true, description: "Current App Map revision" },
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current App Map revision",
+        },
         {
           name: "target",
           type: "object",
           required: true,
-          description: 'Leased control target, e.g. {"kind":"device","platform":"android","targetId":"<serial>"}',
+          description:
+            'Leased control target, e.g. {"kind":"device","platform":"android","targetId":"<serial>"}',
         },
         {
           name: "taughtRows",
           type: "array",
           required: true,
-          description: "1-8 already-taught option rows ({id, identifier?, label?, text?}) to infer the rest from",
+          description:
+            "1-8 already-taught option rows ({id, identifier?, label?, text?}) to infer the rest from",
         },
-        { name: "leaseId", type: "string", required: true, description: "Actor-owned target lease identifier" },
+        {
+          name: "leaseId",
+          type: "string",
+          required: true,
+          description: "Actor-owned target lease identifier",
+        },
         { name: "name", type: "string", description: "Optional Variable display name" },
-        { name: "kind", type: "string", description: "Optional Variable kind (language, account, theme, …)" },
-        { name: "apply", type: "object", description: "Optional reviewed actions that open the value list" },
+        {
+          name: "kind",
+          type: "string",
+          description: "Optional Variable kind (language, account, theme, …)",
+        },
+        {
+          name: "apply",
+          type: "object",
+          description: "Optional reviewed actions that open the value list",
+        },
       ],
       examples: [
         `relay variable infer grok-android language --input '${JSON.stringify({
           expectedRevision: 4,
           leaseId: "<lease>",
           target: { kind: "device", platform: "android", targetId: "<serial>" },
-          taughtRows: [{ id: "en", label: "English" }, { id: "it", label: "Italiano" }],
+          taughtRows: [
+            { id: "en", label: "English" },
+            { id: "it", label: "Italiano" },
+          ],
         })}'`,
       ],
       note: "Requires an active exclusive lease on the target. Taught rows seed inference; the server walks the apply path and reads the remaining options.",

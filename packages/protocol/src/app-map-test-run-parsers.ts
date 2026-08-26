@@ -1,6 +1,5 @@
 import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import type { AppMapParserDependencies } from "./app-map-operation-parsers.js";
-import type { RuntimeParser } from "./operation-contract.js";
 
 type AppMapOperationId = keyof AppMapOperationMap;
 type AppMapOperationInput<Id extends AppMapOperationId> = AppMapOperationMap[Id]["input"];

@@ -32,7 +32,7 @@ function unsafeControlText(value: string): boolean {
   return isUnsafeExploreControlText(value);
 }
 
-function isCorpusChromeLabel(value: string): boolean {
+function isFixtureChromeLabel(value: string): boolean {
   if (isExploreChromeLabel(value, { excludeLanguageSwitcher: true })) return true;
   const label = value.trim();
   // App chrome that leaks under the Settings sheet. The words belong to the
@@ -101,8 +101,8 @@ function isCrawlChromeControl(input: {
   }
   // A LocalizedStringKey is authored English that never changes with the
   // device's language, so the word list reads it consistently everywhere.
-  if (identity) return isCorpusChromeLabel(identity.stringKey);
-  return isCorpusChromeLabel(input.label);
+  if (identity) return isFixtureChromeLabel(identity.stringKey);
+  return isFixtureChromeLabel(input.label);
 }
 
 /**
@@ -236,19 +236,19 @@ function actionableAnchor(
   return undefined;
 }
 
-const CORPUS_CONTROL_LIMIT = 60;
+const EVIDENCE_CONTROL_LIMIT = 60;
 
 /**
  * Cap the list without letting chrome crowd out a row. Order is the tree's, so
  * a crawl still walks the screen top to bottom.
  */
 function capCombineEvidenceControls(controls: CombineEvidenceControl[]): CombineEvidenceControl[] {
-  if (controls.length <= CORPUS_CONTROL_LIMIT) return controls;
+  if (controls.length <= EVIDENCE_CONTROL_LIMIT) return controls;
   const kept = new Set(
-    controls.filter((control) => !control.skipCrawl).slice(0, CORPUS_CONTROL_LIMIT),
+    controls.filter((control) => !control.skipCrawl).slice(0, EVIDENCE_CONTROL_LIMIT),
   );
   for (const control of controls) {
-    if (kept.size >= CORPUS_CONTROL_LIMIT) break;
+    if (kept.size >= EVIDENCE_CONTROL_LIMIT) break;
     kept.add(control);
   }
   return controls.filter((control) => kept.has(control));
@@ -360,7 +360,7 @@ export function crawlableCombineEvidenceControls(
 
 /** Prefer real nav/page titles; never toolbar chrome. */
 export function titleFromNodes(nodes: SnapshotNode[], path: string[]): string | undefined {
-  const chrome = (label: string) => isCorpusChromeLabel(label) || isExploreChromeLabel(label);
+  const chrome = (label: string) => isFixtureChromeLabel(label) || isExploreChromeLabel(label);
 
   // NavigationBar.identifier is often the page title on Grok (e.g. "Kids Mode").
   for (const node of nodes) {
@@ -413,7 +413,7 @@ export function fingerprintCombineEvidenceScreen(
   const visualFingerprint = observeScreenIdentity(nodes).fingerprint;
   const canonicalKey =
     pathKeys.length > 0
-      ? digest(`relay-corpus-path:v1:${localeStable}:${pathKeys.join(">")}`)
+      ? digest(`relay-fixture-path:v1:${localeStable}:${pathKeys.join(">")}`)
       : localeStable;
   return {
     fingerprint: visualFingerprint,

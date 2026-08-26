@@ -1,5 +1,5 @@
 import * as z from "zod/v4";
-import { authoringTarget, empty, identifier, natural, text, unknownRecord } from "./operation-schema-primitives.js";
+import { empty, identifier, natural, unknownRecord } from "./operation-schema-primitives.js";
 
 const runRef = z.object({ runId: identifier("Persisted Run identifier") }).strict();
 const batchRef = z.object({ batchId: identifier("Batch identifier") }).strict();
@@ -18,7 +18,12 @@ export const executionOperationSchemas = {
     .object({
       targets: z
         .array(
-          z.object({ targetId: identifier("Target identifier"), platform: z.enum(["android", "ios"]) }).strict(),
+          z
+            .object({
+              targetId: identifier("Target identifier"),
+              platform: z.enum(["android", "ios"]),
+            })
+            .strict(),
         )
         .min(1),
       workItems: natural("Total campaign work items"),
@@ -108,7 +113,11 @@ export const executionOperationSchemas = {
   "run.share.create": z
     .object({
       runId: identifier("Persisted Run identifier"),
-      expiresInHours: z.number().positive().min(5 / 60).max(30 * 24),
+      expiresInHours: z
+        .number()
+        .positive()
+        .min(5 / 60)
+        .max(30 * 24),
       includeBatch: z.boolean().optional(),
     })
     .strict(),

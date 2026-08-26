@@ -38,7 +38,7 @@ function childIndexes(nodes: readonly SnapshotNode[]): Map<number, number[]> {
 /**
  * Indexes of every node the software keyboard owns, including the whole subtree
  * under each keyboard root. Used to keep system input out of both screen
- * identity and the corpus control list.
+ * identity and the fixture control list.
  */
 export function systemInputNodeIndexes(nodes: readonly SnapshotNode[]): Set<number> {
   const indexed = new Map(

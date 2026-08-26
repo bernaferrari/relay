@@ -1,7 +1,7 @@
 /**
- * Exporting a matrix batch as a pack a person can open.
+ * Exporting a Combine batch as a pack a person can open.
  *
- * The pack is the deliverable of a locale sweep: one folder per case, the
+ * The pack is the deliverable of a Combine: one folder per case, the
  * authored screenshots in order, the findings computed from those same frames
  * and the trees captured beside them, and a portable HTML page that shows both
  * together.
@@ -11,34 +11,34 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type {
   CombineEvidenceFinding,
-  LocaleRunAnalysisReport,
-  LocaleRunPackManifest,
+  CombineEvidenceAnalysisReport,
+  CombineEvidencePackManifest,
 } from "@relay/protocol";
 import { frameObservations } from "./frame-observation.js";
 import { readFrameTreeNodes } from "./run-frame-tree.js";
 import {
-  analyzeLocaleRunPack,
-  localeRunCanonicalKey,
-  type LocaleRunPackCapture,
-} from "./locale-run-analysis.js";
+  analyzeCombineEvidenceBatchData,
+  combineEvidenceCanonicalKey,
+  type CombineEvidenceCapture,
+} from "./combine-evidence-batch-analysis.js";
 import { listPersistedRuns } from "./runs.js";
 import { slugEvidencePathSegment } from "./screen-identity.js";
 import { listJobs, type TestJob } from "./session.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 
-export type { LocaleRunPackManifest };
+export type { CombineEvidencePackManifest };
 
 /**
- * A matrix case as the pack reads it.
+ * A Combine case as the pack reads it.
  *
  * The live registry hands back a `TestJob`; the run store hands back the
- * `PersistedRun` written from one. They agree on everything a locale sweep is
+ * `PersistedRun` written from one. They agree on everything a Combine is
  * evidence for — the frames, the artifacts, the case index — and differ only in
  * fields describing how the job was dispatched, which no finding depends on.
  * Naming the overlap lets one analyzer read a batch whether it is still in
  * memory or only on disk, without a cast that claims more than either type has.
  */
-export type LocaleRunCase = Pick<
+export type CombineEvidenceCase = Pick<
   TestJob,
   | "id"
   | "action"
@@ -71,14 +71,17 @@ function encodePath(path: string): string {
   return path.split("/").map(encodeURIComponent).join("/");
 }
 
-function findingLine(manifest: LocaleRunPackManifest, finding: CombineEvidenceFinding): string {
+function findingLine(
+  manifest: CombineEvidencePackManifest,
+  finding: CombineEvidenceFinding,
+): string {
   const frame = manifest.byCanonicalKey[finding.canonicalKey]?.[finding.locale];
   const detail = escapeHtml(finding.detail);
   const body = frame ? `<a href="${encodePath(frame)}">${detail}</a>` : detail;
   return `<li data-severity="${escapeHtml(finding.severity)}"><code>${escapeHtml(finding.code)}</code> ${body} <em>${escapeHtml(finding.confidence)} confidence</em></li>`;
 }
 
-function portablePackHtml(manifest: LocaleRunPackManifest): string {
+function portablePackHtml(manifest: CombineEvidencePackManifest): string {
   const passed = manifest.cases.filter((item) => item.status === "ok" || item.status === "healed");
   const expected = manifest.cases.reduce((total, item) => total + (item.expectedFrames ?? 0), 0);
   const captured = manifest.cases.reduce((total, item) => total + item.frames.length, 0);
@@ -117,7 +120,7 @@ function portablePackHtml(manifest: LocaleRunPackManifest): string {
 <body><main><h1>${escapeHtml(manifest.title)}</h1><p class="summary">${passed.length} of ${manifest.cases.length} runs passed · ${captured}${expected ? ` of ${expected}` : ""} screenshots · ${analysis.findings.length} finding${analysis.findings.length === 1 ? "" : "s"} (${analysis.critical} critical) against ${escapeHtml(analysis.baselineLocale)}${blind ? ` · ${blind} frame${blind === 1 ? "" : "s"} without a UI tree, checked for presence only` : ""} · ${new Date(manifest.generatedAt).toISOString()}</p>${cards}</main></body></html>\n`;
 }
 
-function expectedEvidenceFrames(job: LocaleRunCase): number | undefined {
+function expectedEvidenceFrames(job: CombineEvidenceCase): number | undefined {
   for (const artifact of job.artifacts ?? []) {
     if (
       artifact.kind !== "frozen-inputs" ||
@@ -159,7 +162,7 @@ function isHarnessFrame(caption: string | undefined): boolean {
  * report. Failing closed keeps a nominal 7 × 10 pack from silently shipping with
  * fewer than 70 useful screenshots.
  */
-export function evidenceFrameNames(job: LocaleRunCase): {
+export function evidenceFrameNames(job: CombineEvidenceCase): {
   names?: Set<string>;
   expected?: number;
 } {
@@ -179,15 +182,15 @@ export function evidenceFrameNames(job: LocaleRunCase): {
   return { names, expected };
 }
 
-function localeRunRoot(): string {
+function combineEvidenceRoot(): string {
   return join(
     process.env.RELAY_WORKSPACE_ROOT?.trim() || findWorkspaceRoot(),
     ".relay",
-    "locale-runs",
+    "combine-evidence",
   );
 }
 
-export function artifactLocale(job: LocaleRunCase): string {
+export function evidenceCaseLocale(job: CombineEvidenceCase): string {
   const fromInputs = (job.resolvedInputs?.locale ?? job.resolvedInputs?.language)?.trim();
   if (fromInputs) return fromInputs;
   for (const artifact of job.artifacts ?? []) {
@@ -208,7 +211,7 @@ export function artifactLocale(job: LocaleRunCase): string {
 }
 
 /** The language this case ran in, ignoring the case label a combine invents. */
-function caseLanguage(job: LocaleRunCase): string | undefined {
+function caseLanguage(job: CombineEvidenceCase): string | undefined {
   const direct = (job.resolvedInputs?.locale ?? job.resolvedInputs?.language)?.trim();
   if (direct) return direct;
   for (const artifact of job.artifacts ?? []) {
@@ -231,7 +234,7 @@ function caseLanguage(job: LocaleRunCase): string | undefined {
 const LANGUAGE_VARIABLE_RE = /^(?:locale|language)(?:_|$)/;
 
 /** Everything a case froze other than its language, as a comparable signature. */
-function caseStateSignature(job: LocaleRunCase): string {
+function caseStateSignature(job: CombineEvidenceCase): string {
   const values = new Map<string, string>();
   const remember = (source: Record<string, unknown> | undefined): void => {
     for (const [key, value] of Object.entries(source ?? {})) {
@@ -252,18 +255,18 @@ function caseStateSignature(job: LocaleRunCase): string {
 /**
  * Whether language is the only intended difference between the cases.
  *
- * A locale matrix qualifies, and so does a combine over a language variable.
- * A combine that also varies state does not: two cases in the same language
+ * A Combine over only a language Variable qualifies. A Combine that also
+ * varies state does not: two cases in the same language
  * are supposed to read differently, and reporting that as a translation defect
  * would bury the real ones.
  *
  * Two cases in one language are only evidence of that when they also froze
- * different state. A matrix restores the baseline locale at the end, so a
- * repeated language is the normal shape of every sweep — reading it as a
+ * different state. A Combine may restore the baseline locale at the end, so a
+ * repeated language is a normal shape — reading it as a
  * varying combine drops the labels and returns a pack of forty rasters with
  * nothing to compare.
  */
-function comparesLanguage(jobs: LocaleRunCase[]): boolean {
+function comparesLanguage(jobs: CombineEvidenceCase[]): boolean {
   const stateByLanguage = new Map<string, Set<string>>();
   for (const job of jobs) {
     const language = caseLanguage(job);
@@ -276,7 +279,7 @@ function comparesLanguage(jobs: LocaleRunCase[]): boolean {
 }
 
 /** Screenshots the test asked for, as opposed to automatic setup diagnostics. */
-function authoredFrames(job: LocaleRunCase): LocaleRunCase["frames"] {
+function authoredFrames(job: CombineEvidenceCase): CombineEvidenceCase["frames"] {
   let allowed: Set<string> | undefined;
   try {
     allowed = evidenceFrameNames(job).names;
@@ -298,12 +301,14 @@ function authoredFrames(job: LocaleRunCase): LocaleRunCase["frames"] {
  * hold, so a grid can show a verdict per cell without copying forty locales of
  * screenshots first.
  */
-export async function analyzeLocaleRunBatch(batchId: string): Promise<LocaleRunAnalysisReport> {
-  return analyzeLocaleRunJobs(batchId, await localeBatchJobs(batchId));
+export async function analyzeCombineEvidenceBatch(
+  batchId: string,
+): Promise<CombineEvidenceAnalysisReport> {
+  return analyzeCombineEvidenceJobs(batchId, await combineBatchJobs(batchId));
 }
 
 /** A matrix batch names its recipe after itself, once per kind of matrix. */
-const BATCH_ACTION_PREFIXES = ["locale-run-", "option-run-"] as const;
+const BATCH_ACTION_PREFIXES = ["option-run-"] as const;
 
 /** Forty languages against forty screens, with room for the restore case. */
 const MAX_BATCH_CASES = 2000;
@@ -326,8 +331,8 @@ const MAX_BATCH_CASES = 2000;
  * first, so reading it back unsorted would quietly make the restore case the
  * baseline and compare every locale against the language the sweep ended on.
  */
-async function localeBatchJobs(batchId: string): Promise<LocaleRunCase[]> {
-  const byId = new Map<string, LocaleRunCase>();
+async function combineBatchJobs(batchId: string): Promise<CombineEvidenceCase[]> {
+  const byId = new Map<string, CombineEvidenceCase>();
   for (const prefix of BATCH_ACTION_PREFIXES) {
     const persisted = await listPersistedRuns(MAX_BATCH_CASES, `${prefix}${batchId}`);
     for (const run of persisted.reverse()) {
@@ -340,7 +345,7 @@ async function localeBatchJobs(batchId: string): Promise<LocaleRunCase[]> {
     if (job.batchId === batchId) byId.set(job.id, job);
   }
   const jobs = [...byId.values()];
-  if (!jobs.length) throw new Error(`no jobs found for locale batch ${batchId}`);
+  if (!jobs.length) throw new Error(`no jobs found for Combine batch ${batchId}`);
   // Stable: cases that never recorded an index keep the order they were run in.
   return jobs
     .map((job, index) => ({ job, index }))
@@ -353,13 +358,13 @@ async function localeBatchJobs(batchId: string): Promise<LocaleRunCase[]> {
 }
 
 /** The same report over jobs already in hand. */
-export function analyzeLocaleRunJobs(
+export function analyzeCombineEvidenceJobs(
   batchId: string,
-  jobs: LocaleRunCase[],
-): LocaleRunAnalysisReport {
-  const captures: LocaleRunPackCapture[] = [];
+  jobs: CombineEvidenceCase[],
+): CombineEvidenceAnalysisReport {
+  const captures: CombineEvidenceCapture[] = [];
   const cases = jobs.map((job) => {
-    const locale = artifactLocale(job);
+    const locale = evidenceCaseLocale(job);
     const observations = frameObservations(job);
     const frames = authoredFrames(job).map((frame, index) => {
       const observation = observations.get(basename(frame.path));
@@ -373,7 +378,7 @@ export function analyzeLocaleRunJobs(
       });
       return {
         framePath: frame.path,
-        canonicalKey: localeRunCanonicalKey(index),
+        canonicalKey: combineEvidenceCanonicalKey(index),
         ...(observation?.caption ? { caption: observation.caption } : {}),
         inspected: Boolean(observation?.controls.length),
       };
@@ -382,9 +387,9 @@ export function analyzeLocaleRunJobs(
   });
 
   const locales = [...new Set(cases.map((item) => item.locale))];
-  const { analysis, coverage } = analyzeLocaleRunPack({
+  const { analysis, coverage } = analyzeCombineEvidenceBatchData({
     batchId,
-    title: jobs[0]?.title ?? "Locale run",
+    title: jobs[0]?.title ?? "Combine evidence",
     locales,
     captures,
     compareText: comparesLanguage(jobs),
@@ -392,21 +397,21 @@ export function analyzeLocaleRunJobs(
   return { schemaVersion: 1, batchId, locales, analysis, coverage, cases };
 }
 
-export async function exportLocaleRunPack(input: {
+export async function exportCombineEvidencePack(input: {
   batchId: string;
-  jobs: LocaleRunCase[];
+  jobs: CombineEvidenceCase[];
   title?: string;
   recipeId?: string;
-}): Promise<{ rootDir: string; manifest: LocaleRunPackManifest }> {
+}): Promise<{ rootDir: string; manifest: CombineEvidencePackManifest }> {
   const batchId = input.batchId.trim();
   if (!batchId) throw new Error("batchId is required");
-  const rootDir = join(localeRunRoot(), batchId, "pack");
+  const rootDir = join(combineEvidenceRoot(), batchId, "pack");
   await mkdir(rootDir, { recursive: true });
 
-  const cases: LocaleRunPackManifest["cases"] = [];
-  const captures: LocaleRunPackCapture[] = [];
+  const cases: CombineEvidencePackManifest["cases"] = [];
+  const captures: CombineEvidenceCapture[] = [];
   for (const job of input.jobs) {
-    const locale = artifactLocale(job);
+    const locale = evidenceCaseLocale(job);
     const localeDir = join(rootDir, slugEvidencePathSegment(locale));
     const screenshotDir = join(localeDir, "screenshots");
     const accessibilityDir = join(localeDir, "accessibility");
@@ -478,8 +483,8 @@ export async function exportLocaleRunPack(input: {
   }
 
   const locales = [...new Set(cases.map((item) => item.locale))];
-  const title = input.title ?? input.jobs[0]?.title ?? "Locale run";
-  const { analysis, byCanonicalKey, frames, coverage } = analyzeLocaleRunPack({
+  const title = input.title ?? input.jobs[0]?.title ?? "Combine evidence";
+  const { analysis, byCanonicalKey, frames, coverage } = analyzeCombineEvidenceBatchData({
     batchId,
     title,
     locales,
@@ -488,7 +493,7 @@ export async function exportLocaleRunPack(input: {
   });
   const framesByPath = new Map(frames.map((frame) => [frame.path, frame]));
 
-  const manifest: LocaleRunPackManifest = {
+  const manifest: CombineEvidencePackManifest = {
     schemaVersion: 2,
     batchId,
     recipeId: input.recipeId ?? input.jobs[0]?.recipeId ?? "unknown",
@@ -527,12 +532,12 @@ export async function exportLocaleRunPack(input: {
   return { rootDir, manifest };
 }
 
-export async function exportLocaleRunPackFromBatchId(batchId: string): Promise<{
+export async function exportCombineEvidencePackFromBatchId(batchId: string): Promise<{
   rootDir: string;
-  manifest: LocaleRunPackManifest;
-  jobs: LocaleRunCase[];
+  manifest: CombineEvidencePackManifest;
+  jobs: CombineEvidenceCase[];
 }> {
-  const jobs = await localeBatchJobs(batchId);
-  const exported = await exportLocaleRunPack({ batchId, jobs });
+  const jobs = await combineBatchJobs(batchId);
+  const exported = await exportCombineEvidencePack({ batchId, jobs });
   return { ...exported, jobs };
 }

@@ -525,7 +525,12 @@ test("verify-change prompt renders the proof loop with commit and file scope", a
     assert.equal(description, relayMcpPrompts[5].description);
     assert.match(text, /at commit 9a1c2e4b7d8f0a3b5c6d7e8f9a0b1c2d3e4f5a6b/);
     assert.match(text, /restricted to App Map map-1/);
-    assert.match(text, /provided changed files \(2 listed\)/);
+    assert.match(text, /from the provided list \(2 files\)/);
+    assert.match(text, /relay_app_map_diff_impact/);
+    assert.match(
+      text,
+      /sourceRevision \{vcs: "git", sha: "9a1c2e4b7d8f0a3b5c6d7e8f9a0b1c2d3e4f5a6b"\}/,
+    );
     assert.match(text, /Establish impact/);
     assert.match(text, /smallest set of saved graph Tests/);
     assert.match(text, /relay_app_map_test_run/);
@@ -554,7 +559,8 @@ test("verify-change prompt renders without optional scope arguments", async () =
       }),
     );
     assert.doesNotMatch(text, /at commit/);
-    assert.match(text, /provided changed files \(0 listed\)/);
+    assert.match(text, /from your VCS context/);
+    assert.match(text, /relay_app_map_diff_impact/);
   } finally {
     await session.close();
   }

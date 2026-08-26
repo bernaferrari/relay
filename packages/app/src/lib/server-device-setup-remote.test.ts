@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { RelayClient } from "@relay/client";
-import { loadAndroidAppLocales, saveAppleDeviceSetup, saveIosLivePreview } from "./server-device-setup-remote";
+import {
+  loadAndroidAppLocales,
+  saveAppleDeviceSetup,
+  saveIosLivePreview,
+} from "./server-device-setup-remote";
 
 test("device mutations and app locale lookup use registered operation ids", async () => {
   const calls: Array<{ id: string; input: unknown }> = [];
@@ -13,10 +17,7 @@ test("device mutations and app locale lookup use registered operation ids", asyn
     },
   } as unknown as RelayClient;
 
-  assert.deepEqual(await loadAndroidAppLocales(client, "pixel-1", "com.example"), [
-    "en",
-    "pt-BR",
-  ]);
+  assert.deepEqual(await loadAndroidAppLocales(client, "pixel-1", "com.example"), ["en", "pt-BR"]);
   await saveAppleDeviceSetup(client, { teamId: "ABCDE12345", bundleId: "com.example.runner" });
   await saveIosLivePreview(client, "agent-device-png");
 

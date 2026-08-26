@@ -77,7 +77,10 @@ export function RunStepList(props: {
                 <Show
                   when={node.frame}
                   fallback={
-                    <span class="grid size-8 place-items-center rounded-lg bg-surface-base" aria-hidden="true">
+                    <span
+                      class="grid size-8 place-items-center rounded-lg bg-surface-base"
+                      aria-hidden="true"
+                    >
                       <Icon name="camera" size={13} class="text-text-weaker/50" />
                     </span>
                   }
@@ -149,7 +152,10 @@ export function RunRow(props: {
   const outcome = () => runOutcomeChip(props.job);
   const status = () => props.batch?.status ?? outcome().label;
   const title = () =>
-    props.batch?.title ?? props.job.title ?? props.job.recipeSnapshot?.title ?? titleize(props.job.action);
+    props.batch?.title ??
+    props.job.title ??
+    props.job.recipeSnapshot?.title ??
+    titleize(props.job.action);
   const glyphSteps = () => props.job.recipeSnapshot?.steps ?? [];
   const passed = () => props.batch?.tone === "pass" || (!props.batch && outcome().tone === "pass");
   const active = () =>

@@ -17,8 +17,9 @@ export function useDiscoveryExplorationTimeline(
   live: () => boolean,
 ) {
   const server = useServer();
-  const [explorationTimeline, setExplorationTimeline] =
-    createSignal<DiscoveryExplorationTimeline | undefined>();
+  const [explorationTimeline, setExplorationTimeline] = createSignal<
+    DiscoveryExplorationTimeline | undefined
+  >();
 
   const run = createMemo(
     () => server.discoverySessions().find((session) => session.id === sessionId())?.explore,

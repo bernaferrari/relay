@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
+import { mkdirSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import {
   acquireRelayStateServerLease,
   recoverAbandonedLocalRelayStateServerLease,
+  relayStateServerLeaseRecoveryAudit,
   RelayStateDirectoryInUseError,
   relayStateServerLeasePath,
 } from "./relay-state-server-lease.js";
@@ -75,6 +78,7 @@ test("a dead same-host owner can be reclaimed but a foreign host is refused", as
 test("an aged dead lease from the previous local hostname is transactionally recovered", async () => {
   await withRoot((root) => {
     const path = relayStateServerLeasePath(join(root, ".relay"));
+    mkdirSync(join(root, ".relay"), { recursive: true });
     const stale = acquireRelayStateServerLease({
       path,
       pid: 999_999_999,
@@ -89,12 +93,23 @@ test("an aged dead lease from the previous local hostname is transactionally rec
       now: 1_000 + 60 * 60_000,
       minimumAgeMs: 5 * 60_000,
       localPortHasListener: false,
+      workspaceFilesystem: "local",
     });
 
     assert.equal(recovery.status, "recovered");
     if (recovery.status !== "recovered") return;
     assert.equal(recovery.previousOwner.leaseId, stale.owner.leaseId);
     assert.equal(recovery.reason, "local-hostname-collision-renamed");
+    assert.match(recovery.auditId, /^[0-9a-f-]{36}$/i);
+    assert.deepEqual(relayStateServerLeaseRecoveryAudit({ path }), [
+      {
+        auditId: recovery.auditId,
+        previousOwner: stale.owner,
+        recoveredAt: recovery.recoveredAt,
+        recoveredByHost: "Bernardos-MacBook-Pro-5.local",
+        reason: "local-hostname-collision-renamed",
+      },
+    ]);
 
     const next = acquireRelayStateServerLease({
       path,
@@ -116,6 +131,7 @@ test("local lease recovery refuses live, young, listening, unrelated, and shared
       now: 1_000_000,
       minimumAgeMs: 300_000,
       localPortHasListener: false,
+      workspaceFilesystem: "local" as const,
     };
 
     const live = acquireRelayStateServerLease({
@@ -137,10 +153,7 @@ test("local lease recovery refuses live, young, listening, unrelated, and shared
       host: "relay-workstation-4.local",
       acquiredAt: common.now - 1_000,
     });
-    assert.equal(
-      recoverAbandonedLocalRelayStateServerLease(common).reason,
-      "lease-not-old-enough",
-    );
+    assert.equal(recoverAbandonedLocalRelayStateServerLease(common).reason, "lease-not-old-enough");
     young.release();
 
     const listening = acquireRelayStateServerLease({
@@ -182,5 +195,87 @@ test("local lease recovery refuses live, young, listening, unrelated, and shared
       "state-not-workspace-local",
     );
     shared.release();
+
+    const unknownPort = acquireRelayStateServerLease({
+      path,
+      pid: 999_999_999,
+      host: "relay-workstation-4.local",
+      acquiredAt: 1,
+    });
+    assert.equal(
+      recoverAbandonedLocalRelayStateServerLease({
+        ...common,
+        localPortHasListener: undefined,
+      }).reason,
+      "local-port-listener-unknown",
+    );
+    unknownPort.release();
+
+    const unknownFilesystem = acquireRelayStateServerLease({
+      path,
+      pid: 999_999_999,
+      host: "relay-workstation-4.local",
+      acquiredAt: 1,
+    });
+    for (const workspaceFilesystem of ["shared", "unknown"] as const) {
+      assert.equal(
+        recoverAbandonedLocalRelayStateServerLease({
+          ...common,
+          workspaceFilesystem,
+        }).reason,
+        "workspace-filesystem-not-local",
+      );
+    }
+    unknownFilesystem.release();
+  });
+});
+
+test("a v1 lease document and database migrate before hostname recovery", async () => {
+  await withRoot((root) => {
+    const path = relayStateServerLeasePath(join(root, ".relay"));
+    mkdirSync(join(root, ".relay"), { recursive: true });
+    const database = new DatabaseSync(path);
+    try {
+      database.exec(`
+        PRAGMA user_version = 1;
+        CREATE TABLE relay_server_state_leases (slot TEXT PRIMARY KEY, document TEXT NOT NULL);
+      `);
+      database.prepare("INSERT INTO relay_server_state_leases(slot, document) VALUES(?, ?)").run(
+        "relay-server",
+        JSON.stringify({
+          schemaVersion: 1,
+          leaseId: "v1-abandoned-lease",
+          pid: 999_999_999,
+          host: "relay-workstation-4.local",
+          acquiredAt: 1,
+        }),
+      );
+    } finally {
+      database.close();
+    }
+
+    const recovery = recoverAbandonedLocalRelayStateServerLease({
+      path,
+      workspaceRoot: root,
+      currentHost: "relay-workstation-5.local",
+      now: 1_000_000,
+      minimumAgeMs: 300_000,
+      localPortHasListener: false,
+      workspaceFilesystem: "local",
+    });
+
+    assert.equal(recovery.status, "recovered");
+    assert.equal(relayStateServerLeaseRecoveryAudit({ path }).length, 1);
+    const migrated = new DatabaseSync(path, { readOnly: true });
+    try {
+      assert.equal(
+        Number(
+          (migrated.prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
+        ),
+        2,
+      );
+    } finally {
+      migrated.close();
+    }
   });
 });

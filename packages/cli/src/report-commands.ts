@@ -1,6 +1,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { buildProofReport, readPersistedRun, renderProofReportMarkdown, runsRoot } from "@relay/core";
+import {
+  buildProofReport,
+  readPersistedRun,
+  renderProofReportMarkdown,
+  runsRoot,
+} from "@relay/core";
 import type { ProofReport } from "@relay/protocol";
 import type { OutputStreams } from "./output.js";
 import { ExitCode, UsageError } from "./errors.js";
@@ -72,7 +77,6 @@ Examples:
 `;
 }
 
-
 /**
  * Local, disk-backed projection of a persisted run into a ProofReport.
  * Like `relay db`, this never goes through the HTTP server: the proof layer
@@ -110,7 +114,9 @@ export async function runReportCommand(
   }
   const serverUrl = env.RELAY_URL?.trim() || env.RELAY_PUBLIC_BASE_URL?.trim() || undefined;
   const sharesStore = join(root, ".run-shares.json");
-  const sharePath = existsSync(sharesStore) ? `/shared/runs/${encodeURIComponent(run.id)}` : undefined;
+  const sharePath = existsSync(sharesStore)
+    ? `/shared/runs/${encodeURIComponent(run.id)}`
+    : undefined;
   const report: ProofReport = buildProofReport({
     run,
     ...(sharePath ? { sharePath } : {}),

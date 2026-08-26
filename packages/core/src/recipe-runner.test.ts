@@ -4493,7 +4493,7 @@ describe("runRecipeStep conversational evidence", () => {
         owner.artifacts.map((artifact) => artifact.kind),
         ["human-intervention-requested", "human-intervention-expired"],
       );
-      assert.equal((owner.artifacts[0]?.data as { timeoutMs?: number }).timeoutMs, 25);
+      assert.equal((owner.artifacts[0]?.data as { timeoutMs?: number } | undefined)?.timeoutMs, 25);
     } finally {
       clearControl(owner.id);
     }

@@ -1,22 +1,19 @@
 /**
- * Findings for a locale matrix, from the pack's own evidence.
+ * Findings for a Combine, from the pack's own evidence.
  *
- * A matrix replays one authored test per locale, so the nth authored
+ * A language Variable Combine replays one authored Test per value, so the nth authored
  * screenshot of every case is the same screen in a different language. That
  * ordinal is the locale-stable identity a crawl gets from the tree, which
  * makes the pack readable by the same analyzer instead of a second one.
  */
-import type {
-  CombineEvidenceAnalysis,
-  LocaleRunPackFrame,
-} from "@relay/protocol";
+import type { CombineEvidenceAnalysis, CombineEvidencePackFrame } from "@relay/protocol";
 import { analyzeCombineEvidence } from "./combine-evidence-analysis.js";
 import type { CombineEvidenceScreen, CombineEvidenceSession } from "./combine-evidence-session.js";
 import { combineEvidenceControls } from "./combine-evidence-screen-analysis.js";
 import type { SnapshotNode } from "./device.js";
 import type { FrameObservation } from "./frame-observation.js";
 
-export type LocaleRunPackCapture = {
+export type CombineEvidenceCapture = {
   locale: string;
   jobId: string;
   /** Position of this authored screenshot inside its own case. */
@@ -30,19 +27,19 @@ export type LocaleRunPackCapture = {
   nodes?: SnapshotNode[];
 };
 
-export type LocaleRunPackAnalysis = {
+export type CombineEvidencePackAnalysis = {
   analysis: CombineEvidenceAnalysis;
   byCanonicalKey: Record<string, Record<string, string>>;
-  frames: LocaleRunPackFrame[];
+  frames: CombineEvidencePackFrame[];
   coverage: { frames: number; inspectedFrames: number };
 };
 
-export function localeRunCanonicalKey(index: number): string {
+export function combineEvidenceCanonicalKey(index: number): string {
   return `frame-${String(index + 1).padStart(3, "0")}`;
 }
 
-function screenFor(capture: LocaleRunPackCapture, compareText: boolean): CombineEvidenceScreen {
-  const canonicalKey = localeRunCanonicalKey(capture.index);
+function screenFor(capture: CombineEvidenceCapture, compareText: boolean): CombineEvidenceScreen {
+  const canonicalKey = combineEvidenceCanonicalKey(capture.index);
   const observation = capture.observation;
   const caption = observation?.caption?.trim();
   const title = observation?.title?.trim() || caption || `Screenshot ${capture.index + 1}`;
@@ -107,13 +104,13 @@ function sessionFor(input: {
  * sweep uses. A single locale has no baseline to differ from, so it reports
  * nothing.
  */
-export function analyzeLocaleRunPack(input: {
+export function analyzeCombineEvidenceBatchData(input: {
   batchId: string;
   title: string;
   locales: string[];
-  captures: LocaleRunPackCapture[];
+  captures: CombineEvidenceCapture[];
   compareText: boolean;
-}): LocaleRunPackAnalysis {
+}): CombineEvidencePackAnalysis {
   const screens = input.captures.map((capture) => screenFor(capture, input.compareText));
   const session = sessionFor({
     batchId: input.batchId,
@@ -123,9 +120,9 @@ export function analyzeLocaleRunPack(input: {
   });
 
   const byCanonicalKey: Record<string, Record<string, string>> = {};
-  const frames: LocaleRunPackFrame[] = [];
+  const frames: CombineEvidencePackFrame[] = [];
   for (const capture of input.captures) {
-    const canonicalKey = localeRunCanonicalKey(capture.index);
+    const canonicalKey = combineEvidenceCanonicalKey(capture.index);
     const locales = byCanonicalKey[canonicalKey] ?? {};
     locales[capture.locale] = capture.packPath;
     byCanonicalKey[canonicalKey] = locales;

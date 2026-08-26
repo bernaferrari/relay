@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap } from "@relay/protocol";
-import {
-  appMapExecutionPlan,
-  connectionUpdateForExecutionStep,
-} from "./app-map-execution-plan";
+import { appMapExecutionPlan, connectionUpdateForExecutionStep } from "./app-map-execution-plan";
 
 const scope = { organizationId: "local", projectId: "default", appMapId: "settings" };
 
@@ -66,10 +63,11 @@ test("edits a projected row by producing a canonical Connection action update", 
     step: { id: "tap-settings", kind: "tap", target: { ref: "settings-button" } },
   });
   assert.equal(update?.connectionId, "open");
-  assert.deepEqual(
-    update?.actions[0]?.kind === "recorded" ? update.actions[0].steps[1] : null,
-    { id: "tap-settings", kind: "tap", target: { ref: "settings-button" } },
-  );
+  assert.deepEqual(update?.actions[0]?.kind === "recorded" ? update.actions[0].steps[1] : null, {
+    id: "tap-settings",
+    kind: "tap",
+    target: { ref: "settings-button" },
+  });
   assert.deepEqual(
     source.open?.actions[0]?.kind === "recorded" ? source.open.actions[0].steps[1] : null,
     { id: "tap-settings", kind: "tap", target: { label: "Settings" } },

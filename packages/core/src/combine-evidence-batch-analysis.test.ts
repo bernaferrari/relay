@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CombineEvidenceControl } from "./combine-evidence-session.js";
 import type { FrameObservation } from "./frame-observation.js";
-import { analyzeLocaleRunPack, type LocaleRunPackCapture } from "./locale-run-analysis.js";
+import {
+  analyzeCombineEvidenceBatchData,
+  type CombineEvidenceCapture,
+} from "./combine-evidence-batch-analysis.js";
 
 function control(stableKey: string, label: string, width = 120): CombineEvidenceControl {
   return {
@@ -25,7 +28,9 @@ function observation(controls: CombineEvidenceControl[], caption = "settings"): 
   };
 }
 
-function capture(input: Partial<LocaleRunPackCapture> & { locale: string }): LocaleRunPackCapture {
+function capture(
+  input: Partial<CombineEvidenceCapture> & { locale: string },
+): CombineEvidenceCapture {
   return {
     jobId: `job-${input.locale}`,
     index: 0,
@@ -36,7 +41,7 @@ function capture(input: Partial<LocaleRunPackCapture> & { locale: string }): Loc
 }
 
 test("an untranslated row in one locale becomes a finding on that cell's frame", () => {
-  const { analysis, byCanonicalKey } = analyzeLocaleRunPack({
+  const { analysis, byCanonicalKey } = analyzeCombineEvidenceBatchData({
     batchId: "batch-1",
     title: "Settings · locales",
     locales: ["en", "pt-BR"],
@@ -74,7 +79,7 @@ test("the compared set is the same whichever locale is the baseline", () => {
   // Italian saw the tab vanish from pt-BR; the same sweep started in English
   // reported nothing and still called its coverage complete.
   const missingFrom = (baseline: "en" | "it"): string[] => {
-    const { analysis } = analyzeLocaleRunPack({
+    const { analysis } = analyzeCombineEvidenceBatchData({
       batchId: "batch-1",
       title: "Ask · locales",
       locales: baseline === "en" ? ["en", "it", "pt-BR"] : ["it", "en", "pt-BR"],
@@ -111,7 +116,7 @@ test("the compared set is the same whichever locale is the baseline", () => {
 });
 
 test("a translation that keeps the original box reports the shared clipping code", () => {
-  const { analysis } = analyzeLocaleRunPack({
+  const { analysis } = analyzeCombineEvidenceBatchData({
     batchId: "batch-1",
     title: "Settings · locales",
     locales: ["en", "de"],
@@ -135,7 +140,7 @@ test("a translation that keeps the original box reports the shared clipping code
 });
 
 test("a case that never captured a frame is missing, not silently clean", () => {
-  const { analysis } = analyzeLocaleRunPack({
+  const { analysis } = analyzeCombineEvidenceBatchData({
     batchId: "batch-1",
     title: "Settings · locales",
     locales: ["en", "it"],
@@ -150,8 +155,8 @@ test("a case that never captured a frame is missing, not silently clean", () => 
   assert.equal(analysis.critical, 1);
 });
 
-test("a single-locale matrix has nothing to compare and reports nothing", () => {
-  const { analysis, coverage } = analyzeLocaleRunPack({
+test("a single-value Combine has nothing to compare and reports nothing", () => {
+  const { analysis, coverage } = analyzeCombineEvidenceBatchData({
     batchId: "batch-1",
     title: "Settings",
     locales: ["en"],
@@ -164,7 +169,7 @@ test("a single-locale matrix has nothing to compare and reports nothing", () => 
 });
 
 test("combine cases differ by state, so their copy is never read as a translation", () => {
-  const { analysis, coverage } = analyzeLocaleRunPack({
+  const { analysis, coverage } = analyzeCombineEvidenceBatchData({
     batchId: "batch-1",
     title: "Kids Mode × Settings",
     locales: ["kids-on", "kids-off"],
@@ -184,7 +189,7 @@ test("combine cases differ by state, so their copy is never read as a translatio
 });
 
 test("frames captured without a UI tree are still checked for presence", () => {
-  const { analysis, coverage, frames } = analyzeLocaleRunPack({
+  const { analysis, coverage, frames } = analyzeCombineEvidenceBatchData({
     batchId: "batch-1",
     title: "Settings · locales",
     locales: ["en", "fr"],

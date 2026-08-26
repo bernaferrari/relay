@@ -1,12 +1,12 @@
 import { For, Show, createEffect, createSignal, on } from "solid-js";
 import { cn } from "../lib/cn";
 import {
-  type LocaleCellAnalysis,
-  type LocaleCellVerdict,
-  type LocaleVerdictTally,
-  localeCellDefectCount,
-  localeFindingHeadline,
-  localeVerdictPresentation,
+  type CombineCellAnalysis,
+  type CombineCellVerdict,
+  type CombineVerdictTally,
+  combineCellDefectCount,
+  combineFindingHeadline,
+  combineVerdictPresentation,
 } from "../lib/combine-verdict";
 import { Icon } from "./icon";
 
@@ -20,8 +20,8 @@ export function CombineCell(props: {
   secondaryLabel?: string;
   screenLabel: string;
   source: string;
-  verdict: LocaleCellVerdict;
-  analysis?: LocaleCellAnalysis | undefined;
+  verdict: CombineCellVerdict;
+  analysis?: CombineCellAnalysis | undefined;
   onOpen: () => void;
   onCompare?: () => void;
   /** Lets the grid adopt one frame shape for every cell in it, from the first
@@ -37,7 +37,7 @@ export function CombineCell(props: {
     ),
   );
   const visible = () => Boolean(props.source) && !imageFailed();
-  const presentation = () => localeVerdictPresentation(props.verdict);
+  const presentation = () => combineVerdictPresentation(props.verdict);
   const findings = () => props.analysis?.findings ?? [];
   const leadFinding = () => findings()[0];
   // The observed string is the evidence. Showing it beats any generic sentence
@@ -49,7 +49,7 @@ export function CombineCell(props: {
   };
   const headline = () => {
     const finding = leadFinding();
-    return finding ? localeFindingHeadline(finding) : presentation().label;
+    return finding ? combineFindingHeadline(finding) : presentation().label;
   };
   const extraFindings = () => Math.max(0, findings().length - 1);
 
@@ -151,12 +151,12 @@ export function CombineCell(props: {
  * defects lead and one click reduces the grid to them. It lives beside the cell
  * because a legend that drifts from the cells it explains is worse than none.
  */
-export function LocaleVerdictLegend(props: {
-  tallies: readonly LocaleVerdictTally[];
-  active: LocaleCellVerdict | null;
-  onSelect: (verdict: LocaleCellVerdict | null) => void;
+export function CombineVerdictLegend(props: {
+  tallies: readonly CombineVerdictTally[];
+  active: CombineCellVerdict | null;
+  onSelect: (verdict: CombineCellVerdict | null) => void;
 }) {
-  const defects = () => localeCellDefectCount(props.tallies);
+  const defects = () => combineCellDefectCount(props.tallies);
   return (
     <div class="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--border-weak-base)] px-5 py-2">
       <span class="mr-1 shrink-0 text-micro font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
@@ -165,7 +165,7 @@ export function LocaleVerdictLegend(props: {
       <For each={props.tallies}>
         {(tally) => {
           const active = () => props.active === tally.verdict;
-          const presentation = () => localeVerdictPresentation(tally.verdict);
+          const presentation = () => combineVerdictPresentation(tally.verdict);
           return (
             <button
               type="button"
@@ -199,8 +199,8 @@ export function LocaleVerdictLegend(props: {
   );
 }
 
-export function VerdictChip(props: { verdict: LocaleCellVerdict; showLabel?: boolean }) {
-  const presentation = () => localeVerdictPresentation(props.verdict);
+export function VerdictChip(props: { verdict: CombineCellVerdict; showLabel?: boolean }) {
+  const presentation = () => combineVerdictPresentation(props.verdict);
   return (
     <span
       class={cn(
@@ -215,7 +215,7 @@ export function VerdictChip(props: { verdict: LocaleCellVerdict; showLabel?: boo
   );
 }
 
-function verdictChipTone(tone: ReturnType<typeof localeVerdictPresentation>["tone"]): string {
+function verdictChipTone(tone: ReturnType<typeof combineVerdictPresentation>["tone"]): string {
   if (tone === "defect") {
     return "bg-[var(--icon-critical-base)] text-[var(--text-on-critical,white)]";
   }
@@ -231,8 +231,8 @@ function verdictChipTone(tone: ReturnType<typeof localeVerdictPresentation>["ton
   return "bg-[color-mix(in_srgb,var(--background-base)_88%,transparent)] text-[var(--text-weak)]";
 }
 
-function CellPlaceholder(props: { verdict: LocaleCellVerdict }) {
-  const presentation = () => localeVerdictPresentation(props.verdict);
+function CellPlaceholder(props: { verdict: CombineCellVerdict }) {
+  const presentation = () => combineVerdictPresentation(props.verdict);
   return (
     <span class="grid size-full place-items-center px-3 text-center">
       <span class="grid justify-items-center gap-1.5">

@@ -55,10 +55,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
       note: "A Variable changes one reusable dimension. A Combine multiplies one or more Variables by one or more Tests. appLocale Variables stay when the compiled Test has an expect-screen; they relaunch if stay cannot be proved. apply.relaunch: true still relaunches.",
     }),
   ),
-  mapped(
-    "app-map.variable.remove",
-    path("variable remove", ["appMapId", "variableId"]),
-  ),
+  mapped("app-map.variable.remove", path("variable remove", ["appMapId", "variableId"])),
   ...graphTestCommandDescriptors,
   mapped(
     "app-map.combine.preflight",
@@ -107,10 +104,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
       note: "Each cell applies one value from every Variable, then runs every selected Test.",
     }),
   ),
-  mapped(
-    "app-map.combine.remove",
-    path("combine remove", ["appMapId", "combineId"]),
-  ),
+  mapped("app-map.combine.remove", path("combine remove", ["appMapId", "combineId"])),
   mapped(
     "app-map.flow.run",
     path("flow run", ["appMapId", "flowId"], undefined, {

@@ -180,26 +180,24 @@ it("an expect-screen mismatch pushes a destination-repair-hint with expected vs 
     };
 
     await assert.rejects(
-      runWithTargetContext(
-        { kind: "device", platform: "android", serial: "wiring-check" },
-        () =>
-          runExpectScreenStep(
-            device,
-            {
-              kind: "expect-screen",
-              screenId: "home",
-              screenTitle: "Home",
-              fingerprint: stepFingerprint,
-              timeoutMs: 0,
-            },
-            {
-              log: () => {},
-              job: { id: "hint-job", platform: "android", artifacts } as never,
-              artifacts,
-              runtime: {},
-            },
-            dependencies,
-          ),
+      runWithTargetContext({ kind: "device", platform: "android", serial: "wiring-check" }, () =>
+        runExpectScreenStep(
+          device,
+          {
+            kind: "expect-screen",
+            screenId: "home",
+            screenTitle: "Home",
+            fingerprint: stepFingerprint,
+            timeoutMs: 0,
+          },
+          {
+            log: () => {},
+            job: { id: "hint-job", platform: "android", artifacts } as never,
+            artifacts,
+            runtime: {},
+          },
+          dependencies,
+        ),
       ),
       /not “Home”/u,
     );

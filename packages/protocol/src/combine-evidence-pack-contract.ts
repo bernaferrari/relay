@@ -2,7 +2,7 @@
 import type { CombineEvidenceAnalysis } from "./combine-evidence-contract.js";
 
 /** One authored screenshot inside a Combine case. */
-export type LocaleRunPackFrame = {
+export type CombineEvidencePackFrame = {
   /** Pack-relative PNG path. */
   path: string;
   /** Identity shared with the same authored capture in every other case. */
@@ -12,18 +12,18 @@ export type LocaleRunPackFrame = {
   inspected: boolean;
 };
 
-export type LocaleRunPackCase = {
+export type CombineEvidencePackCase = {
   locale: string;
   jobId: string;
   status: string;
   name: string;
   frames: string[];
   expectedFrames?: number;
-  captures?: LocaleRunPackFrame[];
+  captures?: CombineEvidencePackFrame[];
 };
 
 /** One authored screenshot of a batch that has not been exported yet. */
-export type LocaleRunCaseFrame = {
+export type CombineEvidenceCaseFrame = {
   /** Run-relative frame path, e.g. frames/003.png. */
   framePath: string;
   /** Identity shared with the same authored capture in every other case. */
@@ -39,7 +39,7 @@ export type LocaleRunCaseFrame = {
  * and exporting forty locales of screenshots to answer that would be a strange
  * price for a hover. Same analyzer, same codes, frames named where they live.
  */
-export type LocaleRunAnalysisReport = {
+export type CombineEvidenceAnalysisReport = {
   schemaVersion: 1;
   batchId: string;
   locales: string[];
@@ -49,18 +49,18 @@ export type LocaleRunAnalysisReport = {
     jobId: string;
     locale: string;
     status: string;
-    frames: LocaleRunCaseFrame[];
+    frames: CombineEvidenceCaseFrame[];
   }>;
 };
 
-export type LocaleRunPackManifest = {
+export type CombineEvidencePackManifest = {
   schemaVersion: 2;
   batchId: string;
   recipeId: string;
   title: string;
   generatedAt: number;
   locales: string[];
-  cases: LocaleRunPackCase[];
+  cases: CombineEvidencePackCase[];
   /** canonicalKey → locale → pack-relative PNG, so a finding can be shown beside the frame it came from. */
   byCanonicalKey: Record<string, Record<string, string>>;
   /** Shared Combine evidence findings over this pack's evidence. */

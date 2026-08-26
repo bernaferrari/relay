@@ -157,7 +157,9 @@ test("the cursor exposes proven, unknown, and handoff truth without inference", 
 
 test("a completed crawl reports the depth it finished within", () => {
   assert.equal(
-    explorationTimelineOutcomeSummary(run({ stopReason: { code: "complete", message: "done", at: 3 } })),
+    explorationTimelineOutcomeSummary(
+      run({ stopReason: { code: "complete", message: "done", at: 3 } }),
+    ),
     "Explored every safe row within depth 2.",
   );
 });
@@ -171,7 +173,9 @@ test("an external handoff is preserved for review instead of auto-recovered", ()
 
 test("an error stop surfaces the message verbatim", () => {
   assert.equal(
-    explorationTimelineOutcomeSummary(run({ stopReason: { code: "error", message: "runner died", at: 3 } })),
+    explorationTimelineOutcomeSummary(
+      run({ stopReason: { code: "error", message: "runner died", at: 3 } }),
+    ),
     "Stopped on an error: runner died",
   );
 });

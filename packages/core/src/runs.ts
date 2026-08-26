@@ -532,7 +532,10 @@ export async function indexedReusableSurfaceComparisons(cacheKey: string) {
       // and verify its commit digest before its evidence is eligible for reuse.
       const run = await readPersistedRun(candidate.runId);
       const artifact = run?.artifacts.find((item) => {
-        if (item.kind !== "logical-scroll-surface-result" || item.capturedAt !== candidate.artifactCapturedAt) {
+        if (
+          item.kind !== "logical-scroll-surface-result" ||
+          item.capturedAt !== candidate.artifactCapturedAt
+        ) {
           return false;
         }
         const data = item.data as { cache?: { key?: unknown } };
@@ -548,7 +551,9 @@ export async function indexedReusableSurfaceComparisons(cacheKey: string) {
       };
     }),
   );
-  return candidates.filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);
+  return candidates.filter(
+    (candidate): candidate is NonNullable<typeof candidate> => candidate !== null,
+  );
 }
 
 /**

@@ -1,8 +1,4 @@
-import type {
-  AppMap,
-  AppMapScenarioTest,
-  AppMapScenarioTestStep,
-} from "@relay/protocol";
+import type { AppMap, AppMapScenarioTest, AppMapScenarioTestStep } from "@relay/protocol";
 
 /**
  * Diff-to-flows v1: map changed repository files onto the App Map Tests that
@@ -56,10 +52,7 @@ function changedDirectoryPrefixes(changedFiles: readonly string[]): string[] {
  *   sits under a changed prefix;
  * - everything else, including root-level paths without a directory, misses.
  */
-function longestMatchingPrefix(
-  prefixes: readonly string[],
-  sourcePath: string,
-): number {
+function longestMatchingPrefix(prefixes: readonly string[], sourcePath: string): number {
   const trimmed = sourcePath.trim().replace(/^\/+/u, "");
   if (!trimmed) return -1;
   let best = -1;
@@ -95,10 +88,7 @@ type DiffImpactContext = {
  * whole-map validation: diff impact must stay a pure read that tolerates
  * partially-authored maps, whose broken references simply contribute nothing.
  */
-function routineClosureTouches(
-  context: DiffImpactContext,
-  routineId: string,
-): boolean {
+function routineClosureTouches(context: DiffImpactContext, routineId: string): boolean {
   let closure = context.routines.get(routineId);
   if (!closure) {
     const affected = new Set<string>([routineId]);
@@ -170,9 +160,7 @@ function stepTouchesDiff(
     );
   }
   if (step.kind === "decision") {
-    const thenTouched = step.thenSteps.some((child) =>
-      stepTouchesDiff(child, context, visited),
-    );
+    const thenTouched = step.thenSteps.some((child) => stepTouchesDiff(child, context, visited));
     if (thenTouched) return true;
     return (step.elseSteps ?? []).some((child) => stepTouchesDiff(child, context, visited));
   }
@@ -213,10 +201,7 @@ export function matchedDiffEntities(appMap: AppMap, input: DiffImpactInput): str
   return [...context.matchedEntityIds].sort();
 }
 
-function diffImpactContext(
-  appMap: AppMap,
-  input: DiffImpactInput,
-): DiffImpactContext | null {
+function diffImpactContext(appMap: AppMap, input: DiffImpactInput): DiffImpactContext | null {
   const prefixes = changedDirectoryPrefixes(input.changedFiles);
   const matched = new Map<string, number>();
   for (const [entityId, paths] of Object.entries(input.sourcePaths ?? {})) {
@@ -267,7 +252,7 @@ function diffImpactContext(
   // A matched flow contributes its traversed connections: a change to a
   // flow-owned document affects every Test that walks the flow even when the
   // individual edges carry no paths of their own.
-  for (const flowId of [...context.matchedEntityIds]) {
+  for (const flowId of context.matchedEntityIds) {
     for (const connectionId of appMap.flows[flowId]?.connectionIds ?? []) {
       context.matchedEntityIds.add(connectionId);
     }

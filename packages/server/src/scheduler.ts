@@ -144,14 +144,15 @@ export async function runDueSchedules(
       await runtime.markScheduleRun(schedule.id, at);
       staged.dispatch();
     } catch (error) {
+      let failureError = error;
       try {
         staged?.rollback();
       } catch (rollbackError) {
-        error = new Error(
+        failureError = new Error(
           `${messageOf(error)}; scheduled batch rollback failed: ${messageOf(rollbackError)}`,
         );
       }
-      const failure = redactText(messageOf(error));
+      const failure = redactText(messageOf(failureError));
       try {
         await runtime.markScheduleFailure(schedule.id, failure, at);
       } catch (recordError) {

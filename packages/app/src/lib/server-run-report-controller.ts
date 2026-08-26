@@ -72,9 +72,9 @@ export function createServerRunReportController(input: {
 
   async function loadRunSignals(id: string): Promise<RegressionSignal[]> {
     try {
-      const data = await (await input.client()).resource<{ signals?: RegressionSignal[] }>(
-        `/runs/${encodeURIComponent(id)}/signals`,
-      );
+      const data = await (
+        await input.client()
+      ).resource<{ signals?: RegressionSignal[] }>(`/runs/${encodeURIComponent(id)}/signals`);
       return data.signals ?? [];
     } catch {
       return [];

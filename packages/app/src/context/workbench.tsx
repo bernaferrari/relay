@@ -207,10 +207,8 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
           .jobs()
           .find(
             (job) =>
-              belongsToSelectedMap(job) &&
-              (job.status === "running" || job.status === "paused"),
-          ) ??
-        null
+              belongsToSelectedMap(job) && (job.status === "running" || job.status === "paused"),
+          ) ?? null
       );
     });
 
