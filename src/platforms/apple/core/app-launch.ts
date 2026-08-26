@@ -24,7 +24,7 @@ import {
   classifyLaunchFailure,
   launchFailureHint,
 } from './launch-diagnostics.ts';
-import { ensureBootedSimulator, getSimulatorState } from './simulator.ts';
+import { ensureBootedSimulator } from './simulator.ts';
 import { runXcrun } from './tool-provider.ts';
 import { closeMacOsApp, openMacOsApp } from '../os/macos/apps.ts';
 import { resolveIosApp } from './app-resolution.ts';
@@ -159,9 +159,6 @@ export async function openIosDevice(device: DeviceInfo): Promise<void> {
     return;
   }
   if (device.kind !== 'simulator') return;
-  const state = await getSimulatorState(device);
-  if (state === 'Booted') return;
-
   await ensureBootedSimulator(device);
 }
 
