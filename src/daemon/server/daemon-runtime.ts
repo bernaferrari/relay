@@ -9,6 +9,7 @@ import {
   createPlatformRuntimeGateway,
   createPlatformDeviceInventoryGateways,
 } from '../../platform-runtime.ts';
+import { createHostDiagnostics } from '../../platform-runtime-host-diagnostics.ts';
 import {
   createDefaultProviderRuntimeComposition,
   DEFAULT_PROVIDER_RUNTIME_REQUIRED_IDS,
@@ -62,6 +63,7 @@ import {
 } from '../app-log-resource-recovery.ts';
 import { createDaemonRecoveryPlatformScope } from '../platform-request-scope.ts';
 import { createAppLogAdmissionLedger } from '../app-log-admission-ledger.ts';
+import { createAudioProbeAdmissionLedger } from '../audio-probe-admission-ledger.ts';
 import { createScreenRecordingAdmissionLedger } from '../screen-recording-admission-ledger.ts';
 import {
   createOwnedProcessRecordStore,
@@ -252,6 +254,8 @@ export async function startDaemonRuntime(
     resolveSessionDir: (sessionId) => sessionStore.resolveSessionDir(sessionId),
   });
   const appLogAdmissionLedger = createAppLogAdmissionLedger();
+  const audioProbeAdmissionLedger = createAudioProbeAdmissionLedger();
+  const hostDiagnostics = createHostDiagnostics();
   const screenRecordingAdmissionLedger = createScreenRecordingAdmissionLedger();
   const version = readVersion();
   const token = crypto.randomBytes(24).toString('hex');
@@ -313,6 +317,8 @@ export async function startDaemonRuntime(
     deviceInventoryGateways,
     deviceRuntimeGateway,
     appLogAdmissionLedger,
+    audioProbeAdmissionLedger,
+    hostDiagnostics,
     screenRecordingAdmissionLedger,
     appleRunnerProvider: providerRuntimeProviders.appleRunnerProvider,
     appleRunnerScreenRecordingTransport:

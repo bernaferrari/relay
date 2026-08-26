@@ -24,6 +24,7 @@ import {
   runtimeCommandRuntimePlanUses,
 } from '@agent-device/contracts/application-lifecycle-runtime-plan';
 import { appLogRuntimePlanUses } from '@agent-device/contracts/logs-runtime-plan';
+import { audioRuntimePlanUses } from '@agent-device/contracts/audio-runtime-plan';
 import { networkDumpUse } from '@agent-device/contracts/network-runtime-plan';
 import { inventoryUse } from '@agent-device/contracts/platform-module';
 import {
@@ -256,11 +257,17 @@ const LINUX_NONE = {};
 //              use. Outside the migration denominator.
 //   `legacy` — unmigrated platform execution. This is the denominator: the
 //              tracker closes when no descriptor declares it.
+//   `host`   — host-scoped diagnostics: platform families contribute host
+//              probes through the neutral host-diagnostics surface; the
+//              descriptor binds no device runtime of its own.
 // The migrated modes (`inventory`, `device-runtime`) are declared inline with
 // the use they name.
 // ---------------------------------------------------------------------------
 const NO_PLATFORM_EXECUTION = { kind: 'none' } as const;
 const LEGACY_PLATFORM_EXECUTION = { kind: 'legacy' } as const;
+// Host-scoped diagnostics (ADR 0019): platform families contribute host probes through the
+// neutral host-diagnostics surface; the descriptor binds no device runtime of its own.
+const HOST_PLATFORM_EXECUTION = { kind: 'host' } as const;
 
 /**
  * The daemon/recording traits every generic-route mutating command shares. The legacy execution
@@ -566,7 +573,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    platformExecution: HOST_PLATFORM_EXECUTION,
   },
   {
     name: 'apps',
@@ -688,14 +695,9 @@ export const RAW_COMMAND_DESCRIPTORS = [
     frameworkTier: 'extended',
     recordsSessionAction: false,
     daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
-    capability: {
-      apple: APPLE_SIM_AND_DEVICE,
-      android: { emulator: true },
-      linux: LINUX_NONE,
-    },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    platformExecution: { kind: 'device-runtime', uses: audioRuntimePlanUses },
   },
   {
     name: 'replay',

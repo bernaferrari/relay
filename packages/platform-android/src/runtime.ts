@@ -22,7 +22,8 @@ import {
 } from '@agent-device/contracts/gesture-admission';
 import { gestureRuntimeOperationFacts } from '@agent-device/contracts/gesture-runtime';
 import { scrollRuntimeOperationFacts } from '@agent-device/contracts/scroll-runtime';
-import { localRuntimeOwner } from '@agent-device/contracts/platform-runtime';
+import { localRuntimeOwner, whenAdmitted } from '@agent-device/contracts/platform-runtime';
+import { audioProbeRuntimeOperationFacts } from '@agent-device/contracts/audio-probe-runtime';
 import { screenshotRuntimeOperationFacts } from '@agent-device/contracts/screenshot-runtime';
 import { selectorObservationRuntimeOperationFacts } from '@agent-device/contracts/selector-observation-runtime';
 import {
@@ -44,6 +45,8 @@ import { keyboardRuntimeOperationFacts } from '@agent-device/contracts/keyboard-
 import { orientationRuntimeOperationFacts } from '@agent-device/contracts/orientation-runtime';
 import { tvRemoteRuntimeOperationFacts } from '@agent-device/contracts/tv-remote-runtime';
 import type { DeviceInfo } from '@agent-device/kernel/device';
+import { createHostAudioProbeCaptureOperations } from '@agent-device/capture-kit';
+import { androidAudioProbeCaptureFact } from './audio-runtime.ts';
 import { createAndroidAppLogRuntime } from './logs/runtime.ts';
 import { dumpAndroidNetworkTraffic } from './network/runtime.ts';
 import { bindAndroidScreenRecordingRuntime } from './recording/runtime.ts';
@@ -134,6 +137,11 @@ const viewportUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-platform-leaf',
   hint: 'viewport resizes web targets only (--platform web).',
+} as const);
+const audioQueryUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-platform-leaf',
+  hint: 'the stateless audio page probe is a web-session operation; Android targets use the host capture.',
 } as const);
 
 function androidLifecycleFacts(device: DeviceInfo) {
@@ -363,6 +371,10 @@ export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): Platfor
         // Read and write share one cell: `cmd clipboard` either has a shell implementation on this
         // build or it has none, and no Android build ships one half of it.
         ...clipboardRuntimeOperationFacts({ read: clipboardCell, write: clipboardCell }),
+        ...audioProbeRuntimeOperationFacts({
+          capture: androidAudioProbeCaptureFact(device),
+          query: audioQueryUnavailable,
+        }),
         ensureReady: available,
         bootTarget: available,
         bootTargetHeadless: device.kind === 'emulator' ? available : headlessUnavailable,
@@ -409,6 +421,13 @@ export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): Platfor
           networkDump: async (input: NetworkDumpInput) =>
             await dumpAndroidNetworkTraffic(host, request.device, input, request.scope.signal),
           ...recording,
+          ...whenAdmitted(facts.operations.audioProbeStart, () =>
+            createHostAudioProbeCaptureOperations({
+              host: host.audioProbe.hostCapture,
+              device: request.device,
+              owner,
+            }),
+          ),
           ...androidInteractionOperations(host, request, facts),
           ensureReady: async (input: EnsureReadyInput) =>
             await ensureAndroidReady(
