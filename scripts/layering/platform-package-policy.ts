@@ -40,6 +40,46 @@ const MECHANICS_FACET_SUBPATHS: Readonly<Partial<Record<PlatformFamily, readonly
   apple: [APPLE_RUNNER_FACADE, APPLE_RUNNER_CLIENT, APPLE_RUNNER_TEST_HOST],
 };
 
+/**
+ * Transitional (#2041): the extracted Android adb/IME cluster lives in
+ * `@agent-device/platform-android` behind these subpaths, while the in-flight perf/trace
+ * handler migration still imports the root shims that re-export them. Each subpath is
+ * importable ONLY by its named root shims; delete this table (and the subpaths) together with
+ * the shims once that migration lands.
+ */
+const TRANSITIONAL_ANDROID_ADB_SUBPATHS = new Map<string, ReadonlySet<string>>([
+  [
+    '@agent-device/platform-android/adb-executor',
+    new Set([
+      'src/platforms/android/adb-executor.ts',
+      // Imports the package directly (not the shim) to avoid a module cycle through the
+      // adb-host binding, which reaches this file for the helper port facets.
+      'src/platforms/android/helper-package-install.ts',
+    ]),
+  ],
+  [
+    '@agent-device/platform-android/adb-host',
+    new Set(['src/platforms/android/adb-host-binding.ts']),
+  ],
+  [
+    '@agent-device/platform-android/ime-lifecycle',
+    new Set(['src/platforms/android/ime-lifecycle.ts']),
+  ],
+  ['@agent-device/platform-android/ime-helper', new Set(['src/platforms/android/ime-helper.ts'])],
+]);
+
+function isTransitionalAndroidAdbShimImport(file: string, specifier: string): boolean {
+  const importers = TRANSITIONAL_ANDROID_ADB_SUBPATHS.get(specifier);
+  if (!importers) return false;
+  // The cluster's own root tests must name the package module to mock or type it — the shim
+  // re-exports would leave package-internal edges un-intercepted. Scoped to that one test
+  // directory; every other test file stays under the composition-only rule.
+  if (file.startsWith('src/platforms/android/__tests__/') && !isProductionSource(file)) {
+    return true;
+  }
+  return importers.has(file);
+}
+
 function violation(file: string, line: number, message: string): LayeringViolation {
   return { rule: RULE, file, line, message };
 }
@@ -109,7 +149,11 @@ function checkDeclarations(packages: readonly PlatformPackageDeclaration[]): Lay
         violation(`${expectedDir}/package.json`, 1, `${expectedDir} must be private`),
       );
     }
-    const expectedSubpaths = [expectedName, ...(MECHANICS_FACET_SUBPATHS[family] ?? [])];
+    const expectedSubpaths = [
+      expectedName,
+      ...(MECHANICS_FACET_SUBPATHS[family] ?? []),
+      ...(family === 'android' ? TRANSITIONAL_ANDROID_ADB_SUBPATHS.keys() : []),
+    ];
     if (
       declaration.exportedSubpaths.length !== expectedSubpaths.length ||
       expectedSubpaths.some((subpath) => !declaration.exportedSubpaths.includes(subpath))
@@ -119,8 +163,8 @@ function checkDeclarations(packages: readonly PlatformPackageDeclaration[]): Lay
           `${expectedDir}/package.json`,
           1,
           `${expectedDir} must export exactly its root façade '${expectedName}'` +
-            (MECHANICS_FACET_SUBPATHS[family]
-              ? ` plus the enumerated mechanics facet subpaths`
+            (expectedSubpaths.length > 1
+              ? ` plus the enumerated mechanics facet and transitional subpaths`
               : ''),
         ),
       );
@@ -186,7 +230,8 @@ function checkSource(file: string, source: string): LayeringViolation[] {
       site.spec !== APPLE_RUNNER_FACADE &&
       site.spec !== APPLE_RUNNER_CLIENT &&
       site.spec !== APPLE_RUNNER_TEST_HOST &&
-      !isPackageOwnedFacadeTest(file, importedFamily, site.spec)
+      !isPackageOwnedFacadeTest(file, importedFamily, site.spec) &&
+      !isTransitionalAndroidAdbShimImport(file, site.spec)
     ) {
       violations.push(
         violation(
