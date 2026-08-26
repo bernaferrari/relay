@@ -28,8 +28,10 @@ import type {
 } from '../request-runtime-binding.ts';
 import type { DeviceClaimReconciler } from '../device-claims.ts';
 import type { AppLogAdmissionLedger } from '../app-log-admission-ledger.ts';
+import type { AudioProbeAdmissionLedger } from '../audio-probe-admission-ledger.ts';
 import type { ScreenRecordingAdmissionLedger } from '../screen-recording-admission-ledger.ts';
 import type { PlatformRequestScope } from '@agent-device/contracts/platform';
+import type { HostDiagnostics } from '@agent-device/contracts/host-diagnostics';
 
 export type SessionCommandInput = {
   req: DaemonRequest;
@@ -45,7 +47,9 @@ export type SessionCommandInput = {
   inspectFacts?: InspectDeviceRuntimeFacts;
   bindExactDevice?: BindExactDeviceRuntime;
   appLogAdmissionLedger?: AppLogAdmissionLedger;
+  audioProbeAdmissionLedger?: AudioProbeAdmissionLedger;
   screenRecordingAdmissionLedger?: ScreenRecordingAdmissionLedger;
+  hostDiagnostics?: HostDiagnostics;
   requestScope?: PlatformRequestScope;
   retainDeviceExecutionLock?: (deviceId: string) => Promise<void>;
   throwIfCanceled?: () => void;
@@ -94,7 +98,9 @@ const handleSessionObservabilityCommandGroup: SessionCommandHandler = async ({
   sessionStore,
   androidAdbExecutor,
   bindDevice,
+  inspectFacts,
   appLogAdmissionLedger,
+  audioProbeAdmissionLedger,
   throwIfCanceled,
 }) =>
   await handleSessionObservabilityCommands({
@@ -103,7 +109,9 @@ const handleSessionObservabilityCommandGroup: SessionCommandHandler = async ({
     sessionStore,
     androidAdbExecutor,
     bindDevice,
+    inspectFacts,
     appLogAdmissionLedger,
+    audioProbeAdmissionLedger,
     throwIfCanceled,
   });
 
@@ -159,6 +167,7 @@ const SESSION_COMMAND_HANDLER_IMPLS = {
     sessionName,
     sessionStore,
     androidAdbExecutor,
+    hostDiagnostics,
     inspectFacts,
     bindDevice,
   }) =>
@@ -167,6 +176,7 @@ const SESSION_COMMAND_HANDLER_IMPLS = {
       sessionName,
       sessionStore,
       androidAdbExecutor,
+      hostDiagnostics,
       inspectFacts,
       bindDevice,
     }),
@@ -285,7 +295,9 @@ export async function handleSessionCommands(
     bindDevice,
     bindExactDevice,
     appLogAdmissionLedger,
+    audioProbeAdmissionLedger,
     screenRecordingAdmissionLedger,
+    hostDiagnostics,
     requestScope,
     retainDeviceExecutionLock,
     throwIfCanceled,
@@ -310,7 +322,9 @@ export async function handleSessionCommands(
     bindDevice,
     bindExactDevice,
     appLogAdmissionLedger,
+    audioProbeAdmissionLedger,
     screenRecordingAdmissionLedger,
+    hostDiagnostics,
     requestScope,
     retainDeviceExecutionLock,
     throwIfCanceled,

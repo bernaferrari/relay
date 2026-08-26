@@ -65,6 +65,11 @@ import {
   type AppLogAdmissionLedger,
 } from './app-log-admission-ledger.ts';
 import {
+  createAudioProbeAdmissionLedger,
+  type AudioProbeAdmissionLedger,
+} from './audio-probe-admission-ledger.ts';
+import type { HostDiagnostics } from '@agent-device/contracts/host-diagnostics';
+import {
   createScreenRecordingAdmissionLedger,
   type ScreenRecordingAdmissionLedger,
 } from './screen-recording-admission-ledger.ts';
@@ -93,7 +98,9 @@ export type RequestRouterDeps = {
   deviceInventoryGateways: ComposedDeviceInventoryGateways;
   deviceRuntimeGateway: DeviceRuntimeGateway<PlatformRuntimeOperations>;
   appLogAdmissionLedger?: AppLogAdmissionLedger;
+  audioProbeAdmissionLedger?: AudioProbeAdmissionLedger;
   screenRecordingAdmissionLedger?: ScreenRecordingAdmissionLedger;
+  hostDiagnostics?: HostDiagnostics;
   providerRuntimeIds?: readonly string[];
   providerRuntimeRequiredIds?: readonly string[];
   leaseLifecycleProvider?: LeaseLifecycleProvider;
@@ -124,7 +131,9 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
     deviceInventoryGateways,
     deviceRuntimeGateway,
     appLogAdmissionLedger = createAppLogAdmissionLedger(),
+    audioProbeAdmissionLedger = createAudioProbeAdmissionLedger(),
     screenRecordingAdmissionLedger = createScreenRecordingAdmissionLedger(),
+    hostDiagnostics,
     providerRuntimeIds,
     providerRuntimeRequiredIds,
     leaseLifecycleProvider,
@@ -289,7 +298,9 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
         scope: requestScope,
       }),
       appLogAdmissionLedger,
+      audioProbeAdmissionLedger,
       screenRecordingAdmissionLedger,
+      hostDiagnostics,
       requestScope,
       retainDeviceExecutionLock: lockedScope.retainDeviceExecutionLock,
       throwIfCanceled: lockedScope.throwIfCanceled,

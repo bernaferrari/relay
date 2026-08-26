@@ -35,6 +35,10 @@ const APP_LOG_SESSION_STATE_OWNERS = new Set([
   'src/daemon/app-log-session-resource.ts',
   'src/daemon/types.ts',
 ]);
+const AUDIO_PROBE_SESSION_STATE_OWNERS = new Set([
+  'src/daemon/audio-probe-session-resource.ts',
+  'src/daemon/types.ts',
+]);
 const APP_STATE_HANDLER_FILE = 'src/daemon/handlers/session-state.ts';
 const APP_STATE_LEGACY_IMPORT_SOURCES = new Set([
   '../../platforms/android/app-lifecycle.ts',
@@ -124,6 +128,70 @@ export function appLogSessionStateOwnershipViolations(
         });
       }
     });
+  }
+  return violations;
+}
+
+/**
+ * The audio-probe session record mirrors app-log's single-owner rule (ADR 0019 §4-5): the
+ * durable coordinator's session slot is the only construction site for `session.audioProbe`.
+ */
+export function audioProbeSessionStateOwnershipViolations(
+  sources: ReadonlyMap<string, string>,
+): UnruledViolation[] {
+  const violations: UnruledViolation[] = [];
+  for (const file of productionSources(sources)) {
+    if (!file.path.startsWith('src/daemon/') || AUDIO_PROBE_SESSION_STATE_OWNERS.has(file.path)) {
+      continue;
+    }
+    const program = parseSync(file.path, file.source).program as AstNode;
+    visitAst(program, (node) => {
+      if (node['type'] !== 'Property' || node['kind'] !== 'init' || node['computed'] === true) {
+        return;
+      }
+      if (propertyName(node['key']) === 'audioProbe') {
+        violations.push({
+          file: file.path,
+          line: lineOf(file.source, node),
+          message: 'session audioProbe record constructed outside its owner',
+        });
+      }
+    });
+  }
+  return violations;
+}
+
+const DOCTOR_HANDLER_FILE = 'src/daemon/handlers/session-doctor.ts';
+const DOCTOR_HOST_DIAGNOSTICS_METHODS = [
+  'toolchainCheck',
+  'deviceChecks',
+  'ambientChecks',
+  'warmupCheck',
+] as const;
+
+/**
+ * R62's singular-execution proof, mirroring R17's shape for the host tier: doctor's handler
+ * consumes every method of the injected neutral host-diagnostics surface, so no platform probe
+ * can quietly move back into the daemon behind one forgotten call site.
+ */
+export function doctorHostDiagnosticsViolations(
+  sources: ReadonlyMap<string, string>,
+): UnruledViolation[] {
+  const source = sources.get(DOCTOR_HANDLER_FILE);
+  if (source === undefined) {
+    return [
+      { file: DOCTOR_HANDLER_FILE, line: 1, message: 'doctor host-diagnostics handler is missing' },
+    ];
+  }
+  const violations: UnruledViolation[] = [];
+  for (const method of DOCTOR_HOST_DIAGNOSTICS_METHODS) {
+    if (!source.includes(`hostDiagnostics.${method}(`)) {
+      violations.push({
+        file: DOCTOR_HANDLER_FILE,
+        line: 1,
+        message: `doctor handler must consume hostDiagnostics.${method}`,
+      });
+    }
   }
   return violations;
 }
