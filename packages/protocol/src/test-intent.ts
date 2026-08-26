@@ -69,7 +69,7 @@ export type AppMapInstructionTestStep = TestStepBase & {
   /**
    * An auditable compensating Routine that restores product state after this
    * graph path, whether the primary path passes or fails. The authored
-   * cancellation policy is frozen into the compiled recipe; a cleanup may
+   * cancellation policy is frozen into the compiled execution plan; a cleanup may
    * continue only while ownership and target transport remain valid.
    */
   cleanup?: AppMapTestStepCleanup;

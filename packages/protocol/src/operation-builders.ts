@@ -26,7 +26,7 @@ function defaultMinimumRole<
   if (options.lease === "exclusive") return "runner";
   if (options.category === "execution" || options.category === "target") return "runner";
   if (options.category === "authoring" || options.category === "evidence") return "author";
-  if (options.category === "discovery" || options.category === "corpus") {
+  if (options.category === "discovery") {
     return options.progress ? "runner" : "author";
   }
   return "author";

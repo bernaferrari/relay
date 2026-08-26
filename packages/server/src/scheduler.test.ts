@@ -35,7 +35,7 @@ function fakeRuntime(overrides: Partial<SchedulerRuntime> = {}): SchedulerRuntim
     readRecipe: async () => recipe,
     freezeRecipeGraph: async () => ({ [recipe.id]: recipe }),
     readProjectVariables: async () => ({ revision: 0, value: [], updatedAt: 1 }),
-    prepareRunMatrix: async (input) => ({
+    prepareCasePlan: async (input) => ({
       id: "scheduled-matrix",
       createdAt: 1_000,
       seed: input.seed ?? 0,

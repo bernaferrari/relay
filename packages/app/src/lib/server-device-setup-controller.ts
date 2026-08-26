@@ -1,4 +1,5 @@
 import { createSignal, type Accessor, type Setter } from "solid-js";
+import type { RelayClient } from "@relay/client";
 import {
   loadAndroidDeviceSetup,
   loadAndroidAppLocales,
@@ -11,10 +12,8 @@ import {
   type AppleSetupStatus,
 } from "./server-device-setup-remote";
 
-type Request = <T = unknown>(path: string, init?: RequestInit, timeoutMs?: number) => Promise<T>;
-
 export function createServerDeviceSetupController(input: {
-  request: Request;
+  client: () => Promise<RelayClient>;
   selectedDevice: Accessor<string | null>;
   setLiveCaptureIssue: Setter<string | null>;
 }) {
@@ -24,7 +23,7 @@ export function createServerDeviceSetupController(input: {
 
   async function refreshAppleDeviceSetup(): Promise<AppleSetupStatus> {
     const sequence = ++appleRefreshSequence;
-    const status = await loadAppleDeviceSetup(input.request);
+    const status = await loadAppleDeviceSetup(await input.client());
     // Settings can refresh while a save is in flight. Only the newest reply
     // may change shared setup state.
     if (sequence === appleRefreshSequence) setAppleDeviceSetup(status);
@@ -32,11 +31,11 @@ export function createServerDeviceSetupController(input: {
   }
 
   async function preflightAppleDeviceSetup(): Promise<boolean> {
-    return (await loadAppleSetupPreflight(input.request)).configured;
+    return (await loadAppleSetupPreflight(await input.client())).configured;
   }
 
   async function refreshAndroidDeviceSetup(): Promise<AndroidSetupStatus> {
-    const status = await loadAndroidDeviceSetup(input.request);
+    const status = await loadAndroidDeviceSetup(await input.client());
     setAndroidDeviceSetup(status);
     return status;
   }
@@ -44,11 +43,11 @@ export function createServerDeviceSetupController(input: {
   async function loadAndroidAppLocalesForSelectedDevice(packageName: string): Promise<string[]> {
     const serial = input.selectedDevice();
     if (!serial) throw new Error("Choose a connected Android device first");
-    return loadAndroidAppLocales(input.request, serial, packageName);
+    return loadAndroidAppLocales(await input.client(), serial, packageName);
   }
 
   async function saveAppleSetup(inputValue: AppleDeviceSetup): Promise<void> {
-    await saveAppleDeviceSetup(input.request, inputValue);
+    await saveAppleDeviceSetup(await input.client(), inputValue);
     await refreshAppleDeviceSetup();
     // A runner setup failure belongs to the previous configuration.
     input.setLiveCaptureIssue(null);
@@ -57,7 +56,7 @@ export function createServerDeviceSetupController(input: {
   async function saveIosPreview(
     backend: "agent-device-png" | "go-ios-auto" | "go-ios-mjpeg",
   ): Promise<void> {
-    await saveIosLivePreview(input.request, backend);
+    await saveIosLivePreview(await input.client(), backend);
     await refreshAppleDeviceSetup();
   }
 

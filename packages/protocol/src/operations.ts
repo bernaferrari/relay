@@ -15,16 +15,16 @@ import {
 import { assertIosSessionOperationLifecycle } from "./ios-session-lifecycle.js";
 import { isExecutionTargetRef } from "./execution-target.js";
 import { createTargetRecoveryOperationParsers } from "./target-recovery-operation-parsers.js";
+import { createTargetCaptureOperationParsers } from "./target-capture-operation-parsers.js";
 import { authoringRawOptimizationOperationDefinition } from "./authoring-raw-optimization-operation.js";
+import { appleDeviceOperationDefinitions } from "./apple-device-operation-definitions.js";
 import { runRepairOperationDefinitions } from "./run-repair-operations.js";
 import { runShareOperationDefinitions } from "./run-share.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
 import { campaignCapacityOperationDefinitions } from "./campaign-capacity-operation-definitions.js";
-import { createCorpusOperationDefinitions } from "./corpus-operation-definitions.js";
 import { createDiscoveryOperationDefinitions } from "./discovery-operation-definitions.js";
 import { combineOperationDefinitions } from "./combine-operation-definitions.js";
-import { localeMatrixOperationDefinitions } from "./locale-matrix-operation-definitions.js";
 import { createOperationBuilders } from "./operation-builders.js";
 import { validateOperationDefinitions as validateDefinitions } from "./operation-definition-validation.js";
 import type {
@@ -272,43 +272,12 @@ const actionsParser = objectParser<{ actions: ActionSummary[] }>("actions respon
   }
 });
 
-const screenshotParser = objectParser<OperationOutput<"target.screenshot.capture">>(
-  "screenshot response",
-  (input) => {
-    string(input.path, "screenshot path");
-    number(input.bytes, "screenshot bytes");
-    if (input.readiness !== undefined) {
-      assertTargetRuntimeReadiness(input.readiness, "screenshot readiness");
-    }
-  },
-);
-
-const targetSnapshotOutputParser = objectParser<OperationOutput<"target.snapshot.capture">>(
-  "target snapshot response",
-  (input) => {
-    if (!Array.isArray(input.nodes)) fail("snapshot nodes", "must be an array");
-    if (!Array.isArray(input.interactive)) fail("snapshot interactive", "must be an array");
-    if (input.inspectable !== undefined) boolean(input.inspectable, "snapshot inspectable");
-    if (typeof input.tree !== "string") fail("snapshot tree", "must be a string");
-    // An iPad can have fresh pixels while its bounded XCTest tree read is still
-    // unavailable. That is a useful, truthful observation—not a malformed
-    // response. Keep the empty tree legal only when the producer explicitly
-    // marks it uninspectable, so semantic snapshots cannot silently lose their
-    // tree text.
-    if (!input.tree && input.inspectable !== false) {
-      fail("snapshot tree", "must be non-empty unless the snapshot is explicitly uninspectable");
-    }
-    if (input.readiness !== undefined) {
-      assertTargetRuntimeReadiness(input.readiness, "snapshot readiness");
-    }
-    if (input.iosSessionLifecycle !== undefined) {
-      assertIosSessionOperationLifecycle(
-        input.iosSessionLifecycle,
-        "snapshot iOS session lifecycle",
-      );
-    }
-  },
-);
+const {
+  screenshotParser,
+  targetSnapshotOutputParser,
+  targetScreenshotInputParser,
+  targetSnapshotInputParser,
+} = createTargetCaptureOperationParsers({ assertTargetRuntimeReadiness });
 const scrollSurveyReasons = new Set<ScrollSurveyStopReasonDto>([
   "end-of-content",
   "screen-changed",
@@ -594,33 +563,6 @@ const runEvidenceInputParser = objectParser<OperationInput<"run.evidence.get">>(
         fail("includeBodies", "must be a boolean");
       }
     }
-  },
-);
-
-function optionalQueryBoolean(value: unknown, label: string): void {
-  if (value === undefined) return;
-  if (value === true || value === false) return;
-  if (value === "true" || value === "false" || value === "1" || value === "0") return;
-  fail(label, "must be a boolean");
-}
-
-const targetInputParser = objectParser<OperationRecord>("target operation", (input) => {
-  string(input.serial, "target serial");
-  if (input.previewX !== undefined) number(input.previewX, "previewX");
-  if (input.previewY !== undefined) number(input.previewY, "previewY");
-  if (input.preview !== undefined) boolean(input.preview, "preview");
-  optionalQueryBoolean(input.visual, "visual");
-});
-
-const targetScreenshotInputParser = objectParser<
-  OperationInput<"target.screenshot.capture">
->("target screenshot input", (input) => targetInputParser.parse(input));
-
-const targetSnapshotInputParser = objectParser<OperationInput<"target.snapshot.capture">>(
-  "target snapshot input",
-  (input) => {
-    targetInputParser.parse(input);
-    optionalQueryBoolean(input.full, "full");
   },
 );
 
@@ -1259,7 +1201,6 @@ const authoringSessionListInputParser = objectParser<OperationInput<"authoring.s
 
 const { command, query } = createOperationBuilders<RelayOperationMap>();
 const discoveryOperationDefinitions = createDiscoveryOperationDefinitions();
-const corpusOperationDefinitions = createCorpusOperationDefinitions();
 const appMapOperationDefinitions = createAppMapOperationDefinitions({
   boolean,
   emptyInputParser,
@@ -1332,13 +1273,7 @@ export const operationDefinitions = [
     output: evidencePolicyParser,
     confirmation: "confirm",
   }),
-  command(
-    "workspace.apple-device.update",
-    "Update Apple device setup",
-    "PUT",
-    "/settings/devices/apple",
-    { confirmation: "confirm" },
-  ),
+  ...appleDeviceOperationDefinitions,
   query("target.actions.list", "List available actions", "/actions", {
     category: "target",
     input: emptyInputParser,
@@ -1780,7 +1715,6 @@ export const operationDefinitions = [
     idempotency: "inherent",
   }),
   ...discoveryOperationDefinitions,
-  ...corpusOperationDefinitions,
   query("job.list", "List jobs", "/jobs", { category: "execution", output: jobsParser }),
   query("job.get", "Get job", "/jobs/:jobId", { category: "execution", input: jobIdInputParser }),
   command("job.start", "Start job", "POST", "/jobs", {
@@ -1824,23 +1758,6 @@ export const operationDefinitions = [
     progress: true,
     cancellable: true,
   }),
-  ...localeMatrixOperationDefinitions,
-  query(
-    "job.locale-matrix.export",
-    "Export locale-run screenshot pack",
-    "/jobs/locale-matrix/:batchId/export",
-    { category: "execution" },
-  ),
-  query("job.locale-matrix.analysis", "Locale findings", "/jobs/locale-matrix/:batchId/analysis", {
-    category: "execution",
-  }),
-  command(
-    "job.locale-matrix.infer",
-    "Infer locale options from taught live-screen rows",
-    "POST",
-    "/jobs/locale-matrix/infer",
-    { category: "execution" },
-  ),
   ...combineOperationDefinitions,
   command(
     "job.compatibility-matrix.start",
@@ -1943,7 +1860,7 @@ export const operationDefinitions = [
     },
   ),
   command("run.pin.update", "Pin Run", "POST", "/runs/:runId/pin", { category: "execution" }),
-  command("step.run", "Run one recipe step", "POST", "/step/run", {
+  command("step.run", "Run one execution step", "POST", "/step/run", {
     category: "execution",
     targetCapabilities: ["snapshot", "tap", "type", "scroll"],
     lease: "exclusive",

@@ -43,7 +43,6 @@ test("a burst of job events causes one effective job refresh", async () => {
     variables: ignore,
     matrices: ignore,
     discoveries: ignore,
-    corpora: ignore,
     authoring: ignore,
   } satisfies Record<EventRefresh, () => Promise<unknown>>;
   let emit: ((event: EventEnvelope) => void) | undefined;

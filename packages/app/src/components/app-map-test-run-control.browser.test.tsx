@@ -47,7 +47,9 @@ test("keeps one primary Run action visible and places expert controls in one dis
   expect(summary.tabIndex).toBe(0);
   expect(summary.className).toContain("min-h-11");
   expect(actions.className).toContain("max-[560px]:w-full");
+  expect(actions.className).toContain("grid-cols-[minmax(0,1fr)_auto]");
   expect(run.getAttribute("data-variant")).toBe("primary");
+  expect(run.className).toContain("min-w-[11.5rem]");
   expect(details.querySelector("[data-test-startup-policy]")).not.toBeNull();
   expect(details.querySelector("[data-test-runtime-profile]")).not.toBeNull();
   expect(details.querySelector("[data-test-runtime-profile]")?.className).toContain("min-h-11");
@@ -72,6 +74,15 @@ test("the disclosure opens from its keyboard-native summary and Escape restores 
   expect(details.open).toBe(true);
   expect(summary.getAttribute("aria-expanded")).toBe("true");
 
+  // Escape works from the summary itself, not only from a field in the panel.
+  summary.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await Promise.resolve();
+  expect(details.open).toBe(false);
+  expect(document.activeElement).toBe(summary);
+
+  summary.click();
+  expect(details.open).toBe(true);
+
   const check = [...details.querySelectorAll<HTMLButtonElement>("button")].find((candidate) =>
     candidate.textContent?.includes("Check offline"),
   )!;
@@ -81,6 +92,33 @@ test("the disclosure opens from its keyboard-native summary and Escape restores 
   expect(details.open).toBe(false);
   expect(document.activeElement).toBe(summary);
   view.dispose();
+});
+
+test("reserves the primary action footprint and announces complete recovery copy", () => {
+  const recovery =
+    "The selected target profile is no longer valid. Choose a matching evidence profile in Run options before running this Test.";
+  const idle = setup();
+  const idlePrimary = [...idle.root.querySelectorAll<HTMLButtonElement>("button")].find(
+    (candidate) => candidate.textContent?.includes("Run test"),
+  )!;
+  const blocked = setup({
+    blockedReason: recovery,
+    blockedActionLabel: "Choose target variant",
+    onResolveBlocked: vi.fn(),
+  });
+  const blockedPrimary = [...blocked.root.querySelectorAll<HTMLButtonElement>("button")].find(
+    (candidate) => candidate.textContent?.includes("Choose target variant"),
+  )!;
+  const status = blocked.root.querySelector<HTMLElement>("[data-test-run-status]")!;
+
+  expect(blockedPrimary.className).toBe(idlePrimary.className);
+  expect(status.textContent).toBe(recovery);
+  expect(status.className).not.toContain("truncate");
+  expect(status.getAttribute("aria-atomic")).toBe("true");
+  expect(status.className).toContain("min-h-[2.6em]");
+
+  idle.dispose();
+  blocked.dispose();
 });
 
 test("active work keeps status plus Cancel visible while run options become inert", () => {

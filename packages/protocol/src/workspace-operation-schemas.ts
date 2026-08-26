@@ -37,9 +37,14 @@ export const workspaceOperationSchemas = {
   "workspace.variables.get": empty,
   "workspace.apple-device.update": z
     .object({
-      developerDiskImagePath: z.string().optional(),
-      goIosPath: z.string().optional(),
+      teamId: identifier("Apple developer Team ID"),
+      bundleId: identifier("XCTest runner bundle identifier"),
+      signingIdentity: z.string().optional(),
+      provisioningProfile: z.string().optional(),
     })
+    .strict(),
+  "workspace.apple-live-preview.update": z
+    .object({ backend: z.enum(["agent-device-png", "go-ios-auto", "go-ios-mjpeg"]) })
     .strict(),
   "presence.list": empty,
   "presence.upsert": z

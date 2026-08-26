@@ -1,7 +1,7 @@
 import type http from "node:http";
 import {
   buildDiscoveryCoverage,
-  buildDiscoveryJourney,
+  buildExplorationTimeline,
   buildTargetProfiles,
   cancelDiscoveryExplore,
   createDiscoverySession,
@@ -273,10 +273,10 @@ export async function handleDiscoveryRoute(input: DiscoveryRouteInput): Promise<
     return true;
   }
 
-  const discoveryJourneyMatch = matchPath(pathname, "/discovery/:id/journey");
-  if (method === "GET" && discoveryJourneyMatch) {
-    const session = await loadScopedSession(discoveryJourneyMatch.id!, scope);
-    json(response, 200, { journey: buildDiscoveryJourney(session) });
+  const explorationTimelineMatch = matchPath(pathname, "/discovery/:id/exploration-timeline");
+  if (method === "GET" && explorationTimelineMatch) {
+    const session = await loadScopedSession(explorationTimelineMatch.id!, scope);
+    json(response, 200, { explorationTimeline: buildExplorationTimeline(session) });
     return true;
   }
 

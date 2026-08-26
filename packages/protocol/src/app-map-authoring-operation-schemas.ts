@@ -5,6 +5,7 @@ import {
   identifier,
   natural,
   point,
+  queryBoolean,
   sessionReference,
   text,
   unknownRecord,
@@ -105,6 +106,48 @@ export const appMapAuthoringOperationSchemas = {
       variable: unknownRecord,
     })
     .strict(),
+  "app-map.variable.infer": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      variableId: identifier("Variable identifier"),
+      expectedRevision: z.number().int().nonnegative(),
+      target: z.discriminatedUnion("kind", [
+        z
+          .object({
+            kind: z.literal("device"),
+            platform: z.enum(["android", "ios"]),
+            targetId: identifier("Target identifier"),
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal("browser"),
+            platform: z.literal("browser"),
+            targetId: identifier("Target identifier"),
+          })
+          .strict(),
+      ]),
+      leaseId: identifier("Actor-owned target lease identifier"),
+      taughtRows: z
+        .array(
+          z
+            .object({
+              id: identifier("Variable option identifier"),
+              identifier: z.string().min(1).optional(),
+              label: z.string().min(1).optional(),
+              text: z.string().min(1).optional(),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(8),
+      name: z.string().min(1).optional(),
+      kind: z
+        .enum(["language", "location", "account", "theme", "workspace", "build", "toggle", "custom"])
+        .optional(),
+      apply: unknownRecord.optional(),
+    })
+    .strict(),
   "app-map.variable.remove": z
     .object({
       appMapId: identifier("App Map identifier"),
@@ -149,8 +192,8 @@ export const appMapAuthoringOperationSchemas = {
     .object({
       appMapId: z.string().optional(),
       targetId: z.string().optional(),
-      activeOnly: z.boolean().optional(),
-      includeHistory: z.boolean().optional(),
+      activeOnly: queryBoolean.optional(),
+      includeHistory: queryBoolean.optional(),
     })
     .strict(),
   "authoring.session.begin": z
@@ -167,4 +210,3 @@ export const appMapAuthoringOperationSchemas = {
   "authoring.session.capture": z.object(sessionReference).strict(),
   "authoring.take.optimization.get": z.object(sessionReference).strict(),
 } as const satisfies Readonly<Record<string, z.ZodObject>>;
-

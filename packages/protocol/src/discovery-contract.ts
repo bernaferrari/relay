@@ -2,7 +2,7 @@ import type { TargetProfile } from "./target-contract.js";
 import type { NavigationProofCursorArtifact } from "./navigation-proof.js";
 
 /** -shaped explore crawl strategies (local-first here/do/ground loop). */
-export type DiscoveryExploreStrategy = "surface" | "journey" | "hard-edges";
+export type DiscoveryExploreStrategy = "surface" | "timeline" | "hard-edges";
 
 export type DiscoveryExploreStopCode = "complete" | "cancelled" | "budget" | "left_app" | "error";
 
@@ -162,8 +162,8 @@ export type ObservedTransition = {
   decision?: DiscoveryDecisionProvenance;
 };
 
-/** One step on the ordered discovery path timeline (Atlas journey). */
-export type DiscoveryJourneyStep = {
+/** One step on the ordered discovery exploration timeline. */
+export type DiscoveryExplorationTimelineStep = {
   index: number;
   transitionId: string;
   kind: ObservedTransition["kind"];
@@ -180,13 +180,13 @@ export type DiscoveryJourneyStep = {
   screenshotScreenId?: string;
 };
 
-export type DiscoveryJourney = {
+export type DiscoveryExplorationTimeline = {
   sessionId: string;
   mapName: string;
   generatedAt: number;
   status: DiscoveryStatus;
   stepCount: number;
-  steps: DiscoveryJourneyStep[];
+  steps: DiscoveryExplorationTimelineStep[];
 };
 
 export type DiscoveryBlockedReason = {
@@ -205,8 +205,8 @@ export type DiscoveryCoverageReport = {
   unprofiledSessionIds: string[];
   screens: DiscoveryCoverageItem[];
   transitions: DiscoveryCoverageItem[];
-  /** Ordered path for the anchor session (Atlas journey timeline). */
-  journey?: DiscoveryJourney;
+  /** Ordered path for the anchor session. */
+  explorationTimeline?: DiscoveryExplorationTimeline;
   /** Why explore stopped short when evidence exists on the anchor session. */
   blockedReasons?: DiscoveryBlockedReason[];
   /** -shaped explore completion for the anchor session. */
@@ -234,4 +234,4 @@ export type DiscoverySession = {
   transitions: ObservedTransition[];
 };
 
-/** Bounds for a first-class settings / i18n tree corpus. */
+/** Bounds for a first-class settings / i18n exploration tree. */

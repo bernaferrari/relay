@@ -36,7 +36,7 @@ export type DeviceInfo = {
   /** Reported by the device adapter when the platform exposes it. */
   osVersion?: string;
   /** Android platform-tool state; unauthorized/offline hardware stays visible but cannot run. */
-  connectionState?: "connected" | "unauthorized" | "offline";
+  connectionState?: string;
   /** iOS physical devices require this before Xcode can install Relay's runner. */
   developerMode?: "enabled" | "disabled";
   /** Whether Xcode's on-device developer services are available for this iOS device. */
@@ -200,23 +200,8 @@ export type CompatibilityReport = import("@relay/protocol").CompatibilityReport;
 
 export type HealthState = "unknown" | "online" | "offline";
 
-export type LocalSchedule = {
-  id: string;
-  recipeId: string;
-  targetKind: "device" | "browser";
-  targetId: string;
-  platform: "android" | "ios" | "browser";
-  intervalMinutes: number;
-  repetitions: number;
-  enabled: boolean;
-  projectId: string;
-  createdAt: number;
-  updatedAt: number;
-  nextRunAt: number;
-  lastRunAt?: number;
-  lastFailureAt?: number;
-  lastFailure?: string;
-};
+export type LocalSchedule =
+  import("@relay/protocol").OperationOutput<"schedule.list">["schedules"][number];
 
 export type LogLine = {
   id: number;

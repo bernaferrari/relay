@@ -1417,7 +1417,7 @@ test("fit includes content positioned left and above the world origin", () => {
   assert.ok(negative.y * view.scale + view.y >= 0);
 });
 
-test("canvas bounds include run-matrix objects beside the screen graph", () => {
+test("canvas bounds include Combine objects beside the screen graph", () => {
   const bounds = canvasBounds([start], [], (node) => node, [
     { x: 720, y: 80, width: 284, height: 150 },
   ]);

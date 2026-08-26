@@ -26,7 +26,7 @@ export function buildAgentWorkers(
   }));
 }
 
-export type JourneyWorkerOption = {
+export type ExplorationTimelineWorkerOption = {
   id: string;
   /** Short enough for a tab: the divided area, else the perspective. */
   label: string;
@@ -36,8 +36,10 @@ export type JourneyWorkerOption = {
 };
 
 /** Every crawl that reached a session, oldest first, so the panel can offer one
- * journey per worker instead of only the one that happens to hold focus. */
-export function journeyWorkerOptions(workers: readonly AgentWorker[]): JourneyWorkerOption[] {
+ * exploration timeline per worker instead of only the one that happens to hold focus. */
+export function explorationTimelineWorkerOptions(
+  workers: readonly AgentWorker[],
+): ExplorationTimelineWorkerOption[] {
   return workers
     .filter((worker) => worker.sessionId)
     .map((worker) => ({

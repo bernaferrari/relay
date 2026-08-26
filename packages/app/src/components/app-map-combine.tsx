@@ -581,7 +581,6 @@ export function AppMapCombine(props: {
   return (
     <section class="flex min-h-0 w-full flex-1 flex-col" aria-label="Combine">
       <AppMapCombineHeader headline={headline()} subhead={subhead()} onClose={props.onClose} />
-
       <div
         ref={observeScrollArea}
         class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3"

@@ -46,6 +46,7 @@ export * from "./target-contract.js";
 export * from "./discovery-contract.js";
 export type {
   CombineEvidenceAnalysis,
+  CombineEvidenceControl,
   CombineEvidenceFinding,
   CombineEvidenceFindingCode,
 } from "./combine-evidence-contract.js";
@@ -573,6 +574,8 @@ export type Build = {
   name: string;
   platform: "android" | "ios";
   sourceUrl?: string;
+  /** Hex sha256 of the remote artifact; verified when the source is ingested. */
+  sourceSha256?: string;
   status: "uploaded" | "ready" | "failed" | "archived";
   createdAt: number;
   updatedAt: number;

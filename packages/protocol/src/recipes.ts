@@ -315,7 +315,7 @@ export type RecipeStep = RecipeStepMetadata &
         timeoutMs?: number;
       }
     | {
-        /** Assert the complete visible option set exposed under a stable
+        /** Assert the complete visible choice list exposed under a stable
          * accessibility identifier namespace or semantic container. Order does
          * not matter; missing and unexpected options both fail with an explicit
          * diff. */
@@ -453,7 +453,7 @@ export type RecipeStep = RecipeStepMetadata &
         /** A server-reviewed Android origin overlay for legacy/imported raw
          * evidence. It is intentionally distinct from capture provenance;
          * execution reopens its local projection and lifecycle ledger, so a
-         * revocation blocks even this already-compiled recipe. */
+         * revocation blocks even this already-compiled execution plan. */
         reviewedDocumentOrigin?: ReviewedDocumentOriginExecutionReference;
         baseline?: {
           compositeWidth?: number;

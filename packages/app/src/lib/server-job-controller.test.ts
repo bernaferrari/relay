@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createSignal } from "solid-js";
+import type { RelayClient } from "@relay/client";
 import type { JobInfo, PersistedRun } from "./api-types";
 import { createServerJobController } from "./server-job-controller";
 
@@ -11,30 +12,30 @@ function job(id: string): JobInfo {
 test("overlapping job refreshes use one read plus one trailing latest read", async () => {
   const [jobs, setJobs] = createSignal<JobInfo[]>([]);
   const [, setRuns] = createSignal<PersistedRun[]>([]);
-  const [, setRunsRoot] = createSignal("");
   const [, setRunning] = createSignal(false);
   let reads = 0;
   let releaseFirst!: () => void;
   const firstRead = new Promise<void>((resolve) => {
     releaseFirst = resolve;
   });
-  const controller = createServerJobController({
-    request: async <Value>(path: string) => {
-      assert.equal(path, "/jobs");
+  const client = {
+    invoke: async (operationId: string) => {
+      assert.equal(operationId, "job.list");
       reads += 1;
       if (reads === 1) {
         await firstRead;
-        return { jobs: [job("stale")], active: null } as Value;
+        return { jobs: [job("stale")], active: null };
       }
-      return { jobs: [job("fresh")], active: null } as Value;
+      return { jobs: [job("fresh")], active: null };
     },
-    client: async () => null as never,
+  } as unknown as RelayClient;
+  const controller = createServerJobController({
+    client: async () => client,
     health: () => "online",
     jobs,
     setJobs,
     persistedRuns: () => [],
     setPersistedRuns: setRuns,
-    setRunsRoot,
     setRunning,
     selectedJobId: () => null,
     appendLog: () => undefined,
@@ -42,6 +43,7 @@ test("overlapping job refreshes use one read plus one trailing latest read", asy
 
   const first = controller.refreshJobs();
   const concurrent = controller.refreshJobs();
+  await Promise.resolve();
   await Promise.resolve();
   assert.equal(reads, 1);
 
@@ -61,22 +63,22 @@ test("overlapping job refreshes use one read plus one trailing latest read", asy
 test("a failed job refresh recovers on the next request", async () => {
   const [, setJobs] = createSignal<JobInfo[]>([]);
   const [, setRuns] = createSignal<PersistedRun[]>([]);
-  const [, setRunsRoot] = createSignal("");
   const [, setRunning] = createSignal(false);
   let reads = 0;
-  const controller = createServerJobController({
-    request: async <Value>() => {
+  const client = {
+    invoke: async () => {
       reads += 1;
       if (reads === 1) throw new Error("temporary job transport failure");
-      return { jobs: [], active: null } as Value;
+      return { jobs: [], active: null };
     },
-    client: async () => null as never,
+  } as unknown as RelayClient;
+  const controller = createServerJobController({
+    client: async () => client,
     health: () => "online",
     jobs: () => [],
     setJobs,
     persistedRuns: () => [],
     setPersistedRuns: setRuns,
-    setRunsRoot,
     setRunning,
     selectedJobId: () => null,
     appendLog: () => undefined,

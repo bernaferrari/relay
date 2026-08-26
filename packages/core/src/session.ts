@@ -29,8 +29,8 @@ import {
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
 import type { RecipeRuntimeState } from "./recipe-runner-context.js";
 import { finalizeDeferredChecksForJob } from "./session-campaign-finalization.js";
-import { redactPrivateValue } from "./private-inputs.js";
 import { classifyRunOutcome } from "./outcomes.js";
+import { redactPrivateValue } from "./private-inputs.js";
 import {
   initializeRunEvidence,
   runEvidenceFinalizationDevice,
@@ -53,7 +53,12 @@ import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import { isTargetUnavailableError } from "./target-unavailable.js";
 import { humanInterventionNeedsReproof } from "./job-intervention.js";
 import { captureAutomaticState } from "./session-automatic-evidence.js";
-import { appendStepLog, finishStep, observeStepActions, openStep } from "./session-trace-steps.js";
+import {
+  appendStepLog,
+  finishStep,
+  observeStepActions,
+  openStep,
+} from "./session-trace-steps.js";
 import {
   createSessionJob,
   replayInputFromPersistedRun,
@@ -80,8 +85,6 @@ import {
   requireScopedAppMapTestExecutionSource,
   revalidateAppMapTestExecutionSource,
 } from "./app-map-test-execution-gate.js";
-import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
-import type { AppMap } from "@relay/protocol";
 import {
   acquirePreparedSessionDevice,
   assertProviderTargetJobAdmission,
@@ -90,10 +93,11 @@ import {
   runProviderTargetJobIfNeeded,
   type ProviderSessionExecution,
 } from "./session-provider-execution.js";
-import { createDefaultGrounder } from "./grounding.js";
-import { currentVerifiedScreen } from "./recipe-runner-context.js";
-import { proposeRepair } from "./repair-proposal.js";
-import { readAppMap } from "./collaboration.js";
+import { attachDestinationRepairProposals } from "./session-repair-attachment.js";
+import { automaticEvidencePhases } from "./session-evidence-phases.js";
+export {
+  automaticEvidencePhases,
+} from "./session-evidence-phases.js";
 export type { EnqueueJobInput, JobErrorCode, JobStatus, TestJob } from "./session-contract.js";
 export { summarizeJob } from "./session-summary.js";
 export { captureAutomaticState } from "./session-automatic-evidence.js";
@@ -459,54 +463,6 @@ export function cancelActiveJob(targetId?: string): TestJob | null {
   return cancelJob(active.id);
 }
 
-export function automaticEvidencePhases(step: RecipeStep): readonly ("before" | "after")[] {
-  switch (step.kind) {
-    // These steps already produce their own evidence or only orchestrate
-    // nested steps. Capturing two additional device states adds latency and
-    // duplicate frames without improving diagnosis.
-    case "sleep":
-    case "screenshot":
-    case "capture-surface":
-    case "tour":
-    case "logs":
-    case "network":
-    case "script":
-    case "flow":
-    case "module":
-    case "repeat":
-    case "branch":
-      return [];
-    case "app":
-      // A matrix's locale/open wrapper is followed by an explicit mapped
-      // screen assertion and screenshot. Capturing both sides here duplicates
-      // that evidence, costs two full tree+raster reads per world, and makes a
-      // simple one-cold-start traversal look like repeated app restarts. Keep
-      // the command attempt and its failure frame; mapped destinations remain
-      // the canonical visual evidence.
-      if (step.action === "open" || step.action === "set-locale") return [];
-      return ["after"];
-    case "device":
-      // Keyboard dismissal is setup noise. The next mapped assertion captures
-      // the settled application surface; failures still receive a frame.
-      if (step.action === "keyboard-dismiss") return [];
-      return ["after"];
-    // Assertions need resulting state; interactions retain both sides.
-    case "expect-screen":
-      return step.id?.startsWith("relay-source-") || step.id?.endsWith(":warm") ? [] : ["after"];
-    case "expect":
-    case "assert-content":
-    case "extract":
-    case "evaluate-semantic":
-    case "wait-for":
-    case "wait-response":
-    case "pause":
-    case "review":
-      return ["after"];
-    default:
-      return ["before", "after"];
-  }
-}
-
 /** Run a frozen recipe as traced, cancellable device actions. */
 async function runRecipeSteps(
   job: TestJob,
@@ -569,87 +525,6 @@ async function runRecipeSteps(
   }
   finalizeDeferredChecksForJob(job, pushLog, runtime);
   setCurrentStep(undefined);
-}
-
-type DestinationRepairHintArtifact = {
-  schemaVersion: 1;
-  expectedScreenId: string;
-  expectedScreenTitle?: string;
-  expectedFingerprint?: string;
-  observedFingerprint?: string;
-  observedScreenTitle?: string;
-  resolutionMethod?: string;
-};
-
-/**
- * On a run failure, turn a destination-mismatch repair hint into review-only
- * proposals from the frozen App Map Test plan's screens. Proposal-only: this
- * never mutates the App Map, retries navigation, or rewrites steps, and an
- * unavailable grounder degrades to zero proposals instead of an error.
- */
-async function attachDestinationRepairProposals(
-  job: TestJob,
-  error: unknown,
-  runtime: RecipeRuntimeState,
-): Promise<void> {
-  if (isJobCancellation(error) || isTargetUnavailableError(error)) return;
-  const hintArtifact = [...job.artifacts]
-    .find(
-      (
-        artifact,
-      ): artifact is {
-        kind: string;
-        capturedAt: number;
-        data: DestinationRepairHintArtifact;
-      } => artifact.kind === "destination-repair-hint",
-    );
-  if (!hintArtifact) return;
-  const intent = parseAppMapTestExecutionIntentArtifact(
-    job.artifacts.find((artifact) => artifact.kind === "app-map-test-execution-intent"),
-  );
-  const appMapId = intent?.sourcePlan.appMapId ?? job.recipeSnapshot?.id;
-  if (!appMapId || !job.projectId) {
-    job.artifacts.push({
-      kind: "destination-repair-proposals",
-      capturedAt: now(),
-      data: { available: false, proposals: [], reason: "grounding-unavailable" },
-    });
-    return;
-  }
-  let map: AppMap | null = null;
-  try {
-    map = await readAppMap(job.projectId, appMapId);
-  } catch {
-    map = null;
-  }
-  const checkpoint = currentVerifiedScreen(runtime);
-  const result = await proposeRepair({
-    failure: {
-      expectedScreenId: hintArtifact.data.expectedScreenId,
-      ...(hintArtifact.data.expectedScreenTitle
-        ? { expectedScreenTitle: hintArtifact.data.expectedScreenTitle }
-        : {}),
-      ...(hintArtifact.data.expectedFingerprint
-        ? { expectedFingerprint: hintArtifact.data.expectedFingerprint }
-        : {}),
-      ...(hintArtifact.data.observedScreenTitle
-        ? { observedScreenTitle: hintArtifact.data.observedScreenTitle }
-        : {}),
-      ...(hintArtifact.data.resolutionMethod
-        ? { resolutionMethod: hintArtifact.data.resolutionMethod }
-        : {}),
-    },
-    map: map ?? { screens: {}, screenVariants: {} },
-    grounder: createDefaultGrounder(),
-    observationAccess: {
-      ...(checkpoint?.nodes ? { nodes: () => Promise.resolve(checkpoint.nodes) } : {}),
-    },
-  });
-  job.artifacts.push({
-    kind: "destination-repair-proposals",
-    capturedAt: now(),
-    data: result,
-  });
 }
 
 async function executeJob(id: string, workerInstanceId?: string): Promise<void> {

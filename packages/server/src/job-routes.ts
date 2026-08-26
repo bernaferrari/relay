@@ -2,6 +2,7 @@ import http from "node:http";
 import {
   appMapTestExecutionSourceFromJob,
   appMapTestExecutionSourceFromRun,
+  analyzeLocaleRunBatch,
   captureHumanInterventionReproof,
   captureScreenshot,
   captureSnapshot,
@@ -18,15 +19,12 @@ import {
   HumanInterventionReproofUnavailableError,
   humanInterventionNeedsReproof,
   listJobs,
-  inferLocaleOptionsFromTeach,
-  recordedLocalePreludeFromMap,
   pauseJob,
-  prepareRunMatrix,
-  readAppMap,
+  prepareCasePlan,
   readProjectVariables,
   referencedRuntimeInputs,
   referencedVariableIds,
-  redactRunMatrix,
+  redactCasePlan,
   resumeJob,
   retryJob,
   replayPersistedRun,
@@ -36,10 +34,8 @@ import {
   listTargetWorkers,
   releaseDeviceLease,
   resolveJobDevicePlatform,
-  stabilizeOptionIds,
   summarizeJob,
   sensitiveInputNames,
-  type LocaleRunScope,
   type TestJob,
 } from "@relay/core";
 import { admitTargetControl, assertJobAccess, assertTargetControl } from "./access-control.js";
@@ -58,7 +54,6 @@ import { handleCombineStartRoute } from "./combine-start-route.js";
 import { HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
 import { handleCombineCampaignRoute } from "./combine-campaign-routes.js";
-import { handleLocaleMatrixRoute } from "./locale-matrix-routes.js";
 import { sendHumanInterventionReproofEvidence } from "./human-intervention-reproof-evidence.js";
 import type { verifyCampaignDurationCohortEvidence } from "./campaign-duration-cohort-evidence.js";
 import {
@@ -350,13 +345,13 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     }
     const definitions = await readProjectVariables(scope.projectId);
     const frozenRecipe = await freezeRecipeExecution(body.recipe);
-    const matrix = await prepareRunMatrix({
+    const matrix = await prepareCasePlan({
       variables: definitions.value,
       dataIds: referencedVariableIds(frozenRecipe.recipeGraph, definitions.value),
       repetitions: body.repetitions,
       seed: body.seed,
     });
-    const safeMatrix = redactRunMatrix(matrix, definitions.value);
+    const safeMatrix = redactCasePlan(matrix, definitions.value);
     const jobs = matrix.cases.map((item) =>
       enqueueJob({
         recipe: frozenRecipe.recipeSnapshot.id,
@@ -393,99 +388,6 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     return true;
   }
 
-  if (method === "POST" && pathname === "/jobs/combine/infer") {
-    const body = (await parseJsonBody(req)) as {
-      nodes?: unknown;
-      examples?: Array<{
-        id?: string;
-        locale?: string;
-        identifier?: string;
-        label?: string;
-        text?: string;
-      }>;
-      kind?: string;
-      name?: string;
-      app?: string;
-      appMapId?: string;
-      inConnectionId?: string;
-      outConnectionId?: string;
-      listScreenId?: string;
-      entryPath?: LocaleRunScope["entryPath"];
-      pickerPath?: LocaleRunScope["languagePath"];
-      languagePath?: LocaleRunScope["languagePath"];
-    };
-    if (!Array.isArray(body.nodes)) throw new HttpError(400, "nodes must be an accessibility tree");
-    if (!Array.isArray(body.examples) || body.examples.length === 0) {
-      throw new HttpError(400, "teach at least one option example");
-    }
-    const examples = body.examples
-      .map((example) => ({
-        locale:
-          typeof example.id === "string"
-            ? example.id
-            : typeof example.locale === "string"
-              ? example.locale
-              : "",
-        ...(typeof example.identifier === "string" ? { identifier: example.identifier } : {}),
-        ...(typeof example.label === "string" ? { label: example.label } : {}),
-        ...(typeof example.text === "string" ? { text: example.text } : {}),
-      }))
-      .filter((example) => example.locale.trim());
-    if (!examples.length) throw new HttpError(400, "teach at least one option example");
-    let entryPath = body.entryPath;
-    let pickerPath = body.pickerPath ?? body.languagePath;
-    if (!entryPath?.length && !pickerPath?.length && body.appMapId?.trim()) {
-      const map = await readAppMap(scope.projectId, body.appMapId.trim());
-      if (map) {
-        const prelude = recordedLocalePreludeFromMap(map, {});
-        if (prelude) {
-          entryPath = prelude.entryPath;
-          pickerPath = prelude.languagePath;
-        }
-      }
-    }
-    const inferred = inferLocaleOptionsFromTeach({
-      nodes: body.nodes as never,
-      examples,
-    });
-    const kind =
-      body.kind === "location" ||
-      body.kind === "account" ||
-      body.kind === "theme" ||
-      body.kind === "workspace" ||
-      body.kind === "build" ||
-      body.kind === "toggle" ||
-      body.kind === "custom"
-        ? body.kind
-        : "language";
-    const options = stabilizeOptionIds(
-      inferred.options.map((option) => ({
-        id: option.locale,
-        ...(option.identifier ? { identifier: option.identifier } : {}),
-        ...(option.label ? { label: option.label } : {}),
-        ...(option.text ? { text: option.text } : {}),
-      })),
-    );
-    const variable = {
-      id: kind === "language" ? "languages" : kind === "location" ? "locations" : kind,
-      name:
-        body.name?.trim() ||
-        (kind === "language" ? "Language" : kind[0]!.toUpperCase() + kind.slice(1)),
-      kind,
-      apply: {
-        kind: kind === "toggle" ? ("toggle" as const) : ("list" as const),
-        ...(body.inConnectionId?.trim() ? { inConnectionId: body.inConnectionId.trim() } : {}),
-        ...(body.outConnectionId?.trim() ? { outConnectionId: body.outConnectionId.trim() } : {}),
-        ...(body.listScreenId?.trim() ? { listScreenId: body.listScreenId.trim() } : {}),
-        ...(entryPath?.length ? { entryPath } : {}),
-        ...(pickerPath?.length ? { pickerPath } : {}),
-      },
-      options,
-    };
-    json(res, 200, { inferred, variable });
-    return true;
-  }
-
   if (method === "POST" && pathname === "/jobs/combine") {
     await handleCombineStartRoute({ request: req, response: res, scope, runtime });
     return true;
@@ -508,7 +410,16 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     return true;
   }
 
-  if (await handleLocaleMatrixRoute({ ...context, runtime })) return true;
+  const combineAnalysisMatch = matchPath(pathname, "/jobs/combine/:batchId/analysis");
+  if (method === "GET" && combineAnalysisMatch) {
+    try {
+      json(res, 200, await analyzeLocaleRunBatch(combineAnalysisMatch.batchId!));
+    } catch (error) {
+      throw new HttpError(404, error instanceof Error ? error.message : String(error));
+    }
+    return true;
+  }
+
   if (method === "POST" && pathname === "/jobs/compatibility-matrix") {
     json(
       res,
@@ -622,7 +533,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         ownerId: currentOperationContext()!.actorId,
       });
     } catch (err) {
-      // Invalid or missing compiled recipes are client errors, not server faults.
+      // Invalid or missing compiled execution plans are client errors, not server faults.
       const message = err instanceof Error ? err.message : String(err);
       throw new HttpError(400, message);
     }

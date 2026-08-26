@@ -1,4 +1,5 @@
 import type { Setter } from "solid-js";
+import type { RelayClient } from "@relay/client";
 import type {
   OperationId,
   OperationInput,
@@ -15,14 +16,13 @@ import { toast } from "../context/toast";
 import { humanError } from "./human-error";
 import type { JobInfo, PersistedRun, RunEvidenceQuery } from "./api-types";
 
-type Request = <T = unknown>(path: string, init?: RequestInit, timeoutMs?: number) => Promise<T>;
 type RunAction = <Id extends OperationId>(
   operationId: Id,
   input: OperationInput<Id>,
 ) => Promise<OperationOutput<Id>>;
 
 export function createServerRunReportController(input: {
-  request: Request;
+  client: () => Promise<RelayClient>;
   runAction: RunAction;
   setJobs: Setter<JobInfo[]>;
   setPersistedRuns: Setter<PersistedRun[]>;
@@ -30,13 +30,13 @@ export function createServerRunReportController(input: {
 }) {
   async function loadPersistedRun(id: string): Promise<boolean> {
     try {
-      const data = await input.request<{ run: PersistedRun }>(`/runs/${encodeURIComponent(id)}`);
-      if (!data.run) return false;
+      const data = await input.runAction("run.get", { runId: id });
+      const run = data.run as PersistedRun;
       input.setPersistedRuns((current) => {
         const exists = current.some((run) => run.id === id);
         return exists
-          ? current.map((run) => (run.id === id ? data.run : run))
-          : [data.run, ...current];
+          ? current.map((currentRun) => (currentRun.id === id ? run : currentRun))
+          : [run, ...current];
       });
       return true;
     } catch {
@@ -46,9 +46,11 @@ export function createServerRunReportController(input: {
 
   async function loadLiveJob(id: string): Promise<boolean> {
     try {
-      const live = await input.request<{ job: JobInfo }>(`/jobs/${encodeURIComponent(id)}`);
-      if (!live.job) return false;
-      input.setJobs((current) => current.map((job) => (job.id === id ? live.job : job)));
+      const live = await input.runAction("job.get", { jobId: id });
+      const job = live.job as JobInfo;
+      input.setJobs((current) =>
+        current.map((currentJob) => (currentJob.id === id ? job : currentJob)),
+      );
       return true;
     } catch {
       return false;
@@ -70,7 +72,7 @@ export function createServerRunReportController(input: {
 
   async function loadRunSignals(id: string): Promise<RegressionSignal[]> {
     try {
-      const data = await input.request<{ signals?: RegressionSignal[] }>(
+      const data = await (await input.client()).resource<{ signals?: RegressionSignal[] }>(
         `/runs/${encodeURIComponent(id)}/signals`,
       );
       return data.signals ?? [];
@@ -84,14 +86,12 @@ export function createServerRunReportController(input: {
     options: { limit?: number; includeBodies?: boolean } = {},
   ): Promise<RunEvidenceQuery | null> {
     try {
-      const query = new URLSearchParams();
-      if (options.limit !== undefined) query.set("limit", String(options.limit));
-      if (options.includeBodies) query.set("includeBodies", "true");
-      const suffix = query.size ? `?${query.toString()}` : "";
-      const data = await input.request<{ evidence?: RunEvidenceQuery }>(
-        `/runs/${encodeURIComponent(id)}/evidence${suffix}`,
-      );
-      return data.evidence ?? null;
+      const data = await input.runAction("run.evidence.get", {
+        runId: id,
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+        ...(options.includeBodies ? { includeBodies: true } : {}),
+      });
+      return data.evidence as RunEvidenceQuery;
     } catch {
       return null;
     }

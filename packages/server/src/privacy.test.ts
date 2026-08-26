@@ -20,8 +20,12 @@ function clientFor(port: number): RelayClient {
 test("privacy policy can be toggled locally and survives a restart", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-server-privacy-"));
   const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
+  const previousStateDir = process.env.RELAY_STATE_DIR;
   const previousMode = process.env.RELAY_REDACTION_MODE;
   process.env.RELAY_WORKSPACE_ROOT = root;
+  // Isolated state dir: parallel test files each boot a real server, and the
+  // state-dir lease is single-owner by design.
+  process.env.RELAY_STATE_DIR = join(root, ".relay");
   delete process.env.RELAY_REDACTION_MODE;
   let server = await startServer({ host: "127.0.0.1", port: 0 });
   try {
@@ -46,6 +50,8 @@ test("privacy policy can be toggled locally and survives a restart", async () =>
     await server.close();
     if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
+    if (previousStateDir === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousStateDir;
     if (previousMode === undefined) delete process.env.RELAY_REDACTION_MODE;
     else process.env.RELAY_REDACTION_MODE = previousMode;
     await rm(root, { recursive: true, force: true });
@@ -55,8 +61,12 @@ test("privacy policy can be toggled locally and survives a restart", async () =>
 test("environment policy is locked and unredacted network bindings are refused", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-server-privacy-lock-"));
   const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
+  const previousStateDir = process.env.RELAY_STATE_DIR;
   const previousMode = process.env.RELAY_REDACTION_MODE;
   process.env.RELAY_WORKSPACE_ROOT = root;
+  // Isolated state dir: parallel test files each boot a real server, and the
+  // state-dir lease is single-owner by design.
+  process.env.RELAY_STATE_DIR = join(root, ".relay");
   process.env.RELAY_REDACTION_MODE = "off";
   const local = await startServer({ host: "127.0.0.1", port: 0 });
   let localClosed = false;
@@ -79,6 +89,8 @@ test("environment policy is locked and unredacted network bindings are refused",
     if (!localClosed) await local.close();
     if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
+    if (previousStateDir === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousStateDir;
     if (previousMode === undefined) delete process.env.RELAY_REDACTION_MODE;
     else process.env.RELAY_REDACTION_MODE = previousMode;
     await rm(root, { recursive: true, force: true });

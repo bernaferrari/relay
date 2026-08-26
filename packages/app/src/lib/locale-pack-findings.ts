@@ -6,13 +6,13 @@
  * paired with the frame it came from. No fetching, no styling, no layout.
  */
 import type {
-  CorpusFinding,
+  CombineEvidenceFinding,
   LocaleRunAnalysisReport,
   LocaleRunPackManifest,
 } from "@relay/protocol";
-import type { LocaleCellAnalysis } from "./locale-matrix-verdict";
+import type { LocaleCellAnalysis } from "./combine-verdict";
 
-export type PackFinding = CorpusFinding & {
+export type PackFinding = CombineEvidenceFinding & {
   /** Pack-relative PNG the finding was observed on, when the frame was kept. */
   frame?: string;
 };
@@ -37,7 +37,7 @@ export type PackFindingsSummary = {
   unreadFrames: number;
 };
 
-function withFrame(manifest: LocaleRunPackManifest, finding: CorpusFinding): PackFinding {
+function withFrame(manifest: LocaleRunPackManifest, finding: CombineEvidenceFinding): PackFinding {
   const frame = manifest.byCanonicalKey[finding.canonicalKey]?.[finding.locale];
   return frame ? { ...finding, frame } : { ...finding };
 }
@@ -89,11 +89,11 @@ export function localeCellAnalysisIndex(
   report: LocaleRunAnalysisReport | null | undefined,
 ): (jobId: string, framePath: string | undefined) => LocaleCellAnalysis | undefined {
   if (!report) return () => undefined;
-  const byLocale = new Map<string, CorpusFinding[]>();
+  const byLocale = new Map<string, CombineEvidenceFinding[]>();
   for (const finding of report.analysis.findings) {
     byLocale.set(finding.locale, [...(byLocale.get(finding.locale) ?? []), finding]);
   }
-  const cells = new Map<string, CorpusFinding[]>();
+  const cells = new Map<string, CombineEvidenceFinding[]>();
   for (const item of report.cases) {
     const findings = byLocale.get(item.locale) ?? [];
     for (const frame of item.frames) {

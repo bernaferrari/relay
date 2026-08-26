@@ -81,7 +81,9 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
 
   if (method === "GET" && pathname === "/snapshot") {
     const serial = url.searchParams.get("serial") ?? undefined;
-    const interactiveOnly = url.searchParams.get("interactiveOnly") === "1";
+    const interactiveOnly =
+      url.searchParams.get("interactiveOnly") === "1" ||
+      url.searchParams.get("interactiveOnly") === "true";
     const includeVisual =
       url.searchParams.get("visual") === "1" || url.searchParams.get("visual") === "true";
     assertTargetObservation(scope, serial);
@@ -95,7 +97,8 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
     const serial = url.searchParams.get("serial") ?? undefined;
     const caption = url.searchParams.get("caption") ?? undefined;
     const jobId = url.searchParams.get("jobId") ?? undefined;
-    const ephemeral = url.searchParams.get("ephemeral") === "1";
+    const ephemeral =
+      url.searchParams.get("ephemeral") === "1" || url.searchParams.get("ephemeral") === "true";
     const previewX = optionalFiniteSearchNumber(url.searchParams, "previewX");
     const previewY = optionalFiniteSearchNumber(url.searchParams, "previewY");
     assertTargetObservation(scope, serial);

@@ -46,7 +46,6 @@ export type ResourceKind =
   | "matrix"
   | "recording-session"
   | "discovery-session"
-  | "corpus-session"
   | "presence";
 
 export type ResourceEventPayload = {

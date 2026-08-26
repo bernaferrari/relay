@@ -2,9 +2,13 @@ import { createEffect, createMemo, createSignal } from "solid-js";
 import type { AppMap, DiscoverySession } from "@relay/protocol";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
-import { agentTargetQueues, buildAgentWorkers, journeyWorkerOptions } from "./app-map-agent-plan";
+import {
+  agentTargetQueues,
+  buildAgentWorkers,
+  explorationTimelineWorkerOptions,
+} from "./app-map-agent-plan";
 import { deriveAppMapAreas } from "./app-map-browse";
-import { useDiscoveryJourney } from "./use-discovery-journey";
+import { useDiscoveryExplorationTimeline } from "./use-discovery-exploration-timeline";
 import type { AgentState, AgentStrategy, AgentWorker } from "../components/app-map-agent-types";
 
 const MAX_WORKERS = 12;
@@ -70,20 +74,20 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
     const withSession = workers().filter((worker) => worker.sessionId);
     return withSession.find((worker) => worker.status === "running") ?? withSession.at(-1);
   });
-  const journeyWorkers = createMemo(() => journeyWorkerOptions(workers()));
+  const explorationTimelineWorkers = createMemo(() => explorationTimelineWorkerOptions(workers()));
   /**
    * Which crawl the timeline shows. Under the divide strategy several workers
    * walk at once, so the panel follows whoever is live until a person pins a
    * worker; the pin then survives the next worker taking over.
    */
-  const [pinnedJourneyWorkerId, setPinnedJourneyWorkerId] = createSignal<string | undefined>();
-  const journeyWorker = createMemo(() => {
-    const pinned = pinnedJourneyWorkerId();
+  const [pinnedTimelineWorkerId, setPinnedTimelineWorkerId] = createSignal<string | undefined>();
+  const explorationTimelineWorker = createMemo(() => {
+    const pinned = pinnedTimelineWorkerId();
     const withSession = workers().filter((worker) => worker.sessionId);
     return withSession.find((worker) => worker.id === pinned) ?? focusedWorker();
   });
-  const journeyView = useDiscoveryJourney(
-    () => journeyWorker()?.sessionId,
+  const explorationTimelineView = useDiscoveryExplorationTimeline(
+    () => explorationTimelineWorker()?.sessionId,
     () => state() === "running",
   );
 
@@ -186,7 +190,7 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
       actionBudget: actionBudget(),
     });
     setWorkers(plan);
-    setPinnedJourneyWorkerId(undefined);
+    setPinnedTimelineWorkerId(undefined);
     setState("running");
     setStage(
       plan.length === 1 ? "Exploring the app" : `${plan.length} agents are exploring the app`,
@@ -271,12 +275,12 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
     workerCount,
     proposalCount,
     liveProposals,
-    journey: journeyView.journey,
-    exploreRun: journeyView.run,
-    journeyLabel: () => journeyWorker()?.targetName,
-    journeyWorkers,
-    journeyWorkerId: () => journeyWorker()?.id,
-    selectJourneyWorker: setPinnedJourneyWorkerId,
+    explorationTimeline: explorationTimelineView.explorationTimeline,
+    exploreRun: explorationTimelineView.run,
+    explorationTimelineLabel: () => explorationTimelineWorker()?.targetName,
+    explorationTimelineWorkers,
+    explorationTimelineWorkerId: () => explorationTimelineWorker()?.id,
+    selectExplorationTimelineWorker: setPinnedTimelineWorkerId,
     setGoal,
     setMinutes,
     setStrategy,

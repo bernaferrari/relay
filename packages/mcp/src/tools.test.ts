@@ -466,6 +466,7 @@ test("control profile includes reusable actions; locale profile reads app-declar
   assert.ok(control.has("action.run"), "control profile is missing action.run");
   const locale = new Set(relayMcpToolsForProfile("locale").map(({ operationId }) => operationId));
   assert.ok(locale.has("target.app.locales"), "locale profile is missing target.app.locales");
+  assert.ok(locale.has("target.interact"), "locale profile is missing target.interact");
 });
 
 test("defines deterministic task profiles with a compact authoring default", () => {
@@ -559,6 +560,9 @@ test("defines deterministic task profiles with a compact authoring default", () 
     relayMcpToolsForProfile("author").some(
       ({ operationId }) => operationId === "workspace.variables.update",
     ),
+  );
+  assert.ok(
+    relayMcpToolsForProfile("author").some(({ operationId }) => operationId === "app-map.variable.infer"),
   );
   assert.ok(
     relayMcpToolsForProfile("author").some(
@@ -686,6 +690,7 @@ test("the language profile exposes one canonical Variable × Test Combine", () =
   const locale = new Set(relayMcpToolsForProfile("locale").map(({ operationId }) => operationId));
   for (const operationId of [
     "app-map.variable.save",
+    "app-map.variable.infer",
     "app-map.test.save",
     "app-map.combine.save",
     "app-map.combine.preflight",

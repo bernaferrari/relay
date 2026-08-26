@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   verifiedExternalIdentity,
   verifyExternalBearerToken,
@@ -168,9 +171,13 @@ test("network routes fail closed for untrusted, expired, and unknown external be
   const previous = {
     authToken: process.env.RELAY_AUTH_TOKEN,
     redactionMode: process.env.RELAY_REDACTION_MODE,
+    stateDir: process.env.RELAY_STATE_DIR,
   };
   delete process.env.RELAY_AUTH_TOKEN;
   process.env.RELAY_REDACTION_MODE = "on";
+  // Isolated state dir: parallel test files each boot a real server, and the
+  // state-dir lease is single-owner by design.
+  process.env.RELAY_STATE_DIR = await mkdtemp(join(tmpdir(), "relay-server-ext-identity-"));
   const server = await startServer({
     host: "0.0.0.0",
     port: 0,
@@ -215,10 +222,13 @@ test("network routes fail closed for untrusted, expired, and unknown external be
     assert.equal(wrongScope.status, 403);
   } finally {
     await server.close();
+    await rm(previous.stateDir ?? "", { recursive: true, force: true }).catch(() => {});
     if (previous.authToken === undefined) delete process.env.RELAY_AUTH_TOKEN;
     else process.env.RELAY_AUTH_TOKEN = previous.authToken;
     if (previous.redactionMode === undefined) delete process.env.RELAY_REDACTION_MODE;
     else process.env.RELAY_REDACTION_MODE = previous.redactionMode;
+    if (previous.stateDir === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous.stateDir;
   }
 });
 
@@ -228,11 +238,15 @@ test("an exact static service token keeps its existing route scope alongside an 
     role: process.env.RELAY_AUTH_ROLE,
     organization: process.env.RELAY_AUTH_ORGANIZATION_ID,
     projects: process.env.RELAY_AUTH_PROJECT_IDS,
+    stateDir: process.env.RELAY_STATE_DIR,
   };
   process.env.RELAY_REDACTION_MODE = "on";
   process.env.RELAY_AUTH_ROLE = "author";
   process.env.RELAY_AUTH_ORGANIZATION_ID = "static-org";
   process.env.RELAY_AUTH_PROJECT_IDS = "static-project";
+  // Isolated state dir: parallel test files each boot a real server, and the
+  // state-dir lease is single-owner by design.
+  process.env.RELAY_STATE_DIR = await mkdtemp(join(tmpdir(), "relay-server-ext-static-"));
   const staticToken = "static-service-token-with-32-characters";
   const server = await startServer({
     host: "0.0.0.0",
@@ -258,6 +272,7 @@ test("an exact static service token keeps its existing route scope alongside an 
     });
   } finally {
     await server.close();
+    await rm(previous.stateDir ?? "", { recursive: true, force: true }).catch(() => {});
     if (previous.redactionMode === undefined) delete process.env.RELAY_REDACTION_MODE;
     else process.env.RELAY_REDACTION_MODE = previous.redactionMode;
     if (previous.role === undefined) delete process.env.RELAY_AUTH_ROLE;
@@ -266,12 +281,18 @@ test("an exact static service token keeps its existing route scope alongside an 
     else process.env.RELAY_AUTH_ORGANIZATION_ID = previous.organization;
     if (previous.projects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
     else process.env.RELAY_AUTH_PROJECT_IDS = previous.projects;
+    if (previous.stateDir === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous.stateDir;
   }
 });
 
 test("loopback retains local trust while an external bearer remains remotely scoped", async () => {
   const previousToken = process.env.RELAY_AUTH_TOKEN;
+  const previousStateDir = process.env.RELAY_STATE_DIR;
   delete process.env.RELAY_AUTH_TOKEN;
+  // Isolated state dir: parallel test files each boot a real server, and the
+  // state-dir lease is single-owner by design.
+  process.env.RELAY_STATE_DIR = await mkdtemp(join(tmpdir(), "relay-server-ext-loopback-"));
   const server = await startServer({
     host: "127.0.0.1",
     port: 0,
@@ -315,7 +336,10 @@ test("loopback retains local trust while an external bearer remains remotely sco
     assert.equal(localOnly.status, 403);
   } finally {
     await server.close();
+    await rm(previousStateDir ?? "", { recursive: true, force: true }).catch(() => {});
     if (previousToken === undefined) delete process.env.RELAY_AUTH_TOKEN;
     else process.env.RELAY_AUTH_TOKEN = previousToken;
+    if (previousStateDir === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousStateDir;
   }
 });

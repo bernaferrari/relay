@@ -1,10 +1,5 @@
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { ApiError } from "@relay/client";
-import {
-  defineIosMutationTerminalityRegistry,
-  verifyIosMutationTerminalityRegistry,
-  type IosMutationTerminalityTrace,
-} from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -143,7 +138,10 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
     const screenshot = tools.find(({ name }) => name === "relay_target_screenshot_capture");
     assert.ok(screenshot);
     assert.deepEqual(Object.keys(screenshot.inputSchema.properties ?? {}).sort(), [
+      "caption",
       "confirm",
+      "ephemeral",
+      "jobId",
       "previewX",
       "previewY",
       "serial",
@@ -154,6 +152,7 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
     assert.deepEqual(Object.keys(snapshot.inputSchema.properties ?? {}).sort(), [
       "confirm",
       "full",
+      "interactiveOnly",
       "serial",
       "visual",
     ]);
@@ -778,179 +777,6 @@ test("returns sanitized structured ApiError recovery without losing revision sta
   } finally {
     await session.close();
   }
-});
-
-type McpSwitcherOperation = "switcher-profile.scan" | "language-profile.scan";
-type McpSwitcherOutcome = "unknown" | "code-only-terminal" | "validation";
-
-function isMcpSwitcherOutcomeUnknown(error: unknown): boolean {
-  if (!error || typeof error !== "object" || Array.isArray(error)) return false;
-  const result = error as {
-    code?: unknown;
-    status?: unknown;
-    terminal?: unknown;
-    recovery?: { action?: unknown; retryable?: unknown };
-  };
-  return (
-    result.code === "IOS_MUTATION_OUTCOME_UNKNOWN" &&
-    result.status === 409 &&
-    result.terminal === "review-needed" &&
-    result.recovery?.action === "none" &&
-    result.recovery?.retryable === false
-  );
-}
-
-async function mcpSwitcherTransportTrace(
-  operationId: McpSwitcherOperation,
-  outcome: McpSwitcherOutcome,
-): Promise<IosMutationTerminalityTrace> {
-  const nativeDispatches: string[] = [];
-  const iosMutation = {
-    sequence: 1,
-    operation: "press",
-    nativeAttempts: 1,
-    outcome: "outcome-unknown",
-    retry: {
-      attempts: 0,
-      decision: "blocked",
-      reason: "native-command-outcome-unknown",
-    },
-    intervention: { required: true, action: "capture-current-screen-before-any-retry" },
-    at: 1,
-  };
-  const switcherScan = {
-    status: "interrupted",
-    phase: "entry-path",
-    repair: {
-      terminal: true,
-      nextAction: "capture-current-screen-before-any-retry",
-      blocked: ["fallback-target", "retry-launch", "path-step"],
-    },
-  };
-  const session = await connectMcp({
-    async invoke() {
-      // A schema rejection stops before any device action. The terminal
-      // outcomes below represent the one transport call that owns an already
-      // dispatched physical action, so only those belong in this trace.
-      if (outcome !== "validation") nativeDispatches.push("mcp-operation-invoke");
-      if (outcome === "unknown") {
-        throw new ApiError(409, "The iOS press may already have reached the device.", {
-          code: "IOS_MUTATION_OUTCOME_UNKNOWN",
-          error: "The iOS press may already have reached the device.",
-          iosMutation,
-          switcherScan,
-        });
-      }
-      if (outcome === "code-only-terminal") {
-        throw new ApiError(409, "Refresh and retry", {
-          code: "IOS_MUTATION_OUTCOME_UNKNOWN",
-          error: "Refresh and retry the picker scan.",
-          iosMutation: "malformed native diagnostic",
-          recovery: { action: "refresh-and-retry", retryable: true },
-          recoveryAction: {
-            operationId: "switcher-profile.scan",
-            input: { serial: "ipad-1" },
-          },
-        });
-      }
-      throw new ApiError(400, "kind is required", {
-        code: "invalid_request",
-        error: "kind is required",
-      });
-    },
-  });
-  try {
-    const result = callResult(
-      await session.request("tools/call", {
-        name:
-          operationId === "switcher-profile.scan"
-            ? "relay_switcher_profile_scan"
-            : "relay_language_profile_scan",
-        arguments:
-          operationId === "switcher-profile.scan"
-            ? { serial: "ipad-1", app: "Grok", kind: "language" }
-            : { serial: "ipad-1", app: "Grok" },
-      }),
-    );
-    assert.equal(result.isError, true);
-    if (outcome === "unknown") {
-      const error = result.structuredContent?.error;
-      assert.deepEqual(error, {
-        operationId,
-        status: 409,
-        code: "IOS_MUTATION_OUTCOME_UNKNOWN",
-        message:
-          "Review needed: Relay cannot confirm whether the iOS command reached the device. Capture the current screen before any explicit retry or repair.",
-        terminal: "review-needed",
-        recovery: { action: "none", retryable: false },
-        iosReview: { iosMutation, switcherScan },
-      });
-      return { nativeDispatches, status: "terminal", error };
-    }
-    if (outcome === "code-only-terminal") {
-      const error = result.structuredContent?.error;
-      assert.deepEqual(error, {
-        operationId,
-        status: 409,
-        code: "IOS_MUTATION_OUTCOME_UNKNOWN",
-        message:
-          "Review needed: Relay cannot confirm whether the iOS command reached the device. Capture the current screen before any explicit retry or repair.",
-        terminal: "review-needed",
-        recovery: { action: "none", retryable: false },
-      });
-      return { nativeDispatches, status: "terminal", error };
-    }
-    const error = result.structuredContent?.error as
-      | {
-          code?: unknown;
-          recovery?: { action?: unknown; retryable?: unknown };
-          iosReview?: unknown;
-        }
-      | undefined;
-    assert.equal(error?.code, "invalid_request");
-    assert.deepEqual(error?.recovery, { action: "fix-input", retryable: false });
-    assert.equal(error?.iosReview, undefined);
-    return { nativeDispatches, status: "handled" };
-  } finally {
-    await session.close();
-  }
-}
-
-test("registered switcher MCP tools preserve terminal review evidence", async () => {
-  const registry = defineIosMutationTerminalityRegistry([
-    {
-      id: "mcp.switcher-profile.scan",
-      unknown: async () => await mcpSwitcherTransportTrace("switcher-profile.scan", "unknown"),
-      recovery: {
-        expectedStatus: "handled",
-        expectedNativeDispatches: 0,
-        run: async () => await mcpSwitcherTransportTrace("switcher-profile.scan", "validation"),
-      },
-    },
-    {
-      id: "mcp.language-profile.scan",
-      unknown: async () => await mcpSwitcherTransportTrace("language-profile.scan", "unknown"),
-      recovery: {
-        expectedStatus: "handled",
-        expectedNativeDispatches: 0,
-        run: async () => await mcpSwitcherTransportTrace("language-profile.scan", "validation"),
-      },
-    },
-    {
-      id: "mcp.switcher-profile.scan.code-only-terminal",
-      unknown: async () =>
-        await mcpSwitcherTransportTrace("switcher-profile.scan", "code-only-terminal"),
-      recovery: {
-        expectedStatus: "handled",
-        expectedNativeDispatches: 0,
-        run: async () => await mcpSwitcherTransportTrace("switcher-profile.scan", "validation"),
-      },
-    },
-  ]);
-
-  await verifyIosMutationTerminalityRegistry(registry, {
-    isOutcomeUnknown: isMcpSwitcherOutcomeUnknown,
-  });
 });
 
 test("fails closed for a malformed iOS terminal payload while retaining valid review evidence", async () => {

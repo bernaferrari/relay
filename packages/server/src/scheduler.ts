@@ -7,7 +7,7 @@ import {
   markScheduleFailure,
   markScheduleRun,
   prepareJobBatch,
-  prepareRunMatrix,
+  prepareCasePlan,
   publish,
   readProjectVariables,
   readRecipe,
@@ -25,7 +25,7 @@ export type SchedulerRuntime = {
   readRecipe: typeof readRecipe;
   freezeRecipeGraph: typeof freezeRecipeGraph;
   readProjectVariables: typeof readProjectVariables;
-  prepareRunMatrix: typeof prepareRunMatrix;
+  prepareCasePlan: typeof prepareCasePlan;
   prepareJobBatch: typeof prepareJobBatch;
   markScheduleRun: typeof markScheduleRun;
   markScheduleFailure: typeof markScheduleFailure;
@@ -38,7 +38,7 @@ const defaultRuntime: SchedulerRuntime = {
   readRecipe,
   freezeRecipeGraph,
   readProjectVariables,
-  prepareRunMatrix,
+  prepareCasePlan,
   prepareJobBatch,
   markScheduleRun,
   markScheduleFailure,
@@ -81,7 +81,7 @@ export async function runDueSchedules(
       // The schedule's persisted due time identifies this occurrence. Poll
       // timing must not change its seed or idempotency provenance.
       const scheduledAt = schedule.nextRunAt;
-      const matrix = await runtime.prepareRunMatrix({
+      const matrix = await runtime.prepareCasePlan({
         variables: variables.value,
         dataIds: referencedVariableIds(recipeGraph, variables.value),
         repetitions: schedule.repetitions,

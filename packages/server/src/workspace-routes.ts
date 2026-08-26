@@ -21,7 +21,7 @@ type WorkspaceRouteInput = {
 };
 
 /** Routes for project-owned schedules and immutable authoring evidence.
- * Compiled recipes intentionally have no public storage route. */
+ * Compiled execution plans intentionally have no public storage route. */
 export async function handleWorkspaceRoute(input: WorkspaceRouteInput): Promise<boolean> {
   const { method, pathname, url, request, response, scope } = input;
   if (method === "GET" && pathname === "/schedules") {

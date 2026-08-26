@@ -9,6 +9,9 @@ import * as z from "zod/v4";
 
 export const text = (description: string) => z.string().min(1).describe(description);
 export const natural = (description: string) => z.number().nonnegative().describe(description);
+export const queryBoolean = z
+  .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+  .transform((value) => value === true || value === "true" || value === "1");
 export const identifier = (description: string) => text(description);
 export const unknownRecord = z.record(z.string(), z.unknown());
 export const empty = z.object({}).strict();

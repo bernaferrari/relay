@@ -43,13 +43,47 @@ function createHarness(
   const copied: Array<{ base64: string; mime: string }> = [];
   let screenshotReads = 0;
 
-  const request: CaptureServerDeps["request"] = async <T>(
-    path: string,
-    init?: RequestInit,
-  ): Promise<T> => {
+  const client = {
+    invoke: async <T>(id: string, input: Record<string, unknown>): Promise<T> => {
+    const path = (() => {
+      switch (id) {
+        case "target.screenshot.capture": {
+          const query = new URLSearchParams(
+            Object.entries(input).flatMap(([key, value]) =>
+              value === undefined ? [] : [[key, String(value)]],
+            ),
+          );
+          return `/screenshot${query.size ? `?${query}` : ""}`;
+        }
+        case "target.snapshot.capture": {
+          const query = new URLSearchParams(
+            Object.entries(input).flatMap(([key, value]) =>
+              value === undefined ? [] : [[key, String(value)]],
+            ),
+          );
+          return `/snapshot${query.size ? `?${query}` : ""}`;
+        }
+        case "target.scroll-survey.capture":
+          return "/capture/scroll-survey";
+        case "target.interact":
+          return "/interact";
+        case "discovery.interact":
+          return `/discovery/${String(input.sessionId)}/interact`;
+        case "step.run":
+          return "/step/run";
+        case "target.touch":
+          return "/device/touch";
+        case "target.key":
+          return "/device/key";
+        case "target.scroll":
+          return "/device/scroll";
+        default:
+          return id;
+      }
+    })();
     calls.push(path);
-    requestBodies.push(typeof init?.body === "string" ? JSON.parse(init.body) : undefined);
-    if (path.startsWith("/screenshot")) {
+    requestBodies.push(input);
+    if (id === "target.screenshot.capture") {
       const readiness = options.screenshotReadiness?.[screenshotReads++];
       return {
         serial: "device-1",
@@ -63,17 +97,21 @@ function createHarness(
         ...(readiness ? { readiness } : {}),
       } as T;
     }
-    if (path.startsWith("/snapshot")) {
+    if (id === "target.snapshot.capture") {
       return {
         serial: "device-1",
         capturedAt: 123,
         nodes: [],
         interactive: [],
+        tree: "Window",
         bounds: { width: 100, height: 200 },
+        inspectable: true,
+        source: "sdk",
+        screenIdentity: { fingerprint: "screen", nodes: [], volatileSignals: [] },
         ...(options.inspectionError ? { inspectionError: options.inspectionError } : {}),
       } as T;
     }
-    if (path === "/capture/scroll-survey") {
+    if (id === "target.scroll-survey.capture") {
       return {
         status: "completed",
         reason: "end-of-content",
@@ -111,16 +149,16 @@ function createHarness(
         mergedNodes: [{ label: "Buy more", rect: { x: 10, y: 220, width: 60, height: 24 } }],
       } as T;
     }
-    if (path === "/step/run") {
+    if (id === "step.run") {
       return (options.stepResult ?? { ok: true, durationMs: 12, logs: [] }) as T;
     }
-    if (path === "/device/key" && options.keyError) throw options.keyError;
-    if (path === "/interact" && options.interactError) throw options.interactError;
+    if (id === "target.key" && options.keyError) throw options.keyError;
+    if (id === "target.interact" && options.interactError) throw options.interactError;
     return {} as T;
+    },
   };
-
   const capture = createServerCapture({
-    request,
+    client: async () => client as never,
     serverUrl: () => "http://localhost:8787",
     selectedDevice: () => "device-1",
     selectedDevicePlatform: () => options.devicePlatform ?? "android",
@@ -220,7 +258,7 @@ test("live iPad preview is compact while explicit capture preserves the full tre
 
   assert.deepEqual(harness.calls, [
     "/snapshot?serial=device-1",
-    "/snapshot?serial=device-1&interactiveOnly=1",
+    "/snapshot?serial=device-1&interactiveOnly=true",
   ]);
 });
 
@@ -296,7 +334,7 @@ test("copy screenshot is ephemeral and does not create a Relay frame or log", as
 
   await harness.capture.copyUiScreenshot();
 
-  assert.equal(harness.calls[0], "/screenshot?ephemeral=1&serial=device-1");
+  assert.equal(harness.calls[0], "/screenshot?serial=device-1&ephemeral=true");
   assert.deepEqual(harness.copied, [{ base64: "encoded", mime: "image/png" }]);
   assert.deepEqual(harness.frames, []);
   assert.deepEqual(harness.logs, []);
@@ -329,9 +367,11 @@ test("scroll survey keeps every viewport's accessibility tree and the stitched c
 test("live capture exposes a setup failure without throwing from the polling loop", async () => {
   let issue: string | null = null;
   const capture = createServerCapture({
-    request: async () => {
-      throw new Error("Finish iPad setup in Relay Settings before capturing.");
-    },
+    client: async () => ({
+      invoke: async () => {
+        throw new Error("Finish iPad setup in Relay Settings before capturing.");
+      },
+    }) as never,
     serverUrl: () => "http://localhost:8787",
     selectedDevice: () => "ipad-1",
     selectedDevicePlatform: () => "ios",

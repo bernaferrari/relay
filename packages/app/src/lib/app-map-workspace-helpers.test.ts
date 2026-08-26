@@ -62,7 +62,7 @@ test("buildMinimapNodes carries every marquee-selected screen into the overview"
   );
 });
 
-test("buildMinimapNodes includes visible run-matrix objects", () => {
+test("buildMinimapNodes includes visible Combine objects", () => {
   const overview = buildMinimapNodes({
     nodes: [],
     notes: [],

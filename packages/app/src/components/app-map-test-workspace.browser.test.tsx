@@ -166,7 +166,6 @@ test("a saved App Map Test opens a Combine strip, not Locale Matrix chrome", asy
   const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
   try {
     await settle();
-    expect(root.querySelector("[data-app-map-test-locale-matrix]")).toBeNull();
     expect(root.textContent).not.toContain("Run this Test across languages");
     expect(root.querySelector("[data-app-map-test-combine-strip]")).not.toBeNull();
     expect(root.textContent).toContain("Whole page");
@@ -370,7 +369,6 @@ test("without an applyable Variable the strip tells the operator to create one",
   const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
   try {
     await settle();
-    expect(root.querySelector("[data-app-map-test-locale-matrix]")).toBeNull();
     expect(root.textContent).not.toContain("Run this Test across languages");
     expect(root.textContent).not.toMatch(/run across languages/i);
     expect(root.querySelector("[data-app-map-test-combine-strip]")).not.toBeNull();

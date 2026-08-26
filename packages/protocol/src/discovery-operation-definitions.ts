@@ -14,7 +14,7 @@ export type DiscoveryOperationId =
   | "discovery.do"
   | "discovery.suggestion"
   | "discovery.coverage"
-  | "discovery.journey"
+  | "discovery.exploration-timeline"
   | "discovery.export"
   | "discovery.promote"
   | "discovery.start"
@@ -94,9 +94,12 @@ export function createDiscoveryOperationDefinitions() {
     query("discovery.coverage", "Discovery coverage report", "/discovery/:sessionId/coverage", {
       category: "discovery",
     }),
-    query("discovery.journey", "Discovery journey timeline", "/discovery/:sessionId/journey", {
-      category: "discovery",
-    }),
+    query(
+      "discovery.exploration-timeline",
+      "Discovery exploration timeline",
+      "/discovery/:sessionId/exploration-timeline",
+      { category: "discovery" },
+    ),
     query("discovery.export", "Export Discovery Map", "/discovery/:sessionId/export", {
       category: "discovery",
     }),

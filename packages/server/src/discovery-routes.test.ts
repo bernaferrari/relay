@@ -181,6 +181,17 @@ test("discovery routes list create and read sessions", async () => {
     assert.equal(readBody.session.id, createdBody.session.id);
     assert.equal(readBody.session.name, "Sign-in map");
 
+    const timeline = await fetch(
+      `${base}/discovery/${encodeURIComponent(createdBody.session.id)}/exploration-timeline`,
+      { headers: operationHeaders("discovery.exploration-timeline") },
+    );
+    assert.equal(timeline.status, 200);
+    const timelineBody = (await timeline.json()) as {
+      explorationTimeline: { sessionId: string; stepCount: number };
+    };
+    assert.equal(timelineBody.explorationTimeline.sessionId, createdBody.session.id);
+    assert.equal(timelineBody.explorationTimeline.stepCount, 0);
+
     const missing = await fetch(`${base}/discovery/does-not-exist`, {
       headers: operationHeaders("discovery.get"),
     });

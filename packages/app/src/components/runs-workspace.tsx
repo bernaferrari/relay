@@ -22,6 +22,7 @@ import type {
   VisualReviewAction,
   VisualReviewDecision,
 } from "@relay/protocol";
+import { failedStepFromTrace } from "@relay/protocol";
 import { appMapIdForJob, runStopHeadline, runTargetLabel } from "../lib/run-presentation";
 import { canApproveVisualBaseline, hasVisualRunFrames } from "../lib/visual-run-readiness";
 import { RunLogsEvidence, RunNetworkEvidence, RunPerformanceEvidence } from "./run-evidence-panels";
@@ -32,6 +33,7 @@ import { RunReplayStage } from "./run-replay-stage";
 import { CombineReview } from "./combine-review";
 import { RunShareMenu } from "./run-share-menu";
 import { VisualDiffReview } from "./visual-diff-review";
+import { RunDetailsDisclosure } from "./run-details-disclosure";
 import { RunsRefreshControl } from "./runs-refresh-control";
 import { CampaignRunChecksPanel } from "./campaign-run-checks-panel";
 import {
@@ -749,13 +751,16 @@ export function RunsWorkspace(props: {
                   </span>
                   <div class="min-w-0">
                     <strong class="block text-body font-semibold text-text-strong">
-                      {runStopHeadline({
-                        total: reviewCompletion()?.total ?? 0,
-                        selectedIndex: initialRunReviewStep(job()),
-                        failureLabel: job().failureCategory
-                          ? readableFailure(job().failureCategory!, job().error)
-                          : "Stopped",
-                      })}
+                      {(() => {
+                        const failedStep = failedStepFromTrace(job());
+                        return runStopHeadline({
+                          total: failedStep?.total ?? reviewCompletion()?.total ?? 0,
+                          selectedIndex: failedStep?.index ?? initialRunReviewStep(job()),
+                          failureLabel: job().failureCategory
+                            ? readableFailure(job().failureCategory!, job().error)
+                            : "Stopped",
+                        });
+                      })()}
                     </strong>
                     <span class="mt-0.5 block text-caption/[1.4] text-text-weak">
                       {job().error
@@ -922,62 +927,7 @@ export function RunsWorkspace(props: {
                       </div>
                     </section>
                   </Show>
-                  <details class="group col-span-2 mt-2 border-t border-border-weak-base">
-                    <summary class="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 text-caption/[1.25] text-text-weaker focus-visible:outline-1 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
-                      <span>More details</span>
-                      <Icon
-                        name="chevron-down"
-                        size={13}
-                        class="transition-transform group-open:rotate-180"
-                      />
-                    </summary>
-                    <dl class="m-0 grid gap-2 pb-3">
-                      <div class="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-2.5">
-                        <dt class="min-w-0 text-micro/[1.25] text-text-weaker">Run ID</dt>
-                        <dd class="m-0 flex min-w-0 items-center gap-1.5">
-                          <code class="truncate text-micro/[1.25] text-text-weak">{job().id}</code>
-                          <button
-                            type="button"
-                            class="grid size-10 shrink-0 place-items-center rounded-lg text-text-weaker hover:bg-surface-base-hover hover:text-text-base"
-                            aria-label="Copy run ID"
-                            onClick={() => void navigator.clipboard?.writeText(job().id)}
-                          >
-                            <Icon name="copy" size={12} />
-                          </button>
-                        </dd>
-                      </div>
-                      <Show when={job().serial}>
-                        <div class="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-2.5">
-                          <dt class="min-w-0 text-micro/[1.25] text-text-weaker">
-                            Device identifier
-                          </dt>
-                          <dd class="m-0 flex min-w-0 items-center gap-1.5">
-                            <code class="truncate text-micro/[1.25] text-text-weak">
-                              {job().serial}
-                            </code>
-                            <button
-                              type="button"
-                              class="grid size-10 shrink-0 place-items-center rounded-lg text-text-weaker hover:bg-surface-base-hover hover:text-text-base"
-                              aria-label="Copy device identifier"
-                              onClick={() => void navigator.clipboard?.writeText(job().serial!)}
-                            >
-                              <Icon name="copy" size={12} />
-                            </button>
-                          </dd>
-                        </div>
-                      </Show>
-                      <Show when={job().error}>
-                        <div class="grid gap-1 border-t border-border-weak-base pt-2.5">
-                          <dt class="min-w-0 text-micro/[1.25] text-text-weaker">
-                            Technical message
-                          </dt>
-                          <dd class="m-0 min-w-0 whitespace-pre-wrap break-words font-mono text-micro/[1.45] text-text-weak">
-                            {job().error}
-                          </dd>
-                        </div>
-                      </Show>
-                    </dl>
-                  </details>
+                  <RunDetailsDisclosure job={job()} />
                 </Show>
                 <Show when={tab() === "visual"}>
                   <Show

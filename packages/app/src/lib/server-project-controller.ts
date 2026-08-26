@@ -1,19 +1,21 @@
 import { createSignal, type Accessor } from "solid-js";
 import { ApiError, type RelayClient } from "@relay/client";
-import type { GenerationRequest, GenerationResult, Revisioned, TestData } from "@relay/protocol";
+import type {
+  GenerationRequest,
+  GenerationResult,
+  OperationInput,
+  Revisioned,
+  TestData,
+} from "@relay/protocol";
 import { toast } from "../context/toast";
 import type { DeviceInfo, LocalSchedule } from "./api-types";
 
-type Request = <T = unknown>(path: string, init?: RequestInit, timeoutMs?: number) => Promise<T>;
-
 export function createServerProjectController(input: {
-  request: Request;
   client: () => Promise<RelayClient>;
   currentClient: Accessor<RelayClient | null>;
   health: Accessor<"unknown" | "online" | "offline">;
   selectedDevice: Accessor<string | null>;
   devices: Accessor<DeviceInfo[]>;
-  projectId: () => string;
 }) {
   const [projectVariables, setProjectVariables] = createSignal<Revisioned<TestData[]>>({
     revision: 0,
@@ -88,16 +90,13 @@ export function createServerProjectController(input: {
     if (!targetId) throw new Error("Select a target before scheduling");
     const targetPlatform =
       input.devices().find((device) => device.serial === targetId)?.platform ?? "android";
-    const data = await input.request<{ schedule: LocalSchedule }>("/schedules", {
-      method: "POST",
-      body: JSON.stringify({
-        ...inputValue,
-        targetKind: targetPlatform === "browser" ? "browser" : "device",
-        targetId,
-        platform: targetPlatform,
-        projectId: input.projectId(),
-      }),
-    });
+    const scheduleInput: OperationInput<"schedule.create"> = {
+      ...inputValue,
+      targetKind: targetPlatform === "browser" ? "browser" : "device",
+      targetId,
+      platform: targetPlatform,
+    };
+    const data = await (await input.client()).invoke("schedule.create", scheduleInput);
     setSchedules((items) => [
       ...items.filter((item) => item.id !== data.schedule.id),
       data.schedule,
@@ -107,12 +106,12 @@ export function createServerProjectController(input: {
 
   async function refreshSchedules(): Promise<void> {
     if (input.health() === "offline") return;
-    const data = await input.request<{ schedules: LocalSchedule[] }>("/schedules");
+    const data = await (await input.client()).invoke("schedule.list", {});
     setSchedules(data.schedules ?? []);
   }
 
   async function deleteLocalSchedule(id: string): Promise<void> {
-    await input.request(`/schedules/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await (await input.client()).invoke("schedule.delete", { scheduleId: id });
     setSchedules((items) => items.filter((item) => item.id !== id));
   }
 

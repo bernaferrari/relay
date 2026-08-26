@@ -249,6 +249,7 @@ export const operationInputSchemas = {
       name: text("Build name"),
       platform: z.enum(["android", "ios"]),
       sourceUrl: z.string().optional(),
+      sourceSha256: z.string().optional(),
       status: z.string().optional(),
     })
     .strict(),

@@ -23,8 +23,7 @@ export type OperationCategory =
   | "execution"
   | "evidence"
   | "workspace"
-  | "discovery"
-  | "corpus";
+  | "discovery";
 
 export type RuntimeParser<T> = {
   readonly description: string;

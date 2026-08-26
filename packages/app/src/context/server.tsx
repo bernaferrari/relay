@@ -23,7 +23,7 @@ import {
   authorizeDevice as authorizeDeviceRequest,
 } from "../lib/server-target-remote";
 import { createServerPrivacyController } from "../lib/server-privacy-controller";
-import { createServerRunController } from "../lib/server-run-controller";
+import { createServerCombineController } from "../lib/server-combine-controller";
 import { createServerRunReportController } from "../lib/server-run-report-controller";
 import type {
   ActionInfo,
@@ -130,7 +130,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       actorId,
       resolveConnection,
       setServerUrl,
-      request,
       connectedClient,
       runAction,
       previewRequestHeaders,
@@ -168,7 +167,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       saveAppleDeviceSetup,
       saveIosLivePreview,
     } = createServerDeviceSetupController({
-      request,
+      client: connectedClient,
       selectedDevice,
       setLiveCaptureIssue,
     });
@@ -180,7 +179,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       updateRedactionEnabled,
       updateSensitiveEvidenceConsent,
       clearPrivacyPolicies,
-    } = createServerPrivacyController(request);
+    } = createServerPrivacyController(connectedClient);
 
     function clearLiveCaptureIssue(): void {
       setLiveCaptureIssue(null);
@@ -193,7 +192,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       selectedDeviceAvailable,
       setSelectedDeviceAvailable,
     } = createServerDeviceInventoryController({
-      request,
+      client: connectedClient,
       health,
       devices,
       setDevices,
@@ -246,7 +245,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       preflightTargetRemote,
       openBrowserTarget,
     } = createServerTargetController({
-      request,
+      client: connectedClient,
       health,
       matrices,
       selectedDevice,
@@ -268,7 +267,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     async function refreshActions() {
       if (health() === "offline") return;
       try {
-        const list = await listActions(request);
+        const list = await listActions(await connectedClient());
         setActions(list);
       } catch (err) {
         if (health() === "offline") return;
@@ -277,7 +276,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     const { refreshDiscoverySessions, ...discoveryApi } = createServerDiscoveryController({
-      request,
+      client: connectedClient,
       health,
       serverUrl,
       discoverySessions,
@@ -324,13 +323,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshSchedules,
       deleteLocalSchedule,
     } = createServerProjectController({
-      request,
       client: connectedClient,
       currentClient,
       health,
       selectedDevice,
       devices,
-      projectId,
     });
 
     const {
@@ -343,14 +340,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       isPaused,
       queuedJobs,
     } = createServerJobController({
-      request,
       client: connectedClient,
       health,
       jobs,
       setJobs,
       persistedRuns,
       setPersistedRuns,
-      setRunsRoot,
       setRunning,
       selectedJobId,
       appendLog,
@@ -367,7 +362,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       createRunShare,
       revokeRunShare,
     } = createServerRunReportController({
-      request,
+      client: connectedClient,
       runAction,
       setJobs,
       setPersistedRuns,
@@ -376,7 +371,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     async function pollHealth() {
       try {
-        const h = await request<{ runsDir?: string }>("/health", undefined, 8000);
+        const h = await (await connectedClient()).invoke(
+          "system.health.get",
+          {},
+          { signal: AbortSignal.timeout(8_000) },
+        );
         const wasOffline = health() === "offline" || health() === "unknown";
         setHealth("online");
         if (h.runsDir) setRunsRoot(h.runsDir);
@@ -422,7 +421,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         if (!selectedLeaseId()) {
           throw new Error(`Relay could not reserve ${device.name ?? "this device"} to start it.`);
         }
-        await bootDeviceRequest(request, serial, device.platform ?? "ios");
+        await bootDeviceRequest(await connectedClient(), { serial });
         await refreshDevices();
         return true;
       } catch (err) {
@@ -439,7 +438,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       if (authorizingSerial()) return false;
       setAuthorizingSerial(serial);
       try {
-        await authorizeDeviceRequest(request, serial);
+        await authorizeDeviceRequest(await connectedClient(), { serial });
         for (let attempt = 0; attempt < 20; attempt += 1) {
           await new Promise((resolve) => setTimeout(resolve, 500));
           await refreshDevices();
@@ -461,7 +460,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       captureUiScreenshot,
       captureScrollablePage,
       copyUiScreenshot,
-      persistRecordingEvidence,
       recordingEvidenceUrl,
       pollLiveFrame,
       pollLiveSnapshot,
@@ -476,7 +474,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       recordIosVideo,
       iosVideoUrl,
     } = createServerCapture({
-      request,
+      client: connectedClient,
       serverUrl,
       selectedDevice,
       selectedDevicePlatform: () =>
@@ -508,9 +506,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         variables: refreshProjectVariables,
         matrices: refreshMatrices,
         discoveries: refreshDiscoverySessions,
-        // Corpus crawling remains a CLI/internal capture primitive. Desktop
-        // screenshot evidence is projected through canonical App Map runs.
-        corpora: async () => undefined,
         authoring: refreshAuthoringSessions,
       },
       appendLog,
@@ -620,7 +615,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     });
 
     const {
-      inferLocaleOptionsFromDevice,
       inferVariableFromDevice,
       runPathAcrossVariables,
       combineCampaign,
@@ -633,18 +627,18 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       estimateCampaignDurationCohorts,
       preflightLocalCampaignAdmission,
       removeCombine,
-      localeMatrix,
       runAppMapConnection: runAppMapConnectionRemote,
       runAppMapFlow: runAppMapFlowRemote,
       loadCompatibilityReport,
-      matrixEvidence,
+      combineEvidence,
       retrySelectedJob,
       replayRecordedRunFromHistory,
-    } = createServerRunController({
-      request,
+    } = createServerCombineController({
+      client: connectedClient,
       health,
       devices,
       selectedDevice,
+      selectedLeaseId,
       selectedJobId,
       projectId,
       projectVariables: () => projectVariables().value,
@@ -654,8 +648,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setSelectedAction,
       setError,
       refreshJobs: async () => void (await refreshJobs()),
-      rememberJob: (job) =>
-        setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]),
       notify: platform.notify,
     });
     const selectedAppMap = createMemo(
@@ -789,7 +781,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       pollHealth,
       retryConnection,
       recoverSelectedTarget,
-      inferLocaleOptionsFromDevice,
       inferVariableFromDevice,
       runPathAcrossVariables,
       combineCampaign,
@@ -802,11 +793,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       estimateCampaignDurationCohorts,
       preflightLocalCampaignAdmission,
       removeCombine,
-      localeMatrix,
       runAppMapConnectionRemote,
       runAppMapFlowRemote,
       loadCompatibilityReport,
-      matrixEvidence,
+      combineEvidence,
       cancelJob: cancelJobRemote,
       pauseJob: pauseJobRemote,
       resumeJob: resumeJobRemote,
@@ -830,7 +820,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       captureUiScreenshot,
       captureScrollablePage,
       copyUiScreenshot,
-      persistRecordingEvidence,
       recordingEvidenceUrl,
       jumpToJob,
       accessibilityMode,

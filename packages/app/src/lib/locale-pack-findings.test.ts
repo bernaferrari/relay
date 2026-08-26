@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {
-  CorpusFinding,
+  CombineEvidenceFinding,
   LocaleRunAnalysisReport,
   LocaleRunPackManifest,
 } from "@relay/protocol";
@@ -12,7 +12,9 @@ import {
   packFindingsSummary,
 } from "./locale-pack-findings";
 
-function finding(input: Partial<CorpusFinding> & { locale: string }): CorpusFinding {
+function finding(
+  input: Partial<CombineEvidenceFinding> & { locale: string },
+): CombineEvidenceFinding {
   return {
     id: `finding-${input.locale}`,
     code: "POSSIBLE_UNTRANSLATED_TEXT",

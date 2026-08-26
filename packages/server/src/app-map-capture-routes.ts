@@ -4,10 +4,12 @@ import {
   connectAppMapScreens,
   currentOperationContext,
   findAppMapCaptureScreen,
+  inferLocaleOptionsFromTeach,
   now,
   readAppMap,
   reviewAppMapScreenCapture,
   submitAppMapProposal,
+  stabilizeOptionIds,
   type AppMap,
 } from "@relay/core";
 import type { AuthoringSession, OperationInput, ScreenVariant } from "@relay/protocol";
@@ -36,6 +38,105 @@ import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
  */
 export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
+
+  const variableInfer = matchPath(
+    pathname,
+    "/app-maps/:appMapId/variables/:variableId/infer",
+  );
+  if (method === "POST" && variableInfer) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.variable.infer">,
+      "appMapId" | "variableId"
+    >;
+    await assertTargetLease(scope, body.target.targetId, body.leaseId);
+    const appMap = await readAppMap(scope.projectId, variableInfer.appMapId!);
+    if (!appMap) throw new HttpError(404, `App Map ${variableInfer.appMapId} not found`);
+    if (appMap.revision !== body.expectedRevision) {
+      throw new HttpError(
+        409,
+        `App Map revision conflict: expected ${body.expectedRevision}, current ${appMap.revision}`,
+        {
+          code: "revision-conflict",
+          recovery: "Reload the App Map and teach the Variable again from the current revision.",
+        },
+      );
+    }
+    let session: AuthoringSession | undefined;
+    try {
+      session = await authoringSessions.create({
+        appMapId: appMap.id,
+        target: body.target,
+        leaseId: body.leaseId,
+        expectedAppMapRevision: appMap.revision,
+      });
+      session = await authoringSessions.capture(session.id, createAuthoringRuntime());
+      const observation = currentTakeRevision(session)?.before;
+      if (!observation) throw new HttpError(502, "The target returned no screen observation");
+      const inferred = inferLocaleOptionsFromTeach({
+        nodes: observation.nodes as never,
+        examples: body.taughtRows.map((row) => ({
+          locale: row.id,
+          ...(row.identifier ? { identifier: row.identifier } : {}),
+          ...(row.label ? { label: row.label } : {}),
+          ...(row.text ? { text: row.text } : {}),
+        })),
+      });
+      const existing = appMap.variables[variableInfer.variableId!];
+      const at = Math.max(now(), appMap.updatedAt);
+      const variable = {
+        id: variableInfer.variableId!,
+        organizationId: appMap.organizationId,
+        projectId: appMap.projectId,
+        appMapId: appMap.id,
+        createdAt: existing?.createdAt ?? at,
+        updatedAt: at,
+        name:
+          body.name?.trim() ||
+          existing?.name ||
+          (body.kind === "language" ? "Language" : variableInfer.variableId!),
+        kind: body.kind ?? existing?.kind ?? "custom",
+        apply: body.apply ?? existing?.apply ?? { kind: "list" as const },
+        options: stabilizeOptionIds(
+          inferred.options.map((option) => ({
+            id: option.locale,
+            ...(option.identifier ? { identifier: option.identifier } : {}),
+            ...(option.label ? { label: option.label } : {}),
+            ...(option.text ? { text: option.text } : {}),
+          })),
+        ),
+        ...(existing?.restoreId ? { restoreId: existing.restoreId } : {}),
+        ...(existing?.screenshotEach !== undefined
+          ? { screenshotEach: existing.screenshotEach }
+          : {}),
+      };
+      const mutation = {
+        operationId: "app-map.variable.save" as const,
+        input: {
+          appMapId: appMap.id,
+          variableId: variable.id,
+          expectedRevision: appMap.revision,
+          variable,
+        },
+      };
+      json(response, 200, {
+        appMapId: appMap.id,
+        expectedRevision: appMap.revision,
+        capturedAt: observation.capturedAt,
+        variable,
+        mutation,
+      });
+    } finally {
+      if (session) {
+        if (!["committed", "cancelled", "failed"].includes(session.state)) {
+          await authoringSessions
+            .cancel(session.id, createAuthoringRuntime())
+            .catch(() => undefined);
+        }
+        await authoringSessions.cleanup(session.id).catch(() => undefined);
+      }
+    }
+    return true;
+  }
 
   const screenCapture = matchPath(pathname, "/app-maps/:appMapId/screens/capture");
   if (method === "POST" && screenCapture) {

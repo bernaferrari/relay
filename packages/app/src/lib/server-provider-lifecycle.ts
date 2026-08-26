@@ -32,9 +32,12 @@ export type ServerProviderLifecycleDependencies<Handle = ReturnType<typeof setIn
 export function createServerProviderLifecycle<Handle = ReturnType<typeof setInterval>>(
   input: ServerProviderLifecycleDependencies<Handle>,
 ) {
-  const timers =
-    input.timers ??
-    ({ setInterval, clearInterval } as unknown as ServerProviderLifecycleTimers<Handle>);
+  const timers: ServerProviderLifecycleTimers<Handle> = input.timers ?? {
+    setInterval: (callback, delayMs) =>
+      globalThis.setInterval(callback, delayMs) as unknown as Handle,
+    clearInterval: (handle) =>
+      globalThis.clearInterval(handle as unknown as ReturnType<typeof setInterval>),
+  };
   let pollTimer: Handle | undefined;
   let startPromise: Promise<void> | undefined;
   let pollPromise: Promise<void> | undefined;

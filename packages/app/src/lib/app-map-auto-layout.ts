@@ -84,7 +84,7 @@ const SIBLING_MOVEMENT_BUDGET = 1;
 /**
  * How wide a shelf row grows before it wraps.
  *
- * Seven is roughly the reach of a journey: it keeps a fan from being the thing
+ * Seven is roughly the reach of a path: it keeps a fan from being the thing
  * that sets the map's width while letting it wrap like text rather than stack
  * like a ribbon. It is what every branch is arranged against, so that the
  * arrangement a map gets does not depend on how its shelves happened to wrap.
@@ -111,7 +111,7 @@ const READING_PANE_ASPECT = 2;
 /** Air between two roots. Nothing joins them, so the gap is the only thing
  * saying so. */
 const ROOT_BAND_GAP_ROWS = 1;
-/** Air between the last journey and the band of screens that have no path yet. */
+/** Air between the last path and the band of screens that have no path yet. */
 const LOOSE_BAND_GAP_ROWS = 1.5;
 /** How wide the loose band grows before it wraps when the journeys are narrow. */
 const MIN_LOOSE_BAND_COLUMNS = 4;
@@ -119,7 +119,7 @@ const MIN_LOOSE_BAND_COLUMNS = 4;
  * How tall a root may be and still share a band with another root: two rows of
  * content and the gap between them.
  *
- * A root taller than that is a journey to be read down its own rows, and two of
+ * A root taller than that is a path to be read down its own rows, and two of
  * those side by side line their rows up with each other and read as one tree,
  * which is exactly the thing this layout exists to prevent. Below it a root is a
  * side path — a couple of screens the crawl reached from a state it never found
@@ -467,7 +467,7 @@ function layoutPrimaryForest(
     return entryDelta || (lane.get(left) ?? 0) - (lane.get(right) ?? 0);
   });
 
-  // A screen with no edge at all is not the head of a journey; it is a capture
+  // A screen with no edge at all is not the head of a path; it is a capture
   // waiting for one. Knowing which blocks the graph actually joins lets the
   // forest keep its vertical space for paths.
   const linked = new Set(scoreEdges.flatMap((edge) => [edge.from, edge.to]));
@@ -555,7 +555,7 @@ function layoutForestPositions(input: {
   edgeSourceOffset: ReadonlyMap<string, number>;
   /** Blocks the graph joins to something. Everything else is a loose capture. */
   linked: ReadonlySet<string>;
-  /** Declared flow starts. A journey somebody named begins the map however
+  /** Declared flow starts. A path somebody named begins the map however
    * short it is, so it is never packed away as a side path. */
   entries: readonly string[];
   /** How wide a shelf row grows before it wraps, chosen for this whole map. */
@@ -649,7 +649,7 @@ function layoutForestPositions(input: {
     });
   };
   // A crawl accepts every state it saw, including the ones it never found a way
-  // out of: a settings map is a journey plus a drift of Back and Screen frames
+  // out of: a settings map is a path plus a drift of Back and Screen frames
   // with no edge at all. Giving each of those its own row turned a readable tree
   // into a mostly empty ribbon several screens tall, so they wrap into a band
   // under the journeys instead of extending the spine.
@@ -696,7 +696,7 @@ type RootBand = { rootIds: readonly string[]; rows: number };
  *
  * So short roots are packed side by side under the taller ones, in observed
  * order, the way a fan of terminal screens is packed into a shelf. Two rules
- * keep it honest. Packing may never make the map wider than its widest journey
+ * keep it honest. Packing may never make the map wider than its widest path
  * already is, so a narrow map of short paths still reads as one column per path
  * and nothing is pushed off-canvas. And a band leaves an empty column between
  * two roots, because the graph joins nothing across that gap — the arrangement

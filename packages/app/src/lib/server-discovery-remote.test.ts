@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { RelayClient } from "@relay/client";
 import {
   approveDiscoverySuggestion,
   backtrackDiscovery,
@@ -35,33 +36,35 @@ function unknownIosMutationError(sessionId: string) {
 
 test("builds discovery requests and preserves session identity", async () => {
   const calls: string[] = [];
-  const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
-    calls.push(`${init?.method ?? "GET"} ${path}`);
-    if (path.endsWith("/interact")) {
-      return { transition: { changedScreen: true } } as T;
-    }
-    return { session: { id: "session-1", status: "running" } } as T;
-  };
-  const session = await createDiscoverySession(request, { name: "Smoke", targetId: "pixel" });
-  await setDiscoveryStatus(request, session.id, "paused");
-  const outcome = await backtrackDiscovery(request, session.id);
+  const client = {
+    invoke: async (operationId: string, input: Record<string, unknown>) => {
+      calls.push(`${operationId} ${JSON.stringify(input)}`);
+      if (operationId === "discovery.interact") {
+        return { transition: { changedScreen: true } };
+      }
+      return { session: { id: "session-1", status: "running" } };
+    },
+  } as unknown as RelayClient;
+  const session = await createDiscoverySession(client, { name: "Smoke", targetId: "pixel" });
+  await setDiscoveryStatus(client, session.id, "paused");
+  const outcome = await backtrackDiscovery(client, session.id);
   assert.equal(
     discoveryScreenUrl("http://relay", "session-1", "screen/1"),
     "http://relay/discovery/session-1/screens/screen%2F1",
   );
   assert.deepEqual(outcome, { status: "succeeded", changedScreen: true });
   assert.deepEqual(calls, [
-    "POST /discovery",
-    "POST /discovery/session-1/status",
-    "POST /discovery/session-1/interact",
+    'discovery.create {"name":"Smoke","targetId":"pixel"}',
+    'discovery.status.update {"sessionId":"session-1","status":"paused"}',
+    'discovery.interact {"sessionId":"session-1","kind":"back"}',
   ]);
 });
 
 for (const interaction of [
   {
     name: "approved suggestion",
-    run: (request: Parameters<typeof approveDiscoverySuggestion>[0], sessionId: string) =>
-      approveDiscoverySuggestion(request, {
+    run: (client: Parameters<typeof approveDiscoverySuggestion>[0], sessionId: string) =>
+      approveDiscoverySuggestion(client, {
         sessionId,
         control: {
           id: "settings",
@@ -69,31 +72,33 @@ for (const interaction of [
           target: { label: "Settings" },
         },
       }),
-    expectedBody: { kind: "label", label: "Settings" },
+    expectedInput: { sessionId: "map-1", kind: "label", label: "Settings" },
     screenshotCaption: "review before retry · approve Settings",
   },
   {
     name: "backtrack",
-    run: (request: Parameters<typeof backtrackDiscovery>[0], sessionId: string) =>
-      backtrackDiscovery(request, sessionId),
-    expectedBody: { kind: "back" },
+    run: (client: Parameters<typeof backtrackDiscovery>[0], sessionId: string) =>
+      backtrackDiscovery(client, sessionId),
+    expectedInput: { sessionId: "map-1", kind: "back" },
     screenshotCaption: "review before retry · backtrack",
   },
 ]) {
   test(`Discovery ${interaction.name} preserves an unknown iOS outcome without retrying`, async () => {
     const sessionId = "map-1";
-    const calls: Array<{ path: string; body: unknown }> = [];
-    const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
-      calls.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-      throw unknownIosMutationError(sessionId);
-    };
+    const calls: Array<{ operationId: string; input: unknown }> = [];
+    const client = {
+      invoke: async (operationId: string, input: unknown) => {
+        calls.push({ operationId, input });
+        throw unknownIosMutationError(sessionId);
+      },
+    } as unknown as RelayClient;
 
-    const outcome = await interaction.run(request, sessionId);
+    const outcome = await interaction.run(client, sessionId);
 
     assert.deepEqual(calls, [
       {
-        path: "/discovery/map-1/interact",
-        body: interaction.expectedBody,
+        operationId: "discovery.interact",
+        input: interaction.expectedInput,
       },
     ]);
     assert.deepEqual(outcome, {

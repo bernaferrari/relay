@@ -1,12 +1,9 @@
 import * as z from "zod/v4";
 import {
   identifier,
+  queryBoolean,
   targetReference,
 } from "./operation-schema-primitives.js";
-
-const queryBoolean = z
-  .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
-  .transform((value) => value === true || value === "true" || value === "1");
 
 export const executionTargetInputSchema = z.discriminatedUnion("kind", [
   z
@@ -59,6 +56,9 @@ export const coreTargetOperationInputSchemas = {
       full: queryBoolean
         .optional()
         .describe("Return the full accessibility tree. Default is a digest."),
+      interactiveOnly: queryBoolean
+        .optional()
+        .describe("Return only interactive controls for a compact live overlay."),
       visual: queryBoolean.optional(),
     })
     .strict(),
@@ -67,6 +67,9 @@ export const coreTargetOperationInputSchemas = {
       ...targetReference,
       previewX: z.coerce.number().optional(),
       previewY: z.coerce.number().optional(),
+      caption: z.string().min(1).optional(),
+      jobId: z.string().min(1).optional(),
+      ephemeral: queryBoolean.optional(),
     })
     .strict(),
   "target.recover": z

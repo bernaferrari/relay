@@ -54,18 +54,10 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
       ],
       note: "A Variable changes one reusable dimension. A Combine multiplies one or more Variables by one or more Tests. appLocale Variables stay when the compiled Test has an expect-screen; they relaunch if stay cannot be proved. apply.relaunch: true still relaunches.",
     }),
-    path("state-set save", ["appMapId", "variableId"], undefined, {
-      summary: "Alias of variable save",
-    }),
-    path("option-set save", ["appMapId", "variableId"], undefined, {
-      summary: "Alias of variable save",
-    }),
   ),
   mapped(
     "app-map.variable.remove",
     path("variable remove", ["appMapId", "variableId"]),
-    path("state-set remove", ["appMapId", "variableId"]),
-    path("option-set remove", ["appMapId", "variableId"]),
   ),
   ...graphTestCommandDescriptors,
   mapped(
@@ -83,15 +75,6 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
         "relay combine preflight grok-android language-x-settings",
         'relay combine preflight grok-android language-x-settings --input \'{"serial":"DEVICE"}\'',
       ],
-    }),
-    path("combine dry-run", ["appMapId", "combineId"], undefined, {
-      summary: "Alias of combine preflight",
-    }),
-    path("run-matrix preflight", ["appMapId", "combineId"], undefined, {
-      summary: "Alias of combine preflight",
-    }),
-    path("run-matrix dry-run", ["appMapId", "combineId"], undefined, {
-      summary: "Alias of combine preflight",
     }),
   ),
   mapped(
@@ -123,16 +106,10 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
       ],
       note: "Each cell applies one value from every Variable, then runs every selected Test.",
     }),
-    path("run-matrix save", ["appMapId", "combineId"], undefined, {
-      summary: "Alias of combine save",
-    }),
-    path("combo save", ["appMapId", "combineId"]),
   ),
   mapped(
     "app-map.combine.remove",
     path("combine remove", ["appMapId", "combineId"]),
-    path("run-matrix remove", ["appMapId", "combineId"]),
-    path("combo remove", ["appMapId", "combineId"]),
   ),
   mapped(
     "app-map.flow.run",

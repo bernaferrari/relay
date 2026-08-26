@@ -4,7 +4,7 @@ import type { RelayOperationMap } from "./operation-map.js";
 export type CombineOperationId =
   | "job.combine.start"
   | "job.combine.export"
-  | "job.combine.infer"
+  | "job.combine.analysis"
   | "job.combine.campaign.get"
   | "job.combine.campaign.resume"
   | "job.combine.campaign.cancel";
@@ -21,6 +21,9 @@ export const combineOperationDefinitions = [
     targetCapabilities: ["tap", "snapshot", "screenshot", "launch"],
   }),
   query("job.combine.export", "Export a Combine pack", "/jobs/combine/:batchId/export", {
+    category: "execution",
+  }),
+  query("job.combine.analysis", "Analyze Combine evidence", "/jobs/combine/:batchId/analysis", {
     category: "execution",
   }),
   query(
@@ -48,12 +51,5 @@ export const combineOperationDefinitions = [
     "POST",
     "/jobs/combine/:batchId/cancel",
     { category: "execution", idempotency: "inherent" },
-  ),
-  command(
-    "job.combine.infer",
-    "Infer variable rows from taught live-screen rows",
-    "POST",
-    "/jobs/combine/infer",
-    { category: "execution" },
   ),
 ] as const;

@@ -79,52 +79,8 @@ export const executionOperationSchemas = {
       prodAccountMatch: z.string().optional(),
     })
     .strict(),
-  "job.locale-matrix.start": z
-    .object({
-      appMapId: z.string().optional(),
-      flowId: z.string().optional(),
-      testId: z.string().optional(),
-      variableId: z.string().optional(),
-      expectedAppMapRevision: natural("Current App Map revision").optional(),
-      serial: z.string().optional(),
-      profileId: z.string().optional(),
-      preset: z.literal("grok").optional(),
-      locales: z.array(z.string()).optional(),
-      scope: unknownRecord.optional(),
-    })
-    .catchall(z.unknown()),
-  "job.locale-matrix.materialize": z
-    .object({
-      appMapId: z.string().optional(),
-      flowId: z.string().optional(),
-      testId: z.string().optional(),
-      variableId: z.string().optional(),
-      expectedAppMapRevision: natural("Current App Map revision").optional(),
-      locales: z.array(z.string()).optional(),
-      profileId: z.string().optional(),
-      preset: z.literal("grok").optional(),
-      scope: unknownRecord.optional(),
-      projectId: z.string().optional(),
-    })
-    .strict(),
-  "job.locale-matrix.export": batchRef,
-  "job.locale-matrix.analysis": batchRef,
-  "job.locale-matrix.infer": z
-    .object({
-      serial: identifier("Connected device serial"),
-      taughtRows: z.array(unknownRecord).min(1),
-      profileId: z.string().optional(),
-    })
-    .strict(),
   "job.combine.export": batchRef,
-  "job.combine.infer": z
-    .object({
-      appMapId: identifier("App Map identifier"),
-      variableId: identifier("Variable identifier"),
-      target: authoringTarget,
-      taughtRows: z.array(unknownRecord).min(1),
-    })
-    .strict(),
+  "job.combine.analysis": batchRef,
   "run.list": z
     .object({
       limit: z.number().int().positive().optional(),

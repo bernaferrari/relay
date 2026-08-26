@@ -109,9 +109,9 @@ export type ReviewedDocumentOriginLedger = {
   };
 };
 
-/** The only reviewed-origin data a compiled recipe may carry. Runtime reads
+/** The only reviewed-origin data a compiled execution plan may carry. Runtime reads
  * the authoritative local projection + ledger again, so this is never a
- * bearer capability and revocation invalidates already-compiled recipes. */
+ * bearer capability and revocation invalidates already-compiled plans. */
 export type ReviewedDocumentOriginExecutionReference = {
   schemaVersion: 1;
   projection: ReviewedDocumentOriginProjection;

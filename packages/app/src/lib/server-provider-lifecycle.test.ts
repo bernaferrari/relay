@@ -176,3 +176,58 @@ test("ServerProvider cleanup fences an unfinished startup from opening SSE", asy
 
   assert.deepEqual(calls, ["sse:dispose"]);
 });
+
+test("ServerProvider default timers preserve the browser global receiver", async () => {
+  const [health] = createSignal<HealthState>("offline");
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  const handle = { kind: "receiver-sensitive-interval" } as unknown as ReturnType<
+    typeof setInterval
+  >;
+  let scheduled = false;
+  let cleared = false;
+
+  globalThis.setInterval = function (
+    this: typeof globalThis,
+    _callback: () => void,
+    delayMs?: number,
+  ) {
+    assert.equal(this, globalThis);
+    assert.equal(delayMs, 250);
+    scheduled = true;
+    return handle;
+  } as typeof setInterval;
+  globalThis.clearInterval = function (this: typeof globalThis, actualHandle: unknown) {
+    assert.equal(this, globalThis);
+    assert.equal(actualHandle, handle);
+    cleared = true;
+  } as typeof clearInterval;
+
+  try {
+    const lifecycle = createServerProviderLifecycle({
+      pollMs: 250,
+      health,
+      resolveConnection: async () => undefined,
+      restoreWorkspace: async () => undefined,
+      pollHealth: async () => undefined,
+      refreshInitial: async () => undefined,
+      normalizeWorkspace: () => undefined,
+      refreshRetry: async () => undefined,
+      refreshPoll: async () => undefined,
+      refreshRecovered: async () => undefined,
+      connectSse: () => undefined,
+      disposeSse: () => undefined,
+      stopPlayback: () => undefined,
+      releaseTargetControl: async () => undefined,
+    });
+
+    await lifecycle.start();
+    await lifecycle.dispose();
+  } finally {
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+  }
+
+  assert.equal(scheduled, true);
+  assert.equal(cleared, true);
+});

@@ -1,4 +1,4 @@
-import type { ServerRequest } from "./server-matrix-remote";
+import type { RelayClient } from "@relay/client";
 
 export type AppleDeviceSetup = {
   teamId: string;
@@ -39,54 +39,48 @@ export type AppleSetupPreflight = {
   configured: boolean;
 };
 
-export async function loadAppleDeviceSetup(request: ServerRequest): Promise<AppleSetupStatus> {
+export async function loadAppleDeviceSetup(client: RelayClient): Promise<AppleSetupStatus> {
   // This only determines whether the local runner is configured. Keep the
   // first-device path responsive; the detailed Settings view can be retried
   // instead of leaving the canvas in an indefinite checking state.
-  return request<AppleSetupStatus>("/settings/devices/apple", undefined, 5_000);
+  return client.resource<AppleSetupStatus>("/settings/devices/apple", {
+    signal: AbortSignal.timeout(5_000),
+  });
 }
 
 export async function loadAppleSetupPreflight(
-  request: ServerRequest,
+  client: RelayClient,
 ): Promise<AppleSetupPreflight> {
-  return request<AppleSetupPreflight>("/settings/devices/apple/preflight", undefined, 4_000);
+  return client.resource<AppleSetupPreflight>("/settings/devices/apple/preflight", {
+    signal: AbortSignal.timeout(4_000),
+  });
 }
 
-export async function loadAndroidDeviceSetup(request: ServerRequest): Promise<AndroidSetupStatus> {
-  return request<AndroidSetupStatus>("/settings/devices/android");
+export async function loadAndroidDeviceSetup(client: RelayClient): Promise<AndroidSetupStatus> {
+  return client.resource<AndroidSetupStatus>("/settings/devices/android");
 }
 
 export async function loadAndroidAppLocales(
-  request: ServerRequest,
+  client: RelayClient,
   serial: string,
   packageName: string,
 ): Promise<string[]> {
-  const query = new URLSearchParams({ serial, package: packageName });
-  const result = await request<{ locales: string[] }>(`/device/app/locales?${query}`);
+  const result = await client.invoke("target.app.locales", { serial, package: packageName });
   return result.locales;
 }
 
 export async function saveAppleDeviceSetup(
-  request: ServerRequest,
+  client: RelayClient,
   input: AppleDeviceSetup,
 ): Promise<AppleSetupStatus["setup"]> {
-  const result = await request<{ setup: AppleSetupStatus["setup"] }>("/settings/devices/apple", {
-    method: "PUT",
-    body: JSON.stringify(input),
-  });
+  const result = await client.invoke("workspace.apple-device.update", input);
   return result.setup;
 }
 
 export async function saveIosLivePreview(
-  request: ServerRequest,
+  client: RelayClient,
   backend: IosLivePreviewBackend,
 ): Promise<AppleSetupStatus["setup"]> {
-  const result = await request<{ setup: AppleSetupStatus["setup"] }>(
-    "/settings/devices/apple/live-preview",
-    {
-      method: "PUT",
-      body: JSON.stringify({ backend }),
-    },
-  );
+  const result = await client.invoke("workspace.apple-live-preview.update", { backend });
   return result.setup;
 }

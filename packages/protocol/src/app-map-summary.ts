@@ -11,10 +11,8 @@ export type AppMapSummaryPresentation = {
 
 const commandPathLists: Record<string, AppMapGetList> = {
   "variable list": "variables",
-  "state-set list": "variables",
   "test list": "tests",
   "combine list": "combines",
-  "run-matrix list": "combines",
 };
 
 export function appMapGetListForCommandPath(

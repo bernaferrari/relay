@@ -1,8 +1,10 @@
 import type { Accessor, Setter } from "solid-js";
+import type { RelayClient } from "@relay/client";
 import { humanError } from "./human-error";
 import type {
   CompatibilityMatrix,
   MatrixExpansion,
+  OperationInput,
   TargetDefinition,
   TargetPreflight,
   TargetProfile,
@@ -16,7 +18,6 @@ import {
   resolveMatrix,
   saveMatrix,
 } from "./server-matrix-remote";
-import type { ServerRequest } from "./server-matrix-remote";
 import {
   deleteTarget,
   listTargetProfiles,
@@ -27,7 +28,7 @@ import {
 } from "./server-target-remote";
 
 type TargetControllerDependencies = {
-  request: ServerRequest;
+  client: () => Promise<RelayClient>;
   health: Accessor<string>;
   matrices: Accessor<CompatibilityMatrix[]>;
   selectedDevice: Accessor<string | null>;
@@ -42,15 +43,15 @@ type TargetControllerDependencies = {
 export function createServerTargetController(deps: TargetControllerDependencies) {
   async function refreshTargets(): Promise<void> {
     if (deps.health() === "offline") return;
-    deps.setTargets(await listTargets(deps.request));
+    deps.setTargets(await listTargets(await deps.client()));
   }
   async function refreshTargetProfiles(): Promise<void> {
     if (deps.health() === "offline") return;
-    deps.setTargetProfiles(await listTargetProfiles(deps.request));
+    deps.setTargetProfiles(await listTargetProfiles(await deps.client()));
   }
   async function refreshMatrices(): Promise<void> {
     if (deps.health() === "offline") return;
-    const data = await deps.request<{ matrices: CompatibilityMatrix[] }>("/matrices");
+    const data = await (await deps.client()).invoke("matrix.list", {});
     deps.setMatrices(data.matrices ?? []);
   }
   async function saveCompatibilityMatrix(input: {
@@ -59,7 +60,7 @@ export function createServerTargetController(deps: TargetControllerDependencies)
     selectors: CompatibilityMatrix["selectors"];
   }): Promise<CompatibilityMatrix> {
     const data = await saveMatrix(
-      deps.request,
+      await deps.client(),
       input,
       deps.matrices().some((matrix) => matrix.id === input.id),
     );
@@ -67,15 +68,15 @@ export function createServerTargetController(deps: TargetControllerDependencies)
     return data.matrix;
   }
   async function deleteCompatibilityMatrix(id: string): Promise<void> {
-    await deleteMatrix(deps.request, id);
+    await deleteMatrix(await deps.client(), id);
     await refreshMatrices();
   }
-  function resolveCompatibilityMatrix(id: string): Promise<MatrixExpansion> {
-    return resolveMatrix(deps.request, id);
+  async function resolveCompatibilityMatrix(id: string): Promise<MatrixExpansion> {
+    return resolveMatrix(await deps.client(), id);
   }
   async function loadCompatibilityMatrixYaml(id: string): Promise<string | null> {
     try {
-      return await loadMatrixYaml(deps.request, id);
+      return await loadMatrixYaml(await deps.client(), id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const readable = humanError(error, "Could not open this compatibility matrix");
@@ -89,7 +90,7 @@ export function createServerTargetController(deps: TargetControllerDependencies)
     conflict: "reject" | "replace" = "reject",
   ): Promise<CompatibilityMatrix | null> {
     try {
-      const matrix = await importMatrixYaml(deps.request, yaml, conflict);
+      const matrix = await importMatrixYaml(await deps.client(), yaml, conflict);
       await refreshMatrices();
       toast(`Imported “${matrix.name}”`, "success");
       return matrix;
@@ -101,27 +102,23 @@ export function createServerTargetController(deps: TargetControllerDependencies)
       return null;
     }
   }
-  async function saveBrowserTarget(input: {
-    id?: string;
-    name: string;
-    startUrl: string;
-    executablePath?: string;
-    headless?: boolean;
-  }): Promise<TargetDefinition> {
-    const target = await saveBrowserTargetRemote(deps.request, input);
+  async function saveBrowserTarget(
+    input: OperationInput<"target.create">,
+  ): Promise<TargetDefinition> {
+    const target = await saveBrowserTargetRemote(await deps.client(), input);
     await Promise.all([refreshTargets(), refreshTargetProfiles(), deps.refreshDevices()]);
     return target;
   }
   async function deleteTargetRemote(id: string): Promise<void> {
-    await deleteTarget(deps.request, id);
+    await deleteTarget(await deps.client(), id);
     if (deps.selectedDevice() === id) await deps.selectDevice(null);
     await Promise.all([refreshTargets(), refreshTargetProfiles(), deps.refreshDevices()]);
   }
-  function preflightTargetRemote(id: string): Promise<TargetPreflight> {
-    return preflightTarget(deps.request, id);
+  async function preflightTargetRemote(id: string): Promise<TargetPreflight> {
+    return preflightTarget(await deps.client(), id);
   }
   async function openBrowserTarget(id: string): Promise<void> {
-    const session = await openBrowserTargetRemote(deps.request, id);
+    const session = await openBrowserTargetRemote(await deps.client(), id);
     toast(`${session.name} is ready for sign in`, "success");
   }
   return {

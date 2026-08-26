@@ -296,7 +296,7 @@ test("an expired share renders a 410 tombstone page with no run data", async () 
       "base64url",
     );
     const body = Buffer.from(
-      JSON.stringify({ v: 1, id: created.json.share.id, exp: 1 }),
+      JSON.stringify({ v: 1, id: (created.json.share as { id: string }).id, exp: 1 }),
       "utf8",
     ).toString("base64url");
     const signature = createHmac("sha256", secret).update(body).digest("base64url");

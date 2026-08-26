@@ -1,5 +1,4 @@
 import {
-  For,
   Show,
   Suspense,
   createEffect,
@@ -25,13 +24,7 @@ import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import { toast } from "../context/toast";
 import { confirmAction } from "./confirm-dialog";
 import { trapFocus } from "../lib/modal";
-import {
-  chromeMenuItem,
-  chromeMenuItemDanger,
-  modalPanel,
-  modalScrim,
-  productIconButton,
-} from "../lib/ui";
+import { chromeMenuItem, chromeMenuItemDanger, productIconButton } from "../lib/ui";
 import { WorkspaceSkeleton } from "./workspace-skeleton";
 import {
   shellRoot,
@@ -56,9 +49,11 @@ import { normalizeMapLibraryArea, type MapLibraryArea } from "./map-library";
 import { ShellTopbarTitle } from "./studio-shell-topbar-title";
 import { StudioImportReviewDialog, type ImportReview } from "./studio-import-review-dialog";
 import { StudioAuthoringWorkspace } from "./studio-authoring-workspace";
+import { StudioShellShortcutsSheet } from "./studio-shell-shortcuts-sheet";
+import { StudioShellCombineRail } from "./studio-shell-combine-rail";
+import { StudioShellVariablesDialog } from "./studio-shell-variables-dialog";
 import { nextMapTitle, readRememberedDevicePanelPreference } from "../lib/studio-shell-preferences";
 import {
-  AppMapCombine,
   DataWorkspace,
   EmptyAppMap,
   MapLibrary,
@@ -975,36 +970,22 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   </Show>
                 </Show>
                 <Show when={combineOpen()}>
-                  <aside
-                    class={cn(
-                      "relative z-[6] flex min-h-0 shrink-0 overflow-hidden border-l border-[var(--border-strong-base)] bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[-12px_0_32px_rgb(0_0_0/10%)] transition-[width] max-[760px]:absolute max-[760px]:inset-y-2 max-[760px]:right-2 max-[760px]:rounded-2xl max-[760px]:border",
-                      combineCollapsed()
-                        ? "w-[44px] max-[760px]:w-[44px]"
-                        : "w-[clamp(420px,40vw,560px)] max-[760px]:w-[min(560px,calc(100%-16px))]",
-                    )}
-                    aria-hidden={combineCollapsed() || undefined}
-                    aria-label="Combine"
-                    onWheel={(event) => event.stopPropagation()}
-                  >
-                    <Suspense fallback={<WorkspaceSkeleton label="combine" />}>
-                      <AppMapCombine
-                        combineId={combineFocusId()}
-                        focusSection={combineFocusSection()}
-                        collapsed={combineCollapsed()}
-                        onOpenDevice={() => {
-                          setCombineCollapsed(true);
-                          if (!devicePanelOpen()) {
-                            window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
-                          }
-                        }}
-                        onClose={() => {
-                          setCombineOpen(false);
-                          setCombineFocusId(undefined);
-                          setCombineFocusSection(undefined);
-                        }}
-                      />
-                    </Suspense>
-                  </aside>
+                  <StudioShellCombineRail
+                    combineId={combineFocusId()}
+                    focusSection={combineFocusSection()}
+                    collapsed={combineCollapsed()}
+                    onOpenDevice={() => {
+                      setCombineCollapsed(true);
+                      if (!devicePanelOpen()) {
+                        window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
+                      }
+                    }}
+                    onClose={() => {
+                      setCombineOpen(false);
+                      setCombineFocusId(undefined);
+                      setCombineFocusSection(undefined);
+                    }}
+                  />
                 </Show>
               </div>
             </section>
@@ -1022,91 +1003,16 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         </OfflineGate>
       </main>
       <Show when={variablesOpen()}>
-        <div
-          class={cn(modalScrim, "z-[var(--z-modal-nested)] flex items-center justify-center p-5")}
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) setVariablesOpen(false);
+        <StudioShellVariablesDialog
+          ref={(element) => {
+            variablesDialog = element;
           }}
-        >
-          <section
-            ref={(element) => {
-              variablesDialog = element;
-            }}
-            class={cn(modalPanel, "h-[min(82vh,760px)] w-[min(100%,980px)] outline-none")}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Variables"
-            tabindex={-1}
-          >
-            <Suspense fallback={<WorkspaceSkeleton label="variables" />}>
-              <DataWorkspace
-                embedded
-                onClose={() => setVariablesOpen(false)}
-                onConfigureProvider={() => {
-                  setVariablesOpen(false);
-                  props.onOpenSettings();
-                }}
-              />
-            </Suspense>
-          </section>
-        </div>
-      </Show>
-      <Show when={helpOpen()}>
-        <div
-          class={cn(modalScrim, "z-[var(--z-modal-nested)] flex items-center justify-center p-5")}
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) setHelpOpen(false);
+          onClose={() => setVariablesOpen(false)}
+          onConfigureProvider={() => {
+            setVariablesOpen(false);
+            props.onOpenSettings();
           }}
-        >
-          <section
-            class={cn(modalPanel, "w-[min(100%,420px)] outline-none")}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Keyboard shortcuts"
-          >
-            <header class="flex items-center justify-between border-b border-border-weak-base px-4 py-3">
-              <h2 class="m-0 text-title font-medium tracking-tight text-text-strong">
-                Keyboard shortcuts
-              </h2>
-              <button
-                type="button"
-                class={productIconButton}
-                aria-label="Close shortcuts"
-                onClick={() => setHelpOpen(false)}
-              >
-                <Icon name="x" size={14} />
-              </button>
-            </header>
-            <div class="grid gap-0.5 p-3">
-              <For
-                each={[
-                  ["Tools", "V / H / D", "Select, pan (hand), and device"],
-                  ["Pan canvas", "Space + drag", "Temporarily grab the canvas"],
-                  ["Command palette", "⌘K", "Search every command"],
-                  ["Zoom", "+ / −", "Zoom the map in and out"],
-                  ["Undo", "⌘Z", "Undo the last canvas edit"],
-                  ["Redo", "⇧⌘Z", "Redo an undone edit"],
-                ]}
-              >
-                {([name, keys, description]) => (
-                  <div class="flex min-h-9 items-center gap-3 rounded-md px-2 hover:bg-surface-raised-base-hover">
-                    <span class="min-w-0 flex-1">
-                      <span class="block text-caption font-medium text-text-strong">{name}</span>
-                      <span class="block text-micro text-text-weak">{description}</span>
-                    </span>
-                    <kbd class="shrink-0 rounded bg-surface-base px-1.5 py-0.5 font-mono text-micro text-text-weak">
-                      {keys}
-                    </kbd>
-                  </div>
-                )}
-              </For>
-              <p class="m-0 px-2 pt-2 text-micro/[1.5] text-text-weak">
-                Product flows and walkthroughs live in{" "}
-                <code class="font-mono">docs/PRODUCT_FLOWS.md</code>.
-              </p>
-            </div>
-          </section>
-        </div>
+        />
       </Show>
       <Show when={importReview()}>
         {(review) => (

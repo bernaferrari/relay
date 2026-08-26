@@ -1,7 +1,7 @@
 import { isCrawlFilingSlot } from "@relay/protocol";
 import type { CanvasPoint } from "./app-map-canvas-layout";
 
-/** Below this a map has no arrangement to preserve or to read as a journey. */
+/** Below this a map has no arrangement to preserve or to read as a path. */
 const MIN_FILED_SCREENS = 2;
 
 /**
@@ -12,7 +12,7 @@ const MIN_FILED_SCREENS = 2;
  * observed state. That is the shape of the accept path, not of the app: it reads
  * as a contact sheet of phones rather than the paths between them, which is the
  * one thing the canvas exists to show. Recognising it lets the canvas offer the
- * tidy journey it can already compute for the same graph, instead of a map
+ * tidy path it can already compute for the same graph, instead of a map
  * nobody has ever arranged looking exactly like one somebody has.
  *
  * One screen dragged anywhere is an arrangement, and the whole map is then left

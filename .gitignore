@@ -47,3 +47,4 @@ selfIdentity.plist
 .beads-credential-key
 # bd worktree
 .worktrees/gj1-4-foreground/
+packages/ios-preview-producer/ios-preview-producer

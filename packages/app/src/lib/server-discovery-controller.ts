@@ -1,15 +1,13 @@
 import type { Accessor } from "solid-js";
+import type { RelayClient } from "@relay/client";
 import type {
-  DiscoveryAgentContext,
   DiscoveryControl,
   DiscoveryCoverageReport,
   DiscoveryDecisionProvenance,
-  DiscoveryJourney,
-  DiscoveryScope,
+  DiscoveryExplorationTimeline,
   DiscoverySession,
+  OperationInput,
 } from "@relay/protocol";
-import { toast } from "../context/toast";
-import type { ServerRequest } from "./server-matrix-remote";
 import {
   approveDiscoverySuggestion as approveDiscoverySuggestionRemote,
   backtrackDiscovery as backtrackDiscoveryRemote,
@@ -18,7 +16,7 @@ import {
   createDiscoverySession,
   discoveryScreenUrl as buildDiscoveryScreenUrl,
   getDiscoveryCoverage,
-  getDiscoveryJourney,
+  getDiscoveryExplorationTimeline,
   getDiscoverySuggestion,
   listDiscoverySessions,
   renameDiscoverySession,
@@ -29,7 +27,7 @@ import {
 } from "./server-discovery-remote";
 
 type DiscoveryControllerDependencies = {
-  request: ServerRequest;
+  client: () => Promise<RelayClient>;
   health: Accessor<string>;
   serverUrl: Accessor<string>;
   discoverySessions: Accessor<DiscoverySession[]>;
@@ -41,7 +39,7 @@ type DiscoveryControllerDependencies = {
 export function createServerDiscoveryController(deps: DiscoveryControllerDependencies) {
   async function refreshDiscoverySessions(): Promise<void> {
     if (deps.health() === "offline") return;
-    const data = await listDiscoverySessions(deps.request);
+    const data = await listDiscoverySessions(await deps.client());
     deps.setDiscoverySessions(data.sessions ?? []);
     if (
       deps.activeDiscoverySessionId() &&
@@ -51,13 +49,10 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
     }
   }
 
-  async function createDiscoverySessionRemote(input: {
-    name: string;
-    targetId: string;
-    scope?: Partial<DiscoveryScope>;
-    agent?: Omit<DiscoveryAgentContext, "createdBy">;
-  }): Promise<DiscoverySession> {
-    const session = await createDiscoverySession(deps.request, input);
+  async function createDiscoverySessionRemote(
+    input: OperationInput<"discovery.create">,
+  ): Promise<DiscoverySession> {
+    const session = await createDiscoverySession(await deps.client(), input);
     await refreshDiscoverySessions();
     deps.setActiveDiscoverySessionId(session.id);
     return session;
@@ -67,7 +62,7 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
     id: string,
     status: DiscoverySession["status"],
   ): Promise<DiscoverySession> {
-    const session = await setDiscoveryStatus(deps.request, id, status);
+    const session = await setDiscoveryStatus(await deps.client(), id, status);
     await refreshDiscoverySessions();
     if (status === "running") deps.setActiveDiscoverySessionId(session.id);
     else if (deps.activeDiscoverySessionId() === session.id) deps.setActiveDiscoverySessionId(null);
@@ -75,13 +70,13 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
   }
 
   async function renameDiscoverySessionRemote(id: string, name: string): Promise<DiscoverySession> {
-    const session = await renameDiscoverySession(deps.request, id, name);
+    const session = await renameDiscoverySession(await deps.client(), id, name);
     await refreshDiscoverySessions();
     return session;
   }
 
   async function captureDiscoveryScreenRemote(id: string): Promise<DiscoverySession> {
-    const session = await captureDiscoveryScreen(deps.request, id);
+    const session = await captureDiscoveryScreen(await deps.client(), id);
     await refreshDiscoverySessions();
     return session;
   }
@@ -91,14 +86,14 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
   }
 
   async function startDiscoveryExploreRemote(id: string): Promise<DiscoverySession> {
-    const session = await startDiscoveryExplore(deps.request, id);
+    const session = await startDiscoveryExplore(await deps.client(), id);
     await refreshDiscoverySessions();
     deps.setActiveDiscoverySessionId(session.id);
     return session;
   }
 
   async function cancelDiscoveryExploreRemote(id: string): Promise<DiscoverySession> {
-    const session = await cancelDiscoveryExplore(deps.request, id);
+    const session = await cancelDiscoveryExplore(await deps.client(), id);
     await refreshDiscoverySessions();
     if (deps.activeDiscoverySessionId() === session.id) deps.setActiveDiscoverySessionId(null);
     return session;
@@ -108,15 +103,17 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
     screenId: string;
     control: DiscoveryControl;
   } | null> {
-    return getDiscoverySuggestion(deps.request, id);
+    return getDiscoverySuggestion(await deps.client(), id);
   }
 
   async function loadDiscoveryCoverage(id: string): Promise<DiscoveryCoverageReport> {
-    return getDiscoveryCoverage(deps.request, id);
+    return getDiscoveryCoverage(await deps.client(), id);
   }
 
-  async function loadDiscoveryJourney(id: string): Promise<DiscoveryJourney> {
-    return getDiscoveryJourney(deps.request, id);
+  async function loadDiscoveryExplorationTimeline(
+    id: string,
+  ): Promise<DiscoveryExplorationTimeline> {
+    return getDiscoveryExplorationTimeline(await deps.client(), id);
   }
 
   async function approveDiscoverySuggestion(input: {
@@ -124,7 +121,7 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
     control: DiscoveryControl;
     decision?: DiscoveryDecisionProvenance;
   }): Promise<DiscoveryApprovalOutcome> {
-    const outcome = await approveDiscoverySuggestionRemote(deps.request, input);
+    const outcome = await approveDiscoverySuggestionRemote(await deps.client(), input);
     if (outcome.status === "ios-outcome-unknown") {
       // The returned review pointer is sufficient even if a background list
       // refresh is unavailable. Do not let a read failure hide the explicit
@@ -137,7 +134,7 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
   }
 
   async function backtrackDiscovery(id: string): Promise<DiscoveryBacktrackOutcome> {
-    const outcome = await backtrackDiscoveryRemote(deps.request, id);
+    const outcome = await backtrackDiscoveryRemote(await deps.client(), id);
     if (outcome.status === "ios-outcome-unknown") {
       void refreshDiscoverySessions().catch(() => undefined);
       return outcome;
@@ -157,7 +154,7 @@ export function createServerDiscoveryController(deps: DiscoveryControllerDepende
     discoveryScreenUrl,
     discoverySuggestion,
     loadDiscoveryCoverage,
-    loadDiscoveryJourney,
+    loadDiscoveryExplorationTimeline,
     approveDiscoverySuggestion,
     backtrackDiscovery,
   };

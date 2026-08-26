@@ -1,100 +1,74 @@
-import type { TargetDefinition, TargetPreflight, TargetProfile } from "@relay/protocol";
-import type { ActionInfo, DeviceInfo } from "./api-types";
-import type { ServerRequest } from "./server-matrix-remote";
+import type { RelayClient } from "@relay/client";
+import type { OperationInput, OperationOutput, TargetProfile } from "@relay/protocol";
 
-export async function listDevices(request: ServerRequest): Promise<DeviceInfo[]> {
-  const data = await request<{ devices: DeviceInfo[] }>("/devices", { cache: "no-store" });
-  return data.devices ?? [];
+type TargetClient = Pick<RelayClient, "invoke">;
+
+export async function listDevices(
+  client: TargetClient,
+): Promise<OperationOutput<"target.devices.list">["devices"]> {
+  return (await client.invoke("target.devices.list", {})).devices;
 }
 
-export async function listAndroidDevicesFast(request: ServerRequest): Promise<DeviceInfo[]> {
-  const data = await request<{ devices: DeviceInfo[] }>("/devices?phase=android", {
-    cache: "no-store",
-  });
-  return data.devices ?? [];
+export async function listAndroidDevicesFast(
+  client: TargetClient,
+): Promise<OperationOutput<"target.devices.list">["devices"]> {
+  return (await client.invoke("target.devices.list", { phase: "android" })).devices;
 }
 
-export async function listActions(request: ServerRequest): Promise<ActionInfo[]> {
-  const data = await request<{ actions: ActionInfo[] }>("/actions");
-  return data.actions ?? [];
+export async function listActions(
+  client: TargetClient,
+): Promise<OperationOutput<"target.actions.list">["actions"]> {
+  return (await client.invoke("target.actions.list", {})).actions;
 }
 
-export async function listTargets(request: ServerRequest): Promise<TargetDefinition[]> {
-  const data = await request<{ targets: TargetDefinition[] }>("/targets");
-  return data.targets ?? [];
+export async function listTargets(
+  client: TargetClient,
+): Promise<OperationOutput<"target.list">["targets"]> {
+  return (await client.invoke("target.list", {})).targets;
 }
 
-export async function listTargetProfiles(request: ServerRequest): Promise<TargetProfile[]> {
-  const data = await request<{ profiles: TargetProfile[] }>("/target-profiles");
-  return data.profiles ?? [];
+/** Target profiles have no registered operation yet, so retain the resource read. */
+export async function listTargetProfiles(client: RelayClient): Promise<TargetProfile[]> {
+  return (await client.resource<{ profiles: TargetProfile[] }>("/target-profiles")).profiles ?? [];
 }
 
 export async function bootDevice(
-  request: ServerRequest,
-  serial: string,
-  platform: string,
+  client: TargetClient,
+  input: OperationInput<"target.boot">,
 ): Promise<void> {
   // Simulator boot is slow; give it more headroom than the default timeout.
-  await request(
-    "/device/boot",
-    { method: "POST", body: JSON.stringify({ serial, platform }) },
-    120_000,
-  );
+  await client.invoke("target.boot", input, { signal: AbortSignal.timeout(120_000) });
 }
 
-export async function authorizeDevice(request: ServerRequest, serial: string): Promise<void> {
-  await request("/device/authorize", {
-    method: "POST",
-    body: JSON.stringify({ serial }),
-  });
+export async function authorizeDevice(
+  client: TargetClient,
+  input: OperationInput<"target.authorize">,
+): Promise<void> {
+  await client.invoke("target.authorize", input);
 }
 
 export async function saveBrowserTarget(
-  request: ServerRequest,
-  input: {
-    id?: string;
-    name: string;
-    startUrl: string;
-    executablePath?: string;
-    headless?: boolean;
-  },
-): Promise<TargetDefinition> {
-  const data = await request<{ target: TargetDefinition }>("/targets", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-  return data.target;
+  client: TargetClient,
+  input: OperationInput<"target.create">,
+): Promise<OperationOutput<"target.create">["target"]> {
+  return (await client.invoke("target.create", input)).target;
 }
 
-export async function deleteTarget(request: ServerRequest, id: string): Promise<void> {
-  await request(`/targets/${encodeURIComponent(id)}`, { method: "DELETE" });
+export async function deleteTarget(client: TargetClient, targetId: string): Promise<void> {
+  await client.invoke("target.delete", { targetId });
 }
 
 export async function preflightTarget(
-  request: ServerRequest,
-  id: string,
-): Promise<TargetPreflight> {
-  const data = await request<{ preflight: TargetPreflight }>(
-    `/targets/${encodeURIComponent(id)}/preflight`,
-    { method: "POST", body: "{}" },
-    30_000,
-  );
-  return data.preflight;
+  client: TargetClient,
+  targetId: string,
+): Promise<OperationOutput<"target.preflight">["preflight"]> {
+  return (await client.invoke("target.preflight", { targetId })).preflight;
 }
 
 export async function openBrowserTarget(
-  request: ServerRequest,
-  id: string,
-): Promise<{ targetId: string; name: string; url: string }> {
-  const data = await request<{
-    session: { targetId: string; name: string; url: string };
-  }>(
-    `/targets/${encodeURIComponent(id)}/open`,
-    {
-      method: "POST",
-      body: "{}",
-    },
-    30_000,
-  );
-  return data.session;
+  client: TargetClient,
+  targetId: string,
+): Promise<OperationOutput<"target.open">["session"]> {
+  return (await client.invoke("target.open", { targetId }, { signal: AbortSignal.timeout(30_000) }))
+    .session;
 }

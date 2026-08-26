@@ -28,7 +28,7 @@ export function appMapCanvasGeometry(input: {
   rotations: Accessor<Record<string, CanvasScreenRotation>>;
   /** Persisted geometry. A screen the graph has but the document has not
    * positioned yet falls back to the tree's own coordinate, which is the tidy
-   * journey for the whole graph. */
+   * path for the whole graph. */
   savedPositions: Accessor<Readonly<Record<string, CanvasPoint>>>;
   orientationFor: (node: MapTreeNode) => ScreenshotOrientationEvidence | undefined;
 }) {
@@ -36,7 +36,7 @@ export function appMapCanvasGeometry(input: {
   // and a whole map that is still the lattice an accepted crawl filed it into.
   // Both fall through to the tidy layout the tree already carries. Only the
   // reading is repaired; the save path writes what the document says, so the
-  // journey a person has been looking at becomes the document on their first
+  // path a person has been looking at becomes the document on their first
   // edit rather than behind their back.
   const positions = createMemo(() => {
     const saved = input.savedPositions();

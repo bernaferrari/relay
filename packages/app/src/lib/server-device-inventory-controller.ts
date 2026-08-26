@@ -1,13 +1,12 @@
 import { createSignal, type Accessor, type Setter } from "solid-js";
+import type { RelayClient } from "@relay/client";
 import type { DeviceInfo, HealthState } from "./api-types";
 import { interimDeviceScan, reconcileDeviceScan } from "./device-inventory";
 import { listAndroidDevicesFast, listDevices } from "./server-target-remote";
 import { preferredTargetSerial, targetIsReady } from "./target-presentation";
 
-type Request = <T = unknown>(path: string, init?: RequestInit, timeoutMs?: number) => Promise<T>;
-
 export function createServerDeviceInventoryController(input: {
-  request: Request;
+  client: () => Promise<RelayClient>;
   health: Accessor<HealthState>;
   devices: Accessor<DeviceInfo[]>;
   setDevices: Setter<DeviceInfo[]>;
@@ -60,7 +59,8 @@ export function createServerDeviceInventoryController(input: {
       };
 
       try {
-        const fullScan = listDevices(input.request);
+        const client = await input.client();
+        const fullScan = listDevices(client);
         let android: DeviceInfo[];
         try {
           const previousBySerial = new Map(
@@ -69,7 +69,7 @@ export function createServerDeviceInventoryController(input: {
               .filter((device) => device.platform === "android")
               .map((device) => [device.serial, device]),
           );
-          android = (await listAndroidDevicesFast(input.request)).map((device) => {
+          android = (await listAndroidDevicesFast(client)).map((device) => {
             const serial = String(device.serial ?? device.id ?? "");
             return { ...previousBySerial.get(serial), ...device, serial };
           });

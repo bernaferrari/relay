@@ -12,7 +12,7 @@ export type CanvasPosition = { x: number; y: number };
  * never overlaps, but it reads as a contact sheet of phones rather than the
  * paths between them. The writer and the reader have to agree about the exact
  * geometry — the canvas recognises a map whose whole geometry is still this
- * lattice and shows it as a journey instead — so the lattice lives here with
+ * lattice and shows it as a path instead — so the lattice lives here with
  * the rest of the canvas contract rather than in either of them.
  */
 export const CRAWL_FILING_LATTICE = {
@@ -175,7 +175,7 @@ export type CanvasTransition = {
   takeId?: string;
   videoTakeId?: string;
   videoClip?: RecordingClip;
-  /** How the transition was authored. All modes still compile to recipe steps. */
+  /** How the transition was authored. All modes still compile to execution steps. */
   mode?: "interaction" | "automatic" | "reusable";
   review?: ConnectionTakeReview;
   /** The first recorded interaction target, when the take captured one. */

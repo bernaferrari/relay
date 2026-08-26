@@ -1,4 +1,5 @@
 import { toast } from "../context/toast";
+import type { RelayClient } from "@relay/client";
 import { humanError } from "./human-error";
 import type {
   Frame,
@@ -8,7 +9,11 @@ import type {
   SnapshotState,
   TraceFrameRef,
 } from "./api-types";
-import type { StandaloneStepReview, StepRunResult, TargetRuntimeReadiness } from "@relay/protocol";
+import type {
+  OperationOutput,
+  StandaloneStepReview,
+  StepRunResult,
+} from "@relay/protocol";
 import { interactionBody, type InteractiveStep } from "./server-interaction";
 import {
   iosInteractionFailure,
@@ -24,10 +29,8 @@ import {
   videoUrlForRun as buildVideoUrl,
 } from "./server-urls";
 
-type Request = <T = unknown>(path: string, init?: RequestInit, timeoutMs?: number) => Promise<T>;
-
 export type CaptureServerDeps = {
-  request: Request;
+  client: () => Promise<RelayClient>;
   serverUrl: () => string;
   selectedDevice: () => string | null;
   /** The persistent H.264 input transport is Android-only. iOS always goes
@@ -52,50 +55,9 @@ export type CaptureServerDeps = {
   refreshDiscoverySessions: () => Promise<void>;
 };
 
-type ScreenshotResponse = {
-  serial?: string;
-  capturedAt: number;
-  mime: string;
-  base64: string;
-  bytes: number;
-  jobId?: string;
-  framePath?: string;
-  width?: number;
-  height?: number;
-  screenMatch?: {
-    fingerprint?: string;
-    visualFingerprint?: string;
-    matchedScreenId?: string | null;
-    status?: string;
-  };
-  proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
-  readiness?: TargetRuntimeReadiness;
-};
-
-type ScrollSurveyResponse = {
-  status: "completed" | "stopped";
-  reason: string;
-  message: string;
-  restoredStartViewport: boolean;
-  frames: Array<{
-    index: number;
-    offsetY: number;
-    appendedHeight: number;
-    screenshot: { base64: string; width: number; height: number; capturedAt: number };
-    snapshot: NonNullable<SnapshotState>;
-  }>;
-  stitched?: { base64: string; width: number; height: number; mime: string };
-  mergedNodes: SnapshotNode[];
-};
-
-export type DeviceVideoTake = {
-  id: string;
-  serial: string;
-  startedAt: number;
-  finishedAt?: number;
-  state: "recording" | "ready";
-  warning?: string;
-};
+type ScreenshotResponse = OperationOutput<"target.screenshot.capture">;
+type ScrollSurveyResponse = OperationOutput<"target.scroll-survey.capture">;
+export type DeviceVideoTake = NonNullable<OperationOutput<"target.video.start">["take"]>;
 
 export type LiveTouchAction = "down" | "move" | "up" | "cancel";
 export type LiveKeyboardInput =
@@ -256,13 +218,10 @@ export function createServerCapture(deps: CaptureServerDeps) {
   async function recordIosVideo(action: "start" | "stop"): Promise<DeviceVideoTake | null> {
     const serial = serialFor(deps);
     if (!serial) return null;
-    const result = await deps.request<{ take: DeviceVideoTake | null }>(
-      "/device/video",
-      {
-        method: "POST",
-        body: JSON.stringify({ serial, action }),
-      },
-      250_000,
+    const result = await (await deps.client()).invoke(
+      "target.video.start",
+      { serial, action },
+      { signal: AbortSignal.timeout(250_000) },
     );
     return result.take;
   }
@@ -276,13 +235,10 @@ export function createServerCapture(deps: CaptureServerDeps) {
     const serial = deps.selectedDevice();
     if (!serial) return false;
     try {
-      await deps.request(
-        "/device/touch",
-        {
-          method: "POST",
-          body: JSON.stringify({ serial, action, x, y }),
-        },
-        2000,
+      await (await deps.client()).invoke(
+        "target.touch",
+        { serial, action, x, y },
+        { signal: AbortSignal.timeout(2000) },
       );
       return true;
     } catch {
@@ -302,13 +258,10 @@ export function createServerCapture(deps: CaptureServerDeps) {
     const serial = deps.selectedDevice();
     if (!serial) return false;
     try {
-      await deps.request(
-        "/device/scroll",
-        {
-          method: "POST",
-          body: JSON.stringify({ serial, x, y, scrollX, scrollY }),
-        },
-        2000,
+      await (await deps.client()).invoke(
+        "target.scroll",
+        { serial, x, y, scrollX, scrollY },
+        { signal: AbortSignal.timeout(2000) },
       );
       return true;
     } catch {
@@ -322,13 +275,10 @@ export function createServerCapture(deps: CaptureServerDeps) {
       const serial = deps.selectedDevice();
       if (!serial) return { status: "failed" } as const;
       try {
-        await deps.request(
-          "/device/key",
-          {
-            method: "POST",
-            body: JSON.stringify({ serial, ...input }),
-          },
-          2000,
+        await (await deps.client()).invoke(
+          "target.key",
+          { serial, ...input },
+          { signal: AbortSignal.timeout(2000) },
         );
         return { status: "succeeded" } as const;
       } catch (error) {
@@ -400,10 +350,8 @@ export function createServerCapture(deps: CaptureServerDeps) {
     deps.setBusyCapture(true);
     try {
       const serial = serialFor(deps);
-      const query = serial ? `?serial=${encodeURIComponent(serial)}` : "";
-      const data = await deps.request<NonNullable<SnapshotState> & { tree?: string }>(
-        `/snapshot${query}`,
-      );
+      if (!serial) return null;
+      const data = await (await deps.client()).invoke("target.snapshot.capture", { serial });
       if (!deps.collectAccessibility()) return null;
       deps.setSnapshot(data);
       deps.appendLog(
@@ -428,12 +376,12 @@ export function createServerCapture(deps: CaptureServerDeps) {
     deps.setBusyCapture(true);
     try {
       const serial = serialFor(deps);
-      const params = new URLSearchParams();
-      if (serial) params.set("serial", serial);
-      if (caption) params.set("caption", caption);
-      if (jobId) params.set("jobId", jobId);
-      const query = params.toString() ? `?${params}` : "";
-      const data = await deps.request<ScreenshotResponse>(`/screenshot${query}`);
+      if (!serial) throw new Error("Select a device before capturing a screenshot.");
+      const data = await (await deps.client()).invoke("target.screenshot.capture", {
+        serial,
+        ...(caption ? { caption } : {}),
+        ...(jobId ? { jobId } : {}),
+      });
       const frame = deps.pushFrame({
         capturedAt: data.capturedAt,
         mime: data.mime,
@@ -470,10 +418,10 @@ export function createServerCapture(deps: CaptureServerDeps) {
     if (!serial) return null;
     deps.setBusyCapture(true);
     try {
-      const survey = await deps.request<ScrollSurveyResponse>(
-        "/capture/scroll-survey",
-        { method: "POST", body: JSON.stringify({ serial, maxScrolls: 4 }) },
-        90_000,
+      const survey = await (await deps.client()).invoke(
+        "target.scroll-survey.capture",
+        { serial, maxScrolls: 4 },
+        { signal: AbortSignal.timeout(90_000) },
       );
       for (const frame of survey.frames) {
         deps.pushFrame({
@@ -550,10 +498,11 @@ export function createServerCapture(deps: CaptureServerDeps) {
     deps.setBusyCapture(true);
     try {
       const serial = serialFor(deps);
-      const params = new URLSearchParams({ ephemeral: "1" });
-      if (serial) params.set("serial", serial);
-      const query = `?${params}`;
-      const data = await deps.request<ScreenshotResponse>(`/screenshot${query}`);
+      if (!serial) throw new Error("Select a device before copying a screenshot.");
+      const data = await (await deps.client()).invoke("target.screenshot.capture", {
+        serial,
+        ephemeral: true,
+      });
       await deps.copyImage(data.base64, data.mime);
       toast("Screenshot copied", "success");
     } catch (error) {
@@ -563,43 +512,18 @@ export function createServerCapture(deps: CaptureServerDeps) {
     }
   }
 
-  async function persistRecordingEvidence(
-    recipeId: string,
-    evidenceId: string,
-    frame: Frame,
-  ): Promise<{ bytes: number; sha256: string; deduplicated: boolean } | null> {
-    try {
-      const saved = await deps.request<{ bytes: number; sha256: string; deduplicated: boolean }>(
-        `/recipes/${encodeURIComponent(recipeId)}/evidence`,
-        {
-          method: "POST",
-          body: JSON.stringify({ evidenceId, mime: frame.mime, base64: frame.base64 }),
-        },
-      );
-      deps.appendLog(`saved recording evidence ${evidenceId}`, "success");
-      return saved;
-    } catch (error) {
-      deps.appendLog(
-        `recording evidence not saved · ${error instanceof Error ? error.message : String(error)}`,
-        "error",
-      );
-      return null;
-    }
-  }
-
   async function pollLiveFrame(): Promise<void> {
     try {
       const serial = serialFor(deps);
-      const params = new URLSearchParams({ ephemeral: "1" });
-      if (serial) params.set("serial", serial);
       // The first iOS read may install/sign the local XCTest runner. It is a
       // one-time operation and legitimately takes longer than Android's
       // screenshot path, so a five second transport timeout turns setup into
       // a phantom "Loading screen" race.
-      const data = await deps.request<ScreenshotResponse>(
-        `/screenshot?${params}`,
-        undefined,
-        30_000,
+      if (!serial) return;
+      const data = await (await deps.client()).invoke(
+        "target.screenshot.capture",
+        { serial, ephemeral: true },
+        { signal: AbortSignal.timeout(30_000) },
       );
       const responseSerial = data.serial ?? serial;
       // Physical Apple devices commonly return a multi-megabyte PNG even when
@@ -661,18 +585,15 @@ export function createServerCapture(deps: CaptureServerDeps) {
     if (!deps.collectAccessibility()) return;
     try {
       const serial = serialFor(deps);
-      const queryParams = new URLSearchParams();
-      if (serial) queryParams.set("serial", serial);
-      if (options?.interactiveOnly) queryParams.set("interactiveOnly", "1");
-      const query = queryParams.size > 0 ? `?${queryParams}` : "";
-      const data = await deps.request<NonNullable<SnapshotState> & { tree?: string }>(
-        `/snapshot${query}`,
-        undefined,
+      if (!serial) return;
+      const data = await (await deps.client()).invoke(
+        "target.snapshot.capture",
+        { serial, ...(options?.interactiveOnly ? { interactiveOnly: true } : {}) },
         // Keep this in lockstep with the screenshot poll. On iOS both calls
         // wait for the same first-run XCTest preparation, so a shorter tree
         // timeout used to overwrite the useful "preparing" state with an
         // unrelated network error.
-        30_000,
+        { signal: AbortSignal.timeout(30_000) },
       );
       if (!deps.collectAccessibility()) return;
       deps.setSnapshot(data);
@@ -714,13 +635,14 @@ export function createServerCapture(deps: CaptureServerDeps) {
     try {
       const body = interactionBody(step);
       const discoveryId = activeDiscoveryId(deps);
-      await deps.request(
-        discoveryId ? `/discovery/${encodeURIComponent(discoveryId)}/interact` : "/interact",
-        {
-          method: "POST",
-          body: JSON.stringify({ ...body, serial: deps.selectedDevice() }),
-        },
-      );
+      const serial = deps.selectedDevice();
+      if (!serial) throw new Error("Select a device before interacting.");
+      const client = await deps.client();
+      if (discoveryId) {
+        await client.invoke("discovery.interact", { sessionId: discoveryId, ...body, serial });
+      } else {
+        await client.invoke("target.interact", { ...body, serial });
+      }
       deps.appendLog(`interact ${step.kind}`, "success");
       if (discoveryId) await deps.refreshDiscoverySessions();
       else await captureUiScreenshot(label, undefined, undefined, true).catch(() => undefined);
@@ -739,10 +661,8 @@ export function createServerCapture(deps: CaptureServerDeps) {
   async function runStep(step: RecipeStep): Promise<StepRunOutcome> {
     try {
       const serial = serialFor(deps);
-      const result = await deps.request<StepRunResult>("/step/run", {
-        method: "POST",
-        body: JSON.stringify({ step, ...(serial ? { serial } : {}) }),
-      });
+      if (!serial) return { ok: false, error: "Select a device before running a step." };
+      const result = await (await deps.client()).invoke("step.run", { step, serial });
       return normalizeStepRunOutcome(result, serial, `run ${step.kind} step`);
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -760,7 +680,6 @@ export function createServerCapture(deps: CaptureServerDeps) {
     captureUiScreenshot,
     captureScrollablePage,
     copyUiScreenshot,
-    persistRecordingEvidence,
     recordingEvidenceUrl: (recipeId: string, evidenceId: string) =>
       buildRecordingEvidenceUrl(deps.serverUrl(), recipeId, evidenceId),
     pollLiveFrame,

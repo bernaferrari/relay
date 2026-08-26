@@ -1,6 +1,6 @@
 import type { AppMap } from "@relay/protocol";
 import type { JobInfo } from "./api-types";
-import { projectRunMatrix } from "./run-matrix-review";
+import { projectCombineReview } from "./combine-review";
 import { combineHeadline, combineValueLabel, projectCombine } from "./app-map-combine-presentation";
 import { SCREEN_CARD_WIDTH } from "./app-map-canvas-layout";
 
@@ -104,7 +104,7 @@ export function canvasCombineCards(
       : newest
         ? [newest]
         : [];
-    const runReview = projectRunMatrix(batchJobs);
+    const runReview = projectCombineReview(batchJobs);
     return {
       id: combine.id,
       name: combineHeadline({

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import test from "node:test";
 import { operationDefinitions, type ProjectRole } from "@relay/protocol";
@@ -148,6 +150,10 @@ test("operation authorization applies before optional command envelopes", () => 
 });
 
 test("GET /meta exposes the registry manifest, not a handwritten endpoint list", async () => {
+  // Isolated state dir: parallel test files each boot a real server against
+  // the shared workspace .relay, and the state-dir lease is single-owner.
+  const previousStateDir = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = await mkdtemp(join(tmpdir(), "relay-server-operations-meta-"));
   const server = await startServer({ host: "127.0.0.1", port: 0 });
   try {
     const response = await fetch(`http://127.0.0.1:${server.port}/meta`);
@@ -175,6 +181,9 @@ test("GET /meta exposes the registry manifest, not a handwritten endpoint list",
     });
   } finally {
     await server.close();
+    await rm(previousStateDir ?? "", { recursive: true, force: true }).catch(() => {});
+    if (previousStateDir === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousStateDir;
   }
 });
 
@@ -184,11 +193,15 @@ test("a network service token receives its configured role and actionable denial
     role: process.env.RELAY_AUTH_ROLE,
     organization: process.env.RELAY_AUTH_ORGANIZATION_ID,
     projects: process.env.RELAY_AUTH_PROJECT_IDS,
+    stateDir: process.env.RELAY_STATE_DIR,
   };
   process.env.RELAY_REDACTION_MODE = "on";
   process.env.RELAY_AUTH_ROLE = "viewer";
   process.env.RELAY_AUTH_ORGANIZATION_ID = "org-network";
   process.env.RELAY_AUTH_PROJECT_IDS = "project-network";
+  // Isolated state dir: parallel test files each boot a real server against
+  // the shared workspace .relay, and the state-dir lease is single-owner.
+  process.env.RELAY_STATE_DIR = await mkdtemp(join(tmpdir(), "relay-server-operations-token-"));
   const token = "test-service-token-with-32-characters";
   const server = await startServer({ host: "0.0.0.0", port: 0, token });
   const headers = { authorization: `Bearer ${token}` };
@@ -228,6 +241,9 @@ test("a network service token receives its configured role and actionable denial
     else process.env.RELAY_AUTH_ORGANIZATION_ID = previous.organization;
     if (previous.projects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
     else process.env.RELAY_AUTH_PROJECT_IDS = previous.projects;
+    await rm(previous.stateDir ?? "", { recursive: true, force: true }).catch(() => {});
+    if (previous.stateDir === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous.stateDir;
   }
 });
 

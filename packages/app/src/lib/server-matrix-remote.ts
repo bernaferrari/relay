@@ -1,47 +1,48 @@
-import type { CompatibilityMatrix, MatrixExpansion } from "@relay/protocol";
+import type { RelayClient } from "@relay/client";
+import type { CompatibilityMatrix, MatrixExpansion, OperationInput } from "@relay/protocol";
 
-export type ServerRequest = <T = unknown>(
-  path: string,
-  init?: RequestInit,
-  timeoutMs?: number,
-) => Promise<T>;
+type MatrixClient = Pick<RelayClient, "invoke">;
 
-export function saveMatrix(
-  request: ServerRequest,
+export async function saveMatrix(
+  client: MatrixClient,
   input: { id: string; name: string; selectors: CompatibilityMatrix["selectors"] },
   replace: boolean,
 ): Promise<{ matrix: CompatibilityMatrix }> {
-  return request<{ matrix: CompatibilityMatrix }>(
-    replace ? `/matrices/${encodeURIComponent(input.id)}` : "/matrices",
-    { method: replace ? "PUT" : "POST", body: JSON.stringify(input) },
-  );
+  if (replace) {
+    return client.invoke("matrix.update", {
+      matrixId: input.id,
+      name: input.name,
+      selectors: input.selectors,
+    } satisfies OperationInput<"matrix.update">);
+  }
+  return client.invoke("matrix.create", {
+    id: input.id,
+    name: input.name,
+    selectors: input.selectors,
+  } satisfies OperationInput<"matrix.create">);
 }
 
-export function deleteMatrix(request: ServerRequest, id: string): Promise<void> {
-  return request(`/matrices/${encodeURIComponent(id)}`, { method: "DELETE" });
+export async function deleteMatrix(client: MatrixClient, id: string): Promise<void> {
+  await client.invoke("matrix.delete", { matrixId: id });
 }
 
-export async function resolveMatrix(request: ServerRequest, id: string): Promise<MatrixExpansion> {
-  const data = await request<{ expansion: MatrixExpansion }>(
-    `/matrices/${encodeURIComponent(id)}/resolve`,
-    { method: "POST", body: "{}" },
-  );
+export async function resolveMatrix(client: MatrixClient, id: string): Promise<MatrixExpansion> {
+  const data = await client.invoke("matrix.resolve", { matrixId: id });
   return data.expansion;
 }
 
-export async function loadMatrixYaml(request: ServerRequest, id: string): Promise<string> {
-  const data = await request<{ yaml: string }>(`/matrices/${encodeURIComponent(id)}/yaml`);
+export async function loadMatrixYaml(client: RelayClient, id: string): Promise<string> {
+  const data = await client.resource<{ yaml: string }>(
+    `/matrices/${encodeURIComponent(id)}/yaml`,
+  );
   return data.yaml;
 }
 
 export async function importMatrixYaml(
-  request: ServerRequest,
+  client: MatrixClient,
   yaml: string,
   conflict: "reject" | "replace",
 ): Promise<CompatibilityMatrix> {
-  const data = await request<{ matrix: CompatibilityMatrix }>("/matrices/import", {
-    method: "POST",
-    body: JSON.stringify({ yaml, conflict }),
-  });
+  const data = await client.invoke("matrix.import", { yaml, conflict });
   return data.matrix;
 }

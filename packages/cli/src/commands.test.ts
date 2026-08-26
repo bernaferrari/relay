@@ -146,6 +146,9 @@ test("variable help says appLocale stays when the Test can name a screen", () =>
     /appLocale Variables stay when the compiled Test has an expect-screen; they relaunch if stay cannot be proved/u,
   );
   assert.match(help, /apply\.relaunch: true still relaunches/u);
+  assert.match(help, /variable infer <appMapId> <variableId>/u);
+  assert.match(help, /Infer remaining Variable rows from 1-8 taught examples/u);
+  assert.match(help, /taughtRows/u);
 });
 
 test("device and Combine help name the Test-run apply path and evidence folder", () => {

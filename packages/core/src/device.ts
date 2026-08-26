@@ -22,7 +22,15 @@ import { bindNativeDeviceMutations, clearAndroidTextWithAdb } from "./device-mut
 import { type Device, type SnapshotNode } from "./device-capabilities.js";
 import * as observationDevice from "./device-observation-membrane.js";
 export type { Device, SnapshotNode } from "./device-capabilities.js";
-import { withRetry } from "./retry.js";
+import {
+  base,
+  controlled,
+  controlledMutation,
+  iosNonHittablePressFields,
+  nativeDevice,
+  type DeviceTransport,
+} from "./device-dispatch.js";
+export { base } from "./device-dispatch.js";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
 import {
   currentTargetContext,
@@ -87,14 +95,6 @@ export const GROK_PACKAGE = "ai.x.grok";
 export const PLAY_PACKAGE = "com.android.vending";
 export const WORK_ACCOUNT_MATCH = process.env.WORK_ACCOUNT_MATCH?.trim() || "teachx.ai";
 const execFileAsync = promisify(execFile);
-/** Dispatcher-private native transport; physical input stays below the exact-once dispatcher. */
-type DeviceTransport = Device & ReturnType<typeof bindNativeDeviceMutations>;
-
-function nativeDevice(device: Device): DeviceTransport {
-  return (observationDevice.canonicalDeviceSource(device) ?? device) as DeviceTransport;
-}
-// One client per explicit target preserves SDK session reuse without binding
-// unrelated concurrently executing targets to the same agent-device session.
 const devicesByTarget = new Map<string, Device>();
 const applicationsByTarget = new Map<string, string>();
 const TARGET_APPLICATIONS_FILE = "runtime/target-applications.json";
@@ -202,65 +202,6 @@ export function resetDeviceClient(context = currentTargetContext()): void {
 export function resetDeviceClients(): void {
   devicesByTarget.clear();
   resetIosSnapshotFlights();
-}
-
-export function base() {
-  const context = currentTargetContext();
-  const platform =
-    context.kind === "device" || context.kind === "cloud" ? context.platform : "android";
-  const serial = context.kind === "device" ? context.serial : undefined;
-  return platform === "ios"
-    ? ({ platform, ...(serial ? { udid: serial } : {}) } as const)
-    : ({ platform, ...(serial ? { serial } : {}) } as const);
-}
-
-/**
- * agent-device's iOS runner can coordinate-activate controls XCTest marks
- * non-hittable (SwiftUI rows). The SDK maps press options → daemon flags via
- * a shallow merge: `maestro` must be a top-level press field, not nested under
- * `flags`. Optional expectedTapPoint steers the coordinate fallback.
- */
-function iosNonHittablePressFields(point?: { x: number; y: number }): Record<string, unknown> {
-  if (selectedPlatform() !== "ios") return {};
-  return {
-    maestro: {
-      allowNonHittableCoordinateFallback: true,
-      ...(point ? { expectedTapPoint: { x: point.x, y: point.y } } : {}),
-    },
-  };
-}
-
-/**
- * Retry an operation only when it is a read or a non-iOS mutation with an
- * established idempotency contract. Physical iOS input must use
- * {@link controlledMutation} so a lost acknowledgement never becomes a
- * second tap, swipe, or text entry.
- */
-async function controlled<T>(op: () => Promise<T>): Promise<T> {
-  return withRetry(
-    async () => {
-      await cooperativeCheckpoint();
-      throwIfCancelled();
-      return await raceCancel(op());
-    },
-    {
-      attempts: Number(process.env.RELAY_RETRY_ATTEMPTS ?? 3),
-      baseDelayMs: Number(process.env.RELAY_RETRY_DELAY_MS ?? 350),
-    },
-  );
-}
-
-/**
- * Android retains its existing bounded transient retry behaviour. Only a
- * connected iOS device takes the exact-once branch; cloud providers can opt
- * into an explicit idempotency contract when they implement one.
- */
-async function controlledMutation<T>(
-  operation: IosMutationOperation,
-  op: () => Promise<T>,
-): Promise<T> {
-  const serial = currentIosDeviceSerial();
-  return serial ? runIosMutationOnce(serial, operation, op) : controlled(op);
 }
 
 function mutateCurrentTarget<T>(operation: () => Promise<T>): Promise<T> {
@@ -1080,123 +1021,12 @@ export async function pressText(
   }
 }
 
-export async function replaceText(
-  device: Device,
-  target: {
-    identifier?: string;
-    ref?: string;
-    label?: string;
-    text?: string;
-    point?: { x: number; y: number };
-  },
-  text: string,
-): Promise<void> {
-  const interactionTarget = target.identifier
-    ? { selector: `id="${target.identifier.replaceAll('"', '\\"')}"` }
-    : target.ref
-      ? { ref: target.ref.startsWith("@") ? target.ref : `@${target.ref}` }
-      : target.label
-        ? { selector: `label="${target.label.replaceAll('"', '\\"')}"` }
-        : target.text
-          ? { selector: `label*="${target.text.replaceAll('"', '\\"')}"` }
-          : target.point
-            ? { x: target.point.x, y: target.point.y }
-            : undefined;
-  if (!interactionTarget) throw new Error("replace text requires a target");
-
-  // Android's accessibility fill is not consistently a replacement operation.
-  // Compose fields in particular may preserve the existing value and append the
-  // new text, even though the command succeeds. Make replacement deterministic
-  // at the input boundary: focus the target, clear it with native key events,
-  // then use the normal exact-text path for the new value.
-  if (selectedPlatform() === "android") {
-    await controlledMutation("press", () =>
-      nativeDevice(device).interactions.press({ ...base(), ...interactionTarget }),
-    );
-    await clearAndroidFocusedText(targetIdentity());
-    if (text.length > 0) await typeText(device, text);
-    return;
-  }
-  // The selector fill carries the same non-hittable coordination fields a
-  // press does: the runner can fall back to the snapshot-derived coordinate
-  // in one round-trip instead of paying a second full traversal here.
-  const resolveFillPoint = async (): Promise<{ x: number; y: number } | undefined> => {
-    if (target.point) return target.point;
-    try {
-      const nodes = await snapshot(device);
-      return (
-        resolveSnapshotTargetPoint(nodes, target) ??
-        (target.label || target.text
-          ? resolveSnapshotTargetPoint(nodes, { label: target.label, text: target.text })
-          : undefined)
-      );
-    } catch {
-      return undefined;
-    }
-  };
-  const fillPoint = await resolveFillPoint();
-  await replaceTextValue(text, {
-    fill: async (value) => {
-      try {
-        await controlledMutation("fill", () =>
-          nativeDevice(device).interactions.fill({
-            ...base(),
-            ...interactionTarget,
-            ...iosNonHittablePressFields(fillPoint),
-            text: value,
-          }),
-        );
-      } catch (error) {
-        const point = await iosSnapshotFallbackPoint(device, target, error, fillPoint);
-        await controlledMutation("fill", () =>
-          nativeDevice(device).interactions.fill({
-            ...base(),
-            x: point.x,
-            y: point.y,
-            text: value,
-          }),
-        );
-      }
-    },
-    type: async (value) => {
-      await controlledMutation("type", () =>
-        nativeDevice(device).interactions.type({ ...base(), text: value }),
-      );
-    },
-  });
-}
-
-async function clearAndroidFocusedText(serial: string): Promise<void> {
-  // Android's MOVE_END is line-aware: on a multiline Compose field it lands at
-  // the end of the current line, which leaves later lines behind. Move to the
-  // beginning of the current line, walk to the top, then move to the beginning
-  // of the whole value before deleting forward.
-  await clearAndroidTextWithAdb(serial, getExecutingJobId());
-}
-
-export type TextReplacementAdapter = {
-  fill: (text: string) => Promise<void>;
-  type: (text: string) => Promise<void>;
-};
-
-/**
- * Replace a field even when the desired value is empty.
- *
- * agent-device deliberately rejects an empty fill at its public boundary.
- * Replacing with one harmless character and deleting it uses the same native
- * text events a person produces and avoids platform-specific select-all logic.
- */
-export async function replaceTextValue(
-  text: string,
-  adapter: TextReplacementAdapter,
-): Promise<void> {
-  if (text.length > 0) {
-    await adapter.fill(text);
-    return;
-  }
-  await adapter.fill("x");
-  await adapter.type("\b");
-}
+export {
+  replaceText,
+  replaceTextValue,
+  type TextReplacementAdapter,
+} from "./device-text-entry.js";
+import { replaceText as replaceTextImpl } from "./device-text-entry.js";
 
 export async function findClick(
   device: Device,
@@ -1424,7 +1254,7 @@ function canUseIosSnapshotCoordinateFallback(error: unknown): boolean {
   return iosSelectorWasNotDispatched(error);
 }
 
-async function iosSnapshotFallbackPoint(
+export async function iosSnapshotFallbackPoint(
   device: Device,
   target: SemanticSnapshotTarget,
   error: unknown,

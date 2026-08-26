@@ -76,7 +76,7 @@ test("standalone step keeps a terminal iOS review pointer for MCP callers", () =
 });
 
 test("a pack export hands back its findings with the frame each one came from", () => {
-  const result = summarizeExecutionOperationResult("job.locale-matrix.export", {
+  const result = summarizeExecutionOperationResult("job.combine.export", {
     rootDir: "/tmp/pack",
     jobIds: ["job-en", "job-pt"],
     manifest: {
@@ -154,7 +154,7 @@ test("a pack export hands back its findings with the frame each one came from", 
 });
 
 test("a live analysis reports verdicts and coverage without a frame list per case", () => {
-  const result = summarizeExecutionOperationResult("job.locale-matrix.analysis", {
+  const result = summarizeExecutionOperationResult("job.combine.analysis", {
     schemaVersion: 1,
     batchId: "batch-1",
     locales: ["en", "pt-BR"],

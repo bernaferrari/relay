@@ -54,10 +54,6 @@ import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import type { OperationFamilyMap } from "./operation-family-map.js";
 import type { OperationRecord, ProjectRole } from "./operation-contract.js";
 import type { ExecutionTargetRef } from "./execution-target.js";
-import type {
-  LocaleMatrixMaterialization,
-  LocaleMatrixMaterializationInput,
-} from "./locale-matrix-materialization.js";
 
 export type RedactionPolicyDto = {
   enabled: boolean;
@@ -235,6 +231,7 @@ export type BuildDto = {
   name: string;
   platform: "android" | "ios";
   sourceUrl?: string;
+  sourceSha256?: string;
   status: "uploaded" | "ready" | "failed" | "archived";
   createdAt: number;
   updatedAt: number;
@@ -267,6 +264,55 @@ export type ScrollSurveyNodeDto = {
   depth?: number;
   parentIndex?: number;
   bundleId?: string;
+};
+
+/** A normalized accessibility node from a single target observation. */
+export type TargetSnapshotNodeDto = ScrollSurveyNodeDto;
+
+/** The complete semantic observation returned by `target.snapshot.capture`. */
+export type TargetSnapshotDto = {
+  serial?: string;
+  capturedAt: number;
+  nodes: TargetSnapshotNodeDto[];
+  interactive: TargetSnapshotNodeDto[];
+  tree: string;
+  bounds?: { width: number; height: number };
+  inspectable: boolean;
+  source: "sdk" | "android-system" | "pixels-only";
+  inspectionState?: "active" | "keyguard" | "asleep" | "unavailable" | "unknown";
+  foregroundApp?: string;
+  treeApp?: string;
+  bindingState?: "matched" | "rebound" | "unavailable";
+  inspectionError?: string;
+  iosSessionLifecycle?: IosSessionOperationLifecycle;
+  screenIdentity: ScreenIdentityObservation;
+  visualFingerprint?: string;
+  proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
+  readiness?: TargetRuntimeReadiness;
+};
+
+/** The in-band raster returned by `target.screenshot.capture`. */
+export type TargetScreenshotDto = {
+  serial?: string;
+  capturedAt: number;
+  mime: "image/png";
+  base64: string;
+  path: string;
+  bytes: number;
+  width?: number;
+  height?: number;
+  foregroundApp?: string;
+  screenMatch?: {
+    fingerprint: string;
+    visualFingerprint?: string;
+    matchedScreenId: string | null;
+    status: "observed" | "unavailable";
+  };
+  proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
+  jobId?: string;
+  framePath?: string;
+  inspectable?: boolean;
+  readiness?: TargetRuntimeReadiness;
 };
 
 export type ScrollSurveySnapshotDto = {
@@ -389,43 +435,19 @@ type SpecificOperationMap = {
     output: { devices: DeviceSummary[] };
   };
   "target.snapshot.capture": {
-    input: { serial: string; visual?: boolean; full?: boolean };
-    output: {
-      nodes: unknown[];
-      interactive: unknown[];
-      /** Pixels-first iOS observations intentionally have no current AX tree. */
-      inspectable?: boolean;
-      tree: string;
-      readiness?: TargetRuntimeReadiness;
-      iosSessionLifecycle?: IosSessionOperationLifecycle;
-    };
+    input: { serial: string; visual?: boolean; full?: boolean; interactiveOnly?: boolean };
+    output: TargetSnapshotDto;
   };
   "target.screenshot.capture": {
-    input: { serial: string; previewX?: number; previewY?: number };
-    output: {
-      path: string;
-      bytes: number;
-      base64?: string;
-      mime?: string;
-      serial?: string;
-      capturedAt?: number;
-      width?: number;
-      height?: number;
-      screenMatch?: {
-        fingerprint: string;
-        visualFingerprint?: string;
-        matchedScreenId: string | null;
-        status: "observed" | "unavailable";
-      };
-      proposedRows?: Array<{
-        x: number;
-        y: number;
-        top?: number;
-        bottom?: number;
-        height?: number;
-      }>;
-      readiness?: TargetRuntimeReadiness;
+    input: {
+      serial: string;
+      previewX?: number;
+      previewY?: number;
+      caption?: string;
+      jobId?: string;
+      ephemeral?: boolean;
     };
+    output: TargetScreenshotDto;
   };
   "step.run": { input: { step: RecipeStep; serial: string }; output: StepRunResult };
   "target.scroll-survey.capture": {
@@ -741,10 +763,6 @@ type SpecificOperationMap = {
   "campaign.local-admission.preflight": {
     input: LocalCampaignAdmissionPreflightRequest;
     output: LocalCampaignAdmissionPreflightResponse;
-  };
-  "job.locale-matrix.materialize": {
-    input: LocaleMatrixMaterializationInput;
-    output: LocaleMatrixMaterialization;
   };
   "lease.list": {
     input: { status?: "active" | "all" };

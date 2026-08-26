@@ -1,0 +1,187 @@
+import { For, Show } from "solid-js";
+import type { DiscoveryExplorationTimeline, DiscoveryExploreRun } from "@relay/protocol";
+import {
+  explorationTimelineHeadline,
+  explorationTimelineCursorSummary,
+  explorationTimelineOutcomeSummary,
+  explorationTimelineRows,
+  type ExplorationTimelineRowTone,
+} from "../lib/discovery-exploration-timeline-presentation";
+import type { ExplorationTimelineWorkerOption } from "../lib/app-map-agent-plan";
+import { cn } from "../lib/cn";
+import { Icon } from "./icon";
+
+const TONE_ICON: Record<ExplorationTimelineRowTone, "arrow-right" | "undo" | "slash"> = {
+  opened: "arrow-right",
+  back: "undo",
+  stayed: "slash",
+};
+
+function toneClass(tone: ExplorationTimelineRowTone): string {
+  if (tone === "stayed")
+    return "bg-[var(--background-base)] text-[var(--text-weak)] border border-[var(--border-weak-base)]";
+  if (tone === "back") return "bg-[var(--surface-base)] text-[var(--text-base)]";
+  return "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]";
+}
+
+/**
+ * The ordered path a crawl actually walked, newest step last.
+ *
+ * When several agents crawl at once the caller passes every one of them: the
+ * tabs let a person read any worker's path, not just the one holding focus.
+ */
+export function AppMapExplorationTimeline(props: {
+  explorationTimeline: DiscoveryExplorationTimeline | undefined;
+  run: DiscoveryExploreRun | undefined;
+  label?: string;
+  workers?: ExplorationTimelineWorkerOption[];
+  selectedWorkerId?: string;
+  onSelectWorker?: (workerId: string) => void;
+}) {
+  const rows = () => explorationTimelineRows(props.explorationTimeline);
+  const headline = () => explorationTimelineHeadline(props.explorationTimeline);
+  const outcome = () => explorationTimelineOutcomeSummary(props.run);
+  const cursor = () => explorationTimelineCursorSummary(props.run);
+  const problems = () => props.run?.problems ?? [];
+  const workers = () => props.workers ?? [];
+
+  return (
+    <Show when={rows().length > 0 || workers().length > 1 || cursor() || problems().length > 0}>
+      <section class="grid gap-2.5">
+        <div class="flex items-baseline justify-between gap-3">
+          <h3 class="text-micro font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
+            Exploration timeline{props.label ? ` · ${props.label}` : ""}
+          </h3>
+          <span class="text-micro text-[var(--text-weak)] tabular-nums">{headline()}</span>
+        </div>
+
+        <Show when={workers().length > 1}>
+          <div class="flex flex-wrap gap-1.5" role="tablist" aria-label="Agent exploration timelines">
+            <For each={workers()}>
+              {(worker) => (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={worker.id === props.selectedWorkerId}
+                  class={cn(
+                    "flex min-h-11 items-center gap-1.5 rounded-xl px-2.5 text-micro font-medium",
+                    worker.id === props.selectedWorkerId
+                      ? "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]"
+                      : "bg-[var(--surface-base)] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)]",
+                  )}
+                  onClick={() => props.onSelectWorker?.(worker.id)}
+                >
+                  <Show when={worker.live}>
+                    <i
+                      class="size-1.5 shrink-0 rounded-full bg-[var(--text-interactive-base)] motion-safe:animate-pulse"
+                      aria-hidden="true"
+                    />
+                  </Show>
+                  <span class="max-w-40 truncate">{worker.label}</span>
+                  <small class="text-[var(--text-weak)]">{worker.detail}</small>
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+
+        <Show when={outcome()}>
+          {(summary) => (
+            <p class="flex items-start gap-2 rounded-xl bg-[var(--surface-base)] px-3 py-2.5 text-micro/[1.45] text-[var(--text-weak)]">
+              <Icon name="info" size={13} class="mt-0.5 shrink-0" />
+              {summary()}
+            </p>
+          )}
+        </Show>
+
+        <Show when={cursor()}>
+          {(status) => (
+            <div
+              class="flex min-h-10 items-center gap-2 rounded-xl bg-[var(--surface-base)] px-3 text-micro"
+              aria-live="polite"
+            >
+              <i
+                class={cn(
+                  "size-2 shrink-0 rounded-full",
+                  status().tone === "proven"
+                    ? "bg-[var(--icon-success-base)]"
+                    : status().tone === "handoff"
+                      ? "bg-[var(--icon-warning-base)]"
+                      : "bg-[var(--icon-critical-base)]",
+                )}
+                aria-hidden="true"
+              />
+              <strong class="shrink-0 font-medium text-[var(--text-strong)]">
+                {status().label}
+              </strong>
+              <span class="min-w-0 truncate text-[var(--text-weak)]" title={status().detail}>
+                {status().detail}
+              </span>
+            </div>
+          )}
+        </Show>
+
+        <Show when={problems().length > 0}>
+          <section
+            class="grid gap-1.5 rounded-xl bg-[var(--surface-base)] p-3"
+            aria-label="Explore problems"
+          >
+            <div class="flex items-baseline justify-between gap-3">
+              <strong class="text-caption font-medium text-[var(--text-strong)]">Problems</strong>
+              <span class="text-micro text-[var(--text-weak)] tabular-nums">
+                {problems().length}
+              </span>
+            </div>
+            <For each={problems()}>
+              {(problem) => (
+                <div class="grid gap-0.5 border-t border-[var(--border-weak-base)] pt-1.5 first:border-0 first:pt-0">
+                  <span class="text-caption text-[var(--text-strong)]">{problem.label}</span>
+                  <span class="text-micro/[1.4] text-[var(--text-weak)]">{problem.reason}</span>
+                </div>
+              )}
+            </For>
+          </section>
+        </Show>
+
+        <Show when={rows().length > 0}>
+          <ol class="grid gap-1">
+            <For each={rows()}>
+              {(row) => (
+                <li class="grid grid-cols-[22px_minmax(0,1fr)] items-start gap-2.5 rounded-xl bg-[var(--surface-base)] px-2.5 py-2">
+                  <span
+                    class={cn(
+                      "mt-0.5 grid size-[22px] place-items-center rounded-full",
+                      toneClass(row.tone),
+                    )}
+                    aria-hidden="true"
+                  >
+                    <Icon name={TONE_ICON[row.tone]} size={11} />
+                  </span>
+                  <span class="min-w-0">
+                    <span class="flex min-w-0 items-baseline gap-1.5">
+                      <strong class="truncate text-caption font-medium text-[var(--text-strong)]">
+                        {row.action}
+                      </strong>
+                      <small class="shrink-0 text-micro text-[var(--text-weak)] tabular-nums">
+                        {row.index + 1}
+                      </small>
+                    </span>
+                    <small class="mt-0.5 block truncate text-micro text-[var(--text-weak)]">
+                      {row.tone === "stayed" ? "Nothing changed on " : ""}
+                      {row.destination}
+                    </small>
+                  </span>
+                </li>
+              )}
+            </For>
+          </ol>
+        </Show>
+        <Show when={rows().length === 0}>
+          <p class="rounded-xl bg-[var(--surface-base)] px-3 py-2.5 text-micro/[1.45] text-[var(--text-weak)]">
+            This agent has not walked a step yet.
+          </p>
+        </Show>
+      </section>
+    </Show>
+  );
+}

@@ -36,7 +36,7 @@ export function createServerAuthoringController(input: {
     // live workspace only needs open sessions for its current document and
     // target; downloading the complete archive made Record parse megabytes of
     // unrelated evidence.
-    const result = await client.authoringSessions({
+    const result = await client.invoke("authoring.session.list", {
       activeOnly: true,
       ...(input.selectedAppMapId() ? { appMapId: input.selectedAppMapId()! } : {}),
       ...(input.selectedDevice() ? { targetId: input.selectedDevice()! } : {}),
@@ -61,27 +61,30 @@ export function createServerAuthoringController(input: {
     pendingConnectionId?: string;
     group?: string;
   }): Promise<AuthoringSession> {
-    return project((await (await input.client()).createAuthoringSession(inputValue)).session);
+    return project((await (await input.client()).invoke("authoring.session.create", inputValue)).session);
   }
 
   async function observeAuthoringSession(id: string): Promise<AuthoringSession> {
     return project(
-      (await (await input.client()).observeAuthoringSession(id, AbortSignal.timeout(120_000)))
-        .session,
+      (await (await input.client()).invoke("authoring.session.observe", { sessionId: id }, {
+        signal: AbortSignal.timeout(120_000),
+      })).session,
     );
   }
 
   async function captureAuthoringScreen(id: string): Promise<AuthoringSession> {
     return project(
-      (await (await input.client()).captureAuthoringScreen(id, AbortSignal.timeout(120_000)))
-        .session,
+      (await (await input.client()).invoke("authoring.session.capture", { sessionId: id }, {
+        signal: AbortSignal.timeout(120_000),
+      })).session,
     );
   }
 
   async function startAuthoringSession(id: string): Promise<AuthoringSession> {
     return project(
-      (await (await input.client()).startAuthoringSession(id, AbortSignal.timeout(120_000)))
-        .session,
+      (await (await input.client()).invoke("authoring.session.start", { sessionId: id }, {
+        signal: AbortSignal.timeout(120_000),
+      })).session,
     );
   }
 
@@ -90,13 +93,16 @@ export function createServerAuthoringController(input: {
     interaction: AuthoringInteraction,
   ): Promise<AuthoringSession> {
     return project(
-      (await (await input.client()).interactAuthoringSession(id, interaction)).session,
+      (await (await input.client()).invoke("authoring.session.interact", { sessionId: id, interaction }))
+        .session,
     );
   }
 
   async function stopAuthoringSession(id: string): Promise<AuthoringSession> {
     return project(
-      (await (await input.client()).stopAuthoringSession(id, AbortSignal.timeout(120_000))).session,
+      (await (await input.client()).invoke("authoring.session.stop", { sessionId: id }, {
+        signal: AbortSignal.timeout(120_000),
+      })).session,
     );
   }
 
@@ -105,13 +111,14 @@ export function createServerAuthoringController(input: {
     inputValue: { fromMs?: number; toMs?: number; actionIds?: string[] },
   ): Promise<AuthoringSession> {
     return project(
-      (await (await input.client()).trimAuthoringTake({ sessionId: id, ...inputValue })).session,
+      (await (await input.client()).invoke("authoring.take.trim", { sessionId: id, ...inputValue }))
+        .session,
     );
   }
 
   async function reorderAuthoringTake(id: string, actionIds: string[]): Promise<AuthoringSession> {
     return project(
-      (await (await input.client()).reorderAuthoringTake({ sessionId: id, actionIds })).session,
+      (await (await input.client()).invoke("authoring.take.reorder", { sessionId: id, actionIds })).session,
     );
   }
 
@@ -124,7 +131,7 @@ export function createServerAuthoringController(input: {
       (
         await (
           await input.client()
-        ).replaceAuthoringAction({
+        ).invoke("authoring.take.replace", {
           sessionId: id,
           actionId,
           interaction,
@@ -138,7 +145,9 @@ export function createServerAuthoringController(input: {
     // evidence through one runner, so replay uses the honest long-operation
     // budget shared by observation and Stop.
     return project(
-      (await (await input.client()).replayAuthoringTake(id, AbortSignal.timeout(120_000))).session,
+      (await (await input.client()).invoke("authoring.take.replay", { sessionId: id }, {
+        signal: AbortSignal.timeout(120_000),
+      })).session,
     );
   }
 
@@ -150,7 +159,7 @@ export function createServerAuthoringController(input: {
       (
         await (
           await input.client()
-        ).commitAuthoringSession({
+        ).invoke("authoring.session.commit", {
           sessionId: id,
           ...inputValue,
         })
@@ -171,13 +180,13 @@ export function createServerAuthoringController(input: {
 
   async function discardAuthoringSession(id: string): Promise<AuthoringSession> {
     return projectTerminalSession(
-      (await (await input.client()).discardAuthoringSession(id)).session,
+      (await (await input.client()).invoke("authoring.session.discard", { sessionId: id })).session,
     );
   }
 
   async function cancelAuthoringSession(id: string): Promise<AuthoringSession> {
     return projectTerminalSession(
-      (await (await input.client()).cancelAuthoringSession(id)).session,
+      (await (await input.client()).invoke("authoring.session.cancel", { sessionId: id })).session,
     );
   }
 

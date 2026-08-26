@@ -3,7 +3,7 @@ import type { AppMapAgentExploration } from "../lib/use-app-map-agent-exploratio
 import { Button } from "@relay/ui/button";
 import { AppMapAgentProgress } from "./app-map-agent-progress";
 import { AppMapAgentSetup } from "./app-map-agent-setup";
-import { AppMapJourneyTimeline } from "./app-map-journey-timeline";
+import { AppMapExplorationTimeline } from "./app-map-exploration-timeline";
 import { Icon } from "./icon";
 
 export function AppMapAgentPanel(props: {
@@ -92,17 +92,18 @@ export function AppMapAgentPanel(props: {
         </Show>
         <Show
           when={
-            (exploration.journey()?.stepCount ?? 0) > 0 || exploration.journeyWorkers().length > 1
+            (exploration.explorationTimeline()?.stepCount ?? 0) > 0 ||
+            exploration.explorationTimelineWorkers().length > 1
           }
         >
           <div class="mt-5">
-            <AppMapJourneyTimeline
-              journey={exploration.journey()}
+            <AppMapExplorationTimeline
+              explorationTimeline={exploration.explorationTimeline()}
               run={exploration.exploreRun()}
-              label={exploration.journeyLabel()}
-              workers={exploration.journeyWorkers()}
-              selectedWorkerId={exploration.journeyWorkerId()}
-              onSelectWorker={exploration.selectJourneyWorker}
+              label={exploration.explorationTimelineLabel()}
+              workers={exploration.explorationTimelineWorkers()}
+              selectedWorkerId={exploration.explorationTimelineWorkerId()}
+              onSelectWorker={exploration.selectExplorationTimelineWorker}
             />
           </div>
         </Show>

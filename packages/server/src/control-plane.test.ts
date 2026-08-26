@@ -160,10 +160,12 @@ test("network static tokens refuse implicit administrator and default project sc
 
 test("mobile setup endpoints report prerequisites and persist Apple runner settings", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-device-settings-"));
+  const previousStateDir = process.env.RELAY_STATE_DIR;
   const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
   const previousAgentDeviceStateDir = process.env.AGENT_DEVICE_STATE_DIR;
   const previousTeam = process.env.AGENT_DEVICE_IOS_TEAM_ID;
   const previousBundle = process.env.AGENT_DEVICE_IOS_BUNDLE_ID;
+  process.env.RELAY_STATE_DIR = join(root, "state");
   process.env.RELAY_WORKSPACE_ROOT = root;
   process.env.AGENT_DEVICE_STATE_DIR = join(root, "agent-device");
   const server = await startServer({ host: "127.0.0.1", port: 0 });
@@ -190,6 +192,20 @@ test("mobile setup endpoints report prerequisites and persist Apple runner setti
       }),
     });
     assert.equal(saved.status, 200);
+    const preview = await fetch(`${baseUrl}/settings/devices/apple/live-preview`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        ...operationHeaders("workspace.apple-live-preview.update"),
+      },
+      body: JSON.stringify({ backend: "agent-device-png" }),
+    });
+    assert.equal(preview.status, 200);
+    assert.equal(
+      ((await preview.json()) as { setup: { iosLivePreview?: { backend?: string } } }).setup
+        .iosLivePreview?.backend,
+      "agent-device-png",
+    );
     const apple = await fetch(`${baseUrl}/settings/devices/apple`);
     const appleBody = (await apple.json()) as { setup: { ios?: { teamId?: string } } };
     assert.equal(appleBody.setup.ios?.teamId, "ABCDE12345");
@@ -199,6 +215,8 @@ test("mobile setup endpoints report prerequisites and persist Apple runner setti
     assert.deepEqual(await afterSetup.json(), { configured: true });
   } finally {
     await server.close();
+    if (previousStateDir === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousStateDir;
     if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
     if (previousAgentDeviceStateDir === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;

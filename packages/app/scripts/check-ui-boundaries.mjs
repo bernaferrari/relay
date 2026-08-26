@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../src/", import.meta.url));
+const protocolRoot = fileURLToPath(new URL("../../protocol/src/", import.meta.url));
 const forbidden =
   /(?:relay-(?:text|panel|line|accent)-[23]|relay-(?:data|workflow)(?:[-_]|\b)|--v2-|v2-background|v2-border|v2-elevation|bg-v2-)/g;
 const arbitraryType = /\btext-\[\d+(?:\.\d+)?px\]/g;
@@ -17,12 +18,13 @@ const arbitraryRadius = /\brounded(?:-[a-z]+)?-\[\d+(?:\.\d+)?px\]/g;
  * appeared in the model — the protocol type has always been AppMapVariable —
  * so the chrome is what got renamed, along with the last few places the old
  * word had leaked back into preflight output.
- * "State set" and "run matrix" stay banned for the same reason: internal names
- * for a Variable and a Combine that leaked into the interface. Bare "matrix" is
+ * The previous state collection and execution-grid spellings stay banned for the
+ * same reason: internal names for a Variable and a Combine leaked into the
+ * interface. Bare "matrix" is
  * allowed, because a compatibility matrix in Test environments is a different
  * object that really is called that.
  */
-const banned = String.raw`State set|[Mm]odifiers?|[Rr]un matri(?:x|ces)`;
+const banned = String.raw`State\sset|[Mm]odifiers?|[Rr]un\smatri(?:x|ces)`;
 const bannedVocab = new RegExp(
   String.raw`(['"\`])(?:(?!\1)[^\n])*?\b(?:${banned})\b(?:(?!\1)[^\n])*?\1|>\s*(?:${banned})\b`,
   "g",
@@ -56,6 +58,18 @@ async function filesIn(directory) {
 }
 
 const violations = [];
+
+// The renderer imports the protocol barrel at runtime. A Node-only module in
+// that barrel externalizes `node:*` in Vite and produces a blank page instead
+// of a useful compile error, so keep the browser boundary executable here.
+const protocolIndex = await readFile(join(protocolRoot, "index.ts"), "utf8");
+for (const match of protocolIndex.matchAll(/export \* from "\.\/(.+)\.js";/g)) {
+  const modulePath = join(protocolRoot, `${match[1]}.ts`);
+  const source = await readFile(modulePath, "utf8");
+  if (/from\s+["']node:/u.test(source)) {
+    violations.push(`${modulePath}: Node-only module exported through the browser protocol barrel`);
+  }
+}
 for (const directory of ["components", "lib", "pages", "context", "styles"]) {
   const dir = join(root, directory);
   let files;

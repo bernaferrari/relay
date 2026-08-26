@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { combineCampaignAdmissionSchema } from "./campaign-capacity-operation-output-schemas.js";
 
 const targetCapabilitySchema = z.enum([
   "snapshot",
@@ -159,7 +160,7 @@ const runCaseProvenanceSchema = z
     seed: z.number().optional(),
   })
   .strict();
-const preparedRunMatrixSchema = z
+const preparedCasePlanSchema = z
   .object({
     id: z.string(),
     createdAt: z.number(),
@@ -179,7 +180,7 @@ const preparedRunMatrixSchema = z
   })
   .strict();
 
-const corpusFindingSchema = z
+const combineEvidenceFindingSchema = z
   .object({
     id: z.string(),
     code: z.enum([
@@ -201,13 +202,13 @@ const corpusFindingSchema = z
     detail: z.string(),
   })
   .strict();
-const corpusAnalysisSchema = z
+const combineEvidenceAnalysisSchema = z
   .object({
     schemaVersion: z.literal(1),
     sessionId: z.string(),
     generatedAt: z.number(),
     baselineLocale: z.string(),
-    findings: z.array(corpusFindingSchema),
+    findings: z.array(combineEvidenceFindingSchema),
     critical: z.number(),
     warnings: z.number(),
     affectedScreens: z.number(),
@@ -243,7 +244,7 @@ const localePackManifestSchema = z
         .strict(),
     ),
     byCanonicalKey: z.record(z.string(), z.record(z.string(), z.string())),
-    analysis: corpusAnalysisSchema,
+    analysis: combineEvidenceAnalysisSchema,
     analysisCoverage: z.object({ frames: z.number(), inspectedFrames: z.number() }).strict(),
   })
   .strict();
@@ -252,7 +253,7 @@ const localeAnalysisSchema = z
     schemaVersion: z.literal(1),
     batchId: z.string(),
     locales: z.array(z.string()),
-    analysis: corpusAnalysisSchema,
+    analysis: combineEvidenceAnalysisSchema,
     coverage: z.object({ frames: z.number(), inspectedFrames: z.number() }).strict(),
     cases: z.array(
       z
@@ -418,7 +419,7 @@ const appMapCellStateSchema = z
   })
   .strict();
 
-const combineCampaignSchema = z
+export const combineCampaignSchema = z
   .object({
     schemaVersion: z.literal(1),
     id: z.string(),
@@ -496,15 +497,7 @@ const combineCampaignSchema = z
         strategy: z.enum(["zip", "cartesian", "pairwise"]).optional(),
         seed: z.number(),
         title: z.string().optional(),
-        localAdmission: z
-          .object({
-            request: z.object({ deadlineMs: z.number() }).passthrough(),
-            preflight: z.object({ checkedAt: z.number() }).passthrough(),
-            targetPreflights: z.array(z.object({ checkedAt: z.number() }).passthrough()).optional(),
-            targets: z.array(executionTargetSchema),
-          })
-          .strict()
-          .optional(),
+        localAdmission: combineCampaignAdmissionSchema.optional(),
       })
       .strict()
       .optional(),
@@ -626,31 +619,12 @@ const variableSchema = z
   })
   .strict();
 
-/** Runtime response contracts for matrix, Combine, job, and Run-maintenance routes. */
+/** Runtime response contracts for case plans, Combines, jobs, and Run maintenance. */
 export const executionOperationOutputSchemas = {
-  "job.locale-matrix.start": z
-    .object({
-      batch: localeBatchSchema,
-      matrix: preparedRunMatrixSchema,
-      jobs: z.array(jobSummarySchema),
-      admission: admissionSchema.optional(),
-    })
-    .strict(),
-  "job.locale-matrix.export": z
-    .object({
-      rootDir: z.string(),
-      manifest: localePackManifestSchema,
-      jobIds: z.array(z.string()),
-    })
-    .strict(),
-  "job.locale-matrix.analysis": localeAnalysisSchema,
-  "job.locale-matrix.infer": z
-    .object({ inferred: inferredLocaleSchema, scope: localeScopeSchema })
-    .strict(),
   "job.combine.start": z
     .object({
       batch: combineBatchSchema,
-      matrix: preparedRunMatrixSchema,
+      matrix: preparedCasePlanSchema,
       cells: z.array(appMapCellStateSchema),
       jobs: z.array(jobSummarySchema),
       selectedCellIds: z.array(z.string()),
@@ -673,9 +647,7 @@ export const executionOperationOutputSchemas = {
       jobIds: z.array(z.string()),
     })
     .strict(),
-  "job.combine.infer": z
-    .object({ inferred: inferredLocaleSchema, variable: variableSchema })
-    .strict(),
+  "job.combine.analysis": localeAnalysisSchema,
   "job.combine.campaign.get": z.object({ campaign: combineCampaignSchema }).strict(),
   "job.combine.campaign.resume": z
     .object({
@@ -690,7 +662,7 @@ export const executionOperationOutputSchemas = {
   "run.replay": z.object({ job: executionJobSchema }).strict(),
   "job.active.cancel": z.object({ job: executionJobSchema }).strict(),
   "job.matrix.start": z
-    .object({ matrix: preparedRunMatrixSchema, jobs: z.array(executionJobSchema) })
+    .object({ matrix: preparedCasePlanSchema, jobs: z.array(executionJobSchema) })
     .strict(),
   "job.compatibility-matrix.start": z
     .object({

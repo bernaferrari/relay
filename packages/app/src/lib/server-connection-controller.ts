@@ -71,18 +71,6 @@ export function createServerConnectionController(input: {
     input.afterServerChange();
   }
 
-  async function request<T = unknown>(
-    path: string,
-    init?: RequestInit,
-    timeoutMs = 20_000,
-  ): Promise<T> {
-    if (!client) await resolveConnection();
-    return client!.resource<T>(path, {
-      ...init,
-      signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
-    });
-  }
-
   async function connectedClient(): Promise<RelayClient> {
     if (!client) await resolveConnection();
     return client!;
@@ -104,7 +92,6 @@ export function createServerConnectionController(input: {
     actorId,
     resolveConnection,
     setServerUrl,
-    request,
     connectedClient,
     runAction,
     previewRequestHeaders: () => buildPreviewRequestHeaders(connection),

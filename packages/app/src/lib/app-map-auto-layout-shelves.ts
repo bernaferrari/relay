@@ -6,7 +6,7 @@
  * A branch whose whole subtree already fits on one row — a screen that opens
  * nothing, or a short chain that never forks — has no height of its own to
  * reserve, so a wide fan of them spends one nearly empty row each. That is what
- * turns a journey into a ribbon. Kept apart from placement because the width a
+ * turns a path into a ribbon. Kept apart from placement because the width a
  * shelf wraps at is a decision about the whole map's shape, not about where any
  * one card goes.
  */

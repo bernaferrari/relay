@@ -44,6 +44,7 @@ export const runEvidenceCommandDescriptors: readonly CliOperationDescriptor[] = 
         command: "run share create",
         arguments: ["runId"],
         summary: "Create an expiring signed report link",
+        note: "When the host sets RELAY_PUBLIC_BASE_URL the response includes an absolute `url`; otherwise resolve `path` against the server origin.",
         inputHelp: [
           {
             name: "expiresInHours",

@@ -576,7 +576,6 @@ export function AppMapWorkspace(props: {
       setHistoryOpen(false);
     },
   });
-
   return (
     <section
       class={cn(

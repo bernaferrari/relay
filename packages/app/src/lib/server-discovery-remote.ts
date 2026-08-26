@@ -1,20 +1,16 @@
+import type { RelayClient } from "@relay/client";
 import type {
-  DiscoveryAgentContext,
   DiscoveryControl,
-  DiscoveryCoverageReport,
   DiscoveryDecisionProvenance,
-  DiscoveryJourney,
-  DiscoveryScope,
-  DiscoverySession,
+  OperationInput,
+  OperationOutput,
 } from "@relay/protocol";
-import type { RecipeInfo } from "./api-types";
 import {
   iosInteractionFailure,
   iosMutationOutcomeUnknownIntervention,
   type IosInteractionFailure,
   type IosMutationOutcomeUnknownIntervention,
 } from "./ios-interaction-safety";
-import type { ServerRequest } from "./server-matrix-remote";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -113,59 +109,45 @@ function unknownIosOutcome(
 }
 
 export function listDiscoverySessions(
-  request: ServerRequest,
-): Promise<{ sessions: DiscoverySession[] }> {
-  return request<{ sessions: DiscoverySession[] }>("/discovery");
+  client: RelayClient,
+): Promise<OperationOutput<"discovery.list">> {
+  return client.invoke("discovery.list", {});
 }
 
 export async function createDiscoverySession(
-  request: ServerRequest,
-  input: {
-    name: string;
-    targetId: string;
-    scope?: Partial<DiscoveryScope>;
-    agent?: Omit<DiscoveryAgentContext, "createdBy">;
-  },
-): Promise<DiscoverySession> {
-  const data = await request<{ session: DiscoverySession }>("/discovery", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+  client: RelayClient,
+  input: OperationInput<"discovery.create">,
+): Promise<OperationOutput<"discovery.create">["session"]> {
+  const data = await client.invoke("discovery.create", input);
   return data.session;
 }
 
 export async function setDiscoveryStatus(
-  request: ServerRequest,
+  client: RelayClient,
   id: string,
-  status: DiscoverySession["status"],
-): Promise<DiscoverySession> {
-  const data = await request<{ session: DiscoverySession }>(
-    `/discovery/${encodeURIComponent(id)}/status`,
-    { method: "POST", body: JSON.stringify({ status }) },
-  );
+  status: OperationInput<"discovery.status.update">["status"],
+): Promise<OperationOutput<"discovery.status.update">["session"]> {
+  const data = await client.invoke("discovery.status.update", { sessionId: id, status });
   return data.session;
 }
 
 export async function renameDiscoverySession(
-  request: ServerRequest,
+  client: RelayClient,
   id: string,
   name: string,
-): Promise<DiscoverySession> {
-  const data = await request<{ session: DiscoverySession }>(
-    `/discovery/${encodeURIComponent(id)}/name`,
-    { method: "POST", body: JSON.stringify({ name }) },
-  );
+): Promise<OperationOutput<"discovery.rename">["session"]> {
+  const data = await client.invoke("discovery.rename", { sessionId: id, name });
   return data.session;
 }
 
 export async function captureDiscoveryScreen(
-  request: ServerRequest,
+  client: RelayClient,
   id: string,
-): Promise<DiscoverySession> {
-  const data = await request<{ session: DiscoverySession }>(
-    `/discovery/${encodeURIComponent(id)}/capture`,
-    { method: "POST", body: "{}" },
-    30_000,
+): Promise<OperationOutput<"discovery.capture">["session"]> {
+  const data = await client.invoke(
+    "discovery.capture",
+    { sessionId: id },
+    { signal: AbortSignal.timeout(30_000) },
   );
   return data.session;
 }
@@ -175,75 +157,47 @@ export function discoveryScreenUrl(base: string, sessionId: string, screenId: st
 }
 
 export async function startDiscoveryExplore(
-  request: ServerRequest,
+  client: RelayClient,
   id: string,
-): Promise<DiscoverySession> {
-  const data = await request<{ session: DiscoverySession }>(
-    `/discovery/${encodeURIComponent(id)}/start`,
-    { method: "POST", body: "{}" },
-  );
+): Promise<OperationOutput<"discovery.start">["session"]> {
+  const data = await client.invoke("discovery.start", { sessionId: id });
   return data.session;
 }
 
 export async function cancelDiscoveryExplore(
-  request: ServerRequest,
+  client: RelayClient,
   id: string,
-): Promise<DiscoverySession> {
-  const data = await request<{ session: DiscoverySession }>(
-    `/discovery/${encodeURIComponent(id)}/cancel`,
-    { method: "POST", body: "{}" },
-  );
+): Promise<OperationOutput<"discovery.cancel">["session"]> {
+  const data = await client.invoke("discovery.cancel", { sessionId: id });
   return data.session;
 }
 
-export async function promoteDiscoveryPath(
-  request: ServerRequest,
-  input: {
-    sessionId: string;
-    transitionIds: string[];
-    recipeId: string;
-    title: string;
-    transitionLabels?: Record<string, string>;
-  },
-): Promise<{ recipe: RecipeInfo; warnings: string[] }> {
-  return request<{ recipe: RecipeInfo; warnings: string[] }>(
-    `/discovery/${encodeURIComponent(input.sessionId)}/promote`,
-    { method: "POST", body: JSON.stringify(input) },
-  );
-}
-
 export async function getDiscoverySuggestion(
-  request: ServerRequest,
+  client: RelayClient,
   id: string,
-): Promise<{ screenId: string; control: DiscoveryControl } | null> {
-  const data = await request<{
-    suggestion: { screenId: string; control: DiscoveryControl } | null;
-  }>(`/discovery/${encodeURIComponent(id)}/suggestion`);
+): Promise<OperationOutput<"discovery.suggestion">["suggestion"]> {
+  const data = await client.invoke("discovery.suggestion", { sessionId: id });
   return data.suggestion;
 }
 
 export async function getDiscoveryCoverage(
-  request: ServerRequest,
+  client: RelayClient,
   id: string,
-): Promise<DiscoveryCoverageReport> {
-  const data = await request<{ coverage: DiscoveryCoverageReport }>(
-    `/discovery/${encodeURIComponent(id)}/coverage`,
-  );
+): Promise<OperationOutput<"discovery.coverage">["coverage"]> {
+  const data = await client.invoke("discovery.coverage", { sessionId: id });
   return data.coverage;
 }
 
-export async function getDiscoveryJourney(
-  request: ServerRequest,
+export async function getDiscoveryExplorationTimeline(
+  client: RelayClient,
   id: string,
-): Promise<DiscoveryJourney> {
-  const data = await request<{ journey: DiscoveryJourney }>(
-    `/discovery/${encodeURIComponent(id)}/journey`,
-  );
-  return data.journey;
+): Promise<OperationOutput<"discovery.exploration-timeline">["explorationTimeline"]> {
+  const data = await client.invoke("discovery.exploration-timeline", { sessionId: id });
+  return data.explorationTimeline;
 }
 
 export async function approveDiscoverySuggestion(
-  request: ServerRequest,
+  client: RelayClient,
   input: {
     sessionId: string;
     control: DiscoveryControl;
@@ -264,9 +218,10 @@ export async function approveDiscoverySuggestion(
             : null;
   if (!action) throw new Error("suggestion has no executable target");
   try {
-    await request(`/discovery/${encodeURIComponent(input.sessionId)}/interact`, {
-      method: "POST",
-      body: JSON.stringify({ ...action, ...(input.decision ? { decision: input.decision } : {}) }),
+    await client.invoke("discovery.interact", {
+      sessionId: input.sessionId,
+      ...action,
+      ...(input.decision ? { decision: input.decision } : {}),
     });
     return { status: "succeeded" };
   } catch (error) {
@@ -278,14 +233,11 @@ export async function approveDiscoverySuggestion(
 
 /** Return to the previous screen while autonomous exploration backtracks. */
 export async function backtrackDiscovery(
-  request: ServerRequest,
+  client: RelayClient,
   sessionId: string,
 ): Promise<DiscoveryBacktrackOutcome> {
   try {
-    const data = await request<{ transition: { changedScreen: boolean } }>(
-      `/discovery/${encodeURIComponent(sessionId)}/interact`,
-      { method: "POST", body: JSON.stringify({ kind: "back" }) },
-    );
+    const data = await client.invoke("discovery.interact", { sessionId, kind: "back" });
     return { status: "succeeded", changedScreen: data.transition.changedScreen };
   } catch (error) {
     const outcome = unknownIosOutcome(error, sessionId, "backtrack");

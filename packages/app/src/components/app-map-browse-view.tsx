@@ -322,8 +322,8 @@ export function AppMapBrowseView(props: {
   );
 }
 
-/** "Journey edge" was the internal name for a connection, and DESIGN_SYSTEM
- * bans Journey from the chrome. A person reading the map calls the arrows
+/** A connection was once called an edge, and DESIGN_SYSTEM
+ * keeps the chrome aligned with the map vocabulary. A person calls the arrows
  * connections, so the header does too. */
 function screensSummary(appMap: AppMap, groupCount: number): string {
   const parts = [

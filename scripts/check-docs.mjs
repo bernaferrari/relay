@@ -67,7 +67,7 @@ for (const block of bashBlocks(readme)) {
 
 const legacyPublicTerms = [
   [
-    /(?:recipe library|saved journeys?|run matrices|run-matrix|modifier values)/iu,
+    /(?:\brecipes?\b|recipes? settings|saved journeys?|\bjourney\b|discovery\.journey|\/journey\b|state[- ]?sets?|option[- ]?sets?|run[- ]?matrices?|\bcombo\b|modifier values)/iu,
     "legacy product vocabulary",
   ],
   [/\b\d+-operation\s+`?full`?\s+catalog/iu, "a hard-coded operation catalog count"],

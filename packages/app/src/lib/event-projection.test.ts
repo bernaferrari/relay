@@ -75,7 +75,6 @@ test("a replay gap requests one scoped refresh of every live projection", () => 
     "variables",
     "matrices",
     "discoveries",
-    "corpora",
     "authoring",
   ]);
 });

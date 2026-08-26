@@ -285,7 +285,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
             name: "interaction.steps",
             type: "object[]",
             required: true,
-            description: "Recipe steps executed in order without CLI round trips",
+            description: "Execution steps performed in order without CLI round trips",
           },
           {
             name: "interaction.label",

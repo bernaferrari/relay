@@ -12,7 +12,9 @@ export type InteractiveStep =
     }
   | { kind: "type"; text: string };
 
-export function interactionBody(step: InteractiveStep): Record<string, unknown> {
+export function interactionBody(
+  step: InteractiveStep,
+): Omit<OperationInput<"target.interact">, "serial"> {
   switch (step.kind) {
     case "identifier":
       return {
@@ -47,3 +49,4 @@ export function interactionBody(step: InteractiveStep): Record<string, unknown> 
       return { kind: "type", text: step.text };
   }
 }
+import type { OperationInput } from "@relay/protocol";

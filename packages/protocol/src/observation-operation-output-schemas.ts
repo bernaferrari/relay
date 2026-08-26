@@ -179,7 +179,7 @@ const discoverySessionSchema = z
         maxDurationMs: z.number(),
         allowedOrigins: z.array(z.string()).optional(),
         allowSensitiveControls: z.boolean().optional(),
-        strategy: z.enum(["surface", "journey", "hard-edges"]).optional(),
+        strategy: z.enum(["surface", "timeline", "hard-edges"]).optional(),
         maxDepth: z.number().optional(),
       })
       .strict(),
@@ -189,7 +189,7 @@ const discoverySessionSchema = z
     currentScreenId: z.string().optional(),
     explore: z
       .object({
-        strategy: z.enum(["surface", "journey", "hard-edges"]),
+        strategy: z.enum(["surface", "timeline", "hard-edges"]),
         maxDepth: z.number(),
         problems: z
           .array(
@@ -246,7 +246,7 @@ const discoveryHereSchema = z
   })
   .strict();
 
-const discoveryJourneySchema = z
+const discoveryExplorationTimelineSchema = z
   .object({
     sessionId: z.string(),
     mapName: z.string(),
@@ -292,7 +292,7 @@ const discoveryCoverageSchema = z
     unprofiledSessionIds: z.array(z.string()),
     screens: z.array(discoveryCoverageItemSchema),
     transitions: z.array(discoveryCoverageItemSchema),
-    journey: discoveryJourneySchema.optional(),
+    explorationTimeline: discoveryExplorationTimelineSchema.optional(),
     blockedReasons: z
       .array(
         z
@@ -520,17 +520,17 @@ const corpusCoverageSchema = z
   })
   .strict();
 
-const corpusFindingCodeSchema = z.enum([
+const combineEvidenceFindingCodeSchema = z.enum([
   "SCREEN_MISSING",
   "POSSIBLE_LOCALE_NOT_APPLIED",
   "CONTROL_MISSING",
   "POSSIBLE_UNTRANSLATED_TEXT",
   "POSSIBLE_TEXT_CLIPPED",
 ]);
-const corpusFindingSchema = z
+const combineEvidenceFindingSchema = z
   .object({
     id: z.string(),
-    code: corpusFindingCodeSchema,
+    code: combineEvidenceFindingCodeSchema,
     severity: z.enum(["critical", "warning"]),
     confidence: z.enum(["high", "medium"]),
     canonicalKey: z.string(),
@@ -543,13 +543,13 @@ const corpusFindingSchema = z
     detail: z.string(),
   })
   .strict();
-const corpusAnalysisSchema = z
+const combineEvidenceAnalysisSchema = z
   .object({
     schemaVersion: z.literal(1),
     sessionId: z.string(),
     generatedAt: z.number(),
     baselineLocale: z.string(),
-    findings: z.array(corpusFindingSchema),
+    findings: z.array(combineEvidenceFindingSchema),
     critical: z.number(),
     warnings: z.number(),
     affectedScreens: z.number(),
@@ -559,7 +559,7 @@ const corpusAnalysisSchema = z
 const knownFindingSchema = z
   .object({
     id: z.string(),
-    code: corpusFindingCodeSchema,
+    code: combineEvidenceFindingCodeSchema,
     canonicalKey: z.string(),
     screenLabel: z.string(),
     locale: z.string(),
@@ -623,7 +623,7 @@ const switcherProfileSchema = z
   })
   .strict();
 
-/** Runtime response contracts for discovery, corpus, locale finding, and picker-profile routes. */
+/** Runtime response contracts for App Map discovery routes. */
 export const observationOperationOutputSchemas = {
   "discovery.list": z.object({ sessions: z.array(discoverySessionSchema) }).strict(),
   "discovery.create": z.object({ session: discoverySessionSchema }).strict(),
@@ -660,35 +660,11 @@ export const observationOperationOutputSchemas = {
     })
     .strict(),
   "discovery.coverage": z.object({ coverage: discoveryCoverageSchema }).strict(),
-  "discovery.journey": z.object({ journey: discoveryJourneySchema }).strict(),
+  "discovery.exploration-timeline": z
+    .object({ explorationTimeline: discoveryExplorationTimelineSchema })
+    .strict(),
   "discovery.export": z.string(),
   "discovery.promote": z.never(),
   "discovery.start": z.object({ session: discoverySessionSchema }).strict(),
   "discovery.cancel": z.object({ session: discoverySessionSchema }).strict(),
-  "corpus.list": z.object({ sessions: z.array(corpusSessionSchema) }).strict(),
-  "corpus.create": z.object({ session: corpusSessionSchema }).strict(),
-  "corpus.get": z.object({ session: corpusSessionSchema }).strict(),
-  "corpus.rename": z.object({ session: corpusSessionSchema }).strict(),
-  "corpus.status.update": z.object({ session: corpusSessionSchema }).strict(),
-  "corpus.start": z.object({ session: corpusSessionSchema }).strict(),
-  "corpus.cancel": z.object({ session: corpusSessionSchema }).strict(),
-  "corpus.coverage": z.object({ coverage: corpusCoverageSchema }).strict(),
-  "corpus.analysis": z.object({ analysis: corpusAnalysisSchema }).strict(),
-  "corpus.export": z.string(),
-  "corpus.screen.get": z.instanceof(Uint8Array),
-  "locale-finding.known.list": z.object({ findings: z.array(knownFindingSchema) }).strict(),
-  "locale-finding.known.add": z
-    .object({ finding: knownFindingSchema, findings: z.array(knownFindingSchema) })
-    .strict(),
-  "locale-finding.known.remove": z.object({ findings: z.array(knownFindingSchema) }).strict(),
-  "language-profile.list": z.object({ profiles: z.array(languageProfileSchema) }).strict(),
-  "language-profile.scan": z
-    .object({ profile: languageProfileSchema, rowsFound: z.number(), scrolls: z.number() })
-    .strict(),
-  "language-profile.save": z.object({ profile: languageProfileSchema }).strict(),
-  "switcher-profile.list": z.object({ profiles: z.array(switcherProfileSchema) }).strict(),
-  "switcher-profile.scan": z
-    .object({ profile: switcherProfileSchema, optionsFound: z.number(), scrolls: z.number() })
-    .strict(),
-  "switcher-profile.save": z.object({ profile: switcherProfileSchema }).strict(),
 } as const satisfies Readonly<Record<string, z.ZodType>>;

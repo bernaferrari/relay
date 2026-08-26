@@ -616,6 +616,7 @@ export const workspaceTargetOperationOutputSchemas = {
   "system.audit.list": z.object({ events: z.array(auditEvent) }).strict(),
   "activity.list": z.object({ records: z.array(activityRecord), nextCursor: text.optional() }).strict(),
   "workspace.apple-device.update": z.object({ setup: deviceSetup }).strict(),
+  "workspace.apple-live-preview.update": z.object({ setup: deviceSetup }).strict(),
   "target.list": z.object({ targets: z.array(targetDefinition) }).strict(),
   "target.create": z.object({ target: targetDefinition }).strict(),
   "target.delete": ok,
