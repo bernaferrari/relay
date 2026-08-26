@@ -1,58 +1,13 @@
 import { createHash } from "node:crypto";
-import type {
-  CorpusAnalysisReport,
-  CorpusControl,
-  CorpusCoverageReport,
-  CorpusFinding,
-  CorpusScreen,
-  CorpusSession,
-} from "@relay/protocol";
+import type { CombineEvidenceAnalysis, CombineEvidenceFinding } from "@relay/protocol";
+import type { CombineEvidenceControl, CombineEvidenceScreen, CombineEvidenceSession } from "./combine-evidence-session.js";
 
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-export function buildCorpusCoverage(session: CorpusSession): CorpusCoverageReport {
-  const locales = session.scope.locales;
-  const byKey = new Map<string, CorpusScreen[]>();
-  for (const screen of session.screens) {
-    const group = byKey.get(screen.canonicalKey) ?? [];
-    group.push(screen);
-    byKey.set(screen.canonicalKey, group);
-  }
-  const screens = [...byKey.entries()].map(([canonicalKey, group]) => {
-    const observedLocales = [...new Set(group.map((screen) => screen.locale))];
-    const missingLocales = locales.filter((locale) => !observedLocales.includes(locale));
-    const label =
-      group.find((screen) => screen.title)?.title ??
-      group[0]?.path.at(-1) ??
-      canonicalKey.slice(0, 12);
-    return {
-      id: canonicalKey.slice(0, 16),
-      label,
-      canonicalKey,
-      observedLocales,
-      missingLocales,
-      screenIds: group.map((screen) => screen.id),
-    };
-  });
-  screens.sort((left, right) => left.label.localeCompare(right.label));
-  const complete = screens.filter((item) => item.missingLocales.length === 0).length;
-  const missing = screens.filter((item) => item.observedLocales.length === 0).length;
-  const partial = screens.length - complete - missing;
-  return {
-    sessionId: session.id,
-    name: session.name,
-    generatedAt: Date.now(),
-    locales: [...locales],
-    screens,
-    complete,
-    partial,
-    missing,
-  };
-}
 
-function normalizedCorpusLabel(value: string | undefined): string {
+function normalizedEvidenceLabel(value: string | undefined): string {
   return (value ?? "").normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase();
 }
 
@@ -74,7 +29,7 @@ function identifierShapedLabel(label: string): boolean {
   return /^\p{L}[\p{L}\p{N}]*(?:\.[\p{L}\p{N}]+)+$/u.test(label) || /\p{Ll}\p{Lu}/u.test(label);
 }
 
-function meaningfulCorpusLabel(value: string | undefined): boolean {
+function meaningfulEvidenceLabel(value: string | undefined): boolean {
   const label = (value ?? "").trim();
   if (label.length < 4 || !/\p{L}/u.test(label)) return false;
   if (/^(?:https?:\/\/|www\.|[\d\W_]+$)/iu.test(label)) return false;
@@ -85,7 +40,7 @@ function meaningfulCorpusLabel(value: string | undefined): boolean {
  * The keys this group can be compared on, decided over every locale in it
  * rather than over the baseline's copy alone.
  *
- * `meaningfulCorpusLabel` reads one label at a time, and applying it only to the
+ * `meaningfulEvidenceLabel` reads one label at a time, and applying it only to the
  * baseline made the comparable set a function of which language the sweep
  * started in: "Ask" is three letters and "Chiedi" is six, so the same control
  * was compared when the baseline was Italian and skipped when it was English.
@@ -95,7 +50,7 @@ function meaningfulCorpusLabel(value: string | undefined): boolean {
  * identifiers, and those are identical in every language, so no locale ever
  * reads one as copy.
  */
-function comparableStableKeys(group: readonly CorpusScreen[]): Set<string> {
+function comparableStableKeys(group: readonly CombineEvidenceScreen[]): Set<string> {
   const observed = new Map<string, string[]>();
   for (const screen of group) {
     for (const [key, label] of Object.entries(screen.localizedLabels ?? {})) {
@@ -107,7 +62,7 @@ function comparableStableKeys(group: readonly CorpusScreen[]): Set<string> {
   }
   const comparable = new Set<string>();
   for (const [key, labels] of observed) {
-    if (labels.some(meaningfulCorpusLabel)) comparable.add(key);
+    if (labels.some(meaningfulEvidenceLabel)) comparable.add(key);
   }
   return comparable;
 }
@@ -116,7 +71,7 @@ function localeFamily(locale: string): string {
   return locale.trim().toLocaleLowerCase().split(/[-_]/u)[0] ?? locale;
 }
 
-function corpusFindingId(parts: string[]): string {
+function evidenceFindingId(parts: string[]): string {
   return digest(`relay-corpus-finding:v1:${parts.join("\u0000")}`).slice(0, 20);
 }
 
@@ -132,9 +87,9 @@ function lengthGrowth(baseline: string, observed: string): number {
   return observed.trim().length / from;
 }
 
-type Box = NonNullable<CorpusControl["rect"]>;
+type Box = NonNullable<CombineEvidenceControl["rect"]>;
 
-function boxesByStableKey(screen: CorpusScreen): Map<string, Box> {
+function boxesByStableKey(screen: CombineEvidenceScreen): Map<string, Box> {
   const boxes = new Map<string, Box>();
   for (const control of screen.controls ?? []) {
     if (control.rect) boxes.set(control.stableKey, control.rect);
@@ -194,19 +149,21 @@ function clippedTextFinding(input: {
 /** Explainable checks over locale-stable screen and control evidence. No model
  * call is required, and possible linguistic defects remain explicitly
  * qualified so the report does not overstate certainty. */
-export function analyzeCorpus(session: CorpusSession): CorpusAnalysisReport {
+export function analyzeCombineEvidence(
+  session: CombineEvidenceSession,
+): CombineEvidenceAnalysis {
   const baselineLocale = session.scope.mapLocale ?? session.scope.locales[0]!;
-  const groups = new Map<string, CorpusScreen[]>();
+  const groups = new Map<string, CombineEvidenceScreen[]>();
   for (const screen of session.screens) {
     const group = groups.get(screen.canonicalKey) ?? [];
     group.push(screen);
     groups.set(screen.canonicalKey, group);
   }
-  const findings: CorpusFinding[] = [];
-  const add = (finding: Omit<CorpusFinding, "id">): void => {
+  const findings: CombineEvidenceFinding[] = [];
+  const add = (finding: Omit<CombineEvidenceFinding, "id">): void => {
     findings.push({
       ...finding,
-      id: corpusFindingId([
+      id: evidenceFindingId([
         finding.code,
         finding.canonicalKey,
         finding.locale,
@@ -256,7 +213,7 @@ export function analyzeCorpus(session: CorpusSession): CorpusAnalysisReport {
       const commonLabels = stableBaselineLabels.filter(([key]) => key in currentLabels);
       const unchangedLabels = commonLabels.filter(
         ([key, label]) =>
-          normalizedCorpusLabel(currentLabels[key]) === normalizedCorpusLabel(label),
+          normalizedEvidenceLabel(currentLabels[key]) === normalizedEvidenceLabel(label),
       );
 
       const sameScreenshot =
@@ -302,7 +259,7 @@ export function analyzeCorpus(session: CorpusSession): CorpusAnalysisReport {
           });
           continue;
         }
-        if (normalizedCorpusLabel(observed) === normalizedCorpusLabel(expected)) {
+        if (normalizedEvidenceLabel(observed) === normalizedEvidenceLabel(expected)) {
           add({
             code: "POSSIBLE_UNTRANSLATED_TEXT",
             severity: "warning",
@@ -363,37 +320,3 @@ export function analyzeCorpus(session: CorpusSession): CorpusAnalysisReport {
   };
 }
 
-export function formatCorpusExport(session: CorpusSession, format: "json" | "markdown"): string {
-  if (format === "json") return `${JSON.stringify(session, null, 2)}\n`;
-  const coverage = buildCorpusCoverage(session);
-  const analysis = analyzeCorpus(session);
-  const lines = [
-    `# ${session.name}`,
-    "",
-    `- Status: ${session.status}`,
-    `- Target: ${session.targetProfile?.name ?? session.targetId}`,
-    `- Locales: ${session.scope.locales.join(", ")}`,
-    `- Screens: ${session.screens.length}`,
-    `- Transitions: ${session.transitions.length}`,
-    `- Coverage: ${coverage.complete} complete · ${coverage.partial} partial`,
-    `- Findings: ${analysis.critical} critical · ${analysis.warnings} warnings`,
-    "",
-    "## Screens by locale",
-  ];
-  for (const locale of session.scope.locales) {
-    lines.push("", `### ${locale}`);
-    for (const screen of session.screens.filter((item) => item.locale === locale)) {
-      const path = screen.path.length ? screen.path.join(" › ") : "Root";
-      lines.push(
-        `- d${screen.depth} ${path}${screen.title ? ` — ${screen.title}` : ""} (\`${screen.artifactPath ?? screen.screenshotPath ?? screen.id}\`)`,
-      );
-    }
-  }
-  if (analysis.findings.length) {
-    lines.push("", "## Findings");
-    for (const finding of analysis.findings) {
-      lines.push(`- **${finding.severity}** · ${finding.locale} · ${finding.detail}`);
-    }
-  }
-  return `${lines.join("\n")}\n`;
-}

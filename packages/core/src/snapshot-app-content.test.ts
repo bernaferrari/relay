@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { corpusControls } from "./corpus-screen-analysis.js";
+import { combineEvidenceControls } from "./combine-evidence-screen-analysis.js";
 import type { SnapshotNode } from "./device.js";
 import {
   isSystemInputNode,
@@ -139,7 +139,7 @@ test("layout-only containers do not number the rows beside them", () => {
 test("iOS rows survive as themselves when the app frame is the only hittable node", () => {
   // The regression that made the locale sweep unreadable: every row anchored on
   // the Application, so all of them collapsed into one control keyed by the app.
-  const controls = corpusControls(iosAskScreen("Expert"));
+  const controls = combineEvidenceControls(iosAskScreen("Expert"));
   assert.deepEqual(
     controls.map((control) => control.label),
     ["Expert", "Voice Mode"],
@@ -153,15 +153,15 @@ test("iOS rows survive as themselves when the app frame is the only hittable nod
 test("an untranslated row is comparable across locales", () => {
   // The defect the sweep missed: the composer read "Esperto" in Italian and
   // "Expert" in pt-BR. Same stable key, different copy, so a comparison sees it.
-  const italian = corpusControls(iosAskScreen("Esperto"))[0];
-  const portuguese = corpusControls(iosAskScreen("Expert"))[0];
+  const italian = combineEvidenceControls(iosAskScreen("Esperto"))[0];
+  const portuguese = combineEvidenceControls(iosAskScreen("Expert"))[0];
   assert.equal(italian?.stableKey, portuguese?.stableKey);
   assert.equal(italian?.label, "Esperto");
   assert.equal(portuguese?.label, "Expert");
 });
 
 test("keyboard copy cannot become a finding, in any keyboard language", () => {
-  const labels = corpusControls(iosAskScreen("Esperto")).map((control) => control.label);
+  const labels = combineEvidenceControls(iosAskScreen("Esperto")).map((control) => control.label);
   for (const keyboard of ["elimina", "maiuscole", "Ciao", "Hide keyboard", "RightButtonBar"]) {
     assert.ok(!labels.includes(keyboard), `${keyboard} leaked into the control list`);
   }
@@ -171,8 +171,8 @@ test("a row keys the same whether or not the keyboard was up", () => {
   // Two locales can disagree about whether a text field took focus. If that
   // renumbered the rows, one row would read as two, and a translation diff would
   // be reported as a control that appeared and one that vanished.
-  const focused = corpusControls(iosAskScreen("Expert", { keyboard: true }));
-  const unfocused = corpusControls(iosAskScreen("Expert", { keyboard: false }));
+  const focused = combineEvidenceControls(iosAskScreen("Expert", { keyboard: true }));
+  const unfocused = combineEvidenceControls(iosAskScreen("Expert", { keyboard: false }));
   assert.deepEqual(
     focused.map((control) => control.stableKey),
     unfocused.map((control) => control.stableKey),

@@ -7,13 +7,12 @@
  * pack lives in locale-run-pack.ts.
  */
 import { createHash } from "node:crypto";
-import { materializeLocaleMatrixCases, normalizeLocaleMatrixLocales } from "@relay/protocol";
 import type { ActionSpec, AppMap, RecipeStep } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { resolveLanguageOptions, listLanguageProfilesSync } from "./language-profiles.js";
-import { extractSwitcherOptionsFromNodes } from "./switcher-option-rows.js";
+import { extractSwitcherOptionsFromNodes } from "./variable-option-inference.js";
 import type { Recipe } from "./recipes.js";
-import { prepareRunMatrix, type PreparedRunMatrix } from "./run-matrix.js";
+import { prepareCasePlan, type PreparedCasePlan } from "./case-plan.js";
 import {
   appLocaleShouldRelaunch,
   stayAppLocaleDestinationCheck,
@@ -21,6 +20,27 @@ import {
 
 /** Matrix list values cannot be blank (zip strips empties). */
 const NONE = "-";
+
+function normalizeLocales(locales: readonly string[]): string[] {
+  const normalized = [...new Set(locales.map((locale) => locale.trim()).filter(Boolean))];
+  if (!normalized.length) throw new Error("at least one locale is required");
+  if (normalized.length > 250) throw new Error("at most 250 locales per run");
+  return normalized;
+}
+
+function materializeLocaleCases(input: {
+  locales: readonly string[];
+  restoreLocale?: string;
+  restoreAtEnd?: boolean;
+}): Array<{ caseIndex: number; locale: string }> {
+  const locales = normalizeLocales(input.locales);
+  const restore = input.restoreAtEnd !== false ? input.restoreLocale?.trim() : undefined;
+  if (restore && locales.at(-1) !== restore) locales.push(restore);
+  if (locales.length > 250) {
+    throw new Error("at most 250 locale cases per run, including a final restore");
+  }
+  return locales.map((locale, caseIndex) => ({ caseIndex, locale }));
+}
 
 export type LocaleNavStep =
   | {
@@ -238,7 +258,7 @@ export function isLocalePickerScreenTitle(title: string | undefined | null): boo
   return Boolean(title?.trim() && PICKER_SCREEN_RE.test(title));
 }
 
-/** Recorded / authored recipe steps → picker nav. Screenshots and asserts drop out. */
+/** Recorded / authored execution steps → picker nav. Screenshots and asserts drop out. */
 export function localeNavFromRecipeSteps(steps: readonly RecipeStep[]): LocaleNavStep[] {
   const out: LocaleNavStep[] = [];
   for (const step of steps) {
@@ -639,14 +659,14 @@ export function composeLocaleRunRecipes(input: {
   };
 }
 
-export async function prepareLocaleRunMatrix(
+export async function prepareLocaleCasePlan(
   scope: LocaleRunScope,
   seed?: number,
 ): Promise<{
   locales: string[];
-  matrix: PreparedRunMatrix;
+  matrix: PreparedCasePlan;
 }> {
-  const cases = materializeLocaleMatrixCases({
+  const cases = materializeLocaleCases({
     locales: scope.locales,
     restoreLocale: scope.restoreLocale,
     restoreAtEnd: scope.restoreAtEnd,
@@ -662,7 +682,7 @@ export async function prepareLocaleRunMatrix(
     texts.push(option.text?.trim() || NONE);
   }
 
-  const matrix = await prepareRunMatrix({
+  const matrix = await prepareCasePlan({
     strategy: "zip",
     seed,
     maxCases: 250,
@@ -696,7 +716,7 @@ export async function prepareLocaleRunMatrix(
 }
 
 export function defaultGrokLocaleScope(locales: string[]): LocaleRunScope {
-  const normalized = normalizeLocaleMatrixLocales(locales);
+  const normalized = normalizeLocales(locales);
   const profile = listLanguageProfilesSync().find((item) => item.id === "grok-ios");
   if (!profile) {
     return {

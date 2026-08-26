@@ -1,9 +1,9 @@
 /**
- * One recipe model: deterministic YAML recipes on disk, listed/edited over HTTP,
- * executed by the job engine (recipe-runner.ts + session.ts).
+ * One private execution-plan model: deterministic YAML on disk, consumed by
+ * the job engine (recipe-runner.ts + session.ts).
  *
- * Built-in coded flows are mirrored here as single-`flow`-step recipes so the
- * UI has a uniform list; custom recipes live as files under `recipes/`.
+ * Built-in coded flows are mirrored here as single-`flow`-step plans so the
+ * execution engine has one representation; custom plans live under `tests/`.
  */
 import { mkdir, readdir, writeFile, unlink, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -97,13 +97,13 @@ export function recipesRoot(): string {
   return join(findWorkspaceRoot(), "recipes");
 }
 
-/** Git-tracked YAML definitions are the only persisted recipe source. */
+/** Git-tracked YAML definitions are the only persisted execution-plan source. */
 export function testsRoot(): string {
   const env = process.env.RELAY_TESTS_DIR?.trim();
   return env || join(findWorkspaceRoot(), "tests");
 }
 
-/** Built-in recipes: one per coded flow, each a single opaque `flow` step. */
+/** Built-in plans: one per coded flow, each a single opaque `flow` step. */
 export function builtinRecipes(): Recipe[] {
   return ACTIONS.map((a) => ({
     id: a.id,
@@ -120,8 +120,8 @@ async function readStoredRecipe(id: string): Promise<Recipe | null> {
   return readYamlRecipeFile(recipeYamlPath(testsRoot(), id));
 }
 
-/** Packaged flows and YAML recipes share one editable catalog. A YAML entry with
- * the same id overrides its packaged default. */
+/** Packaged flows and stored plan definitions share one execution catalog. A
+ * stored definition with the same id overrides its packaged default. */
 export async function listRecipes(): Promise<Recipe[]> {
   const builtins = builtinRecipes();
   const yamlRecipes = new Map<string, Recipe>();

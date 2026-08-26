@@ -7,13 +7,11 @@ import type { SnapshotNode } from "./device.js";
 import {
   extractLanguageRowsFromNodes,
   getLanguageProfile,
-  corpusScopeFromLanguageProfile,
   inferLanguageTag,
   listLanguageProfiles,
-  localeRunScopeFromLanguageProfile,
+  matrixScopeFromLanguageProfile,
   resolveLanguageOptions,
   saveLanguageProfile,
-  switchLanguageModuleYaml,
 } from "./language-profiles.js";
 
 const roots: string[] = [];
@@ -121,22 +119,13 @@ test("resolveLanguageOptions maps tags to real picker labels", async () => {
   assert.equal(options.ja?.label, "ja");
 });
 
-test("corpusScopeFromLanguageProfile builds map-once scope", async () => {
+test("matrixScopeFromLanguageProfile restores English", async () => {
   await workspace();
-  const scope = await corpusScopeFromLanguageProfile("grok-ios", ["pt-BR", "en"]);
-  assert.equal(scope.strategy, "map-once-replay");
-  assert.equal(scope.mapLocale, "en");
-  assert.equal(scope.app, "ai.x.GrokApp");
-  assert.deepEqual(scope.languageOptions?.["pt-BR"], [
-    { kind: "tap", target: { label: "Português (Brasil)" } },
-  ]);
-});
-
-test("localeRunScopeFromLanguageProfile restores English", async () => {
-  await workspace();
-  const scope = await localeRunScopeFromLanguageProfile("grok-ios", ["it", "en"]);
+  const scope = await matrixScopeFromLanguageProfile("grok-ios", ["it", "en"]);
   assert.equal(scope.restoreLocale, "en");
+  assert.equal(scope.app, "ai.x.GrokApp");
   assert.equal(scope.languageOptions?.it?.label, "Italiano");
+  assert.equal(scope.screenshotEachLocale, true);
 });
 
 test("saveLanguageProfile overrides seed after scan-like save", async () => {
@@ -160,11 +149,3 @@ test("saveLanguageProfile overrides seed after scan-like save", async () => {
   assert.ok(grok.languages.some((row) => row.tag === "ja"));
 });
 
-test("switchLanguageModuleYaml emits reusable module", async () => {
-  await workspace();
-  const profile = (await getLanguageProfile("grok-ios"))!;
-  const yaml = switchLanguageModuleYaml(profile);
-  assert.match(yaml, /id: switch-language-grok-ios/);
-  assert.match(yaml, /locale_label/);
-  assert.match(yaml, /App Language/);
-});

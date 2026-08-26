@@ -10,10 +10,9 @@ import {
   type SnapshotNode,
 } from "./device.js";
 import { setLocalDeviceProvider } from "./device-factory.js";
-import { extractSwitcherOptionsFromNodes, inferOptionId } from "./switcher-option-rows.js";
+import { extractSwitcherOptionsFromNodes, inferOptionId } from "./variable-option-inference.js";
 import {
   getSwitcherProfile,
-  corpusScopeFromSwitcherProfile,
   listSwitcherProfiles,
   mergeSwitcherOptions,
   saveSwitcherProfile,
@@ -187,13 +186,6 @@ test("grok language seed is a language-kind switcher", async () => {
   assert.ok(profile!.options.some((option) => option.id === "pt-BR"));
 });
 
-test("corpusScopeFromSwitcherProfile expands option tags", async () => {
-  await workspace();
-  const scope = await corpusScopeFromSwitcherProfile("grok-ios-language", ["en", "it"]);
-  assert.equal(scope.strategy, "map-once-replay");
-  assert.equal(scope.mapLocale, "en");
-  assert.deepEqual(scope.languageOptions?.it, [{ kind: "tap", target: { label: "Italiano" } }]);
-});
 
 test("saveSwitcherProfile persists account-kind profiles", async () => {
   await workspace();

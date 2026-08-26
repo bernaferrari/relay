@@ -9,27 +9,27 @@ import type {
 import { CaseExpansionError, expandCaseIndexes } from "@relay/protocol";
 import { generateValues } from "./generation.js";
 
-export type RunMatrixStrategy = "repeat" | CaseExpansionStrategy;
+export type CasePlanStrategy = "repeat" | CaseExpansionStrategy;
 
-export type PrepareRunMatrixInput = {
+export type PrepareCasePlanInput = {
   variables: TestData[];
   dataIds?: string[];
-  strategy?: RunMatrixStrategy;
+  strategy?: CasePlanStrategy;
   repetitions?: number;
   seed?: number;
   maxCases?: number;
   runtimeValues?: Record<string, string | string[]>;
 };
 
-export type PreparedRunMatrix = {
+export type PreparedCasePlan = {
   id: string;
   createdAt: number;
   seed: number;
-  strategy: RunMatrixStrategy;
+  strategy: CasePlanStrategy;
   cases: FrozenRunCase[];
 };
 
-export class RunMatrixError extends Error {
+export class CasePlanError extends Error {
   constructor(
     readonly code:
       | "missing-private-value"
@@ -41,7 +41,7 @@ export class RunMatrixError extends Error {
     message: string,
   ) {
     super(message);
-    this.name = "RunMatrixError";
+    this.name = "CasePlanError";
   }
 }
 
@@ -64,14 +64,14 @@ function compactValues(value: string | string[] | undefined): string[] {
 
 async function resolveVariable(
   variable: TestData,
-  input: PrepareRunMatrixInput,
+  input: PrepareCasePlanInput,
   generationCount: number,
   seed: number,
 ): Promise<ResolvedVariable> {
   const name = variable.name.trim();
   const runtime = compactValues(input.runtimeValues?.[name] ?? input.runtimeValues?.[variable.id]);
   if (variable.scope === "private" && runtime.length === 0) {
-    throw new RunMatrixError(
+    throw new CasePlanError(
       "missing-private-value",
       `Private variable “${name}” needs a local value before this run can start`,
     );
@@ -97,7 +97,7 @@ async function resolveVariable(
       });
       const values = compactValues(generated.values);
       if (values.length === 0 && fallback.length === 0) {
-        throw new RunMatrixError(
+        throw new CasePlanError(
           "generation-failed",
           `Generated variable “${name}” returned no values and has no fallback`,
         );
@@ -117,7 +117,7 @@ async function resolveVariable(
         },
       };
     } catch (error) {
-      if (error instanceof RunMatrixError) throw error;
+      if (error instanceof CasePlanError) throw error;
       if (fallback.length) {
         return {
           definition: variable,
@@ -131,7 +131,7 @@ async function resolveVariable(
           },
         };
       }
-      throw new RunMatrixError(
+      throw new CasePlanError(
         "generation-failed",
         `Could not generate values for “${name}”; add a fallback or check the generation provider`,
       );
@@ -149,7 +149,7 @@ async function resolveVariable(
 }
 
 function indexesFor(
-  strategy: RunMatrixStrategy,
+  strategy: CasePlanStrategy,
   variables: ResolvedVariable[],
   repetitions: number,
   limit: number,
@@ -164,7 +164,7 @@ function indexesFor(
     return expandCaseIndexes(lengths, strategy, limit);
   } catch (error) {
     if (error instanceof CaseExpansionError) {
-      throw new RunMatrixError(error.code, error.message);
+      throw new CasePlanError(error.code, error.message);
     }
     throw error;
   }
@@ -183,7 +183,7 @@ function caseName(variables: ResolvedVariable[], indexes: number[], index: numbe
 }
 
 /** Resolve dynamic values and coverage combinations before any run is queued. */
-export async function prepareRunMatrix(input: PrepareRunMatrixInput): Promise<PreparedRunMatrix> {
+export async function prepareCasePlan(input: PrepareCasePlanInput): Promise<PreparedCasePlan> {
   const repetitions = bounded(input.repetitions, 1, 100);
   const maxCases = bounded(input.maxCases, 20, 250);
   const seed = Number.isFinite(input.seed) ? Math.floor(input.seed!) : Date.now();
@@ -197,7 +197,7 @@ export async function prepareRunMatrix(input: PrepareRunMatrixInput): Promise<Pr
       (id) => !selected.some((variable) => variable.id === id),
     );
     if (missing.length) {
-      throw new RunMatrixError(
+      throw new CasePlanError(
         "missing-variable",
         `Case stack references missing variable${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}`,
       );
@@ -209,7 +209,7 @@ export async function prepareRunMatrix(input: PrepareRunMatrixInput): Promise<Pr
   );
   const unresolved = variables.find((variable) => variable.values.length === 0);
   if (unresolved) {
-    throw new RunMatrixError(
+    throw new CasePlanError(
       "missing-variable",
       `Variable “${unresolved.name}” has no value for this run`,
     );
@@ -231,19 +231,19 @@ export async function prepareRunMatrix(input: PrepareRunMatrixInput): Promise<Pr
   return { id: matrixId, createdAt: Date.now(), seed, strategy, cases };
 }
 
-export async function prepareCaseStackMatrix(input: {
+export async function prepareCaseStackPlan(input: {
   variables: TestData[];
   caseStacks: CaseStack[];
   runtimeValues?: Record<string, string | string[]>;
   seed?: number;
-}): Promise<PreparedRunMatrix> {
+}): Promise<PreparedCasePlan> {
   if (input.caseStacks.length === 0) {
-    return prepareRunMatrix({ variables: [], seed: input.seed });
+    return prepareCasePlan({ variables: [], seed: input.seed });
   }
-  const matrices: PreparedRunMatrix[] = [];
+  const plans: PreparedCasePlan[] = [];
   for (const stack of input.caseStacks) {
-    matrices.push(
-      await prepareRunMatrix({
+    plans.push(
+      await prepareCasePlan({
         variables: input.variables,
         dataIds: stack.dataIds,
         strategy: stack.strategy,
@@ -257,27 +257,27 @@ export async function prepareCaseStackMatrix(input: {
   let combined: Array<Pick<FrozenRunCase, "name" | "values" | "provenance">> = [
     { name: "", values: {}, provenance: [] },
   ];
-  for (let matrixIndex = 0; matrixIndex < matrices.length; matrixIndex += 1) {
+  for (let planIndex = 0; planIndex < plans.length; planIndex += 1) {
     const next: typeof combined = [];
     for (const left of combined) {
-      for (const right of matrices[matrixIndex]!.cases) {
+      for (const right of plans[planIndex]!.cases) {
         for (const [name, value] of Object.entries(right.values)) {
           if (left.values[name] !== undefined && left.values[name] !== value) {
-            throw new RunMatrixError(
+            throw new CasePlanError(
               "conflicting-variable",
               `Case stacks assign different values to “${name}”; keep that variable in one stack`,
             );
           }
         }
         next.push({
-          name: [left.name, `${input.caseStacks[matrixIndex]!.name}: ${right.name}`]
+          name: [left.name, `${input.caseStacks[planIndex]!.name}: ${right.name}`]
             .filter(Boolean)
             .join(" · "),
           values: { ...left.values, ...right.values },
           provenance: [...left.provenance, ...right.provenance],
         });
         if (next.length > maxCases) {
-          throw new RunMatrixError(
+          throw new CasePlanError(
             "too-many-cases",
             `Combined case stacks expand beyond ${maxCases} runs; reduce coverage or split the flow`,
           );
@@ -290,8 +290,8 @@ export async function prepareCaseStackMatrix(input: {
   return {
     id,
     createdAt: Date.now(),
-    seed: matrices[0]!.seed,
-    strategy: matrices.length === 1 ? matrices[0]!.strategy : "cartesian",
+    seed: plans[0]!.seed,
+    strategy: plans.length === 1 ? plans[0]!.strategy : "cartesian",
     cases: combined.map((item, index) => ({
       id: `${id}:${index + 1}`,
       name: item.name || `Case ${index + 1}`,
@@ -303,10 +303,10 @@ export async function prepareCaseStackMatrix(input: {
 }
 
 /** Safe for reports, Activity, and transport. Raw values remain execution-only. */
-export function redactRunMatrix(
-  matrix: PreparedRunMatrix,
+export function redactCasePlan(
+  matrix: PreparedCasePlan,
   variables: TestData[],
-): PreparedRunMatrix {
+): PreparedCasePlan {
   const privateNames = new Set(
     variables
       .filter((variable) => variable.scope === "private" || variable.sensitive)

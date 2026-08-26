@@ -1,20 +1,21 @@
 /**
  * Language profiles — thin facade over generic switcher profiles.
  *
- * Prefer `switcher-profiles` for new code. These helpers keep corpus/locale-run
- * and existing "grok-ios" ids working while the product model is kind-agnostic.
+ * Prefer `switcher-profiles` for new code. These helpers keep locale-run and
+ * the existing "grok-ios" id working while the product model is kind-agnostic.
  */
-import type { CorpusNavStep, CorpusScope } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
-import { extractSwitcherOptionsFromNodes, inferOptionId } from "./switcher-option-rows.js";
+import type { ProfileNavStep } from "./profile-nav.js";
+import {
+  extractSwitcherOptionsFromNodes,
+  inferOptionId,
+} from "./variable-option-inference.js";
 import {
   getSwitcherProfile,
-  corpusScopeFromSwitcherProfile,
   listSwitcherProfiles,
   listSwitcherProfilesSync,
   matrixScopeFromSwitcherProfile,
   saveSwitcherProfile,
-  scanSwitcherPicker,
   type SwitcherOption,
   type SwitcherProfile,
 } from "./switcher-profiles.js";
@@ -31,8 +32,8 @@ export type AppLanguageProfile = {
   name: string;
   app: string;
   platform?: "ios" | "android" | "any";
-  entryPath: CorpusNavStep[];
-  languagePath: CorpusNavStep[];
+  entryPath: ProfileNavStep[];
+  languagePath: ProfileNavStep[];
   languages: LanguageRow[];
   defaultLocale?: string;
   notes?: string;
@@ -141,35 +142,23 @@ export function resolveLanguageOptions(
   return out;
 }
 
-export async function corpusScopeFromLanguageProfile(
-  profileId: string,
-  locales: string[],
-  overrides?: Partial<CorpusScope>,
-): Promise<Partial<CorpusScope>> {
-  return corpusScopeFromSwitcherProfile(
-    profileId === "grok-ios" ? "grok-ios-language" : profileId,
-    locales,
-    overrides,
-  );
-}
-
-export type ProfileLocaleRunScope = {
+export type ProfileMatrixScope = {
   locales: string[];
   app?: string;
   relaunch?: boolean;
-  entryPath?: CorpusNavStep[];
-  languagePath?: CorpusNavStep[];
+  entryPath?: ProfileNavStep[];
+  languagePath?: ProfileNavStep[];
   languageOptions?: Record<string, { label?: string; identifier?: string; text?: string }>;
   restoreLocale?: string;
   restoreAtEnd?: boolean;
   screenshotEachLocale?: boolean;
 };
 
-export async function localeRunScopeFromLanguageProfile(
+export async function matrixScopeFromLanguageProfile(
   profileId: string,
   locales: string[],
-  overrides?: Partial<ProfileLocaleRunScope>,
-): Promise<ProfileLocaleRunScope> {
+  overrides?: Partial<ProfileMatrixScope>,
+): Promise<ProfileMatrixScope> {
   const matrix = await matrixScopeFromSwitcherProfile(
     profileId === "grok-ios" ? "grok-ios-language" : profileId,
     locales,
@@ -199,51 +188,6 @@ export async function localeRunScopeFromLanguageProfile(
   };
 }
 
-export function switchLanguageModuleYaml(profile: AppLanguageProfile): string {
-  const langs = profile.languages.map((row) => `  # - ${row.tag}: ${row.label}`).join("\n");
-  const entry = profile.entryPath.map((step) => yamlNav(step)).join("\n");
-  const language = profile.languagePath.map((step) => yamlNav(step)).join("\n");
-  return `schemaVersion: 1
-id: switch-language-${profile.id}
-name: Switch language · ${profile.name}
-description: >
-  Reusable language switch. Bind locale_label per case.
-  Known locales:
-${langs}
-parameters:
-  - name: locale_label
-    label: Language row label
-    required: true
-steps:
-  - kind: app
-    action: open
-    app: ${JSON.stringify(profile.app)}
-    relaunch: true
-  - kind: sleep
-    ms: 1200
-${entry}
-${language}
-  - kind: tap
-    target:
-      label: "{{locale_label}}"
-  - kind: sleep
-    ms: 900
-`;
-}
-
-function yamlNav(step: CorpusNavStep): string {
-  const pad = "  ";
-  if (step.kind === "wait") return `${pad}- kind: sleep\n${pad}  ms: ${step.ms}`;
-  if (step.kind === "back") return `${pad}- kind: key\n${pad}  key: back`;
-  if (step.kind === "tap" && step.target.identifier) {
-    return `${pad}- kind: tap\n${pad}  target:\n${pad}    identifier: ${JSON.stringify(step.target.identifier)}`;
-  }
-  if (step.kind === "tap" && step.target.label) {
-    return `${pad}- kind: tap\n${pad}  target:\n${pad}    label: ${JSON.stringify(step.target.label)}`;
-  }
-  return `${pad}- kind: sleep\n${pad}  ms: 300`;
-}
-
 export const inferLanguageTag = inferOptionId;
 export function extractLanguageRowsFromNodes(nodes: SnapshotNode[]): LanguageRow[] {
   return extractSwitcherOptionsFromNodes(nodes).map((option) => ({
@@ -252,42 +196,4 @@ export function extractLanguageRowsFromNodes(nodes: SnapshotNode[]): LanguageRow
     ...(option.aliases ? { aliases: option.aliases } : {}),
     ...(option.identifier ? { identifier: option.identifier } : {}),
   }));
-}
-
-export type ScanLanguagePickerInput = {
-  serial: string;
-  app: string;
-  profileId?: string;
-  name?: string;
-  entryPath?: CorpusNavStep[];
-  languagePath?: CorpusNavStep[];
-  platform?: "ios" | "android";
-  maxScrolls?: number;
-  save?: boolean;
-  /** Keep the already-visible picker bound to its current iOS session when false. */
-  openApp?: boolean;
-};
-
-export async function scanAppLanguagePicker(input: ScanLanguagePickerInput) {
-  const result = await scanSwitcherPicker({
-    serial: input.serial,
-    app: input.app,
-    kind: "language",
-    profileId:
-      input.profileId === "grok-ios"
-        ? "grok-ios-language"
-        : (input.profileId ?? "grok-ios-language"),
-    name: input.name,
-    entryPath: input.entryPath,
-    pickerPath: input.languagePath,
-    platform: input.platform,
-    maxScrolls: input.maxScrolls,
-    save: input.save,
-    openApp: input.openApp,
-  });
-  return {
-    profile: toLanguage(result.profile),
-    rowsFound: result.optionsFound,
-    scrolls: result.scrolls,
-  };
 }

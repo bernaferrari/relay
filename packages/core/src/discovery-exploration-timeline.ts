@@ -1,8 +1,8 @@
 import type {
   DiscoveryBlockedReason,
   DiscoveryExploreOutcome,
-  DiscoveryJourney,
-  DiscoveryJourneyStep,
+  DiscoveryExplorationTimeline,
+  DiscoveryExplorationTimelineStep,
   DiscoverySession,
 } from "@relay/protocol";
 
@@ -12,19 +12,19 @@ const LEFT_APP_LABEL =
   /app language|preferred language|open (ios |system )?settings|system settings/i;
 
 /**
- * Ordered discovery path timeline with screenshot refs for Atlas.
+ * Ordered discovery exploration timeline with screenshot refs for Atlas.
  * Steps follow transition capture order (not BFS), so the timeline matches
  * what the explorer actually did.
  */
-export function buildDiscoveryJourney(
+export function buildExplorationTimeline(
   session: DiscoverySession,
   at = Date.now(),
-): DiscoveryJourney {
+): DiscoveryExplorationTimeline {
   const byId = new Map(session.screens.map((screen) => [screen.id, screen]));
   const ordered = [...session.transitions].sort(
     (left, right) => left.capturedAt - right.capturedAt || left.id.localeCompare(right.id),
   );
-  const steps: DiscoveryJourneyStep[] = ordered.map((transition, index) => {
+  const steps: DiscoveryExplorationTimelineStep[] = ordered.map((transition, index) => {
     const from = byId.get(transition.fromScreenId);
     const to = transition.toScreenId ? byId.get(transition.toScreenId) : undefined;
     const screenshotScreen = to ?? from;

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CorpusControl } from "@relay/protocol";
+import type { CombineEvidenceControl } from "./combine-evidence-session.js";
 import type { FrameObservation } from "./frame-observation.js";
 import { analyzeLocaleRunPack, type LocaleRunPackCapture } from "./locale-run-analysis.js";
 
-function control(stableKey: string, label: string, width = 120): CorpusControl {
+function control(stableKey: string, label: string, width = 120): CombineEvidenceControl {
   return {
     id: `${stableKey}-1`,
     label,
@@ -14,7 +14,7 @@ function control(stableKey: string, label: string, width = 120): CorpusControl {
   };
 }
 
-function observation(controls: CorpusControl[], caption = "settings"): FrameObservation {
+function observation(controls: CombineEvidenceControl[], caption = "settings"): FrameObservation {
   return {
     schemaVersion: 1,
     framePath: "frames/001.png",

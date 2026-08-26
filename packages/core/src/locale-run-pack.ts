@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type {
-  CorpusFinding,
+  CombineEvidenceFinding,
   LocaleRunAnalysisReport,
   LocaleRunPackManifest,
 } from "@relay/protocol";
@@ -22,7 +22,7 @@ import {
   type LocaleRunPackCapture,
 } from "./locale-run-analysis.js";
 import { listPersistedRuns } from "./runs.js";
-import { slugCorpusPathSegment } from "./screen-identity.js";
+import { slugEvidencePathSegment } from "./screen-identity.js";
 import { listJobs, type TestJob } from "./session.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 
@@ -71,7 +71,7 @@ function encodePath(path: string): string {
   return path.split("/").map(encodeURIComponent).join("/");
 }
 
-function findingLine(manifest: LocaleRunPackManifest, finding: CorpusFinding): string {
+function findingLine(manifest: LocaleRunPackManifest, finding: CombineEvidenceFinding): string {
   const frame = manifest.byCanonicalKey[finding.canonicalKey]?.[finding.locale];
   const detail = escapeHtml(finding.detail);
   const body = frame ? `<a href="${encodePath(frame)}">${detail}</a>` : detail;
@@ -83,7 +83,7 @@ function portablePackHtml(manifest: LocaleRunPackManifest): string {
   const expected = manifest.cases.reduce((total, item) => total + (item.expectedFrames ?? 0), 0);
   const captured = manifest.cases.reduce((total, item) => total + item.frames.length, 0);
   const { analysis, analysisCoverage } = manifest;
-  const byLocale = new Map<string, CorpusFinding[]>();
+  const byLocale = new Map<string, CombineEvidenceFinding[]>();
   for (const finding of analysis.findings) {
     byLocale.set(finding.locale, [...(byLocale.get(finding.locale) ?? []), finding]);
   }
@@ -407,7 +407,7 @@ export async function exportLocaleRunPack(input: {
   const captures: LocaleRunPackCapture[] = [];
   for (const job of input.jobs) {
     const locale = artifactLocale(job);
-    const localeDir = join(rootDir, slugCorpusPathSegment(locale));
+    const localeDir = join(rootDir, slugEvidencePathSegment(locale));
     const screenshotDir = join(localeDir, "screenshots");
     const accessibilityDir = join(localeDir, "accessibility");
     await mkdir(screenshotDir, { recursive: true });
@@ -440,7 +440,7 @@ export async function exportLocaleRunPack(input: {
           const destName = `${String(index + 1).padStart(3, "0")}-${name}`;
           const bytes = await readFile(join(frameDir, name));
           await writeFile(join(screenshotDir, destName), bytes);
-          const packPath = `${slugCorpusPathSegment(locale)}/screenshots/${destName}`;
+          const packPath = `${slugEvidencePathSegment(locale)}/screenshots/${destName}`;
           frames.push(packPath);
           const observation = observations.get(name);
           const nodes = await readFrameTreeNodes(job.runDir, `frames/${name}`);

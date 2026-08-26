@@ -37,7 +37,7 @@ import { preflightCompiledAppMapTestOffline } from "./offline-test-preflight.js"
 import {
   assertOptionSandwichReady,
   defaultOptionMatrixStrategy,
-  prepareOptionRunMatrix,
+  prepareOptionCasePlan,
   type OptionRunSet,
 } from "./option-run.js";
 import {
@@ -47,7 +47,7 @@ import {
 } from "./app-map-combine-cell-target-binding.js";
 import { synthesizeCombineCellRuntimeProfiles } from "./app-map-combine-from-test.js";
 import type { Recipe } from "./recipes.js";
-import type { PreparedRunMatrix } from "./run-matrix.js";
+import type { PreparedCasePlan } from "./case-plan.js";
 
 export class AppMapCombineCellContractError extends Error {
   readonly code = "APP_MAP_COMBINE_CELL_CONTRACT";
@@ -85,7 +85,7 @@ export type PreparedAppMapCombine = {
   cells: PreparedAppMapCombineCell[];
   selectedCellIds: string[];
   selectedCells: PreparedAppMapCombineCell[];
-  matrix: PreparedRunMatrix;
+  matrix: PreparedCasePlan;
   cellStates: AppMapCombineCellState[];
   sets: OptionRunSet[];
 };
@@ -207,7 +207,7 @@ export function resolveSavedAppMapRuntimeTargetProfile(input: {
 export function enumerateAppMapCombineCells(input: {
   combine: AppMapCombine;
   tests: AppMapScenarioTest[];
-  matrix: PreparedRunMatrix;
+  matrix: PreparedCasePlan;
   variableIds: readonly string[];
 }): Array<{
   cellId: string;
@@ -558,7 +558,7 @@ export async function prepareAppMapCombineCells(input: {
   }
   const strategy =
     input.strategy ?? input.combine.strategy ?? defaultOptionMatrixStrategy(sets.length);
-  const matrix = await prepareOptionRunMatrix({
+  const matrix = await prepareOptionCasePlan({
     sets,
     selected,
     strategy,

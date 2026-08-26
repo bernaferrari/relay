@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { CorpusControl } from "@relay/protocol";
+import type { CombineEvidenceControl } from "./combine-evidence-session.js";
 import type { SnapshotNode } from "./device.js";
 import {
   hasProfileChromePrefix,
@@ -18,7 +18,7 @@ import {
   wholeScreenNodeIndexes,
 } from "./snapshot-app-content.js";
 import {
-  corpusControlStableKey,
+  combineEvidenceControlStableKey,
   observeLocaleStableIdentity,
   observeScreenIdentity,
   stableLabelKey,
@@ -242,7 +242,7 @@ const CORPUS_CONTROL_LIMIT = 60;
  * Cap the list without letting chrome crowd out a row. Order is the tree's, so
  * a crawl still walks the screen top to bottom.
  */
-function capCorpusControls(controls: CorpusControl[]): CorpusControl[] {
+function capCombineEvidenceControls(controls: CombineEvidenceControl[]): CombineEvidenceControl[] {
   if (controls.length <= CORPUS_CONTROL_LIMIT) return controls;
   const kept = new Set(
     controls.filter((control) => !control.skipCrawl).slice(0, CORPUS_CONTROL_LIMIT),
@@ -258,10 +258,10 @@ function capCorpusControls(controls: CorpusControl[]): CorpusControl[] {
  * Every comparable control on one screen, each marked with whether an automatic
  * crawl may activate it. Prefer stable identifiers.
  */
-export function corpusControls(
+export function combineEvidenceControls(
   nodes: SnapshotNode[],
   options?: { allowSensitive?: boolean; includeToggles?: boolean },
-): CorpusControl[] {
+): CombineEvidenceControl[] {
   const seen = new Set<string>();
   const nested = isNestedSettingsPage(nodes);
   // The software keyboard lives in the app's own hierarchy on iOS, and the app
@@ -306,7 +306,7 @@ export function corpusControls(
         stableLabelKey(node.value);
       const stableKey =
         anchor?.identifier || node.identifier || semanticKey
-          ? corpusControlStableKey(anchor ?? node)
+          ? combineEvidenceControlStableKey(anchor ?? node)
           : structuralControlKey(nodes, anchor ?? node, index, numbered);
       const target = anchor?.identifier
         ? { identifier: anchor.identifier }
@@ -348,13 +348,13 @@ export function corpusControls(
         },
       ];
     });
-  return capCorpusControls(controls);
+  return capCombineEvidenceControls(controls);
 }
 
 /** The controls an automatic crawl may activate, in tree order. */
-export function crawlableCorpusControls(
-  controls: readonly CorpusControl[] | undefined,
-): CorpusControl[] {
+export function crawlableCombineEvidenceControls(
+  controls: readonly CombineEvidenceControl[] | undefined,
+): CombineEvidenceControl[] {
   return (controls ?? []).filter((control) => !control.skipCrawl);
 }
 
@@ -402,7 +402,7 @@ export function titleFromNodes(nodes: SnapshotNode[], path: string[]): string | 
  * Locale-stable key for the root; path-scoped key for nested pages so parent
  * AX leakage cannot collapse every settings subpage into one node.
  */
-export function fingerprintCorpusScreen(
+export function fingerprintCombineEvidenceScreen(
   nodes: SnapshotNode[],
   pathKeys: string[] = [],
 ): {

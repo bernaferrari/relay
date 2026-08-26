@@ -87,8 +87,6 @@ export * from "./discovery-coverage.js";
 export * from "./discovery-exploration-timeline.js";
 export * from "./grounding.js";
 export * from "./explore.js";
-export * from "./corpus.js";
-export * from "./locale-finding-triage.js";
 export * from "./locale-run.js";
 export * from "./locale-run-pack.js";
 export * from "./option-run.js";

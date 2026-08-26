@@ -8,7 +8,7 @@
  *
  * Language is one kind — not a special-case product.
  */
-import type { CorpusNavStep, CorpusScope } from "@relay/protocol";
+import type { ProfileNavStep } from "./profile-nav.js";
 import {
   openApp,
   pressIdentifier,
@@ -24,7 +24,7 @@ import {
 } from "./device.js";
 import { createDeviceForTarget } from "./device-factory.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
-import { extractSwitcherOptionsFromNodes } from "./switcher-option-rows.js";
+import { extractSwitcherOptionsFromNodes } from "./variable-option-inference.js";
 import {
   attachSwitcherScanOutcomeUnknownDiagnostic,
   createSwitcherScanProgress,
@@ -65,9 +65,9 @@ export type SwitcherProfile = {
   app: string;
   platform?: "ios" | "android" | "any";
   /** Path from cold open to the surface that contains the switcher entry. */
-  entryPath: CorpusNavStep[];
+  entryPath: ProfileNavStep[];
   /** Path from entry surface to the option list. */
-  pickerPath: CorpusNavStep[];
+  pickerPath: ProfileNavStep[];
   options: SwitcherOption[];
   defaultOptionId?: string;
   notes?: string;
@@ -256,7 +256,7 @@ function optionForId(profile: SwitcherProfile, id: string): SwitcherOption | und
   );
 }
 
-export function resolveSwitcherTargets(
+function resolveSwitcherTargets(
   profile: SwitcherProfile,
   optionIds: string[],
 ): Record<string, { label?: string; identifier?: string; text?: string }> {
@@ -272,43 +272,13 @@ export function resolveSwitcherTargets(
   return out;
 }
 
-/**
- * Expand a switcher profile + option tags into a corpus scope.
- * For kind=language, option ids are locales (mapLocale / locales fields).
- */
-export async function corpusScopeFromSwitcherProfile(
-  profileId: string,
-  optionIds: string[],
-  overrides?: Partial<CorpusScope>,
-): Promise<Partial<CorpusScope>> {
-  const profile = await getSwitcherProfile(profileId);
-  if (!profile) throw new Error(`unknown switcher profile: ${profileId}`);
-  const tags = [...new Set(optionIds.map((id) => id.trim()).filter(Boolean))];
-  if (!tags.length) throw new Error("at least one option is required");
-  const targets = resolveSwitcherTargets(profile, tags);
-  const languageOptions = Object.fromEntries(
-    Object.entries(targets).map(([tag, target]) => [tag, [{ kind: "tap" as const, target }]]),
-  );
-  const preferred = profile.defaultOptionId ?? tags[0]!;
-  const mapOption = tags.includes(preferred) ? preferred : tags[0]!;
-  return {
-    strategy: "map-once-replay",
-    mapLocale: mapOption,
-    locales: tags,
-    app: profile.app,
-    entryPath: structuredClone(profile.entryPath),
-    languagePath: structuredClone(profile.pickerPath),
-    languageOptions,
-    ...overrides,
-  };
-}
 
 export type SwitcherMatrixScope = {
   options: string[];
   app?: string;
   relaunch?: boolean;
-  entryPath?: CorpusNavStep[];
-  pickerPath?: CorpusNavStep[];
+  entryPath?: ProfileNavStep[];
+  pickerPath?: ProfileNavStep[];
   optionTargets?: Record<string, { label?: string; identifier?: string; text?: string }>;
   restoreOptionId?: string;
   restoreAtEnd?: boolean;
@@ -353,8 +323,8 @@ function looksLikeOptionList(nodes: SnapshotNode[], kind: SwitcherKind): boolean
 async function ensureOptionList(
   device: Device,
   app: string,
-  entryPath: CorpusNavStep[],
-  pickerPath: CorpusNavStep[],
+  entryPath: ProfileNavStep[],
+  pickerPath: ProfileNavStep[],
   kind: SwitcherKind,
   progress: SwitcherScanProgress,
 ): Promise<void> {
@@ -405,7 +375,7 @@ async function ensureOptionList(
 
 async function runNavSteps(
   device: Device,
-  steps: CorpusNavStep[] | undefined,
+  steps: ProfileNavStep[] | undefined,
   progress?: SwitcherScanProgress,
   phase?: SwitcherScanProgress["phase"],
 ): Promise<void> {
@@ -528,8 +498,8 @@ export type ScanSwitcherInput = {
   kind: SwitcherKind;
   profileId?: string;
   name?: string;
-  entryPath?: CorpusNavStep[];
-  pickerPath?: CorpusNavStep[];
+  entryPath?: ProfileNavStep[];
+  pickerPath?: ProfileNavStep[];
   platform?: "ios" | "android";
   maxScrolls?: number;
   save?: boolean;

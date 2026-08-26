@@ -6,10 +6,10 @@ import type {
   TargetProfile,
 } from "@relay/protocol";
 import {
-  buildDiscoveryJourney,
+  buildExplorationTimeline,
   discoveryExploreOutcome,
   inferDiscoveryBlockedReasons,
-} from "./discovery-journey.js";
+} from "./discovery-exploration-timeline.js";
 
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 16);
@@ -102,7 +102,7 @@ export function buildDiscoveryCoverage(
       .sort(),
     screens: finalized(screens.values(), profileIds),
     transitions: finalized(transitions.values(), profileIds),
-    journey: buildDiscoveryJourney(anchor, at),
+    explorationTimeline: buildExplorationTimeline(anchor, at),
     blockedReasons,
     exploreOutcome: discoveryExploreOutcome(anchor, blockedReasons),
   };

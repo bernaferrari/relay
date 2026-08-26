@@ -20,13 +20,6 @@ import { clearControl, JobCancelledError, requestCancel, runWithJobControl } fro
 import { setLocalDeviceProvider } from "./device-factory.js";
 import { captureFullSurfaceEvidence } from "./discovery-surface.js";
 import { dismissTowardParent } from "./explore.js";
-import {
-  corpusCrawlLoopsForTests,
-  createCorpusSession,
-  recordCorpusScreen,
-  resetCorpusCrawlsForTests,
-  setCorpusCrawlRuntimeForTests,
-} from "./corpus.js";
 import { postLoginNotifications } from "./grok.js";
 import { openPhysicalIosApp } from "./ios-app-open.js";
 import { runRecipeStep } from "./recipe-runner.js";
@@ -42,14 +35,10 @@ const iosCloud = (sessionId: string) => ({
   platform: "ios" as const,
 });
 const roots: string[] = [];
-let corpusRoot: string | undefined;
-
 afterEach(async () => {
   setLocalDeviceProvider(undefined);
   resetDeviceClients();
-  resetCorpusCrawlsForTests();
   delete process.env.RELAY_WORKSPACE_ROOT;
-  corpusRoot = undefined;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -433,87 +422,6 @@ async function runSwitcherSurface(
   }
 }
 
-const corpusNodes: SnapshotNode[] = [
-  {
-    index: 0,
-    type: "StaticText",
-    role: "header",
-    label: "Settings",
-    identifier: "settings.title",
-    visibleToUser: true,
-    hittable: false,
-  },
-  {
-    index: 1,
-    type: "Button",
-    role: "button",
-    label: "First row",
-    identifier: "settings.first",
-    visibleToUser: true,
-    hittable: true,
-  },
-];
-
-async function corpusWorkspace(): Promise<void> {
-  if (corpusRoot) {
-    process.env.RELAY_WORKSPACE_ROOT = corpusRoot;
-    return;
-  }
-  const root = await mkdtemp(join(tmpdir(), "relay-terminality-corpus-"));
-  roots.push(root);
-  corpusRoot = root;
-  process.env.RELAY_WORKSPACE_ROOT = root;
-}
-
-async function captureCorpusRoot(input: {
-  sessionId: string;
-  locale: string;
-  depth: number;
-  path: string[];
-  pathKeys: string[];
-}) {
-  return await recordCorpusScreen({
-    sessionId: input.sessionId,
-    nodes: corpusNodes,
-    locale: input.locale,
-    depth: input.depth,
-    path: input.path,
-    pathKeys: input.pathKeys,
-    makeCurrent: true,
-  });
-}
-
-async function runCorpusCrawlSurface(
-  nativeDispatches: string[],
-  outcome: "unknown" | "ordinary",
-): Promise<void> {
-  await corpusWorkspace();
-  const session = await createCorpusSession({
-    name: `Terminality ${outcome}`,
-    targetId: `ios-corpus-${outcome}`,
-    scope: { locales: ["en"], maxDepth: 1 },
-  });
-  setCorpusCrawlRuntimeForTests({
-    captureCurrent: captureCorpusRoot,
-    collectControlsWithScroll: async () => ({ nodes: corpusNodes, controls: [] }),
-    interactCorpusControl: async ({ control }) => {
-      nativeDispatches.push(control.label);
-      if (outcome === "unknown") throw unknownIosMutation("press");
-      throw new Error("row is no longer present");
-    },
-    backtrack: async () => {
-      nativeDispatches.push("backtrack");
-    },
-  });
-  await corpusCrawlLoopsForTests.crawlLocale({
-    session,
-    locale: "en",
-    serial: `ios-corpus-${outcome}`,
-    device: {} as Device,
-    recordPlan: [],
-  });
-}
-
 test("registered public recovery boundaries preserve iOS exact-once terminality", async () => {
   const registry = defineIosMutationTerminalityRegistry([
     {
@@ -761,25 +669,6 @@ test("registered public recovery boundaries preserve iOS exact-once terminality"
           const nativeDispatches: string[] = [];
           return await ordinaryTrace(nativeDispatches, "recovered", () =>
             runSwitcherSurface(nativeDispatches, "selector-miss"),
-          );
-        },
-      },
-    },
-    {
-      id: "core.corpus.crawl",
-      unknown: async () => {
-        const nativeDispatches: string[] = [];
-        return await terminalTrace(nativeDispatches, () =>
-          runCorpusCrawlSurface(nativeDispatches, "unknown"),
-        );
-      },
-      recovery: {
-        expectedStatus: "handled",
-        expectedNativeDispatches: 1,
-        run: async () => {
-          const nativeDispatches: string[] = [];
-          return await ordinaryTrace(nativeDispatches, "handled", () =>
-            runCorpusCrawlSurface(nativeDispatches, "ordinary"),
           );
         },
       },

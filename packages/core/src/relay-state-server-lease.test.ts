@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   acquireRelayStateServerLease,
+  recoverAbandonedLocalRelayStateServerLease,
   RelayStateDirectoryInUseError,
   relayStateServerLeasePath,
 } from "./relay-state-server-lease.js";
@@ -68,5 +69,118 @@ test("a dead same-host owner can be reclaimed but a foreign host is refused", as
     } finally {
       remote.release();
     }
+  });
+});
+
+test("an aged dead lease from the previous local hostname is transactionally recovered", async () => {
+  await withRoot((root) => {
+    const path = relayStateServerLeasePath(join(root, ".relay"));
+    const stale = acquireRelayStateServerLease({
+      path,
+      pid: 999_999_999,
+      host: "Bernardos-MacBook-Pro-4.local",
+      acquiredAt: 1_000,
+    });
+
+    const recovery = recoverAbandonedLocalRelayStateServerLease({
+      path,
+      workspaceRoot: root,
+      currentHost: "Bernardos-MacBook-Pro-5.local",
+      now: 1_000 + 60 * 60_000,
+      minimumAgeMs: 5 * 60_000,
+      localPortHasListener: false,
+    });
+
+    assert.equal(recovery.status, "recovered");
+    if (recovery.status !== "recovered") return;
+    assert.equal(recovery.previousOwner.leaseId, stale.owner.leaseId);
+    assert.equal(recovery.reason, "local-hostname-collision-renamed");
+
+    const next = acquireRelayStateServerLease({
+      path,
+      host: "Bernardos-MacBook-Pro-5.local",
+      acquiredAt: recovery.recoveredAt + 1,
+    });
+    next.release();
+    stale.release();
+  });
+});
+
+test("local lease recovery refuses live, young, listening, unrelated, and shared owners", async () => {
+  await withRoot((root) => {
+    const path = relayStateServerLeasePath(join(root, ".relay"));
+    const common = {
+      path,
+      workspaceRoot: root,
+      currentHost: "relay-workstation-5.local",
+      now: 1_000_000,
+      minimumAgeMs: 300_000,
+      localPortHasListener: false,
+    };
+
+    const live = acquireRelayStateServerLease({
+      path,
+      pid: process.pid,
+      host: "relay-workstation-4.local",
+      acquiredAt: 1,
+    });
+    assert.deepEqual(recoverAbandonedLocalRelayStateServerLease(common), {
+      status: "refused",
+      reason: "owner-process-alive",
+      owner: live.owner,
+    });
+    live.release();
+
+    const young = acquireRelayStateServerLease({
+      path,
+      pid: 999_999_999,
+      host: "relay-workstation-4.local",
+      acquiredAt: common.now - 1_000,
+    });
+    assert.equal(
+      recoverAbandonedLocalRelayStateServerLease(common).reason,
+      "lease-not-old-enough",
+    );
+    young.release();
+
+    const listening = acquireRelayStateServerLease({
+      path,
+      pid: 999_999_999,
+      host: "relay-workstation-4.local",
+      acquiredAt: 1,
+    });
+    assert.equal(
+      recoverAbandonedLocalRelayStateServerLease({
+        ...common,
+        localPortHasListener: true,
+      }).reason,
+      "local-port-listener-present",
+    );
+    listening.release();
+
+    const unrelated = acquireRelayStateServerLease({
+      path,
+      pid: 999_999_999,
+      host: "another-relay-host.local",
+      acquiredAt: 1,
+    });
+    assert.equal(
+      recoverAbandonedLocalRelayStateServerLease(common).reason,
+      "foreign-host-not-local-rename",
+    );
+    unrelated.release();
+
+    const sharedPath = relayStateServerLeasePath(join(root, "shared-state"));
+    const shared = acquireRelayStateServerLease({
+      path: sharedPath,
+      pid: 999_999_999,
+      host: "relay-workstation-4.local",
+      acquiredAt: 1,
+    });
+    assert.equal(
+      recoverAbandonedLocalRelayStateServerLease({ ...common, path: sharedPath }).reason,
+      "state-not-workspace-local",
+    );
+    shared.release();
   });
 });

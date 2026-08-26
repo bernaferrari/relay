@@ -26,6 +26,11 @@ export {
 } from "./app-map/connection-operations.js";
 export { previewRoutineImpact } from "./app-map/routine-operations.js";
 export {
+  computeDiffImpact,
+  matchedDiffEntities,
+  type DiffImpactInput,
+} from "./diff-impact.js";
+export {
   connectionRouteCost,
   selectEquivalentDirectConnection,
   type ConnectionRouteCost,

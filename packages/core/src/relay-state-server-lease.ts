@@ -237,3 +237,108 @@ export function acquireRelayStateServerLease(
     },
   };
 }
+
+export type RecoverAbandonedLocalRelayStateServerLeaseInput = {
+  path?: string;
+  workspaceRoot?: string;
+  currentHost?: string;
+  now?: number;
+  minimumAgeMs?: number;
+  localPortHasListener?: boolean;
+};
+
+type RelayStateServerLeaseRecoveryRefusalReason =
+  | "owner-process-alive"
+  | "lease-not-old-enough"
+  | "local-port-listener-present"
+  | "foreign-host-not-local-rename"
+  | "state-not-workspace-local"
+  | "no-existing-lease";
+
+export type RelayStateServerLeaseRecovery =
+  | {
+      readonly status: "recovered";
+      readonly reason: "local-hostname-collision-renamed" | "aged-dead-local-owner";
+      readonly previousOwner: RelayStateServerLeaseOwner;
+      readonly recoveredAt: number;
+    }
+  | {
+      readonly status: "refused";
+      readonly reason: RelayStateServerLeaseRecoveryRefusalReason;
+      readonly owner?: Readonly<PersistedRelayServerLease>;
+    };
+
+function isLocalHostnameRenamed(previous: string, current: string): boolean {
+  const base = (host: string): string => host.replace(/-?\d+\.local$/i, "").trim().toLowerCase();
+  const previousBase = base(previous);
+  return previousBase !== "" && previousBase === base(current);
+}
+
+/**
+ * Reclaim a stale lease left behind by a dead local Relay server before this
+ * one starts. Refuses live owners, young leases, and directories whose local
+ * port already has a listener; a foreign host is only accepted when its name
+ * looks like the local hostname renamed (macOS hostname collisions). The row
+ * is removed inside one `BEGIN IMMEDIATE` transaction so a concurrent acquirer
+ * never observes a partially reclaimed directory.
+ */
+export function recoverAbandonedLocalRelayStateServerLease(
+  input: RecoverAbandonedLocalRelayStateServerLeaseInput = {},
+): RelayStateServerLeaseRecovery {
+  const path = input.path ?? relayStateServerLeasePath();
+  const workspaceRoot = input.workspaceRoot ?? findWorkspaceRoot();
+  const currentHost = nonEmpty(input.currentHost ?? hostname(), "currentHost");
+  const now = timestamp(input.now ?? Date.now(), "now");
+  const minimumAgeMs = timestamp(input.minimumAgeMs ?? 0, "minimumAgeMs");
+
+  const stateRoot = join(workspaceRoot, ".relay");
+  if (dirname(path) !== stateRoot || !path.endsWith(LEASE_DATABASE_NAME)) {
+    return { status: "refused", reason: "state-not-workspace-local" };
+  }
+
+  mkdirSync(stateRoot, { recursive: true });
+  const database = new DatabaseSync(path, { timeout: 5_000 });
+  try {
+    database.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = FULL;
+      PRAGMA busy_timeout = 5000;
+      CREATE TABLE IF NOT EXISTS relay_server_state_leases (
+        slot TEXT PRIMARY KEY,
+        document TEXT NOT NULL
+      );
+    `);
+    begin(database);
+    const existing = readLease(database);
+    if (!existing) {
+      rollback(database);
+      return { status: "refused", reason: "no-existing-lease" };
+    }
+    const owner = existing;
+    const refuse = (
+      reason: RelayStateServerLeaseRecoveryRefusalReason,
+    ): RelayStateServerLeaseRecovery => {
+      rollback(database);
+      return { status: "refused", reason, owner };
+    };
+    if (isProcessAlive(existing.pid)) return refuse("owner-process-alive");
+    if (now - existing.acquiredAt < minimumAgeMs) return refuse("lease-not-old-enough");
+    if (input.localPortHasListener === true) return refuse("local-port-listener-present");
+    let recoveryReason: RelayStateServerLeaseRecovery["reason"];
+    if (existing.host === currentHost) {
+      recoveryReason = "aged-dead-local-owner";
+    } else if (isLocalHostnameRenamed(existing.host, currentHost)) {
+      recoveryReason = "local-hostname-collision-renamed";
+    } else {
+      return refuse("foreign-host-not-local-rename");
+    }
+    database.prepare("DELETE FROM relay_server_state_leases WHERE slot = ?").run(LEASE_SLOT);
+    database.exec("COMMIT");
+    return { status: "recovered", reason: recoveryReason, previousOwner: owner, recoveredAt: now };
+  } catch (error) {
+    rollback(database);
+    throw error;
+  } finally {
+    closeDatabase(database);
+  }
+}

@@ -4,16 +4,15 @@
  * A matrix replays one authored test per locale, so the nth authored
  * screenshot of every case is the same screen in a different language. That
  * ordinal is the locale-stable identity a crawl gets from the tree, which
- * makes the pack readable by the corpus analyzer instead of a second one.
+ * makes the pack readable by the same analyzer instead of a second one.
  */
 import type {
-  CorpusAnalysisReport,
-  CorpusScreen,
-  CorpusSession,
+  CombineEvidenceAnalysis,
   LocaleRunPackFrame,
 } from "@relay/protocol";
-import { analyzeCorpus } from "./corpus-report.js";
-import { corpusControls } from "./corpus-screen-analysis.js";
+import { analyzeCombineEvidence } from "./combine-evidence-analysis.js";
+import type { CombineEvidenceScreen, CombineEvidenceSession } from "./combine-evidence-session.js";
+import { combineEvidenceControls } from "./combine-evidence-screen-analysis.js";
 import type { SnapshotNode } from "./device.js";
 import type { FrameObservation } from "./frame-observation.js";
 
@@ -32,7 +31,7 @@ export type LocaleRunPackCapture = {
 };
 
 export type LocaleRunPackAnalysis = {
-  analysis: CorpusAnalysisReport;
+  analysis: CombineEvidenceAnalysis;
   byCanonicalKey: Record<string, Record<string, string>>;
   frames: LocaleRunPackFrame[];
   coverage: { frames: number; inspectedFrames: number };
@@ -42,7 +41,7 @@ export function localeRunCanonicalKey(index: number): string {
   return `frame-${String(index + 1).padStart(3, "0")}`;
 }
 
-function screenFor(capture: LocaleRunPackCapture, compareText: boolean): CorpusScreen {
+function screenFor(capture: LocaleRunPackCapture, compareText: boolean): CombineEvidenceScreen {
   const canonicalKey = localeRunCanonicalKey(capture.index);
   const observation = capture.observation;
   const caption = observation?.caption?.trim();
@@ -52,7 +51,7 @@ function screenFor(capture: LocaleRunPackCapture, compareText: boolean): CorpusS
   // keep the frames and lose the labels: presence is all that is comparable.
   const controls = compareText
     ? capture.nodes?.length
-      ? corpusControls(capture.nodes)
+      ? combineEvidenceControls(capture.nodes)
       : (observation?.controls ?? [])
     : [];
   return {
@@ -80,10 +79,33 @@ function screenFor(capture: LocaleRunPackCapture, compareText: boolean): CorpusS
   };
 }
 
+function sessionFor(input: {
+  batchId: string;
+  title: string;
+  locales: string[];
+  screens: CombineEvidenceScreen[];
+}): CombineEvidenceSession {
+  const now = Date.now();
+  return {
+    id: input.batchId,
+    name: input.title,
+    targetId: "",
+    scope: {
+      locales: input.locales,
+      ...(input.locales[0] ? { mapLocale: input.locales[0] } : {}),
+    },
+    status: "complete",
+    createdAt: now,
+    updatedAt: now,
+    screens: input.screens,
+  };
+}
+
 /**
- * The pack's cases read as a corpus: one screen per authored frame per locale,
- * analyzed by the same deterministic checks the language sweep uses. A single
- * locale has no baseline to differ from, so it reports nothing.
+ * The pack's cases read as one comparable session: one screen per authored
+ * frame per locale, analyzed by the same deterministic checks the language
+ * sweep uses. A single locale has no baseline to differ from, so it reports
+ * nothing.
  */
 export function analyzeLocaleRunPack(input: {
   batchId: string;
@@ -93,32 +115,12 @@ export function analyzeLocaleRunPack(input: {
   compareText: boolean;
 }): LocaleRunPackAnalysis {
   const screens = input.captures.map((capture) => screenFor(capture, input.compareText));
-  const now = Date.now();
-  const session: CorpusSession = {
-    id: input.batchId,
-    name: input.title,
-    targetId: "",
-    scope: {
-      maxDepth: 0,
-      maxScreens: screens.length,
-      maxTransitions: 0,
-      maxDurationMs: 0,
-      locales: input.locales,
-      ...(input.locales[0] ? { mapLocale: input.locales[0] } : {}),
-    },
-    status: "complete",
-    createdAt: now,
-    updatedAt: now,
-    progress: {
-      phase: "complete",
-      screensCaptured: screens.length,
-      transitionsCaptured: 0,
-      completedLocales: input.locales,
-      updatedAt: now,
-    },
+  const session = sessionFor({
+    batchId: input.batchId,
+    title: input.title,
+    locales: input.locales,
     screens,
-    transitions: [],
-  };
+  });
 
   const byCanonicalKey: Record<string, Record<string, string>> = {};
   const frames: LocaleRunPackFrame[] = [];
@@ -137,7 +139,7 @@ export function analyzeLocaleRunPack(input: {
   }
 
   return {
-    analysis: analyzeCorpus(session),
+    analysis: analyzeCombineEvidence(session),
     byCanonicalKey,
     frames,
     coverage: {

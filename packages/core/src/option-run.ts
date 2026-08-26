@@ -23,7 +23,7 @@ import {
   appLocaleShouldRelaunch,
   stayAppLocaleDestinationCheck,
 } from "./stay-app-locale-destination.js";
-import { prepareRunMatrix, redactRunMatrix, type PreparedRunMatrix } from "./run-matrix.js";
+import { prepareCasePlan, redactCasePlan, type PreparedCasePlan } from "./case-plan.js";
 import { enqueueJob, type EnqueueJobInput, type TestJob } from "./session.js";
 import { currentOperationContext } from "./operation-context.js";
 import {
@@ -212,10 +212,10 @@ export function defaultOptionMatrixStrategy(setCount: number): "zip" | "cartesia
   return setCount > 1 ? "cartesian" : "zip";
 }
 
-export async function prepareOptionRunMatrix(
+export async function prepareOptionCasePlan(
   request: OptionRunRequest,
   seed?: number,
-): Promise<PreparedRunMatrix> {
+): Promise<PreparedCasePlan> {
   if (!request.sets.length) throw new Error("at least one variable is required");
   for (const set of request.sets) {
     if (set.apply.kind === "toggle") {
@@ -230,7 +230,7 @@ export async function prepareOptionRunMatrix(
     source: "list",
     values: selectedIds(set, request.selected),
   }));
-  const matrix = await prepareRunMatrix({
+  const matrix = await prepareCasePlan({
     variables,
     strategy,
     seed,
@@ -263,8 +263,8 @@ export async function prepareOptionRunMatrix(
  */
 export function optimizeSequentialAppLocaleRestore(
   request: OptionRunRequest,
-  matrix: PreparedRunMatrix,
-): { request: OptionRunRequest; matrix: PreparedRunMatrix; optimized: boolean } {
+  matrix: PreparedCasePlan,
+): { request: OptionRunRequest; matrix: PreparedCasePlan; optimized: boolean } {
   const [set] = request.sets;
   const restoreId = set?.restoreId?.trim();
   if (
@@ -701,7 +701,7 @@ export async function startOptionRecipeRun(input: {
   title: string;
   createdAt: number;
   worlds: string[];
-  matrix: PreparedRunMatrix;
+  matrix: PreparedCasePlan;
   jobs: TestJob[];
   composedRecipeId: string;
   expectedScreenshotsPerWorld?: number;
@@ -721,7 +721,7 @@ export async function startOptionRecipeRun(input: {
       preset: request.preset,
     });
   }
-  const preparedMatrix = await prepareOptionRunMatrix(request, input.seed);
+  const preparedMatrix = await prepareOptionCasePlan(request, input.seed);
   const optimized = optimizeSequentialAppLocaleRestore(request, preparedMatrix);
   const matrix = optimized.matrix;
   const executionRequest = optimized.request;
@@ -742,7 +742,7 @@ export async function startOptionRecipeRun(input: {
   const projectId = input.projectId?.trim() || operation?.projectId || "default";
   const ownerId = input.ownerId?.trim() || operation?.actorId;
   const title = input.title?.trim() || `${body.title} · across`;
-  const safeMatrix = redactRunMatrix(matrix, []);
+  const safeMatrix = redactCasePlan(matrix, []);
 
   const requestedIndexes = input.caseIndexes
     ? new Set(input.caseIndexes.map((index) => Math.floor(index)))
@@ -820,7 +820,7 @@ export async function startOptionRecipeRun(input: {
 }
 
 export function assertRequestedCaseValues(
-  matrix: PreparedRunMatrix,
+  matrix: PreparedCasePlan,
   requestedIndexes: ReadonlySet<number> | undefined,
   expectedByIndex: Record<number, Record<string, string>> | undefined,
 ): void {

@@ -420,7 +420,7 @@ export function observeLocaleStableIdentity(
 }
 
 /** Stable control key for one interactive node across locales. */
-export function corpusControlStableKey(node: {
+export function combineEvidenceControlStableKey(node: {
   identifier?: string;
   label?: string;
   value?: string;
@@ -437,7 +437,7 @@ export function corpusControlStableKey(node: {
   return `label:${role}:${label}`;
 }
 
-export function slugCorpusPathSegment(value: string): string {
+export function slugEvidencePathSegment(value: string): string {
   const key = stableLabelKey(value) ?? value;
   const slug = key
     .normalize("NFKD")

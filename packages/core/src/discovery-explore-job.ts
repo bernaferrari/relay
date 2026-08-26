@@ -1,6 +1,6 @@
 /**
  * Server-owned explore crawl: here → ground? → do → verify → land.
- * Strategies match  naming: surface / journey / hard-edges.
+ * Explore strategies: surface / timeline / hard-edges.
  * Planner visits never imply live device location. The persisted navigation
  * cursor is the only proof of where Explore is; mismatches stop for review.
  */
@@ -63,7 +63,7 @@ const HARD_EDGE_RE =
 
 type PlannedVisit = {
   screenId: string;
-  /** Remaining unopened control ids for this visit (surface BFS / journey DFS share the stack). */
+  /** Remaining unopened control ids for this visit (surface BFS / timeline DFS share the stack). */
   pendingIds: string[];
 };
 
@@ -189,7 +189,7 @@ export function needsExploreGrounding(option: Pick<DiscoveryControl, "label" | "
 }
 
 /**
- * Higher score = pick sooner. Surface/journey boost semantic options;
+ * Higher score = pick sooner. Surface/timeline boost semantic options;
  * hard-edges boost settings/permissions-like labels hardest.
  */
 export function scoreExploreOption(

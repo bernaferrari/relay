@@ -8,7 +8,7 @@ import {
   assertOptionSandwichReady,
   navStepsToRecipe,
   stabilizeOptionIds,
-  prepareOptionRunMatrix,
+  prepareOptionCasePlan,
   optimizeSequentialAppLocaleRestore,
   expectedRecipeScreenshotCount,
   assertRequestedCaseValues,
@@ -74,7 +74,7 @@ const locations: OptionRunSet = {
 };
 
 test("two option sets cartesian expand to four worlds", async () => {
-  const matrix = await prepareOptionRunMatrix({
+  const matrix = await prepareOptionCasePlan({
     sets: [languages, locations],
     strategy: "cartesian",
   });
@@ -87,7 +87,7 @@ test("two option sets cartesian expand to four worlds", async () => {
 });
 
 test("campaign resume refuses an index whose reviewed locale value moved", async () => {
-  const matrix = await prepareOptionRunMatrix({ sets: [languages], strategy: "cartesian" }, 42);
+  const matrix = await prepareOptionCasePlan({ sets: [languages], strategy: "cartesian" }, 42);
   const reviewed = matrix.cases[0]!.values.languages!;
   const changed = reviewed === "en" ? "de" : "en";
   assert.doesNotThrow(() =>
@@ -100,7 +100,7 @@ test("campaign resume refuses an index whose reviewed locale value moved", async
 });
 
 test("zip pairs option sets of equal length", async () => {
-  const matrix = await prepareOptionRunMatrix({
+  const matrix = await prepareOptionCasePlan({
     sets: [languages, locations],
     strategy: "zip",
   });
@@ -112,7 +112,7 @@ test("a full 41-locale sweep is not rejected by a small UI-era cap", async () =>
     ...languages,
     options: Array.from({ length: 41 }, (_, index) => ({ id: `locale-${index + 1}` })),
   };
-  const matrix = await prepareOptionRunMatrix({ sets: [locales], strategy: "zip" });
+  const matrix = await prepareOptionCasePlan({ sets: [locales], strategy: "zip" });
   assert.equal(matrix.cases.length, 41);
 });
 
@@ -126,7 +126,7 @@ test("a single app-locale campaign restores once by scheduling its baseline last
     restoreId: "en",
   };
   const request = { sets: [language], strategy: "zip" as const };
-  const matrix = await prepareOptionRunMatrix(request);
+  const matrix = await prepareOptionCasePlan(request);
   const optimized = optimizeSequentialAppLocaleRestore(request, matrix);
 
   assert.equal(optimized.optimized, true);
@@ -142,7 +142,7 @@ test("a single app-locale campaign restores once by scheduling its baseline last
 });
 
 test("restore optimization never rewrites list or multi-variable campaigns", async () => {
-  const matrix = await prepareOptionRunMatrix({ sets: [languages], strategy: "zip" });
+  const matrix = await prepareOptionCasePlan({ sets: [languages], strategy: "zip" });
   const result = optimizeSequentialAppLocaleRestore(
     { sets: [{ ...languages, restoreId: "en" }], strategy: "zip" },
     matrix,
@@ -160,7 +160,7 @@ test("pairwise covers every pair without constructing the full product", async (
     apply: { kind: "list", entryPath: [{ kind: "tap", target: { label: "Theme" } }] },
     options: [{ id: "light" }, { id: "dark" }, { id: "system" }],
   };
-  const matrix = await prepareOptionRunMatrix({
+  const matrix = await prepareOptionCasePlan({
     sets: [languages, locations, themes],
     strategy: "pairwise",
   });
@@ -554,7 +554,7 @@ test("seven app languages × ten mapped screens declares exactly 70 screenshots"
     apply: { kind: "appLocale", app: "ai.x.grok" },
     options: ["en", "ar", "de", "es", "fr", "it", "pt-BR"].map((id) => ({ id })),
   };
-  const matrix = await prepareOptionRunMatrix({ sets: [language], strategy: "cartesian" });
+  const matrix = await prepareOptionCasePlan({ sets: [language], strategy: "cartesian" });
   const { root, graph } = composeOptionRunRecipes({
     body: tenScreens,
     request: { sets: [language], screenshotEach: true },
@@ -717,7 +717,7 @@ test("an explicit empty selection never expands to every saved option", async ()
     ],
   };
   await assert.rejects(
-    prepareOptionRunMatrix({ sets: [set], selected: { language: [] } }),
+    prepareOptionCasePlan({ sets: [set], selected: { language: [] } }),
     /needs at least one option/,
   );
 });
@@ -1038,7 +1038,7 @@ test("pickStepId splits one recording into In before pick and Out after", () => 
 test("toggle apply is rejected before enqueue", async () => {
   await assert.rejects(
     () =>
-      prepareOptionRunMatrix({
+      prepareOptionCasePlan({
         sets: [
           {
             id: "dark",

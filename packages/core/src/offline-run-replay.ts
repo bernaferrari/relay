@@ -234,7 +234,7 @@ function recipeSteps(value: unknown): unknown[] {
   return Array.isArray(recipe?.steps) ? recipe.steps : [];
 }
 
-/** Locate exactly the compiled recipe called by a frozen campaign check. This
+/** Locate exactly the compiled execution plan called by a frozen campaign check. This
  * intentionally consumes only the persisted plan artifact; it never reads a
  * newer App Map or assumes an unrecorded route. */
 function selectorsForFrozenCheck(planData: unknown, checkId: string): FrozenSelector[] {

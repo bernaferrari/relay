@@ -1,5 +1,5 @@
 /**
- * On-disk store for recorder screenshots linked from recipe step evidence.
+ * On-disk store for recorder screenshots linked from execution-step evidence.
  */
 import { mkdir, readFile, writeFile, unlink, link } from "node:fs/promises";
 import { join } from "node:path";

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { CorpusControl } from "@relay/protocol";
+import type { CombineEvidenceControl } from "@relay/protocol";
 import { FRAME_OBSERVATION_KIND, type FrameObservation } from "./frame-observation.js";
 import {
   analyzeLocaleRunBatch,
@@ -12,7 +12,7 @@ import {
 } from "./locale-run-pack.js";
 import type { TestJob } from "./session-contract.js";
 
-function row(stableKey: string, label: string): CorpusControl {
+function row(stableKey: string, label: string): CombineEvidenceControl {
   return {
     id: `${stableKey}-1`,
     label,
@@ -25,7 +25,7 @@ function row(stableKey: string, label: string): CorpusControl {
 function localeCase(input: {
   locale: string;
   runDir: string;
-  controls?: CorpusControl[];
+  controls?: CombineEvidenceControl[];
 }): TestJob {
   const observation: FrameObservation = {
     schemaVersion: 1,

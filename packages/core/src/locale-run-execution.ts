@@ -14,12 +14,12 @@ import {
 } from "@relay/protocol";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
 import { freezeRecipeGraph, readRecipe, type Recipe } from "./recipes.js";
-import { redactRunMatrix, type PreparedRunMatrix } from "./run-matrix.js";
+import { redactCasePlan, type PreparedCasePlan } from "./case-plan.js";
 import { enqueueJob, prepareJobBatch, type EnqueueJobInput, type TestJob } from "./session.js";
 import {
   completeTaughtLocaleScope,
   composeLocaleRunRecipes,
-  prepareLocaleRunMatrix,
+  prepareLocaleCasePlan,
   type LocaleRunScope,
 } from "./locale-run.js";
 
@@ -65,7 +65,7 @@ export type PreparedLocaleRecipeRun = {
   title: string;
   createdAt: number;
   locales: string[];
-  matrix: PreparedRunMatrix;
+  matrix: PreparedCasePlan;
   composedRecipeId: string;
   /** Kept in core only; it is never a transport response. */
   recipeSnapshot: Recipe;
@@ -87,7 +87,7 @@ export type LocaleRunBatch = {
   title: string;
   createdAt: number;
   locales: string[];
-  matrix: PreparedRunMatrix;
+  matrix: PreparedCasePlan;
   jobs: TestJob[];
   composedRecipeId: string;
 };
@@ -144,7 +144,7 @@ export async function prepareLocaleRecipeRun(
 
   const id = randomUUID();
   const createdAt = Date.now();
-  const preparedMatrix = await prepareLocaleRunMatrix(scope, input.seed);
+  const preparedMatrix = await prepareLocaleCasePlan(scope, input.seed);
   const bodyGraph = await freezeRecipeGraph(body, input.compiledGraph ?? {});
   const { root, graph: seedGraph } = composeLocaleRunRecipes({
     body,
@@ -164,7 +164,7 @@ export async function prepareLocaleRecipeRun(
     durationCohort: input.durationCohort,
     bodyRecipeId: body.id,
   });
-  const matrix = redactRunMatrix(preparedMatrix.matrix, [
+  const matrix = redactCasePlan(preparedMatrix.matrix, [
     {
       id: "locale",
       name: "locale",

@@ -32,7 +32,7 @@ function option(
 
 test("defaultExploreDepth matches  strategy names", () => {
   assert.equal(defaultExploreDepth("surface"), 2);
-  assert.equal(defaultExploreDepth("journey"), 6);
+  assert.equal(defaultExploreDepth("timeline"), 6);
   assert.equal(defaultExploreDepth("hard-edges"), 4);
 });
 
@@ -43,7 +43,7 @@ test("resolveExploreStrategy prefers start options over scope", () => {
   );
   assert.equal(
     resolveExploreStrategy(
-      { maxScreens: 1, maxTransitions: 1, maxDurationMs: 1, strategy: "journey" },
+      { maxScreens: 1, maxTransitions: 1, maxDurationMs: 1, strategy: "timeline" },
       { strategy: "hard-edges" },
     ),
     "hard-edges",
@@ -53,16 +53,16 @@ test("resolveExploreStrategy prefers start options over scope", () => {
       maxScreens: 1,
       maxTransitions: 1,
       maxDurationMs: 1,
-      strategy: "journey",
+      strategy: "timeline",
     }),
-    "journey",
+    "timeline",
   );
 });
 
 test("resolveExploreMaxDepth uses strategy default when scope omits maxDepth", () => {
   const scope = { maxScreens: 10, maxTransitions: 10, maxDurationMs: 60_000 };
   assert.equal(resolveExploreMaxDepth("surface", scope), 2);
-  assert.equal(resolveExploreMaxDepth("journey", scope, { maxDepth: 3 }), 3);
+  assert.equal(resolveExploreMaxDepth("timeline", scope, { maxDepth: 3 }), 3);
 });
 
 test("hard-edge labels prefer settings and permissions-like copy", () => {
@@ -129,12 +129,12 @@ test("patchDiscoveryScope stores the one public explore strategy", async () => {
       targetId: "phone",
     });
     const patched = await patchDiscoveryScope(session.id, {
-      strategy: "journey",
+      strategy: "timeline",
       maxDepth: 5,
     });
-    assert.equal(patched.scope.strategy, "journey");
+    assert.equal(patched.scope.strategy, "timeline");
     assert.equal(patched.scope.maxDepth, 5);
-    assert.equal((await readDiscoverySession(session.id))?.scope.strategy, "journey");
+    assert.equal((await readDiscoverySession(session.id))?.scope.strategy, "timeline");
   } finally {
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previous;

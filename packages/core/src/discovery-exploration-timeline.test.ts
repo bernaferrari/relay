@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { DiscoverySession } from "@relay/protocol";
 import {
-  buildDiscoveryJourney,
+  buildExplorationTimeline,
   discoveryExploreOutcome,
   inferDiscoveryBlockedReasons,
-} from "./discovery-journey.js";
+} from "./discovery-exploration-timeline.js";
 import { buildDiscoveryCoverage } from "./discovery-coverage.js";
 
 function session(overrides: Partial<DiscoverySession> = {}): DiscoverySession {
@@ -78,21 +78,21 @@ function session(overrides: Partial<DiscoverySession> = {}): DiscoverySession {
   };
 }
 
-test("journey timeline orders transitions and keeps screenshot refs", () => {
-  const journey = buildDiscoveryJourney(session(), 100);
-  assert.equal(journey.stepCount, 3);
+test("exploration timeline orders transitions and keeps screenshot refs", () => {
+  const timeline = buildExplorationTimeline(session(), 100);
+  assert.equal(timeline.stepCount, 3);
   assert.deepEqual(
-    journey.steps.map((step) => step.label),
+    timeline.steps.map((step) => step.label),
     ["Memory", "Back", "Kids Mode"],
   );
-  assert.equal(journey.steps[0]?.screenshotPath, "screens/memory.png");
-  assert.equal(journey.steps[0]?.screenshotScreenId, "memory");
-  assert.equal(journey.steps[0]?.fromTitle, "Settings");
-  assert.equal(journey.steps[0]?.toTitle, "Memory");
-  assert.equal(journey.steps[2]?.toTitle, "Kids Mode");
+  assert.equal(timeline.steps[0]?.screenshotPath, "screens/memory.png");
+  assert.equal(timeline.steps[0]?.screenshotScreenId, "memory");
+  assert.equal(timeline.steps[0]?.fromTitle, "Settings");
+  assert.equal(timeline.steps[0]?.toTitle, "Memory");
+  assert.equal(timeline.steps[2]?.toTitle, "Kids Mode");
 });
 
-test("coverage report includes journey, blocked reasons, and explore outcome", () => {
+test("coverage report includes the exploration timeline, blocked reasons, and explore outcome", () => {
   const anchor = session({
     status: "stopped",
     screens: [
@@ -113,7 +113,7 @@ test("coverage report includes journey, blocked reasons, and explore outcome", (
     ],
   });
   const report = buildDiscoveryCoverage(anchor, [anchor], 50);
-  assert.equal(report.journey?.stepCount, 4);
+  assert.equal(report.explorationTimeline?.stepCount, 4);
   assert.equal(report.exploreOutcome, "blocked");
   assert.ok(report.blockedReasons?.some((reason) => reason.code === "auth"));
   assert.ok(report.blockedReasons?.some((reason) => reason.code === "left-app"));

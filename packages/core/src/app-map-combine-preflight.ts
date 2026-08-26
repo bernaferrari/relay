@@ -17,7 +17,7 @@ import {
   composeOptionRunRecipes,
   defaultOptionMatrixStrategy,
   expectedRecipeScreenshotCount,
-  prepareOptionRunMatrix,
+  prepareOptionCasePlan,
   type OptionRunSet,
 } from "./option-run.js";
 import type { Recipe } from "./recipes.js";
@@ -173,7 +173,7 @@ export async function preflightAppMapCombine(
     try {
       for (const set of sets) assertOptionSandwichReady(set, map);
       const strategy = effectiveCombine.strategy ?? defaultOptionMatrixStrategy(sets.length);
-      const matrix = await prepareOptionRunMatrix({
+      const matrix = await prepareOptionCasePlan({
         sets,
         selected: effectiveCombine.selected,
         strategy,
@@ -234,7 +234,7 @@ export async function preflightAppMapCombine(
   let cells: AppMapCombinePreflight["cells"] = [];
   if (!blockers.length && worlds) {
     try {
-      const matrix = await prepareOptionRunMatrix({
+      const matrix = await prepareOptionCasePlan({
         sets,
         selected: effectiveCombine.selected,
         strategy,

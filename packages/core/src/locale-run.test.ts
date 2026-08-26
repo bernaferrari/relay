@@ -12,7 +12,7 @@ import {
   localeNavFromRecipeSteps,
   localeRunScopeFromTeach,
   completeTaughtLocaleScope,
-  prepareLocaleRunMatrix,
+  prepareLocaleCasePlan,
   prepareLocaleRecipeRun,
   recordedLocalePreludeFromMap,
   stagePreparedLocaleRecipeRun,
@@ -105,7 +105,7 @@ test("the frames the matrix wraps a body in are not the screen under test", () =
   assert.deepEqual([...evidenceFrameNames(job).names!], ["003.png"]);
 });
 
-test("run-matrix exports use the language value as the case folder", () => {
+test("locale pack exports use the language value as the case folder", () => {
   assert.equal(
     artifactLocale({ resolvedInputs: { language: "pt-BR" } } as unknown as TestJob),
     "pt-BR",
@@ -442,8 +442,8 @@ test("Android appLocale stay re-proves the Test destination when it has identity
   );
 });
 
-test("prepareLocaleRunMatrix zips locale fields and restores English at end", async () => {
-  const prepared = await prepareLocaleRunMatrix(defaultGrokLocaleScope(["en", "pt-BR", "es"]), 42);
+test("prepareLocaleCasePlan zips locale fields and restores English at end", async () => {
+  const prepared = await prepareLocaleCasePlan(defaultGrokLocaleScope(["en", "pt-BR", "es"]), 42);
   // Profile adds restore-en at end; unknown "es" keeps tag as label fallback.
   assert.deepEqual(prepared.locales, ["en", "pt-BR", "es", "en"]);
   assert.equal(prepared.matrix.cases.length, 4);
@@ -453,15 +453,15 @@ test("prepareLocaleRunMatrix zips locale fields and restores English at end", as
   assert.equal(prepared.matrix.cases[3]!.values.locale, "en");
 });
 
-test("prepareLocaleRunMatrix keeps all dynamically discovered locale options", async () => {
+test("prepareLocaleCasePlan keeps all dynamically discovered locale options", async () => {
   const locales = Array.from({ length: 45 }, (_, index) => `x-relay-${index + 1}`);
-  const prepared = await prepareLocaleRunMatrix({ locales, restoreAtEnd: false }, 42);
+  const prepared = await prepareLocaleCasePlan({ locales, restoreAtEnd: false }, 42);
   assert.equal(prepared.matrix.cases.length, 45);
   assert.deepEqual(prepared.locales, locales);
 });
 
 test("languageOptions can supply stable identifiers per locale", async () => {
-  const prepared = await prepareLocaleRunMatrix({
+  const prepared = await prepareLocaleCasePlan({
     locales: ["en", "pt-BR"],
     languageOptions: {
       en: { identifier: "lang.en" },
@@ -736,7 +736,7 @@ test("localeRunScopeFromTeach honors screenshot-each-locale and zips inferred id
   assert.deepEqual(scope.languageOptions?.en, { identifier: "lang.en" });
   assert.deepEqual(scope.languageOptions?.it, { label: "Italiano" });
   assert.ok(scope.languagePath?.length);
-  const prepared = await prepareLocaleRunMatrix(scope, 7);
+  const prepared = await prepareLocaleCasePlan(scope, 7);
   assert.equal(prepared.matrix.cases.length, 2);
   assert.equal(prepared.matrix.cases[0]!.values.locale_identifier, "lang.en");
   assert.equal(prepared.matrix.cases[1]!.values.locale_label, "Italiano");

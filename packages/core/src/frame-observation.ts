@@ -7,14 +7,14 @@
  * crawl records — no extra device round trip, and nothing at all when the tree
  * was unavailable.
  */
-import type { CorpusControl } from "@relay/protocol";
+import type { CombineEvidenceControl } from "./combine-evidence-session.js";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import {
-  corpusControls,
-  fingerprintCorpusScreen,
+  combineEvidenceControls,
+  fingerprintCombineEvidenceScreen,
   titleFromNodes,
-} from "./corpus-screen-analysis.js";
+} from "./combine-evidence-screen-analysis.js";
 import type { SnapshotNode } from "./device.js";
 import { now } from "./events.js";
 import type { TestJob } from "./session-contract.js";
@@ -30,7 +30,7 @@ export type FrameObservation = {
   /** Digest of the raster, so two locales that produced the same pixels say so. */
   sha256?: string;
   title?: string;
-  controls: CorpusControl[];
+  controls: CombineEvidenceControl[];
 };
 
 /**
@@ -50,7 +50,7 @@ export function recordFrameObservation(input: {
   const nodes = input.nodes ? [...input.nodes] : [];
   if (!nodes.length) return;
   if (job.artifacts.some((artifact) => observationOf(artifact)?.framePath === framePath)) return;
-  const { fingerprint } = fingerprintCorpusScreen(nodes);
+  const { fingerprint } = fingerprintCombineEvidenceScreen(nodes);
   const title = titleFromNodes(nodes, []);
   const observation: FrameObservation = {
     schemaVersion: 1,
@@ -61,7 +61,7 @@ export function recordFrameObservation(input: {
       ? { sha256: createHash("sha256").update(Buffer.from(input.base64, "base64")).digest("hex") }
       : {}),
     ...(title ? { title } : {}),
-    controls: corpusControls(nodes),
+    controls: combineEvidenceControls(nodes),
   };
   job.artifacts.push({ kind: FRAME_OBSERVATION_KIND, capturedAt: now(), data: observation });
 }

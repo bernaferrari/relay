@@ -1,5 +1,5 @@
 /**
- * Human-readable recipe step titles and trace glyphs.
+ * Human-readable execution-step titles and trace glyphs.
  */
 import type { RecipeStep, StepTarget } from "@relay/protocol";
 import type { Glyph } from "./trace.js";
@@ -136,7 +136,7 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `${step.action} device logs`;
     default: {
       const kind = (step as { kind?: string }).kind ?? "unknown";
-      throw new Error(`unsupported recipe step: ${kind}`);
+      throw new Error(`unsupported execution step: ${kind}`);
     }
   }
 }
@@ -206,7 +206,7 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
       return ["store"];
     default: {
       const kind = (step as { kind?: string }).kind ?? "unknown";
-      throw new Error(`unsupported recipe step: ${kind}`);
+      throw new Error(`unsupported execution step: ${kind}`);
     }
   }
 }

@@ -42,7 +42,7 @@ const DEFAULT_SCOPE: DiscoveryScope = {
   allowSensitiveControls: false,
 };
 
-const EXPLORE_STRATEGIES = new Set(["surface", "journey", "hard-edges"]);
+const EXPLORE_STRATEGIES = new Set(["surface", "timeline", "hard-edges"]);
 
 function requiredText(value: unknown, label: string, maxLength: number): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`);
@@ -753,7 +753,7 @@ export async function readDiscoveryScreenAsset(
   }
 }
 
-/** App Map is truth. Discovery no longer writes YAML recipes. */
+/** App Map is truth. Discovery no longer writes standalone execution plans. */
 export async function promoteDiscoveryPath(_input: {
   sessionId: string;
   transitionIds: string[];
@@ -763,7 +763,7 @@ export async function promoteDiscoveryPath(_input: {
   transitionLabels?: Record<string, string>;
 }): Promise<never> {
   throw new Error(
-    "Discovery promotes to the App Map. Start explore, then Keep a proposed edge. YAML recipe promote is removed.",
+    "Discovery promotes to the App Map. Start explore, then Keep a proposed edge. Direct execution-plan promotion is removed.",
   );
 }
 
