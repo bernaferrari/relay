@@ -9,7 +9,7 @@ import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
 import { sleep } from '../../utils/timeouts.ts';
 import { runHarmonyHdc } from './hdc.ts';
-import { readHarmonyGestureViewport } from './snapshot.ts';
+import { invalidateHarmonyGestureViewport, readHarmonyGestureViewport } from './snapshot.ts';
 
 export async function pressHarmony(device: DeviceInfo, x: number, y: number): Promise<void> {
   await runHarmonyHdc(device, ['shell', 'uitest', 'uiInput', 'click', String(x), String(y)]);
@@ -123,20 +123,27 @@ export async function performHarmonyGesture(
 
 export async function backHarmony(device: DeviceInfo): Promise<void> {
   await runHarmonyHdc(device, ['shell', 'uitest', 'uiInput', 'keyEvent', 'Back']);
+  invalidateHarmonyGestureViewport(device);
 }
 
 export async function homeHarmony(device: DeviceInfo): Promise<void> {
   await runHarmonyHdc(device, ['shell', 'uitest', 'uiInput', 'keyEvent', 'Home']);
+  invalidateHarmonyGestureViewport(device);
 }
 
 export async function appSwitcherHarmony(device: DeviceInfo): Promise<void> {
   await runHarmonyHdc(device, ['shell', 'uitest', 'uiInput', 'keyEvent', 'Recent']);
+  invalidateHarmonyGestureViewport(device);
 }
 
 export async function pressHarmonyKeyboardKey(
   device: DeviceInfo,
   key: 'Enter' | 'Back',
 ): Promise<void> {
+  if (key === 'Back') {
+    await backHarmony(device);
+    return;
+  }
   await runHarmonyHdc(device, ['shell', 'uitest', 'uiInput', 'keyEvent', key]);
 }
 
