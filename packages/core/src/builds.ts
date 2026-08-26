@@ -1,6 +1,11 @@
 import { execFile } from "node:child_process";
-import { access, stat } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { access, mkdir, rename, rm, stat } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { promisify } from "node:util";
 import type { Build } from "@relay/protocol";
 import { findWorkspaceRoot } from "./workspace-root.js";
@@ -41,6 +46,92 @@ function localArtifactPath(sourceUrl: string | undefined): string | undefined {
     return decodeURIComponent(url.pathname);
   }
   return isAbsolute(source) ? source : resolve(findWorkspaceRoot(), source);
+}
+
+/** Remote build sources larger than this are rejected before the disk fills. */
+const MAX_REMOTE_BUILD_BYTES = 4 * 1024 * 1024 * 1024;
+const HEX_SHA256 = /^[a-f0-9]{64}$/i;
+
+/** Preserves a trailing `.apk`/`.app` from the source URL so cached files
+ * keep satisfying the existing artifact-format checks downstream. */
+function cacheFileExtension(pathname: string): string {
+  const match = /\.(apk|app)$/i.exec(new URL(`https://cache.invalid${pathname}`).pathname);
+  return match ? match[0] : ".artifact";
+}
+
+/**
+ * Downloads a remote build artifact into the state dir's builds cache,
+ * enforcing a size cap and verifying an optional expected sha256 digest
+ * fail-closed, and returns the cached path for the existing install/preflight
+ * flows. Content type is deliberately ignored: artifact bytes are
+ * authenticated by digest, not by server-claimed metadata. The https-only
+ * policy for registered sources is enforced at the trust boundaries (the
+ * control-plane registration route and `preflightRegisteredBuild`), so this
+ * primitive accepts any absolute http(s) URL.
+ */
+export async function resolveRegisteredBuildArtifact(
+  sourceUrl: string,
+  options: { sourceSha256?: string; fetchImpl?: typeof fetch } = {},
+): Promise<string> {
+  const url = new URL(sourceUrl.trim());
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Build source URL must be an absolute http(s) URL");
+  }
+  const expectedSha256 = options.sourceSha256?.trim().toLowerCase();
+  if (expectedSha256 !== undefined && !HEX_SHA256.test(expectedSha256)) {
+    throw new Error("sourceSha256 must be a hex sha256 digest");
+  }
+  // The cache key is derived from the exact registered URL so distinct sources
+  // never collide while repeat registrations of one artifact reuse bytes.
+  const cacheDirectory = join(
+    process.env.RELAY_STATE_DIR?.trim() || join(findWorkspaceRoot(), ".relay"),
+    "builds",
+  );
+  await mkdir(cacheDirectory, { recursive: true });
+  const destination = join(
+    cacheDirectory,
+    `${createHash("sha256").update(sourceUrl).digest("hex")}${cacheFileExtension(url.pathname)}`,
+  );
+  const partial = `${destination}.partial`;
+  try {
+    await rm(partial, { force: true });
+    const response = await (options.fetchImpl ?? fetch)(url, { redirect: "follow" });
+    if (!response.ok) {
+      throw new Error(`Build source download failed with HTTP ${response.status}`);
+    }
+    if (!response.body) throw new Error("Build source download returned an empty body");
+    let received = 0;
+    const hash = createHash("sha256");
+    const out = createWriteStream(partial);
+    try {
+      await pipeline(
+        Readable.fromWeb(response.body as WebReadableStream<Uint8Array>),
+        async function* (chunks: AsyncIterable<Uint8Array>) {
+          for await (const chunk of chunks) {
+            received += chunk.byteLength;
+            if (received > MAX_REMOTE_BUILD_BYTES) {
+              throw new Error(`Build source exceeds the ${MAX_REMOTE_BUILD_BYTES} byte size cap`);
+            }
+            hash.update(chunk);
+            yield chunk;
+          }
+        },
+        out,
+      );
+    } finally {
+      out.destroy();
+    }
+    const actualSha256 = hash.digest("hex");
+    if (expectedSha256 !== undefined && actualSha256 !== expectedSha256) {
+      throw new Error(`Build source sha256 mismatch: expected ${expectedSha256}, got ${actualSha256}`);
+    }
+    // Rename only after full verification so failures never leave a
+    // half-written artifact at the canonical cache path.
+    await rename(partial, destination);
+    return destination;
+  } finally {
+    await rm(partial, { force: true });
+  }
 }
 
 async function inferApplicationId(
@@ -87,9 +178,47 @@ export async function preflightRegisteredBuild(
 ): Promise<RegisteredBuildPreflight> {
   const at = options.at ?? Date.now();
   const run = options.run ?? defaultCommandRunner;
-  const path = localArtifactPath(build.sourceUrl);
+  let path = localArtifactPath(build.sourceUrl);
   const expectedKind = build.platform === "android" ? "apk" : "app";
   const checks: RegisteredBuildPreflight["checks"] = [];
+  if (!path && /^https?:\/\//i.test(build.sourceUrl?.trim() ?? "")) {
+    const remoteSource = build.sourceUrl!.trim();
+    const remoteHttpAllowed =
+      remoteSource.toLowerCase().startsWith("https://") ||
+      /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])([:/]|$)/i.test(remoteSource);
+    if (!remoteHttpAllowed) {
+      checks.push({
+        id: "local-artifact",
+        status: "fail",
+        message: "Remote build source must be an absolute https URL",
+      });
+      return {
+        buildId: build.id,
+        ok: false,
+        checkedAt: at,
+        capabilities: { install: false, launch: false },
+        checks,
+      };
+    }
+    try {
+      path = await resolveRegisteredBuildArtifact(remoteSource, {
+        sourceSha256: build.sourceSha256,
+      });
+    } catch (error) {
+      checks.push({
+        id: "local-artifact",
+        status: "fail",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return {
+        buildId: build.id,
+        ok: false,
+        checkedAt: at,
+        capabilities: { install: false, launch: false },
+        checks,
+      };
+    }
+  }
   if (!path) {
     checks.push({
       id: "local-artifact",
@@ -156,6 +285,7 @@ export async function preflightRegisteredBuild(
       ? `Application id: ${applicationId}`
       : "Application id could not be inferred; install is available but launch needs an explicit app id",
   });
+
   const install = kindMatches && targetMatches;
   return {
     buildId: build.id,

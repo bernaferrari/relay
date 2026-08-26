@@ -76,12 +76,41 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
     if (!body.id || !body.name || (body.platform !== "android" && body.platform !== "ios")) {
       throw new HttpError(400, "id, name, and a valid platform are required");
     }
+    let sourceUrl: string | undefined;
+    let sourceSha256: string | undefined;
+    const rawSource = body.sourceUrl?.trim();
+    if (rawSource) {
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(rawSource)) {
+        // Only absolute https is accepted for remote ingest; file:/http:
+        // sources are rejected so registration never fetches untrusted
+        // plaintext or unexpected local filesystem content through a URL.
+        try {
+          const parsed = new URL(rawSource);
+          if (parsed.protocol !== "https:") {
+            throw new HttpError(400, "Remote build sourceUrl must be an absolute https URL");
+          }
+          sourceUrl = rawSource;
+        } catch (error) {
+          if (error instanceof HttpError) throw error;
+          throw new HttpError(400, `Remote build sourceUrl is not a valid URL: ${rawSource}`);
+        }
+      } else {
+        // Bare absolute or workspace-relative paths keep their existing
+        // local-artifact semantics.
+        sourceUrl = rawSource;
+      }
+      sourceSha256 = body.sourceSha256?.trim() || undefined;
+      if (sourceSha256 && !/^[a-f0-9]{64}$/i.test(sourceSha256)) {
+        throw new HttpError(400, "sourceSha256 must be a hex sha256 digest");
+      }
+    }
     const build = await saveBuild({
       id: body.id,
       projectId: scope.projectId,
       name: body.name,
       platform: body.platform,
-      sourceUrl: body.sourceUrl,
+      sourceUrl,
+      sourceSha256,
       status: body.status ?? "uploaded",
     });
     json(response, 201, { build });
