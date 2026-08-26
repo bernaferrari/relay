@@ -1,7 +1,6 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import {
   buildProofReport,
+  findActiveRunSharePath,
   readPersistedRun,
   renderProofReportMarkdown,
   runsRoot,
@@ -113,10 +112,10 @@ export async function runReportCommand(
     );
   }
   const serverUrl = env.RELAY_URL?.trim() || env.RELAY_PUBLIC_BASE_URL?.trim() || undefined;
-  const sharesStore = join(root, ".run-shares.json");
-  const sharePath = existsSync(sharesStore)
-    ? `/shared/runs/${encodeURIComponent(run.id)}`
-    : undefined;
+  // Shares resolve by HMAC token, never by run id. Only a real, active share
+  // record produces a link; otherwise the report omits it instead of
+  // fabricating a path that would 404.
+  const sharePath = await findActiveRunSharePath(root, run.id);
   const report: ProofReport = buildProofReport({
     run,
     ...(sharePath ? { sharePath } : {}),

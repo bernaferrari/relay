@@ -8,6 +8,7 @@ import type { PersistedRun } from "./runs.js";
 import {
   buildRunShareReport,
   createRunShare,
+  findActiveRunSharePath,
   listRunShares,
   publicShareBaseUrl,
   pruneExpiredShares,
@@ -436,6 +437,60 @@ test("resolveRunShareTokenState distinguishes expired from invalid tokens", asyn
       at: at + 2,
     });
     assert.equal((await resolveRunShareTokenState(root, created.token, at + 3)).state, "invalid");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("findActiveRunSharePath returns a resolvable token path only for live shares", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-share-find-"));
+  const at = 50_000;
+  const lifetime = 60 * 60 * 1_000;
+  const sharedRun = run({ id: "run-find", outcome: "passed" });
+  const otherRun = run({ id: "run-other", outcome: "passed" });
+  try {
+    // No store yet: no path, never a fabricated one.
+    assert.equal(await findActiveRunSharePath(root, sharedRun.id, at), undefined);
+
+    const created = await createRunShare({
+      root,
+      run: sharedRun,
+      relatedRuns: [sharedRun],
+      actorId: "human:a",
+      expiresAt: at + lifetime,
+      includeBatch: false,
+      at,
+    });
+    const path = await findActiveRunSharePath(root, sharedRun.id, at + 1);
+    assert.ok(path);
+    assert.match(path, /^\/shared\/runs\//u);
+    // The path resolves to the same record the token in createRunShare did.
+    const token = path.slice("/shared/runs/".length);
+    assert.equal((await resolveRunShareTokenState(root, token, at + 1)).state, "active");
+    // A run the share does not cover stays linkless.
+    assert.equal(await findActiveRunSharePath(root, otherRun.id, at + 1), undefined);
+
+    // Revoked shares stop producing paths.
+    await revokeRunShare({
+      root,
+      id: created.share.id,
+      scope: { projectId: "project-a", ownerId: "owner-a" },
+      actorId: "human:a",
+      at: at + 2,
+    });
+    assert.equal(await findActiveRunSharePath(root, sharedRun.id, at + 3), undefined);
+
+    // A fresh share past its expiry is equally linkless.
+    const expired = await createRunShare({
+      root,
+      run: sharedRun,
+      relatedRuns: [sharedRun],
+      actorId: "human:a",
+      expiresAt: at + lifetime,
+      includeBatch: false,
+      at: at + 10,
+    });
+    assert.equal(await findActiveRunSharePath(root, sharedRun.id, expired.share.expiresAt + 1), undefined);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

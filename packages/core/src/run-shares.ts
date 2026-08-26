@@ -360,6 +360,30 @@ export async function pruneExpiredShares(root: string, at = Date.now()): Promise
   });
 }
 
+/** Real public path for an existing active share covering a run, so callers
+ * never fabricate links. Shares resolve by HMAC token — never by run id — and
+ * the token is recomputable because exp equals the record's expiresAt. When
+ * several active shares cover the run, the newest wins. Returns undefined
+ * when no non-revoked, unexpired share exists. */
+export async function findActiveRunSharePath(
+  root: string,
+  runId: string,
+  at = Date.now(),
+): Promise<string | undefined> {
+  const candidates = (await readStore(root))
+    .filter(
+      (record) =>
+        !record.revokedAt &&
+        record.expiresAt > at &&
+        (record.runId === runId || record.runIds.includes(runId)),
+    )
+    .sort((left, right) => right.createdAt - left.createdAt);
+  const record = candidates[0];
+  if (!record) return undefined;
+  const token = await tokenFor(root, { v: 1, id: record.id, exp: record.expiresAt });
+  return `/shared/runs/${token}`;
+}
+
 export type RunShareTokenResolution =
   | { state: "active"; record: RunShareRecord }
   | { state: "expired" }
