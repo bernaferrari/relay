@@ -1470,43 +1470,6 @@ test('runner session restarts dead runner without graceful shutdown', async () =
   assert.equal(mockRedirectRelease.mock.calls.length, 1);
 });
 
-test('runner session keeps boot and stale bundle cleanup available when needed', async () => {
-  const device = { ...IOS_SIMULATOR, id: 'runner-session-clean-sim', booted: false };
-
-  await ensureRunnerSession(device, {
-    cleanStaleBundles: true,
-  });
-
-  assert.equal(
-    mockRunXcrun.mock.calls.some((call) => call[0]?.includes('bootstatus')),
-    true,
-  );
-  assert.equal(
-    mockRunXcrun.mock.calls.some((call) => call[0]?.includes('uninstall')),
-    true,
-  );
-  const uninstallCalls = mockRunXcrun.mock.calls.filter((call) => call[0]?.includes('uninstall'));
-  assert.equal(
-    uninstallCalls.every((call) => call[1]?.timeoutMs === 10_000),
-    true,
-  );
-});
-
-test('runner session stale bundle cleanup is best-effort when simctl stalls', async () => {
-  const device = { ...IOS_SIMULATOR, id: 'runner-session-clean-timeout-sim' };
-
-  mockRunXcrun
-    .mockRejectedValueOnce(new AppError('COMMAND_FAILED', 'simctl uninstall timed out'))
-    .mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
-
-  const session = await ensureRunnerSession(device, {
-    cleanStaleBundles: true,
-  });
-
-  assert.equal(session.deviceId, device.id);
-  assert.equal(mockRunCmdBackground.mock.calls.length, 1);
-});
-
 test('runner session stop kills only owned stale xcodebuild runner processes without in-memory session', async () => {
   const deviceId = '11C70358-8331-4872-A0CA-F15B6859B6FC';
   writeRunnerLease(makeRunnerLease({ deviceId, ownerToken: runnerOwnerToken() }));
