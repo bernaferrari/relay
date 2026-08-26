@@ -46,6 +46,10 @@ type DiagnosticsScope = DiagnosticsScopeOptions & {
   // events are streamed out and reset mid-flight.
   phaseCounts: Map<string, number>;
   sensitiveValues: Set<string>;
+  ensuredDirectories: Set<string>;
+  // Sorted-longest-first view of `sensitiveValues`, recomputed lazily after a
+  // registration invalidates it so replacement order stays deterministic.
+  sortedSensitiveValues?: string[];
 };
 
 const diagnosticsStorage = new AsyncLocalStorage<DiagnosticsScope>();
@@ -69,6 +73,7 @@ export async function withDiagnosticsScope<T>(
     liveWrittenEventCount: 0,
     phaseCounts: new Map(),
     sensitiveValues: new Set(),
+    ensuredDirectories: new Set(),
   };
   return await diagnosticsStorage.run(scope, fn);
 }
@@ -89,20 +94,17 @@ export function getDiagnosticsMeta(): {
 } {
   const scope = diagnosticsStorage.getStore();
   if (!scope) return {};
-  return {
-    diagnosticId: scope.diagnosticId,
-    requestId: scope.requestId,
-    session: scope.session,
-    command: scope.command,
-    debug: scope.debug,
-    flushOnSuccess: scope.flushOnSuccess,
-  };
+  const { diagnosticId, requestId, session, command, debug, flushOnSuccess } = scope;
+  return { diagnosticId, requestId, session, command, debug, flushOnSuccess };
 }
 
 /** Register a caller-declared literal that must not reach this request's diagnostics. */
 export function registerDiagnosticSensitiveValue(value: string): void {
   if (!value) return;
-  diagnosticsStorage.getStore()?.sensitiveValues.add(value);
+  const scope = diagnosticsStorage.getStore();
+  if (!scope) return;
+  scope.sensitiveValues.add(value);
+  scope.sortedSensitiveValues = undefined;
 }
 
 /**
@@ -145,11 +147,11 @@ export function emitDiagnostic(event: {
   const fileLine = `${JSON.stringify(payload)}\n`;
   try {
     if (scope.debug && scope.logPath) {
-      appendDiagnosticLine(scope.logPath, fileLine);
+      appendDiagnosticLine(scope, scope.logPath, fileLine);
       scope.liveWrittenEventCount = scope.events.length;
     }
     if (scope.traceLogPath) {
-      appendDiagnosticLine(scope.traceLogPath, fileLine);
+      appendDiagnosticLine(scope, scope.traceLogPath, fileLine);
     }
     if (scope.debug && !scope.logPath && !scope.traceLogPath) {
       process.stderr.write(`[agent-device][diag] ${fileLine}`);
@@ -206,19 +208,27 @@ export function flushDiagnosticsToSessionFile(
   if (!scope) return null;
   if (!options.force && !scope.debug && !scope.flushOnSuccess) return null;
   if (scope.events.length === 0) return null;
+  const values = sortedScopeSensitiveValues(scope);
 
   try {
     if (scope.logPath) {
       const pendingEvents = scope.events.slice(scope.liveWrittenEventCount);
       if (pendingEvents.length > 0) {
-        const lines = pendingEvents.map((entry) => JSON.stringify(redactScopeData(scope, entry)));
-        appendDiagnosticLine(scope.logPath, `${lines.join('\n')}\n`);
+        // Data payloads are fully redacted once at emit time; this flush pass
+        // repeats only the caller-declared literal replacement so literals
+        // registered after an emit are still scrubbed. Metadata fields are
+        // generated identifiers and internal phase names, deliberately no
+        // longer re-normalized here. Replacement output is not length-bounded:
+        // a short literal can grow past `[REDACTED]`.
+        const lines = pendingEvents.map((entry) =>
+          JSON.stringify(replaceSensitiveValues(entry, values)),
+        );
+        appendDiagnosticLine(scope, scope.logPath, `${lines.join('\n')}\n`);
       }
-      const logPath = scope.logPath;
       const logRecord = scope.logRecord;
       scope.events = [];
       scope.liveWrittenEventCount = 0;
-      return { path: logPath, ...(logRecord ? { ref: logRecord } : {}) };
+      return { path: scope.logPath, ...(logRecord ? { ref: logRecord } : {}) };
     }
 
     const sessionDir = sanitizePathPart(scope.session ?? 'default');
@@ -227,7 +237,10 @@ export function flushDiagnosticsToSessionFile(
     fs.mkdirSync(baseDir, { recursive: true });
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filePath = path.join(baseDir, `${timestamp}-${scope.diagnosticId}.ndjson`);
-    const lines = scope.events.map((entry) => JSON.stringify(redactScopeData(scope, entry)));
+    // Same single-value-replacement re-pass as the logPath branch above.
+    const lines = scope.events.map((entry) =>
+      JSON.stringify(replaceSensitiveValues(entry, values)),
+    );
     fs.writeFileSync(filePath, `${lines.join('\n')}\n`);
     scope.events = [];
     return { path: filePath };
@@ -236,10 +249,17 @@ export function flushDiagnosticsToSessionFile(
   }
 }
 
+/** Longest-first so an overlapping shorter literal cannot truncate a longer one. */
+function sortedScopeSensitiveValues(scope: DiagnosticsScope): readonly string[] {
+  scope.sortedSensitiveValues ??= [...scope.sensitiveValues].sort(
+    (left, right) => right.length - left.length,
+  );
+  return scope.sortedSensitiveValues;
+}
+
 function redactScopeData<T>(scope: DiagnosticsScope, input: T): T {
   const redacted = redactDiagnosticData(input);
-  const values = [...scope.sensitiveValues].sort((left, right) => right.length - left.length);
-  return replaceSensitiveValues(redacted, values) as T;
+  return replaceSensitiveValues(redacted, sortedScopeSensitiveValues(scope)) as T;
 }
 
 function replaceSensitiveValues(value: unknown, sensitiveValues: readonly string[]): unknown {
@@ -265,7 +285,11 @@ function sanitizePathPart(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
-function appendDiagnosticLine(logPath: string, line: string): void {
-  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+function appendDiagnosticLine(scope: DiagnosticsScope, logPath: string, line: string): void {
+  const dir = path.dirname(logPath);
+  if (!scope.ensuredDirectories.has(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    scope.ensuredDirectories.add(dir);
+  }
   fs.appendFileSync(logPath, line, 'utf8');
 }
