@@ -267,6 +267,10 @@ test('lifecycle route proofs accept one shared admission per descriptor operatio
       lifecycleSources([
         [RUNTIME_HANDLER_FILE, lifecycleAdmissionSource('admitClearRuntime', 'admitRuntimeUse')],
         [
+          'src/daemon/gesture-runtime.ts',
+          lifecycleAdmissionSource('resolveBoundGestureViewportRuntime', 'admitRuntimeUse'),
+        ],
+        [
           PORT_REVERSE_HANDLER_FILE,
           lifecycleAdmissionSource('handlePortReverseCommand', 'admitRuntimeUse'),
         ],
