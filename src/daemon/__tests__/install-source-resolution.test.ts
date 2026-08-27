@@ -76,3 +76,14 @@ test('resolveInstallSource rejects GitHub Actions artifact sources on the local 
     ),
   ).toThrow(/compatible remote daemon/i);
 });
+
+test('resolveInstallSource refuses an unknown upload id rather than reading the wire path', () => {
+  expect(() =>
+    resolveInstallSource(
+      makeRequest({
+        uploadedArtifactId: 'not-a-real-upload',
+        installSource: { kind: 'path', path: '/etc/passwd' },
+      }),
+    ),
+  ).toThrow();
+});
