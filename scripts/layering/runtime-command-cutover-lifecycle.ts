@@ -69,6 +69,10 @@ const LIFECYCLE_HANDLER_RULES = {
     admissions: [
       { functionName: 'admitClearRuntime' },
       {
+        functionName: 'resolveBoundGestureViewportRuntime',
+        file: 'src/daemon/gesture-runtime.ts',
+      },
+      {
         functionName: 'handlePortReverseCommand',
         file: 'src/daemon/handlers/session-runtime-port-reverse.ts',
       },
