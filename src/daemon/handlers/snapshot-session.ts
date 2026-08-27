@@ -1,11 +1,5 @@
-import { isIosFamily } from '@agent-device/kernel/device';
 import { resolveTargetDevice } from '../../core/dispatch-resolve.ts';
-import {
-  resolveRunnerAppBundleId,
-  stopIosRunnerSession,
-} from '../../platforms/apple/core/runner-client.ts';
-import { closeIosApp } from '../../platforms/apple/core/apps.ts';
-import { emitDiagnostic } from '../../utils/diagnostics.ts';
+import type { PlatformResourceCleanup } from '@agent-device/contracts/platform-resource-cleanup';
 import type { DaemonRequest, SessionState } from '../types.ts';
 import { ensureDeviceReady } from '../device-ready.ts';
 import { SessionStore } from '../session-store.ts';
@@ -25,33 +19,16 @@ export async function withSessionlessRunnerCleanup<T>(
   session: SessionState | undefined,
   device: SessionState['device'],
   task: () => Promise<T>,
+  platformCleanup?: PlatformResourceCleanup,
 ): Promise<T> {
-  const shouldCleanupSessionlessIosRunner = !session && isIosFamily(device);
+  if (!session && !platformCleanup) {
+    throw new Error('Platform resource cleanup was not injected');
+  }
   try {
     return await task();
   } finally {
-    // Sessionless iOS commands intentionally stop the runner to avoid leaked xcodebuild processes.
-    // For multi-command flows, keep an active session via `open` so the runner can be reused.
-    if (shouldCleanupSessionlessIosRunner) {
-      await stopIosRunnerSession(device.id);
-      await closeSessionlessIosRunnerHostApp(device);
-    }
+    if (!session) await platformCleanup!.cleanupSessionlessExecutionHost(device);
   }
-}
-
-async function closeSessionlessIosRunnerHostApp(device: SessionState['device']): Promise<void> {
-  const bundleId = resolveRunnerAppBundleId();
-  await closeIosApp(device, bundleId).catch((error) => {
-    emitDiagnostic({
-      level: 'debug',
-      phase: 'ios_sessionless_runner_host_close_failed',
-      data: {
-        deviceId: device.id,
-        bundleId,
-        error: error instanceof Error ? error.message : String(error),
-      },
-    });
-  });
 }
 
 export function recordIfSession(
