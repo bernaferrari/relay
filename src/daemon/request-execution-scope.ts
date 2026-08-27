@@ -57,6 +57,7 @@ import {
 import { createDeviceClaimAdmission, type DeviceClaimAdmission } from './device-claim-admission.ts';
 import { createDeviceClaimReconciler } from './device-claim-reconciliation.ts';
 import { resolveCommandDeviceClaimPolicy } from '../core/command-descriptor/registry.ts';
+import type { PlatformResourceCleanup } from '@agent-device/contracts/platform-resource-cleanup';
 
 // Production daemon wiring owns one LeaseRegistry per process; scoping locks by registry keeps
 // test and embedded routers isolated without changing process-level serialization there.
@@ -114,6 +115,7 @@ export async function createRequestExecutionScope(params: {
   leaseRegistry: LeaseRegistry;
   deviceRuntimeGateway?: DeviceRuntimeGateway<PlatformRuntimeOperations>;
   platformRequestScope?: PlatformRequestScope;
+  platformResourceCleanup?: PlatformResourceCleanup;
 }): Promise<RequestExecutionScope> {
   const { sessionStore, leaseRegistry } = params;
   let scopedReq = applyRequestCommandDefaults(scopeRequestSession(params.req));
@@ -225,6 +227,7 @@ export async function createRequestExecutionScope(params: {
               sessionStore,
               inspectFacts: scope.inspectFacts,
               bindDevice: scope.bindDevice,
+              platformCleanup: requirePlatformCleanup(params.platformResourceCleanup),
             }),
         });
         scopedReq = admitRequestLeaseForLockedScope({
@@ -332,8 +335,9 @@ async function teardownExpiredSession(params: {
   sessionStore: SessionStore;
   inspectFacts: InspectDeviceRuntimeFacts;
   bindDevice: BindDeviceRuntime;
+  platformCleanup: PlatformResourceCleanup;
 }): Promise<void> {
-  const { session, sessionName, sessionStore, inspectFacts, bindDevice } = params;
+  const { session, sessionName, sessionStore, inspectFacts, bindDevice, platformCleanup } = params;
   let primaryError: unknown;
   try {
     await teardownSessionResources({
@@ -341,6 +345,7 @@ async function teardownExpiredSession(params: {
       session,
       sessionName,
       sessionStore,
+      platformCleanup,
     });
   } catch (error) {
     primaryError = error;
@@ -371,6 +376,18 @@ async function teardownExpiredSession(params: {
   if (primaryError !== undefined) throw primaryError;
 }
 
+function requirePlatformCleanup(
+  cleanup: PlatformResourceCleanup | undefined,
+): PlatformResourceCleanup {
+  if (!cleanup) {
+    throw new AppError(
+      'INTERNAL_ERROR',
+      'Platform resource cleanup was not supplied by root runtime composition',
+    );
+  }
+  return cleanup;
+}
+
 function applyRequestCommandDefaults(req: DaemonRequest): DaemonRequest {
   const flags = { ...(req.flags ?? {}) };
   const changed = applyCommandDefaults(req.command, flags);
@@ -381,7 +398,7 @@ function applyRequestCommandDefaults(req: DaemonRequest): DaemonRequest {
   };
 }
 
-export function prepareLockedRequestScope(params: {
+export async function prepareLockedRequestScope(params: {
   scope: RequestExecutionScope;
   sessionStore: SessionStore;
   trackDownloadableArtifact: (opts: {
@@ -390,14 +407,14 @@ export function prepareLockedRequestScope(params: {
     artifactType: DaemonArtifactType | undefined;
     fileName?: string;
   }) => string;
-}): LockedRequestScopeResult {
+}): Promise<LockedRequestScopeResult> {
   const { scope, sessionStore, trackDownloadableArtifact } = params;
   const logPath = scope.runnerLogPath;
   scope.throwIfCanceled();
   const seededSession = sessionStore.get(scope.sessionName);
   if (seededSession) {
     // Called under runLocked: refreshRecordingHealth may mutate session recording state.
-    refreshRecordingHealth(seededSession);
+    await refreshRecordingHealth(seededSession);
     sessionStore.set(scope.sessionName, seededSession);
   }
   const binding = prepareLockedRequestBinding({

@@ -20,7 +20,7 @@ import { LeaseRegistry } from '../lease-registry.ts';
 import { createExpiredProviderLeaseReleaser } from '../provider-lease-expiry.ts';
 import { clearDaemonShutdownReport, writeDaemonShutdownReport } from '../daemon-shutdown-report.ts';
 import { createRequestHandler } from '../request-router.ts';
-import { isWebSession, stopSessionAppLog, teardownSessionResources } from '../session-teardown.ts';
+import { stopSessionAppLog, teardownSessionResources } from '../session-teardown.ts';
 import { finalizeDaemonSessionApplicationLifecycle } from '../application-lifecycle-recovery.ts';
 import { runtimeHintValues } from '../handlers/session-runtime.ts';
 import { closeDaemonServers } from './server-shutdown.ts';
@@ -37,7 +37,6 @@ import {
   withDiagnosticsScope,
 } from '../../utils/diagnostics.ts';
 import { isEnvTruthy } from '../../utils/retry.ts';
-import { resetAndroidSnapshotHelperSessions } from '../../platforms/android/snapshot-helper.ts';
 import {
   acquireDaemonLock,
   parseIntegerEnv,
@@ -56,10 +55,13 @@ import {
 } from './transport.ts';
 import { prewarmPngWorker, terminatePngWorker } from '../../utils/png-worker-client.ts';
 import { sleep } from '../../utils/timeouts.ts';
-import { setRunnerLeaseOwnerStateDir } from '../../platforms/apple/core/runner-owner-state.ts';
-import { cleanupManagedAgentBrowserOrphans } from '../../platforms/web/agent-browser-lifecycle.ts';
-import { getManagedAgentBrowserStatus } from '../../platforms/web/agent-browser-tool.ts';
-import { openWebSessionNames } from '../web-session-names.ts';
+import { configureAppleRunnerLeaseOwnerStateDir } from '../../platform-runtime-apple-runner-owner.ts';
+import {
+  cleanupManagedWebRuntimeOrphans,
+  platformResourceCleanup,
+  resetAndroidSnapshotHelperRuntime,
+} from '../../platform-runtime-resource-cleanup.ts';
+import { isWebSession, openWebSessionNames } from '../web-session-names.ts';
 import {
   recoverAppLogResourcesAfterDaemonLock,
   type AppLogRecoveryDiagnostic,
@@ -173,6 +175,7 @@ export async function teardownDaemonSessionForShutdown(params: {
           sessionName,
           sessionStore,
           stateDir,
+          platformCleanup: platformResourceCleanup,
         }),
     });
     const lifecycleTeardownSucceeded = finalizeApplicationLifecycle
@@ -248,7 +251,7 @@ export async function startDaemonRuntime(
   const { baseDir, infoPath, lockPath, logPath, sessionsDir } = daemonPaths;
   const daemonServerMode = resolveDaemonServerMode(env.AGENT_DEVICE_DAEMON_SERVER_MODE);
   const retainArtifacts = isEnvTruthy(env.AGENT_DEVICE_RETAIN_ARTIFACTS);
-  setRunnerLeaseOwnerStateDir(baseDir);
+  await configureAppleRunnerLeaseOwnerStateDir(baseDir);
 
   const sessionStore = new SessionStore(sessionsDir);
   const ownedProcessRecords = createOwnedProcessRecordStore({
@@ -337,6 +340,7 @@ export async function startDaemonRuntime(
     screenRecordingAdmissionLedger,
     requestPlatformProviders,
     androidObservation,
+    platformResourceCleanup,
     providerRuntimeIds: providerRuntimeProviders.providerRuntimeIds,
     providerRuntimeRequiredIds: providerRuntimeProviders.providerRuntimeRequiredIds,
     providerDeviceRuntimeScope: providerRuntimeProviders.providerDeviceRuntimeScope,
@@ -481,7 +485,7 @@ export async function startDaemonRuntime(
   };
   if (!acquireDaemonLock(baseDir, lockPath, lockData)) {
     stderr.write('Daemon lock is held by another process; exiting.\n');
-    setRunnerLeaseOwnerStateDir(undefined);
+    await configureAppleRunnerLeaseOwnerStateDir(undefined);
     exit(0);
     return null;
   }
@@ -562,7 +566,7 @@ export async function startDaemonRuntime(
     closeServersBestEffort(servers);
     removeInfo(infoPath);
     releaseDaemonLock(lockPath);
-    setRunnerLeaseOwnerStateDir(undefined);
+    await configureAppleRunnerLeaseOwnerStateDir(undefined);
     exit(1);
     return null;
   }
@@ -589,7 +593,7 @@ export async function startDaemonRuntime(
     expiredProviderLeaseReleaser.beginShutdown();
     await teardownDaemonSessions();
     try {
-      await resetAndroidSnapshotHelperSessions();
+      await resetAndroidSnapshotHelperRuntime();
     } catch (error) {
       emitDiagnostic({
         level: 'warn',
@@ -627,7 +631,7 @@ export async function startDaemonRuntime(
     ]);
     removeInfo(infoPath);
     releaseDaemonLock(lockPath);
-    setRunnerLeaseOwnerStateDir(undefined);
+    await configureAppleRunnerLeaseOwnerStateDir(undefined);
     exit(shutdownOptions.exitCode ?? 0);
   };
 
@@ -695,10 +699,9 @@ export async function cleanupWebBrowserOrphansForDaemonStartup(params: {
   sessionStore: SessionStore;
   ownedProcessRecords?: OwnedProcessRecordStore;
 }): Promise<void> {
-  const status = getManagedAgentBrowserStatus({ stateDir: params.stateDir });
-  if (!status.installed) return;
   try {
-    await cleanupManagedAgentBrowserOrphans(status, 'daemon-startup', {
+    await cleanupManagedWebRuntimeOrphans({
+      stateDir: params.stateDir,
       openWebSessionNames: openWebSessionNames(params.sessionStore),
       ...(params.ownedProcessRecords === undefined
         ? {}
