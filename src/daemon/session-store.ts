@@ -2,7 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { AppError, type DiagnosticsRecordRef } from '@agent-device/kernel/errors';
 import { emitDiagnostic } from '../utils/diagnostics.ts';
-import type { SessionRuntimeHints, SessionState } from './types.ts';
+import type { SessionRef, SessionRuntimeHints, SessionState } from './types.ts';
 import { recordActionEntry, type RecordActionEntry } from './session-action-recorder.ts';
 import { expandSessionPath, isSafeSessionSegment, safeSessionName } from './session-paths.ts';
 import { NO_SCRIPT_PUBLICATION, isRepairCommittable } from './session-script-publication-state.ts';
@@ -94,6 +94,29 @@ export class SessionStore {
 
   toArray(): SessionState[] {
     return Array.from(this.sessions.values());
+  }
+
+  /**
+   * {@link SessionStore.get}, but returning the session WITH the address it answers to. The store
+   * is the only owner of that mapping, so a caller that needs both never recomputes the key or
+   * falls back to `SessionState.name` (#2031/#1394).
+   */
+  lookup(address: string): SessionRef | undefined {
+    const session = this.sessions.get(address);
+    return session ? { address, session } : undefined;
+  }
+
+  /** The session currently bound to `deviceId`, with its address, or `undefined` if none is. */
+  findByDevice(deviceId: string): SessionRef | undefined {
+    for (const [address, session] of this.sessions) {
+      if (session.device.id === deviceId) return { address, session };
+    }
+    return undefined;
+  }
+
+  /** Every live session with its address, for surfaces that must report what `--session` accepts. */
+  listRefs(): SessionRef[] {
+    return Array.from(this.sessions, ([address, session]) => ({ address, session }));
   }
 
   getRuntimeHints(name: string): SessionRuntimeHints | undefined {

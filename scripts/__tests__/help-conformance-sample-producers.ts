@@ -365,7 +365,8 @@ export const SAMPLE_PRODUCERS: SampleProducer[] = [
     producer: 'the real session-open by-session conflict producer',
     sample: DEVICE_IN_USE_SAMPLE,
     render: () => {
-      const owningSession = { name: 'checkout' } as SessionState;
+      // An explicitly named session is stored under its own name, so address === name here.
+      const owningSession = { address: 'checkout', session: { name: 'checkout' } as SessionState };
       const device = { id: 'SIM-001', name: 'iPhone 17 Pro' } as Parameters<
         typeof buildDeviceInUseBySessionError
       >[1];

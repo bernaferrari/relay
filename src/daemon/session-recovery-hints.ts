@@ -1,4 +1,4 @@
-import type { SessionState } from './types.ts';
+import type { SessionRef, SessionState } from './types.ts';
 import { shellQuoteIfNeeded } from '../utils/shell-quote.ts';
 
 export type SessionRecoveryContext = 'device-in-use' | 'selector-conflict';
@@ -10,22 +10,25 @@ export function describeSessionDevice(session: SessionState): string {
   return `${platform} device "${name}" (${id})`;
 }
 
-export function buildSessionRecoveryHint(
-  session: SessionState,
-  context: SessionRecoveryContext,
-): string {
+/**
+ * Every command in a recovery hint is addressed by `ref.address`, never by `SessionState.name`:
+ * the hint's whole job is to hand back a command that runs, and for an implicitly cwd-scoped
+ * session those two differ (see {@link SessionRef}). Taking the pair rather than a record is what
+ * keeps an addressless caller from compiling.
+ */
+export function buildSessionRecoveryHint(ref: SessionRef, context: SessionRecoveryContext): string {
   // Active recording state controls user recovery text; record-only ownership controls cleanup.
-  if (session.screenRecording) {
-    return buildRecordingSessionRecoveryHint(session, context);
+  if (ref.session.screenRecording) {
+    return buildRecordingSessionRecoveryHint(ref.address, context);
   }
-  return buildOpenSessionRecoveryHint(session, context);
+  return buildOpenSessionRecoveryHint(ref.address, context);
 }
 
 function buildRecordingSessionRecoveryHint(
-  session: SessionState,
+  sessionAddress: string,
   context: SessionRecoveryContext,
 ): string {
-  const sessionArg = shellQuoteIfNeeded(session.name);
+  const sessionArg = shellQuoteIfNeeded(sessionAddress);
   const closeCommand = `agent-device close --session ${sessionArg}`;
   const recordStopCommand = `agent-device record stop --session ${sessionArg}`;
   const reuseText =
@@ -34,7 +37,7 @@ function buildRecordingSessionRecoveryHint(
       : `To keep using this device, reuse --session ${sessionArg} for commands that should attach to the recording session.`;
 
   return (
-    `Recording session "${session.name}" owns this device. ` +
+    `Recording session "${sessionAddress}" owns this device. ` +
     `Run ${recordStopCommand}; if the session still appears in agent-device session list, run ${closeCommand}. ` +
     `${reuseText} ` +
     `Run agent-device session list to inspect active sessions.`
@@ -42,10 +45,10 @@ function buildRecordingSessionRecoveryHint(
 }
 
 function buildOpenSessionRecoveryHint(
-  session: SessionState,
+  sessionAddress: string,
   context: SessionRecoveryContext,
 ): string {
-  const sessionArg = shellQuoteIfNeeded(session.name);
+  const sessionArg = shellQuoteIfNeeded(sessionAddress);
   const closeCommand = `agent-device close --session ${sessionArg}`;
   if (context === 'selector-conflict') {
     return (
