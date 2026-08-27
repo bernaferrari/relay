@@ -49,6 +49,19 @@ export const INHERITED_PARENT_FLAG_KEYS = [
   'out',
 ] as const;
 
+/**
+ * The refusal below names the rejected command but never stated the boundary, so it was only
+ * discoverable by trial (#2062). Surface-neutral by design — this default reaches the MCP and
+ * Node readers, whose batch step schema already enumerates the accepted commands in its
+ * `command` enum; the CLI attaches its terminal recovery via the `hint` parameter at its own
+ * admission. NOT the place for the roster itself: hint strings are redaction-capped at 400
+ * characters, and the enumerated roster truncates.
+ */
+export const BATCH_AVAILABLE_COMMANDS_HINT =
+  'Session, daemon, connection, and host tooling commands are excluded from batch — they own ' +
+  'lifecycle a batch cannot carry — and batch and replay never nest. Run an excluded command on ' +
+  'its own; every other device command is available as a step.';
+
 const structuredBatchCommandNames = new Set<string>(STRUCTURED_BATCH_COMMAND_NAMES);
 
 function isStructuredBatchCommandName(command: string): command is StructuredBatchCommandName {
@@ -80,12 +93,14 @@ export function resolveStructuredBatchCommandName(
 export function readStructuredBatchCommandName(
   command: unknown,
   stepNumber: number,
+  hint: string = BATCH_AVAILABLE_COMMANDS_HINT,
 ): StructuredBatchCommandName {
   const resolved = resolveStructuredBatchCommandName(command);
   if (resolved !== undefined) return resolved;
   throw new AppError(
     'INVALID_ARGS',
     `Batch step ${stepNumber} command is not available through command batch: ${String(command)}`,
+    { hint },
   );
 }
 
