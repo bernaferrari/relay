@@ -21,7 +21,7 @@ export const grandfatheredSourceLimits = Object.freeze({
   "packages/app/src/components/take-action-editor.tsx": 717,
   "packages/core/src/authoring-sessions.ts": 1072,
   "packages/core/src/device.ts": 1356,
-  "packages/protocol/src/operations.ts": 1906,
+  "packages/protocol/src/operations.ts": 1780,
 });
 
 export function defaultSourceLimit(path) {

@@ -4,6 +4,7 @@ import {
   combineLensName,
   variableCanApply,
   type AppMapCapturePolicy,
+  type AppMapCombine,
   type AppMapScenarioTest,
   type AppMapVariable,
   type CombineLensInput,
@@ -198,6 +199,86 @@ export function testCombineSentence(input: {
   const lensLabel = input.lens === "smoke" ? "smoke" : "visual";
   const variableLabel = input.variableNames?.filter(Boolean).join(" × ") || "selection";
   return `Combine Variable ${variableLabel} × Test ${input.testName} in ${worldLabel} · ${lensLabel} lens`;
+}
+
+export const TEACH_LANGUAGE_VARIABLE_HINT = "Teach a language Variable first";
+
+export type ScreenAcrossLanguagesMap = {
+  connections: Record<string, { destination?: { kind?: string; screenId?: string } }>;
+  tests?: Record<string, Pick<AppMapScenarioTest, "id" | "steps" | "surfaceBindings">>;
+  variables?: Record<string, Pick<AppMapVariable, "id" | "kind" | "options">>;
+  combines?: Record<string, Pick<AppMapCombine, "id" | "variableIds" | "testIds" | "selected">>;
+};
+
+export type ScreenAcrossLanguagesIntent =
+  | { kind: "disabled"; hint: string }
+  | {
+      kind: "run";
+      testId: string;
+      variableIds: string[];
+      selected: Record<string, string[]>;
+    }
+  | { kind: "open-combine"; combineId?: string; testId?: string };
+
+export function languageVariable(
+  variables: ScreenAcrossLanguagesMap["variables"],
+): Pick<AppMapVariable, "id" | "kind" | "options"> | undefined {
+  const list = Object.values(variables ?? {});
+  return (
+    list.find((variable) => variable.id === "language") ??
+    list.find((variable) => variable.kind === "language")
+  );
+}
+
+/** Screen-card/inspector action: run the Test that ends here across selected
+ * language values, or open Combine instead of firing every option. */
+export function screenAcrossLanguages(
+  map: ScreenAcrossLanguagesMap | undefined,
+  screenId: string | undefined,
+): ScreenAcrossLanguagesIntent {
+  const language = languageVariable(map?.variables);
+  if (!map || !screenId || !language) {
+    return { kind: "disabled", hint: TEACH_LANGUAGE_VARIABLE_HINT };
+  }
+  const matchingTests = Object.values(map.tests ?? {}).filter(
+    (test) => testDestinationScreenId(map, test) === screenId,
+  );
+  const matchingIds = new Set(matchingTests.map((test) => test.id));
+  const pairingCombines = Object.values(map.combines ?? {}).filter(
+    (combine) =>
+      combine.variableIds.includes(language.id) &&
+      combine.testIds.some((id) => matchingIds.has(id)),
+  );
+  const test =
+    matchingTests.find((candidate) =>
+      pairingCombines.some((combine) => combine.testIds.includes(candidate.id)),
+    ) ?? matchingTests[0];
+  if (!test) {
+    const languageCombine = Object.values(map.combines ?? {}).find((combine) =>
+      combine.variableIds.includes(language.id),
+    );
+    return {
+      kind: "open-combine",
+      ...(languageCombine ? { combineId: languageCombine.id } : {}),
+    };
+  }
+  const combine =
+    pairingCombines.find((candidate) => candidate.testIds.includes(test.id)) ?? pairingCombines[0];
+  const known = new Set(language.options.map((option) => option.id));
+  const selected = combine?.selected?.[language.id]?.filter((id) => known.has(id));
+  if (!selected?.length) {
+    return {
+      kind: "open-combine",
+      ...(combine ? { combineId: combine.id } : {}),
+      testId: test.id,
+    };
+  }
+  return {
+    kind: "run",
+    testId: test.id,
+    variableIds: [language.id],
+    selected: { [language.id]: selected },
+  };
 }
 
 export { combineLensName, type CombineLensInput };

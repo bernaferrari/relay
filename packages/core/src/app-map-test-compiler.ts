@@ -28,6 +28,7 @@ import {
   frozenRawAccessibilityVariants,
 } from "./app-map-test-raw-accessibility.js";
 import { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
+import { attachMappedInboundPrelude } from "./app-map-test-inbound-prelude.js";
 import type { Recipe } from "./recipes.js";
 
 export { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
@@ -54,6 +55,10 @@ export class AppMapTestCompileError extends Error {
 }
 
 const MAX_COMPILED_STEPS = 4_096;
+/** Bounded automatic survey of a scrollable destination — the same default
+ * the `target.scroll-survey.capture` operation uses, so an every-screen Test
+ * never costs more than one manual `device survey`. */
+const DESTINATION_SURVEY_MAX_SCROLLS = 4;
 
 type ReturnRequirementStep = Extract<RecipeStep, { kind: "expect-screen" }>;
 
@@ -170,6 +175,7 @@ export function compileAppMapScenarioTest(
   const navigationDiagnosticKeys = new Set<string>();
   const scheduledLogicalSurfaces = new Set<string>();
   const scheduledScreenCaptures = new Set<string>();
+  const scheduledDestinationSurveys = new Set<string>();
   const forceRecaptureSurfaceScreenIds = new Set(options.forceRecaptureSurfaceScreenIds ?? []);
   // An `every-screen` capture policy already promises a full survey of every
   // surface the Test reaches, so a run may force a fresh survey without an
@@ -287,6 +293,42 @@ export function compileAppMapScenarioTest(
         semanticNodeCount: baseline.mergedTree.nodeCount,
       },
     };
+  };
+  // DX 2026-08-22 (Data Controls locale QA): a Test that lands on a screen
+  // the map itself declares full-surface must not make the operator
+  // rediscover a destination survey with a bespoke script. The landing
+  // expectation owns one bounded evidence survey, so hidden copy reaches the
+  // run frames automatically. Evidence-policy gated: `every-screen` already
+  // promised a full survey of every surface the Test reaches, and a
+  // step-level capture is an explicit author request — no other mode gets
+  // surprise scrolls on a failures-only run.
+  const fullSurfaceVariantScreenIds = new Set(
+    Object.values(map.screenVariants)
+      .filter((variant) => variant.scrollCapturePolicy?.captureMode === "full-surface")
+      .map((variant) => variant.screenId),
+  );
+  const captureDestinationSurvey = (
+    screenId: string,
+    stepCapture: boolean,
+    captureOptions: { schedule?: boolean } = { schedule: true },
+  ):
+    | NonNullable<Extract<RecipeStep, { kind: "expect-screen" }>["destinationSurvey"]>
+    | undefined => {
+    const schedule = captureOptions.schedule !== false;
+    if (!captureCoversEveryScreen && stepCapture !== true) return undefined;
+    if (!fullSurfaceVariantScreenIds.has(screenId)) return undefined;
+    // A bound full-surface comparison already surveys this destination and
+    // owns its frames; never scroll the same screen twice in one landing.
+    const bound = test.surfaceBindings?.some(
+      (candidate) =>
+        candidate.screenId === screenId &&
+        candidate.captureMode === "full-surface" &&
+        Boolean(candidate.surfaceId && candidate.baselineCaptureId),
+    );
+    if (bound) return undefined;
+    if (schedule && scheduledDestinationSurveys.has(screenId)) return undefined;
+    if (schedule) scheduledDestinationSurveys.add(screenId);
+    return { maxScrolls: DESTINATION_SURVEY_MAX_SCROLLS };
   };
 
   const importRecipes = (
@@ -489,8 +531,17 @@ export function compileAppMapScenarioTest(
                       schedule: !recoveryAlternative,
                     })
                   : undefined;
+              const destinationSurvey =
+                terminalConnectionId &&
+                (recipeStep.id === `relay-destination-${terminalConnectionId}` || isLiveEntry)
+                  ? captureDestinationSurvey(recipeStep.screenId, step.capture === true, {
+                      schedule: !recoveryAlternative,
+                    })
+                  : undefined;
               return [
-                boundedExpectation,
+                destinationSurvey
+                  ? { ...boundedExpectation, destinationSurvey }
+                  : boundedExpectation,
                 ...(capture ? [capture] : []),
                 ...(logicalSurface ? [logicalSurface] : []),
               ];
@@ -722,6 +773,8 @@ export function compileAppMapScenarioTest(
       navigationDiagnostics,
     );
   }
+  attachMappedInboundPrelude(map, graph, rootRecipeId);
+
   const root = graph[rootRecipeId]!;
   const plan: AppMapCompiledTest = {
     schemaVersion: 1,

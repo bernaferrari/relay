@@ -15,6 +15,12 @@ import {
 } from "./recipe-runner-support.js";
 import { screenIdentityMatches } from "./recipe-target-match.js";
 import { foregroundApplicationBundle } from "./recipe-runner-tour-matching.js";
+import {
+  mappedPreludeHost,
+  mappedPreludeStartVisible,
+  runMappedPrelude,
+} from "./recipe-runner-tour.js";
+
 import type { RecipeStep } from "./recipes.js";
 import {
   compareScreenIdentity,
@@ -27,6 +33,10 @@ import {
   awaitStableDestinationEvidence,
   recordDestinationEvidenceTiming,
 } from "./destination-evidence.js";
+import {
+  runDestinationEvidenceSurvey,
+  type DestinationSurveyDependencies,
+} from "./destination-survey.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import type { DestinationRepairHint } from "./repair-proposal.js";
 
@@ -91,8 +101,9 @@ async function frameNodes(
 
 type ExpectScreenDependencies = {
   captureScreenshot?: typeof captureScreenshot;
+  /** Test seam for the automatic destination evidence survey. */
+  captureSurvey?: DestinationSurveyDependencies["captureSurvey"];
 };
-
 function ownsAndroidDestinationEvidence(
   step: Extract<RecipeStep, { kind: "expect-screen" }>,
   ctx: RecipeStepContext,
@@ -157,6 +168,7 @@ export async function runExpectScreenStep(
     markNavigationUnknown(ctx, `Verifying destination ${step.screenTitle}.`);
   }
   const expected = new Set([step.fingerprint, ...(step.aliases ?? [])]);
+  const prelude = mappedPreludeHost(step);
   const recoveryMaxAttempts =
     step.recovery?.strategy === "back" ? (step.recovery.maxAttempts ?? 6) : 0;
   let parentViewportRecoveryAttempts =
@@ -176,6 +188,7 @@ export async function runExpectScreenStep(
   let verifiedObservedAt: number | undefined;
   let verifiedScreenshot: Awaited<ReturnType<typeof captureScreenshot>> | undefined;
   let firstAttempt = true;
+  let preludeRuns = 0;
   // Retained from the final attempt so a terminal mismatch can describe what
   // the device actually showed in its repair hint.
   let mismatchObservedFingerprint: string | undefined;
@@ -233,6 +246,16 @@ export async function runExpectScreenStep(
     }
     mismatchObservedFingerprint = observed.fingerprint;
     mismatchNodeCount = nodes.length;
+    if (
+      prelude.preludeSteps?.length &&
+      preludeRuns < 2 &&
+      mappedPreludeStartVisible(nodes, prelude)
+    ) {
+      preludeRuns += 1;
+      ctx.log(`screen: opening “${step.screenTitle}” from the current app screen`);
+      await runMappedPrelude(device, prelude.preludeSteps, ctx.log, "screen");
+      continue;
+    }
 
     let visualFingerprint: string | undefined;
     if (verifiedScreenshot) {
@@ -259,6 +282,7 @@ export async function runExpectScreenStep(
       verifiedObservedAt = observedAt;
       break;
     }
+
     if (recoveryAttempts < recoveryMaxAttempts && parentViewportRecoveryAttempts > 0) {
       const attempt = 3 - parentViewportRecoveryAttempts;
       parentViewportRecoveryAttempts -= 1;
@@ -427,4 +451,11 @@ export async function runExpectScreenStep(
     ctx.log(`repair checkpoint: verified ${step.screenTitle} from fresh device evidence`);
   }
   ctx.log(`screen: reached ${step.screenTitle}`);
+  // The landing is proven; the destination survey only widens its evidence.
+  await runDestinationEvidenceSurvey(
+    step,
+    ctx,
+    { nodes: verifiedNodes, screenshot: verifiedScreenshot },
+    { captureSurvey: dependencies.captureSurvey },
+  );
 }

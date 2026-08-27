@@ -375,6 +375,14 @@ export type RecipeStep = RecipeStepMetadata &
           sourceInputDigest: string;
           transitionId?: string;
         };
+        /** The compiler marks a scrollable landing whose evidence must cover
+         * more than the first viewport. After this expectation verifies, the
+         * runner performs one bounded scroll survey and persists every frame
+         * with its tree as run evidence. The annotation is evidence-only: a
+         * survey failure degrades to a warning and never fails the run. */
+        destinationSurvey?: {
+          maxScrolls: number;
+        };
       }
     | {
         kind: "extract";

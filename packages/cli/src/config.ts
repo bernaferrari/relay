@@ -82,8 +82,9 @@ const valueFlags = new Set([
   "--input",
   "--input-file",
   "--file",
-  "--dir",
   "--mark",
+  "--dir",
+  "--max-scrolls",
   "--in",
   "--lens",
   "--cell",
@@ -107,6 +108,7 @@ const switchFlags = new Set([
   "--preview",
   "--confirm",
   "--all",
+  "--no-restore",
 ]);
 const repeatableValueFlags = new Set(["--in"]);
 
@@ -347,13 +349,18 @@ function applySnapshotPresentation(
   operationId: string,
   input: Record<string, unknown>,
   tokens: ParsedTokens,
+  output: OutputMode,
 ): Record<string, unknown> {
   const wantsFull = tokens.switches.has("--full");
   const wantsFile = tokens.values.has("--file");
   if (wantsFull && operationId !== "target.snapshot.capture") {
     throw new UsageError("--full is only valid on snapshot commands");
   }
-  if (operationId !== "target.snapshot.capture" || (!wantsFull && !wantsFile)) return input;
+  if (operationId !== "target.snapshot.capture") return input;
+  // The CLI is what an agent types first: machine output keeps the raw tree
+  // (nodes), matching HTTP GET /snapshot?visual=1. Human stdout stays the
+  // compact digest unless --full explicitly widens it.
+  if (!wantsFull && !wantsFile && output === "human") return input;
   return { ...input, full: true };
 }
 
@@ -368,6 +375,35 @@ function applySurveyDir(
     throw new UsageError("--dir is only valid on device survey");
   }
   return { ...input, dir };
+}
+
+function applySurveyMaxScrolls(
+  operationId: string,
+  input: Record<string, unknown>,
+  tokens: ParsedTokens,
+): Record<string, unknown> {
+  const raw = tokens.values.get("--max-scrolls");
+  if (raw === undefined) return input;
+  if (operationId !== "target.scroll-survey.capture") {
+    throw new UsageError("--max-scrolls is only valid on device survey");
+  }
+  const maxScrolls = Number(raw);
+  if (!Number.isInteger(maxScrolls) || maxScrolls < 1 || maxScrolls > 12) {
+    throw new UsageError("--max-scrolls must be an integer between 1 and 12");
+  }
+  return { ...input, maxScrolls };
+}
+
+function applySurveyRestore(
+  operationId: string,
+  input: Record<string, unknown>,
+  tokens: ParsedTokens,
+): Record<string, unknown> {
+  if (!tokens.switches.has("--no-restore")) return input;
+  if (operationId !== "target.scroll-survey.capture") {
+    throw new UsageError("--no-restore is only valid on device survey");
+  }
+  return { ...input, restore: false };
 }
 
 function surveyDirForce(operationId: string, tokens: ParsedTokens): boolean {
@@ -517,19 +553,29 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
         );
       }
     }
-    const input = applySurveyDir(
+    const input = applySurveyRestore(
       operationId,
-      applySnapshotPresentation(
+      applySurveyDir(
         operationId,
-        confirmedReviewedOriginInput(
+        applySurveyMaxScrolls(
           operationId,
-          readInput(tokens, env),
-          tokens.switches.has("--confirm"),
+          applySnapshotPresentation(
+            operationId,
+            confirmedReviewedOriginInput(
+              operationId,
+              readInput(tokens, env),
+              tokens.switches.has("--confirm"),
+            ),
+            tokens,
+            output,
+          ),
+          tokens,
         ),
         tokens,
       ),
       tokens,
     );
+
     return {
       config: {
         connection,
@@ -563,7 +609,10 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   if (resource) {
     screenshotOutput(tokens, output, {});
     applySurveyDir("", {}, tokens);
-    applySnapshotPresentation("", {}, tokens);
+    applySurveyMaxScrolls("", {}, tokens);
+    applySurveyRestore("", {}, tokens);
+    applySnapshotPresentation("", {}, tokens, output);
+
     return {
       config: {
         connection,
@@ -600,16 +649,25 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   ) {
     throw new UsageError("--target current and --revision current are only valid on test run");
   }
-  resolved.input = applySurveyDir(
+  resolved.input = applySurveyRestore(
     resolved.operationId,
-    applySnapshotPresentation(
+    applySurveyDir(
       resolved.operationId,
-      applyCombineRunFlags(
+      applySurveyMaxScrolls(
         resolved.operationId,
-        confirmedReviewedOriginInput(
+        applySnapshotPresentation(
           resolved.operationId,
-          resolved.input,
-          tokens.switches.has("--confirm"),
+          applyCombineRunFlags(
+            resolved.operationId,
+            confirmedReviewedOriginInput(
+              resolved.operationId,
+              resolved.input,
+              tokens.switches.has("--confirm"),
+            ),
+            tokens,
+          ),
+          tokens,
+          output,
         ),
         tokens,
       ),
@@ -617,6 +675,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     ),
     tokens,
   );
+
   resolved.input = applySourceRevisionFlags(resolved.operationId, resolved.input, tokens, env);
   const preview = tokens.switches.has("--preview");
   if (mark) {

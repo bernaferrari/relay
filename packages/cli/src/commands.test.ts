@@ -174,6 +174,30 @@ test("authoring vocabulary exposes Variables, Tests, and saved Combines", () => 
   });
 });
 
+test("device locale maps to a verified per-app locale set", () => {
+  assert.deepEqual(resolveCommand(["device", "locale", "pixel-1", "ai.x.grok", "he"]), {
+    operationId: "target.app.locale.set",
+    commandPath: "device locale",
+    input: { serial: "pixel-1", package: "ai.x.grok", locale: "he" },
+  });
+  const help = renderHelp("device");
+  assert.match(help, /device locale <serial> <package> <locale>/u);
+  assert.match(help, /verify it took/u);
+  assert.match(help, /fails when the app still reports another language/u);
+});
+
+test("connect get is a CLI projection of app-map.get", () => {
+  assert.deepEqual(resolveCommand(["connect", "get", "checkout", "continue"]), {
+    operationId: "app-map.get",
+    commandPath: "connect get",
+    input: { appMapId: "checkout", connectionId: "continue" },
+  });
+  const help = renderHelp("connect");
+  assert.match(help, /connect get <appMapId> <connectionId>/u);
+  assert.match(help, /tap targets, reveal/u);
+  assert.match(help, /CLI projection of app-map.get/u);
+});
+
 test("Test help exposes graph creation, semantic edits, and the required run target", () => {
   const help = renderHelp("test");
   assert.match(help, /intentSchemaVersion 1/);
@@ -476,6 +500,17 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
     ],
     [["device", "screenshot", "pixel-9"], "target.screenshot.capture", { serial: "pixel-9" }],
     [["device", "survey", "pixel-9"], "target.scroll-survey.capture", { serial: "pixel-9" }],
+    [
+      ["connect", "get", "checkout", "continue"],
+      "app-map.get",
+      { appMapId: "checkout", connectionId: "continue" },
+    ],
+    [
+      ["device", "locale", "pixel-9", "com.example.app", "de"],
+      "target.app.locale.set",
+      { serial: "pixel-9", package: "com.example.app", locale: "de" },
+    ],
+
     [
       ["device", "launch", "ipad-1", "Settings"],
       "target.app.launch",

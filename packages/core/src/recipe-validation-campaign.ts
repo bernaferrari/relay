@@ -265,7 +265,7 @@ export function parseExpectScreenCampaignFields(
   index: number,
 ): Pick<
   Extract<RecipeStep, { kind: "expect-screen" }>,
-  "returnRequirement" | "repairCheckpoint" | "evidenceSurface"
+  "returnRequirement" | "repairCheckpoint" | "evidenceSurface" | "destinationSurvey"
 > {
   const evidenceSurface = parseEvidenceSurface(
     raw.evidenceSurface,
@@ -321,10 +321,27 @@ export function parseExpectScreenCampaignFields(
         : {}),
     };
   }
+  let destinationSurvey: Extract<RecipeStep, { kind: "expect-screen" }>["destinationSurvey"];
+  if (raw.destinationSurvey !== undefined) {
+    if (
+      !isObject(raw.destinationSurvey) ||
+      !isNumber(raw.destinationSurvey.maxScrolls) ||
+      !Number.isInteger(raw.destinationSurvey.maxScrolls) ||
+      raw.destinationSurvey.maxScrolls < 1 ||
+      raw.destinationSurvey.maxScrolls > 12
+    ) {
+      throw stepErr(
+        index,
+        "expect-screen.destinationSurvey.maxScrolls must be an integer from 1 to 12",
+      );
+    }
+    destinationSurvey = { maxScrolls: raw.destinationSurvey.maxScrolls };
+  }
   return {
     ...(returnRequirement ? { returnRequirement } : {}),
     ...(repairCheckpoint ? { repairCheckpoint } : {}),
     ...(evidenceSurface ? { evidenceSurface } : {}),
+    ...(destinationSurvey ? { destinationSurvey } : {}),
   };
 }
 

@@ -84,7 +84,9 @@ test("uses a reversible overlap-heavy Android survey drag without changing iOS",
   const androidDown = scrollSurveyGesture("android", bounds, "down");
   const androidUp = scrollSurveyGesture("android", bounds, "up");
   assert.equal(androidDown.durationMs, 800);
-  assert.ok(androidDown.from.y - androidDown.to.y <= bounds.height * 0.27);
+  const travel = androidDown.from.y - androidDown.to.y;
+  assert.ok(travel >= bounds.height * 0.44);
+  assert.ok(travel <= bounds.height * 0.48);
   assert.deepEqual(androidUp.from, androidDown.to);
   assert.deepEqual(androidUp.to, androidDown.from);
   assert.equal(androidUp.durationMs, androidDown.durationMs);
@@ -1557,4 +1559,32 @@ test("does not claim restoration when inverse swipes leave a scrolled viewport",
   );
   assert.equal(result.reason, "limit-reached");
   assert.equal(result.restoredStartViewport, false);
+});
+
+test("skips inverse restoration when restore is false", async () => {
+  const startingPage = 2;
+  const terminalPage = 3;
+  let page = startingPage;
+  let up = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => captured(image((page - startingPage) * 40), page - startingPage),
+      scrollDown: async () => {
+        page = Math.min(page + 1, terminalPage);
+      },
+      scrollUp: async () => {
+        up += 1;
+        page -= 1;
+      },
+      settle: async () => {},
+    },
+    { restore: false },
+  );
+  assert.equal(result.status, "completed");
+  assert.equal(result.reason, "end-of-content");
+  assert.equal(result.frames.length, 2);
+  assert.equal(up, 0);
+  assert.equal(page, terminalPage);
+  assert.equal(result.restoredStartViewport, false);
+  assert.match(result.message, /Restore skipped/u);
 });

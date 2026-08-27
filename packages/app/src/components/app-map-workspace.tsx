@@ -65,14 +65,13 @@ import { useAppMapCanvasPersistence } from "../lib/use-app-map-canvas-persistenc
 import { useAppMapLiveDevice } from "../lib/use-app-map-live-device";
 import { useAppMapCanvasPresentation } from "../lib/use-app-map-canvas-presentation";
 import { useAppMapContextPanels } from "./use-app-map-context-panels";
+import type { AppMapContextSurface } from "./use-app-map-context-panels";
 import { useAppMapCaptureActions } from "../lib/use-app-map-capture-actions";
 import { useAppMapWorkspaceEvents } from "../lib/use-app-map-workspace-events";
 import { useAppMapWorkspaceShell } from "../lib/use-app-map-workspace-shell";
 import { targetChromeName } from "../lib/target-presentation";
 import { mappedCompanionStatus } from "../lib/mapped-companion-status";
 import { useAppMapWorkspaceRun } from "../lib/use-app-map-workspace-run";
-
-type AppMapContextSurface = "agent" | "history" | "proposals" | null;
 
 export function AppMapWorkspace(props: {
   /** Which of the shell's three canvas modes is showing. The shell owns it so
@@ -927,6 +926,7 @@ export function AppMapWorkspace(props: {
                         if (node) removeScreen(node);
                       }}
                       onClose={() => setScreenInspectorOpen(false)}
+                      onOpenCombine={props.onOpenCombine}
                     />
                   }
                 >

@@ -97,8 +97,9 @@ export RELAY_ACTOR_ID=agent:grok-ios-mapper
 Same three words in the UI and the CLI:
 
 - **Variable** = a list you apply and undo (Language is just the first kind). Teach 1–2 rows, infer the rest. `relay variable save`
-- **Test** = go here, click there, finish. `relay test run grok-ios settings-tour`
-- **Combine** = selected Variable values × selected Tests. From the Test: `relay test run grok-ios settings-tour --in language=ja,pt --lens visual`. From a saved grid: `relay combine run grok-ios language-x-settings --cell ja`. Default is one cell. `--all` is explicit. Do **not** fire all cells unless asked. Capture is a lens (`visual` / `smoke`), never a Variable.
+- **Test** = go here, click there, finish. `relay test run grok-android-manual-v2 supergrok-locale-tour`
+- **Combine** = selected Variable values × selected Tests. From the Test: `relay test run grok-android-manual-v2 supergrok-locale-tour --in language=hu,ro --lens visual --target current --revision current`. From a saved grid: `relay combine run grok-android-manual-v2 matrix-language-to-supergrok-locale-tour --cell hu`. Default is one cell. `--all` is explicit. Do **not** fire all cells unless asked. Capture is a lens (`visual` / `smoke`), never a Variable. After a batch: `relay combine export <batch-id>` writes per-locale screenshots + accessibility trees (and `full.png` when the destination was surveyed).
+- Do **not** write a per-screen `.mjs` capture script. The YAML Test + language Variable is the recipe. `device survey --dir --no-restore` is the full-surface verb when you are already on the screen.
 
 Tour seek reaches the origin screen (fingerprint, then mapped row overlap, then Back/Settings/prelude) before walking rows. Tour back is label-overlap, not nav title — Grok child sheets often keep header “Settings”.
 

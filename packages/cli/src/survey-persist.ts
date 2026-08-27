@@ -9,12 +9,31 @@ export type SurveyPersistPath = {
   json: string;
 };
 
+/** One manifest row per persisted frame: where it scrolled to, which files it
+ * wrote, and how many labeled controls the review tree kept. */
+export type SurveyPersistFrame = {
+  index: number;
+  offsetY?: number;
+  labelCount: number;
+  files: SurveyPersistPath;
+};
+
+export type SurveyPersistFull = {
+  png: string;
+  json: string;
+  width: number;
+  height: number;
+  nodeCount: number;
+};
+
 export type SurveyPersistDigest = {
   status: "completed" | "stopped";
   reason: string;
   frameCount: number;
   dir: string;
   paths: SurveyPersistPath[];
+  frames: SurveyPersistFrame[];
+  full?: SurveyPersistFull;
 };
 
 function fail(message: string): never {
@@ -95,8 +114,8 @@ export async function persistScrollSurvey(
       `Could not create survey directory ${root}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-
   const paths: SurveyPersistPath[] = [];
+  const frames: SurveyPersistFrame[] = [];
   for (const [ordinal, value] of body.frames.entries()) {
     const frame = record(value, `frame ${ordinal}`);
     const index = Number.isInteger(frame.index) ? Number(frame.index) : ordinal;
@@ -109,6 +128,7 @@ export async function persistScrollSurvey(
     const stem = frameStem(index);
     const pngPath = join(root, `${stem}.png`);
     const jsonPath = join(root, `${stem}.json`);
+    const presentable = presentPersistedSnapshot(snapshot);
     const jsonBody = {
       index,
       ...(typeof frame.offsetY === "number" ? { offsetY: frame.offsetY } : {}),
@@ -118,7 +138,7 @@ export async function persistScrollSurvey(
         ...(typeof screenshot.height === "number" ? { height: screenshot.height } : {}),
         ...(typeof screenshot.capturedAt === "number" ? { capturedAt: screenshot.capturedAt } : {}),
       },
-      snapshot: presentPersistedSnapshot(snapshot),
+      snapshot: presentable,
     };
     try {
       await writeFile(pngPath, png);
@@ -128,7 +148,56 @@ export async function persistScrollSurvey(
         `Could not write survey frame ${stem} in ${root}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    paths.push({ png: pngPath, json: jsonPath });
+    const files = { png: pngPath, json: jsonPath };
+    paths.push(files);
+    frames.push({
+      index,
+      ...(typeof frame.offsetY === "number" ? { offsetY: frame.offsetY } : {}),
+      labelCount: presentable.nodes.filter(
+        (node) => typeof node.label === "string" && node.label.trim().length > 0,
+      ).length,
+      files,
+    });
+  }
+
+  let full: SurveyPersistFull | undefined;
+  const stitched =
+    body.stitched && typeof body.stitched === "object" && !Array.isArray(body.stitched)
+      ? (body.stitched as Record<string, unknown>)
+      : undefined;
+
+  if (typeof stitched?.base64 === "string" && stitched.base64.length > 0) {
+    const fullPng = join(root, "full.png");
+    const fullJson = join(root, "full.json");
+    const mergedNodes = Array.isArray(body.mergedNodes) ? body.mergedNodes : [];
+    try {
+      await writeFile(fullPng, screenshotPng({ base64: stitched.base64, mime: "image/png" }));
+      await writeFile(
+        fullJson,
+        `${JSON.stringify(
+          {
+            width: typeof stitched.width === "number" ? stitched.width : undefined,
+            height: typeof stitched.height === "number" ? stitched.height : undefined,
+            nodeCount: mergedNodes.length,
+            snapshot: presentPersistedSnapshot({ nodes: mergedNodes }),
+          },
+
+          null,
+          2,
+        )}\n`,
+      );
+    } catch (error) {
+      fail(
+        `Could not write full-page survey in ${root}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    full = {
+      png: fullPng,
+      json: fullJson,
+      width: typeof stitched.width === "number" ? stitched.width : 0,
+      height: typeof stitched.height === "number" ? stitched.height : 0,
+      nodeCount: mergedNodes.length,
+    };
   }
 
   return {
@@ -137,5 +206,7 @@ export async function persistScrollSurvey(
     frameCount: paths.length,
     dir: root,
     paths,
+    frames,
+    ...(full ? { full } : {}),
   };
 }

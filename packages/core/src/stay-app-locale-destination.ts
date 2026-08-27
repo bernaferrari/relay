@@ -76,7 +76,14 @@ export function stayAppLocaleDestinationCheck(
 ): RecipeStep | undefined {
   const destination = lastProductExpectScreen(graph, childRootId);
   if (!destination || !stayIdentity(destination)) return undefined;
-  const { recovery: _recovery, repairCheckpoint: _repair, ...check } = destination;
+  const {
+    recovery: _recovery,
+    repairCheckpoint: _repair,
+    // The body module that immediately follows owns the destination survey;
+    // a stay re-proof must not scroll the landing a second time.
+    destinationSurvey: _destinationSurvey,
+    ...check
+  } = destination;
   return {
     ...check,
     id: destination.id ? `${destination.id}-stay` : "stay-destination",

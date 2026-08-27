@@ -132,7 +132,7 @@ test("friendly command families invoke through the operation client", async () =
     {
       argv: ["discovery", "capture", "discovery-1", "pixel-9"],
       operationId: "discovery.capture",
-      input: { sessionId: "discovery-1", serial: "pixel-9" },
+      input: { sessionId: "discovery-1" },
     },
     {
       argv: ["policy", "privacy", "update", "--input", '{"enabled":true}'],
@@ -246,35 +246,38 @@ const snapshotTree = {
   ],
 };
 
-test("device snapshot --json defaults to a digest and --full keeps nodes", async () => {
-  const digestIo = capture();
-  const digestCode = await runCli(["device", "snapshot", "pixel-9", "--json"], {
-    streams: digestIo.streams,
+test("device snapshot --json includes nodes and human default stays a digest", async () => {
+  const jsonIo = capture();
+  const jsonCode = await runCli(["device", "snapshot", "pixel-9", "--json"], {
+    streams: jsonIo.streams,
     createClient: () => ({ invoke: async () => snapshotTree, events: async () => {} }),
     registerSignalHandlers: false,
     env: {},
   });
-  assert.equal(digestCode, ExitCode.success);
-  const digest = JSON.parse(digestIo.stdout()).result as {
+  assert.equal(jsonCode, ExitCode.success);
+  const json = JSON.parse(jsonIo.stdout()).result as {
+    nodes?: unknown[];
+    nodeCount?: number;
+  };
+  assert.deepEqual(json.nodes, snapshotTree.nodes);
+  assert.equal(json.nodeCount, undefined);
+
+  const humanIo = capture();
+  const humanCode = await runCli(["device", "snapshot", "pixel-9"], {
+    streams: humanIo.streams,
+    createClient: () => ({ invoke: async () => snapshotTree, events: async () => {} }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(humanCode, ExitCode.success);
+  const human = JSON.parse(humanIo.stdout()) as {
     nodes?: unknown;
     nodeCount?: number;
     controls?: unknown;
   };
-  assert.equal(digest.nodes, undefined);
-  assert.equal(digest.nodeCount, 1);
-  assert.ok(Array.isArray(digest.controls));
-
-  const fullIo = capture();
-  const fullCode = await runCli(["device", "snapshot", "pixel-9", "--json", "--full"], {
-    streams: fullIo.streams,
-    createClient: () => ({ invoke: async () => snapshotTree, events: async () => {} }),
-    registerSignalHandlers: false,
-    env: {},
-  });
-  assert.equal(fullCode, ExitCode.success);
-  const full = JSON.parse(fullIo.stdout()).result as { nodes?: unknown[]; nodeCount?: number };
-  assert.deepEqual(full.nodes, snapshotTree.nodes);
-  assert.equal(full.nodeCount, undefined);
+  assert.equal(human.nodes, undefined);
+  assert.equal(human.nodeCount, 1);
+  assert.ok(Array.isArray(human.controls));
 });
 
 test("device snapshot --file writes the full snapshot JSON", async () => {
@@ -393,6 +396,70 @@ test("variable list stdout is the catalog only; map get still includes topology"
   assert.ok(Array.isArray(got.appMap?.connections));
   assert.ok((got.appMap?.screens?.length ?? 0) > 0);
   assert.ok((got.appMap?.connections?.length ?? 0) > 0);
+});
+
+test("connect get --json returns saved connection actions", async () => {
+  const appMap = {
+    id: "checkout",
+    name: "Checkout",
+    revision: 4,
+    screens: { cart: { id: "cart", title: "Cart", variantIds: [] } },
+    connections: {
+      continue: {
+        id: "continue",
+        label: "Continue",
+        fromScreenId: "cart",
+        destination: { kind: "screen", screenId: "review" },
+        state: "ready",
+        actions: [
+          { kind: "reveal", target: { label: "Continue" }, direction: "down" },
+          { kind: "tap", target: { identifier: "checkout.continue", label: "Continue" } },
+        ],
+      },
+    },
+  };
+  const io = capture();
+  const calls: Array<{ operationId: OperationId; input: unknown }> = [];
+  const code = await runCli(["connect", "get", "checkout", "continue", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        return { appMap };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(code, ExitCode.success);
+  assert.deepEqual(calls, [{ operationId: "app-map.get", input: { appMapId: "checkout" } }]);
+  const listed = JSON.parse(io.stdout()).result as {
+    connection?: { id?: string; actions?: unknown[] };
+    appMap?: unknown;
+  };
+  assert.equal(listed.appMap, undefined);
+  assert.deepEqual(listed.connection, {
+    id: "continue",
+    label: "Continue",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "review" },
+    state: "ready",
+    actions: [
+      { kind: "reveal", target: { label: "Continue" }, direction: "down" },
+      { kind: "tap", target: { identifier: "checkout.continue", label: "Continue" } },
+    ],
+  });
+
+  const missing = capture();
+  const missingCode = await runCli(["connect", "get", "checkout", "missing", "--json"], {
+    streams: missing.streams,
+    createClient: () => ({ invoke: async () => ({ appMap }), events: async () => {} }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(missingCode, ExitCode.validation);
+  assert.match(JSON.parse(missing.stdout()).error.message, /Unknown connection: missing/u);
 });
 
 test("screenshot output writes validated PNG files without leaking base64", async () => {
@@ -566,7 +633,7 @@ test("device survey --dir persists frames and prints a digest without base64", a
     assert.deepEqual(calls, [
       {
         operationId: "target.scroll-survey.capture",
-        input: { serial: "pixel-9", maxScrolls: 6, dir },
+        input: { serial: "pixel-9", maxScrolls: 6 },
       },
     ]);
     const terminal = JSON.parse(io.stdout()) as { result: Record<string, unknown> };
@@ -579,6 +646,27 @@ test("device survey --dir persists frames and prints a digest without base64", a
         { png: join(dir, "00.png"), json: join(dir, "00.json") },
         { png: join(dir, "01.png"), json: join(dir, "01.json") },
       ],
+      frames: [
+        {
+          index: 0,
+          offsetY: 0,
+          labelCount: 2,
+          files: { png: join(dir, "00.png"), json: join(dir, "00.json") },
+        },
+        {
+          index: 1,
+          offsetY: 20,
+          labelCount: 2,
+          files: { png: join(dir, "01.png"), json: join(dir, "01.json") },
+        },
+      ],
+      full: {
+        png: join(dir, "full.png"),
+        json: join(dir, "full.json"),
+        width: 10,
+        height: 40,
+        nodeCount: 0,
+      },
     });
     assert.doesNotMatch(io.stdout(), /base64/u);
     assert.doesNotMatch(io.stdout(), new RegExp(pngBase64));
@@ -1667,6 +1755,32 @@ test("structured operation failures use a non-zero exit instead of a false succe
     },
   });
   assert.match(io.stderr(), /the system Copy action did not appear/);
+});
+
+test("device locale fails loudly when the app keeps another language", async () => {
+  const io = capture();
+  const code = await runCli(["device", "locale", "pixel-1", "ai.x.grok", "he", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      invoke: async () => {
+        throw new ApiError(409, "app locale he did not take (tried iw)", {
+          code: "APP_LOCALE_DID_NOT_TAKE",
+          recovery:
+            "The app kept another language after the alias retries. Inspect its locale resources, or verify the screen with device snapshot before trusting the switch.",
+        });
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(code, ExitCode.conflict);
+  const body = JSON.parse(io.stdout()) as {
+    error?: { message?: string; details?: { code?: string } };
+  };
+  assert.match(body.error?.message ?? "", /did not take/u);
+  assert.equal(body.error?.details?.code, "APP_LOCALE_DID_NOT_TAKE");
+  assert.match(io.stderr(), /did not take/u);
 });
 
 test("structured recovery is machine-readable and useful in the human CLI", async () => {

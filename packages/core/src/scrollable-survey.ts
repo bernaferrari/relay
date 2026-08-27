@@ -404,6 +404,8 @@ export async function captureScrollableSurvey(
   options: ScrollSurveyOptions = {},
 ): Promise<ScrollSurveyResult> {
   const maxScrolls = Math.max(1, Math.min(12, options.maxScrolls ?? 4));
+  const shouldRestore = options.restore !== false;
+
   // Type assertions do not survive JavaScript callers. Only the evidence
   // loader's in-process capability can make this survey eligible for either a
   // fast restore or a durable document-origin issuance.
@@ -475,8 +477,10 @@ export async function captureScrollableSurvey(
   let restorationFailure: string | undefined;
   const rejectedRestorationFrames: ScrollSurveyFrame[] = [];
   const restoreOnce = async () => {
+    if (!shouldRestore) return;
     if (restorationStarted) return;
     restorationStarted = true;
+
     if (
       owedMovements > 0 &&
       owedMovements === acceptedScrollMovements &&
@@ -677,6 +681,17 @@ export async function captureScrollableSurvey(
     }
   }
   if (hasUnexpected) throw unexpected;
+  if (!shouldRestore) {
+    return result(
+      frames,
+      decision.status,
+      decision.reason,
+      `${decision.message.replace(" and restored the original viewport", "")} Restore skipped.`,
+      false,
+      diagnosticFrames,
+    );
+  }
+
   if (!restored) {
     return result(
       frames,

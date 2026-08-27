@@ -882,9 +882,10 @@ test("scroll survey has one strict target-operation contract", () => {
   assert.equal(definition.progress, false);
   assert.equal(definition.cancellable, false);
 
-  assert.deepEqual(definition.input.parse({ serial: "ipad-1", maxScrolls: 4 }), {
+  assert.deepEqual(definition.input.parse({ serial: "ipad-1", maxScrolls: 4, restore: false }), {
     serial: "ipad-1",
     maxScrolls: 4,
+    restore: false,
   });
   for (const input of [
     { serial: "" },
@@ -893,6 +894,7 @@ test("scroll survey has one strict target-operation contract", () => {
     { serial: "ipad-1", maxScrolls: 13 },
     { serial: "ipad-1", maxScrolls: 1.5 },
     { serial: "ipad-1", maxScrolls: "4" },
+    { serial: "ipad-1", restore: "false" },
   ]) {
     assert.throws(() => definition.input.parse(input), /scroll survey/u);
   }
@@ -930,6 +932,42 @@ test("scroll survey has one strict target-operation contract", () => {
   assert.throws(
     () => definition.output.parse({ ...validOutput, reason: "unknown" }),
     /scroll survey reason/u,
+  );
+});
+
+test("app locale set is one verified per-app locale mutation", () => {
+  const definition = operationDefinition("target.app.locale.set");
+  assert.equal(definition.transport.method, "POST");
+  assert.equal(definition.transport.path, "/device/app/locale");
+  assert.equal(definition.category, "target");
+  assert.equal(definition.lease, "exclusive");
+  assert.equal(definition.idempotency, "inherent");
+
+  assert.deepEqual(
+    definition.input.parse({ serial: "pixel-1", package: "ai.x.grok", locale: "he" }),
+    {
+      serial: "pixel-1",
+      package: "ai.x.grok",
+      locale: "he",
+    },
+  );
+  for (const input of [
+    { serial: "", package: "ai.x.grok", locale: "he" },
+    { serial: "pixel-1", package: "", locale: "he" },
+    { serial: "pixel-1", package: "ai.x.grok", locale: "" },
+  ]) {
+    assert.throws(() => definition.input.parse(input), /target app locale set/u);
+  }
+
+  const validOutput = { packageName: "ai.x.grok", locale: "he", observedLocale: "iw" };
+  assert.deepEqual(definition.output.parse(validOutput), validOutput);
+  assert.deepEqual(definition.output.parse({ packageName: "ai.x.grok", locale: "he" }), {
+    packageName: "ai.x.grok",
+    locale: "he",
+  });
+  assert.throws(
+    () => definition.output.parse({ packageName: "ai.x.grok", locale: "he", observedLocale: 7 }),
+    /target app locale set observed locale/u,
   );
 });
 

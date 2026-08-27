@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMap, AppMapScenarioTest, Screen } from "@relay/protocol";
+import type { AppMap, AppMapScenarioTest, RecipeStep, Screen } from "@relay/protocol";
 import { compileAppMapTest } from "./map-work.js";
 import { compileAppMapConnection } from "./app-map-compiler.js";
 import {
@@ -8,6 +8,7 @@ import {
   appMapTestReturnRepairEndpoints,
   proposeAppMapTestExecutionSchedule,
 } from "./app-map-test-compiler.js";
+import { stayAppLocaleDestinationCheck } from "./stay-app-locale-destination.js";
 
 const at = 1;
 const scope = { organizationId: "org", projectId: "project", appMapId: "checkout" };
@@ -2125,6 +2126,8 @@ test("screen assertions compile from approved graph identity", () => {
     screenTitle: "cart",
     fingerprint: "b".repeat(64),
     timeoutMs: 5_000,
+    preludeSteps: [{ kind: "tap", target: { identifier: "cart" } }],
+    preludeStartFingerprint: "a".repeat(64),
   });
   assert.deepEqual(compiled.plan.stepProvenance[0]?.referencedEntityIds, ["cart"]);
 });
@@ -2158,4 +2161,156 @@ test("scenario compilation rejects cross-map scope and invalid binding payloads"
   assert.ok(module?.kind === "module" && module.binding.status === "resolved");
   module.binding.bindings = { account: 42 as unknown as string };
   assert.throws(() => compileAppMapTest(fixture(), invalid), /bindings.account must be a string/);
+});
+
+test("scrollable destination with every-screen compiles a destination survey that stay clones drop", () => {
+  const current = fixture();
+  current.screens.cart!.variantIds = ["cart-en"];
+  current.screenVariants["cart-en"] = {
+    ...scope,
+    id: "cart-en",
+    screenId: "cart",
+    targetProfile: {
+      id: "iphone-en",
+      targetId: "iphone-1",
+      source: "device",
+      platform: "ios",
+      name: "iPhone · English",
+      capabilities: ["screenshot", "snapshot", "scroll"],
+      observedAt: at,
+    },
+    scrollCapturePolicy: {
+      captureMode: "full-surface",
+      source: "explicit",
+      reason: "Stable cart content should be captured completely.",
+      decidedAt: at,
+    },
+    evidenceIds: [],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const work = scenario();
+  work.steps = [work.steps[0]!];
+  work.capture = { mode: "every-screen" };
+
+  const compiled = compileAppMapTest(current, work);
+  const expectations = Object.values(compiled.graph).flatMap((recipe) =>
+    recipe.steps.filter(
+      (step): step is Extract<RecipeStep, { kind: "expect-screen" }> =>
+        step.kind === "expect-screen",
+    ),
+  );
+  const destination = expectations.find((step) => step.id === "relay-destination-open-cart");
+  assert.ok(destination);
+  assert.deepEqual(destination.destinationSurvey, { maxScrolls: 4 });
+  assert.equal(
+    expectations.some((step) => step.id !== destination.id && step.destinationSurvey),
+    false,
+  );
+
+  const stay = stayAppLocaleDestinationCheck(compiled.graph, compiled.root.id);
+  assert.ok(stay?.kind === "expect-screen");
+  assert.equal(stay.screenId, "cart");
+  assert.equal(stay.destinationSurvey, undefined);
+});
+
+function superGrokLocaleTourMap(): AppMap {
+  const map = fixture();
+  map.screens.home!.title = "Home";
+  map.screens.settings = {
+    ...screen("settings"),
+    title: "Settings",
+    identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
+  };
+  map.screens.supergrok = {
+    ...screen("supergrok"),
+    title: "SuperGrok",
+    identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+  };
+  map.screens.composer = {
+    ...screen("composer"),
+    title: "Composer",
+    identity: { schemaVersion: 1, fingerprint: "d".repeat(64) },
+  };
+  map.connections["open-settings"] = {
+    ...scope,
+    id: "open-settings",
+    fromScreenId: "home",
+    destination: { kind: "screen", screenId: "settings" },
+    label: "Open Settings",
+    state: "ready",
+    actions: [{ id: "tap-settings", kind: "tap", target: { identifier: "settings_button" } }],
+    createdAt: at,
+    updatedAt: at,
+  };
+  map.connections["open-supergrok"] = {
+    ...scope,
+    id: "open-supergrok",
+    fromScreenId: "settings",
+    destination: { kind: "screen", screenId: "supergrok" },
+    label: "Open SuperGrok",
+    state: "ready",
+    actions: [{ id: "tap-supergrok", kind: "tap", target: { label: "SuperGrok" } }],
+    createdAt: at,
+    updatedAt: at,
+  };
+  map.connections["dismiss-composer"] = {
+    ...scope,
+    id: "dismiss-composer",
+    fromScreenId: "composer",
+    destination: { kind: "screen", screenId: "home" },
+    label: "Close composer",
+    state: "ready",
+    actions: [{ id: "tap-close", kind: "tap", target: { label: "Close" } }],
+    createdAt: at,
+    updatedAt: at,
+  };
+  return map;
+}
+
+test("a SuperGrok-starting Test compiles mapped home/settings inbound as prelude", () => {
+  const map = superGrokLocaleTourMap();
+  const work: AppMapScenarioTest = {
+    ...scope,
+    id: "supergrok-locale-tour",
+    name: "SuperGrok locale tour",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "on-supergrok",
+        kind: "validation",
+        intent: "On SuperGrok",
+        binding: {
+          status: "resolved",
+          kind: "assertion",
+          assertion: { kind: "screen", screenId: "supergrok" },
+        },
+      },
+      {
+        id: "see-billing",
+        kind: "validation",
+        intent: "Manage billing is visible",
+        binding: {
+          status: "resolved",
+          kind: "recipe-step",
+          step: { kind: "expect", target: { label: "Manage billing" }, condition: "visible" },
+        },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+
+  const compiled = compileAppMapTest(map, work);
+  const first = compiled.root.steps[0];
+  assert.equal(first?.kind, "expect-screen");
+  assert.equal(first.kind === "expect-screen" ? first.screenId : undefined, "supergrok");
+  assert.ok(first && "preludeSteps" in first);
+  assert.deepEqual(first.preludeSteps, [
+    { kind: "tap", target: { identifier: "settings_button" } },
+    { kind: "tap", target: { label: "SuperGrok" } },
+  ]);
+  assert.ok("preludeStartFingerprint" in first);
+  assert.equal(first.preludeStartFingerprint, "a".repeat(64));
 });

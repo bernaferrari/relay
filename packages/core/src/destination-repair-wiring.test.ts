@@ -267,39 +267,39 @@ it("a failed expect-screen job carries the repair hint and stub-grounder proposa
     },
   } as unknown as Device;
   setLocalDeviceProvider({ kind: "device", create: () => stubDevice });
-    // Seed the frozen plan's App Map with the expected screen so the repair
-    // attachment can resolve it and name the exact recovery command.
-    const created = await createAppMap({
-      organizationId: "org",
-      projectId: "project",
-      appMapId: "destination-repair-wiring-job",
-      name: "Destination repair wiring",
-    });
-    await mutateStoredAppMap("project", "destination-repair-wiring-job", (map) =>
-      addAppMapScreen(
-        map,
-        {
-          screen: {
-            organizationId: map.organizationId,
-            projectId: map.projectId,
-            appMapId: map.id,
-            id: "home",
-            title: "Home",
-            identity: { schemaVersion: 1, fingerprint: "f".repeat(64) },
-            variantIds: [],
-            createdAt: created.updatedAt,
-            updatedAt: created.updatedAt,
-          },
+  // Seed the frozen plan's App Map with the expected screen so the repair
+  // attachment can resolve it and name the exact recovery command.
+  const created = await createAppMap({
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "destination-repair-wiring-job",
+    name: "Destination repair wiring",
+  });
+  await mutateStoredAppMap("project", "destination-repair-wiring-job", (map) =>
+    addAppMapScreen(
+      map,
+      {
+        screen: {
+          organizationId: map.organizationId,
+          projectId: map.projectId,
+          appMapId: map.id,
+          id: "home",
+          title: "Home",
+          identity: { schemaVersion: 1, fingerprint: "f".repeat(64) },
+          variantIds: [],
+          createdAt: created.updatedAt,
+          updatedAt: created.updatedAt,
         },
-        {
-          expectedRevision: created.revision,
-          eventId: "seed-home-screen",
-          actorId: "agent:runner",
-          actorKind: "agent",
-          at: created.updatedAt,
-        },
-      ),
-    );
+      },
+      {
+        expectedRevision: created.revision,
+        eventId: "seed-home-screen",
+        actorId: "agent:runner",
+        actorKind: "agent",
+        at: created.updatedAt,
+      },
+    ),
+  );
 
   try {
     const { enqueueJob, waitForJobCompletion } = await import("./session.js");

@@ -331,3 +331,88 @@ test("App Map list presentations return only the requested catalog", () => {
   assert.ok(full.appMap.screens.length > 0);
   assert.ok(full.appMap.connections.length > 0);
 });
+
+test("connect get presents saved connection actions instead of the map summary", () => {
+  const scope = {
+    organizationId: "local",
+    projectId: "project-1",
+    appMapId: "checkout",
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const actions = [
+    {
+      id: "reveal-continue",
+      kind: "reveal" as const,
+      target: { label: "Continue" },
+      direction: "down" as const,
+    },
+    {
+      id: "tap-continue",
+      kind: "tap" as const,
+      target: { identifier: "checkout.continue", label: "Continue" },
+    },
+  ];
+  const appMap = {
+    schemaVersion: 1,
+    id: "checkout",
+    organizationId: "local",
+    projectId: "project-1",
+    name: "Checkout",
+    revision: 4,
+    notes: {},
+    groups: {},
+    screens: {
+      cart: { ...scope, id: "cart", title: "Cart", variantIds: [] },
+    },
+    screenVariants: {},
+    connections: {
+      continue: {
+        ...scope,
+        id: "continue",
+        label: "Continue",
+        fromScreenId: "cart",
+        destination: { kind: "screen", screenId: "review" },
+        state: "ready",
+        actions,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 1,
+    updatedAt: 2,
+  } satisfies AppMap;
+
+  const result = summarizeAppMapOperationResult(
+    "app-map.get",
+    { appMap },
+    { commandPath: "connect get", input: { appMapId: "checkout", connectionId: "continue" } },
+  ) as { connection?: { id?: string; actions?: unknown[] }; appMap?: unknown };
+  assert.equal(result.appMap, undefined);
+  assert.deepEqual(result.connection, {
+    id: "continue",
+    label: "Continue",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "review" },
+    state: "ready",
+    actions,
+  });
+
+  assert.throws(
+    () =>
+      summarizeAppMapOperationResult(
+        "app-map.get",
+        { appMap },
+        { commandPath: "connect get", input: { appMapId: "checkout", connectionId: "missing" } },
+      ),
+    /Unknown connection: missing/u,
+  );
+});

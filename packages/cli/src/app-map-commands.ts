@@ -24,6 +24,16 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
     path("screen list", ["appMapId"]),
     path("connection list", ["appMapId"]),
     path("connect list", ["appMapId"]),
+    path("connect get", ["appMapId", "connectionId"], undefined, {
+      summary: "Show one saved connection and its actions (tap targets, reveal)",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "connectionId", type: "string", description: "Saved connection identifier" },
+      ],
+      examples: ["relay connect get checkout continue --json"],
+      note: "CLI projection of app-map.get. Returns the saved connection's actions (tap targets, reveal) without a separate operation.",
+    }),
+
     path("flow list", ["appMapId"]),
     path("routine list", ["appMapId"]),
     path("proposal list", ["appMapId"]),

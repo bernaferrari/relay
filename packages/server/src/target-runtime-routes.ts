@@ -17,6 +17,7 @@ import {
   listDeviceLeases,
   listDevices,
   listAndroidAppLocales,
+  setAndroidAppLocaleOnDevice,
   listTargetWorkers,
   preflightLocalCampaignCapacity,
   preflightDevicePool,
@@ -71,6 +72,7 @@ export type TargetRuntimeRouteRuntime = {
   >;
   runBuildCommand?: BuildCommandRunner;
   listAndroidAppLocales: typeof listAndroidAppLocales;
+  setAppLocale: typeof setAndroidAppLocaleOnDevice;
   now: () => number;
 };
 
@@ -97,6 +99,7 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
   // after this module has been imported.
   getDurableWorkerAssignments: () => durableWorkerAssignmentStore(),
   listAndroidAppLocales,
+  setAppLocale: setAndroidAppLocaleOnDevice,
   now: () => Date.now(),
 };
 
@@ -204,6 +207,43 @@ export async function handleTargetRuntimeRoute(context: {
     }
     const locales = await runtime.listAndroidAppLocales(serial, packageName);
     json(response, 200, { packageName, locales });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/device/app/locale") {
+    const body = (await parseJsonBody(request)) as OperationInput<"target.app.locale.set">;
+    const serial = typeof body.serial === "string" ? body.serial.trim() : "";
+    const packageName = typeof body.package === "string" ? body.package.trim() : "";
+    const locale = typeof body.locale === "string" ? body.locale.trim() : "";
+    if (!serial) throw new HttpError(400, "serial is required");
+    if (!packageName) throw new HttpError(400, "package is required");
+    if (!locale) throw new HttpError(400, "locale is required");
+    await runtime.assertTargetControl(scope, serial);
+    const device = (await runtime.listDevices().catch(() => [])).find(
+      (candidate) => candidate.serial === serial,
+    );
+    if (!device) throw new HttpError(409, `Target ${serial} is not connected`);
+    if (device.platform !== "android") {
+      throw new HttpError(400, "Per-app locale application currently requires Android");
+    }
+    let observedLocale: string | undefined;
+    try {
+      // setAndroidAppLocaleOnDevice retries the he/iw and id/in aliases and
+      // rejects when the read-back still reports another language, so a 200
+      // here means the app itself confirmed the change.
+      observedLocale = await runtime.setAppLocale(serial, packageName, locale);
+    } catch (error) {
+      throw new HttpError(409, error instanceof Error ? error.message : String(error), {
+        code: "APP_LOCALE_DID_NOT_TAKE",
+        recovery:
+          "The app kept another language after the alias retries. Inspect its locale resources, or verify the screen with device snapshot before trusting the switch.",
+      });
+    }
+    json(response, 200, {
+      packageName,
+      locale,
+      ...(observedLocale ? { observedLocale } : {}),
+    });
     return true;
   }
 

@@ -283,7 +283,6 @@ export function removeAppMapScreen(
   );
 }
 
-
 export type AppMapScreenAliasObservationResult = {
   appMap: AppMap;
   alias: { fingerprint: string; aliasesNow: string[] };

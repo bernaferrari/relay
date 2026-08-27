@@ -146,6 +146,7 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
       survey = await captureScrollableSurveyForTarget({
         serial,
         ...(body.maxScrolls !== undefined ? { maxScrolls: body.maxScrolls } : {}),
+        ...(body.restore === false ? { restore: false } : {}),
       });
     } catch (error) {
       if (error instanceof IosMutationOutcomeUnknownError) {

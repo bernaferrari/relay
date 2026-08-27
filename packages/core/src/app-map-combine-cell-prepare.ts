@@ -191,11 +191,7 @@ export function resolveSavedAppMapRuntimeTargetProfile(input: {
     const candidates = savedAppMapTargetProfileIdsForTarget(input.map, input.target);
     if (candidates.length !== 1) {
       const message = unresolvedTargetProfileMessage(input.target, candidates);
-      throw new AppMapCombineCellContractError(
-        message,
-        [issue("missing-binding", message)],
-        [],
-      );
+      throw new AppMapCombineCellContractError(message, [issue("missing-binding", message)], []);
     }
     return resolveSavedAppMapRuntimeTargetProfile({
       map: input.map,
@@ -477,8 +473,7 @@ function completeCellRuntimeProfileBindings(input: {
   for (const cell of input.cells) {
     const bound = bindings.find(
       (binding) =>
-        binding.testId === cell.testId &&
-        sameAppMapCombineCellValues(binding.values, cell.values),
+        binding.testId === cell.testId && sameAppMapCombineCellValues(binding.values, cell.values),
     );
     if (bound) {
       const explicit = input.supplied.some(

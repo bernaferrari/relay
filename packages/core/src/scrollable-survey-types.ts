@@ -85,4 +85,7 @@ export type ScrollSurveyOptions = {
    * matches it. If it disagrees, the survey remains useful but restores every
    * movement with exact inverse gestures and marks the result for review. */
   frozenDocumentOrigin?: ValidatedFrozenDocumentOrigin;
+  /** Default true. False collects the surface and leaves the viewport where
+   * the last frame landed — for campaigns that relaunch or abandon next. */
+  restore?: boolean;
 };

@@ -119,12 +119,14 @@ function observedLocaleMatches(
 
 /** Set one app's locale through Android's public LocaleManager shell surface.
  * When the requested tag fails or the observed language does not change,
- * retry the product-owned he/iw and id/in aliases. */
+ * retry the product-owned he/iw and id/in aliases. Resolves with the locale
+ * Android reported back after the change (undefined when only the
+ * accessibility-tree language could prove it) and rejects when it never took. */
 export async function setAndroidAppLocale(
   packageName: string,
   locale: string,
   options: SetAndroidAppLocaleOptions = {},
-): Promise<void> {
+): Promise<string | undefined> {
   requireAndroidBuildControl(packageName);
   if (!BCP_47_TAG.test(locale)) {
     throw new Error(`app locale is not a BCP-47 language tag: ${locale}`);
@@ -150,7 +152,7 @@ export async function setAndroidAppLocale(
     const afterTree = await options.readTreeLanguage?.();
     const localeMatch = observedLocaleMatches(afterLocale, locale);
     const treeMatch = observedLocaleMatches(afterTree, locale);
-    if (localeMatch === true || treeMatch === true) return;
+    if (localeMatch === true || treeMatch === true) return afterLocale ?? afterTree;
     const localeUnchanged =
       afterLocale !== undefined &&
       beforeLocale !== undefined &&

@@ -40,19 +40,39 @@ export function assertCaptureSurfaceSurveyUsable(
   }
 }
 
-export async function persistCaptureSurfaceSurveyFrames(
+async function persistSurveyFrames(
   job: TestJob,
-  step: Pick<Extract<RecipeStep, { kind: "capture-surface" }>, "screenTitle">,
+  screenTitle: string,
   survey: Pick<ScrollSurveyResult, "frames">,
+  label: string,
 ): Promise<void> {
   for (const [index, frame] of survey.frames.entries()) {
     const written = await writeFramePng(
       job,
       frame.screenshot.base64,
-      `surface:${step.screenTitle} · ${index + 1}`,
+      `${label}:${screenTitle} · ${index + 1}`,
     );
     if (frame.snapshot.nodes.length) {
       await writeFrameTree(job, written.path, frame.snapshot.nodes);
     }
   }
+}
+
+export async function persistCaptureSurfaceSurveyFrames(
+  job: TestJob,
+  step: Pick<Extract<RecipeStep, { kind: "capture-surface" }>, "screenTitle">,
+  survey: Pick<ScrollSurveyResult, "frames">,
+): Promise<void> {
+  await persistSurveyFrames(job, step.screenTitle, survey, "surface");
+}
+
+/** Destination-landing evidence uses the same frame+tree persistence, labeled
+ * so a reviewer can tell an automatic survey apart from a bound full-surface
+ * comparison. */
+export async function persistDestinationSurveyFrames(
+  job: TestJob,
+  destination: Pick<Extract<RecipeStep, { kind: "expect-screen" }>, "screenTitle">,
+  survey: Pick<ScrollSurveyResult, "frames">,
+): Promise<void> {
+  await persistSurveyFrames(job, destination.screenTitle, survey, "destination");
 }

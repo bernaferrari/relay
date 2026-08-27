@@ -21,12 +21,8 @@ import {
   awaitStableDestinationEvidence,
   recordDestinationEvidenceTiming,
 } from "./destination-evidence.js";
-import {
-  extractTourStops,
-  onTourOrigin,
-  tourFallbackOverlap,
-  tourOriginFingerprintMatch,
-} from "./tour.js";
+import { extractTourStops, onTourOrigin, tourFallbackOverlap } from "./tour.js";
+
 import type { TourStop } from "./tour.js";
 import type { RecipeStep } from "./recipes.js";
 import type { TestJob } from "./session.js";
@@ -46,6 +42,7 @@ import {
   seekSemanticTourRow,
 } from "./recipe-runner-tour-scroll-runtime.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
+import { snapshotLabelMatches } from "./device-target-resolution.js";
 
 import {
   foregroundApplicationBundle,
@@ -402,10 +399,27 @@ async function recoverMappedTourRows(
   return current;
 }
 
-async function runTourPrelude(
+export type MappedPreludeGesture = NonNullable<
+  Extract<RecipeStep, { kind: "tour" }>["preludeSteps"]
+>[number];
+
+export type MappedPreludeHost = {
+  preludeSteps?: MappedPreludeGesture[];
+  preludeStartFingerprint?: string;
+  preludeStartAliases?: string[];
+};
+
+export function mappedPreludeHost(step: RecipeStep): MappedPreludeHost {
+  if (step.kind === "tour") return step;
+  if (step.kind !== "expect-screen") return {};
+  return step as Extract<RecipeStep, { kind: "expect-screen" }> & MappedPreludeHost;
+}
+
+export async function runMappedPrelude(
   device: Device,
-  steps: NonNullable<Extract<RecipeStep, { kind: "tour" }>["preludeSteps"]>,
+  steps: NonNullable<MappedPreludeHost["preludeSteps"]>,
   log: (line: string) => void,
+  source: "tour" | "screen" = "tour",
 ): Promise<void> {
   for (const step of steps) {
     try {
@@ -415,14 +429,14 @@ async function runTourPrelude(
         const shouldRun = step.when.condition === "present" ? present : !present;
         if (!shouldRun) {
           log(
-            `tour: conditional prelude ${step.kind} skipped — ${describePreludeTarget(step.when.target)} is ${present ? "present" : "absent"}`,
+            `${source}: conditional prelude ${step.kind} skipped — ${describePreludeTarget(step.when.target)} is ${present ? "present" : "absent"}`,
           );
           continue;
         }
       }
       if (step.kind === "tap" && step.target) {
         log(
-          `tour: prelude tap ${step.target.label ?? step.target.identifier ?? step.target.text ?? "control"}`,
+          `${source}: prelude tap ${step.target.label ?? step.target.identifier ?? step.target.text ?? "control"}`,
         );
         await pressNamedControl(device, {
           ...(step.target.identifier ? { identifier: step.target.identifier } : {}),
@@ -431,13 +445,13 @@ async function runTourPrelude(
           ...(step.target.point ? { point: step.target.point } : {}),
         });
       } else if (step.kind === "key") {
-        log(`tour: prelude ${step.key}`);
+        log(`${source}: prelude ${step.key}`);
         await pressKey(device, step.key);
       } else if (step.kind === "swipe") {
-        log("tour: prelude swipe");
+        log(`${source}: prelude swipe`);
         await swipeGesture(device, step.from, step.to, step.durationMs);
       } else if (step.kind === "scroll") {
-        log(`tour: prelude scroll ${step.direction}`);
+        log(`${source}: prelude scroll ${step.direction}`);
         if (step.direction === "down") await scrollDown(device, step.amount);
         else await scrollUp(device, step.amount);
       }
@@ -446,7 +460,7 @@ async function runTourPrelude(
       rethrowIosMutationOutcomeUnknown(error);
       if (!step.optional) throw error;
       log(
-        `tour: optional prelude ${step.kind} skipped — ${error instanceof Error ? error.message : String(error)}`,
+        `${source}: optional prelude ${step.kind} skipped — ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -481,36 +495,38 @@ function conditionalPreludeTargetPresent(
   });
 }
 
-function firstPreludeTargetVisible(
-  nodes: SnapshotNode[],
-  step: Extract<RecipeStep, { kind: "tour" }>,
-): boolean {
+function identifierMatchesPrelude(query: string, live: string | undefined): boolean {
+  if (!live) return false;
+  const expected = query.trim().toLowerCase();
+  const actual = live.trim().toLowerCase();
+  return (
+    actual === expected || actual.endsWith(`/${expected}`) || actual.endsWith(`:id/${expected}`)
+  );
+}
+
+export function mappedPreludeStartVisible(nodes: SnapshotNode[], step: MappedPreludeHost): boolean {
   const steps = step.preludeSteps;
   if (!steps?.length) return false;
-  if (
-    step.preludeStartFingerprint &&
-    !tourOriginFingerprintMatch(
-      nodes.length ? observeScreenIdentity(nodes).fingerprint : undefined,
-      step.preludeStartFingerprint,
-      step.preludeStartAliases,
-    )
-  ) {
-    return false;
-  }
   const first = steps[0];
   // A mapped scroll/swipe is the route to a known scroll checkpoint. Unlike a
   // tap it has no label to discover, so it should be attempted immediately on
   // the current app surface rather than spending three Back retries first.
   if (first?.kind === "swipe" || first?.kind === "scroll") return true;
+  if (first?.kind === "key") {
+    return nodes.some((node) => {
+      const label = node.label?.trim().toLowerCase();
+      const type = `${node.type ?? ""} ${node.role ?? ""}`;
+      return label === "close" || label === "back" || /keyboard/i.test(type);
+    });
+  }
   if (first?.kind !== "tap" || !first.target) return false;
-  const identifier = first.target.identifier?.trim().toLowerCase();
-  const label = (first.target.label ?? first.target.text)?.trim().toLowerCase();
+  const identifier = first.target.identifier;
+  const label = first.target.label ?? first.target.text;
   return nodes.some((node) => {
-    if (identifier && node.identifier?.trim().toLowerCase() === identifier) return true;
-    const texts = [node.label, node.value]
-      .map((value) => value?.trim().toLowerCase())
-      .filter(Boolean);
-    return Boolean(label && texts.includes(label));
+    if (identifier && identifierMatchesPrelude(identifier, node.identifier)) return true;
+    return Boolean(
+      label && (snapshotLabelMatches(label, node.label) || snapshotLabelMatches(label, node.value)),
+    );
   });
 }
 
@@ -534,7 +550,7 @@ async function tryTourPrelude(
   step: Extract<RecipeStep, { kind: "tour" }>,
   log: (line: string) => void,
 ): Promise<Awaited<ReturnType<typeof readTourSurface>> | null> {
-  if (!step.preludeSteps?.length || !firstPreludeTargetVisible(surface.nodes, step)) {
+  if (!step.preludeSteps?.length || !mappedPreludeStartVisible(surface.nodes, step)) {
     return null;
   }
   log(
@@ -542,7 +558,7 @@ async function tryTourPrelude(
       ? `tour: opening “${step.originTitle}” from the current app screen`
       : "tour: opening the mapped list from the current app screen",
   );
-  await runTourPrelude(device, step.preludeSteps, log);
+  await runMappedPrelude(device, step.preludeSteps, log);
   return await readTourSurface(device, step);
 }
 
@@ -585,11 +601,7 @@ async function seekTourOrigin(
           : `tour: no rows yet — back (${attempt + 1})`,
     );
     try {
-      if (attempt === 2) {
-        await pressNamedControl(device, { label: step.originTitle?.trim() || "Settings" });
-      } else {
-        await pressNamedControl(device, { label: "Back" });
-      }
+      await pressNamedControl(device, { label: "Back" });
     } catch (error) {
       rethrowIosMutationOutcomeUnknown(error);
       await pressKey(device, "back");
@@ -612,8 +624,8 @@ async function seekTourOrigin(
     if (await restoreRememberedApp(device, surface.nodes, log)) {
       surface = await readTourSurface(device, step);
     }
-    if (firstPreludeTargetVisible(surface.nodes, step)) {
-      await runTourPrelude(device, step.preludeSteps, log);
+    if (mappedPreludeStartVisible(surface.nodes, step)) {
+      await runMappedPrelude(device, step.preludeSteps, log);
       surface = await readTourSurface(device, step);
     } else {
       log("tour: mapped prelude start is not verified; refusing to replay it off-origin");

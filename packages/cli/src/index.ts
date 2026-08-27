@@ -19,6 +19,7 @@ import {
   type OperationInvoker,
   validateOperationId,
 } from "./invoke.js";
+import { protocolOperationInput } from "./protocol-input.js";
 import { CliOutput, type OutputStreams } from "./output.js";
 import { emitScreenshot, emitSnapshotFile } from "./screenshot.js";
 import { persistScrollSurvey } from "./survey-persist.js";
@@ -79,6 +80,15 @@ function jobStatus(response: unknown): string {
 
 const pausedPollIntervalMs = 5_000;
 
+async function invoke(
+  client: OperationInvoker,
+  operationId: string,
+  input: unknown,
+  signal: AbortSignal,
+): Promise<unknown> {
+  return invokeOperation(client, operationId, protocolOperationInput(operationId, input), signal);
+}
+
 async function watchJob(
   client: OperationInvoker,
   operationId: string,
@@ -91,7 +101,7 @@ async function watchJob(
   let lastHeartbeat = "";
   let pausedHintShown = false;
   while (true) {
-    const result = await invokeOperation(client, operationId, input, signal);
+    const result = await invoke(client, operationId, input, signal);
     if (signal.aborted) throw abortError();
     const status = jobStatus(result);
     output.snapshot(operationId, summarizeExecutionOperationResult(operationId, result));
@@ -245,7 +255,7 @@ async function resolveCurrentTestRunInput(
   const next = { ...parsed.input };
   if (parsed.currentRevision) {
     const response = object(
-      await invokeOperation(client, "app-map.get", { appMapId }, signal),
+      await invoke(client, "app-map.get", { appMapId }, signal),
       "app-map.get",
     );
     const appMap = object(response.appMap, "app-map.get appMap");
@@ -256,7 +266,7 @@ async function resolveCurrentTestRunInput(
   }
   if (parsed.currentTarget) {
     const response = object(
-      await invokeOperation(client, "target.devices.list", {}, signal),
+      await invoke(client, "target.devices.list", {}, signal),
       "target.devices.list",
     );
     const devices = Array.isArray(response.devices)
@@ -342,7 +352,7 @@ export async function runCli(
       } else if (parsed.behavior === "job-start-watch" && parsed.config.wait) {
         const input = await resolveCurrentTestRunInput(client, parsed, abort.signal, output);
         output.progress(operationId, "invoking");
-        const started = await invokeOperation(client, operationId, input, abort.signal);
+        const started = await invoke(client, operationId, input, abort.signal);
         output.snapshot(operationId, summarizeResult(operationId, started, input, commandPath));
         const jobIds = startedJobIds(started);
         const results: unknown[] = [];
@@ -371,8 +381,9 @@ export async function runCli(
         );
       } else {
         const input = await resolveCurrentTestRunInput(client, parsed, abort.signal, output);
+        const surveyDir = typeof input.dir === "string" ? input.dir : undefined;
         output.progress(operationId, "invoking");
-        const result = await invokeOperation(client, operationId, input, abort.signal);
+        const result = await invoke(client, operationId, input, abort.signal);
         assertOperationSucceeded(operationId, result, input, commandPath);
         if (parsed.behavior === "screenshot") {
           await emitScreenshot(operationId, result, parsed.screenshotOutput, output);
@@ -381,13 +392,10 @@ export async function runCli(
           parsed.screenshotOutput.kind === "file"
         ) {
           await emitSnapshotFile(operationId, result, parsed.screenshotOutput, output);
-        } else if (
-          parsed.operationId === "target.scroll-survey.capture" &&
-          typeof input.dir === "string"
-        ) {
+        } else if (parsed.operationId === "target.scroll-survey.capture" && surveyDir) {
           output.result(
             operationId,
-            await persistScrollSurvey(input.dir, result, {
+            await persistScrollSurvey(surveyDir, result, {
               force: parsed.surveyForce === true,
             }),
           );

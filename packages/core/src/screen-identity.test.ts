@@ -305,3 +305,39 @@ test("fingerprints and normalized nodes are deterministic for arbitrary input or
   assert.deepEqual(forward.volatileSignals, reversed.volatileSignals);
   assert.match(forward.fingerprint, /^[0-9a-f]{64}$/u);
 });
+
+test("heads-up notification banners never re-key screen identity", () => {
+  const base = [
+    { role: "android.widget.TextView", label: "Settings", visibleToUser: true },
+    { role: "android.widget.TextView", label: "SuperGrok", visibleToUser: true },
+  ];
+  const quiet = observeScreenIdentity(base as never);
+  const withBanners = observeScreenIdentity([
+    { role: "android.widget.TextView", label: "Photos notification:", visibleToUser: true },
+    { role: "android.widget.TextView", label: "WhatsApp notification:", visibleToUser: true },
+    { role: "android.widget.TextView", label: "Do not disturb turned on", visibleToUser: true },
+    ...base,
+  ] as never);
+  assert.equal(withBanners.fingerprint, quiet.fingerprint);
+
+  // Opting back in: device state differences count again.
+  const previous = process.env.RELAY_IDENTITY_INCLUDE_DEVICE_STATE;
+  process.env.RELAY_IDENTITY_INCLUDE_DEVICE_STATE = "1";
+  try {
+    const including = observeScreenIdentity([
+      { role: "android.widget.TextView", label: "Photos notification:", visibleToUser: true },
+      ...base,
+    ] as never);
+    assert.notEqual(including.fingerprint, quiet.fingerprint);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_IDENTITY_INCLUDE_DEVICE_STATE;
+    else process.env.RELAY_IDENTITY_INCLUDE_DEVICE_STATE = previous;
+  }
+
+  // A real settings row named Notifications (no trailing colon) stays.
+  const settingsRow = observeScreenIdentity([
+    ...base,
+    { role: "android.widget.TextView", label: "Notifications", visibleToUser: true },
+  ] as never);
+  assert.notEqual(settingsRow.fingerprint, quiet.fingerprint);
+});

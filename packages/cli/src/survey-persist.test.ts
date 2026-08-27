@@ -57,7 +57,29 @@ test("persist writes numbered png+json siblings and keeps the review tree", asyn
         { png: join(dir, "00.png"), json: join(dir, "00.json") },
         { png: join(dir, "01.png"), json: join(dir, "01.json") },
       ],
+      frames: [
+        {
+          index: 0,
+          offsetY: 0,
+          labelCount: 2,
+          files: { png: join(dir, "00.png"), json: join(dir, "00.json") },
+        },
+        {
+          index: 1,
+          offsetY: 100,
+          labelCount: 2,
+          files: { png: join(dir, "01.png"), json: join(dir, "01.json") },
+        },
+      ],
+      full: {
+        png: join(dir, "full.png"),
+        json: join(dir, "full.json"),
+        width: 10,
+        height: 40,
+        nodeCount: 0,
+      },
     });
+
     assert.deepEqual(await readFile(join(dir, "00.png")), Buffer.from(pngBase64, "base64"));
     assert.deepEqual(await readFile(join(dir, "01.png")), Buffer.from(pngBase64, "base64"));
     const first = JSON.parse(await readFile(join(dir, "00.json"), "utf8")) as {
@@ -112,10 +134,17 @@ test("force replaces leftover survey frames instead of mixing generations", asyn
       "01.png",
       "02.json",
       "02.png",
+      "full.json",
+      "full.png",
     ]);
     const digest = await persistScrollSurvey(root, survey([frame(0, "Language")]), { force: true });
     assert.equal(digest.frameCount, 1);
-    assert.deepEqual(await readdir(root).then((names) => names.sort()), ["00.json", "00.png"]);
+    assert.deepEqual(await readdir(root).then((names) => names.sort()), [
+      "00.json",
+      "00.png",
+      "full.json",
+      "full.png",
+    ]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

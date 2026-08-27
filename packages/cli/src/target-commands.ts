@@ -46,14 +46,14 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       { visual: true },
       {
         summary:
-          "Read the current screen. Default JSON is a digest; --full prints the raw tree; --file writes a review tree",
+          "Read the current screen. --json prints the raw tree (nodes); human output is a digest unless --full prints the raw tree; --file writes a review tree",
         argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
         inputHelp: [
           {
             name: "full",
             type: "boolean",
             description:
-              "Return the raw snapshot tree (nodes) on stdout instead of the digest; set by --full",
+              "Force the raw snapshot tree (nodes) in human output; --json/--ndjson already include it; set by --full",
           },
         ],
         examples: [
@@ -61,7 +61,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
           "relay device observe 00008110 --json --full",
           "relay device observe 00008110 --file tree.json",
         ],
-        note: "Read-only. Default --json is a digest (app, header, controls, nodeCount). --full prints the raw tree. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
+        note: "Read-only. --json/--ndjson stdout is the raw tree (nodes), matching HTTP /snapshot?visual=1; plain human output stays a digest (app, header, controls, nodeCount) unless --full. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
       },
     ),
     path(
@@ -70,14 +70,14 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       { visual: true },
       {
         summary:
-          "Read the current screen. Default JSON is a digest; --full prints the raw tree; --file writes a review tree",
+          "Read the current screen. --json prints the raw tree (nodes); human output is a digest unless --full prints the raw tree; --file writes a review tree",
         argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
         inputHelp: [
           {
             name: "full",
             type: "boolean",
             description:
-              "Return the raw snapshot tree (nodes) on stdout instead of the digest; set by --full",
+              "Force the raw snapshot tree (nodes) in human output; --json/--ndjson already include it; set by --full",
           },
         ],
         examples: [
@@ -85,7 +85,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
           "relay device snapshot emulator-5554 --json --full",
           "relay device snapshot emulator-5554 --file tree.json",
         ],
-        note: "Read-only. Default --json is a digest (app, header, controls, nodeCount). --full prints the raw tree. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
+        note: "Read-only. --json/--ndjson stdout is the raw tree (nodes), matching HTTP /snapshot?visual=1; plain human output stays a digest (app, header, controls, nodeCount) unless --full. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
       },
     ),
   ),
@@ -114,7 +114,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         {
           name: "maxScrolls",
           type: "integer (1-12)",
-          description: "Maximum downward scrolls; defaults to 4",
+          description: "Maximum downward scrolls; defaults to 4; set by --max-scrolls",
         },
         {
           name: "dir",
@@ -122,12 +122,18 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
           description:
             "Folder for sibling 00.png / 00.json frames (review tree: defaults + overrides). Prefer --dir over inline --json. Refuses a non-empty dest unless --force.",
         },
+        {
+          name: "restore",
+          type: "boolean",
+          description:
+            "Restore the starting viewport after capture. Default true. --no-restore skips the up-swipes when the next action relaunches or abandons.",
+        },
       ],
       examples: [
         "relay device survey emulator-5554 --dir ./survey --json",
-        "relay device survey 00008110 --dir ./survey --input '{\"maxScrolls\":6}' --json",
+        "relay device survey 00008110 --dir ./survey --max-scrolls 3 --no-restore --json",
       ],
-      note: "Requires an exclusive lease. Relay keeps every original PNG + accessibility snapshot, stops at uncertain seams, and restores the starting viewport. Without --dir, --json stdout includes every viewport as base64 and can be megabytes.",
+      note: "Requires an exclusive lease owned by the same --actor. Prefer --dir so stdout stays a digest (index, offsetY, files, label counts) instead of megabytes of base64. Refuses a non-empty dest unless --force. Default restores the start viewport; --no-restore leaves the list where it landed.",
     }),
   ),
   mapped(
@@ -152,6 +158,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       ],
     }),
   ),
+
   mapped(
     "target.app.locales",
     path("target app locales", ["serial", "package"]),
@@ -162,7 +169,24 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         { name: "package", type: "string", description: "Android package name" },
       ],
       examples: ["relay device app-locales emulator-5554 com.example.app --json"],
-      note: "List only. Apply a tag with an appLocale Variable (`relay variable save`) then `relay test run <map> <test> --in language=<tag>`. Combine export writes screenshots plus accessibility JSON.",
+      note: "List only. Apply one tag directly with `relay device locale <serial> <package> <tag>`, or teach an appLocale Variable (`relay variable save`) and run it as a Combine. Combine export writes screenshots plus accessibility JSON.",
+    }),
+  ),
+  mapped(
+    "target.app.locale.set",
+    path("target locale", ["serial", "package", "locale"]),
+    path("device locale", ["serial", "package", "locale"], undefined, {
+      summary: "Set an Android app's per-app locale and verify it took",
+      argumentHelp: [
+        { name: "serial", type: "string", description: "Connected Android device serial" },
+        { name: "package", type: "string", description: "Android package name" },
+        { name: "locale", type: "string", description: "BCP-47 tag such as de, he, or pt-BR" },
+      ],
+      examples: [
+        "relay device locale emulator-5554 com.example.app de --json",
+        "relay device locale RQCY104BG8X ai.x.grok he",
+      ],
+      note: "Applies Android's per-app locale (he/iw and id/in aliases retried), reads the locale back, and fails when the app still reports another language. Requires an exclusive lease owned by the same --actor. For saved coverage teach an appLocale Variable (`relay variable save`) and run it with `relay test run <map> <test> --in language=<tag>`. Combine export writes screenshots plus accessibility JSON.",
     }),
   ),
   mapped(

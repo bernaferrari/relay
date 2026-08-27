@@ -21,6 +21,7 @@ import type {
 export type ScrollSurveyTargetInput = {
   serial: string;
   maxScrolls?: number;
+  restore?: boolean;
   initialCapture?: ScrollSurveyCapture;
   frozenDocumentOrigin?: ValidatedFrozenDocumentOrigin;
 };
@@ -56,12 +57,13 @@ export function scrollSurveyGesture(
   bounds: { width: number; height: number },
   direction: "down" | "up",
 ) {
-  // Android turns a fast half-screen swipe into a fling; Settings physically
-  // skipped 1857px after the old 1170px gesture, leaving only two overlapping
-  // anchors. A slow quarter-screen drag keeps enough old content visible to
-  // prove the seam. XCTest does not share Android's fling behavior.
-  const lower = platform === "android" ? 0.68 : 0.78;
-  const upper = platform === "android" ? 0.42 : 0.28;
+  // Android flings a *fast* half-screen swipe (Settings once skipped 1857px).
+  // Keep the drag slow (800ms) so it stays a drag, but travel ~45% of the
+  // viewport — a quarter-screen move wasted four scrolls on SuperGrok-length
+  // pages and still left >70% overlap unused. Seam matching needs overlap,
+  // not a crawl. iOS XCTest does not share the fling, so it can travel more.
+  const lower = platform === "android" ? 0.8 : 0.78;
+  const upper = platform === "android" ? 0.34 : 0.28;
   const fromY = bounds.height * (direction === "down" ? lower : upper);
   const toY = bounds.height * (direction === "down" ? upper : lower);
   return {
@@ -151,6 +153,7 @@ export function createScrollableSurveyTargetCaptureAdapter(algorithm: ScrollSurv
       },
       {
         maxScrolls: input.maxScrolls,
+        ...(input.restore === false ? { restore: false } : {}),
         ...(input.initialCapture ? { initialCapture: input.initialCapture } : {}),
         ...(input.frozenDocumentOrigin ? { frozenDocumentOrigin: input.frozenDocumentOrigin } : {}),
       },

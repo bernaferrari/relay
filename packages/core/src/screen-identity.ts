@@ -281,8 +281,20 @@ export function observeScreenIdentity(nodes: readonly SnapshotNode[]): ScreenIde
   );
   // Status bars, navigation bars, notifications, and keyboards are device
   // state, not application-screen identity. Preserve all nodes for providers
-  // that do not expose package ownership.
-  const identityNodes = applicationNodes.some((node) => node.bundleId) ? applicationNodes : nodes;
+  // that do not expose package ownership — except heads-up banner nodes,
+  // whose content changes with every incoming notification and would re-key
+  // the screen on each buzz. Setting RELAY_IDENTITY_INCLUDE_DEVICE_STATE=1
+  // opts back in for hosts that want device state to count as identity.
+  const includeDeviceState =
+    process.env.RELAY_IDENTITY_INCLUDE_DEVICE_STATE?.trim() === "1" ||
+    process.env.RELAY_IDENTITY_INCLUDE_DEVICE_STATE?.trim()?.toLowerCase() === "true";
+  const bannerNode = (node: SnapshotNode): boolean => {
+    const label = node.label?.trim() ?? "";
+    return /notifications?\s*:$/iu.test(label) || /^do\s+not\s+disturb\b/iu.test(label);
+  };
+  const identityNodes = (
+    applicationNodes.some((node) => node.bundleId) ? applicationNodes : nodes
+  ).filter((node) => includeDeviceState || !bannerNode(node));
   const entries = nodes
     .filter((node) => identityNodes.includes(node))
     .filter((node) => node.index === undefined || !ignoredSystemInput.has(node.index))

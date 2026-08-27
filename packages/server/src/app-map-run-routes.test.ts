@@ -34,7 +34,8 @@ test("the offline-preflight path inherits the only saved profile for the target"
 
 test("several matching saved profiles fail with the candidate ids in the recovery", () => {
   assert.throws(
-    () => frozenEvidenceTargetProfileForTarget({ target: { ...pixel }, profiles: [pixelEn, pixelIt] }),
+    () =>
+      frozenEvidenceTargetProfileForTarget({ target: { ...pixel }, profiles: [pixelEn, pixelIt] }),
     (error: unknown) => {
       if (!(error instanceof HttpError) || error.status !== 409) return false;
       const body = error.body as {

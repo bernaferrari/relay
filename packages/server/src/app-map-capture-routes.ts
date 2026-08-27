@@ -281,22 +281,16 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
       const observation = take.before;
       let alias: { fingerprint: string; aliasesNow: string[] } | undefined;
       const persistAlias = (mapRevision: number) =>
-        applyMutation(
-          scope,
-          current.id,
-          mapRevision,
-          body.eventId,
-          (map, context) => {
-            const result = observeAppMapScreenAlias(
-              map,
-              screenAliasObserve.screenId!,
-              observation,
-              context,
-            );
-            alias = result.alias;
-            return result.appMap;
-          },
-        );
+        applyMutation(scope, current.id, mapRevision, body.eventId, (map, context) => {
+          const result = observeAppMapScreenAlias(
+            map,
+            screenAliasObserve.screenId!,
+            observation,
+            context,
+          );
+          alias = result.alias;
+          return result.appMap;
+        });
       let appMap: AppMap;
       try {
         appMap = await persistAlias(expectedRevision);
@@ -309,11 +303,10 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
       const identity = appMap.screens[screenAliasObserve.screenId!]?.identity;
       json(response, 200, {
         appMap,
-        alias:
-          alias ?? {
-            fingerprint: identity?.fingerprint ?? "",
-            aliasesNow: identity?.aliases ?? [],
-          },
+        alias: alias ?? {
+          fingerprint: identity?.fingerprint ?? "",
+          aliasesNow: identity?.aliases ?? [],
+        },
       });
     } finally {
       if (session) {

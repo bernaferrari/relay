@@ -473,6 +473,33 @@ test("device survey --dir maps onto the scroll-survey operation input", () => {
     () => parseCli(["device", "survey", "ipad-1", "--force"], {}),
     /--force requires --dir/,
   );
+
+  const kebab = parseCli(["device", "survey", "ipad-1", "--max-scrolls", "6"], {});
+  assert.equal(kebab.command, "invoke");
+  if (kebab.command === "invoke") {
+    assert.deepEqual(kebab.input, { serial: "ipad-1", maxScrolls: 6 });
+  }
+  assert.throws(
+    () => parseCli(["device", "survey", "ipad-1", "--max-scrolls", "0"], {}),
+    /integer between 1 and 12/,
+  );
+  assert.throws(
+    () => parseCli(["device", "screenshot", "pixel-9", "--max-scrolls", "6"], {}),
+    /only valid on device survey/,
+  );
+
+  const unrestored = parseCli(
+    ["device", "survey", "ipad-1", "--max-scrolls", "3", "--no-restore"],
+    {},
+  );
+  assert.equal(unrestored.command, "invoke");
+  if (unrestored.command === "invoke") {
+    assert.deepEqual(unrestored.input, { serial: "ipad-1", maxScrolls: 3, restore: false });
+  }
+  assert.throws(
+    () => parseCli(["device", "screenshot", "pixel-9", "--no-restore"], {}),
+    /only valid on device survey/,
+  );
 });
 
 test("screenshot output flags reject ambiguous or unrelated use", () => {
@@ -514,6 +541,13 @@ test("screenshot output flags reject ambiguous or unrelated use", () => {
     assert.equal(snapshot.input.full, undefined);
     assert.deepEqual(snapshot.screenshotOutput, { kind: "default" });
   }
+  const jsonSnapshot = parseCli(["device", "snapshot", "pixel-9", "--json"], {});
+  assert.equal(jsonSnapshot.command, "invoke");
+  if (jsonSnapshot.command === "invoke") {
+    assert.equal(jsonSnapshot.input.full, true);
+    assert.equal(jsonSnapshot.input.visual, true);
+  }
+
   const fullSnapshot = parseCli(["device", "snapshot", "pixel-9", "--full"], {});
   assert.equal(fullSnapshot.command, "invoke");
   if (fullSnapshot.command === "invoke") {

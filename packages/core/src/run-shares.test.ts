@@ -490,7 +490,10 @@ test("findActiveRunSharePath returns a resolvable token path only for live share
       includeBatch: false,
       at: at + 10,
     });
-    assert.equal(await findActiveRunSharePath(root, sharedRun.id, expired.share.expiresAt + 1), undefined);
+    assert.equal(
+      await findActiveRunSharePath(root, sharedRun.id, expired.share.expiresAt + 1),
+      undefined,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

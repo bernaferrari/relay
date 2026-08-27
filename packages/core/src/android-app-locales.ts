@@ -4,6 +4,8 @@ import { constants } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { setAndroidAppLocale, type SetAndroidAppLocaleOptions } from "./android-app-build.js";
+import { runWithTargetContext } from "./target-context.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_APK_TOOL_OUTPUT = 64 * 1024 * 1024;
@@ -130,4 +132,21 @@ export async function listAndroidAppLocales(
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
+}
+
+/** Apply one per-app locale on a specific connected Android device and report
+ * the locale Android read back after the change (he/iw and id/in aliases are
+ * retried by the underlying setter). Rejects when the locale never takes. */
+export async function setAndroidAppLocaleOnDevice(
+  serial: string,
+  packageName: string,
+  locale: string,
+  options: SetAndroidAppLocaleOptions = {},
+): Promise<string | undefined> {
+  if (!serial.trim()) throw new Error("device serial is required");
+  if (!validPackageName(packageName))
+    throw new Error("app package name contains unsupported characters");
+  return runWithTargetContext({ kind: "device", platform: "android", serial }, () =>
+    setAndroidAppLocale(packageName, locale, options),
+  );
 }

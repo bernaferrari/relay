@@ -14,8 +14,10 @@ import type {
   CombineEvidenceAnalysisReport,
   CombineEvidencePackManifest,
 } from "@relay/protocol";
+import type { SnapshotNode } from "./device.js";
+import { pngDimensions } from "./ios-geometry.js";
 import { frameObservations } from "./frame-observation.js";
-import { readFrameTreeNodes } from "./run-frame-tree.js";
+import { parseFrameTreeNodes, readFrameTreeNodes } from "./run-frame-tree.js";
 import {
   analyzeCombineEvidenceBatchData,
   combineEvidenceCanonicalKey,
@@ -24,6 +26,8 @@ import {
 import { listPersistedRuns } from "./runs.js";
 import { slugEvidencePathSegment } from "./screen-identity.js";
 import { listJobs, type TestJob } from "./session.js";
+import { composeScrollSurveyFrames } from "./scrollable-survey.js";
+import type { ScrollSurveyFrame } from "./scrollable-survey-types.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 
 export type { CombineEvidencePackManifest };
@@ -397,6 +401,133 @@ export function analyzeCombineEvidenceJobs(
   return { schemaVersion: 1, batchId, locales, analysis, coverage, cases };
 }
 
+function mergedNodesFromUnknown(value: unknown): SnapshotNode[] | undefined {
+  const direct = parseFrameTreeNodes(value);
+  if (direct?.length) return direct;
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as { snapshot?: unknown; mergedNodes?: unknown };
+  const fromSnapshot = parseFrameTreeNodes(record.snapshot);
+  if (fromSnapshot?.length) return fromSnapshot;
+  return Array.isArray(record.mergedNodes) && record.mergedNodes.length
+    ? (record.mergedNodes as SnapshotNode[])
+    : undefined;
+}
+
+async function readOptionalFile(path: string): Promise<Buffer | undefined> {
+  try {
+    return await readFile(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/** CLI survey persist writes full.png/full.json next to the viewports; a
+ * Combine run may also already hold that stitch at the run root. */
+async function readExistingFullPageStitch(runDir: string): Promise<{
+  png?: Buffer;
+  nodes?: SnapshotNode[];
+}> {
+  for (const dir of [runDir, join(runDir, "frames")]) {
+    const png = await readOptionalFile(join(dir, "full.png"));
+    let nodes: SnapshotNode[] | undefined;
+    const json = await readOptionalFile(join(dir, "full.json"));
+    if (json) {
+      try {
+        nodes = mergedNodesFromUnknown(JSON.parse(json.toString("utf8")));
+      } catch {
+        nodes = undefined;
+      }
+    }
+    if (png || nodes?.length)
+      return { ...(png ? { png } : {}), ...(nodes?.length ? { nodes } : {}) };
+  }
+  return {};
+}
+
+async function composeFullPageFromDestinationFrames(
+  job: CombineEvidenceCase,
+  listed: NonNullable<CombineEvidenceCase["frames"]>,
+): Promise<{ png?: Buffer; nodes?: SnapshotNode[] }> {
+  if (!listed.length || !job.runDir) return {};
+  const frames: ScrollSurveyFrame[] = [];
+  for (const [index, frame] of listed.entries()) {
+    const bytes = await readOptionalFile(join(job.runDir, frame.path));
+    if (!bytes) return {};
+    const dims = pngDimensions(bytes);
+    if (!dims) return {};
+    const nodes = (await readFrameTreeNodes(job.runDir, frame.path)) ?? [];
+    frames.push({
+      index,
+      offsetY: 0,
+      appendedHeight: 0,
+      screenshot: {
+        base64: bytes.toString("base64"),
+        width: dims.width,
+        height: dims.height,
+        capturedAt: frame.capturedAt ?? 0,
+      },
+      snapshot: {
+        capturedAt: frame.capturedAt ?? 0,
+        nodes,
+        interactive: [],
+        inspectable: true,
+        source: "sdk",
+        bounds: { width: dims.width, height: dims.height },
+        screenIdentity: { fingerprint: "", nodes: [], volatileSignals: [] },
+      },
+    });
+  }
+  try {
+    const composition = composeScrollSurveyFrames(frames);
+    if (!composition?.stitched) return {};
+    return {
+      png: Buffer.from(composition.stitched.base64, "base64"),
+      ...(composition.mergedNodes.length ? { nodes: composition.mergedNodes } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+/** Destination surveys persist each viewport as run evidence. The pack also
+ * ships the stitched long page when that stitch already exists or can be
+ * rebuilt from those frames — otherwise a reviewer only sees the first
+ * viewport and misses the rest of the surface. */
+async function writePackFullPage(
+  job: CombineEvidenceCase,
+  dest: {
+    locale: string;
+    screenshotDir: string;
+    accessibilityDir: string;
+    frames: string[];
+  },
+): Promise<void> {
+  if (!job.runDir) return;
+  const destinationFrames = (job.frames ?? []).filter((frame) =>
+    (frame.caption ?? "").trim().startsWith("destination:"),
+  );
+  const existing = await readExistingFullPageStitch(job.runDir);
+  if (!destinationFrames.length && !existing.png && !existing.nodes?.length) return;
+  const composed =
+    existing.png && existing.nodes?.length
+      ? {}
+      : await composeFullPageFromDestinationFrames(job, destinationFrames);
+  const png = existing.png ?? composed.png;
+  const nodes = existing.nodes ?? composed.nodes;
+  if (png) {
+    await writeFile(join(dest.screenshotDir, "full.png"), png);
+    dest.frames.push(`${slugEvidencePathSegment(dest.locale)}/screenshots/full.png`);
+  }
+  if (nodes?.length) {
+    await mkdir(dest.accessibilityDir, { recursive: true });
+    await writeFile(
+      join(dest.accessibilityDir, "full.json"),
+      `${JSON.stringify({ schemaVersion: 1, kind: "relay.frame-tree", nodes }, null, 2)}\n`,
+      "utf8",
+    );
+  }
+}
+
 export async function exportCombineEvidencePack(input: {
   batchId: string;
   jobs: CombineEvidenceCase[];
@@ -437,6 +568,7 @@ export async function exportCombineEvidencePack(input: {
           .filter(
             (name) =>
               name.endsWith(".png") &&
+              name !== "full.png" &&
               !harness.has(name) &&
               (!evidence.names || evidence.names.has(name)),
           )
@@ -471,6 +603,7 @@ export async function exportCombineEvidencePack(input: {
       } catch {
         // frames optional
       }
+      await writePackFullPage(job, { locale, screenshotDir, accessibilityDir, frames });
     }
     cases.push({
       locale,
@@ -523,7 +656,7 @@ export async function exportCombineEvidencePack(input: {
       `Findings: ${analysis.findings.length} (${analysis.critical} critical) against ${analysis.baselineLocale}`,
       `Frames read: ${coverage.inspectedFrames} of ${coverage.frames} carried a UI tree`,
       "",
-      "Open index.html for a portable visual report. Each folder is one matrix case: screenshots/ are the rasters, accessibility/ holds the raw tree beside each PNG when one was captured.",
+      "Open index.html for a portable visual report. Each folder is one matrix case: screenshots/ are the rasters (full.png is the stitched long page when a destination survey or stitch was captured), accessibility/ holds the raw tree beside each PNG when one was captured.",
       "manifest.json carries the same findings under `analysis`, and `byCanonicalKey` maps each one to the frame it came from.",
       "",
     ].join("\n"),

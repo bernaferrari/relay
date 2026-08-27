@@ -37,6 +37,25 @@ export function resolveAppMapGetList(
   );
 }
 
+function connectGetId(presentation?: AppMapSummaryPresentation): string | undefined {
+  if (presentation?.commandPath !== "connect get") return undefined;
+  if (
+    !presentation.input ||
+    typeof presentation.input !== "object" ||
+    Array.isArray(presentation.input)
+  ) {
+    throw new Error("connect get requires a connectionId");
+  }
+  if (!("connectionId" in presentation.input)) {
+    throw new Error("connect get requires a connectionId");
+  }
+  const connectionId = presentation.input.connectionId;
+  if (typeof connectionId !== "string" || !connectionId.trim()) {
+    throw new Error("connect get requires a connectionId");
+  }
+  return connectionId;
+}
+
 export function summarizeAppMapOperationResult(
   operationId: string,
   result: unknown,
@@ -89,6 +108,22 @@ export function summarizeAppMapOperationResult(
     !map.connections
   )
     return result;
+
+  const connectionId = operationId === "app-map.get" ? connectGetId(presentation) : undefined;
+  if (connectionId) {
+    const connection = map.connections[connectionId];
+    if (!connection) throw new Error(`Unknown connection: ${connectionId}`);
+    return {
+      connection: {
+        id: connection.id,
+        ...(connection.label ? { label: connection.label } : {}),
+        fromScreenId: connection.fromScreenId,
+        destination: connection.destination,
+        state: connection.state,
+        actions: connection.actions,
+      },
+    };
+  }
 
   const byId = <T extends AppMapEntity>(values: Record<string, T>): T[] =>
     Object.values(values).sort((left, right) => left.id.localeCompare(right.id));

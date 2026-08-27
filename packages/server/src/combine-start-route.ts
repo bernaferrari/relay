@@ -501,9 +501,7 @@ export async function executeCombineStart(
     if (error instanceof AppMapCombineCellContractError)
       throw combineCellContractHttpError(error, {
         map,
-        ...(targetId
-          ? { target: { targetId, platform: requestedPlatform ?? "browser" } }
-          : {}),
+        ...(targetId ? { target: { targetId, platform: requestedPlatform ?? "browser" } } : {}),
       });
     if (error instanceof AppMapCompileError) throw new HttpError(409, error.message);
     throw new HttpError(400, error instanceof Error ? error.message : String(error));

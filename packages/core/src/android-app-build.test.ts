@@ -15,23 +15,49 @@ function localeArgs(args: string[]): { action?: string; locale?: string } {
 
 test("set-locale retries he as iw when the requested tag fails", async () => {
   const sets: string[] = [];
-  await runWithTargetContext({ kind: "device", platform: "android", serial: "pixel" }, () =>
-    setAndroidAppLocale("com.example", "he", {
-      command: async (args) => {
-        const { action, locale } = localeArgs(args);
-        if (action === "get") {
-          return { stdout: sets.at(-1) ? `Locales for app for user 0 are [${sets.at(-1)}]` : "[]" };
-        }
-        if (action === "set") {
-          if (locale === "he") throw new Error("Unknown locale: he");
-          sets.push(locale ?? "");
-          return { stdout: "" };
-        }
-        throw new Error(`unexpected adb ${args.join(" ")}`);
-      },
-    }),
+  const observed = await runWithTargetContext(
+    { kind: "device", platform: "android", serial: "pixel" },
+    () =>
+      setAndroidAppLocale("com.example", "he", {
+        command: async (args) => {
+          const { action, locale } = localeArgs(args);
+          if (action === "get") {
+            return {
+              stdout: sets.at(-1) ? `Locales for app for user 0 are [${sets.at(-1)}]` : "[]",
+            };
+          }
+          if (action === "set") {
+            if (locale === "he") throw new Error("Unknown locale: he");
+            sets.push(locale ?? "");
+            return { stdout: "" };
+          }
+          throw new Error(`unexpected adb ${args.join(" ")}`);
+        },
+      }),
   );
   assert.deepEqual(sets, ["iw"]);
+  assert.equal(observed, "iw");
+});
+
+test("set-locale reports the locale Android read back after it takes", async () => {
+  const observed = await runWithTargetContext(
+    { kind: "device", platform: "android", serial: "pixel" },
+    () =>
+      setAndroidAppLocale("com.example", "pt-BR", {
+        command: async (args) => {
+          const { action, locale } = localeArgs(args);
+          if (action === "get") {
+            return { stdout: "Locales for app for user 0 are [pt-BR]" };
+          }
+          if (action === "set") {
+            assert.equal(locale, "pt-BR");
+            return { stdout: "" };
+          }
+          throw new Error(`unexpected adb ${args.join(" ")}`);
+        },
+      }),
+  );
+  assert.equal(observed, "pt-BR");
 });
 
 test("set-locale retries id as in when the tree language does not change", async () => {

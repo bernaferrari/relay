@@ -434,6 +434,9 @@ test("an ambiguous iOS app launch is returned as review evidence, never recovery
 });
 
 test("discovers every locale declared by an installed Android app", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-app-locales-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
   const server = await startServer({
     host: "127.0.0.1",
     port: 0,
@@ -467,6 +470,129 @@ test("discovers every locale declared by an installed Android app", async () => 
     });
   } finally {
     await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("sets one per-app locale and reports the locale Android read back", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-app-locale-set-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const applied: Array<{ serial: string; packageName: string; locale: string }> = [];
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      listDevices: async () => [
+        {
+          id: "pixel",
+          serial: "pixel-1",
+          name: "Pixel",
+          platform: "android",
+          kind: "Pixel 9",
+          booted: true,
+        },
+      ],
+      assertTargetControl: async () => ({
+        id: "lease",
+        projectId: "runtime-project",
+        poolId: "local",
+        deviceSerial: "pixel-1",
+        ownerId: "human:runtime-test",
+        status: "leased",
+        leasedAt: 1,
+        expiresAt: Date.now() + 60_000,
+      }),
+      setAppLocale: async (serial, packageName, locale) => {
+        applied.push({ serial, packageName, locale });
+        return "iw";
+      },
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/app/locale`, {
+      method: "POST",
+      headers: headers("target.app.locale.set"),
+      body: JSON.stringify({ serial: "pixel-1", package: "ai.x.grok", locale: "he" }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      packageName: "ai.x.grok",
+      locale: "he",
+      observedLocale: "iw",
+    });
+    assert.deepEqual(applied, [{ serial: "pixel-1", packageName: "ai.x.grok", locale: "he" }]);
+
+    const malformed = await fetch(`http://127.0.0.1:${server.port}/device/app/locale`, {
+      method: "POST",
+      headers: headers("target.app.locale.set"),
+      body: JSON.stringify({ serial: "pixel-1", package: "ai.x.grok" }),
+    });
+    assert.equal(malformed.status, 400);
+    assert.match(await malformed.text(), /target app locale set locale/u);
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a locale that never takes fails loudly instead of reporting success", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-app-locale-mismatch-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      listDevices: async () => [
+        {
+          id: "pixel",
+          serial: "pixel-1",
+          name: "Pixel",
+          platform: "android",
+          kind: "Pixel 9",
+          booted: true,
+        },
+      ],
+      assertTargetControl: async () => ({
+        id: "lease",
+        projectId: "runtime-project",
+        poolId: "local",
+        deviceSerial: "pixel-1",
+        ownerId: "human:runtime-test",
+        status: "leased",
+        leasedAt: 1,
+        expiresAt: Date.now() + 60_000,
+      }),
+      setAppLocale: async () => {
+        throw new Error("app locale he did not take (tried iw)");
+      },
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/app/locale`, {
+      method: "POST",
+      headers: headers("target.app.locale.set"),
+      body: JSON.stringify({ serial: "pixel-1", package: "ai.x.grok", locale: "he" }),
+    });
+    assert.equal(response.status, 409);
+    const body = (await response.json()) as {
+      error?: string;
+      code?: string;
+      recovery?: string;
+    };
+    assert.match(body.error ?? "", /did not take/u);
+    assert.equal(body.code, "APP_LOCALE_DID_NOT_TAKE");
+    assert.match(body.recovery ?? "", /locale resources/u);
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
   }
 });
 

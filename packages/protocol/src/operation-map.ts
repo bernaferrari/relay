@@ -451,7 +451,8 @@ type SpecificOperationMap = {
   };
   "step.run": { input: { step: RecipeStep; serial: string }; output: StepRunResult };
   "target.scroll-survey.capture": {
-    input: { serial: string; maxScrolls?: number };
+    input: { serial: string; maxScrolls?: number; restore?: boolean };
+
     output: {
       status: "completed" | "stopped";
       reason: ScrollSurveyStopReasonDto;
@@ -504,6 +505,10 @@ type SpecificOperationMap = {
   "target.app.locales": {
     input: { serial: string; package: string };
     output: { packageName: string; locales: string[] };
+  };
+  "target.app.locale.set": {
+    input: { serial: string; package: string; locale: string };
+    output: { packageName: string; locale: string; observedLocale?: string };
   };
   "target.ui.describe": {
     input: { serial: string };

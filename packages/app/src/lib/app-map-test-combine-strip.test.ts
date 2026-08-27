@@ -3,7 +3,10 @@ import test from "node:test";
 import type { AppMapVariable } from "@relay/protocol";
 import {
   applyableVariables,
+  languageVariable,
   projectTestCombineStrip,
+  screenAcrossLanguages,
+  TEACH_LANGUAGE_VARIABLE_HINT,
   testCombineCaptureForLens,
   testCombineLensFromPolicy,
   testCombineSentence,
@@ -222,5 +225,96 @@ test("Whole page is not ready without a frozen full-surface binding", () => {
       { steps },
     ).ready,
     true,
+  );
+});
+
+test("a screen without a language Variable asks the operator to teach one", () => {
+  assert.equal(languageVariable({}), undefined);
+  assert.deepEqual(
+    screenAcrossLanguages({ connections: {}, tests: {}, variables: {} }, "settings"),
+    {
+      kind: "disabled",
+      hint: TEACH_LANGUAGE_VARIABLE_HINT,
+    },
+  );
+});
+
+test("a screen whose Test ends there runs selected Combine languages", () => {
+  const variable = language({ kind: "appLocale", app: "com.example" }, ["en", "ja", "pt"]);
+  const test = {
+    id: "supergrok-locale-tour",
+    steps: [
+      {
+        id: "open",
+        kind: "instruction" as const,
+        intent: "Open Settings",
+        binding: {
+          status: "resolved" as const,
+          kind: "connections" as const,
+          connectionIds: ["open"],
+        },
+      },
+    ],
+  };
+  const map = {
+    connections: { open: { destination: { kind: "screen" as const, screenId: "settings" } } },
+    tests: { [test.id]: test },
+    variables: { language: variable },
+    combines: {
+      "matrix-language-to-supergrok-locale-tour": {
+        id: "matrix-language-to-supergrok-locale-tour",
+        variableIds: ["language"],
+        testIds: [test.id],
+        selected: { language: ["ja", "pt"] },
+      },
+    },
+  };
+  assert.equal(languageVariable(map.variables)?.id, "language");
+  assert.deepEqual(screenAcrossLanguages(map, "settings"), {
+    kind: "run",
+    testId: test.id,
+    variableIds: ["language"],
+    selected: { language: ["ja", "pt"] },
+  });
+});
+
+test("without selected Combine languages the screen opens Combine instead of --all", () => {
+  const variable = language({ kind: "appLocale", app: "com.example" });
+  const test = {
+    id: "tour",
+    steps: [
+      {
+        id: "expect",
+        kind: "validation" as const,
+        intent: "On Settings",
+        binding: {
+          status: "resolved" as const,
+          kind: "assertion" as const,
+          assertion: { kind: "screen" as const, screenId: "settings" },
+        },
+      },
+    ],
+  };
+  assert.deepEqual(
+    screenAcrossLanguages(
+      {
+        connections: {},
+        tests: { tour: test },
+        variables: { language: variable },
+        combines: {
+          "matrix-language-to-tour": {
+            id: "matrix-language-to-tour",
+            variableIds: ["language"],
+            testIds: ["tour"],
+          },
+        },
+      },
+      "settings",
+    ),
+    {
+      kind: "open-combine",
+      combineId: "matrix-language-to-tour",
+      testId: "tour",
+    },
   );
 });

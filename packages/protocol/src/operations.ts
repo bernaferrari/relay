@@ -41,7 +41,6 @@ import type {
   RelayOperationMap,
   RedactionPolicyDto,
   RevisionedDto,
-  ScrollSurveyStopReasonDto,
   TestDataDto,
 } from "./operation-map.js";
 import {
@@ -274,165 +273,12 @@ const actionsParser = objectParser<{ actions: ActionSummary[] }>("actions respon
 
 const {
   screenshotParser,
+  targetScrollSurveyInputParser,
+  targetScrollSurveyOutputParser,
   targetSnapshotOutputParser,
   targetScreenshotInputParser,
   targetSnapshotInputParser,
 } = createTargetCaptureOperationParsers({ assertTargetRuntimeReadiness });
-const scrollSurveyReasons = new Set<ScrollSurveyStopReasonDto>([
-  "end-of-content",
-  "screen-changed",
-  "inspection-unavailable",
-  "missing-page-anchor",
-  "seam-ambiguous",
-  "dimension-changed",
-  "scroll-failed",
-  "restore-failed",
-  "start-viewport-unproven",
-  "limit-reached",
-]);
-
-function assertScrollSurveyRect(value: unknown, label: string): void {
-  const rect = record(value, label);
-  number(rect.x, `${label} x`);
-  number(rect.y, `${label} y`);
-  number(rect.width, `${label} width`);
-  number(rect.height, `${label} height`);
-}
-
-function assertScrollSurveyNode(value: unknown, label: string): void {
-  const node = record(value, label);
-  for (const field of ["index", "depth", "parentIndex"]) {
-    if (node[field] !== undefined && !Number.isInteger(number(node[field], `${label} ${field}`))) {
-      fail(`${label} ${field}`, "must be an integer");
-    }
-  }
-  if (node.rect !== undefined) assertScrollSurveyRect(node.rect, `${label} rect`);
-}
-
-function assertScrollSurveySnapshot(value: unknown, label: string): void {
-  const snapshot = record(value, label);
-  if (snapshot.serial !== undefined) string(snapshot.serial, `${label} serial`);
-  number(snapshot.capturedAt, `${label} capturedAt`);
-  if (!Array.isArray(snapshot.nodes)) fail(`${label} nodes`, "must be an array");
-  snapshot.nodes.forEach((node, index) => assertScrollSurveyNode(node, `${label} node ${index}`));
-  if (!Array.isArray(snapshot.interactive)) fail(`${label} interactive`, "must be an array");
-  snapshot.interactive.forEach((node, index) =>
-    assertScrollSurveyNode(node, `${label} interactive node ${index}`),
-  );
-  if (snapshot.bounds !== undefined) {
-    const bounds = record(snapshot.bounds, `${label} bounds`);
-    number(bounds.width, `${label} bounds width`);
-    number(bounds.height, `${label} bounds height`);
-  }
-  boolean(snapshot.inspectable, `${label} inspectable`);
-  if (!new Set(["sdk", "android-system", "pixels-only"]).has(String(snapshot.source))) {
-    fail(`${label} source`, "must be sdk, android-system, or pixels-only");
-  }
-  if (
-    snapshot.inspectionState !== undefined &&
-    !new Set(["active", "keyguard", "asleep", "unavailable", "unknown"]).has(
-      String(snapshot.inspectionState),
-    )
-  ) {
-    fail(`${label} inspectionState`, "is unsupported");
-  }
-  if (
-    snapshot.bindingState !== undefined &&
-    !new Set(["matched", "rebound", "unavailable"]).has(String(snapshot.bindingState))
-  ) {
-    fail(`${label} bindingState`, "is unsupported");
-  }
-  record(snapshot.screenIdentity, `${label} screenIdentity`);
-  if (snapshot.proposedRows !== undefined) {
-    if (!Array.isArray(snapshot.proposedRows)) fail(`${label} proposedRows`, "must be an array");
-    snapshot.proposedRows.forEach((value, index) => {
-      const row = record(value, `${label} proposed row ${index}`);
-      number(row.x, `${label} proposed row ${index} x`);
-      number(row.y, `${label} proposed row ${index} y`);
-    });
-  }
-}
-
-const targetScrollSurveyInputParser = objectParser<OperationInput<"target.scroll-survey.capture">>(
-  "scroll survey input",
-  (input) => {
-    if (typeof input.serial !== "string" || !input.serial.trim()) {
-      fail("scroll survey serial", "must be a non-empty string");
-    }
-    if (
-      input.maxScrolls !== undefined &&
-      (typeof input.maxScrolls !== "number" ||
-        !Number.isInteger(input.maxScrolls) ||
-        input.maxScrolls < 1 ||
-        input.maxScrolls > 12)
-    ) {
-      fail("scroll survey maxScrolls", "must be an integer between 1 and 12");
-    }
-  },
-);
-
-const targetScrollSurveyOutputParser = objectParser<
-  OperationOutput<"target.scroll-survey.capture">
->("scroll survey response", (input) => {
-  if (input.status !== "completed" && input.status !== "stopped") {
-    fail("scroll survey status", "must be completed or stopped");
-  }
-  if (!scrollSurveyReasons.has(input.reason as ScrollSurveyStopReasonDto)) {
-    fail("scroll survey reason", "is unsupported");
-  }
-  if (!Array.isArray(input.frames) || input.frames.length === 0) {
-    fail("scroll survey frames", "must be a non-empty array");
-  }
-  input.frames.forEach((value, index) => {
-    const frame = record(value, `scroll survey frame ${index}`);
-    if (!Number.isInteger(number(frame.index, `scroll survey frame ${index} index`))) {
-      fail(`scroll survey frame ${index} index`, "must be an integer");
-    }
-    number(frame.offsetY, `scroll survey frame ${index} offsetY`);
-    number(frame.appendedHeight, `scroll survey frame ${index} appendedHeight`);
-    const screenshot = record(frame.screenshot, `scroll survey frame ${index} screenshot`);
-    string(screenshot.base64, `scroll survey frame ${index} screenshot base64`);
-    number(screenshot.width, `scroll survey frame ${index} screenshot width`);
-    number(screenshot.height, `scroll survey frame ${index} screenshot height`);
-    number(screenshot.capturedAt, `scroll survey frame ${index} screenshot capturedAt`);
-    assertScrollSurveySnapshot(frame.snapshot, `scroll survey frame ${index} snapshot`);
-  });
-  if (!Array.isArray(input.diagnosticFrames)) {
-    fail("scroll survey diagnosticFrames", "must be an array");
-  }
-  input.diagnosticFrames.forEach((value, index) => {
-    const frame = record(value, `scroll survey diagnostic frame ${index}`);
-    if (!Number.isInteger(number(frame.index, `scroll survey diagnostic frame ${index} index`))) {
-      fail(`scroll survey diagnostic frame ${index} index`, "must be an integer");
-    }
-    number(frame.offsetY, `scroll survey diagnostic frame ${index} offsetY`);
-    number(frame.appendedHeight, `scroll survey diagnostic frame ${index} appendedHeight`);
-    const screenshot = record(
-      frame.screenshot,
-      `scroll survey diagnostic frame ${index} screenshot`,
-    );
-    string(screenshot.base64, `scroll survey diagnostic frame ${index} screenshot base64`);
-    number(screenshot.width, `scroll survey diagnostic frame ${index} screenshot width`);
-    number(screenshot.height, `scroll survey diagnostic frame ${index} screenshot height`);
-    number(screenshot.capturedAt, `scroll survey diagnostic frame ${index} screenshot capturedAt`);
-    assertScrollSurveySnapshot(frame.snapshot, `scroll survey diagnostic frame ${index} snapshot`);
-  });
-  if (input.stitched !== undefined) {
-    const stitched = record(input.stitched, "scroll survey stitched preview");
-    string(stitched.base64, "scroll survey stitched preview base64");
-    number(stitched.width, "scroll survey stitched preview width");
-    number(stitched.height, "scroll survey stitched preview height");
-    if (stitched.mime !== "image/png") {
-      fail("scroll survey stitched preview mime", "must be image/png");
-    }
-  }
-  if (!Array.isArray(input.mergedNodes)) fail("scroll survey mergedNodes", "must be an array");
-  input.mergedNodes.forEach((node, index) =>
-    assertScrollSurveyNode(node, `scroll survey merged node ${index}`),
-  );
-  boolean(input.restoredStartViewport, "scroll survey restoredStartViewport");
-  string(input.message, "scroll survey message");
-});
 
 const jobsParser = objectParser<OperationOutput<"job.list">>("jobs response", (input) => {
   if (!Array.isArray(input.jobs)) fail("jobs", "must be an array");
@@ -712,6 +558,26 @@ const targetAppLocalesOutputParser = objectParser<OperationOutput<"target.app.lo
     string(input.packageName, "target app locales package name");
     if (!Array.isArray(input.locales)) fail("target app locales", "must be an array");
     for (const locale of input.locales) string(locale, "target app locale");
+  },
+);
+
+const targetAppLocaleSetInputParser = objectParser<OperationInput<"target.app.locale.set">>(
+  "target app locale set input",
+  (input) => {
+    string(input.serial, "target app locale set serial");
+    string(input.package, "target app locale set package");
+    string(input.locale, "target app locale set locale");
+  },
+);
+
+const targetAppLocaleSetOutputParser = objectParser<OperationOutput<"target.app.locale.set">>(
+  "target app locale set response",
+  (input) => {
+    string(input.packageName, "target app locale set package name");
+    string(input.locale, "target app locale set locale");
+    if (input.observedLocale !== undefined) {
+      string(input.observedLocale, "target app locale set observed locale");
+    }
   },
 );
 
@@ -1350,6 +1216,14 @@ export const operationDefinitions = [
     lease: "shared",
     input: targetAppLocalesInputParser,
     output: targetAppLocalesOutputParser,
+  }),
+  command("target.app.locale.set", "Set an app's per-app locale", "POST", "/device/app/locale", {
+    category: "target",
+    targetCapabilities: ["snapshot"],
+    lease: "exclusive",
+    idempotency: "inherent",
+    input: targetAppLocaleSetInputParser,
+    output: targetAppLocaleSetOutputParser,
   }),
   command("target.recover", "Repair target connection", "POST", "/device/recover", {
     category: "target",

@@ -93,12 +93,21 @@ export const workspaceOperationSchemas = {
       package: identifier("Application package identifier"),
     })
     .strict(),
+  "target.app.locale.set": z
+    .object({
+      serial: identifier("Connected device serial"),
+      package: identifier("Application package identifier"),
+      locale: identifier("BCP-47 language tag, such as de, he, or pt-BR"),
+    })
+    .strict(),
   "target.scroll-survey.capture": z
     .object({
       serial: identifier("Connected device serial"),
-      maxScrolls: z.number().int().min(1).max(100).optional(),
+      maxScrolls: z.number().int().min(1).max(12).optional(),
+      restore: z.boolean().optional(),
     })
     .strict(),
+
   "target.stream.open": z
     .object({
       serial: identifier("Connected device serial"),

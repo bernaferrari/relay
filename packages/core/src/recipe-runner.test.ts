@@ -26,7 +26,7 @@ import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { currentVerifiedScreen, type VerifiedScreenCheckpoint } from "./recipe-runner-context.js";
 import type { TestJob } from "./session.js";
 import { registerEvaluationProvider } from "./evaluation.js";
-import { saveRecipe } from "./recipes.js";
+import { saveRecipe, type RecipeStep } from "./recipes.js";
 import {
   clearControl,
   cooperativeCheckpoint,
@@ -5706,6 +5706,328 @@ describe("runRecipeStep tour", () => {
           noLog,
         ),
       /tour:not-on-origin/,
+    );
+  });
+
+  const superGrokNodes = [
+    {
+      type: "Application",
+      identifier: "ai.x.grok",
+      label: "Grok",
+      rect: { x: 0, y: 0, width: 834, height: 1112 },
+    },
+    {
+      type: "TextView",
+      identifier: "supergrok_title",
+      label: "SuperGrok",
+      hittable: true,
+      rect: { x: 40, y: 80, width: 240, height: 40 },
+    },
+    {
+      type: "Button",
+      label: "Manage billing",
+      hittable: true,
+      rect: { x: 40, y: 200, width: 300, height: 56 },
+    },
+  ];
+  const homeWithSettings = [
+    { type: "Application", label: "Grok", rect: { x: 0, y: 0, width: 834, height: 1112 } },
+    {
+      type: "Button",
+      identifier: "settings_button",
+      label: "Settings",
+      hittable: true,
+      rect: { x: 40, y: 560, width: 72, height: 80 },
+    },
+  ];
+  const settingsWithSuperGrok = [
+    { type: "Application", label: "Grok", rect: { x: 0, y: 0, width: 834, height: 1112 } },
+    {
+      type: "Button",
+      label: "SuperGrok",
+      hittable: true,
+      rect: { x: 20, y: 400, width: 300, height: 56 },
+    },
+  ];
+  const composerOpen = [
+    { type: "Application", label: "Grok", rect: { x: 0, y: 0, width: 834, height: 1112 } },
+    {
+      type: "Button",
+      label: "Close",
+      hittable: true,
+      rect: { x: 20, y: 80, width: 80, height: 40 },
+    },
+    { type: "Keyboard", role: "keyboard", rect: { x: 0, y: 700, width: 834, height: 400 } },
+  ];
+  const superGrokFingerprint = observeScreenIdentity(superGrokNodes).fingerprint;
+  const mappedSuperGrokPrelude = [
+    { kind: "tap" as const, target: { identifier: "settings_button" } },
+    { kind: "tap" as const, target: { label: "SuperGrok" } },
+  ];
+
+  function describePress(options: unknown): string {
+    if (!options || typeof options !== "object") return "";
+    if ("selector" in options && typeof options.selector === "string") return options.selector;
+    if (
+      "x" in options &&
+      "y" in options &&
+      typeof options.x === "number" &&
+      typeof options.y === "number"
+    ) {
+      return `point:${options.x},${options.y}`;
+    }
+    return "";
+  }
+
+  function homeToSuperGrokDevice(start: "home" | "supergrok" | "composer") {
+    let screen: "home" | "settings" | "supergrok" | "composer" = start;
+    const presses: string[] = [];
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes:
+            screen === "home"
+              ? homeWithSettings
+              : screen === "settings"
+                ? settingsWithSuperGrok
+                : screen === "composer"
+                  ? composerOpen
+                  : superGrokNodes,
+        }),
+      press: (options) => {
+        const selector = describePress(options);
+        presses.push(selector);
+        if (selector.includes("settings_button")) screen = "settings";
+        else if (/label="SuperGrok"|SuperGrok/.test(selector) && !selector.includes("title")) {
+          screen = "supergrok";
+        }
+        return Promise.resolve({});
+      },
+      back: () => {
+        presses.push("hardware-back");
+        return Promise.resolve({});
+      },
+      scroll: () => Promise.resolve({}),
+      wait: () => Promise.resolve({}),
+    });
+    return { device, presses };
+  }
+
+  it("seeks SuperGrok from home by tapping mapped settings then SuperGrok", async () => {
+    const { device, presses } = homeToSuperGrokDevice("home");
+    await runIosRecipeStep(
+      device,
+      {
+        kind: "tour",
+        screenshot: false,
+        mappedStopsOnly: true,
+        originTitle: "SuperGrok",
+        originFingerprint: superGrokFingerprint,
+        preludeSteps: mappedSuperGrokPrelude,
+        fallbackStops: [{ label: "Manage billing" }],
+      },
+      noLog,
+    );
+    assert.match(presses[0] ?? "", /settings_button/);
+    assert.match(presses[1] ?? "", /SuperGrok/);
+    assert.equal(
+      presses.some((press) => press.startsWith("point:")),
+      false,
+    );
+  });
+
+  it("skips mapped SuperGrok prelude when already on the destination fingerprint", async () => {
+    const { device, presses } = homeToSuperGrokDevice("supergrok");
+    await runIosRecipeStep(
+      device,
+      {
+        kind: "tour",
+        screenshot: false,
+        mappedStopsOnly: true,
+        originTitle: "SuperGrok",
+        originFingerprint: superGrokFingerprint,
+        preludeSteps: mappedSuperGrokPrelude,
+      },
+      noLog,
+    );
+    assert.equal(
+      presses.some((press) => press.includes("settings_button") || press.includes("SuperGrok")),
+      false,
+    );
+    assert.deepEqual(presses, []);
+  });
+
+  it("fails closed when the SuperGrok prelude start is not visible", async () => {
+    const { device, presses } = homeToSuperGrokDevice("composer");
+    await assert.rejects(
+      () =>
+        runIosRecipeStep(
+          device,
+          {
+            kind: "tour",
+            screenshot: false,
+            mappedStopsOnly: true,
+            originTitle: "SuperGrok",
+            originFingerprint: superGrokFingerprint,
+            preludeSteps: mappedSuperGrokPrelude,
+            fallbackStops: [{ label: "Manage billing" }],
+          },
+          noLog,
+        ),
+      /tour:not-on-origin/,
+    );
+    assert.equal(
+      presses.some(
+        (press) =>
+          press.includes("settings_button") ||
+          press.includes("SuperGrok") ||
+          press.includes("Settings") ||
+          press.startsWith("point:"),
+      ),
+      false,
+    );
+  });
+});
+
+describe("runRecipeStep expect-screen mapped prelude", () => {
+  const superGrokNodes = [
+    {
+      type: "Application",
+      identifier: "ai.x.grok",
+      label: "Grok",
+      rect: { x: 0, y: 0, width: 834, height: 1112 },
+    },
+    {
+      type: "TextView",
+      identifier: "supergrok_title",
+      label: "SuperGrok",
+      hittable: true,
+      rect: { x: 40, y: 80, width: 240, height: 40 },
+    },
+  ];
+  const homeWithSettings = [
+    { type: "Application", label: "Grok", rect: { x: 0, y: 0, width: 834, height: 1112 } },
+    {
+      type: "Button",
+      identifier: "settings_button",
+      label: "Settings",
+      hittable: true,
+      rect: { x: 40, y: 560, width: 72, height: 80 },
+    },
+  ];
+  const settingsWithSuperGrok = [
+    { type: "Application", label: "Grok", rect: { x: 0, y: 0, width: 834, height: 1112 } },
+    {
+      type: "Button",
+      label: "SuperGrok",
+      hittable: true,
+      rect: { x: 20, y: 400, width: 300, height: 56 },
+    },
+  ];
+  const composerOpen = [
+    { type: "Application", label: "Grok", rect: { x: 0, y: 0, width: 834, height: 1112 } },
+    {
+      type: "Button",
+      label: "Close",
+      hittable: true,
+      rect: { x: 20, y: 80, width: 80, height: 40 },
+    },
+    { type: "Keyboard", role: "keyboard", rect: { x: 0, y: 700, width: 834, height: 400 } },
+  ];
+  const fingerprint = observeScreenIdentity(superGrokNodes).fingerprint;
+
+  function describePress(options: unknown): string {
+    if (!options || typeof options !== "object") return "";
+    if ("selector" in options && typeof options.selector === "string") return options.selector;
+    if (
+      "x" in options &&
+      "y" in options &&
+      typeof options.x === "number" &&
+      typeof options.y === "number"
+    ) {
+      return `point:${options.x},${options.y}`;
+    }
+    return "";
+  }
+
+  function expectSuperGrokStep(): Extract<RecipeStep, { kind: "expect-screen" }> {
+    // Compiled Tests attach inbound prelude onto expect-screen; the host is
+    // read at runtime by mappedPreludeHost rather than the protocol union.
+    return {
+      kind: "expect-screen",
+      screenId: "supergrok",
+      screenTitle: "SuperGrok",
+      fingerprint,
+      timeoutMs: 250,
+      preludeSteps: [
+        { kind: "tap", target: { identifier: "settings_button" } },
+        { kind: "tap", target: { label: "SuperGrok" } },
+      ],
+    } as Extract<RecipeStep, { kind: "expect-screen" }>;
+  }
+
+  function homeToSuperGrokDevice(start: "home" | "supergrok" | "composer") {
+    let screen: "home" | "settings" | "supergrok" | "composer" = start;
+    const presses: string[] = [];
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes:
+            screen === "home"
+              ? homeWithSettings
+              : screen === "settings"
+                ? settingsWithSuperGrok
+                : screen === "composer"
+                  ? composerOpen
+                  : superGrokNodes,
+        }),
+      press: (options) => {
+        const selector = describePress(options);
+        presses.push(selector);
+        if (selector.includes("settings_button")) screen = "settings";
+        else if (selector.includes("SuperGrok")) screen = "supergrok";
+        return Promise.resolve({});
+      },
+      wait: () => Promise.resolve({}),
+    });
+    return { device, presses };
+  }
+
+  it("seeks SuperGrok from home by tapping mapped settings then SuperGrok", async () => {
+    const { device, presses } = homeToSuperGrokDevice("home");
+    await runRecipeStep(device, expectSuperGrokStep(), noLog);
+    assert.match(presses[0] ?? "", /settings_button/);
+    assert.match(presses[1] ?? "", /SuperGrok/);
+    assert.equal(
+      presses.some((press) => press.startsWith("point:")),
+      false,
+    );
+  });
+
+  it("skips mapped SuperGrok prelude when already on the destination fingerprint", async () => {
+    const { device, presses } = homeToSuperGrokDevice("supergrok");
+    await runRecipeStep(device, expectSuperGrokStep(), noLog);
+    assert.deepEqual(presses, []);
+  });
+
+  it("fails closed when the SuperGrok prelude start is not visible", async () => {
+    const { device, presses } = homeToSuperGrokDevice("composer");
+    await assert.rejects(
+      () =>
+        runRecipeStep(device, expectSuperGrokStep(), {
+          log: () => {},
+          observeVisualFingerprint: () => Promise.resolve("f".repeat(64)),
+        }),
+      /expect-screen: on “.*”, not “SuperGrok”/,
+    );
+    assert.equal(
+      presses.some(
+        (press) =>
+          press.includes("settings_button") ||
+          press.includes("SuperGrok") ||
+          press.startsWith("point:"),
+      ),
+      false,
     );
   });
 });

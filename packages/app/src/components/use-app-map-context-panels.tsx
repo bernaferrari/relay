@@ -7,18 +7,19 @@ import { AppMapAgentPanel } from "./app-map-agent-panel";
 import { AppMapHistoryPanel } from "./app-map-history-panel";
 import { AppMapProposalReview } from "./app-map-proposal-review";
 
-type ContextSurface = "agent" | "history" | "proposals" | null;
+export type AppMapContextSurface = "agent" | "history" | "proposals" | null;
 
 /** Owns mutually-exclusive App Map drawers and their long-lived async state. */
 export function useAppMapContextPanels(options: {
   activeAppMap: Accessor<AppMap | undefined>;
-  surface: Accessor<ContextSurface>;
-  setSurface: Setter<ContextSurface>;
+  surface: Accessor<AppMapContextSurface>;
+  setSurface: Setter<AppMapContextSurface>;
   openDevicePicker: () => void;
 }) {
   const server = useServer();
-  const surfaceOpen = (candidate: Exclude<ContextSurface, null>) => options.surface() === candidate;
-  const setSurfaceOpen = (candidate: Exclude<ContextSurface, null>, open: boolean) =>
+  const surfaceOpen = (candidate: Exclude<AppMapContextSurface, null>) =>
+    options.surface() === candidate;
+  const setSurfaceOpen = (candidate: Exclude<AppMapContextSurface, null>, open: boolean) =>
     options.setSurface((current) => (open ? candidate : current === candidate ? null : current));
   const agentOpen = () => surfaceOpen("agent");
   const historyOpen = () => surfaceOpen("history");

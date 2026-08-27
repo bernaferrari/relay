@@ -103,7 +103,10 @@ function mapWithProfiles(
       },
     },
     screenVariants: Object.fromEntries(
-      profiles.map((targetProfile, index) => [`home-${index}`, variant(`home-${index}`, targetProfile)]),
+      profiles.map((targetProfile, index) => [
+        `home-${index}`,
+        variant(`home-${index}`, targetProfile),
+      ]),
     ),
     connections: {},
     caseStacks: {},
@@ -139,7 +142,10 @@ const pixel = { targetId: "pixel-1", platform: "android" } as const;
 
 test("resolveSavedAppMapRuntimeTargetProfile inherits the only saved profile for a target", () => {
   const map = mapWithProfiles([
-    { ...profile({ id: "device:RQ8-1080x2340", targetId: "RQ8" }), viewport: { width: 1080, height: 2340 } },
+    {
+      ...profile({ id: "device:RQ8-1080x2340", targetId: "RQ8" }),
+      viewport: { width: 1080, height: 2340 },
+    },
     profile({ id: "ipad-en", targetId: "ipad-1", platform: "ios" }),
   ]);
   const resolved = resolveSavedAppMapRuntimeTargetProfile({
