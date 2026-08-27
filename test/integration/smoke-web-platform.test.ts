@@ -17,7 +17,11 @@ import {
   getManagedAgentBrowserStatus,
   type AgentBrowserToolStatus,
 } from '../../src/platforms/web/agent-browser-tool.ts';
-import { stopProcessForTakeover } from '../../src/daemon/daemon-process.ts';
+import {
+  stopProcessForTakeover,
+  waitForDaemonExit,
+  type DaemonProcessIdentity,
+} from '../../src/daemon/daemon-process.ts';
 import {
   expandProcessTree,
   isProcessAlive,
@@ -39,11 +43,6 @@ const WEB_SHUTDOWN_CLEANUP_TIMEOUT_MS = 5_000;
 // this pass for the wrong reason. A pass can then only mean the daemon's shutdown teardown
 // actively closed the browser, not that agent-browser's own idle timer beat this test's own wait.
 const WEB_SHUTDOWN_IDLE_TIMEOUT_MS = WEB_SHUTDOWN_SETTLE_TIMEOUT_MS + 60_000;
-
-type WebShutdownDaemonIdentity = {
-  pid: number;
-  startTime: string;
-};
 
 test('web shutdown cleanup reaps the exact daemon that survived graceful shutdown', async (t) => {
   const root = mkdtempSync('/tmp/agent-device-web-shutdown-cleanup-');
@@ -168,7 +167,7 @@ async function runWebShutdownSmoke(context: WebSmokeContext): Promise<void> {
   // Cleanup authority lives entirely in `finally`, driven by these two, so a failed assertion
   // above (including the very failure this test exists to catch: processes still alive when the
   // fix regresses) can never leave a daemon or a Chrome fleet running on the host afterward.
-  let daemonIdentity: WebShutdownDaemonIdentity | undefined;
+  let daemonIdentity: DaemonProcessIdentity | undefined;
   let status: AgentBrowserToolStatus | undefined;
   try {
     await runStep(context, 'set up managed web backend', ['web', 'setup', '--json']);
@@ -194,16 +193,22 @@ async function runWebShutdownSmoke(context: WebSmokeContext): Promise<void> {
     // orchestrator shutting the container down would, rather than going through `close`.
     process.kill(daemonPid, 'SIGTERM');
 
-    const after = await settleManagedBrowserProcesses(status);
+    const [after, daemonExit] = await Promise.all([
+      settleManagedBrowserProcesses(status),
+      waitForDaemonExit(daemonIdentity, {
+        timeoutMs: WEB_SHUTDOWN_SETTLE_TIMEOUT_MS,
+        pollMs: WEB_SHUTDOWN_SETTLE_POLL_MS,
+      }),
+    ]);
     assert.equal(
       after.count,
       0,
       `expected zero owned Chrome processes after daemon shutdown, found: ${formatProcessSummary(after)}`,
     );
     assert.equal(
-      isProcessAlive(daemonPid),
-      false,
-      'expected the daemon process itself to have exited after SIGTERM',
+      daemonExit.exited,
+      true,
+      `expected the daemon process itself to have exited after SIGTERM, still alive ${daemonExit.elapsedMs}ms later`,
     );
 
     // #1781 B1: the daemon leak oracle this fix unblocks wiring to a web lane — no stray
@@ -222,7 +227,7 @@ async function runWebShutdownSmoke(context: WebSmokeContext): Promise<void> {
 // alongside.
 async function cleanupWebShutdownSmoke(
   context: WebSmokeContext,
-  daemonIdentity: WebShutdownDaemonIdentity | undefined,
+  daemonIdentity: DaemonProcessIdentity | undefined,
   status: AgentBrowserToolStatus | undefined,
   timeouts = {
     termTimeoutMs: WEB_SHUTDOWN_CLEANUP_TIMEOUT_MS,
