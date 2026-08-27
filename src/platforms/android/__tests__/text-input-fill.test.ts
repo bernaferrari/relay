@@ -354,6 +354,95 @@ test('verifyAndroidFilledTextInHierarchy accepts Android sentence autocapitaliza
   assert.equal(verification.ok, true);
 });
 
+// `fill <target> ""` is the clear-field primitive (#2063). A cleared EditText carries no `text`
+// attribute at all, so the dump reads back as null while the expectation is "": without an
+// explicit empty rule the clear succeeds on the device and is still reported as text_mismatch.
+test('verifyAndroidFilledTextInHierarchy accepts a cleared field for an empty expectation', () => {
+  const clearedByAttribute = verifyAndroidFilledTextInHierarchy(
+    androidInputXml({ text: '' }),
+    10,
+    10,
+    '',
+  );
+  assert.equal(clearedByAttribute.ok, true);
+
+  const clearedWithoutAttribute = verifyAndroidFilledTextInHierarchy(
+    '<?xml version="1.0" encoding="UTF-8"?><hierarchy><node package="com.example" class="android.widget.EditText" focused="true" bounds="[0,0][200,100]"/></hierarchy>',
+    10,
+    10,
+    '',
+  );
+  assert.equal(clearedWithoutAttribute.ok, true);
+});
+
+test('verifyAndroidFilledTextInHierarchy refuses an empty expectation when no input is observed at all', () => {
+  // `actual` is null both for a cleared field and for NO field: a wrong point or lost focus
+  // must not satisfy the empty expectation, or three such samples become a stable success for
+  // a clear that never touched an app input.
+  const noInputAnywhere = verifyAndroidFilledTextInHierarchy(
+    '<?xml version="1.0" encoding="UTF-8"?><hierarchy><node package="com.example" class="android.widget.FrameLayout" bounds="[0,0][1080,1920]"/></hierarchy>',
+    10,
+    10,
+    '',
+  );
+  assert.equal(noInputAnywhere.ok, false);
+  assert.equal(noInputAnywhere.actualInput, null);
+
+  const inputElsewhere = verifyAndroidFilledTextInHierarchy(
+    '<?xml version="1.0" encoding="UTF-8"?><hierarchy><node package="com.example" class="android.widget.EditText" bounds="[500,500][700,600]"/></hierarchy>',
+    10,
+    10,
+    '',
+  );
+  assert.equal(inputElsewhere.ok, false);
+});
+
+// Live Pixel 9 emulator (Settings search, adb-shell channel): a CLEARED EditText dumps its hint
+// as `text` ("Search settings"), because getText() returns the hint for an empty field on
+// modern Android. The helper's hint-showing fact is the only way to tell that apart from a
+// field whose VALUE equals the hint string.
+test('verifyAndroidFilledTextInHierarchy accepts hint-only text for an empty expectation', () => {
+  const hintShowing = verifyAndroidFilledTextInHierarchy(
+    '<?xml version="1.0" encoding="UTF-8"?><hierarchy><node package="com.example" class="android.widget.EditText" text="Search settings" hint-showing="true" focused="true" bounds="[0,0][200,100]"/></hierarchy>',
+    10,
+    10,
+    '',
+  );
+  assert.equal(hintShowing.ok, true);
+
+  // Without the fact, identical text is a real value and the clear must NOT verify.
+  const valueEqualsHint = verifyAndroidFilledTextInHierarchy(
+    androidInputXml({ text: 'Search settings' }),
+    10,
+    10,
+    '',
+  );
+  assert.equal(valueEqualsHint.ok, false);
+});
+
+test('verifyAndroidFilledTextInHierarchy treats hint-only text as an empty value for a non-empty expectation', () => {
+  const verification = verifyAndroidFilledTextInHierarchy(
+    '<?xml version="1.0" encoding="UTF-8"?><hierarchy><node package="com.example" class="android.widget.EditText" text="Search settings" hint-showing="true" focused="true" bounds="[0,0][200,100]"/></hierarchy>',
+    10,
+    10,
+    'battery saver',
+  );
+  assert.equal(verification.ok, false);
+  assert.equal(verification.actual, 'Search settings');
+});
+
+test('verifyAndroidFilledTextInHierarchy still refuses a non-empty field for an empty expectation', () => {
+  const verification = verifyAndroidFilledTextInHierarchy(
+    androidInputXml({ text: 'still here' }),
+    10,
+    10,
+    '',
+  );
+
+  assert.equal(verification.ok, false);
+  assert.equal(verification.actual, 'still here');
+});
+
 test('verifyAndroidFilledTextInHierarchy rejects near-complete prefixes', () => {
   const verification = verifyAndroidFilledTextInHierarchy(
     androidInputXml({ text: 'filed the expens' }),
@@ -415,6 +504,49 @@ test('verifyAndroidFilledTextInHierarchy does not ignore broader case mismatches
   );
 
   assert.equal(verification.ok, false);
+});
+
+// The delete burst used to be sized from the INCOMING text, so the empty clear (#2063) sent the
+// 12/24-delete minimums and could never empty a field longer than 36 characters — leaving residue
+// after reporting failure. The clear must be sized from the value being removed.
+test('fillAndroid sizes the empty clear from the field content, not the empty text', async () => {
+  let value = 'a'.repeat(70);
+  let deletes = 0;
+  await withFillAdb(
+    async (args) => {
+      if (args[0] === 'shell' && args[1] === 'input' && args[2] === 'keyevent') {
+        const count = args.filter((arg) => arg === 'KEYCODE_DEL').length;
+        deletes += count;
+        value = value.slice(0, Math.max(0, value.length - count));
+      }
+      return adbResult('');
+    },
+    () => androidInputXml({ text: value }),
+    async () => {
+      await fillAndroid(ANDROID_EMULATOR, 10, 10, '');
+    },
+  );
+  assert.equal(value, '');
+  assert.ok(deletes >= 70, `expected the clear to cover the 70-char value, sent ${deletes}`);
+});
+
+// A masked value only ever compares by length, and the empty expectation (#2063) accepts an
+// observed masked node with no dump text: a masked field WITH content dumps its bullet run.
+// Matches iOS, where clearing a secure field succeeds unverified instead of failing after the
+// clear worked.
+test('verifyAndroidFilledTextInHierarchy accepts a cleared masked field for an empty expectation', () => {
+  const cleared = verifyAndroidFilledTextInHierarchy(passwordHierarchy(''), 10, 10, '');
+  assert.equal(cleared.ok, true);
+  assert.equal(cleared.masked, true);
+
+  const residue = verifyAndroidFilledTextInHierarchy(
+    passwordHierarchy(maskBullets('Test@123')),
+    10,
+    10,
+    '',
+  );
+  assert.equal(residue.ok, false);
+  assert.equal(residue.reason, 'masked_unverified');
 });
 
 test('fillAndroid accepts matching-length masked password verification', async () => {

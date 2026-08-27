@@ -15,6 +15,36 @@ extension RunnerTests {
   ) -> TextEntryResult {
     let totalStartedAt = Date()
     guard !text.isEmpty else {
+      // Replacing a field WITH the empty string is the clear-field primitive (#2063): the typing
+      // is vacuous but the clear is not. Returning here unconditionally left the old value in
+      // place while the response reported "typed". Append (`type`) and unrepaired entry stay
+      // no-ops, which is what an empty payload means for them.
+      if repairMode == .replacement {
+        guard let clearTarget = resolveTextEntryElement(app: app, target: target) else {
+          // No resolvable input means no clear happened — including the synthesized
+          // first-responder route, whose target carries no element. Success here would claim a
+          // clear the runner never performed.
+          logTextEntryPhase(commandId: commandId, phase: "total", startedAt: totalStartedAt, chars: 0, mode: repairMode)
+          return TextEntryResult(
+            verified: nil,
+            repaired: false,
+            expectedText: "",
+            observedText: nil,
+            failure: .notFocused
+          )
+        }
+        clearTextInput(clearTarget)
+        // nil means the value is unreadable (secure fields), not "not empty": leave `verified`
+        // nil there rather than reporting a mismatch the runner cannot actually observe.
+        let observed = editableTextValue(for: clearTarget, treatingPlaceholderAsEmpty: true)
+        logTextEntryPhase(commandId: commandId, phase: "total", startedAt: totalStartedAt, chars: 0, mode: repairMode)
+        return TextEntryResult(
+          verified: observed.map { $0.isEmpty },
+          repaired: false,
+          expectedText: "",
+          observedText: observed
+        )
+      }
       logTextEntryPhase(commandId: commandId, phase: "total", startedAt: totalStartedAt, chars: 0, mode: repairMode)
       return TextEntryResult(verified: true, repaired: false, expectedText: "", observedText: "")
     }
