@@ -11,6 +11,10 @@ import {
   selectConfiguredFixtures,
   validateGoldenScenarioRecipe,
 } from "./golden-device-contract.mjs";
+import {
+  captureGoldenFixtureEvidence,
+  runGoldenRotationScenario,
+} from "./golden-device-evidence.mjs";
 
 const TERMINAL_JOB_STATUSES = new Set(["ok", "error", "healed", "cancelled"]);
 
@@ -140,113 +144,6 @@ function assertScenarioRuntimeEvidence(scenario, job, fixture) {
   }
 }
 
-async function captureFixtureEvidence(api, writer, fixture, phase) {
-  const encoded = encodeURIComponent(fixture.serial);
-  const directory = `fixtures/${fixture.platform}/${phase}`;
-  const captureSnapshot = () =>
-    api.request({
-      operationId: "target.snapshot.capture",
-      path: `/snapshot?serial=${encoded}&visual=true`,
-    });
-  const captureScreenshot = () =>
-    api.request({
-      operationId: "target.screenshot.capture",
-      path: `/screenshot?serial=${encoded}&ephemeral=1`,
-    });
-  if (fixture.platform === "ios") {
-    // XCTest AX and screenshot use different channels. Keep this coherent
-    // pixels → AX → pixels bracket sequential rather than racing the runner.
-    const before = await captureScreenshot();
-    await writer.screenshot(`${directory}/before.png`, before);
-    const snapshot = await captureSnapshot();
-    if (!isRecord(snapshot) || !Array.isArray(snapshot.nodes)) {
-      fail("Golden iOS snapshot response was malformed", "GOLDEN_SNAPSHOT_INVALID");
-    }
-    await writer.json(`${directory}/tree.json`, snapshot);
-    const after = await captureScreenshot();
-    await writer.screenshot(`${directory}/after.png`, after);
-    return { snapshot, screenshot: after };
-  }
-  const [snapshot, screenshot] = await Promise.all([captureSnapshot(), captureScreenshot()]);
-  if (!isRecord(snapshot) || !Array.isArray(snapshot.nodes)) {
-    fail("Golden Android snapshot response was malformed", "GOLDEN_SNAPSHOT_INVALID");
-  }
-  await writer.json(`${directory}/tree.json`, snapshot);
-  await writer.screenshot(`${directory}/screen.png`, screenshot);
-  return { snapshot, screenshot };
-}
-
-function imageDimensions(screenshot, label) {
-  const width = Number(screenshot?.width);
-  const height = Number(screenshot?.height);
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    fail(`${label} did not include usable screenshot dimensions`, "GOLDEN_ROTATION_UNPROVEN");
-  }
-  return { width, height };
-}
-
-async function runRotationScenario(api, writer, fixture) {
-  const runStep = async (orientation, phase) => {
-    const response = await api.request({
-      operationId: "step.run",
-      method: "POST",
-      path: "/step/run",
-      body: { serial: fixture.serial, step: { kind: "rotate", orientation } },
-    });
-    await writer.json(`fixtures/${fixture.platform}/rotation-${phase}.json`, response);
-    if (!isRecord(response) || response.ok !== true) {
-      fail(
-        `${fixture.platform} rotation ${phase} did not complete successfully.`,
-        "GOLDEN_ROTATION_FAILED",
-      );
-    }
-  };
-  let landscapeError;
-  try {
-    // This is the rotation input's entrance proof. The landscape capture below
-    // is its exit proof and, in turn, the portrait restoration's entrance.
-    await captureFixtureEvidence(api, writer, fixture, "rotation-entrance");
-    await runStep(fixture.rotation.orientation, "landscape");
-    const landscape = await captureFixtureEvidence(api, writer, fixture, "rotation-landscape");
-    const landscapeDimensions = imageDimensions(landscape.screenshot, "Landscape rotation capture");
-    if (landscapeDimensions.width <= landscapeDimensions.height) {
-      fail(
-        `${fixture.platform} rotation did not produce landscape pixels; do not accept an unverified orientation change.`,
-        "GOLDEN_ROTATION_UNPROVEN",
-      );
-    }
-  } catch (error) {
-    landscapeError = error;
-    await writer
-      .json(`fixtures/${fixture.platform}/rotation-landscape-error.json`, errorRecord(error))
-      .catch(() => undefined);
-  }
-
-  // A failed rotation acknowledgement does not prove that the physical device
-  // stayed portrait. Always make one bounded restoration attempt before the
-  // fixture is released, and preserve both failure records if the recovery is
-  // also unsuccessful. The original landscape failure remains the verdict.
-  let restoreError;
-  try {
-    await runStep(fixture.rotation.restoreOrientation, "restore");
-    const portrait = await captureFixtureEvidence(api, writer, fixture, "rotation-restored");
-    const portraitDimensions = imageDimensions(portrait.screenshot, "Portrait restoration capture");
-    if (portraitDimensions.height <= portraitDimensions.width) {
-      fail(
-        `${fixture.platform} rotation did not restore portrait pixels; fixture must be returned to canonical orientation.`,
-        "GOLDEN_ROTATION_UNPROVEN",
-      );
-    }
-  } catch (error) {
-    restoreError = error;
-    await writer
-      .json(`fixtures/${fixture.platform}/rotation-restore-error.json`, errorRecord(error))
-      .catch(() => undefined);
-  }
-  if (landscapeError) throw landscapeError;
-  if (restoreError) throw restoreError;
-}
-
 async function runRecipe(api, writer, fixture, scenario, options) {
   const recipe = fixture.scenarios[scenario];
   const started = await api.request({
@@ -332,7 +229,7 @@ async function preflightFixture(api, writer, fixture) {
       "GOLDEN_LAUNCH_FAILED",
     );
   }
-  await captureFixtureEvidence(api, writer, fixture, "preflight");
+  await captureGoldenFixtureEvidence(api, writer, fixture, "preflight");
 }
 
 async function validateFixtureRecipes(api, writer, fixture, options) {
@@ -365,8 +262,8 @@ async function validateFixtureRecipes(api, writer, fixture, options) {
 async function runFixtureSuite(api, writer, fixture, options) {
   await preflightFixture(api, writer, fixture);
   await runProofReplay(api, writer, fixture, options);
-  await captureFixtureEvidence(api, writer, fixture, "after-proof-replay");
-  await runRotationScenario(api, writer, fixture);
+  await captureGoldenFixtureEvidence(api, writer, fixture, "after-proof-replay");
+  await runGoldenRotationScenario(api, writer, fixture);
   for (const scenario of [
     "delayedSemanticFallback",
     "semanticInput",
@@ -380,7 +277,7 @@ async function runFixtureSuite(api, writer, fixture, options) {
     "appHandoffToSettings",
   ]) {
     await runRecipe(api, writer, fixture, scenario, options);
-    await captureFixtureEvidence(api, writer, fixture, `after-${scenario}`);
+    await captureGoldenFixtureEvidence(api, writer, fixture, `after-${scenario}`);
   }
 }
 
@@ -528,7 +425,7 @@ async function runParallelScheduling(api, writer, fixtures, options) {
   const overlapMs = assertParallelScheduling(jobs, fixtures, options.minimumOverlapMs);
   const captures = await Promise.allSettled(
     fixtures.map((fixture) =>
-      captureFixtureEvidence(api, writer, fixture, "after-parallel-scheduling"),
+      captureGoldenFixtureEvidence(api, writer, fixture, "after-parallel-scheduling"),
     ),
   );
   const captureFailure = captures.find((result) => result.status === "rejected");
@@ -684,7 +581,7 @@ export async function runGoldenFixtureAcceptance(input) {
   if (fixtureEvidenceAuthorized) {
     for (const { fixture } of selected) {
       try {
-        await captureFixtureEvidence(api, writer, fixture, "final");
+        await captureGoldenFixtureEvidence(api, writer, fixture, "final");
       } catch (captureError) {
         finalCaptureErrors.push({ platform: fixture.platform, ...errorRecord(captureError) });
       }

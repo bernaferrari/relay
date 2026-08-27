@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   COMPONENT_SOURCE_LIMIT,
   DEFAULT_SOURCE_LIMIT,
+  SCRIPT_SOURCE_LIMIT,
   evaluateProductDocumentBoundaries,
   evaluateSourceBudgets,
   sourceLineCount,
@@ -45,18 +46,22 @@ test("renderer observation sessions cannot become a second editable graph", () =
   );
 });
 
-test("rejects new component and source monoliths at their respective boundaries", () => {
+test("rejects new component, source, and script monoliths at their respective limits", () => {
   assert.deepEqual(
     evaluateSourceBudgets(
       [
         { path: "packages/app/src/components/new-panel.tsx", lines: COMPONENT_SOURCE_LIMIT + 1 },
         { path: "packages/core/src/new-domain.ts", lines: DEFAULT_SOURCE_LIMIT + 1 },
+        { path: "scripts/new-tool.mjs", lines: SCRIPT_SOURCE_LIMIT + 1 },
+        { path: "packages/app/scripts/new-tool.mts", lines: SCRIPT_SOURCE_LIMIT + 1 },
       ],
       {},
     ),
     [
       `packages/app/src/components/new-panel.tsx has ${COMPONENT_SOURCE_LIMIT + 1} lines; split it below the ${COMPONENT_SOURCE_LIMIT}-line component limit.`,
       `packages/core/src/new-domain.ts has ${DEFAULT_SOURCE_LIMIT + 1} lines; split it below the ${DEFAULT_SOURCE_LIMIT}-line source limit.`,
+      `scripts/new-tool.mjs has ${SCRIPT_SOURCE_LIMIT + 1} lines; split it below the ${SCRIPT_SOURCE_LIMIT}-line script module limit.`,
+      `packages/app/scripts/new-tool.mts has ${SCRIPT_SOURCE_LIMIT + 1} lines; split it below the ${SCRIPT_SOURCE_LIMIT}-line script module limit.`,
     ],
   );
 });

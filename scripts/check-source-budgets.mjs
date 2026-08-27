@@ -6,6 +6,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const DEFAULT_SOURCE_LIMIT = 900;
 export const COMPONENT_SOURCE_LIMIT = 700;
+export const SCRIPT_SOURCE_LIMIT = 650;
 
 /**
  * Existing large modules are explicit debt, not precedent. Their exact current
@@ -25,9 +26,16 @@ export const grandfatheredSourceLimits = Object.freeze({
 });
 
 export function defaultSourceLimit(path) {
+  if ([".mjs", ".mts"].includes(extname(path))) return SCRIPT_SOURCE_LIMIT;
   return path.startsWith("packages/app/src/components/")
     ? COMPONENT_SOURCE_LIMIT
     : DEFAULT_SOURCE_LIMIT;
+}
+
+function sourceKind(path) {
+  if (path.startsWith("packages/app/src/components/")) return "component";
+  if ([".mjs", ".mts"].includes(extname(path))) return "script module";
+  return "source";
 }
 
 export function sourceLineCount(source) {
@@ -45,7 +53,7 @@ export function evaluateSourceBudgets(entries, exceptions = grandfatheredSourceL
     if (ceiling === undefined) {
       if (lines > ordinaryLimit) {
         violations.push(
-          `${path} has ${lines} lines; split it below the ${ordinaryLimit}-line ${path.includes("/components/") ? "component" : "source"} limit.`,
+          `${path} has ${lines} lines; split it below the ${ordinaryLimit}-line ${sourceKind(path)} limit.`,
         );
       }
       continue;
@@ -101,17 +109,20 @@ export function evaluateProductDocumentBoundaries(entries) {
   return violations;
 }
 
-async function sourceFiles(directory) {
+function isTestSource(name) {
+  return /\.(?:test|spec)\.[^.]+$/u.test(name) || name.endsWith(".d.ts");
+}
+
+async function sourceFiles(directory, extensions) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) {
-      files.push(...(await sourceFiles(path)));
+      files.push(...(await sourceFiles(path, extensions)));
       continue;
     }
-    if (![".ts", ".tsx"].includes(extname(entry.name))) continue;
-    if (/\.(?:test|spec)\.[^.]+$/.test(entry.name) || entry.name.endsWith(".d.ts")) continue;
+    if (!extensions.has(extname(entry.name)) || isTestSource(entry.name)) continue;
     files.push(path);
   }
   return files;
@@ -125,12 +136,19 @@ async function inspectRepository() {
   for (const entry of packageDirectories) {
     if (!entry.isDirectory()) continue;
     const sourceRoot = resolve(repositoryRoot, "packages", entry.name, "src");
+    const scriptRoot = resolve(repositoryRoot, "packages", entry.name, "scripts");
     try {
-      files.push(...(await sourceFiles(sourceRoot)));
+      files.push(...(await sourceFiles(sourceRoot, new Set([".ts", ".tsx", ".mjs", ".mts"]))));
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    try {
+      files.push(...(await sourceFiles(scriptRoot, new Set([".mjs", ".mts"]))));
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
   }
+  files.push(...(await sourceFiles(resolve(repositoryRoot, "scripts"), new Set([".mjs", ".mts"]))));
   return Promise.all(
     files.map(async (path) => {
       const source = await readFile(path, "utf8");
