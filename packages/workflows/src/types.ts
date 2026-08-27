@@ -2,7 +2,9 @@ import type {
   AuthoringCommitDestination,
   AuthoringInteraction,
   AuthoringTarget,
+  AppMapCompiledTest,
   AppMapTestStartup,
+  OfflineTestPreflightReport,
   SourceRevision,
 } from "@relay/protocol";
 
@@ -16,14 +18,18 @@ export type RunTestIntent = {
   /** Current is read once and frozen before compilation. */
   revision?: "current" | { exact: number };
   startup?: AppMapTestStartup;
+  targetProfileId?: string;
   sourceRevision?: SourceRevision;
   capture?: { fullSurfaceScreenIds: readonly string[] };
+  /** Stable before dispatch so a renderer crash can adopt the queued job. */
+  workflowRequestId?: string;
 };
 
 /** Start one canonical recording session and leave it ready to accept recorded
  * interactions. The App Map revision is frozen before any target mutation. */
 export type AuthorTestIntent = {
   kind: "author-test";
+  actorId: string;
   title: string;
   appMapId: string;
   target: AuthoringTarget;
@@ -47,6 +53,23 @@ export type RepeatTestIntent = {
 };
 
 export type WorkflowIntent = RunTestIntent | AuthorTestIntent | RepeatTestIntent;
+
+export type AuthorTestRecoveryIntent = { kind: "author-test"; sessionId: string };
+export type RunTestRecoveryIntent = {
+  kind: "run-test";
+  frozen: FrozenRunTestIdentity;
+  /** Client time immediately before the outcome-unknown enqueue request. */
+  startedAfter: number;
+};
+export type RepeatTestRecoveryIntent = {
+  kind: "repeat-test";
+  appMapId: string;
+  testId: string;
+};
+export type WorkflowRecoveryIntent =
+  | RunTestRecoveryIntent
+  | AuthorTestRecoveryIntent
+  | RepeatTestRecoveryIntent;
 
 export type WorkflowPhase =
   | "blocked"
@@ -85,12 +108,15 @@ export type FrozenRunTestIdentity = {
   planDigest: string;
   target: AuthoringTarget;
   startup?: AppMapTestStartup;
+  targetProfileId?: string;
   sourceRevision?: SourceRevision;
   capture?: { fullSurfaceScreenIds: readonly string[] };
+  workflowRequestId?: string;
 };
 
 export type FrozenAuthorTestIdentity = {
   title: string;
+  actorId: string;
   appMapId: string;
   appMapRevision: number;
   target: AuthoringTarget;
@@ -138,6 +164,7 @@ export type RunTestSnapshot = {
   ref?: WorkflowRef;
   frozen?: FrozenRunTestIdentity;
   execution?: { jobId: string; runId?: string };
+  compiled?: { plan: AppMapCompiledTest; preflight: OfflineTestPreflightReport };
   progress: { label: string; completed?: number; total?: number };
   allowedNextActions: readonly RunWorkflowAction[];
   problems: readonly WorkflowProblem[];
@@ -186,6 +213,7 @@ export type AuthorTestSnapshot = {
     takeId?: string;
     takeRevision?: number;
     committedConnectionId?: string;
+    committedTestId?: string;
   };
   review?: AuthoringReview;
   progress: { label: string; completed?: number; total?: number };
@@ -205,6 +233,15 @@ export type RepeatOutcomeCounts = {
   cancelled: number;
 };
 
+export type RepeatValueResult = {
+  cellId: string;
+  valueId: string;
+  phase: "pilot" | "remaining";
+  status: "untouched" | "running" | "passed" | "failed" | "needs-review" | "cancelled";
+  runId?: string;
+  error?: string;
+};
+
 export type RepeatTestSnapshot = {
   schemaVersion: 1;
   kind: "repeat-test";
@@ -214,8 +251,10 @@ export type RepeatTestSnapshot = {
   version: string;
   ref?: WorkflowRef;
   frozen?: FrozenRepeatTestIdentity;
-  repeat?: { id: string; pilotJobId: string };
+  repeat?: { id: string };
   outcomes: RepeatOutcomeCounts;
+  /** One inspectable result per selected value; counts are only a summary. */
+  results: readonly RepeatValueResult[];
   progress: { label: string; completed?: number; total?: number };
   allowedNextActions: readonly RepeatWorkflowAction[];
   problems: readonly WorkflowProblem[];
@@ -256,4 +295,7 @@ export interface RelayWorkflows {
   start(intent: RepeatTestIntent): Promise<RepeatTestSnapshot>;
   advance(decision: WorkflowDecision): Promise<WorkflowSnapshot>;
   inspect(ref: WorkflowRef): Promise<WorkflowSnapshot>;
+  recover(intent: RunTestRecoveryIntent): Promise<RunTestSnapshot>;
+  recover(intent: AuthorTestRecoveryIntent): Promise<AuthorTestSnapshot>;
+  recover(intent: RepeatTestRecoveryIntent): Promise<RepeatTestSnapshot>;
 }

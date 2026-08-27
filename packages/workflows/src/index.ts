@@ -14,6 +14,7 @@ export type {
   AuthoringReview,
   AuthorTestDecision,
   AuthorTestIntent,
+  AuthorTestRecoveryIntent,
   AuthorTestSnapshot,
   FrozenAuthorTestIdentity,
   FrozenRepeatTestIdentity,
@@ -22,6 +23,7 @@ export type {
   RepeatOutcomeCounts,
   RepeatTestDecision,
   RepeatTestIntent,
+  RepeatTestRecoveryIntent,
   RepeatTestSnapshot,
   RunTestDecision,
   RunTestIntent,
@@ -31,6 +33,7 @@ export type {
   WorkflowPhase,
   WorkflowProblem,
   WorkflowRef,
+  WorkflowRecoveryIntent,
   WorkflowSnapshot,
 } from "./types.js";
 export type {

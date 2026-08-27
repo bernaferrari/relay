@@ -2,6 +2,7 @@ import { Show, createEffect, createMemo, createSignal, on } from "solid-js";
 import type { Proposal } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
+import { useRecorder } from "../context/recorder";
 import { useAppMapProposalReview } from "../lib/use-app-map-proposal-review";
 import { useElementWidth } from "../lib/use-element-width";
 import { scenarioDiagnostics, scenarioStepCount } from "../lib/app-map-test-editor-model";
@@ -28,6 +29,8 @@ import { AppMapTestProposalReview } from "./app-map-test-proposal-review";
 import { AppMapTestPreflight } from "./app-map-test-preflight";
 import { AppMapTestCombineStrip } from "./app-map-test-combine-strip";
 import { AppMapTestSourceDialog } from "./app-map-test-source-dialog";
+import type { AppMapTestSourceApply } from "../lib/app-map-test-source";
+import { AppMapTestRecordingPanel } from "./app-map-test-recording-panel";
 import { createAppMapTestDocumentSession } from "./app-map-test-document-session";
 import {
   RailStrip,
@@ -40,9 +43,12 @@ export function AppMapTestWorkspace(props: {
   testId?: string;
   onTestChange?: (testId: string) => void;
   onOpenRun?: (runId: string) => void;
+  onChooseTarget?: () => void;
+  onOpenTarget?: () => void;
   onRecord?: () => void;
 }) {
   const server = useServer();
+  const recorder = useRecorder();
   const [proposalReviewOpen, setProposalReviewOpen] = createSignal(false);
   const [sourceOpen, setSourceOpen] = createSignal(false);
   const [preflightOpen, setPreflightOpen] = createSignal(false);
@@ -58,6 +64,16 @@ export function AppMapTestWorkspace(props: {
     steps: testRailPresentation("steps", mode(), railOpen().steps),
     device: testRailPresentation("device", mode(), railOpen().device),
   }));
+
+  createEffect(() => {
+    if (
+      recorder.recording() ||
+      recorder.take()?.state === "review" ||
+      recorder.authoringNeedsAttention()
+    ) {
+      setRailOverride((current) => ({ ...current, device: true }));
+    }
+  });
 
   // The run session and the document session each need the other, and both only
   // call back once the component is running, so the reference is filled in below.
@@ -140,8 +156,7 @@ export function AppMapTestWorkspace(props: {
     offline: () => server.isOffline(),
     jobs: () => server.jobs(),
     refreshJobs: () => server.refreshJobs(),
-    cancelJob: (id) => server.cancelJob(id),
-    compileAndRun: (input) => server.runAction("app-map.test.run", input),
+    client: { invoke: server.runAction },
     compile: (input) => server.runAction("app-map.test.compile", input),
     awaitPendingSaves,
   });
@@ -173,13 +188,35 @@ export function AppMapTestWorkspace(props: {
     queueMicrotask(() => document.getElementById("test-step-search")?.focus());
   }
 
+  async function applySource(update: Extract<AppMapTestSourceApply, { ok: true }>): Promise<void> {
+    const map = appMap();
+    if (!map || saveState() !== "saved") {
+      throw new Error(
+        "Wait for the latest Test changes to finish saving, then apply Source again.",
+      );
+    }
+    await server.runAction("app-map.commit", {
+      appMapId: map.id,
+      expectedRevision: map.revision,
+      summary: `Updated ${update.test.name} from Test Source`,
+      changes: [{ kind: "test.save", test: update.test }, ...update.repeatChanges],
+    });
+    await server.refreshAppMaps();
+  }
+
   /** Escape closes a floating rail and hands focus back to the toggle that opened it. */
   function dismissOverlayRail(): void {
     const rail = (["steps", "device"] as const).find((kind) => railView()[kind] === "overlay");
     if (!rail) return;
+    const trigger = document.querySelector<HTMLElement>(`[data-test-rail-toggle="${rail}"]`);
+    trigger?.focus();
     setRailOverride((current) => ({ ...current, [rail]: false }));
     queueMicrotask(() =>
       document.querySelector<HTMLElement>(`[data-test-rail-toggle="${rail}"]`)?.focus(),
+    );
+    setTimeout(
+      () => document.querySelector<HTMLElement>(`[data-test-rail-toggle="${rail}"]`)?.focus(),
+      0,
     );
   }
 
@@ -272,29 +309,41 @@ export function AppMapTestWorkspace(props: {
   function DeviceRail() {
     return (
       <Show
-        when={draft()}
+        when={
+          recorder.recording() ||
+          recorder.take()?.state === "review" ||
+          recorder.authoringNeedsAttention()
+        }
         fallback={
-          // Otherwise this column is a second unexplained void: the same grey as
-          // the rail beside it, with nothing in it and no label saying what it
-          // is waiting for.
-          <div class="grid min-h-full place-items-center p-6 text-center">
-            <p class="m-0 max-w-[28ch] text-caption/[1.5] text-text-weak">
-              Screenshots from this Test’s last run appear here.
-            </p>
-          </div>
+          <Show
+            when={draft()}
+            fallback={
+              <div class="grid min-h-full place-items-center p-6 text-center">
+                <p class="m-0 max-w-[28ch] text-caption/[1.5] text-text-weak">
+                  Screenshots from this Test’s last run appear here.
+                </p>
+              </div>
+            }
+          >
+            {(test) => (
+              <AppMapTestDeviceEvidence
+                appMap={appMap() ?? undefined}
+                test={test()}
+                selectedStepId={selectedStepId()}
+                compiledPlan={testRun.plan()}
+                onOpenRun={props.onOpenRun}
+                onSelectStep={setSelectedStepId}
+                onClose={() => toggleRail("device")}
+              />
+            )}
+          </Show>
         }
       >
-        {(test) => (
-          <AppMapTestDeviceEvidence
-            appMap={appMap() ?? undefined}
-            test={test()}
-            selectedStepId={selectedStepId()}
-            compiledPlan={testRun.plan()}
-            onOpenRun={props.onOpenRun}
-            onSelectStep={setSelectedStepId}
-            onClose={() => toggleRail("device")}
-          />
-        )}
+        <AppMapTestRecordingPanel
+          appMap={appMap()!}
+          onTestCreated={(testId) => selectTest(testId)}
+          onOpenTargets={props.onChooseTarget ?? (() => undefined)}
+        />
       </Show>
     );
   }
@@ -308,6 +357,7 @@ export function AppMapTestWorkspace(props: {
           ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable;
         // Escape is the way out of a floating rail even from its own search field.
         if (event.key === "Escape") {
+          event.preventDefault();
           dismissOverlayRail();
           return;
         }
@@ -383,6 +433,7 @@ export function AppMapTestWorkspace(props: {
             size="sm"
             class="shrink-0"
             aria-haspopup="dialog"
+            disabled={saveState() !== "saved"}
             onClick={() => setSourceOpen(true)}
           >
             <Icon name="edit" size={13} /> Source
@@ -547,6 +598,9 @@ export function AppMapTestWorkspace(props: {
                       map={appMap()!}
                       test={test()}
                       ready={saveState() === "saved"}
+                      onChooseTarget={props.onChooseTarget}
+                      onOpenTarget={props.onOpenTarget}
+                      onOpenRun={props.onOpenRun}
                     />
                   )}
                 </Show>
@@ -603,7 +657,7 @@ export function AppMapTestWorkspace(props: {
         <AppMapTestSourceDialog
           map={appMap()!}
           test={draft()!}
-          onApply={queueSave}
+          onApply={applySource}
           onClose={() => setSourceOpen(false)}
         />
       </Show>

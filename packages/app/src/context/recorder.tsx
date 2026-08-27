@@ -1,14 +1,16 @@
-import { createMemo, createSignal } from "solid-js";
+import { createSignal } from "solid-js";
 import type { AuthoringInteraction, AuthoringSession, AuthoringVideoClip } from "@relay/protocol";
 import { createSimpleContext } from "@relay/ui/context/helper";
 import { useServer } from "./server";
 import { nodeAtPoint, targetFromStrategy, type PickStrategy } from "../lib/snapshot";
-import { sentenceForStep } from "../lib/step-sentence";
 import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
 import { toast } from "./toast";
 import { humanError } from "../lib/human-error";
-import { dispatchWithSafePointFallback, interactionSucceeded } from "../lib/ios-interaction-safety";
-import type { InteractionAttemptOutcome } from "../lib/server-capture";
+import {
+  canFlushBufferedTypeAfterLiveInput,
+  dispatchWithSafePointFallback,
+  interactionSucceeded,
+} from "../lib/ios-interaction-safety";
 import {
   authoringTargetFromPhysicalIosStep,
   buildTapTarget,
@@ -21,15 +23,16 @@ import {
   stableLiveTapStep,
 } from "../lib/recorder-tap-targeting";
 import {
-  issueFromSession,
-  projectTake,
   projectedObservation,
-  selectProjectedAuthoringSession,
   sessionRevision,
   snapshotFromAuthoringSession,
   type CapturedMapScreen,
   type CapturedStartScreen,
 } from "./recorder-projection";
+import { createAuthorTestWorkflowBoundary } from "../lib/author-test-workflow-coordinator";
+import { createSingleFlightAction } from "../lib/single-flight-action";
+import { createPendingRecordingScopeActions } from "./recorder-pending-scope";
+import { createRecorderAuthoringState } from "./recorder-authoring-state";
 
 export {
   authoringTargetFromPhysicalIosStep,
@@ -57,17 +60,7 @@ export type {
 
 export type RecLevel = "smart" | "element" | "point";
 
-export const describeStep = sentenceForStep;
-
-/**
- * A live Android key command can be either applied, unavailable, or an iOS
- * command whose outcome is unknown. Only the unavailable case may be followed
- * by the canonical semantic type action. The unknown case is a review stop,
- * never a reason to type again.
- */
-export function canFlushBufferedTypeAfterLiveInput(outcome: InteractionAttemptOutcome): boolean {
-  return outcome.status !== "ios-outcome-unknown";
-}
+export { canFlushBufferedTypeAfterLiveInput } from "../lib/ios-interaction-safety";
 
 export const { use: useRecorder, provider: RecorderProvider } = createSimpleContext({
   name: "Recorder",
@@ -76,26 +69,34 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     const server = useServer();
     const [interacting, setInteracting] = createSignal(false);
     const [localArming, setLocalArming] = createSignal(false);
+    const [checkpointBusy, setCheckpointBusy] = createSignal(false);
     const [pendingGroup, setPendingGroup] = createSignal("");
     const [pendingSourceScreenId, setPendingSourceScreenId] = createSignal<string>();
     const [pendingConnectionId, setPendingTransitionId] = createSignal<string>();
+    const { workflow: authoringWorkflow, snapshot: workflowSnapshot } =
+      createAuthorTestWorkflowBoundary({
+        client: { invoke: (id, value) => server.runAction(id, value) },
+        refreshAuthoringSessions: server.refreshAuthoringSessions,
+        refreshAppMaps: server.refreshAppMaps,
+      });
 
-    const activeSession = createMemo(() =>
-      selectProjectedAuthoringSession(server.authoringSessions(), {
-        appMapId: server.selectedAppMapId(),
-        targetId: server.selectedDevice(),
-        actorId: server.actorId(),
-      }),
-    );
-    const ownsActiveSession = () => activeSession()?.actorId === server.actorId();
-    const take = createMemo(() => {
-      const session = activeSession();
-      return session ? projectTake(session, server.authoringEvidenceUrl) : null;
+    const {
+      activeSession,
+      ownsActiveSession,
+      take,
+      needsAttention: authoringNeedsAttention,
+      restoring: restoringAuthoring,
+      recording,
+      arming,
+      issue: recordingIssue,
+      group: recordingGroup,
+    } = createRecorderAuthoringState({
+      server,
+      workflow: authoringWorkflow,
+      workflowSnapshot,
+      localArming,
+      pendingGroup,
     });
-    const recording = createMemo(() => activeSession()?.state === "recording");
-    const arming = createMemo(() => localArming() || activeSession()?.state === "preparing");
-    const recordingIssue = createMemo(() => issueFromSession(activeSession()));
-    const recordingGroup = createMemo(() => activeSession()?.group ?? pendingGroup());
 
     const targetReady = () =>
       targetIsReady(
@@ -103,24 +104,17 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         server.health() === "online",
       );
 
-    function setRecordingGroup(value: string): void {
-      if (activeSession()) return;
-      setPendingGroup(value.slice(0, 96));
-    }
-
-    function setRecordingSourceScreen(value: string | undefined): void {
-      if (activeSession()) return;
-      setPendingSourceScreenId(value);
-    }
-
-    function setRecordingTransition(value: string | undefined): void {
-      if (activeSession()) return;
-      setPendingTransitionId(value);
-    }
-
-    function startNextRecordingGroup(): void {
-      if (!activeSession()) setPendingGroup("");
-    }
+    const {
+      setRecordingGroup,
+      setRecordingSourceScreen,
+      setRecordingTransition,
+      startNextRecordingGroup,
+    } = createPendingRecordingScopeActions({
+      hasActiveSession: () => Boolean(activeSession()),
+      setGroup: setPendingGroup,
+      setSourceScreenId: setPendingSourceScreenId,
+      setTransitionId: setPendingTransitionId,
+    });
 
     async function ensureControlLease(serial: string): Promise<string | null> {
       // Validate ownership at the server boundary; a renderer-local id can
@@ -130,6 +124,14 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     }
 
     async function ensureDirectControl(): Promise<boolean> {
+      if (restoringAuthoring()) {
+        toast("Relay is restoring the canonical recording state", "info");
+        return false;
+      }
+      if (authoringNeedsAttention()) {
+        toast("Inspect the uncertain recording outcome before controlling this device", "warning");
+        return false;
+      }
       const serial = server.selectedDevice();
       if (!serial) return false;
       if (await ensureControlLease(serial)) return true;
@@ -143,6 +145,11 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     }
 
     async function enterRecordModeCore(): Promise<boolean> {
+      if (restoringAuthoring()) return false;
+      if (authoringNeedsAttention()) {
+        toast("Inspect the uncertain recording outcome before recording again", "warning");
+        return false;
+      }
       const existing = activeSession();
       if (existing) {
         if (!ownsActiveSession()) {
@@ -153,9 +160,16 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         // start (for example, Home has no active app session).
         if (existing.state === "ready") {
           try {
-            const session = await server.startAuthoringSession(existing.id);
-            setInteracting(session.state === "recording");
-            return session.state === "recording";
+            const snapshot = await authoringWorkflow.inspect(existing.id);
+            if (!snapshot) {
+              toast(
+                "This older recording preparation cannot be resumed safely. Cancel it and record the Test again.",
+                "warning",
+              );
+              return false;
+            }
+            setInteracting(snapshot.stage === "recording");
+            return snapshot.stage === "recording";
           } catch (error) {
             toast(humanError(error), "warning");
             return false;
@@ -183,7 +197,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       try {
         const appMap = await server.loadAppMap(appMapId);
-        let session = await server.createAuthoringSession({
+        const snapshot = await authoringWorkflow.start({
+          kind: "author-test",
+          actorId: server.actorId(),
+          title: pendingGroup().trim() || "New Test",
           appMapId,
           target:
             device.platform === "browser"
@@ -194,22 +211,23 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
                   targetId: device.serial,
                 },
           leaseId,
-          expectedAppMapRevision: appMap.revision,
+          revision: { exact: appMap.revision },
           ...(pendingSourceScreenId() ? { sourceScreenId: pendingSourceScreenId() } : {}),
           ...(pendingConnectionId() ? { pendingConnectionId: pendingConnectionId() } : {}),
           ...(pendingGroup().trim() ? { group: pendingGroup().trim() } : {}),
         });
-        session = await server.observeAuthoringSession(session.id);
-        if (session.state !== "ready") {
+        if (snapshot.stage !== "recording") {
           toast(
-            humanError(session.error || "Relay could not prepare this device for recording"),
+            humanError(
+              snapshot.problems.at(-1)?.detail ||
+                "Relay could not prepare this device for recording",
+            ),
             "warning",
           );
           return false;
         }
-        session = await server.startAuthoringSession(session.id);
-        setInteracting(session.state === "recording");
-        return session.state === "recording";
+        setInteracting(true);
+        return true;
       } catch (error) {
         toast(humanError(error), "warning");
         return false;
@@ -224,6 +242,13 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       } finally {
         setLocalArming(false);
       }
+    }
+
+    async function inspectRecording(): Promise<boolean> {
+      const sessionId = workflowSnapshot()?.authoring?.sessionId ?? activeSession()?.id;
+      if (!sessionId) return false;
+      const inspected = await authoringWorkflow.inspect(sessionId);
+      return Boolean(inspected && inspected.phase !== "needs-attention");
     }
 
     /** Capture the current target through the authoritative observation
@@ -395,13 +420,15 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       await flushType();
       const session = activeSession();
       if (!session || !ownsActiveSession() || session.state !== "recording") return;
-      const stopped = await server.stopAuthoringSession(session.id);
-      if (stopped.state === "cancelled") {
+      const stopped = await authoringWorkflow.advance(session.id, { action: "stop" });
+      if (!stopped) return;
+      if (stopped.stage === "cancelled") {
         setInteracting(false);
         toast("Nothing recorded · returned to the map", "info");
         return;
       }
-      if (stopped.error) toast(humanError(stopped.error), "warning");
+      const problem = stopped.problems.at(-1);
+      if (problem) toast(humanError(problem.detail), "warning");
       setInteracting(true);
     }
 
@@ -414,7 +441,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       if (server.health() !== "online") return false;
       try {
         const session = activeSession();
-        const recordingHere = session?.state === "recording" && ownsActiveSession();
+        const recordingHere = recording() && session?.state === "recording" && ownsActiveSession();
         // A recording session owns the lease and is the execute + record
         // boundary; a second direct path could race it on physical iOS.
         if (!recordingHere && !alreadyApplied && !(await ensureDirectControl())) return false;
@@ -449,35 +476,13 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           ? authoringTargetFromPhysicalIosStep(physicalIosStep, target)
           : target;
         if (recordingHere && session) {
-          const primary = () =>
-            server.interactAuthoringSession(session.id, {
-              kind: "tap",
-              target: physicalIosTarget,
-              ...(alreadyApplied ? { applied: true } : {}),
-            });
-          if (physicalIos) {
-            await dispatchWithSafePointFallback({
-              platform: "ios",
-              kind: "tap",
-              hasPoint: !alreadyApplied && Boolean(target.point),
-              attempt: primary,
-              pointFallback: () =>
-                server.interactAuthoringSession(session.id, {
-                  kind: "tap",
-                  target: { point: target.point! },
-                }),
-            });
-          } else {
-            try {
-              await primary();
-            } catch (error) {
-              if (alreadyApplied || !target.point || !canRetryTapAtPoint(error)) throw error;
-              await server.interactAuthoringSession(session.id, {
-                kind: "tap",
-                target: { point: target.point },
-              });
-            }
-          }
+          // The canonical authoring operation owns selector fallback. A second
+          // renderer mutation would be unsafe after an uncertain outcome.
+          await authoringWorkflow.record(session.id, {
+            kind: "tap",
+            target: physicalIosTarget,
+            ...(alreadyApplied ? { applied: true } : {}),
+          });
           return true;
         }
         if (alreadyApplied) return true;
@@ -544,7 +549,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       if (server.health() !== "online") return false;
       try {
         const session = activeSession();
-        const recordingHere = session?.state === "recording" && ownsActiveSession();
+        const recordingHere = recording() && session?.state === "recording" && ownsActiveSession();
         if (!recordingHere && !alreadyApplied && !(await ensureDirectControl())) return false;
         await flushType();
         const selectedDevice = server
@@ -581,7 +586,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           ...(alreadyApplied ? { applied: true } : {}),
         };
         if (recordingHere && session) {
-          await server.interactAuthoringSession(session.id, interaction);
+          await authoringWorkflow.record(session.id, interaction);
           return true;
         }
         if (alreadyApplied) return true;
@@ -609,7 +614,13 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       relativeAnchor?: Parameters<typeof targetFromStrategy>[5],
     ): Promise<void> {
       const session = activeSession();
-      if (!session || session.state !== "recording" || !ownsActiveSession()) return;
+      if (
+        !session ||
+        session.state !== "recording" ||
+        !ownsActiveSession() ||
+        authoringNeedsAttention()
+      )
+        return;
       const snapshot =
         snapshotFromAuthoringSession(session) ??
         server.snapshot() ??
@@ -617,7 +628,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       if (!hasUsableDeviceBounds(snapshot)) return;
       const target = targetFromStrategy(strategy, fx, fy, snapshot.bounds, anchor, relativeAnchor);
       try {
-        await server.interactAuthoringSession(session.id, { kind: "tap", target });
+        await authoringWorkflow.record(session.id, { kind: "tap", target });
       } catch (error) {
         toast(humanError(error), "warning");
       }
@@ -626,21 +637,29 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     async function replayTake(): Promise<boolean> {
       const session = activeSession();
       if (!session || session.state !== "reviewing" || !ownsActiveSession()) return false;
-      const replayed = await server.replayAuthoringTake(session.id);
-      const attempt = replayed.take?.replayAttempts.at(-1);
+      const replayed = await authoringWorkflow.advance(session.id, { action: "replay" });
+      const attempt = replayed?.review?.latestReplay;
       if (attempt?.outcome === "failed" && attempt.error) throw new Error(attempt.error);
       return attempt?.outcome === "passed";
     }
 
-    async function addCheckpoint(label = "Checkpoint"): Promise<void> {
-      const session = activeSession();
-      if (!session || session.state !== "recording" || !ownsActiveSession()) return;
-      try {
-        await server.interactAuthoringSession(session.id, { kind: "screenshot", label });
-      } catch (error) {
-        toast(humanError(error, "Could not save this checkpoint"), "warning");
-      }
-    }
+    const addCheckpoint = createSingleFlightAction({
+      onBusyChange: setCheckpointBusy,
+      action: async (label: string = "Checkpoint"): Promise<void> => {
+        const session = activeSession();
+        if (!session || session.state !== "recording" || !ownsActiveSession()) return;
+        try {
+          const snapshot = await authoringWorkflow.advance(session.id, {
+            action: "checkpoint",
+            label,
+          });
+          const problem = snapshot?.problems.at(-1);
+          if (problem) throw new Error(problem.detail);
+        } catch (error) {
+          toast(humanError(error, "Could not save this checkpoint"), "warning");
+        }
+      },
+    });
 
     async function keepTake(
       input: {
@@ -649,14 +668,29 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           | { kind: "screen"; screenId: string }
           | { kind: "end" };
       } = {},
-    ): Promise<AuthoringSession | null> {
+    ): Promise<Pick<AuthoringSession, "committedConnectionId" | "committedTestId"> | null> {
       const session = activeSession();
       if (!session || session.state !== "reviewing" || !ownsActiveSession()) return null;
-      const committed = await server.commitAuthoringSession(session.id, input);
+      const committed = await authoringWorkflow.advance(session.id, {
+        action: "approve",
+        ...input,
+      });
+      if (committed?.stage !== "committed") {
+        const problem = committed?.problems.at(-1);
+        if (problem) throw new Error(problem.detail);
+        return null;
+      }
       setPendingSourceScreenId(undefined);
       setPendingTransitionId(undefined);
       setPendingGroup("");
-      return committed;
+      return {
+        ...(committed.authoring?.committedConnectionId
+          ? { committedConnectionId: committed.authoring.committedConnectionId }
+          : {}),
+        ...(committed.authoring?.committedTestId
+          ? { committedTestId: committed.authoring.committedTestId }
+          : {}),
+      };
     }
 
     async function discardTake(): Promise<void> {
@@ -670,8 +704,9 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         return;
       }
       try {
-        if (session.state === "reviewing") await server.discardAuthoringSession(session.id);
-        else await server.cancelAuthoringSession(session.id);
+        await authoringWorkflow.proved(session.id, {
+          action: session.state === "reviewing" ? "discard" : "cancel",
+        });
         setPendingSourceScreenId(undefined);
         setPendingTransitionId(undefined);
         setPendingGroup("");
@@ -691,15 +726,19 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         .filter((item) => item.id === actionId)
         .map((item) => item.position);
       if (indexes.length > 1) {
-        await server.replaceAuthoringAction(session.id, actionId, {
-          kind: "steps",
-          steps: indexes
-            .filter((position) => position !== index)
-            .map((position) => current.steps[position]!),
+        await authoringWorkflow.proved(session.id, {
+          action: "replace",
+          actionId,
+          interaction: {
+            kind: "steps",
+            steps: indexes
+              .filter((position) => position !== index)
+              .map((position) => current.steps[position]!),
+          },
         });
       } else {
         const actionIds = [...new Set(current.actionIds.filter((id) => id !== actionId))];
-        await server.trimAuthoringTake(session.id, { actionIds });
+        await authoringWorkflow.proved(session.id, { action: "trim", actionIds });
       }
     }
 
@@ -707,7 +746,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       const current = take();
       const session = activeSession();
       if (!current || !session || session.state !== "reviewing" || !ownsActiveSession()) return;
-      await server.reorderAuthoringTake(session.id, [...actionIds]);
+      await authoringWorkflow.proved(session.id, {
+        action: "reorder",
+        actionIds: [...actionIds],
+      });
     }
 
     async function replaceTakeAction(
@@ -724,7 +766,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         !current.actions.some((action) => action.id === actionId)
       )
         return;
-      await server.replaceAuthoringAction(session.id, actionId, interaction);
+      await authoringWorkflow.proved(session.id, { action: "replace", actionId, interaction });
     }
 
     async function removeTakeAction(actionId: string): Promise<void> {
@@ -732,7 +774,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       const session = activeSession();
       if (!current || !session || session.state !== "reviewing" || !ownsActiveSession()) return;
       if (!current.actions.some((action) => action.id === actionId)) return;
-      await server.trimAuthoringTake(session.id, {
+      await authoringWorkflow.proved(session.id, {
+        action: "trim",
         actionIds: current.actions
           .map((action) => action.id)
           .filter((candidate) => candidate !== actionId),
@@ -742,7 +785,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     async function setTakeVideoClip(videoClip: AuthoringVideoClip): Promise<void> {
       const session = activeSession();
       if (!session || !ownsActiveSession()) return;
-      await server.trimAuthoringTake(session.id, {
+      await authoringWorkflow.proved(session.id, {
+        action: "trim",
         fromMs: videoClip.startMs,
         toMs: videoClip.endMs,
       });
@@ -750,7 +794,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
 
     const [typeBuffer, setTypeBuffer] = createSignal("");
     let typeTimer: ReturnType<typeof setTimeout> | undefined;
-    let typeDelivery = Promise.resolve<InteractionAttemptOutcome>({ status: "failed" });
+    let typeDelivery: ReturnType<typeof server.keyDevice> = Promise.resolve({ status: "failed" });
 
     function queueDeviceKey(
       input: { kind: "text"; text: string } | { kind: "key"; key: "enter" | "backspace" },
@@ -777,8 +821,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       if (!canFlushBufferedTypeAfterLiveInput(delivery)) return;
       const applied = interactionSucceeded(delivery);
       const session = activeSession();
-      if (session?.state === "recording" && ownsActiveSession()) {
-        await server.interactAuthoringSession(session.id, {
+      if (session?.state === "recording" && ownsActiveSession() && !authoringNeedsAttention()) {
+        await authoringWorkflow.record(session.id, {
           kind: "type",
           text,
           ...(applied ? { applied: true } : {}),
@@ -816,6 +860,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     return {
       interacting,
       setInteracting,
+      checkpointBusy,
+      authoringNeedsAttention,
       recording,
       arming,
       recordingIssue,
@@ -837,6 +883,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       setRecordingTransition,
       startNextRecordingGroup,
       enterRecordMode,
+      inspectRecording,
       captureStartScreen,
       captureMapScreen,
       stopRecording,

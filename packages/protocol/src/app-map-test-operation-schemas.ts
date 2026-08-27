@@ -76,10 +76,26 @@ export const appMapTestRunInputSchema = z
     executionMode: z.enum(["pilot", "all"]).optional(),
     cell: identifier("World or Combine cell selector").optional(),
     sourceRevision: sourceRevisionSchema.optional(),
+    workflowRequestId: identifier("Durable outcome-workflow request identifier").optional(),
+    repeatRecovery: z
+      .object({
+        schemaVersion: z.literal(1),
+        testPlanDigest: text("Frozen Test plan digest"),
+      })
+      .strict()
+      .optional()
+      .describe("Internal adoption identity for an outcome-level Repeat workflow"),
   })
   .strict()
   .superRefine((input, context) => {
     if (input.in === undefined) return;
+    if (input.repeatRecovery && Object.keys(input.in).length !== 1) {
+      context.addIssue({
+        code: "custom",
+        message: "repeatRecovery requires exactly one Repeat dimension",
+        path: ["repeatRecovery"],
+      });
+    }
     if (input.startup !== undefined) {
       context.addIssue({
         code: "custom",
@@ -115,6 +131,7 @@ export const appMapTestCompileInputSchema = z
       "Optional mapped screen identifier to compile as a verified live checkpoint",
     ).optional(),
     targetProfileId: identifier("Saved runtime evidence profile to scope offline proof").optional(),
+    forceRecaptureScreenIds: forceRecaptureScreenIds.optional(),
   })
   .strict();
 

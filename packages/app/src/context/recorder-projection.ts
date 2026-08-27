@@ -10,6 +10,7 @@ import type {
   OperationOutput,
   TargetProfile,
 } from "@relay/protocol";
+import type { AuthorTestSnapshot } from "@relay/workflows";
 import type { RecipeStep, SnapshotNode, SnapshotState } from "./server";
 
 export type RecordingTakeAction = {
@@ -203,6 +204,26 @@ export function issueFromSession(session: AuthoringSession | null): RecordingIss
     kind: /sign|xcode|runner|developer mode|provision/i.test(session.error) ? "setup" : "screen",
     message: session.error,
   };
+}
+
+export function authoringWorkflowNeedsAttention(
+  session: AuthoringSession | null,
+  snapshot: AuthorTestSnapshot | undefined,
+): boolean {
+  return Boolean(
+    snapshot?.phase === "needs-attention" &&
+    (!snapshot.authoring?.sessionId || snapshot.authoring.sessionId === session?.id),
+  );
+}
+
+export function projectedRecordingIssue(
+  session: AuthoringSession | null,
+  snapshot: AuthorTestSnapshot | undefined,
+): RecordingIssue | null {
+  const canonical = issueFromSession(session);
+  if (canonical) return canonical;
+  const problem = snapshot?.problems.at(-1);
+  return problem ? { kind: "screen", message: problem.detail } : null;
 }
 
 export function selectProjectedAuthoringSession(

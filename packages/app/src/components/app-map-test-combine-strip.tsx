@@ -4,6 +4,7 @@ import {
   createRelayWorkflows,
   type RepeatTestDecision,
   type RepeatTestSnapshot,
+  type WorkflowRef,
 } from "@relay/workflows";
 import { Button } from "@relay/ui/button";
 import { Switch } from "@relay/ui/switch";
@@ -27,11 +28,19 @@ import {
   testSelectedRow,
 } from "../lib/app-map-test-editor-styles";
 
+function repeatStatusLabel(status: RepeatTestSnapshot["results"][number]["status"]): string {
+  if (status === "needs-review") return "Needs review";
+  return `${status.slice(0, 1).toUpperCase()}${status.slice(1)}`;
+}
+
 export function AppMapTestCombineStrip(props: {
   map: AppMap;
   test: AppMapScenarioTest;
   ready: boolean;
   onStarted?: () => void;
+  onChooseTarget?: () => void;
+  onOpenTarget?: () => void;
+  onOpenRun?: (runId: string) => void;
 }) {
   const server = useServer();
   const candidates = createMemo(() => applyableVariables(Object.values(props.map.variables ?? {})));
@@ -40,19 +49,91 @@ export function AppMapTestCombineStrip(props: {
   const [lens, setLens] = createSignal<TestCombineLens>("visual");
   const [wholePage, setWholePage] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
+  const [restoring, setRestoring] = createSignal(false);
   const [repeat, setRepeat] = createSignal<RepeatTestSnapshot>();
   const [reviewed, setReviewed] = createSignal(false);
   const workflows = createRelayWorkflows({
     invoke: (operationId, input) => server.runAction(operationId, input),
   });
-  const repeatLocked = () => Boolean(repeat());
-  let repeatOwner = `${props.map.id}:${props.test.id}`;
+  const repeatLocked = () => Boolean(repeat()) || restoring();
+  const storageKey = () => `relay:repeat:v1:${props.map.id}:${props.test.id}`;
+  let restoreVersion = 0;
+  function rememberRepeat(snapshot: RepeatTestSnapshot): void {
+    if (!snapshot.ref) return;
+    setVariableId(snapshot.frozen!.over.dimensionId);
+    setSelectedIds([...snapshot.frozen!.over.valueIds]);
+    setLens(snapshot.frozen!.evidence);
+    setWholePage(Boolean(snapshot.frozen!.capture?.fullSurfaceScreenIds.length));
+    setRepeat(snapshot);
+    try {
+      window.localStorage.setItem(storageKey(), snapshot.ref);
+    } catch {
+      // Canonical recovery remains available when browser storage is unavailable.
+    }
+  }
+
+  function applyRecoverySnapshot(snapshot: RepeatTestSnapshot): void {
+    if (snapshot.ref && snapshot.frozen) rememberRepeat(snapshot);
+    else setRepeat(snapshot.phase === "needs-attention" ? snapshot : undefined);
+  }
+
+  async function recoverRepeat(version?: number): Promise<RepeatTestSnapshot | undefined> {
+    const snapshot = await workflows.recover({
+      kind: "repeat-test",
+      appMapId: props.map.id,
+      testId: props.test.id,
+    });
+    if (version !== undefined && version !== restoreVersion) return undefined;
+    applyRecoverySnapshot(snapshot);
+    return snapshot;
+  }
+
   createEffect(() => {
-    const owner = `${props.map.id}:${props.test.id}`;
-    if (owner === repeatOwner) return;
-    repeatOwner = owner;
+    const key = storageKey();
+    const version = ++restoreVersion;
     setRepeat();
     setReviewed(false);
+    let ref: WorkflowRef | undefined;
+    try {
+      const stored = window.localStorage.getItem(key);
+      ref = stored ? (stored as WorkflowRef) : undefined;
+    } catch {
+      ref = undefined;
+    }
+    setRestoring(true);
+    void (ref ? workflows.inspect(ref) : recoverRepeat(version))
+      .then((snapshot) => {
+        if (version !== restoreVersion) return;
+        if (
+          snapshot?.kind === "repeat-test" &&
+          snapshot.ref &&
+          snapshot.frozen &&
+          snapshot.frozen.appMapId === props.map.id &&
+          snapshot.frozen.testId === props.test.id
+        ) {
+          rememberRepeat(snapshot);
+          return;
+        }
+        if (ref) {
+          try {
+            window.localStorage.removeItem(key);
+          } catch {
+            // Canonical lookup below remains authoritative.
+          }
+          return recoverRepeat(version);
+        }
+      })
+      .catch((error) => {
+        if (version === restoreVersion) {
+          toast(humanError(error, "Could not restore the active Repeat"), "error");
+        }
+      })
+      .finally(() => {
+        if (version === restoreVersion) setRestoring(false);
+      });
+  });
+  onCleanup(() => {
+    restoreVersion += 1;
   });
   createEffect(() => {
     const available = candidates();
@@ -64,6 +145,10 @@ export function AppMapTestCombineStrip(props: {
   const selectedVariable = createMemo(() =>
     candidates().find((candidate) => candidate.id === variableId()),
   );
+  const repeatValueLabel = (valueId: string) => {
+    const option = selectedVariable()?.options.find((candidate) => candidate.id === valueId);
+    return option ? combineValueLabel(option) : valueId;
+  };
   const selected = createMemo(() => {
     const variable = selectedVariable();
     if (!variable) return {};
@@ -133,7 +218,7 @@ export function AppMapTestCombineStrip(props: {
     const device = selectedDevice();
     if (!props.ready || busy()) return;
     if (!device) {
-      window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+      props.onChooseTarget?.();
       return;
     }
     const platform =
@@ -169,15 +254,35 @@ export function AppMapTestCombineStrip(props: {
       });
       setRepeat(snapshot);
       if (snapshot.ref) {
+        rememberRepeat(snapshot);
         toast(`Pilot started with ${projection().worlds[0]!.label}`, "success");
-        window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
+        props.onOpenTarget?.();
         props.onStarted?.();
         void server.refreshJobs();
       } else {
-        toast(snapshot.problems[0]?.title ?? "Could not start the pilot", "error");
+        const recovered = await recoverRepeat();
+        if (recovered?.ref) {
+          toast("Restored the already-started Repeat", "success");
+          props.onOpenTarget?.();
+          void server.refreshJobs();
+        } else {
+          if (recovered) applyRecoverySnapshot(recovered);
+          toast(snapshot.problems[0]?.title ?? "Could not start the pilot", "error");
+        }
       }
     } catch (error) {
-      toast(humanError(error, "Could not start the pilot"), "error");
+      try {
+        const recovered = await recoverRepeat();
+        if (recovered?.ref) {
+          toast("Restored the already-started Repeat", "success");
+          void server.refreshJobs();
+        } else {
+          if (recovered) applyRecoverySnapshot(recovered);
+          toast(humanError(error, "Could not start the pilot"), "error");
+        }
+      } catch {
+        toast(humanError(error, "Could not start the pilot"), "error");
+      }
     } finally {
       setBusy(false);
     }
@@ -185,11 +290,20 @@ export function AppMapTestCombineStrip(props: {
 
   async function inspectRepeat(): Promise<void> {
     const current = repeat();
-    if (!current?.ref || busy()) return;
+    if (!current || busy()) return;
     setBusy(true);
     try {
-      const snapshot = await workflows.inspect(current.ref);
-      if (snapshot.kind === "repeat-test") setRepeat(snapshot);
+      const snapshot = current.ref
+        ? await workflows.inspect(current.ref)
+        : await workflows.recover({
+            kind: "repeat-test",
+            appMapId: props.map.id,
+            testId: props.test.id,
+          });
+      if (snapshot.kind === "repeat-test") {
+        if (current.ref) setRepeat(snapshot);
+        else applyRecoverySnapshot(snapshot);
+      }
     } catch (error) {
       toast(humanError(error, "Could not refresh Repeat"), "error");
     } finally {
@@ -377,6 +491,24 @@ export function AppMapTestCombineStrip(props: {
                     {projection().cells.length} {projection().cells.length === 1 ? "case" : "cases"}
                   </span>
                 </div>
+                <Show
+                  when={selectedDevice()}
+                  fallback={
+                    <div class="flex items-center justify-between gap-2">
+                      <span class={testEditorHint}>Target: choose a device</span>
+                      <Button variant="secondary" size="sm" onClick={props.onChooseTarget}>
+                        Choose device
+                      </Button>
+                    </div>
+                  }
+                >
+                  {(device) => (
+                    <span class={testEditorHint}>
+                      Target: {device().name || device().serial} ·{" "}
+                      {device().platform === "ios" ? "iOS" : "Android"}
+                    </span>
+                  )}
+                </Show>
                 <p class={cn(testEditorHint, "m-0")}>
                   Relay runs one representative value first and waits for review before the
                   remaining values.
@@ -384,7 +516,9 @@ export function AppMapTestCombineStrip(props: {
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={busy() || !projection().cells.length}
+                  disabled={
+                    busy() || restoring() || !selectedDevice() || !projection().cells.length
+                  }
                   aria-busy={busy()}
                   onClick={() => void runPilot()}
                 >
@@ -406,18 +540,12 @@ export function AppMapTestCombineStrip(props: {
                     </span>
                   </div>
                   <div class="flex flex-wrap gap-1">
-                    <Show when={current().repeat?.pilotJobId}>
-                      {(jobId) => (
+                    <Show when={current().evidenceRefs[0]}>
+                      {(evidence) => (
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() =>
-                            window.dispatchEvent(
-                              new CustomEvent("relay:open-run-history", {
-                                detail: { jobId: jobId() },
-                              }),
-                            )
-                          }
+                          onClick={() => props.onOpenRun?.(evidence().id)}
                         >
                           View pilot evidence
                         </Button>
@@ -439,6 +567,39 @@ export function AppMapTestCombineStrip(props: {
                       {problem().recovery}
                     </p>
                   )}
+                </Show>
+                <Show when={current().results.length > 0}>
+                  <ul
+                    class="m-0 grid list-none gap-1 p-0"
+                    aria-label="Repeat results"
+                    data-test-repeat-results
+                  >
+                    <For each={current().results}>
+                      {(result) => (
+                        <li class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md border border-border-weak-base bg-background-base px-2.5 py-2 text-caption">
+                          <span class="min-w-0 truncate font-medium text-text-strong">
+                            {repeatValueLabel(result.valueId)}
+                          </span>
+                          <span class="text-text-weak">
+                            {result.phase === "pilot" ? "Pilot · " : ""}
+                            {repeatStatusLabel(result.status)}
+                          </span>
+                          <Show when={result.runId} fallback={<span aria-hidden="true" />}>
+                            {(runId) => (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                aria-label={`Open ${repeatValueLabel(result.valueId)} result`}
+                                onClick={() => props.onOpenRun?.(runId())}
+                              >
+                                View
+                              </Button>
+                            )}
+                          </Show>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
                 </Show>
                 <Show when={current().allowedNextActions.includes("confirm-and-continue")}>
                   <label class="flex min-h-11 items-center gap-2 rounded-md border border-border-weak-base px-2.5 text-caption text-text-base">
@@ -482,7 +643,18 @@ export function AppMapTestCombineStrip(props: {
                     </Button>
                   </Show>
                   <Show when={current().stage === "complete"}>
-                    <Button variant="secondary" size="sm" onClick={() => setRepeat()}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        try {
+                          window.localStorage.removeItem(storageKey());
+                        } catch {
+                          // The completed Repeat is safe to leave as durable history.
+                        }
+                        setRepeat();
+                      }}
+                    >
                       Repeat again
                     </Button>
                   </Show>

@@ -232,3 +232,11 @@ export async function dispatchWithSafePointFallback<Result>(
 export function interactionSucceeded(input: { status: string }): boolean {
   return input.status === "succeeded";
 }
+
+/** A command whose iOS outcome is unknown is a review stop, never authority
+ * to flush the same buffered input through another transport. */
+export function canFlushBufferedTypeAfterLiveInput<T extends { status: string }>(
+  input: T,
+): boolean {
+  return input.status !== "ios-outcome-unknown";
+}

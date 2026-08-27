@@ -13,8 +13,6 @@ import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { targetIsReady } from "./target-presentation";
 import type { DeviceInfo } from "./api-types";
-import { testFromRecordedPath } from "./recorded-path-test";
-import { humanError } from "./human-error";
 
 type GraphLike = NonNullable<AppMapCanvasState["graph"]>;
 
@@ -135,36 +133,16 @@ export function useAppMapTakeReview(options: {
   const keepTake = async () => {
     const take = recorder.take();
     if (!take || takeReplay().takeId !== take.id || takeReplay().state !== "passed") return;
+    const appMapId = server.selectedAppMapId();
     const committed = await recorder.keepTake({
       destination: reviewDestination(),
     });
     if (committed) {
-      const appMapId = server.selectedAppMapId();
-      let next = appMapId ? await server.loadAppMap(appMapId) : null;
+      const next = appMapId ? await server.loadAppMap(appMapId) : null;
       const destination = committed.committedConnectionId
         ? next?.connections[committed.committedConnectionId]?.destination
         : undefined;
-      let createdTestId: string | undefined;
-      if (next && committed.committedConnectionId && Object.keys(next.tests).length === 0) {
-        const firstTest = testFromRecordedPath({
-          map: next,
-          connectionId: committed.committedConnectionId,
-        });
-        if (firstTest) {
-          try {
-            const saved = await server.saveTest({
-              appMapId: next.id,
-              expectedRevision: next.revision,
-              test: firstTest,
-            });
-            next = saved.appMap;
-            createdTestId = firstTest.id;
-            await server.refreshAppMaps();
-          } catch (error) {
-            toast(`Path saved, but its Test was not created. ${humanError(error)}`, "warning");
-          }
-        }
-      }
+      const createdTestId = committed.committedTestId;
       options.setPendingConnectionId(null);
       options.setRecordingSourceScreenId(null);
       recorder.setRecordingTransition(undefined);

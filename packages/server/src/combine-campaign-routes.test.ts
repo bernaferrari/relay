@@ -63,6 +63,19 @@ test("campaign continuation rejects a changed App Map before scheduling untouche
         selectedCellIds: ["c" + "a".repeat(32), "c" + "b".repeat(32)],
         strategy: "zip",
         seed: 42,
+        repeat: {
+          schemaVersion: 1,
+          requestedAppMapRevision: 3,
+          executionAppMapRevision: 4,
+          testId: "settings",
+          testPlanDigest: "settings-plan",
+          rootRecipeId: "settings-root",
+          target: { kind: "device", platform: "android", targetId: "android-1" },
+          over: { dimensionId: "language", valueIds: ["en", "it"] },
+          evidence: "visual",
+          pilotJobId: "pilot-job",
+          selectedCaseIds: ["c" + "a".repeat(32), "c" + "b".repeat(32)],
+        },
       },
     });
     const client = new RelayClient({
@@ -78,6 +91,12 @@ test("campaign continuation rejects a changed App Map before scheduling untouche
     const beforeCampaign = before.campaign as CombineCampaign;
     assert.equal(beforeCampaign.status, "ready-to-resume");
     assert.equal(beforeCampaign.cases[1]?.status, "pending");
+    const adopted = await client.invoke("job.combine.campaign.repeat.active", {
+      appMapId: "settings",
+      testId: "settings",
+    });
+    assert.equal(adopted.campaign?.id, "campaign-1");
+    assert.equal(adopted.campaign?.execution?.repeat?.evidence, "visual");
     await client.invoke("app-map.create", { appMapId: "settings", name: "Settings" });
     const jobsBeforeResume = await client.invoke("job.list", { limit: 100 });
     const leasesBeforeResume = await client.invoke("lease.list", { status: "all" });

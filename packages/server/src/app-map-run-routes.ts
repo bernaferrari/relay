@@ -9,6 +9,7 @@ import {
   compileAppMapConnection,
   compileAppMapFlow,
   compileAppMapTest,
+  findActiveCombineCampaignForCombine,
   createAppMapTestExecutionIntent,
   currentOperationContext,
   enqueueJob,
@@ -34,7 +35,7 @@ import { assertTargetControl, targetLeaseBelongsToCaller } from "./access-contro
 import { executeCombineStart } from "./combine-start-route.js";
 import { applyAppMapMutation } from "./app-map-route-mutations.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
-import { defaultJobRouteRuntime } from "./job-routes.js";
+import { defaultJobRouteRuntime, type JobRouteRuntime } from "./job-routes.js";
 import {
   frozenTestRunTargetProfile,
   queuedAppMapTestTargetProfile,
@@ -173,6 +174,7 @@ export type AppMapRunRouteContext = {
   response: http.ServerResponse;
   scope: RequestContext;
   runtime?: Partial<AppMapTestRunRouteRuntime>;
+  combineRuntime?: Partial<JobRouteRuntime>;
 };
 
 export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promise<boolean> {
@@ -201,6 +203,16 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     if (!test) throw new HttpError(404, `Test ${testMatch.testId} not found`);
 
     if (body.in) {
+      const repeatEntry = Object.entries(body.in);
+      if (
+        body.repeatRecovery &&
+        (repeatEntry.length !== 1 || (body.lens !== "visual" && body.lens !== "smoke"))
+      ) {
+        throw new HttpError(
+          400,
+          "Repeat recovery requires one dimension and an explicit visual or smoke evidence lens",
+        );
+      }
       let upserted;
       try {
         upserted = upsertAppMapCombineFromTest({
@@ -215,6 +227,19 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         }
         throw error;
       }
+      const activeRepeat = await findActiveCombineCampaignForCombine(
+        input.scope.projectId,
+        map.id,
+        upserted.combine.id,
+      );
+      if (activeRepeat) {
+        throw new HttpError(409, "This Repeat already has unfinished work", {
+          code: "ACTIVE_REPEAT_EXISTS",
+          repeatId: activeRepeat.id,
+          recovery:
+            "Return to the Test to inspect, continue, or stop the existing Repeat before starting another pilot.",
+        });
+      }
       const saved = await applyAppMapMutation(
         input.scope,
         map.id,
@@ -222,22 +247,52 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         undefined,
         (current, context) => saveAppMapCombine(current, upserted.combine, context),
       );
-      const started = await executeCombineStart(input.scope, defaultJobRouteRuntime, {
-        appMapId: saved.id,
-        combineId: upserted.combine.id,
-        serial: body.target.kind === "device" ? body.target.targetId : undefined,
-        browserTargetId: body.target.kind === "browser" ? body.target.targetId : undefined,
-        platform: body.target.platform === "browser" ? undefined : body.target.platform,
-        targetKind: body.target.kind,
-        selected: body.in,
-        capture: upserted.capture,
-        ...(body.surfaceCapture ? { surfaceCapture: body.surfaceCapture } : {}),
-        executionMode: body.executionMode ?? "pilot",
-        cell: body.cell,
-        defaultTargetProfileId: body.targetProfileId,
-        title: upserted.combine.name,
-        ...(body.sourceRevision ? { sourceRevision: body.sourceRevision } : {}),
-      });
+      const started = await executeCombineStart(
+        input.scope,
+        { ...defaultJobRouteRuntime, ...input.combineRuntime },
+        {
+          appMapId: saved.id,
+          combineId: upserted.combine.id,
+          serial: body.target.kind === "device" ? body.target.targetId : undefined,
+          browserTargetId: body.target.kind === "browser" ? body.target.targetId : undefined,
+          platform: body.target.platform === "browser" ? undefined : body.target.platform,
+          targetKind: body.target.kind,
+          selected: body.in,
+          capture: upserted.capture,
+          ...(body.surfaceCapture ? { surfaceCapture: body.surfaceCapture } : {}),
+          executionMode: body.executionMode ?? "pilot",
+          cell: body.cell,
+          defaultTargetProfileId: body.targetProfileId,
+          title: upserted.combine.name,
+          ...(body.sourceRevision ? { sourceRevision: body.sourceRevision } : {}),
+          ...(body.repeatRecovery
+            ? {
+                repeatRecovery: {
+                  schemaVersion: 1,
+                  requestedAppMapRevision: body.expectedRevision,
+                  testId: test.id,
+                  testPlanDigest: body.repeatRecovery.testPlanDigest,
+                  target: structuredClone(body.target),
+                  over: {
+                    dimensionId: repeatEntry[0]![0],
+                    valueIds: [...repeatEntry[0]![1]],
+                  },
+                  evidence: body.lens === "smoke" ? "smoke" : "visual",
+                  ...(body.sourceRevision
+                    ? { sourceRevision: structuredClone(body.sourceRevision) }
+                    : {}),
+                  ...(body.surfaceCapture
+                    ? {
+                        capture: {
+                          fullSurfaceScreenIds: [...body.surfaceCapture.forceRecaptureScreenIds],
+                        },
+                      }
+                    : {}),
+                },
+              }
+            : {}),
+        },
+      );
       const job = started.jobs[0];
       if (!job) throw new HttpError(500, "Combine start returned no jobs");
       json(input.response, 202, {
@@ -445,6 +500,15 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       ...(targetProfile ? { targetProfile } : {}),
       ...(body.sourceRevision ? { sourceRevision: body.sourceRevision } : {}),
       artifacts: [
+        ...(body.workflowRequestId
+          ? [
+              {
+                kind: "app-map-test-workflow-request",
+                capturedAt: queuedAt,
+                data: { schemaVersion: 1, requestId: body.workflowRequestId },
+              },
+            ]
+          : []),
         {
           kind: "app-map-test-execution-intent",
           capturedAt: queuedAt,

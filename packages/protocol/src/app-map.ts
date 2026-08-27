@@ -694,9 +694,10 @@ export type AppMapBatchChange =
   | { kind: "group.remove"; groupId: string }
   | { kind: "flow.save"; flow: Flow }
   | { kind: "flow.remove"; flowId: string }
-  /** A Flow and the Test that exposes it can be authored in one atomic map
-   * revision. This avoids a half-promoted recording on a revision conflict. */
-  | { kind: "test.save"; test: AppMapTest };
+  /** A Flow and its exposed Test can be authored in one atomic revision. */
+  | { kind: "test.save"; test: AppMapTest }
+  | { kind: "combine.save"; combine: AppMapCombine }
+  | { kind: "combine.remove"; combineId: string };
 
 export type ProposalChange =
   | { kind: "screen.add"; input: AddScreenInput }

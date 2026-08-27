@@ -664,6 +664,13 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
       if (input.targetProfileId !== undefined) {
         string(input.targetProfileId, "Test compilation targetProfileId");
       }
+      if (
+        input.forceRecaptureScreenIds !== undefined &&
+        (!Array.isArray(input.forceRecaptureScreenIds) ||
+          input.forceRecaptureScreenIds.some((id) => typeof id !== "string" || !id.trim()))
+      ) {
+        fail("Test compilation forceRecaptureScreenIds", "must contain non-empty strings");
+      }
     },
   );
 

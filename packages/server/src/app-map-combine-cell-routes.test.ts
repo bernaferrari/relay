@@ -10,6 +10,7 @@ import {
   combineCampaignCaseFromPreparedCell,
   createCombineCampaign,
   enqueueJob,
+  findActiveRepeatCampaigns,
   getJob,
   localExecutionTargetRef,
   listDevices,
@@ -993,6 +994,299 @@ test("campaign resume queues one pending selected cell and leaves a passed pilot
   }
 });
 
+test("concurrent campaign resumes queue each untouched case once with one lineage event", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-combine-resume-concurrency-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  let releaseFirstControl!: () => void;
+  let markFirstControl!: () => void;
+  const firstControl = new Promise<void>((resolve) => {
+    markFirstControl = resolve;
+  });
+  const holdFirstControl = new Promise<void>((resolve) => {
+    releaseFirstControl = resolve;
+  });
+  let controlCalls = 0;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      async assertTargetControl(_scope, targetId) {
+        if (!targetId) throw new Error("target id is required");
+        controlCalls += 1;
+        if (controlCalls === 1) {
+          markFirstControl();
+          await holdFirstControl;
+        }
+        return admissionLease(targetId);
+      },
+    },
+  });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await saveLocaleCombine(client, {
+      en: { targetId: "resume-pixel-1", platform: "android" },
+      it: { targetId: "resume-pixel-1", platform: "android" },
+      fr: { targetId: "resume-pixel-1", platform: "android" },
+    });
+    const map = await readAppMap("mobile", "store");
+    if (!map?.combines.locales) throw new Error("expected locales Combine");
+    const prepared = await prepareAppMapCombineCells({
+      map,
+      combine: map.combines.locales,
+      target: { targetId: "resume-pixel-1", platform: "android" },
+    });
+    const byLanguage = Object.fromEntries(
+      prepared.cells.map((cell) => [cell.values.language, cell]),
+    );
+    const english = byLanguage.en;
+    const italian = byLanguage.it;
+    const french = byLanguage.fr;
+    if (!english || !italian || !french) throw new Error("expected en/it/fr cells");
+    await createCombineCampaign({
+      schemaVersion: 1,
+      id: "campaign-concurrent-resume",
+      projectId: "mobile",
+      ownerId: "human:designer",
+      appMapId: "store",
+      combineId: "locales",
+      sourceRevision: map.revision,
+      latestRevision: map.revision,
+      target: { kind: "device", id: "resume-pixel-1", platform: "android" },
+      status: "ready-to-resume",
+      createdAt: 10,
+      updatedAt: 10,
+      cases: [
+        {
+          ...combineCampaignCaseFromPreparedCell(english, {
+            index: 0,
+            phase: "pilot",
+            status: "pending",
+          }),
+          status: "passed",
+        },
+        combineCampaignCaseFromPreparedCell(italian, {
+          index: 1,
+          phase: "coverage",
+          status: "pending",
+        }),
+        combineCampaignCaseFromPreparedCell(french, {
+          index: 2,
+          phase: "coverage",
+          status: "pending",
+        }),
+      ],
+      lineage: [
+        { kind: "created", at: 10, appMapRevision: map.revision, actorId: "human:designer" },
+      ],
+      execution: {
+        selected: { language: ["en", "it", "fr"] },
+        selectedCellIds: [english.cellId, italian.cellId, french.cellId],
+        strategy: "zip",
+        seed: prepared.matrix.seed,
+      },
+    });
+    const jobsBefore = await client.invoke("job.list", { limit: 100 });
+    const resume = () =>
+      client.invoke("job.combine.campaign.resume", {
+        batchId: "campaign-concurrent-resume",
+        reviewed: true,
+        expectedAppMapRevision: map.revision,
+      });
+    const firstResume = resume();
+    await firstControl;
+    const secondResume = resume();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    releaseFirstControl();
+    const results = await Promise.allSettled([firstResume, secondResume]);
+    const queuedResponses = results.filter(
+      (result) => result.status === "fulfilled" && (result.value.jobs?.length ?? 0) > 0,
+    );
+    assert.equal(queuedResponses.length, 1);
+    assert.equal(
+      queuedResponses[0]!.status === "fulfilled" && queuedResponses[0]!.value.jobs.length,
+      2,
+    );
+    const jobsAfter = await client.invoke("job.list", { limit: 100 });
+    assert.equal(jobsAfter.jobs.length, jobsBefore.jobs.length + 2);
+    assert.equal(controlCalls, 1);
+    const current = await client.invoke("job.combine.campaign.get", {
+      batchId: "campaign-concurrent-resume",
+    });
+    const campaign = current.campaign as CombineCampaign;
+    assert.equal(campaign.lineage.filter((event) => event.kind === "resumed").length, 1);
+    const coverage = campaign.cases.filter((item) => item.phase === "coverage");
+    assert.equal(coverage.length, 2);
+    assert.equal(new Set(coverage.map((item) => item.jobId)).size, 2);
+    assert.ok(coverage.every((item) => item.jobId));
+    for (const item of coverage) {
+      if (!item.jobId) continue;
+      cancelJob(item.jobId);
+      await waitForJobCompletion(item.jobId);
+    }
+  } finally {
+    releaseFirstControl();
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("campaign cancel serializes with an in-flight resume before any later dispatch", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-combine-resume-cancel-concurrency-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  let releaseResumeControl!: () => void;
+  let markResumeControl!: () => void;
+  const resumeReachedControl = new Promise<void>((resolve) => {
+    markResumeControl = resolve;
+  });
+  const holdResumeControl = new Promise<void>((resolve) => {
+    releaseResumeControl = resolve;
+  });
+  let controlCalls = 0;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      async assertTargetControl(_scope, targetId) {
+        if (!targetId) throw new Error("target id is required");
+        controlCalls += 1;
+        if (controlCalls === 1) {
+          markResumeControl();
+          await holdResumeControl;
+        }
+        return admissionLease(targetId);
+      },
+    },
+  });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await saveLocaleCombine(client, {
+      en: { targetId: "resume-cancel-pixel", platform: "android" },
+      it: { targetId: "resume-cancel-pixel", platform: "android" },
+      fr: { targetId: "resume-cancel-pixel", platform: "android" },
+    });
+    const map = await readAppMap("mobile", "store");
+    if (!map?.combines.locales) throw new Error("expected locales Combine");
+    const prepared = await prepareAppMapCombineCells({
+      map,
+      combine: map.combines.locales,
+      target: { targetId: "resume-cancel-pixel", platform: "android" },
+    });
+    const byLanguage = Object.fromEntries(
+      prepared.cells.map((cell) => [cell.values.language, cell]),
+    );
+    const english = byLanguage.en;
+    const italian = byLanguage.it;
+    const french = byLanguage.fr;
+    if (!english || !italian || !french) throw new Error("expected en/it/fr cells");
+    await createCombineCampaign({
+      schemaVersion: 1,
+      id: "campaign-concurrent-resume-cancel",
+      projectId: "mobile",
+      ownerId: "human:designer",
+      appMapId: "store",
+      combineId: "locales",
+      sourceRevision: map.revision,
+      latestRevision: map.revision,
+      target: { kind: "device", id: "resume-cancel-pixel", platform: "android" },
+      status: "ready-to-resume",
+      createdAt: 10,
+      updatedAt: 10,
+      cases: [
+        {
+          ...combineCampaignCaseFromPreparedCell(english, {
+            index: 0,
+            phase: "pilot",
+            status: "pending",
+          }),
+          status: "passed",
+        },
+        combineCampaignCaseFromPreparedCell(italian, {
+          index: 1,
+          phase: "coverage",
+          status: "pending",
+        }),
+        combineCampaignCaseFromPreparedCell(french, {
+          index: 2,
+          phase: "coverage",
+          status: "pending",
+        }),
+      ],
+      lineage: [
+        { kind: "created", at: 10, appMapRevision: map.revision, actorId: "human:designer" },
+      ],
+      execution: {
+        selected: { language: ["en", "it", "fr"] },
+        selectedCellIds: [english.cellId, italian.cellId, french.cellId],
+        strategy: "zip",
+        seed: prepared.matrix.seed,
+      },
+    });
+    const jobsBefore = await client.invoke("job.list", { limit: 100 });
+    const resume = client.invoke("job.combine.campaign.resume", {
+      batchId: "campaign-concurrent-resume-cancel",
+      reviewed: true,
+      expectedAppMapRevision: map.revision,
+    });
+    await resumeReachedControl;
+    let cancelSettled = false;
+    const cancel = client
+      .invoke("job.combine.campaign.cancel", {
+        batchId: "campaign-concurrent-resume-cancel",
+      })
+      .finally(() => {
+        cancelSettled = true;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(cancelSettled, false);
+    releaseResumeControl();
+    await resume;
+    const cancelled = await cancel;
+    assert.equal(cancelled.campaign.status, "cancelled");
+    const jobsAfter = await client.invoke("job.list", { limit: 100 });
+    assert.equal(jobsAfter.jobs.length, jobsBefore.jobs.length + 2);
+    assert.equal(controlCalls, 1);
+    const current = await client.invoke("job.combine.campaign.get", {
+      batchId: "campaign-concurrent-resume-cancel",
+    });
+    const campaign = current.campaign as CombineCampaign;
+    assert.equal(campaign.status, "cancelled");
+    assert.deepEqual(
+      campaign.lineage.map((event) => event.kind),
+      ["created", "resumed", "cancelled"],
+    );
+    const coverage = campaign.cases.filter((item) => item.phase === "coverage");
+    assert.equal(new Set(coverage.map((item) => item.jobId)).size, 2);
+    assert.ok(coverage.every((item) => item.jobId));
+    for (const item of coverage) {
+      if (item.jobId) await waitForJobCompletion(item.jobId);
+    }
+  } finally {
+    releaseResumeControl();
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Test Repeat queues one pilot cell and preserves its source revision", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-combine-default-pilot-"));
   const previous = process.env.RELAY_STATE_DIR;
@@ -1042,6 +1336,8 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
       target: { kind: "device", platform: "android", targetId: "pixel-1" },
       targetProfileId: "pixel-en",
       in: { language: ["en", "it", "fr"] },
+      lens: "visual",
+      repeatRecovery: { schemaVersion: 1, testPlanDigest: "script-only-plan" },
       sourceRevision,
     });
     const repeatId = started.campaign?.id;
@@ -1052,7 +1348,112 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
     assert.equal(campaign.cases.filter((item) => item.phase === "pilot").length, 1);
     assert.equal(campaign.status, "pilot-running");
     assert.equal(campaign.execution?.selectedCellIds?.length, 3);
+    assert.deepEqual(campaign.execution?.repeat, {
+      schemaVersion: 1,
+      requestedAppMapRevision: map.revision,
+      executionAppMapRevision: campaign.sourceRevision,
+      testId: "script-only",
+      testPlanDigest: "script-only-plan",
+      rootRecipeId: started.planIdentity.rootRecipeId,
+      target: { kind: "device", platform: "android", targetId: "pixel-1" },
+      over: { dimensionId: "language", valueIds: ["en", "it", "fr"] },
+      evidence: "visual",
+      sourceRevision,
+      pilotJobId: started.job.id,
+      selectedCaseIds: campaign.execution?.selectedCellIds,
+    });
+    const active = await client.invoke("job.combine.campaign.repeat.active", {
+      appMapId: "store",
+      testId: "script-only",
+    });
+    assert.equal(active.campaign?.id, repeatId);
     assert.deepEqual(getJob(started.job.id)?.sourceRevision, sourceRevision);
+    const afterPilot = await readAppMap("mobile", "store");
+    if (!afterPilot) throw new Error("expected updated store App Map");
+    await assert.rejects(
+      client.invoke("app-map.test.run", {
+        appMapId: "store",
+        testId: "script-only",
+        expectedRevision: afterPilot.revision,
+        target: { kind: "device", platform: "android", targetId: "pixel-1" },
+        targetProfileId: "pixel-en",
+        in: { language: ["en", "it", "fr"] },
+        sourceRevision,
+      }),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        (error.body as { code?: unknown }).code === "ACTIVE_REPEAT_EXISTS",
+    );
+    const pilotJob = getJob(started.job.id);
+    if (!pilotJob) throw new Error("Test Repeat pilot job disappeared");
+    cancelJob(pilotJob.id);
+    await waitForJobCompletion(pilotJob.id);
+    pilotJob.status = "ok";
+    pilotJob.persisted = false;
+    await updateCombineCampaign("mobile", repeatId, (current) => ({
+      ...current,
+      cases: current.cases.map((item) =>
+        item.phase === "pilot" ? { ...item, runId: "unverified-run" } : item,
+      ),
+    }));
+    const withoutEvidence = (await client.invoke("job.combine.campaign.get", { batchId: repeatId }))
+      .campaign as CombineCampaign;
+    const unprovedPilot = withoutEvidence.cases.find((item) => item.phase === "pilot");
+    assert.equal(withoutEvidence.status, "pilot-running");
+    assert.equal(unprovedPilot?.status, "running");
+    assert.equal(unprovedPilot?.runId, undefined);
+    const jobsBeforeContinue = await client.invoke("job.list", { limit: 100 });
+    await assert.rejects(
+      client.invoke("job.combine.campaign.resume", {
+        batchId: repeatId,
+        expectedAppMapRevision: campaign.sourceRevision,
+      }),
+      (error: unknown) =>
+        error instanceof ApiError && error.status === 409 && /still running/u.test(error.message),
+    );
+    const jobsAfterContinue = await client.invoke("job.list", { limit: 100 });
+    assert.equal(jobsAfterContinue.jobs.length, jobsBeforeContinue.jobs.length);
+    pilotJob.persisted = true;
+    const withEvidence = (await client.invoke("job.combine.campaign.get", { batchId: repeatId }))
+      .campaign as CombineCampaign;
+    const provedPilot = withEvidence.cases.find((item) => item.phase === "pilot");
+    assert.equal(withEvidence.status, "ready-to-resume");
+    assert.equal(provedPilot?.status, "passed");
+    assert.equal(provedPilot?.runId, pilotJob.id);
+    for (const [jobStatus, resultStatus] of [
+      ["error", "failed"],
+      ["cancelled", "cancelled"],
+    ] as const) {
+      pilotJob.status = jobStatus;
+      pilotJob.persisted = false;
+      if (jobStatus === "error") pilotJob.error = "representative failed";
+      else delete pilotJob.error;
+      const terminalWithoutEvidence = (
+        await client.invoke("job.combine.campaign.get", { batchId: repeatId })
+      ).campaign as CombineCampaign;
+      const unprovedTerminal = terminalWithoutEvidence.cases.find((item) => item.phase === "pilot");
+      assert.equal(terminalWithoutEvidence.status, "pilot-running");
+      assert.equal(unprovedTerminal?.status, "running");
+      assert.equal(unprovedTerminal?.runId, undefined);
+      await assert.rejects(
+        client.invoke("job.combine.campaign.resume", {
+          batchId: repeatId,
+          expectedAppMapRevision: campaign.sourceRevision,
+          reviewed: true,
+        }),
+        (error: unknown) =>
+          error instanceof ApiError && error.status === 409 && /still running/u.test(error.message),
+      );
+      pilotJob.persisted = true;
+      const terminalWithEvidence = (
+        await client.invoke("job.combine.campaign.get", { batchId: repeatId })
+      ).campaign as CombineCampaign;
+      const provedTerminal = terminalWithEvidence.cases.find((item) => item.phase === "pilot");
+      assert.equal(terminalWithEvidence.status, "needs-review");
+      assert.equal(provedTerminal?.status, resultStatus);
+      assert.equal(provedTerminal?.runId, pilotJob.id);
+    }
     for (const job of (started.jobs as Array<{ id?: string }>) ?? []) {
       if (job.id) {
         cancelJob(job.id);
@@ -1060,6 +1461,132 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
       }
     }
   } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("concurrent outcome Repeat starts create one campaign and one pilot for a Test", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-repeat-start-concurrency-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  let releaseFirstControl!: () => void;
+  let markFirstControl!: () => void;
+  const firstControl = new Promise<void>((resolve) => {
+    markFirstControl = resolve;
+  });
+  const holdFirstControl = new Promise<void>((resolve) => {
+    releaseFirstControl = resolve;
+  });
+  let controlCalls = 0;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      async listDevices() {
+        return [
+          {
+            id: "pixel-1",
+            serial: "pixel-1",
+            name: "Pixel",
+            kind: "Physical device",
+            booted: true,
+            platform: "android" as const,
+          },
+        ];
+      },
+      async assertTargetControl(_scope, targetId) {
+        if (!targetId) throw new Error("target id is required");
+        controlCalls += 1;
+        if (controlCalls === 1) {
+          markFirstControl();
+          await holdFirstControl;
+        }
+        return admissionLease(targetId);
+      },
+    },
+  });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await saveLocaleCombine(client);
+    const beforeVariable = await readAppMap("mobile", "store");
+    if (!beforeVariable) throw new Error("expected store App Map");
+    await client.invoke("app-map.variable.save", {
+      appMapId: "store",
+      variableId: "region",
+      expectedRevision: beforeVariable.revision,
+      variable: {
+        name: "Region",
+        kind: "custom",
+        apply: { kind: "appLocale", app: "com.example" },
+        options: [
+          { id: "us", label: "United States" },
+          { id: "ca", label: "Canada" },
+        ],
+      } as never,
+    });
+    const before = await readAppMap("mobile", "store");
+    if (!before) throw new Error("expected updated store App Map");
+    const jobsBefore = await client.invoke("job.list", { limit: 100 });
+    const run = (expectedRevision: number, dimensionId: string, valueIds: string[]) =>
+      client.invoke("app-map.test.run", {
+        appMapId: "store",
+        testId: "script-only",
+        expectedRevision,
+        target: { kind: "device", platform: "android", targetId: "pixel-1" },
+        targetProfileId: "pixel-en",
+        in: { [dimensionId]: valueIds },
+        lens: "visual",
+        repeatRecovery: { schemaVersion: 1, testPlanDigest: "script-only-plan" },
+      });
+    const languageStart = run(before.revision, "language", ["en", "it"]);
+    await firstControl;
+    const afterFirstSave = await readAppMap("mobile", "store");
+    if (!afterFirstSave) throw new Error("expected first Repeat Combine to be saved");
+    const regionStart = run(afterFirstSave.revision, "region", ["us", "ca"]);
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const current = await readAppMap("mobile", "store");
+      if (current && current.revision > afterFirstSave.revision) break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const afterSecondSave = await readAppMap("mobile", "store");
+    assert.ok(afterSecondSave && afterSecondSave.revision > afterFirstSave.revision);
+    releaseFirstControl();
+    const results = await Promise.allSettled([languageStart, regionStart]);
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+    const rejected = results.find((result) => result.status === "rejected");
+    assert.ok(
+      rejected?.status === "rejected" &&
+        rejected.reason instanceof ApiError &&
+        rejected.reason.status === 409 &&
+        (rejected.reason.body as { code?: unknown }).code === "ACTIVE_REPEAT_EXISTS",
+    );
+    const campaigns = await findActiveRepeatCampaigns("mobile", "store", "script-only");
+    assert.equal(campaigns.length, 1);
+    assert.equal(campaigns[0]!.cases.filter((item) => item.phase === "pilot").length, 1);
+    const jobsAfter = await client.invoke("job.list", { limit: 100 });
+    assert.equal(jobsAfter.jobs.length, jobsBefore.jobs.length + 1);
+    assert.equal(controlCalls, 1);
+    for (const result of results) {
+      if (result.status !== "fulfilled") continue;
+      for (const job of (result.value.jobs as Array<{ id?: string }>) ?? []) {
+        if (!job.id) continue;
+        cancelJob(job.id);
+        await waitForJobCompletion(job.id);
+      }
+    }
+  } finally {
+    releaseFirstControl();
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;

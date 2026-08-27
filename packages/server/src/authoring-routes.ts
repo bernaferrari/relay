@@ -740,6 +740,7 @@ export async function handleAuthoringRoute(input: {
       const value = await body<CommitAuthoringSessionInput>(request);
       const session = await authoringSessions.commit(sessionId, {
         destination: value.destination,
+        ...(value.createTest ? { createTest: true } : {}),
       });
       json(response, 200, { session });
       return true;

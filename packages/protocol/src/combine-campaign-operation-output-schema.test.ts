@@ -64,6 +64,19 @@ const campaign: CombineCampaign = {
   execution: {
     selectedCellIds: [],
     seed: 7,
+    repeat: {
+      schemaVersion: 1,
+      requestedAppMapRevision: 2,
+      executionAppMapRevision: 3,
+      testId: "settings-test",
+      testPlanDigest: "plan-settings",
+      rootRecipeId: "settings-root",
+      target: { kind: "device", platform: "android", targetId: "pixel-1" },
+      over: { dimensionId: "language", valueIds: ["en"] },
+      evidence: "visual",
+      pilotJobId: "pilot-1",
+      selectedCaseIds: ["case-en"],
+    },
     localAdmission: {
       request: { deadlineMs: 60_000, durationEvidence: [] },
       preflight: {

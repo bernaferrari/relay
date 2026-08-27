@@ -37,9 +37,9 @@ import {
   removeAuthoringSession,
   writeAuthoringSession,
 } from "./authoring-session-storage.js";
-import { commitAppMapRecording } from "./app-map.js";
-import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
-import { authoringEvidenceExists, persistAuthoringEvidence } from "./authoring-evidence.js";
+import { readAppMap } from "./collaboration.js";
+import { persistAuthoringEvidence } from "./authoring-evidence.js";
+import { commitAuthoringSessionMap } from "./authoring-session-map-commit.js";
 import { invalidateAuthoringActionProof } from "./authoring-transition-proof.js";
 import {
   MAX_AUTHORING_RETAINED_OBSERVATIONS,
@@ -121,7 +121,7 @@ export type AuthoringRecoveryScope = {
 };
 
 export type AuthoringCommitFault = (
-  boundary: "before-verify" | "after-verify" | "before-rename" | "after-rename",
+  boundary: "before-verify" | "after-verify" | "before-rename" | "before-persist" | "after-rename",
 ) => void;
 
 function clone<T>(value: T): T {
@@ -829,7 +829,7 @@ export class AuthoringSessionStore {
 
   async commit(
     id: string,
-    input: { destination?: AuthoringCommitDestination },
+    input: { destination?: AuthoringCommitDestination; createTest?: true },
     fault?: AuthoringCommitFault,
   ): Promise<AuthoringSession> {
     return this.#mutate(id, async (session) => {
@@ -841,70 +841,29 @@ export class AuthoringSessionStore {
       const approvedAfter = await approvedAfterObservation(session, revision, destination);
       session = transition(session, "committing");
       session.commitTransactionId = session.id;
+      session.commitTestId = input.createTest ? `test-${session.id}` : undefined;
       await writeAuthoringSession(session);
       let mapCommitted = false;
       let committedConnectionId: string | undefined;
+      let committedTestId: string | undefined;
       let committedRevision: number | undefined;
       try {
-        const appMap = await readAppMap(session.projectId, session.appMapId);
-        if (!appMap) throw new AuthoringStateError("App Map no longer exists");
-        if (appMap.revision !== session.expectedAppMapRevision) {
-          throw new AuthoringStateError("App Map changed while this Take was being reviewed");
-        }
-        const evidence = [
-          ...revision.evidence,
-          ...take.replayAttempts.flatMap((attempt) => attempt.evidence),
-        ];
-        fault?.("before-verify");
-        for (const item of evidence) {
-          if (!(await authoringEvidenceExists(item))) {
-            throw new AuthoringStateError(`Authoring evidence ${item.id} is not durable`);
-          }
-        }
-        fault?.("after-verify");
-        fault?.("before-rename");
-        const committedAt = Math.max(now(), appMap.updatedAt + 1);
-        const result = await mutateStoredAppMap(session.projectId, session.appMapId, (current) => {
-          const committed = commitAppMapRecording(
-            current,
-            {
-              sessionId: session.id,
-              sourceScreenId: session.sourceScreenId,
-              pendingConnectionId: session.pendingConnectionId,
-              destination: input.destination ?? session.destination,
-              target: session.target,
-              takeId: take.id,
-              takeRevision: revision.revision,
-              actions: revision.actions,
-              before: revision.before,
-              // The reviewed replay is the authoritative result of the exact
-              // actions being committed. This is especially important when a
-              // person trims or rewrites a planned connection: the original
-              // recording may have ended on a different screen, while the
-              // successful replay is the state they explicitly approved.
-              after: approvedAfter ?? revision.after,
-              evidenceIds: [...new Set(evidence.map((item) => item.id))],
-              evidenceUrisById: Object.fromEntries(evidence.map((item) => [item.id, item.uri])),
-              evidenceKindsById: Object.fromEntries(evidence.map((item) => [item.id, item.kind])),
-              evidenceById: Object.fromEntries(evidence.map((item) => [item.id, item])),
-            },
-            {
-              expectedRevision: session.expectedAppMapRevision,
-              eventId: session.id,
-              actorId: session.actorId,
-              actorKind: session.actorKind,
-              at: committedAt,
-            },
-          );
-          committedConnectionId = committed.connectionId;
-          return committed.appMap;
+        const result = await commitAuthoringSessionMap({
+          session,
+          revision,
+          destination: input.destination,
+          approvedAfter,
+          fault,
         });
         mapCommitted = true;
         committedRevision = result.revision;
+        committedConnectionId = result.connectionId;
+        committedTestId = result.testId;
         fault?.("after-rename");
       } catch (error) {
         if (!mapCommitted) {
           session = transition(session, "reviewing");
+          session.commitTestId = undefined;
           session.error = error instanceof Error ? error.message : String(error);
           await writeAuthoringSession(session);
         }
@@ -913,6 +872,8 @@ export class AuthoringSessionStore {
       session = transition(session, "committed");
       session.expectedAppMapRevision = committedRevision!;
       session.committedConnectionId = committedConnectionId;
+      session.committedTestId = committedTestId;
+      session.commitTestId = undefined;
       session.take = { ...take, state: "committed", updatedAt: session.updatedAt };
       session.archive = { reason: "committed", archivedAt: session.updatedAt };
       return session;
@@ -1003,9 +964,12 @@ export class AuthoringSessionStore {
         if (next.state === "committing") {
           const appMap = await readAppMap(next.projectId, next.appMapId);
           const committed = appMap?.activity[next.commitTransactionId ?? next.id];
-          if (appMap && committed?.eventType === "recording.committed") {
+          const testReachedCommit = !next.commitTestId || Boolean(appMap?.tests[next.commitTestId]);
+          if (appMap && committed?.eventType === "recording.committed" && testReachedCommit) {
             next = transition(next, "committed");
             next.committedConnectionId = committed.subject.id;
+            next.committedTestId = next.commitTestId;
+            next.commitTestId = undefined;
             next.expectedAppMapRevision = appMap.revision;
             if (next.take) next.take = { ...next.take, state: "committed" };
           } else {

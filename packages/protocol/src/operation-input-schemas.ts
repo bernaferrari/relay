@@ -715,6 +715,7 @@ export const operationInputSchemas = {
     .object({
       ...sessionReference,
       destination: destination.optional(),
+      createTest: z.literal(true).optional(),
     })
     .strict(),
   "authoring.session.discard": z.object(sessionReference).strict(),
@@ -758,6 +759,12 @@ export const operationInputSchemas = {
   "job.get": z.object({ jobId: identifier("Job identifier") }).strict(),
   "job.combine.campaign.get": z
     .object({ batchId: identifier("Combine campaign identifier") })
+    .strict(),
+  "job.combine.campaign.repeat.active": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      testId: identifier("Test identifier"),
+    })
     .strict(),
   "job.combine.campaign.resume": z
     .object({

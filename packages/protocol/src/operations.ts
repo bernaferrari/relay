@@ -1028,11 +1028,6 @@ const commitAuthoringSessionParser = objectParser<CommitAuthoringSessionInput>(
   "commit authoring session input",
   (input) => {
     assertAuthoringSessionRef(input);
-    if (
-      input.mode !== undefined &&
-      !["interaction", "automatic", "reusable"].includes(String(input.mode))
-    )
-      fail("authoring mode", "must be interaction, automatic, or reusable");
     if (input.destination !== undefined) {
       const destination = record(input.destination, "authoring destination");
       if (!["new-screen", "screen", "end"].includes(String(destination.kind)))
@@ -1041,9 +1036,10 @@ const commitAuthoringSessionParser = objectParser<CommitAuthoringSessionInput>(
       if (destination.kind === "new-screen" && destination.title !== undefined)
         string(destination.title, "destination title");
     }
+    if (input.createTest !== undefined && input.createTest !== true)
+      fail("authoring createTest", "must be true when provided");
   },
 );
-
 const authoringSessionResponseParser: RuntimeParser<AuthoringSessionResponse> = {
   description: "authoring session response",
   parse: parseAuthoringSessionResponse,

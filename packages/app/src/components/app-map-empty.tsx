@@ -22,6 +22,7 @@ export function EmptyAppMap(props: {
   deviceOpen: boolean;
   onToggleDevice: () => void;
   onCaptureFirstScreen: () => void;
+  onRecordFirstTest: () => void;
   onOpenTargets: () => void;
   onImportYaml: (yaml: string) => Promise<void> | void;
   onExportYaml: () => void;
@@ -59,9 +60,7 @@ export function EmptyAppMap(props: {
     onOpenTargets: props.onOpenTargets,
     onShowLiveDevice: props.onToggleDevice,
     onSaveStartScreen: props.onCaptureFirstScreen,
-    // A blank canvas cannot own a Test; these become reachable only after the
-    // capture succeeds and Studio swaps in the authored workspace.
-    onRecord: props.onToggleDevice,
+    onRecord: props.onRecordFirstTest,
     onImportYaml: props.onImportYaml,
     onOpenTest: () => undefined,
     onOpenRun: () => undefined,
@@ -92,8 +91,8 @@ export function EmptyAppMap(props: {
                     Record your first test
                   </h1>
                   <p class="m-0 max-w-[38ch] text-body/[1.55] text-[var(--text-weak)]">
-                    Open the live device, save the starting screen, then use the app normally. Relay
-                    turns that path into a replayable Test.
+                    Open the live device, choose Record test, then use the app normally. Relay saves
+                    the starting screen as part of the replayable Test.
                   </p>
                 </div>
                 <Show
@@ -190,7 +189,7 @@ export function EmptyAppMap(props: {
                     size="lg"
                     disabled={props.creating || !ready()}
                     aria-busy={props.creating}
-                    onClick={props.onCaptureFirstScreen}
+                    onClick={props.onRecordFirstTest}
                   >
                     <Show
                       when={props.creating}
@@ -198,7 +197,7 @@ export function EmptyAppMap(props: {
                     >
                       <Icon name="refresh" size={14} class="ui-refresh-spin" />
                     </Show>
-                    {props.creating ? "Saving…" : "Save starting screen"}
+                    {props.creating ? "Starting…" : "Record test"}
                   </Button>
                 }
               >

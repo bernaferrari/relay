@@ -111,6 +111,12 @@ test("current revision is read once, compiled offline, and frozen into the exact
     scripted.invocations.map(({ id }) => id),
     ["app-map.get", "app-map.test.compile", "app-map.test.run"],
   );
+  assert.deepEqual(scripted.invocations[1]?.input, {
+    appMapId: "settings",
+    testId: "data-controls",
+    entryCheckpointScreenId: "data-controls",
+    forceRecaptureScreenIds: ["data-controls"],
+  });
   assert.deepEqual(scripted.invocations[2]?.input, {
     appMapId: "settings",
     testId: "data-controls",
@@ -276,9 +282,111 @@ test("a mutation transport failure is never retried implicitly", async () => {
   assert.equal(scripted.remaining(), 1);
 });
 
+test("an uncertain Run is recovered from its immutable execution intent", async () => {
+  const canonical = job("running", {
+    action: "open-settings",
+    serial: "pixel-9",
+    platform: "android",
+    artifacts: [
+      {
+        kind: "app-map-test-execution-intent",
+        data: {
+          sourcePlan: {
+            appMapId: "settings",
+            appMapRevision: 3,
+            testId: "data-controls",
+            rootRecipeId: "open-settings",
+            digest: "plan-3",
+          },
+        },
+      },
+    ],
+  });
+  const scripted = createScriptedRelayClient([
+    { id: "job.list", output: { jobs: [{ ...canonical, frameCount: 0 }] } },
+    { id: "job.get", output: { job: canonical } },
+  ]);
+
+  const snapshot = await createRelayWorkflows(scripted.client).recover({
+    kind: "run-test",
+    startedAfter: 99,
+    frozen: {
+      appMapId: "settings",
+      appMapRevision: 3,
+      testId: "data-controls",
+      planDigest: "plan-3",
+      target,
+    },
+  });
+
+  assert.equal(snapshot.phase, "running");
+  assert.equal(snapshot.execution?.jobId, "job-1");
+  assert.equal(snapshot.frozen?.rootRecipeId, "open-settings");
+  assert.ok(snapshot.ref);
+  assert.equal(scripted.remaining(), 0);
+});
+
+test("fresh-capture recovery adopts by its pre-dispatch request identity", async () => {
+  const requestId = "workflow-request-1";
+  const canonical = job("running", {
+    action: "recaptured-root",
+    serial: "pixel-9",
+    platform: "android",
+    artifacts: [
+      {
+        kind: "app-map-test-workflow-request",
+        data: { schemaVersion: 1, requestId },
+      },
+      {
+        kind: "app-map-test-execution-intent",
+        data: {
+          sourcePlan: {
+            appMapId: "settings",
+            appMapRevision: 3,
+            testId: "data-controls",
+            rootRecipeId: "recaptured-root",
+            digest: "server-recapture-digest",
+          },
+        },
+      },
+    ],
+  });
+  const scripted = createScriptedRelayClient([
+    compileStep(3),
+    { id: "app-map.test.run", error: new Error("response lost after dispatch") },
+    { id: "job.list", output: { jobs: [{ ...canonical, frameCount: 0 }] } },
+    { id: "job.get", output: { job: canonical } },
+  ]);
+  const workflows = createRelayWorkflows(scripted.client);
+  const uncertain = await workflows.start(
+    intent({
+      revision: { exact: 3 },
+      workflowRequestId: requestId,
+      capture: { fullSurfaceScreenIds: ["data-controls"] },
+    }),
+  );
+  assert.equal(uncertain.phase, "needs-attention");
+  assert.equal(uncertain.frozen?.workflowRequestId, requestId);
+  assert.deepEqual(scripted.invocations[0]?.input, {
+    appMapId: "settings",
+    testId: "data-controls",
+    forceRecaptureScreenIds: ["data-controls"],
+  });
+
+  const recovered = await workflows.recover({
+    kind: "run-test",
+    frozen: uncertain.frozen!,
+    startedAfter: 99,
+  });
+  assert.equal(recovered.phase, "running");
+  assert.equal(recovered.frozen?.rootRecipeId, "recaptured-root");
+  assert.equal(scripted.remaining(), 0);
+});
+
 function authorIntent(overrides: Partial<AuthorTestIntent> = {}): AuthorTestIntent {
   return {
     kind: "author-test",
+    actorId: "human:local",
     title: "Data Controls path",
     appMapId: "settings",
     target,
@@ -294,6 +402,11 @@ function authoringSession(input: {
   revision?: number;
   replay?: { id: string; takeRevision: number; outcome: "passed" | "failed"; error?: string };
   committedConnectionId?: string;
+  committedTestId?: string;
+  actorId?: string;
+  sourceScreenId?: string;
+  pendingConnectionId?: string;
+  group?: string;
 }) {
   const revision = input.revision ?? 1;
   const actions = (input.actions ?? []).map((action, index) => ({
@@ -329,9 +442,12 @@ function authoringSession(input: {
     id: "authoring-1",
     organizationId: "local",
     projectId: "default",
-    actorId: "human:local",
+    actorId: input.actorId ?? "human:local",
     actorKind: "human",
     appMapId: "settings",
+    ...(input.sourceScreenId ? { sourceScreenId: input.sourceScreenId } : {}),
+    ...(input.pendingConnectionId ? { pendingConnectionId: input.pendingConnectionId } : {}),
+    ...(input.group ? { group: input.group } : {}),
     state: input.state,
     target,
     leaseId: "lease-1",
@@ -339,6 +455,7 @@ function authoringSession(input: {
     createdAt: 90,
     updatedAt: input.updatedAt,
     ...(input.committedConnectionId ? { committedConnectionId: input.committedConnectionId } : {}),
+    ...(input.committedTestId ? { committedTestId: input.committedTestId } : {}),
     take: {
       id: "take-1",
       state:
@@ -383,7 +500,12 @@ function authoringStep(
 }
 
 test("authoring starts recording against one frozen App Map revision", async () => {
-  const recording = authoringSession({ state: "recording", updatedAt: 100 });
+  const recording = authoringSession({
+    state: "recording",
+    updatedAt: 100,
+    sourceScreenId: "home",
+    group: "Settings",
+  });
   const scripted = createScriptedRelayClient([
     { id: "app-map.get", output: { appMap: { revision: 7 } } },
     authoringStep("authoring.session.begin", recording, (input) =>
@@ -417,6 +539,65 @@ test("authoring starts recording against one frozen App Map revision", async () 
   assert.equal(scripted.remaining(), 0);
 });
 
+test("a lost begin response adopts the one matching canonical recording session", async () => {
+  const recording = authoringSession({ state: "recording", updatedAt: 100 });
+  const scripted = createScriptedRelayClient([
+    { id: "authoring.session.begin", error: new Error("response lost after dispatch") },
+    { id: "authoring.session.list", output: { sessions: [recording] } },
+  ]);
+  const workflows = createRelayWorkflows(scripted.client);
+
+  const recovered = await workflows.start(authorIntent({ revision: { exact: 7 } }));
+
+  assert.equal(recovered.stage, "recording");
+  assert.equal(recovered.phase, "running");
+  assert.ok(recovered.ref);
+  assert.equal(scripted.invocations.filter(({ id }) => id === "authoring.session.begin").length, 1);
+  assert.equal(scripted.remaining(), 0);
+});
+
+test("a lost begin response never adopts another actor or authoring path", async () => {
+  const otherActor = authoringSession({
+    state: "recording",
+    updatedAt: 100,
+    actorId: "agent:other",
+  });
+  const otherPath = authoringSession({
+    state: "recording",
+    updatedAt: 101,
+    group: "Another path",
+  });
+  const scripted = createScriptedRelayClient([
+    { id: "authoring.session.begin", error: new Error("response lost after dispatch") },
+    { id: "authoring.session.list", output: { sessions: [otherActor, otherPath] } },
+  ]);
+
+  const snapshot = await createRelayWorkflows(scripted.client).start(
+    authorIntent({ revision: { exact: 7 } }),
+  );
+
+  assert.equal(snapshot.phase, "needs-attention");
+  assert.equal(snapshot.ref, undefined);
+  assert.equal(snapshot.problems[0]?.code, "mutation-outcome-unknown");
+  assert.equal(scripted.remaining(), 0);
+});
+
+test("authoring recovery reconstructs an opaque reference from canonical state", async () => {
+  const recording = authoringSession({ state: "recording", updatedAt: 100 });
+  const scripted = createScriptedRelayClient([authoringStep("authoring.session.get", recording)]);
+  const workflows = createRelayWorkflows(scripted.client);
+
+  const recovered = await workflows.recover({
+    kind: "author-test",
+    sessionId: "authoring-1",
+  });
+
+  assert.equal(recovered.stage, "recording");
+  assert.ok(recovered.ref);
+  assert.equal(recovered.authoring?.sessionId, "authoring-1");
+  assert.equal(scripted.remaining(), 0);
+});
+
 test("record, checkpoint, compile-review, replay proof, and approval compose canonical operations", async () => {
   const recording = authoringSession({ state: "recording", updatedAt: 100 });
   const withTap = authoringSession({
@@ -441,6 +622,7 @@ test("record, checkpoint, compile-review, replay proof, and approval compose can
     actions: [{ id: "tap-settings" }, { id: "checkpoint", label: "Data Controls" }],
     replay: { id: "live-demonstration", takeRevision: 1, outcome: "passed" },
     committedConnectionId: "connection-1",
+    committedTestId: "test-authoring-1",
   });
   const scripted = createScriptedRelayClient([
     authoringStep("authoring.session.begin", recording),
@@ -456,7 +638,13 @@ test("record, checkpoint, compile-review, replay proof, and approval compose can
     authoringStep("authoring.session.get", withCheckpoint),
     authoringStep("authoring.session.stop", reviewing),
     authoringStep("authoring.session.get", reviewing),
-    authoringStep("authoring.session.commit", committed),
+    authoringStep("authoring.session.commit", committed, (input) =>
+      assert.deepEqual(input, {
+        sessionId: "authoring-1",
+        destination: { kind: "new-screen", title: "Data Controls" },
+        createTest: true,
+      }),
+    ),
   ]);
   const workflows = createRelayWorkflows(scripted.client);
   let snapshot: AuthorTestSnapshot = await workflows.start(
@@ -500,7 +688,29 @@ test("record, checkpoint, compile-review, replay proof, and approval compose can
   })) as AuthorTestSnapshot;
   assert.equal(snapshot.phase, "succeeded");
   assert.equal(snapshot.authoring?.committedConnectionId, "connection-1");
+  assert.equal(snapshot.authoring?.committedTestId, "test-authoring-1");
   assert.equal(scripted.remaining(), 0);
+});
+
+test("a committed recording without its generated Test fails closed", async () => {
+  const incomplete = authoringSession({
+    state: "committed",
+    updatedAt: 140,
+    actions: [{ id: "tap-settings" }],
+    replay: { id: "live-demonstration", takeRevision: 1, outcome: "passed" },
+    committedConnectionId: "connection-1",
+  });
+  const scripted = createScriptedRelayClient([authoringStep("authoring.session.get", incomplete)]);
+
+  const snapshot = await createRelayWorkflows(scripted.client).recover({
+    kind: "author-test",
+    sessionId: "authoring-1",
+  });
+
+  assert.equal(snapshot.phase, "needs-attention");
+  assert.equal(snapshot.authoring?.committedConnectionId, "connection-1");
+  assert.equal(snapshot.authoring?.committedTestId, undefined);
+  assert.equal(snapshot.problems[0]?.code, "malformed-response");
 });
 
 test("an edited review cannot be approved until its exact revision replays", async () => {

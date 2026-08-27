@@ -92,7 +92,9 @@ export function decodeRunWorkflowRef(ref: WorkflowRef): RunWorkflowReference | u
       !Number.isInteger(frozen.appMapRevision) ||
       (frozen.appMapRevision as number) < 0 ||
       !nonEmptyString(frozen.testId) ||
-      !nonEmptyString(frozen.planDigest)
+      !nonEmptyString(frozen.planDigest) ||
+      (frozen.targetProfileId !== undefined && !nonEmptyString(frozen.targetProfileId)) ||
+      (frozen.workflowRequestId !== undefined && !nonEmptyString(frozen.workflowRequestId))
     ) {
       return undefined;
     }
@@ -133,6 +135,7 @@ export function decodeAuthoringWorkflowRef(
     if (
       !target ||
       !nonEmptyString(frozen.title) ||
+      !nonEmptyString(frozen.actorId) ||
       !nonEmptyString(frozen.appMapId) ||
       !Number.isInteger(frozen.appMapRevision) ||
       (frozen.appMapRevision as number) < 0

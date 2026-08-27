@@ -4,6 +4,7 @@ import type { RelayOperationPort } from "./operation-port.js";
 import type {
   AuthorTestDecision,
   AuthorTestIntent,
+  AuthorTestRecoveryIntent,
   AuthorTestSnapshot,
   FrozenAuthorTestIdentity,
   WorkflowProblem,
@@ -45,12 +46,26 @@ function validRevision(value: unknown): value is number {
 function frozenIdentity(intent: AuthorTestIntent, revision: number): FrozenAuthorTestIdentity {
   return {
     title: intent.title.trim(),
+    actorId: intent.actorId,
     appMapId: intent.appMapId,
     appMapRevision: revision,
     target: { ...intent.target },
     ...(intent.sourceScreenId ? { sourceScreenId: intent.sourceScreenId } : {}),
     ...(intent.pendingConnectionId ? { pendingConnectionId: intent.pendingConnectionId } : {}),
     ...(intent.group?.trim() ? { group: intent.group.trim() } : {}),
+  };
+}
+
+function frozenIdentityFromSession(session: AuthoringSession): FrozenAuthorTestIdentity {
+  return {
+    title: session.group?.trim() || "New Test",
+    actorId: session.actorId,
+    appMapId: session.appMapId,
+    appMapRevision: session.expectedAppMapRevision,
+    target: { ...session.target },
+    ...(session.sourceScreenId ? { sourceScreenId: session.sourceScreenId } : {}),
+    ...(session.pendingConnectionId ? { pendingConnectionId: session.pendingConnectionId } : {}),
+    ...(session.group?.trim() ? { group: session.group.trim() } : {}),
   };
 }
 
@@ -88,10 +103,14 @@ function validStartedSession(
 ) {
   return Boolean(
     session.id &&
+    session.actorId === intent.actorId &&
     session.appMapId === intent.appMapId &&
     session.expectedAppMapRevision === revision &&
     session.leaseId === intent.leaseId &&
     sameTarget(session.target, intent.target) &&
+    session.sourceScreenId === intent.sourceScreenId &&
+    session.pendingConnectionId === intent.pendingConnectionId &&
+    (session.group?.trim() || undefined) === (intent.group?.trim() || undefined) &&
     session.state === "recording" &&
     session.take?.state === "recording",
   );
@@ -101,7 +120,12 @@ export class CanonicalAuthoringWorkflow {
   constructor(private readonly operations: RelayOperationPort) {}
 
   async start(intent: AuthorTestIntent): Promise<AuthorTestSnapshot> {
-    if (!intent.title.trim() || !intent.appMapId.trim() || !intent.leaseId.trim()) {
+    if (
+      !intent.title.trim() ||
+      !intent.actorId.trim() ||
+      !intent.appMapId.trim() ||
+      !intent.leaseId.trim()
+    ) {
       return initialProblem({
         intent,
         problem: {
@@ -155,6 +179,8 @@ export class CanonicalAuthoringWorkflow {
         ...(intent.group?.trim() ? { group: intent.group.trim() } : {}),
       });
     } catch (error) {
+      const reconciled = await this.reconcileStartedSession(intent, revision);
+      if (reconciled) return reconciled;
       return initialProblem({
         intent,
         frozen,
@@ -174,14 +200,61 @@ export class CanonicalAuthoringWorkflow {
         ),
       });
     }
+    return this.snapshotForSession(output.session, frozen);
+  }
+
+  async recover(intent: AuthorTestRecoveryIntent): Promise<AuthorTestSnapshot> {
+    try {
+      const output = await this.operations.invoke("authoring.session.get", {
+        sessionId: intent.sessionId,
+      });
+      return this.snapshotForSession(output.session, frozenIdentityFromSession(output.session));
+    } catch (error) {
+      return {
+        schemaVersion: 1,
+        kind: "author-test",
+        title: "Recover recording",
+        phase: "needs-attention",
+        stage: "unknown",
+        version: "unavailable",
+        authoring: { sessionId: intent.sessionId },
+        progress: { label: "The Authoring Session needs inspection" },
+        allowedNextActions: ["inspect"],
+        problems: [unavailableProblem("recover the canonical Authoring Session", error)],
+        evidenceRefs: [],
+      };
+    }
+  }
+
+  private async reconcileStartedSession(
+    intent: AuthorTestIntent,
+    revision: number,
+  ): Promise<AuthorTestSnapshot | undefined> {
+    try {
+      const output = await this.operations.invoke("authoring.session.list", {});
+      const matches = output.sessions.filter((session) =>
+        validStartedSession(session, intent, revision),
+      );
+      return matches.length === 1
+        ? this.snapshotForSession(matches[0]!, frozenIdentity(intent, revision))
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private snapshotForSession(
+    session: AuthoringSession,
+    frozen: FrozenAuthorTestIdentity,
+  ): AuthorTestSnapshot {
     const ref = encodeAuthoringWorkflowRef({
       schemaVersion: 1,
       kind: "author-test",
-      sessionId: output.session.id,
+      sessionId: session.id,
       frozen,
     });
     try {
-      return snapshotFromAuthoringSession({ ref, frozen, session: output.session });
+      return snapshotFromAuthoringSession({ ref, frozen, session });
     } catch (error) {
       return {
         schemaVersion: 1,
@@ -192,7 +265,7 @@ export class CanonicalAuthoringWorkflow {
         version: "unavailable",
         ref,
         frozen,
-        authoring: { sessionId: output.session.id },
+        authoring: { sessionId: session.id },
         progress: { label: "The Authoring Session needs inspection" },
         allowedNextActions: ["inspect"],
         problems: [mutationUnknownProblem("the Authoring Session began", error)],
@@ -314,6 +387,7 @@ export class CanonicalAuthoringWorkflow {
       return this.operations.invoke("authoring.session.commit", {
         sessionId,
         ...(decision.destination ? { destination: decision.destination } : {}),
+        createTest: true,
       });
     }
     if (decision.action === "discard") {
@@ -339,6 +413,7 @@ export class CanonicalAuthoringWorkflow {
   ): boolean {
     return (
       session.id === reference.sessionId &&
+      session.actorId === reference.frozen.actorId &&
       session.appMapId === reference.frozen.appMapId &&
       session.expectedAppMapRevision === reference.frozen.appMapRevision &&
       sameTarget(session.target, reference.frozen.target)

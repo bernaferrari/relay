@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { CombineCampaign } from "@relay/protocol";
 import { createRelayWorkflows, type RepeatTestIntent } from "./index.js";
 import { createScriptedRelayClient, type ScriptedRelayStep } from "./testing.js";
 
@@ -98,6 +99,11 @@ function durableResult(input: {
   status: ResultStatus;
   selected?: boolean;
 }) {
+  const terminal =
+    input.status === "passed" ||
+    input.status === "failed" ||
+    input.status === "blocked" ||
+    input.status === "cancelled";
   return {
     index: input.index,
     cellId: input.id,
@@ -111,7 +117,12 @@ function durableResult(input: {
     staticInputDigest: `input-${input.value}`,
     phase: input.phase,
     status: input.status,
-    ...(input.phase === "pilot" ? { jobId: "pilot-job" } : {}),
+    ...(input.phase === "pilot"
+      ? {
+          jobId: "pilot-job",
+        }
+      : {}),
+    ...(terminal ? { runId: input.phase === "pilot" ? "pilot-run" : `${input.id}-run` } : {}),
   };
 }
 
@@ -122,7 +133,7 @@ function durableRepeat(input: {
   updatedAt?: number;
   sourceRevision?: number;
   includeExtra?: boolean;
-}) {
+}): CombineCampaign {
   return {
     schemaVersion: 1,
     id: "repeat-1",
@@ -171,8 +182,8 @@ function durableRepeat(input: {
     ],
     lineage: [{ kind: "created", at: 100, appMapRevision: 8 }],
     execution: {
-      selected: { language: values },
-      selectedCellIds: resultIds,
+      selected: { language: [...values] },
+      selectedCellIds: [...resultIds],
       strategy: "cartesian",
       seed: 1,
     },
@@ -181,6 +192,30 @@ function durableRepeat(input: {
 
 function inspectStep(record: ReturnType<typeof durableRepeat>): ScriptedRelayStep {
   return { id: "job.combine.campaign.get", output: { campaign: record } };
+}
+
+function recoverableRepeat() {
+  const record = durableRepeat({
+    status: "ready-to-resume",
+    pilot: "passed",
+    remaining: "pending",
+  });
+  record.execution!.repeat = {
+    schemaVersion: 1,
+    requestedAppMapRevision: 7,
+    executionAppMapRevision: 8,
+    testId: "data-controls",
+    testPlanDigest: "plan-7",
+    rootRecipeId: "repeat-root",
+    target,
+    over: { dimensionId: "language", valueIds: [...values] },
+    evidence: "visual",
+    sourceRevision: { vcs: "git", sha: "abc1234" },
+    capture: { fullSurfaceScreenIds: ["data-controls"] },
+    pilotJobId: "pilot-job",
+    selectedCaseIds: [...resultIds],
+  };
+  return record;
 }
 
 async function startReadyRef() {
@@ -213,6 +248,83 @@ test("invalid Repeat values fail before any canonical operation", async () => {
   assert.equal(scripted.remaining(), 1);
 });
 
+test("recover adopts one canonical unfinished Repeat without starting another pilot", async () => {
+  const scripted = createScriptedRelayClient([
+    {
+      id: "job.combine.campaign.repeat.active",
+      output: { campaign: recoverableRepeat() },
+    },
+  ]);
+
+  const snapshot = await createRelayWorkflows(scripted.client).recover({
+    kind: "repeat-test",
+    appMapId: "settings",
+    testId: "data-controls",
+  });
+
+  assert.ok(snapshot.ref);
+  assert.equal(snapshot.phase, "paused");
+  assert.equal(snapshot.frozen?.requestedAppMapRevision, 7);
+  assert.equal(snapshot.frozen?.evidence, "visual");
+  assert.deepEqual(snapshot.frozen?.capture?.fullSurfaceScreenIds, ["data-controls"]);
+  assert.equal(snapshot.frozen?.sourceRevision?.sha, "abc1234");
+  assert.deepEqual(snapshot.frozen?.over.valueIds, values);
+  assert.deepEqual(
+    scripted.invocations.map((invocation) => invocation.id),
+    ["job.combine.campaign.repeat.active"],
+  );
+});
+
+test("a lost Repeat start response is recovered explicitly without retrying the mutation", async () => {
+  const scripted = createScriptedRelayClient([
+    compileStep(),
+    { id: "app-map.test.run", error: new Error("response lost") },
+    {
+      id: "job.combine.campaign.repeat.active",
+      output: { campaign: recoverableRepeat() },
+    },
+  ]);
+  const workflows = createRelayWorkflows(scripted.client);
+
+  const unknown = await workflows.start(intent({ revision: { exact: 7 } }));
+  assert.equal(unknown.phase, "needs-attention");
+  assert.equal(unknown.ref, undefined);
+
+  const recovered = await workflows.recover({
+    kind: "repeat-test",
+    appMapId: "settings",
+    testId: "data-controls",
+  });
+  assert.ok(recovered.ref);
+  assert.equal(recovered.phase, "paused");
+  assert.equal(
+    scripted.invocations.filter((invocation) => invocation.id === "app-map.test.run").length,
+    1,
+  );
+});
+
+test("recover refuses malformed durable Repeat identity without mutating anything", async () => {
+  const record = recoverableRepeat();
+  record.execution!.repeat!.selectedCaseIds = ["result-en"];
+  const scripted = createScriptedRelayClient([
+    {
+      id: "job.combine.campaign.repeat.active",
+      output: { campaign: record },
+    },
+  ]);
+
+  const snapshot = await createRelayWorkflows(scripted.client).recover({
+    kind: "repeat-test",
+    appMapId: "settings",
+    testId: "data-controls",
+  });
+
+  assert.equal(snapshot.phase, "needs-attention");
+  assert.equal(snapshot.ref, undefined);
+  assert.equal(snapshot.problems[0]?.code, "malformed-response");
+  assert.equal(scripted.invocations.length, 1);
+});
+
 test("Repeat freezes the Test, starts exactly one pilot, then projects durable state", async () => {
   const record = durableRepeat({ status: "pilot-running", pilot: "queued", remaining: "pending" });
   const scripted = createScriptedRelayClient([
@@ -227,6 +339,7 @@ test("Repeat freezes the Test, starts exactly one pilot, then projects durable s
         in: { language: values },
         lens: "visual",
         executionMode: "pilot",
+        repeatRecovery: { schemaVersion: 1, testPlanDigest: "plan-7" },
         sourceRevision: { vcs: "git", sha: "abcdef1" },
         surfaceCapture: { forceRecaptureScreenIds: ["data-controls"] },
       }),
@@ -257,6 +370,14 @@ test("Repeat freezes the Test, starts exactly one pilot, then projects durable s
     needsReview: 0,
     cancelled: 0,
   });
+  assert.deepEqual(
+    snapshot.results.map(({ valueId, phase, status }) => ({ valueId, phase, status })),
+    [
+      { valueId: "en", phase: "pilot", status: "running" },
+      { valueId: "it", phase: "remaining", status: "untouched" },
+      { valueId: "fr", phase: "remaining", status: "untouched" },
+    ],
+  );
   assert.equal(scripted.invocations.filter(({ id }) => id === "app-map.test.run").length, 1);
   assert.equal(scripted.remaining(), 0);
 });
@@ -377,6 +498,66 @@ test("an unproved pilot cannot continue", async () => {
     scripted.invocations.filter(({ id }) => id === "job.combine.campaign.resume").length,
     0,
   );
+});
+
+test("a persisted representative result exposes immutable Run evidence", async () => {
+  const { ref } = await startReadyRef();
+  const scripted = createScriptedRelayClient([
+    inspectStep(
+      durableRepeat({
+        status: "ready-to-resume",
+        pilot: "passed",
+        remaining: "pending",
+      }),
+    ),
+  ]);
+  const snapshot = await createRelayWorkflows(scripted.client).inspect(ref);
+  assert.equal(snapshot.kind, "repeat-test");
+  if (snapshot.kind !== "repeat-test") return;
+  assert.deepEqual(snapshot.evidenceRefs, [{ kind: "run", id: "pilot-run" }]);
+  assert.deepEqual(snapshot.repeat, { id: "repeat-1" });
+});
+
+test("a terminal representative result without immutable Run evidence cannot pass or continue", async () => {
+  const { ref } = await startReadyRef();
+  const record = durableRepeat({
+    status: "ready-to-resume",
+    pilot: "passed",
+    remaining: "pending",
+  });
+  delete record.cases[0]!.runId;
+  const scripted = createScriptedRelayClient([inspectStep(record)]);
+  const snapshot = await createRelayWorkflows(scripted.client).inspect(ref);
+  assert.equal(snapshot.kind, "repeat-test");
+  if (snapshot.kind !== "repeat-test") return;
+  assert.equal(snapshot.phase, "running");
+  assert.equal(snapshot.results[0]?.status, "running");
+  assert.equal(snapshot.allowedNextActions.includes("continue"), false);
+  assert.equal(snapshot.allowedNextActions.includes("confirm-and-continue"), false);
+  assert.deepEqual(snapshot.evidenceRefs, []);
+});
+
+test("failed and cancelled representative results remain nonterminal without immutable evidence", async () => {
+  const { ref } = await startReadyRef();
+  for (const [recordStatus, resultStatus] of [
+    ["needs-review", "failed"],
+    ["cancelled", "cancelled"],
+  ] as const) {
+    const record = durableRepeat({
+      status: recordStatus,
+      pilot: resultStatus,
+      remaining: "pending",
+    });
+    delete record.cases[0]!.runId;
+    const scripted = createScriptedRelayClient([inspectStep(record)]);
+    const snapshot = await createRelayWorkflows(scripted.client).inspect(ref);
+    assert.equal(snapshot.kind, "repeat-test");
+    if (snapshot.kind !== "repeat-test") continue;
+    assert.equal(snapshot.phase, "running");
+    assert.equal(snapshot.results[0]?.status, "running");
+    assert.deepEqual(snapshot.allowedNextActions, ["inspect", "cancel"]);
+    assert.deepEqual(snapshot.evidenceRefs, []);
+  }
 });
 
 test("a stale decision returns current state without mutation", async () => {

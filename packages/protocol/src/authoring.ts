@@ -514,7 +514,11 @@ export type AuthoringSession = {
   recoverable?: boolean;
   error?: string;
   commitTransactionId?: string;
+  /** Durable intent recorded before the atomic App Map transaction. Recovery
+   * uses this to prove the Test and Connection crossed the same commit point. */
+  commitTestId?: string;
   committedConnectionId?: string;
+  committedTestId?: string;
   /** Terminal review disposition. This is server-owned so another renderer
    * cannot revive an already decided or replaced Take after a refresh. */
   archive?: {
@@ -552,6 +556,9 @@ export type ReplaceAuthoringActionInput = AuthoringSessionRef & {
 
 export type CommitAuthoringSessionInput = AuthoringSessionRef & {
   destination?: AuthoringCommitDestination;
+  /** Create the first runnable Test in the same App Map transaction as the
+   * reviewed Connection. */
+  createTest?: true;
 };
 
 export type AuthoringSessionResponse = { session: AuthoringSession };
@@ -566,6 +573,7 @@ export type AuthoringSessionSummary = {
   target: AuthoringTarget;
   sourceScreenId?: string;
   committedConnectionId?: string;
+  committedTestId?: string;
   error?: string;
   archive?: AuthoringSession["archive"];
   take?: {
@@ -636,6 +644,7 @@ export function summarizeAuthoringSession(session: AuthoringSession): AuthoringS
     ...(session.committedConnectionId
       ? { committedConnectionId: session.committedConnectionId }
       : {}),
+    ...(session.committedTestId ? { committedTestId: session.committedTestId } : {}),
     ...(session.error ? { error: session.error } : {}),
     ...(session.archive ? { archive: structuredClone(session.archive) } : {}),
     ...(take

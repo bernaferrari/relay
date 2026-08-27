@@ -138,19 +138,19 @@ export function StageRecordingControls(props: {
             variant={props.recording ? "danger" : "primary"}
             size="md"
             class="min-w-[104px] gap-2 rounded-lg"
-            aria-label={props.recording ? "Stop recording path" : "Record path"}
+            aria-label={props.recording ? "Stop recording" : "Record test"}
             disabled={!props.recording && !props.selectedLeaseId}
             onClick={props.onToggleRecording}
             data-tip={
               props.recording
                 ? "Stop when you reach the next screen"
                 : props.selectedLeaseId
-                  ? "Record taps as a path on the map"
+                  ? "Record device interactions as a Test"
                   : "Restoring device control…"
             }
           >
             <Icon name={props.recording ? "square" : "circle"} size={10} />
-            {props.recording ? "Stop" : "Record path"}
+            {props.recording ? "Stop" : "Record test"}
           </Button>
           <Show when={props.recording}>
             <div class="flex h-9 min-w-0 items-center rounded-lg bg-[var(--surface-base)] shadow-[inset_0_0_0_1px_var(--border-weak-base)]">

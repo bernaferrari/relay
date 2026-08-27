@@ -4,6 +4,8 @@ import type {
   LocalCampaignCapacityTargetCriticalPathPreflight,
 } from "./campaign-capacity-plan.js";
 import type { ExecutionTargetRef, LocalAgentDeviceExecutionTargetRef } from "./execution-target.js";
+import type { SourceRevision } from "./source-revision.js";
+import type { AuthoringTarget } from "./authoring.js";
 
 /**
  * Shared, serialized local-deadline request. Every selected target ×
@@ -77,7 +79,28 @@ export type CombineCampaignCase = {
   phase: "pilot" | "coverage";
   status: CombineCampaignCaseStatus;
   jobId?: string;
+  /** Immutable Run evidence becomes available after the case is persisted. */
+  runId?: string;
   error?: string;
+};
+
+/** Immutable workflow identity retained beside durable scheduling state. It
+ * exists only so a client can adopt an already-started Repeat after losing its
+ * local opaque reference; the App Map Test and Run evidence remain canonical. */
+export type RepeatCampaignExecutionIdentity = {
+  schemaVersion: 1;
+  requestedAppMapRevision: number;
+  executionAppMapRevision: number;
+  testId: string;
+  testPlanDigest: string;
+  rootRecipeId: string;
+  target: AuthoringTarget;
+  over: { dimensionId: string; valueIds: string[] };
+  evidence: "visual" | "smoke";
+  sourceRevision?: SourceRevision;
+  capture?: { fullSurfaceScreenIds: string[] };
+  pilotJobId: string;
+  selectedCaseIds: string[];
 };
 
 /** Durable, bounded execution state for a saved Combine. App Map/Test data
@@ -119,6 +142,7 @@ export type CombineCampaign = {
     strategy?: "zip" | "cartesian" | "pairwise";
     seed: number;
     title?: string;
+    repeat?: RepeatCampaignExecutionIdentity;
     /** Immutable admission evidence captured before any Combine jobs queued. */
     localAdmission?: {
       request: LocalCampaignAdmissionRequest;

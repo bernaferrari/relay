@@ -1,5 +1,6 @@
 import * as z from "zod/v4";
 import { combineCampaignAdmissionSchema } from "./campaign-capacity-operation-output-schemas.js";
+import { sourceRevisionSchema } from "./app-map-test-operation-schemas.js";
 
 const targetCapabilitySchema = z.enum([
   "snapshot",
@@ -473,6 +474,7 @@ export const combineCampaignSchema = z
             "cancelled",
           ]),
           jobId: z.string().optional(),
+          runId: z.string().optional(),
           error: z.string().optional(),
         })
         .strict(),
@@ -497,6 +499,42 @@ export const combineCampaignSchema = z
         strategy: z.enum(["zip", "cartesian", "pairwise"]).optional(),
         seed: z.number(),
         title: z.string().optional(),
+        repeat: z
+          .object({
+            schemaVersion: z.literal(1),
+            requestedAppMapRevision: z.number().int().nonnegative(),
+            executionAppMapRevision: z.number().int().nonnegative(),
+            testId: z.string(),
+            testPlanDigest: z.string(),
+            rootRecipeId: z.string(),
+            target: z.discriminatedUnion("kind", [
+              z
+                .object({
+                  kind: z.literal("device"),
+                  platform: z.enum(["android", "ios"]),
+                  targetId: z.string(),
+                })
+                .strict(),
+              z
+                .object({
+                  kind: z.literal("browser"),
+                  platform: z.literal("browser"),
+                  targetId: z.string(),
+                })
+                .strict(),
+            ]),
+            over: z.object({ dimensionId: z.string(), valueIds: z.array(z.string()) }).strict(),
+            evidence: z.enum(["visual", "smoke"]),
+            sourceRevision: sourceRevisionSchema.optional(),
+            capture: z
+              .object({ fullSurfaceScreenIds: z.array(z.string()) })
+              .strict()
+              .optional(),
+            pilotJobId: z.string(),
+            selectedCaseIds: z.array(z.string()),
+          })
+          .strict()
+          .optional(),
         localAdmission: combineCampaignAdmissionSchema.optional(),
       })
       .strict()
@@ -649,6 +687,9 @@ export const executionOperationOutputSchemas = {
     .strict(),
   "job.combine.analysis": combineEvidenceAnalysisReportSchema,
   "job.combine.campaign.get": z.object({ campaign: combineCampaignSchema }).strict(),
+  "job.combine.campaign.repeat.active": z
+    .object({ campaign: combineCampaignSchema.nullable() })
+    .strict(),
   "job.combine.campaign.resume": z
     .object({
       campaign: combineCampaignSchema,

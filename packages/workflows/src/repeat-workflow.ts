@@ -11,11 +11,16 @@ import type {
   RepeatOutcomeCounts,
   RepeatTestDecision,
   RepeatTestIntent,
+  RepeatTestRecoveryIntent,
   RepeatTestSnapshot,
   WorkflowProblem,
   WorkflowRef,
 } from "./types.js";
-import { encodeRepeatWorkflowRef, type RepeatWorkflowReference } from "./workflow-ref.js";
+import {
+  decodeRepeatWorkflowRef,
+  encodeRepeatWorkflowRef,
+  type RepeatWorkflowReference,
+} from "./workflow-ref.js";
 
 type ValidCompile = {
   preflight: OperationOutput<"app-map.test.compile">["preflight"];
@@ -115,6 +120,7 @@ function initialProblem(input: {
     version: "unstarted",
     ...(input.frozen ? { frozen: input.frozen } : {}),
     outcomes: emptyOutcomes(input.intent.over.valueIds.length),
+    results: [],
     progress: { label: input.problem.title },
     allowedNextActions: [],
     problems: [input.problem],
@@ -169,8 +175,9 @@ function unknownSnapshot(input: {
     version: "unavailable",
     ref: input.ref,
     frozen: input.reference.frozen,
-    repeat: { id: input.reference.repeatId, pilotJobId: input.reference.pilotJobId },
+    repeat: { id: input.reference.repeatId },
     outcomes: emptyOutcomes(input.reference.selectedCaseIds.length),
+    results: [],
     progress: { label: input.problem.title },
     allowedNextActions: ["inspect"],
     problems: [input.problem],
@@ -277,6 +284,10 @@ export class CanonicalRepeatWorkflow {
         in: { [intent.over.dimensionId]: [...intent.over.valueIds] },
         lens: evidence,
         executionMode: "pilot",
+        repeatRecovery: {
+          schemaVersion: 1,
+          testPlanDigest: checked.preflight.planDigest,
+        },
         ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
         ...(intent.capture
           ? {
@@ -362,6 +373,83 @@ export class CanonicalRepeatWorkflow {
     };
     const ref = encodeRepeatWorkflowRef(reference);
     return this.readRecord(ref, reference);
+  }
+
+  async recover(intent: RepeatTestRecoveryIntent): Promise<RepeatTestSnapshot> {
+    let record: CombineCampaign | null;
+    try {
+      record = (
+        await this.operations.invoke("job.combine.campaign.repeat.active", {
+          appMapId: intent.appMapId,
+          testId: intent.testId,
+        })
+      ).campaign;
+    } catch (error) {
+      return this.recoveryProblem(
+        intent,
+        unavailableProblem("look for unfinished Repeat work", error),
+        "needs-attention",
+      );
+    }
+    if (!record) {
+      return this.recoveryProblem(intent, {
+        code: "operation-unavailable",
+        title: "No unfinished Repeat was found",
+        detail: "Relay has no durable unfinished Repeat for this Test.",
+        recovery: "Start a new Repeat explicitly when you are ready.",
+        retryable: false,
+      });
+    }
+
+    try {
+      const identity = record.execution?.repeat;
+      if (
+        !identity ||
+        record.appMapId !== intent.appMapId ||
+        identity.testId !== intent.testId ||
+        identity.executionAppMapRevision !== record.sourceRevision
+      ) {
+        throw new TypeError("The durable Repeat has no matching adoption identity");
+      }
+      const reference: RepeatWorkflowReference = {
+        schemaVersion: 1,
+        kind: "repeat-test",
+        repeatId: record.id,
+        pilotJobId: identity.pilotJobId,
+        selectedCaseIds: [...identity.selectedCaseIds],
+        frozen: {
+          appMapId: record.appMapId,
+          requestedAppMapRevision: identity.requestedAppMapRevision,
+          executionAppMapRevision: identity.executionAppMapRevision,
+          testId: identity.testId,
+          testPlanDigest: identity.testPlanDigest,
+          rootRecipeId: identity.rootRecipeId,
+          target: structuredClone(identity.target),
+          over: structuredClone(identity.over),
+          evidence: identity.evidence,
+          ...(identity.sourceRevision
+            ? { sourceRevision: structuredClone(identity.sourceRevision) }
+            : {}),
+          ...(identity.capture ? { capture: structuredClone(identity.capture) } : {}),
+        },
+      };
+      const ref = encodeRepeatWorkflowRef(reference);
+      const decoded = decodeRepeatWorkflowRef(ref);
+      if (!decoded) throw new TypeError("The durable Repeat adoption identity is malformed");
+      return snapshotFromRepeatRecord({ ref, reference: decoded, record });
+    } catch (error) {
+      return this.recoveryProblem(
+        intent,
+        {
+          code: "malformed-response",
+          title: "Relay could not safely adopt this Repeat",
+          detail: publicDetail(error),
+          recovery: "Inspect Runs and resolve the inconsistent durable identity before continuing.",
+          retryable: false,
+        },
+        "needs-attention",
+      );
+    }
   }
 
   async inspect(ref: WorkflowRef, reference: RepeatWorkflowReference) {
@@ -457,5 +545,26 @@ export class CanonicalRepeatWorkflow {
         problem: unavailableProblem("inspect durable Repeat state", error),
       });
     }
+  }
+
+  private recoveryProblem(
+    intent: RepeatTestRecoveryIntent,
+    problem: WorkflowProblem,
+    phase: RepeatTestSnapshot["phase"] = "blocked",
+  ): RepeatTestSnapshot {
+    return {
+      schemaVersion: 1,
+      kind: "repeat-test",
+      title: `Repeat ${intent.testId}`,
+      phase,
+      stage: phase === "blocked" ? "unstarted" : "unknown",
+      version: phase === "blocked" ? "unstarted" : "unavailable",
+      outcomes: emptyOutcomes(0),
+      results: [],
+      progress: { label: problem.title },
+      allowedNextActions: [],
+      problems: [problem],
+      evidenceRefs: [],
+    };
   }
 }

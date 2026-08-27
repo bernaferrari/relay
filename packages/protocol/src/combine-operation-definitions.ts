@@ -6,6 +6,7 @@ export type CombineOperationId =
   | "job.combine.export"
   | "job.combine.analysis"
   | "job.combine.campaign.get"
+  | "job.combine.campaign.repeat.active"
   | "job.combine.campaign.resume"
   | "job.combine.campaign.cancel";
 
@@ -29,6 +30,12 @@ export const combineOperationDefinitions = [
     "job.combine.campaign.get",
     "Get a resumable Combine campaign",
     "/jobs/combine/:batchId/campaign",
+    { category: "execution" },
+  ),
+  query(
+    "job.combine.campaign.repeat.active",
+    "Find unfinished Repeat work",
+    "/jobs/combine/repeat/active",
     { category: "execution" },
   ),
   command(

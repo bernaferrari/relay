@@ -65,6 +65,7 @@ export function appMapTestCompileInput(intent: AppMapTestRunIntent): {
   testId: string;
   entryCheckpointScreenId?: string;
   targetProfileId?: string;
+  forceRecaptureScreenIds?: string[];
 } {
   return {
     appMapId: intent.appMapId,
@@ -73,5 +74,8 @@ export function appMapTestCompileInput(intent: AppMapTestRunIntent): {
       ? { entryCheckpointScreenId: intent.startup.screenId }
       : {}),
     ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
+    ...(intent.surfaceCapture
+      ? { forceRecaptureScreenIds: [...intent.surfaceCapture.forceRecaptureScreenIds] }
+      : {}),
   };
 }

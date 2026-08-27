@@ -1,4 +1,11 @@
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js";
+import {
+  createRelayWorkflows,
+  type FrozenRunTestIdentity,
+  type RelayInvokeClient,
+  type RunTestSnapshot,
+  type WorkflowRef,
+} from "@relay/workflows";
 import type {
   AppMap,
   AppMapCompiledTest,
@@ -23,6 +30,13 @@ import {
 } from "./app-map-test-run-intent";
 
 type SaveState = "saved" | "saving" | "error";
+type RunAttentionMarker = {
+  schemaVersion: 1;
+  frozen: FrozenRunTestIdentity;
+  startedAfter: number;
+  ref?: string;
+};
+type RunMarkerStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 /**
  * Compile, launch, cancel and attribute one Test run.
@@ -40,33 +54,22 @@ export function createAppMapTestRun(options: {
   offline: Accessor<boolean>;
   jobs: Accessor<JobInfo[]>;
   refreshJobs: () => Promise<unknown>;
-  cancelJob: (id: string) => Promise<unknown>;
-  compileAndRun: (input: {
-    appMapId: string;
-    testId: string;
-    expectedRevision: number;
-    target:
-      | { kind: "browser"; platform: "browser"; targetId: string }
-      | { kind: "device"; platform: "android" | "ios"; targetId: string };
-    targetProfileId?: string;
-    surfaceCapture?: { forceRecaptureScreenIds: string[] };
-    startup: AppMapTestStartup;
-  }) => Promise<{
-    plan: AppMapCompiledTest;
-    planIdentity: { rootRecipeId: string };
-    job: { id: string };
-  }>;
+  client: RelayInvokeClient;
   compile: (input: {
     appMapId: string;
     testId: string;
     entryCheckpointScreenId?: string;
     targetProfileId?: string;
+    forceRecaptureScreenIds?: string[];
   }) => Promise<{
     plan: AppMapCompiledTest;
     preflight: OfflineTestPreflightReport;
   }>;
   awaitPendingSaves: () => Promise<void>;
+  /** Injectable only for deterministic remount/recovery tests. */
+  storage?: RunMarkerStorage;
 }) {
+  const workflows = createRelayWorkflows(options.client);
   const [plan, setPlan] = createSignal<AppMapCompiledTest>();
   const [jobId, setJobId] = createSignal<string>();
   const [launchState, setLaunchState] = createSignal<TestRunLaunchState>("idle");
@@ -77,9 +80,13 @@ export function createAppMapTestRun(options: {
   const [targetProfileId, setTargetProfileIdState] = createSignal<string>();
   const [preflight, setPreflight] = createSignal<OfflineTestPreflightReport>();
   const [preflightBusy, setPreflightBusy] = createSignal(false);
+  const [workflow, setWorkflow] = createSignal<RunTestSnapshot>();
+  const [attentionMarker, setAttentionMarker] = createSignal<RunAttentionMarker>();
   let runGeneration = 0;
   let preflightRequest = 0;
+  let recoveryRequest = 0;
   let runContextKey: string | undefined;
+  let recoveredMarkerKey: string | undefined;
   const fullSurfaceIds = createMemo(() => {
     const test = options.draft();
     return test ? fullSurfaceScreenIds(test) : [];
@@ -142,6 +149,113 @@ export function createAppMapTestRun(options: {
     });
   }
 
+  function markerStorage(): RunMarkerStorage | undefined {
+    if (options.storage) return options.storage;
+    try {
+      return typeof localStorage === "undefined" ? undefined : localStorage;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function attentionKey(): string | undefined {
+    const intent = currentRunIntent();
+    if (!intent?.target) return undefined;
+    const target =
+      intent.target.kind === "device"
+        ? `${intent.target.platform}:${intent.target.targetId}`
+        : `browser:${intent.target.targetId}`;
+    return `relay.run-test-attention.v1:${encodeURIComponent(intent.appMapId)}:${encodeURIComponent(intent.testId)}:${encodeURIComponent(target)}`;
+  }
+
+  function readAttentionMarker(key: string): RunAttentionMarker | undefined {
+    try {
+      const raw = markerStorage()?.getItem(key);
+      if (!raw) return undefined;
+      const value = JSON.parse(raw) as Partial<RunAttentionMarker>;
+      const intent = currentRunIntent();
+      if (
+        value.schemaVersion !== 1 ||
+        typeof value.startedAfter !== "number" ||
+        !value.frozen ||
+        !intent ||
+        value.frozen.appMapId !== intent.appMapId ||
+        value.frozen.testId !== intent.testId ||
+        JSON.stringify(value.frozen.target) !== JSON.stringify(intent.target) ||
+        (value.ref !== undefined && typeof value.ref !== "string")
+      ) {
+        return undefined;
+      }
+      return value as RunAttentionMarker;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function persistAttention(marker: RunAttentionMarker, explicitKey?: string): void {
+    const key = explicitKey ?? attentionKey();
+    if (!key) return;
+    try {
+      markerStorage()?.setItem(key, JSON.stringify(marker));
+    } catch {
+      // Losing local persistence must not clear the in-memory review boundary.
+    }
+    if (key === attentionKey()) setAttentionMarker(marker);
+  }
+
+  function clearAttention(explicitKey?: string): void {
+    const key = explicitKey ?? attentionKey();
+    if (key) {
+      try {
+        markerStorage()?.removeItem(key);
+      } catch {
+        // Canonical reconciliation already succeeded; a stale marker is safe.
+      }
+    }
+    if (key === attentionKey()) setAttentionMarker();
+  }
+
+  function persistedAttention(): RunAttentionMarker | undefined {
+    const key = attentionKey();
+    return attentionMarker() ?? (key ? readAttentionMarker(key) : undefined);
+  }
+
+  async function reconcileAttention(marker: RunAttentionMarker, key: string): Promise<void> {
+    const request = ++recoveryRequest;
+    const recovered = marker.ref
+      ? await workflows.inspect(marker.ref as WorkflowRef)
+      : await workflows.recover({
+          kind: "run-test",
+          frozen: marker.frozen,
+          startedAfter: marker.startedAfter,
+        });
+    if (request !== recoveryRequest || attentionKey() !== key || recovered.kind !== "run-test") {
+      return;
+    }
+    setWorkflow(recovered);
+    setJobId(recovered.execution?.jobId);
+    setError(recovered.problems.at(-1)?.detail ?? "");
+    if (
+      recovered.ref &&
+      (recovered.phase === "queued" ||
+        recovered.phase === "running" ||
+        recovered.phase === "paused" ||
+        recovered.phase === "needs-attention")
+    ) {
+      persistAttention(
+        {
+          ...marker,
+          frozen: recovered.frozen ?? marker.frozen,
+          ref: recovered.ref,
+        },
+        key,
+      );
+    } else if (recovered.execution?.jobId) {
+      clearAttention(key);
+    }
+    await options.refreshJobs();
+  }
+
   function runContext(): string {
     const map = options.appMap();
     const test = options.draft();
@@ -176,6 +290,22 @@ export function createAppMapTestRun(options: {
   }
 
   createEffect(syncRunContext);
+  createEffect(() => {
+    const key = attentionKey();
+    if (!key) {
+      recoveredMarkerKey = undefined;
+      setAttentionMarker();
+      return;
+    }
+    const marker = readAttentionMarker(key);
+    setAttentionMarker(marker);
+    const markerKey = marker
+      ? `${key}:${marker.startedAfter}:${marker.ref ?? "unresolved"}`
+      : undefined;
+    if (!marker || markerKey === recoveredMarkerKey) return;
+    recoveredMarkerKey = markerKey;
+    void reconcileAttention(marker, key);
+  });
 
   function isCurrentRunIntent(intent: AppMapTestRunIntent): boolean {
     const current = currentRunIntent(intent.startup);
@@ -184,6 +314,7 @@ export function createAppMapTestRun(options: {
 
   function forget(): void {
     setJobId();
+    setWorkflow();
     setLaunchState("idle");
     setError("");
     setMismatched(false);
@@ -217,7 +348,20 @@ export function createAppMapTestRun(options: {
     syncRunContext();
   }
 
-  const blockedReason = createMemo(() => {
+  const blockedReason = () => {
+    const persisted = persistedAttention();
+    if (persisted && !isActiveTestRun(job())) {
+      return persisted.ref
+        ? "Inspect the existing run before starting another run."
+        : "Inspect the uncertain run outcome before starting another run.";
+    }
+    const currentWorkflow = workflow();
+    if (currentWorkflow?.phase === "needs-attention") {
+      return (
+        currentWorkflow.problems.at(-1)?.recovery ??
+        "Inspect the uncertain run outcome before starting another run."
+      );
+    }
     if (options.offline()) return "Reconnect Relay before running this Test.";
     if (options.saveState() === "saving") return "Wait for the latest changes to finish saving.";
     if (options.saveState() === "error") return "Retry the local changes before running.";
@@ -245,49 +389,106 @@ export function createAppMapTestRun(options: {
       return "Choose a runtime evidence profile for the selected target before running this Test.";
     }
     return undefined;
-  });
+  };
 
   async function run(): Promise<void> {
+    const pendingAttention = persistedAttention();
+    const pendingKey = attentionKey();
+    if (pendingAttention && pendingKey) {
+      await reconcileAttention(pendingAttention, pendingKey);
+      return;
+    }
     const intent = currentRunIntent();
     if (!intent?.target || blockedReason() || isActiveTestRun(job())) return;
     setLaunchState("preparing");
     setError("");
     setMismatched(false);
     setJobId();
+    const startedAfter = Date.now();
+    const workflowRequestId = crypto.randomUUID();
+    const dispatchKey = attentionKey();
+    const preliminaryMarker: RunAttentionMarker = {
+      schemaVersion: 1,
+      frozen: {
+        appMapId: intent.appMapId,
+        appMapRevision: intent.expectedRevision,
+        testId: intent.testId,
+        planDigest: "pending",
+        target: intent.target,
+        startup: intent.startup,
+        workflowRequestId,
+        ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
+        ...(intent.surfaceCapture
+          ? {
+              capture: {
+                fullSurfaceScreenIds: [...intent.surfaceCapture.forceRecaptureScreenIds],
+              },
+            }
+          : {}),
+      },
+      startedAfter,
+    };
+    persistAttention(preliminaryMarker, dispatchKey);
     try {
-      const compiled = await checkOffline(intent);
-      if (!compiled) {
-        if (isCurrentRunIntent(intent)) setLaunchState("idle");
-        return;
-      }
-      if (compiled.preflight.summary.blockers) {
-        if (isCurrentRunIntent(intent)) setLaunchState("idle");
-        return;
-      }
-      const result = await options.compileAndRun({
+      const result = await workflows.start({
+        kind: "run-test",
         appMapId: intent.appMapId,
         testId: intent.testId,
-        expectedRevision: intent.expectedRevision,
+        revision: { exact: intent.expectedRevision },
         target: intent.target,
         ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
-        ...(intent.surfaceCapture ? { surfaceCapture: intent.surfaceCapture } : {}),
+        ...(intent.surfaceCapture
+          ? { capture: { fullSurfaceScreenIds: intent.surfaceCapture.forceRecaptureScreenIds } }
+          : {}),
         startup: intent.startup,
+        workflowRequestId,
       });
+      setWorkflow(result);
+      if (
+        result.phase === "queued" ||
+        result.phase === "running" ||
+        result.phase === "paused" ||
+        result.phase === "needs-attention"
+      ) {
+        persistAttention(
+          {
+            ...preliminaryMarker,
+            frozen: result.frozen ?? preliminaryMarker.frozen,
+            startedAfter,
+            ...(result.ref ? { ref: result.ref } : {}),
+          },
+          dispatchKey,
+        );
+      } else {
+        clearAttention(dispatchKey);
+      }
+      if (result.compiled) {
+        setPlan(result.compiled.plan);
+        setPreflight(result.compiled.preflight);
+      }
       if (!isCurrentRunIntent(intent)) {
-        await options.cancelJob(result.job.id).catch(() => undefined);
+        if (result.ref && result.allowedNextActions.includes("cancel")) {
+          await workflows
+            .advance({ action: "cancel", ref: result.ref, expectedVersion: result.version })
+            .catch(() => undefined);
+        }
         await options.refreshJobs();
         return;
       }
-      setPlan(result.plan);
-      setJobId(result.job.id);
+      setJobId(result.execution?.jobId);
       await options.refreshJobs();
       setLaunchState("idle");
-      const queued = options.jobs().find((candidate) => candidate.id === result.job.id);
-      if (!sameAppMapTestStartup(result.plan.startup, intent.startup)) {
+      const queued = options.jobs().find((candidate) => candidate.id === result.execution?.jobId);
+      if (result.phase === "needs-attention" || !result.ref || !result.execution?.jobId) {
+        setError(result.problems.at(-1)?.detail ?? result.progress.label);
+      } else if (
+        result.compiled &&
+        !sameAppMapTestStartup(result.compiled.plan.startup, intent.startup)
+      ) {
         setMismatched(true);
         setError("Relay returned a plan with a different startup policy. Review this queued run.");
         setLaunchState("error");
-      } else if (queued && queued.action !== result.planIdentity.rootRecipeId) {
+      } else if (queued && queued.action !== result.frozen?.rootRecipeId) {
         setMismatched(true);
         setError("The queued job does not match this saved Test revision.");
         setLaunchState("error");
@@ -337,12 +538,39 @@ export function createAppMapTestRun(options: {
   }
 
   async function cancel(): Promise<void> {
-    const id = jobId();
-    if (!id || !isActiveTestRun(job()) || launchState() === "canceling") return;
+    const active = workflow();
+    if (!active?.ref || !isActiveTestRun(job()) || launchState() === "canceling") return;
     setLaunchState("canceling");
-    await options.cancelJob(id);
+    const inspected = await workflows.inspect(active.ref);
+    if (inspected.kind !== "run-test") return;
+    setWorkflow(inspected);
+    if (!inspected.allowedNextActions.includes("cancel")) {
+      setError(inspected.problems.at(-1)?.detail ?? inspected.progress.label);
+      setLaunchState(inspected.phase === "needs-attention" ? "idle" : "error");
+      return;
+    }
+    const cancelled = await workflows.advance({
+      action: "cancel",
+      ref: inspected.ref!,
+      expectedVersion: inspected.version,
+    });
+    if (cancelled.kind !== "run-test") return;
+    setWorkflow(cancelled);
+    if (cancelled.phase === "needs-attention") {
+      persistAttention({
+        schemaVersion: 1,
+        frozen: cancelled.frozen ?? active.frozen!,
+        startedAfter: Date.now(),
+        ...(cancelled.ref ? { ref: cancelled.ref } : {}),
+      });
+    } else {
+      clearAttention();
+    }
+    setError(cancelled.problems.at(-1)?.detail ?? "");
     await options.refreshJobs();
-    setLaunchState(mismatched() ? "error" : "idle");
+    setLaunchState(
+      cancelled.phase === "needs-attention" ? "idle" : mismatched() ? "error" : "idle",
+    );
   }
 
   return {

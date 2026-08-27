@@ -530,6 +530,7 @@ export type AppMapOperationMap = {
       /** Read-only runtime evidence scope. The target profile is selected by
        * immutable profile ID, never inferred from translated visible copy. */
       targetProfileId?: string;
+      forceRecaptureScreenIds?: string[];
     };
     output: { plan: AppMapCompiledTest; preflight: OfflineTestPreflightReport };
   };
@@ -574,6 +575,10 @@ export type AppMapOperationMap = {
       /** Immutable commit/build binding for the code under test. Frozen into
        * the run manifest as audit-grade provenance. */
       sourceRevision?: SourceRevision;
+      /** Internal identity required to adopt an already-started Repeat after
+       * the initiating client loses its response or local opaque reference. */
+      repeatRecovery?: { schemaVersion: 1; testPlanDigest: string };
+      workflowRequestId?: string;
     };
     output: {
       planIdentity: {

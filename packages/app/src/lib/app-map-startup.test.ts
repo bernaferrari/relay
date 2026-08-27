@@ -20,21 +20,21 @@ test("startup keeps a valid map or restores the most recently edited map", () =>
   ];
   assert.deepEqual(
     appMapStartupDecision({ online: true, loaded: true, selectedId: "older", maps }),
-    { kind: "keep", mode: "map" },
+    { kind: "keep", mode: "test" },
   );
   assert.deepEqual(appMapStartupDecision({ online: true, loaded: true, selectedId: null, maps }), {
     kind: "select",
     id: "latest",
-    mode: "map",
+    mode: "test",
   });
 });
 
-test("saved Tests make the Test workspace the default without hiding maps that need authoring", () => {
+test("every saved map opens in Test while Map remains an optional topology view", () => {
   const map = { id: "mapped", updatedAt: 10, tests: { checkout: {} } };
   assert.equal(appMapOpeningMode(map), "test");
   assert.deepEqual(
     appMapStartupDecision({ online: true, loaded: true, selectedId: map.id, maps: [map] }),
     { kind: "keep", mode: "test" },
   );
-  assert.equal(appMapOpeningMode({ id: "new", updatedAt: 20 }), "map");
+  assert.equal(appMapOpeningMode({ id: "new", updatedAt: 20 }), "test");
 });

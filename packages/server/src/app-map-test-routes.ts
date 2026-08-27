@@ -88,9 +88,13 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
       const search = new URL(request.url ?? pathname, "http://relay.local").searchParams;
       const entryCheckpointScreenId = search.get("entryCheckpointScreenId");
       const targetProfileId = search.get("targetProfileId")?.trim() || undefined;
+      const forceRecaptureScreenIds = search.getAll("forceRecaptureScreenIds");
       const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(appMap);
       const plan = compileAppMapTest(appMap, test, {
         ...(entryCheckpointScreenId ? { entryCheckpointScreenId } : {}),
+        ...(forceRecaptureScreenIds.length
+          ? { forceRecaptureSurfaceScreenIds: forceRecaptureScreenIds }
+          : {}),
         reviewedDocumentOrigins,
       }).plan;
       const evidence = await loadFrozenRawAccessibilityEvidence(plan);

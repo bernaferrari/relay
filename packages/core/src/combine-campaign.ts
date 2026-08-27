@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { CombineCampaign, CombineCampaignCaseStatus } from "@relay/protocol";
 import { atomicWriteFile, KeyedSerialQueue } from "./coordination-store.js";
@@ -8,13 +8,7 @@ import { readPersistedRun } from "./runs.js";
 import { durableWorkerAssignmentStore } from "./durable-worker-assignments.js";
 
 export type StoredCombineCampaign = CombineCampaign & {
-  execution: {
-    selected?: Record<string, string[]>;
-    selectedCellIds: string[];
-    strategy?: "zip" | "cartesian" | "pairwise";
-    seed: number;
-    title?: string;
-  };
+  execution: NonNullable<CombineCampaign["execution"]>;
 };
 
 const writes = new KeyedSerialQueue();
@@ -90,6 +84,67 @@ export async function readCombineCampaign(
   }
 }
 
+const activeCampaignStatuses: ReadonlySet<CombineCampaign["status"]> = new Set([
+  "pilot-running",
+  "ready-to-resume",
+  "needs-review",
+  "running",
+]);
+
+async function campaignEntries(projectId: string): Promise<string[]> {
+  const projectRoot = join(root(), safeSegment(projectId, "projectId"));
+  try {
+    return (await readdir(projectRoot))
+      .filter((name) => name.endsWith(".json"))
+      .sort()
+      .map((name) => name.slice(0, -".json".length));
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+/** Find unfinished work for one canonical Combine. This is used as a
+ * server-side backstop when a browser loses its opaque workflow reference. */
+export async function findActiveCombineCampaignForCombine(
+  projectId: string,
+  appMapId: string,
+  combineId: string,
+): Promise<StoredCombineCampaign | null> {
+  for (const campaignId of await campaignEntries(projectId)) {
+    const campaign = await readCombineCampaign(projectId, campaignId);
+    if (
+      campaign?.appMapId === appMapId &&
+      campaign.combineId === combineId &&
+      activeCampaignStatuses.has((await projectCombineCampaign(campaign)).status)
+    ) {
+      return campaign;
+    }
+  }
+  return null;
+}
+
+/** Find unfinished outcome-level Repeats for one Test. Callers must apply
+ * subject visibility before deciding whether the result is unique. */
+export async function findActiveRepeatCampaigns(
+  projectId: string,
+  appMapId: string,
+  testId: string,
+): Promise<StoredCombineCampaign[]> {
+  const matches: StoredCombineCampaign[] = [];
+  for (const campaignId of await campaignEntries(projectId)) {
+    const campaign = await readCombineCampaign(projectId, campaignId);
+    if (
+      campaign?.appMapId === appMapId &&
+      campaign.execution.repeat?.testId === testId &&
+      activeCampaignStatuses.has((await projectCombineCampaign(campaign)).status)
+    ) {
+      matches.push(campaign);
+    }
+  }
+  return matches;
+}
+
 export async function updateCombineCampaign(
   projectId: string,
   campaignId: string,
@@ -110,8 +165,10 @@ export async function updateCombineCampaign(
 }
 
 type ObservableJob = {
+  id?: string;
   status?: string;
   error?: string;
+  persisted?: boolean;
   artifacts?: Array<{ kind?: string; data?: unknown }>;
 };
 
@@ -140,10 +197,19 @@ function caseStatus(job: ObservableJob | null): CombineCampaignCaseStatus {
   return checkProblem(job) ?? "passed";
 }
 
-async function observableJob(jobId: string): Promise<ObservableJob | null> {
+function isTerminalCaseStatus(status: CombineCampaignCaseStatus): boolean {
+  return (
+    status === "passed" || status === "failed" || status === "blocked" || status === "cancelled"
+  );
+}
+
+async function observableJob(
+  jobId: string,
+): Promise<{ job: ObservableJob; runId?: string } | null> {
   const live = getJob(jobId);
-  if (live) return live;
-  return readPersistedRun(jobId);
+  if (live) return { job: live, ...(live.persisted ? { runId: live.id } : {}) };
+  const persisted = await readPersistedRun(jobId);
+  return persisted ? { job: persisted, runId: persisted.id } : null;
 }
 
 /** A durable row is the restart truth when no live registry entry or completed
@@ -164,8 +230,8 @@ export async function projectCombineCampaign(
   const cases = await Promise.all(
     campaign.cases.map(async (item) => {
       if (!item.jobId) return item;
-      const job = await observableJob(item.jobId);
-      if (!job) {
+      const observed = await observableJob(item.jobId);
+      if (!observed) {
         const recoveryStatus = recoveryCaseStatus(item.jobId);
         if (recoveryStatus) {
           return {
@@ -180,10 +246,19 @@ export async function projectCombineCampaign(
           };
         }
       }
+      const observedStatus = caseStatus(observed?.job ?? null);
+      const provingRunEvidence = isTerminalCaseStatus(observedStatus) && !observed?.runId;
+      const status = provingRunEvidence ? "running" : observedStatus;
+      const { runId: _unverifiedRunId, ...unprovedCase } = item;
       return {
-        ...item,
-        status: caseStatus(job),
-        ...(job?.error ? { error: job.error } : {}),
+        ...unprovedCase,
+        status,
+        ...(provingRunEvidence
+          ? { error: "Relay is still proving immutable Run evidence for this completed cell." }
+          : observed?.job.error
+            ? { error: observed.job.error }
+            : {}),
+        ...(observed?.runId ? { runId: observed.runId } : {}),
       };
     }),
   );

@@ -7,17 +7,21 @@ import type {
   AppMapCombineCellTargetBinding,
   AppMapCompiledTest,
   CombineCampaign,
+  RepeatCampaignExecutionIdentity,
 } from "@relay/protocol";
 import { executionTargetRefKey } from "@relay/protocol";
 import {
   AppMapCombineCellContractError,
   AppMapCombineWorldError,
   AppMapCompileError,
+  KeyedSerialQueue,
   activeReviewedDocumentOriginsForAppMap,
   applyFullSurfaceDestinationBindings,
   combineCampaignCaseFromPreparedCell,
   createCombineCampaign,
   currentOperationContext,
+  findActiveCombineCampaignForCombine,
+  findActiveRepeatCampaigns,
   prepareAppMapCombineCells,
   readAppMap,
   resolveCombineCellSelector,
@@ -69,6 +73,10 @@ type CombineStartRequest = {
   cell?: string;
   defaultTargetProfileId?: string;
   sourceRevision?: SourceRevision;
+  repeatRecovery?: Omit<
+    RepeatCampaignExecutionIdentity,
+    "executionAppMapRevision" | "rootRecipeId" | "pilotJobId" | "selectedCaseIds"
+  >;
 };
 
 export type CombineStartResult = {
@@ -143,6 +151,29 @@ export async function executeCombineStart(
   runtime: JobRouteRuntime,
   body: CombineStartRequest,
 ): Promise<CombineStartResult> {
+  const combineId = body.combineId?.trim();
+  const appMapId = body.appMapId?.trim();
+  const repeatTestId = body.repeatRecovery?.testId.trim();
+  if (repeatTestId && appMapId) {
+    return combineStartLocks.run(`${scope.projectId}:${appMapId}:test:${repeatTestId}`, () =>
+      executeCombineStartUnlocked(scope, runtime, body),
+    );
+  }
+  if (combineId && appMapId) {
+    return combineStartLocks.run(`${scope.projectId}:${appMapId}:combine:${combineId}`, () =>
+      executeCombineStartUnlocked(scope, runtime, body),
+    );
+  }
+  return executeCombineStartUnlocked(scope, runtime, body);
+}
+
+const combineStartLocks = new KeyedSerialQueue();
+
+async function executeCombineStartUnlocked(
+  scope: RequestContext,
+  runtime: JobRouteRuntime,
+  body: CombineStartRequest,
+): Promise<CombineStartResult> {
   if (!body.appMapId?.trim()) {
     throw new HttpError(400, "appMapId is required");
   }
@@ -165,6 +196,37 @@ export async function executeCombineStart(
   const combine = body.combineId?.trim() ? loaded.combines?.[body.combineId.trim()] : undefined;
   if (body.combineId?.trim() && !combine) {
     throw new HttpError(404, `Combination ${body.combineId} not found`);
+  }
+  if (body.repeatRecovery) {
+    const activeRepeats = await findActiveRepeatCampaigns(
+      scope.projectId,
+      loaded.id,
+      body.repeatRecovery.testId,
+    );
+    const active = activeRepeats[0];
+    if (active) {
+      throw new HttpError(409, "This Repeat already has unfinished work", {
+        code: "ACTIVE_REPEAT_EXISTS",
+        repeatId: active.id,
+        recovery:
+          "Return to the Test to inspect, continue, or stop the existing Repeat before starting another pilot.",
+      });
+    }
+  }
+  if (combine) {
+    const active = await findActiveCombineCampaignForCombine(
+      scope.projectId,
+      loaded.id,
+      combine.id,
+    );
+    if (active) {
+      throw new HttpError(409, "This Repeat already has unfinished work", {
+        code: "ACTIVE_REPEAT_EXISTS",
+        repeatId: active.id,
+        recovery:
+          "Return to the Test to inspect, continue, or stop the existing Repeat before starting another pilot.",
+      });
+    }
   }
   const runTestOnce = Boolean(body.testId?.trim()) && !combine && !body.variableIds?.length;
   if (runTestOnce) {
@@ -351,6 +413,18 @@ export async function executeCombineStart(
         });
       });
       const at = Date.now();
+      if (body.repeatRecovery && (!isPilotRun || staged.jobs.length !== 1)) {
+        throw new HttpError(409, "Repeat recovery identity requires exactly one pilot job");
+      }
+      const repeat = body.repeatRecovery
+        ? {
+            ...structuredClone(body.repeatRecovery),
+            executionAppMapRevision: map.revision,
+            rootRecipeId: selectedToQueue[0]!.plan.rootRecipeId,
+            pilotJobId: staged.jobs[0]!.id,
+            selectedCaseIds: [...prepared.selectedCellIds],
+          }
+        : undefined;
       campaign = {
         schemaVersion: 1 as const,
         id: staged.batchId,
@@ -397,6 +471,7 @@ export async function executeCombineStart(
           strategy: body.strategy ?? combine.strategy,
           seed: prepared.matrix.seed,
           title: body.title?.trim() || combine.name,
+          ...(repeat ? { repeat } : {}),
           ...(admission
             ? {
                 localAdmission: {

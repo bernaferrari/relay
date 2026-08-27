@@ -5,7 +5,8 @@ import { Button } from "@relay/ui/button";
 import type { RecipeStep } from "../context/server";
 import { cn } from "../lib/cn";
 import type { TakeDestination } from "../lib/app-map-canvas-graph";
-import { describeStep, type RecordingTake } from "../context/recorder";
+import type { RecordingTake } from "../context/recorder";
+import { sentenceForStep as describeStep } from "../lib/step-sentence";
 import { Icon } from "./icon";
 import { AppMapToolbar } from "./app-map-toolbar";
 import { EmptyState } from "./empty-state";
@@ -28,8 +29,7 @@ const secondaryButton =
 const reviewEvidenceShell =
   "relative overflow-hidden rounded-2xl bg-[var(--phone-screen)] shadow-[0_0_0_1px_var(--border-weak-base),0_24px_54px_-32px_color-mix(in_srgb,var(--surface-float-base)_72%,transparent)]";
 
-/** A compact capture status for the live device drawer. Once stopped, review
- * moves into TakeReviewWorkspace so it never competes with the live device. */
+/** Compact live status; stopped review moves into TakeReviewWorkspace. */
 export function TakeCaptureBar(props: {
   take: RecordingTake;
   contextLabel?: string;

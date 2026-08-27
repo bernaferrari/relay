@@ -835,6 +835,51 @@ test("commits a canvas gesture atomically as one revision and one activity event
   assert.ok(input.screens.home, "the original map remains untouched");
 });
 
+test("commits Test Source and its Repeat definition as one App Map revision", () => {
+  const input = mapFixture();
+  input.variables.language = {
+    ...entity("language"),
+    name: "Language",
+    kind: "language",
+    apply: { kind: "appLocale", app: "com.example" },
+    options: [
+      { id: "en", label: "English" },
+      { id: "pt-BR", label: "Portuguese (Brazil)" },
+    ],
+  };
+  const sourceTest: AppMapTest = {
+    ...entity("settings-test"),
+    name: "Settings path",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [],
+  };
+  const result = commitAppMapChanges(
+    input,
+    [
+      { kind: "test.save", test: sourceTest },
+      {
+        kind: "combine.save",
+        combine: {
+          ...entity("matrix-language-to-settings-test"),
+          name: "Language × Settings path",
+          variableIds: ["language"],
+          testIds: [sourceTest.id],
+        },
+      },
+    ],
+    undefined,
+    context(input, "test-source-repeat"),
+    "Updated Settings path from Test Source",
+  );
+
+  assert.equal(result.revision, input.revision + 1);
+  assert.equal(result.tests[sourceTest.id]?.name, sourceTest.name);
+  assert.deepEqual(result.combines["matrix-language-to-settings-test"]?.testIds, [sourceTest.id]);
+  assert.equal(input.tests[sourceTest.id], undefined);
+  assert.equal(input.combines["matrix-language-to-settings-test"], undefined);
+});
+
 test("rejects path and tour objects as Tests", () => {
   for (const kind of ["path", "tour"] as const) {
     const input = mapFixture();

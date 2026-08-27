@@ -5,6 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   createCombineCampaign,
+  findActiveCombineCampaignForCombine,
+  findActiveRepeatCampaigns,
   pendingSelectedCombineCampaignCells,
   projectCombineCampaign,
   readCombineCampaign,
@@ -66,6 +68,19 @@ function fixture(status: "passed" | "failed" = "passed"): StoredCombineCampaign 
       selectedCellIds: ["c" + "a".repeat(32), "c" + "b".repeat(32)],
       strategy: "zip",
       seed: 42,
+      repeat: {
+        schemaVersion: 1,
+        requestedAppMapRevision: 6,
+        executionAppMapRevision: 7,
+        testId: "settings",
+        testPlanDigest: "settings-plan",
+        rootRecipeId: "settings-root",
+        target: { kind: "device", platform: "android", targetId: "android-1" },
+        over: { dimensionId: "language", valueIds: ["en", "it"] },
+        evidence: "visual",
+        pilotJobId: "pilot-job",
+        selectedCaseIds: ["c" + "a".repeat(32), "c" + "b".repeat(32)],
+      },
     },
   };
 }
@@ -79,6 +94,16 @@ test("Combine campaigns persist pilot state and derive a truthful resume boundar
     const read = await readCombineCampaign("project-1", "campaign-1");
     assert.equal(read?.execution.seed, 42);
     assert.equal((await projectCombineCampaign(read!)).status, "ready-to-resume");
+    assert.equal(
+      (await findActiveCombineCampaignForCombine("project-1", "settings", "languages"))?.id,
+      "campaign-1",
+    );
+    assert.deepEqual(
+      (await findActiveRepeatCampaigns("project-1", "settings", "settings")).map(
+        (campaign) => campaign.id,
+      ),
+      ["campaign-1"],
+    );
 
     const resumed = await updateCombineCampaign("project-1", "campaign-1", (current) => ({
       ...current,

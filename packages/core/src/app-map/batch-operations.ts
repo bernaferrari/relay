@@ -79,5 +79,21 @@ function applyChange(draft: AppMap, change: AppMapBatchChange, at: number): void
       assertEntityScope(draft, change.test);
       draft.tests = { ...draft.tests, [change.test.id]: structuredClone(change.test) };
       return;
+    case "combine.save":
+      assertEntityScope(draft, change.combine);
+      draft.combines = {
+        ...draft.combines,
+        [change.combine.id]: structuredClone(change.combine),
+      };
+      return;
+    case "combine.remove": {
+      if (!draft.combines[change.combineId]) {
+        appMapFail("missing-reference", `Combine ${change.combineId} does not exist`);
+      }
+      const combines = { ...draft.combines };
+      delete combines[change.combineId];
+      draft.combines = combines;
+      return;
+    }
   }
 }

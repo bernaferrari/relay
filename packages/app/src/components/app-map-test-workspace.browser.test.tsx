@@ -11,7 +11,16 @@ import type {
 import type { JobInfo } from "../lib/api-types";
 
 const serverMock = vi.hoisted(() => ({ current: undefined as unknown }));
+const recorderMock = vi.hoisted(() => ({
+  current: {
+    recording: () => false,
+    arming: () => false,
+    authoringNeedsAttention: () => false,
+    take: () => null,
+  },
+}));
 vi.mock("../context/server", () => ({ useServer: () => serverMock.current }));
+vi.mock("../context/recorder", () => ({ useRecorder: () => recorderMock.current }));
 
 import { AppMapTestWorkspace } from "./app-map-test-workspace";
 
@@ -96,7 +105,7 @@ function repeatCampaign(status: "ready-to-resume" | "running") {
     staticInputDigest: `input-${value}`,
     phase: pilot ? ("pilot" as const) : ("coverage" as const),
     status: pilot ? ("passed" as const) : remaining,
-    ...(pilot ? { jobId: "pilot-job" } : {}),
+    ...(pilot ? { jobId: "pilot-job", runId: "pilot-run" } : {}),
   });
   return {
     schemaVersion: 1,
@@ -117,12 +126,26 @@ function repeatCampaign(status: "ready-to-resume" | "running") {
       selectedCellIds: ["result-en", "result-it"],
       strategy: "cartesian",
       seed: 1,
+      repeat: {
+        schemaVersion: 1,
+        requestedAppMapRevision: 1,
+        executionAppMapRevision: 2,
+        testId: "checkout-locale",
+        testPlanDigest: "plan-1",
+        rootRecipeId: "repeat-root",
+        target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+        over: { dimensionId: "language", valueIds: ["en", "it"] },
+        evidence: "visual",
+        pilotJobId: "pilot-job",
+        selectedCaseIds: ["result-en", "result-it"],
+      },
     },
   };
 }
 
 test("a saved App Map Test opens the canonical Combine strip", async () => {
   document.body.replaceChildren();
+  window.localStorage.removeItem("relay:repeat:v1:checkout:checkout-locale");
   const root = document.createElement("div");
   document.body.append(root);
   const scenario: AppMapScenarioTest = {
@@ -176,7 +199,11 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
     createdAt: 1,
     updatedAt: 1,
   };
+  let started = false;
   const runAction = vi.fn(async (operationId: string, _input?: unknown) => {
+    if (operationId === "job.combine.campaign.repeat.active") {
+      return { campaign: started ? repeatCampaign("ready-to-resume") : null };
+    }
     if (operationId === "app-map.test.compile") {
       return {
         plan: { rootRecipeId: "repeat-root" },
@@ -193,20 +220,8 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
       };
     }
     if (operationId === "app-map.test.run") {
-      const pilot = { id: "pilot-job", action: "app-map.test.run", status: "queued", queuedAt: 1 };
-      return {
-        planIdentity: {
-          appMapId: "checkout",
-          appMapRevision: 2,
-          testId: scenario.id,
-          rootRecipeId: "repeat-root",
-        },
-        plan: { rootRecipeId: "repeat-root" },
-        job: pilot,
-        jobs: [pilot],
-        combine: { id: "generated-repeat", revision: 2 },
-        campaign: { id: "repeat-1", selectedCellIds: ["result-en", "result-it"] },
-      };
+      started = true;
+      throw new Error("pilot response lost");
     }
     if (operationId === "job.combine.campaign.resume") {
       return { campaign: repeatCampaign("running"), jobs: [], cells: [] };
@@ -237,7 +252,7 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
     preflightLocalCampaignAdmission: async () => ({}),
   };
 
-  const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
+  let dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
   try {
     await settle();
     expect(root.textContent).not.toContain("Run this Test across languages");
@@ -253,25 +268,49 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
     const pilot = root.querySelector<HTMLButtonElement>("[data-test-repeat-pilot] button");
     expect(pilot?.textContent).toContain("Run pilot");
     expect(root.textContent).toContain("Pilot: English");
+    expect(root.textContent).toContain("Target: iPad · iOS");
     expect(root.textContent).toContain("waits for review before the remaining values");
 
     pilot?.click();
     await settle();
-    expect(runAction).toHaveBeenCalledTimes(3);
-    expect(runAction.mock.calls[1]?.[0]).toBe("app-map.test.run");
-    expect(runAction.mock.calls[1]?.[1]).toEqual(
+    const runCall = runAction.mock.calls.find(
+      ([operationId]) => operationId === "app-map.test.run",
+    );
+    expect(runCall?.[1]).toEqual(
       expect.objectContaining({
         appMapId: "checkout",
         testId: scenario.id,
         in: { language: ["en", "it"] },
         lens: "visual",
         executionMode: "pilot",
+        repeatRecovery: { schemaVersion: 1, testPlanDigest: "plan-1" },
       }),
     );
-    expect(runAction.mock.calls[1]?.[1]).not.toHaveProperty("executionMode", "all");
-    expect(runAction.mock.calls[1]?.[1]).not.toHaveProperty("cell");
-    expect(runAction.mock.calls[1]?.[1]).not.toHaveProperty("surfaceCapture");
+    expect(runCall?.[1]).not.toHaveProperty("executionMode", "all");
+    expect(runCall?.[1]).not.toHaveProperty("cell");
+    expect(runCall?.[1]).not.toHaveProperty("surfaceCapture");
     expect(root.textContent).toContain("Continue remaining 1");
+    expect(root.textContent).toContain("View pilot evidence");
+    const repeatResults = root.querySelector("[data-test-repeat-results]");
+    expect(repeatResults?.textContent).toContain("English");
+    expect(repeatResults?.textContent).toContain("Pilot · Passed");
+    expect(repeatResults?.textContent).toContain("Italiano");
+    expect(repeatResults?.textContent).toContain("Untouched");
+
+    dispose();
+    root.replaceChildren();
+    window.localStorage.removeItem("relay:repeat:v1:checkout:checkout-locale");
+    dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
+    await settle();
+    expect(root.textContent).toContain("Continue remaining 1");
+    expect(
+      runAction.mock.calls.filter(([operationId]) => operationId === "app-map.test.run"),
+    ).toHaveLength(1);
+    expect(
+      runAction.mock.calls.filter(
+        ([operationId]) => operationId === "job.combine.campaign.repeat.active",
+      ).length,
+    ).toBeGreaterThanOrEqual(3);
 
     const continueButton = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
       button.textContent?.includes("Continue remaining"),
@@ -287,6 +326,7 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
     });
   } finally {
     dispose();
+    window.localStorage.removeItem("relay:repeat:v1:checkout:checkout-locale");
     root.remove();
   }
 });
@@ -350,21 +390,23 @@ test("Whole page is disabled when the destination has no frozen full-page captur
     updatedAt: 1,
   };
   const runAction = vi.fn(async (operationId: string, _input?: unknown) =>
-    operationId === "app-map.test.compile"
-      ? {
-          plan: { rootRecipeId: "repeat-root" },
-          preflight: {
-            schemaVersion: 1,
-            mode: "offline-test-preflight",
-            appMapId: "checkout",
-            appMapRevision: 1,
-            testId: scenario.id,
-            planDigest: "plan-1",
-            summary: { blockers: 0 },
-            findings: [],
-          },
-        }
-      : { job: { id: "combine-cell" } },
+    operationId === "job.combine.campaign.repeat.active"
+      ? { campaign: null }
+      : operationId === "app-map.test.compile"
+        ? {
+            plan: { rootRecipeId: "repeat-root" },
+            preflight: {
+              schemaVersion: 1,
+              mode: "offline-test-preflight",
+              appMapId: "checkout",
+              appMapRevision: 1,
+              testId: scenario.id,
+              planDigest: "plan-1",
+              summary: { blockers: 0 },
+              findings: [],
+            },
+          }
+        : { job: { id: "combine-cell" } },
   );
   serverMock.current = {
     selectedAppMap: () => map,
@@ -400,9 +442,11 @@ test("Whole page is disabled when the destination has no frozen full-page captur
     await settle();
     root.querySelector<HTMLButtonElement>("[data-test-repeat-pilot] button")?.click();
     await settle();
-    expect(runAction).toHaveBeenCalledTimes(2);
-    expect(runAction.mock.calls[1]?.[0]).toBe("app-map.test.run");
-    expect(runAction.mock.calls[1]?.[1]).not.toHaveProperty("surfaceCapture");
+    const runCall = runAction.mock.calls.find(
+      ([operationId]) => operationId === "app-map.test.run",
+    );
+    expect(runCall).toBeDefined();
+    expect(runCall?.[1]).not.toHaveProperty("surfaceCapture");
   } finally {
     dispose();
     root.remove();
@@ -563,7 +607,9 @@ test("Source edits the open canonical Test and invalid YAML cannot queue a save"
     updatedAt: 1,
   };
   map.tests[scenario.id] = scenario;
-  const editTest = vi.fn(async (_input: unknown) => ({ appMap: { revision: 2 } }));
+  const commitSource = vi.fn(async (_id: unknown, _input: unknown) => ({
+    appMap: { revision: 2 },
+  }));
   serverMock.current = {
     selectedAppMap: () => map,
     isOffline: () => false,
@@ -578,7 +624,7 @@ test("Source edits the open canonical Test and invalid YAML cannot queue a save"
     refreshJobs: async () => undefined,
     cancelJob: async () => undefined,
     refreshAppMaps: async () => undefined,
-    editTest,
+    runAction: commitSource,
   };
 
   const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
@@ -603,7 +649,7 @@ test("Source edits the open canonical Test and invalid YAML cannot queue a save"
     .click();
   await settle();
   expect(root.querySelector("#test-source-error")?.textContent).toContain("not applied");
-  expect(editTest).not.toHaveBeenCalled();
+  expect(commitSource.mock.calls.filter(([id]) => id === "app-map.commit")).toHaveLength(0);
 
   editor.value = validSource.replace("Open Settings", "Open app settings");
   editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
@@ -611,8 +657,9 @@ test("Source edits the open canonical Test and invalid YAML cannot queue a save"
     .find((button) => button.textContent?.includes("Apply source"))!
     .click();
   await settle();
-  expect(editTest).toHaveBeenCalledOnce();
-  expect(JSON.stringify(editTest.mock.calls[0]?.[0])).toContain("Open app settings");
+  const commitCalls = commitSource.mock.calls.filter(([id]) => id === "app-map.commit");
+  expect(commitCalls).toHaveLength(1);
+  expect(JSON.stringify(commitCalls[0]?.[1])).toContain("Open app settings");
   expect(root.querySelector("[role='dialog']")).toBeNull();
   expect(document.activeElement).toBe(sourceButton);
   dispose();
@@ -1180,6 +1227,17 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
           },
         };
       }
+      if (id === "job.get") {
+        return { job: jobs().find((job) => job.id === input.jobId) };
+      }
+      if (id === "job.cancel") {
+        const cancelled = {
+          ...jobs().find((job) => job.id === input.jobId)!,
+          status: "cancelled" as const,
+        };
+        setJobs([cancelled]);
+        return { job: cancelled };
+      }
       runInput = input;
       await runGate;
       setJobs([
@@ -1202,10 +1260,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
         job: { id: "job-exact", action: rootRecipeId, status: "queued", queuedAt: 2 },
       };
     },
-    cancelJob: async (id: string) => {
-      calls.push(`cancel:${id}`);
-      setJobs((current) => current.map((job) => ({ ...job, status: "cancelled" as const })));
-    },
+    cancelJob: async () => undefined,
   };
 
   const dispose = render(
@@ -1288,13 +1343,15 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
     target: { kind: "device", platform: "ios", targetId: "ipad-1" },
     targetProfileId: "ipad-pt-BR",
     startup: { mode: "cold" },
+    workflowRequestId: expect.any(String),
   });
   expect(primary().textContent).toContain("Cancel queued run");
   expect(root.textContent).toContain("Queued on the selected target");
   primary().click();
   await settle();
 
-  expect(calls).toContain("cancel:job-exact");
+  expect(calls).toContain("job.get");
+  expect(calls).toContain("job.cancel");
   expect(primary().textContent).toContain("Open result");
   primary().click();
   expect(opened).toEqual(["job-exact"]);
@@ -1544,7 +1601,11 @@ test("a verified checkpoint is compiled offline and sent unchanged to the exact 
   expect(compileInputs).toEqual([
     { appMapId: "checkout", testId: "settings-warm", entryCheckpointScreenId: "settings" },
   ]);
-  expect(root.textContent).toContain("Verified checkpoint · Settings");
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent?.trim() === "Device")
+    ?.click();
+  await settle();
+  expect(root.textContent).toContain("Verified · Settings");
   expect(root.textContent).toContain(
     "Mismatch stops for review. Relay never falls back to a cold relaunch.",
   );
@@ -1560,6 +1621,7 @@ test("a verified checkpoint is compiled offline and sent unchanged to the exact 
     expectedRevision: 1,
     target: { kind: "device", platform: "ios", targetId: "ipad-1" },
     startup: { mode: "verified-checkpoint", screenId: "settings" },
+    workflowRequestId: expect.any(String),
   });
 
   dispose();
@@ -1689,7 +1751,7 @@ test("offline preflight blocks device control but leaves an inspectable repair r
     .click();
   await settle();
 
-  expect(calls).toEqual(["app-map.test.compile"]);
+  expect(calls).toEqual(["job.combine.campaign.repeat.active", "app-map.test.compile"]);
   expect(root.textContent).toContain("1 offline issue blocks device control");
   expect(root.textContent).toContain("Cloud filter is absent");
   expect(root.textContent).toContain("0 / 1 resolved");

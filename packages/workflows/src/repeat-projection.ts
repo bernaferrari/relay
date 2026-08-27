@@ -3,12 +3,21 @@ import type {
   FrozenRepeatTestIdentity,
   RepeatOutcomeCounts,
   RepeatTestSnapshot,
+  RepeatValueResult,
   WorkflowProblem,
   WorkflowRef,
 } from "./types.js";
 import type { RepeatWorkflowReference } from "./workflow-ref.js";
 
 type SelectedRepeatResult = CombineCampaign["cases"][number];
+
+const provingRunEvidenceError = "Relay is still proving immutable Run evidence for this result.";
+
+function isTerminalResult(status: SelectedRepeatResult["status"]): boolean {
+  return (
+    status === "passed" || status === "failed" || status === "blocked" || status === "cancelled"
+  );
+}
 
 function sameValues(left: readonly string[], right: readonly string[]): boolean {
   return (
@@ -53,7 +62,15 @@ export function selectedRepeatResults(
   if (selected.some((item) => !item)) {
     throw new TypeError("A selected Repeat result is missing from durable execution state.");
   }
-  const results = selected as SelectedRepeatResult[];
+  const results = (selected as SelectedRepeatResult[]).map((item) =>
+    isTerminalResult(item.status) && !item.runId
+      ? {
+          ...item,
+          status: "running" as const,
+          error: provingRunEvidenceError,
+        }
+      : item,
+  );
   const executionIds = record.execution?.selectedCellIds;
   if (!executionIds || !sameValues(executionIds, reference.selectedCaseIds)) {
     throw new TypeError("The selected Repeat scope no longer matches its frozen identity.");
@@ -120,6 +137,27 @@ function counts(results: readonly SelectedRepeatResult[]): RepeatOutcomeCounts {
   return output;
 }
 
+function valueResults(
+  results: readonly SelectedRepeatResult[],
+  dimensionId: string,
+): RepeatValueResult[] {
+  return results.map((result) => ({
+    cellId: result.cellId,
+    valueId: result.values[dimensionId]!,
+    phase: result.phase === "pilot" ? "pilot" : "remaining",
+    status:
+      result.status === "pending"
+        ? "untouched"
+        : result.status === "queued" || result.status === "running"
+          ? "running"
+          : result.status === "blocked"
+            ? "needs-review"
+            : result.status,
+    ...(result.runId ? { runId: result.runId } : {}),
+    ...(result.error ? { error: result.error } : {}),
+  }));
+}
+
 function version(record: CombineCampaign, results: readonly SelectedRepeatResult[]): string {
   return `repeat-v1-${fingerprint(
     JSON.stringify([
@@ -151,8 +189,14 @@ export function snapshotFromRepeatRecord(input: {
   let label: string;
   let actions: RepeatTestSnapshot["allowedNextActions"];
   let problems: WorkflowProblem[] = [];
+  const provingRunEvidence = results.some((item) => item.error === provingRunEvidenceError);
 
-  if (pilot.status === "pending") {
+  if (provingRunEvidence) {
+    phase = "running";
+    stage = pilot.error === provingRunEvidenceError ? "pilot" : "remaining";
+    label = "Proving immutable Run evidence";
+    actions = ["inspect", "cancel"];
+  } else if (pilot.status === "pending") {
     phase = "needs-attention";
     stage = "unknown";
     label = "Relay cannot prove that the representative case started";
@@ -245,11 +289,14 @@ export function snapshotFromRepeatRecord(input: {
     version: version(record, results),
     ref,
     frozen: reference.frozen,
-    repeat: { id: reference.repeatId, pilotJobId: reference.pilotJobId },
+    repeat: { id: reference.repeatId },
     outcomes: outcome,
+    results: valueResults(results, reference.frozen.over.dimensionId),
     progress: { label, completed, total: outcome.selected },
     allowedNextActions: actions,
     problems,
-    evidenceRefs: [],
+    evidenceRefs: results.flatMap((result) =>
+      result.runId ? [{ kind: "run" as const, id: result.runId }] : [],
+    ),
   };
 }

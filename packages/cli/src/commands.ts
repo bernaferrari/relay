@@ -433,6 +433,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       argumentHelp: [{ name: "batchId", type: "string", description: "Combine campaign ID" }],
     }),
   ),
+  {
+    operationId: "job.combine.campaign.repeat.active",
+    exclusion: "internal",
+    reason: "The Repeat workflow uses this read-only lookup to adopt durable unfinished work.",
+  },
   mapped(
     "job.combine.campaign.resume",
     path("combine campaign resume", ["batchId"], undefined, {

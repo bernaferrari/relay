@@ -249,6 +249,7 @@ async function handleRequest(
         response: res,
         scope,
         runtime: appMapTestRunRuntime,
+        combineRuntime: jobRouteRuntime,
       })
     )
       return;

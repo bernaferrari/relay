@@ -1220,6 +1220,8 @@ test("an edited planned connection adopts the successfully replayed destination"
 
 test("an unedited live demonstration can be committed without a second pass", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
+    const before = await readAppMap("project-a", appMapId);
+    assert.ok(before);
     let session = await createReadySession(store, runtime, appMapId);
     session = await store.start(session.id, runtime);
     session = await store.interact(
@@ -1233,12 +1235,101 @@ test("an unedited live demonstration can be committed without a second pass", as
 
     session = await store.commit(session.id, {
       destination: { kind: "new-screen", title: "Home" },
+      createTest: true,
     });
     assert.equal(session.state, "committed");
     const appMap = await readAppMap("project-a", appMapId);
+    assert.equal(appMap?.revision, before.revision + 1);
     const connection = appMap?.connections[session.committedConnectionId!];
     assert.equal(connection?.state, "ready");
     assert.equal(connection?.actions[0]?.kind, "recorded");
+    const created = appMap?.tests[session.committedTestId!];
+    assert.equal(created?.kind, "scenario");
+    const createdStep = created?.kind === "scenario" ? created.steps[0] : undefined;
+    assert.deepEqual(
+      createdStep?.kind === "instruction" &&
+        createdStep.binding.status === "resolved" &&
+        createdStep.binding.kind === "connections"
+        ? createdStep.binding.connectionIds
+        : undefined,
+      [session.committedConnectionId],
+    );
+  });
+});
+
+test("recorded Test approval rolls back both artifacts when the atomic map write fails", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(session.id, { kind: "key", key: "back" }, runtime);
+    session = await store.stop(session.id, runtime);
+    const before = await readAppMap("project-a", appMapId);
+    assert.ok(before);
+
+    await assert.rejects(
+      store.commit(session.id, { createTest: true }, (boundary) => {
+        if (boundary === "before-persist") throw new Error("simulated atomic write failure");
+      }),
+      /simulated atomic write failure/u,
+    );
+
+    const after = await readAppMap("project-a", appMapId);
+    assert.deepEqual(after?.connections, before.connections);
+    assert.deepEqual(after?.tests, before.tests);
+    const restored = await store.get(session.id);
+    assert.equal(restored.state, "reviewing");
+    assert.equal(restored.committedConnectionId, undefined);
+    assert.equal(restored.committedTestId, undefined);
+  });
+});
+
+test("recorded Test approval leaves no partial artifacts after an App Map revision conflict", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(session.id, { kind: "key", key: "back" }, runtime);
+    session = await store.stop(session.id, runtime);
+
+    const changed = await mutateStoredAppMap("project-a", appMapId, (current) => {
+      const at = Date.now();
+      return commitAppMapChanges(
+        current,
+        [
+          {
+            kind: "screen.add",
+            input: {
+              screen: {
+                organizationId: current.organizationId,
+                projectId: current.projectId,
+                appMapId: current.id,
+                id: "concurrent-screen",
+                title: "Concurrent screen",
+                variantIds: [],
+                createdAt: at,
+                updatedAt: at,
+              },
+            },
+          },
+        ],
+        undefined,
+        {
+          expectedRevision: current.revision,
+          eventId: "concurrent-map-change",
+          actorId: "human:other",
+          actorKind: "human",
+          at,
+        },
+      );
+    });
+
+    await assert.rejects(
+      store.commit(session.id, { createTest: true }),
+      /App Map changed while this Take was being reviewed/u,
+    );
+    const after = await readAppMap("project-a", appMapId);
+    assert.equal(after?.revision, changed.revision);
+    assert.equal(Object.keys(after?.connections ?? {}).length, 0);
+    assert.equal(Object.keys(after?.tests ?? {}).length, 0);
   });
 });
 
@@ -1494,7 +1585,7 @@ test("recovery preserves interrupted recording and resolves post-rename commits"
     runtime.screen = "source";
     session = await store.replay(session.id, runtime);
     await assert.rejects(
-      store.commit(session.id, {}, (boundary) => {
+      store.commit(session.id, { createTest: true }, (boundary) => {
         if (boundary === "after-rename") throw new Error("simulated process death");
       }),
       /simulated process death/,
@@ -1507,6 +1598,8 @@ test("recovery preserves interrupted recording and resolves post-rename commits"
     const activity = appMap.activity[session.id];
     assert.equal(activity?.eventType, "recording.committed");
     assert.ok(activity && appMap.connections[activity.subject.id]);
+    assert.ok(afterCommitRecovery[0]?.committedTestId);
+    assert.ok(appMap.tests[afterCommitRecovery[0]!.committedTestId!]);
   });
 });
 

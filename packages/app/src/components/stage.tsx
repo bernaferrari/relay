@@ -1369,7 +1369,7 @@ export function DeviceStage(_props: {
           setRecordingGroup={rec.setRecordingGroup}
           startNextRecordingGroup={rec.startNextRecordingGroup}
           selectedLeaseId={server.selectedLeaseId()}
-          busyCapture={server.busyCapture()}
+          busyCapture={server.busyCapture() || rec.checkpointBusy()}
           frameCount={server.frames().length}
           onToggleRecording={toggleRecording}
           onCaptureScreenshot={() => {

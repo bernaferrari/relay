@@ -6,10 +6,11 @@ export type AppMapStartupItem = {
 
 export type AppMapOpeningMode = "map" | "test";
 
-/** Reopen useful saved work at its outcome-oriented Test view. A map without
- * a saved Test still opens on topology because there is no Test to author. */
-export function appMapOpeningMode(map: AppMapStartupItem | undefined): AppMapOpeningMode {
-  return map && Object.keys(map.tests ?? {}).length > 0 ? "test" : "map";
+/** The public workflow starts with the outcome-oriented Test view. The map is
+ * still available as a generated topology view, but it is never an authoring
+ * prerequisite for recording the first Test. */
+export function appMapOpeningMode(_map: AppMapStartupItem | undefined): AppMapOpeningMode {
+  return "test";
 }
 
 export type AppMapStartupDecision =

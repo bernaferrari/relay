@@ -196,6 +196,10 @@ export function appMapCommitSummary(input: {
       return `Removed flow ${appMap.flows[change.flowId]?.name ?? "Flow"}`;
     case "test.save":
       return `${appMap.tests?.[change.test.id] ? "Updated" : "Created"} reusable test ${change.test.name}`;
+    case "combine.save":
+      return `${appMap.combines?.[change.combine.id] ? "Updated" : "Created"} Repeat ${change.combine.name}`;
+    case "combine.remove":
+      return `Removed Repeat ${appMap.combines?.[change.combineId]?.name ?? "definition"}`;
   }
 }
 

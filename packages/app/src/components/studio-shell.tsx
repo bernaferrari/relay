@@ -7,7 +7,6 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
-import type { AppMap } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
 import { useRecorder } from "../context/recorder";
@@ -52,7 +51,8 @@ import { StudioAuthoringWorkspace } from "./studio-authoring-workspace";
 import { StudioShellShortcutsSheet } from "./studio-shell-shortcuts-sheet";
 import { StudioShellCombineRail } from "./studio-shell-combine-rail";
 import { StudioShellVariablesDialog } from "./studio-shell-variables-dialog";
-import { nextMapTitle, readRememberedDevicePanelPreference } from "../lib/studio-shell-preferences";
+import { readRememberedDevicePanelPreference } from "../lib/studio-shell-preferences";
+import { createStudioBlankMapActions } from "../lib/studio-blank-map-actions";
 import { EmptyAppMap, MapLibrary, RunsWorkspace } from "./studio-shell-workspaces";
 
 type ProductArea = MapLibraryArea;
@@ -97,8 +97,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     server.selectedAppMapId();
     setActiveTargetSetId();
   });
-  // Restore a persisted canvas before recipes paint, including browser sessions
-  // with empty storage, so opening Relay feels like reopening a design file.
+  // Restore persisted work before recipes paint so Relay reopens like a design file.
   // The selected id remains the source of truth; this only closes a startup race.
   let restoredInitialMap = false;
   createEffect(() => {
@@ -123,6 +122,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     }
     // No saved maps yet. The renderer now owns an unsaved canvas until the
     // first capture/edit, so launching Relay never manufactures an empty file.
+    setMapMode("test");
     restoredInitialMap = true;
     server.setSelectedAppMapId(null);
   });
@@ -279,7 +279,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       }
       if (key === "r" && !selectedMap()) {
         event.preventDefault();
-        void captureFirstScreenFromBlankMap();
+        void blankMapActions.record();
       }
     };
     window.addEventListener("keydown", onWorkspaceShortcut);
@@ -415,39 +415,22 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     rows.sort((a, b) => b.updatedAt - a.updatedAt);
     return needle ? rows.filter((appMap) => appMap.name.toLowerCase().includes(needle)) : rows;
   });
-  async function captureFirstScreenFromBlankMap(): Promise<void> {
-    const canCapture =
-      selectedTargetIsReady() && Boolean(server.selectedLeaseId()) && !server.controlIssue();
-    if (creatingBlankMap() || !canCapture) {
-      if (!canCapture) openDevicePicker();
-      return;
-    }
-    setCreatingBlankMap(true);
-    let createdMap: AppMap | null = null;
-    try {
-      const title = nextMapTitle(server.appMaps());
-      createdMap = await server.createAppMap(crypto.randomUUID(), title);
-      const captured = await recorder.captureMapScreen(createdMap.id, { title: "Start" });
-      if (!captured) throw new Error("Relay could not capture the current screen");
-      await server.refreshAppMaps();
-      server.setSelectedAppMapId(captured.appMap.id);
+  const blankMapActions = createStudioBlankMapActions({
+    server,
+    recorder,
+    creating: creatingBlankMap,
+    setCreating: setCreatingBlankMap,
+    targetReady: selectedTargetIsReady,
+    openDevicePicker,
+    openWorkspace: (mapId, mode) => {
+      server.setSelectedAppMapId(mapId);
       setArea("maps");
-      setMapMode("map");
+      setMapMode(mode);
       setSettingsOpen(false);
       setNavOpen(false);
-      toast("Starting screen saved · record what you do next", "success");
-    } catch (error) {
-      if (createdMap) {
-        await server
-          .runAction("app-map.remove", { appMapId: createdMap.id })
-          .catch(() => undefined);
-        await server.refreshAppMaps().catch(() => undefined);
-      }
-      toast(humanError(error, "Could not save the start screen"), "warning");
-    } finally {
-      setCreatingBlankMap(false);
-    }
-  }
+    },
+    clearWorkspace: () => server.setSelectedAppMapId(null),
+  });
 
   async function importTestYaml(yaml: string): Promise<void> {
     try {
@@ -595,8 +578,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     toast("This saved run is no longer attached to an editable map Test.", "warning");
   }
 
-  /** New Map is a local blank canvas. It becomes durable only after its first
-   * capture or note, so browsing and reopening Relay cannot create drafts. */
+  /** A blank Map becomes durable only after its first capture or note. */
   function startNewMap(): void {
     setArea("maps");
     server.setSelectedAppMapId(null);
@@ -887,12 +869,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     "text-caption",
                     combineOpen() && "bg-[var(--surface-base)] text-[var(--text-strong)]",
                   )}
-                  aria-label={combineOpen() ? "Close Combine" : "Open Combine"}
+                  aria-label={combineOpen() ? "Close Repeat" : "Open Repeat"}
                   aria-pressed={combineOpen()}
                   data-tip={
                     combineOpen()
-                      ? "Close Combine"
-                      : "Multiply Variables such as languages or models by reusable Tests."
+                      ? "Close Repeat"
+                      : "Repeat Tests over languages, devices, or other selected values."
                   }
                   disabled={
                     server.isOffline() ||
@@ -902,7 +884,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   onClick={() => toggleCombine()}
                 >
                   <Icon name="grid" size={13} />
-                  <span class="max-[720px]:hidden">Combine</span>
+                  <span class="max-[720px]:hidden">Repeat</span>
                 </Button>
               </Show>
             </Show>
@@ -928,7 +910,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                         creating={creatingBlankMap()}
                         onToggleDevice={toggleDevicePanel}
                         onOpenTargets={() => props.onOpenSettings("targets")}
-                        onCaptureFirstScreen={() => void captureFirstScreenFromBlankMap()}
+                        onCaptureFirstScreen={() => void blankMapActions.capture()}
+                        onRecordFirstTest={() => void blankMapActions.record()}
                         onImportYaml={importTestYaml}
                         onExportYaml={() => void exportSelected()}
                       />
@@ -949,6 +932,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       }}
                       onImportYaml={importTestYaml}
                       onExportYaml={() => void exportSelected()}
+                      onRecordTest={() => void recorder.enterRecordMode()}
                     />
                   </div>
                   <Show when={settingsOpen()}>

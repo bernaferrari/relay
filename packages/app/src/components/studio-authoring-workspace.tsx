@@ -22,17 +22,17 @@ export function StudioAuthoringWorkspace(props: {
   onOpenRun: (id: string) => void;
   onImportYaml: (yaml: string) => Promise<void> | void;
   onExportYaml: () => void;
+  onRecordTest: () => void;
 }) {
+  function recordTest(): void {
+    if (props.mode !== "test") props.onMode("test");
+    props.onRecordTest();
+  }
   const onboarding = useFirstTestOnboarding({
     onOpenTargets: props.onOpenTargets,
     onShowLiveDevice: () => window.dispatchEvent(new CustomEvent("relay:open-device-panel")),
     onSaveStartScreen: () => window.dispatchEvent(new CustomEvent("relay:capture-screen")),
-    onRecord: () => {
-      props.onMode("map");
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("relay:record-path")));
-      });
-    },
+    onRecord: recordTest,
     onImportYaml: props.onImportYaml,
     onOpenTest: () => props.onMode("test"),
     onOpenRun: props.onOpenRun,
@@ -68,6 +68,8 @@ export function StudioAuthoringWorkspace(props: {
         <Suspense fallback={<WorkspaceSkeleton label="test editor" />}>
           <AppMapTestWorkspace
             onOpenRun={props.onOpenRun}
+            onChooseTarget={props.onOpenTargets}
+            onOpenTarget={() => window.dispatchEvent(new CustomEvent("relay:open-device-panel"))}
             onRecord={onboarding.checklistProps().onRecord}
           />
         </Suspense>

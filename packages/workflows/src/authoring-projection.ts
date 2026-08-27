@@ -27,6 +27,7 @@ export function workflowVersionForAuthoringSession(session: AuthoringSession): s
       latestReplay?.id,
       latestReplay?.outcome,
       session.committedConnectionId,
+      session.committedTestId,
       session.error,
       session.archive?.reason,
     ]),
@@ -119,6 +120,18 @@ function allowedActions(
 
 function problemsForSession(session: AuthoringSession): WorkflowProblem[] {
   const problems: WorkflowProblem[] = [];
+  if (
+    session.state === "committed" &&
+    (!session.committedConnectionId || !session.committedTestId)
+  ) {
+    problems.push({
+      code: "malformed-response",
+      title: "The approved recording is incomplete",
+      detail: "Canonical state does not contain both the reviewed Connection and its Test.",
+      recovery: "Inspect the Authoring Session and App Map before approving or recording again.",
+      retryable: false,
+    });
+  }
   if (session.state === "failed") {
     problems.push({
       code: "operation-unavailable",
@@ -171,11 +184,14 @@ export function snapshotFromAuthoringSession(input: {
 }): AuthorTestSnapshot {
   const { ref, frozen, session } = input;
   const review = reviewForSession(session);
+  const incompleteCommit =
+    session.state === "committed" && (!session.committedConnectionId || !session.committedTestId);
+  const needsAttention = input.forceNeedsAttention || incompleteCommit;
   return {
     schemaVersion: 1,
     kind: "author-test",
     title: frozen.title,
-    phase: input.forceNeedsAttention ? "needs-attention" : phaseForSession(session),
+    phase: needsAttention ? "needs-attention" : phaseForSession(session),
     stage: session.state,
     version: workflowVersionForAuthoringSession(session),
     ref,
@@ -188,12 +204,13 @@ export function snapshotFromAuthoringSession(input: {
       ...(session.committedConnectionId
         ? { committedConnectionId: session.committedConnectionId }
         : {}),
+      ...(session.committedTestId ? { committedTestId: session.committedTestId } : {}),
     },
     ...(review ? { review } : {}),
-    progress: input.forceNeedsAttention
+    progress: needsAttention
       ? { label: "The mutation outcome needs inspection" }
       : progressForSession(session),
-    allowedNextActions: input.forceNeedsAttention ? ["inspect"] : allowedActions(session, review),
+    allowedNextActions: needsAttention ? ["inspect"] : allowedActions(session, review),
     problems: [...problemsForSession(session), ...(input.extraProblems ?? [])],
     evidenceRefs: evidenceForSession(session),
   };

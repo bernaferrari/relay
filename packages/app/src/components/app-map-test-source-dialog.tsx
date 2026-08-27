@@ -2,28 +2,46 @@ import { Show, createSignal, onCleanup, onMount } from "solid-js";
 import type { AppMap, AppMapScenarioTest } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { applyAppMapTestSource, projectAppMapTestSource } from "../lib/app-map-test-source";
+import type { AppMapTestSourceApply } from "../lib/app-map-test-source";
 import { trapFocus } from "../lib/modal";
 import { Icon } from "./icon";
 
 export function AppMapTestSourceDialog(props: {
   map: AppMap;
   test: AppMapScenarioTest;
-  onApply: (test: AppMapScenarioTest) => void;
+  onApply: (update: Extract<AppMapTestSourceApply, { ok: true }>) => Promise<void> | void;
   onClose: () => void;
 }) {
-  const projection = projectAppMapTestSource(props.map, props.test);
+  const openedMap = structuredClone(props.map);
+  const openedTest = structuredClone(props.test);
+  const openedTestContent = JSON.stringify(openedTest);
+  const projection = projectAppMapTestSource(openedMap, openedTest);
   const initialSource = projection.kind === "ready" ? projection.source : "";
   const [source, setSource] = createSignal(initialSource);
   const [error, setError] = createSignal("");
+  const [applying, setApplying] = createSignal(false);
   let panel: HTMLElement | undefined;
   let editor: HTMLTextAreaElement | undefined;
   let closeButton: HTMLButtonElement | undefined;
 
-  function apply(): void {
+  async function apply(): Promise<void> {
+    if (applying()) return;
     setError("");
+    if (
+      props.map.id !== openedMap.id ||
+      props.map.revision !== openedMap.revision ||
+      props.test.id !== openedTest.id ||
+      JSON.stringify(props.test) !== openedTestContent
+    ) {
+      setError(
+        "Source was not applied. This Test changed after Source opened. Close Source, review the latest Test, and apply your edit again.",
+      );
+      queueMicrotask(() => document.getElementById("test-source-error")?.focus());
+      return;
+    }
     const result = applyAppMapTestSource({
-      map: props.map,
-      current: props.test,
+      map: openedMap,
+      current: openedTest,
       source: source(),
       updatedAt: Date.now(),
     });
@@ -32,8 +50,18 @@ export function AppMapTestSourceDialog(props: {
       queueMicrotask(() => document.getElementById("test-source-error")?.focus());
       return;
     }
-    props.onApply(result.test);
-    props.onClose();
+    setApplying(true);
+    try {
+      await props.onApply(result);
+      props.onClose();
+    } catch (failure) {
+      setError(
+        `Source was not applied. ${failure instanceof Error ? failure.message : String(failure)}`,
+      );
+      queueMicrotask(() => document.getElementById("test-source-error")?.focus());
+    } finally {
+      setApplying(false);
+    }
   }
 
   function reset(): void {
@@ -104,7 +132,7 @@ export function AppMapTestSourceDialog(props: {
                     reviewed paths, checkpoints, modules, and existing checks. Nothing has changed.
                   </p>
                 </div>
-                <Button variant="secondary" onClick={props.onClose}>
+                <Button variant="secondary" disabled={applying()} onClick={props.onClose}>
                   Back to Test
                 </Button>
               </div>
@@ -154,8 +182,12 @@ export function AppMapTestSourceDialog(props: {
                 <Button variant="secondary" onClick={props.onClose}>
                   Close
                 </Button>
-                <Button variant="primary" disabled={source() === initialSource} onClick={apply}>
-                  Apply source
+                <Button
+                  variant="primary"
+                  disabled={source() === initialSource || applying()}
+                  onClick={() => void apply()}
+                >
+                  {applying() ? "Applying…" : "Apply source"}
                 </Button>
               </div>
             </footer>

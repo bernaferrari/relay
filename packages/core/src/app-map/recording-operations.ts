@@ -28,6 +28,7 @@ import type {
 } from "./model.js";
 import { appMapFail } from "./errors.js";
 import { mutateAppMap } from "./mutation.js";
+import { attachRecordedTest } from "./recorded-test.js";
 
 export type AppMapRecordingInput = {
   sessionId: string;
@@ -44,9 +45,11 @@ export type AppMapRecordingInput = {
   evidenceUrisById?: Record<string, string>;
   evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
   evidenceById?: Record<string, AuthoringEvidence>;
+  /** Stable id prepared by the Authoring Session before its atomic commit. */
+  testId?: string;
 };
 
-export type AppMapRecordingResult = { appMap: AppMap; connectionId: string };
+export type AppMapRecordingResult = { appMap: AppMap; connectionId: string; testId?: string };
 
 export type AppMapScreenCaptureInput = {
   target: AuthoringTarget;
@@ -864,7 +867,22 @@ export function commitAppMapRecording(
       };
       map.connections[connection.id] = connection;
       attachToFlow(map, source.id, connection.id, context.at);
+      if (input.testId) {
+        const destinationTitle =
+          connection.destination.kind === "screen"
+            ? (map.screens[connection.destination.screenId]?.title.trim() ?? "Next screen")
+            : "Finish";
+        attachRecordedTest({
+          map,
+          testId: input.testId,
+          sessionId: input.sessionId,
+          connection,
+          sourceTitle: source.title.trim() || "Start",
+          destinationTitle,
+          at: context.at,
+        });
+      }
     },
   );
-  return { appMap, connectionId };
+  return { appMap, connectionId, ...(input.testId ? { testId: input.testId } : {}) };
 }

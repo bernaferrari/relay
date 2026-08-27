@@ -10,17 +10,21 @@ import { CanonicalRepeatWorkflow } from "./repeat-workflow.js";
 import type {
   AuthorTestDecision,
   AuthorTestIntent,
+  AuthorTestRecoveryIntent,
   AuthorTestSnapshot,
   FrozenRunTestIdentity,
   RelayWorkflows,
   RepeatTestDecision,
   RepeatTestIntent,
+  RepeatTestRecoveryIntent,
   RepeatTestSnapshot,
+  RunTestRecoveryIntent,
   RunTestIntent,
   RunTestSnapshot,
   WorkflowDecision,
   WorkflowIntent,
   WorkflowProblem,
+  WorkflowRecoveryIntent,
   WorkflowRef,
   WorkflowSnapshot,
 } from "./types.js";
@@ -49,6 +53,7 @@ function initialProblem(input: {
   problem: WorkflowProblem;
   frozen?: FrozenRunTestIdentity;
   phase?: WorkflowSnapshot["phase"];
+  compiled?: ValidCompile;
 }): RunTestSnapshot {
   return {
     schemaVersion: 1,
@@ -57,6 +62,9 @@ function initialProblem(input: {
     phase: input.phase ?? "blocked",
     version: "unstarted",
     ...(input.frozen ? { frozen: input.frozen } : {}),
+    ...(input.compiled
+      ? { compiled: { plan: input.compiled.plan, preflight: input.compiled.preflight } }
+      : {}),
     progress: { label: input.problem.title },
     allowedNextActions: [],
     problems: [input.problem],
@@ -143,10 +151,12 @@ function frozenIdentity(
     planDigest,
     target: { ...intent.target },
     ...(intent.startup ? { startup: { ...intent.startup } } : {}),
+    ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
     ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
     ...(intent.capture
       ? { capture: { fullSurfaceScreenIds: [...intent.capture.fullSurfaceScreenIds] } }
       : {}),
+    ...(intent.workflowRequestId ? { workflowRequestId: intent.workflowRequestId } : {}),
   };
 }
 
@@ -191,6 +201,126 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     return this.startRunTest(intent);
   }
 
+  async recover(intent: AuthorTestRecoveryIntent): Promise<AuthorTestSnapshot>;
+  async recover(intent: RepeatTestRecoveryIntent): Promise<RepeatTestSnapshot>;
+  async recover(intent: RunTestRecoveryIntent): Promise<RunTestSnapshot>;
+  async recover(intent: WorkflowRecoveryIntent): Promise<WorkflowSnapshot> {
+    if (intent.kind === "run-test") return this.recoverRunTest(intent);
+    return intent.kind === "author-test"
+      ? this.authoring.recover(intent)
+      : this.repeat.recover(intent);
+  }
+
+  private async recoverRunTest(intent: RunTestRecoveryIntent): Promise<RunTestSnapshot> {
+    const unavailable = (problem: WorkflowProblem): RunTestSnapshot => ({
+      schemaVersion: 1,
+      kind: "run-test",
+      title: `Run ${intent.frozen.testId}`,
+      phase: "needs-attention",
+      version: "recovery-needed",
+      frozen: intent.frozen,
+      progress: { label: problem.title },
+      allowedNextActions: [],
+      problems: [problem],
+      evidenceRefs: [],
+    });
+    let summaries: OperationOutput<"job.list">["jobs"];
+    try {
+      ({ jobs: summaries } = await this.operations.invoke("job.list", { limit: 100 }));
+    } catch (error) {
+      return unavailable({
+        ...unavailableProblem("inspect canonical jobs", error),
+        recovery:
+          "Restore Relay connectivity, then inspect this uncertain Run again. Do not start another Run.",
+      });
+    }
+    const recent = summaries.filter((job) => job.queuedAt >= intent.startedAfter - 1_000);
+    const matches: Array<{
+      job: NonNullable<ReturnType<typeof parseCanonicalJob>>;
+      rootRecipeId: string;
+    }> = [];
+    for (const summary of recent) {
+      try {
+        const output = await this.operations.invoke("job.get", { jobId: summary.id });
+        const raw = output.job as unknown as Record<string, unknown>;
+        const job = parseCanonicalJob(raw);
+        if (!job) continue;
+        const artifacts = Array.isArray(raw.artifacts) ? raw.artifacts : [];
+        const artifact = artifacts.find((candidate) => {
+          if (!candidate || typeof candidate !== "object") return false;
+          return (candidate as Record<string, unknown>).kind === "app-map-test-execution-intent";
+        }) as Record<string, unknown> | undefined;
+        const data = artifact?.data;
+        if (!data || typeof data !== "object") continue;
+        const execution = data as Record<string, unknown>;
+        const requestArtifact = artifacts.find((candidate) => {
+          if (!candidate || typeof candidate !== "object") return false;
+          return (candidate as Record<string, unknown>).kind === "app-map-test-workflow-request";
+        }) as Record<string, unknown> | undefined;
+        const requestData =
+          requestArtifact?.data && typeof requestArtifact.data === "object"
+            ? (requestArtifact.data as Record<string, unknown>)
+            : undefined;
+        const source = execution.sourcePlan;
+        if (!source || typeof source !== "object") continue;
+        const sourcePlan = source as Record<string, unknown>;
+        const selectedProfile = execution.selectedRuntimeTargetProfile;
+        const profileId =
+          selectedProfile && typeof selectedProfile === "object"
+            ? (selectedProfile as Record<string, unknown>).id
+            : undefined;
+        const targetMatches =
+          intent.frozen.target.kind === "device"
+            ? raw.serial === intent.frozen.target.targetId &&
+              raw.platform === intent.frozen.target.platform
+            : raw.browserTargetId === intent.frozen.target.targetId;
+        if (
+          sourcePlan.appMapId !== intent.frozen.appMapId ||
+          sourcePlan.appMapRevision !== intent.frozen.appMapRevision ||
+          sourcePlan.testId !== intent.frozen.testId ||
+          (intent.frozen.workflowRequestId
+            ? requestData?.requestId !== intent.frozen.workflowRequestId
+            : sourcePlan.digest !== intent.frozen.planDigest) ||
+          typeof sourcePlan.rootRecipeId !== "string" ||
+          !sourcePlan.rootRecipeId ||
+          !targetMatches ||
+          (intent.frozen.targetProfileId !== undefined &&
+            profileId !== intent.frozen.targetProfileId)
+        ) {
+          continue;
+        }
+        matches.push({ job, rootRecipeId: sourcePlan.rootRecipeId });
+      } catch {
+        // One unreadable candidate cannot justify retrying a possibly completed mutation.
+      }
+    }
+    if (matches.length !== 1) {
+      return unavailable({
+        code: "mutation-outcome-unknown",
+        title:
+          matches.length > 1
+            ? "More than one canonical Run matches this request"
+            : "Relay has not found the uncertain Run yet",
+        detail:
+          matches.length > 1
+            ? "Relay cannot choose one Run without risking attribution to the wrong execution."
+            : "The enqueue may still be persisting, or its canonical job is not currently readable.",
+        recovery:
+          "Inspect this uncertain Run again after Relay is available. Do not start another Run.",
+        retryable: false,
+      });
+    }
+    const match = matches[0]!;
+    const frozen = { ...intent.frozen, rootRecipeId: match.rootRecipeId };
+    const ref = encodeRunWorkflowRef({
+      schemaVersion: 1,
+      kind: "run-test",
+      jobId: match.job.id,
+      frozen,
+    });
+    return snapshotFromJob({ ref, frozen, job: match.job });
+  }
+
   private async startRunTest(intent: RunTestIntent): Promise<RunTestSnapshot> {
     let revision: number;
     if (intent.revision && intent.revision !== "current") {
@@ -225,6 +355,13 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       compiled = await this.operations.invoke("app-map.test.compile", {
         appMapId: intent.appMapId,
         testId: intent.testId,
+        ...(intent.startup?.mode === "verified-checkpoint"
+          ? { entryCheckpointScreenId: intent.startup.screenId }
+          : {}),
+        ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
+        ...(intent.capture
+          ? { forceRecaptureScreenIds: [...intent.capture.fullSurfaceScreenIds] }
+          : {}),
       });
     } catch (error) {
       return initialProblem({ intent, problem: unavailableProblem("compile the Test", error) });
@@ -256,6 +393,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       return initialProblem({
         intent,
         frozen,
+        compiled: checkedCompile,
         problem: {
           code: "compile-blocked",
           title: `The Test has ${checkedCompile.blockers.length} compile blocker${checkedCompile.blockers.length === 1 ? "" : "s"}`,
@@ -272,11 +410,13 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       testId: intent.testId,
       expectedRevision: revision,
       target: { ...intent.target },
+      ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
       ...(intent.startup ? { startup: { ...intent.startup } } : {}),
       ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
       ...(intent.capture
         ? { surfaceCapture: { forceRecaptureScreenIds: [...intent.capture.fullSurfaceScreenIds] } }
         : {}),
+      ...(intent.workflowRequestId ? { workflowRequestId: intent.workflowRequestId } : {}),
     };
     let run: OperationOutput<"app-map.test.run">;
     try {
@@ -323,7 +463,10 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       jobId: job.id,
       frozen: finalFrozen,
     });
-    return snapshotFromJob({ ref, frozen: finalFrozen, job });
+    return {
+      ...snapshotFromJob({ ref, frozen: finalFrozen, job }),
+      compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+    };
   }
 
   async inspect(ref: WorkflowRef): Promise<WorkflowSnapshot> {

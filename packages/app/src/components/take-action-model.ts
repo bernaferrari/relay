@@ -1,5 +1,6 @@
 import type { AuthoringInteraction, StepTarget } from "@relay/protocol";
-import { describeStep, type RecordingTakeAction } from "../context/recorder";
+import type { RecordingTakeAction } from "../context/recorder";
+import { sentenceForStep as describeStep } from "../lib/step-sentence";
 import { defaultTapTarget } from "../lib/take-action-conversion";
 import { defaultStrategy, parsePoint, type Strategy } from "../lib/step-target";
 

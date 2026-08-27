@@ -38,6 +38,7 @@ test("freezes one exact Test/device/profile intent for compile and run", () => {
     testId: "test",
     entryCheckpointScreenId: "settings",
     targetProfileId: "ipad-pt",
+    forceRecaptureScreenIds: ["voice"],
   });
   assert.equal(sameAppMapTestRunIntent(intent, { ...intent }), true);
   assert.equal(sameAppMapTestRunIntent(intent, { ...intent, generation: 4 }), false);
