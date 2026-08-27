@@ -12,6 +12,10 @@ import {
   buildDaemonHttpUrl,
 } from '../daemon/http-contract.ts';
 import { buildDaemonHealthPayload } from '../daemon/http-health.ts';
+import {
+  carriesUnbackedHostPathInstallSource,
+  sendHostPathInstallSourceRefused,
+} from './proxy-install-source-admission.ts';
 
 export type DaemonProxyOptions = {
   upstreamBaseUrl: string;
@@ -77,6 +81,11 @@ async function handleProxyRequest(
 
   if (!isAuthorized(req, options.clientToken, rpcBody)) {
     sendUnauthorized(res, route, readJsonRpcId(rpcBody));
+    return;
+  }
+
+  if (carriesUnbackedHostPathInstallSource(rpcBody)) {
+    sendHostPathInstallSourceRefused(res, readJsonRpcId(rpcBody));
     return;
   }
 
