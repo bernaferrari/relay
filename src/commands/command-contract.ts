@@ -14,6 +14,12 @@ export type JsonSchema = {
   const?: unknown;
   minimum?: number;
   maximum?: number;
+  /**
+   * Marks this object as ANOTHER command's input, naming the sibling property
+   * that holds that command's name. Model-facing admission recurses into it
+   * with that command's own advertised schema (`mcp/command-tools.ts`).
+   */
+  commandInputFor?: string;
 };
 
 export type CommandMetadata<Name extends string, Input> = {
