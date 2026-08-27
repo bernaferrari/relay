@@ -10,7 +10,7 @@ import {
 import type { BoundDeviceRuntime } from '@agent-device/contracts/platform-runtime';
 import type { SessionSurface } from '@agent-device/contracts/session';
 import type { DeviceInfo } from '@agent-device/kernel/device';
-import type { DaemonRequest, DaemonResponse, SessionState } from '../types.ts';
+import type { DaemonRequest, DaemonResponse, SessionRef, SessionState } from '../types.ts';
 import {
   abortAuthoringOnSecondOpen,
   armAuthoringOnOpen,
@@ -342,9 +342,9 @@ function findNewSessionDeviceConflict(params: {
   sessionStore: SessionStore;
 }): DaemonResponse | undefined {
   const { req, device, sessionStore } = params;
-  const inUse = sessionStore.toArray().find((session) => session.device.id === device.id);
+  const inUse = sessionStore.findByDevice(device.id);
   if (!inUse) return undefined;
-  if (isImplicitSessionScopeConflict(req, inUse)) {
+  if (isImplicitSessionScopeConflict(req, inUse.session)) {
     return errorResponse(
       'DEVICE_IN_USE',
       'Device is already in use by another workspace session.',
@@ -362,11 +362,11 @@ function findNewSessionDeviceConflict(params: {
 // test renders the exact error this handler returns; a message or hint change here fails that
 // gate instead of drifting past it.
 export function buildDeviceInUseBySessionError(
-  inUse: SessionState,
+  inUse: SessionRef,
   device: DeviceInfo,
 ): DaemonResponse {
-  return errorResponse('DEVICE_IN_USE', `Device is already in use by session "${inUse.name}".`, {
-    session: inUse.name,
+  return errorResponse('DEVICE_IN_USE', `Device is already in use by session "${inUse.address}".`, {
+    session: inUse.address,
     deviceId: device.id,
     deviceName: device.name,
     hint: buildSessionRecoveryHint(inUse, 'device-in-use'),

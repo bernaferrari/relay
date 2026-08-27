@@ -20,7 +20,7 @@ import {
   resolveAndroidSerialAllowlist,
   resolveIosSimulatorDeviceSetPath,
 } from '../../utils/device-isolation.ts';
-import type { DaemonRequest, DaemonResponse } from '../types.ts';
+import type { DaemonRequest, DaemonResponse, SessionRef } from '../types.ts';
 import { resolveSessionRunnerLogPath, SessionStore } from '../session-store.ts';
 import {
   requireSessionOrExplicitSelector,
@@ -83,20 +83,27 @@ function sessionListInventoryResponse(
     ok: true,
     data: {
       sessions: sessionStore
-        .toArray()
-        .filter((session) => sessionMatchesScope(session, scope))
-        .map((session) => publicSessionInfo(session, sessionStore)),
+        .listRefs()
+        .filter((ref) => sessionMatchesScope(ref.session, scope))
+        .map((ref) => publicSessionInfo(ref, sessionStore)),
     },
   };
 }
 
-function publicSessionInfo(
-  session: ReturnType<SessionStore['toArray']>[number],
-  sessionStore: SessionStore,
-) {
-  const sessionStateDir = sessionStore.resolveSessionDir(session.name);
+/**
+ * `address` is the string `--session` accepts for this session, and `sessionStateDir` /
+ * `runnerLogPath` are resolved from that same key rather than from `session.name`. An implicitly
+ * cwd-scoped session is named `default` and stored under `cwd:<hash>:default`, so reporting only
+ * the name left `session list` — the discovery surface — naming a session no `--session` value
+ * could reach, and pointed its paths at `<state>/sessions/default`, a directory that does not
+ * exist, while the real artifacts sat in `<state>/sessions/cwd_<hash>_default` (#2031/#1394).
+ * `name` stays as the public name the session was opened under.
+ */
+function publicSessionInfo({ address, session }: SessionRef, sessionStore: SessionStore) {
+  const sessionStateDir = sessionStore.resolveSessionDir(address);
   return {
     name: session.name,
+    address,
     sessionStateDir,
     runnerLogPath: resolveSessionRunnerLogPath(sessionStateDir),
     platform: publicPlatformString(session.device),
