@@ -6,6 +6,7 @@ import {
 } from '@agent-device/maestro';
 import { helpBody } from '../commands/command-text.ts';
 import {
+  DEVICE_SELECTION_FLAG_KEYS,
   getCliCommandSchema,
   getCommandSchema,
   getFlagDefinitions,
@@ -655,7 +656,7 @@ For simulator/emulator flows, use help manual-qa for routine QA or help workflow
 Discovery:
   agent-device devices --platform ios
   agent-device devices --platform android
-  Use --device <name-or-udid> only when multiple devices are present.
+  With multiple devices present, select one: --device <name>, or --udid <udid> (iOS) / --serial <serial> (Android) when names collide.
 
 iOS physical-device prerequisites:
   Xcode, xcrun xcdevice, and xcrun xctrace must be available from the selected Xcode.
@@ -1059,6 +1060,12 @@ Full command catalog. Use agent-device help <command> for exact flags and behavi
   });
   const commandLines = renderCommandSection(commands);
 
+  const selectionSection = renderFlagSection(
+    // "shared by", not "accepted by every": a few catalog commands take a subset (connect has
+    // no --udid/--serial, device has no --session) — help <command> states each command's own.
+    "Device Selection (shared by device commands; help <command> lists each command's flags):",
+    listHelpFlags(DEVICE_SELECTION_FLAG_KEYS),
+  );
   const helpFlags = listHelpFlags(GLOBAL_FLAG_KEYS);
   const flagsSection = renderFlagSection('Global Flags:', helpFlags);
   const configSection = renderTextSection('Configuration:', CONFIGURATION_LINES);
@@ -1067,6 +1074,8 @@ Full command catalog. Use agent-device help <command> for exact flags and behavi
 
   return `${header}
 ${commandLines}
+
+${selectionSection}
 
 ${flagsSection}
 
