@@ -24,11 +24,13 @@ export type { AndroidFillVerification } from './fill-diagnostics.ts';
 
 type AndroidFillVerificationCandidate = AndroidFillVerificationNode & {
   editText: boolean;
+  // Helper-only fact: the node's dump text is its HINT, so the field itself is empty.
+  hintShowing: boolean;
 };
 
 type AndroidTextAtPointInspection = {
-  targetInput: AndroidFillVerificationNode | null;
-  actualInput: AndroidFillVerificationNode | null;
+  targetInput: AndroidFillVerificationCandidate | null;
+  actualInput: AndroidFillVerificationCandidate | null;
 };
 
 type AndroidTextAtPointScan = {
@@ -152,6 +154,10 @@ export function buildAndroidFillUnconfirmedVerification(
   const afterTarget = verification.targetInput;
   const actualInput = verification.actualInput;
   if (
+    // The unconfirmed soft-success exists for app-owned formatting that prevents raw equality.
+    // Nothing formats the EMPTY value (#2063): residual text after a clear is a failed clear,
+    // and the soft-success would also skip the second, bigger delete burst.
+    requested.length === 0 ||
     verification.reason === 'ime_capture' ||
     !beforeTarget ||
     !afterTarget ||
@@ -289,10 +295,14 @@ function maskedAndroidFillVerification(
   const actualInput = inspection.actualInput;
   if (!actualInput || !isMaskedAndroidInput(actualInput)) return null;
   const actual = actualInput.text ?? null;
-  const actualLength = Array.from(actual ?? '').length;
+  const valueLength = Array.from(observedAndroidValue(actualInput)).length;
   const expectedLength = Array.from(expected).length;
+  // A masked value only ever compares by length. The empty expectation accepts an observed
+  // masked node with an empty VALUE: a masked field WITH content dumps its bullet run, so
+  // emptiness is honest evidence — matching iOS, where clearing a secure field succeeds
+  // unverified rather than failing after the clear worked.
   const matched =
-    actual !== null && actualLength > 0 && expectedLength > 0 && actualLength === expectedLength;
+    expectedLength === 0 ? valueLength === 0 : valueLength > 0 && valueLength === expectedLength;
   return {
     ok: matched,
     actual,
@@ -307,36 +317,59 @@ function textAndroidFillVerification(
   inspection: AndroidTextAtPointInspection,
   expected: string,
 ): AndroidFillVerification {
-  const actual = inspection.actualInput?.text ?? null;
+  const actualInput = inspection.actualInput;
   return {
-    ok: isAcceptableAndroidFillMatch(actual, expected),
-    actual,
+    // An observed input node is required before any match: an empty expectation accepts an
+    // empty VALUE, and "no input at all" (wrong point, lost focus) must never read as one —
+    // three empty samples of nothing would report a clear that never touched an app field.
+    ok:
+      actualInput !== null &&
+      isAcceptableAndroidFillMatch(observedAndroidValue(actualInput), expected),
+    // Raw dump text, for diagnostics — the hint-collapsed VALUE is only for matching.
+    actual: actualInput?.text ?? null,
     reason: 'text_mismatch',
     targetInput: inspection.targetInput,
-    actualInput: inspection.actualInput,
+    actualInput,
   };
 }
 
-function isAcceptableAndroidFillMatch(actual: string | null, expected: string): boolean {
-  if (actual === expected) {
+/**
+ * An observed input's VALUE. The dump `text` is not it in two cases the verifiers must agree
+ * on: an absent attribute is the empty value, and hint-only text is too — an empty field's
+ * `getText()` returns its HINT on modern Android (the placeholder-as-value trap the Apple
+ * runner solves with `treatingPlaceholderAsEmpty`); the helper's hint-showing fact is the only
+ * way to tell that apart from a real value equal to the hint string (#2063).
+ */
+function observedAndroidValue(input: AndroidFillVerificationCandidate): string {
+  if (input.hintShowing) return '';
+  return input.text ?? '';
+}
+
+function isAcceptableAndroidFillMatch(value: string, expected: string): boolean {
+  if (value === expected) {
     return true;
   }
-  const normalizedActual = normalizeFillVerificationText(actual);
-  const normalizedExpected = normalizeFillVerificationText(expected);
-  if (!normalizedActual || !normalizedExpected) {
+  if (expected.length === 0) {
+    // The clear request (#2063) matched exactly above or not at all; whitespace never
+    // normalizes into emptiness.
     return false;
   }
-  if (normalizedActual === normalizedExpected) {
+  const normalizedValue = normalizeFillVerificationText(value);
+  const normalizedExpected = normalizeFillVerificationText(expected);
+  if (!normalizedValue || !normalizedExpected) {
+    return false;
+  }
+  if (normalizedValue === normalizedExpected) {
     return true;
   }
-  if (isSentenceAutocapitalizeMatch(normalizedActual, normalizedExpected)) {
+  if (isSentenceAutocapitalizeMatch(normalizedValue, normalizedExpected)) {
     return true;
   }
   return false;
 }
 
-function normalizeFillVerificationText(value: string | null): string {
-  return (value ?? '').replace(/\s+/g, ' ').trim();
+function normalizeFillVerificationText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 function isSentenceAutocapitalizeMatch(actual: string, expected: string): boolean {
@@ -372,6 +405,7 @@ function androidFillCandidateFromNode(
     }),
     area,
     editText: isEditTextClass(node.className ?? ''),
+    hintShowing: node.hintShowing === true,
   };
 }
 
