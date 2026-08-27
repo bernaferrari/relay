@@ -7,6 +7,8 @@ primitives, while product components use Tailwind utilities for ordinary styling
 ```text
 desktop (Electron) · web app · CLI · TUI · MCP
                      │
+        outcome workflows · advanced operations
+                     │
           authenticated @relay/client
                      │
       server — operations · events · leases
@@ -25,10 +27,10 @@ Variants, Connections, Actions, Routines, Flows, Runs, Target Results, Baselines
 and Activity Events. Screens are observed application states; Connections describe how one state
 reaches another; Flows are reusable paths through the map.
 
-**App Map is the primary visual authoring model.** The canvas is where people and agents capture
-screens, record connections, review Takes, and organize coverage. App Map schema v1 is the only
-persisted canvas schema. Unsupported persisted schemas are discarded rather than migrated or
-inferred. There is no second graph document and no compatibility authoring surface.
+**Test is the primary outcome-oriented authoring view.** People record and review one trusted path,
+then run it and inspect its evidence. Map is the generated topology view of the same canonical App
+Map state, not an opening toll or a second document. App Map schema v1 remains the only persisted
+graph schema. Unsupported persisted schemas are discarded rather than migrated or inferred.
 
 Capture engines may discover screens and collect screenshots or accessibility trees, but they never
 own a second product workspace. Their output is projected onto the frozen App Map revision as Run
@@ -59,18 +61,19 @@ and peers) always refers to an App Map id — never a recipe id.
 
 ## Packages
 
-| Package           | Responsibility                                                            |
-| ----------------- | ------------------------------------------------------------------------- |
-| `@relay/protocol` | Canonical operation, entity, event, revision, and evidence schemas        |
-| `@relay/core`     | App Map operations, authoring, execution, evaluation, evidence, discovery |
-| `@relay/server`   | Project-scoped HTTP, SSE, operation dispatch, leases, and artifacts       |
-| `@relay/client`   | Validated HTTP operations and reconnecting event stream                   |
-| `@relay/cli`      | Server-first interface for people, scripts, CI, and agents                |
-| `@relay/mcp`      | Capability-scoped MCP adapter with native PNG observations                |
-| `@relay/tui`      | Terminal workspace                                                        |
-| `@relay/ui`       | Host-independent Solid design system                                      |
-| `@relay/app`      | Host-independent Solid product UI                                         |
-| `@relay/desktop`  | Sandboxed Electron host                                                   |
+| Package            | Responsibility                                                            |
+| ------------------ | ------------------------------------------------------------------------- |
+| `@relay/protocol`  | Canonical operation, entity, event, revision, and evidence schemas        |
+| `@relay/core`      | App Map operations, authoring, execution, evaluation, evidence, discovery |
+| `@relay/server`    | Project-scoped HTTP, SSE, operation dispatch, leases, and artifacts       |
+| `@relay/client`    | Validated HTTP operations and reconnecting event stream                   |
+| `@relay/workflows` | Outcome-oriented workflows over canonical operations                      |
+| `@relay/cli`       | Server-first interface for people, scripts, CI, and agents                |
+| `@relay/mcp`       | Capability-scoped MCP adapter with native PNG observations                |
+| `@relay/tui`       | Terminal workspace                                                        |
+| `@relay/ui`        | Host-independent Solid design system                                      |
+| `@relay/app`       | Host-independent Solid product UI                                         |
+| `@relay/desktop`   | Sandboxed Electron host                                                   |
 
 ## One operation boundary
 

@@ -16,10 +16,10 @@ export type MapMode = "map" | "screens" | "coverage" | "test";
 export type MapCanvasView = Exclude<MapMode, "test">;
 
 const MODES = [
-  ["map", "map", "Canvas", "The screens and the paths between them"],
+  ["test", "play", "Test", "Author and run one trusted path"],
+  ["map", "map", "Map", "The screens and the paths between them"],
   ["screens", "grid", "Screens", "Every screen as a grid"],
   ["coverage", "check", "Results", "What ran, and how it went"],
-  ["test", "play", "Test", "Author and run one path"],
 ] as const;
 
 export function MapModeSwitch(props: { value: MapMode; onChange: (value: MapMode) => void }) {
@@ -43,7 +43,7 @@ export function MapModeSwitch(props: { value: MapMode; onChange: (value: MapMode
     <div
       class="flex h-9 items-center rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-0.5"
       role="tablist"
-      aria-label="Map mode"
+      aria-label="Workspace view"
     >
       {MODES.map(([mode, icon, label, tip], index) => (
         <button

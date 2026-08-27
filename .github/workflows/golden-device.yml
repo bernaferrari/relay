@@ -27,12 +27,9 @@ jobs:
       RELAY_PORT: "18787"
       RELAY_URL: http://127.0.0.1:18787
       RELAY_ACTOR_ID: system:golden-device
-      RELAY_STATE_DIR: ${{ runner.temp }}/relay-golden-state
-      RELAY_RUNS_DIR: ${{ runner.temp }}/relay-golden-artifacts/runs
       # Recipe IDs in the protected fixture contract resolve only from this
       # checked-out, reviewed source — never a stale runner-local catalog.
       RELAY_TESTS_DIR: ${{ github.workspace }}/tests
-      GOLDEN_ARTIFACT_DIR: ${{ runner.temp }}/relay-golden-artifacts
       GOLDEN_ACCEPTANCE_MODE: required
       # Configure this protected Environment secret with the schema documented
       # in docs/GOLDEN_DEVICE_ACCEPTANCE.md. An empty value is a hard failure.
@@ -40,6 +37,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # The runner context is available to steps, not job-level env. Export
+      # target-local paths before any command needs them so GitHub can parse
+      # the workflow and every later step receives the same isolated roots.
+      - name: Configure isolated acceptance paths
+        run: |
+          echo "RELAY_STATE_DIR=$RUNNER_TEMP/relay-golden-state" >> "$GITHUB_ENV"
+          echo "GOLDEN_ARTIFACT_DIR=$RUNNER_TEMP/relay-golden-artifacts" >> "$GITHUB_ENV"
+          echo "RELAY_RUNS_DIR=$RUNNER_TEMP/relay-golden-artifacts/runs" >> "$GITHUB_ENV"
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:

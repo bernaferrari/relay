@@ -23,15 +23,18 @@ test("run-outcome mode is labelled Results, never Coverage", () => {
   dispose();
 });
 
-test("the other modes keep their one-word labels", () => {
+test("Test leads the workspace views and every mode keeps a one-word label", () => {
   const { root, dispose } = setup("screens");
   for (const [mode, label] of [
-    ["map", "Canvas"],
-    ["screens", "Screens"],
     ["test", "Test"],
+    ["map", "Map"],
+    ["screens", "Screens"],
   ] as const) {
     const tab = root.querySelector<HTMLButtonElement>(`[data-map-mode="${mode}"]`);
     expect(tab?.getAttribute("aria-label")).toBe(label);
   }
+  expect(root.getAttribute("aria-label")).toBeNull();
+  expect(root.querySelector('[role="tablist"]')?.getAttribute("aria-label")).toBe("Workspace view");
+  expect(root.querySelector('[role="tab"]')?.getAttribute("data-map-mode")).toBe("test");
   dispose();
 });

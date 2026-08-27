@@ -38,7 +38,7 @@ import {
   shellMapWrap,
   shellDragStrip,
 } from "../lib/shell-layout";
-import { appMapStartupDecision } from "../lib/app-map-startup";
+import { appMapOpeningMode, appMapStartupDecision } from "../lib/app-map-startup";
 import { appMapLibraryItem } from "../lib/app-map-library";
 import { normalizeMapLibraryArea, type MapLibraryArea } from "../lib/map-library-area";
 import { appMapPrimaryAction } from "../lib/app-map-primary-action";
@@ -64,10 +64,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       new URLSearchParams(window.location.search).has("run") ? "runs" : "maps",
     ),
   );
-  // Open on the canvas; choosing a saved Test switches modes explicitly.
   const [mapMode, setMapMode] = createSignal<MapMode>("map");
   const authoringMap = () => mapMode() !== "test";
-  // The App Map is the only authoring surface. Device remains one click away.
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [variablesOpen, setVariablesOpen] = createSignal(false);
   const [combineOpen, setCombineOpen] = createSignal(false);
@@ -113,10 +111,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     });
     if (decision.kind === "wait") return;
     if (decision.kind === "keep") {
+      setMapMode(decision.mode);
       restoredInitialMap = true;
       return;
     }
     if (decision.kind === "select") {
+      setMapMode(decision.mode);
       restoredInitialMap = true;
       server.setSelectedAppMapId(decision.id);
       return;
@@ -435,7 +435,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       setMapMode("map");
       setSettingsOpen(false);
       setNavOpen(false);
-      toast("Start screen saved · record a path or capture more screenshots", "success");
+      toast("Starting screen saved · record what you do next", "success");
     } catch (error) {
       if (createdMap) {
         await server
@@ -567,7 +567,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   function openMap(id: string): void {
     server.setSelectedAppMapId(id);
     setArea("maps");
-    setMapMode("map");
+    setMapMode(appMapOpeningMode(server.appMaps().find((candidate) => candidate.id === id)));
     setSettingsOpen(false);
     // The library is for choosing work. Once chosen, give the graph and live
     // device the room; the toolbar button keeps the library one click away.

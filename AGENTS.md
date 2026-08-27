@@ -25,15 +25,18 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) and [README.md](./README.md).
 
 ## Packages
 
-| Package          | Path               | Notes                            |
-| ---------------- | ------------------ | -------------------------------- |
-| `@relay/core`    | `packages/core`    | Domain recipes — no UI           |
-| `@relay/server`  | `packages/server`  | HTTP API over core               |
-| `@relay/cli`     | `packages/cli`     | Primary host                     |
-| `@relay/tui`     | `packages/tui`     | ANSI terminal UI                 |
-| `@relay/ui`      | `packages/ui`      | Solid design system + themes     |
-| `@relay/app`     | `packages/app`     | Solid product UI (host-agnostic) |
-| `@relay/desktop` | `packages/desktop` | Electron shell                   |
+| Package            | Path                 | Notes                            |
+| ------------------ | -------------------- | -------------------------------- |
+| `@relay/protocol`  | `packages/protocol`  | Canonical operation contracts    |
+| `@relay/core`      | `packages/core`      | Domain recipes — no UI           |
+| `@relay/server`    | `packages/server`    | HTTP API over core               |
+| `@relay/client`    | `packages/client`    | Validated operation transport    |
+| `@relay/workflows` | `packages/workflows` | Outcome-oriented workflow façade |
+| `@relay/cli`       | `packages/cli`       | Primary host                     |
+| `@relay/tui`       | `packages/tui`       | ANSI terminal UI                 |
+| `@relay/ui`        | `packages/ui`        | Solid design system + themes     |
+| `@relay/app`       | `packages/app`       | Solid product UI (host-agnostic) |
+| `@relay/desktop`   | `packages/desktop`   | Electron shell                   |
 
 ## Rules
 

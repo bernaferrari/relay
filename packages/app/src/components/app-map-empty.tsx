@@ -71,7 +71,7 @@ export function EmptyAppMap(props: {
   return (
     <section
       class="app-map-canvas relative min-h-0 min-w-0 flex-1 overflow-hidden"
-      aria-label="My map"
+      aria-label="New test"
     >
       <div class="pointer-events-none absolute inset-0 app-map-grid" aria-hidden="true" />
 
@@ -89,11 +89,11 @@ export function EmptyAppMap(props: {
                 </span>
                 <div class="grid gap-1.5">
                   <h1 class="m-0 text-display/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)] text-balance">
-                    Map this app
+                    Record your first test
                   </h1>
                   <p class="m-0 max-w-[38ch] text-body/[1.55] text-[var(--text-weak)]">
-                    Show the live device, then start mapping. Relay taps through screens and files
-                    them on the canvas.
+                    Open the live device, save the starting screen, then use the app normally. Relay
+                    turns that path into a replayable Test.
                   </p>
                 </div>
                 <Show
@@ -115,7 +115,7 @@ export function EmptyAppMap(props: {
                     onClick={props.onToggleDevice}
                   >
                     <Icon name="smartphone" size={14} />
-                    Show live device
+                    Open live device
                     <kbd class="rounded-md bg-[rgb(255_255_255/18%)] px-1.5 py-0.5 font-mono text-micro font-medium">
                       D
                     </kbd>
@@ -198,7 +198,7 @@ export function EmptyAppMap(props: {
                     >
                       <Icon name="refresh" size={14} class="ui-refresh-spin" />
                     </Show>
-                    {props.creating ? "Saving…" : "Start mapping"}
+                    {props.creating ? "Saving…" : "Save starting screen"}
                   </Button>
                 }
               >
