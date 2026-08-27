@@ -632,6 +632,16 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       return attempt?.outcome === "passed";
     }
 
+    async function addCheckpoint(label = "Checkpoint"): Promise<void> {
+      const session = activeSession();
+      if (!session || session.state !== "recording" || !ownsActiveSession()) return;
+      try {
+        await server.interactAuthoringSession(session.id, { kind: "screenshot", label });
+      } catch (error) {
+        toast(humanError(error, "Could not save this checkpoint"), "warning");
+      }
+    }
+
     async function keepTake(
       input: {
         destination?:
@@ -646,10 +656,6 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       setPendingSourceScreenId(undefined);
       setPendingTransitionId(undefined);
       setPendingGroup("");
-      toast(
-        "Path kept on the map · record another, capture a screenshot, or run the path",
-        "success",
-      );
       return committed;
     }
 
@@ -819,6 +825,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       ownsActiveSession,
       keepTake,
       replayTake,
+      addCheckpoint,
       discardTake,
       removeTakeStep,
       reorderTakeActions,

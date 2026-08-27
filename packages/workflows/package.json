@@ -12,7 +12,8 @@
     "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
-    "@relay/protocol": "workspace:*"
+    "@relay/protocol": "workspace:*",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

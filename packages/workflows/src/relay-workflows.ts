@@ -5,15 +5,28 @@ import {
   type RelayOperationPort,
 } from "./operation-port.js";
 import { parseCanonicalJob, snapshotFromJob } from "./job-projection.js";
+import { CanonicalAuthoringWorkflow } from "./authoring-workflow.js";
+import { CanonicalRepeatWorkflow } from "./repeat-workflow.js";
 import type {
+  AuthorTestDecision,
+  AuthorTestIntent,
+  AuthorTestSnapshot,
   FrozenRunTestIdentity,
   RelayWorkflows,
+  RepeatTestDecision,
+  RepeatTestIntent,
+  RepeatTestSnapshot,
   RunTestIntent,
+  RunTestSnapshot,
+  WorkflowDecision,
+  WorkflowIntent,
   WorkflowProblem,
   WorkflowRef,
   WorkflowSnapshot,
 } from "./types.js";
 import {
+  decodeAuthoringWorkflowRef,
+  decodeRepeatWorkflowRef,
   decodeRunWorkflowRef,
   encodeRunWorkflowRef,
   type RunWorkflowReference,
@@ -36,7 +49,7 @@ function initialProblem(input: {
   problem: WorkflowProblem;
   frozen?: FrozenRunTestIdentity;
   phase?: WorkflowSnapshot["phase"];
-}): WorkflowSnapshot {
+}): RunTestSnapshot {
   return {
     schemaVersion: 1,
     kind: "run-test",
@@ -161,9 +174,24 @@ function invalidRefSnapshot(ref: WorkflowRef): WorkflowSnapshot {
 }
 
 class CanonicalRelayWorkflows implements RelayWorkflows {
-  constructor(private readonly operations: RelayOperationPort) {}
+  private readonly authoring: CanonicalAuthoringWorkflow;
+  private readonly repeat: CanonicalRepeatWorkflow;
 
-  async start(intent: RunTestIntent): Promise<WorkflowSnapshot> {
+  constructor(private readonly operations: RelayOperationPort) {
+    this.authoring = new CanonicalAuthoringWorkflow(operations);
+    this.repeat = new CanonicalRepeatWorkflow(operations);
+  }
+
+  async start(intent: RunTestIntent): Promise<RunTestSnapshot>;
+  async start(intent: AuthorTestIntent): Promise<AuthorTestSnapshot>;
+  async start(intent: RepeatTestIntent): Promise<RepeatTestSnapshot>;
+  async start(intent: WorkflowIntent): Promise<WorkflowSnapshot> {
+    if (intent.kind === "author-test") return this.authoring.start(intent);
+    if (intent.kind === "repeat-test") return this.repeat.start(intent);
+    return this.startRunTest(intent);
+  }
+
+  private async startRunTest(intent: RunTestIntent): Promise<RunTestSnapshot> {
     let revision: number;
     if (intent.revision && intent.revision !== "current") {
       revision = intent.revision.exact;
@@ -224,7 +252,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
 
     const frozen = frozenIdentity(intent, revision, checkedCompile.preflight.planDigest);
     if (checkedCompile.blockers.length) {
-      const primary = checkedCompile.blockers[0];
+      const primary = checkedCompile.blockers[0]!;
       return initialProblem({
         intent,
         frozen,
@@ -299,16 +327,24 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
   }
 
   async inspect(ref: WorkflowRef): Promise<WorkflowSnapshot> {
+    const repeatReference = decodeRepeatWorkflowRef(ref);
+    if (repeatReference) return this.repeat.inspect(ref, repeatReference);
+    const authoringReference = decodeAuthoringWorkflowRef(ref);
+    if (authoringReference) return this.authoring.inspect(ref, authoringReference);
     const reference = decodeRunWorkflowRef(ref);
     if (!reference) return invalidRefSnapshot(ref);
     return this.readJob(ref, reference);
   }
 
-  async advance(decision: {
-    action: "cancel";
-    ref: WorkflowRef;
-    expectedVersion: string;
-  }): Promise<WorkflowSnapshot> {
+  async advance(decision: WorkflowDecision): Promise<WorkflowSnapshot> {
+    const repeatReference = decodeRepeatWorkflowRef(decision.ref);
+    if (repeatReference) {
+      return this.repeat.advance(decision as RepeatTestDecision, repeatReference);
+    }
+    const authoringReference = decodeAuthoringWorkflowRef(decision.ref);
+    if (authoringReference) {
+      return this.authoring.advance(decision as AuthorTestDecision, authoringReference);
+    }
     const reference = decodeRunWorkflowRef(decision.ref);
     if (!reference) return invalidRefSnapshot(decision.ref);
     const current = await this.readJob(decision.ref, reference);
@@ -325,6 +361,21 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
             recovery:
               "Review the latest snapshot and explicitly cancel again only if it is still active.",
             retryable: true,
+          },
+        ],
+      };
+    }
+    if (decision.action !== "cancel") {
+      return {
+        ...current,
+        problems: [
+          ...current.problems,
+          {
+            code: "unexpected-authoring-state",
+            title: "This decision does not apply to a Test run",
+            detail: `The ${decision.action} decision belongs to an Authoring Session.`,
+            recovery: "Use a decision allowed by the latest workflow snapshot.",
+            retryable: false,
           },
         ],
       };
@@ -355,7 +406,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
   private async readJob(
     ref: WorkflowRef,
     reference: RunWorkflowReference,
-  ): Promise<WorkflowSnapshot> {
+  ): Promise<RunTestSnapshot> {
     try {
       const output = await this.operations.invoke("job.get", { jobId: reference.jobId });
       const job = parseCanonicalJob(output.job);

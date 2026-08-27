@@ -84,7 +84,10 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
 
   const resumeMatch = matchPath(pathname, "/jobs/combine/:batchId/resume");
   if (method === "POST" && resumeMatch) {
-    const body = (await parseJsonBody(request)) as { reviewed?: boolean };
+    const body = (await parseJsonBody(request)) as {
+      reviewed?: boolean;
+      expectedAppMapRevision?: number;
+    };
     const campaignId = resumeMatch.batchId!;
     const existing = await readCombineCampaign(scope.projectId, campaignId);
     if (!existing || (!scope.localTrusted && existing.ownerId !== scope.subject)) {
@@ -105,6 +108,18 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
     }
     const map = await readAppMap(scope.projectId, projected.appMapId);
     if (!map) throw new HttpError(409, "The campaign App Map no longer exists");
+    if (body.expectedAppMapRevision !== undefined && map.revision !== body.expectedAppMapRevision) {
+      throw new HttpError(
+        409,
+        `Expected App Map revision ${body.expectedAppMapRevision}, current revision is ${map.revision}`,
+        {
+          code: "revision-conflict",
+          currentRevision: map.revision,
+          recovery:
+            "Inspect the changed Test and start a new Repeat. Relay will not continue a frozen Repeat against different App Map content.",
+        },
+      );
+    }
     const combine = map.combines?.[projected.combineId];
     if (!combine) throw new HttpError(409, "The campaign Combine no longer exists");
     const runtime = { ...context.runtime };

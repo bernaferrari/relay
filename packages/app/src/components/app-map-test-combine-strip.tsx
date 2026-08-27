@@ -1,5 +1,10 @@
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import type { AppMap, AppMapScenarioTest } from "@relay/protocol";
+import {
+  createRelayWorkflows,
+  type RepeatTestDecision,
+  type RepeatTestSnapshot,
+} from "@relay/workflows";
 import { Button } from "@relay/ui/button";
 import { Switch } from "@relay/ui/switch";
 import { useServer } from "../context/server";
@@ -35,6 +40,20 @@ export function AppMapTestCombineStrip(props: {
   const [lens, setLens] = createSignal<TestCombineLens>("visual");
   const [wholePage, setWholePage] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
+  const [repeat, setRepeat] = createSignal<RepeatTestSnapshot>();
+  const [reviewed, setReviewed] = createSignal(false);
+  const workflows = createRelayWorkflows({
+    invoke: (operationId, input) => server.runAction(operationId, input),
+  });
+  const repeatLocked = () => Boolean(repeat());
+  let repeatOwner = `${props.map.id}:${props.test.id}`;
+  createEffect(() => {
+    const owner = `${props.map.id}:${props.test.id}`;
+    if (owner === repeatOwner) return;
+    repeatOwner = owner;
+    setRepeat();
+    setReviewed(false);
+  });
   createEffect(() => {
     const available = candidates();
     if (available.some((item) => item.id === variableId())) return;
@@ -74,6 +93,12 @@ export function AppMapTestCombineStrip(props: {
   createEffect(() => {
     if (!wholePageAvailability().ready && wholePage()) setWholePage(false);
   });
+  createEffect(() => {
+    const current = repeat();
+    if (!current?.ref || (current.phase !== "queued" && current.phase !== "running")) return;
+    const timer = window.setInterval(() => void inspectRepeat(), 1_500);
+    onCleanup(() => window.clearInterval(timer));
+  });
 
   function combineRunInput(input: { cell?: string; executionMode?: "pilot" | "all" }) {
     if (wholePage() && !destinationScreenId()) {
@@ -104,49 +129,7 @@ export function AppMapTestCombineStrip(props: {
     setSelectedIds(variable ? variable.options.map((option) => option.id) : []);
   }
 
-  async function runCell(worldId?: string): Promise<void> {
-    const variable = selectedVariable();
-    const device = selectedDevice();
-    if (!variable || !props.ready || busy()) return;
-    if (!device) {
-      window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
-      return;
-    }
-    const platform =
-      device.platform === "ios" || device.platform === "android" ? device.platform : undefined;
-    if (!platform) {
-      toast("Choose a device Target before running a Combine cell.", "warning");
-      return;
-    }
-    const world = worldId
-      ? projection().worlds.find((item) => item.id === worldId)
-      : projection().worlds[0];
-    if (!world) {
-      toast("Choose at least one value.", "warning");
-      return;
-    }
-    const combine = combineRunInput({ cell: world.values[variable.id]?.id ?? world.id });
-    if (!combine) return;
-    setBusy(true);
-    try {
-      await server.runAction("app-map.test.run", {
-        appMapId: props.map.id,
-        testId: props.test.id,
-        expectedRevision: props.map.revision,
-        target: { kind: "device", platform, targetId: device.serial },
-        ...combine,
-      });
-      toast(`Running ${props.test.name} in ${world.label}`, "success");
-      window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
-      props.onStarted?.();
-    } catch (error) {
-      toast(humanError(error, "Could not start this Combine cell"), "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function runSelected(): Promise<void> {
+  async function runPilot(): Promise<void> {
     const device = selectedDevice();
     if (!props.ready || busy()) return;
     if (!device) {
@@ -156,36 +139,81 @@ export function AppMapTestCombineStrip(props: {
     const platform =
       device.platform === "ios" || device.platform === "android" ? device.platform : undefined;
     if (!platform) {
-      toast("Choose a device Target before running a Combine.", "warning");
+      toast("Choose a device before repeating this Test.", "warning");
       return;
     }
     if (!projection().cells.length) {
       toast("Choose at least one value.", "warning");
       return;
     }
-    const combine = combineRunInput({
-      executionMode: projection().cells.length > 1 ? "all" : "pilot",
-    });
-    if (!combine) return;
+    const repeatInput = combineRunInput({ executionMode: "pilot" });
+    const dimension = selectedVariable();
+    if (!repeatInput || !dimension) return;
     setBusy(true);
     try {
-      await server.runAction("app-map.test.run", {
+      const snapshot = await workflows.start({
+        kind: "repeat-test",
         appMapId: props.map.id,
         testId: props.test.id,
-        expectedRevision: props.map.revision,
+        revision: { exact: props.map.revision },
         target: { kind: "device", platform, targetId: device.serial },
-        ...combine,
+        over: { dimensionId: dimension.id, valueIds: [...selectedIds()] },
+        evidence: lens(),
+        ...(repeatInput.surfaceCapture
+          ? {
+              capture: {
+                fullSurfaceScreenIds: repeatInput.surfaceCapture.forceRecaptureScreenIds,
+              },
+            }
+          : {}),
       });
-      toast(
-        projection().cells.length === 1
-          ? `Running ${props.test.name}`
-          : `Running ${projection().cells.length} selected worlds`,
-        "success",
-      );
-      window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
-      props.onStarted?.();
+      setRepeat(snapshot);
+      if (snapshot.ref) {
+        toast(`Pilot started with ${projection().worlds[0]!.label}`, "success");
+        window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
+        props.onStarted?.();
+        void server.refreshJobs();
+      } else {
+        toast(snapshot.problems[0]?.title ?? "Could not start the pilot", "error");
+      }
     } catch (error) {
-      toast(humanError(error, "Could not start this Combine"), "error");
+      toast(humanError(error, "Could not start the pilot"), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function inspectRepeat(): Promise<void> {
+    const current = repeat();
+    if (!current?.ref || busy()) return;
+    setBusy(true);
+    try {
+      const snapshot = await workflows.inspect(current.ref);
+      if (snapshot.kind === "repeat-test") setRepeat(snapshot);
+    } catch (error) {
+      toast(humanError(error, "Could not refresh Repeat"), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function advanceRepeat(action: RepeatTestDecision["action"]): Promise<void> {
+    const current = repeat();
+    if (!current?.ref || busy()) return;
+    setBusy(true);
+    try {
+      const snapshot = await workflows.advance({
+        action,
+        ref: current.ref,
+        expectedVersion: current.version,
+      });
+      if (snapshot.kind === "repeat-test") {
+        setRepeat(snapshot);
+        setReviewed(false);
+        void server.refreshJobs();
+      }
+    } catch (error) {
+      toast(humanError(error, "Could not update Repeat"), "error");
     } finally {
       setBusy(false);
     }
@@ -199,10 +227,9 @@ export function AppMapTestCombineStrip(props: {
           class="grid gap-1 rounded-xl border border-border-weak-base bg-background-base px-3 py-3"
           data-app-map-test-combine-strip
         >
-          <p class={cn(testEditorSection, "m-0")}>Run this Test in other worlds</p>
+          <p class={cn(testEditorSection, "m-0")}>Repeat this Test</p>
           <p class={cn(testEditorHint, "m-0")}>
-            Create a Variable with apply and undo — a list, app locale, or toggle — then pick values
-            here.
+            Add a repeat dimension such as Language, Theme, or Account, then choose its values here.
           </p>
         </section>
       }
@@ -214,7 +241,7 @@ export function AppMapTestCombineStrip(props: {
       >
         <header class="grid gap-1">
           <p class="m-0 text-micro font-semibold uppercase tracking-[0.06em] text-text-weaker">
-            Combine
+            Repeat this…
           </p>
           <h2 id="app-map-test-combine-title" class="m-0 text-body font-semibold text-text-strong">
             {sentence()}
@@ -222,11 +249,12 @@ export function AppMapTestCombineStrip(props: {
         </header>
         <Show when={candidates().length > 1}>
           <label class="grid gap-1">
-            <span class={testEditorSection}>Variable</span>
+            <span class={testEditorSection}>Dimension</span>
             <select
               class="min-h-11 rounded-md border border-border-weak-base bg-background-base px-2.5 text-caption text-text-strong focus-visible:border-border-focus focus-visible:outline-none"
               data-test-combine-variable
               value={variableId()}
+              disabled={repeatLocked()}
               onChange={(event) => {
                 const id = event.currentTarget.value;
                 setVariableId(id);
@@ -254,6 +282,7 @@ export function AppMapTestCombineStrip(props: {
             <button
               type="button"
               class="text-caption text-text-base hover:underline"
+              disabled={repeatLocked()}
               onClick={selectAll}
             >
               All
@@ -273,6 +302,7 @@ export function AppMapTestCombineStrip(props: {
                     )}
                     data-test-combine-value={option.id}
                     aria-pressed={on()}
+                    disabled={repeatLocked()}
                     onClick={() => toggleValue(option.id)}
                   >
                     {combineValueLabel(option)}
@@ -283,7 +313,7 @@ export function AppMapTestCombineStrip(props: {
           </div>
         </div>
         <div class="grid gap-1.5">
-          <span class={testEditorSection}>Lens</span>
+          <span class={testEditorSection}>Evidence</span>
           <div class="flex gap-1.5">
             <For each={["visual", "smoke"] as const}>
               {(choice) => (
@@ -295,6 +325,7 @@ export function AppMapTestCombineStrip(props: {
                   )}
                   data-test-combine-lens={choice}
                   aria-pressed={lens() === choice}
+                  disabled={repeatLocked()}
                   onClick={() => setLens(choice)}
                 >
                   {choice === "visual" ? "Visual" : "Smoke"}
@@ -319,7 +350,7 @@ export function AppMapTestCombineStrip(props: {
           <Switch
             class="mt-0.5 shrink-0"
             checked={wholePage()}
-            disabled={!wholePageAvailability().ready}
+            disabled={repeatLocked() || !wholePageAvailability().ready}
             aria-labelledby="app-map-test-combine-whole-page"
             data-test-combine-whole-page
             onCheckedChange={setWholePage}
@@ -328,37 +359,137 @@ export function AppMapTestCombineStrip(props: {
         <Show
           when={props.ready}
           fallback={
-            <p class={cn(testEditorHint, "m-0")}>Save the current Test before running a cell.</p>
+            <p class={cn(testEditorHint, "m-0")}>Save the current Test before starting a pilot.</p>
           }
         >
-          <div class="grid gap-1" data-test-combine-grid>
-            <For each={projection().worlds}>
-              {(world) => (
-                <button
-                  type="button"
-                  class={cn(testQuietRow, "min-h-11 px-2.5 text-caption text-text-strong")}
-                  data-test-combine-cell={world.id}
-                  disabled={busy()}
-                  onClick={() => void runCell(world.id)}
+          <Show
+            when={repeat()}
+            fallback={
+              <div class="grid gap-2 rounded-lg bg-surface-base p-2.5" data-test-repeat-pilot>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="text-caption text-text-base">
+                    Pilot:{" "}
+                    <strong class="font-medium text-text-strong">
+                      {projection().worlds[0]?.label}
+                    </strong>
+                  </span>
+                  <span class="text-caption tabular-nums text-text-weak">
+                    {projection().cells.length} {projection().cells.length === 1 ? "case" : "cases"}
+                  </span>
+                </div>
+                <p class={cn(testEditorHint, "m-0")}>
+                  Relay runs one representative value first and waits for review before the
+                  remaining values.
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy() || !projection().cells.length}
+                  aria-busy={busy()}
+                  onClick={() => void runPilot()}
                 >
-                  Run {world.label}
-                </button>
-              )}
-            </For>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busy() || !projection().cells.length}
-              onClick={() => void runSelected()}
-            >
-              Run selected
-            </Button>
-            <span class={testEditorHint}>
-              Primary action is one cell. Run selected is explicit.
-            </span>
-          </div>
+                  {busy() ? "Starting pilot…" : "Run pilot"}
+                </Button>
+              </div>
+            }
+          >
+            {(current) => (
+              <div class="grid gap-2 rounded-lg bg-surface-base p-2.5" data-test-repeat-status>
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <div class="grid gap-px">
+                    <strong class="text-caption font-medium text-text-strong">
+                      {current().progress.label}
+                    </strong>
+                    <span class="text-caption tabular-nums text-text-weak">
+                      {current().outcomes.passed} passed · {current().outcomes.untouched} untouched
+                      · {current().outcomes.failed + current().outcomes.needsReview} problems
+                    </span>
+                  </div>
+                  <div class="flex flex-wrap gap-1">
+                    <Show when={current().repeat?.pilotJobId}>
+                      {(jobId) => (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() =>
+                            window.dispatchEvent(
+                              new CustomEvent("relay:open-run-history", {
+                                detail: { jobId: jobId() },
+                              }),
+                            )
+                          }
+                        >
+                          View pilot evidence
+                        </Button>
+                      )}
+                    </Show>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy()}
+                      onClick={() => void inspectRepeat()}
+                    >
+                      Refresh
+                    </Button>
+                  </div>
+                </div>
+                <Show when={current().problems[0]}>
+                  {(problem) => (
+                    <p class={cn(testEditorHint, "m-0")} role="status">
+                      {problem().recovery}
+                    </p>
+                  )}
+                </Show>
+                <Show when={current().allowedNextActions.includes("confirm-and-continue")}>
+                  <label class="flex min-h-11 items-center gap-2 rounded-md border border-border-weak-base px-2.5 text-caption text-text-base">
+                    <input
+                      type="checkbox"
+                      checked={reviewed()}
+                      onChange={(event) => setReviewed(event.currentTarget.checked)}
+                    />
+                    I reviewed the representative result
+                  </label>
+                </Show>
+                <div class="flex flex-wrap gap-2">
+                  <Show when={current().allowedNextActions.includes("continue")}>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={busy()}
+                      onClick={() => void advanceRepeat("continue")}
+                    >
+                      Continue remaining {current().outcomes.untouched}
+                    </Button>
+                  </Show>
+                  <Show when={current().allowedNextActions.includes("confirm-and-continue")}>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={busy() || !reviewed()}
+                      onClick={() => void advanceRepeat("confirm-and-continue")}
+                    >
+                      Continue remaining {current().outcomes.untouched}
+                    </Button>
+                  </Show>
+                  <Show when={current().allowedNextActions.includes("cancel")}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy()}
+                      onClick={() => void advanceRepeat("cancel")}
+                    >
+                      Stop Repeat
+                    </Button>
+                  </Show>
+                  <Show when={current().stage === "complete"}>
+                    <Button variant="secondary" size="sm" onClick={() => setRepeat()}>
+                      Repeat again
+                    </Button>
+                  </Show>
+                </div>
+              </div>
+            )}
+          </Show>
         </Show>
       </section>
     </Show>

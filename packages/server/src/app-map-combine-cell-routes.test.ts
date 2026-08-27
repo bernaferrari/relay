@@ -993,7 +993,7 @@ test("campaign resume queues one pending selected cell and leaves a passed pilot
   }
 });
 
-test("Combine start without --all queues one pilot cell", async () => {
+test("Test Repeat queues one pilot cell and preserves its source revision", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-combine-default-pilot-"));
   const previous = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
@@ -1028,18 +1028,31 @@ test("Combine start without --all queues one pilot cell", async () => {
       actorKind: "human",
     });
     await saveLocaleCombine(client);
-    const started = await client.invoke("job.combine.start", {
+    const map = await readAppMap("mobile", "store");
+    if (!map) throw new Error("expected store App Map");
+    const sourceRevision = {
+      vcs: "git" as const,
+      sha: "abc1234def5678",
+      branch: "feature/repeat",
+    };
+    const started = await client.invoke("app-map.test.run", {
       appMapId: "store",
-      combineId: "locales",
-      serial: "pixel-1",
-      platform: "android",
-      selected: { language: ["en", "it", "fr"] },
+      testId: "script-only",
+      expectedRevision: map.revision,
+      target: { kind: "device", platform: "android", targetId: "pixel-1" },
+      targetProfileId: "pixel-en",
+      in: { language: ["en", "it", "fr"] },
+      sourceRevision,
     });
-    const campaign = started.campaign as CombineCampaign;
+    const repeatId = started.campaign?.id;
+    if (!repeatId) throw new Error("Test Repeat did not return its execution id");
+    const campaign = (await client.invoke("job.combine.campaign.get", { batchId: repeatId }))
+      .campaign as CombineCampaign;
     assert.equal(((started.jobs as unknown[]) ?? []).length, 1);
     assert.equal(campaign.cases.filter((item) => item.phase === "pilot").length, 1);
     assert.equal(campaign.status, "pilot-running");
     assert.equal(campaign.execution?.selectedCellIds?.length, 3);
+    assert.deepEqual(getJob(started.job.id)?.sourceRevision, sourceRevision);
     for (const job of (started.jobs as Array<{ id?: string }>) ?? []) {
       if (job.id) {
         cancelJob(job.id);

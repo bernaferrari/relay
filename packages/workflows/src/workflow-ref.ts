@@ -1,10 +1,31 @@
-import type { FrozenRunTestIdentity, WorkflowRef } from "./types.js";
+import type {
+  FrozenAuthorTestIdentity,
+  FrozenRepeatTestIdentity,
+  FrozenRunTestIdentity,
+  WorkflowRef,
+} from "./types.js";
 
 export type RunWorkflowReference = {
   schemaVersion: 1;
   kind: "run-test";
   jobId: string;
   frozen: FrozenRunTestIdentity;
+};
+
+export type AuthoringWorkflowReference = {
+  schemaVersion: 1;
+  kind: "author-test";
+  sessionId: string;
+  frozen: FrozenAuthorTestIdentity;
+};
+
+export type RepeatWorkflowReference = {
+  schemaVersion: 1;
+  kind: "repeat-test";
+  repeatId: string;
+  pilotJobId: string;
+  selectedCaseIds: string[];
+  frozen: FrozenRepeatTestIdentity;
 };
 
 function encodeBase64Url(value: string): string {
@@ -23,6 +44,14 @@ function decodeBase64Url(value: string): string {
 }
 
 export function encodeRunWorkflowRef(reference: RunWorkflowReference): WorkflowRef {
+  return `relay-workflow.v1.${encodeBase64Url(JSON.stringify(reference))}` as WorkflowRef;
+}
+
+export function encodeAuthoringWorkflowRef(reference: AuthoringWorkflowReference): WorkflowRef {
+  return `relay-workflow.v1.${encodeBase64Url(JSON.stringify(reference))}` as WorkflowRef;
+}
+
+export function encodeRepeatWorkflowRef(reference: RepeatWorkflowReference): WorkflowRef {
   return `relay-workflow.v1.${encodeBase64Url(JSON.stringify(reference))}` as WorkflowRef;
 }
 
@@ -72,6 +101,126 @@ export function decodeRunWorkflowRef(ref: WorkflowRef): RunWorkflowReference | u
       kind: "run-test",
       jobId: record.jobId,
       frozen: { ...(frozen as FrozenRunTestIdentity), target },
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Authoring references identify only the canonical session plus the immutable
+ * intent facts needed to project it. Take revisions and evidence stay owned by
+ * the Authoring Session and are always read afresh. */
+export function decodeAuthoringWorkflowRef(
+  ref: WorkflowRef,
+): AuthoringWorkflowReference | undefined {
+  const prefix = "relay-workflow.v1.";
+  if (!ref.startsWith(prefix)) return undefined;
+  try {
+    const raw = JSON.parse(decodeBase64Url(ref.slice(prefix.length))) as unknown;
+    if (!raw || typeof raw !== "object") return undefined;
+    const record = raw as Record<string, unknown>;
+    if (
+      record.schemaVersion !== 1 ||
+      record.kind !== "author-test" ||
+      !nonEmptyString(record.sessionId) ||
+      !record.frozen ||
+      typeof record.frozen !== "object"
+    ) {
+      return undefined;
+    }
+    const frozen = record.frozen as Record<string, unknown>;
+    const target = parseTarget(frozen.target);
+    if (
+      !target ||
+      !nonEmptyString(frozen.title) ||
+      !nonEmptyString(frozen.appMapId) ||
+      !Number.isInteger(frozen.appMapRevision) ||
+      (frozen.appMapRevision as number) < 0
+    ) {
+      return undefined;
+    }
+    for (const field of ["sourceScreenId", "pendingConnectionId", "group"] as const) {
+      if (frozen[field] !== undefined && !nonEmptyString(frozen[field])) return undefined;
+    }
+    return {
+      schemaVersion: 1,
+      kind: "author-test",
+      sessionId: record.sessionId,
+      frozen: { ...(frozen as FrozenAuthorTestIdentity), target },
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function decodeRepeatWorkflowRef(ref: WorkflowRef): RepeatWorkflowReference | undefined {
+  const prefix = "relay-workflow.v1.";
+  if (!ref.startsWith(prefix)) return undefined;
+  try {
+    const raw = JSON.parse(decodeBase64Url(ref.slice(prefix.length))) as unknown;
+    if (!raw || typeof raw !== "object") return undefined;
+    const record = raw as Record<string, unknown>;
+    if (
+      record.schemaVersion !== 1 ||
+      record.kind !== "repeat-test" ||
+      !nonEmptyString(record.repeatId) ||
+      !nonEmptyString(record.pilotJobId) ||
+      !Array.isArray(record.selectedCaseIds) ||
+      record.selectedCaseIds.length === 0 ||
+      record.selectedCaseIds.some((id) => !nonEmptyString(id)) ||
+      new Set(record.selectedCaseIds).size !== record.selectedCaseIds.length ||
+      !record.frozen ||
+      typeof record.frozen !== "object"
+    ) {
+      return undefined;
+    }
+    const frozen = record.frozen as Record<string, unknown>;
+    const target = parseTarget(frozen.target);
+    const over = frozen.over as Record<string, unknown> | undefined;
+    if (
+      !target ||
+      !nonEmptyString(frozen.appMapId) ||
+      !Number.isInteger(frozen.requestedAppMapRevision) ||
+      (frozen.requestedAppMapRevision as number) < 0 ||
+      !Number.isInteger(frozen.executionAppMapRevision) ||
+      (frozen.executionAppMapRevision as number) < 0 ||
+      !nonEmptyString(frozen.testId) ||
+      !nonEmptyString(frozen.testPlanDigest) ||
+      !nonEmptyString(frozen.rootRecipeId) ||
+      !over ||
+      !nonEmptyString(over.dimensionId) ||
+      !Array.isArray(over.valueIds) ||
+      over.valueIds.length === 0 ||
+      over.valueIds.some((id) => !nonEmptyString(id)) ||
+      new Set(over.valueIds).size !== over.valueIds.length ||
+      record.selectedCaseIds.length !== over.valueIds.length
+    ) {
+      return undefined;
+    }
+    if (frozen.evidence !== "visual" && frozen.evidence !== "smoke") {
+      return undefined;
+    }
+    const capture = frozen.capture as Record<string, unknown> | undefined;
+    if (
+      capture &&
+      (!Array.isArray(capture.fullSurfaceScreenIds) ||
+        capture.fullSurfaceScreenIds.length === 0 ||
+        capture.fullSurfaceScreenIds.some((id) => !nonEmptyString(id)) ||
+        new Set(capture.fullSurfaceScreenIds).size !== capture.fullSurfaceScreenIds.length)
+    ) {
+      return undefined;
+    }
+    return {
+      schemaVersion: 1,
+      kind: "repeat-test",
+      repeatId: record.repeatId,
+      pilotJobId: record.pilotJobId,
+      selectedCaseIds: [...record.selectedCaseIds],
+      frozen: {
+        ...(frozen as FrozenRepeatTestIdentity),
+        target,
+        over: { dimensionId: over.dimensionId, valueIds: [...over.valueIds] },
+      },
     };
   } catch {
     return undefined;

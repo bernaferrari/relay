@@ -1373,7 +1373,7 @@ export function DeviceStage(_props: {
           frameCount={server.frames().length}
           onToggleRecording={toggleRecording}
           onCaptureScreenshot={() => {
-            void server.captureUiScreenshot();
+            void (rec.recording() ? rec.addCheckpoint() : server.captureUiScreenshot());
           }}
           onCopyScreenshot={() => {
             void server.copyUiScreenshot();

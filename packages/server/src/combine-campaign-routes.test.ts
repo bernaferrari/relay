@@ -8,7 +8,7 @@ import { createCombineCampaign } from "@relay/core";
 import type { CombineCampaign } from "@relay/protocol";
 import { startServer } from "./index.js";
 
-test("campaign routes preserve untouched cases and cancel without scheduling them", async () => {
+test("campaign continuation rejects a changed App Map before scheduling untouched cases", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-combine-campaign-server-"));
   const previous = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
@@ -78,15 +78,19 @@ test("campaign routes preserve untouched cases and cancel without scheduling the
     const beforeCampaign = before.campaign as CombineCampaign;
     assert.equal(beforeCampaign.status, "ready-to-resume");
     assert.equal(beforeCampaign.cases[1]?.status, "pending");
+    await client.invoke("app-map.create", { appMapId: "settings", name: "Settings" });
     const jobsBeforeResume = await client.invoke("job.list", { limit: 100 });
     const leasesBeforeResume = await client.invoke("lease.list", { status: "all" });
     await assert.rejects(
-      client.invoke("job.combine.campaign.resume", { batchId: "campaign-1" }),
+      client.invoke("job.combine.campaign.resume", {
+        batchId: "campaign-1",
+        expectedAppMapRevision: 4,
+      }),
       (error: unknown) =>
         error instanceof ApiError &&
         error.status === 409 &&
-        ((error.body as { code?: unknown }).code === "APP_MAP_COMBINE_CELL_CONTRACT" ||
-          String((error.body as { error?: unknown }).error ?? "").length > 0),
+        (error.body as { code?: unknown }).code === "revision-conflict" &&
+        (error.body as { currentRevision?: unknown }).currentRevision === 0,
     );
     const jobsAfterResume = await client.invoke("job.list", { limit: 100 });
     const leasesAfterResume = await client.invoke("lease.list", { status: "all" });

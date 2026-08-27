@@ -13,6 +13,8 @@ import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { targetIsReady } from "./target-presentation";
 import type { DeviceInfo } from "./api-types";
+import { testFromRecordedPath } from "./recorded-path-test";
+import { humanError } from "./human-error";
 
 type GraphLike = NonNullable<AppMapCanvasState["graph"]>;
 
@@ -36,6 +38,7 @@ export function useAppMapTakeReview(options: {
   setPendingConnectionId: (id: string | null) => void;
   getRecordingSourceScreenId: () => string | null;
   setRecordingSourceScreenId: (id: string | null) => void;
+  onPathKept?: (testId?: string) => void;
 }) {
   const recorder = useRecorder();
   const server = useServer();
@@ -137,10 +140,31 @@ export function useAppMapTakeReview(options: {
     });
     if (committed) {
       const appMapId = server.selectedAppMapId();
-      const next = appMapId ? await server.loadAppMap(appMapId) : null;
+      let next = appMapId ? await server.loadAppMap(appMapId) : null;
       const destination = committed.committedConnectionId
         ? next?.connections[committed.committedConnectionId]?.destination
         : undefined;
+      let createdTestId: string | undefined;
+      if (next && committed.committedConnectionId && Object.keys(next.tests).length === 0) {
+        const firstTest = testFromRecordedPath({
+          map: next,
+          connectionId: committed.committedConnectionId,
+        });
+        if (firstTest) {
+          try {
+            const saved = await server.saveTest({
+              appMapId: next.id,
+              expectedRevision: next.revision,
+              test: firstTest,
+            });
+            next = saved.appMap;
+            createdTestId = firstTest.id;
+            await server.refreshAppMaps();
+          } catch (error) {
+            toast(`Path saved, but its Test was not created. ${humanError(error)}`, "warning");
+          }
+        }
+      }
       options.setPendingConnectionId(null);
       options.setRecordingSourceScreenId(null);
       recorder.setRecordingTransition(undefined);
@@ -151,7 +175,11 @@ export function useAppMapTakeReview(options: {
       // inspector open beside the canvas.
       options.setCaptureOpen(false);
       setTakeReplay({ takeId: null, state: "idle" });
-      toast("Path kept · Run it from the top bar, or record the next path", "success");
+      toast(
+        createdTestId ? "Path approved · your Test is ready to run" : "Path approved",
+        "success",
+      );
+      if (createdTestId) options.onPathKept?.(createdTestId);
       requestAnimationFrame(() => {
         const addedScreen =
           destination?.kind === "screen"

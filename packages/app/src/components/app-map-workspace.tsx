@@ -231,9 +231,8 @@ export function AppMapWorkspace(props: {
     pendingProposals,
     Panels: ContextPanels,
   } = contextPanels;
-  // The revision history reads the canvas it annotates. Leaving for the Screens
-  // grid or Coverage table used to be the same click that closed it, and the
-  // mode switcher moving to the shell must not lose that.
+  // The revision history annotates the Map and must close when another view
+  // opens, even though the mode switcher now lives in the shell.
   createEffect(() => {
     if (props.view !== "map") setHistoryOpen(false);
   });
@@ -447,6 +446,7 @@ export function AppMapWorkspace(props: {
     setCaptureOpen,
     openDevicePicker,
     openLiveDevice,
+    onPathKept: () => props.onOpenActions(),
   });
   const {
     busy: startCaptureBusy,

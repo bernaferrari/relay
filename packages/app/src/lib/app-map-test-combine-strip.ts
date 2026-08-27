@@ -196,9 +196,9 @@ export function testCombineSentence(input: {
         : values.length === 2
           ? `${values[0]} and ${values[1]}`
           : `${values.length} selected values`;
-  const lensLabel = input.lens === "smoke" ? "smoke" : "visual";
-  const variableLabel = input.variableNames?.filter(Boolean).join(" × ") || "selection";
-  return `Combine Variable ${variableLabel} × Test ${input.testName} in ${worldLabel} · ${lensLabel} lens`;
+  const evidenceLabel = input.lens === "smoke" ? "smoke checks" : "visual evidence";
+  const dimensionLabel = input.variableNames?.filter(Boolean).join(" × ") || "selection";
+  return `Repeat ${input.testName} across ${dimensionLabel}: ${worldLabel} · ${evidenceLabel}`;
 }
 
 export const TEACH_LANGUAGE_VARIABLE_HINT = "Teach a language Variable first";

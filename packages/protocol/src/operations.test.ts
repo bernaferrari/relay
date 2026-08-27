@@ -564,6 +564,23 @@ test("graph Test runs accept optional Combine worlds and a capture lens", () => 
   );
 });
 
+test("Repeat continuation accepts an exact App Map revision fence", () => {
+  const input = {
+    batchId: "repeat-1",
+    reviewed: true,
+    expectedAppMapRevision: 12,
+  };
+  assert.deepEqual(operationDefinition("job.combine.campaign.resume").input.parse(input), input);
+  assert.throws(
+    () =>
+      operationDefinition("job.combine.campaign.resume").input.parse({
+        ...input,
+        expectedAppMapRevision: -1,
+      }),
+    />=0/u,
+  );
+});
+
 test("graph Test compilation can preview a verified checkpoint without changing the saved Test", () => {
   const input = {
     appMapId: "map-1",

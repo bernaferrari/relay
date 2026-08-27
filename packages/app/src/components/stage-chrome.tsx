@@ -173,22 +173,40 @@ export function StageRecordingControls(props: {
             </div>
           </Show>
           <span class="mx-0.5 h-5 w-px bg-border-weak-base" aria-hidden="true" />
-          <IconButton
-            variant="ghost"
-            size="normal"
-            class="!size-9 rounded-lg"
-            data-tip="Save screenshot to the map (⌘⇧S)"
-            aria-label="Save screenshot to the map"
-            disabled={props.busyCapture}
-            onClick={props.onCaptureScreenshot}
+          <Show
+            when={props.recording}
+            fallback={
+              <IconButton
+                variant="ghost"
+                size="normal"
+                class="!size-9 rounded-lg"
+                data-tip="Save screenshot to the map (⌘⇧S)"
+                aria-label="Save screenshot to the map"
+                disabled={props.busyCapture}
+                onClick={props.onCaptureScreenshot}
+              >
+                <Show when={props.busyCapture} fallback={<Icon name="camera" size={14} />}>
+                  <span
+                    class="size-3.5 rounded-full border-[1.5px] border-current border-t-transparent opacity-70 motion-safe:animate-spin"
+                    aria-hidden="true"
+                  />
+                </Show>
+              </IconButton>
+            }
           >
-            <Show when={props.busyCapture} fallback={<Icon name="camera" size={14} />}>
-              <span
-                class="size-3.5 rounded-full border-[1.5px] border-current border-t-transparent opacity-70 motion-safe:animate-spin"
-                aria-hidden="true"
-              />
-            </Show>
-          </IconButton>
+            <Button
+              variant="secondary"
+              size="md"
+              class="rounded-lg"
+              aria-label="Add checkpoint"
+              data-tip="Save screenshot evidence at this point"
+              disabled={props.busyCapture}
+              aria-busy={props.busyCapture}
+              onClick={props.onCaptureScreenshot}
+            >
+              <Icon name={props.busyCapture ? "refresh" : "camera"} size={14} /> Checkpoint
+            </Button>
+          </Show>
           <IconButton
             variant="ghost"
             size="normal"

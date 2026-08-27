@@ -77,15 +77,7 @@ test("the strip projects selected worlds as rows of this Test", () => {
     worlds: strip.worlds,
     lens: "visual",
   });
-  assert.match(sentence, /Variable/u);
-  assert.match(sentence, /Test/u);
-  assert.match(sentence, /Combine/u);
-  assert.match(sentence, /lens/u);
-  assert.match(sentence, /visual/u);
-  assert.equal(
-    sentence,
-    "Combine Variable Language × Test Settings tour in JA and PT · visual lens",
-  );
+  assert.equal(sentence, "Repeat Settings tour across Language: JA and PT · visual evidence");
   assert.deepEqual(
     testCombineStripRunInput({
       selected: { language: ["ja", "pt"] },

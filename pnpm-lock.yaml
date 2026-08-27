@@ -259,6 +259,9 @@ importers:
       '@relay/ui':
         specifier: workspace:*
         version: link:../ui
+      '@relay/workflows':
+        specifier: workspace:*
+        version: link:../workflows
       '@yume-chan/scrcpy':
         specifier: 2.3.0
         version: 2.3.0
@@ -526,6 +529,9 @@ importers:
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       '@types/node':
         specifier: ^26.1.2

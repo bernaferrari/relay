@@ -763,6 +763,7 @@ export const operationInputSchemas = {
     .object({
       batchId: identifier("Combine campaign identifier"),
       reviewed: z.boolean().optional(),
+      expectedAppMapRevision: z.number().int().nonnegative().optional(),
     })
     .strict(),
   "job.combine.campaign.cancel": z

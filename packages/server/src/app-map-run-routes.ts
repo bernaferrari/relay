@@ -236,6 +236,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         cell: body.cell,
         defaultTargetProfileId: body.targetProfileId,
         title: upserted.combine.name,
+        ...(body.sourceRevision ? { sourceRevision: body.sourceRevision } : {}),
       });
       const job = started.jobs[0];
       if (!job) throw new HttpError(500, "Combine start returned no jobs");

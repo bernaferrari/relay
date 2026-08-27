@@ -27,6 +27,7 @@ import { Icon } from "./icon";
 import { AppMapTestProposalReview } from "./app-map-test-proposal-review";
 import { AppMapTestPreflight } from "./app-map-test-preflight";
 import { AppMapTestCombineStrip } from "./app-map-test-combine-strip";
+import { AppMapTestSourceDialog } from "./app-map-test-source-dialog";
 import { createAppMapTestDocumentSession } from "./app-map-test-document-session";
 import {
   RailStrip,
@@ -39,9 +40,11 @@ export function AppMapTestWorkspace(props: {
   testId?: string;
   onTestChange?: (testId: string) => void;
   onOpenRun?: (runId: string) => void;
+  onRecord?: () => void;
 }) {
   const server = useServer();
   const [proposalReviewOpen, setProposalReviewOpen] = createSignal(false);
+  const [sourceOpen, setSourceOpen] = createSignal(false);
   const [preflightOpen, setPreflightOpen] = createSignal(false);
   /** `undefined` means "follow the layout default for this width". */
   const [railOverride, setRailOverride] = createSignal<Partial<Record<TestRailKind, boolean>>>({});
@@ -375,6 +378,15 @@ export function AppMapTestWorkspace(props: {
         }
       >
         <Show when={draft()}>
+          <Button
+            variant="secondary"
+            size="sm"
+            class="shrink-0"
+            aria-haspopup="dialog"
+            onClick={() => setSourceOpen(true)}
+          >
+            <Icon name="edit" size={13} /> Source
+          </Button>
           <Show when={reviewableTestProposals().length > 0}>
             <Button
               variant="secondary"
@@ -506,10 +518,16 @@ export function AppMapTestWorkspace(props: {
                     description={
                       tests().length
                         ? "Pick one from the switcher to read its steps here, or start a new Test."
-                        : "A Test is what you run once — a path through this map, written as readable intent and bound to reviewed screens."
+                        : props.onRecord
+                          ? "Use the app normally, add checkpoints, review the recording, then approve one replayable Test."
+                          : "A Test is what you run once — a path through this map, written as readable intent and bound to reviewed screens."
                     }
-                    actionLabel={creating() ? "Creating…" : "Create Test"}
-                    onAction={() => void createTest()}
+                    actionLabel={
+                      props.onRecord ? "Record test" : creating() ? "Creating…" : "Create Test"
+                    }
+                    onAction={props.onRecord ?? (() => void createTest())}
+                    secondaryLabel={props.onRecord ? "Start a blank Test" : undefined}
+                    onSecondary={props.onRecord ? () => void createTest() : undefined}
                   />
                 </div>
               }
@@ -579,6 +597,14 @@ export function AppMapTestWorkspace(props: {
           }
           onRevert={(id) => void revertProposal(id)}
           onClose={() => setProposalReviewOpen(false)}
+        />
+      </Show>
+      <Show when={sourceOpen() && appMap() && draft()}>
+        <AppMapTestSourceDialog
+          map={appMap()!}
+          test={draft()!}
+          onApply={queueSave}
+          onClose={() => setSourceOpen(false)}
         />
       </Show>
     </section>

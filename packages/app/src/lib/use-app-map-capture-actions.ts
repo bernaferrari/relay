@@ -44,6 +44,7 @@ export function useAppMapCaptureActions(options: {
   setCaptureOpen: (open: boolean) => void;
   openDevicePicker: () => void;
   openLiveDevice: () => void;
+  onPathKept?: (testId?: string) => void;
 }) {
   const server = useServer();
   const execution = useAppMapExecution();
@@ -215,6 +216,7 @@ export function useAppMapCaptureActions(options: {
     setRecordingSourceScreenId: (id) => {
       recordingSourceScreenId = id;
     },
+    onPathKept: options.onPathKept,
   });
 
   return {

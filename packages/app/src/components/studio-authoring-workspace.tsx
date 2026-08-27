@@ -66,7 +66,10 @@ export function StudioAuthoringWorkspace(props: {
         }
       >
         <Suspense fallback={<WorkspaceSkeleton label="test editor" />}>
-          <AppMapTestWorkspace onOpenRun={props.onOpenRun} />
+          <AppMapTestWorkspace
+            onOpenRun={props.onOpenRun}
+            onRecord={onboarding.checklistProps().onRecord}
+          />
         </Suspense>
       </Show>
       <Show when={onboarding.visible()}>

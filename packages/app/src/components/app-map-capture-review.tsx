@@ -183,8 +183,8 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
           Review recording
         </strong>
         <p class="m-0 mt-1 text-caption/[1.45] text-[var(--text-weak)]">
-          {actionLabel()} from {props.sourceTitle}. Edit the steps, try them on the device, then
-          keep what worked.
+          {actionLabel()} from {props.sourceTitle}. Edit the steps, replay them on the device, then
+          approve what worked.
         </p>
       </header>
 
@@ -376,13 +376,13 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
             {pendingMutation()
               ? "Saving your edit before Relay can try it on the device."
               : canApprove()
-                ? "If the device reached the right place, keep this path."
+                ? "If the device reached the right place, approve this path as a Test."
                 : props.replayState === "failed"
                   ? props.replayError ||
                     `Put the device back on “${props.sourceTitle}”, then try the steps again.`
                   : reviewInvalidated()
                     ? "You changed the timeline. Try it once on the device so Relay can confirm the new steps before you keep them."
-                    : `These steps already ran while you recorded. Keep the path if the device is in the right place, or try them again from “${props.sourceTitle}”.`}
+                    : `These steps already ran while you recorded. Replay them from “${props.sourceTitle}” before approving the path.`}
           </p>
         </section>
       </div>
@@ -404,14 +404,14 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
             }
           />
           {canApprove()
-            ? "Keep"
+            ? "Approve path"
             : props.replayState === "running"
-              ? "Playing…"
+              ? "Replaying…"
               : props.replayState === "failed"
-                ? "Try steps again"
+                ? "Replay again"
                 : reviewInvalidated()
-                  ? "Check edits on device"
-                  : "Try steps on device"}
+                  ? "Replay edited path"
+                  : "Replay path"}
         </button>
         <div class="flex items-center justify-between gap-2">
           <button

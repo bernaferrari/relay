@@ -1,4 +1,4 @@
-import type { FrozenRunTestIdentity, WorkflowProblem, WorkflowSnapshot } from "./types.js";
+import type { FrozenRunTestIdentity, RunTestSnapshot, WorkflowProblem } from "./types.js";
 import type { WorkflowRef } from "./types.js";
 
 export type CanonicalJob = {
@@ -61,7 +61,7 @@ export function workflowVersionForJob(job: CanonicalJob): string {
   )}`;
 }
 
-function jobPhase(job: CanonicalJob): WorkflowSnapshot["phase"] {
+function jobPhase(job: CanonicalJob): RunTestSnapshot["phase"] {
   if (job.status === "queued") return "queued";
   if (job.status === "running") return "running";
   if (job.status === "paused") return "paused";
@@ -71,7 +71,7 @@ function jobPhase(job: CanonicalJob): WorkflowSnapshot["phase"] {
   return "needs-attention";
 }
 
-function progressLabel(job: CanonicalJob, phase: WorkflowSnapshot["phase"]): string {
+function progressLabel(job: CanonicalJob, phase: RunTestSnapshot["phase"]): string {
   if (phase === "queued") return "Waiting for the selected target";
   if (phase === "running") {
     return job.frameCount ? `Running test · ${job.frameCount} frames captured` : "Running test";
@@ -88,7 +88,7 @@ export function snapshotFromJob(input: {
   frozen: FrozenRunTestIdentity;
   job: CanonicalJob;
   extraProblems?: readonly WorkflowProblem[];
-}): WorkflowSnapshot {
+}): RunTestSnapshot {
   const { ref, frozen, job } = input;
   const phase = jobPhase(job);
   const problems = [...(input.extraProblems ?? [])];
