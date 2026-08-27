@@ -342,8 +342,48 @@ function resolveDeviceByName(
   if (!deviceName) return undefined;
   const normalizedName = normalizeDeviceName(deviceName);
   const match = candidates.find((device) => normalizeDeviceName(device.name) === normalizedName);
-  if (!match) throw new AppError('DEVICE_NOT_FOUND', `No device named ${deviceName}`);
+  if (!match) {
+    const hint = deviceIdentityMistakenForNameHint(candidates, deviceName);
+    throw new AppError(
+      'DEVICE_NOT_FOUND',
+      `No device named ${deviceName}`,
+      hint === undefined ? undefined : { hint },
+    );
+  }
   return match;
+}
+
+/**
+ * `--device` takes a device NAME, and `--udid`/`--serial` take a device IDENTITY. Passing an
+ * identity to `--device` reached name resolution and answered "No device named
+ * 204BFFD9-9644-4830-B2C1-1B946597A07C" (#2064) — literally true, and unactionable: it names
+ * neither the flag that does take that value nor the fact that one exists. It is the same class of
+ * mistake `assertSelectorFlagMatchesPlatform` already answers for a mismatched identity flag, so
+ * answer it the same way: name the flag the value belongs to. Only an observed identity earns the
+ * hint — the candidates' own ids, with the flag derived from that device's platform; guessing from
+ * the value's shape would have to reimplement every platform's identity syntax here. A platform
+ * with no identity flag at all (web, linux) earns no hint either: `--udid` resolves only Apple
+ * devices, so naming it would send the user to a flag that provably cannot work.
+ */
+function deviceIdentityMistakenForNameHint(
+  candidates: DeviceInfo[],
+  deviceName: string,
+): string | undefined {
+  const identityMatch = candidates.find((device) => device.id === deviceName);
+  if (!identityMatch) return undefined;
+  const flag = deviceIdentityFlag(identityMatch.platform);
+  if (!flag) return undefined;
+  return (
+    `${deviceName} is the id of ${JSON.stringify(identityMatch.name)}, not its name. ` +
+    `Did you mean ${flag} ${deviceName}?`
+  );
+}
+
+/** The identity flag that can actually resolve a device on this platform, if one exists. */
+function deviceIdentityFlag(platform: Platform): '--udid' | '--serial' | undefined {
+  if (isApplePlatform(platform)) return '--udid';
+  if (isSerialAddressablePlatform(platform)) return '--serial';
+  return undefined;
 }
 
 /**

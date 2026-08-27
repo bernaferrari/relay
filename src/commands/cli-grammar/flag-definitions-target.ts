@@ -25,21 +25,22 @@ export const TARGET_FLAG_DEFINITIONS: readonly FlagDefinition[] = [
     names: ['--device'],
     type: 'string',
     usageLabel: '--device <name>',
-    usageDescription: 'Device name to target',
+    usageDescription: 'Device name to target (a UDID belongs in --udid, a serial in --serial)',
   },
   {
     key: 'udid',
     names: ['--udid'],
     type: 'string',
     usageLabel: '--udid <udid>',
-    usageDescription: 'iOS device UDID',
+    usageDescription:
+      'Apple device or simulator UDID; the only selector that pins one device when several share a --device name',
   },
   {
     key: 'serial',
     names: ['--serial'],
     type: 'string',
     usageLabel: '--serial <serial>',
-    usageDescription: 'Android device or Vega VVD serial',
+    usageDescription: 'Android, HarmonyOS, or Vega VVD serial',
   },
   {
     key: 'stale',
