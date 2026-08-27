@@ -20,6 +20,11 @@ import { registerRelayPrompts } from "./prompts.js";
 import { registerRelayResources, type RelayResourceScope } from "./resources.js";
 import { compactOfflineReplayToolResult } from "./offline-replay-result.js";
 import {
+  invokeRelayOutcomeTool,
+  relayOutcomeTools,
+  type RelayOutcomeToolDescriptor,
+} from "./outcome-tools.js";
+import {
   defaultRelayMcpProfile,
   relayMcpToolsForProfile,
   type RelayMcpProfile,
@@ -36,13 +41,15 @@ export const relayMcpServerInfo = {
 export const relayMcpInstructions = [
   "Use Relay tools only within the configured organization and project scope.",
   "Treat tool results as server-authoritative and preserve Relay actor identity.",
-  "Pass operation fields directly as tool arguments; do not infer target or session identifiers.",
-  "Take a screenshot before interacting. Prefer identifier, then label, then text, then point.",
-  "If a tap does not change pixels, it missed; try the label, not a cell center.",
-  "A missing accessibility tree is not a failed session — screenshot plus point still works.",
-  'On TARGET_CONTROL_LEASE_REQUIRED, call lease.create with poolId "local", deviceSerial, and confirm:true, then retry.',
-  "On TARGET_CONTROL_RUN_RESERVED, wait or cancel the active job before sending input.",
-  "Read relay://control/gotchas before the first interact, recover, snapshot, or launch.",
+  "Prefer outcome tools: connect, record, run, repeat, inspect, repair, and export evidence.",
+  "Omit appMapId and targetId when exactly one App Map and one ready device exist.",
+  "Never retry an outcome whose snapshot says the mutation outcome is unknown; inspect its opaque workflow reference.",
+  "Repeat runs one representative pilot first and requires explicit confirmation before remaining values.",
+  "Repair tools create reviewable proposals; they never silently rewrite an approved Test.",
+  "For advanced target control, capture a screenshot before interacting and prefer identifier, then label, text, and point.",
+  "A missing accessibility tree is not a failed session; pixels and point control remain usable.",
+  "Never take over a lease implicitly, and wait or cancel an active reserved Run before sending input.",
+  "Read relay://control/gotchas before advanced interact, recover, snapshot, or launch operations.",
 ].join(" ");
 
 export const relayMcpTextLimit = 8_192;
@@ -86,6 +93,7 @@ export type McpServerDependencies = {
   invoker: OperationInvoker;
   scope: RelayResourceScope;
   profile?: RelayMcpProfile;
+  actorId?: string;
 };
 
 const relayToolOutputSchema = z
@@ -421,18 +429,67 @@ function registerRelayTool(
   });
 }
 
+function registerRelayOutcomeTool(
+  server: McpServer,
+  descriptor: RelayOutcomeToolDescriptor,
+  invoker: OperationInvoker,
+  actorId: string,
+): void {
+  const schema = descriptor.inputSchema as z.ZodObject;
+  server.registerTool(
+    descriptor.name,
+    {
+      title: descriptor.title,
+      description: descriptor.description,
+      outputSchema: relayToolOutputSchema,
+      annotations: descriptor.annotations,
+      inputSchema: schema.extend({
+        confirm: descriptor.requiresConfirmation
+          ? z.literal(true).describe("Explicit approval for this protected outcome")
+          : z.literal(true).optional().describe("Optional explicit approval"),
+      }),
+    },
+    async (argumentsValue, context) => {
+      const { confirm, ...argumentsWithoutConfirmation } = argumentsValue as Record<
+        string,
+        unknown
+      >;
+      try {
+        const result = await invokeRelayOutcomeTool({
+          name: descriptor.name,
+          argumentsValue: argumentsWithoutConfirmation,
+          confirmed: confirm === true,
+          invoker,
+          actorId,
+          signal: context.mcpReq.signal,
+        });
+        return normalResult(result);
+      } catch (error) {
+        return errorResult(relayMcpError(descriptor.name, error));
+      }
+    },
+  );
+}
+
 export function createMcpServer({
   invoker,
   scope,
   profile = defaultRelayMcpProfile,
+  actorId = "agent:mcp",
 }: McpServerDependencies): McpServer {
   const server = new McpServer(relayMcpServerInfo, {
     instructions: relayMcpInstructions,
   });
 
   const tools = relayMcpToolsForProfile(profile);
-  for (const descriptor of tools) {
-    registerRelayTool(server, descriptor, invoker);
+  if (profile === "outcome") {
+    for (const descriptor of relayOutcomeTools) {
+      registerRelayOutcomeTool(server, descriptor, invoker, actorId);
+    }
+  } else {
+    for (const descriptor of tools) {
+      registerRelayTool(server, descriptor, invoker);
+    }
   }
   registerRelayResources(server, { invoker, scope, profile, tools });
   registerRelayPrompts(server, scope, tools);

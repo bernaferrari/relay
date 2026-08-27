@@ -467,8 +467,9 @@ test("control profile includes reusable actions; locale profile reads app-declar
   assert.ok(locale.has("target.interact"), "locale profile is missing target.interact");
 });
 
-test("defines deterministic task profiles with a compact authoring default", () => {
+test("defines deterministic advanced profiles behind the compact outcome default", () => {
   assert.deepEqual(relayMcpProfiles, [
+    "outcome",
     "control",
     "map",
     "observe",
@@ -482,7 +483,8 @@ test("defines deterministic task profiles with a compact authoring default", () 
     "proof",
     "full",
   ]);
-  assert.equal(defaultRelayMcpProfile, "control");
+  assert.equal(defaultRelayMcpProfile, "outcome");
+  assert.deepEqual(relayMcpToolsForProfile("outcome"), []);
   assert.deepEqual(relayMcpToolsForProfile("full"), relayMcpTools);
   assert.equal(
     relayMcpToolsForProfile("observe").every(({ annotations }) => annotations.readOnlyHint),

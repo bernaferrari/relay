@@ -1,7 +1,8 @@
 import type { AuthoringInteraction, CanvasScreen, RecordingClip } from "@relay/protocol";
 import type { RecordingTake } from "../context/recorder";
 import type { TakeDestination } from "../lib/app-map-canvas-graph";
-import { RecordedTakePlayer, TakeReviewSidebar } from "./app-map-capture-review";
+import { TakeReviewSidebar } from "./app-map-capture-review";
+import { RecordedTakePlayer } from "./recorded-take-player";
 
 export type AppMapTakeReviewProps = {
   take: RecordingTake;

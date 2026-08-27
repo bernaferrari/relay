@@ -34,6 +34,7 @@ export * from "./app-map-combine-id.js";
 export * from "./navigation-proof.js";
 export * from "./graph-exploration.js";
 export * from "./run-share.js";
+export * from "./trace-pack.js";
 export * from "./visual-verification.js";
 export * from "./target-runtime.js";
 export * from "./campaign-capacity-plan.js";

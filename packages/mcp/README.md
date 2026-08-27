@@ -6,41 +6,23 @@ messages and diagnostics go to stderr.
 
 ## Configure a client
 
-Run the package from this workspace and pass an explicit Relay scope and agent identity:
+Run the package from this workspace. The local defaults use the loopback Relay service, the local
+project, a process-scoped agent identity, and the compact outcome tool set:
 
 ```json
 {
   "mcpServers": {
     "relay": {
       "command": "pnpm",
-      "args": [
-        "--filter",
-        "@relay/mcp",
-        "start",
-        "--",
-        "--server",
-        "http://127.0.0.1:8787",
-        "--organization",
-        "acme",
-        "--project",
-        "mobile-app",
-        "--actor",
-        "agent:mcp:qa",
-        "--profile",
-        "control",
-        "--credential-source",
-        "env:RELAY_AUTH_TOKEN"
-      ],
-      "env": {
-        "RELAY_AUTH_TOKEN": "${RELAY_AUTH_TOKEN}"
-      }
+      "args": ["--filter", "@relay/mcp", "start"]
     }
   }
 }
 ```
 
-Set `RELAY_AUTH_TOKEN` in the environment that launches the MCP client. Never place a literal token
-in client configuration, arguments, logs, or prompts. For an unauthenticated local Relay server use
+For a remote authenticated service, set `RELAY_AUTH_TOKEN` in the environment that launches the MCP
+client and configure its URL and project. Never place a literal token in client configuration,
+arguments, logs, or prompts. For an explicitly unauthenticated local Relay server use
 `--credential-source none`. The equivalent `RELAY_URL`, `RELAY_ORGANIZATION_ID`,
 `RELAY_PROJECT_ID`, `RELAY_ACTOR_ID`, `RELAY_CREDENTIAL_SOURCE`, and `RELAY_TIMEOUT_MS` environment
 variables are also supported, but organization, project, and actor identity should always be chosen
@@ -48,14 +30,15 @@ deliberately.
 
 ## Tool profiles
 
-Relay advertises a role-sized tool set instead of sending every operation to every agent. Select one
-with `--profile <name>` or `RELAY_MCP_PROFILE`; the default is the compact `control` profile.
-Choose `test` when one agent should read, create, propose, compile, run, cancel, and inspect evidence
-for graph-native Tests without loading the complete `full` catalog.
+Relay defaults to fourteen outcome tools that cover Connect, Record, Checkpoint, Review, Replay,
+Approve, Run, Repeat, failure inspection, repair proposals, and TracePack export. Agents do not need
+to select a profile for the normal workflow. Trusted orchestrators can opt into a lower-level profile
+with `--profile <name>` or `RELAY_MCP_PROFILE`.
 
 | Profile   | Intended use                                                                              |
 | --------- | ----------------------------------------------------------------------------------------- |
-| `control` | Default direct target observation, input, recovery, and lease management                  |
+| `outcome` | Default Test workflow: connect, record, replay, run, repeat, inspect, repair, export      |
+| `control` | Advanced direct target observation, input, recovery, and lease management                 |
 | `map`     | Discovery and observation proposals without full authoring edits                          |
 | `observe` | Read-only project, device, App Map, proposal, run, and evidence inspection                |
 | `author`  | Default App Map editing, device recording, and proposal creation                          |
@@ -68,20 +51,27 @@ for graph-native Tests without loading the complete `full` catalog.
 | `proof`   | Verify one change: affected flows, runs, proof reports, repair proposals, and share links |
 | `full`    | Every canonical Relay operation; intended for trusted orchestration only                  |
 
-Tools advertise and take operation fields directly. For example, capture a screenshot with
+Outcome tools accept job-level intent and resolve the sole App Map, target, current revision, and
+unclaimed control lease internally. Advanced profile tools advertise and take canonical operation
+fields directly. For example, capture a screenshot with
 `{"serial":"emulator-5554"}`. Wrapped or alternate input envelopes are rejected. Known operation
 contracts expose specific required fields, types, and enums; intentionally generic Relay operations
 remain extensible objects and are still validated by the canonical protocol parser before invocation.
 
 ## Agent quickstart: verify one flow across languages
 
-Run the Relay service first (`pnpm ensure:serve`), then configure the adapter with
-`--profile locale` for the language sweep or `--profile control` when direct target
-input is needed. The full loop — open the app, navigate, screenshot, save a Screen,
-teach and infer a Language Variable, then run the Test across every language with
-`app-map.test.run` (`in`) or `job.combine.start` — is documented command by command
-in [docs/LANGUAGE_SWEEP_LOOP.md](../../docs/LANGUAGE_SWEEP_LOOP.md), including which
-evidence each step returns.
+Run the Relay service first (`pnpm ensure:serve`), then use the default tools:
+
+1. `relay_connect_target`
+2. `relay_record_test` → `relay_record_action` / `relay_add_checkpoint`
+3. `relay_stop_recording` → `relay_replay_recording` → `relay_approve_recording`
+4. `relay_repeat_test` to run one pilot
+5. `relay_inspect_workflow`, then `relay_continue_repeat` with explicit confirmation
+6. `relay_inspect_failure` or `relay_export_evidence`
+
+Every workflow mutation carries the opaque workflow reference and expected version returned by the
+previous step. The language variant is documented in
+[Repeat a Test across languages](../../docs/LANGUAGE_SWEEP_LOOP.md).
 
 ## Graph Test loop
 
@@ -121,15 +111,16 @@ proposals on failure, and return a structured verdict with share links for revie
 
 - Resources expose bounded, sanitized project, App Map, Flow, Run, Authoring Session, Target, and
   observation state under scoped `relay://` URIs. They do not provide arbitrary filesystem reads.
-- Tools are generated from Relay's canonical operation registry and invoke Relay through
-  `@relay/client`. Mutations keep the configured agent actor identity and Relay's lease, revision, and
-  idempotency rules.
+- Outcome tools call the typed `@relay/workflows` façade; advanced tools are generated from the
+  canonical operation registry. Both invoke Relay through `@relay/client` and retain actor identity,
+  lease, revision, confirmation, and idempotency rules.
 - `relay_target_screenshot_capture` returns the current Target screenshot as native MCP `image/png`
   content plus safe metadata. It never exposes Relay host paths.
 - Curated prompts guide safe app mapping, failed-connection repair, and Take review. Every prompt
   requires the configured project and the relevant Target, App Map, session, connection, or Take IDs.
-- The `relay_author_this_graph_test` prompt keeps Test design, reviewable semantic edits, compiler
-  validation, one-pass execution, and immutable evidence inspection inside the compact `test` profile.
+- `relay_export_evidence` returns a content-addressed TracePack for one persisted Run. Offline
+  analysis verifies every digest, reports incomplete evidence, and never claims that a future target
+  transition will pass.
 - Observation is not mutation permission. Side-effecting and destructive operations require explicit
   user approval; confirmation-protected tools additionally require the literal `confirm: true` field.
 - MCP request cancellation is forwarded to the Relay client. A cancelled request does not grant

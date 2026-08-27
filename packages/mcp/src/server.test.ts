@@ -1,5 +1,6 @@
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { ApiError } from "@relay/client";
+import type { OperationId } from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -16,6 +17,7 @@ import {
   relayMcpToolsForProfile,
   type RelayMcpProfile,
 } from "./tools.js";
+import { relayOutcomeTools } from "./outcome-tools.js";
 
 type RpcResponse = {
   id: number;
@@ -158,6 +160,80 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
     ]);
     assert.match(snapshot.description ?? "", /digest/i);
     assert.match(snapshot.description ?? "", /full/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("default outcome profile registers only the small jobs-to-be-done surface", async () => {
+  const calls: Array<{ operationId: OperationId; input: unknown }> = [];
+  const session = await connectMcp(
+    {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        if (operationId === "target.devices.list") {
+          return {
+            devices: [
+              {
+                id: "pixel-9",
+                serial: "pixel-9",
+                name: "Pixel 9",
+                kind: "emulator",
+                booted: true,
+                platform: "android",
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            ],
+          };
+        }
+        throw new Error(`unexpected ${operationId}`);
+      },
+    },
+    "outcome",
+  );
+  try {
+    const listed = await session.request("tools/list", {});
+    const names: string[] = ((listed.result?.tools as ListedTool[] | undefined) ?? []).map(
+      ({ name }) => name,
+    );
+    const nameSet = new Set<string>(names);
+    assert.deepEqual(
+      names,
+      relayOutcomeTools.map(({ name }) => name),
+    );
+    assert.equal(nameSet.has("relay_lease_create"), false);
+    assert.equal(nameSet.has("relay_app_map_test_run"), false);
+    for (const name of [
+      "relay_record_test",
+      "relay_record_action",
+      "relay_add_checkpoint",
+      "relay_stop_recording",
+      "relay_replay_recording",
+      "relay_approve_recording",
+      "relay_run_test",
+      "relay_repeat_test",
+      "relay_continue_repeat",
+      "relay_export_evidence",
+    ]) {
+      assert.ok(nameSet.has(name), `default outcome profile is missing ${name}`);
+    }
+    const approve = ((listed.result?.tools as ListedTool[] | undefined) ?? []).find(
+      ({ name }) => name === "relay_approve_recording",
+    );
+    assert.deepEqual(approve?.inputSchema.required?.sort(), ["confirm", "expectedVersion", "ref"]);
+
+    const connected = callResult(
+      await session.request("tools/call", {
+        name: "relay_connect_target",
+        arguments: {},
+      }),
+    );
+    assert.deepEqual(connected.structuredContent?.result, {
+      targets: [{ kind: "device", platform: "android", targetId: "pixel-9" }],
+      current: { kind: "device", platform: "android", targetId: "pixel-9" },
+    });
+    assert.deepEqual(calls, [{ operationId: "target.devices.list", input: {} }]);
   } finally {
     await session.close();
   }
@@ -704,14 +780,8 @@ test("profile selection exposes deterministic least-privilege tool sets", async 
   }
 
   const compact = relayMcpToolsForProfile(defaultRelayMcpProfile);
-  assert.ok(compact.length < relayMcpTools.length / 2);
-  assert.ok(compact.some(({ operationId }) => operationId === "target.interact"));
-  assert.ok(compact.some(({ operationId }) => operationId === "target.recover"));
-  assert.ok(compact.some(({ operationId }) => operationId === "lease.create"));
-  assert.equal(
-    compact.some(({ operationId }) => operationId === "app-map.proposal.submit"),
-    false,
-  );
+  assert.deepEqual(compact, []);
+  assert.ok(relayOutcomeTools.length < relayMcpTools.length / 2);
   assert.ok(
     relayMcpToolsForProfile("author").some(
       ({ operationId }) => operationId === "app-map.proposal.submit",

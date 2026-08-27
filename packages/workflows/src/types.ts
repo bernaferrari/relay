@@ -299,3 +299,79 @@ export interface RelayWorkflows {
   recover(intent: AuthorTestRecoveryIntent): Promise<AuthorTestSnapshot>;
   recover(intent: RepeatTestRecoveryIntent): Promise<RepeatTestSnapshot>;
 }
+
+export type OutcomeTargetSelection = { targetId?: string };
+
+export type ConnectTargetIntent = OutcomeTargetSelection & { kind: "connect-target" };
+
+export type RecordTestOutcomeIntent = OutcomeTargetSelection & {
+  kind: "record-test";
+  appMapId?: string;
+  title: string;
+  /** Recording controls a target. This explicit consent permits Relay to
+   * acquire a new lease, but never to take over somebody else's lease. */
+  confirmControl: true;
+};
+
+export type RunTestOutcomeIntent = OutcomeTargetSelection & {
+  kind: "run-test";
+  appMapId?: string;
+  testId: string;
+};
+
+export type RepeatTestOutcomeIntent = OutcomeTargetSelection & {
+  kind: "repeat-test";
+  appMapId?: string;
+  testId: string;
+  over: { dimensionId: string; valueIds: readonly string[] };
+  evidence?: "visual" | "smoke";
+};
+
+export type InspectFailureIntent = { kind: "inspect-failure"; runId: string };
+
+export type ProposeRepairIntent = {
+  kind: "propose-repair";
+  runId: string;
+  checkId: string;
+  proposal: "accept-current" | "disable";
+  reason: string;
+};
+
+export type ExportEvidenceIntent = { kind: "export-evidence"; runId: string };
+export type ContinueRepeatOutcomeIntent = {
+  kind: "continue-repeat";
+  ref: WorkflowRef;
+  expectedVersion: string;
+  confirmRemaining: true;
+};
+
+export type ConnectTargetResult = {
+  targets: readonly AuthoringTarget[];
+  current?: AuthoringTarget;
+};
+
+export type FailureInspection = {
+  runId: string;
+  run: unknown;
+  evidence: unknown;
+  repairProposals: readonly unknown[];
+};
+
+/** Small jobs-to-be-done interface for ordinary humans and agents. The
+ * canonical operation registry remains the authority behind every method. */
+export interface RelayOutcomeJobs {
+  connect(intent?: ConnectTargetIntent): Promise<ConnectTargetResult>;
+  record(intent: RecordTestOutcomeIntent): Promise<AuthorTestSnapshot>;
+  run(intent: RunTestOutcomeIntent): Promise<RunTestSnapshot>;
+  repeat(intent: RepeatTestOutcomeIntent): Promise<RepeatTestSnapshot>;
+  inspectFailure(intent: InspectFailureIntent): Promise<FailureInspection>;
+  proposeRepair(intent: ProposeRepairIntent): Promise<unknown>;
+  exportEvidence(intent: ExportEvidenceIntent): Promise<unknown>;
+  inspect(ref: WorkflowRef): Promise<WorkflowSnapshot>;
+  continueRepeat(input: {
+    ref: WorkflowRef;
+    expectedVersion: string;
+    confirmRemaining: true;
+  }): Promise<RepeatTestSnapshot>;
+  advanceRecording(decision: AuthorTestDecision): Promise<AuthorTestSnapshot>;
+}

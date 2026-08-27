@@ -105,26 +105,35 @@ evidence sharing is expiring, revocable, and redacted. It is not a hosted cloud-
 
 ## CLI and automation
 
-The desktop app is the easiest starting point. For scripts, CI, terminal users, or agents, start a
-Relay service deliberately and call the same project-scoped API through the canonical CLI entry:
+The desktop app is the easiest starting point. For scripts and terminal users, use the outcome
+commands first:
 
 ```bash
-pnpm ensure:serve
-pnpm relay device list --json
-pnpm relay map list --json
-pnpm relay test compile <map-id> <test-id> --json
-pnpm relay test run <map-id> <test-id> --target current --revision current
+pnpm relay connect
+pnpm relay record "Settings localization" --confirm
+pnpm relay run settings-localization
+pnpm relay repeat settings-localization --in language=en,ja,pt-BR --lens visual
+pnpm relay export-evidence <run-id>
 ```
 
-The CLI does not silently start another server. Use `pnpm relay --help` or family help such as
-`pnpm relay test --help` to discover the verified command vocabulary. JSON results are written to
-stdout; waits and diagnostics are written to stderr. The [MCP adapter](./packages/mcp/README.md)
-exposes the same registered operations to capable agents.
+These commands resolve the sole connected device, sole App Map, and current revision. The first
+Record creates a default App Map; `--device` or `--map` is needed only when selection is ambiguous.
+Repeat runs one representative pilot and returns an opaque workflow reference and version; after
+review, continue the remaining values with
+`pnpm relay continue-repeat <workflow-ref> <expected-version> --confirm`. Raw operation invocation
+and the older command families remain available as an advanced surface.
+
+For an outcome command using the implicit local URL, the CLI safely starts or reuses the local Relay
+service and verifies its identity. Explicit `--server` or `RELAY_URL` endpoints and every advanced
+command remain caller-managed. Use `pnpm relay --help` to discover the outcome commands or family
+help such as `pnpm relay test --help` for advanced operations. JSON results are written to stdout;
+waits and diagnostics are written to stderr. The
+[MCP adapter](./packages/mcp/README.md) exposes the same outcome workflows to agents by default.
 
 ### What failures look like
 
-Every command talks to the Relay service over HTTP first. If no service is running on the
-configured URL, the request fails at the network layer and the CLI reports it as a connection
+Advanced commands and explicit endpoints talk to a caller-managed Relay service. If no service is
+running on that URL, the request fails at the network layer and the CLI reports it as a connection
 failure with exit code `3`:
 
 ```text
@@ -141,7 +150,7 @@ relay: fetch failed
 }
 ```
 
-(Use `pnpm ensure:serve` to start the local service, then retry.)
+(Use `pnpm ensure:serve` to start or repair a caller-managed local service, then retry.)
 
 Device input requires a server-owned lease. When another actor already holds the lease for the
 target, the control operation fails closed instead of displacing them:
@@ -170,6 +179,12 @@ Every consequential operation is attributed. A run freezes the selected App Map 
 target, Variables, evidence policy, actions, assertions, frames, UI trees, logs, and failures.
 Finalized artifacts are immutable. Network bodies, audio probes, and crash diagnostics stay off
 until a user enables them; redaction is applied before persistence and transport.
+
+`pnpm relay export-evidence <run-id>` exports that persisted Run as a portable, content-addressed
+TracePack. Relay verifies the manifest and every embedded object before offline analysis, reports
+missing or degraded channels as partial, and always leaves future target behavior unknown. The
+analysis may prove what the frozen evidence showed and propose the smallest live replay needed; it
+cannot manufacture a future-device pass.
 
 Local desktop requests are trusted administrators. Remote service tokens receive one configured
 project role (`viewer`, `author`, `runner`, or `admin`). A visible server-owned lease protects device
@@ -218,7 +233,7 @@ run `pnpm server:doctor`.
 
 - [Architecture](./ARCHITECTURE.md)
 - [Product flows](./docs/PRODUCT_FLOWS.md)
-- [Language sweep loop](./docs/LANGUAGE_SWEEP_LOOP.md)
+- [Repeat a Test across languages](./docs/LANGUAGE_SWEEP_LOOP.md)
 - [Recording format](./docs/RECORDING_FORMAT.md)
 - [Evidence metrics](./docs/evidence-metrics.md)
 - [Enterprise readiness](./docs/ENTERPRISE_READINESS.md)

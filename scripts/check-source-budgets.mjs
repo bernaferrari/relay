@@ -14,13 +14,10 @@ export const SCRIPT_SOURCE_LIMIT = 650;
  * recorded ceiling in the same change.
  */
 export const grandfatheredSourceLimits = Object.freeze({
-  "packages/app/src/components/app-map-capture-review.tsx": 1001,
   "packages/app/src/components/app-map-workspace.tsx": 1099,
   "packages/app/src/components/runs-workspace.tsx": 962,
   "packages/app/src/components/stage.tsx": 1386,
   "packages/app/src/components/studio-shell.tsx": 1008,
-  "packages/app/src/components/take-action-editor.tsx": 717,
-  "packages/core/src/authoring-sessions.ts": 1036,
   "packages/core/src/device.ts": 1356,
   "packages/protocol/src/operations.ts": 1776,
 });

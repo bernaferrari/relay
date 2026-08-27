@@ -45,6 +45,7 @@ import type { IosSessionOperationLifecycle, TargetRuntimeReadiness } from "./tar
 import type { RunReview } from "./run-review.js";
 import type { CampaignRepairOperationMap } from "./run-repair-operations.js";
 import type { RunShareOperationMap } from "./run-share.js";
+import type { TracePackExportResponse } from "./trace-pack.js";
 import type {
   LocalCampaignAdmissionPreflightRequest,
   LocalCampaignAdmissionPreflightResponse,
@@ -597,6 +598,10 @@ type SpecificOperationMap = {
   "run.replay.offline": {
     input: { runId: string };
     output: { report: OperationRecord };
+  };
+  "run.trace-pack.get": {
+    input: { runId: string };
+    output: TracePackExportResponse;
   };
   "run.review": {
     input: { runId: string; action: "approve" | "reject"; note?: string };

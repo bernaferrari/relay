@@ -53,7 +53,7 @@ function offlineReplayFixture(dir: string): PersistedRun {
     frames: [],
     dir,
     writtenAt: at + 20,
-    inputDigest: "fixture",
+    inputDigest: "f".repeat(64),
     resolvedInputs: {},
     artifacts: [
       {
@@ -176,6 +176,45 @@ test("offline replay route diagnoses persisted evidence without a target and enf
 
     await assert.rejects(
       () => get("/runs/offline-run-1/replay-offline", { ...scope, subject: "another-user" }),
+      (error: unknown) => error instanceof HttpError && error.status === 404,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("TracePack route exports and analyzes only the scoped persisted run", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-trace-pack-route-"));
+  const previous = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  try {
+    await persistFixture(root);
+    const { response, body } = await get("/runs/offline-run-1/trace-pack");
+    assert.equal(response.status, 200);
+    const tracePack = body.tracePack as {
+      kind: string;
+      source: { runId: string };
+      digest: string;
+    };
+    const analysis = body.analysis as {
+      futureTransitionVerdict: string;
+      smallestLiveVerification: { kind: string; checkId?: string };
+    };
+    assert.equal(tracePack.kind, "relay-trace-pack");
+    assert.equal(tracePack.source.runId, "offline-run-1");
+    assert.match(tracePack.digest, /^sha256:[a-f0-9]{64}$/u);
+    assert.equal(analysis.futureTransitionVerdict, "unknown");
+    assert.deepEqual(analysis.smallestLiveVerification, {
+      kind: "replay-check",
+      checkId: "visit-birth-year",
+      reason: "Visit Birth year is the first causal failure; replay only this check first.",
+      requiresTarget: true,
+    });
+
+    await assert.rejects(
+      () => get("/runs/offline-run-1/trace-pack", { ...scope, subject: "another-user" }),
       (error: unknown) => error instanceof HttpError && error.status === 404,
     );
   } finally {

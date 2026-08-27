@@ -1244,6 +1244,14 @@ test("offline run replay is a frozen-evidence response, not a live run job", () 
   );
 });
 
+test("TracePack export is a persisted-run evidence query with a strict response", () => {
+  const definition = operationDefinition("run.trace-pack.get");
+  assert.deepEqual(definition.input.parse({ runId: "run-1" }), { runId: "run-1" });
+  assert.deepEqual(definition.transport, { method: "GET", path: "/runs/:runId/trace-pack" });
+  assert.equal(definition.minimumRole, "viewer");
+  assert.throws(() => definition.output.parse({ tracePack: {}, analysis: {} }));
+});
+
 test("standalone step output keeps an unknown iOS command as terminal review evidence", () => {
   const definition = operationDefinition("step.run");
   const result = {

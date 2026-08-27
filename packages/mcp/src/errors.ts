@@ -35,7 +35,8 @@ export type RelayMcpIosReview = {
 };
 
 export type RelayMcpStructuredError = {
-  operationId: OperationId;
+  /** Canonical operation id for raw tools, or the public outcome tool name. */
+  operationId: OperationId | `relay_${string}`;
   status?: number;
   code: string;
   message: string;
@@ -148,13 +149,16 @@ function iosReviewFrom(body: Record<string, unknown> | undefined): RelayMcpIosRe
   return iosMutation ? { iosMutation } : undefined;
 }
 
-export function relayMcpError(operationId: OperationId, error: unknown): RelayMcpStructuredError {
+export function relayMcpError(
+  operationId: RelayMcpStructuredError["operationId"],
+  error: unknown,
+): RelayMcpStructuredError {
   const fallback = `Relay operation ${operationId} failed.`;
   if (!(error instanceof ApiError)) {
     return {
       operationId,
       code: "operation_failed",
-      message: fallback,
+      message: sanitizeErrorText(error instanceof Error ? error.message : error, fallback),
       recovery: { action: "none", retryable: false },
     };
   }

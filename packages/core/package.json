@@ -30,6 +30,7 @@
     "./run-evidence": "./src/run-evidence.ts",
     "./run-observatory": "./src/run-observatory.ts",
     "./offline-run-replay": "./src/offline-run-replay.ts",
+    "./trace-pack": "./src/trace-pack.ts",
     "./matrix-yaml": "./src/matrix-yaml.ts",
     "./schedules": "./src/schedules.ts",
     "./targets": "./src/targets.ts",

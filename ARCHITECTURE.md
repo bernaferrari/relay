@@ -81,11 +81,13 @@ and peers) always refers to an App Map id — never a recipe id.
 its stable ID, runtime input/output parser, transport, safety confirmation, capability and lease
 requirements, idempotency, progress, and cancellation metadata.
 
-The app, CLI, TUI, MCP adapter, and future SDKs call the same validated operations. The server
-installs canonical actor and request identity before calling `runAction`; hosts do not contain private
-domain behavior. `GET /meta` is generated from the registry, so machine interfaces discover exact
-contracts instead of scraping route documentation. MCP operations accept the direct canonical input
-shape only.
+The app, CLI, TUI, MCP adapter, and future SDKs ultimately call the same validated operations. The
+CLI and default MCP surface enter through `@relay/workflows`, which resolves outcome-level intent
+such as Record, Run, and Repeat into those operations without duplicating domain logic. Advanced MCP
+profiles accept direct canonical operation input. The server installs canonical actor and request
+identity before calling `runAction`; hosts do not contain private domain behavior. `GET /meta` is
+generated from the registry, so machine interfaces discover exact contracts instead of scraping
+route documentation.
 
 Public automation authors App Maps through registered `app-map.*` operations. Tests, Flows, and
 Connections compile into recipe IR inside the runner. `app-map.test.run` checks the exact App Map
@@ -129,9 +131,10 @@ Proposals. Identity merges, approved baselines, and verified status require huma
 
 ## Authoring and execution
 
-The canvas is the primary authoring surface. A recording creates an Authoring Session and immutable
-Take evidence. Review can trim, split, replace, replay, or rewrite the proposed Connection. Approval
-commits the reviewed Connection to the App Map and compiles its executable action projection.
+Test is the primary authoring surface; Map is its generated topology view. A recording creates an
+Authoring Session and immutable Take evidence. Review can trim, split, replace, replay, or rewrite
+the proposed Connection. Approval commits the reviewed Connection and generated Test to the App Map
+and compiles their executable action projection.
 
 A Test run freezes the App Map and Test revision, compiled step provenance, selected targets,
 Variables, target profiles, comparison regions, baseline provenance, and evidence policy before
@@ -171,6 +174,11 @@ Sensitive network bodies, audio probes, and crash diagnostics require explicit c
 before persistence and transport. Unsupported or denied evidence channels remain visible instead of
 silently appearing successful.
 
+A finalized Run can be exported as a **TracePack**: one schema-validated, content-addressed manifest
+containing its redacted frozen Run and embedded frame objects. Every digest is verified before
+offline replay. Completeness names missing frames and degraded channels, and offline analysis keeps
+future transition success structurally `unknown` while proposing the smallest live verification.
+
 ## Host and security invariants
 
 1. Domain logic stays in `core` and is reached through registered operations.
@@ -187,9 +195,10 @@ silently appearing successful.
 
 ## Development verification
 
-Run `vp check`, `pnpm run check:architecture`, `vp test`, and `pnpm run test:packages`. The architecture
-check keeps new components below 700 lines and other source modules below 900. Existing larger
-modules have explicit, exact ceilings that may only move downward, so refactors become a permanent
-ratchet instead of temporary cleanup. For the exact Electron renderer, run `pnpm dev:desktop`, then
-`pnpm inspect:desktop` in another terminal. The inspector captures the real preload/IPC renderer, a
-screenshot, console and page errors, layout overflow, and accessible controls.
+Run `vp check`, `pnpm run check:architecture`, `vp test`, and `pnpm run test:packages`. The
+architecture check keeps new components below 700 lines, project-owned `.mjs`/`.mts` production
+modules below 650, and other source modules below 900. Existing larger modules have explicit, exact
+ceilings that may only move downward, so refactors become a permanent ratchet instead of temporary
+cleanup. For the exact Electron renderer, run `pnpm dev:desktop`, then `pnpm inspect:desktop` in
+another terminal. The inspector captures the real preload/IPC renderer, a screenshot, console and
+page errors, layout overflow, and accessible controls.

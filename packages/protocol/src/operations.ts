@@ -19,7 +19,7 @@ import { createTargetCaptureOperationParsers } from "./target-capture-operation-
 import { authoringRawOptimizationOperationDefinition } from "./authoring-raw-optimization-operation.js";
 import { appleDeviceOperationDefinitions } from "./apple-device-operation-definitions.js";
 import { runRepairOperationDefinitions } from "./run-repair-operations.js";
-import { runShareOperationDefinitions } from "./run-share.js";
+import { runEvidenceOperationDefinitions } from "./run-evidence-operation-definitions.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
 import { campaignCapacityOperationDefinitions } from "./campaign-capacity-operation-definitions.js";
@@ -1674,7 +1674,7 @@ export const operationDefinitions = [
     category: "evidence",
     input: runIdInputParser,
   }),
-  ...runShareOperationDefinitions,
+  ...runEvidenceOperationDefinitions,
   command("run.catalog.rebuild", "Rebuild Run catalog", "POST", "/runs/catalog/rebuild", {
     category: "execution",
     confirmation: "confirm",

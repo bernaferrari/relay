@@ -51,6 +51,15 @@ test("global configuration uses CLI over environment over defaults", () => {
   assert.equal(fromEnvironment.config.connection.projectId, "env-project");
   assert.equal(fromEnvironment.config.connection.organizationId, "local");
   assert.equal(fromEnvironment.config.timeoutMs, 180_000);
+  assert.equal(parsed.config.ensureLocalServer, false);
+  assert.equal(fromEnvironment.config.ensureLocalServer, false);
+
+  const implicitLocal = parseCli(["connect"], {});
+  assert.equal(implicitLocal.config.ensureLocalServer, true);
+  const explicitLocal = parseCli(["connect", "--server", "http://127.0.0.1:8787"], {});
+  assert.equal(explicitLocal.config.ensureLocalServer, false);
+  const environmentLocal = parseCli(["connect"], { RELAY_URL: "http://127.0.0.1:8787" });
+  assert.equal(environmentLocal.config.ensureLocalServer, false);
 });
 
 test("credential source reads a named environment variable and redacts its value", () => {
@@ -764,4 +773,64 @@ test("sourceRevision flags are rejected off test run and on malformed values", (
     /lowercase git SHA/u,
   );
   assert.throws(() => parseCli(["test", "run", "a", "b", "--pr", "zero"], {}), /positive integer/u);
+});
+
+test("outcome commands resolve ordinary intent without raw JSON mechanics", () => {
+  assert.deepEqual(parseCli(["connect"], {}), {
+    config: parseCli(["help"], {}).config,
+    command: "outcome",
+    intent: { kind: "connect-target" },
+  });
+
+  const record = parseCli(["record", "Checkout smoke", "--confirm"], {});
+  assert.equal(record.command, "outcome");
+  if (record.command === "outcome") {
+    assert.deepEqual(record.intent, {
+      kind: "record-test",
+      title: "Checkout smoke",
+      confirmControl: true,
+    });
+  }
+
+  const run = parseCli(["run", "checkout-smoke", "--map", "checkout"], {});
+  assert.equal(run.command, "outcome");
+  if (run.command === "outcome") {
+    assert.deepEqual(run.intent, {
+      kind: "run-test",
+      appMapId: "checkout",
+      testId: "checkout-smoke",
+    });
+  }
+
+  const repeat = parseCli(
+    ["repeat", "locale-smoke", "--in", "language=ja,pt", "--lens", "visual"],
+    {},
+  );
+  assert.equal(repeat.command, "outcome");
+  if (repeat.command === "outcome") {
+    assert.deepEqual(repeat.intent, {
+      kind: "repeat-test",
+      testId: "locale-smoke",
+      over: { dimensionId: "language", valueIds: ["ja", "pt"] },
+      evidence: "visual",
+    });
+  }
+
+  const continuation = parseCli(["continue-repeat", "opaque-ref", "version-2", "--confirm"], {});
+  assert.equal(continuation.command, "outcome");
+  if (continuation.command === "outcome") {
+    assert.deepEqual(continuation.intent, {
+      kind: "continue-repeat",
+      ref: "opaque-ref",
+      expectedVersion: "version-2",
+      confirmRemaining: true,
+    });
+  }
+
+  assert.throws(() => parseCli(["record", "Smoke"], {}), /requires --confirm/u);
+  assert.throws(
+    () => parseCli(["continue-repeat", "opaque-ref", "version-2"], {}),
+    /requires --confirm/u,
+  );
+  assert.throws(() => parseCli(["run", "smoke", "--input", "{}"], {}), /do not accept --input/u);
 });

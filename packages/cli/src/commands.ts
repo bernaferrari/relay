@@ -481,6 +481,12 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
 
   ...runEvidenceCommandDescriptors,
   mapped(
+    "run.trace-pack.get",
+    path("run trace-pack get", ["runId"], undefined, {
+      summary: "Export one content-addressed Run TracePack for offline analysis",
+    }),
+  ),
+  mapped(
     "run.repair.list",
     path("repair list", [], undefined, {
       summary: "List addressable failed-check repair targets",

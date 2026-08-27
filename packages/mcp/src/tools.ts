@@ -3,6 +3,7 @@ import * as z from "zod/v4";
 type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
 
 export const relayMcpProfiles = [
+  "outcome",
   "control",
   "map",
   "observe",
@@ -18,7 +19,7 @@ export const relayMcpProfiles = [
 ] as const;
 
 export type RelayMcpProfile = (typeof relayMcpProfiles)[number];
-export const defaultRelayMcpProfile: RelayMcpProfile = "control";
+export const defaultRelayMcpProfile: RelayMcpProfile = "outcome";
 
 export const relayMcpExclusions = [
   {
@@ -205,6 +206,7 @@ const observeOperations = [
   "run.get",
   "run.replay.offline",
   "run.evidence.get",
+  "run.trace-pack.get",
   "job.combine.analysis",
 ] as const satisfies readonly OperationId[];
 
@@ -284,6 +286,7 @@ const testOperations = [
   "run.get",
   "run.replay.offline",
   "run.evidence.get",
+  "run.trace-pack.get",
   "run.story.get",
   "app-map.test.from-intent",
   "run.repair.list",
@@ -325,6 +328,7 @@ const runOperations = [
   "run.get",
   "run.replay.offline",
   "run.evidence.get",
+  "run.trace-pack.get",
   "run.story.get",
   "run.repair.list",
   "run.repair.get",
@@ -413,6 +417,7 @@ const reviewOperations = [
   "run.get",
   "run.replay.offline",
   "run.evidence.get",
+  "run.trace-pack.get",
   "run.repair.list",
   "run.repair.get",
   "run.repair.propose",
@@ -474,6 +479,7 @@ const proofOperations = [
   "run.get",
   "run.replay.offline",
   "run.evidence.get",
+  "run.trace-pack.get",
   "run.story.get",
   "run.repair.list",
   "run.repair.get",
@@ -483,7 +489,10 @@ const proofOperations = [
   "run.share.revoke",
 ] as const satisfies readonly OperationId[];
 
-const profileOperations: Record<Exclude<RelayMcpProfile, "full">, ReadonlySet<OperationId>> = {
+const profileOperations: Record<
+  Exclude<RelayMcpProfile, "full" | "outcome">,
+  ReadonlySet<OperationId>
+> = {
   control: new Set(controlOperations),
   map: new Set(mapOperations),
   observe: new Set(observeOperations),
@@ -499,6 +508,7 @@ const profileOperations: Record<Exclude<RelayMcpProfile, "full">, ReadonlySet<Op
 
 function toolInProfile(tool: RelayMcpToolDescriptor, profile: RelayMcpProfile): boolean {
   if (profile === "full") return true;
+  if (profile === "outcome") return false;
   return profileOperations[profile].has(tool.operationId);
 }
 

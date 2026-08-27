@@ -31,6 +31,8 @@ const globalOptions = `Global options:
   --wait | --no-wait               Wait policy (env RELAY_WAIT)
   --target current                 Resolve the only connected target for Test run
   --revision current               Resolve the latest saved App Map revision for Test run
+  --device <id>                    Choose a connected device for an outcome command
+  --map <id>                       Choose an App Map when more than one exists
 
 Screenshot and snapshot output:
   --file <path>                    Save screenshot PNG or snapshot JSON to a file
@@ -114,17 +116,32 @@ function renderRootHelp(): string {
     "activity follow",
   ];
 
-  return `Relay — App Maps for humans and agents
+  return `Relay — record once, prove every build
 
 Usage:
+  relay connect [device]
+  relay record <title> [--map <id>] [--device <id>] --confirm
+  relay run <testId> [--map <id>] [--device <id>]
+  relay repeat <testId> --in <dimension>=<values> [--map <id>] [--device <id>]
+  relay continue-repeat <workflowRef> <expectedVersion> --confirm
+  relay inspect-failure <runId>
+  relay propose-repair <runId> <checkId> <accept-current|disable> <reason>
+  relay export-evidence <runId>
   relay <family> <command> [arguments] [--input <json> | --input-file <path>] [global options]
   relay operation invoke <operationId> (--input <json> | --input-file <path>) [global options]
   relay <family> --help
 
-Command families:
+Outcome commands:
+  connect, record, run, repeat, continue-repeat, inspect-failure, propose-repair, export-evidence
+
+These resolve the sole App Map, connected target, and current revision automatically. Use --map
+or --device only when selection is ambiguous. The first Record creates a default App Map. Record
+acquires control only after --confirm and never takes over another actor's lease.
+
+Advanced command families:
 ${groups}
 
-Start here:
+Advanced examples:
 ${usages(workflowCommands).join("\n")}
 
 An App Map is screens and paths. A Variable is a list plus the recorded steps that apply

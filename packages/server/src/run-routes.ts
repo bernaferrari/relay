@@ -30,6 +30,8 @@ import {
   readVisualBaselineFrame,
   readPersistedRun,
   replayPersistedRunOffline,
+  analyzeTracePack,
+  exportTracePack,
   preflightCompiledAppMapTestOffline,
   rebuildRunCatalog,
   reconcileCampaignCheckRepair,
@@ -772,6 +774,14 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   if (method === "GET" && offlineReplayMatch) {
     const run = await loadScopedRun(offlineReplayMatch.id!, scope);
     json(response, 200, { report: replayPersistedRunOffline(run) });
+    return true;
+  }
+
+  const tracePackMatch = matchPath(pathname, "/runs/:id/trace-pack");
+  if (method === "GET" && tracePackMatch) {
+    const run = await loadScopedRun(tracePackMatch.id!, scope);
+    const tracePack = await exportTracePack(run);
+    json(response, 200, { tracePack, analysis: analyzeTracePack(tracePack) });
     return true;
   }
 

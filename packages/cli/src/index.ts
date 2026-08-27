@@ -1,6 +1,11 @@
 #!/usr/bin/env tsx
 import { pathToFileURL } from "node:url";
 import {
+  createRelayOutcomeJobs,
+  type RelayOutcomeJobs,
+  type WorkflowSnapshot,
+} from "@relay/workflows";
+import {
   summarizeAppMapOperationResult,
   summarizeAuthoringOperationResult,
   summarizeExecutionOperationResult,
@@ -25,6 +30,7 @@ import { emitScreenshot, emitSnapshotFile } from "./screenshot.js";
 import { persistScrollSurvey } from "./survey-persist.js";
 import { runDbCommand } from "./db-commands.js";
 import { runReportCommand } from "./report-commands.js";
+import { ensureLocalRelayServer, type LocalServerResult } from "./local-server.js";
 
 export type CliDependencies = {
   env?: Record<string, string | undefined>;
@@ -32,6 +38,7 @@ export type CliDependencies = {
   createClient?: ClientFactory;
   registerSignalHandlers?: boolean;
   pollIntervalMs?: number;
+  ensureOutcomeServer?: (serverUrl: string) => Promise<LocalServerResult>;
 };
 
 const processStreams: OutputStreams = { stdout: process.stdout, stderr: process.stderr };
@@ -234,6 +241,102 @@ function firstPositional(argv: readonly string[]): string | undefined {
   return undefined;
 }
 
+function outcomeOperationId(kind: string): string {
+  return `outcome.${kind}`;
+}
+
+function assertOutcomeSucceeded(snapshot: WorkflowSnapshot): void {
+  if (snapshot.phase === "cancelled") {
+    throw new CliError(snapshot.progress.label, ExitCode.cancellation, snapshot);
+  }
+  if (
+    snapshot.phase === "blocked" ||
+    snapshot.phase === "failed" ||
+    snapshot.phase === "needs-attention"
+  ) {
+    throw new CliError(
+      snapshot.problems[0]?.title ?? snapshot.progress.label,
+      ExitCode.operationFailure,
+      snapshot,
+    );
+  }
+}
+
+async function waitForOutcome(
+  jobs: RelayOutcomeJobs,
+  snapshot: WorkflowSnapshot,
+  signal: AbortSignal,
+  output: CliOutput,
+  operationId: string,
+  pollIntervalMs: number,
+): Promise<WorkflowSnapshot> {
+  let current = snapshot;
+  while (
+    current.ref &&
+    (current.phase === "queued" || current.phase === "running") &&
+    current.kind !== "author-test"
+  ) {
+    output.snapshot(operationId, current);
+    await waitForPoll(pollIntervalMs, signal);
+    current = await jobs.inspect(current.ref);
+  }
+  return current;
+}
+
+async function runOutcomeCommand(input: {
+  parsed: Extract<ReturnType<typeof parseCli>, { command: "outcome" }>;
+  client: OperationInvoker;
+  signal: AbortSignal;
+  output: CliOutput;
+  pollIntervalMs: number;
+}): Promise<unknown> {
+  const { parsed, client, signal } = input;
+  const jobs = createRelayOutcomeJobs(
+    {
+      invoke: (operationId, operationInput) => invoke(client, operationId, operationInput, signal),
+    },
+    { actorId: parsed.config.connection.actorId },
+  );
+  const intent = parsed.intent;
+  if (intent.kind === "connect-target") return jobs.connect(intent);
+  if (intent.kind === "continue-repeat") {
+    const started = await jobs.continueRepeat(intent);
+    const settled = parsed.config.wait
+      ? await waitForOutcome(
+          jobs,
+          started,
+          signal,
+          input.output,
+          outcomeOperationId(intent.kind),
+          input.pollIntervalMs,
+        )
+      : started;
+    assertOutcomeSucceeded(settled);
+    return settled;
+  }
+  if (intent.kind === "inspect-failure") return jobs.inspectFailure(intent);
+  if (intent.kind === "propose-repair") return jobs.proposeRepair(intent);
+  if (intent.kind === "export-evidence") return jobs.exportEvidence(intent);
+  const started =
+    intent.kind === "record-test"
+      ? await jobs.record(intent)
+      : intent.kind === "repeat-test"
+        ? await jobs.repeat(intent)
+        : await jobs.run(intent);
+  const settled = parsed.config.wait
+    ? await waitForOutcome(
+        jobs,
+        started,
+        signal,
+        input.output,
+        outcomeOperationId(intent.kind),
+        input.pollIntervalMs,
+      )
+    : started;
+  assertOutcomeSucceeded(settled);
+  return settled;
+}
+
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new UsageError(`Malformed ${label} response`);
@@ -317,7 +420,12 @@ export async function runCli(
       streams.stdout.write(renderHelp(parsed.helpFamily));
       return ExitCode.success;
     }
-    operationId = parsed.command === "invoke" ? parsed.operationId : parsed.resourceId;
+    operationId =
+      parsed.command === "invoke"
+        ? parsed.operationId
+        : parsed.command === "resource"
+          ? parsed.resourceId
+          : outcomeOperationId(parsed.intent.kind);
     const commandPath = "commandPath" in parsed ? parsed.commandPath : undefined;
     const abort = new AbortController();
     const cancel = () => abort.abort();
@@ -327,8 +435,24 @@ export async function runCli(
     }
     try {
       if (parsed.command === "invoke") validateOperationId(operationId);
+      if (parsed.command === "outcome" && parsed.config.ensureLocalServer) {
+        output.heartbeat("Ensuring the local Relay server is ready");
+        await (dependencies.ensureOutcomeServer ?? ensureLocalRelayServer)(
+          parsed.config.connection.url,
+        );
+      }
       const client = (dependencies.createClient ?? createClient)(parsed.config);
-      if (parsed.command === "resource") {
+      if (parsed.command === "outcome") {
+        output.progress(operationId, "invoking");
+        const result = await runOutcomeCommand({
+          parsed,
+          client,
+          signal: abort.signal,
+          output,
+          pollIntervalMs: dependencies.pollIntervalMs ?? 250,
+        });
+        output.result(operationId, result);
+      } else if (parsed.command === "resource") {
         output.progress(operationId, "invoking");
         const result = await readResource(client, parsed.resourcePath, abort.signal);
         output.result(operationId, result);

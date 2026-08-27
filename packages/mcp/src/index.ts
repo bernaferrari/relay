@@ -21,6 +21,7 @@ export function runMcp(
         invoker,
         scope: { projectId: config.connection.projectId },
         profile: config.profile,
+        actorId: config.connection.actorId,
       }),
     { onerror: diagnostic },
   );

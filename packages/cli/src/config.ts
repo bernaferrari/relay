@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { resolveCommand, resolveResourceCommand, type CommandBehavior } from "./commands.js";
 import { UsageError } from "./errors.js";
+import { parseInFlags, parseOutcomeCliIntent, type OutcomeCliIntent } from "./outcome-command.js";
 
 export type OutputMode = "human" | "json" | "ndjson";
 export type CredentialSource = { type: "none" } | { type: "env"; name: string };
@@ -23,6 +24,8 @@ export type GlobalConfig = {
   quiet: boolean;
   timeoutMs: number;
   wait: boolean;
+  /** Outcome commands alone may act on this policy. */
+  ensureLocalServer: boolean;
 };
 
 export type ParsedCli =
@@ -49,6 +52,11 @@ export type ParsedCli =
       resourceId: string;
       resourcePath: string;
       commandPath: string;
+    }
+  | {
+      config: GlobalConfig;
+      command: "outcome";
+      intent: OutcomeCliIntent;
     };
 
 type Environment = Record<string, string | undefined>;
@@ -59,9 +67,6 @@ const defaults = {
   project: "default",
   actor: "human:local-cli",
   credentialSource: "env:RELAY_AUTH_TOKEN",
-  // A single authoring operation can include device recovery, several gestures,
-  // assertions, and evidence capture. Physical iOS snapshots regularly exceed
-  // two minutes on a cold XCTest runner. Callers can still pass --timeout.
   timeout: "180000",
   wait: true,
 } as const;
@@ -93,6 +98,8 @@ const valueFlags = new Set([
   "--commit",
   "--pr",
   "--branch",
+  "--device",
+  "--map",
 ]);
 const switchFlags = new Set([
   "-h",
@@ -188,28 +195,6 @@ function booleanEnv(value: string | undefined, fallback: boolean): boolean {
   if (value === "1" || value === "true") return true;
   if (value === "0" || value === "false") return false;
   throw new UsageError("RELAY_WAIT must be true, false, 1, or 0");
-}
-
-function parseInFlags(raw: string | undefined): Record<string, string[]> {
-  if (raw === undefined) return {};
-  const worlds: Record<string, string[]> = {};
-  for (const token of raw.split("\u0000")) {
-    const equals = token.indexOf("=");
-    if (equals < 1) {
-      throw new UsageError("--in requires variableId=value[,value]");
-    }
-    const variableId = token.slice(0, equals).trim();
-    const valueIds = token
-      .slice(equals + 1)
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-    if (!variableId || !valueIds.length) {
-      throw new UsageError("--in requires variableId=value[,value]");
-    }
-    worlds[variableId] = [...(worlds[variableId] ?? []), ...valueIds];
-  }
-  return worlds;
 }
 
 function applyCombineRunFlags(
@@ -499,6 +484,8 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     actorKind: actorKind(actor),
     auth: credential ? { type: "bearer", token: credential } : { type: "none" },
   };
+  const ensureLocalServer =
+    !tokens.values.has("--server") && !env.RELAY_URL?.trim() && connection.url === defaults.server;
 
   const [group, action, operationId, ...extra] = tokens.positionals;
   const helpSwitch = tokens.switches.has("-h") || tokens.switches.has("--help");
@@ -514,6 +501,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
         quiet: tokens.switches.has("--quiet"),
         timeoutMs,
         wait,
+        ensureLocalServer,
       },
       command: "help",
       ...(group === "help"
@@ -584,6 +572,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
         quiet: tokens.switches.has("--quiet"),
         timeoutMs,
         wait,
+        ensureLocalServer,
       },
       command: "invoke",
       operationId,
@@ -621,6 +610,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
         quiet: tokens.switches.has("--quiet"),
         timeoutMs,
         wait,
+        ensureLocalServer,
       },
       command: "resource",
       resourceId: resource.resourceId,
@@ -629,12 +619,40 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     };
   }
 
+  let resolved: ReturnType<typeof resolveCommand>;
+  try {
+    resolved = resolveCommand(tokens.positionals, input);
+  } catch (error) {
+    const intent = parseOutcomeCliIntent(tokens);
+    if (!intent) throw error;
+    if (rawInput !== undefined || inputFile !== undefined) {
+      throw new UsageError(
+        "Outcome commands use named arguments and do not accept --input or --input-file",
+      );
+    }
+    return {
+      config: {
+        connection,
+        credentialSource,
+        output,
+        quiet: tokens.switches.has("--quiet"),
+        timeoutMs,
+        wait,
+        ensureLocalServer,
+      },
+      command: "outcome",
+      intent,
+    };
+  }
+  if (tokens.values.has("--device") || tokens.values.has("--map")) {
+    throw new UsageError("--device and --map are only valid on outcome commands");
+  }
+
   const mark = tokens.values.get("--mark");
   if (mark) {
     const matched = mark.trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
     if (!matched) throw new UsageError("--mark requires <x>,<y> in the same units as a tap");
   }
-  const resolved = resolveCommand(tokens.positionals, input);
   const targetShortcut = tokens.values.get("--target");
   const revisionShortcut = tokens.values.get("--revision");
   if (targetShortcut !== undefined && targetShortcut !== "current") {
@@ -709,6 +727,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       quiet: tokens.switches.has("--quiet"),
       timeoutMs,
       wait,
+      ensureLocalServer,
     },
     command: "invoke",
     operationId: resolved.operationId,
@@ -751,5 +770,6 @@ export function redactedConfig(config: GlobalConfig): Record<string, unknown> {
     quiet: config.quiet,
     timeoutMs: config.timeoutMs,
     wait: config.wait,
+    localServer: config.ensureLocalServer ? "ensure-for-outcomes" : "caller-managed",
   };
 }

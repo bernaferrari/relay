@@ -1,4 +1,5 @@
 export { createRelayWorkflows } from "./relay-workflows.js";
+export { createRelayOutcomeJobs, type RelayOutcomeJobOptions } from "./outcome-jobs.js";
 export {
   formatIntentDocumentYaml,
   intentDocumentReferences,
@@ -35,6 +36,17 @@ export type {
   WorkflowRef,
   WorkflowRecoveryIntent,
   WorkflowSnapshot,
+  ConnectTargetIntent,
+  ConnectTargetResult,
+  ContinueRepeatOutcomeIntent,
+  ExportEvidenceIntent,
+  FailureInspection,
+  InspectFailureIntent,
+  ProposeRepairIntent,
+  RecordTestOutcomeIntent,
+  RelayOutcomeJobs,
+  RepeatTestOutcomeIntent,
+  RunTestOutcomeIntent,
 } from "./types.js";
 export type {
   IntentCheckStep,

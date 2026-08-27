@@ -1,18 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type {
-  AuthoringAction,
-  AuthoringCaptureContext,
   AuthoringCommitDestination,
-  AuthoringEvidence,
   AuthoringInteraction,
-  AuthoringObservation,
-  AuthoringObservationProof,
   AuthoringReplayAttempt,
   AuthoringSession,
   AuthoringSessionState,
   AuthoringTakeRevision,
   CreateAuthoringSessionInput,
-  RecipeStep,
 } from "@relay/protocol";
 export { recordedPauseDuration } from "./authoring-recorded-pause.js";
 import { actionSource, stepsForInteraction } from "./authoring-action-steps.js";
@@ -62,67 +56,20 @@ import {
   publishAuthoringCommittedEvent,
   publishAuthoringSessionEvent,
 } from "./authoring-session-review-lifecycle.js";
-
-export type CapturedAuthoringObservation = {
-  capturedAt: number;
-  targetId: string;
-  fingerprint: string;
-  proof?: AuthoringObservationProof;
-  /** Platform capture provenance kept for offline optimization and audit. */
-  capture?: AuthoringCaptureContext;
-  foregroundApp?: string;
-  bounds?: { width: number; height: number };
-  nodes?: Array<Record<string, unknown>>;
-  /** Timestamp of the primary pixel evidence. `capturedAt` remains the
-   * complete observation boundary, which may be later than this raster after
-   * an iOS pixels → AX → pixels bracket. */
-  screenshotCapturedAt?: number;
-  screenshot?: { data: Uint8Array; mime: string };
-  /** The closing iOS raster when it differs from the primary frame. It is
-   * retained as immutable diagnostic evidence, never substituted for the
-   * opening frame that established the observation's screen fingerprint. */
-  bracketScreenshot?: { data: Uint8Array; mime: string; capturedAt: number };
-};
-
-export type AuthoringRuntime = {
-  observe(session: AuthoringSession): Promise<CapturedAuthoringObservation>;
-  execute(session: AuthoringSession, interaction: AuthoringInteraction): Promise<void>;
-  replay(session: AuthoringSession, steps: RecipeStep[]): Promise<void>;
-  /** Executes one authored action as an atomic batch. When present, the store
-   * captures durable entrance/exit evidence around each action; older
-   * runtimes keep the final-only replay path instead of inventing links. */
-  replayAction?(session: AuthoringSession, action: AuthoringAction): Promise<void>;
-  /**
-   * Captures the endpoint immediately after one replayed action. This must be
-   * pixels-first and must not wait for a new accessibility query: an iOS
-   * endpoint is still useful while XCTest semantics are delayed, but stale
-   * geometry must never be promoted to a current proof.
-   */
-  observeReplayActionEndpoint?(session: AuthoringSession): Promise<CapturedAuthoringObservation>;
-  /** Allow asynchronous application and system UI to settle before Relay
-   * decides that a replay reached the wrong destination. */
-  settle?(ms: number): Promise<void>;
-  startVideo?(session: AuthoringSession): Promise<void>;
-  stopVideo?(
-    session: AuthoringSession,
-  ): Promise<{ data?: Uint8Array; mime?: string; warning?: string }>;
-};
-
-export type AuthoringRecovery = {
-  releaseLease(session: AuthoringSession): Promise<void>;
-  reconcileRecording?(
-    session: AuthoringSession,
-  ): Promise<{ data?: Uint8Array; mime?: string } | void>;
-};
-
-export type AuthoringRecoveryScope = {
-  organizationId: string;
-  projectId: string;
-};
-
-export type AuthoringCommitFault = (
-  boundary: "before-verify" | "after-verify" | "before-rename" | "before-persist" | "after-rename",
-) => void;
+import { persistCapturedAuthoringObservation } from "./authoring-observation-capture.js";
+export type { CapturedAuthoringObservation } from "./authoring-observation-capture.js";
+import type {
+  AuthoringCommitFault,
+  AuthoringRecovery,
+  AuthoringRecoveryScope,
+  AuthoringRuntime,
+} from "./authoring-session-runtime.js";
+export type {
+  AuthoringCommitFault,
+  AuthoringRecovery,
+  AuthoringRecoveryScope,
+  AuthoringRuntime,
+} from "./authoring-session-runtime.js";
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -158,103 +105,6 @@ function assertOwner(session: AuthoringSession): void {
     throw new AuthoringStateError("Only the owning actor can mutate this Authoring Session");
   }
 }
-
-function observationId(capturedAt: number, fingerprint: string): string {
-  // Captures can share a millisecond and visual fingerprint (especially a
-  // fast intentional observe). A durable action link must never resolve to a
-  // different capture just because the two endpoints happened to look alike.
-  return `observation-${capturedAt.toString(36)}-${fingerprint.slice(0, 12)}-${randomUUID()}`;
-}
-
-function fallbackObservationProof(
-  captured: CapturedAuthoringObservation,
-): AuthoringObservationProof {
-  const pixelCapturedAt = captured.screenshotCapturedAt ?? captured.capturedAt;
-  return {
-    schemaVersion: 1,
-    captureOrder: "concurrent",
-    pixels: captured.screenshot
-      ? { status: "captured", capturedAt: pixelCapturedAt, fingerprint: captured.fingerprint }
-      : { status: "unavailable" },
-    semantics:
-      captured.nodes && captured.nodes.length > 0
-        ? { status: "current", capturedAt: captured.capturedAt, fingerprint: captured.fingerprint }
-        : { status: "unavailable", capturedAt: captured.capturedAt },
-  };
-}
-
-async function persistObservation(
-  captured: CapturedAuthoringObservation,
-): Promise<{ observation: AuthoringObservation; evidence: AuthoringEvidence[] }> {
-  const proof = clone(captured.proof ?? fallbackObservationProof(captured));
-  const semanticCapturedAt = proof.semantics.capturedAt ?? captured.capturedAt;
-  const primaryPixelCapturedAt =
-    captured.screenshotCapturedAt ?? proof.pixels.capturedAt ?? captured.capturedAt;
-  const snapshot = await persistAuthoringEvidence({
-    kind: "snapshot",
-    // A snapshot is the semantic plane, not the enclosing observation. Keep
-    // its own timestamp so a delayed iOS tree is auditable offline.
-    capturedAt: semanticCapturedAt,
-    data: JSON.stringify({
-      schemaVersion: 1,
-      capturedAt: semanticCapturedAt,
-      observationCapturedAt: captured.capturedAt,
-      targetId: captured.targetId,
-      fingerprint: captured.fingerprint,
-      proof,
-      ...(captured.capture ? { capture: captured.capture } : {}),
-      ...(captured.foregroundApp ? { foregroundApp: captured.foregroundApp } : {}),
-      bounds: captured.bounds,
-      nodes: captured.nodes?.slice(0, 256) ?? [],
-    }),
-    mime: "application/json",
-  });
-  const evidence = [snapshot];
-  if (captured.screenshot) {
-    evidence.push(
-      await persistAuthoringEvidence({
-        kind: "screenshot",
-        capturedAt: primaryPixelCapturedAt,
-        data: captured.screenshot.data,
-        mime: captured.screenshot.mime,
-      }),
-    );
-  }
-  if (captured.bracketScreenshot) {
-    evidence.push(
-      await persistAuthoringEvidence({
-        kind: "screenshot",
-        capturedAt: captured.bracketScreenshot.capturedAt,
-        data: captured.bracketScreenshot.data,
-        mime: captured.bracketScreenshot.mime,
-      }),
-    );
-  }
-  const id = observationId(captured.capturedAt, captured.fingerprint);
-  return {
-    observation: {
-      id,
-      capturedAt: captured.capturedAt,
-      screen: {
-        id,
-        fingerprint: captured.fingerprint,
-        // The screen fingerprint is a pixel claim, so give it the primary
-        // raster's timestamp rather than the later semantic/bracket boundary.
-        capturedAt: primaryPixelCapturedAt,
-        source: "recording",
-        deviceId: captured.targetId,
-      },
-      evidenceIds: evidence.map((item) => item.id),
-      proof,
-      ...(captured.capture ? { capture: clone(captured.capture) } : {}),
-      ...(captured.bounds ? { bounds: { ...captured.bounds } } : {}),
-      ...(captured.foregroundApp ? { foregroundApp: captured.foregroundApp } : {}),
-      ...(captured.nodes ? { nodes: clone(captured.nodes.slice(0, 256)) } : {}),
-    },
-    evidence,
-  };
-}
-
 function nextRevision(
   session: AuthoringSession,
   reason: AuthoringTakeRevision["reason"],
@@ -283,7 +133,7 @@ function nextRevision(
 const recordingLifecycleDependencies = {
   now,
   persistEvidence: persistAuthoringEvidence,
-  persistObservation,
+  persistObservation: persistCapturedAuthoringObservation,
   nextRevision,
   writeSession: writeAuthoringSession,
 };
@@ -378,7 +228,7 @@ export class AuthoringSessionStore {
       requireState(session, "preparing", "ready", "recording", "reviewing", "failed");
       let observed;
       try {
-        observed = await persistObservation(await runtime.observe(session));
+        observed = await persistCapturedAuthoringObservation(await runtime.observe(session));
       } catch (error) {
         if (session.state === "preparing" || session.state === "failed") {
           const failed = session.state === "failed" ? session : transition(session, "failed");
@@ -421,7 +271,7 @@ export class AuthoringSessionStore {
     return this.#mutate(id, async (session) => {
       assertOwner(session);
       requireState(session, "preparing", "ready");
-      const captured = await persistObservation(await runtime.observe(session));
+      const captured = await persistCapturedAuthoringObservation(await runtime.observe(session));
       if (session.state === "preparing") session = transition(session, "ready");
       const at = now();
       const takeId = `take-${randomUUID()}`;
@@ -467,7 +317,7 @@ export class AuthoringSessionStore {
       requireState(session, "ready");
       let captured;
       try {
-        captured = await persistObservation(await runtime.observe(session));
+        captured = await persistCapturedAuthoringObservation(await runtime.observe(session));
         await assertExpectedSource(session, captured.observation);
         await runtime.startVideo?.(session);
       } catch (error) {
@@ -678,7 +528,7 @@ export class AuthoringSessionStore {
       }
       let outcome: AuthoringReplayAttempt["outcome"] = "passed";
       let error: string | undefined;
-      const source = await persistObservation(await runtime.observe(session));
+      const source = await persistCapturedAuthoringObservation(await runtime.observe(session));
       const actionProofs: NonNullable<AuthoringReplayAttempt["actionProofs"]> = {};
       let replayObservations = retainAuthoringObservations(undefined, [source.observation]);
       if (!replayObservations) {
@@ -706,7 +556,9 @@ export class AuthoringSessionStore {
               // start a fresh AX query: pixels remain valid proof while an iOS
               // tree is delayed, and the final destination check keeps its
               // existing bounded settle behavior below.
-              const exit = await persistObservation(await observeReplayActionEndpoint(session));
+              const exit = await persistCapturedAuthoringObservation(
+                await observeReplayActionEndpoint(session),
+              );
               const retained = retainAuthoringObservations(replayObservations, [exit.observation]);
               if (!retained) {
                 throw new AuthoringStateError(
@@ -775,7 +627,7 @@ export class AuthoringSessionStore {
       }
       let captured = sourceMismatch
         ? source
-        : await persistObservation(await runtime.observe(session));
+        : await persistCapturedAuthoringObservation(await runtime.observe(session));
       if (captured !== source) evidence.push(...captured.evidence);
       if (outcome === "passed") {
         const expected = await expectedReplayScreen(session, revision);
@@ -788,7 +640,7 @@ export class AuthoringSessionStore {
         if (!destinationMatches() && runtime.settle) {
           for (const delayMs of [250, 500, 750]) {
             await runtime.settle(delayMs);
-            captured = await persistObservation(await runtime.observe(session));
+            captured = await persistCapturedAuthoringObservation(await runtime.observe(session));
             evidence.push(...captured.evidence);
             if (destinationMatches()) break;
           }

@@ -21,6 +21,7 @@
     "@modelcontextprotocol/server": "2.0.0",
     "@relay/client": "workspace:*",
     "@relay/protocol": "workspace:*",
+    "@relay/workflows": "workspace:*",
     "zod": "4.4.3"
   },
   "devDependencies": {

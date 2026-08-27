@@ -81,6 +81,33 @@ test("generic invocation calls the operation client with parsed input", async ()
   assert.equal(io.stderr(), "");
 });
 
+test("only implicit-local outcome commands ensure the Relay daemon", async () => {
+  for (const testCase of [
+    { env: {}, expectedEnsures: 1 },
+    { env: { RELAY_URL: "http://127.0.0.1:8787" }, expectedEnsures: 0 },
+    { env: { RELAY_URL: "https://relay.example" }, expectedEnsures: 0 },
+  ] as const) {
+    const io = capture();
+    let ensures = 0;
+    const code = await runCli(["connect", "--json"], {
+      streams: io.streams,
+      env: testCase.env,
+      registerSignalHandlers: false,
+      ensureOutcomeServer: async (serverUrl) => {
+        ensures += 1;
+        assert.equal(serverUrl, "http://127.0.0.1:8787");
+        return { status: "already-running" };
+      },
+      createClient: () => ({
+        invoke: async () => ({ devices: [] }),
+        events: async () => {},
+      }),
+    });
+    assert.equal(code, ExitCode.success);
+    assert.equal(ensures, testCase.expectedEnsures);
+  }
+});
+
 test("friendly command families invoke through the operation client", async () => {
   const cases: Array<{
     argv: string[];

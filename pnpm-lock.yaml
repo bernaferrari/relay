@@ -305,6 +305,9 @@ importers:
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@relay/workflows':
+        specifier: workspace:*
+        version: link:../workflows
     devDependencies:
       '@types/node':
         specifier: ^26.1.2
@@ -423,6 +426,9 @@ importers:
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@relay/workflows':
+        specifier: workspace:*
+        version: link:../workflows
       zod:
         specifier: 4.4.3
         version: 4.4.3
