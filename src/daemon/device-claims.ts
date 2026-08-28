@@ -40,6 +40,8 @@ export type DeviceClaim = {
   ownerToken: string;
   createdAtMs: number;
   updatedAtMs: number;
+  /** Set by {@link abandonDeviceClaim}; absent while the claim still holds the device for its owner. */
+  abandonedAtMs?: number;
 };
 
 export type DeviceClaimReconciliationResult =
@@ -102,10 +104,11 @@ export async function acquireDeviceClaim(params: {
 /**
  * #1320 `transient-exclusive`: exclusive ownership for the duration of one
  * sessionless device mutation. Identical to a session claim except that a claim
- * already held by this daemon process covers the command instead of colliding
- * with it — the claim file itself, not the in-memory session table, is the
- * authority for that, so a claim acquired earlier in the same request (`open`'s,
- * for instance) can never lock the daemon out of its own device.
+ * this daemon still holds covers the command instead of colliding with it — the
+ * claim file itself, not the in-memory session table, is the authority for that,
+ * so a claim acquired earlier in the same request (`open`'s, for instance) can
+ * never lock the daemon out of its own device. An abandoned claim holds nothing,
+ * so it is superseded into this command's own transient claim instead.
  */
 export async function acquireTransientDeviceClaim(params: {
   device: DeviceInfo;
@@ -120,6 +123,7 @@ export async function acquireTransientDeviceClaim(params: {
     const existing = inspectDeviceClaimFile(resolveDeviceClaimPath(deviceKey));
     if (
       existing?.claim &&
+      !isAbandonedDeviceClaim(existing.claim) &&
       isClaimOwnedByThisDaemon(existing.claim, params.stateDir, readCurrentOwnerIdentity())
     ) {
       return { status: 'covered-by-owned-claim' };
@@ -189,6 +193,18 @@ function isClaimOwnedByThisDaemon(
   );
 }
 
+function isAbandonedDeviceClaim(claim: DeviceClaim): boolean {
+  return claim.abandonedAtMs !== undefined;
+}
+
+function isAbandonedClaimOfThisDaemon(
+  claim: DeviceClaim,
+  stateDir: string,
+  owner: ReturnType<typeof readCurrentOwnerIdentity>,
+): boolean {
+  return isAbandonedDeviceClaim(claim) && isClaimOwnedByThisDaemon(claim, stateDir, owner);
+}
+
 function deviceClaimIdentity(device: DeviceInfo): DeviceIdentity {
   return deviceIdentity({
     ...device,
@@ -206,6 +222,13 @@ async function resolveExistingClaim(params: {
 }): Promise<DeviceClaimAcquireResult | { status: 'available' }> {
   const existing = inspectDeviceClaimFile(resolveDeviceClaimPath(params.deviceKey));
   if (!existing) return { status: 'available' };
+  if (
+    existing.claim &&
+    isAbandonedClaimOfThisDaemon(existing.claim, params.stateDir, params.owner)
+  ) {
+    emitClaimSupersede(params.deviceKey, existing.claim);
+    return { status: 'available' };
+  }
   if (existing.claim && isCurrentClaimOwner(existing.claim, params, params.owner)) {
     return { status: 'acquired', ownership: ownershipFromClaim(existing.claim) };
   }
@@ -258,16 +281,7 @@ export async function clearDeviceClaim(
     const inspected = inspectDeviceClaimFile(claimPath);
     if (!inspected) return 'absent';
     const claim = inspected.claim;
-    if (
-      !claim ||
-      claim.ownerToken !== ownership.ownerToken ||
-      !ownerIdentityMatches(
-        { pid: claim.ownerPid, startTime: claim.ownerStartTime },
-        { pid: ownership.ownerPid, startTime: ownership.ownerStartTime },
-      )
-    ) {
-      return 'ownership-changed';
-    }
+    if (!claim || !claimMatchesOwnership(claim, ownership)) return 'ownership-changed';
     try {
       fs.unlinkSync(claimPath);
     } catch (error) {
@@ -276,6 +290,47 @@ export async function clearDeviceClaim(
     }
     return 'deleted';
   });
+}
+
+/**
+ * What abandoning a claim did, in the terms {@link DeviceClaimClearOutcome} uses:
+ *
+ *  - `abandoned`        — the claim we acquired now holds the device for nobody.
+ *  - `absent`           — no claim remains for the device; nothing to mark.
+ *  - `ownership-changed`— a claim remains, but it is not the one we acquired.
+ */
+export type DeviceClaimAbandonOutcome = 'abandoned' | 'absent' | 'ownership-changed';
+
+/**
+ * Keeps the device fenced against every other owner while recording that this claim holds it for
+ * nobody. Only the daemon that abandoned it may take it back.
+ */
+export async function abandonDeviceClaim(
+  ownership: DeviceClaimSessionOwnership | undefined,
+): Promise<DeviceClaimAbandonOutcome> {
+  if (!ownership) return 'absent';
+  return await withDeviceClaimLock(ownership.deviceKey, async () => {
+    const inspected = inspectDeviceClaimFile(resolveDeviceClaimPath(ownership.deviceKey));
+    if (!inspected) return 'absent';
+    const claim = inspected.claim;
+    if (!claim || !claimMatchesOwnership(claim, ownership)) return 'ownership-changed';
+    const now = Date.now();
+    writeClaim({ ...claim, abandonedAtMs: now, updatedAtMs: now });
+    return 'abandoned';
+  });
+}
+
+function claimMatchesOwnership(
+  claim: DeviceClaim,
+  ownership: DeviceClaimSessionOwnership,
+): boolean {
+  return (
+    claim.ownerToken === ownership.ownerToken &&
+    ownerIdentityMatches(
+      { pid: claim.ownerPid, startTime: claim.ownerStartTime },
+      { pid: ownership.ownerPid, startTime: ownership.ownerStartTime },
+    )
+  );
 }
 
 /**
@@ -383,6 +438,18 @@ function emitClaimConflict(
       ownerSession: existing.claim?.session,
       ownerStateDir: existing.claim?.stateDir,
       ...(reconciliationReason ? { reconciliationReason } : {}),
+    },
+  });
+}
+
+function emitClaimSupersede(deviceKey: string, abandoned: DeviceClaim): void {
+  emitDiagnostic({
+    level: 'info',
+    phase: 'device_claim_abandoned_superseded',
+    data: {
+      deviceKey,
+      abandonedSession: abandoned.session,
+      abandonedAtMs: abandoned.abandonedAtMs,
     },
   });
 }
