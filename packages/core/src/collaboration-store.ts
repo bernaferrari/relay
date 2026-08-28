@@ -5,6 +5,8 @@ import type {
   CompatibilityMatrix,
   DeviceLease,
   DevicePool,
+  DurableWorkflowAuditEvent,
+  DurableWorkflowRecord,
   Project,
   ReviewedDocumentOriginLedger,
   ReviewedDocumentOriginProjection,
@@ -133,6 +135,14 @@ export type ControlStore = {
   upsertVariables(projectId: string, value: Revisioned<TestData[]>): void;
   idempotency(key: string): number | string | undefined;
   upsertIdempotency(key: string, value: number | string): void;
+  workflowRecord(workflowId: string): DurableWorkflowRecord | undefined;
+  workflowRecordEvents(workflowId: string): DurableWorkflowAuditEvent[];
+  insertWorkflowRecord(record: DurableWorkflowRecord, event: DurableWorkflowAuditEvent): boolean;
+  compareAndSetWorkflowRecord(
+    expectedVersion: number,
+    record: DurableWorkflowRecord,
+    event: DurableWorkflowAuditEvent,
+  ): "updated" | "stale" | "missing";
   appMap(key: string): AppMap | undefined;
   appMapRecoveryDocument(key: string): AppMapRecoveryDocument | undefined;
   hasAppMap(key: string): boolean;
@@ -269,6 +279,78 @@ function createStore(db: DatabaseSync): ControlStore {
     },
     upsertIdempotency(key, value) {
       upsertIdempotencyRow(db, key, value);
+    },
+    workflowRecord(workflowId) {
+      return parseRowDocument<DurableWorkflowRecord>(
+        db
+          .prepare("SELECT document FROM workflow_records WHERE workflow_id = ?")
+          .get(workflowId) as { document?: string } | undefined,
+      );
+    },
+    workflowRecordEvents(workflowId) {
+      return documents<DurableWorkflowAuditEvent>(
+        db
+          .prepare(
+            "SELECT document FROM workflow_record_events WHERE workflow_id = ? ORDER BY sequence",
+          )
+          .all(workflowId) as Array<{ document?: string }>,
+      );
+    },
+    insertWorkflowRecord(record, event) {
+      const inserted = db
+        .prepare(
+          `INSERT OR IGNORE INTO workflow_records
+           (workflow_id, organization_id, project_id, kind, version, status, expires_at, document, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          record.workflowId,
+          record.organizationId,
+          record.projectId,
+          record.kind,
+          record.version,
+          record.status,
+          record.expiresAt,
+          JSON.stringify(record),
+          record.updatedAt,
+        ).changes;
+      if (!inserted) return false;
+      db.prepare(
+        `INSERT INTO workflow_record_events
+         (workflow_id, sequence, version, document, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run(event.workflowId, event.sequence, event.version, JSON.stringify(event), event.at);
+      return true;
+    },
+    compareAndSetWorkflowRecord(expectedVersion, record, event) {
+      const existing = db
+        .prepare("SELECT version FROM workflow_records WHERE workflow_id = ?")
+        .get(record.workflowId) as { version?: number } | undefined;
+      if (!existing) return "missing";
+      const updated = db
+        .prepare(
+          `UPDATE workflow_records
+           SET version = ?, status = ?, expires_at = ?, document = ?, updated_at = ?
+           WHERE workflow_id = ? AND version = ? AND organization_id = ? AND project_id = ?`,
+        )
+        .run(
+          record.version,
+          record.status,
+          record.expiresAt,
+          JSON.stringify(record),
+          record.updatedAt,
+          record.workflowId,
+          expectedVersion,
+          record.organizationId,
+          record.projectId,
+        ).changes;
+      if (!updated) return "stale";
+      db.prepare(
+        `INSERT INTO workflow_record_events
+         (workflow_id, sequence, version, document, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run(event.workflowId, event.sequence, event.version, JSON.stringify(event), event.at);
+      return "updated";
     },
     appMap(key) {
       const row = db.prepare("SELECT document, status FROM app_maps WHERE map_key = ?").get(key) as

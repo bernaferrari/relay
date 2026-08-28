@@ -58,6 +58,28 @@ test("offline preflight blocks absent selectors but keeps flattened-tree ambigui
   );
 });
 
+test("offline preflight carries deterministic reviewed external-effect risk", () => {
+  const report = preflightCompiledAppMapTestOffline(
+    plan([
+      {
+        kind: "tap",
+        target: { label: "Open provider" },
+        reviewedExternalEffects: {
+          schemaVersion: 1,
+          effects: ["external-app"],
+          reviewedBy: "human:reviewer",
+          reviewedAt: 10,
+          reason: "The provider handoff is an intentional part of this Test.",
+        },
+      },
+    ]),
+  );
+
+  assert.equal(report.executionRisk.level, "guarded");
+  assert.equal(report.executionRisk.confirmation, "once-per-run");
+  assert.deepEqual(report.executionRisk.externalEffects, ["external-app"]);
+});
+
 test("offline preflight rejects invented Cloud filter copy unless a typed locator explains it", () => {
   const cloud = {
     fingerprint: "cloud",

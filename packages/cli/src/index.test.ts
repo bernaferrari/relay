@@ -108,6 +108,35 @@ test("only implicit-local outcome commands ensure the Relay daemon", async () =>
   }
 });
 
+test("Replay Lab rejects invalid explicit files without starting Relay or invoking its client", async () => {
+  const io = capture();
+  let ensured = false;
+  let invoked = false;
+  const code = await runCli(
+    ["replay-lab", "compare", "/missing/oldest.json", "/missing/newest.json", "--json"],
+    {
+      streams: io.streams,
+      env: {},
+      registerSignalHandlers: false,
+      ensureOutcomeServer: async () => {
+        ensured = true;
+        return { status: "started" };
+      },
+      createClient: () => ({
+        invoke: async () => {
+          invoked = true;
+          return {};
+        },
+        events: async () => {},
+      }),
+    },
+  );
+  assert.equal(code, ExitCode.validation);
+  assert.equal(ensured, false);
+  assert.equal(invoked, false);
+  assert.match(io.stderr(), /not a regular local file/u);
+});
+
 test("relay observe emits durable references without transient presentation bytes", async () => {
   const io = capture();
   const artifact = (digit: string, kind: "image" | "structured-data", mime: string) => {

@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js";
 import {
   createRelayWorkflows,
+  type DurableWorkflowHandle,
   type FrozenRunTestIdentity,
   type RelayInvokeClient,
   type RunTestSnapshot,
@@ -34,6 +35,8 @@ type RunAttentionMarker = {
   schemaVersion: 1;
   frozen: FrozenRunTestIdentity;
   startedAfter: number;
+  workflow?: DurableWorkflowHandle;
+  /** Read-only compatibility for a marker written before durable Runs. */
   ref?: string;
 };
 type RunMarkerStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -182,6 +185,11 @@ export function createAppMapTestRun(options: {
         value.frozen.appMapId !== intent.appMapId ||
         value.frozen.testId !== intent.testId ||
         JSON.stringify(value.frozen.target) !== JSON.stringify(intent.target) ||
+        (value.workflow !== undefined &&
+          (typeof value.workflow.workflowId !== "string" ||
+            !value.workflow.workflowId ||
+            !Number.isSafeInteger(value.workflow.expectedVersion) ||
+            value.workflow.expectedVersion < 0)) ||
         (value.ref !== undefined && typeof value.ref !== "string")
       ) {
         return undefined;
@@ -222,13 +230,15 @@ export function createAppMapTestRun(options: {
 
   async function reconcileAttention(marker: RunAttentionMarker, key: string): Promise<void> {
     const request = ++recoveryRequest;
-    const recovered = marker.ref
-      ? await workflows.inspect(marker.ref as WorkflowRef)
-      : await workflows.recover({
-          kind: "run-test",
-          frozen: marker.frozen,
-          startedAfter: marker.startedAfter,
-        });
+    const recovered = marker.workflow
+      ? await workflows.inspectDurable(marker.workflow.workflowId)
+      : marker.ref
+        ? await workflows.inspect(marker.ref as WorkflowRef)
+        : await workflows.recover({
+            kind: "run-test",
+            frozen: marker.frozen,
+            startedAfter: marker.startedAfter,
+          });
     if (request !== recoveryRequest || attentionKey() !== key || recovered.kind !== "run-test") {
       return;
     }
@@ -236,7 +246,7 @@ export function createAppMapTestRun(options: {
     setJobId(recovered.execution?.jobId);
     setError(recovered.problems.at(-1)?.detail ?? "");
     if (
-      recovered.ref &&
+      (recovered.workflow || recovered.ref) &&
       (recovered.phase === "queued" ||
         recovered.phase === "running" ||
         recovered.phase === "paused" ||
@@ -246,7 +256,8 @@ export function createAppMapTestRun(options: {
         {
           ...marker,
           frozen: recovered.frozen ?? marker.frozen,
-          ref: recovered.ref,
+          ...(recovered.workflow ? { workflow: recovered.workflow } : {}),
+          ...(recovered.ref ? { ref: recovered.ref } : {}),
         },
         key,
       );
@@ -300,7 +311,7 @@ export function createAppMapTestRun(options: {
     const marker = readAttentionMarker(key);
     setAttentionMarker(marker);
     const markerKey = marker
-      ? `${key}:${marker.startedAfter}:${marker.ref ?? "unresolved"}`
+      ? `${key}:${marker.startedAfter}:${marker.workflow?.workflowId ?? marker.ref ?? "unresolved"}:${marker.workflow?.expectedVersion ?? ""}`
       : undefined;
     if (!marker || markerKey === recoveredMarkerKey) return;
     recoveredMarkerKey = markerKey;
@@ -351,7 +362,7 @@ export function createAppMapTestRun(options: {
   const blockedReason = () => {
     const persisted = persistedAttention();
     if (persisted && !isActiveTestRun(job())) {
-      return persisted.ref
+      return persisted.workflow || persisted.ref
         ? "Inspect the existing run before starting another run."
         : "Inspect the uncertain run outcome before starting another run.";
     }
@@ -442,6 +453,7 @@ export function createAppMapTestRun(options: {
           : {}),
         startup: intent.startup,
         workflowRequestId,
+        continuation: "durable",
       });
       setWorkflow(result);
       if (
@@ -455,6 +467,7 @@ export function createAppMapTestRun(options: {
             ...preliminaryMarker,
             frozen: result.frozen ?? preliminaryMarker.frozen,
             startedAfter,
+            ...(result.workflow ? { workflow: result.workflow } : {}),
             ...(result.ref ? { ref: result.ref } : {}),
           },
           dispatchKey,
@@ -467,10 +480,14 @@ export function createAppMapTestRun(options: {
         setPreflight(result.compiled.preflight);
       }
       if (!isCurrentRunIntent(intent)) {
-        if (result.ref && result.allowedNextActions.includes("cancel")) {
-          await workflows
-            .advance({ action: "cancel", ref: result.ref, expectedVersion: result.version })
-            .catch(() => undefined);
+        if (result.allowedNextActions.includes("cancel")) {
+          if (result.workflow) {
+            await workflows.cancelRun(result.workflow).catch(() => undefined);
+          } else if (result.ref) {
+            await workflows
+              .advance({ action: "cancel", ref: result.ref, expectedVersion: result.version })
+              .catch(() => undefined);
+          }
         }
         await options.refreshJobs();
         return;
@@ -479,7 +496,11 @@ export function createAppMapTestRun(options: {
       await options.refreshJobs();
       setLaunchState("idle");
       const queued = options.jobs().find((candidate) => candidate.id === result.execution?.jobId);
-      if (result.phase === "needs-attention" || !result.ref || !result.execution?.jobId) {
+      if (
+        result.phase === "needs-attention" ||
+        (!result.workflow && !result.ref) ||
+        !result.execution?.jobId
+      ) {
         setError(result.problems.at(-1)?.detail ?? result.progress.label);
       } else if (
         result.compiled &&
@@ -539,9 +560,17 @@ export function createAppMapTestRun(options: {
 
   async function cancel(): Promise<void> {
     const active = workflow();
-    if (!active?.ref || !isActiveTestRun(job()) || launchState() === "canceling") return;
+    if (
+      (!active?.workflow && !active?.ref) ||
+      !isActiveTestRun(job()) ||
+      launchState() === "canceling"
+    ) {
+      return;
+    }
     setLaunchState("canceling");
-    const inspected = await workflows.inspect(active.ref);
+    const inspected = active.workflow
+      ? await workflows.inspectDurable(active.workflow.workflowId)
+      : await workflows.inspect(active.ref!);
     if (inspected.kind !== "run-test") return;
     setWorkflow(inspected);
     if (!inspected.allowedNextActions.includes("cancel")) {
@@ -549,11 +578,13 @@ export function createAppMapTestRun(options: {
       setLaunchState(inspected.phase === "needs-attention" ? "idle" : "error");
       return;
     }
-    const cancelled = await workflows.advance({
-      action: "cancel",
-      ref: inspected.ref!,
-      expectedVersion: inspected.version,
-    });
+    const cancelled = inspected.workflow
+      ? await workflows.cancelRun(inspected.workflow)
+      : await workflows.advance({
+          action: "cancel",
+          ref: inspected.ref!,
+          expectedVersion: inspected.version,
+        });
     if (cancelled.kind !== "run-test") return;
     setWorkflow(cancelled);
     if (cancelled.phase === "needs-attention") {
@@ -561,6 +592,7 @@ export function createAppMapTestRun(options: {
         schemaVersion: 1,
         frozen: cancelled.frozen ?? active.frozen!,
         startedAfter: Date.now(),
+        ...(cancelled.workflow ? { workflow: cancelled.workflow } : {}),
         ...(cancelled.ref ? { ref: cancelled.ref } : {}),
       });
     } else {

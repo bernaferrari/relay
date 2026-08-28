@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
+  authoringCaptureNeedsReplay,
+  authoringCaptureProvenance,
   describeSnapshotChrome,
   type AuthoringCommitDestination,
   type AuthoringObservation,
@@ -226,6 +228,9 @@ export function destinationMismatchError(
 export async function attachLiveDemonstrationAttempt(
   session: AuthoringSession,
 ): Promise<AuthoringSession> {
+  if (authoringCaptureNeedsReplay(authoringCaptureProvenance(session.captureProvenance))) {
+    return session;
+  }
   const take = session.take;
   if (!take) return session;
   const revision = currentRevision(session);
@@ -303,7 +308,12 @@ export async function approvedAfterObservation(
       latestAttempt.error ?? "Replay the current Take successfully before committing it",
     );
   }
-  if (revision.reason === "recording" && revision.before && revision.after) {
+  if (
+    revision.reason === "recording" &&
+    revision.before &&
+    revision.after &&
+    !authoringCaptureNeedsReplay(authoringCaptureProvenance(session.captureProvenance))
+  ) {
     const expected = await expectedReplayScreen(session, revision);
     if (observationMatchesExpectedDestination(revision.after, expected)) {
       return revision.after;

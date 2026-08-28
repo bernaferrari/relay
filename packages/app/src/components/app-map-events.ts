@@ -97,7 +97,7 @@ export function createAppMapEventOrchestration(options: {
   onOpenDevicePanel: () => void;
   onCloseDevicePanel: () => void;
   onRunMap: () => void;
-  onUndoRequest: (event: Event, redo: boolean) => void;
+  onUndoRequest: (redo: boolean) => void;
   onToolChange: (tool: AppMapCanvasTool) => void;
   onCaptureScreen: () => void;
   onAddNote: () => void;
@@ -125,10 +125,6 @@ export function createAppMapEventOrchestration(options: {
     const onRunMap = () => options.onRunMap();
     const onRecordPath = () => options.onRecord();
     const onCaptureScreen = () => options.onCaptureScreen();
-    const onUndoRequest = (event: Event) => {
-      const request = event as CustomEvent<{ redo: boolean }>;
-      options.onUndoRequest(event, request.detail.redo);
-    };
     const onCanvasKey = (event: KeyboardEvent) => {
       if (shouldIgnoreCanvasShortcut(event)) return;
       if (isCaptureScreenShortcut(event)) {
@@ -192,6 +188,8 @@ export function createAppMapEventOrchestration(options: {
       runTest: options.onRunMap,
       recordTest: options.onRecord,
       captureScreen: options.onCaptureScreen,
+      undoMap: () => options.onUndoRequest(false),
+      redoMap: () => options.onUndoRequest(true),
     });
 
     // Compatibility listeners remain for Map-only surfaces that have not yet
@@ -203,7 +201,6 @@ export function createAppMapEventOrchestration(options: {
     window.addEventListener("relay:run-app-map", onRunMap);
     window.addEventListener("relay:record-path", onRecordPath);
     window.addEventListener("relay:capture-screen", onCaptureScreen);
-    window.addEventListener("relay:undo-request", onUndoRequest);
     window.addEventListener("keydown", onCanvasKey);
     window.addEventListener("keyup", onCanvasKeyUp);
     onCleanup(() => {
@@ -214,7 +211,6 @@ export function createAppMapEventOrchestration(options: {
       window.removeEventListener("relay:run-app-map", onRunMap);
       window.removeEventListener("relay:record-path", onRecordPath);
       window.removeEventListener("relay:capture-screen", onCaptureScreen);
-      window.removeEventListener("relay:undo-request", onUndoRequest);
       window.removeEventListener("keydown", onCanvasKey);
       window.removeEventListener("keyup", onCanvasKeyUp);
     });

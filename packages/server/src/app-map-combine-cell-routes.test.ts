@@ -1291,8 +1291,17 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
   const root = await mkdtemp(join(tmpdir(), "relay-combine-default-pilot-"));
   const previous = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
-  const server = await startServer({
-    host: "127.0.0.1",
+  let gateRetry = false;
+  let markRetryControl!: () => void;
+  let releaseRetryControl!: () => void;
+  const retryReachedControl = new Promise<void>((resolve) => {
+    markRetryControl = resolve;
+  });
+  const holdRetryControl = new Promise<void>((resolve) => {
+    releaseRetryControl = resolve;
+  });
+  const serverOptions = () => ({
+    host: "127.0.0.1" as const,
     port: 0,
     jobRouteRuntime: {
       async listDevices() {
@@ -1307,11 +1316,20 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
           },
         ];
       },
-      async assertTargetControl(scope, targetId) {
+      async assertTargetControl(
+        scope: Parameters<typeof assertTargetControl>[0],
+        targetId?: string,
+      ) {
+        if (!targetId) throw new Error("target id is required");
+        if (gateRetry) {
+          markRetryControl();
+          await holdRetryControl;
+        }
         return assertTargetControl(scope, targetId);
       },
     },
   });
+  let server = await startServer(serverOptions());
   try {
     const client = new RelayClient({
       url: `http://127.0.0.1:${server.port}`,
@@ -1362,7 +1380,7 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
           ],
           strategy: "cartesian",
           pilot: { mode: "specified", case: { language: "it", region: "ca" } },
-          resume: "untouched",
+          resume: "all",
         },
         resolved: {
           dimensions: [
@@ -1371,7 +1389,7 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
           ],
           strategy: "cartesian",
           pilot: { mode: "specified", case: { language: "it", region: "ca" } },
-          resume: "untouched",
+          resume: "all",
         },
       },
       sourceRevision,
@@ -1403,7 +1421,7 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
         ],
         strategy: "cartesian",
         pilot: { mode: "specified", case: { language: "it", region: "ca" } },
-        resume: "untouched",
+        resume: "all",
       },
       resolved: {
         dimensions: [
@@ -1412,7 +1430,7 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
         ],
         strategy: "cartesian",
         pilot: { mode: "specified", case: { language: "it", region: "ca" } },
-        resume: "untouched",
+        resume: "all",
       },
       evidence: "visual",
       sourceRevision,
@@ -1512,6 +1530,66 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
       assert.equal(provedTerminal?.status, resultStatus);
       assert.equal(provedTerminal?.runId, pilotJob.id);
     }
+    await assert.rejects(
+      client.invoke("job.combine.campaign.resume", {
+        batchId: repeatId,
+        expectedAppMapRevision: campaign.sourceRevision,
+      }),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        (error.body as { code?: unknown }).code === "REPEAT_TERMINAL_REVIEW_REQUIRED",
+    );
+    await server.close();
+    server = await startServer(serverOptions());
+    const resumedClient = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    const recovered = await resumedClient.invoke("job.combine.campaign.repeat.active", {
+      appMapId: "store",
+      testId: "script-only",
+    });
+    assert.equal(recovered.campaign?.id, repeatId);
+    gateRetry = true;
+    const firstRetry = resumedClient.invoke("job.combine.campaign.resume", {
+      batchId: repeatId,
+      expectedAppMapRevision: campaign.sourceRevision,
+      reviewed: true,
+    });
+    await retryReachedControl;
+    const secondRetry = resumedClient.invoke("job.combine.campaign.resume", {
+      batchId: repeatId,
+      expectedAppMapRevision: campaign.sourceRevision,
+      reviewed: true,
+    });
+    releaseRetryControl();
+    const retryResults = await Promise.allSettled([firstRetry, secondRetry]);
+    const fulfilledRetries = retryResults.filter(
+      (result) => result.status === "fulfilled" && result.value.jobs.length > 0,
+    );
+    assert.equal(fulfilledRetries.length, 1);
+    const retried = fulfilledRetries[0]!.status === "fulfilled" ? fulfilledRetries[0]!.value : null;
+    if (!retried) throw new Error("expected one exact terminal retry");
+    assert.equal(retried.jobs.length, 6);
+    const retriedCampaign = retried.campaign as CombineCampaign;
+    const retriedPilot = retriedCampaign.cases.find((item) => item.phase === "pilot");
+    assert.deepEqual(retriedPilot?.priorRunIds, [pilotJob.id]);
+    assert.equal(retriedPilot?.runId, undefined);
+    assert.notEqual(retriedPilot?.jobId, pilotJob.id);
+    assert.deepEqual(retriedCampaign.execution?.repeat?.spec, campaign.execution?.repeat?.spec);
+    assert.deepEqual(
+      retriedCampaign.execution?.repeat?.resolved,
+      campaign.execution?.repeat?.resolved,
+    );
+    for (const job of retried.jobs) {
+      cancelJob(job.id);
+      await waitForJobCompletion(job.id);
+    }
     for (const job of (started.jobs as Array<{ id?: string }>) ?? []) {
       if (job.id) {
         cancelJob(job.id);
@@ -1519,6 +1597,7 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
       }
     }
   } finally {
+    releaseRetryControl();
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;

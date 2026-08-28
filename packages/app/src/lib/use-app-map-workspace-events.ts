@@ -55,11 +55,10 @@ export function useAppMapWorkspaceEvents(options: {
     onOpenDevicePanel: options.onOpenDevice,
     onCloseDevicePanel: options.onCloseDevice,
     onRunMap: options.onRun,
-    onUndoRequest: (event, shouldRedo) => {
+    onUndoRequest: (shouldRedo) => {
       const canUndo = options.historyCanUndo();
       const canRedo = options.historyCanRedo();
       if (shouldRedo ? !canRedo : !canUndo) return;
-      event.preventDefault();
       if (shouldRedo) options.onRedo();
       else options.onUndo();
     },

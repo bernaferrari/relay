@@ -74,6 +74,11 @@ test("raw authoring intent and outcome append in order without mutating their so
     observation: before,
   });
   const unchangedSeed = structuredClone(seed);
+  assert.deepEqual(seed.rawEvents[0]?.source.captureProvenance, {
+    schemaVersion: 1,
+    mode: "control-and-record",
+    origin: "relay-control",
+  });
 
   const intent = appendAuthoringRawInteractionIntent(take(seed.rawEvents), {
     target,
@@ -93,6 +98,10 @@ test("raw authoring intent and outcome append in order without mutating their so
   );
   const interaction = intent.rawEvents[1];
   assert.ok(interaction && interaction.kind === "interaction-intent");
+  assert.deepEqual(
+    interaction.source.captureProvenance,
+    seed.rawEvents[0]?.source.captureProvenance,
+  );
   assert.deepEqual(interaction.links, {
     entranceObservationId: "before",
     evidenceIds: ["evidence-before"],

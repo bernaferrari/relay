@@ -1805,6 +1805,11 @@ test("startup recovery scopes every persisted project without crossing project o
 test("raw Takes preserve append-only source facts across review edits", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     const captureOnly = await createReadySession(store, runtime, appMapId);
+    assert.deepEqual(captureOnly.captureProvenance, {
+      schemaVersion: 1,
+      mode: "control-and-record",
+      origin: "relay-control",
+    });
     const captured = await store.capture(captureOnly.id, runtime);
     assert.equal(captured.take?.rawCaptureVersion, AUTHORING_RAW_CAPTURE_VERSION);
     assert.deepEqual(

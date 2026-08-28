@@ -1,4 +1,15 @@
-import type { AuthoringTarget, DeviceLease, DeviceSummary } from "@relay/protocol";
+import { verifyChangeOffline } from "@relay/core/verify-change";
+import {
+  measureTracePackJson,
+  TRACE_PACK_OFFLINE_TRANSPORT_LIMITS,
+  VERIFY_CHANGE_MAX_IDS,
+  VERIFY_CHANGE_MAX_TRACE_PACKS,
+  type AuthoringTarget,
+  type DeviceLease,
+  type DeviceSummary,
+  type SourceRevision,
+  type TracePack,
+} from "@relay/protocol";
 import type { RelayOperationPort } from "./operation-port.js";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";
 import { createRelayWorkflows } from "./relay-workflows.js";
@@ -13,10 +24,70 @@ import type {
   RecordTestOutcomeIntent,
   RelayOutcomeJobs,
   RepeatTestOutcomeIntent,
+  ReplayLabOutcomeIntent,
   RunTestOutcomeIntent,
+  VerifyChangeOutcomeIntent,
 } from "./types.js";
+import { runReplayLab } from "./replay-lab.js";
 
 export type RelayOutcomeJobOptions = { actorId: string };
+
+const VERIFY_CHANGE_READ_CONCURRENCY = 4;
+const VERIFY_CHANGE_MAX_TOTAL_PACK_BYTES = 128 * 1024 * 1024;
+const VERIFY_CHANGE_MAX_PACK_OBJECTS = 2_000;
+
+async function mapWithConcurrency<T, R>(
+  values: readonly T[],
+  concurrency: number,
+  operation: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const results = Array.from({ length: values.length }, () => undefined as R);
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < values.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await operation(values[index]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, () => worker()));
+  return results;
+}
+
+function measureBoundedTracePack(pack: TracePack): number {
+  if (pack.objects.length > VERIFY_CHANGE_MAX_PACK_OBJECTS) {
+    throw new TypeError(
+      `Verify change TracePack exceeds ${VERIFY_CHANGE_MAX_PACK_OBJECTS} objects.`,
+    );
+  }
+  return measureTracePackJson(pack, TRACE_PACK_OFFLINE_TRANSPORT_LIMITS).serializedBytes;
+}
+
+function assertBoundedTracePacks(packs: readonly TracePack[]): void {
+  if (packs.length > VERIFY_CHANGE_MAX_TRACE_PACKS) {
+    throw new TypeError(
+      `Verify change accepts at most ${VERIFY_CHANGE_MAX_TRACE_PACKS} TracePacks.`,
+    );
+  }
+  let totalBytes = 0;
+  for (const pack of packs) {
+    totalBytes += measureBoundedTracePack(pack);
+    if (totalBytes > VERIFY_CHANGE_MAX_TOTAL_PACK_BYTES) {
+      throw new TypeError("Verify change TracePacks exceed 128 MiB in aggregate.");
+    }
+  }
+}
+
+function uniqueBoundedIds(values: readonly string[], label: string): string[] {
+  if (values.length > VERIFY_CHANGE_MAX_IDS) {
+    throw new TypeError(`${label} accepts at most ${VERIFY_CHANGE_MAX_IDS} ids.`);
+  }
+  const unique = [...new Set(values)].sort();
+  if (unique.length > VERIFY_CHANGE_MAX_IDS) {
+    throw new TypeError(`${label} accepts at most ${VERIFY_CHANGE_MAX_IDS} unique ids.`);
+  }
+  return unique;
+}
 
 function runnableTarget(device: DeviceSummary): AuthoringTarget | undefined {
   if (device.platform !== "android" && device.platform !== "ios") return undefined;
@@ -123,6 +194,18 @@ function repairList(value: unknown, runId: string): unknown[] {
   );
 }
 
+function revisionMatches(candidate: unknown, expected: SourceRevision): boolean {
+  if (!candidate || typeof candidate !== "object") return false;
+  const value = candidate as Partial<SourceRevision>;
+  return (
+    value.vcs === expected.vcs &&
+    value.sha === expected.sha &&
+    (expected.prNumber === undefined || value.prNumber === expected.prNumber) &&
+    (expected.branch === undefined || value.branch === expected.branch) &&
+    (expected.artifactDigest === undefined || value.artifactDigest === expected.artifactDigest)
+  );
+}
+
 class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
   private readonly operations: RelayOperationPort;
   private readonly workflows;
@@ -192,6 +275,8 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       target,
       leaseId,
       revision: "current",
+      workflowRequestId: crypto.randomUUID(),
+      continuation: "durable",
     });
   }
 
@@ -205,6 +290,8 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       target,
       revision: "current",
       workflowRequestId: crypto.randomUUID(),
+      continuation: "durable",
+      ...(intent.confirmRisk ? { confirmRisk: true } : {}),
     });
   }
 
@@ -219,6 +306,7 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       revision: "current",
       repeat: structuredClone(intent.repeat),
       ...(intent.evidence ? { evidence: intent.evidence } : {}),
+      ...(intent.confirmRisk ? { confirmRisk: true } : {}),
     });
   }
 
@@ -249,8 +337,99 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
     return this.operations.invoke("run.trace-pack.get", { runId: intent.runId });
   }
 
-  inspect(ref: Parameters<RelayOutcomeJobs["inspect"]>[0]) {
-    return this.workflows.inspect(ref);
+  replayLab(intent: ReplayLabOutcomeIntent) {
+    return runReplayLab(intent);
+  }
+
+  async verifyChange(intent: VerifyChangeOutcomeIntent) {
+    const selection = intent.selection;
+    if (selection.kind === "tests") {
+      const testIds = uniqueBoundedIds(selection.testIds, "Verify change Test selection");
+      const { appMap } = await this.operations.invoke("app-map.get", {
+        appMapId: selection.appMapId,
+      });
+      const tests = testIds.flatMap((testId) => {
+        const test = appMap.tests[testId];
+        return test ? [{ appMap, test }] : [];
+      });
+      const missing = testIds
+        .filter((testId) => !appMap.tests[testId])
+        .map((testId) => `affected-test-not-found:${selection.appMapId}:${testId}`);
+      return verifyChangeOffline({
+        selectionKind: "tests",
+        tests,
+        confirmationSatisfied: intent.confirmationSatisfied,
+        selectionUncertainty: missing,
+      });
+    }
+
+    let tracePacks: readonly TracePack[];
+    let selectionUncertainty: string[] = [];
+    if (selection.kind === "trace-packs") {
+      tracePacks = selection.tracePacks;
+      assertBoundedTracePacks(tracePacks);
+    } else {
+      let runIds: readonly string[];
+      if (selection.kind === "runs") {
+        runIds = uniqueBoundedIds(selection.runIds, "Verify change Run selection");
+      } else {
+        const { runs } = await this.operations.invoke("run.list", {
+          limit: VERIFY_CHANGE_MAX_IDS + 1,
+          ...(selection.appMapId ? { appMapId: selection.appMapId } : {}),
+        });
+        const matchingRunIds = runs
+          .filter((run) => revisionMatches(run.sourceRevision, selection.sourceRevision))
+          .map((run) => run.id)
+          .sort();
+        runIds = matchingRunIds.slice(0, VERIFY_CHANGE_MAX_IDS);
+        if (matchingRunIds.length > VERIFY_CHANGE_MAX_IDS) {
+          selectionUncertainty.push(
+            `affected-test-selection-truncated:source-revision:${selection.sourceRevision.sha}`,
+          );
+        }
+        if (!runIds.length) {
+          selectionUncertainty.push(
+            `affected-test-selection-unavailable:source-revision:${selection.sourceRevision.sha}`,
+          );
+        }
+      }
+      let totalBytes = 0;
+      tracePacks = await mapWithConcurrency(
+        runIds,
+        VERIFY_CHANGE_READ_CONCURRENCY,
+        async (runId) => {
+          const { tracePack } = await this.operations.invoke("run.trace-pack.get", { runId });
+          totalBytes += measureBoundedTracePack(tracePack);
+          if (totalBytes > VERIFY_CHANGE_MAX_TOTAL_PACK_BYTES) {
+            throw new TypeError("Verify change TracePacks exceed 128 MiB in aggregate.");
+          }
+          return tracePack;
+        },
+      );
+    }
+    return verifyChangeOffline({
+      selectionKind: selection.kind,
+      tracePacks,
+      ...(selection.kind === "source-revision" ? { sourceRevision: selection.sourceRevision } : {}),
+      confirmationSatisfied: intent.confirmationSatisfied,
+      selectionUncertainty,
+    });
+  }
+
+  inspect(input: Parameters<RelayOutcomeJobs["inspect"]>[0]) {
+    return "workflowId" in input
+      ? this.workflows.inspectDurable(input.workflowId)
+      : this.workflows.inspect(input.legacyRef);
+  }
+
+  cancelRun(input: Parameters<RelayOutcomeJobs["cancelRun"]>[0]) {
+    if (input.confirmCancel !== true) {
+      throw new TypeError("Cancelling a Run requires explicit confirmation.");
+    }
+    return this.workflows.cancelRun({
+      workflowId: input.workflowId,
+      expectedVersion: input.expectedVersion,
+    });
   }
 
   async continueRepeat(input: Parameters<RelayOutcomeJobs["continueRepeat"]>[0]) {
@@ -266,17 +445,13 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
   }
 
   async advanceRecording(decision: Parameters<RelayOutcomeJobs["advanceRecording"]>[0]) {
-    const snapshot = await this.workflows.advance(decision);
-    if (snapshot.kind !== "author-test") {
-      throw new TypeError("The workflow reference does not identify a recording.");
-    }
-    return snapshot;
+    return this.workflows.advanceAuthoring(decision);
   }
 
   editRecording(intent: Parameters<RelayOutcomeJobs["editRecording"]>[0]) {
     return this.advanceRecording({
       action: "edit",
-      ref: intent.ref,
+      workflowId: intent.workflowId,
       expectedVersion: intent.expectedVersion,
       edit: structuredClone(intent.edit),
     });

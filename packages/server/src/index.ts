@@ -1,7 +1,4 @@
-/**
- * HTTP + SSE API over @relay/core.
- * Jobs, traces, heal retries, persisted runs/, live capture.
- */
+/** HTTP + SSE API over @relay/core: jobs, evidence, recovery, and live capture. */
 import http from "node:http";
 import { URL } from "node:url";
 import { readFile } from "node:fs/promises";
@@ -61,7 +58,6 @@ import {
   restartAgentDeviceDaemonForSigningEnvDrift,
   authoringSessions,
   runWithOperationContext,
-  runWithTargetDriverRegistry,
   recoverCollaborationState,
   recoverDurableWorkerAssignments,
   pruneExpiredShares,
@@ -76,6 +72,7 @@ import { createSseHub } from "./sse.js";
 import { startScheduler } from "./scheduler.js";
 import { createRequestHandlerLifecycle } from "./request-handler-lifecycle.js";
 import { createFailClosedServerShutdown } from "./server-shutdown.js";
+import { createTargetRuntimeScope } from "./target-runtime-scope.js";
 import { handleRunRoute, type RunRouteRuntime } from "./run-routes.js";
 import { handlePublicRunShareRoute } from "./run-share-routes.js";
 import { handleJobRoute, type JobRouteRuntime } from "./job-routes.js";
@@ -104,10 +101,8 @@ import {
   handleActivityRoute,
   recordOperationActivity,
 } from "./activity-routes.js";
-import { handleAppMapRoute } from "./app-map-routes.js";
 import { handleDiscoveryRoute } from "./discovery-routes.js";
 import { handlePresenceRoute } from "./presence-routes.js";
-import { handleAppMapRunRoute, type AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
 import { handleSettingsRoute } from "./settings-routes.js";
 import { handleTargetRoute } from "./target-routes.js";
 import { handleManualTargetRoute } from "./manual-target-routes.js";
@@ -116,12 +111,12 @@ import { handleControlPlaneRoute } from "./control-plane-routes.js";
 import { handleWorkspaceRoute } from "./workspace-routes.js";
 import { handleInteractionRoute } from "./interaction-routes.js";
 import { handleStepRunRoute, type StepRunRouteRuntime } from "./step-run-route.js";
+import type { AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
 import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";
-import {
-  handleTargetRuntimeRoute,
-  type TargetRuntimeRouteRuntime,
-} from "./target-runtime-routes.js";
+import type { TargetRuntimeRouteRuntime } from "./target-runtime-routes.js";
 import type { StartServerOptions, StartedServer } from "./server-types.js";
+import type { WorkflowRouteRuntime } from "./workflow-routes.js";
+import { handlePrimaryOperationRoutes } from "./primary-operation-routes.js";
 export type { StartServerOptions, StartedServer } from "./server-types.js";
 
 function setCorsOrigin(response: http.ServerResponse, origin: string): void {
@@ -164,6 +159,7 @@ async function handleRequest(
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>,
   appMapTestRunRuntime?: Partial<AppMapTestRunRouteRuntime>,
   jobRouteRuntime?: Partial<JobRouteRuntime>,
+  workflowRouteRuntime?: Partial<WorkflowRouteRuntime>,
   runRouteRuntime?: Partial<RunRouteRuntime>,
   stepRunRuntime?: Partial<StepRunRouteRuntime>,
   campaignDurationRuntime?: CampaignDurationRouteRuntime,
@@ -243,27 +239,22 @@ async function handleRequest(
     if (await handleActivityRoute({ method, pathname, url, response: res, scope })) return;
     if (operation) await recordOperationActivity({ operation, pathname, scope, response: res });
     if (
-      await handleAppMapRunRoute({
+      await handlePrimaryOperationRoutes({
         method,
         pathname,
         request: req,
         response: res,
         scope,
-        runtime: appMapTestRunRuntime,
-        combineRuntime: jobRouteRuntime,
-      })
-    )
-      return;
-    if (await handleAppMapRoute({ method, pathname, request: req, response: res, scope })) return;
-    if (
-      await handleTargetRuntimeRoute({
-        method,
-        pathname,
-        request: req,
-        response: res,
-        scope,
-        runtime: targetRuntime,
-        campaignDurationRuntime,
+        runtimes: {
+          appMapTestRun: appMapTestRunRuntime,
+          jobs: jobRouteRuntime,
+          workflow: {
+            ...workflowRouteRuntime,
+            ...(authoringRuntime ? { authoringRuntime } : {}),
+          },
+          target: targetRuntime,
+          campaignDuration: campaignDurationRuntime,
+        },
       })
     )
       return;
@@ -799,12 +790,13 @@ async function startServerWithStateLease(
     throw new Error("Refusing a non-local binding while evidence redaction is disabled");
   }
   assertExplicitRemoteServiceTokenScope(host, token);
+  const targetRuntimeScope = createTargetRuntimeScope(targetDriverRegistry);
   const sse = createSseHub(CORS_HEADERS);
   const requestHandlers = createRequestHandlerLifecycle();
   const server = http.createServer((req, res) => {
     if (
       !requestHandlers.run(() =>
-        runWithTargetDriverRegistry(targetDriverRegistry, () =>
+        targetRuntimeScope.run(() =>
           handleRequest(
             req,
             res,
@@ -819,6 +811,7 @@ async function startServerWithStateLease(
             opts.targetRuntime,
             opts.appMapTestRunRuntime,
             opts.jobRouteRuntime,
+            opts.workflowRouteRuntime,
             opts.runRouteRuntime,
             opts.stepRunRuntime,
             opts.campaignDurationRuntime,
@@ -830,7 +823,6 @@ async function startServerWithStateLease(
     }
   });
   const scheduler = startScheduler();
-
   try {
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
@@ -840,6 +832,7 @@ async function startServerWithStateLease(
       });
     });
   } catch (error) {
+    targetRuntimeScope.close();
     await scheduler.close().catch(() => undefined);
     sse.close();
     throw error;
@@ -860,7 +853,10 @@ async function startServerWithStateLease(
     closeSse: () => sse.close(),
     drainSessionExecutions: (timeoutMs) => shutdownSessionExecution(timeoutMs),
     flushActivity: flushOperationActivity,
-    releaseStateLease: () => stateLease.release(),
+    releaseStateLease: () => {
+      targetRuntimeScope.close();
+      stateLease.release();
+    },
   });
   return { port, host, close };
 }

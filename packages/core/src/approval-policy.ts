@@ -27,6 +27,7 @@ function result(
     ...value,
     evidenceRefs: unique([
       ...(input.evidence.tracePackDigest ? [input.evidence.tracePackDigest] : []),
+      ...(input.evidence.tracePackDigests ?? []),
       ...input.findings.flatMap((finding) => finding.evidenceRefs),
     ]),
   };

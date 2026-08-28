@@ -100,6 +100,43 @@ describe("compileExecutionRisk", () => {
     ]);
   });
 
+  test("classifies reviewed external effects without guessing from selector copy", () => {
+    const reviewed = {
+      schemaVersion: 1 as const,
+      effects: ["communication", "account-mutation"] as const,
+      reviewedBy: "human:reviewer",
+      reviewedAt: 10,
+      reason: "This fixture intentionally sends and persists the form.",
+    };
+    const risk = compileExecutionRisk(
+      graph("root", {
+        root: {
+          id: "root",
+          steps: [
+            {
+              id: "submit",
+              kind: "tap",
+              target: { label: "Continue" },
+              reviewedExternalEffects: reviewed,
+            },
+          ],
+        },
+      }),
+    );
+
+    assert.equal(risk.level, "destructive");
+    assert.equal(risk.confirmation, "human-only");
+    assert.equal(risk.cleanupRequired, true);
+    assert.deepEqual(risk.externalEffects, ["communication", "account-mutation"]);
+    assert.deepEqual(
+      risk.reasons.map(({ code, stepId }) => ({ code, stepId })),
+      [
+        { code: EXECUTION_RISK_CODES.reviewedAccountMutation, stepId: "submit" },
+        { code: EXECUTION_RISK_CODES.reviewedCommunication, stepId: "submit" },
+      ],
+    );
+  });
+
   test("fails closed for opaque code, missing recipes, and cycles", () => {
     const script = compileExecutionRisk(
       graph("root", {

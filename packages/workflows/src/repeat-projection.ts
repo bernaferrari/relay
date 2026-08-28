@@ -195,7 +195,13 @@ function version(record: CombineCampaign, results: readonly SelectedRepeatResult
       record.id,
       record.status,
       record.updatedAt,
-      ...results.flatMap((item) => [item.cellId, item.status, item.jobId, item.error]),
+      ...results.flatMap((item) => [
+        item.cellId,
+        item.status,
+        item.jobId,
+        item.error,
+        ...(item.priorRunIds ?? []),
+      ]),
     ]),
   )}`;
 }
@@ -221,6 +227,12 @@ export function snapshotFromRepeatRecord(input: {
   let actions: RepeatTestSnapshot["allowedNextActions"];
   let problems: WorkflowProblem[] = [];
   const provingRunEvidence = results.some((item) => item.error === provingRunEvidenceError);
+  const resumeMode = reference.frozen.resolved.resume;
+  const reviewableTerminalResults = results.filter(
+    (item) =>
+      item.status === "failed" ||
+      (resumeMode === "all" && (item.status === "blocked" || item.status === "cancelled")),
+  );
 
   if (provingRunEvidence) {
     phase = "running";
@@ -277,18 +289,35 @@ export function snapshotFromRepeatRecord(input: {
     label = "Repeat completed";
     actions = ["inspect"];
   } else if (record.status === "completed-with-problems") {
-    phase = "failed";
-    stage = "complete";
-    label = "Repeat completed with problems";
-    actions = ["inspect"];
-    problems = [
-      problem({
-        code: "operation-unavailable",
-        title: "Some selected values did not pass",
-        detail: "Inspect the failed and review-required results before accepting this change.",
-        recovery: "Inspect evidence and start a new Repeat after repairs when needed.",
-      }),
-    ];
+    if (resumeMode !== "untouched" && reviewableTerminalResults.length) {
+      phase = "needs-attention";
+      stage = "awaiting-continuation";
+      label = "Review non-passing results before retrying";
+      actions = ["inspect", "confirm-and-continue", "cancel"];
+      problems = [
+        problem({
+          code: "operation-unavailable",
+          title: "Retry requires an explicit evidence review",
+          detail: `${reviewableTerminalResults.length} immutable Run result${reviewableTerminalResults.length === 1 ? " is" : "s are"} eligible under the saved ${resumeMode} resume policy.`,
+          recovery:
+            "Inspect those Runs, then explicitly confirm and continue to retry only eligible results.",
+          retryable: true,
+        }),
+      ];
+    } else {
+      phase = "failed";
+      stage = "complete";
+      label = "Repeat completed with problems";
+      actions = ["inspect"];
+      problems = [
+        problem({
+          code: "operation-unavailable",
+          title: "Some selected values did not pass",
+          detail: "Inspect the failed and review-required results before accepting this change.",
+          recovery: "Inspect evidence and start a new Repeat after repairs when needed.",
+        }),
+      ];
+    }
   } else if (record.status === "cancelled") {
     phase = "cancelled";
     stage = "complete";
@@ -327,7 +356,10 @@ export function snapshotFromRepeatRecord(input: {
     allowedNextActions: actions,
     problems,
     evidenceRefs: results.flatMap((result) =>
-      result.runId ? [{ kind: "run" as const, id: result.runId }] : [],
+      [...(result.priorRunIds ?? []), ...(result.runId ? [result.runId] : [])].map((id) => ({
+        kind: "run" as const,
+        id,
+      })),
     ),
   };
 }

@@ -57,6 +57,8 @@ import type { OperationFamilyMap } from "./operation-family-map.js";
 import type { OperationRecord, ProjectRole } from "./operation-contract.js";
 import type { ExecutionTargetRef } from "./execution-target.js";
 import type { TargetObservation } from "./target-observation.js";
+import type { TargetSupervisorHealth } from "./target-supervisor.js";
+import type { WorkflowOperationMap } from "./workflow-record.js";
 
 export type RedactionPolicyDto = {
   enabled: boolean;
@@ -437,6 +439,10 @@ type SpecificOperationMap = {
     input: { phase?: "android" };
     output: { devices: DeviceSummary[] };
   };
+  "target.health.get": {
+    input: { serial: string };
+    output: { health: TargetSupervisorHealth };
+  };
   "target.snapshot.capture": {
     input: { serial: string; visual?: boolean; full?: boolean; interactiveOnly?: boolean };
     output: TargetSnapshotDto;
@@ -805,7 +811,8 @@ type SpecificOperationMap = {
   "lease.release": { input: { leaseId: string }; output: { lease: DeviceLeaseDto } };
 } & AppMapOperationMap &
   CampaignRepairOperationMap &
-  RunShareOperationMap;
+  RunShareOperationMap &
+  WorkflowOperationMap;
 
 export type RelayOperationMap = SpecificOperationMap & OperationFamilyMap;
 export type OperationId = keyof RelayOperationMap;

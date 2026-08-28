@@ -532,6 +532,9 @@ importers:
 
   packages/workflows:
     dependencies:
+      '@relay/core':
+        specifier: workspace:*
+        version: link:../core
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol

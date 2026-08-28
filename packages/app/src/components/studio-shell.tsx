@@ -54,13 +54,16 @@ import { StudioShellVariablesDialog } from "./studio-shell-variables-dialog";
 import { readRememberedDevicePanelPreference } from "../lib/studio-shell-preferences";
 import { createStudioBlankMapActions } from "../lib/studio-blank-map-actions";
 import { EmptyAppMap, MapLibrary, RunsWorkspace } from "./studio-shell-workspaces";
-import { createWorkspaceController } from "../lib/workspace-controller";
+import type { WorkspaceController } from "../lib/workspace-controller";
 import { connectLegacyStudioShellEvents } from "../lib/studio-shell-event-adapter";
 
-export function StudioShell(props: { onOpenSettings: (section?: SettingsSection) => void }) {
+export function StudioShell(props: {
+  onOpenSettings: (section?: SettingsSection) => void;
+  workspaceController: WorkspaceController;
+}) {
   const server = useServer();
   const recorder = useRecorder();
-  const workspaceController = createWorkspaceController();
+  const workspaceController = props.workspaceController;
   const [area, setArea] = createSignal<MapLibraryArea>(
     normalizeMapLibraryArea(
       new URLSearchParams(window.location.search).has("run") ? "runs" : "maps",
@@ -99,8 +102,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     server.selectedAppMapId();
     setActiveTargetSetId();
   });
-  // Restore persisted work before recipes paint so Relay reopens like a design file.
-  // The selected id remains the source of truth; this only closes a startup race.
+  // Restore persisted work before recipes paint; the selected id stays authoritative.
   let restoredInitialMap = false;
   createEffect(() => {
     if (restoredInitialMap) return;
@@ -122,15 +124,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       server.setSelectedAppMapId(decision.id);
       return;
     }
-    // No saved maps yet. The renderer now owns an unsaved canvas until the
-    // first capture/edit, so launching Relay never manufactures an empty file.
+    // Keep the unsaved canvas renderer-owned until its first capture or edit.
     setMapMode("test");
     restoredInitialMap = true;
     server.setSelectedAppMapId(null);
   });
   onMount(() => {
     const disconnect = connectLegacyStudioShellEvents(window, {
-      onTargetSet: setActiveTargetSetId,
       onOpenSettings: props.onOpenSettings,
       onOpenRun: (jobId) => {
         if (jobId) server.setSelectedJobId(jobId);
@@ -256,9 +256,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     window.addEventListener("keydown", onWorkspaceShortcut);
     onCleanup(() => window.removeEventListener("keydown", onWorkspaceShortcut));
   });
-  // Navigator, Device, and Properties are three contextual side surfaces.
-  // Showing more than one at once makes the canvas feel boxed in and leaves
-  // no obvious answer to which context is active.
+  // Navigator, Device, and Properties are contextual side surfaces. Showing
+  // more than one boxes in the canvas and obscures which context is active.
   createEffect(() => {
     if (!navOpen()) return;
     setSettingsOpen(false);
@@ -345,6 +344,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       setArea("runs");
     },
     runReadinessChanged: setGraphRunReadiness,
+    mapTargetSetChanged: setActiveTargetSetId,
     recordTest: () => !authoringMap() && void recorder.enterRecordMode(),
   });
   onCleanup(disconnectWorkspace);
@@ -657,9 +657,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 onOpenLive={toggleDevicePanel}
                 onChooseTargetSet={(targetSetId) => {
                   if (targetSetId) workspaceController.execute({ kind: "device.hide" });
-                  window.dispatchEvent(
-                    new CustomEvent("relay:choose-target-set", { detail: { targetSetId } }),
-                  );
+                  workspaceController.execute({
+                    kind: "map.target-set.choose",
+                    ...(targetSetId !== undefined ? { targetSetId } : {}),
+                  });
                 }}
                 onManageTargets={() => props.onOpenSettings("targets")}
               />
@@ -744,9 +745,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       class={cn("flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
-                        window.dispatchEvent(
-                          new CustomEvent("relay:undo-request", { detail: { redo: false } }),
-                        );
+                        workspaceController.execute({ kind: "map.undo" });
                       }}
                     >
                       <Icon name="undo" size={14} />
@@ -759,9 +758,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       class={cn("flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
-                        window.dispatchEvent(
-                          new CustomEvent("relay:undo-request", { detail: { redo: true } }),
-                        );
+                        workspaceController.execute({ kind: "map.redo" });
                       }}
                     >
                       <Icon name="redo" size={14} />
@@ -776,7 +773,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       data-tip="Arrange every screen into a compact path"
                       onClick={() => {
                         setStudioActionsOpen(false);
-                        window.dispatchEvent(new CustomEvent("relay:tidy-map"));
+                        workspaceController.execute({ kind: "map.tidy" });
                         queueMicrotask(() => studioActionsTrigger?.focus());
                       }}
                     >
@@ -788,7 +785,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       class={cn("flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
-                        window.dispatchEvent(new CustomEvent("relay:toggle-map-history"));
+                        workspaceController.execute({ kind: "map.history.toggle" });
                       }}
                     >
                       <Icon name="clock" size={14} /> Version history

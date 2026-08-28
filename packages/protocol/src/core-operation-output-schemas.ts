@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { workflowRecordOperationOutputSchemas } from "./workflow-record-operation-schemas.js";
 
 export const executionJobOutputSchema = z
   .object({
@@ -22,6 +23,7 @@ const persistedRun = executionJobOutputSchema.extend({
 
 /** Output contracts for exact core operations that do not own a custom parser. */
 export const coreOperationOutputSchemas = {
+  ...workflowRecordOperationOutputSchemas,
   "event.stream": z
     .object({
       schemaVersion: z.literal(1),

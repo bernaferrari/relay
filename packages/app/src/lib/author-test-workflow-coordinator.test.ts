@@ -3,14 +3,12 @@ import test from "node:test";
 import type {
   AuthorTestIntent,
   AuthorTestSnapshot,
+  DurableAuthorTestDecision,
   RelayWorkflows,
-  WorkflowDecision,
-  WorkflowRef,
-  WorkflowSnapshot,
 } from "@relay/workflows";
 import { createAuthorTestWorkflowCoordinator } from "./author-test-workflow-coordinator";
 
-const ref = "opaque-authoring-ref" as WorkflowRef;
+const workflowId = "author-workflow";
 const intent: AuthorTestIntent = {
   kind: "author-test",
   actorId: "human:local",
@@ -23,7 +21,7 @@ const intent: AuthorTestIntent = {
 
 function snapshot(
   stage: AuthorTestSnapshot["stage"],
-  version: string,
+  version: number,
   actions: AuthorTestSnapshot["allowedNextActions"],
 ): AuthorTestSnapshot {
   return {
@@ -32,8 +30,8 @@ function snapshot(
     title: "Settings",
     phase: stage === "recording" ? "running" : "paused",
     stage,
-    version,
-    ref,
+    version: `workflow-v${version}`,
+    workflow: { workflowId, expectedVersion: version },
     authoring: { sessionId: "session" },
     frozen: {
       title: "Settings",
@@ -41,6 +39,7 @@ function snapshot(
       appMapId: "map",
       appMapRevision: 4,
       target: { kind: "device", platform: "ios", targetId: "ipad" },
+      workflowRequestId: "request-1",
     },
     progress: { label: stage },
     allowedNextActions: actions,
@@ -49,19 +48,19 @@ function snapshot(
   };
 }
 
-test("authoring lifecycle decisions inspect the opaque ref and mutate exactly once", async () => {
-  const decisions: WorkflowDecision[] = [];
-  const inspected: WorkflowRef[] = [];
+test("authoring lifecycle decisions inspect the durable handle and mutate exactly once", async () => {
+  const decisions: DurableAuthorTestDecision[] = [];
+  const inspected: string[] = [];
   const published: AuthorTestSnapshot[] = [];
   const workflows = {
-    start: async () => snapshot("recording", "v1", ["inspect", "checkpoint", "stop"]),
-    inspect: async (candidate: WorkflowRef) => {
+    start: async () => snapshot("recording", 1, ["inspect", "checkpoint", "stop"]),
+    inspectAuthoring: async (candidate: string) => {
       inspected.push(candidate);
-      return snapshot("recording", "v2", ["inspect", "checkpoint", "stop"]);
+      return snapshot("recording", 2, ["inspect", "checkpoint", "stop"]);
     },
-    advance: async (decision: WorkflowDecision) => {
+    advanceAuthoring: async (decision: DurableAuthorTestDecision) => {
       decisions.push(decision);
-      return snapshot("recording", "v3", ["inspect", "checkpoint", "stop"]);
+      return snapshot("recording", 3, ["inspect", "checkpoint", "stop"]);
     },
   } as unknown as RelayWorkflows;
   const coordinator = createAuthorTestWorkflowCoordinator({
@@ -74,22 +73,23 @@ test("authoring lifecycle decisions inspect the opaque ref and mutate exactly on
   await coordinator.start(intent);
   await coordinator.advance("session", { action: "checkpoint", label: "Ready" });
 
-  assert.deepEqual(inspected, [ref]);
+  assert.deepEqual(inspected, [workflowId]);
   assert.equal(decisions.length, 1);
   assert.deepEqual(decisions[0], {
     action: "checkpoint",
     label: "Ready",
-    ref,
-    expectedVersion: "v2",
+    workflowId,
+    expectedVersion: 2,
   });
-  assert.equal(published.at(-1)?.version, "v3");
+  assert.equal(published.at(-1)?.version, "workflow-v3");
 });
 
 test("an unproved inspection never triggers or retries a lifecycle mutation", async () => {
   let advances = 0;
   const unknown: AuthorTestSnapshot = {
-    ...snapshot("unknown", "unavailable", ["inspect"]),
+    ...snapshot("unknown", 2, ["inspect"]),
     phase: "needs-attention",
+    version: "unavailable",
     problems: [
       {
         code: "malformed-response",
@@ -101,9 +101,9 @@ test("an unproved inspection never triggers or retries a lifecycle mutation", as
     ],
   };
   const workflows = {
-    start: async () => snapshot("recording", "v1", ["inspect", "stop"]),
-    inspect: async (): Promise<WorkflowSnapshot> => unknown,
-    advance: async () => {
+    start: async () => snapshot("recording", 1, ["inspect", "stop"]),
+    inspectAuthoring: async () => unknown,
+    advanceAuthoring: async () => {
       advances += 1;
       return unknown;
     },
@@ -122,7 +122,7 @@ test("an unproved inspection never triggers or retries a lifecycle mutation", as
   assert.equal(advances, 0);
 });
 
-test("an opaque reference survives a renderer reload without persisting recording truth", async () => {
+test("a durable handle survives a renderer reload without persisting recording truth", async () => {
   const values = new Map<string, string>();
   const storage = {
     getItem: (key: string) => values.get(key) ?? null,
@@ -131,12 +131,12 @@ test("an opaque reference survives a renderer reload without persisting recordin
   };
   let inspections = 0;
   const workflows = {
-    start: async () => snapshot("recording", "v1", ["inspect", "stop"]),
-    inspect: async () => {
+    start: async () => snapshot("recording", 1, ["inspect", "stop"]),
+    inspectAuthoring: async () => {
       inspections += 1;
-      return snapshot("recording", "v2", ["inspect", "stop"]);
+      return snapshot("recording", 2, ["inspect", "stop"]);
     },
-    advance: async () => snapshot("reviewing", "v3", ["inspect", "replay"]),
+    advanceAuthoring: async () => snapshot("reviewing", 3, ["inspect", "replay"]),
   } as unknown as RelayWorkflows;
   const first = createAuthorTestWorkflowCoordinator({
     workflows,
@@ -150,21 +150,26 @@ test("an opaque reference survives a renderer reload without persisting recordin
     storage,
     onSnapshot: () => undefined,
   });
-  assert.equal((await reloaded.inspect("session"))?.version, "v2");
+  assert.equal((await reloaded.inspect("session"))?.version, "workflow-v2");
   assert.equal(inspections, 1);
-  assert.deepEqual([...values.values()], [ref]);
+  assert.equal(
+    [...values.values()].every(
+      (value) => value === JSON.stringify({ workflowId, expectedVersion: 2 }),
+    ),
+    true,
+  );
 });
 
 test("concurrent decisions serialize against the latest canonical session version", async () => {
-  const expectedVersions: string[] = [];
+  const expectedVersions: number[] = [];
   let version = 1;
   const workflows = {
-    start: async () => snapshot("recording", "v1", ["inspect", "checkpoint", "stop"]),
-    inspect: async () => snapshot("recording", `v${version}`, ["inspect", "checkpoint", "stop"]),
-    advance: async (decision: WorkflowDecision) => {
+    start: async () => snapshot("recording", 1, ["inspect", "checkpoint", "stop"]),
+    inspectAuthoring: async () => snapshot("recording", version, ["inspect", "checkpoint", "stop"]),
+    advanceAuthoring: async (decision: DurableAuthorTestDecision) => {
       expectedVersions.push(decision.expectedVersion);
       version += 1;
-      return snapshot("recording", `v${version}`, ["inspect", "checkpoint", "stop"]);
+      return snapshot("recording", version, ["inspect", "checkpoint", "stop"]);
     },
   } as unknown as RelayWorkflows;
   const coordinator = createAuthorTestWorkflowCoordinator({
@@ -178,12 +183,12 @@ test("concurrent decisions serialize against the latest canonical session versio
     coordinator.proved("session", { action: "checkpoint", label: "Two" }),
   ]);
 
-  assert.deepEqual(expectedVersions, ["v1", "v2"]);
+  assert.deepEqual(expectedVersions, [1, 2]);
 });
 
 test("a stale workflow problem is never reported as a proved mutation", async () => {
   const stale: AuthorTestSnapshot = {
-    ...snapshot("recording", "v2", ["inspect", "checkpoint"]),
+    ...snapshot("recording", 2, ["inspect", "checkpoint"]),
     problems: [
       {
         code: "stale-workflow-version",
@@ -195,9 +200,9 @@ test("a stale workflow problem is never reported as a proved mutation", async ()
     ],
   };
   const workflows = {
-    start: async () => snapshot("recording", "v1", ["inspect", "checkpoint"]),
-    inspect: async () => snapshot("recording", "v1", ["inspect", "checkpoint"]),
-    advance: async () => stale,
+    start: async () => snapshot("recording", 1, ["inspect", "checkpoint"]),
+    inspectAuthoring: async () => snapshot("recording", 1, ["inspect", "checkpoint"]),
+    advanceAuthoring: async () => stale,
   } as unknown as RelayWorkflows;
   const coordinator = createAuthorTestWorkflowCoordinator({
     workflows,
@@ -213,7 +218,7 @@ test("a stale workflow problem is never reported as a proved mutation", async ()
 
 test("a failed replay remains editable and can be replayed again explicitly", async () => {
   const failedReplay: AuthorTestSnapshot = {
-    ...snapshot("reviewing", "v2", ["inspect", "edit", "replay", "discard"]),
+    ...snapshot("reviewing", 2, ["inspect", "edit", "replay", "discard"]),
     problems: [
       {
         code: "operation-unavailable",
@@ -225,16 +230,20 @@ test("a failed replay remains editable and can be replayed again explicitly", as
     ],
   };
   let canonical = failedReplay;
-  const decisions: WorkflowDecision[] = [];
+  const decisions: DurableAuthorTestDecision[] = [];
   const workflows = {
     start: async () => failedReplay,
-    inspect: async () => canonical,
-    advance: async (decision: WorkflowDecision) => {
+    inspectAuthoring: async () => canonical,
+    advanceAuthoring: async (decision: DurableAuthorTestDecision) => {
       decisions.push(decision);
       canonical =
         decision.action === "edit"
-          ? { ...failedReplay, version: "v3" }
-          : snapshot("reviewing", "v4", ["inspect", "approve", "replay", "discard"]);
+          ? {
+              ...failedReplay,
+              version: "workflow-v3",
+              workflow: { workflowId, expectedVersion: 3 },
+            }
+          : snapshot("reviewing", 4, ["inspect", "approve", "replay", "discard"]);
       return canonical;
     },
   } as unknown as RelayWorkflows;
@@ -250,7 +259,7 @@ test("a failed replay remains editable and can be replayed again explicitly", as
   });
   const replayed = await coordinator.advance("session", { action: "replay" });
 
-  assert.equal(replayed?.version, "v4");
+  assert.equal(replayed?.version, "workflow-v4");
   assert.deepEqual(
     decisions.map((decision) => decision.action),
     ["edit", "replay"],
@@ -265,10 +274,10 @@ test("an uncertain begin remains blocked after remount until explicit inspection
     removeItem: (key: string) => values.delete(key),
   };
   const uncertain: AuthorTestSnapshot = {
-    ...snapshot("unknown", "unavailable", ["inspect"]),
+    ...snapshot("unknown", 1, ["inspect"]),
     phase: "needs-attention",
     authoring: undefined,
-    ref: undefined,
+    version: "unavailable",
     problems: [
       {
         code: "mutation-outcome-unknown",
@@ -281,8 +290,8 @@ test("an uncertain begin remains blocked after remount until explicit inspection
   };
   const workflows = {
     start: async () => uncertain,
-    recover: async () => snapshot("recording", "v2", ["inspect", "checkpoint", "stop"]),
-    inspect: async () => snapshot("recording", "v2", ["inspect", "checkpoint", "stop"]),
+    recover: async () => snapshot("recording", 2, ["inspect", "checkpoint", "stop"]),
+    inspectAuthoring: async () => snapshot("recording", 2, ["inspect", "checkpoint", "stop"]),
   } as unknown as RelayWorkflows;
   const first = createAuthorTestWorkflowCoordinator({
     workflows,
@@ -302,5 +311,10 @@ test("an uncertain begin remains blocked after remount until explicit inspection
 
   const inspected = await reloaded.inspect("session");
   assert.equal(inspected?.phase, "running");
-  assert.equal(values.size, 1, "only the recovered opaque ref remains");
+  assert.equal(
+    [...values.values()].every(
+      (value) => value === JSON.stringify({ workflowId, expectedVersion: 2 }),
+    ),
+    true,
+  );
 });

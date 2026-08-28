@@ -11,6 +11,7 @@ import { StudioShell } from "./components/studio-shell";
 import { SettingsPage, type SettingsSection } from "./pages/settings";
 import { DesktopUpdateDialog } from "./components/desktop-update";
 import { ConfirmDialogHost } from "./components/confirm-dialog";
+import { createWorkspaceController } from "./lib/workspace-controller";
 /* Product chrome — must load for every host (web + desktop Electron). */
 import "./styles/app.css";
 
@@ -46,6 +47,7 @@ export function AppBaseProviders(
 
 /** Main product UI — App Map workspace. */
 export function AppInterface() {
+  const workspaceController = createWorkspaceController();
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [settingsSection, setSettingsSection] = createSignal<SettingsSection>("appearance");
   const openSettings = (section: SettingsSection = "appearance") => {
@@ -54,8 +56,8 @@ export function AppInterface() {
   };
 
   return (
-    <Layout onOpenSettings={() => openSettings()}>
-      <StudioShell onOpenSettings={openSettings} />
+    <Layout onOpenSettings={() => openSettings()} workspaceController={workspaceController}>
+      <StudioShell onOpenSettings={openSettings} workspaceController={workspaceController} />
       <Show when={settingsOpen()}>
         <SettingsPage initialSection={settingsSection()} onClose={() => setSettingsOpen(false)} />
       </Show>

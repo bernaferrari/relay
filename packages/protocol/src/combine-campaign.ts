@@ -82,6 +82,9 @@ export type CombineCampaignCase = {
   jobId?: string;
   /** Immutable Run evidence becomes available after the case is persisted. */
   runId?: string;
+  /** Earlier immutable Runs retained when an explicitly reviewed resume
+   * re-executes this exact frozen case tuple. */
+  priorRunIds?: string[];
   error?: string;
 };
 

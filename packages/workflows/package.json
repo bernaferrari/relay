@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./outcomes": "./src/outcome-jobs.ts",
     "./testing": "./src/testing.ts"
   },
   "scripts": {
@@ -12,6 +13,7 @@
     "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
+    "@relay/core": "workspace:*",
     "@relay/protocol": "workspace:*",
     "yaml": "^2.9.0"
   },

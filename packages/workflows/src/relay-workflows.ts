@@ -1,4 +1,10 @@
-import type { OfflineTestPreflightFinding, OperationInput, OperationOutput } from "@relay/protocol";
+import type {
+  DurableWorkflowOperationOutput,
+  OfflineTestPreflightFinding,
+  OperationInput,
+  OperationOutput,
+  WorkflowJsonValue,
+} from "@relay/protocol";
 import {
   createRelayOperationPort,
   type RelayInvokeClient,
@@ -12,6 +18,7 @@ import type {
   AuthorTestIntent,
   AuthorTestRecoveryIntent,
   AuthorTestSnapshot,
+  DurableWorkflowHandle,
   FrozenRunTestIdentity,
   RelayWorkflows,
   RepeatTestDecision,
@@ -35,7 +42,8 @@ import {
   encodeRunWorkflowRef,
   type RunWorkflowReference,
 } from "./workflow-ref.js";
-
+import { executionRiskPreflightProblem, isExecutionRisk } from "./execution-risk-preflight.js";
+import { invalidRefSnapshot } from "./invalid-workflow-snapshot.js";
 type ValidCompile = {
   plan: OperationOutput<"app-map.test.compile">["plan"];
   preflight: OperationOutput<"app-map.test.compile">["preflight"];
@@ -120,6 +128,7 @@ function readCompile(
     !preflight.planDigest ||
     !preflight.summary ||
     !validRevision(preflight.summary.blockers) ||
+    !isExecutionRisk(preflight.executionRisk) ||
     !Array.isArray(preflight.findings)
   ) {
     return undefined;
@@ -160,27 +169,137 @@ function frozenIdentity(
   };
 }
 
-function invalidRefSnapshot(ref: WorkflowRef): WorkflowSnapshot {
+function durableRunIdentity(value: WorkflowJsonValue): FrozenRunTestIdentity | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const frozen = value as Record<string, WorkflowJsonValue>;
+  const target = frozen.target;
+  if (
+    typeof frozen.appMapId !== "string" ||
+    !frozen.appMapId ||
+    !validRevision(frozen.appMapRevision) ||
+    typeof frozen.testId !== "string" ||
+    !frozen.testId ||
+    typeof frozen.planDigest !== "string" ||
+    !frozen.planDigest ||
+    !target ||
+    typeof target !== "object" ||
+    Array.isArray(target)
+  ) {
+    return undefined;
+  }
+  const targetRecord = target as Record<string, WorkflowJsonValue>;
+  if (
+    (targetRecord.kind !== "device" && targetRecord.kind !== "browser") ||
+    typeof targetRecord.targetId !== "string" ||
+    !targetRecord.targetId ||
+    (targetRecord.kind === "device" &&
+      targetRecord.platform !== "android" &&
+      targetRecord.platform !== "ios")
+  ) {
+    return undefined;
+  }
+  return {
+    appMapId: frozen.appMapId,
+    appMapRevision: frozen.appMapRevision,
+    testId: frozen.testId,
+    planDigest: frozen.planDigest,
+    target:
+      targetRecord.kind === "device"
+        ? {
+            kind: "device",
+            platform: targetRecord.platform as "android" | "ios",
+            targetId: targetRecord.targetId,
+          }
+        : { kind: "browser", platform: "browser", targetId: targetRecord.targetId },
+    ...(typeof frozen.rootRecipeId === "string" && frozen.rootRecipeId
+      ? { rootRecipeId: frozen.rootRecipeId }
+      : {}),
+    ...(typeof frozen.targetProfileId === "string" && frozen.targetProfileId
+      ? { targetProfileId: frozen.targetProfileId }
+      : {}),
+    ...(typeof frozen.workflowRequestId === "string" && frozen.workflowRequestId
+      ? { workflowRequestId: frozen.workflowRequestId }
+      : {}),
+  };
+}
+
+function unavailableDurableRun(input: {
+  workflow: DurableWorkflowHandle;
+  frozen?: FrozenRunTestIdentity;
+  problem: WorkflowProblem;
+  jobId?: string;
+}): RunTestSnapshot {
   return {
     schemaVersion: 1,
     kind: "run-test",
-    title: "Relay run",
+    title: `Run ${input.frozen?.testId ?? "Test"}`,
     phase: "needs-attention",
-    version: "invalid-ref",
-    ref,
-    progress: { label: "The workflow reference is invalid" },
-    allowedNextActions: [],
-    problems: [
-      {
-        code: "invalid-workflow-ref",
-        title: "Relay cannot inspect this workflow",
-        detail: "The opaque workflow reference is malformed or belongs to an unsupported version.",
-        recovery: "Use the reference returned by start without editing it.",
-        retryable: false,
-      },
-    ],
+    version: `workflow-v${input.workflow.expectedVersion}`,
+    workflow: input.workflow,
+    ...(input.frozen ? { frozen: input.frozen } : {}),
+    ...(input.jobId ? { execution: { jobId: input.jobId } } : {}),
+    progress: { label: input.problem.title },
+    allowedNextActions: ["inspect"],
+    problems: [input.problem],
     evidenceRefs: [],
   };
+}
+
+function durableRunSnapshot(output: DurableWorkflowOperationOutput): RunTestSnapshot {
+  const record = output.workflow.record;
+  const workflow = { workflowId: record.workflowId, expectedVersion: record.version };
+  const frozen = durableRunIdentity(record.frozenIdentity);
+  const job = parseCanonicalJob(output.job);
+  if (!frozen || record.kind !== "run-test") {
+    return unavailableDurableRun({
+      workflow,
+      problem: {
+        code: "malformed-response",
+        title: "Relay could not validate this Run workflow",
+        detail: "The durable workflow does not contain one valid frozen Run identity.",
+        recovery: "Inspect the server-owned workflow after repairing its canonical record.",
+        retryable: false,
+      },
+    });
+  }
+  if (!job || (record.resource?.kind === "job" && record.resource.id !== job.id)) {
+    return unavailableDurableRun({
+      workflow,
+      frozen,
+      ...(record.resource?.kind === "job" ? { jobId: record.resource.id } : {}),
+      problem: {
+        code: "mutation-outcome-unknown",
+        title: "The Run outcome still needs reconciliation",
+        detail: "Relay cannot yet prove one canonical job for this server-owned workflow.",
+        recovery: "Inspect this workflow again. Do not start or cancel another Run.",
+        retryable: false,
+      },
+    });
+  }
+  const projected = snapshotFromJob({ workflow, frozen, job });
+  if (
+    record.status === "needs-attention" ||
+    record.lastTransition === "cancel-requested" ||
+    record.lastTransition === "cancel-outcome-unknown"
+  ) {
+    return {
+      ...projected,
+      phase: "needs-attention",
+      allowedNextActions: ["inspect"],
+      progress: { label: "Run outcome needs reconciliation" },
+      problems: [
+        ...projected.problems,
+        {
+          code: "mutation-outcome-unknown",
+          title: "The last Run mutation has an uncertain outcome",
+          detail: `Relay stopped at ${record.lastTransition} and will not issue it again automatically.`,
+          recovery: "Inspect the canonical Run evidence before taking any further action.",
+          retryable: false,
+        },
+      ],
+    };
+  }
+  return projected;
 }
 
 class CanonicalRelayWorkflows implements RelayWorkflows {
@@ -322,6 +441,18 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
   }
 
   private async startRunTest(intent: RunTestIntent): Promise<RunTestSnapshot> {
+    if (intent.continuation === "durable" && !intent.workflowRequestId) {
+      return initialProblem({
+        intent,
+        problem: {
+          code: "invalid-intent",
+          title: "The durable Run has no stable request identity",
+          detail: "Server-owned continuation requires one request ID before any Run mutation.",
+          recovery: "Create a new Run workflow with one stable workflow request ID.",
+          retryable: false,
+        },
+      });
+    }
     let revision: number;
     if (intent.revision && intent.revision !== "current") {
       revision = intent.revision.exact;
@@ -405,6 +536,60 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       });
     }
 
+    const riskProblem = executionRiskPreflightProblem(
+      checkedCompile.preflight.executionRisk,
+      intent.confirmRisk,
+    );
+    if (riskProblem) {
+      return initialProblem({
+        intent,
+        frozen,
+        compiled: checkedCompile,
+        problem: riskProblem,
+      });
+    }
+
+    let durable: OperationOutput<"workflow.create"> | undefined;
+    if (intent.continuation === "durable" && intent.workflowRequestId) {
+      try {
+        durable = await this.operations.invoke("workflow.create", {
+          workflowId: intent.workflowRequestId,
+          kind: "run-test",
+          frozenIdentity: frozen,
+        });
+      } catch (error) {
+        return initialProblem({
+          intent,
+          frozen,
+          compiled: checkedCompile,
+          problem: unavailableProblem("reserve the durable Run workflow", error),
+        });
+      }
+      if (durable.disposition === "existing") {
+        try {
+          const existing = await this.operations.invoke("workflow.get", {
+            workflowId: durable.workflow.record.workflowId,
+          });
+          return {
+            ...durableRunSnapshot(existing),
+            compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+          };
+        } catch (error) {
+          return {
+            ...unavailableDurableRun({
+              workflow: {
+                workflowId: durable.workflow.record.workflowId,
+                expectedVersion: durable.workflow.record.version,
+              },
+              frozen,
+              problem: mutationUnknownProblem("the existing Run was reconciled", error),
+            }),
+            compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+          };
+        }
+      }
+    }
+
     const runInput: OperationInput<"app-map.test.run"> = {
       appMapId: intent.appMapId,
       testId: intent.testId,
@@ -422,6 +607,19 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     try {
       run = await this.operations.invoke("app-map.test.run", runInput);
     } catch (error) {
+      if (durable) {
+        return {
+          ...unavailableDurableRun({
+            workflow: {
+              workflowId: durable.workflow.record.workflowId,
+              expectedVersion: durable.workflow.record.version,
+            },
+            frozen,
+            problem: mutationUnknownProblem("the Test run was queued", error),
+          }),
+          compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+        };
+      }
       return initialProblem({
         intent,
         frozen,
@@ -440,6 +638,23 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       typeof identity.rootRecipeId !== "string" ||
       !identity.rootRecipeId
     ) {
+      if (durable) {
+        return {
+          ...unavailableDurableRun({
+            workflow: {
+              workflowId: durable.workflow.record.workflowId,
+              expectedVersion: durable.workflow.record.version,
+            },
+            frozen,
+            ...(job ? { jobId: job.id } : {}),
+            problem: mutationUnknownProblem(
+              "the Test run was queued",
+              "The run response failed identity validation.",
+            ),
+          }),
+          compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+        };
+      }
       return initialProblem({
         intent,
         frozen,
@@ -457,6 +672,33 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       checkedCompile.preflight.planDigest,
       identity.rootRecipeId,
     );
+    if (durable) {
+      try {
+        const attached = await this.operations.invoke("workflow.transition", {
+          workflowId: durable.workflow.record.workflowId,
+          expectedVersion: durable.workflow.record.version,
+          action: "attach-run",
+          jobId: job.id,
+        });
+        return {
+          ...durableRunSnapshot(attached),
+          compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+        };
+      } catch (error) {
+        return {
+          ...unavailableDurableRun({
+            workflow: {
+              workflowId: durable.workflow.record.workflowId,
+              expectedVersion: durable.workflow.record.version,
+            },
+            frozen: finalFrozen,
+            jobId: job.id,
+            problem: mutationUnknownProblem("the queued Run was attached", error),
+          }),
+          compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+        };
+      }
+    }
     const ref = encodeRunWorkflowRef({
       schemaVersion: 1,
       kind: "run-test",
@@ -477,6 +719,74 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     const reference = decodeRunWorkflowRef(ref);
     if (!reference) return invalidRefSnapshot(ref);
     return this.readJob(ref, reference);
+  }
+
+  async inspectRun(workflowId: string): Promise<RunTestSnapshot> {
+    try {
+      return durableRunSnapshot(await this.operations.invoke("workflow.get", { workflowId }));
+    } catch (error) {
+      return unavailableDurableRun({
+        workflow: { workflowId, expectedVersion: 1 },
+        problem: {
+          ...unavailableProblem("inspect the durable Run workflow", error),
+          recovery:
+            "Restore Relay connectivity, then inspect this workflow ID again. Do not start another Run.",
+        },
+      });
+    }
+  }
+
+  async inspectDurable(workflowId: string): Promise<RunTestSnapshot | AuthorTestSnapshot> {
+    try {
+      const output = await this.operations.invoke("workflow.get", { workflowId });
+      return output.workflow.record.kind === "author-test"
+        ? this.authoring.snapshotDurable(output)
+        : durableRunSnapshot(output);
+    } catch (error) {
+      return unavailableDurableRun({
+        workflow: { workflowId, expectedVersion: 1 },
+        problem: unavailableProblem("inspect the durable workflow", error),
+      });
+    }
+  }
+
+  inspectAuthoring(workflowId: string): Promise<AuthorTestSnapshot> {
+    return this.authoring.inspectDurable(workflowId);
+  }
+
+  advanceAuthoring(decision: import("./types.js").DurableAuthorTestDecision) {
+    return this.authoring.advanceDurable(decision);
+  }
+
+  async cancelRun(input: DurableWorkflowHandle): Promise<RunTestSnapshot> {
+    try {
+      return durableRunSnapshot(
+        await this.operations.invoke("workflow.transition", {
+          workflowId: input.workflowId,
+          expectedVersion: input.expectedVersion,
+          action: "cancel-run",
+        }),
+      );
+    } catch (error) {
+      try {
+        const inspected = durableRunSnapshot(
+          await this.operations.invoke("workflow.get", { workflowId: input.workflowId }),
+        );
+        return {
+          ...inspected,
+          problems: [
+            ...inspected.problems,
+            mutationUnknownProblem("the exact Run was cancelled", error),
+          ],
+        };
+      } catch {
+        // A failed read cannot justify issuing the cancellation again.
+      }
+      return unavailableDurableRun({
+        workflow: input,
+        problem: mutationUnknownProblem("the exact Run was cancelled", error),
+      });
+    }
   }
 
   async advance(decision: WorkflowDecision): Promise<WorkflowSnapshot> {

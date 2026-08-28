@@ -510,6 +510,7 @@ test("defines deterministic advanced profiles behind the compact outcome default
   const observed = new Set(
     relayMcpToolsForProfile("observe").map(({ operationId }) => operationId),
   );
+  assert.equal(observed.has("target.health.get"), true);
   assert.ok(
     relayMcpToolsForProfile("author").some(({ operationId }) => operationId === "discovery.start"),
   );

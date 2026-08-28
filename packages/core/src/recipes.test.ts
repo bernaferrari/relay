@@ -1,4 +1,4 @@
-import { describe, it, before, after } from "node:test";
+import { describe, it, test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -347,6 +347,30 @@ describe("packaged recipe CRUD", () => {
 });
 
 describe("validateRecipeSteps", () => {
+  test("retains complete reviewed external-effect provenance and rejects partial declarations", () => {
+    const step = {
+      kind: "tap" as const,
+      target: { label: "Submit" },
+      reviewedExternalEffects: {
+        schemaVersion: 1 as const,
+        effects: ["communication" as const],
+        reviewedBy: "human:reviewer",
+        reviewedAt: 10,
+        reason: "This fixture sends a message.",
+      },
+    };
+    assert.deepEqual(validateRecipeSteps([step]), [step]);
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            ...step,
+            reviewedExternalEffects: { ...step.reviewedExternalEffects, reviewedBy: "" },
+          },
+        ]),
+      /reviewedExternalEffects requires/u,
+    );
+  });
   it("validates compiled semantic reveal navigation", () => {
     const step = {
       kind: "reveal" as const,

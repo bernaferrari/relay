@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CombineCampaign, RepeatSpec } from "@relay/protocol";
+import type { CombineCampaign, ExecutionRisk, RepeatSpec } from "@relay/protocol";
 import { createRelayWorkflows, type RepeatTestIntent } from "./index.js";
 import { createScriptedRelayClient, type ScriptedRelayStep } from "./testing.js";
 
@@ -45,7 +45,20 @@ function mapStep(revision = 7): ScriptedRelayStep {
   };
 }
 
-function preflight(revision = 7) {
+function preflight(
+  revision = 7,
+  executionRisk: ExecutionRisk = {
+    schemaVersion: 1 as const,
+    level: "safe" as const,
+    reasons: [],
+    externalEffects: [],
+    confirmation: "none" as const,
+    expectedAppBoundaries: [],
+    maximumActions: 0,
+    maximumDurationMs: 0,
+    cleanupRequired: false,
+  },
+) {
   return {
     schemaVersion: 1,
     mode: "offline-test-preflight",
@@ -53,6 +66,7 @@ function preflight(revision = 7) {
     appMapRevision: revision,
     testId: "data-controls",
     planDigest: `plan-${revision}`,
+    executionRisk,
     summary: {
       recipes: 1,
       checkedSelectors: 1,
@@ -69,10 +83,13 @@ function preflight(revision = 7) {
   };
 }
 
-function compileStep(revision = 7): ScriptedRelayStep {
+function compileStep(
+  revision = 7,
+  executionRisk?: Parameters<typeof preflight>[1],
+): ScriptedRelayStep {
   return {
     id: "app-map.test.compile",
-    output: { plan: { rootRecipeId: "base-test" }, preflight: preflight(revision) },
+    output: { plan: { rootRecipeId: "base-test" }, preflight: preflight(revision, executionRisk) },
   };
 }
 
@@ -429,6 +446,30 @@ test("Repeat freezes the Test, starts exactly one pilot, then projects durable s
   );
   assert.equal(scripted.invocations.filter(({ id }) => id === "app-map.test.run").length, 1);
   assert.equal(scripted.remaining(), 0);
+});
+
+test("Repeat risk preflight blocks before starting the representative pilot", async () => {
+  const guarded = {
+    schemaVersion: 1 as const,
+    level: "guarded" as const,
+    reasons: [{ code: "reviewed-effect.external-app", explanation: "The Test opens another app." }],
+    externalEffects: ["external-app" as const],
+    confirmation: "once-per-run" as const,
+    expectedAppBoundaries: ["external-app"],
+    maximumActions: 1,
+    maximumDurationMs: 0,
+    cleanupRequired: false,
+  };
+  const scripted = createScriptedRelayClient([mapStep(), compileStep(7, guarded)]);
+
+  const snapshot = await createRelayWorkflows(scripted.client).start(intent());
+
+  assert.equal(snapshot.phase, "blocked");
+  assert.equal(snapshot.problems[0]?.code, "risk-confirmation-required");
+  assert.deepEqual(
+    scripted.invocations.map(({ id }) => id),
+    ["app-map.get", "app-map.test.compile"],
+  );
 });
 
 test("multi-dimensional recovery preserves exact case tuples and rejects tuple drift", async () => {
@@ -984,4 +1025,46 @@ test("public projection counts only selected values and exposes no internal prod
       `public snapshot leaked ${banned}`,
     );
   }
+});
+
+test("failed resume policy requires review and continues through the canonical campaign", async () => {
+  const retrySpec: RepeatSpec = { ...structuredClone(repeat), resume: "failed" };
+  const failed = durableRepeat({
+    status: "completed-with-problems",
+    pilot: "passed",
+    remaining: "failed",
+  });
+  const scripted = createScriptedRelayClient([
+    mapStep(),
+    compileStep(),
+    runStep(),
+    inspectStep(failed),
+  ]);
+  const workflows = createRelayWorkflows(scripted.client);
+  const snapshot = await workflows.start(intent({ revision: { exact: 7 }, repeat: retrySpec }));
+  assert.equal(snapshot.phase, "needs-attention");
+  assert.equal(snapshot.stage, "awaiting-continuation");
+  assert.deepEqual(snapshot.allowedNextActions, ["inspect", "confirm-and-continue", "cancel"]);
+  assert.ok(snapshot.ref);
+
+  const running = durableRepeat({ status: "running", pilot: "passed", remaining: "running" });
+  const continuation = createScriptedRelayClient([
+    inspectStep(failed),
+    {
+      id: "job.combine.campaign.resume",
+      checkInput: (input) =>
+        assert.deepEqual(input, {
+          batchId: "repeat-1",
+          expectedAppMapRevision: 8,
+          reviewed: true,
+        }),
+      output: { campaign: running, jobs: [], cells: [] },
+    },
+  ]);
+  const continued = await createRelayWorkflows(continuation.client).advance({
+    action: "confirm-and-continue",
+    ref: snapshot.ref!,
+    expectedVersion: snapshot.version,
+  });
+  assert.equal(continued.phase, "running");
 });

@@ -78,6 +78,21 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     exclusion: "internal",
     reason: "The public relay observe outcome owns durable bounded target observation.",
   },
+  {
+    operationId: "workflow.create",
+    exclusion: "internal",
+    reason: "Outcome commands reserve durable workflows without exposing protocol mechanics.",
+  },
+  {
+    operationId: "workflow.get",
+    exclusion: "internal",
+    reason: "relay inspect-workflow owns durable workflow inspection.",
+  },
+  {
+    operationId: "workflow.transition",
+    exclusion: "internal",
+    reason: "Outcome commands own authorized CAS transitions for Runs and recordings.",
+  },
 
   mapped("workspace.privacy.get", path("policy privacy get")),
   mapped("workspace.privacy.update", path("policy privacy update")),

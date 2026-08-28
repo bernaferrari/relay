@@ -12,6 +12,17 @@ export const EXECUTION_EXTERNAL_EFFECTS = [
 ] as const;
 export type ExecutionExternalEffect = (typeof EXECUTION_EXTERNAL_EFFECTS)[number];
 
+/** Explicit authored effect declaration. The persistence mutation that saves
+ * this value is the review boundary; execution never infers these effects
+ * from labels, copy, or coordinates. */
+export type ReviewedExternalEffects = {
+  schemaVersion: 1;
+  effects: readonly ExecutionExternalEffect[];
+  reviewedBy: string;
+  reviewedAt: number;
+  reason: string;
+};
+
 export type ExecutionRisk = {
   schemaVersion: 1;
   level: ExecutionRiskLevel;
@@ -66,6 +77,7 @@ export type ApprovalPolicyInput = {
     requiredChannels: readonly string[];
     missing: readonly string[];
     tracePackDigest?: string;
+    tracePackDigests?: readonly string[];
   };
   verification: {
     requiredPaths: "passed" | "failed" | "unproven";

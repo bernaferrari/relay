@@ -1,5 +1,18 @@
-import { repeatSpecSchema, type AuthoringInteraction, type RepeatSpec } from "@relay/protocol";
-import { createRelayOutcomeJobs, type RelayOutcomeJobs, type WorkflowRef } from "@relay/workflows";
+import {
+  repeatSpecSchema,
+  replayLabReportSchema,
+  measureTracePackJson,
+  TRACE_PACK_OFFLINE_TRANSPORT_LIMITS,
+  tracePackSchema,
+  VERIFY_CHANGE_MAX_IDS,
+  VERIFY_CHANGE_MAX_TRACE_PACKS,
+  type AuthoringInteraction,
+  type RepeatSpec,
+  type SourceRevision,
+  type TracePack,
+} from "@relay/protocol";
+import type { RelayOutcomeJobs, WorkflowRef } from "@relay/workflows";
+import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
 import * as z from "zod/v4";
 import type { OperationInvoker } from "./server.js";
 
@@ -20,8 +33,194 @@ export type RelayOutcomeToolDescriptor = {
 };
 
 const identifier = z.string().trim().min(1);
+const legacyWorkflowRef = z
+  .string()
+  .min(1)
+  .max(96 * 1024)
+  .startsWith("relay-workflow.v1.");
 const targetId = identifier.optional().describe("Only needed when more than one device is ready");
-const workflowDecision = { ref: identifier, expectedVersion: identifier } as const;
+const workflowDecision = {
+  workflowId: identifier,
+  expectedVersion: z.number().int().positive(),
+} as const;
+const sourceRevision = z
+  .object({
+    vcs: z.literal("git"),
+    sha: z.string().regex(/^[0-9a-f]{7,40}$/u),
+    prNumber: z.number().int().positive().optional(),
+    branch: identifier.optional(),
+    artifactDigest: identifier.optional(),
+  })
+  .strict();
+const replayLabMaxPayloadBytes = 128 * 1024 * 1024;
+const tracePackMaxObjects = 2_000;
+function tracePackObjectCount(value: unknown): number | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const objects = (value as { objects?: unknown }).objects;
+  return Array.isArray(objects) ? objects.length : undefined;
+}
+const boundedTracePackTransport = z.unknown().superRefine((pack, context) => {
+  const objectCount = tracePackObjectCount(pack);
+  if (objectCount !== undefined && objectCount > tracePackMaxObjects) {
+    context.addIssue({ code: "custom", message: "TracePack payload exceeds 2000 objects" });
+  }
+  try {
+    measureTracePackJson(pack, TRACE_PACK_OFFLINE_TRANSPORT_LIMITS);
+  } catch (error) {
+    context.addIssue({
+      code: "custom",
+      message: error instanceof Error ? error.message : "TracePack exceeds transport bounds",
+    });
+  }
+});
+const boundedOfflineTracePack = tracePackSchema.superRefine((pack, context) => {
+  if (pack.objects.length > tracePackMaxObjects) {
+    context.addIssue({ code: "custom", message: "TracePack payload exceeds 2000 objects" });
+  }
+  try {
+    measureTracePackJson(pack, TRACE_PACK_OFFLINE_TRANSPORT_LIMITS);
+  } catch (error) {
+    context.addIssue({
+      code: "custom",
+      message: error instanceof Error ? error.message : "TracePack exceeds transport bounds",
+    });
+  }
+});
+function boundedTracePackArray(item: z.ZodType) {
+  return z
+    .array(item)
+    .min(1)
+    .max(64)
+    .superRefine((packs, context) => {
+      try {
+        const bytes = packs.reduce<number>(
+          (total, pack) =>
+            total + measureTracePackJson(pack, TRACE_PACK_OFFLINE_TRANSPORT_LIMITS).serializedBytes,
+          0,
+        );
+        if (bytes > replayLabMaxPayloadBytes) {
+          context.addIssue({ code: "custom", message: "Replay Lab payload exceeds 128 MiB" });
+        }
+      } catch (error) {
+        context.addIssue({
+          code: "custom",
+          message: error instanceof Error ? error.message : "Replay Lab payload exceeds bounds",
+        });
+      }
+    });
+}
+const replayLabTracePacks = z
+  .array(boundedOfflineTracePack)
+  .min(2)
+  .max(64)
+  .superRefine((packs, context) => {
+    try {
+      const bytes = packs.reduce(
+        (total, pack) =>
+          total + measureTracePackJson(pack, TRACE_PACK_OFFLINE_TRANSPORT_LIMITS).serializedBytes,
+        0,
+      );
+      if (bytes > replayLabMaxPayloadBytes) {
+        context.addIssue({ code: "custom", message: "Replay Lab payload exceeds 128 MiB" });
+      }
+    } catch (error) {
+      context.addIssue({
+        code: "custom",
+        message: error instanceof Error ? error.message : "Replay Lab payload exceeds bounds",
+      });
+    }
+  });
+const replayLabTracePackTransport = boundedTracePackArray(boundedTracePackTransport).min(2);
+const verifyChangeSelection = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("runs"),
+      runIds: z.array(identifier).min(1).max(VERIFY_CHANGE_MAX_IDS),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("tests"),
+      appMapId: identifier,
+      testIds: z.array(identifier).min(1).max(VERIFY_CHANGE_MAX_IDS),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("trace-packs"),
+      tracePacks: z.array(boundedOfflineTracePack).min(1).max(VERIFY_CHANGE_MAX_TRACE_PACKS),
+    })
+    .strict(),
+  z
+    .object({ kind: z.literal("source-revision"), sourceRevision, appMapId: identifier.optional() })
+    .strict(),
+]);
+const verifyChangeSelectionTransport = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("runs"),
+      runIds: z.array(identifier).min(1).max(VERIFY_CHANGE_MAX_IDS),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("tests"),
+      appMapId: identifier,
+      testIds: z.array(identifier).min(1).max(VERIFY_CHANGE_MAX_IDS),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("trace-packs"),
+      tracePacks: boundedTracePackArray(boundedTracePackTransport).max(
+        VERIFY_CHANGE_MAX_TRACE_PACKS,
+      ),
+    })
+    .strict(),
+  z
+    .object({ kind: z.literal("source-revision"), sourceRevision, appMapId: identifier.optional() })
+    .strict(),
+]);
+
+function assertRawTracePackPayloads(value: unknown, maxPacks: number): void {
+  if (!Array.isArray(value)) return;
+  if (value.length > maxPacks) throw new TypeError(`TracePack count exceeds ${maxPacks}`);
+  let total = 0;
+  for (const pack of value) {
+    total += measureTracePackJson(pack, TRACE_PACK_OFFLINE_TRANSPORT_LIMITS).serializedBytes;
+    if (total > replayLabMaxPayloadBytes) {
+      throw new TypeError("TracePack payload exceeds 128 MiB");
+    }
+  }
+}
+
+function assertRawOutcomeInputBounds(name: string, value: Record<string, unknown>): void {
+  if (name === "relay_replay_lab") {
+    assertRawTracePackPayloads(value.tracePacks, 64);
+    return;
+  }
+  if (name !== "relay_verify_change") return;
+  const selection = value.selection;
+  if (!selection || typeof selection !== "object" || Array.isArray(selection)) return;
+  const record = selection as Record<string, unknown>;
+  if (
+    record.kind === "runs" &&
+    Array.isArray(record.runIds) &&
+    record.runIds.length > VERIFY_CHANGE_MAX_IDS
+  ) {
+    throw new TypeError(`Run selection exceeds ${VERIFY_CHANGE_MAX_IDS}`);
+  }
+  if (
+    record.kind === "tests" &&
+    Array.isArray(record.testIds) &&
+    record.testIds.length > VERIFY_CHANGE_MAX_IDS
+  ) {
+    throw new TypeError(`Test selection exceeds ${VERIFY_CHANGE_MAX_IDS}`);
+  }
+  if (record.kind === "trace-packs") {
+    assertRawTracePackPayloads(record.tracePacks, VERIFY_CHANGE_MAX_TRACE_PACKS);
+  }
+}
 const semanticTarget = z
   .object({
     identifier: identifier.optional(),
@@ -111,7 +310,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_record_test",
     title: "Record a Test",
     description:
-      "Start one recording in the current Test workspace on the sole ready Device. Relay may reserve available control but never displaces another person or agent.",
+      "Start a control-and-record session in the current Test workspace on the sole ready Device. Interactions are sent through Relay. Relay may reserve available control but never displaces another person or agent.",
     requiresConfirmation: true,
     inputSchema: z
       .object({ appMapId: identifier.optional(), title: identifier, targetId })
@@ -127,10 +326,15 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_run_test",
     title: "Run a Test",
     description:
-      "Compile and run one saved Test on the sole ready Device. Returns a continuation reference and immutable Run evidence references.",
+      "Compile and run one saved Test on the sole ready Device. Returns a server-owned workflow ID, exact version, and immutable Run evidence references.",
     requiresConfirmation: false,
     inputSchema: z
-      .object({ appMapId: identifier.optional(), testId: identifier, targetId })
+      .object({
+        appMapId: identifier.optional(),
+        testId: identifier,
+        targetId,
+        confirmRisk: z.literal(true).optional(),
+      })
       .strict(),
     annotations: {
       readOnlyHint: false,
@@ -143,7 +347,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_record_action",
     title: "Record one action",
     description:
-      "Append one typed tap, type, key, swipe, or wait to the active recording using its opaque reference and optimistic version.",
+      "Append one typed tap, type, key, swipe, or wait using its durable workflow id and optimistic version.",
     requiresConfirmation: false,
     inputSchema: z.object({ ...workflowDecision, interaction: recordedInteraction }).strict(),
     annotations: {
@@ -232,6 +436,7 @@ export const relayOutcomeTools = Object.freeze([
         repeat: repeatSpecSchema,
         evidence: z.enum(["visual", "smoke"]).optional(),
         targetId,
+        confirmRisk: z.literal(true).optional(),
       })
       .strict(),
     annotations: {
@@ -245,13 +450,39 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_inspect_workflow",
     title: "Inspect a workflow",
     description:
-      "Read the latest canonical Run, Repeat, or recording state from a continuation reference.",
+      "Read a server-owned Run by workflow ID, or inspect one bounded legacy v1 continuation reference read-only.",
     requiresConfirmation: false,
-    inputSchema: z.object({ ref: identifier }).strict(),
+    inputSchema: z
+      .object({ workflowId: identifier.optional(), legacyRef: legacyWorkflowRef.optional() })
+      .strict()
+      .superRefine((value, context) => {
+        if ((value.workflowId === undefined) === (value.legacyRef === undefined)) {
+          context.addIssue({
+            code: "custom",
+            message: "Provide exactly one workflowId or legacyRef",
+          });
+        }
+      }),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: "relay_cancel_run",
+    title: "Cancel a Run",
+    description:
+      "Cancel one server-owned Run using its workflow ID and exact numeric version. Uncertain outcomes are inspection-only and are never retried automatically.",
+    requiresConfirmation: true,
+    inputSchema: z
+      .object({ workflowId: identifier, expectedVersion: z.number().int().positive() })
+      .strict(),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
       openWorldHint: false,
     },
   },
@@ -305,6 +536,44 @@ export const relayOutcomeTools = Object.freeze([
     },
   },
   {
+    name: "relay_replay_lab",
+    title: "Compare TracePacks offline",
+    description:
+      "Compare 2-64 ordered TracePack payloads and optionally recompute visual/localization findings. This read-only tool does not read local files, contact the Relay server, inspect a Device, or mutate evidence.",
+    requiresConfirmation: false,
+    inputSchema: z
+      .object({
+        analysis: z.enum(["compare", "visual-localization", "all"]),
+        tracePacks: replayLabTracePackTransport,
+      })
+      .strict(),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: "relay_verify_change",
+    title: "Verify a change",
+    description:
+      "Evaluate explicit frozen Tests, Runs, evidence packs, or source revision metadata offline. Returns the deterministic policy rules, evidence, first causal failure, and unresolved uncertainty without changing Tests or posting a check.",
+    requiresConfirmation: false,
+    inputSchema: z
+      .object({
+        selection: verifyChangeSelectionTransport,
+        confirmationSatisfied: z.boolean().optional(),
+      })
+      .strict(),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
     name: "relay_export_evidence",
     title: "Export evidence",
     description:
@@ -319,6 +588,62 @@ export const relayOutcomeTools = Object.freeze([
     },
   },
 ] as const satisfies readonly RelayOutcomeToolDescriptor[]);
+
+function short(value: string): string {
+  return value.length <= 240 ? value : `${value.slice(0, 239)}…`;
+}
+
+/** MCP text stays useful when the complete comparison is larger than the
+ * transport envelope. Full details remain available from the same CLI input. */
+export function compactReplayLabOutcome(value: unknown): unknown {
+  const parsed = replayLabReportSchema.safeParse(value);
+  if (!parsed.success) return undefined;
+  const report = parsed.data;
+  return {
+    truncated: true,
+    message: "Replay Lab details were compacted to its decision-relevant offline summary.",
+    replayLab: {
+      schemaVersion: report.schemaVersion,
+      analysis: report.analysis,
+      tracePackCount: report.tracePackCount,
+      futureTransitionVerdict: report.futureTransitionVerdict,
+      repairPolicy: report.repairPolicy,
+      hypotheses: report.hypotheses.slice(0, 8).map((hypothesis) => ({
+        rank: hypothesis.rank,
+        priority: hypothesis.priority,
+        kind: hypothesis.kind,
+        classification: hypothesis.classification,
+        statement: short(hypothesis.statement),
+        evidence: hypothesis.evidence.slice(0, 4),
+        requiresLiveVerification: true,
+      })),
+      remainingHypotheses: Math.max(0, report.hypotheses.length - 8),
+      smallestLiveExperiment: {
+        ...report.smallestLiveExperiment,
+        reason: short(report.smallestLiveExperiment.reason),
+      },
+      comparison: report.comparison
+        ? {
+            testIdentity: report.comparison.testIdentity.status,
+            nonProvedRequiredPaths: report.comparison.requiredPaths.filter(
+              (item) => item.reachability.status !== "unchanged-proved",
+            ).length,
+            matcherChanges: report.comparison.matcherDeltas.filter(
+              (item) => item.status === "changed",
+            ).length,
+            completenessGaps: report.comparison.completenessGaps.length,
+          }
+        : undefined,
+      visualLocalization: report.visualLocalization
+        ? {
+            visual: report.visualLocalization.sufficiency.visual,
+            localization: report.visualLocalization.sufficiency.localization,
+            findings: report.visualLocalization.localization.findings.length,
+          }
+        : undefined,
+    },
+  };
+}
 
 export async function invokeRelayOutcomeTool(input: {
   name: RelayOutcomeToolDescriptor["name"];
@@ -359,7 +684,13 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
   if (descriptor.requiresConfirmation && !input.confirmed) {
     throw new TypeError(`${descriptor.name} requires confirm: true.`);
   }
-  const parsed = descriptor.inputSchema.parse(input.argumentsValue) as Record<string, unknown>;
+  assertRawOutcomeInputBounds(input.name, input.argumentsValue);
+  let parsed = descriptor.inputSchema.parse(input.argumentsValue) as Record<string, unknown>;
+  if (input.name === "relay_replay_lab") {
+    parsed = { ...parsed, tracePacks: replayLabTracePacks.parse(parsed.tracePacks) };
+  } else if (input.name === "relay_verify_change") {
+    parsed = { ...parsed, selection: verifyChangeSelection.parse(parsed.selection) };
+  }
   const { jobs } = input;
   if (input.name === "relay_connect_target") {
     return jobs.connect({
@@ -388,6 +719,7 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
       ...(typeof parsed.appMapId === "string" ? { appMapId: parsed.appMapId } : {}),
       testId: parsed.testId as string,
       ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
+      ...(parsed.confirmRisk === true ? { confirmRisk: true } : {}),
     });
   }
   if (input.name === "relay_repeat_test") {
@@ -400,55 +732,66 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
         ? { evidence: parsed.evidence }
         : {}),
       ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
+      ...(parsed.confirmRisk === true ? { confirmRisk: true } : {}),
     });
   }
   if (input.name === "relay_record_action") {
     return jobs.advanceRecording({
       action: "record",
-      ref: parsed.ref as WorkflowRef,
-      expectedVersion: parsed.expectedVersion as string,
+      workflowId: parsed.workflowId as string,
+      expectedVersion: parsed.expectedVersion as number,
       interaction: parsed.interaction as AuthoringInteraction,
     });
   }
   if (input.name === "relay_add_checkpoint") {
     return jobs.advanceRecording({
       action: "checkpoint",
-      ref: parsed.ref as WorkflowRef,
-      expectedVersion: parsed.expectedVersion as string,
+      workflowId: parsed.workflowId as string,
+      expectedVersion: parsed.expectedVersion as number,
       ...(typeof parsed.label === "string" ? { label: parsed.label } : {}),
     });
   }
   if (input.name === "relay_stop_recording") {
     return jobs.advanceRecording({
       action: "stop",
-      ref: parsed.ref as WorkflowRef,
-      expectedVersion: parsed.expectedVersion as string,
+      workflowId: parsed.workflowId as string,
+      expectedVersion: parsed.expectedVersion as number,
     });
   }
   if (input.name === "relay_edit_recording") {
     return jobs.editRecording({
       kind: "edit-recording",
-      ref: parsed.ref as WorkflowRef,
-      expectedVersion: parsed.expectedVersion as string,
+      workflowId: parsed.workflowId as string,
+      expectedVersion: parsed.expectedVersion as number,
       edit: parsed.edit as Parameters<RelayOutcomeJobs["editRecording"]>[0]["edit"],
     });
   }
   if (input.name === "relay_replay_recording") {
     return jobs.advanceRecording({
       action: "replay",
-      ref: parsed.ref as WorkflowRef,
-      expectedVersion: parsed.expectedVersion as string,
+      workflowId: parsed.workflowId as string,
+      expectedVersion: parsed.expectedVersion as number,
     });
   }
   if (input.name === "relay_approve_recording") {
     return jobs.advanceRecording({
       action: "approve",
-      ref: parsed.ref as WorkflowRef,
-      expectedVersion: parsed.expectedVersion as string,
+      workflowId: parsed.workflowId as string,
+      expectedVersion: parsed.expectedVersion as number,
     });
   }
   if (input.name === "relay_inspect_workflow") {
-    return jobs.inspect(parsed.ref as WorkflowRef);
+    return typeof parsed.workflowId === "string"
+      ? jobs.inspect({ workflowId: parsed.workflowId })
+      : jobs.inspect({ legacyRef: parsed.legacyRef as WorkflowRef });
+  }
+  if (input.name === "relay_cancel_run") {
+    return jobs.cancelRun({
+      kind: "cancel-run",
+      workflowId: parsed.workflowId as string,
+      expectedVersion: parsed.expectedVersion as number,
+      confirmCancel: true,
+    });
   }
   if (input.name === "relay_continue_repeat") {
     return jobs.continueRepeat({
@@ -459,6 +802,25 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
   }
   if (input.name === "relay_inspect_failure") {
     return jobs.inspectFailure({ kind: "inspect-failure", runId: parsed.runId as string });
+  }
+  if (input.name === "relay_replay_lab") {
+    return jobs.replayLab({
+      kind: "replay-lab",
+      analysis: parsed.analysis as "compare" | "visual-localization" | "all",
+      tracePacks: parsed.tracePacks as Parameters<RelayOutcomeJobs["replayLab"]>[0]["tracePacks"],
+    });
+  }
+  if (input.name === "relay_verify_change") {
+    const selection = parsed.selection as
+      | { kind: "runs"; runIds: string[] }
+      | { kind: "tests"; appMapId: string; testIds: string[] }
+      | { kind: "trace-packs"; tracePacks: TracePack[] }
+      | { kind: "source-revision"; sourceRevision: SourceRevision; appMapId?: string };
+    return jobs.verifyChange({
+      kind: "verify-change",
+      selection,
+      ...(parsed.confirmationSatisfied === true ? { confirmationSatisfied: true } : {}),
+    });
   }
   if (input.name === "relay_propose_repair") {
     return jobs.proposeRepair({

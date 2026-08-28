@@ -18,6 +18,13 @@ test("workspace controller routes typed commands to their surface owners", () =>
     deviceStateChanged: (open) => calls.push(`device-state:${open}`),
     runReadinessChanged: (readiness) => calls.push(`ready:${readiness.ready}`),
     captureScreen: () => calls.push("capture"),
+    chooseMapTargetSet: (targetSetId) => calls.push(`target-set:${targetSetId ?? "none"}`),
+    mapTargetSetChanged: (targetSetId) => calls.push(`target-set-state:${targetSetId ?? "none"}`),
+    undoMap: () => calls.push("undo-map"),
+    redoMap: () => calls.push("redo-map"),
+    tidyMap: () => calls.push("tidy-map"),
+    toggleMapHistory: () => calls.push("map-history"),
+    revealMapScreen: ({ appMapId, screenId }) => calls.push(`reveal:${appMapId}:${screenId}`),
   });
 
   assert.equal(controller.execute({ kind: "target.choose" }), true);
@@ -43,6 +50,16 @@ test("workspace controller routes typed commands to their surface owners", () =>
   );
   assert.equal(controller.execute({ kind: "test.record" }), true);
   assert.equal(controller.execute({ kind: "screen.capture" }), true);
+  assert.equal(controller.execute({ kind: "map.target-set.choose", targetSetId: "release" }), true);
+  assert.equal(controller.execute({ kind: "map.target-set.state" }), true);
+  assert.equal(controller.execute({ kind: "map.undo" }), true);
+  assert.equal(controller.execute({ kind: "map.redo" }), true);
+  assert.equal(controller.execute({ kind: "map.tidy" }), true);
+  assert.equal(controller.execute({ kind: "map.history.toggle" }), true);
+  assert.equal(
+    controller.execute({ kind: "map.screen.reveal", appMapId: "map-1", screenId: "settings" }),
+    true,
+  );
   assert.deepEqual(calls, [
     "target",
     "selected:ipad-1",
@@ -54,6 +71,13 @@ test("workspace controller routes typed commands to their surface owners", () =>
     "ready:true",
     "record",
     "capture",
+    "target-set:release",
+    "target-set-state:none",
+    "undo-map",
+    "redo-map",
+    "tidy-map",
+    "map-history",
+    "reveal:map-1:settings",
   ]);
 });
 

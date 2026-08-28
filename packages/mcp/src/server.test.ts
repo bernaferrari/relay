@@ -215,6 +215,7 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
       "relay_run_test",
       "relay_repeat_test",
       "relay_continue_repeat",
+      "relay_verify_change",
       "relay_export_evidence",
     ]) {
       assert.ok(nameSet.has(name), `default outcome profile is missing ${name}`);
@@ -222,7 +223,11 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
     const approve = ((listed.result?.tools as ListedTool[] | undefined) ?? []).find(
       ({ name }) => name === "relay_approve_recording",
     );
-    assert.deepEqual(approve?.inputSchema.required?.sort(), ["confirm", "expectedVersion", "ref"]);
+    assert.deepEqual(approve?.inputSchema.required?.sort(), [
+      "confirm",
+      "expectedVersion",
+      "workflowId",
+    ]);
 
     const connected = callResult(
       await session.request("tools/call", {

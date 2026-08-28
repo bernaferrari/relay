@@ -5,7 +5,9 @@ import type {
   AppMap,
   AppMapCompiledTest,
   AppMapScenarioTest,
+  DurableWorkflowRead,
   OfflineTestPreflightReport,
+  WorkflowJsonValue,
 } from "@relay/protocol";
 import type { DeviceInfo } from "./api-types.js";
 import type { RelayInvokeClient } from "@relay/workflows";
@@ -19,6 +21,17 @@ const report = (testId: string): OfflineTestPreflightReport =>
     appMapRevision: 1,
     testId,
     planDigest: "frozen",
+    executionRisk: {
+      schemaVersion: 1,
+      level: "safe",
+      reasons: [],
+      externalEffects: [],
+      confirmation: "none",
+      expectedAppBoundaries: [],
+      maximumActions: 0,
+      maximumDurationMs: 0,
+      cleanupRequired: false,
+    },
     summary: {
       recipes: 1,
       checkedSelectors: 0,
@@ -85,6 +98,36 @@ function compiled(testId: string): AppMapCompiledTest {
   };
 }
 
+function durableWorkflow(input: {
+  workflowId: string;
+  frozenIdentity: WorkflowJsonValue;
+  version: number;
+  status?: "active" | "needs-attention" | "terminal";
+  transition?: string;
+  jobId?: string;
+}): DurableWorkflowRead {
+  return {
+    record: {
+      schemaVersion: 1,
+      workflowId: input.workflowId,
+      organizationId: "org",
+      projectId: "project",
+      kind: "run-test",
+      version: input.version,
+      status: input.status ?? "active",
+      frozenIdentity: input.frozenIdentity,
+      ...(input.jobId ? { resource: { kind: "job", id: input.jobId } } : {}),
+      createdBy: "human:test",
+      lastActorId: "human:test",
+      createdAt: 1,
+      updatedAt: input.version,
+      expiresAt: 100_000,
+      lastTransition: input.transition ?? "created",
+    },
+    audit: [],
+  };
+}
+
 test("discards a deferred offline report when Test, device, or profile scope changes", async () => {
   let releaseCompile!: () => void;
   const compileGate = new Promise<void>((resolve) => (releaseCompile = resolve));
@@ -148,14 +191,36 @@ test("discards a deferred offline report when Test, device, or profile scope cha
 
 test("an uncertain queue outcome blocks an explicit second Run", async () => {
   let runCalls = 0;
+  let workflowId = "";
+  let frozenIdentity: WorkflowJsonValue;
   const client = {
-    async invoke(id: string) {
+    async invoke(id: string, input: unknown) {
       if (id === "app-map.test.compile") {
         return { plan: compiled("english"), preflight: report("english") };
+      }
+      if (id === "workflow.create") {
+        const request = input as { workflowId: string; frozenIdentity: WorkflowJsonValue };
+        workflowId = request.workflowId;
+        frozenIdentity = request.frozenIdentity;
+        return {
+          disposition: "created",
+          workflow: durableWorkflow({ workflowId, frozenIdentity, version: 1 }),
+        };
       }
       if (id === "app-map.test.run") {
         runCalls += 1;
         throw new Error("response lost after queueing");
+      }
+      if (id === "workflow.get") {
+        return {
+          workflow: durableWorkflow({
+            workflowId,
+            frozenIdentity,
+            version: 2,
+            status: "needs-attention",
+            transition: "run-outcome-unknown",
+          }),
+        };
       }
       throw new Error(`unexpected operation ${id}`);
     },
@@ -182,7 +247,7 @@ test("an uncertain queue outcome blocks an explicit second Run", async () => {
         assert.equal(run.blockedReason(), undefined);
         await run.run();
         assert.equal(runCalls, 1);
-        assert.match(run.blockedReason() ?? "", /uncertain run outcome/u);
+        assert.match(run.blockedReason() ?? "", /Inspect the existing run/u);
         await run.run();
         assert.equal(runCalls, 1);
         dispose();
@@ -204,33 +269,36 @@ test("an uncertain queue outcome survives a remount and adopts the canonical job
   };
   let runCalls = 0;
   let recoveryCalls = 0;
-  let workflowRequestId = "";
+  let workflowId = "";
+  let frozenIdentity: WorkflowJsonValue;
   const client = {
     async invoke(id: string, input: unknown) {
       if (id === "app-map.test.compile") {
         return { plan: compiled("english"), preflight: report("english") };
       }
-      if (id === "app-map.test.run") {
-        runCalls += 1;
-        workflowRequestId = (input as { workflowRequestId: string }).workflowRequestId;
-        throw new Error("response lost after queueing");
-      }
-      if (id === "job.list") {
-        recoveryCalls += 1;
+      if (id === "workflow.create") {
+        const request = input as { workflowId: string; frozenIdentity: WorkflowJsonValue };
+        workflowId = request.workflowId;
+        frozenIdentity = request.frozenIdentity;
         return {
-          jobs: [
-            {
-              id: "job-recovered",
-              action: "root",
-              status: "running",
-              queuedAt: Date.now(),
-              frameCount: 0,
-            },
-          ],
+          disposition: "created",
+          workflow: durableWorkflow({ workflowId, frozenIdentity, version: 1 }),
         };
       }
-      if (id === "job.get") {
+      if (id === "app-map.test.run") {
+        runCalls += 1;
+        throw new Error("response lost after queueing");
+      }
+      if (id === "workflow.get") {
+        recoveryCalls += 1;
         return {
+          workflow: durableWorkflow({
+            workflowId,
+            frozenIdentity: { ...(frozenIdentity as object), rootRecipeId: "root" },
+            version: 2,
+            transition: "run-attached",
+            jobId: "job-recovered",
+          }),
           job: {
             id: "job-recovered",
             action: "root",
@@ -238,25 +306,6 @@ test("an uncertain queue outcome survives a remount and adopts the canonical job
             queuedAt: Date.now(),
             serial: "ipad-1",
             platform: "ios",
-            artifacts: [
-              {
-                kind: "app-map-test-workflow-request",
-                data: { schemaVersion: 1, requestId: workflowRequestId },
-              },
-              {
-                kind: "app-map-test-execution-intent",
-                data: {
-                  sourcePlan: {
-                    appMapId: "map",
-                    appMapRevision: 1,
-                    testId: "english",
-                    rootRecipeId: "root",
-                    digest: "frozen",
-                  },
-                  selectedRuntimeTargetProfile: { id: "ipad-en" },
-                },
-              },
-            ],
           },
         };
       }
@@ -301,7 +350,7 @@ test("an uncertain queue outcome survives a remount and adopts the canonical job
     createRoot((dispose) => {
       const run = makeRun();
       run.setTargetProfile("ipad-en");
-      assert.match(run.blockedReason() ?? "", /uncertain run outcome/u);
+      assert.match(run.blockedReason() ?? "", /Inspect the existing run/u);
       void run.run().then(() => {
         assert.equal(runCalls, 1);
         queueMicrotask(() => {
@@ -339,6 +388,17 @@ test("a renderer exit after dispatch still recovers by the pre-dispatch request 
     async invoke(id: string, input: unknown) {
       if (id === "app-map.test.compile") {
         return { plan: compiled("english"), preflight: report("english") };
+      }
+      if (id === "workflow.create") {
+        const request = input as { workflowId: string; frozenIdentity: WorkflowJsonValue };
+        return {
+          disposition: "created",
+          workflow: durableWorkflow({
+            workflowId: request.workflowId,
+            frozenIdentity: request.frozenIdentity,
+            version: 1,
+          }),
+        };
       }
       if (id === "app-map.test.run") {
         dispatchedRequestId = (input as { workflowRequestId: string }).workflowRequestId;

@@ -168,6 +168,7 @@ export const relayMcpTools: readonly RelayMcpToolDescriptor[] = Object.freeze(
 );
 
 const controlOperations = [
+  "target.health.get",
   "system.health.get",
   "system.doctor.get",
   "target.devices.list",
@@ -187,6 +188,7 @@ const controlOperations = [
 ] as const satisfies readonly OperationId[];
 
 const observeOperations = [
+  "target.health.get",
   "system.health.get",
   "system.doctor.get",
   "target.devices.list",

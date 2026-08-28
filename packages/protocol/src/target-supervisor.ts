@@ -71,6 +71,9 @@ export type TargetSupervisorLatencySummary = {
 
 export type TargetSupervisorHealth = {
   schemaVersion: 1;
+  /** Project visibility includes scoped operational context. Public is a
+   * local-host-only liveness projection with identities and history removed. */
+  visibility?: "project" | "public";
   target: { id: string; kind: TargetKind };
   observedAt: number;
   epochs: { target: number; semanticSession: number };

@@ -25,7 +25,7 @@ import {
 import type { StoredAppMapDisposition } from "./app-map/stored-map-repair.js";
 
 export const CONTROL_DB_NAME = "control.sqlite";
-export const CONTROL_SCHEMA_VERSION = 5;
+export const CONTROL_SCHEMA_VERSION = 6;
 export const JSON_MIGRATED_META = "json_migrated";
 export const RECOVERED_FROM_BACKUP_META = "recovered_from_json_backup";
 export const REPAIRED_ON_MIGRATE_META = "repaired_on_migrate";
@@ -112,6 +112,28 @@ export function applyControlSchema(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS idempotency (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS workflow_records (
+      workflow_id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('run-test', 'author-test', 'repeat-test')),
+      version INTEGER NOT NULL CHECK (version >= 1),
+      status TEXT NOT NULL CHECK (status IN ('active', 'needs-attention', 'terminal', 'expired')),
+      expires_at INTEGER NOT NULL,
+      document TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS workflow_records_project_updated
+      ON workflow_records(project_id, updated_at DESC);
+    CREATE TABLE IF NOT EXISTS workflow_record_events (
+      workflow_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL CHECK (sequence >= 1),
+      version INTEGER NOT NULL CHECK (version >= 1),
+      document TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (workflow_id, sequence),
+      FOREIGN KEY (workflow_id) REFERENCES workflow_records(workflow_id)
     );
     CREATE TABLE IF NOT EXISTS app_maps (
       map_key TEXT PRIMARY KEY,
@@ -266,6 +288,34 @@ function migrateControlSchema(db: DatabaseSync): void {
   if (version < 5) {
     ensureAppMapRecoveryColumns(db);
     db.exec("PRAGMA user_version = 5");
+    version = 5;
+  }
+  if (version < 6) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS workflow_records (
+        workflow_id TEXT PRIMARY KEY,
+        organization_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('run-test', 'author-test', 'repeat-test')),
+        version INTEGER NOT NULL CHECK (version >= 1),
+        status TEXT NOT NULL CHECK (status IN ('active', 'needs-attention', 'terminal', 'expired')),
+        expires_at INTEGER NOT NULL,
+        document TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS workflow_records_project_updated
+        ON workflow_records(project_id, updated_at DESC);
+      CREATE TABLE IF NOT EXISTS workflow_record_events (
+        workflow_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL CHECK (sequence >= 1),
+        version INTEGER NOT NULL CHECK (version >= 1),
+        document TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (workflow_id, sequence),
+        FOREIGN KEY (workflow_id) REFERENCES workflow_records(workflow_id)
+      );
+      PRAGMA user_version = 6;
+    `);
   }
 }
 

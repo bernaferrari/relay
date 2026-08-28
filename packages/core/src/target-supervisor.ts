@@ -112,11 +112,13 @@ export type TargetSupervisorEvent =
       kind: "semantics.traversal-completed";
       token: string;
       usable: boolean;
+      freshness?: "current" | "stale";
       durationMs?: number;
       reason?: string;
     }
   | { kind: "semantics.traversal-timed-out"; token: string; durationMs?: number }
   | { kind: "semantics.traversal-wedged"; token: string; reason: string }
+  | { kind: "semantics.invalidated"; reason: string }
   | { kind: "input.intent-persisted"; mutationId: string; intent: string }
   | { kind: "input.dispatched"; mutationId: string }
   | { kind: "input.completed"; mutationId: string }
@@ -128,6 +130,12 @@ export type TargetSupervisorEvent =
       outcome: "applied" | "not-applied" | "ambiguous";
     }
   | { kind: "recovery.requested"; channel: TargetRecoveryChannel }
+  | {
+      kind: "recovery.receipt";
+      channel: AutomaticRecoveryChannel;
+      outcome: "succeeded" | "failed";
+      reason: string;
+    }
   | {
       kind: "recovery.step-completed";
       channel: AutomaticRecoveryChannel;
@@ -368,6 +376,10 @@ export class TargetSupervisor {
       case "semantics.traversal-wedged":
         this.wedgeSemanticTraversal(event.token, event.reason);
         break;
+      case "semantics.invalidated":
+        this.invalidateSemantics();
+        this.record("SEMANTIC_TRAVERSAL_STALE", event.reason);
+        break;
       case "input.intent-persisted":
         this.persistInputIntent(event.mutationId, event.intent);
         break;
@@ -385,6 +397,9 @@ export class TargetSupervisor {
         break;
       case "recovery.requested":
         effects.push(this.requestRecovery(event.channel));
+        break;
+      case "recovery.receipt":
+        this.recordRecoveryReceipt(event);
         break;
       case "recovery.step-completed":
         effects.push(...this.completeRecoveryStep(event));
@@ -524,7 +539,7 @@ export class TargetSupervisor {
     const invalidatedAfterStart =
       this.state.semantics.invalidatedAt !== undefined &&
       this.state.semantics.invalidatedAt >= traversal.startedSequence;
-    if (event.usable && !invalidatedAfterStart) {
+    if (event.usable && !invalidatedAfterStart && event.freshness !== "stale") {
       this.state.semantics = { state: "current", lastCapturedAt: this.clock.now() };
       this.record("SEMANTIC_TRAVERSAL_COMPLETED", "Fresh semantic evidence is current.", {
         traversalToken: event.token,
@@ -752,6 +767,24 @@ export class TargetSupervisor {
       this.record("TARGET_NEEDS_HUMAN", "Automatic recovery stopped and requires a human.");
     }
     return [];
+  }
+
+  private recordRecoveryReceipt(
+    event: Extract<TargetSupervisorEvent, { kind: "recovery.receipt" }>,
+  ): void {
+    if (this.state.recovery) throw new Error("A recovery receipt cannot replace an active step");
+    this.state.counters.recoveryAttempts += 1;
+    if (event.outcome === "failed") {
+      this.state.counters.recoveryFailures += 1;
+      this.state.needsHuman = true;
+      this.record("RECOVERY_EXHAUSTED", event.reason, { channel: event.channel });
+      this.record("TARGET_NEEDS_HUMAN", "Observed target recovery failed and requires a human.");
+      return;
+    }
+    this.state.needsHuman = false;
+    if (event.channel === "pixels") this.state.pixels.state = "delayed";
+    else this.state.semantics.state = "refreshing";
+    this.record("RECOVERY_COMPLETED", event.reason, { channel: event.channel });
   }
 
   private effectiveControl(): TargetSupervisorHealth["control"] {

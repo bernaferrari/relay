@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, rename, rm, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { AuthoringSession } from "@relay/protocol";
-import { serializeAuthoringSession } from "@relay/protocol";
+import { authoringCaptureProvenance, serializeAuthoringSession } from "@relay/protocol";
 import { findWorkspaceRoot } from "./workspace-root.js";
 
 function sessionsRoot(): string {
@@ -58,7 +58,10 @@ function parseAuthoringSession(value: unknown): AuthoringSession | null {
     typeof input.leaseId !== "string"
   )
     return null;
-  return input as AuthoringSession;
+  return {
+    ...(input as AuthoringSession),
+    captureProvenance: authoringCaptureProvenance(input.captureProvenance),
+  };
 }
 
 export async function readAuthoringSession(id: string): Promise<AuthoringSession | null> {

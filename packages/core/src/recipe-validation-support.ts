@@ -621,6 +621,7 @@ function parseStepMetadata(
   group?: string;
   evidence?: RecordedStepEvidence;
   note?: string;
+  reviewedExternalEffects?: RecipeStep["reviewedExternalEffects"];
   optional?: boolean;
   check?: RecipeStep["check"];
   when?: RecipeStep["when"];
@@ -630,6 +631,7 @@ function parseStepMetadata(
     group?: string;
     evidence?: RecordedStepEvidence;
     note?: string;
+    reviewedExternalEffects?: RecipeStep["reviewedExternalEffects"];
     optional?: boolean;
     check?: RecipeStep["check"];
     when?: RecipeStep["when"];
@@ -648,6 +650,47 @@ function parseStepMetadata(
   }
   if (raw.evidence !== undefined) metadata.evidence = parseRecordedEvidence(raw.evidence, index);
   if (isString(raw.note) && raw.note.trim()) metadata.note = raw.note;
+  if (raw.reviewedExternalEffects !== undefined) {
+    if (!isObject(raw.reviewedExternalEffects)) {
+      throw stepErr(index, "reviewedExternalEffects must be an object");
+    }
+    const review = raw.reviewedExternalEffects;
+    const allowed = [
+      "communication",
+      "purchase",
+      "account-mutation",
+      "data-deletion",
+      "permission-change",
+      "installation",
+      "external-app",
+    ] as const;
+    if (
+      review.schemaVersion !== 1 ||
+      !Array.isArray(review.effects) ||
+      review.effects.length === 0 ||
+      review.effects.some((effect) => !allowed.includes(effect as (typeof allowed)[number])) ||
+      new Set(review.effects).size !== review.effects.length ||
+      !isString(review.reviewedBy) ||
+      !review.reviewedBy.trim() ||
+      !isNumber(review.reviewedAt) ||
+      !Number.isInteger(review.reviewedAt) ||
+      review.reviewedAt < 0 ||
+      !isString(review.reason) ||
+      !review.reason.trim()
+    ) {
+      throw stepErr(
+        index,
+        "reviewedExternalEffects requires schemaVersion 1, distinct known effects, reviewedBy, reviewedAt, and reason",
+      );
+    }
+    metadata.reviewedExternalEffects = {
+      schemaVersion: 1,
+      effects: review.effects as (typeof allowed)[number][],
+      reviewedBy: review.reviewedBy.trim(),
+      reviewedAt: review.reviewedAt,
+      reason: review.reason.trim(),
+    };
+  }
   if (raw.optional !== undefined) {
     if (typeof raw.optional !== "boolean") throw stepErr(index, "optional must be a boolean");
     metadata.optional = raw.optional;

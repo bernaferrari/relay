@@ -14,6 +14,7 @@ import type {
   TargetRuntimeReadiness,
 } from "@relay/protocol";
 import type { DevicePlatform, SnapshotNode } from "./device.js";
+import { currentTargetSupervisorStore } from "./target-supervisor-store.js";
 
 export type RuntimeReadinessTarget = {
   serial: string;
@@ -25,6 +26,10 @@ export type RuntimeReadinessTarget = {
 };
 
 export type RuntimeReadinessCapability = keyof TargetRuntimeReadiness;
+
+function supervisedTarget(target: Pick<RuntimeReadinessTarget, "platform" | "serial">) {
+  return { id: target.serial, kind: target.platform } as const;
+}
 
 type RuntimeProbe = {
   state: Exclude<TargetRuntimeCapabilityState, "unproven">;
@@ -352,6 +357,10 @@ export function recordTargetPixelCapture(
     durationMs: options?.durationMs,
     observationEpoch: options?.observationEpoch,
   });
+  currentTargetSupervisorStore()?.recordPixelCapture(supervisedTarget(target), {
+    durationMs: options?.durationMs,
+    ...(fingerprint ? { fingerprint } : {}),
+  });
   if (changed) {
     invalidateTargetSemanticControl(target, "visual-changed", at, options?.observationEpoch);
   }
@@ -397,6 +406,12 @@ export function invalidateTargetSemanticControl(
   targetProbes.semanticInvalidation = invalidation;
   probesByTarget.set(key, targetProbes);
   applyPendingSemanticInvalidation(target);
+  currentTargetSupervisorStore()?.invalidateSemantics(
+    supervisedTarget(target),
+    reason === "input-changed"
+      ? "Confirmed input invalidated the previous semantic proof."
+      : "Changed pixels invalidated the previous semantic proof.",
+  );
 }
 
 /**
@@ -531,6 +546,20 @@ export function recordTargetSemanticSnapshot(
     },
   );
   applyPendingSemanticInvalidation(target);
+  const readiness = targetRuntimeReadiness(target, input.at ?? Date.now()).semanticControl;
+  currentTargetSupervisorStore()?.recordSemanticReceipt(supervisedTarget(target), {
+    state:
+      readiness.state === "proven"
+        ? readiness.freshness === "stale"
+          ? "stale"
+          : "current"
+        : "unavailable",
+    durationMs: input.durationMs,
+    reason: input.errorMessage,
+    ...(input.nodes.find((node) => node.bundleId)?.bundleId
+      ? { foregroundApp: input.nodes.find((node) => node.bundleId)!.bundleId }
+      : {}),
+  });
 }
 
 /**
@@ -554,6 +583,11 @@ export function recordTargetSemanticProbeInFlight(
     errorMessage: input?.errorMessage,
     observationEpoch: input?.observationEpoch,
   });
+  currentTargetSupervisorStore()?.recordSemanticReceipt(supervisedTarget(target), {
+    state: "in-flight",
+    durationMs: input?.durationMs,
+    reason: input?.errorMessage,
+  });
 }
 
 /**
@@ -564,15 +598,32 @@ export function recordTargetSemanticProbeInFlight(
  */
 export function recordTargetSemanticFlightSettled(
   target: Pick<RuntimeReadinessTarget, "platform" | "serial">,
-  input: { nodes: readonly SnapshotNode[]; at?: number; durationMs?: number },
+  input: {
+    nodes: readonly SnapshotNode[];
+    at?: number;
+    durationMs?: number;
+    staleAfterInput?: boolean;
+  },
 ): void {
   if (!hasUsableSemanticAccessibility(input.nodes)) return;
-  recordTargetRuntimeCapability(target, "semanticControl", "proven", {
-    at: input.at,
-    observedNodeCount: input.nodes.length,
-    ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+  if (!input.staleAfterInput) {
+    recordTargetRuntimeCapability(target, "semanticControl", "proven", {
+      at: input.at,
+      observedNodeCount: input.nodes.length,
+      ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+    });
+    applyPendingSemanticInvalidation(target);
+  }
+  const readiness = input.staleAfterInput
+    ? undefined
+    : targetRuntimeReadiness(target, input.at ?? Date.now()).semanticControl;
+  currentTargetSupervisorStore()?.recordSemanticReceipt(supervisedTarget(target), {
+    state: input.staleAfterInput || readiness?.freshness === "stale" ? "stale" : "current",
+    durationMs: input.durationMs,
+    ...(input.nodes.find((node) => node.bundleId)?.bundleId
+      ? { foregroundApp: input.nodes.find((node) => node.bundleId)!.bundleId }
+      : {}),
   });
-  applyPendingSemanticInvalidation(target);
 }
 
 /** Record one capture's semantic outcome without forcing callers to reason

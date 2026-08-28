@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { analyzeTracePack, exportTracePack, verifyTracePack } from "./trace-pack.js";
 import type { PersistedRun } from "./runs.js";
+import { writeAuthoringSession } from "./authoring-session-storage.js";
 
 function canonicalValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalValue);
@@ -101,6 +102,58 @@ test("TracePack export is deterministic, portable, and verifies every content ad
   const run = tampered.objects.find((object) => object.kind === "frozen-run")!;
   (run.content as { status: string }).status = "error";
   assert.throws(() => verifyTracePack(tampered), /object integrity/u);
+});
+
+test("TracePack retains recording capture provenance when the run links an Authoring Session", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-trace-pack-authoring-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = directory;
+  try {
+    await writeAuthoringSession({
+      schemaVersion: 1,
+      id: "authoring-watch-1",
+      organizationId: "local",
+      projectId: "project-1",
+      actorId: "agent:test",
+      actorKind: "agent",
+      appMapId: "map-1",
+      state: "reviewing",
+      target: { kind: "device", platform: "android", targetId: "device-1" },
+      captureProvenance: {
+        schemaVersion: 1,
+        mode: "watch-and-infer",
+        origin: "observed-transition",
+      },
+      leaseId: "lease-1",
+      expectedAppMapRevision: 1,
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const run = persistedRun();
+    run.executionProvenance = {
+      schemaVersion: 1,
+      actorId: "agent:test",
+      actorKind: "agent",
+      organizationId: "local",
+      projectId: "project-1",
+      operationId: "authoring.session.replay",
+      requestId: "request-1",
+      issuedAt: 1,
+      authoringSessionId: "authoring-watch-1",
+    };
+
+    const pack = await exportTracePack(run);
+    assert.deepEqual(pack.source.authoringCapture, {
+      schemaVersion: 1,
+      mode: "watch-and-infer",
+      origin: "observed-transition",
+    });
+    assert.deepEqual(verifyTracePack(pack), pack);
+  } finally {
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("captured video is embedded and independently digest-verified", async () => {

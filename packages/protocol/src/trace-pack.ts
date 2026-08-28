@@ -1,4 +1,54 @@
 import * as z from "zod/v4";
+import { measureBoundedJsonValue, type JsonValueBounds } from "./json-value-bounds.js";
+
+export const TRACE_PACK_JSON_LIMITS = Object.freeze({
+  maxDepth: 64,
+  maxStringBytes: 512 * 1024 * 1024,
+  maxArrayItems: 100_000,
+  maxObjectEntries: 20_000,
+  maxNodes: 1_000_000,
+  maxSerializedBytes: 1024 * 1024 * 1024,
+}) satisfies JsonValueBounds;
+
+export const TRACE_PACK_OFFLINE_TRANSPORT_LIMITS = Object.freeze({
+  maxDepth: 48,
+  maxStringBytes: 32 * 1024 * 1024,
+  maxArrayItems: 50_000,
+  maxObjectEntries: 10_000,
+  maxNodes: 250_000,
+  maxSerializedBytes: 32 * 1024 * 1024,
+}) satisfies JsonValueBounds;
+
+export function measureTracePackJson(
+  value: unknown,
+  limits: JsonValueBounds = TRACE_PACK_JSON_LIMITS,
+) {
+  return measureBoundedJsonValue(value, limits, "TracePack");
+}
+
+const authoringCaptureProvenanceSchema = z.discriminatedUnion("mode", [
+  z
+    .object({
+      schemaVersion: z.literal(1),
+      mode: z.literal("control-and-record"),
+      origin: z.literal("relay-control"),
+    })
+    .strict(),
+  z
+    .object({
+      schemaVersion: z.literal(1),
+      mode: z.literal("watch-and-infer"),
+      origin: z.literal("observed-transition"),
+    })
+    .strict(),
+  z
+    .object({
+      schemaVersion: z.literal(1),
+      mode: z.literal("instrumented"),
+      origin: z.literal("app-instrumentation"),
+    })
+    .strict(),
+]);
 
 const sha256 = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
 const jsonValue: z.ZodType<unknown> = z.lazy(() =>
@@ -131,6 +181,8 @@ export const tracePackSchema = z
         action: z.string().min(1),
         inputDigest: z.string().regex(/^[a-f0-9]{64}$/u),
         writtenAt: z.number().int().nonnegative(),
+        /** Present when the frozen run links to a durable Authoring Session. */
+        authoringCapture: authoringCaptureProvenanceSchema.optional(),
       })
       .strict(),
     redaction: z
@@ -219,9 +271,13 @@ export type TracePackOfflineAnalysis = z.output<typeof tracePackOfflineAnalysisS
 export type TracePackExportResponse = z.output<typeof tracePackExportResponseSchema>;
 
 export function parseTracePack(value: unknown): TracePack {
+  measureTracePackJson(value);
   return tracePackSchema.parse(value);
 }
 
 export function parseTracePackExportResponse(value: unknown): TracePackExportResponse {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    measureTracePackJson((value as { tracePack?: unknown }).tracePack);
+  }
   return tracePackExportResponseSchema.parse(value);
 }

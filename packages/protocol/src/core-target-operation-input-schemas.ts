@@ -69,6 +69,7 @@ export const coreTargetOperationInputSchemas = {
     })
     .strict(),
   "target.observation.capture": z.object(targetReference).strict(),
+  "target.health.get": z.object(targetReference).strict(),
   "target.recover": z
     .object({
       ...targetReference,

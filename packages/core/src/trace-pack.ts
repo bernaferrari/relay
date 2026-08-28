@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  authoringCaptureProvenance,
   parseTracePack,
   tracePackOfflineAnalysisSchema,
   type EvidenceChannelStatus,
@@ -9,6 +10,7 @@ import {
 } from "@relay/protocol";
 import { replayPersistedRunOffline } from "./offline-run-replay.js";
 import type { PersistedRun } from "./runs.js";
+import { readAuthoringSession } from "./authoring-session-storage.js";
 import {
   assertTracePackArtifactBounds,
   closeTracePackArtifacts,
@@ -75,6 +77,9 @@ export async function exportTracePack(
   if (!/^[a-f0-9]{64}$/u.test(run.inputDigest)) {
     throw new Error(`run ${run.id} has no valid frozen input digest`);
   }
+  const authoringSession = run.executionProvenance?.authoringSessionId
+    ? await readAuthoringSession(run.executionProvenance.authoringSessionId)
+    : null;
   const closure = await closeTracePackArtifacts(run, requestedLimits);
   const objects = [jsonObject("run.json", "frozen-run", frozenRun(run)), ...closure.objects].sort(
     (left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0),
@@ -123,6 +128,9 @@ export async function exportTracePack(
       action: run.action,
       inputDigest: run.inputDigest,
       writtenAt: run.writtenAt,
+      ...(authoringSession
+        ? { authoringCapture: authoringCaptureProvenance(authoringSession.captureProvenance) }
+        : {}),
     },
     redaction: {
       status: run.schemaVersion >= 5 ? ("applied-at-persistence" as const) : ("unknown" as const),
@@ -202,14 +210,15 @@ export function verifyTracePack(
   return pack;
 }
 
-function runFromPack(pack: TracePack): PersistedRun {
+export function frozenRunFromTracePack(value: unknown): PersistedRun {
+  const pack = verifyTracePack(value);
   const manifests = pack.objects.filter((object) => object.kind === "frozen-run");
   if (manifests.length !== 1) throw new Error("TracePack must contain exactly one frozen run");
-  const value = manifests[0]!.content;
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  const frozenContent = manifests[0]!.content;
+  if (!frozenContent || typeof frozenContent !== "object" || Array.isArray(frozenContent)) {
     throw new Error("TracePack frozen run is not an object");
   }
-  const run = value as Omit<PersistedRun, "dir">;
+  const run = frozenContent as Omit<PersistedRun, "dir">;
   if (run.id !== pack.source.runId || run.inputDigest !== pack.source.inputDigest) {
     throw new Error("TracePack source identity does not match its frozen run");
   }
@@ -219,7 +228,7 @@ function runFromPack(pack: TracePack): PersistedRun {
 /** Analyze frozen evidence without claiming a future-device pass. */
 export function analyzeTracePack(value: unknown): TracePackOfflineAnalysis {
   const pack = verifyTracePack(value);
-  const run = runFromPack(pack);
+  const run = frozenRunFromTracePack(pack);
   const replay = replayPersistedRunOffline(run);
   const runObject = pack.objects.find((object) => object.kind === "frozen-run")!;
   const proved: TracePackOfflineAnalysis["proved"] = [

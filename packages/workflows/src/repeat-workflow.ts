@@ -17,6 +17,7 @@ import type {
   WorkflowProblem,
   WorkflowRef,
 } from "./types.js";
+import { executionRiskPreflightProblem, isExecutionRisk } from "./execution-risk-preflight.js";
 import {
   decodeRepeatWorkflowRef,
   encodeRepeatWorkflowRef,
@@ -148,6 +149,7 @@ function readCompile(
     !preflight.planDigest ||
     !preflight.summary ||
     !validRevision(preflight.summary.blockers) ||
+    !isExecutionRisk(preflight.executionRisk) ||
     !Array.isArray(preflight.findings)
   ) {
     return undefined;
@@ -249,11 +251,9 @@ export class CanonicalRepeatWorkflow {
           code:
             code === "REPEAT_VALUE_NOT_FOUND"
               ? "repeat-value-unresolved"
-              : code === "REPEAT_RESUME_MODE_UNAVAILABLE"
-                ? "repeat-resume-unsupported"
-                : code === "REPEAT_PILOT_CASE_INVALID"
-                  ? "repeat-pilot-invalid"
-                  : "repeat-dimension-unresolved",
+              : code === "REPEAT_PILOT_CASE_INVALID"
+                ? "repeat-pilot-invalid"
+                : "repeat-dimension-unresolved",
           title: "Relay could not resolve this Repeat",
           detail: publicDetail(error),
           recovery: "Repair the saved dimension, values, or pilot selection, then start again.",
@@ -304,6 +304,12 @@ export class CanonicalRepeatWorkflow {
         },
       });
     }
+
+    const riskProblem = executionRiskPreflightProblem(
+      checked.preflight.executionRisk,
+      intent.confirmRisk,
+    );
+    if (riskProblem) return initialProblem({ intent, problem: riskProblem });
 
     const evidence = intent.evidence ?? "visual";
     let started: OperationOutput<"app-map.test.run">;

@@ -85,17 +85,14 @@ test("RepeatSpec fails closed before execution on unknown dimensions, values, an
   }
 });
 
-test("failed and all resume modes are structured pre-dispatch blockers", () => {
+test("failed and all resume modes resolve through the canonical Repeat contract", () => {
   for (const resume of ["failed", "all"] as const) {
-    assert.throws(
-      () =>
-        resolveRepeatSpec(map(), {
-          dimensions: [{ id: "language", values: ["en"] }],
-          resume,
-        }),
-      (error: unknown) =>
-        error instanceof RepeatSpecResolutionError &&
-        error.code === "REPEAT_RESUME_MODE_UNAVAILABLE",
+    assert.equal(
+      resolveRepeatSpec(map(), {
+        dimensions: [{ id: "language", values: ["en"] }],
+        resume,
+      }).resume,
+      resume,
     );
   }
 });

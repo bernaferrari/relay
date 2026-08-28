@@ -11,8 +11,9 @@ import type {
   OfflineTestPreflightSelector,
   RecipeStep,
 } from "@relay/protocol";
-import { createHash } from "node:crypto";
 import { preflightSemanticActivation } from "./device-target-resolution.js";
+import { compileExecutionRisk } from "./execution-risk-compiler.js";
+import { offlineTestPlanDigest } from "./offline-test-preflight-digest.js";
 import type { SnapshotNode } from "./device.js";
 import {
   rawCandidateLedger,
@@ -50,21 +51,6 @@ export type OfflineTestPreflightOptions = {
   targetProfileId?: string;
 };
 
-function stableValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stableValue);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-      .map(([key, entry]) => [key, stableValue(entry)]),
-  );
-}
-
-function digest(value: unknown): string {
-  return createHash("sha256")
-    .update(JSON.stringify(stableValue(value)))
-    .digest("hex");
-}
 type SelectorAssessment = {
   selector: OfflineTestPreflightSelector;
   findings: OfflineTestPreflightFinding[];
@@ -880,7 +866,8 @@ export function preflightCompiledAppMapTestOffline(
     appMapId: plan.appMapId,
     appMapRevision: plan.appMapRevision,
     testId: plan.test.id,
-    planDigest: digest(plan),
+    planDigest: offlineTestPlanDigest(plan),
+    executionRisk: compileExecutionRisk({ kind: "compiled-test", test: plan }),
     summary: {
       recipes: recipes.length,
       checkedSelectors,

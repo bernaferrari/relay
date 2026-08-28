@@ -674,6 +674,8 @@ export type OfflineTestPreflightReport = {
   appMapRevision: number;
   testId: string;
   planDigest: string;
+  /** Deterministic policy input compiled from this exact frozen plan. */
+  executionRisk: import("./approval-policy.js").ExecutionRisk;
   summary: {
     recipes: number;
     checkedSelectors: number;

@@ -4,8 +4,9 @@ import type {
   AuthorTestDecision,
   AuthorTestIntent,
   AuthorTestSnapshot,
+  DurableAuthorTestDecision,
+  DurableWorkflowHandle,
   RelayWorkflows,
-  WorkflowRef,
   WorkflowProblem,
 } from "@relay/workflows";
 import { createRelayWorkflows, type RelayInvokeClient } from "@relay/workflows";
@@ -24,7 +25,8 @@ export type AuthorTestWorkflowAction =
       destination?: Extract<AuthorTestDecision, { action: "approve" }>["destination"];
     }
   | { action: "discard" }
-  | { action: "cancel" };
+  | { action: "cancel" }
+  | { action: "abandon"; reason: string };
 
 /**
  * Keeps the opaque workflow reference out of the recorder UI. Every decision
@@ -36,7 +38,7 @@ export function createAuthorTestWorkflowCoordinator(input: {
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
 }) {
   type AttentionMarker = { problem: WorkflowProblem };
-  const references = new Map<string, WorkflowRef>();
+  const handles = new Map<string, DurableWorkflowHandle>();
   const attentionMarkers = new Map<string, AttentionMarker>();
   const sessionQueues = new Map<string, Promise<void>>();
   let storage = input.storage;
@@ -47,7 +49,11 @@ export function createAuthorTestWorkflowCoordinator(input: {
       storage = undefined;
     }
   }
-  const storageKey = (sessionId: string) => `relay:author-test-workflow:v1:${sessionId}`;
+  const storageKey = (sessionId: string) => `relay:author-test-workflow:v2:${sessionId}`;
+  const workflowScopeKey = (snapshot: AuthorTestSnapshot) =>
+    snapshot.frozen?.workflowRequestId
+      ? `relay:author-test-workflow-scope:v2:${snapshot.frozen.workflowRequestId}`
+      : undefined;
   const attentionKey = (sessionId: string) => `relay:author-test-attention:v1:${sessionId}`;
   const scopeKey = (snapshot: AuthorTestSnapshot) => {
     const frozen = snapshot.frozen;
@@ -137,25 +143,59 @@ export function createAuthorTestWorkflowCoordinator(input: {
     }
   }
 
-  function remember(sessionId: string, ref: WorkflowRef): void {
-    references.set(sessionId, ref);
+  function remember(snapshot: AuthorTestSnapshot, handle: DurableWorkflowHandle): void {
+    const keys = [
+      ...(snapshot.authoring?.sessionId ? [storageKey(snapshot.authoring.sessionId)] : []),
+      ...(workflowScopeKey(snapshot) ? [workflowScopeKey(snapshot)!] : []),
+    ];
+    if (snapshot.authoring?.sessionId) handles.set(snapshot.authoring.sessionId, handle);
     try {
-      storage?.setItem(storageKey(sessionId), ref);
+      for (const key of keys) storage?.setItem(key, JSON.stringify(handle));
     } catch {
       // A private window can deny session storage. The in-memory reference is
       // still sufficient for the current authoring session.
     }
   }
 
-  function referenceFor(sessionId: string): WorkflowRef | undefined {
-    const active = references.get(sessionId);
+  function handleFor(sessionId: string): DurableWorkflowHandle | undefined {
+    const active = handles.get(sessionId);
     if (active) return active;
     try {
       const restored = storage?.getItem(storageKey(sessionId));
       if (!restored) return undefined;
-      const ref = restored as WorkflowRef;
-      references.set(sessionId, ref);
-      return ref;
+      const parsed = JSON.parse(restored) as Partial<DurableWorkflowHandle>;
+      if (
+        typeof parsed.workflowId !== "string" ||
+        !parsed.workflowId ||
+        !Number.isSafeInteger(parsed.expectedVersion) ||
+        parsed.expectedVersion! < 1
+      ) {
+        return undefined;
+      }
+      const handle = {
+        workflowId: parsed.workflowId,
+        expectedVersion: parsed.expectedVersion!,
+      };
+      handles.set(sessionId, handle);
+      return handle;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function scopedHandle(snapshot: AuthorTestSnapshot): DurableWorkflowHandle | undefined {
+    const key = workflowScopeKey(snapshot);
+    if (!key) return undefined;
+    try {
+      const restored = storage?.getItem(key);
+      if (!restored) return undefined;
+      const parsed = JSON.parse(restored) as Partial<DurableWorkflowHandle>;
+      return typeof parsed.workflowId === "string" &&
+        parsed.workflowId &&
+        Number.isSafeInteger(parsed.expectedVersion) &&
+        parsed.expectedVersion! >= 1
+        ? { workflowId: parsed.workflowId, expectedVersion: parsed.expectedVersion! }
+        : undefined;
     } catch {
       return undefined;
     }
@@ -165,8 +205,7 @@ export function createAuthorTestWorkflowCoordinator(input: {
     snapshot: AuthorTestSnapshot,
     options: { acknowledgeAttention?: boolean } = {},
   ): Promise<AuthorTestSnapshot> {
-    const sessionId = snapshot.authoring?.sessionId;
-    if (sessionId && snapshot.ref) remember(sessionId, snapshot.ref);
+    if (snapshot.workflow) remember(snapshot, snapshot.workflow);
     if (options.acknowledgeAttention && snapshot.phase !== "needs-attention") {
       clearAttention(snapshot);
     } else {
@@ -177,24 +216,32 @@ export function createAuthorTestWorkflowCoordinator(input: {
   }
 
   async function start(intent: AuthorTestIntent): Promise<AuthorTestSnapshot> {
-    const snapshot = await input.workflows.start(intent);
+    const snapshot = await input.workflows.start({
+      ...intent,
+      workflowRequestId: intent.workflowRequestId ?? crypto.randomUUID(),
+      continuation: "durable",
+    });
     if (snapshot.phase !== "needs-attention") clearAttention(snapshot);
     return publish(snapshot);
   }
 
   async function readCanonical(sessionId: string): Promise<AuthorTestSnapshot | undefined> {
-    const ref = referenceFor(sessionId);
-    if (ref) {
-      const inspected = await input.workflows.inspect(ref);
+    const handle = handleFor(sessionId);
+    if (handle) {
+      const inspected = await input.workflows.inspectAuthoring(handle.workflowId);
       if (inspected.kind === "author-test") return inspected;
-      references.delete(sessionId);
+      handles.delete(sessionId);
       try {
         storage?.removeItem(storageKey(sessionId));
       } catch {
         // Recovery below still reads canonical state directly.
       }
     }
-    return input.workflows.recover({ kind: "author-test", sessionId });
+    const recovered = await input.workflows.recover({ kind: "author-test", sessionId });
+    const recoveredHandle = scopedHandle(recovered);
+    if (!recoveredHandle) return recovered;
+    const inspected = await input.workflows.inspectAuthoring(recoveredHandle.workflowId);
+    return inspected.kind === "author-test" ? inspected : recovered;
   }
 
   async function hydrate(sessionId: string): Promise<AuthorTestSnapshot | undefined> {
@@ -217,7 +264,7 @@ export function createAuthorTestWorkflowCoordinator(input: {
       const canonical = await readCanonical(sessionId);
       const current = canonical ? await publish(applyStoredAttention(canonical)) : undefined;
       if (
-        !current?.ref ||
+        !current?.workflow ||
         current.version === "unavailable" ||
         current.phase === "needs-attention"
       ) {
@@ -240,11 +287,10 @@ export function createAuthorTestWorkflowCoordinator(input: {
       }
       const decision = {
         ...action,
-        ref: current.ref,
-        expectedVersion: current.version,
-      } as AuthorTestDecision;
-      const snapshot = await input.workflows.advance(decision);
-      return snapshot.kind === "author-test" ? publish(snapshot) : undefined;
+        workflowId: current.workflow.workflowId,
+        expectedVersion: current.workflow.expectedVersion,
+      } as DurableAuthorTestDecision;
+      return publish(await input.workflows.advanceAuthoring(decision));
     });
   }
 
@@ -279,7 +325,7 @@ export function createAuthorTestWorkflowCoordinator(input: {
     proved,
     record: (sessionId: string, interaction: AuthoringInteraction) =>
       proved(sessionId, { action: "record", interaction }),
-    hasSession: (sessionId: string) => Boolean(referenceFor(sessionId)),
+    hasSession: (sessionId: string) => Boolean(handleFor(sessionId)),
   };
 }
 

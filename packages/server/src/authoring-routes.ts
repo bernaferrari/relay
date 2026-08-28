@@ -8,6 +8,7 @@ import {
   captureSnapshot,
   cleanupScreenshot,
   createDeviceForTarget,
+  currentOperationContext,
   describeRecipeStep,
   getBrowserDevice,
   IosMutationOutcomeUnknownError,
@@ -37,6 +38,7 @@ import type {
   ReorderAuthoringTakeInput,
   ReplaceAuthoringActionInput,
   TrimAuthoringTakeInput,
+  WorkflowTransitionInput,
 } from "@relay/protocol";
 import { assertTargetControl, assertTargetLease } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
@@ -547,6 +549,129 @@ async function controlledSession(scope: RequestContext, sessionId: string) {
   return session;
 }
 
+type AuthoringWorkflowTransition = Exclude<
+  WorkflowTransitionInput,
+  { action: "attach-run" | "cancel-run" | "start-authoring" | "authoring-abandon" }
+>;
+
+export async function assertAuthoringTransitionAccess(
+  scope: RequestContext,
+  session: AuthoringSession,
+  action: AuthoringWorkflowTransition["action"],
+): Promise<void> {
+  const actorId = currentOperationContext()?.actorId ?? scope.subject;
+  if (session.actorId !== actorId) throw new HttpError(404, "Authoring Session not found");
+  if (
+    [
+      "authoring-record",
+      "authoring-checkpoint",
+      "authoring-stop",
+      "authoring-replay",
+      "authoring-cancel",
+    ].includes(action)
+  ) {
+    await controlledSession(scope, session.id);
+  }
+}
+
+/** Server-side authoring begin used by both the canonical operation and the
+ * durable workflow coordinator. The caller must reserve durable intent before
+ * entering this function when response loss matters. */
+export async function beginControlledAuthoringSession(
+  scope: RequestContext,
+  value: CreateAuthoringSessionInput,
+  runtime: AuthoringRuntime = createAuthoringRuntime(),
+): Promise<AuthoringSession> {
+  await assertTargetLease(scope, value.target.targetId, value.leaseId);
+  const created = await authoringSessions.create(value);
+  try {
+    const observed = await authoringSessions.observe(created.id, runtime);
+    if (observed.state !== "ready") {
+      throw new HttpError(422, observed.error ?? "Relay could not read the source screen", {
+        code: "AUTHORING_SOURCE_UNAVAILABLE",
+        sessionId: created.id,
+        recovery: "Recover the selected device, then start the proposal again.",
+      });
+    }
+    const started = await authoringSessions.start(created.id, runtime);
+    if (started.state !== "recording") {
+      throw new HttpError(422, started.error ?? "Relay could not start the proposal", {
+        code: "AUTHORING_START_FAILED",
+        sessionId: created.id,
+        recovery: "Recover the selected device, then start the proposal again.",
+      });
+    }
+    return started;
+  } catch (error) {
+    await authoringSessions.cancel(created.id, runtime).catch(() => undefined);
+    throw error;
+  }
+}
+
+/** Execute exactly one already-reserved durable Authoring transition. This
+ * function never retries; the workflow coordinator owns reconciliation. */
+export async function executeControlledAuthoringTransition(
+  scope: RequestContext,
+  sessionId: string,
+  input: AuthoringWorkflowTransition,
+  runtime: AuthoringRuntime = createAuthoringRuntime(),
+  workflowMutation?: NonNullable<AuthoringSession["workflowMutation"]>,
+): Promise<AuthoringSession> {
+  const current = await authoringSessions.get(sessionId);
+  await assertAuthoringTransitionAccess(scope, current, input.action);
+  if (input.action === "authoring-record") {
+    return authoringSessions.interact(sessionId, input.interaction, runtime, workflowMutation);
+  }
+  if (input.action === "authoring-checkpoint") {
+    return authoringSessions.interact(
+      sessionId,
+      { kind: "screenshot", ...(input.label ? { label: input.label } : {}) },
+      runtime,
+      workflowMutation,
+    );
+  }
+  if (input.action === "authoring-stop") {
+    return authoringSessions.stop(sessionId, runtime, workflowMutation);
+  }
+  if (input.action === "authoring-edit") {
+    return authoringSessions.edit(sessionId, input.edit, workflowMutation);
+  }
+  if (input.action === "authoring-replay") {
+    const session = await authoringSessions.replay(sessionId, runtime, workflowMutation);
+    const attempt = session.take?.replayAttempts.at(-1);
+    if (attempt?.outcome === "failed") {
+      throw new HttpError(422, attempt.error ?? "Proposal replay failed", {
+        code: "REPLAY_FAILED",
+        sessionId,
+        replayId: attempt.id,
+      });
+    }
+    if (attempt?.outcome === "cancelled") {
+      throw new HttpError(409, "Proposal replay was cancelled", {
+        code: "REPLAY_CANCELLED",
+        sessionId,
+        replayId: attempt.id,
+      });
+    }
+    return session;
+  }
+  if (input.action === "authoring-approve") {
+    return authoringSessions.commit(
+      sessionId,
+      {
+        ...(input.destination ? { destination: input.destination } : {}),
+        createTest: true,
+      },
+      undefined,
+      workflowMutation,
+    );
+  }
+  if (input.action === "authoring-discard") {
+    return authoringSessions.discard(sessionId, workflowMutation);
+  }
+  return authoringSessions.cancel(sessionId, runtime, workflowMutation);
+}
+
 async function body<T>(request: http.IncomingMessage): Promise<T> {
   return (await parseJsonBody(request)) as T;
 }
@@ -610,33 +735,13 @@ export async function handleAuthoringRoute(input: {
     }
     if (method === "POST" && pathname === "/authoring-sessions/begin") {
       const value = await body<CreateAuthoringSessionInput>(request);
-      await assertTargetLease(scope, value.target.targetId, value.leaseId);
-      const authoringRuntime = input.authoringRuntime ?? createAuthoringRuntime();
-      const created = await authoringSessions.create(value);
-      try {
-        const observed = await authoringSessions.observe(created.id, authoringRuntime);
-        if (observed.state !== "ready") {
-          throw new HttpError(422, observed.error ?? "Relay could not read the source screen", {
-            code: "AUTHORING_SOURCE_UNAVAILABLE",
-            sessionId: created.id,
-            recovery: "Recover the selected device, then start the proposal again.",
-          });
-        }
-        const started = await authoringSessions.start(created.id, authoringRuntime);
-        if (started.state !== "recording") {
-          throw new HttpError(422, started.error ?? "Relay could not start the proposal", {
-            code: "AUTHORING_START_FAILED",
-            sessionId: created.id,
-            recovery: "Recover the selected device, then start the proposal again.",
-          });
-        }
-        json(response, 201, {
-          session: started,
-        });
-      } catch (error) {
-        await authoringSessions.cancel(created.id, authoringRuntime).catch(() => undefined);
-        throw error;
-      }
+      json(response, 201, {
+        session: await beginControlledAuthoringSession(
+          scope,
+          value,
+          input.authoringRuntime ?? createAuthoringRuntime(),
+        ),
+      });
       return true;
     }
 

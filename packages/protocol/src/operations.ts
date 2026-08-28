@@ -6,15 +6,16 @@ import {
   type AuthoringSessionListResponse,
   type AuthoringSessionResponse,
   type CommitAuthoringSessionInput,
-  type CreateAuthoringSessionInput,
   type ReorderAuthoringTakeInput,
   type ReplaceAuthoringActionInput,
   type TrimAuthoringTakeInput,
 } from "./authoring.js";
+import { createAuthoringSessionParser } from "./authoring-session-operation-parser.js";
 import { assertIosSessionOperationLifecycle } from "./ios-session-lifecycle.js";
 import { isExecutionTargetRef } from "./execution-target.js";
 import { createTargetRecoveryOperationParsers } from "./target-recovery-operation-parsers.js";
 import { createTargetCaptureOperationParsers } from "./target-capture-operation-parsers.js";
+import { createTargetSupervisorOperationDefinition } from "./target-supervisor-operation-definition.js";
 import * as authoringOperations from "./authoring-raw-optimization-operation.js";
 import { appleDeviceOperationDefinitions } from "./apple-device-operation-definitions.js";
 import { runRepairOperationDefinitions } from "./run-repair-operations.js";
@@ -22,6 +23,8 @@ import { runEvidenceOperationDefinitions } from "./run-evidence-operation-defini
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
 import { campaignCapacityOperationDefinitions } from "./campaign-capacity-operation-definitions.js";
+import { workflowOperationDefinitions } from "./workflow-operation-definitions.js";
+import { scheduleOperationDefinitions } from "./schedule-operation-definitions.js";
 import { createDiscoveryOperationDefinitions } from "./discovery-operation-definitions.js";
 import { combineOperationDefinitions } from "./combine-operation-definitions.js";
 import { createOperationBuilders } from "./operation-builders.js";
@@ -836,36 +839,6 @@ const authoringSessionRefParser = objectParser<{ sessionId: string }>(
   assertAuthoringSessionRef,
 );
 
-const createAuthoringSessionParser = objectParser<CreateAuthoringSessionInput>(
-  "create authoring session input",
-  (input) => {
-    string(input.appMapId, "appMapId");
-    if (input.testName !== undefined) string(input.testName, "testName");
-    string(input.leaseId, "leaseId");
-    const target = record(input.target, "authoring target");
-    string(target.targetId, "authoring target targetId");
-    if (target.kind !== "device" && target.kind !== "browser") {
-      fail("authoring target kind", "must be device or browser");
-    }
-    if (!(["android", "ios", "browser"] as unknown[]).includes(target.platform)) {
-      fail("authoring target platform", "must be android, ios, or browser");
-    }
-    if (
-      (target.kind === "browser" && target.platform !== "browser") ||
-      (target.kind === "device" && target.platform === "browser")
-    ) {
-      fail("authoring target", "kind and platform do not describe the same target");
-    }
-    if (number(input.expectedAppMapRevision, "expectedAppMapRevision") < 0) {
-      fail("expectedAppMapRevision", "must be non-negative");
-    }
-    if (input.sourceScreenId !== undefined) string(input.sourceScreenId, "sourceScreenId");
-    if (input.pendingConnectionId !== undefined)
-      string(input.pendingConnectionId, "pendingConnectionId");
-    if (input.group !== undefined) string(input.group, "group");
-  },
-);
-
 function assertAuthoringInteraction(value: unknown): void {
   const interaction = record(value, "authoring interaction");
   const kind = string(interaction.kind, "authoring interaction kind");
@@ -1072,11 +1045,9 @@ const appMapOperationDefinitions = createAppMapOperationDefinitions({
   record,
   string,
 });
-
 type ExactOperationDefinition = {
   [Id in OperationId]: OperationDefinition<Id, OperationInput<Id>, OperationOutput<Id>>;
 }[OperationId];
-
 export const operationDefinitions = [
   query("system.health.get", "Get Relay health", "/health", {
     category: "system",
@@ -1182,6 +1153,7 @@ export const operationDefinitions = [
     output: screenshotParser,
   }),
   targetObservationOperationDefinition,
+  createTargetSupervisorOperationDefinition({ assertTargetRuntimeReadiness }),
   command(
     "target.scroll-survey.capture",
     "Capture a bounded scrollable-page survey",
@@ -1573,20 +1545,11 @@ export const operationDefinitions = [
     "/authoring-sessions/:sessionId",
     { category: "authoring", input: authoringSessionRefParser, output: okParser },
   ),
-  query("schedule.list", "List schedules", "/schedules"),
-  command("schedule.create", "Create schedule", "POST", "/schedules"),
-  command("schedule.delete", "Delete schedule", "DELETE", "/schedules/:scheduleId"),
-  query("matrix.list", "List compatibility matrices", "/matrices"),
-  command("matrix.create", "Create compatibility matrix", "POST", "/matrices"),
-  command("matrix.update", "Update compatibility matrix", "PUT", "/matrices/:matrixId"),
-  command("matrix.delete", "Delete compatibility matrix", "DELETE", "/matrices/:matrixId"),
-  command("matrix.import", "Import compatibility matrix", "POST", "/matrices/import"),
-  command("matrix.resolve", "Resolve compatibility matrix", "POST", "/matrices/:matrixId/resolve", {
-    idempotency: "inherent",
-  }),
+  ...scheduleOperationDefinitions,
   ...discoveryOperationDefinitions,
   query("job.list", "List jobs", "/jobs", { category: "execution", output: jobsParser }),
   query("job.get", "Get job", "/jobs/:jobId", { category: "execution", input: jobIdInputParser }),
+  ...workflowOperationDefinitions,
   command("job.start", "Start job", "POST", "/jobs", {
     category: "execution",
     input: startJobInputParser,

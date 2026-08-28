@@ -1,8 +1,16 @@
-import type { AuthoringSession, OperationOutput } from "@relay/protocol";
+import {
+  parseAuthoringSession,
+  type AuthoringSession,
+  type DurableWorkflowOperationOutput,
+  type OperationInput,
+  type OperationOutput,
+} from "@relay/protocol";
 import { snapshotFromAuthoringSession } from "./authoring-projection.js";
 import type { RelayOperationPort } from "./operation-port.js";
 import type {
   AuthorTestDecision,
+  DurableAuthorTestDecision,
+  DurableWorkflowHandle,
   AuthorTestIntent,
   AuthorTestRecoveryIntent,
   AuthorTestSnapshot,
@@ -57,6 +65,7 @@ function frozenIdentity(intent: AuthorTestIntent, revision: number): FrozenAutho
     ...(intent.sourceScreenId ? { sourceScreenId: intent.sourceScreenId } : {}),
     ...(intent.pendingConnectionId ? { pendingConnectionId: intent.pendingConnectionId } : {}),
     ...(intent.group?.trim() ? { group: intent.group.trim() } : {}),
+    ...(intent.workflowRequestId ? { workflowRequestId: intent.workflowRequestId } : {}),
   };
 }
 
@@ -70,6 +79,7 @@ function frozenIdentityFromSession(session: AuthoringSession): FrozenAuthorTestI
     ...(session.sourceScreenId ? { sourceScreenId: session.sourceScreenId } : {}),
     ...(session.pendingConnectionId ? { pendingConnectionId: session.pendingConnectionId } : {}),
     ...(session.group?.trim() ? { group: session.group.trim() } : {}),
+    ...(session.workflowRequestId ? { workflowRequestId: session.workflowRequestId } : {}),
   };
 }
 
@@ -115,10 +125,145 @@ function validStartedSession(
     session.sourceScreenId === intent.sourceScreenId &&
     session.pendingConnectionId === intent.pendingConnectionId &&
     session.testName === intent.title.trim() &&
+    session.workflowRequestId === intent.workflowRequestId &&
     (session.group?.trim() || undefined) === (intent.group?.trim() || undefined) &&
     session.state === "recording" &&
     session.take?.state === "recording",
   );
+}
+
+function unavailableDurableAuthor(input: {
+  workflow: DurableWorkflowHandle;
+  frozen?: FrozenAuthorTestIdentity;
+  problem: WorkflowProblem;
+  sessionId?: string;
+}): AuthorTestSnapshot {
+  return {
+    schemaVersion: 1,
+    kind: "author-test",
+    title: input.frozen?.title ?? "New Test",
+    phase: "needs-attention",
+    stage: "unknown",
+    version: `workflow-v${input.workflow.expectedVersion}`,
+    workflow: input.workflow,
+    ...(input.frozen ? { frozen: input.frozen } : {}),
+    ...(input.sessionId ? { authoring: { sessionId: input.sessionId } } : {}),
+    progress: { label: input.problem.title },
+    allowedNextActions: ["inspect"],
+    problems: [input.problem],
+    evidenceRefs: [],
+  };
+}
+
+function durableAuthorSnapshot(
+  output: DurableWorkflowOperationOutput,
+  fallbackFrozen?: FrozenAuthorTestIdentity,
+): AuthorTestSnapshot {
+  const record = output.workflow.record;
+  const workflow = { workflowId: record.workflowId, expectedVersion: record.version };
+  const frozen = (
+    record.frozenIdentity && typeof record.frozenIdentity === "object"
+      ? record.frozenIdentity
+      : fallbackFrozen
+  ) as FrozenAuthorTestIdentity | undefined;
+  let session: AuthoringSession | undefined;
+  try {
+    if (output.session) session = parseAuthoringSession(output.session);
+  } catch {
+    session = undefined;
+  }
+  if (record.resolution?.kind === "abandoned" && frozen) {
+    return {
+      schemaVersion: 1,
+      kind: "author-test",
+      title: frozen.title,
+      phase: "cancelled",
+      stage: "cancelled",
+      version: `workflow-v${workflow.expectedVersion}`,
+      workflow,
+      frozen,
+      ...(record.resource?.kind === "authoring-session"
+        ? { authoring: { sessionId: record.resource.id } }
+        : {}),
+      progress: { label: "Recording workflow abandoned after review" },
+      allowedNextActions: ["inspect"],
+      problems: [],
+      evidenceRefs: [],
+    };
+  }
+  if (!frozen || record.kind !== "author-test" || !session) {
+    return unavailableDurableAuthor({
+      workflow,
+      ...(frozen ? { frozen } : {}),
+      ...(record.resource?.kind === "authoring-session" ? { sessionId: record.resource.id } : {}),
+      problem: {
+        code: "mutation-outcome-unknown",
+        title: "The recording still needs reconciliation",
+        detail: "Relay cannot yet prove one canonical Authoring Session for this workflow.",
+        recovery: "Inspect this workflow again. Do not start or mutate another recording.",
+        retryable: false,
+      },
+    });
+  }
+  const uncertain =
+    record.status === "needs-attention" ||
+    record.lastTransition.endsWith("-requested") ||
+    record.lastTransition.endsWith("-outcome-unknown");
+  return snapshotFromAuthoringSession({
+    workflow,
+    frozen,
+    session,
+    ...(uncertain
+      ? {
+          forceNeedsAttention: true,
+          extraProblems: [
+            {
+              code: "mutation-outcome-unknown" as const,
+              title: "The last recording mutation has an uncertain outcome",
+              detail: `Relay stopped at ${record.lastTransition} and will not issue it again automatically.`,
+              recovery: "Inspect the canonical recording evidence before taking another action.",
+              retryable: false,
+            },
+          ],
+        }
+      : {}),
+  });
+}
+
+function durableTransitionInput(
+  decision: DurableAuthorTestDecision,
+): OperationInput<"workflow.transition"> {
+  const fence = {
+    workflowId: decision.workflowId,
+    expectedVersion: decision.expectedVersion,
+  };
+  if (decision.action === "record") {
+    return { ...fence, action: "authoring-record", interaction: decision.interaction };
+  }
+  if (decision.action === "checkpoint") {
+    return {
+      ...fence,
+      action: "authoring-checkpoint",
+      ...(decision.label ? { label: decision.label } : {}),
+    };
+  }
+  if (decision.action === "stop") return { ...fence, action: "authoring-stop" };
+  if (decision.action === "edit") {
+    return { ...fence, action: "authoring-edit", edit: structuredClone(decision.edit) };
+  }
+  if (decision.action === "replay") return { ...fence, action: "authoring-replay" };
+  if (decision.action === "approve") {
+    return {
+      ...fence,
+      action: "authoring-approve",
+      ...(decision.destination ? { destination: decision.destination } : {}),
+    };
+  }
+  if (decision.action === "discard") return { ...fence, action: "authoring-discard" };
+  if (decision.action === "abandon") {
+    return { ...fence, action: "authoring-abandon", reason: decision.reason };
+  }
+  return { ...fence, action: "authoring-cancel" };
 }
 
 export class CanonicalAuthoringWorkflow {
@@ -138,6 +283,18 @@ export class CanonicalAuthoringWorkflow {
           title: "The recording intent is incomplete",
           detail: "A title, App Map identifier, and actor-owned lease are required.",
           recovery: "Choose a Test title and a controlled target, then start again.",
+          retryable: false,
+        },
+      });
+    }
+    if (intent.continuation === "durable" && !intent.workflowRequestId) {
+      return initialProblem({
+        intent,
+        problem: {
+          code: "invalid-intent",
+          title: "The durable recording has no stable request identity",
+          detail: "Server-owned continuation requires one request ID before target control.",
+          recovery: "Start a new recording with one stable workflow request ID.",
           retryable: false,
         },
       });
@@ -172,6 +329,61 @@ export class CanonicalAuthoringWorkflow {
     }
 
     const frozen = frozenIdentity(intent, revision);
+    if (intent.continuation === "durable" && intent.workflowRequestId) {
+      let durable: OperationOutput<"workflow.create">;
+      try {
+        durable = await this.operations.invoke("workflow.create", {
+          workflowId: intent.workflowRequestId,
+          kind: "author-test",
+          frozenIdentity: frozen,
+        });
+      } catch (error) {
+        return initialProblem({
+          intent,
+          frozen,
+          problem: unavailableProblem("reserve the durable recording workflow", error),
+        });
+      }
+      if (durable.disposition === "existing") {
+        try {
+          return durableAuthorSnapshot(
+            await this.operations.invoke("workflow.get", {
+              workflowId: durable.workflow.record.workflowId,
+            }),
+            frozen,
+          );
+        } catch (error) {
+          return unavailableDurableAuthor({
+            workflow: {
+              workflowId: durable.workflow.record.workflowId,
+              expectedVersion: durable.workflow.record.version,
+            },
+            frozen,
+            problem: mutationUnknownProblem("the existing recording was reconciled", error),
+          });
+        }
+      }
+      try {
+        return durableAuthorSnapshot(
+          await this.operations.invoke("workflow.transition", {
+            workflowId: durable.workflow.record.workflowId,
+            expectedVersion: durable.workflow.record.version,
+            action: "start-authoring",
+            leaseId: intent.leaseId,
+          }),
+          frozen,
+        );
+      } catch (error) {
+        return unavailableDurableAuthor({
+          workflow: {
+            workflowId: durable.workflow.record.workflowId,
+            expectedVersion: durable.workflow.record.version,
+          },
+          frozen,
+          problem: mutationUnknownProblem("the Authoring Session began", error),
+        });
+      }
+    }
     let output: OperationOutput<"authoring.session.begin">;
     try {
       output = await this.operations.invoke("authoring.session.begin", {
@@ -229,6 +441,55 @@ export class CanonicalAuthoringWorkflow {
         problems: [unavailableProblem("recover the canonical Authoring Session", error)],
         evidenceRefs: [],
       };
+    }
+  }
+
+  async inspectDurable(workflowId: string): Promise<AuthorTestSnapshot> {
+    try {
+      return durableAuthorSnapshot(await this.operations.invoke("workflow.get", { workflowId }));
+    } catch (error) {
+      return unavailableDurableAuthor({
+        workflow: { workflowId, expectedVersion: 1 },
+        problem: {
+          ...unavailableProblem("inspect the durable recording workflow", error),
+          recovery:
+            "Restore Relay connectivity, then inspect this workflow ID again. Do not start another recording.",
+        },
+      });
+    }
+  }
+
+  snapshotDurable(output: DurableWorkflowOperationOutput): AuthorTestSnapshot {
+    return durableAuthorSnapshot(output);
+  }
+
+  async advanceDurable(decision: DurableAuthorTestDecision): Promise<AuthorTestSnapshot> {
+    try {
+      return durableAuthorSnapshot(
+        await this.operations.invoke("workflow.transition", durableTransitionInput(decision)),
+      );
+    } catch (error) {
+      try {
+        const inspected = durableAuthorSnapshot(
+          await this.operations.invoke("workflow.get", { workflowId: decision.workflowId }),
+        );
+        return {
+          ...inspected,
+          problems: [
+            ...inspected.problems,
+            mutationUnknownProblem("the recording decision completed", error),
+          ],
+        };
+      } catch {
+        // A failed read cannot justify issuing the mutation again.
+      }
+      return unavailableDurableAuthor({
+        workflow: {
+          workflowId: decision.workflowId,
+          expectedVersion: decision.expectedVersion,
+        },
+        problem: mutationUnknownProblem("the recording decision completed", error),
+      });
     }
   }
 

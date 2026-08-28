@@ -7,6 +7,7 @@ import type { JobRouteRuntime } from "./job-routes.js";
 import type { RunRouteRuntime } from "./run-routes.js";
 import type { StepRunRouteRuntime } from "./step-run-route.js";
 import type { TargetRuntimeRouteRuntime } from "./target-runtime-routes.js";
+import type { WorkflowRouteRuntime } from "./workflow-routes.js";
 
 /** Host-owned server seams, kept separate from the HTTP router implementation. */
 export type StartServerOptions = {
@@ -32,6 +33,8 @@ export type StartServerOptions = {
   appMapTestRunRuntime?: Partial<AppMapTestRunRouteRuntime>;
   /** Test seam for retry/replay/resume intent ordering. */
   jobRouteRuntime?: Partial<JobRouteRuntime>;
+  /** Test seam for durable workflow reconciliation and exact-once cancellation. */
+  workflowRouteRuntime?: Partial<WorkflowRouteRuntime>;
   /** Test seam for repair-retry intent ordering. */
   runRouteRuntime?: Partial<RunRouteRuntime>;
   /** Test seam for standalone-step execution without a physical target. */

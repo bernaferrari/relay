@@ -271,6 +271,7 @@ export async function snapshotIosSingleFlight(
         nodes,
         at: Date.now(),
         durationMs: Math.max(0, Date.now() - startedAt),
+        staleAfterInput: currentIosSnapshotInputEpoch(key) !== inputEpoch,
       });
     },
     () => undefined,

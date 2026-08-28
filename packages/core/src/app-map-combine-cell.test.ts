@@ -565,6 +565,17 @@ function childFixture() {
     appMapRevision: plan.appMapRevision,
     testId: plan.test.id,
     planDigest: digestAppMapTestExecutionValue(plan),
+    executionRisk: {
+      schemaVersion: 1,
+      level: "safe",
+      reasons: [],
+      externalEffects: [],
+      confirmation: "none",
+      expectedAppBoundaries: [],
+      maximumActions: 0,
+      maximumDurationMs: 0,
+      cleanupRequired: false,
+    },
     summary: {
       recipes: 1,
       checkedSelectors: 0,

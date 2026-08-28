@@ -8,6 +8,10 @@ import {
   summarizeAuthoringOperationResult,
   type AuthoringSession,
 } from "./authoring.js";
+import {
+  CONTROL_AND_RECORD_PROVENANCE,
+  parseAuthoringCaptureProvenance,
+} from "./authoring-capture.js";
 
 function session(state: AuthoringSession["state"]): AuthoringSession {
   return {
@@ -63,6 +67,7 @@ test("canonical Test names remain distinct from optional App Map grouping", () =
         testName: "Settings localization",
         state: "recording",
         target: { kind: "device", platform: "android", targetId: "device-a" },
+        captureProvenance: CONTROL_AND_RECORD_PROVENANCE,
       },
     },
   );
@@ -202,6 +207,7 @@ test("agent mutation output summarizes a take without repeating evidence or sema
       appMapId: "map-a",
       state: "reviewing",
       target: { kind: "device", platform: "android", targetId: "device-a" },
+      captureProvenance: CONTROL_AND_RECORD_PROVENANCE,
       sourceScreenId: "screen-start",
       take: {
         id: "take-a",
@@ -209,7 +215,14 @@ test("agent mutation output summarizes a take without repeating evidence or sema
         revision: 2,
         actionCount: 1,
         evidenceCount: 1,
-        actions: [{ id: "action-a", stepCount: 1, proofStatus: "pixels-only" }],
+        actions: [
+          {
+            id: "action-a",
+            stepCount: 1,
+            proofStatus: "pixels-only",
+            captureProof: "replay-proved",
+          },
+        ],
         latestReplay: {
           id: "replay-a",
           outcome: "passed",
@@ -230,6 +243,33 @@ test("agent mutation output summarizes a take without repeating evidence or sema
   assert.deepEqual(summarizeAuthoringOperationResult("authoring.session.get", { session: value }), {
     session: value,
   });
+});
+
+test("capture provenance rejects mismatched origin claims and keeps inferred work unproved", () => {
+  assert.deepEqual(
+    parseAuthoringCaptureProvenance({
+      schemaVersion: 1,
+      mode: "watch-and-infer",
+      origin: "observed-transition",
+    }),
+    {
+      schemaVersion: 1,
+      mode: "watch-and-infer",
+      origin: "observed-transition",
+    },
+  );
+  assert.throws(
+    () =>
+      parseAuthoringSession({
+        ...session("reviewing"),
+        captureProvenance: {
+          schemaVersion: 1,
+          mode: "watch-and-infer",
+          origin: "relay-control",
+        },
+      }),
+    /mode and origin do not agree/u,
+  );
 });
 
 test("raw optimization output is a small immutable review payload", () => {

@@ -1,14 +1,17 @@
 import type {
   ConnectTargetIntent,
+  CancelRunOutcomeIntent,
   ContinueRepeatOutcomeIntent,
   ExportEvidenceIntent,
   EditRecordingOutcomeIntent,
   InspectFailureIntent,
+  InspectWorkflowOutcomeIntent,
   ObserveTargetIntent,
   ProposeRepairIntent,
   RecordTestOutcomeIntent,
   RepeatTestOutcomeIntent,
   RunTestOutcomeIntent,
+  VerifyChangeOutcomeIntent,
 } from "@relay/workflows";
 import type {
   AuthoringInteraction,
@@ -17,10 +20,13 @@ import type {
   RepeatPilotSpec,
 } from "@relay/protocol";
 import { UsageError } from "./errors.js";
+import type { ReplayLabFileIntent } from "./replay-lab-files.js";
 
 export type OutcomeCliIntent =
   | ConnectTargetIntent
   | ObserveTargetIntent
+  | InspectWorkflowOutcomeIntent
+  | CancelRunOutcomeIntent
   | ContinueRepeatOutcomeIntent
   | RecordTestOutcomeIntent
   | RunTestOutcomeIntent
@@ -28,7 +34,9 @@ export type OutcomeCliIntent =
   | InspectFailureIntent
   | ProposeRepairIntent
   | ExportEvidenceIntent
-  | EditRecordingOutcomeIntent;
+  | EditRecordingOutcomeIntent
+  | ReplayLabFileIntent
+  | VerifyChangeOutcomeIntent;
 
 type OutcomeCommandTokens = {
   positionals: readonly string[];
@@ -204,10 +212,14 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
     };
   }
   if (verb === "edit-recording" && args.length >= 4) {
+    const expectedVersion = Number(args[1]);
+    if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+      throw new UsageError("edit-recording expectedVersion must be a positive integer");
+    }
     return {
       kind: "edit-recording",
-      ref: args[0]! as EditRecordingOutcomeIntent["ref"],
-      expectedVersion: args[1]!,
+      workflowId: args[0]!,
+      expectedVersion,
       edit: parseRecordingEdit(args.slice(2)),
     };
   }
@@ -220,6 +232,7 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       ...(selectedMap || args.length === 2 ? { appMapId: selectedMap ?? args[0]! } : {}),
       testId: args.at(-1)!,
       ...(targetId ? { targetId } : {}),
+      ...(tokens.switches.has("--confirm") ? { confirmRisk: true } : {}),
     };
   }
   if (verb === "repeat" && (args.length === 1 || args.length === 2)) {
@@ -270,6 +283,7 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       },
       ...(evidence ? { evidence } : {}),
       ...(targetId ? { targetId } : {}),
+      ...(tokens.switches.has("--confirm") ? { confirmRisk: true } : {}),
     };
   }
   if (verb === "continue-repeat" && args.length === 2) {
@@ -281,6 +295,35 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       ref: args[0]! as ContinueRepeatOutcomeIntent["ref"],
       expectedVersion: args[1]!,
       confirmRemaining: true,
+    };
+  }
+  if (verb === "inspect-workflow" && args.length === 1) {
+    if (args[0]!.startsWith("relay-workflow.v1.") && args[0]!.length > 96 * 1024) {
+      throw new UsageError("legacy workflow reference exceeds the bounded input limit");
+    }
+    return args[0]!.startsWith("relay-workflow.v1.")
+      ? {
+          kind: "inspect-workflow",
+          legacyRef: args[0]! as Extract<
+            InspectWorkflowOutcomeIntent,
+            { legacyRef: unknown }
+          >["legacyRef"],
+        }
+      : { kind: "inspect-workflow", workflowId: args[0]! };
+  }
+  if (verb === "cancel-run" && args.length === 2) {
+    if (!tokens.switches.has("--confirm")) {
+      throw new UsageError("cancel-run requires --confirm");
+    }
+    const expectedVersion = Number(args[1]);
+    if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+      throw new UsageError("cancel-run expectedVersion must be a positive integer");
+    }
+    return {
+      kind: "cancel-run",
+      workflowId: args[0]!,
+      expectedVersion,
+      confirmCancel: true,
     };
   }
   if (verb === "inspect-failure" && args.length === 1) {
@@ -301,6 +344,44 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
   }
   if (verb === "export-evidence" && args.length === 1) {
     return { kind: "export-evidence", runId: args[0]! };
+  }
+  if (verb === "replay-lab" && args.length >= 3) {
+    const [analysis, ...paths] = args;
+    if (analysis !== "compare" && analysis !== "visual-localization" && analysis !== "all") {
+      throw new UsageError("replay-lab analysis must be compare, visual-localization, or all");
+    }
+    if (new Set(paths).size !== paths.length) {
+      throw new UsageError("replay-lab requires unique TracePack file paths in historical order");
+    }
+    return { kind: "replay-lab", analysis, paths };
+  }
+  if (verb === "verify-change") {
+    const [scope, ...subjects] = args;
+    const confirmationSatisfied = tokens.switches.has("--confirm") || undefined;
+    if (scope === "run" && subjects.length > 0) {
+      return {
+        kind: "verify-change",
+        selection: { kind: "runs", runIds: subjects },
+        ...(confirmationSatisfied ? { confirmationSatisfied } : {}),
+      };
+    }
+    if (scope === "test" && subjects.length > 1) {
+      return {
+        kind: "verify-change",
+        selection: { kind: "tests", appMapId: subjects[0]!, testIds: subjects.slice(1) },
+        ...(confirmationSatisfied ? { confirmationSatisfied } : {}),
+      };
+    }
+    if (scope === "revision" && subjects.length === 1 && /^[0-9a-f]{7,40}$/u.test(subjects[0]!)) {
+      return {
+        kind: "verify-change",
+        selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: subjects[0]! } },
+        ...(confirmationSatisfied ? { confirmationSatisfied } : {}),
+      };
+    }
+    throw new UsageError(
+      "verify-change requires run <runId...>, test <appMapId> <testId...>, or revision <gitSha>",
+    );
   }
   return undefined;
 }

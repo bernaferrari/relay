@@ -12,8 +12,7 @@ export type RepeatPublicErrorCode =
   | "REPEAT_DIMENSION_NOT_RUNNABLE"
   | "REPEAT_DIMENSION_HAS_NO_SUPPORTED_VALUES"
   | "REPEAT_VALUE_NOT_FOUND"
-  | "REPEAT_PILOT_CASE_INVALID"
-  | "REPEAT_RESUME_MODE_UNAVAILABLE";
+  | "REPEAT_PILOT_CASE_INVALID";
 
 export class RepeatSpecResolutionError extends Error {
   constructor(
@@ -70,12 +69,6 @@ export function resolveRepeatSpec(map: AppMap, input: RepeatSpec): ResolvedRepea
     return { id: dimension.id, valueIds };
   });
   const pilot = parsed.data.pilot ?? { mode: "representative" as const };
-  if (parsed.data.resume === "failed" || parsed.data.resume === "all") {
-    throw new RepeatSpecResolutionError(
-      "REPEAT_RESUME_MODE_UNAVAILABLE",
-      `Repeat resume mode ${parsed.data.resume} is not available until terminal-case reruns have a dedicated reviewed campaign operation.`,
-    );
-  }
   if (pilot.mode === "specified") {
     for (const dimension of dimensions) {
       if (!dimension.valueIds.includes(pilot.case[dimension.id]!)) {

@@ -9,6 +9,37 @@ import {
 
 type Invocation = { method: keyof RelayOutcomeJobs; argumentsValue: unknown[] };
 
+function tracePack(digit: string) {
+  const digest = `sha256:${digit.repeat(64)}`;
+  return {
+    schemaVersion: 1 as const,
+    kind: "relay-trace-pack" as const,
+    digest,
+    createdAt: 1,
+    source: {
+      runId: `run-${digit}`,
+      runSchemaVersion: 5,
+      status: "ok",
+      action: "test",
+      inputDigest: "a".repeat(64),
+      writtenAt: 1,
+    },
+    redaction: { status: "applied-at-persistence" as const, redactedChannels: [] },
+    completeness: { status: "complete" as const, channels: {}, missing: [], artifacts: [] },
+    objects: [
+      {
+        path: "run.json",
+        kind: "frozen-run" as const,
+        mediaType: "application/json",
+        encoding: "json" as const,
+        digest,
+        bytes: 2,
+        content: {},
+      },
+    ],
+  };
+}
+
 function recordingJobs(invocations: Invocation[]): RelayOutcomeJobs {
   return new Proxy(
     {},
@@ -61,52 +92,58 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
     },
     {
       name: "relay_run_test",
-      argumentsValue: { appMapId: "checkout", testId: "smoke", targetId: "pixel-9" },
+      argumentsValue: {
+        appMapId: "checkout",
+        testId: "smoke",
+        targetId: "pixel-9",
+        confirmRisk: true,
+      },
       method: "run",
       expected: {
         kind: "run-test",
         appMapId: "checkout",
         testId: "smoke",
         targetId: "pixel-9",
+        confirmRisk: true,
       },
     },
     {
       name: "relay_record_action",
       argumentsValue: {
-        ref: "recording-ref",
-        expectedVersion: "v1",
+        workflowId: "recording-workflow",
+        expectedVersion: 1,
         interaction: { kind: "tap", target: { label: "Settings" } },
       },
       method: "advanceRecording",
       expected: {
         action: "record",
-        ref: "recording-ref",
-        expectedVersion: "v1",
+        workflowId: "recording-workflow",
+        expectedVersion: 1,
         interaction: { kind: "tap", target: { label: "Settings" } },
       },
     },
     {
       name: "relay_add_checkpoint",
-      argumentsValue: { ref: "recording-ref", expectedVersion: "v2", label: "Settings" },
+      argumentsValue: { workflowId: "recording-workflow", expectedVersion: 2, label: "Settings" },
       method: "advanceRecording",
       expected: {
         action: "checkpoint",
-        ref: "recording-ref",
-        expectedVersion: "v2",
+        workflowId: "recording-workflow",
+        expectedVersion: 2,
         label: "Settings",
       },
     },
     {
       name: "relay_stop_recording",
-      argumentsValue: { ref: "recording-ref", expectedVersion: "v3" },
+      argumentsValue: { workflowId: "recording-workflow", expectedVersion: 3 },
       method: "advanceRecording",
-      expected: { action: "stop", ref: "recording-ref", expectedVersion: "v3" },
+      expected: { action: "stop", workflowId: "recording-workflow", expectedVersion: 3 },
     },
     {
       name: "relay_edit_recording",
       argumentsValue: {
-        ref: "recording-ref",
-        expectedVersion: "v4",
+        workflowId: "recording-workflow",
+        expectedVersion: 4,
         edit: {
           kind: "merge",
           actionIds: ["tap-menu", "tap-settings"],
@@ -116,8 +153,8 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
       method: "editRecording",
       expected: {
         kind: "edit-recording",
-        ref: "recording-ref",
-        expectedVersion: "v4",
+        workflowId: "recording-workflow",
+        expectedVersion: 4,
         edit: {
           kind: "merge",
           actionIds: ["tap-menu", "tap-settings"],
@@ -127,16 +164,16 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
     },
     {
       name: "relay_replay_recording",
-      argumentsValue: { ref: "recording-ref", expectedVersion: "v4" },
+      argumentsValue: { workflowId: "recording-workflow", expectedVersion: 4 },
       method: "advanceRecording",
-      expected: { action: "replay", ref: "recording-ref", expectedVersion: "v4" },
+      expected: { action: "replay", workflowId: "recording-workflow", expectedVersion: 4 },
     },
     {
       name: "relay_approve_recording",
-      argumentsValue: { ref: "recording-ref", expectedVersion: "v5" },
+      argumentsValue: { workflowId: "recording-workflow", expectedVersion: 5 },
       confirmed: true,
       method: "advanceRecording",
-      expected: { action: "approve", ref: "recording-ref", expectedVersion: "v5" },
+      expected: { action: "approve", workflowId: "recording-workflow", expectedVersion: 5 },
     },
     {
       name: "relay_repeat_test",
@@ -175,9 +212,21 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
     },
     {
       name: "relay_inspect_workflow",
-      argumentsValue: { ref: "workflow-ref" },
+      argumentsValue: { workflowId: "workflow-id" },
       method: "inspect",
-      expected: "workflow-ref",
+      expected: { workflowId: "workflow-id" },
+    },
+    {
+      name: "relay_cancel_run",
+      argumentsValue: { workflowId: "workflow-id", expectedVersion: 2 },
+      confirmed: true,
+      method: "cancelRun",
+      expected: {
+        kind: "cancel-run",
+        workflowId: "workflow-id",
+        expectedVersion: 2,
+        confirmCancel: true,
+      },
     },
     {
       name: "relay_continue_repeat",
@@ -211,6 +260,30 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
         checkId: "check-1",
         proposal: "accept-current",
         reason: "Approved copy change",
+      },
+    },
+    {
+      name: "relay_replay_lab",
+      argumentsValue: {
+        analysis: "compare",
+        tracePacks: [tracePack("a"), tracePack("b")],
+      },
+      method: "replayLab",
+      expected: {
+        kind: "replay-lab",
+        analysis: "compare",
+        tracePacks: [tracePack("a"), tracePack("b")],
+      },
+    },
+    {
+      name: "relay_verify_change",
+      argumentsValue: {
+        selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: "abcdef0" } },
+      },
+      method: "verifyChange",
+      expected: {
+        kind: "verify-change",
+        selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: "abcdef0" } },
       },
     },
     {
@@ -250,7 +323,7 @@ test("protected outcome tools reject missing confirmation before workflow dispat
     },
     {
       name: "relay_approve_recording" as const,
-      argumentsValue: { ref: "recording-ref", expectedVersion: "v1" },
+      argumentsValue: { workflowId: "recording-workflow", expectedVersion: 1 },
     },
     {
       name: "relay_continue_repeat" as const,
@@ -291,4 +364,124 @@ test("default outcome tool copy keeps engine nouns behind advanced profiles", ()
       descriptor.name,
     );
   }
+});
+
+test("verify-change is a read-only fail-closed tool with no provider posting fields", () => {
+  const descriptor = relayOutcomeTools.find(({ name }) => name === "relay_verify_change")!;
+  assert.equal(descriptor.annotations.readOnlyHint, true);
+  assert.equal(descriptor.requiresConfirmation, false);
+  assert.equal(
+    descriptor.inputSchema.safeParse({
+      selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: "abcdef0" } },
+      github: { checkPosting: true },
+    }).success,
+    false,
+  );
+});
+
+test("Replay Lab MCP accepts only bounded explicit payloads", async () => {
+  const descriptor = relayOutcomeTools.find(({ name }) => name === "relay_replay_lab")!;
+  assert.equal(descriptor.annotations.readOnlyHint, true);
+  assert.equal(
+    descriptor.inputSchema.safeParse({ analysis: "compare", tracePacks: [tracePack("a")] }).success,
+    false,
+  );
+  const oversized = structuredClone(tracePack("b"));
+  oversized.objects[0]!.bytes = 33 * 1024 * 1024;
+  assert.equal(
+    descriptor.inputSchema.safeParse({
+      analysis: "all",
+      tracePacks: [tracePack("a"), oversized],
+    }).success,
+    true,
+    "declared object bytes do not replace actual transport measurement",
+  );
+  const falselySmall = structuredClone(tracePack("c"));
+  falselySmall.objects[0]!.content = { payload: "x".repeat(32 * 1024 * 1024) };
+  falselySmall.objects[0]!.bytes = 1;
+  assert.equal(
+    descriptor.inputSchema.safeParse({
+      analysis: "compare",
+      tracePacks: [tracePack("a"), falselySmall],
+    }).success,
+    false,
+    "actual JSON payload size must win over the declared object byte count",
+  );
+  let deeplyNested: unknown = "leaf";
+  for (let index = 0; index < 10_000; index += 1) deeplyNested = { child: deeplyNested };
+  const deepPack = structuredClone(tracePack("d"));
+  (deepPack.objects[0] as { content: unknown }).content = deeplyNested;
+  assert.equal(
+    descriptor.inputSchema.safeParse({
+      analysis: "compare",
+      tracePacks: [tracePack("a"), deepPack],
+    }).success,
+    false,
+    "deep JSON must fail before offline analysis",
+  );
+  const invocations: Invocation[] = [];
+  await assert.rejects(
+    invokeRelayOutcomeToolWithJobs({
+      name: "relay_replay_lab",
+      argumentsValue: { analysis: "compare", tracePacks: [tracePack("a"), deepPack] },
+      confirmed: false,
+      jobs: recordingJobs(invocations),
+    }),
+    /depth/u,
+  );
+  assert.deepEqual(invocations, []);
+});
+
+test("verify-change bounds ids and supplied TracePacks before invoking the façade", async () => {
+  const invocations: Invocation[] = [];
+  await assert.rejects(
+    invokeRelayOutcomeToolWithJobs({
+      name: "relay_verify_change",
+      argumentsValue: {
+        selection: {
+          kind: "runs",
+          runIds: Array.from({ length: 129 }, (_, index) => `run-${index}`),
+        },
+      },
+      confirmed: false,
+      jobs: recordingJobs(invocations),
+    }),
+    /128/u,
+  );
+  assert.deepEqual(invocations, []);
+
+  const falselySmall = structuredClone(tracePack("e"));
+  falselySmall.objects[0]!.content = { payload: "x".repeat(32 * 1024 * 1024) };
+  falselySmall.objects[0]!.bytes = 1;
+  await assert.rejects(
+    invokeRelayOutcomeToolWithJobs({
+      name: "relay_verify_change",
+      argumentsValue: {
+        selection: { kind: "trace-packs", tracePacks: [falselySmall] },
+      },
+      confirmed: false,
+      jobs: recordingJobs(invocations),
+    }),
+    /string|serialized bytes/u,
+  );
+  assert.deepEqual(invocations, []);
+
+  const tooManyObjects = structuredClone(tracePack("f"));
+  tooManyObjects.objects = Array.from({ length: 2_001 }, (_, index) => ({
+    ...tooManyObjects.objects[0]!,
+    path: index === 0 ? "run.json" : `artifacts/${index}.json`,
+    content: {},
+  }));
+  await assert.rejects(
+    invokeRelayOutcomeToolWithJobs({
+      name: "relay_verify_change",
+      argumentsValue: {
+        selection: { kind: "trace-packs", tracePacks: [tooManyObjects] },
+      },
+      confirmed: false,
+      jobs: recordingJobs(invocations),
+    }),
+    /2000 objects/u,
+  );
+  assert.deepEqual(invocations, []);
 });

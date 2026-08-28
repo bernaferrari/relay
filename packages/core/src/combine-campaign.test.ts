@@ -8,6 +8,7 @@ import {
   findActiveCombineCampaignForCombine,
   findActiveRepeatCampaigns,
   pendingSelectedCombineCampaignCells,
+  prepareSelectedCombineCampaignResume,
   projectCombineCampaign,
   readCombineCampaign,
   updateCombineCampaign,
@@ -163,6 +164,98 @@ test("a failed pilot requires review while untouched cases remain pending", asyn
   const projected = await projectCombineCampaign(campaign);
   assert.equal(projected.status, "needs-review");
   assert.equal(projected.cases[1]?.status, "pending");
+});
+
+test("failed and all resume modes reopen only reviewed non-passing cases", () => {
+  const campaign = fixture("passed");
+  campaign.execution.repeat!.resolved.resume = "failed";
+  campaign.cases[0] = {
+    ...campaign.cases[0]!,
+    status: "passed",
+    jobId: "passed-job",
+    runId: "passed-run",
+  };
+  campaign.cases[1] = {
+    ...campaign.cases[1]!,
+    status: "failed",
+    jobId: "failed-job",
+    runId: "failed-run",
+    error: "failed",
+  };
+  campaign.cases.push(
+    {
+      ...campaign.cases[1]!,
+      index: 2,
+      cellId: "c" + "c".repeat(32),
+      values: { language: "fr" },
+      status: "blocked",
+      jobId: "blocked-job",
+      runId: "blocked-run",
+    },
+    {
+      ...campaign.cases[1]!,
+      index: 3,
+      cellId: "c" + "d".repeat(32),
+      values: { language: "de" },
+      status: "cancelled",
+      jobId: "cancelled-job",
+      runId: "cancelled-run",
+    },
+    {
+      ...campaign.cases[1]!,
+      index: 4,
+      cellId: "c" + "e".repeat(32),
+      values: { language: "es" },
+      status: "pending",
+      jobId: undefined,
+      runId: undefined,
+    },
+    {
+      ...campaign.cases[1]!,
+      index: 5,
+      cellId: "c" + "f".repeat(32),
+      values: { language: "ja" },
+      status: "running",
+      jobId: "active-job",
+      runId: undefined,
+    },
+  );
+  campaign.execution.selectedCellIds = campaign.cases.map((item) => item.cellId);
+  campaign.execution.repeat!.selectedCaseIds = [...campaign.execution.selectedCellIds];
+
+  const failed = prepareSelectedCombineCampaignResume(campaign);
+  assert.deepEqual(failed.selectedCellIds, [campaign.cases[1]!.cellId, campaign.cases[4]!.cellId]);
+  assert.deepEqual(failed.retriedTerminalCellIds, [campaign.cases[1]!.cellId]);
+  assert.equal(failed.campaign.cases[0]?.status, "passed");
+  assert.equal(failed.campaign.cases[2]?.status, "blocked");
+  assert.equal(failed.campaign.cases[5]?.status, "running");
+  assert.deepEqual(failed.campaign.cases[1]?.priorRunIds, ["failed-run"]);
+  assert.equal(failed.campaign.cases[1]?.runId, undefined);
+  assert.equal(failed.campaign.cases[1]?.jobId, undefined);
+
+  campaign.execution.repeat!.resolved.resume = "all";
+  const all = prepareSelectedCombineCampaignResume(campaign);
+  assert.deepEqual(all.selectedCellIds, [
+    campaign.cases[1]!.cellId,
+    campaign.cases[2]!.cellId,
+    campaign.cases[3]!.cellId,
+    campaign.cases[4]!.cellId,
+  ]);
+  assert.deepEqual(all.retriedTerminalCellIds, [
+    campaign.cases[1]!.cellId,
+    campaign.cases[2]!.cellId,
+    campaign.cases[3]!.cellId,
+  ]);
+});
+
+test("terminal Repeat results cannot reopen without immutable Run evidence", () => {
+  const campaign = fixture("failed");
+  campaign.execution.repeat!.resolved.resume = "failed";
+  campaign.cases[0]!.jobId = "failed-job";
+  assert.throws(
+    () => prepareSelectedCombineCampaignResume(campaign),
+    /without immutable Run evidence/u,
+  );
 });
 
 async function withDurableCampaignState(operation: () => Promise<void> | void): Promise<void> {

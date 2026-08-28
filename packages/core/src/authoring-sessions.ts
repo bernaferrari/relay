@@ -5,10 +5,9 @@ import type {
   AuthoringRecordingEdit,
   AuthoringReplayAttempt,
   AuthoringSession,
-  AuthoringSessionState,
-  AuthoringTakeRevision,
   CreateAuthoringSessionInput,
 } from "@relay/protocol";
+import { CONTROL_AND_RECORD_PROVENANCE } from "@relay/protocol";
 export { recordedPauseDuration } from "./authoring-recorded-pause.js";
 import { AuthoringStateError, transition } from "./authoring-session-state.js";
 import {
@@ -22,7 +21,7 @@ import {
   observationMatchesExpectedDestination,
 } from "./authoring-session-screen-proof.js";
 export { AuthoringStateError, assertAuthoringTransition } from "./authoring-session-state.js";
-import { currentOperationContext, type OperationContext } from "./operation-context.js";
+import { currentOperationContext } from "./operation-context.js";
 import { now, publish } from "./events.js";
 import { KeyedSerialQueue } from "./coordination-store.js";
 import {
@@ -71,65 +70,13 @@ export type {
   AuthoringRecoveryScope,
   AuthoringRuntime,
 } from "./authoring-session-runtime.js";
-
-function clone<T>(value: T): T {
-  return structuredClone(value);
-}
-
-function requireState(
-  session: AuthoringSession,
-  ...states: AuthoringSessionState[]
-): AuthoringSession {
-  if (!states.includes(session.state)) {
-    throw new AuthoringStateError(
-      `Authoring Session is ${session.state}; expected ${states.join(" or ")}`,
-    );
-  }
-  return session;
-}
-
-function context(): OperationContext {
-  const operation = currentOperationContext();
-  if (!operation) throw new Error("Relay operation context is required for authoring");
-  return operation;
-}
-
-function assertOwner(session: AuthoringSession): void {
-  const operation = context();
-  if (
-    session.organizationId !== operation.organizationId ||
-    session.projectId !== operation.projectId
-  ) {
-    throw new AuthoringStateError("Authoring Session is outside this project");
-  }
-  if (session.actorId !== operation.actorId) {
-    throw new AuthoringStateError("Only the owning actor can mutate this Authoring Session");
-  }
-}
-function nextRevision(
-  session: AuthoringSession,
-  reason: AuthoringTakeRevision["reason"],
-  mutate: (previous: AuthoringTakeRevision) => AuthoringTakeRevision,
-): AuthoringSession {
-  const take = session.take!;
-  const previous = currentRevision(session);
-  const revision = mutate(clone(previous));
-  revision.id = `${take.id}:revision:${previous.revision + 1}`;
-  revision.revision = previous.revision + 1;
-  revision.createdAt = now();
-  revision.createdBy = context().actorId;
-  revision.reason = reason;
-  return {
-    ...session,
-    updatedAt: revision.createdAt,
-    take: {
-      ...take,
-      updatedAt: revision.createdAt,
-      currentRevision: revision.revision,
-      revisions: [...take.revisions, revision],
-    },
-  };
-}
+import {
+  assertAuthoringOwner as assertOwner,
+  authoringOperationContext as context,
+  cloneAuthoringValue as clone,
+  nextAuthoringRevision as nextRevision,
+  requireAuthoringState as requireState,
+} from "./authoring-session-mutation-support.js";
 
 const recordingLifecycleDependencies = {
   now,
@@ -200,9 +147,13 @@ export class AuthoringSessionStore {
       actorId: operation.actorId,
       actorKind: operation.actorKind,
       appMapId: input.appMapId,
+      ...(input.workflowRequestId?.trim()
+        ? { workflowRequestId: input.workflowRequestId.trim() }
+        : {}),
       ...(input.testName?.trim() ? { testName: input.testName.trim() } : {}),
       state: "preparing",
       target: clone(input.target),
+      captureProvenance: { ...CONTROL_AND_RECORD_PROVENANCE },
       leaseId: input.leaseId,
       expectedAppMapRevision: input.expectedAppMapRevision,
       ...(input.sourceScreenId ? { sourceScreenId: input.sourceScreenId } : {}),
@@ -302,6 +253,7 @@ export class AuthoringSessionStore {
         replayAttempts: [],
         ...seedAuthoringRawRecording({
           target: session.target,
+          captureProvenance: session.captureProvenance,
           trigger: "capture",
           recordedAt: at,
           observation: captured.observation,
@@ -354,6 +306,7 @@ export class AuthoringSessionStore {
         replayAttempts: [],
         ...seedAuthoringRawRecording({
           target: session.target,
+          captureProvenance: session.captureProvenance,
           trigger: "recording",
           recordedAt: at,
           observation: captured.observation,
@@ -367,32 +320,49 @@ export class AuthoringSessionStore {
     id: string,
     interaction: AuthoringInteraction,
     runtime: AuthoringRuntime,
+    workflowMutation?: NonNullable<AuthoringSession["workflowMutation"]>,
   ): Promise<AuthoringSession> {
-    return this.#mutate(id, async (session) => {
-      assertOwner(session);
-      requireState(session, "recording");
-      return recordAuthoringInteraction(session, interaction, runtime, {
-        ...recordingLifecycleDependencies,
-        idleStartedAt: this.#recordingReadyAt.get(id),
-      });
-    });
-  }
-
-  async stop(id: string, runtime: AuthoringRuntime): Promise<AuthoringSession> {
-    try {
-      const stopped = await this.#mutate(id, async (session) => {
+    return this.#mutate(
+      id,
+      async (session) => {
         assertOwner(session);
         requireState(session, "recording");
-        session = await finishAuthoringRecording(session, runtime, recordingLifecycleDependencies);
-        if (currentRevision(session).actions.length === 0) {
-          session = transition(session, "cancelled");
-          session.take = { ...session.take!, state: "discarded", updatedAt: session.updatedAt };
-          return session;
-        }
-        session = transition(session, "reviewing");
-        session.take = { ...session.take!, state: "reviewing", updatedAt: session.updatedAt };
-        return attachLiveDemonstrationAttempt(session);
-      });
+        return recordAuthoringInteraction(session, interaction, runtime, {
+          ...recordingLifecycleDependencies,
+          idleStartedAt: this.#recordingReadyAt.get(id),
+        });
+      },
+      workflowMutation,
+    );
+  }
+
+  async stop(
+    id: string,
+    runtime: AuthoringRuntime,
+    workflowMutation?: NonNullable<AuthoringSession["workflowMutation"]>,
+  ): Promise<AuthoringSession> {
+    try {
+      const stopped = await this.#mutate(
+        id,
+        async (session) => {
+          assertOwner(session);
+          requireState(session, "recording");
+          session = await finishAuthoringRecording(
+            session,
+            runtime,
+            recordingLifecycleDependencies,
+          );
+          if (currentRevision(session).actions.length === 0) {
+            session = transition(session, "cancelled");
+            session.take = { ...session.take!, state: "discarded", updatedAt: session.updatedAt };
+            return session;
+          }
+          session = transition(session, "reviewing");
+          session.take = { ...session.take!, state: "reviewing", updatedAt: session.updatedAt };
+          return attachLiveDemonstrationAttempt(session);
+        },
+        workflowMutation,
+      );
       if (stopped.state === "reviewing")
         await archiveSupersededAuthoringReviews({
           replacement: stopped,
@@ -466,286 +436,324 @@ export class AuthoringSessionStore {
   /** Deep recording-review module: callers express one semantic edit while
    * canonical state owns action lookup, structural validation, proof
    * invalidation, and the immutable next revision. */
-  async edit(id: string, edit: AuthoringRecordingEdit): Promise<AuthoringSession> {
-    return this.#mutate(id, async (session) => {
-      assertOwner(session);
-      requireState(session, "reviewing");
-      return nextRevision(session, "edit", (revision) =>
-        editAuthoringTakeRevision({
-          revision,
-          edit,
-          ...(session.group ? { group: session.group } : {}),
-        }),
-      );
-    });
+  async edit(
+    id: string,
+    edit: AuthoringRecordingEdit,
+    workflowMutation?: NonNullable<AuthoringSession["workflowMutation"]>,
+  ): Promise<AuthoringSession> {
+    return this.#mutate(
+      id,
+      async (session) => {
+        assertOwner(session);
+        requireState(session, "reviewing");
+        return nextRevision(session, "edit", (revision) =>
+          editAuthoringTakeRevision({
+            revision,
+            edit,
+            ...(session.group ? { group: session.group } : {}),
+          }),
+        );
+      },
+      workflowMutation,
+    );
   }
 
-  async replay(id: string, runtime: AuthoringRuntime): Promise<AuthoringSession> {
-    return this.#mutate(id, async (session) => {
-      assertOwner(session);
-      requireState(session, "reviewing");
-      const revision = currentRevision(session);
-      const startedAt = now();
-      const replayAction = runtime.replayAction;
-      const observeReplayActionEndpoint = runtime.observeReplayActionEndpoint;
-      if (
-        replayAction &&
-        observeReplayActionEndpoint &&
-        revision.actions.length + 1 > MAX_AUTHORING_RETAINED_OBSERVATIONS
-      ) {
-        // Do not execute a path whose per-action endpoints could not all be
-        // retained. A partial index would leave action ids resolving to
-        // nothing and make a failed proof look reviewable.
-        throw new AuthoringStateError(
-          `A Take can retain at most ${MAX_AUTHORING_RETAINED_OBSERVATIONS - 1} replay action endpoints; trim it before replaying`,
-        );
-      }
-      let outcome: AuthoringReplayAttempt["outcome"] = "passed";
-      let error: string | undefined;
-      const source = await persistCapturedAuthoringObservation(await runtime.observe(session));
-      const actionProofs: NonNullable<AuthoringReplayAttempt["actionProofs"]> = {};
-      let replayObservations = retainAuthoringObservations(undefined, [source.observation]);
-      if (!replayObservations) {
-        throw new AuthoringStateError("Replay source observation could not be retained");
-      }
-      const evidence = [...source.evidence];
-      let sourceMismatch = false;
-      try {
-        await assertExpectedSource(session, source.observation, revision.before, "replaying");
-      } catch (caught) {
-        outcome = "failed";
-        error = caught instanceof Error ? caught.message : String(caught);
-        // This try block contains only source validation. Nothing may execute
-        // after it fails, regardless of the adapter's exact diagnostic text.
-        sourceMismatch = true;
-      }
-      if (!sourceMismatch && outcome === "passed") {
-        if (replayAction && observeReplayActionEndpoint) {
-          let entrance = source.observation;
-          for (let index = 0; index < revision.actions.length; index += 1) {
-            const action = revision.actions[index]!;
-            try {
-              await replayAction(session, action);
-              // This endpoint is deliberately immediate. It must not settle or
-              // start a fresh AX query: pixels remain valid proof while an iOS
-              // tree is delayed, and the final destination check keeps its
-              // existing bounded settle behavior below.
-              const exit = await persistCapturedAuthoringObservation(
-                await observeReplayActionEndpoint(session),
-              );
-              const retained = retainAuthoringObservations(replayObservations, [exit.observation]);
-              if (!retained) {
-                throw new AuthoringStateError(
-                  "Replay action endpoint could not be retained; no further actions were executed",
+  async replay(
+    id: string,
+    runtime: AuthoringRuntime,
+    workflowMutation?: NonNullable<AuthoringSession["workflowMutation"]>,
+  ): Promise<AuthoringSession> {
+    return this.#mutate(
+      id,
+      async (session) => {
+        assertOwner(session);
+        requireState(session, "reviewing");
+        const revision = currentRevision(session);
+        const startedAt = now();
+        const replayAction = runtime.replayAction;
+        const observeReplayActionEndpoint = runtime.observeReplayActionEndpoint;
+        if (
+          replayAction &&
+          observeReplayActionEndpoint &&
+          revision.actions.length + 1 > MAX_AUTHORING_RETAINED_OBSERVATIONS
+        ) {
+          // Do not execute a path whose per-action endpoints could not all be
+          // retained. A partial index would leave action ids resolving to
+          // nothing and make a failed proof look reviewable.
+          throw new AuthoringStateError(
+            `A Take can retain at most ${MAX_AUTHORING_RETAINED_OBSERVATIONS - 1} replay action endpoints; trim it before replaying`,
+          );
+        }
+        let outcome: AuthoringReplayAttempt["outcome"] = "passed";
+        let error: string | undefined;
+        const source = await persistCapturedAuthoringObservation(await runtime.observe(session));
+        const actionProofs: NonNullable<AuthoringReplayAttempt["actionProofs"]> = {};
+        let replayObservations = retainAuthoringObservations(undefined, [source.observation]);
+        if (!replayObservations) {
+          throw new AuthoringStateError("Replay source observation could not be retained");
+        }
+        const evidence = [...source.evidence];
+        let sourceMismatch = false;
+        try {
+          await assertExpectedSource(session, source.observation, revision.before, "replaying");
+        } catch (caught) {
+          outcome = "failed";
+          error = caught instanceof Error ? caught.message : String(caught);
+          // This try block contains only source validation. Nothing may execute
+          // after it fails, regardless of the adapter's exact diagnostic text.
+          sourceMismatch = true;
+        }
+        if (!sourceMismatch && outcome === "passed") {
+          if (replayAction && observeReplayActionEndpoint) {
+            let entrance = source.observation;
+            for (let index = 0; index < revision.actions.length; index += 1) {
+              const action = revision.actions[index]!;
+              try {
+                await replayAction(session, action);
+                // This endpoint is deliberately immediate. It must not settle or
+                // start a fresh AX query: pixels remain valid proof while an iOS
+                // tree is delayed, and the final destination check keeps its
+                // existing bounded settle behavior below.
+                const exit = await persistCapturedAuthoringObservation(
+                  await observeReplayActionEndpoint(session),
                 );
+                const retained = retainAuthoringObservations(replayObservations, [
+                  exit.observation,
+                ]);
+                if (!retained) {
+                  throw new AuthoringStateError(
+                    "Replay action endpoint could not be retained; no further actions were executed",
+                  );
+                }
+                replayObservations = retained;
+                evidence.push(...exit.evidence);
+                actionProofs[action.id] = authoringReplayActionProof({
+                  action,
+                  outcome: "passed",
+                  entrance,
+                  exit: exit.observation,
+                });
+                entrance = exit.observation;
+              } catch (caught) {
+                outcome = "failed";
+                error = caught instanceof Error ? caught.message : String(caught);
+                actionProofs[action.id] = authoringReplayActionProof({
+                  action,
+                  outcome: "failed",
+                  entrance,
+                  error,
+                });
+                for (const skipped of revision.actions.slice(index + 1)) {
+                  actionProofs[skipped.id] = authoringReplayActionProof({
+                    action: skipped,
+                    outcome: "not-run",
+                    error: "A previous replay action failed",
+                  });
+                }
+                break;
               }
-              replayObservations = retained;
-              evidence.push(...exit.evidence);
-              actionProofs[action.id] = authoringReplayActionProof({
-                action,
-                outcome: "passed",
-                entrance,
-                exit: exit.observation,
-              });
-              entrance = exit.observation;
+            }
+          } else {
+            try {
+              await runtime.replay(
+                session,
+                revision.actions.flatMap((action) => action.steps),
+              );
             } catch (caught) {
               outcome = "failed";
               error = caught instanceof Error ? caught.message : String(caught);
-              actionProofs[action.id] = authoringReplayActionProof({
-                action,
-                outcome: "failed",
-                entrance,
-                error,
-              });
-              for (const skipped of revision.actions.slice(index + 1)) {
-                actionProofs[skipped.id] = authoringReplayActionProof({
-                  action: skipped,
-                  outcome: "not-run",
-                  error: "A previous replay action failed",
-                });
-              }
-              break;
             }
           }
-        } else {
-          try {
-            await runtime.replay(
-              session,
-              revision.actions.flatMap((action) => action.steps),
-            );
-          } catch (caught) {
+        }
+        if (replayAction && observeReplayActionEndpoint && sourceMismatch) {
+          for (const action of revision.actions) {
+            actionProofs[action.id] = authoringReplayActionProof({
+              action,
+              outcome: "not-run",
+              error,
+            });
+          }
+        } else if (!replayAction || !observeReplayActionEndpoint) {
+          for (const action of revision.actions) {
+            actionProofs[action.id] = authoringReplayActionProof({
+              action,
+              // A legacy batch can have run zero, some, or every action. It is
+              // honest to say the individual result is unobserved, never to
+              // claim that a particular action was skipped or proved.
+              outcome: "unobserved",
+              ...(error ? { error } : {}),
+            });
+          }
+        }
+        let captured = sourceMismatch
+          ? source
+          : await persistCapturedAuthoringObservation(await runtime.observe(session));
+        if (captured !== source) evidence.push(...captured.evidence);
+        if (outcome === "passed") {
+          const expected = await expectedReplayScreen(session, revision);
+          const destinationMatches = () =>
+            observationMatchesExpectedDestination(captured.observation, expected);
+          // Native sheets, navigation animations, and streamed application
+          // responses often appear just after the input command returns. Poll a
+          // bounded 1.5 seconds rather than forcing every human or agent to
+          // discover and save arbitrary sleeps in otherwise deterministic flows.
+          if (!destinationMatches() && runtime.settle) {
+            for (const delayMs of [250, 500, 750]) {
+              await runtime.settle(delayMs);
+              captured = await persistCapturedAuthoringObservation(await runtime.observe(session));
+              evidence.push(...captured.evidence);
+              if (destinationMatches()) break;
+            }
+          }
+          if (!destinationMatches()) {
             outcome = "failed";
-            error = caught instanceof Error ? caught.message : String(caught);
+            error = destinationMismatchError(expected, captured.observation, "Replay");
           }
         }
-      }
-      if (replayAction && observeReplayActionEndpoint && sourceMismatch) {
-        for (const action of revision.actions) {
-          actionProofs[action.id] = authoringReplayActionProof({
-            action,
-            outcome: "not-run",
-            error,
-          });
-        }
-      } else if (!replayAction || !observeReplayActionEndpoint) {
-        for (const action of revision.actions) {
-          actionProofs[action.id] = authoringReplayActionProof({
-            action,
-            // A legacy batch can have run zero, some, or every action. It is
-            // honest to say the individual result is unobserved, never to
-            // claim that a particular action was skipped or proved.
-            outcome: "unobserved",
-            ...(error ? { error } : {}),
-          });
-        }
-      }
-      let captured = sourceMismatch
-        ? source
-        : await persistCapturedAuthoringObservation(await runtime.observe(session));
-      if (captured !== source) evidence.push(...captured.evidence);
-      if (outcome === "passed") {
-        const expected = await expectedReplayScreen(session, revision);
-        const destinationMatches = () =>
-          observationMatchesExpectedDestination(captured.observation, expected);
-        // Native sheets, navigation animations, and streamed application
-        // responses often appear just after the input command returns. Poll a
-        // bounded 1.5 seconds rather than forcing every human or agent to
-        // discover and save arbitrary sleeps in otherwise deterministic flows.
-        if (!destinationMatches() && runtime.settle) {
-          for (const delayMs of [250, 500, 750]) {
-            await runtime.settle(delayMs);
-            captured = await persistCapturedAuthoringObservation(await runtime.observe(session));
-            evidence.push(...captured.evidence);
-            if (destinationMatches()) break;
-          }
-        }
-        if (!destinationMatches()) {
-          outcome = "failed";
-          error = destinationMismatchError(expected, captured.observation, "Replay");
-        }
-      }
-      const attempt: AuthoringReplayAttempt = {
-        id: `replay-${randomUUID()}`,
-        takeId: session.take!.id,
-        takeRevision: revision.revision,
-        startedAt,
-        finishedAt: now(),
-        outcome,
-        before: source.observation,
-        after: captured.observation,
-        captureMode: replayAction && observeReplayActionEndpoint ? "per-action" : "final-only",
-        ...(replayAction && observeReplayActionEndpoint
-          ? { observations: replayObservations }
-          : {}),
-        actionProofs,
-        evidence,
-        ...(error ? { error } : {}),
-      };
-      return {
-        ...session,
-        updatedAt: attempt.finishedAt,
-        take: {
-          ...session.take!,
+        const attempt: AuthoringReplayAttempt = {
+          id: `replay-${randomUUID()}`,
+          takeId: session.take!.id,
+          takeRevision: revision.revision,
+          startedAt,
+          finishedAt: now(),
+          outcome,
+          before: source.observation,
+          after: captured.observation,
+          captureMode: replayAction && observeReplayActionEndpoint ? "per-action" : "final-only",
+          ...(replayAction && observeReplayActionEndpoint
+            ? { observations: replayObservations }
+            : {}),
+          actionProofs,
+          evidence,
+          ...(error ? { error } : {}),
+        };
+        return {
+          ...session,
           updatedAt: attempt.finishedAt,
-          replayAttempts: [...session.take!.replayAttempts, attempt],
-        },
-      };
-    });
+          take: {
+            ...session.take!,
+            updatedAt: attempt.finishedAt,
+            replayAttempts: [...session.take!.replayAttempts, attempt],
+          },
+        };
+      },
+      workflowMutation,
+    );
   }
 
   async commit(
     id: string,
     input: { destination?: AuthoringCommitDestination; createTest?: true },
     fault?: AuthoringCommitFault,
+    workflowMutation?: NonNullable<AuthoringSession["workflowMutation"]>,
   ): Promise<AuthoringSession> {
-    return this.#mutate(id, async (session) => {
-      assertOwner(session);
-      requireState(session, "reviewing");
-      const take = session.take!;
-      const revision = currentRevision(session);
-      const destination = await destinationForSession(session, input.destination);
-      const approvedAfter = await approvedAfterObservation(session, revision, destination);
-      if (input.createTest && !session.testName?.trim()) {
-        throw new AuthoringStateError("A canonical Test name is required before approval");
-      }
-      session = transition(session, "committing");
-      session.commitTransactionId = session.id;
-      session.commitTestId = input.createTest ? `test-${session.id}` : undefined;
-      await writeAuthoringSession(session);
-      let mapCommitted = false;
-      let committedConnectionId: string | undefined;
-      let committedTestId: string | undefined;
-      let committedRevision: number | undefined;
-      try {
-        const result = await commitAuthoringSessionMap({
-          session,
-          revision,
-          destination: input.destination,
-          approvedAfter,
-          fault,
-        });
-        mapCommitted = true;
-        committedRevision = result.revision;
-        committedConnectionId = result.connectionId;
-        committedTestId = result.testId;
-        fault?.("after-rename");
-      } catch (error) {
-        if (!mapCommitted) {
-          session = transition(session, "reviewing");
-          session.commitTestId = undefined;
-          session.error = error instanceof Error ? error.message : String(error);
-          await writeAuthoringSession(session);
-        }
-        throw error;
-      }
-      session = transition(session, "committed");
-      session.expectedAppMapRevision = committedRevision!;
-      session.committedConnectionId = committedConnectionId;
-      session.committedTestId = committedTestId;
-      session.commitTestId = undefined;
-      session.take = { ...take, state: "committed", updatedAt: session.updatedAt };
-      session.archive = { reason: "committed", archivedAt: session.updatedAt };
-      return session;
-    });
-  }
-
-  async discard(id: string): Promise<AuthoringSession> {
-    return this.#mutate(id, async (session) => {
-      assertOwner(session);
-      requireState(session, "reviewing");
-      session = transition(session, "cancelled");
-      session.take = session.take
-        ? { ...session.take, state: "discarded", updatedAt: session.updatedAt }
-        : undefined;
-      session.archive = { reason: "discarded", archivedAt: session.updatedAt };
-      return session;
-    });
-  }
-
-  async cancel(id: string, runtime?: AuthoringRuntime): Promise<AuthoringSession> {
-    try {
-      return await this.#mutate(id, async (session) => {
+    return this.#mutate(
+      id,
+      async (session) => {
         assertOwner(session);
-        if (session.state === "committed" || session.state === "cancelled") return session;
-        if (session.state === "recording") {
-          if (!runtime) {
-            throw new AuthoringStateError(
-              "Cancelling an active recording requires target reconciliation",
+        requireState(session, "reviewing");
+        const take = session.take!;
+        const revision = currentRevision(session);
+        const destination = await destinationForSession(session, input.destination);
+        const approvedAfter = await approvedAfterObservation(session, revision, destination);
+        if (input.createTest && !session.testName?.trim()) {
+          throw new AuthoringStateError("A canonical Test name is required before approval");
+        }
+        session = transition(session, "committing");
+        session.commitTransactionId = session.id;
+        session.commitTestId = input.createTest ? `test-${session.id}` : undefined;
+        await writeAuthoringSession(session);
+        let mapCommitted = false;
+        let committedConnectionId: string | undefined;
+        let committedTestId: string | undefined;
+        let committedRevision: number | undefined;
+        try {
+          const result = await commitAuthoringSessionMap({
+            session,
+            revision,
+            destination: input.destination,
+            approvedAfter,
+            fault,
+          });
+          mapCommitted = true;
+          committedRevision = result.revision;
+          committedConnectionId = result.connectionId;
+          committedTestId = result.testId;
+          fault?.("after-rename");
+        } catch (error) {
+          if (!mapCommitted) {
+            session = transition(session, "reviewing");
+            session.commitTestId = undefined;
+            session.error = error instanceof Error ? error.message : String(error);
+            await writeAuthoringSession(session);
+          }
+          throw error;
+        }
+        session = transition(session, "committed");
+        session.expectedAppMapRevision = committedRevision!;
+        session.committedConnectionId = committedConnectionId;
+        session.committedTestId = committedTestId;
+        session.commitTestId = undefined;
+        session.take = { ...take, state: "committed", updatedAt: session.updatedAt };
+        session.archive = { reason: "committed", archivedAt: session.updatedAt };
+        return session;
+      },
+      workflowMutation,
+    );
+  }
+
+  async discard(
+    id: string,
+    workflowMutation?: NonNullable<AuthoringSession["workflowMutation"]>,
+  ): Promise<AuthoringSession> {
+    return this.#mutate(
+      id,
+      async (session) => {
+        assertOwner(session);
+        requireState(session, "reviewing");
+        session = transition(session, "cancelled");
+        session.take = session.take
+          ? { ...session.take, state: "discarded", updatedAt: session.updatedAt }
+          : undefined;
+        session.archive = { reason: "discarded", archivedAt: session.updatedAt };
+        return session;
+      },
+      workflowMutation,
+    );
+  }
+
+  async cancel(
+    id: string,
+    runtime?: AuthoringRuntime,
+    workflowMutation?: NonNullable<AuthoringSession["workflowMutation"]>,
+  ): Promise<AuthoringSession> {
+    try {
+      return await this.#mutate(
+        id,
+        async (session) => {
+          assertOwner(session);
+          if (session.state === "committed" || session.state === "cancelled") return session;
+          if (session.state === "recording") {
+            if (!runtime) {
+              throw new AuthoringStateError(
+                "Cancelling an active recording requires target reconciliation",
+              );
+            }
+            session = await finishAuthoringRecording(
+              session,
+              runtime,
+              recordingLifecycleDependencies,
             );
           }
-          session = await finishAuthoringRecording(
-            session,
-            runtime,
-            recordingLifecycleDependencies,
-          );
-        }
-        session = transition(session, "cancelled");
-        if (session.take) {
-          session.take = { ...session.take, state: "discarded", updatedAt: session.updatedAt };
-          session.archive = { reason: "discarded", archivedAt: session.updatedAt };
-        }
-        return session;
-      });
+          session = transition(session, "cancelled");
+          if (session.take) {
+            session.take = { ...session.take, state: "discarded", updatedAt: session.updatedAt };
+            session.archive = { reason: "discarded", archivedAt: session.updatedAt };
+          }
+          return session;
+        },
+        workflowMutation,
+      );
     } finally {
       this.#recordingReadyAt.delete(id);
     }
@@ -846,11 +854,13 @@ export class AuthoringSessionStore {
   async #mutate(
     id: string,
     operation: (session: AuthoringSession) => Promise<AuthoringSession>,
+    workflowMutation?: NonNullable<AuthoringSession["workflowMutation"]>,
   ): Promise<AuthoringSession> {
     return this.#queue.run(id, async () => {
       const current = await readAuthoringSession(id);
       if (!current) throw new AuthoringStateError("Authoring Session not found");
-      const next = await operation(clone(current));
+      let next = await operation(clone(current));
+      if (workflowMutation) next = { ...next, workflowMutation: clone(workflowMutation) };
       await writeAuthoringSession(next);
       if (next.state === "recording") this.#recordingReadyAt.set(id, now());
       else if (current.state === "recording") this.#recordingReadyAt.delete(id);

@@ -34,6 +34,17 @@ export function AppMapTestRecordingPanel(props: {
   const [semanticName, setSemanticName] = createSignal("");
   const [tapLabel, setTapLabel] = createSignal("");
 
+  const captureCopy = () => {
+    const mode = recorder.take()?.captureProvenance.mode ?? "control-and-record";
+    if (mode === "watch-and-infer") {
+      return "Watch and infer · proposed actions stay unproved until this revision passes replay.";
+    }
+    if (mode === "instrumented") {
+      return "Instrumented capture · captured events stay unproved until this revision passes replay.";
+    }
+    return "Control and record · interactions are sent through Relay and retained with evidence.";
+  };
+
   async function editRecording(edit: AuthoringRecordingEdit): Promise<void> {
     if (editBusy()) return;
     setEditBusy(true);
@@ -106,6 +117,7 @@ export function AppMapTestRecordingPanel(props: {
               ? "Use the device normally and add checkpoints where evidence matters."
               : "Replay the captured actions, then approve the proven Test."}
         </span>
+        <span class="mt-1 block text-micro text-text-weak">{captureCopy()}</span>
       </header>
 
       <Show

@@ -1,7 +1,13 @@
-import type { AuthoringSession } from "@relay/protocol";
+import {
+  authoringCaptureNeedsReplay,
+  authoringCaptureProvenance,
+  captureProofForAuthoring,
+  type AuthoringSession,
+} from "@relay/protocol";
 import type {
   AuthorTestSnapshot,
   FrozenAuthorTestIdentity,
+  DurableWorkflowHandle,
   WorkflowProblem,
   WorkflowRef,
 } from "./types.js";
@@ -43,6 +49,7 @@ export function workflowVersionForAuthoringSession(session: AuthoringSession): s
     JSON.stringify([
       session.id,
       session.testName,
+      authoringCaptureProvenance(session.captureProvenance).mode,
       session.state,
       session.updatedAt,
       session.take?.id,
@@ -96,6 +103,7 @@ function reviewForSession(session: AuthoringSession): AuthorTestSnapshot["review
   const approvedReplay = take.replayAttempts.some(
     (attempt) => attempt.takeRevision === revision.revision && attempt.outcome === "passed",
   );
+  const captureProvenance = authoringCaptureProvenance(session.captureProvenance);
   return {
     actionCount: revision.actions.length,
     actions: revision.actions.map((action) => ({
@@ -104,6 +112,7 @@ function reviewForSession(session: AuthoringSession): AuthorTestSnapshot["review
       ...(action.label ? { label: action.label } : {}),
       stepCount: action.steps.length,
       ...(action.proofStatus ? { proofStatus: action.proofStatus } : {}),
+      captureProof: captureProofForAuthoring(captureProvenance, approvedReplay),
     })),
     ...(latestReplay
       ? {
@@ -142,6 +151,26 @@ function allowedActions(
 
 function problemsForSession(session: AuthoringSession): WorkflowProblem[] {
   const problems: WorkflowProblem[] = [];
+  const captureProvenance = authoringCaptureProvenance(session.captureProvenance);
+  const revision = session.take?.revisions.find(
+    (candidate) => candidate.revision === session.take?.currentRevision,
+  );
+  const replayPassed = session.take?.replayAttempts.some(
+    (attempt) => attempt.takeRevision === revision?.revision && attempt.outcome === "passed",
+  );
+  if (
+    session.state === "reviewing" &&
+    captureProvenance.mode === "watch-and-infer" &&
+    !replayPassed
+  ) {
+    problems.push({
+      code: "operation-unavailable",
+      title: "Inferred actions are not proved yet",
+      detail: "Watch-and-infer observations describe a proposed path, not commands Relay proved.",
+      recovery: "Replay this exact reviewed revision before approval.",
+      retryable: true,
+    });
+  }
   if (
     session.state === "committed" &&
     (!session.committedConnectionId || !session.committedTestId)
@@ -198,13 +227,15 @@ function evidenceForSession(session: AuthoringSession): AuthorTestSnapshot["evid
 }
 
 export function snapshotFromAuthoringSession(input: {
-  ref: WorkflowRef;
+  ref?: WorkflowRef;
+  workflow?: DurableWorkflowHandle;
   frozen: FrozenAuthorTestIdentity;
   session: AuthoringSession;
   extraProblems?: readonly WorkflowProblem[];
   forceNeedsAttention?: boolean;
 }): AuthorTestSnapshot {
   const { ref, frozen, session } = input;
+  const captureProvenance = authoringCaptureProvenance(session.captureProvenance);
   const review = reviewForSession(session);
   const incompleteCommit =
     session.state === "committed" && (!session.committedConnectionId || !session.committedTestId);
@@ -215,8 +246,11 @@ export function snapshotFromAuthoringSession(input: {
     title: frozen.title,
     phase: needsAttention ? "needs-attention" : phaseForSession(session),
     stage: session.state,
-    version: workflowVersionForAuthoringSession(session),
-    ref,
+    version: input.workflow
+      ? `workflow-v${input.workflow.expectedVersion}`
+      : workflowVersionForAuthoringSession(session),
+    ...(input.workflow ? { workflow: input.workflow } : {}),
+    ...(ref ? { ref } : {}),
     frozen,
     authoring: {
       sessionId: session.id,
@@ -227,6 +261,11 @@ export function snapshotFromAuthoringSession(input: {
         ? { committedConnectionId: session.committedConnectionId }
         : {}),
       ...(session.committedTestId ? { committedTestId: session.committedTestId } : {}),
+    },
+    capture: {
+      mode: captureProvenance.mode,
+      provenance: captureProvenance,
+      replayRequiredBeforeApproval: authoringCaptureNeedsReplay(captureProvenance),
     },
     ...(review ? { review } : {}),
     progress: needsAttention

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { ExecutionRisk } from "@relay/protocol";
 import {
   createRelayWorkflows,
   type AuthorTestIntent,
@@ -20,7 +21,21 @@ function intent(overrides: Partial<RunTestIntent> = {}): RunTestIntent {
   };
 }
 
-function preflight(revision: number, blockers: Array<{ code: string; message: string }> = []) {
+function preflight(
+  revision: number,
+  blockers: Array<{ code: string; message: string }> = [],
+  executionRisk: ExecutionRisk = {
+    schemaVersion: 1 as const,
+    level: "safe" as const,
+    reasons: [],
+    externalEffects: [],
+    confirmation: "none" as const,
+    expectedAppBoundaries: [],
+    maximumActions: 0,
+    maximumDurationMs: 0,
+    cleanupRequired: false,
+  },
+) {
   return {
     schemaVersion: 1,
     mode: "offline-test-preflight",
@@ -28,6 +43,7 @@ function preflight(revision: number, blockers: Array<{ code: string; message: st
     appMapRevision: revision,
     testId: "data-controls",
     planDigest: `plan-${revision}`,
+    executionRisk,
     summary: {
       recipes: 1,
       checkedSelectors: 1,
@@ -51,10 +67,14 @@ function preflight(revision: number, blockers: Array<{ code: string; message: st
 function compileStep(
   revision: number,
   blockers?: Array<{ code: string; message: string }>,
+  executionRisk?: Parameters<typeof preflight>[2],
 ): ScriptedRelayStep {
   return {
     id: "app-map.test.compile",
-    output: { plan: { rootRecipeId: "open-settings" }, preflight: preflight(revision, blockers) },
+    output: {
+      plan: { rootRecipeId: "open-settings" },
+      preflight: preflight(revision, blockers, executionRisk),
+    },
   };
 }
 
@@ -142,6 +162,39 @@ test("compile blockers are problems and never invoke the run mutation", async ()
   assert.deepEqual(
     scripted.invocations.map(({ id }) => id),
     ["app-map.test.compile"],
+  );
+});
+
+test("risk preflight is conditional and always runs before the exact-once mutation", async () => {
+  const guarded = {
+    schemaVersion: 1 as const,
+    level: "guarded" as const,
+    reasons: [{ code: "reviewed-effect.external-app", explanation: "The Test opens another app." }],
+    externalEffects: ["external-app" as const],
+    confirmation: "once-per-run" as const,
+    expectedAppBoundaries: ["external-app"],
+    maximumActions: 1,
+    maximumDurationMs: 0,
+    cleanupRequired: false,
+  };
+  const blockedClient = createScriptedRelayClient([compileStep(4, [], guarded)]);
+  const blocked = await createRelayWorkflows(blockedClient.client).start(
+    intent({ revision: { exact: 4 } }),
+  );
+  assert.equal(blocked.problems[0]?.code, "risk-confirmation-required");
+  assert.deepEqual(
+    blockedClient.invocations.map(({ id }) => id),
+    ["app-map.test.compile"],
+  );
+
+  const confirmedClient = createScriptedRelayClient([compileStep(4, [], guarded), runStep(4)]);
+  const confirmed = await createRelayWorkflows(confirmedClient.client).start(
+    intent({ revision: { exact: 4 }, confirmRisk: true }),
+  );
+  assert.equal(confirmed.phase, "queued");
+  assert.deepEqual(
+    confirmedClient.invocations.map(({ id }) => id),
+    ["app-map.test.compile", "app-map.test.run"],
   );
 });
 

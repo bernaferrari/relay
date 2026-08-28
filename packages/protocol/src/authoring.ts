@@ -1,4 +1,11 @@
 import type { RecipeStep, StepTarget } from "./recipes.js";
+import {
+  parseAuthoringCaptureProvenance,
+  type AuthoringCaptureProvenance,
+  type AuthoringCaptureProof,
+} from "./authoring-capture.js";
+import { summarizeAuthoringSession } from "./authoring-summary.js";
+export { summarizeAuthoringSession } from "./authoring-summary.js";
 
 export const AUTHORING_SESSION_STATES = [
   "preparing",
@@ -367,6 +374,8 @@ export type AuthoringRawObservationLink = {
 export type AuthoringRawCaptureSource = {
   kind: "authoring-runtime";
   target: AuthoringTarget;
+  /** Optional only while reading raw streams written before capture modes. */
+  captureProvenance?: AuthoringCaptureProvenance;
 };
 
 type AuthoringRawEventBase = {
@@ -499,11 +508,25 @@ export type AuthoringSession = {
   actorId: string;
   actorKind: "human" | "agent" | "system";
   appMapId: string;
+  /** Stable server-owned workflow correlation for outcome authoring. This is
+   * not authorization and is absent on legacy low-level sessions. */
+  workflowRequestId?: string;
+  /** Exact durable mutation proof written atomically with canonical session
+   * state. A workflow GET may reconcile only this named transition. */
+  workflowMutation?: {
+    workflowId: string;
+    transitionVersion: number;
+    action: string;
+    completedAt: number;
+  };
   /** Canonical name of the Test this recording will create. Optional only for
    * legacy sessions and observation-only captures that never create a Test. */
   testName?: string;
   state: AuthoringSessionState;
   target: AuthoringTarget;
+  /** Immutable origin of this recording. Optional only for legacy sessions,
+   * which normalize to the historical Relay control path at read time. */
+  captureProvenance?: AuthoringCaptureProvenance;
   leaseId: string;
   expectedAppMapRevision: number;
   sourceScreenId?: string;
@@ -534,6 +557,8 @@ export type AuthoringSession = {
 
 export type CreateAuthoringSessionInput = {
   appMapId: string;
+  /** Stable correlation used to reconcile an uncertain durable begin. */
+  workflowRequestId?: string;
   /** Required by the outcome authoring workflow whenever createTest will be
    * requested; low-level screen captures may omit it. */
   testName?: string;
@@ -594,6 +619,7 @@ export type AuthoringSessionSummary = {
   testName?: string;
   state: AuthoringSessionState;
   target: AuthoringTarget;
+  captureProvenance: AuthoringCaptureProvenance;
   sourceScreenId?: string;
   committedConnectionId?: string;
   committedTestId?: string;
@@ -610,6 +636,7 @@ export type AuthoringSessionSummary = {
       label?: string;
       stepCount: number;
       proofStatus?: AuthoringTransitionProofStatus;
+      captureProof: AuthoringCaptureProof;
     }>;
     latestReplay?: {
       id: string;
@@ -631,99 +658,6 @@ export type AuthoringSessionSummary = {
     };
   };
 };
-
-function pendingRawIntentCount(events: readonly AuthoringRawEvent[]): number {
-  const outcomes = new Set(
-    events
-      .filter(
-        (event): event is AuthoringRawInteractionOutcomeEvent =>
-          event.kind === "interaction-outcome",
-      )
-      .map((event) => event.intentEventId),
-  );
-  return events.filter(
-    (event): event is AuthoringRawInteractionIntentEvent =>
-      event.kind === "interaction-intent" && !outcomes.has(event.id),
-  ).length;
-}
-
-/** Progressive-disclosure representation for CLI and MCP mutations.
- * Full revisions, semantic trees, and evidence stay available through the
- * explicit session-get operation instead of being repeated after every tap. */
-export function summarizeAuthoringSession(session: AuthoringSession): AuthoringSessionSummary {
-  const take = session.take;
-  const revision = take?.revisions.find((item) => item.revision === take.currentRevision);
-  const replay = take?.replayAttempts
-    .filter((attempt) => attempt.takeRevision === revision?.revision)
-    .at(-1);
-  return {
-    id: session.id,
-    actorId: session.actorId,
-    actorKind: session.actorKind,
-    appMapId: session.appMapId,
-    ...(session.testName ? { testName: session.testName } : {}),
-    state: session.state,
-    target: structuredClone(session.target),
-    ...(session.sourceScreenId ? { sourceScreenId: session.sourceScreenId } : {}),
-    ...(session.committedConnectionId
-      ? { committedConnectionId: session.committedConnectionId }
-      : {}),
-    ...(session.committedTestId ? { committedTestId: session.committedTestId } : {}),
-    ...(session.error ? { error: session.error } : {}),
-    ...(session.archive ? { archive: structuredClone(session.archive) } : {}),
-    ...(take
-      ? {
-          take: {
-            id: take.id,
-            state: take.state,
-            revision: take.currentRevision,
-            actionCount: revision?.actions.length ?? 0,
-            evidenceCount: revision?.evidence.length ?? 0,
-            actions: (revision?.actions ?? []).map((action) => ({
-              id: action.id,
-              ...(action.label ? { label: action.label } : {}),
-              stepCount: action.steps.length,
-              ...(action.proofStatus ? { proofStatus: action.proofStatus } : {}),
-            })),
-            ...(replay
-              ? {
-                  latestReplay: {
-                    id: replay.id,
-                    outcome: replay.outcome,
-                    takeRevision: replay.takeRevision,
-                    durationMs: Math.max(0, replay.finishedAt - replay.startedAt),
-                    ...(replay.error ? { error: replay.error } : {}),
-                    ...(replay.actionProofs
-                      ? {
-                          actionProofs: Object.fromEntries(
-                            Object.entries(replay.actionProofs).map(([actionId, proof]) => [
-                              actionId,
-                              {
-                                outcome: proof.outcome,
-                                proofStatus: proof.proofStatus,
-                                transition: proof.transition,
-                              },
-                            ]),
-                          ),
-                        }
-                      : {}),
-                  },
-                }
-              : {}),
-            ...(take.rawCaptureVersion !== undefined && take.rawEvents !== undefined
-              ? {
-                  rawCapture: {
-                    version: take.rawCaptureVersion,
-                    eventCount: take.rawEvents.length,
-                    pendingIntentCount: pendingRawIntentCount(take.rawEvents),
-                  },
-                }
-              : {}),
-          },
-        }
-      : {}),
-  };
-}
 
 export function summarizeAuthoringOperationResult(operationId: string, result: unknown): unknown {
   if (operationId === "authoring.session.get") return result;
@@ -774,6 +708,9 @@ export function parseAuthoringSession(value: unknown): AuthoringSession {
   }
   object(input.target, "authoring session target");
   if (input.testName !== undefined) nonEmpty(input.testName, "authoring session testName");
+  if (input.captureProvenance !== undefined) {
+    parseAuthoringCaptureProvenance(input.captureProvenance);
+  }
   return input as AuthoringSession;
 }
 

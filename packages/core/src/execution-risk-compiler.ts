@@ -36,6 +36,13 @@ export const EXECUTION_RISK_CODES = {
   scenarioUncompilable: "execution.scenario-uncompilable",
   systemSetting: "interaction.system-setting",
   dynamicTour: "interaction.dynamic-tour",
+  reviewedCommunication: "reviewed-effect.communication",
+  reviewedPurchase: "reviewed-effect.purchase",
+  reviewedAccountMutation: "reviewed-effect.account-mutation",
+  reviewedDataDeletion: "reviewed-effect.data-deletion",
+  reviewedPermissionChange: "reviewed-effect.permission-change",
+  reviewedInstallation: "reviewed-effect.installation",
+  reviewedExternalApp: "reviewed-effect.external-app",
 } as const;
 
 export type ExecutionRiskCode = (typeof EXECUTION_RISK_CODES)[keyof typeof EXECUTION_RISK_CODES];
@@ -195,6 +202,71 @@ class RiskAccumulator {
 
 function riskStepId(recipeId: string, step: RecipeStep, index: number): string {
   return step.id?.trim() || `${recipeId}:step-${index + 1}`;
+}
+
+const REVIEWED_EFFECT_RISK: Record<
+  ExecutionExternalEffect,
+  {
+    level: ExecutionRiskLevel;
+    confirmation: Confirmation;
+    code: ExecutionRiskCode;
+    cleanupRequired?: boolean;
+  }
+> = {
+  communication: {
+    level: "guarded",
+    confirmation: "per-step",
+    code: EXECUTION_RISK_CODES.reviewedCommunication,
+  },
+  purchase: {
+    level: "destructive",
+    confirmation: "human-only",
+    code: EXECUTION_RISK_CODES.reviewedPurchase,
+  },
+  "account-mutation": {
+    level: "destructive",
+    confirmation: "human-only",
+    code: EXECUTION_RISK_CODES.reviewedAccountMutation,
+    cleanupRequired: true,
+  },
+  "data-deletion": {
+    level: "destructive",
+    confirmation: "human-only",
+    code: EXECUTION_RISK_CODES.reviewedDataDeletion,
+  },
+  "permission-change": {
+    level: "guarded",
+    confirmation: "once-per-run",
+    code: EXECUTION_RISK_CODES.reviewedPermissionChange,
+    cleanupRequired: true,
+  },
+  installation: {
+    level: "guarded",
+    confirmation: "once-per-run",
+    code: EXECUTION_RISK_CODES.reviewedInstallation,
+    cleanupRequired: true,
+  },
+  "external-app": {
+    level: "guarded",
+    confirmation: "once-per-run",
+    code: EXECUTION_RISK_CODES.reviewedExternalApp,
+  },
+};
+
+function classifyReviewedEffects(
+  accumulator: RiskAccumulator,
+  step: RecipeStep,
+  stepId: string,
+): void {
+  for (const effect of step.reviewedExternalEffects?.effects ?? []) {
+    const policy = REVIEWED_EFFECT_RISK[effect];
+    accumulator.addRisk({
+      ...policy,
+      stepId,
+      explanation: `The reviewed Test declares the external effect ${effect}.`,
+      externalEffects: [effect],
+    });
+  }
 }
 
 /** Omit a wall-clock bound as soon as one operation lacks an authored ceiling.
@@ -508,6 +580,7 @@ function compileGraphRisk(
     let recipeBounds: Bounds = { maximumActions: 0, maximumDurationMs: 0 };
     for (const [index, step] of recipe.steps.entries()) {
       const stepId = riskStepId(recipeId, step, index);
+      classifyReviewedEffects(accumulator, step, stepId);
       let stepBounds: Bounds;
       if (step.kind === "module") {
         stepBounds = analyzeRecipe(step.recipeId, nextStack);

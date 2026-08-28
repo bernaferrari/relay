@@ -1,10 +1,7 @@
 #!/usr/bin/env tsx
 import { pathToFileURL } from "node:url";
-import {
-  createRelayOutcomeJobs,
-  type RelayOutcomeJobs,
-  type WorkflowSnapshot,
-} from "@relay/workflows";
+import { type RelayOutcomeJobs, type WorkflowSnapshot } from "@relay/workflows";
+import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
 import {
   summarizeAppMapOperationResult,
   summarizeAuthoringOperationResult,
@@ -31,6 +28,7 @@ import { persistScrollSurvey } from "./survey-persist.js";
 import { runDbCommand } from "./db-commands.js";
 import { runReportCommand } from "./report-commands.js";
 import { ensureLocalRelayServer, type LocalServerResult } from "./local-server.js";
+import { readReplayLabTracePacks } from "./replay-lab-files.js";
 
 export type CliDependencies = {
   env?: Record<string, string | undefined>;
@@ -272,13 +270,17 @@ async function waitForOutcome(
 ): Promise<WorkflowSnapshot> {
   let current = snapshot;
   while (
-    current.ref &&
+    (current.ref || (current.kind === "run-test" && current.workflow)) &&
     (current.phase === "queued" || current.phase === "running") &&
     current.kind !== "author-test"
   ) {
     output.snapshot(operationId, current);
     await waitForPoll(pollIntervalMs, signal);
-    current = await jobs.inspect(current.ref);
+    current = await jobs.inspect(
+      current.kind === "run-test" && current.workflow
+        ? { workflowId: current.workflow.workflowId }
+        : { legacyRef: current.ref! },
+    );
   }
   return current;
 }
@@ -320,9 +322,27 @@ async function runOutcomeCommand(input: {
     assertOutcomeSucceeded(settled);
     return settled;
   }
+  if (intent.kind === "inspect-workflow") {
+    return "workflowId" in intent
+      ? jobs.inspect({ workflowId: intent.workflowId })
+      : jobs.inspect({ legacyRef: intent.legacyRef });
+  }
+  if (intent.kind === "cancel-run") {
+    const cancelled = await jobs.cancelRun(intent);
+    assertOutcomeSucceeded(cancelled);
+    return cancelled;
+  }
   if (intent.kind === "inspect-failure") return jobs.inspectFailure(intent);
   if (intent.kind === "propose-repair") return jobs.proposeRepair(intent);
   if (intent.kind === "export-evidence") return jobs.exportEvidence(intent);
+  if (intent.kind === "replay-lab") {
+    return jobs.replayLab({
+      kind: "replay-lab",
+      analysis: intent.analysis,
+      tracePacks: await readReplayLabTracePacks(intent.paths),
+    });
+  }
+  if (intent.kind === "verify-change") return jobs.verifyChange(intent);
   const started =
     intent.kind === "record-test"
       ? await jobs.record(intent)
@@ -441,7 +461,11 @@ export async function runCli(
     }
     try {
       if (parsed.command === "invoke") validateOperationId(operationId);
-      if (parsed.command === "outcome" && parsed.config.ensureLocalServer) {
+      if (
+        parsed.command === "outcome" &&
+        parsed.intent.kind !== "replay-lab" &&
+        parsed.config.ensureLocalServer
+      ) {
         output.heartbeat("Ensuring the local Relay server is ready");
         await (dependencies.ensureOutcomeServer ?? ensureLocalRelayServer)(
           parsed.config.connection.url,

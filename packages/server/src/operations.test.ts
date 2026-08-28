@@ -129,6 +129,7 @@ function bind(method: string, pathname: string, role: ProjectRole) {
 
 test("operation authorization applies before optional command envelopes", () => {
   assert.doesNotThrow(() => bind("GET", "/health", "viewer"));
+  assert.doesNotThrow(() => bind("GET", "/device/health", "viewer"));
   assert.doesNotThrow(() => bind("PUT", "/app-maps/map-1", "author"));
   assert.doesNotThrow(() => bind("POST", "/jobs", "runner"));
   assert.doesNotThrow(() => bind("PUT", "/settings/privacy", "admin"));

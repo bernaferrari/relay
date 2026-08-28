@@ -232,8 +232,7 @@ export function AppMapWorkspace(props: {
     pendingProposals,
     Panels: ContextPanels,
   } = contextPanels;
-  // The revision history annotates the Map and must close when another view
-  // opens, even though the mode switcher now lives in the shell.
+  // Revision history annotates only the Map view.
   createEffect(() => {
     if (props.view !== "map") setHistoryOpen(false);
   });
@@ -470,6 +469,7 @@ export function AppMapWorkspace(props: {
     rewriteTake,
   } = captureActions;
   useAppMapWorkspaceShell({
+    workspaceController: props.workspaceController,
     activeFlow,
     graph,
     canvasState,

@@ -20,6 +20,7 @@ import { registerRelayPrompts } from "./prompts.js";
 import { registerRelayResources, type RelayResourceScope } from "./resources.js";
 import { compactOfflineReplayToolResult } from "./offline-replay-result.js";
 import {
+  compactReplayLabOutcome,
   invokeRelayOutcomeTool,
   relayOutcomeTools,
   type RelayOutcomeToolDescriptor,
@@ -45,6 +46,7 @@ export const relayMcpInstructions = [
   "Omit the advanced appMapId and targetId fields when exactly one Test workspace and one ready Device exist.",
   "Never retry an outcome whose snapshot says the mutation outcome is unknown; inspect its continuation reference.",
   "Repeat runs one representative pilot first and requires explicit confirmation before remaining values.",
+  "Replay Lab accepts only explicit bounded TracePack payloads and always keeps future target behavior unknown.",
   "Repair tools create reviewable proposals; they never silently rewrite an approved Test.",
   "For advanced Device control, capture a screenshot before interacting and prefer identifier, then label, text, and point.",
   "A missing accessibility tree is not a failed session; pixels and point control remain usable.",
@@ -485,7 +487,7 @@ function registerRelayOutcomeTool(
       description: descriptor.description,
       outputSchema: relayToolOutputSchema,
       annotations: descriptor.annotations,
-      inputSchema: schema.extend({
+      inputSchema: schema.safeExtend({
         confirm: descriptor.requiresConfirmation
           ? z.literal(true).describe("Explicit approval for this protected outcome")
           : z.literal(true).optional().describe("Optional explicit approval"),
@@ -506,6 +508,9 @@ function registerRelayOutcomeTool(
           signal: context.mcpReq.signal,
         });
         if (descriptor.name === "relay_observe_target") return targetObservationResult(result);
+        if (descriptor.name === "relay_replay_lab") {
+          return normalResult(result, compactReplayLabOutcome(result));
+        }
         return normalResult(result);
       } catch (error) {
         return errorResult(relayMcpError(descriptor.name, error));

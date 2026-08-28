@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createRelayOutcomeJobs } from "./index.js";
+import { createRelayOutcomeJobs } from "./outcome-jobs.js";
+import type { RelayInvokeClient } from "./operation-port.js";
 import { createScriptedRelayClient } from "./testing.js";
 
 const pixel = {
@@ -34,6 +35,60 @@ function artifact(digit: string, mime: string, kind: "image" | "structured-data"
   };
 }
 
+function tracePackExport(runId: string) {
+  const digest = `sha256:${"a".repeat(64)}` as const;
+  return {
+    tracePack: {
+      schemaVersion: 1 as const,
+      kind: "relay-trace-pack" as const,
+      digest,
+      createdAt: 1,
+      source: {
+        runId,
+        runSchemaVersion: 5,
+        status: "ok",
+        action: "test",
+        inputDigest: "b".repeat(64),
+        writtenAt: 1,
+      },
+      redaction: { status: "applied-at-persistence" as const, redactedChannels: [] },
+      completeness: { status: "complete" as const, channels: {}, missing: [], artifacts: [] },
+      objects: [
+        {
+          path: "run.json",
+          kind: "frozen-run" as const,
+          mediaType: "application/json",
+          encoding: "json" as const,
+          digest,
+          bytes: 2,
+          content: {},
+        },
+      ],
+    },
+    analysis: {
+      schemaVersion: 1 as const,
+      mode: "trace-pack-offline-analysis" as const,
+      tracePackDigest: digest,
+      sourceRunId: runId,
+      historicalVerdict: "insufficient-evidence" as const,
+      futureTransitionVerdict: "unknown" as const,
+      proved: [],
+      unknown: [
+        {
+          code: "MISSING_EVIDENCE",
+          statement: "The fixture intentionally has no verified evidence.",
+          resolution: "Use a content-addressed TracePack.",
+        },
+      ],
+      smallestLiveVerification: {
+        kind: "recapture-frozen-plan" as const,
+        reason: "The fixture requires fresh evidence.",
+        requiresTarget: true as const,
+      },
+    },
+  };
+}
+
 test("connect selects the sole ready device without exposing leases or profiles", async () => {
   const scripted = createScriptedRelayClient([
     { id: "target.devices.list", output: { devices: [pixel] } },
@@ -61,6 +116,90 @@ test("connect leaves multiple devices explicit instead of guessing", async () =>
   const result = await jobs.connect();
   assert.equal(result.current, undefined);
   assert.equal(result.targets.length, 2);
+});
+
+test("verify-change fails closed when source metadata selects no frozen Runs", async () => {
+  const scripted = createScriptedRelayClient([
+    {
+      id: "run.list",
+      checkInput: (input) => assert.deepEqual(input, { limit: 129 }),
+      output: { runs: [] },
+    },
+  ]);
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+
+  const result = await jobs.verifyChange({
+    kind: "verify-change",
+    selection: {
+      kind: "source-revision",
+      sourceRevision: { vcs: "git", sha: "abcdef0" },
+    },
+  });
+
+  assert.notEqual(result.decision, "approve");
+  assert.ok(
+    result.unresolvedUncertainty.includes(
+      "affected-test-selection-unavailable:source-revision:abcdef0",
+    ),
+  );
+  assert.equal(result.mutation, "none");
+  assert.equal(result.checkPosting, "none");
+  assert.equal(scripted.remaining(), 0);
+});
+
+test("verify-change bounds direct Run selections before transport", async () => {
+  let invoked = false;
+  const client: RelayInvokeClient = {
+    async invoke() {
+      invoked = true;
+      throw new Error("transport must not be reached");
+    },
+  };
+  const jobs = createRelayOutcomeJobs(client, { actorId: "agent:test" });
+
+  await assert.rejects(
+    jobs.verifyChange({
+      kind: "verify-change",
+      selection: {
+        kind: "runs",
+        runIds: Array.from({ length: 129 }, (_, index) => `run-${index}`),
+      },
+    }),
+    /128/u,
+  );
+  assert.equal(invoked, false);
+});
+
+test("verify-change reads immutable Run evidence with bounded concurrency", async () => {
+  let active = 0;
+  let maximumActive = 0;
+  let calls = 0;
+  const client: RelayInvokeClient = {
+    async invoke(id, input) {
+      assert.equal(id, "run.trace-pack.get");
+      const runId = (input as { runId: string }).runId;
+      calls += 1;
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return tracePackExport(runId);
+    },
+  };
+  const jobs = createRelayOutcomeJobs(client, { actorId: "agent:test" });
+
+  await assert.rejects(
+    jobs.verifyChange({
+      kind: "verify-change",
+      selection: {
+        kind: "runs",
+        runIds: Array.from({ length: 9 }, (_, index) => `run-${index}`),
+      },
+    }),
+    /integrity/u,
+  );
+  assert.equal(calls, 9);
+  assert.equal(maximumActive, 4);
 });
 
 test("observe projects pixels and current semantics through one bounded outcome", async () => {
@@ -183,6 +322,7 @@ test("record preserves the CLI and MCP title as the canonical Authoring Session 
     actorId: "agent:test",
     actorKind: "agent",
     appMapId: "settings",
+    workflowRequestId: "author-request",
     testName: "Settings localization",
     state: "recording",
     target: { kind: "device", platform: "android", targetId: "pixel-9" },
@@ -233,16 +373,82 @@ test("record preserves the CLI and MCP title as the canonical Authoring Session 
     },
     { id: "app-map.get", output: { appMap: { revision: 7 } } },
     {
-      id: "authoring.session.begin",
-      output: { session: recording },
-      checkInput: (input) =>
+      id: "workflow.create",
+      output: {
+        disposition: "created",
+        workflow: {
+          record: {
+            schemaVersion: 1,
+            workflowId: "author-workflow",
+            organizationId: "local",
+            projectId: "default",
+            kind: "author-test",
+            version: 1,
+            status: "active",
+            frozenIdentity: {
+              title: "Settings localization",
+              actorId: "agent:test",
+              appMapId: "settings",
+              appMapRevision: 7,
+              workflowRequestId: "author-request",
+              target: { kind: "device", platform: "android", targetId: "pixel-9" },
+            },
+            createdBy: "agent:test",
+            lastActorId: "agent:test",
+            createdAt: 1,
+            updatedAt: 1,
+            expiresAt: 10_000,
+            lastTransition: "created",
+          },
+          audit: [],
+        },
+      },
+      checkInput: (input) => {
+        const value = input as { workflowId?: unknown; kind?: unknown };
+        assert.equal(value.kind, "author-test");
+        assert.equal(typeof value.workflowId, "string");
+      },
+    },
+    {
+      id: "workflow.transition",
+      output: {
+        workflow: {
+          record: {
+            schemaVersion: 1,
+            workflowId: "author-workflow",
+            organizationId: "local",
+            projectId: "default",
+            kind: "author-test",
+            version: 3,
+            status: "active",
+            frozenIdentity: {
+              title: "Settings localization",
+              actorId: "agent:test",
+              appMapId: "settings",
+              appMapRevision: 7,
+              workflowRequestId: "author-request",
+              target: { kind: "device", platform: "android", targetId: "pixel-9" },
+            },
+            resource: { kind: "authoring-session", id: recording.id },
+            createdBy: "agent:test",
+            lastActorId: "agent:test",
+            createdAt: 1,
+            updatedAt: 2,
+            expiresAt: 10_000,
+            lastTransition: "authoring-started",
+          },
+          audit: [],
+        },
+        session: recording,
+      },
+      checkInput: (input) => {
         assert.deepEqual(input, {
-          appMapId: "settings",
-          testName: "Settings localization",
-          target: { kind: "device", platform: "android", targetId: "pixel-9" },
+          workflowId: "author-workflow",
+          expectedVersion: 1,
+          action: "start-authoring",
           leaseId: "lease-1",
-          expectedAppMapRevision: 7,
-        }),
+        });
+      },
     },
   ]);
   const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
@@ -257,5 +463,7 @@ test("record preserves the CLI and MCP title as the canonical Authoring Session 
   assert.equal(result.kind, "author-test");
   assert.equal(result.title, "Settings localization");
   assert.equal(result.stage, "recording");
+  assert.deepEqual(result.workflow, { workflowId: "author-workflow", expectedVersion: 3 });
+  assert.equal(result.ref, undefined);
   assert.equal(scripted.remaining(), 0);
 });

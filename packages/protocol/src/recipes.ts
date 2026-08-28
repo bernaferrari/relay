@@ -6,6 +6,7 @@ import type {
   SemanticRevealPlan,
 } from "./scroll-surface.js";
 import type { ReviewedDocumentOriginExecutionReference } from "./reviewed-document-origin.js";
+import type { ReviewedExternalEffects } from "./approval-policy.js";
 export type HorizontalCoordinateAnchor = "left" | "center" | "right";
 export type VerticalCoordinateAnchor = "top" | "center" | "bottom";
 
@@ -177,6 +178,9 @@ export type RecipeStepMetadata = {
   /** Immutable screen/UI-tree context captured when this step was recorded. */
   evidence?: RecordedStepEvidence;
   note?: string;
+  /** Review-owned declaration for real-world effects that cannot be inferred
+   * safely from UI copy. It informs policy only and never changes execution. */
+  reviewedExternalEffects?: ReviewedExternalEffects;
   /** Best-effort setup/cleanup step. Cancellation always remains fatal. */
   optional?: boolean;
   /**

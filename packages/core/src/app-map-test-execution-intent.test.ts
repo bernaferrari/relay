@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMapCompiledTest, OfflineTestPreflightReport } from "@relay/protocol";
+import { compileExecutionRisk } from "./execution-risk-compiler.js";
 import {
   createAppMapTestExecutionIntent,
   digestAppMapTestExecutionValue,
@@ -62,6 +63,17 @@ function fixture(): {
     appMapRevision: 7,
     testId: "smoke",
     planDigest: digestAppMapTestExecutionValue(plan),
+    executionRisk: {
+      schemaVersion: 1,
+      level: "safe",
+      reasons: [],
+      externalEffects: [],
+      confirmation: "none",
+      expectedAppBoundaries: [],
+      maximumActions: 0,
+      maximumDurationMs: 0,
+      cleanupRequired: false,
+    },
     summary: {
       recipes: 1,
       checkedSelectors: 0,
@@ -123,6 +135,10 @@ function campaignFixture(input: {
     };
   }
   current.preflight.planDigest = digestAppMapTestExecutionValue(current.plan);
+  current.preflight.executionRisk = compileExecutionRisk({
+    kind: "compiled-test",
+    test: current.plan,
+  });
   return current;
 }
 
@@ -145,6 +161,15 @@ test("freezes one parser-validated Test execution intent", () => {
     }),
     intent,
   );
+});
+
+test("binds preflight execution risk to the exact frozen Test plan", () => {
+  const intent = createAppMapTestExecutionIntent(fixture());
+  assert.equal(intent.preflight.executionRisk.level, "safe");
+
+  const alteredRisk = structuredClone(intent);
+  alteredRisk.preflight.executionRisk.maximumActions = 1;
+  assert.equal(parseAppMapTestExecutionIntent(alteredRisk), undefined);
 });
 
 test("rejects execution intents whose profile or source identity no longer matches the frozen plan", () => {
@@ -188,6 +213,10 @@ test("rejects a Test graph that could fall through to a mutable or cyclic recipe
   missing.recipeGraph[rootId]!.steps = [externalStep];
   missing.plan.recipes[rootId]!.steps = [structuredClone(externalStep)];
   missing.preflight.planDigest = digestAppMapTestExecutionValue(missing.plan);
+  missing.preflight.executionRisk = compileExecutionRisk({
+    kind: "compiled-test",
+    test: missing.plan,
+  });
   assert.throws(
     () => createAppMapTestExecutionIntent(missing),
     /inconsistent App Map Test execution intent/u,
@@ -198,6 +227,10 @@ test("rejects a Test graph that could fall through to a mutable or cyclic recipe
   cyclic.recipeGraph[cyclic.plan.rootRecipeId]!.steps = [recursiveStep];
   cyclic.plan.recipes[cyclic.plan.rootRecipeId]!.steps = [structuredClone(recursiveStep)];
   cyclic.preflight.planDigest = digestAppMapTestExecutionValue(cyclic.plan);
+  cyclic.preflight.executionRisk = compileExecutionRisk({
+    kind: "compiled-test",
+    test: cyclic.plan,
+  });
   assert.throws(
     () => createAppMapTestExecutionIntent(cyclic),
     /inconsistent App Map Test execution intent/u,

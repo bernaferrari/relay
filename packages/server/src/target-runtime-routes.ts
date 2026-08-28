@@ -22,8 +22,10 @@ import {
   preflightLocalCampaignCapacity,
   preflightDevicePool,
   preflightRegisteredBuild,
+  currentTargetSupervisorStore,
   openApp,
   recoverTargetRuntime,
+  targetRuntimeReadiness,
   type TargetRuntimeRecovery,
   readBuild,
   readDevicePool,
@@ -41,6 +43,7 @@ import {
   projectRoleAllows,
   type LocalAgentDeviceExecutionTargetRef,
   type OperationInput,
+  type TargetSupervisorHealth,
 } from "@relay/protocol";
 import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import { recordAudit, type RequestContext } from "./security.js";
@@ -74,6 +77,12 @@ export type TargetRuntimeRouteRuntime = {
   listAndroidAppLocales: typeof listAndroidAppLocales;
   setAppLocale: typeof setAndroidAppLocaleOnDevice;
   now: () => number;
+  readTargetHealth: (serial: string, platform: "android" | "ios") => TargetSupervisorHealth;
+  recordTargetRecovery: (
+    serial: string,
+    platform: "android" | "ios",
+    recovery: TargetRuntimeRecovery,
+  ) => void;
 };
 
 const defaultRuntime: TargetRuntimeRouteRuntime = {
@@ -101,6 +110,27 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
   listAndroidAppLocales,
   setAppLocale: setAndroidAppLocaleOnDevice,
   now: () => Date.now(),
+  readTargetHealth: (serial, platform) => {
+    const store = currentTargetSupervisorStore();
+    if (!store) throw new Error("Server-owned TargetSupervisor store is unavailable");
+    return store.health(
+      { id: serial, kind: platform },
+      targetRuntimeReadiness({ serial, platform }),
+    );
+  },
+  recordTargetRecovery: (serial, platform, recovery) => {
+    const store = currentTargetSupervisorStore();
+    if (!store) return;
+    store.recordRecoveryReceipt(
+      { id: serial, kind: platform },
+      {
+        channel: platform === "ios" ? "semantics" : "pixels",
+        outcome: recovery.ready ? "succeeded" : "failed",
+        reason: recovery.summary,
+        ...(recovery.readiness ? { readiness: recovery.readiness } : {}),
+      },
+    );
+  },
 };
 
 function requestedRecoveryFenceAssignmentId(body: {
@@ -142,6 +172,69 @@ function recordRecoveryFenceAudit(
   });
 }
 
+function publicTargetHealth(health: TargetSupervisorHealth): TargetSupervisorHealth {
+  return {
+    ...health,
+    visibility: "public",
+    pixels: {
+      state: health.pixels.state,
+      ...(health.pixels.lastCapturedAt !== undefined
+        ? { lastCapturedAt: health.pixels.lastCapturedAt }
+        : {}),
+    },
+    semantics: {
+      state: health.semantics.state,
+      ...(health.semantics.lastCapturedAt !== undefined
+        ? { lastCapturedAt: health.semantics.lastCapturedAt }
+        : {}),
+    },
+    input: { state: health.input.state },
+    control: { state: health.control.state },
+    context: {},
+    events: [],
+  };
+}
+
+async function scopedTargetHealth(input: {
+  scope: RequestContext;
+  serial: string;
+  runtime: TargetRuntimeRouteRuntime;
+}): Promise<TargetSupervisorHealth> {
+  const at = input.runtime.now();
+  const projectSharesTarget = (await input.runtime.listDeviceLeases(input.scope.projectId)).some(
+    (lease) =>
+      lease.organizationId === input.scope.organizationId &&
+      lease.deviceSerial === input.serial &&
+      lease.status === "leased" &&
+      lease.expiresAt > at,
+  );
+  if (!projectSharesTarget && !input.scope.localTrusted) {
+    recordAudit(input.scope, {
+      action: "target.health.read",
+      resource: "target",
+      target: input.serial,
+      result: "deny",
+    });
+    // Do not disclose whether a global host target exists to another project.
+    throw new HttpError(404, "Target not found");
+  }
+  const device = (await input.runtime.listDevices().catch(() => [])).find(
+    (candidate) => candidate.serial === input.serial,
+  );
+  if (!device) throw new HttpError(404, `Target ${input.serial} is not connected`);
+  if (device.platform !== "android" && device.platform !== "ios") {
+    throw new HttpError(400, "Target health currently requires a connected device");
+  }
+  const health = input.runtime.readTargetHealth(input.serial, device.platform);
+  recordAudit(input.scope, {
+    action: "target.health.read",
+    resource: "target",
+    target: input.serial,
+    result: "allow",
+  });
+  return projectSharesTarget ? { ...health, visibility: "project" } : publicTargetHealth(health);
+}
+
 export async function handleTargetRuntimeRoute(context: {
   method: string;
   pathname: string;
@@ -168,6 +261,16 @@ export async function handleTargetRuntimeRoute(context: {
 
   if (method === "GET" && pathname === "/target-workers") {
     json(response, 200, { workers: runtime.listTargetWorkers() });
+    return true;
+  }
+
+  if (method === "GET" && pathname === "/device/health") {
+    const url = new URL(request.url ?? pathname, "http://relay.local");
+    const serial = url.searchParams.get("serial")?.trim() ?? "";
+    if (!serial) throw new HttpError(400, "serial is required");
+    json(response, 200, {
+      health: await scopedTargetHealth({ scope, serial, runtime }),
+    });
     return true;
   }
 
@@ -384,6 +487,7 @@ export async function handleTargetRuntimeRoute(context: {
     }
     await runtime.assertTargetControl(scope, serial);
     const recovery = await runtime.recoverTarget(serial, reason, force);
+    runtime.recordTargetRecovery(serial, device.platform, recovery);
     await appendActivity({
       eventType: recovery.ready ? "target.recovery.completed" : "target.recovery.failed",
       resourceKind: "target",

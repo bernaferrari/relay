@@ -20,7 +20,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   mapped(
     "authoring.session.create",
     path("session create", [], undefined, {
-      summary: "Start a recording session on an App Map and device",
+      summary: "Start a Relay-controlled recording session on an App Map and device",
       inputHelp: [
         { name: "appMapId", type: "string", required: true, description: "App Map identifier" },
         { name: "target", type: "object", required: true, description: "Device or browser target" },
@@ -81,7 +81,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   mapped(
     "authoring.session.begin",
     path("session begin", [], undefined, {
-      summary: "Create a session, observe the target, and start recording",
+      summary: "Create a session, observe the target, and start Relay-controlled recording",
     }),
     path("proposal begin", [], undefined, {
       summary: "Begin a ready-to-record proposal in one operation",

@@ -7,6 +7,9 @@ import type {
   AppMapScenarioTest,
   AppMapScenarioTestEdit,
   AppMapTest,
+  DurableWorkflowRead,
+  ExecutionRisk,
+  WorkflowJsonValue,
 } from "@relay/protocol";
 import type { JobInfo } from "../lib/api-types";
 
@@ -87,6 +90,48 @@ function fixture(): AppMap {
     activity: {},
     createdAt: 1,
     updatedAt: 1,
+  };
+}
+
+const safeExecutionRisk: ExecutionRisk = {
+  schemaVersion: 1,
+  level: "safe",
+  reasons: [],
+  externalEffects: [],
+  confirmation: "none",
+  expectedAppBoundaries: [],
+  maximumActions: 1,
+  maximumDurationMs: 1_000,
+  cleanupRequired: false,
+};
+
+function durableRunWorkflow(input: {
+  workflowId: string;
+  frozenIdentity: WorkflowJsonValue;
+  version: number;
+  status?: "active" | "needs-attention" | "terminal";
+  transition?: string;
+  jobId?: string;
+}): DurableWorkflowRead {
+  return {
+    record: {
+      schemaVersion: 1,
+      workflowId: input.workflowId,
+      organizationId: "org",
+      projectId: "project",
+      kind: "run-test",
+      version: input.version,
+      status: input.status ?? "active",
+      frozenIdentity: input.frozenIdentity,
+      ...(input.jobId ? { resource: { kind: "job", id: input.jobId } } : {}),
+      createdBy: "human:test",
+      lastActorId: "human:test",
+      createdAt: 1,
+      updatedAt: input.version,
+      expiresAt: 100_000,
+      lastTransition: input.transition ?? "created",
+    },
+    audit: [],
   };
 }
 
@@ -220,6 +265,7 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
       return {
         plan: { rootRecipeId: "repeat-root" },
         preflight: {
+          executionRisk: safeExecutionRisk,
           schemaVersion: 1,
           mode: "offline-test-preflight",
           appMapId: "checkout",
@@ -419,6 +465,7 @@ test("Whole page is disabled when the destination has no frozen full-page captur
           ? {
               plan: { rootRecipeId: "repeat-root" },
               preflight: {
+                executionRisk: safeExecutionRisk,
                 schemaVersion: 1,
                 mode: "offline-test-preflight",
                 appMapId: "checkout",
@@ -1178,6 +1225,8 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   let finishRun!: () => void;
   const runGate = new Promise<void>((resolve) => (finishRun = resolve));
   let runInput: Record<string, unknown> | undefined;
+  let durableIdentity: WorkflowJsonValue;
+  let durableWorkflowId = "";
   const compileInputs: Record<string, unknown>[] = [];
   serverMock.current = {
     selectedAppMap: () => initial,
@@ -1208,6 +1257,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
         return {
           plan,
           preflight: {
+            executionRisk: safeExecutionRisk,
             schemaVersion: 1,
             mode: "offline-test-preflight",
             appMapId: "checkout",
@@ -1250,17 +1300,62 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
           },
         };
       }
-      if (id === "job.get") {
-        return { job: jobs().find((job) => job.id === input.jobId) };
+      if (id === "workflow.create") {
+        durableWorkflowId = input.workflowId as string;
+        durableIdentity = input.frozenIdentity as WorkflowJsonValue;
+        return {
+          disposition: "created",
+          workflow: durableRunWorkflow({
+            workflowId: durableWorkflowId,
+            frozenIdentity: durableIdentity,
+            version: 1,
+          }),
+        };
       }
-      if (id === "job.cancel") {
+      if (id === "workflow.get") {
+        return {
+          workflow: durableRunWorkflow({
+            workflowId: durableWorkflowId,
+            frozenIdentity: { ...(durableIdentity as object), rootRecipeId },
+            version: 2,
+            transition: "run-attached",
+            jobId: "job-exact",
+          }),
+          job: jobs()[0],
+        };
+      }
+      if (id === "workflow.transition" && input.action === "cancel-run") {
         const cancelled = {
-          ...jobs().find((job) => job.id === input.jobId)!,
+          ...jobs()[0]!,
           status: "cancelled" as const,
+          finishedAt: 3,
         };
         setJobs([cancelled]);
-        return { job: cancelled };
+        return {
+          workflow: durableRunWorkflow({
+            workflowId: durableWorkflowId,
+            frozenIdentity: { ...(durableIdentity as object), rootRecipeId },
+            version: 4,
+            status: "terminal",
+            transition: "run-cancelled",
+            jobId: "job-exact",
+          }),
+          job: cancelled,
+        };
       }
+      if (id === "workflow.transition") {
+        return {
+          workflow: durableRunWorkflow({
+            workflowId: durableWorkflowId,
+            frozenIdentity: { ...(durableIdentity as object), rootRecipeId },
+            version: 2,
+            transition: "run-attached",
+            jobId: "job-exact",
+          }),
+          job: jobs()[0],
+        };
+      }
+      if (id !== "app-map.test.run") throw new Error(`Unexpected operation ${id}`);
       runInput = input;
       await runGate;
       setJobs([
@@ -1354,7 +1449,13 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   finishRun();
   await settle();
 
-  expect(calls).toEqual(["app-map.test.compile", "app-map.test.compile", "app-map.test.run"]);
+  expect(calls).toEqual([
+    "app-map.test.compile",
+    "app-map.test.compile",
+    "workflow.create",
+    "app-map.test.run",
+    "workflow.transition",
+  ]);
   expect(compileInputs).toEqual([
     { appMapId: "checkout", testId: "checkout-run", targetProfileId: "ipad-pt-BR" },
     { appMapId: "checkout", testId: "checkout-run", targetProfileId: "ipad-pt-BR" },
@@ -1373,8 +1474,8 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   primary().click();
   await settle();
 
-  expect(calls).toContain("job.get");
-  expect(calls).toContain("job.cancel");
+  expect(calls).toContain("workflow.get");
+  expect(calls.filter((id) => id === "workflow.transition")).toHaveLength(2);
   expect(primary().textContent).toContain("Open result");
   primary().click();
   expect(opened).toEqual(["job-exact"]);
@@ -1547,6 +1648,8 @@ test("a verified checkpoint is compiled offline and sent unchanged to the exact 
   };
   const compileInputs: Record<string, unknown>[] = [];
   let runInput: Record<string, unknown> | undefined;
+  let durableIdentity: WorkflowJsonValue;
+  let durableWorkflowId = "";
   serverMock.current = {
     selectedAppMap: () => initial,
     isOffline: () => false,
@@ -1571,6 +1674,7 @@ test("a verified checkpoint is compiled offline and sent unchanged to the exact 
         return {
           plan: input.entryCheckpointScreenId === "settings" ? warmPlan : coldPlan,
           preflight: {
+            executionRisk: safeExecutionRisk,
             schemaVersion: 1,
             mode: "offline-test-preflight",
             appMapId: "checkout",
@@ -1593,6 +1697,31 @@ test("a verified checkpoint is compiled offline and sent unchanged to the exact 
           },
         };
       }
+      if (id === "workflow.create") {
+        durableWorkflowId = input.workflowId as string;
+        durableIdentity = input.frozenIdentity as WorkflowJsonValue;
+        return {
+          disposition: "created",
+          workflow: durableRunWorkflow({
+            workflowId: durableWorkflowId,
+            frozenIdentity: durableIdentity,
+            version: 1,
+          }),
+        };
+      }
+      if (id === "workflow.transition") {
+        return {
+          workflow: durableRunWorkflow({
+            workflowId: durableWorkflowId,
+            frozenIdentity: { ...(durableIdentity as object), rootRecipeId },
+            version: 2,
+            transition: "run-attached",
+            jobId: "warm-job",
+          }),
+          job: { id: "warm-job", action: rootRecipeId, status: "queued", queuedAt: 2 },
+        };
+      }
+      if (id !== "app-map.test.run") throw new Error(`Unexpected operation ${id}`);
       runInput = input;
       return {
         plan: warmPlan,
@@ -1718,6 +1847,7 @@ test("offline preflight blocks device control but leaves an inspectable repair r
           startup: { mode: "cold" },
         },
         preflight: {
+          executionRisk: safeExecutionRisk,
           schemaVersion: 1,
           mode: "offline-test-preflight",
           appMapId: "checkout",

@@ -1,4 +1,9 @@
-import type { FrozenRunTestIdentity, RunTestSnapshot, WorkflowProblem } from "./types.js";
+import type {
+  DurableWorkflowHandle,
+  FrozenRunTestIdentity,
+  RunTestSnapshot,
+  WorkflowProblem,
+} from "./types.js";
 import type { WorkflowRef } from "./types.js";
 
 export type CanonicalJob = {
@@ -84,12 +89,13 @@ function progressLabel(job: CanonicalJob, phase: RunTestSnapshot["phase"]): stri
 }
 
 export function snapshotFromJob(input: {
-  ref: WorkflowRef;
+  ref?: WorkflowRef;
+  workflow?: DurableWorkflowHandle;
   frozen: FrozenRunTestIdentity;
   job: CanonicalJob;
   extraProblems?: readonly WorkflowProblem[];
 }): RunTestSnapshot {
-  const { ref, frozen, job } = input;
+  const { frozen, job } = input;
   const phase = jobPhase(job);
   const problems = [...(input.extraProblems ?? [])];
   if (phase === "failed") {
@@ -116,8 +122,11 @@ export function snapshotFromJob(input: {
     kind: "run-test",
     title: `Run ${frozen.testId}`,
     phase,
-    version: workflowVersionForJob(job),
-    ref,
+    version: input.workflow
+      ? `workflow-v${input.workflow.expectedVersion}`
+      : workflowVersionForJob(job),
+    ...(input.workflow ? { workflow: input.workflow } : {}),
+    ...(input.ref ? { ref: input.ref } : {}),
     frozen,
     execution: { jobId: job.id, ...(job.runId ? { runId: job.runId } : {}) },
     progress: {

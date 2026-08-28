@@ -1,5 +1,4 @@
 export { createRelayWorkflows } from "./relay-workflows.js";
-export { createRelayOutcomeJobs, type RelayOutcomeJobOptions } from "./outcome-jobs.js";
 export {
   RepeatSpecResolutionError,
   resolveRepeatSpec,
@@ -33,7 +32,10 @@ export type {
 } from "./authoring-intent.js";
 export type {
   AuthoringReview,
+  CancelRunOutcomeIntent,
   AuthorTestDecision,
+  DurableAuthorTestDecision,
+  DurableWorkflowHandle,
   AuthorTestIntent,
   AuthorTestRecoveryIntent,
   AuthorTestSnapshot,
@@ -55,6 +57,7 @@ export type {
   WorkflowProblem,
   WorkflowRef,
   WorkflowRecoveryIntent,
+  WorkflowLookup,
   WorkflowSnapshot,
   ConnectTargetIntent,
   ConnectTargetResult,
@@ -63,14 +66,17 @@ export type {
   ExportEvidenceIntent,
   FailureInspection,
   InspectFailureIntent,
+  InspectWorkflowOutcomeIntent,
   ObserveTargetIntent,
   ProposeRepairIntent,
   RecordTestOutcomeIntent,
   RelayOutcomeJobs,
   RepeatTestOutcomeIntent,
+  ReplayLabOutcomeIntent,
   RunTestOutcomeIntent,
   TargetObservation,
   TargetObservationControl,
+  VerifyChangeOutcomeIntent,
 } from "./types.js";
 export type {
   IntentCheckStep,

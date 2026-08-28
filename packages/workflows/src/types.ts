@@ -1,19 +1,32 @@
 import type {
   AuthoringCommitDestination,
   AuthoringInteraction,
+  AuthoringCaptureMode,
+  AuthoringCaptureProof,
+  AuthoringCaptureProvenance,
   AuthoringRecordingEdit,
   AuthoringTarget,
   AppMapCompiledTest,
   AppMapTestStartup,
   OfflineTestPreflightReport,
   RepeatSpec,
+  ReplayLabAnalysis,
+  ReplayLabReport,
   ResolvedRepeatSpec,
   SourceRevision,
   TargetObservation,
+  TracePack,
+  VerifyChangeIntent,
+  VerifyChangeResult,
 } from "@relay/protocol";
 export type { TargetObservation, TargetObservationControl } from "@relay/protocol";
 
 export type WorkflowRef = string & { readonly __workflowRef: unique symbol };
+
+export type DurableWorkflowHandle = {
+  workflowId: string;
+  expectedVersion: number;
+};
 
 export type RunTestIntent = {
   kind: "run-test";
@@ -28,6 +41,12 @@ export type RunTestIntent = {
   capture?: { fullSurfaceScreenIds: readonly string[] };
   /** Stable before dispatch so a renderer crash can adopt the queued job. */
   workflowRequestId?: string;
+  /** New outcome clients reserve server-owned continuation state. Omit only
+   * for bounded v1 compatibility reads and older embedding clients. */
+  continuation?: "durable";
+  /** Explicit consent for a once-per-run risk. Per-step and human-only risks
+   * stay outside this simplified outcome. */
+  confirmRisk?: true;
 };
 
 /** Start one canonical recording session and leave it ready to accept recorded
@@ -43,6 +62,9 @@ export type AuthorTestIntent = {
   sourceScreenId?: string;
   pendingConnectionId?: string;
   group?: string;
+  /** Stable before dispatch so response loss can reconcile one session. */
+  workflowRequestId?: string;
+  continuation?: "durable";
 };
 
 export type RepeatTestIntent = {
@@ -55,6 +77,7 @@ export type RepeatTestIntent = {
   evidence?: "visual" | "smoke";
   sourceRevision?: SourceRevision;
   capture?: { fullSurfaceScreenIds: readonly string[] };
+  confirmRisk?: true;
 };
 
 export type WorkflowIntent = RunTestIntent | AuthorTestIntent | RepeatTestIntent;
@@ -101,8 +124,8 @@ export type WorkflowProblem = {
     | "repeat-dimension-unresolved"
     | "repeat-value-unresolved"
     | "repeat-pilot-invalid"
-    | "repeat-resume-unsupported"
-    | "repeat-scope-changed";
+    | "repeat-scope-changed"
+    | "risk-confirmation-required";
   title: string;
   detail: string;
   recovery: string;
@@ -133,6 +156,7 @@ export type FrozenAuthorTestIdentity = {
   sourceScreenId?: string;
   pendingConnectionId?: string;
   group?: string;
+  workflowRequestId?: string;
 };
 
 export type FrozenRepeatTestIdentity = {
@@ -160,7 +184,8 @@ export type AuthorWorkflowAction =
   | "replay"
   | "approve"
   | "discard"
-  | "cancel";
+  | "cancel"
+  | "abandon";
 export type RepeatWorkflowAction = "inspect" | "continue" | "confirm-and-continue" | "cancel";
 
 export type RunTestSnapshot = {
@@ -170,6 +195,9 @@ export type RunTestSnapshot = {
   phase: WorkflowPhase;
   /** Opaque fingerprint of the latest canonical job projection. */
   version: string;
+  /** Server-owned continuation for new Run clients. The id is a lookup key,
+   * never authorization; expectedVersion is the next CAS fence. */
+  workflow?: DurableWorkflowHandle;
   ref?: WorkflowRef;
   frozen?: FrozenRunTestIdentity;
   execution?: { jobId: string; runId?: string };
@@ -188,6 +216,9 @@ export type AuthoringReview = {
     label?: string;
     stepCount: number;
     proofStatus?: "verified" | "pixels-only" | "unresolved";
+    /** Origin truth before replay; inferred/instrumented actions remain
+     * explicitly unproved until this exact revision passes replay. */
+    captureProof: AuthoringCaptureProof;
   }[];
   latestReplay?: {
     id: string;
@@ -216,6 +247,7 @@ export type AuthorTestSnapshot = {
     | "cancelled";
   /** Opaque fingerprint of the latest canonical authoring session projection. */
   version: string;
+  workflow?: DurableWorkflowHandle;
   ref?: WorkflowRef;
   frozen?: FrozenAuthorTestIdentity;
   authoring?: {
@@ -224,6 +256,11 @@ export type AuthorTestSnapshot = {
     takeRevision?: number;
     committedConnectionId?: string;
     committedTestId?: string;
+  };
+  capture?: {
+    mode: AuthoringCaptureMode;
+    provenance: AuthoringCaptureProvenance;
+    replayRequiredBeforeApproval: boolean;
   };
   review?: AuthoringReview;
   progress: { label: string; completed?: number; total?: number };
@@ -291,6 +328,20 @@ export type AuthorTestDecision = VersionedDecision &
     | { action: "approve"; destination?: AuthoringCommitDestination }
     | { action: "discard" }
     | { action: "cancel" }
+    | { action: "abandon"; reason: string }
+  );
+
+export type DurableAuthorTestDecision = DurableWorkflowHandle &
+  (
+    | { action: "record"; interaction: AuthoringInteraction }
+    | { action: "checkpoint"; label?: string }
+    | { action: "stop" }
+    | { action: "edit"; edit: AuthoringRecordingEdit }
+    | { action: "replay" }
+    | { action: "approve"; destination?: AuthoringCommitDestination }
+    | { action: "discard" }
+    | { action: "cancel" }
+    | { action: "abandon"; reason: string }
   );
 
 export type RepeatTestDecision = VersionedDecision &
@@ -304,6 +355,11 @@ export interface RelayWorkflows {
   start(intent: RepeatTestIntent): Promise<RepeatTestSnapshot>;
   advance(decision: WorkflowDecision): Promise<WorkflowSnapshot>;
   inspect(ref: WorkflowRef): Promise<WorkflowSnapshot>;
+  inspectDurable(workflowId: string): Promise<RunTestSnapshot | AuthorTestSnapshot>;
+  inspectRun(workflowId: string): Promise<RunTestSnapshot>;
+  inspectAuthoring(workflowId: string): Promise<AuthorTestSnapshot>;
+  advanceAuthoring(decision: DurableAuthorTestDecision): Promise<AuthorTestSnapshot>;
+  cancelRun(input: DurableWorkflowHandle): Promise<RunTestSnapshot>;
   recover(intent: RunTestRecoveryIntent): Promise<RunTestSnapshot>;
   recover(intent: AuthorTestRecoveryIntent): Promise<AuthorTestSnapshot>;
   recover(intent: RepeatTestRecoveryIntent): Promise<RepeatTestSnapshot>;
@@ -328,6 +384,7 @@ export type RunTestOutcomeIntent = OutcomeTargetSelection & {
   kind: "run-test";
   appMapId?: string;
   testId: string;
+  confirmRisk?: true;
 };
 
 export type RepeatTestOutcomeIntent = OutcomeTargetSelection & {
@@ -336,6 +393,7 @@ export type RepeatTestOutcomeIntent = OutcomeTargetSelection & {
   testId: string;
   repeat: RepeatSpec;
   evidence?: "visual" | "smoke";
+  confirmRisk?: true;
 };
 
 export type InspectFailureIntent = { kind: "inspect-failure"; runId: string };
@@ -349,6 +407,20 @@ export type ProposeRepairIntent = {
 };
 
 export type ExportEvidenceIntent = { kind: "export-evidence"; runId: string };
+export type ReplayLabOutcomeIntent = {
+  kind: "replay-lab";
+  analysis: ReplayLabAnalysis;
+  tracePacks: readonly TracePack[];
+};
+export type VerifyChangeOutcomeIntent = VerifyChangeIntent;
+export type WorkflowLookup = { workflowId: string } | { legacyRef: WorkflowRef };
+export type InspectWorkflowOutcomeIntent = WorkflowLookup & { kind: "inspect-workflow" };
+export type CancelRunOutcomeIntent = {
+  kind: "cancel-run";
+  workflowId: string;
+  expectedVersion: number;
+  confirmCancel: true;
+};
 export type ContinueRepeatOutcomeIntent = {
   kind: "continue-repeat";
   ref: WorkflowRef;
@@ -358,8 +430,8 @@ export type ContinueRepeatOutcomeIntent = {
 
 export type EditRecordingOutcomeIntent = {
   kind: "edit-recording";
-  ref: WorkflowRef;
-  expectedVersion: string;
+  workflowId: string;
+  expectedVersion: number;
   edit: AuthoringRecordingEdit;
 };
 
@@ -386,12 +458,15 @@ export interface RelayOutcomeJobs {
   inspectFailure(intent: InspectFailureIntent): Promise<FailureInspection>;
   proposeRepair(intent: ProposeRepairIntent): Promise<unknown>;
   exportEvidence(intent: ExportEvidenceIntent): Promise<unknown>;
-  inspect(ref: WorkflowRef): Promise<WorkflowSnapshot>;
+  replayLab(intent: ReplayLabOutcomeIntent): Promise<ReplayLabReport>;
+  verifyChange(intent: VerifyChangeOutcomeIntent): Promise<VerifyChangeResult>;
+  inspect(input: WorkflowLookup): Promise<WorkflowSnapshot>;
+  cancelRun(input: CancelRunOutcomeIntent): Promise<RunTestSnapshot>;
   continueRepeat(input: {
     ref: WorkflowRef;
     expectedVersion: string;
     confirmRemaining: true;
   }): Promise<RepeatTestSnapshot>;
-  advanceRecording(decision: AuthorTestDecision): Promise<AuthorTestSnapshot>;
+  advanceRecording(decision: DurableAuthorTestDecision): Promise<AuthorTestSnapshot>;
   editRecording(intent: EditRecordingOutcomeIntent): Promise<AuthorTestSnapshot>;
 }

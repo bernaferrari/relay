@@ -40,7 +40,7 @@ export const combineOperationDefinitions = [
   ),
   command(
     "job.combine.campaign.resume",
-    "Resume untouched Combine cases",
+    "Resume eligible Combine cases",
     "POST",
     "/jobs/combine/:batchId/resume",
     {

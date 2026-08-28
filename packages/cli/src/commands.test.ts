@@ -56,6 +56,12 @@ test("every friendly path resolves with its declared arguments", () => {
   }
 });
 
+test("device health exposes the bounded read-only supervisor projection", () => {
+  const resolved = resolveCommand(["device", "health", "ipad-1"]);
+  assert.equal(resolved.operationId, "target.health.get");
+  assert.deepEqual(resolved.input, { serial: "ipad-1" });
+});
+
 test("all plan-035 authoring operations have friendly command paths", () => {
   const authoringOperationIds = [
     "authoring.session.list",

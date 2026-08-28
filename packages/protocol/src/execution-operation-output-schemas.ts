@@ -476,6 +476,7 @@ export const combineCampaignSchema = z
           ]),
           jobId: z.string().optional(),
           runId: z.string().optional(),
+          priorRunIds: z.array(z.string()).optional(),
           error: z.string().optional(),
         })
         .strict(),

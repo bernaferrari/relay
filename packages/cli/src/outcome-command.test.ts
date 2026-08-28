@@ -44,16 +44,16 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
     {
       input: tokens([
         "edit-recording",
-        "recording-ref",
-        "v4",
+        "recording-workflow",
+        "4",
         "merge",
         "tap-menu,tap-settings",
         "Open Settings",
       ]),
       expected: {
         kind: "edit-recording",
-        ref: "recording-ref",
-        expectedVersion: "v4",
+        workflowId: "recording-workflow",
+        expectedVersion: 4,
         edit: {
           kind: "merge",
           actionIds: ["tap-menu", "tap-settings"],
@@ -113,6 +113,28 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
       input: tokens(["export-evidence", "run-1"]),
       expected: { kind: "export-evidence", runId: "run-1" },
     },
+    {
+      input: tokens(["replay-lab", "all", "oldest.json", "newest.json"]),
+      expected: {
+        kind: "replay-lab",
+        analysis: "all",
+        paths: ["oldest.json", "newest.json"],
+      },
+    },
+    {
+      input: tokens(["verify-change", "run", "run-1", "run-2"]),
+      expected: {
+        kind: "verify-change",
+        selection: { kind: "runs", runIds: ["run-1", "run-2"] },
+      },
+    },
+    {
+      input: tokens(["verify-change", "revision", "abcdef0"]),
+      expected: {
+        kind: "verify-change",
+        selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: "abcdef0" } },
+      },
+    },
   ] as const;
 
   for (const testCase of cases) {
@@ -153,6 +175,18 @@ test("Repeat flags produce the canonical ordered multi-dimensional specification
       },
     },
   );
+});
+
+test("Run risk consent is explicit and does not affect safe Runs by default", () => {
+  assert.deepEqual(parseOutcomeCliIntent(tokens(["run", "checkout"], {}, ["--confirm"])), {
+    kind: "run-test",
+    testId: "checkout",
+    confirmRisk: true,
+  });
+  assert.deepEqual(parseOutcomeCliIntent(tokens(["run", "checkout"])), {
+    kind: "run-test",
+    testId: "checkout",
+  });
 });
 
 test("Repeat CLI rejects ambiguous or malformed dimension policies", () => {

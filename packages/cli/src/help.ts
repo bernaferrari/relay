@@ -122,27 +122,37 @@ Usage:
   relay connect [device]
   relay observe [device]
   relay record <title> [--map <id>] [--device <id>] --confirm
-  relay edit-recording <workflowRef> <expectedVersion> <remove|reorder|replace|merge|split|rename> ...
-  relay run <testId> [--map <id>] [--device <id>]
+  relay edit-recording <workflowId> <expectedVersion> <remove|reorder|replace|merge|split|rename> ...
+  relay run <testId> [--map <id>] [--device <id>] [--confirm]
   relay repeat <testId> --each <dimension>=<values|supported|all> [--each ...]
     [--strategy <cartesian|zip|pairwise>] [--pilot <representative|first|dimension=value,...>]
-    [--resume <untouched|failed|all>] [--map <id>] [--device <id>]
+    [--resume <untouched|failed|all>] [--map <id>] [--device <id>] [--confirm]
   relay continue-repeat <workflowRef> <expectedVersion> --confirm
+  relay inspect-workflow <workflowId|legacyV1Ref>
+  relay cancel-run <workflowId> <expectedVersion> --confirm
   relay inspect-failure <runId>
   relay propose-repair <runId> <checkId> <accept-current|disable> <reason>
   relay export-evidence <runId>
+  relay replay-lab <compare|visual-localization|all> <oldest.tracepack.json> <newest.tracepack.json> [...]
+  relay verify-change run <runId...>
+  relay verify-change test <appMapId> <testId...>
+  relay verify-change revision <gitSha>
   relay <family> <command> [arguments] [--input <json> | --input-file <path>] [global options]
   relay operation invoke <operationId> (--input <json> | --input-file <path>) [global options]
   relay <family> --help
 
 Outcome commands:
-  connect, observe, record, edit-recording, run, repeat, continue-repeat, inspect-failure, propose-repair,
-  export-evidence
+  connect, observe, record, edit-recording, run, repeat, continue-repeat, inspect-workflow, cancel-run,
+  inspect-failure, propose-repair,
+  export-evidence, replay-lab, verify-change
 
 These resolve the sole connected Device and current Test workspace automatically. Use --device, or
 the advanced --map option, only when selection is ambiguous. The first Record creates its backing
 topology automatically. Record acquires control only after --confirm and never displaces another
-person or agent.
+person or agent. The current command is Control and record: interactions pass through Relay.
+
+Replay Lab reads only the explicitly named local TracePack JSON files. It does not start the Relay
+daemon, read a Device or workspace, contact a network service, or mutate Tests and evidence.
 
 Advanced command families:
 ${groups}

@@ -5,11 +5,13 @@ import type { MapCanvasView } from "../components/map-mode-switch";
 import { compactCanvasPositions } from "./app-map-auto-layout";
 import { withCanvasGraph } from "./app-map-canvas-graph";
 import type { CanvasScreenRotation } from "./app-map-canvas-layout";
-import { bindAppMapWorkspaceShellEvents } from "./app-map-workspace-shell-events";
+import { connectAppMapShellCommands } from "./app-map-workspace-command-adapter";
 import { applyTargetSetToActiveFlow } from "./app-map-workspace-helpers";
+import type { WorkspaceController } from "./workspace-controller";
 
 /** Shell commands that mutate canvas metadata or reveal a canonical screen. */
 export function useAppMapWorkspaceShell(options: {
+  workspaceController?: WorkspaceController;
   activeFlow: Accessor<CanvasFlow | null>;
   graph: Accessor<NonNullable<AppMapCanvasState["graph"]>>;
   canvasState: Accessor<AppMapCanvasState>;
@@ -31,11 +33,11 @@ export function useAppMapWorkspaceShell(options: {
     options.persistMetadata(withCanvasGraph(options.canvasState(), next));
   };
   createEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent("relay:target-set-state", {
-        detail: { targetSetId: options.activeFlow()?.targetSetId },
-      }),
-    );
+    const targetSetId = options.activeFlow()?.targetSetId;
+    options.workspaceController?.execute({
+      kind: "map.target-set.state",
+      ...(targetSetId !== undefined ? { targetSetId } : {}),
+    });
   });
   const tidyMap = () => {
     const rotations = options.rotations();
@@ -49,22 +51,21 @@ export function useAppMapWorkspaceShell(options: {
   };
 
   onMount(() => {
-    const unbind = bindAppMapWorkspaceShellEvents({
-      onChooseTargetSet: chooseTargetSet,
-      onTidyMap: tidyMap,
-      onToggleHistory: () => {
+    const disconnectWorkspace = connectAppMapShellCommands(options.workspaceController, {
+      chooseTargetSet,
+      tidyMap,
+      toggleHistory: () => {
         const opening = !options.historyOpen();
         if (opening) options.setCaptureOpen(false);
         options.setHistoryOpen(opening);
       },
-      onRevealScreen: (detail) => {
-        if (!detail.screenId || !detail.appMapId || detail.appMapId !== options.selectedAppMapId())
-          return;
+      revealScreen: ({ appMapId, screenId }) => {
+        if (appMapId !== options.selectedAppMapId()) return;
         options.setWorkspaceView("map");
-        options.setSelectedNodeId(detail.screenId);
-        queueMicrotask(() => options.revealScreen(detail.screenId!));
+        options.setSelectedNodeId(screenId);
+        queueMicrotask(() => options.revealScreen(screenId));
       },
     });
-    onCleanup(unbind);
+    onCleanup(disconnectWorkspace);
   });
 }

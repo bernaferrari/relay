@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
   AUTHORING_RAW_CAPTURE_VERSION,
+  authoringCaptureProvenance,
   type AuthoringAction,
+  type AuthoringCaptureProvenance,
   type AuthoringInteraction,
   type AuthoringObservation,
   type AuthoringRawCaptureVersion,
@@ -239,12 +241,20 @@ function appendRawEvent(
   target: AuthoringTarget,
   input: RawEventInput,
   rawCaptureVersion: AuthoringRawCaptureVersion = AUTHORING_RAW_CAPTURE_VERSION,
+  captureProvenance?: AuthoringCaptureProvenance,
 ): AuthoringRawRecordingPatch {
+  const provenance = authoringCaptureProvenance(
+    captureProvenance ?? events[0]?.source.captureProvenance,
+  );
   const event = {
     ...structuredClone(input),
     id: `raw-${randomUUID()}`,
     sequence: events.length + 1,
-    source: { kind: "authoring-runtime" as const, target: structuredClone(target) },
+    source: {
+      kind: "authoring-runtime" as const,
+      target: structuredClone(target),
+      captureProvenance: provenance,
+    },
   } as AuthoringRawEvent;
   return {
     rawCaptureVersion,
@@ -256,17 +266,24 @@ function appendRawEvent(
  * a legacy Take is never retroactively populated from editable revisions. */
 export function seedAuthoringRawRecording(input: {
   target: AuthoringTarget;
+  captureProvenance?: AuthoringCaptureProvenance;
   trigger: "recording" | "capture";
   recordedAt: number;
   observation: AuthoringObservation;
   focus?: AuthoringRawObservationLink["focus"];
 }): AuthoringRawRecordingPatch {
-  return appendRawEvent([], input.target, {
-    kind: "take-start",
-    trigger: input.trigger,
-    recordedAt: input.recordedAt,
-    observation: rawObservationLink(input.observation, input.focus),
-  });
+  return appendRawEvent(
+    [],
+    input.target,
+    {
+      kind: "take-start",
+      trigger: input.trigger,
+      recordedAt: input.recordedAt,
+      observation: rawObservationLink(input.observation, input.focus),
+    },
+    undefined,
+    input.captureProvenance,
+  );
 }
 
 /** Append a manual observation only when the Take already has a raw source

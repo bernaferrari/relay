@@ -91,6 +91,80 @@ const activeCampaignStatuses: ReadonlySet<CombineCampaign["status"]> = new Set([
   "running",
 ]);
 
+type RepeatResumeMode = "untouched" | "failed" | "all";
+
+function repeatResumeMode(campaign: StoredCombineCampaign): RepeatResumeMode {
+  return campaign.execution.repeat?.resolved.resume ?? "untouched";
+}
+
+function retryableTerminalStatus(
+  mode: RepeatResumeMode,
+  status: CombineCampaignCaseStatus,
+): boolean {
+  if (mode === "failed") return status === "failed";
+  if (mode === "all") {
+    return status === "failed" || status === "blocked" || status === "cancelled";
+  }
+  return false;
+}
+
+/** Select exact frozen cases for one continuation. Every mode continues
+ * untouched work; failed/all additionally reopen reviewed terminal outcomes.
+ * Passed and active cases are never eligible. */
+export function prepareSelectedCombineCampaignResume(campaign: StoredCombineCampaign): {
+  campaign: StoredCombineCampaign;
+  selectedCellIds: string[];
+  retriedTerminalCellIds: string[];
+} {
+  const selected = new Set(campaign.execution.selectedCellIds ?? []);
+  const mode = repeatResumeMode(campaign);
+  const selectedCellIds: string[] = [];
+  const retriedTerminalCellIds: string[] = [];
+  const cases = campaign.cases.map((item) => {
+    if (!selected.has(item.cellId)) return item;
+    const terminalRetry = retryableTerminalStatus(mode, item.status);
+    if (item.status !== "pending" && !terminalRetry) return item;
+    if (terminalRetry && (!item.jobId || !item.runId)) {
+      throw new Error(`Campaign cell ${item.cellId} cannot retry without immutable Run evidence.`);
+    }
+    selectedCellIds.push(item.cellId);
+    if (terminalRetry) retriedTerminalCellIds.push(item.cellId);
+    const priorRunIds = item.runId
+      ? [...new Set([...(item.priorRunIds ?? []), item.runId])]
+      : item.priorRunIds;
+    const {
+      jobId: _jobId,
+      runId: _runId,
+      error: _error,
+      priorRunIds: _priorRunIds,
+      ...stable
+    } = item;
+    return {
+      ...stable,
+      status: "pending" as const,
+      ...(priorRunIds?.length ? { priorRunIds } : {}),
+    };
+  });
+  return {
+    campaign: { ...campaign, cases },
+    selectedCellIds,
+    retriedTerminalCellIds,
+  };
+}
+
+function hasReviewableRepeatResume(campaign: StoredCombineCampaign): boolean {
+  if (!campaign.execution.repeat || campaign.status === "cancelled") return false;
+  const mode = repeatResumeMode(campaign);
+  if (mode === "untouched") return false;
+  const selected = new Set(campaign.execution.selectedCellIds);
+  return campaign.cases.some(
+    (item) =>
+      selected.has(item.cellId) &&
+      retryableTerminalStatus(mode, item.status) &&
+      Boolean(item.jobId && item.runId),
+  );
+}
+
 async function campaignEntries(projectId: string): Promise<string[]> {
   const projectRoot = join(root(), safeSegment(projectId, "projectId"));
   try {
@@ -113,12 +187,13 @@ export async function findActiveCombineCampaignForCombine(
 ): Promise<StoredCombineCampaign | null> {
   for (const campaignId of await campaignEntries(projectId)) {
     const campaign = await readCombineCampaign(projectId, campaignId);
+    const projected = campaign ? await projectCombineCampaign(campaign) : null;
     if (
-      campaign?.appMapId === appMapId &&
-      campaign.combineId === combineId &&
-      activeCampaignStatuses.has((await projectCombineCampaign(campaign)).status)
+      projected?.appMapId === appMapId &&
+      projected.combineId === combineId &&
+      (activeCampaignStatuses.has(projected.status) || hasReviewableRepeatResume(projected))
     ) {
-      return campaign;
+      return projected;
     }
   }
   return null;
@@ -134,12 +209,13 @@ export async function findActiveRepeatCampaigns(
   const matches: StoredCombineCampaign[] = [];
   for (const campaignId of await campaignEntries(projectId)) {
     const campaign = await readCombineCampaign(projectId, campaignId);
+    const projected = campaign ? await projectCombineCampaign(campaign) : null;
     if (
-      campaign?.appMapId === appMapId &&
-      campaign.execution.repeat?.testId === testId &&
-      activeCampaignStatuses.has((await projectCombineCampaign(campaign)).status)
+      projected?.appMapId === appMapId &&
+      projected.execution.repeat?.testId === testId &&
+      (activeCampaignStatuses.has(projected.status) || hasReviewableRepeatResume(projected))
     ) {
-      matches.push(campaign);
+      matches.push(projected);
     }
   }
   return matches;

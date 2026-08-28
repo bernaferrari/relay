@@ -10,12 +10,14 @@ import { cn } from "../lib/cn";
 import type { SettingsSection } from "../pages/settings";
 import { nextAccessibilityOverlayMode } from "../lib/accessibility-overlay-mode";
 import { plural } from "../lib/plural";
+import type { WorkspaceController } from "../lib/workspace-controller";
 
 export type AppView = "workspace" | "settings";
 
 export function Layout(props: {
   children: JSX.Element;
   onOpenSettings: (section?: SettingsSection) => void;
+  workspaceController: WorkspaceController;
 }) {
   const server = useServer();
   const cmd = useCommand();
@@ -294,11 +296,11 @@ export function Layout(props: {
             server.setSelectedAppMapId(appMap.id);
             window.setTimeout(
               () =>
-                window.dispatchEvent(
-                  new CustomEvent("relay:reveal-app-map-screen", {
-                    detail: { appMapId: appMap.id, screenId: screen.id },
-                  }),
-                ),
+                props.workspaceController.execute({
+                  kind: "map.screen.reveal",
+                  appMapId: appMap.id,
+                  screenId: screen.id,
+                }),
               0,
             );
           },

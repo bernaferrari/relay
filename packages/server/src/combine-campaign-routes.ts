@@ -13,6 +13,7 @@ import {
   listTargetWorkers,
   localExecutionTargetRef,
   pendingSelectedCombineCampaignCells,
+  prepareSelectedCombineCampaignResume,
   prepareAppMapCombineCells,
   projectCombineCampaign,
   reconcileCausalCombineRerun,
@@ -122,9 +123,17 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         throw new HttpError(409, "Combine campaign is still running");
       }
       if (projected.status === "needs-review" && body.reviewed !== true) {
+        const repeatResume = projected.execution.repeat?.resolved.resume;
         throw new HttpError(
           409,
           "Pilot needs review. Repair or accept the observed difference, then resume with reviewed=true.",
+          repeatResume === "failed" || repeatResume === "all"
+            ? {
+                code: "REPEAT_TERMINAL_REVIEW_REQUIRED",
+                recovery:
+                  "Inspect the immutable Runs, then resume with reviewed=true to retry only eligible non-passing results.",
+              }
+            : undefined,
         );
       }
       if (projected.status === "cancelled") {
@@ -161,7 +170,11 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           combine,
           selected: projected.execution.selected ?? combine.selected,
           strategy: projected.execution.strategy ?? combine.strategy,
-          cellRuntimeProfiles: combine.cellRuntimeProfiles,
+          cellRuntimeProfiles: projected.cases.map((item) => ({
+            testId: item.testId,
+            values: { ...item.values },
+            targetProfileId: item.targetProfileId,
+          })),
           selectedCellIds: projected.execution.selectedCellIds,
           cellTargetBindings: targetBindingsForCampaign(projected),
           compileOptions: { reviewedDocumentOrigins },
@@ -179,7 +192,20 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
             staticInputDigest: digestAppMapTestExecutionValue(cell.staticInputs),
           })),
         );
-        const resumeCampaign = causalRerun.campaign;
+        const resumePlan = prepareSelectedCombineCampaignResume(causalRerun.campaign);
+        if (resumePlan.retriedTerminalCellIds.length && body.reviewed !== true) {
+          throw new HttpError(
+            409,
+            "Retrying completed Repeat results requires explicit evidence review.",
+            {
+              code: "REPEAT_TERMINAL_REVIEW_REQUIRED",
+              cellIds: resumePlan.retriedTerminalCellIds,
+              recovery:
+                "Inspect the immutable Runs, then resume with reviewed=true to retry only eligible non-passing results.",
+            },
+          );
+        }
+        const resumeCampaign = resumePlan.campaign;
         for (const item of resumeCampaign.cases) {
           const preparedCell = preparedById.get(item.cellId);
           if (!preparedCell) {
@@ -360,14 +386,14 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         }
         if (resumePersisted) {
           try {
+            const priorById = new Map(projected.cases.map((item) => [item.cellId, item]));
             await updateCombineCampaign(scope.projectId, campaignId, (current) => ({
               ...current,
               status: projected.status,
               updatedAt: Date.now(),
               cases: current.cases.map((item) => {
                 if (!resumedCellIds.has(item.cellId)) return item;
-                const { jobId: _jobId, ...withoutJob } = item;
-                return { ...withoutJob, status: "pending" as const };
+                return priorById.get(item.cellId) ?? item;
               }),
             }));
           } catch (cleanupError) {

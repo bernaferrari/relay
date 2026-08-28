@@ -5,6 +5,7 @@ import type {
   RecipeStep,
 } from "@relay/protocol";
 import { createHash } from "node:crypto";
+import { compileExecutionRisk } from "./execution-risk-compiler.js";
 import { validateRecipeParameters, validateRecipeSteps, type Recipe } from "./recipes.js";
 import { CURRENT_RECORDING_FORMAT_VERSION } from "./recording-format.js";
 
@@ -440,6 +441,7 @@ function parseAppMapTestExecutionIntentValue(
       "appMapRevision",
       "testId",
       "planDigest",
+      "executionRisk",
       "summary",
       "selectors",
       "cursorTimeline",
@@ -474,6 +476,9 @@ function parseAppMapTestExecutionIntentValue(
     !integer(preflight.appMapRevision) ||
     !string(preflight.testId) ||
     !digest(preflight.planDigest) ||
+    !isRecord(preflight.executionRisk) ||
+    digestAppMapTestExecutionValue(preflight.executionRisk) !==
+      digestAppMapTestExecutionValue(compileExecutionRisk({ kind: "compiled-test", test: plan })) ||
     !isRecord(preflight.summary) ||
     !ownKeys(preflight.summary, [
       "recipes",

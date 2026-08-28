@@ -1,5 +1,6 @@
 import type {
   AuthoringActionSource,
+  AuthoringCaptureProvenance,
   AuthoringObservation,
   AuthoringReplayActionProof,
   AuthoringScreenObservation,
@@ -10,6 +11,7 @@ import type {
   OperationOutput,
   TargetProfile,
 } from "@relay/protocol";
+import { authoringCaptureProvenance } from "@relay/protocol";
 import type { AuthorTestSnapshot } from "@relay/workflows";
 import type { RecipeStep, SnapshotNode, SnapshotState } from "./server";
 
@@ -48,6 +50,7 @@ export type RecordingTake = {
   sourceViewport?: { width: number; height: number };
   destinationViewport?: { width: number; height: number };
   platform: "android" | "ios" | "browser";
+  captureProvenance: AuthoringCaptureProvenance;
   startedAt: number;
   finishedAt?: number;
   group: string;
@@ -177,6 +180,7 @@ export function projectTake(
     ...(revision.before?.bounds ? { sourceViewport: { ...revision.before.bounds } } : {}),
     ...(revision.after?.bounds ? { destinationViewport: { ...revision.after.bounds } } : {}),
     platform: session.target.platform,
+    captureProvenance: authoringCaptureProvenance(session.captureProvenance),
     startedAt: take.createdAt,
     ...(session.state !== "recording" ? { finishedAt: take.updatedAt } : {}),
     group: session.group ?? "",

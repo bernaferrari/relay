@@ -15,6 +15,16 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       examples: ["relay device list"],
     }),
   ),
+  mapped(
+    "target.health.get",
+    path("target health", ["serial"]),
+    path("device health", ["serial"], undefined, {
+      summary: "Read bounded target health without taking control",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      examples: ["relay device health 00008110 --json"],
+      note: "Read-only. Pixels, semantics, input, and overall health are reported independently; pixel-only does not mean disconnected.",
+    }),
+  ),
   mapped("target.list", path("target list")),
   mapped("target.create", path("target create")),
   mapped("target.delete", path("target delete", ["targetId"])),

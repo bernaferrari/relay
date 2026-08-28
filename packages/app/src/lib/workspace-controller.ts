@@ -17,7 +17,14 @@ export type WorkspaceCommand =
   | { kind: "test.run" }
   | { kind: "test.run-readiness"; readiness: AppMapRunReadiness }
   | { kind: "test.record" }
-  | { kind: "screen.capture" };
+  | { kind: "screen.capture" }
+  | { kind: "map.target-set.choose"; targetSetId?: string }
+  | { kind: "map.target-set.state"; targetSetId?: string }
+  | { kind: "map.undo" }
+  | { kind: "map.redo" }
+  | { kind: "map.tidy" }
+  | { kind: "map.history.toggle" }
+  | { kind: "map.screen.reveal"; appMapId: string; screenId: string };
 
 export type WorkspaceCommandAdapter = {
   chooseTarget?: () => void;
@@ -31,6 +38,13 @@ export type WorkspaceCommandAdapter = {
   runReadinessChanged?: (readiness: AppMapRunReadiness) => void;
   recordTest?: () => void;
   captureScreen?: () => void;
+  chooseMapTargetSet?: (targetSetId?: string) => void;
+  mapTargetSetChanged?: (targetSetId?: string) => void;
+  undoMap?: () => void;
+  redoMap?: () => void;
+  tidyMap?: () => void;
+  toggleMapHistory?: () => void;
+  revealMapScreen?: (input: { appMapId: string; screenId: string }) => void;
 };
 
 export type WorkspaceController = {
@@ -75,6 +89,27 @@ function executeOn(adapter: WorkspaceCommandAdapter, command: WorkspaceCommand):
     case "screen.capture":
       adapter.captureScreen?.();
       return adapter.captureScreen !== undefined;
+    case "map.target-set.choose":
+      adapter.chooseMapTargetSet?.(command.targetSetId);
+      return adapter.chooseMapTargetSet !== undefined;
+    case "map.target-set.state":
+      adapter.mapTargetSetChanged?.(command.targetSetId);
+      return adapter.mapTargetSetChanged !== undefined;
+    case "map.undo":
+      adapter.undoMap?.();
+      return adapter.undoMap !== undefined;
+    case "map.redo":
+      adapter.redoMap?.();
+      return adapter.redoMap !== undefined;
+    case "map.tidy":
+      adapter.tidyMap?.();
+      return adapter.tidyMap !== undefined;
+    case "map.history.toggle":
+      adapter.toggleMapHistory?.();
+      return adapter.toggleMapHistory !== undefined;
+    case "map.screen.reveal":
+      adapter.revealMapScreen?.({ appMapId: command.appMapId, screenId: command.screenId });
+      return adapter.revealMapScreen !== undefined;
   }
 }
 
