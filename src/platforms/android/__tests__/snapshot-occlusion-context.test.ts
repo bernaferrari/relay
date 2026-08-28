@@ -16,8 +16,8 @@ import {
   isAndroidHelperRuntimeForceStop,
 } from './snapshot-helper-session.fixtures.ts';
 
-vi.mock('../../../utils/exec.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../utils/exec.ts')>();
+vi.mock('@agent-device/host-kit/command', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agent-device/host-kit/command')>();
   return { ...actual, runCmd: vi.fn() };
 });
 vi.mock('../adb.ts', async (importOriginal) => {

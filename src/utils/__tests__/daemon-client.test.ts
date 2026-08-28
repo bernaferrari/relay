@@ -11,7 +11,13 @@ import {
   listenOnLoopback,
   supportsLoopbackBind,
 } from '../../__tests__/test-utils/loopback.ts';
-import { runCmdBackground } from '../exec.ts';
+import { runCmdBackground } from '@agent-device/host-kit/command';
+import {
+  isProcessAlive,
+  readProcessCommand,
+  readProcessStartTime,
+  waitForProcessExit,
+} from '@agent-device/host-kit/process';
 import { sendToDaemon } from '../../daemon/client/daemon-client.ts';
 import { computeDaemonCodeSignature } from '../../daemon/code-signature.ts';
 import { downloadRemoteArtifact } from '../../remote/daemon-artifacts.ts';
@@ -27,14 +33,8 @@ import {
   shouldResetDaemonAfterRequestTimeout,
 } from '../../daemon/client/daemon-client-timeout.ts';
 import { resolveDaemonPaths } from '../../daemon/config.ts';
-import {
-  isProcessAlive,
-  readProcessCommand,
-  readProcessStartTime,
-  waitForProcessExit,
-} from '../host-process.ts';
 import { stopProcessForTakeover } from '../../daemon/daemon-process.ts';
-import { findProjectRoot, readVersion } from '../version.ts';
+import { findProjectRoot, readVersion } from '@agent-device/host-kit/version';
 import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
 // readProcessStartTime/readProcessCommand shell out to `ps` with a 1s
@@ -52,8 +52,8 @@ const { mockReadProcessStartTime, mockReadProcessCommand } = vi.hoisted(() => ({
   mockReadProcessCommand: vi.fn<(pid: number) => string | null | undefined>(),
 }));
 
-vi.mock('../host-process.ts', async () => {
-  const actual = await vi.importActual<typeof import('../host-process.ts')>('../host-process.ts');
+vi.mock('@agent-device/host-kit/process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agent-device/host-kit/process')>();
   return {
     ...actual,
     readProcessStartTime: (pid: number) => {

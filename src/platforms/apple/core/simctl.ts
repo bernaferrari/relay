@@ -1,6 +1,6 @@
 import { isIosFamily, type DeviceInfo } from '@agent-device/kernel/device';
-import type { ExecOptions, ExecResult } from '../../../utils/exec.ts';
-import { resolveIosSimulatorDeviceSetPath } from '../../../utils/device-isolation.ts';
+import { type ExecOptions, type ExecResult } from '@agent-device/host-kit/command';
+import { resolveIosSimulatorDeviceSetPath } from '@agent-device/kernel/device-isolation';
 import { runXcrun } from './tool-provider.ts';
 
 type SimctlArgsOptions = {

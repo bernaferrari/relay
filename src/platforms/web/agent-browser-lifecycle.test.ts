@@ -8,20 +8,22 @@ const { runCmdMock } = vi.hoisted(() => ({
   runCmdMock: vi.fn(),
 }));
 
-vi.mock('../../utils/exec.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../utils/exec.ts')>();
+vi.mock('@agent-device/host-kit/command', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@agent-device/host-kit/command')>()),
+  runCmd: runCmdMock,
+  withoutCommandExecutorOverride: async <T>(fn: () => Promise<T>) => await fn(),
+}));
+
+vi.mock('@agent-device/host-kit/process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agent-device/host-kit/process')>();
   return {
     ...actual,
-    runCmd: runCmdMock,
-    withoutCommandExecutorOverride: async <T>(fn: () => Promise<T>) => await fn(),
+    listHostProcesses: async (options: Parameters<typeof actual.listHostProcesses>[0]) =>
+      await actual.listHostProcesses({ ...options, runCommand: runCmdMock }),
+    readProcessStartTime: (pid: number) => `start-${pid}`,
+    readProcessCommand: (pid: number) => `command-${pid}`,
   };
 });
-
-vi.mock('../../utils/host-process.ts', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../utils/host-process.ts')>()),
-  readProcessStartTime: (pid: number) => `start-${pid}`,
-  readProcessCommand: (pid: number) => `command-${pid}`,
-}));
 
 import {
   DEFAULT_AGENT_BROWSER_IDLE_TIMEOUT_MS,

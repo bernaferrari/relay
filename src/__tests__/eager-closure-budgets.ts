@@ -106,7 +106,7 @@ export function discoverFacadeEntryFiles(repoRoot: string): string[] {
  */
 export const FACADE_BUDGETS: Readonly<Record<string, number>> = Object.freeze({
   // --- @agent-device/ad-replay ---
-  'packages/ad-replay/src/index.ts': 58,
+  'packages/ad-replay/src/index.ts': 57,
 
   // --- @agent-device/ad-script ---
   'packages/ad-script/src/index.ts': 37,
@@ -122,6 +122,27 @@ export const FACADE_BUDGETS: Readonly<Record<string, number>> = Object.freeze({
   // --- @agent-device/capture-kit ---
   // R60 review: audio-probe split into descriptor/status/recovery/live-process modules (+3 files).
   'packages/capture-kit/src/index.ts': 32,
+  'packages/capture-kit/src/png-resize.ts': 18,
+  'packages/capture-kit/src/png-rgb-difference.ts': 1,
+  'packages/capture-kit/src/png-size.ts': 3,
+  'packages/capture-kit/src/png-worker-client.ts': 10,
+  'packages/capture-kit/src/png.ts': 3,
+  'packages/capture-kit/src/screenshot-density.ts': 6,
+  'packages/capture-kit/src/screenshot-diff-pixels.ts': 1,
+  'packages/capture-kit/src/mobile-snapshot-semantics.ts': 10,
+  'packages/capture-kit/src/snapshot-occlusion.ts': 10,
+  'packages/capture-kit/src/snapshot-quality-backend-capabilities.ts': 1,
+  'packages/capture-kit/src/snapshot-quality-verdict.ts': 2,
+
+  // --- @agent-device/host-kit ---
+  'packages/host-kit/src/archive.ts': 9,
+  'packages/host-kit/src/command.ts': 7,
+  'packages/host-kit/src/diagnostics.ts': 3,
+  'packages/host-kit/src/file.ts': 12,
+  'packages/host-kit/src/process.ts': 12,
+  'packages/host-kit/src/request.ts': 5,
+  'packages/host-kit/src/retry.ts': 6,
+  'packages/host-kit/src/version.ts': 4,
 
   // --- @agent-device/contracts ---
   'packages/contracts/src/alert-contract.ts': 1,
@@ -235,12 +256,21 @@ export const FACADE_BUDGETS: Readonly<Record<string, number>> = Object.freeze({
   'packages/kernel/src/errors.ts': 2,
   // Added by #2041: keyed async lock moved from src/utils for the extracted IME lifecycle.
   'packages/kernel/src/keyed-lock.ts': 1,
+  'packages/kernel/src/rect-center.ts': 2,
   'packages/kernel/src/rect.ts': 1,
+  'packages/kernel/src/device-isolation.ts': 1,
+  'packages/kernel/src/location-coordinates.ts': 3,
+  'packages/kernel/src/record.ts': 3,
+  'packages/kernel/src/scoped-provider.ts': 1,
+  'packages/kernel/src/source-value.ts': 3,
+  'packages/kernel/src/success-text.ts': 1,
+  'packages/kernel/src/ttl-memo.ts': 1,
   'packages/kernel/src/redaction.ts': 1,
+  'packages/kernel/src/scroll-indicator.ts': 1,
   'packages/kernel/src/snapshot.ts': 1,
 
   // --- @agent-device/maestro ---
-  'packages/maestro/src/index.ts': 105,
+  'packages/maestro/src/index.ts': 106,
 
   // --- @agent-device/platform-*: ADR-0019's metadata-eager/implementation-lazy façades. Each
   // evaluates only itself; every implementation sits behind a function-scoped `await import`.
@@ -276,7 +306,7 @@ export const FACADE_BUDGETS: Readonly<Record<string, number>> = Object.freeze({
   'packages/provider-webdriver/src/index.ts': 49,
 
   // --- @agent-device/replay-test ---
-  'packages/replay-test/src/index.ts': 19,
+  'packages/replay-test/src/index.ts': 20,
 
   // --- @agent-device/selectors ---
   'packages/selectors/src/ast.ts': 16,
@@ -323,7 +353,7 @@ export const FACADE_BUDGETS: Readonly<Record<string, number>> = Object.freeze({
  */
 export const HUB_BUDGETS: Readonly<Record<string, number>> = Object.freeze({
   // 363 -> 365 in #2004, which cuts per-invocation work and pays two modules for it:
-  // `src/utils/ttl-memo.ts` (version.ts now resolves the package version and the project root
+  // `@agent-device/kernel/ttl-memo` (version.ts now resolves the package version and the project root
   // once per process instead of re-reading package.json several times an invocation) and
   // `src/daemon/client/daemon-launch-spec.ts` (the launch-entry probe, split out of the 726-line
   // daemon-client-lifecycle.ts). Both run on the path every local command already takes, so
@@ -337,7 +367,7 @@ export const HUB_BUDGETS: Readonly<Record<string, number>> = Object.freeze({
   // readers), `input-audience.ts` (who may write a key), and `common-input-fields.ts` (the table
   // itself). Every command schema already evaluated all three concerns; the growth is three more
   // module records for the same code, with no new subtree behind any of them.
-  'src/cli.ts': 368,
+  'src/cli.ts': 380,
   'src/platform-runtime.ts': 47,
   'src/core/command-descriptor/registry.ts': 67,
   'src/core/command-descriptor/platform-execution-entry.ts': 3,
@@ -345,7 +375,7 @@ export const HUB_BUDGETS: Readonly<Record<string, number>> = Object.freeze({
   // R64 removes the perf plugin facet and keeps collector binding behind the selected runtime
   // operation. Teardown now owns only neutral durable-resource cleanup; platform collectors load
   // through the perf host when an admitted operation actually runs.
-  'src/daemon/session-teardown.ts': 60,
+  'src/daemon/session-teardown.ts': 68,
 });
 
 /**

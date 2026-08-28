@@ -8,8 +8,8 @@ import {
   type MaestroRuntimeOperations,
   type MaestroRuntimePort,
 } from '@agent-device/maestro';
-import { registerDiagnosticSensitiveValue } from '../../../utils/diagnostics.ts';
-import { stripUndefined } from '../../../utils/parsing.ts';
+import { registerDiagnosticSensitiveValue } from '@agent-device/host-kit/diagnostics';
+import { stripUndefined } from '@agent-device/kernel/record';
 import { executeRunScriptFile } from './run-script-execution.ts';
 import { waitForMaestroAnimationToEnd } from './wait-for-animation-to-end.ts';
 import {

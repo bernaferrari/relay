@@ -1,4 +1,4 @@
-import { runCmd } from '../utils/exec.ts';
+import { runCmd } from '@agent-device/host-kit/command';
 
 export const TOOLCHAIN_TIMEOUT_MS = 3_000;
 

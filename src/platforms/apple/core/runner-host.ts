@@ -1,13 +1,14 @@
 import type { AppleRunnerHost } from '@agent-device/platform-apple/runner';
-import { publishFileSync } from '../../../utils/atomic-file.ts';
-import { resolveIosSimulatorDeviceSetPath } from '../../../utils/device-isolation.ts';
-import { emitDiagnostic, withDiagnosticTimer } from '../../../utils/diagnostics.ts';
+import { publishFileSync, acquireProcessLock } from '@agent-device/host-kit/file';
+import { resolveIosSimulatorDeviceSetPath } from '@agent-device/kernel/device-isolation';
+
 import {
   requireExecSuccess,
   runCmdBackground,
   runCmdStreaming,
   runCmdSync,
-} from '../../../utils/exec.ts';
+} from '@agent-device/host-kit/command';
+import { emitDiagnostic, withDiagnosticTimer } from '@agent-device/host-kit/diagnostics';
 import {
   isProcessAlive,
   isProcessGroupAlive,
@@ -15,17 +16,23 @@ import {
   readProcessStartTime,
   signalPidsBestEffort,
   signalProcessGroupBestEffort,
-} from '../../../utils/host-process.ts';
-import { withKeyedLock } from '../../../utils/keyed-lock.ts';
-import { classifyOwnerLiveness } from '../../../utils/owner-identity.ts';
-import { isRecord } from '../../../utils/parsing.ts';
-import { acquireProcessLock } from '../../../utils/process-lock.ts';
-import { Deadline, isEnvTruthy, retryWithPolicy } from '../../../utils/retry.ts';
-import { parseBooleanLiteral } from '../../../utils/source-value.ts';
-import { createTtlMemo } from '../../../utils/ttl-memo.ts';
-import { findProjectRoot, readVersion } from '../../../utils/version.ts';
-import { getRequestSignal, isRequestCanceled } from '../../../request/cancel.ts';
-import { emitRequestProgress } from '../../../request/progress.ts';
+  classifyOwnerLiveness,
+} from '@agent-device/host-kit/process';
+import { Deadline, isEnvTruthy, retryWithPolicy } from '@agent-device/host-kit/retry';
+
+import { withKeyedLock } from '@agent-device/kernel/keyed-lock';
+
+import { findProjectRoot, readVersion } from '@agent-device/host-kit/version';
+import { isRecord } from '@agent-device/kernel/record';
+import { parseBooleanLiteral } from '@agent-device/kernel/source-value';
+import { createTtlMemo } from '@agent-device/kernel/ttl-memo';
+
+import {
+  getRequestSignal,
+  isRequestCanceled,
+  emitRequestProgress,
+} from '@agent-device/host-kit/request';
+
 import { bootFailureHint, classifyBootFailure } from '../../boot-diagnostics.ts';
 import { resolveIosPhysicalDeviceControl } from './physical-device-control.ts';
 import { visitXmlPlistEntries } from './plist-xml.ts';

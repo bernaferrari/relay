@@ -1,6 +1,6 @@
 import { AppError } from '@agent-device/kernel/errors';
 import type { DeviceInfo } from '@agent-device/kernel/device';
-import { requireLocationCoordinates } from '../../utils/location-coordinates.ts';
+import { requireLocationCoordinates } from '@agent-device/kernel/location-coordinates';
 import {
   summarizeCommandAttemptFailures,
   type CommandAttemptFailure,

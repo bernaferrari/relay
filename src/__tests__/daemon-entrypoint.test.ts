@@ -10,8 +10,9 @@ import {
   cleanupDownloadableArtifact,
   trackDownloadableArtifact,
 } from '../daemon/artifact-tracking.ts';
-import { runCmdBackground } from '../utils/exec.ts';
-import { isProcessAlive, waitForProcessExit } from '../utils/host-process.ts';
+import { runCmdBackground } from '@agent-device/host-kit/command';
+import { isProcessAlive, waitForProcessExit } from '@agent-device/host-kit/process';
+
 import { closeLoopbackServer, listenOnLoopback, waitForHttpOk } from './test-utils/loopback.ts';
 import { mkdtempForTestSync } from './test-utils/tmp-dir.ts';
 

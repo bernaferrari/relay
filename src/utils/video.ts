@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import { AppError } from '@agent-device/kernel/errors';
-import { runCmd } from './exec.ts';
+import { runCmd } from '@agent-device/host-kit/command';
+import { sleep } from '@agent-device/host-kit/retry';
 import { buildSwiftToolEnv, compileSwiftSourceText } from './swift-cache.ts';
-import { sleep } from './timeouts.ts';
+
 import { hasPlayableWebmStructure } from './video-webm.ts';
 
 // Duration zero must pass: a recording of a fully static screen legitimately contains a single

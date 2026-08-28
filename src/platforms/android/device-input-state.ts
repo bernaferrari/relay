@@ -1,7 +1,8 @@
-import { emitDiagnostic } from '../../utils/diagnostics.ts';
+import { shellQuoteIfNeeded } from '@agent-device/host-kit/command';
+import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
-import { shellQuoteIfNeeded } from '../../utils/shell-quote.ts';
+
 import { isClipboardShellUnsupported, sleep } from './adb.ts';
 import {
   androidAdbResultError,
