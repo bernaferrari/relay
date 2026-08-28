@@ -1,5 +1,4 @@
 import { resolveAppsFilter, type AppsFilter } from '@agent-device/contracts/device';
-import type { AppStateRuntimeResult } from '@agent-device/contracts/app-state-runtime';
 import { androidAdbResultError, type AndroidAdbExecutor } from './adb-executor.ts';
 import {
   parseAndroidLaunchablePackages,
@@ -31,23 +30,6 @@ export async function listAndroidAppsWithAdb(
   return packageIds
     .map((packageName) => ({ package: packageName, name: inferAndroidAppName(packageName) }))
     .sort((a, b) => a.package.localeCompare(b.package));
-}
-
-export async function getAndroidAppStateWithAdb(
-  adb: AndroidAdbExecutor,
-): Promise<AppStateRuntimeResult> {
-  const windowFocus = await readAndroidFocusWithAdb(adb, [
-    ['shell', 'dumpsys', 'window', 'windows'],
-    ['shell', 'dumpsys', 'window'],
-  ]);
-  if (windowFocus) return windowFocus;
-
-  const activityFocus = await readAndroidFocusWithAdb(adb, [
-    ['shell', 'dumpsys', 'activity', 'activities'],
-    ['shell', 'dumpsys', 'activity'],
-  ]);
-  if (activityFocus) return activityFocus;
-  return {};
 }
 
 async function listAndroidLaunchablePackagesWithAdb(
@@ -102,17 +84,4 @@ async function listAndroidUserInstalledPackagesWithAdb(adb: AndroidAdbExecutor):
     throw androidAdbResultError('Failed to list Android user-installed apps', result);
   }
   return parseAndroidUserInstalledPackages(result.stdout);
-}
-
-async function readAndroidFocusWithAdb(
-  adb: AndroidAdbExecutor,
-  commands: string[][],
-): Promise<AppStateRuntimeResult | null> {
-  const { parseAndroidForegroundApp } = await import('../../platform-runtime.ts');
-  for (const args of commands) {
-    const result = await adb(args, { allowFailure: true });
-    const parsed = await parseAndroidForegroundApp(result.stdout ?? '');
-    if (parsed) return parsed;
-  }
-  return null;
 }
