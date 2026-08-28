@@ -151,7 +151,9 @@ export async function watchWorkflow(input: WatchWorkflowInput): Promise<Workflow
           afterSequence: cursor,
           onOpen: () => {
             connected = true;
-            wake();
+            // Replay buffers are bounded and server sequence numbers restart.
+            // Canonical state on every open closes both otherwise-silent gaps.
+            requestRefresh();
           },
           onGap: requestRefresh,
         });

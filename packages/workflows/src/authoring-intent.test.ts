@@ -206,3 +206,32 @@ test("ambiguous and missing names return review decisions instead of a partial d
   );
   assert.equal("document" in unresolved, false);
 });
+
+test("an id and another object's friendly name cannot silently select different bindings", () => {
+  const { map, test: current } = fixture();
+  map.connections.secondary = {
+    ...map.connections.open!,
+    id: "secondary",
+    label: "open",
+  };
+  const unresolved = bindAuthoringIntent({
+    map,
+    current,
+    document: {
+      ...source,
+      steps: [{ ...source.steps[1]!, path: ["open"] }],
+    },
+  });
+  assert.equal(unresolved.status, "unresolved");
+  if (unresolved.status !== "unresolved") return;
+  assert.deepEqual(unresolved.decisions[0], {
+    path: "steps[0].path[0]",
+    referenceKind: "connection",
+    query: "open",
+    reason: "ambiguous",
+    candidates: [
+      { id: "open", name: "Open settings" },
+      { id: "secondary", name: "open" },
+    ],
+  });
+});

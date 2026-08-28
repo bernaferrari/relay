@@ -66,36 +66,38 @@ test("workflow watch ignores other identities and refreshes canonically after a 
     workflowId: "workflow-1",
     initial: snapshot("running", 2),
     source: openSource((onEvent) => {
-      onEvent(
-        event(1, {
-          type: "workflow.changed",
-          at: 1,
-          workflowId: "workflow-other",
-          version: 99,
-          status: "terminal",
-        }),
-      );
-      onEvent(
-        event(2, {
-          type: "workflow.changed",
-          at: 2,
-          workflowId: "workflow-1",
-          version: 3,
-          status: "terminal",
-        }),
-      );
+      setTimeout(() => {
+        onEvent(
+          event(1, {
+            type: "workflow.changed",
+            at: 1,
+            workflowId: "workflow-other",
+            version: 99,
+            status: "terminal",
+          }),
+        );
+        onEvent(
+          event(2, {
+            type: "workflow.changed",
+            at: 2,
+            workflowId: "workflow-1",
+            version: 3,
+            status: "terminal",
+          }),
+        );
+      }, 0);
     }),
     inspect: async () => {
       inspections += 1;
-      return snapshot("succeeded", 3);
+      return inspections === 1 ? snapshot("running", 2) : snapshot("succeeded", 3);
     },
     onSnapshot: (next) => updates.push(next as RepeatTestSnapshot),
   });
-  assert.equal(inspections, 1);
+  assert.equal(inspections, 2);
   assert.equal(settled.phase, "succeeded");
   assert.deepEqual(
     updates.map((update) => update.workflow?.expectedVersion),
-    [3],
+    [2, 3],
   );
 });
 
@@ -105,24 +107,41 @@ test("a stream gap refreshes the canonical workflow without consuming event payl
     workflowId: "workflow-1",
     initial: snapshot("running", 2),
     source: openSource((onEvent) => {
-      onEvent(
-        event(20, {
-          type: "stream.gap",
-          at: 20,
-          requestedAfter: 1,
-          oldestAvailable: 10,
-          latestAvailable: 19,
-          requiresRefresh: true,
-        }),
-      );
+      setTimeout(() => {
+        onEvent(
+          event(20, {
+            type: "stream.gap",
+            at: 20,
+            requestedAfter: 1,
+            oldestAvailable: 10,
+            latestAvailable: 19,
+            requiresRefresh: true,
+          }),
+        );
+      }, 0);
     }),
     inspect: async () => {
       inspections += 1;
-      return snapshot("succeeded", 4);
+      return inspections === 1 ? snapshot("running", 2) : snapshot("succeeded", 4);
+    },
+  });
+  assert.equal(inspections, 2);
+  assert.equal(settled.workflow?.expectedVersion, 4);
+});
+
+test("an open stream refreshes canonical state even when replay is empty", async () => {
+  let inspections = 0;
+  const settled = await watchWorkflow({
+    workflowId: "workflow-1",
+    initial: snapshot("running", 2),
+    source: openSource(() => undefined),
+    inspect: async () => {
+      inspections += 1;
+      return snapshot("succeeded", 7);
     },
   });
   assert.equal(inspections, 1);
-  assert.equal(settled.workflow?.expectedVersion, 4);
+  assert.equal(settled.workflow?.expectedVersion, 7);
 });
 
 test("a disconnected event stream uses only the slow canonical fallback", async () => {

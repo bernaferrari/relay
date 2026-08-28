@@ -290,9 +290,16 @@ function resolveName(input: {
   decisions: AuthoringIntentBindingDecision[];
 }): string | undefined {
   const query = normalized(input.query);
-  const idMatches = input.candidates.filter((candidate) => normalized(candidate.id) === query);
-  if (idMatches.length === 1) return idMatches[0]!.id;
-  const matches = input.candidates.filter((candidate) => normalized(candidate.name) === query);
+  const matches = [
+    ...new Map(
+      input.candidates
+        .filter(
+          (candidate) =>
+            normalized(candidate.id) === query || normalized(candidate.name) === query,
+        )
+        .map((candidate) => [candidate.id, candidate]),
+    ).values(),
+  ];
   if (matches.length === 1) return matches[0]!.id;
   input.decisions.push({
     path: input.path,

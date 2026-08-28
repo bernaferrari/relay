@@ -130,34 +130,60 @@ export async function dispatchSupervisedIosMutation<T>(
     mutationId,
     intent: `Physical iOS ${active.operation}`,
   });
-  store.transition(target, { kind: "input.dispatched", mutationId });
   active.receipt = { store, target, mutationId };
+  try {
+    store.transition(target, { kind: "input.dispatched", mutationId });
+  } catch (error) {
+    // No native command has run. Clear the durable intention when storage is
+    // available so a persistence failure cannot strand a false in-flight input.
+    try {
+      store.transition(target, {
+        kind: "input.not-dispatched",
+        mutationId,
+        reason: "Relay could not durably record the native dispatch.",
+      });
+    } catch {
+      // The store is still unavailable; the original persistence error is the
+      // actionable failure and a later store read rehydrates durable truth.
+    }
+    throw error;
+  }
   return operation();
 }
+
+type SupervisedIosMutationFinish = {
+  mutationId?: string;
+  persistenceError?: unknown;
+};
 
 function finishSupervisedIosMutation(
   active: SupervisedIosMutationContext,
   outcome: "completed" | "not-dispatched" | "outcome-unknown",
   reason?: string,
-): string | undefined {
+): SupervisedIosMutationFinish {
   const receipt = active.receipt;
-  if (!receipt) return undefined;
-  if (outcome === "completed") {
+  if (!receipt) return {};
+  try {
+    if (outcome === "completed") {
+      receipt.store.transition(receipt.target, {
+        kind: "input.completed",
+        mutationId: receipt.mutationId,
+      });
+      return { mutationId: receipt.mutationId };
+    }
     receipt.store.transition(receipt.target, {
-      kind: "input.completed",
+      kind: outcome === "not-dispatched" ? "input.not-dispatched" : "input.outcome-unknown",
       mutationId: receipt.mutationId,
+      reason:
+        reason?.trim() ||
+        (outcome === "not-dispatched"
+          ? "The selector was rejected before native dispatch."
+          : "The native mutation acknowledgement was lost."),
     });
-    return receipt.mutationId;
+    return { mutationId: receipt.mutationId };
+  } catch (persistenceError) {
+    return { mutationId: receipt.mutationId, persistenceError };
   }
-  receipt.store.transition(receipt.target, {
-    kind: outcome === "not-dispatched" ? "input.not-dispatched" : "input.outcome-unknown",
-    mutationId: receipt.mutationId,
-    reason: reason?.trim() ||
-      (outcome === "not-dispatched"
-        ? "The selector was rejected before native dispatch."
-        : "The native mutation acknowledgement was lost."),
-  });
-  return receipt.mutationId;
 }
 
 export function lastIosMutationAttemptDiagnostic(
@@ -301,7 +327,7 @@ export async function runIosMutationOnce<T>(
       iosSelectorWasNotDispatched(error) ? "selector-miss" : "outcome-unknown",
       isJobCancellation(error),
     );
-    const supervisedMutationId = finishSupervisedIosMutation(
+    const supervisedFinish = finishSupervisedIosMutation(
       supervised,
       diagnostic.outcome === "selector-miss" ? "not-dispatched" : "outcome-unknown",
       mutationErrorMessage(error),
@@ -312,11 +338,25 @@ export async function runIosMutationOnce<T>(
     if (diagnostic.outcome === "selector-miss") throw error;
     throw new IosMutationOutcomeUnknownError(
       diagnostic,
-      error,
-      supervisedMutationId ? { serial, mutationId: supervisedMutationId } : undefined,
+      supervisedFinish.persistenceError ?? error,
+      supervisedFinish.mutationId
+        ? { serial, mutationId: supervisedFinish.mutationId }
+        : undefined,
     );
   }
-  finishSupervisedIosMutation(supervised, "completed");
+  const supervisedFinish = finishSupervisedIosMutation(supervised, "completed");
+  if (supervisedFinish.persistenceError) {
+    const diagnostic = mutationDiagnostic(serial, operation, "outcome-unknown", false);
+    iosMutationSequences.set(serial, diagnostic.sequence);
+    iosMutationAttemptDiagnostics.set(serial, diagnostic);
+    throw new IosMutationOutcomeUnknownError(
+      diagnostic,
+      supervisedFinish.persistenceError,
+      supervisedFinish.mutationId
+        ? { serial, mutationId: supervisedFinish.mutationId }
+        : undefined,
+    );
+  }
   const diagnostic = mutationDiagnostic(serial, operation, "completed");
   iosMutationSequences.set(serial, diagnostic.sequence);
   iosMutationAttemptDiagnostics.set(serial, diagnostic);

@@ -222,7 +222,9 @@ export function eventsAfter(afterSequence: number): {
   const latestAvailable = recent.at(-1)?.sequence ?? sequence;
   return {
     events: recent.filter((event) => event.sequence > afterSequence),
-    gap: afterSequence > 0 && afterSequence < oldestAvailable - 1,
+    gap:
+      afterSequence > 0 &&
+      (afterSequence < oldestAvailable - 1 || afterSequence > latestAvailable),
     oldestAvailable,
     latestAvailable,
   };

@@ -151,3 +151,47 @@ test("physical iOS native dispatches write durable supervisor receipts", async (
   assert.equal(rejected.counters.uncertainMutations, 0);
   assert.equal(rejected.events[0]?.code, "INPUT_NOT_DISPATCHED");
 });
+
+test("a terminal receipt failure cannot turn a completed native input into a retryable error", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "relay-supervised-receipt-failure-"));
+  let failCompletedReceipt = true;
+  const store = new TargetSupervisorStore(join(root, "supervisors.sqlite"), {
+    beforePersistTransition: (event) => {
+      if (failCompletedReceipt && event.kind === "input.completed") {
+        failCompletedReceipt = false;
+        throw new Error("injected receipt persistence failure");
+      }
+    },
+  });
+  context.after(async () => {
+    store.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const serial = "ios-supervised-receipt-failure";
+  let nativeCalls = 0;
+  const bound = bindNativeDeviceMutations(
+    stubNative(() => {
+      nativeCalls += 1;
+    }),
+    serial,
+  );
+  let failure: IosMutationOutcomeUnknownError | undefined;
+  await assert.rejects(
+    runWithTargetSupervisorStore(store, () =>
+      runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
+        runIosMutationOnce(serial, "press", () =>
+          bound.interactions.press({ platform: "ios", x: 1, y: 2 } as never),
+        ),
+      ),
+    ),
+    (error) => {
+      assert.ok(error instanceof IosMutationOutcomeUnknownError);
+      failure = error;
+      return true;
+    },
+  );
+  assert.equal(nativeCalls, 1);
+  assert.match(failure?.supervisedMutation?.mutationId ?? "", /^ios-input-/u);
+  assert.equal(store.health({ id: serial, kind: "ios" }).input.state, "uncertain");
+});

@@ -41,11 +41,16 @@ export class TargetSupervisorStore {
   readonly #db: DatabaseSync;
   readonly #actors = new Map<string, TargetSupervisor>();
   readonly #clock: TargetSupervisorClock;
+  readonly #beforePersistTransition?: (event: TargetSupervisorEvent) => void;
   #closed = false;
 
   constructor(
     readonly path = targetSupervisorStorePath(),
-    options: { clock?: TargetSupervisorClock } = {},
+    options: {
+      clock?: TargetSupervisorClock;
+      /** Deterministic persistence fault injection for exact-once tests. */
+      beforePersistTransition?: (event: TargetSupervisorEvent) => void;
+    } = {},
   ) {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.#db = new DatabaseSync(path, { timeout: 5_000 });
@@ -61,6 +66,7 @@ export class TargetSupervisorStore {
       );
     `);
     this.#clock = options.clock ?? { now: () => Date.now() };
+    this.#beforePersistTransition = options.beforePersistTransition;
   }
 
   close(): void {
@@ -78,10 +84,19 @@ export class TargetSupervisorStore {
   }
 
   transition(target: SupervisedTarget, event: TargetSupervisorEvent): TargetSupervisorTransition {
+    const key = targetKey(target);
     const actor = this.#actor(target);
     const result = actor.transition(event);
-    this.#persist(actor);
-    return result;
+    try {
+      this.#beforePersistTransition?.(event);
+      this.#persist(actor);
+      return result;
+    } catch (error) {
+      // The actor mutates before SQLite writes. Never leave an uncommitted
+      // transition cached: the next read must rehydrate the durable checkpoint.
+      this.#actors.delete(key);
+      throw error;
+    }
   }
 
   recordPixelCapture(
