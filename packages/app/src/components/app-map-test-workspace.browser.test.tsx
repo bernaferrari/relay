@@ -2100,7 +2100,7 @@ test("a narrow workspace keeps the device on the right edge and never below the 
   // The device is docked in the third (right) track, and the steps rail is the
   // one that yields to an overlay when space runs short.
   expect(Number.parseInt(tracks()[2]!, 10)).toBeGreaterThanOrEqual(272);
-  expect(root.querySelector("[data-test-rail-strip='steps']")).not.toBeNull();
+  expect(root.querySelector("[data-test-rail-strip='steps']")?.textContent).toContain("Steps");
   expect(root.querySelector("[data-test-rail-strip='device']")).toBeNull();
 
   // Collapsing the device leaves its edge strip behind rather than moving it.
@@ -2111,12 +2111,12 @@ test("a narrow workspace keeps the device on the right edge and never below the 
   root.querySelector<HTMLButtonElement>("[data-test-rail-toggle='device']")!.click();
   await settle();
 
-  // Opening Coverage here overlays the editor on the left edge; it does not push the
+  // Opening Steps here overlays the editor on the left edge; it does not push the
   // device anywhere, so the grid still has exactly three columns.
   root.querySelector<HTMLButtonElement>("[data-test-rail-toggle='steps']")!.click();
   await settle();
   expect(tracks()).toHaveLength(3);
-  expect(root.querySelector("#test-coverage-tab")?.getAttribute("aria-selected")).toBe("true");
+  expect(root.querySelector("#test-steps-tab")?.getAttribute("aria-selected")).toBe("true");
   expect(root.querySelector("#test-problems-tab")).not.toBeNull();
 
   // Escape leaves the floating rail and hands focus back to the control that

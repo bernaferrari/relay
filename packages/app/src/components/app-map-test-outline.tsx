@@ -19,7 +19,7 @@ import { EmptyState } from "./empty-state";
 import { StepKindMenu, StepRow, type StepDropTarget } from "./app-map-test-step-row";
 
 /**
- * The Coverage rail. It owns browsing: find, read, select, order, add, remove.
+ * The Steps rail. It owns browsing: find, read, select, order, add, remove.
  * Editing a step happens in the centre column, and evidence for a step happens
  * in the device rail, so this rail never has to explain a binding.
  */
@@ -43,7 +43,7 @@ export function AppMapTestOutline(props: {
   onClose?: () => void;
 }) {
   const [query, setQuery] = createSignal("");
-  const [pane, setPane] = createSignal<"coverage" | "problems">("coverage");
+  const [pane, setPane] = createSignal<"steps" | "problems">("steps");
   const [dragged, setDragged] = createSignal<ScenarioStepOutlineItem>();
   const [dropTarget, setDropTarget] = createSignal<StepDropTarget>();
   const outline = createMemo(() => flattenScenarioSteps(props.test.steps));
@@ -120,20 +120,20 @@ export function AppMapTestOutline(props: {
         <div
           class="flex shrink-0 rounded-md bg-surface-base-active p-0.5"
           role="tablist"
-          aria-label="Test coverage"
+          aria-label="Test steps"
         >
           <button
             type="button"
             role="tab"
-            id="test-coverage-tab"
-            aria-selected={pane() === "coverage"}
+            id="test-steps-tab"
+            aria-selected={pane() === "steps"}
             class={cn(
               "min-h-7 rounded px-2 text-micro font-medium",
-              pane() === "coverage" ? "bg-background-base text-text-strong" : "text-text-weak",
+              pane() === "steps" ? "bg-background-base text-text-strong" : "text-text-weak",
             )}
-            onClick={() => setPane("coverage")}
+            onClick={() => setPane("steps")}
           >
-            Coverage
+            Steps
           </button>
           <button
             type="button"
@@ -152,7 +152,7 @@ export function AppMapTestOutline(props: {
             </Show>
           </button>
         </div>
-        <Show when={pane() === "coverage"}>
+        <Show when={pane() === "steps"}>
           <label class="relative min-w-0 flex-1" for="test-step-search">
             <span class="sr-only">Find a step</span>
             <Icon
@@ -179,7 +179,7 @@ export function AppMapTestOutline(props: {
           <button
             type="button"
             class={cn(productIconButton, "ml-auto size-8")}
-            aria-label="Hide coverage"
+            aria-label="Hide steps"
             onClick={() => props.onClose?.()}
           >
             <Icon name="chevron-left" size={15} />
@@ -187,7 +187,7 @@ export function AppMapTestOutline(props: {
         </Show>
       </div>
 
-      <Show when={pane() === "coverage"}>
+      <Show when={pane() === "steps"}>
         <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
           <ol class="m-0 grid list-none gap-1 p-0" aria-label="Test steps">
             <For each={visible()}>
@@ -249,7 +249,7 @@ export function AppMapTestOutline(props: {
                 <li class="px-3 py-8 text-center">
                   <p class="m-0 text-caption font-medium text-text-strong">No problems</p>
                   <p class="mt-1 text-caption/[1.45] text-text-weak">
-                    Coverage is ready to run on the selected target.
+                    Steps are ready to run on the selected target.
                   </p>
                 </li>
               }
@@ -283,7 +283,7 @@ export function AppMapTestOutline(props: {
         </div>
       </Show>
 
-      <Show when={pane() === "coverage"}>
+      <Show when={pane() === "steps"}>
         <div class="shrink-0 border-t border-border-weak-base p-2">
           <StepKindMenu label="Add step" variant="primary" onPick={props.onAddRoot} />
         </div>
