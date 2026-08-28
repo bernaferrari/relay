@@ -10,10 +10,12 @@ import {
   parseGoldenFixtureConfig,
   runGoldenFixtureAcceptance,
   selectConfiguredFixtures,
+  validateGoldenFaultReceipt,
   validateGoldenScenarioRecipe,
 } from "./golden-device-lib.mjs";
 import {
   createFakeGoldenApi,
+  fakeGoldenFaultReceipt,
   goldenConfig,
   goldenRecipe,
   recordingArtifacts,
@@ -22,10 +24,11 @@ import {
 test("strict acceptance executes exact Android+iOS fixtures and preserves an evidence bundle", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
   try {
-    const { api, config } = createFakeGoldenApi();
+    const { api, config, faults, faultCalls } = createFakeGoldenApi();
     const summary = await runGoldenFixtureAcceptance({
       config,
       api,
+      faults,
       artifacts: new GoldenArtifactWriter(root),
       jobTimeoutMs: 100,
       pollIntervalMs: 1,
@@ -41,6 +44,11 @@ test("strict acceptance executes exact Android+iOS fixtures and preserves an evi
     assert.ok(api.calls.some((call) => call.operationId === "target.recover"));
     assert.ok(api.calls.some((call) => call.operationId === "run.replay"));
     assert.ok(api.calls.some((call) => call.operationId === "step.run"));
+    assert.equal(
+      faultCalls.filter((call) => call.operation === "disrupt").length,
+      4,
+      "both exact host faults are injected once per configured fixture",
+    );
     const lastRecipeValidation = Math.max(
       ...api.calls
         .map((call, index) => (call.operationId === "recipe.get" ? index : -1))
@@ -60,6 +68,162 @@ test("strict acceptance executes exact Android+iOS fixtures and preserves an evi
     await readFile(join(root, "fixtures/ios/preflight/before.png"));
     await readFile(join(root, "fixtures/android/preflight/tree.json"));
     await readFile(join(root, "fixtures/android/jobs/pointInput-finished.json"));
+    await readFile(join(root, "fixtures/ios/faults/runnerKillMidSession/disruption-receipt.json"));
+    await readFile(join(root, "fixtures/ios/faults/ddiUnmountRecover/restoration-receipt.json"));
+    await readFile(join(root, "fixtures/ios/faults/ddiUnmountRecover/post-fault-proof.json"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ordinary recipes cannot impersonate required host fault injection", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
+  try {
+    const { api, config } = createFakeGoldenApi();
+    await assert.rejects(
+      runGoldenFixtureAcceptance({
+        config,
+        api,
+        artifacts: new GoldenArtifactWriter(root),
+        jobTimeoutMs: 100,
+        pollIntervalMs: 1,
+        now: () => 2_000,
+        sleep: async () => undefined,
+      }),
+      (error) =>
+        error instanceof GoldenAcceptanceError && error.code === "GOLDEN_FAULT_INJECTOR_MISSING",
+    );
+    assert.equal(
+      api.calls.some(
+        (call) => call.operationId === "target.recover" || call.operationId === "job.start",
+      ),
+      false,
+      "fault injection is required before either fixture is touched",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("fault receipts are exact, target-bound, single-attempt, and bounded", () => {
+  const fixture = parseGoldenFixtureConfig(goldenConfig()).fixtures.ios;
+  const expected = {
+    invocationId: "fault-invocation",
+    scenario: "ddiUnmountRecover",
+    phase: "disruption",
+    fixture,
+    startedAt: 1_000,
+    deadlineAt: 1_100,
+  };
+  const valid = fakeGoldenFaultReceipt({ ...expected, finishedAt: 1_050 });
+  assert.equal(validateGoldenFaultReceipt(valid, expected), valid);
+
+  for (const invalid of [
+    { ...valid, attempts: 2 },
+    { ...valid, finishedAt: 1_101 },
+    { ...valid, target: { ...valid.target, serialFingerprint: "different-target" } },
+    { ...valid, proof: { kind: "ordinary-recipe", observed: true } },
+    { ...valid, unexpected: true },
+  ]) {
+    assert.throws(
+      () => validateGoldenFaultReceipt(invalid, expected),
+      (error) =>
+        error instanceof GoldenAcceptanceError && error.code === "GOLDEN_FAULT_DISRUPTION_UNPROVEN",
+    );
+  }
+});
+
+test("a malformed disruption receipt blocks the recipe but still proves restoration", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
+  try {
+    const { api, config, faults, faultCalls } = createFakeGoldenApi({
+      invalidFaultReceiptScenario: "runnerKillMidSession",
+      invalidFaultReceiptPhase: "disruption",
+      invalidFaultReceiptKind: "wrong-proof",
+    });
+    await assert.rejects(
+      runGoldenFixtureAcceptance({
+        config,
+        api,
+        faults,
+        artifacts: new GoldenArtifactWriter(root),
+        jobTimeoutMs: 100,
+        pollIntervalMs: 1,
+        now: () => 2_000,
+        sleep: async () => undefined,
+      }),
+      (error) =>
+        error instanceof GoldenAcceptanceError && error.code === "GOLDEN_FAULT_DISRUPTION_UNPROVEN",
+    );
+    assert.equal(
+      api.calls.some(
+        (call) =>
+          call.operationId === "job.start" && String(call.body?.recipe).endsWith("-runner-kill"),
+      ),
+      false,
+      "an ordinary runner-kill recipe never starts without exact disruption proof",
+    );
+    assert.equal(
+      faultCalls.filter((call) => call.operation === "confirmRestored").length,
+      2,
+      "both fixtures are restored after their disruption attempts",
+    );
+    await readFile(join(root, "fixtures/ios/faults/runnerKillMidSession/restoration-receipt.json"));
+    await readFile(join(root, "fixtures/ios/restored-runnerKillMidSession/after.png"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a post-fault recipe cannot pass when host restoration is unproven", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
+  try {
+    const { api, config, faults } = createFakeGoldenApi({
+      failFaultRestorationScenario: "runnerKillMidSession",
+    });
+    await assert.rejects(
+      runGoldenFixtureAcceptance({
+        config,
+        api,
+        faults,
+        artifacts: new GoldenArtifactWriter(root),
+        jobTimeoutMs: 100,
+        pollIntervalMs: 1,
+        now: () => 2_000,
+        sleep: async () => undefined,
+      }),
+      /restoration/u,
+    );
+    await readFile(join(root, "fixtures/ios/faults/runnerKillMidSession/post-fault-proof.json"));
+    await readFile(join(root, "fixtures/ios/faults/runnerKillMidSession/restoration-error.json"));
+    const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
+    assert.equal(manifest.status, "failed");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("host disruption is actively timed out and then restored", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
+  try {
+    const { api, config, faults, faultCalls } = createFakeGoldenApi({
+      hangFaultScenario: "runnerKillMidSession",
+    });
+    await assert.rejects(
+      runGoldenFixtureAcceptance({
+        config,
+        api,
+        faults,
+        artifacts: new GoldenArtifactWriter(root),
+        jobTimeoutMs: 100,
+        pollIntervalMs: 1,
+        faultTimeoutMs: 1,
+        now: () => 2_000,
+        sleep: async () => undefined,
+      }),
+      (error) => error instanceof GoldenAcceptanceError && error.code === "GOLDEN_FAULT_TIMEOUT",
+    );
+    assert.equal(faultCalls.filter((call) => call.operation === "confirmRestored").length, 2);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -68,11 +232,14 @@ test("strict acceptance executes exact Android+iOS fixtures and preserves an evi
 test("a terminal normal job routed to another fixture fails closed after durable drain", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
   try {
-    const { api, config } = createFakeGoldenApi({ wrongTerminalTarget: "proofReplay" });
+    const { api, config, faults } = createFakeGoldenApi({
+      wrongTerminalTarget: "proofReplay",
+    });
     await assert.rejects(
       runGoldenFixtureAcceptance({
         config,
         api,
+        faults,
         artifacts: new GoldenArtifactWriter(root),
         jobTimeoutMs: 100,
         pollIntervalMs: 1,
@@ -92,11 +259,12 @@ test("a terminal normal job routed to another fixture fails closed after durable
 test("a terminal replay job routed to another fixture fails closed", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
   try {
-    const { api, config } = createFakeGoldenApi({ wrongReplayTerminalTarget: true });
+    const { api, config, faults } = createFakeGoldenApi({ wrongReplayTerminalTarget: true });
     await assert.rejects(
       runGoldenFixtureAcceptance({
         config,
         api,
+        faults,
         artifacts: new GoldenArtifactWriter(root),
         jobTimeoutMs: 100,
         pollIntervalMs: 1,
@@ -116,7 +284,7 @@ test("a terminal replay job routed to another fixture fails closed", async () =>
 test("a rejected parallel start drains sibling jobs and their evidence before final capture", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
   try {
-    const { api, config, parallelJobIds } = createFakeGoldenApi({
+    const { api, config, faults, parallelJobIds } = createFakeGoldenApi({
       failParallelStartPlatform: "ios",
     });
     const events = [];
@@ -124,6 +292,7 @@ test("a rejected parallel start drains sibling jobs and their evidence before fi
       runGoldenFixtureAcceptance({
         config,
         api,
+        faults,
         artifacts: recordingArtifacts(root, events),
         jobTimeoutMs: 100,
         pollIntervalMs: 1,
@@ -158,13 +327,14 @@ test("a rejected parallel start drains sibling jobs and their evidence before fi
 test("a misrouted parallel start response fails after every fixture job drains", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
   try {
-    const { api, config, parallelJobIds } = createFakeGoldenApi({
+    const { api, config, faults, parallelJobIds } = createFakeGoldenApi({
       wrongParallelStartPlatform: "ios",
     });
     await assert.rejects(
       runGoldenFixtureAcceptance({
         config,
         api,
+        faults,
         artifacts: new GoldenArtifactWriter(root),
         jobTimeoutMs: 100,
         pollIntervalMs: 1,
@@ -221,11 +391,12 @@ test("configured hardware never falls back to another ready target", () => {
 test("a missing configured fixture fails closed and still writes the inventory manifest", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
   try {
-    const { api, config } = createFakeGoldenApi({ missingFixture: "ios" });
+    const { api, config, faults } = createFakeGoldenApi({ missingFixture: "ios" });
     await assert.rejects(
       runGoldenFixtureAcceptance({
         config,
         api,
+        faults,
         artifacts: new GoldenArtifactWriter(root),
         jobTimeoutMs: 100,
         pollIntervalMs: 1,
@@ -332,10 +503,13 @@ test("quarantined acceptance rejects unexpected attached physical hardware", () 
 test("a relation-based semantic resolution is accepted as semantic evidence", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
   try {
-    const { api, config } = createFakeGoldenApi({ semanticResolutionStrategy: "relation" });
+    const { api, config, faults } = createFakeGoldenApi({
+      semanticResolutionStrategy: "relation",
+    });
     const summary = await runGoldenFixtureAcceptance({
       config,
       api,
+      faults,
       artifacts: new GoldenArtifactWriter(root),
       jobTimeoutMs: 100,
       pollIntervalMs: 1,
@@ -570,11 +744,12 @@ test("strict golden recipes cover every direct device mutator and reject opaque 
 test("a normal semantic pass cannot falsely satisfy the delayed-tree fallback scenario", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
   try {
-    const { api, config } = createFakeGoldenApi({ omitDelayedFallback: true });
+    const { api, config, faults } = createFakeGoldenApi({ omitDelayedFallback: true });
     await assert.rejects(
       runGoldenFixtureAcceptance({
         config,
         api,
+        faults,
         artifacts: new GoldenArtifactWriter(root),
         jobTimeoutMs: 100,
         pollIntervalMs: 1,
@@ -596,11 +771,12 @@ test("a normal semantic pass cannot falsely satisfy the delayed-tree fallback sc
 test("an unrelated failed semantic target cannot prove the delayed fallback path", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
   try {
-    const { api, config } = createFakeGoldenApi({ unrelatedDelayedFallback: true });
+    const { api, config, faults } = createFakeGoldenApi({ unrelatedDelayedFallback: true });
     await assert.rejects(
       runGoldenFixtureAcceptance({
         config,
         api,
+        faults,
         artifacts: new GoldenArtifactWriter(root),
         jobTimeoutMs: 100,
         pollIntervalMs: 1,
@@ -618,11 +794,14 @@ test("an unrelated failed semantic target cannot prove the delayed fallback path
 test("a missing recipe prevents every recovery, launch, and fixture evidence claim", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
   try {
-    const { api, config } = createFakeGoldenApi({ missingRecipe: "golden-ios-point" });
+    const { api, config, faults } = createFakeGoldenApi({
+      missingRecipe: "golden-ios-point",
+    });
     await assert.rejects(
       runGoldenFixtureAcceptance({
         config,
         api,
+        faults,
         artifacts: new GoldenArtifactWriter(root),
         jobTimeoutMs: 100,
         pollIntervalMs: 1,
@@ -653,11 +832,12 @@ test("a missing recipe prevents every recovery, launch, and fixture evidence cla
 test("a packaged flow cannot impersonate a reviewed fixture recipe", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
   try {
-    const { api, config } = createFakeGoldenApi({ recipeSource: "builtin" });
+    const { api, config, faults } = createFakeGoldenApi({ recipeSource: "builtin" });
     await assert.rejects(
       runGoldenFixtureAcceptance({
         config,
         api,
+        faults,
         artifacts: new GoldenArtifactWriter(root),
         jobTimeoutMs: 100,
         pollIntervalMs: 1,
@@ -681,11 +861,12 @@ test("a packaged flow cannot impersonate a reviewed fixture recipe", async () =>
 test("a failed landscape capture restores portrait and still collects final fixture evidence", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));
   try {
-    const { api, config } = createFakeGoldenApi({ failLandscapeCapture: true });
+    const { api, config, faults } = createFakeGoldenApi({ failLandscapeCapture: true });
     await assert.rejects(
       runGoldenFixtureAcceptance({
         config,
         api,
+        faults,
         artifacts: new GoldenArtifactWriter(root),
         jobTimeoutMs: 100,
         pollIntervalMs: 1,

@@ -1,10 +1,40 @@
 import {
   GoldenAcceptanceError,
   GoldenArtifactWriter,
+  fixtureFingerprint,
   parseGoldenFixtureConfig,
 } from "./golden-device-lib.mjs";
 
 const pixels = Buffer.from("relay-golden-pixels").toString("base64");
+
+const faultProof = {
+  runnerKillMidSession: {
+    disruption: "xctest-runner-process-absent",
+    restoration: "xctest-session-ready",
+  },
+  ddiUnmountRecover: {
+    disruption: "developer-disk-image-unmounted",
+    restoration: "developer-disk-image-mounted",
+  },
+};
+
+export function fakeGoldenFaultReceipt(input) {
+  return {
+    schemaVersion: 1,
+    invocationId: input.invocationId,
+    scenario: input.scenario,
+    phase: input.phase,
+    target: {
+      platform: input.fixture.platform,
+      serialFingerprint: fixtureFingerprint(input.fixture.serial),
+    },
+    status: "confirmed",
+    attempts: 1,
+    startedAt: input.startedAt,
+    finishedAt: input.finishedAt,
+    proof: { kind: faultProof[input.scenario][input.phase], observed: true },
+  };
+}
 
 export function goldenRecipe(id, scenario) {
   const common = {
@@ -145,6 +175,38 @@ export function createFakeGoldenApi(options = {}) {
     ["ios-fixture", "portrait"],
   ]);
   let sequence = 0;
+  const faultCalls = [];
+  const faultReceipt = (input) => {
+    const receipt = fakeGoldenFaultReceipt({ ...input, finishedAt: input.startedAt });
+    if (
+      options.invalidFaultReceiptScenario === input.scenario &&
+      options.invalidFaultReceiptPhase === input.phase
+    ) {
+      if (options.invalidFaultReceiptKind === "extra-field") receipt.unreviewed = true;
+      if (options.invalidFaultReceiptKind === "wrong-proof") receipt.proof.kind = "ordinary-recipe";
+      if (options.invalidFaultReceiptKind === "wrong-target") {
+        receipt.target.serialFingerprint = "not-the-configured-fixture";
+      }
+      if (options.invalidFaultReceiptKind === "late") {
+        receipt.finishedAt = input.deadlineAt + 1;
+      }
+    }
+    return receipt;
+  };
+  const faults = {
+    async disrupt(input) {
+      faultCalls.push({ operation: "disrupt", ...input });
+      if (options.hangFaultScenario === input.scenario) return new Promise(() => undefined);
+      return faultReceipt(input);
+    },
+    async confirmRestored(input) {
+      faultCalls.push({ operation: "confirmRestored", ...input });
+      if (options.failFaultRestorationScenario === input.scenario) {
+        throw new Error("Simulated host restoration failure");
+      }
+      return faultReceipt(input);
+    },
+  };
   const deviceFor = (platform, serial) => ({
     id: serial,
     serial,
@@ -317,7 +379,7 @@ export function createFakeGoldenApi(options = {}) {
       throw new Error(`Unhandled API request ${request.operationId} ${path}`);
     },
   };
-  return { api, config, parallelJobIds };
+  return { api, config, faults, faultCalls, parallelJobIds };
 }
 
 export function recordingArtifacts(root, events) {

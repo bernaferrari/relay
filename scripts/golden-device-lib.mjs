@@ -12,4 +12,8 @@ export {
   validateGoldenScenarioRecipe,
 } from "./golden-device-contract.mjs";
 export { createGoldenApi, GoldenArtifactWriter } from "./golden-device-transport.mjs";
+export {
+  GOLDEN_HOST_FAULT_SCENARIOS,
+  validateGoldenFaultReceipt,
+} from "./golden-device-fault-contract.mjs";
 export { runGoldenFixtureAcceptance } from "./golden-device-runner.mjs";

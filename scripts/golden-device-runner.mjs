@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   errorRecord,
   fail,
@@ -11,6 +12,11 @@ import {
   selectConfiguredFixtures,
   validateGoldenScenarioRecipe,
 } from "./golden-device-contract.mjs";
+import { GOLDEN_HOST_FAULT_SCENARIOS } from "./golden-device-fault-contract.mjs";
+import {
+  assertGoldenFaultInjector,
+  runGoldenFaultRecoveryScenario,
+} from "./golden-device-fault-runner.mjs";
 import {
   captureGoldenFixtureEvidence,
   runGoldenRotationScenario,
@@ -268,16 +274,20 @@ async function runFixtureSuite(api, writer, fixture, options) {
     "delayedSemanticFallback",
     "semanticInput",
     "pointInput",
-    // iOS trustworthiness lanes: runner killed mid-session, wedged DDI
-    // recovery, and app → Settings handoff. Each recipe already proves its
-    // own entrance/exit; recovery acknowledgement evidence is captured by
-    // preflightFixture and the per-scenario captures below.
-    "runnerKillMidSession",
-    "ddiUnmountRecover",
     "appHandoffToSettings",
   ]) {
     await runRecipe(api, writer, fixture, scenario, options);
     await captureGoldenFixtureEvidence(api, writer, fixture, `after-${scenario}`);
+  }
+  for (const scenario of GOLDEN_HOST_FAULT_SCENARIOS) {
+    await runGoldenFaultRecoveryScenario({
+      api,
+      writer,
+      fixture,
+      scenario,
+      options,
+      runRecipe,
+    });
   }
 }
 
@@ -465,12 +475,24 @@ export async function runGoldenFixtureAcceptance(input) {
   const now = input.now ?? Date.now;
   const sleep =
     input.sleep ?? ((ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms)));
+  const faultTimeoutMs = input.faultTimeoutMs ?? 15_000;
+  if (!Number.isInteger(faultTimeoutMs) || faultTimeoutMs < 1 || faultTimeoutMs > 60_000) {
+    fail(
+      "Golden host fault timeout must be an integer between 1 and 60000ms.",
+      "GOLDEN_RUNTIME_CONFIG_INVALID",
+    );
+  }
   const options = {
     now,
     sleep,
     jobTimeoutMs: input.jobTimeoutMs ?? 180_000,
     pollIntervalMs: input.pollIntervalMs ?? 500,
     minimumOverlapMs: config.scheduling.minimumOverlapMs,
+    faults: input.faults,
+    faultTimeoutMs,
+    createFaultInvocationId: input.createFaultInvocationId ?? randomUUID,
+    setTimeout: input.setTimeout ?? setTimeout,
+    clearTimeout: input.clearTimeout ?? clearTimeout,
   };
   if (!writer || typeof writer.init !== "function") {
     fail("Golden acceptance requires an artifact writer", "GOLDEN_ARTIFACT_WRITER_MISSING");
@@ -533,6 +555,10 @@ export async function runGoldenFixtureAcceptance(input) {
       if (firstFailure?.status === "rejected") throw firstFailure.reason;
       fail("A recipe contract failed without a failure record", "GOLDEN_RECIPE_CONTRACT_INVALID");
     }
+    // Recipes only prove normal target control. Require the separate,
+    // quarantined host adapter before either fixture is recovered or launched,
+    // otherwise the named recovery scenarios could pass without a disruption.
+    assertGoldenFaultInjector(options.faults);
     fixtureEvidenceAuthorized = true;
     // Let both fixture suites settle before final evidence is captured. A
     // fail-fast Promise.all would race final screenshots against the other
