@@ -187,7 +187,8 @@ const ROOT_TOOLING = new Set([
   'tsconfig.lib.json',
   'tsdown.config.ts',
   'vitest.config.ts',
-  '.oxlintrc.json',
+  '.fallowrc.json',
+  'oxlint.config.ts',
   '.oxfmtrc.json',
   '.npmrc',
 ]);
