@@ -39,9 +39,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
           description: "Human-reviewed result of the uncertain command",
         },
       ],
-      examples: [
-        "relay device reconcile-input 00008110 ios-input-123 applied --confirm --json",
-      ],
+      examples: ["relay device reconcile-input 00008110 ios-input-123 applied --confirm --json"],
       note: "Relay captures fresh immutable pixels and semantics before releasing the exact-once fence. Ambiguous keeps the target stopped for human review.",
     }),
   ),

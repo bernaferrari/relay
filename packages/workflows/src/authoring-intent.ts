@@ -294,8 +294,7 @@ function resolveName(input: {
     ...new Map(
       input.candidates
         .filter(
-          (candidate) =>
-            normalized(candidate.id) === query || normalized(candidate.name) === query,
+          (candidate) => normalized(candidate.id) === query || normalized(candidate.name) === query,
         )
         .map((candidate) => [candidate.id, candidate]),
     ).values(),

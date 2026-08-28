@@ -1,8 +1,5 @@
 import type { TargetSupervisorHealth } from "@relay/protocol";
-import type {
-  SupervisedTarget,
-  TargetSupervisorStore,
-} from "./target-supervisor-store.js";
+import type { SupervisedTarget, TargetSupervisorStore } from "./target-supervisor-store.js";
 import type { TargetSupervisorEffect } from "./target-supervisor.js";
 
 type AutomaticRecoveryEffect = Extract<TargetSupervisorEffect, { kind: "recover" }>;

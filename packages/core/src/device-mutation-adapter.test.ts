@@ -9,10 +9,7 @@ import { bindNativeDeviceMutations } from "./device-mutation-adapter.js";
 import { IosMutationOutcomeUnknownError, runIosMutationOnce } from "./ios-mutation-policy.js";
 import { reserveTargetControl } from "./target-control.js";
 import { runWithTargetContext } from "./target-context.js";
-import {
-  runWithTargetSupervisorStore,
-  TargetSupervisorStore,
-} from "./target-supervisor-store.js";
+import { runWithTargetSupervisorStore, TargetSupervisorStore } from "./target-supervisor-store.js";
 
 type NativeDevice = ReturnType<typeof createAgentDeviceClient>;
 
@@ -75,14 +72,15 @@ test("physical iOS native dispatches write durable supervisor receipts", async (
   });
 
   const successfulSerial = "ios-supervised-success";
-  const successful = bindNativeDeviceMutations(stubNative(() => undefined), successfulSerial);
+  const successful = bindNativeDeviceMutations(
+    stubNative(() => undefined),
+    successfulSerial,
+  );
   await runWithTargetSupervisorStore(store, () =>
-    runWithTargetContext(
-      { kind: "device", platform: "ios", serial: successfulSerial },
-      () =>
-        runIosMutationOnce(successfulSerial, "press", () =>
-          successful.interactions.press({ platform: "ios", x: 1, y: 2 } as never),
-        ),
+    runWithTargetContext({ kind: "device", platform: "ios", serial: successfulSerial }, () =>
+      runIosMutationOnce(successfulSerial, "press", () =>
+        successful.interactions.press({ platform: "ios", x: 1, y: 2 } as never),
+      ),
     ),
   );
   const success = store.health({ id: successfulSerial, kind: "ios" });

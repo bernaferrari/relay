@@ -37,9 +37,7 @@ test("one coordinator owns bounded recovery escalation and persists every receip
   assert.equal(health.counters.recoveryAttempts, 2);
   assert.equal(health.counters.recoveryFailures, 1);
   assert.deepEqual(
-    health.events
-      .filter((event) => event.code.startsWith("RECOVERY_"))
-      .map((event) => event.code),
+    health.events.filter((event) => event.code.startsWith("RECOVERY_")).map((event) => event.code),
     ["RECOVERY_COMPLETED", "RECOVERY_ESCALATED", "RECOVERY_STARTED"],
   );
 });

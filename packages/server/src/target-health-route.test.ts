@@ -378,22 +378,19 @@ test("uncertain target input reconciles only after a fresh durable observation",
     },
   });
   try {
-    const response = await fetch(
-      `http://127.0.0.1:${server.port}/device/input/reconcile`,
-      {
-        method: "POST",
-        headers: {
-          ...headers(),
-          "content-type": "application/json",
-          "x-relay-operation-id": "target.input.reconcile",
-        },
-        body: JSON.stringify({
-          serial: target.serial,
-          mutationId: "ios-input-reviewed",
-          outcome: "applied",
-        }),
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/input/reconcile`, {
+      method: "POST",
+      headers: {
+        ...headers(),
+        "content-type": "application/json",
+        "x-relay-operation-id": "target.input.reconcile",
       },
-    );
+      body: JSON.stringify({
+        serial: target.serial,
+        mutationId: "ios-input-reviewed",
+        outcome: "applied",
+      }),
+    });
     assert.equal(response.status, 200, await response.text());
     assert.deepEqual(calls, ["observe", "reconcile"]);
   } finally {

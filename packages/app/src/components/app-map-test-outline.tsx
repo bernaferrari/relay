@@ -41,6 +41,7 @@ export function AppMapTestOutline(props: {
   onDuplicate: (stepId: string) => void;
   onDelete: (stepId: string) => void;
   onClose?: () => void;
+  onEscape?: () => void;
 }) {
   const [query, setQuery] = createSignal("");
   const [pane, setPane] = createSignal<"steps" | "problems">("steps");
@@ -168,7 +169,13 @@ export function AppMapTestOutline(props: {
               placeholder={`Find in ${outline().length} ${outline().length === 1 ? "step" : "steps"}…`}
               onInput={(event) => setQuery(event.currentTarget.value)}
               onKeyDown={(event) => {
-                if (event.key !== "Escape" || !query()) return;
+                if (event.key !== "Escape") return;
+                if (!query()) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  props.onEscape?.();
+                  return;
+                }
                 event.stopPropagation();
                 setQuery("");
               }}

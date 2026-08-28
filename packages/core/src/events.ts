@@ -223,8 +223,7 @@ export function eventsAfter(afterSequence: number): {
   return {
     events: recent.filter((event) => event.sequence > afterSequence),
     gap:
-      afterSequence > 0 &&
-      (afterSequence < oldestAvailable - 1 || afterSequence > latestAvailable),
+      afterSequence > 0 && (afterSequence < oldestAvailable - 1 || afterSequence > latestAvailable),
     oldestAvailable,
     latestAvailable,
   };

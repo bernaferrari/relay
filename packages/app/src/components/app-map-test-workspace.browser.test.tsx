@@ -893,16 +893,17 @@ test("Source edits the open canonical Test and invalid YAML cannot queue a save"
   sourceButton.click();
   await settle();
   const editor = root.querySelector<HTMLTextAreaElement>("#test-source-editor")!;
+  expect(editor.value).toContain("kind: authoring-intent");
   expect(editor.value).toContain("path:\n      - open");
-  expect(editor.value).toContain("checkpoint: settings");
-  expect(editor.value).not.toContain("Checkout");
+  expect(editor.value).toContain("checkpoint: Settings");
+  expect(editor.value).toContain("appMap: Checkout");
   expect(document.activeElement).toBe(editor);
   const validSource = editor.value;
 
   editor.value = "steps: [";
   editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
   [...root.querySelectorAll<HTMLButtonElement>("button")]
-    .find((button) => button.textContent?.includes("Apply source"))!
+    .find((button) => button.textContent?.includes("Bind and apply"))!
     .click();
   await settle();
   expect(root.querySelector("#test-source-error")?.textContent).toContain("not applied");
@@ -911,7 +912,7 @@ test("Source edits the open canonical Test and invalid YAML cannot queue a save"
   editor.value = validSource.replace("Open Settings", "Open app settings");
   editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
   [...root.querySelectorAll<HTMLButtonElement>("button")]
-    .find((button) => button.textContent?.includes("Apply source"))!
+    .find((button) => button.textContent?.includes("Bind and apply"))!
     .click();
   await settle();
   const commitCalls = commitSource.mock.calls.filter(([id]) => id === "app-map.commit");
@@ -2210,7 +2211,9 @@ test("a narrow workspace keeps the device on the right edge and never below the 
 
   // Escape leaves the floating rail and hands focus back to the control that
   // opened it, then `/` brings the rail and its search back.
-  layout.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  const stepSearch = root.querySelector<HTMLInputElement>("#test-step-search")!;
+  stepSearch.focus();
+  stepSearch.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await settle();
   expect(root.querySelector("[data-test-rail-strip='steps']")).not.toBeNull();
   expect(document.activeElement?.getAttribute("data-test-rail-toggle")).toBe("steps");

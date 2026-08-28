@@ -339,9 +339,7 @@ export async function runIosMutationOnce<T>(
     throw new IosMutationOutcomeUnknownError(
       diagnostic,
       supervisedFinish.persistenceError ?? error,
-      supervisedFinish.mutationId
-        ? { serial, mutationId: supervisedFinish.mutationId }
-        : undefined,
+      supervisedFinish.mutationId ? { serial, mutationId: supervisedFinish.mutationId } : undefined,
     );
   }
   const supervisedFinish = finishSupervisedIosMutation(supervised, "completed");
@@ -352,9 +350,7 @@ export async function runIosMutationOnce<T>(
     throw new IosMutationOutcomeUnknownError(
       diagnostic,
       supervisedFinish.persistenceError,
-      supervisedFinish.mutationId
-        ? { serial, mutationId: supervisedFinish.mutationId }
-        : undefined,
+      supervisedFinish.mutationId ? { serial, mutationId: supervisedFinish.mutationId } : undefined,
     );
   }
   const diagnostic = mutationDiagnostic(serial, operation, "completed");

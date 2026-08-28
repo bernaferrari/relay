@@ -313,10 +313,7 @@ export function AppMapTestWorkspace(props: {
     return undefined;
   });
 
-  /**
-   * Both rails render identically whether they are docked in their grid track or
-   * floated over the editor, so the body lives in one place.
-   */
+  /** Both rails share one body whether docked in the grid or floated over the editor. */
   function StepsRail() {
     return (
       <Show when={draft()} fallback={<StepsRailEmpty />}>
@@ -339,6 +336,7 @@ export function AppMapTestWorkspace(props: {
             onDuplicate={steps.duplicateStep}
             onDelete={steps.deleteStep}
             onClose={() => toggleRail("steps")}
+            onEscape={dismissOverlayRail}
           />
         )}
       </Show>
