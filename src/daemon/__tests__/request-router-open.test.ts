@@ -13,17 +13,37 @@ vi.mock('@agent-device/host-kit/process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@agent-device/host-kit/process')>();
   return { ...actual, readProcessStartTime: vi.fn(() => 'test-process-start') };
 });
-// Opening a session runs the owned-lease cleanup, which pattern-kills stale
-// xcodebuild runners with a real `pkill -f`. The session id here is fabricated,
-// so on a host with a live Apple runner that write would reach a process this
-// test does not own; stub the tool seam the way the runner tests stub the
-// signal seam (#1824).
-vi.mock('../../platforms/apple/core/tool-provider.ts', async (importOriginal) => {
+vi.mock('@agent-device/platform-apple/runner/operations', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('../../platforms/apple/core/tool-provider.ts')>();
+    await importOriginal<typeof import('@agent-device/platform-apple/runner/operations')>();
   return {
     ...actual,
-    runAppleToolCommand: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+    detachIosSimulatorRunnerSessionsForShutdown: vi.fn(async () => {}),
+    notifyIosRunnerAppRelaunched: vi.fn(async () => {}),
+    prewarmAppleRunnerCache: vi.fn(async () => {}),
+    prewarmIosRunnerSession: vi.fn(async () => {}),
+    prepareIosRunner: vi.fn(async () => ({
+      runner: { currentUptimeMs: 42 },
+      connectMs: 0,
+      healthCheckMs: 0,
+    })),
+    resolveRunnerAppBundleId: vi.fn(() => 'com.callstack.agentdevice.runner'),
+    scheduleIosRunnerIdleStop: vi.fn(),
+    stopIosRunnerSession: vi.fn(async () => {}),
+    stopAllIosRunnerSessions: vi.fn(async () => {}),
+  };
+});
+vi.mock('@agent-device/platform-apple/app-lifecycle', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@agent-device/platform-apple/app-lifecycle')>();
+  return { ...actual, closeIosApp: vi.fn(async () => {}) };
+});
+vi.mock('@agent-device/platform-apple/app-resolution', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@agent-device/platform-apple/app-resolution')>();
+  return {
+    ...actual,
+    resolveIosApp: vi.fn(async (_device, app) => app),
   };
 });
 
