@@ -25,6 +25,13 @@ export type RecordingTakeAction = {
   steps: RecipeStep[];
   stepStartIndex: number;
   evidenceUrl?: string;
+  /** Immutable action-boundary proof. These resolve the exact observations
+   * linked by the owning Take revision (or its latest replay), rather than
+   * borrowing the previous/next action's display frame. */
+  entranceEvidenceUrl?: string;
+  exitEvidenceUrl?: string;
+  entranceViewport?: { width: number; height: number };
+  exitViewport?: { width: number; height: number };
 };
 
 export type RecordingTakeActionProof = {
@@ -121,6 +128,24 @@ export function projectTake(
   const latestReplay = take.replayAttempts
     .filter((attempt) => attempt.takeRevision === revision.revision)
     .at(-1);
+  const revisionObservations = new Map(
+    (revision.observations ?? [revision.before, revision.after].filter(Boolean)).map(
+      (observation) => [observation!.id, observation!],
+    ),
+  );
+  const replayObservations = new Map(
+    (latestReplay?.observations ?? []).map((observation) => [observation.id, observation]),
+  );
+  const replayEvidenceById = new Map((latestReplay?.evidence ?? []).map((item) => [item.id, item]));
+  const screenshotUrl = (
+    observation: AuthoringObservation | undefined,
+    evidence: ReadonlyMap<string, (typeof revision.evidence)[number]>,
+  ) => {
+    const screenshot = observation?.evidenceIds
+      .map((id) => evidence.get(id))
+      .find((item) => item?.kind === "screenshot");
+    return screenshot ? evidenceUrl(screenshot.uri, screenshot.mime) : undefined;
+  };
   const actions: RecordingTakeAction[] = [];
   const steps: RecipeStep[] = [];
   const actionIds: string[] = [];
@@ -142,6 +167,26 @@ export function projectTake(
       : action.proofStatus
         ? { source: "recording", status: action.proofStatus }
         : undefined;
+    const replayEntrance = replayProof?.entranceObservationId
+      ? replayObservations.get(replayProof.entranceObservationId)
+      : undefined;
+    const replayExit = replayProof?.exitObservationId
+      ? replayObservations.get(replayProof.exitObservationId)
+      : undefined;
+    const recordedEntrance = action.entranceObservationId
+      ? revisionObservations.get(action.entranceObservationId)
+      : undefined;
+    const recordedExit = action.exitObservationId
+      ? revisionObservations.get(action.exitObservationId)
+      : undefined;
+    const entrance = replayEntrance ?? recordedEntrance;
+    const exit = replayExit ?? recordedExit;
+    const entranceEvidenceUrl = replayEntrance
+      ? screenshotUrl(replayEntrance, replayEvidenceById)
+      : screenshotUrl(recordedEntrance, evidenceById);
+    const exitEvidenceUrl = replayExit
+      ? screenshotUrl(replayExit, replayEvidenceById)
+      : screenshotUrl(recordedExit, evidenceById);
     actions.push({
       id: action.id,
       source: action.source,
@@ -150,6 +195,10 @@ export function projectTake(
       steps: projectedSteps,
       stepStartIndex: steps.length,
       ...(screenshot ? { evidenceUrl: evidenceUrl(screenshot.uri, screenshot.mime) } : {}),
+      ...(entranceEvidenceUrl ? { entranceEvidenceUrl } : {}),
+      ...(exitEvidenceUrl ? { exitEvidenceUrl } : {}),
+      ...(entrance?.bounds ? { entranceViewport: { ...entrance.bounds } } : {}),
+      ...(exit?.bounds ? { exitViewport: { ...exit.bounds } } : {}),
     });
     for (const step of projectedSteps) {
       steps.push(step);

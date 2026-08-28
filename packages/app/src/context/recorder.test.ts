@@ -509,6 +509,8 @@ test("Take projection preserves action boundaries and favors current replay proo
               recordedAt: 2,
               startedAt: 2,
               finishedAt: 3,
+              entranceObservationId: "before-observation",
+              exitObservationId: "after-observation",
               steps: [
                 { kind: "tap", target: { label: "Continue" } },
                 { kind: "sleep", ms: 250 },
@@ -556,6 +558,10 @@ test("Take projection preserves action boundaries and favors current replay proo
   assert.equal(take.pendingConnectionId, "connection-planned");
   assert.equal(take.sourceEvidenceUrl, "evidence:relay://before.png");
   assert.equal(take.destinationEvidenceUrl, "evidence:relay://after.png");
+  assert.equal(take.actions[1]?.entranceEvidenceUrl, "evidence:relay://before.png");
+  assert.equal(take.actions[1]?.exitEvidenceUrl, "evidence:relay://after.png");
+  assert.deepEqual(take.actions[1]?.entranceViewport, { width: 834, height: 1112 });
+  assert.deepEqual(take.actions[1]?.exitViewport, { width: 834, height: 1112 });
   assert.deepEqual(take.sourceViewport, { width: 834, height: 1112 });
   assert.deepEqual(take.latestReplay, { outcome: "passed" });
 });

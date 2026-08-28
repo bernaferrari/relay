@@ -106,3 +106,75 @@ test("keeps retirement hidden for inspectable recording uncertainty", () => {
   dispose();
   root.remove();
 });
+
+test("keeps actions compact while a checkpoint carries a larger evidence card", () => {
+  const pixel = "data:image/png;base64,iVBORw0KGgo=";
+  recorderMock.current = {
+    ...recorderFixture(false),
+    authoringNeedsAttention: () => false,
+    take: () => ({
+      id: "take",
+      state: "review",
+      captureProvenance: {
+        schemaVersion: 1,
+        mode: "control-and-record",
+        origin: "relay-control",
+      },
+      latestReplay: { outcome: "passed" },
+      actions: [
+        {
+          id: "tap",
+          source: "captured",
+          label: "Open Settings",
+          steps: [{ kind: "tap", target: { label: "Settings" } }],
+          stepStartIndex: 0,
+        },
+        {
+          id: "checkpoint",
+          source: "manual",
+          label: "Settings checkpoint",
+          steps: [],
+          stepStartIndex: 1,
+          evidenceUrl: pixel,
+          exitEvidenceUrl: pixel,
+        },
+      ],
+    }),
+    editTake: vi.fn(async () => undefined),
+    replayTake: vi.fn(async () => true),
+    keepTake: vi.fn(async () => undefined),
+    discardTake: vi.fn(async () => undefined),
+  };
+  const select = vi.fn();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const dispose = render(
+    () => (
+      <AppMapTestRecordingPanel
+        appMap={mapFixture()}
+        selectedActionId="tap"
+        onSelectAction={select}
+        onTestCreated={() => undefined}
+        onOpenTargets={() => undefined}
+      />
+    ),
+    root,
+  );
+
+  const action = root.querySelector('[data-recording-action="tap"]')!;
+  const checkpoint = root.querySelector('[data-recording-action="checkpoint"]')!;
+  expect(action.getAttribute("data-recording-checkpoint")).toBeNull();
+  expect(action.querySelector("img")).toBeNull();
+  expect(checkpoint.getAttribute("data-recording-checkpoint")).toBe("true");
+  expect(checkpoint.querySelector("img")).toBeTruthy();
+  expect(checkpoint.textContent).toContain("Checkpoint");
+
+  const checkpointButton = checkpoint.querySelector<HTMLButtonElement>(
+    '[aria-label="Review checkpoint Settings checkpoint"]',
+  );
+  checkpointButton?.click();
+  expect(select).toHaveBeenCalledWith("checkpoint");
+
+  dispose();
+  root.remove();
+});

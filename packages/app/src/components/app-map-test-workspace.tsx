@@ -31,6 +31,7 @@ import { AppMapTestCombineStrip } from "./app-map-test-combine-strip";
 import { AppMapTestSourceDialog } from "./app-map-test-source-dialog";
 import type { AppMapTestSourceApply } from "../lib/app-map-test-source";
 import { AppMapTestRecordingPanel } from "./app-map-test-recording-panel";
+import { RecordingReviewEvidence } from "./recording-review-evidence";
 import { createAppMapTestDocumentSession } from "./app-map-test-document-session";
 import {
   RailStrip,
@@ -55,6 +56,7 @@ export function AppMapTestWorkspace(props: {
   const [proposalReviewOpen, setProposalReviewOpen] = createSignal(false);
   const [sourceOpen, setSourceOpen] = createSignal(false);
   const [preflightOpen, setPreflightOpen] = createSignal(false);
+  const [selectedRecordingActionId, setSelectedRecordingActionId] = createSignal<string>();
   /** `undefined` means "follow the layout default for this width". */
   const [railOverride, setRailOverride] = createSignal<Partial<Record<TestRailKind, boolean>>>({});
   const workspace = useElementWidth();
@@ -101,6 +103,18 @@ export function AppMapTestWorkspace(props: {
       recorder.authoringNeedsAttention()
     ) {
       setRailOverride((current) => ({ ...current, device: true }));
+    }
+  });
+
+  createEffect(() => {
+    const take = recorder.take();
+    if (take?.state !== "review") {
+      setSelectedRecordingActionId(undefined);
+      return;
+    }
+    const selected = selectedRecordingActionId();
+    if (!selected || !take.actions.some((action) => action.id === selected)) {
+      setSelectedRecordingActionId(take.actions[0]?.id);
     }
   });
 
@@ -373,6 +387,8 @@ export function AppMapTestWorkspace(props: {
           appMap={appMap()!}
           onTestCreated={(testId) => selectTest(testId)}
           onOpenTargets={chooseTarget}
+          selectedActionId={selectedRecordingActionId()}
+          onSelectAction={setSelectedRecordingActionId}
         />
       </Show>
     );
@@ -583,56 +599,68 @@ export function AppMapTestWorkspace(props: {
               )}
             </Show>
             <Show
-              when={draft()}
+              when={recorder.take()?.state === "review" ? recorder.take() : undefined}
               fallback={
-                // Without this the document pane is a blank white column between
-                // two rails — the surface that should say what the mode is for
-                // was the one surface saying nothing. It names what lands here
-                // and offers the same first step the rail does.
-                <div class="grid min-h-full place-items-center px-5 py-10">
-                  <EmptyState
-                    size="lg"
-                    icon="edit"
-                    title={tests().length ? "No Test open" : "No Tests yet"}
-                    description={
-                      tests().length
-                        ? "Pick one from the switcher to read its steps here, or start a new Test."
-                        : props.onRecord
-                          ? "Use the app normally, add checkpoints, review the recording, then approve one replayable Test."
-                          : "A Test is what you run once — a path through this map, written as readable intent and bound to reviewed screens."
-                    }
-                    actionLabel={
-                      props.onRecord ? "Record test" : creating() ? "Creating…" : "Create Test"
-                    }
-                    onAction={props.onRecord ?? (() => void createTest())}
-                    secondaryLabel={props.onRecord ? "Start a blank Test" : undefined}
-                    onSecondary={props.onRecord ? () => void createTest() : undefined}
-                  />
-                </div>
+                <Show
+                  when={draft()}
+                  fallback={
+                    // Without this the document pane is a blank white column between
+                    // two rails — the surface that should say what the mode is for
+                    // was the one surface saying nothing. It names what lands here
+                    // and offers the same first step the rail does.
+                    <div class="grid min-h-full place-items-center px-5 py-10">
+                      <EmptyState
+                        size="lg"
+                        icon="edit"
+                        title={tests().length ? "No Test open" : "No Tests yet"}
+                        description={
+                          tests().length
+                            ? "Pick one from the switcher to read its steps here, or start a new Test."
+                            : props.onRecord
+                              ? "Use the app normally, add checkpoints, review the recording, then approve one replayable Test."
+                              : "A Test is what you run once — a path through this map, written as readable intent and bound to reviewed screens."
+                        }
+                        actionLabel={
+                          props.onRecord ? "Record test" : creating() ? "Creating…" : "Create Test"
+                        }
+                        onAction={props.onRecord ?? (() => void createTest())}
+                        secondaryLabel={props.onRecord ? "Start a blank Test" : undefined}
+                        onSecondary={props.onRecord ? () => void createTest() : undefined}
+                      />
+                    </div>
+                  }
+                >
+                  <div class="mx-auto grid w-full max-w-[640px] gap-4 px-5 py-4">
+                    <AppMapTestInspector
+                      map={appMap()!}
+                      item={selectedItem()}
+                      diagnostics={diagnostics()}
+                      blockers={blockers().length}
+                      onDraftChange={steps.updateDraftStep}
+                      onCommit={steps.commitStep}
+                    />
+                    <Show when={selectedTest()}>
+                      {(test) => (
+                        <AppMapTestCombineStrip
+                          map={appMap()!}
+                          test={test()}
+                          ready={saveState() === "saved"}
+                          onChooseTarget={chooseTarget}
+                          onOpenTarget={showDevice}
+                          onOpenRun={openRun}
+                        />
+                      )}
+                    </Show>
+                  </div>
+                </Show>
               }
             >
-              <div class="mx-auto grid w-full max-w-[640px] gap-4 px-5 py-4">
-                <AppMapTestInspector
-                  map={appMap()!}
-                  item={selectedItem()}
-                  diagnostics={diagnostics()}
-                  blockers={blockers().length}
-                  onDraftChange={steps.updateDraftStep}
-                  onCommit={steps.commitStep}
+              {(take) => (
+                <RecordingReviewEvidence
+                  take={take()!}
+                  selectedActionId={selectedRecordingActionId()}
                 />
-                <Show when={selectedTest()}>
-                  {(test) => (
-                    <AppMapTestCombineStrip
-                      map={appMap()!}
-                      test={test()}
-                      ready={saveState() === "saved"}
-                      onChooseTarget={chooseTarget}
-                      onOpenTarget={showDevice}
-                      onOpenRun={openRun}
-                    />
-                  )}
-                </Show>
-              </div>
+              )}
             </Show>
           </div>
 

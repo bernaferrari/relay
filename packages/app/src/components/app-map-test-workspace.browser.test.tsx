@@ -20,7 +20,7 @@ const recorderMock = vi.hoisted(() => ({
     arming: () => false,
     authoringNeedsAttention: () => false,
     take: () => null,
-  },
+  } as unknown,
 }));
 vi.mock("../context/server", () => ({ useServer: () => serverMock.current }));
 vi.mock("../context/recorder", () => ({ useRecorder: () => recorderMock.current }));
@@ -713,6 +713,95 @@ test("an empty Test workspace leads with recording and keeps blank authoring sec
   expect(record).toHaveBeenCalledOnce();
   dispose();
   root.remove();
+});
+
+test("recording review selects immutable action proof in the main Test area", async () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const pixel = "data:image/png;base64,iVBORw0KGgo=";
+  const take = {
+    id: "take",
+    state: "review" as const,
+    platform: "android" as const,
+    captureProvenance: {
+      schemaVersion: 1 as const,
+      mode: "control-and-record" as const,
+      origin: "relay-control" as const,
+    },
+    latestReplay: { outcome: "passed" as const },
+    actions: [
+      {
+        id: "tap",
+        source: "captured" as const,
+        label: "Open Settings",
+        steps: [{ kind: "tap" as const, target: { label: "Settings" } }],
+        stepStartIndex: 0,
+        entranceEvidenceUrl: pixel,
+        exitEvidenceUrl: pixel,
+        proof: { source: "replay" as const, status: "verified" as const },
+      },
+      {
+        id: "checkpoint",
+        source: "manual" as const,
+        label: "Settings checkpoint",
+        steps: [],
+        stepStartIndex: 1,
+        evidenceUrl: pixel,
+        entranceEvidenceUrl: pixel,
+        exitEvidenceUrl: pixel,
+        proof: { source: "recording" as const, status: "verified" as const },
+      },
+    ],
+  };
+  recorderMock.current = {
+    recording: () => false,
+    arming: () => false,
+    authoringNeedsAttention: () => false,
+    take: () => take,
+    canRetireRecordingAttempt: () => false,
+    editTake: vi.fn(async () => undefined),
+    replayTake: vi.fn(async () => true),
+    keepTake: vi.fn(async () => undefined),
+    discardTake: vi.fn(async () => undefined),
+  };
+  serverMock.current = {
+    selectedAppMap: () => fixture(),
+    isOffline: () => false,
+    health: () => "online",
+    devices: () => [],
+    selectedDevice: () => null,
+    liveFrame: () => null,
+    liveCaptureIssue: () => null,
+    appleDeviceSetup: () => null,
+    jobs: () => [],
+    persistedRuns: () => [],
+    refreshJobs: async () => undefined,
+    cancelJob: async () => undefined,
+    refreshAppMaps: async () => undefined,
+  };
+
+  const dispose = render(() => <AppMapTestWorkspace />, root);
+  await settle();
+  const evidence = root.querySelector<HTMLElement>('[aria-label="Selected recording evidence"]')!;
+  expect(evidence.textContent).toContain("Recorded action proof");
+  expect(evidence.textContent).toContain("Open Settings");
+
+  root
+    .querySelector<HTMLButtonElement>('[aria-label="Review checkpoint Settings checkpoint"]')!
+    .click();
+  await settle();
+  expect(evidence.textContent).toContain("Checkpoint evidence");
+  expect(evidence.textContent).toContain("Settings checkpoint");
+
+  dispose();
+  root.remove();
+  recorderMock.current = {
+    recording: () => false,
+    arming: () => false,
+    authoringNeedsAttention: () => false,
+    take: () => null,
+  };
 });
 
 test("Source edits the open canonical Test and invalid YAML cannot queue a save", async () => {

@@ -2,10 +2,12 @@ import { For, Show, createSignal } from "solid-js";
 import type { AppMap, AuthoringRecordingEdit } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useRecorder } from "../context/recorder";
+import { cn } from "../lib/cn";
 import { toast } from "../context/toast";
 import { humanError } from "../lib/human-error";
 import { DeviceCompanionStage } from "./device-companion-stage";
 import { Icon } from "./icon";
+import { isRecordingCheckpoint } from "./recording-review-evidence";
 
 function destinationFor(map: AppMap, fingerprint: string | undefined) {
   if (!fingerprint) return { kind: "new-screen" as const };
@@ -25,6 +27,8 @@ export function AppMapTestRecordingPanel(props: {
   appMap: AppMap;
   onTestCreated: (testId: string) => void;
   onOpenTargets: () => void;
+  selectedActionId?: string;
+  onSelectAction?: (actionId: string) => void;
 }) {
   const recorder = useRecorder();
   const [replaying, setReplaying] = createSignal(false);
@@ -155,10 +159,48 @@ export function AppMapTestRecordingPanel(props: {
                       ? "Recorded action"
                       : `${action.steps.length} recorded steps`);
                   const actionIds = () => recorder.take()?.actions.map((item) => item.id) ?? [];
+                  const selected = () => props.selectedActionId === action.id;
+                  const checkpoint = () => isRecordingCheckpoint(action);
                   return (
-                    <li class="rounded-md border border-border-weak-base bg-surface-base p-2 pl-2">
+                    <li
+                      class={cn(
+                        "overflow-hidden rounded-lg border bg-surface-base",
+                        selected()
+                          ? "border-border-interactive-base bg-surface-interactive-weak"
+                          : "border-border-weak-base",
+                        checkpoint() ? "p-3" : "p-1.5",
+                      )}
+                      data-recording-action={action.id}
+                      data-recording-checkpoint={checkpoint() ? "true" : undefined}
+                    >
+                      <Show when={checkpoint() && (action.exitEvidenceUrl ?? action.evidenceUrl)}>
+                        {(src) => (
+                          <button
+                            type="button"
+                            class="mb-2 block w-full overflow-hidden rounded-md border border-border-weak-base bg-[var(--phone-screen)] text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+                            aria-label={`Review checkpoint ${title()}`}
+                            onClick={() => props.onSelectAction?.(action.id)}
+                          >
+                            <img
+                              class="h-28 w-full object-contain"
+                              src={src()}
+                              alt={`Checkpoint evidence for ${title()}`}
+                            />
+                            <span class="block px-2 py-1.5 text-micro font-semibold tracking-[0.09em] text-text-weak uppercase">
+                              Checkpoint
+                            </span>
+                          </button>
+                        )}
+                      </Show>
                       <div class="flex min-w-0 items-center gap-2">
-                        <span class="min-w-0 flex-1 truncate">{title()}</span>
+                        <button
+                          type="button"
+                          class="min-h-11 min-w-0 flex-1 truncate rounded-md px-1 text-left font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+                          aria-current={selected() ? "step" : undefined}
+                          onClick={() => props.onSelectAction?.(action.id)}
+                        >
+                          {title()}
+                        </button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -199,48 +241,54 @@ export function AppMapTestRecordingPanel(props: {
                           Edit
                         </Button>
                       </div>
-                      <div class="mt-1 flex flex-wrap gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          class="min-h-11"
-                          disabled={index() >= actionIds().length - 1 || editBusy()}
-                          onClick={() =>
-                            void editRecording({
-                              kind: "merge",
-                              actionIds: [action.id, actionIds()[index() + 1]!],
-                            })
-                          }
-                        >
-                          Merge with next
-                        </Button>
-                        <Show when={action.steps.length > 1}>
+                      <Show when={selected()}>
+                        <div class="mt-1 flex flex-wrap gap-1 border-t border-border-weak-base pt-1.5">
                           <Button
                             variant="ghost"
                             size="sm"
                             class="min-h-11"
-                            disabled={editBusy()}
+                            disabled={index() >= actionIds().length - 1 || editBusy()}
                             onClick={() =>
-                              void editRecording({ kind: "split", actionId: action.id, atStep: 1 })
+                              void editRecording({
+                                kind: "merge",
+                                actionIds: [action.id, actionIds()[index() + 1]!],
+                              })
                             }
                           >
-                            Split after first step
+                            Merge with next
                           </Button>
-                        </Show>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          class="min-h-11 text-danger-base"
-                          disabled={actionIds().length <= 1 || editBusy()}
-                          onClick={() => {
-                            if (globalThis.confirm(`Remove “${title()}” from this Test?`)) {
-                              void editRecording({ kind: "remove", actionIds: [action.id] });
-                            }
-                          }}
-                        >
-                          Remove
-                        </Button>
-                      </div>
+                          <Show when={action.steps.length > 1}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              class="min-h-11"
+                              disabled={editBusy()}
+                              onClick={() =>
+                                void editRecording({
+                                  kind: "split",
+                                  actionId: action.id,
+                                  atStep: 1,
+                                })
+                              }
+                            >
+                              Split after first step
+                            </Button>
+                          </Show>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            class="min-h-11 text-danger-base"
+                            disabled={actionIds().length <= 1 || editBusy()}
+                            onClick={() => {
+                              if (globalThis.confirm(`Remove “${title()}” from this Test?`)) {
+                                void editRecording({ kind: "remove", actionIds: [action.id] });
+                              }
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </Show>
                       <Show when={editingActionId() === action.id}>
                         <div class="mt-2 grid gap-2 border-t border-border-weak-base pt-2">
                           <form
