@@ -16,7 +16,6 @@ import {
 } from "../lib/app-map-test-layout";
 import { flattenScenarioSteps } from "../lib/app-map-test-editor-tree";
 import { createAppMapTestStepActions } from "../lib/use-app-map-test-step-actions";
-import { EmptyState } from "./empty-state";
 import { AppMapTestInspector } from "./app-map-test-inspector";
 import { AppMapTestOutline } from "./app-map-test-outline";
 import { AppMapTestUndo } from "./app-map-test-undo";
@@ -32,6 +31,7 @@ import { AppMapTestSourceDialog } from "./app-map-test-source-dialog";
 import type { AppMapTestSourceApply } from "../lib/app-map-test-source";
 import { AppMapTestRecordingPanel } from "./app-map-test-recording-panel";
 import { RecordingReviewEvidence } from "./recording-review-evidence";
+import { AppMapTestEmptyState } from "./app-map-test-empty-state";
 import { createAppMapTestDocumentSession } from "./app-map-test-document-session";
 import {
   RailStrip,
@@ -41,6 +41,7 @@ import {
 } from "./app-map-test-workspace-chrome";
 import type { WorkspaceController } from "../lib/workspace-controller";
 import { captureTestStartScreen } from "../lib/capture-test-start-screen";
+import { useRecordingActionSelection } from "../lib/use-recording-action-selection";
 
 export function AppMapTestWorkspace(props: {
   testId?: string;
@@ -106,16 +107,10 @@ export function AppMapTestWorkspace(props: {
     }
   });
 
-  createEffect(() => {
-    const take = recorder.take();
-    if (take?.state !== "review") {
-      setSelectedRecordingActionId(undefined);
-      return;
-    }
-    const selected = selectedRecordingActionId();
-    if (!selected || !take.actions.some((action) => action.id === selected)) {
-      setSelectedRecordingActionId(take.actions[0]?.id);
-    }
+  useRecordingActionSelection({
+    take: recorder.take,
+    selectedActionId: selectedRecordingActionId,
+    setSelectedActionId: setSelectedRecordingActionId,
   });
 
   // The run session and the document session each need the other, and both only
@@ -604,30 +599,13 @@ export function AppMapTestWorkspace(props: {
                 <Show
                   when={draft()}
                   fallback={
-                    // Without this the document pane is a blank white column between
-                    // two rails — the surface that should say what the mode is for
-                    // was the one surface saying nothing. It names what lands here
-                    // and offers the same first step the rail does.
-                    <div class="grid min-h-full place-items-center px-5 py-10">
-                      <EmptyState
-                        size="lg"
-                        icon="edit"
-                        title={tests().length ? "No Test open" : "No Tests yet"}
-                        description={
-                          tests().length
-                            ? "Pick one from the switcher to read its steps here, or start a new Test."
-                            : props.onRecord
-                              ? "Use the app normally, add checkpoints, review the recording, then approve one replayable Test."
-                              : "A Test is what you run once — a path through this map, written as readable intent and bound to reviewed screens."
-                        }
-                        actionLabel={
-                          props.onRecord ? "Record test" : creating() ? "Creating…" : "Create Test"
-                        }
-                        onAction={props.onRecord ?? (() => void createTest())}
-                        secondaryLabel={props.onRecord ? "Start a blank Test" : undefined}
-                        onSecondary={props.onRecord ? () => void createTest() : undefined}
-                      />
-                    </div>
+                    <AppMapTestEmptyState
+                      hasTests={tests().length > 0}
+                      recordingAvailable={Boolean(props.onRecord)}
+                      creating={creating()}
+                      onRecord={props.onRecord}
+                      onCreate={() => void createTest()}
+                    />
                   }
                 >
                   <div class="mx-auto grid w-full max-w-[640px] gap-4 px-5 py-4">
