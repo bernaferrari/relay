@@ -626,8 +626,8 @@ const runReviewInputParser = objectParser<OperationInput<"run.review">>(
   "run review input",
   (input) => {
     string(input.runId, "run review runId");
-    if (input.action !== "approve" && input.action !== "reject") {
-      fail("run review action", 'must be "approve" or "reject"');
+    if (input.action !== "approve" && input.action !== "reject" && input.action !== "defer") {
+      fail("run review action", 'must be "approve", "reject", or "defer"');
     }
     if (input.note !== undefined) string(input.note, "run review note");
   },

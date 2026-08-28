@@ -1,4 +1,14 @@
-import { For, Show, createMemo, createResource, onCleanup, onMount, type JSX } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  onCleanup,
+  onMount,
+  type JSX,
+} from "solid-js";
 import type { CombineCellAnalysis, CombineCellVerdict } from "../lib/combine-verdict";
 import type { CombineCapture, CombineRow } from "../lib/combine-review";
 import type { JobInfo, PersistedRun } from "../context/server";
@@ -13,6 +23,7 @@ import {
 import { cn } from "../lib/cn";
 import { modalPanel, modalScrim } from "../lib/ui";
 import { trapFocus } from "../lib/modal";
+import { toast } from "../context/toast";
 import { Icon } from "./icon";
 
 export function RepeatResultDialog(props: {
@@ -30,6 +41,17 @@ export function RepeatResultDialog(props: {
   onClose: () => void;
 }) {
   const server = useServer();
+  const [review, setReview] = createSignal(props.row.job.review);
+  const [reviewNote, setReviewNote] = createSignal("");
+  const [reviewing, setReviewing] = createSignal(false);
+  let reviewRunId = props.row.job.id;
+  createEffect(() => {
+    const runId = props.row.job.id;
+    if (runId === reviewRunId) return;
+    reviewRunId = runId;
+    setReview(props.row.job.review);
+    setReviewNote("");
+  });
   let dialog: HTMLDivElement | undefined;
   onMount(() => {
     if (dialog) onCleanup(trapFocus(dialog));
@@ -66,6 +88,26 @@ export function RepeatResultDialog(props: {
     if (tone === "blocked") return "border-border-critical-base/40 bg-surface-critical-weak";
     return "border-border-weak-base bg-surface-base";
   };
+  async function decideReview(action: "approve" | "reject" | "defer"): Promise<void> {
+    if (review()?.status !== "pending" || !props.row.job.persisted || reviewing()) return;
+    setReviewing(true);
+    try {
+      const decided = await server.reviewRun(props.row.job.id, action, reviewNote());
+      if (!decided) return;
+      setReview(decided);
+      setReviewNote("");
+      toast(
+        action === "approve"
+          ? "Checkpoint result approved"
+          : action === "reject"
+            ? "Checkpoint result rejected"
+            : "Another review requested",
+        action === "approve" ? "success" : "info",
+      );
+    } finally {
+      setReviewing(false);
+    }
+  }
 
   return (
     <div
@@ -267,6 +309,80 @@ export function RepeatResultDialog(props: {
                 </Show>
               </dl>
             </section>
+            <Show when={review()}>
+              {(currentReview) => (
+                <section
+                  class="mt-3 grid gap-2 border-t border-border-weak-base pt-3"
+                  aria-label="Checkpoint result decision"
+                  data-repeat-result-decision
+                >
+                  <div class="flex items-baseline justify-between gap-3">
+                    <strong class="text-caption font-semibold text-text-strong">
+                      Result decision
+                    </strong>
+                    <span class="text-micro font-medium text-text-weak">
+                      {currentReview().status === "pending"
+                        ? "Needs review"
+                        : currentReview().status === "approved"
+                          ? "Approved"
+                          : "Rejected"}
+                    </span>
+                  </div>
+                  <p class="m-0 text-micro/[1.45] text-text-weak">{currentReview().reason}</p>
+                  <Show when={currentReview().status === "pending"}>
+                    <label class="grid gap-1 text-micro font-medium text-text-weak">
+                      Review note
+                      <textarea
+                        class="min-h-20 resize-y rounded-md border border-border-weak-base bg-background-base px-2.5 py-2 text-caption font-normal text-text-strong focus-visible:border-border-focus focus-visible:outline-none"
+                        value={reviewNote()}
+                        maxLength={2_000}
+                        placeholder="Optional context for this checkpoint result"
+                        disabled={reviewing()}
+                        onInput={(event) => setReviewNote(event.currentTarget.value)}
+                      />
+                    </label>
+                    <div class="flex flex-wrap gap-2">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={reviewing() || !props.row.job.persisted}
+                        onClick={() => void decideReview("approve")}
+                      >
+                        Approve result
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={reviewing() || !props.row.job.persisted}
+                        onClick={() => void decideReview("reject")}
+                      >
+                        Reject result
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={reviewing() || !props.row.job.persisted}
+                        onClick={() => void decideReview("defer")}
+                      >
+                        Request review
+                      </Button>
+                    </div>
+                    <Show when={!props.row.job.persisted}>
+                      <p class="m-0 text-micro/[1.45] text-text-warning-base">
+                        Decisions become available after this Run is saved.
+                      </p>
+                    </Show>
+                  </Show>
+                  <Show when={currentReview().note}>
+                    {(note) => <p class="m-0 text-micro/[1.45] text-text-weak">{note()}</p>}
+                  </Show>
+                  <p class="m-0 text-micro/[1.45] text-text-weaker">
+                    This decision applies only to this Run and checkpoint. It does not replace the
+                    approved screenshot or change any visual baseline.
+                  </p>
+                </section>
+              )}
+            </Show>
           </aside>
         </div>
 

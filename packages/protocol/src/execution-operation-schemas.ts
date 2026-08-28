@@ -97,7 +97,7 @@ export const executionOperationSchemas = {
   "run.review": z
     .object({
       runId: identifier("Persisted Run identifier"),
-      action: z.enum(["approve", "reject"]),
+      action: z.enum(["approve", "reject", "defer"]),
       note: z.string().optional(),
     })
     .strict(),

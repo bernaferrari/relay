@@ -247,6 +247,13 @@ test("run routes expose deferred checks and persist the human decision", async (
       "pending",
     );
 
+    const deferred = await requestRoute("POST", "/runs/review-run/review", {
+      action: "defer",
+      note: "Ask the localization owner.",
+    });
+    assert.equal((deferred.value.review as { status: string }).status, "pending");
+    assert.equal((deferred.value.review as { note: string }).note, "Ask the localization owner.");
+
     const approved = await requestRoute("POST", "/runs/review-run/review", {
       action: "approve",
       note: "The image is correct.",

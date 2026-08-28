@@ -172,6 +172,44 @@ test("deferred checks survive persistence and can be approved exactly once", asy
   }
 });
 
+test("requesting another review stays pending without changing the captured outcome", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-review-defer-"));
+  const previous = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  const run = job(join(root, "run"));
+  run.outcome = "uncertain";
+  run.review = {
+    schemaVersion: 1,
+    status: "pending",
+    capability: "visual comparison",
+    reason: "The checkpoint needs another reviewer.",
+    requestedAt: 10,
+  };
+  try {
+    const persisted = await persistRun(run);
+    const deferred = await reviewPersistedRun(runsRoot(), persisted, {
+      action: "defer",
+      actor: { id: "human:ada", kind: "human" },
+      note: "Please ask the localization owner.",
+    });
+    assert.equal(deferred.review.status, "pending");
+    assert.equal(deferred.review.requestedBy?.id, "human:ada");
+    assert.equal(deferred.review.note, "Please ask the localization owner.");
+    assert.equal(deferred.run.outcome, "uncertain");
+    assert.equal((await readPersistedRun(run.id))?.review?.status, "pending");
+
+    const approved = await reviewPersistedRun(runsRoot(), deferred.run, {
+      action: "approve",
+      actor: { id: "human:grace", kind: "human" },
+    });
+    assert.equal(approved.review.status, "approved");
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("concurrent human review decisions resolve from the committed winner", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-run-review-race-"));
   const previous = process.env.RELAY_RUNS_DIR;

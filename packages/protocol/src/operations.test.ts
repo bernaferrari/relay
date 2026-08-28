@@ -59,6 +59,19 @@ test("campaign capacity preflight remains composed into the central operation re
   assert.equal(definition.output.description, "campaign capacity preflight response");
 });
 
+test("run review can request another human decision without resolving the Run", () => {
+  const review = operationDefinition("run.review");
+  assert.deepEqual(review.input.parse({ runId: "run-1", action: "defer", note: "Ask Ada" }), {
+    runId: "run-1",
+    action: "defer",
+    note: "Ask Ada",
+  });
+  assert.throws(
+    () => review.input.parse({ runId: "run-1", action: "approve-baseline" }),
+    /approve.*reject.*defer/u,
+  );
+});
+
 test("App Map descriptors keep their canonical contiguous order", () => {
   assert.deepEqual(
     operationDefinitions.filter(({ id }) => id.startsWith("app-map.")).map(({ id }) => id),

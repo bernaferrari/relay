@@ -718,11 +718,11 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
       action?: unknown;
       note?: unknown;
     };
-    if (body.action !== "approve" && body.action !== "reject") {
+    if (body.action !== "approve" && body.action !== "reject" && body.action !== "defer") {
       throw new HttpError(400, "Unknown run review action", {
         code: "RUN_REVIEW_ACTION_INVALID",
         recovery:
-          "Choose action=approve to mark the check correct or action=reject to keep it unresolved.",
+          "Choose action=approve to mark the check correct, action=reject to reject it, or action=defer to request another review without deciding it.",
       });
     }
     try {

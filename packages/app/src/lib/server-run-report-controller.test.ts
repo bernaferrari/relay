@@ -79,3 +79,53 @@ test("unregistered regression signals remain a metadata resource", async () => {
   assert.deepEqual(await controller.loadRunSignals("run/1"), []);
   assert.deepEqual(paths, ["/runs/run%2F1/signals"]);
 });
+
+test("requesting another checkpoint review uses the canonical run review operation", async () => {
+  const calls: Array<{ operationId: string; input: unknown }> = [];
+  const review = {
+    schemaVersion: 1 as const,
+    status: "pending" as const,
+    capability: "localization-checkpoint",
+    reason: "Another person must inspect this checkpoint.",
+    requestedAt: 2,
+    requestedBy: { id: "human:reviewer", kind: "human" as const },
+    note: "Ask the localization owner.",
+  };
+  const run = {
+    id: "run-1",
+    action: "app-map.test.run",
+    status: "error",
+    attempts: 1,
+    dir: "run-1",
+    frames: [],
+    steps: [],
+    logs: [],
+    writtenAt: 1,
+    review,
+  } as PersistedRun;
+  let refreshes = 0;
+  const controller = createServerRunReportController({
+    client: async () => ({}) as RelayClient,
+    runAction: (async (operationId: string, input: unknown) => {
+      calls.push({ operationId, input });
+      if (operationId === "run.review") return { run, review };
+      if (operationId === "run.get") return { run };
+      throw new Error(`unexpected operation ${operationId}`);
+    }) as Parameters<typeof createServerRunReportController>[0]["runAction"],
+    setJobs: () => [],
+    setPersistedRuns: () => [],
+    refreshRuns: async () => {
+      refreshes += 1;
+    },
+  });
+
+  assert.equal(await controller.reviewRun("run-1", "defer", "Ask the localization owner."), review);
+  assert.equal(refreshes, 1);
+  assert.deepEqual(calls, [
+    {
+      operationId: "run.review",
+      input: { runId: "run-1", action: "defer", note: "Ask the localization owner." },
+    },
+    { operationId: "run.get", input: { runId: "run-1" } },
+  ]);
+});

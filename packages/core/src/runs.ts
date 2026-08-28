@@ -118,7 +118,7 @@ export type PersistedRun = {
 
 export type RunArtifact = TestJob["artifacts"][number];
 
-export type RunReviewAction = "approve" | "reject";
+export type RunReviewAction = "approve" | "reject" | "defer";
 
 export class RunReviewError extends Error {
   readonly code:
@@ -559,8 +559,9 @@ export async function indexedReusableSurfaceComparisons(cacheKey: string) {
 /**
  * Resolve a deferred verification without rewriting the captured evidence.
  * The manifest remains authoritative; only the small review envelope and the
- * derived outcome change. Repeating the same decision is intentionally
- * idempotent so a user can safely click once and recover from a network retry.
+ * derived outcome change. A terminal decision is idempotent so a user can
+ * safely recover from a network retry; deferral keeps the review pending and
+ * records the latest bounded request context.
  */
 async function reviewPersistedRunOnce(
   root: string,
@@ -605,6 +606,17 @@ async function reviewPersistedRunOnce(
   }
 
   const decidedAt = now();
+  if (input.action === "defer") {
+    const review: RunReview = {
+      ...run.review,
+      requestedAt: decidedAt,
+      requestedBy: input.actor,
+      ...(input.note?.trim() ? { note: input.note.trim().slice(0, 2_000) } : {}),
+    };
+    const next: PersistedRun = structuredClone(run);
+    next.review = review;
+    return persistRunReview(root, run, next, review);
+  }
   const review: RunReview = {
     ...run.review,
     status: input.action === "approve" ? "approved" : "rejected",
@@ -626,6 +638,15 @@ async function reviewPersistedRunOnce(
     next.errorCode = "REVIEW_REJECTED";
   }
 
+  return persistRunReview(root, run, next, review);
+}
+
+async function persistRunReview(
+  root: string,
+  run: PersistedRun,
+  next: PersistedRun,
+  review: RunReview,
+): Promise<RunReviewResult> {
   const json = JSON.stringify(next, null, 2);
   const token = randomUUID();
   const temporary = {

@@ -129,7 +129,7 @@ export function createServerRunReportController(input: {
 
   async function reviewRun(
     id: string,
-    action: "approve" | "reject",
+    action: "approve" | "reject" | "defer",
     note?: string,
   ): Promise<RunReview | null> {
     try {

@@ -624,7 +624,7 @@ type SpecificOperationMap = {
     output: TracePackExportResponse;
   };
   "run.review": {
-    input: { runId: string; action: "approve" | "reject"; note?: string };
+    input: { runId: string; action: "approve" | "reject" | "defer"; note?: string };
     output: { run: OperationRecord; review: RunReview };
   };
   "run.evidence.get": {
