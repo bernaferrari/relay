@@ -44,7 +44,7 @@ export function createDeviceInventoryHost(): DeviceInventoryHost {
     homeDirectory: os.homedir(),
     observations: Object.freeze({
       deviceBooted: async (device: DeviceInfo) => {
-        const { markSimulatorBooted } = await import('./platforms/apple/core/simulator.ts');
+        const { markSimulatorBooted } = await import('@agent-device/platform-apple/simulator');
         markSimulatorBooted(device);
       },
     }),

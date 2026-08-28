@@ -25,7 +25,7 @@ import { buildDeviceInUseBySessionError } from '../../src/daemon/handlers/sessio
 import { buildDeviceClaimConflictError } from '../../src/daemon/device-claim-conflict.ts';
 import { resolveRefStalenessWarning } from '../../src/daemon/session-snapshot.ts';
 import type { SessionState } from '../../src/daemon/types.ts';
-import { buildAppNotInstalledError } from '../../src/platforms/apple/core/app-resolution.ts';
+import { buildAppNotInstalledError } from '@agent-device/platform-apple/app-resolution';
 import {
   presentConnectReadiness,
   renderConnectSuccess,

@@ -27,9 +27,23 @@ function declarations(): PlatformPackageDeclaration[] {
       family === 'apple'
         ? [
             '@agent-device/platform-apple',
+            '@agent-device/platform-apple/app-lifecycle',
+            '@agent-device/platform-apple/app-resolution',
+            '@agent-device/platform-apple/debug-symbols',
+            '@agent-device/platform-apple/doctor',
+            '@agent-device/platform-apple/interactions',
+            '@agent-device/platform-apple/install-artifact',
+            '@agent-device/platform-apple/macos',
+            '@agent-device/platform-apple/perf',
+            '@agent-device/platform-apple/physical-device',
             '@agent-device/platform-apple/runner',
             '@agent-device/platform-apple/runner/client',
             '@agent-device/platform-apple/runner/test-host',
+            '@agent-device/platform-apple/runner/operations',
+            '@agent-device/platform-apple/runner-owner',
+            '@agent-device/platform-apple/simctl',
+            '@agent-device/platform-apple/simulator',
+            '@agent-device/platform-apple/tool-provider',
           ]
         : family === 'android'
           ? [
@@ -87,8 +101,9 @@ test('the inventory substrate has six private lazy packages and one exact compos
   assert.deepEqual(checkPlatformPackagePolicy(validSources(), declarations()), []);
 });
 
-test('the W6 family implementations are retired from src/platforms', () => {
+test('retired platform family implementations are rejected from src/platforms', () => {
   const violations = checkPlatformsRootShape([
+    'src/platforms/apple/core/apps.ts',
     'src/platforms/harmonyos/app-lifecycle.ts',
     'src/platforms/linux/snapshot.ts',
     'src/platforms/vega/interactor.ts',
@@ -98,6 +113,7 @@ test('the W6 family implementations are retired from src/platforms', () => {
   assert.deepEqual(
     violations.map(({ file, rule }) => ({ file, rule })),
     [
+      { file: 'src/platforms/apple/core/apps.ts', rule: 'platforms-root-shape' },
       { file: 'src/platforms/harmonyos/app-lifecycle.ts', rule: 'platforms-root-shape' },
       { file: 'src/platforms/linux/snapshot.ts', rule: 'platforms-root-shape' },
       { file: 'src/platforms/vega/interactor.ts', rule: 'platforms-root-shape' },
@@ -266,7 +282,7 @@ test('the apple runner mechanics facet subpaths are the enumerated exception', (
   // The host-bound client factory has exactly one composition root.
   const clientSources = validSources();
   clientSources.set(
-    'src/platforms/apple/core/runner-client.ts',
+    'packages/platform-apple/src/core/runner-client.ts',
     "import { createAppleRunnerClient } from '@agent-device/platform-apple/runner/client';",
   );
   assert.deepEqual(checkPlatformPackagePolicy(clientSources, declarations()), []);
@@ -276,7 +292,7 @@ test('the apple runner mechanics facet subpaths are the enumerated exception', (
   );
   assert.match(
     messages(clientSources).join('\n'),
-    /only the composition root src\/platforms\/apple\/core\/runner-client\.ts may construct/,
+    /only the composition root packages\/platform-apple\/src\/core\/runner-client\.ts may construct/,
   );
 
   // The test-host installer is a single vitest setup file, dynamic imports included.
@@ -296,6 +312,36 @@ test('the apple runner mechanics facet subpaths are the enumerated exception', (
   );
 
   // A NEW unenumerated subpath widens the export list and fails declarations.
+  const widened = declarations();
+  const apple = widened.find((pkg) => pkg.family === 'apple')!;
+  widened[widened.indexOf(apple)] = {
+    ...apple,
+    exportedSubpaths: [...apple.exportedSubpaths, '@agent-device/platform-apple/internal'],
+  };
+  assert.match(
+    messages(validSources(), widened).join('\n'),
+    /platform-apple must export exactly its root façade/,
+  );
+});
+
+test('the Apple domain facades preserve synchronous helpers without widening the root facade', () => {
+  const sources = validSources();
+  for (const specifier of [
+    '@agent-device/platform-apple/app-resolution',
+    '@agent-device/platform-apple/interactions',
+    '@agent-device/platform-apple/install-artifact',
+    '@agent-device/platform-apple/perf',
+    '@agent-device/platform-apple/physical-device',
+    '@agent-device/platform-apple/runner-owner',
+    '@agent-device/platform-apple/simctl',
+    '@agent-device/platform-apple/simulator',
+    '@agent-device/platform-apple/tool-provider',
+  ]) {
+    sources.set('src/platform-runtime-domain-facade.ts', `import '${specifier}';`);
+    assert.deepEqual(checkPlatformPackagePolicy(sources, declarations()), []);
+    sources.delete('src/platform-runtime-domain-facade.ts');
+  }
+
   const widened = declarations();
   const apple = widened.find((pkg) => pkg.family === 'apple')!;
   widened[widened.indexOf(apple)] = {
@@ -556,12 +602,9 @@ test('Node resolves only each platform package root facade', () => {
   }
 });
 
-test('the src/platforms root holds only the remaining family directories and __tests__', () => {
-  const clean = ['apple'].map((family) => `src/platforms/${family}/doctor.ts`);
-  assert.deepEqual(
-    checkPlatformsRootShape([...clean, 'src/platforms/__tests__/install-source.test.ts']),
-    [],
-  );
+test('the src/platforms root holds only the shared __tests__ directory', () => {
+  const clean = ['src/platforms/__tests__/install-source.test.ts'];
+  assert.deepEqual(checkPlatformsRootShape(clean), []);
 });
 
 test('a moved Android family cannot leave production or test files under the old root', () => {

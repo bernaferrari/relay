@@ -26,7 +26,7 @@ const localTransport: AppleSimulatorScreenRecordingTransport = Object.freeze({
   mode: 'local',
   async start({ device, outputPath, signal }) {
     const [{ buildSimctlArgsForDevice }, { runCmdBackground }] = await Promise.all([
-      import('./platforms/apple/core/simctl.ts'),
+      import('@agent-device/platform-apple/simctl'),
       import('@agent-device/host-kit/command'),
     ]);
     signal?.throwIfAborted();

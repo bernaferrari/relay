@@ -313,8 +313,8 @@ async function runIosSimulatorRuntimeHintCommand(
   options?: Readonly<{ allowFailure?: boolean }>,
 ): Promise<void> {
   const [{ buildSimctlArgsForDevice }, { runXcrun }] = await Promise.all([
-    import('./platforms/apple/core/simctl.ts'),
-    import('./platforms/apple/core/tool-provider.ts'),
+    import('@agent-device/platform-apple/simctl'),
+    import('@agent-device/platform-apple/tool-provider'),
   ]);
   await runXcrun(buildSimctlArgsForDevice(device, args), options);
 }

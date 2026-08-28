@@ -166,7 +166,8 @@ async function resolveAppInstalledSimulatorSelection(
   );
   if (bootedSimulators.length < 2) return undefined;
 
-  const { findIosSimulatorInstalledApp } = await import('../platforms/apple/core/apps.ts');
+  const { findIosSimulatorInstalledApp } =
+    await import('@agent-device/platform-apple/app-resolution');
   const matches = (
     await Promise.all(
       bootedSimulators.map(async (device) =>

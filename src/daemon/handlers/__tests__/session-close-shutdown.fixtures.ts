@@ -7,24 +7,38 @@ import type { DaemonRequest, DaemonResponse, SessionState } from '../../types.ts
 import { AppError } from '@agent-device/kernel/errors';
 import { mkdtempForTestSync } from '../../../__tests__/test-utils/tmp-dir.ts';
 
-vi.mock('../../../platforms/apple/core/simulator.ts', async (importOriginal) => {
+vi.mock('@agent-device/platform-apple/runner/operations', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('../../../platforms/apple/core/simulator.ts')>();
-  return { ...actual, shutdownSimulator: vi.fn() };
+    await importOriginal<typeof import('@agent-device/platform-apple/runner/operations')>();
+  return {
+    ...actual,
+    stopIosRunnerSession: vi.fn(async () => {}),
+  };
+});
+vi.mock('@agent-device/platform-apple/simulator', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agent-device/platform-apple/simulator')>();
+  return {
+    ...actual,
+    shutdownSimulator: vi.fn(),
+  };
+});
+vi.mock('@agent-device/platform-apple/perf', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agent-device/platform-apple/perf')>();
+  return {
+    ...actual,
+    cleanupAppleXctracePerfCapture: vi.fn(async () => ({})),
+  };
+});
+vi.mock('@agent-device/platform-apple/macos', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agent-device/platform-apple/macos')>();
+  return {
+    ...actual,
+    runMacOsAlertAction: vi.fn(async () => {}),
+  };
 });
 vi.mock('@agent-device/host-kit/command', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@agent-device/host-kit/command')>();
   return { ...actual, runCmd: vi.fn() };
-});
-vi.mock('../../../platforms/apple/core/runner-client.ts', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../../../platforms/apple/core/runner-client.ts')>();
-  return { ...actual, stopIosRunnerSession: vi.fn(async () => {}) };
-});
-vi.mock('../../../platforms/apple/core/perf-xctrace.ts', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../../../platforms/apple/core/perf-xctrace.ts')>();
-  return { ...actual, cleanupAppleXctracePerfCapture: vi.fn(async () => ({})) };
 });
 vi.mock('@agent-device/platform-android/mechanics', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@agent-device/platform-android/mechanics')>();
@@ -33,11 +47,6 @@ vi.mock('@agent-device/platform-android/mechanics', async (importOriginal) => {
     cleanupAndroidNativePerfSession: vi.fn(async () => {}),
     stopAndroidSnapshotHelperSessionForDevice: vi.fn(async () => {}),
   };
-});
-vi.mock('../../../platforms/apple/os/macos/helper.ts', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../../../platforms/apple/os/macos/helper.ts')>();
-  return { ...actual, runMacOsAlertAction: vi.fn(async () => {}) };
 });
 vi.mock('../../../utils/video.ts', () => ({
   waitForStableFile: vi.fn(async () => {}),
@@ -52,18 +61,18 @@ import {
 import { teardownSessionResources as teardownProductionSessionResources } from '../../session-teardown.ts';
 import { platformResourceCleanup } from '../../../platform-runtime-resource-cleanup.ts';
 import { LeaseRegistry } from '../../lease-registry.ts';
-import { shutdownSimulator } from '../../../platforms/apple/core/simulator.ts';
 import { runCmd } from '@agent-device/host-kit/command';
 import {
   flushDiagnosticsToSessionFile,
   withDiagnosticsScope,
 } from '@agent-device/host-kit/diagnostics';
-import { cleanupAppleXctracePerfCapture } from '../../../platforms/apple/core/perf-xctrace.ts';
 import {
   cleanupAndroidNativePerfSession,
   stopAndroidSnapshotHelperSessionForDevice,
 } from '@agent-device/platform-android/mechanics';
-import { stopIosRunnerSession } from '../../../platforms/apple/core/runner-client.ts';
+import { stopIosRunnerSession } from '@agent-device/platform-apple/runner/operations';
+import { shutdownSimulator } from '@agent-device/platform-apple/simulator';
+import { cleanupAppleXctracePerfCapture } from '@agent-device/platform-apple/perf';
 import { WEB_DESKTOP_DEVICE } from '../../../__tests__/test-utils/device-fixtures.ts';
 import { acquireDeviceClaim } from '../../device-claims.ts';
 import { inspectDeviceClaims } from '../../device-claim-inspection.ts';
