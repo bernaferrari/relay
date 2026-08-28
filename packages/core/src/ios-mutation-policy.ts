@@ -5,11 +5,18 @@
  * mutation safety are different concerns, and keeping them together makes it
  * too easy to reintroduce a generic retry around a tap.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { noteConfirmedIosSnapshotInput } from "./ios-snapshot-flight.js";
 import { currentTargetContext } from "./target-context.js";
 import { TargetControlReservedError } from "./target-control.js";
 import { invalidateTargetSemanticControl } from "./target-runtime-readiness.js";
+import {
+  currentTargetSupervisorStore,
+  type SupervisedTarget,
+  type TargetSupervisorStore,
+} from "./target-supervisor-store.js";
 
 export type IosMutationOperation =
   | "app-open"
@@ -84,6 +91,75 @@ function recordConfirmedIosInput(serial: string, operation: IosMutationOperation
 const iosMutationAttemptDiagnostics = new Map<string, IosMutationAttemptDiagnostic>();
 const iosMutationSequences = new Map<string, number>();
 
+type SupervisedIosMutationReceipt = {
+  store: TargetSupervisorStore;
+  target: SupervisedTarget;
+  mutationId: string;
+};
+
+type SupervisedIosMutationContext = {
+  serial: string;
+  operation: IosMutationOperation;
+  receipt?: SupervisedIosMutationReceipt;
+};
+
+const supervisedIosMutations = new AsyncLocalStorage<SupervisedIosMutationContext>();
+
+/**
+ * Enter the durable supervisor exactly at the private native transport seam.
+ * Target-lane admission has already succeeded when this callback runs, while
+ * no SDK command has been sent yet. The enclosing exact-once policy owns the
+ * terminal receipt because only it can distinguish a proven selector miss
+ * from an acknowledgement loss.
+ */
+export async function dispatchSupervisedIosMutation<T>(
+  targetId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const active = supervisedIosMutations.getStore();
+  if (!active || active.serial !== targetId) return operation();
+  if (active.receipt) {
+    throw new Error("A physical iOS intention attempted more than one native dispatch");
+  }
+  const store = currentTargetSupervisorStore();
+  if (!store) return operation();
+  const target = { id: targetId, kind: "ios" } as const;
+  const mutationId = `ios-input-${randomUUID()}`;
+  store.transition(target, {
+    kind: "input.intent-persisted",
+    mutationId,
+    intent: `Physical iOS ${active.operation}`,
+  });
+  store.transition(target, { kind: "input.dispatched", mutationId });
+  active.receipt = { store, target, mutationId };
+  return operation();
+}
+
+function finishSupervisedIosMutation(
+  active: SupervisedIosMutationContext,
+  outcome: "completed" | "not-dispatched" | "outcome-unknown",
+  reason?: string,
+): string | undefined {
+  const receipt = active.receipt;
+  if (!receipt) return undefined;
+  if (outcome === "completed") {
+    receipt.store.transition(receipt.target, {
+      kind: "input.completed",
+      mutationId: receipt.mutationId,
+    });
+    return receipt.mutationId;
+  }
+  receipt.store.transition(receipt.target, {
+    kind: outcome === "not-dispatched" ? "input.not-dispatched" : "input.outcome-unknown",
+    mutationId: receipt.mutationId,
+    reason: reason?.trim() ||
+      (outcome === "not-dispatched"
+        ? "The selector was rejected before native dispatch."
+        : "The native mutation acknowledgement was lost."),
+  });
+  return receipt.mutationId;
+}
+
 export function lastIosMutationAttemptDiagnostic(
   serial: string,
 ): IosMutationAttemptDiagnostic | undefined {
@@ -95,14 +171,20 @@ export function lastIosMutationAttemptDiagnostic(
 export class IosMutationOutcomeUnknownError extends Error {
   readonly iosMutation: IosMutationAttemptDiagnostic;
   readonly cause: unknown;
+  readonly supervisedMutation?: { serial: string; mutationId: string };
 
-  constructor(diagnostic: IosMutationAttemptDiagnostic, cause: unknown) {
+  constructor(
+    diagnostic: IosMutationAttemptDiagnostic,
+    cause: unknown,
+    supervisedMutation?: { serial: string; mutationId: string },
+  ) {
     super(
       `The iOS ${diagnostic.operation} may already have reached the device. Relay did not retry it. Capture the current screen, review the outcome, then explicitly choose retry or repair.`,
     );
     this.name = "IosMutationOutcomeUnknownError";
     this.iosMutation = diagnostic;
     this.cause = cause;
+    this.supervisedMutation = supervisedMutation;
   }
 }
 
@@ -204,13 +286,10 @@ export async function runIosMutationOnce<T>(
 ): Promise<T> {
   await cooperativeCheckpoint();
   throwIfCancelled();
+  const supervised: SupervisedIosMutationContext = { serial, operation };
+  let result: T;
   try {
-    const result = await raceCancel(op());
-    const diagnostic = mutationDiagnostic(serial, operation, "completed");
-    iosMutationSequences.set(serial, diagnostic.sequence);
-    iosMutationAttemptDiagnostics.set(serial, diagnostic);
-    recordConfirmedIosInput(serial, operation);
-    return result;
+    result = await supervisedIosMutations.run(supervised, () => raceCancel(op()));
   } catch (error) {
     // The target lane rejects before it invokes the native SDK callback, so
     // this is not an ambiguous device outcome and must not manufacture a
@@ -222,10 +301,25 @@ export async function runIosMutationOnce<T>(
       iosSelectorWasNotDispatched(error) ? "selector-miss" : "outcome-unknown",
       isJobCancellation(error),
     );
+    const supervisedMutationId = finishSupervisedIosMutation(
+      supervised,
+      diagnostic.outcome === "selector-miss" ? "not-dispatched" : "outcome-unknown",
+      mutationErrorMessage(error),
+    );
     iosMutationSequences.set(serial, diagnostic.sequence);
     iosMutationAttemptDiagnostics.set(serial, diagnostic);
     attachIosMutationDiagnostic(error, diagnostic);
     if (diagnostic.outcome === "selector-miss") throw error;
-    throw new IosMutationOutcomeUnknownError(diagnostic, error);
+    throw new IosMutationOutcomeUnknownError(
+      diagnostic,
+      error,
+      supervisedMutationId ? { serial, mutationId: supervisedMutationId } : undefined,
+    );
   }
+  finishSupervisedIosMutation(supervised, "completed");
+  const diagnostic = mutationDiagnostic(serial, operation, "completed");
+  iosMutationSequences.set(serial, diagnostic.sequence);
+  iosMutationAttemptDiagnostics.set(serial, diagnostic);
+  recordConfirmedIosInput(serial, operation);
+  return result;
 }

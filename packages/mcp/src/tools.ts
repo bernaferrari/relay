@@ -169,6 +169,7 @@ export const relayMcpTools: readonly RelayMcpToolDescriptor[] = Object.freeze(
 
 const controlOperations = [
   "target.health.get",
+  "target.input.reconcile",
   "system.health.get",
   "system.doctor.get",
   "target.devices.list",

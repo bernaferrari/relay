@@ -121,6 +121,7 @@ export type TargetSupervisorEvent =
   | { kind: "semantics.invalidated"; reason: string }
   | { kind: "input.intent-persisted"; mutationId: string; intent: string }
   | { kind: "input.dispatched"; mutationId: string }
+  | { kind: "input.not-dispatched"; mutationId: string; reason: string }
   | { kind: "input.completed"; mutationId: string }
   | { kind: "input.outcome-unknown"; mutationId: string; reason: string }
   | {
@@ -386,6 +387,9 @@ export class TargetSupervisor {
       case "input.dispatched":
         this.markInputDispatched(event.mutationId);
         break;
+      case "input.not-dispatched":
+        this.rejectInputBeforeDispatch(event.mutationId, event.reason);
+        break;
       case "input.completed":
         this.completeInput(event.mutationId);
         break;
@@ -628,6 +632,17 @@ export class TargetSupervisor {
     delete this.state.input.pending;
     delete this.state.input.blockedReason;
     this.record("INPUT_COMPLETED", "The one dispatched mutation completed.", { mutationId });
+  }
+
+  private rejectInputBeforeDispatch(mutationId: string, reason: string): void {
+    this.requireMutation(mutationId);
+    delete this.state.input.pending;
+    delete this.state.input.blockedReason;
+    this.record(
+      "INPUT_NOT_DISPATCHED",
+      `The native adapter proved that no input was dispatched: ${boundedText(reason)}`,
+      { mutationId },
+    );
   }
 
   private markInputUnknown(mutationId: string, reason: string): TargetSupervisorEffect {

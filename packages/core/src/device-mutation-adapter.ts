@@ -1,6 +1,7 @@
 import type { createAgentDeviceClient } from "agent-device";
 import { getExecutingJobId, raceCancel } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
+import { dispatchSupervisedIosMutation } from "./ios-mutation-policy.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -30,7 +31,9 @@ export function bindNativeDeviceMutations(
   targetId: string,
 ): NativeDeviceMutations {
   const mutate = <T>(operation: () => Promise<T>) =>
-    runTargetMutation(targetId, getExecutingJobId(), operation);
+    runTargetMutation(targetId, getExecutingJobId(), () =>
+      dispatchSupervisedIosMutation(targetId, operation),
+    );
   return {
     devices: { ...native.devices, boot: (options) => mutate(() => native.devices.boot(options)) },
     apps: {

@@ -1,6 +1,7 @@
 import type { OperationDefinition, RuntimeParser } from "./operation-contract.js";
 import { operationInputContract } from "./operation-builders.js";
 import { fail, number, objectParser, record, string } from "./operation-parser-primitives.js";
+import type { TargetObservation } from "./target-observation.js";
 import type { TargetSupervisorHealth } from "./target-supervisor.js";
 
 const PIXEL_STATES = new Set(["ready", "delayed", "unavailable"]);
@@ -21,19 +22,10 @@ function boundedOptionalText(value: unknown, label: string, maximum = 512): void
   }
 }
 
-export function createTargetSupervisorOperationDefinition(input: {
+function targetSupervisorHealthOutput(input: {
   assertTargetRuntimeReadiness(value: unknown, label: string): void;
-}): OperationDefinition<
-  "target.health.get",
-  { serial: string },
-  { health: TargetSupervisorHealth }
-> {
-  const operationInput = objectParser<{ serial: string }>("target health input", (value) => {
-    if (!string(value.serial, "target health serial").trim()) {
-      fail("target health serial", "must be non-empty");
-    }
-  });
-  const output: RuntimeParser<{ health: TargetSupervisorHealth }> = objectParser(
+}): RuntimeParser<{ health: TargetSupervisorHealth }> {
+  return objectParser(
     "bounded target supervisor health response",
     (value) => {
       const health = record(value.health, "target health");
@@ -91,6 +83,21 @@ export function createTargetSupervisorOperationDefinition(input: {
       }
     },
   );
+}
+
+export function createTargetSupervisorOperationDefinition(input: {
+  assertTargetRuntimeReadiness(value: unknown, label: string): void;
+}): OperationDefinition<
+  "target.health.get",
+  { serial: string },
+  { health: TargetSupervisorHealth }
+> {
+  const operationInput = objectParser<{ serial: string }>("target health input", (value) => {
+    if (!string(value.serial, "target health serial").trim()) {
+      fail("target health serial", "must be non-empty");
+    }
+  });
+  const output = targetSupervisorHealthOutput(input);
   return {
     id: "target.health.get",
     version: 1,
@@ -108,4 +115,68 @@ export function createTargetSupervisorOperationDefinition(input: {
     cancellable: false,
     transport: { method: "GET", path: "/device/health" },
   };
+}
+
+export function createTargetInputReconciliationOperationDefinition(input: {
+  assertTargetRuntimeReadiness(value: unknown, label: string): void;
+  targetObservation: RuntimeParser<TargetObservation>;
+}): OperationDefinition<
+  "target.input.reconcile",
+  {
+    serial: string;
+    mutationId: string;
+    outcome: "applied" | "not-applied" | "ambiguous";
+  },
+  { health: TargetSupervisorHealth; observation: TargetObservation }
+> {
+  const operationInput = objectParser<{
+    serial: string;
+    mutationId: string;
+    outcome: "applied" | "not-applied" | "ambiguous";
+  }>("target input reconciliation", (value) => {
+    if (!string(value.serial, "target input reconciliation serial").trim()) {
+      fail("target input reconciliation serial", "must be non-empty");
+    }
+    if (!string(value.mutationId, "target input reconciliation mutationId").trim()) {
+      fail("target input reconciliation mutationId", "must be non-empty");
+    }
+    if (!new Set(["applied", "not-applied", "ambiguous"]).has(String(value.outcome))) {
+      fail("target input reconciliation outcome", "is unsupported");
+    }
+  });
+  const health = targetSupervisorHealthOutput(input);
+  const output = objectParser<{
+    health: TargetSupervisorHealth;
+    observation: TargetObservation;
+  }>("target input reconciliation response", (value) => {
+    health.parse({ health: value.health });
+    input.targetObservation.parse(value.observation);
+  });
+  return {
+    id: "target.input.reconcile",
+    version: 1,
+    label: "Reconcile uncertain target input",
+    category: "target",
+    mode: "command",
+    input: operationInputContract("target.input.reconcile", operationInput),
+    output,
+    idempotency: "required",
+    targetCapabilities: ["screenshot", "snapshot"],
+    lease: "exclusive",
+    confirmation: "confirm",
+    minimumRole: "runner",
+    progress: false,
+    cancellable: false,
+    transport: { method: "POST", path: "/device/input/reconcile" },
+  };
+}
+
+export function createTargetSupervisorOperationDefinitions(input: {
+  assertTargetRuntimeReadiness(value: unknown, label: string): void;
+  targetObservation: RuntimeParser<TargetObservation>;
+}) {
+  return [
+    createTargetSupervisorOperationDefinition(input),
+    createTargetInputReconciliationOperationDefinition(input),
+  ] as const;
 }

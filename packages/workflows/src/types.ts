@@ -16,6 +16,7 @@ import type {
   SourceRevision,
   TargetObservation,
   TracePack,
+  TracePackExportResponse,
   VerifyChangeIntent,
   VerifyChangeResult,
 } from "@relay/protocol";
@@ -456,10 +457,50 @@ export type ConnectTargetResult = {
 
 export type FailureInspection = {
   runId: string;
-  run: unknown;
-  evidence: unknown;
-  repairProposals: readonly unknown[];
+  run: FailureRunSummary;
+  evidence: FailureEvidenceSummary;
+  repairProposals: readonly FailureRepairProposal[];
 };
+
+/** Bounded outcome projection. Raw Run artifacts and provider payloads remain
+ * available through the advanced canonical operations and TracePack export. */
+export type FailureRunSummary = {
+  id: string;
+  action: string;
+  status: string;
+  queuedAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+  error?: string;
+};
+
+/** Presence summary over immutable Run evidence. The simplified seam does not
+ * expose arbitrary event, log, or channel payloads. */
+export type FailureEvidenceSummary = {
+  runId: string;
+  eventCount: number;
+  channels: readonly string[];
+};
+
+export type FailureRepairProposal = {
+  id: string;
+  runId: string;
+  checkId: string;
+  checkTitle: string;
+  error: string;
+  priorAttemptCount: number;
+};
+
+export type RepairProposalResult = {
+  proposalId: string;
+  repairTargetId: string;
+  runId: string;
+  checkId: string;
+  proposal: ProposeRepairIntent["proposal"];
+  reviewRequired: true;
+};
+
+export type EvidenceExportResult = TracePackExportResponse;
 
 /** Small jobs-to-be-done interface for ordinary humans and agents. The
  * canonical operation registry remains the authority behind every method. */
@@ -470,8 +511,8 @@ export interface RelayOutcomeJobs {
   run(intent: RunTestOutcomeIntent): Promise<RunTestSnapshot>;
   repeat(intent: RepeatTestOutcomeIntent): Promise<RepeatTestSnapshot>;
   inspectFailure(intent: InspectFailureIntent): Promise<FailureInspection>;
-  proposeRepair(intent: ProposeRepairIntent): Promise<unknown>;
-  exportEvidence(intent: ExportEvidenceIntent): Promise<unknown>;
+  proposeRepair(intent: ProposeRepairIntent): Promise<RepairProposalResult>;
+  exportEvidence(intent: ExportEvidenceIntent): Promise<EvidenceExportResult>;
   replayLab(intent: ReplayLabOutcomeIntent): Promise<ReplayLabReport>;
   verifyChange(intent: VerifyChangeOutcomeIntent): Promise<VerifyChangeResult>;
   inspect(input: WorkflowLookup): Promise<WorkflowSnapshot>;

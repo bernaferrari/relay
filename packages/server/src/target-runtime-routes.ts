@@ -47,6 +47,7 @@ import {
 } from "@relay/protocol";
 import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import { recordAudit, type RequestContext } from "./security.js";
+import { captureDurableTargetObservation } from "./target-observation-route.js";
 
 export type TargetRuntimeRouteRuntime = {
   listDevices: typeof listDevices;
@@ -78,6 +79,16 @@ export type TargetRuntimeRouteRuntime = {
   setAppLocale: typeof setAndroidAppLocaleOnDevice;
   now: () => number;
   readTargetHealth: (serial: string, platform: "android" | "ios") => TargetSupervisorHealth;
+  captureTargetObservation: typeof captureDurableTargetObservation;
+  reconcileTargetInput: (
+    serial: string,
+    platform: "android" | "ios",
+    input: {
+      mutationId: string;
+      observationId: string;
+      outcome: "applied" | "not-applied" | "ambiguous";
+    },
+  ) => TargetSupervisorHealth;
   recordTargetRecovery: (
     serial: string,
     platform: "android" | "ios",
@@ -117,6 +128,20 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
       { id: serial, kind: platform },
       targetRuntimeReadiness({ serial, platform }),
     );
+  },
+  captureTargetObservation: captureDurableTargetObservation,
+  reconcileTargetInput: (serial, platform, input) => {
+    const store = currentTargetSupervisorStore();
+    if (!store) throw new Error("Server-owned TargetSupervisor store is unavailable");
+    return store.transition(
+      { id: serial, kind: platform },
+      {
+        kind: "input.reconciled",
+        mutationId: input.mutationId,
+        observationId: input.observationId,
+        outcome: input.outcome,
+      },
+    ).health;
   },
   recordTargetRecovery: (serial, platform, recovery) => {
     const store = currentTargetSupervisorStore();
@@ -195,6 +220,21 @@ function publicTargetHealth(health: TargetSupervisorHealth): TargetSupervisorHea
   };
 }
 
+function durableObservationId(
+  observation: Awaited<ReturnType<typeof captureDurableTargetObservation>>,
+): string {
+  const projections = [
+    observation.pixels.status === "captured" ? observation.pixels.artifact : undefined,
+    observation.semantics.artifact,
+  ];
+  for (const projection of projections) {
+    if (projection?.status === "available") return projection.artifact.id;
+  }
+  throw new HttpError(409, "Target input reconciliation requires durable observation evidence", {
+    code: "TARGET_INPUT_RECONCILIATION_EVIDENCE_UNAVAILABLE",
+  });
+}
+
 async function scopedTargetHealth(input: {
   scope: RequestContext;
   serial: string;
@@ -270,6 +310,50 @@ export async function handleTargetRuntimeRoute(context: {
     if (!serial) throw new HttpError(400, "serial is required");
     json(response, 200, {
       health: await scopedTargetHealth({ scope, serial, runtime }),
+    });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/device/input/reconcile") {
+    const body = (await parseJsonBody(request)) as OperationInput<"target.input.reconcile">;
+    const serial = typeof body.serial === "string" ? body.serial.trim() : "";
+    const mutationId = typeof body.mutationId === "string" ? body.mutationId.trim() : "";
+    if (!serial) throw new HttpError(400, "serial is required");
+    if (!mutationId) throw new HttpError(400, "mutationId is required");
+    if (!new Set(["applied", "not-applied", "ambiguous"]).has(body.outcome)) {
+      throw new HttpError(400, "outcome must be applied, not-applied, or ambiguous");
+    }
+    await runtime.assertTargetControl(scope, serial);
+    const device = (await runtime.listDevices().catch(() => [])).find(
+      (candidate) => candidate.serial === serial,
+    );
+    if (!device || (device.platform !== "android" && device.platform !== "ios")) {
+      throw new HttpError(404, `Target ${serial} is not connected`);
+    }
+    const before = runtime.readTargetHealth(serial, device.platform);
+    if (before.input.state !== "uncertain" || before.input.pendingMutationId !== mutationId) {
+      throw new HttpError(409, "The target has no matching uncertain mutation to reconcile", {
+        code: "TARGET_INPUT_RECONCILIATION_STALE",
+      });
+    }
+    // Capture after authority and pending-id checks, but before releasing the
+    // exact mutation fence. The reviewed decision is therefore bound to a
+    // fresh immutable observation rather than a caller-supplied evidence id.
+    const observation = await runtime.captureTargetObservation(serial);
+    const health = runtime.reconcileTargetInput(serial, device.platform, {
+      mutationId,
+      observationId: durableObservationId(observation),
+      outcome: body.outcome,
+    });
+    recordAudit(scope, {
+      action: "target.input.reconcile",
+      resource: mutationId,
+      target: serial,
+      result: body.outcome === "ambiguous" ? "deny" : "allow",
+    });
+    json(response, 200, {
+      health: { ...health, visibility: "project" },
+      observation,
     });
     return true;
   }

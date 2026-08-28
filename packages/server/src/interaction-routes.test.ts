@@ -94,6 +94,44 @@ test("the interaction boundary preserves an iOS one-command intervention for app
   });
 });
 
+test("a supervised unknown input returns the exact observe-and-decide continuation", () => {
+  const error = new IosMutationOutcomeUnknownError(
+    {
+      sequence: 1,
+      operation: "press",
+      nativeAttempts: 1,
+      outcome: "outcome-unknown",
+      retry: {
+        attempts: 0,
+        decision: "blocked",
+        reason: "native-command-outcome-unknown",
+      },
+      intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+      at: 1,
+    },
+    new Error("connection reset"),
+    { serial: "ipad-reviewed", mutationId: "ios-input-reviewed" },
+  );
+
+  const response = iosMutationOutcomeUnknownHttpError(error);
+  assert.deepEqual((response.body as { targetInputReview?: unknown }).targetInputReview, {
+    mutationId: "ios-input-reviewed",
+    observe: {
+      operationId: "target.observation.capture",
+      input: { serial: "ipad-reviewed" },
+    },
+    decide: {
+      operationId: "target.input.reconcile",
+      input: {
+        serial: "ipad-reviewed",
+        mutationId: "ios-input-reviewed",
+        outcome: "applied | not-applied | ambiguous",
+      },
+      requiresConfirmation: true,
+    },
+  });
+});
+
 test("the interaction boundary preserves cancellation after an iOS attempt started", () => {
   const error = new IosMutationOutcomeUnknownError(
     {

@@ -87,3 +87,31 @@ test("target.health.get rejects an unbounded diagnostic history", () => {
     /at most 128/u,
   );
 });
+
+test("target.input.reconcile requires explicit review and an exclusive target", () => {
+  const definition = operationDefinition("target.input.reconcile");
+  assert.deepEqual(
+    definition.input.parse({
+      serial: "ipad-health",
+      mutationId: "ios-input-1",
+      outcome: "not-applied",
+    }),
+    {
+      serial: "ipad-health",
+      mutationId: "ios-input-1",
+      outcome: "not-applied",
+    },
+  );
+  assert.equal(definition.confirmation, "confirm");
+  assert.equal(definition.lease, "exclusive");
+  assert.equal(definition.mode, "command");
+  assert.throws(
+    () =>
+      definition.input.parse({
+        serial: "ipad-health",
+        mutationId: "ios-input-1",
+        outcome: "probably-applied",
+      }),
+    /outcome/u,
+  );
+});

@@ -57,6 +57,7 @@ export * from "./target-driver.js";
 export * from "./target-driver-registry.js";
 export * from "./target-supervisor.js";
 export * from "./target-supervisor-store.js";
+export * from "./target-supervisor-recovery-coordinator.js";
 export * from "./workflow-records.js";
 export * from "./deterministic-provider-test-driver.js";
 export * from "./target-worker.js";

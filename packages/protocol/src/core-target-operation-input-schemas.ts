@@ -70,6 +70,13 @@ export const coreTargetOperationInputSchemas = {
     .strict(),
   "target.observation.capture": z.object(targetReference).strict(),
   "target.health.get": z.object(targetReference).strict(),
+  "target.input.reconcile": z
+    .object({
+      ...targetReference,
+      mutationId: identifier("Uncertain mutation identifier"),
+      outcome: z.enum(["applied", "not-applied", "ambiguous"]),
+    })
+    .strict(),
   "target.recover": z
     .object({
       ...targetReference,

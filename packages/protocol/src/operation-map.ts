@@ -443,6 +443,14 @@ type SpecificOperationMap = {
     input: { serial: string };
     output: { health: TargetSupervisorHealth };
   };
+  "target.input.reconcile": {
+    input: {
+      serial: string;
+      mutationId: string;
+      outcome: "applied" | "not-applied" | "ambiguous";
+    };
+    output: { health: TargetSupervisorHealth; observation: TargetObservation };
+  };
   "target.snapshot.capture": {
     input: { serial: string; visual?: boolean; full?: boolean; interactiveOnly?: boolean };
     output: TargetSnapshotDto;

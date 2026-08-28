@@ -74,7 +74,23 @@ export type IosMutationOutcomeUnknownPayload = Readonly<Record<string, unknown>>
   scrollSurvey?: ScrollSurveyOutcomeUnknownDiagnostic;
   /** Existing App Map source/destination proof, when the error came from Keep replay. */
   connectionProof?: unknown;
+  targetInputReview?: unknown;
 };
+
+function currentTargetInputReview(error: IosMutationOutcomeUnknownError): unknown {
+  const supervised = error.supervisedMutation;
+  if (!supervised) return undefined;
+  const { serial, mutationId } = supervised;
+  return {
+    mutationId,
+    observe: { operationId: "target.observation.capture", input: { serial } },
+    decide: {
+      operationId: "target.input.reconcile",
+      input: { serial, mutationId, outcome: "applied | not-applied | ambiguous" },
+      requiresConfirmation: true,
+    },
+  };
+}
 
 /**
  * Preserve the exact command diagnostic for both error and in-band result
@@ -93,6 +109,7 @@ export function iosMutationOutcomeUnknownPayload(
   const visualVerification = iosVisualVerificationDiagnostic(error);
   const scrollSurvey = scrollSurveyOutcomeUnknownDiagnostic(error);
   const connectionProof = connectionProofOutcomeUnknownDiagnostic(error);
+  const targetInputReview = currentTargetInputReview(error);
   return {
     ...details,
     code: "IOS_MUTATION_OUTCOME_UNKNOWN",
@@ -101,6 +118,7 @@ export function iosMutationOutcomeUnknownPayload(
     ...(visualVerification ? { iosVisualVerification: visualVerification } : {}),
     ...(scrollSurvey ? { scrollSurvey } : {}),
     ...(connectionProof ? { connectionProof } : {}),
+    ...(targetInputReview ? { targetInputReview } : {}),
   };
 }
 

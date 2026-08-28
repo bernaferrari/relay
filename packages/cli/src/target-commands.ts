@@ -25,6 +25,26 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       note: "Read-only. Pixels, semantics, input, and overall health are reported independently; pixel-only does not mean disconnected.",
     }),
   ),
+  mapped(
+    "target.input.reconcile",
+    path("target input reconcile", ["serial", "mutationId", "outcome"]),
+    path("device reconcile-input", ["serial", "mutationId", "outcome"], undefined, {
+      summary: "Review one uncertain device input against a fresh observation",
+      argumentHelp: [
+        { name: "serial", type: "string", description: "Connected iOS device serial" },
+        { name: "mutationId", type: "string", description: "Pending mutation from target health" },
+        {
+          name: "outcome",
+          type: "applied | not-applied | ambiguous",
+          description: "Human-reviewed result of the uncertain command",
+        },
+      ],
+      examples: [
+        "relay device reconcile-input 00008110 ios-input-123 applied --confirm --json",
+      ],
+      note: "Relay captures fresh immutable pixels and semantics before releasing the exact-once fence. Ambiguous keeps the target stopped for human review.",
+    }),
+  ),
   mapped("target.list", path("target list")),
   mapped("target.create", path("target create")),
   mapped("target.delete", path("target delete", ["targetId"])),

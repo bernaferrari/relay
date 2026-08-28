@@ -118,6 +118,172 @@ test("connect leaves multiple devices explicit instead of guessing", async () =>
   assert.equal(result.targets.length, 2);
 });
 
+test("inspect-failure returns bounded public projections from canonical repair summaries", async () => {
+  const repair = {
+    schemaVersion: 1 as const,
+    id: "repair-run-1-usage",
+    status: "pending" as const,
+    defaultAction: "continue-and-report" as const,
+    source: {
+      runId: "run-1",
+      runInputDigest: "digest-1",
+      checkId: "usage",
+      checkTitle: "Usage stays visible",
+      action: "test",
+      capturedAt: 3,
+    },
+    error: "Usage was not visible",
+    priorAttemptCount: 1,
+  };
+  const scripted = createScriptedRelayClient([
+    {
+      id: "run.get",
+      output: {
+        run: {
+          id: "run-1",
+          action: "test",
+          status: "failed",
+          queuedAt: 1,
+          startedAt: 2,
+          finishedAt: 4,
+          error: "Usage was not visible",
+          artifacts: [{ private: "advanced-only" }],
+          result: { private: "advanced-only" },
+        },
+      },
+    },
+    {
+      id: "run.evidence.get",
+      output: {
+        evidence: {
+          runId: "run-1",
+          events: [{ private: "advanced-only" }, { private: "advanced-only" }],
+          channels: { screenshot: {}, accessibility: {} },
+          logs: [{ private: "advanced-only" }],
+        },
+      },
+    },
+    {
+      id: "run.repair.list",
+      output: {
+        repairs: [
+          repair,
+          {
+            ...repair,
+            id: "repair-run-2-usage",
+            source: { ...repair.source, runId: "run-2" },
+          },
+        ],
+      },
+    },
+  ]);
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+
+  assert.deepEqual(await jobs.inspectFailure({ kind: "inspect-failure", runId: "run-1" }), {
+    runId: "run-1",
+    run: {
+      id: "run-1",
+      action: "test",
+      status: "failed",
+      queuedAt: 1,
+      startedAt: 2,
+      finishedAt: 4,
+      error: "Usage was not visible",
+    },
+    evidence: {
+      runId: "run-1",
+      eventCount: 2,
+      channels: ["accessibility", "screenshot"],
+    },
+    repairProposals: [
+      {
+        id: "repair-run-1-usage",
+        runId: "run-1",
+        checkId: "usage",
+        checkTitle: "Usage stays visible",
+        error: "Usage was not visible",
+        priorAttemptCount: 1,
+      },
+    ],
+  });
+  assert.equal(scripted.remaining(), 0);
+});
+
+test("inspect-failure rejects legacy repair envelopes instead of guessing", async () => {
+  const scripted = createScriptedRelayClient([
+    {
+      id: "run.get",
+      output: { run: { id: "run-1", action: "test", status: "failed", queuedAt: 1 } },
+    },
+    {
+      id: "run.evidence.get",
+      output: { evidence: { runId: "run-1", events: [], channels: {} } },
+    },
+    { id: "run.repair.list", output: { proposals: [] } },
+  ]);
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+
+  await assert.rejects(
+    jobs.inspectFailure({ kind: "inspect-failure", runId: "run-1" }),
+    /run repairs must be an array/u,
+  );
+});
+
+test("propose-repair returns a review-only identity projection", async () => {
+  const scripted = createScriptedRelayClient([
+    {
+      id: "run.repair.propose",
+      output: {
+        proposalId: "proposal-1",
+        repair: {
+          schemaVersion: 1,
+          id: "repair-1",
+          source: { runId: "run-1", checkId: "usage" },
+          actions: [],
+        },
+        appMap: { id: "map-1", revision: 8, private: "advanced-only" },
+      },
+    },
+  ]);
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+
+  assert.deepEqual(
+    await jobs.proposeRepair({
+      kind: "propose-repair",
+      runId: "run-1",
+      checkId: "usage",
+      proposal: "disable",
+      reason: "The check is obsolete",
+    }),
+    {
+      proposalId: "proposal-1",
+      repairTargetId: "repair-1",
+      runId: "run-1",
+      checkId: "usage",
+      proposal: "disable",
+      reviewRequired: true,
+    },
+  );
+});
+
+test("export-evidence returns the strict TracePack envelope and verifies Run identity", async () => {
+  const exported = tracePackExport("run-1");
+  const scripted = createScriptedRelayClient([
+    { id: "run.trace-pack.get", output: exported },
+    { id: "run.trace-pack.get", output: tracePackExport("run-other") },
+  ]);
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+
+  assert.deepEqual(
+    await jobs.exportEvidence({ kind: "export-evidence", runId: "run-1" }),
+    exported,
+  );
+  await assert.rejects(
+    jobs.exportEvidence({ kind: "export-evidence", runId: "run-1" }),
+    /different Run/u,
+  );
+});
+
 test("verify-change fails closed when source metadata selects no frozen Runs", async () => {
   const scripted = createScriptedRelayClient([
     {

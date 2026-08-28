@@ -15,7 +15,7 @@ import { assertIosSessionOperationLifecycle } from "./ios-session-lifecycle.js";
 import { isExecutionTargetRef } from "./execution-target.js";
 import { createTargetRecoveryOperationParsers } from "./target-recovery-operation-parsers.js";
 import { createTargetCaptureOperationParsers } from "./target-capture-operation-parsers.js";
-import { createTargetSupervisorOperationDefinition } from "./target-supervisor-operation-definition.js";
+import { createTargetSupervisorOperationDefinitions } from "./target-supervisor-operation-definition.js";
 import * as authoringOperations from "./authoring-raw-optimization-operation.js";
 import { appleDeviceOperationDefinitions } from "./apple-device-operation-definitions.js";
 import { runRepairOperationDefinitions } from "./run-repair-operations.js";
@@ -241,7 +241,6 @@ const { targetRecoverInputParser, targetRecoverOutputParser } =
   createTargetRecoveryOperationParsers({
     assertTargetRuntimeReadiness,
   });
-
 const devicesParser = objectParser<{ devices: DeviceSummary[] }>("devices response", (input) => {
   if (!Array.isArray(input.devices)) fail("devices", "must be an array");
   for (const item of input.devices) {
@@ -253,7 +252,6 @@ const devicesParser = objectParser<{ devices: DeviceSummary[] }>("devices respon
       assertTargetRuntimeReadiness(device.readiness, "device readiness");
   }
 });
-
 const targetDevicesInputParser = objectParser<{ phase?: "android" }>(
   "target devices input",
   (input) => {
@@ -262,7 +260,6 @@ const targetDevicesInputParser = objectParser<{ phase?: "android" }>(
     }
   },
 );
-
 const actionsParser = objectParser<{ actions: ActionSummary[] }>("actions response", (input) => {
   if (!Array.isArray(input.actions)) fail("actions", "must be an array");
   for (const item of input.actions) {
@@ -1153,7 +1150,10 @@ export const operationDefinitions = [
     output: screenshotParser,
   }),
   targetObservationOperationDefinition,
-  createTargetSupervisorOperationDefinition({ assertTargetRuntimeReadiness }),
+  ...createTargetSupervisorOperationDefinitions({
+    assertTargetRuntimeReadiness,
+    targetObservation: targetObservationOperationDefinition.output,
+  }),
   command(
     "target.scroll-survey.capture",
     "Capture a bounded scrollable-page survey",
