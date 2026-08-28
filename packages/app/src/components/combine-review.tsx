@@ -1,13 +1,4 @@
-import {
-  For,
-  Show,
-  createEffect,
-  createMemo,
-  createResource,
-  createSignal,
-  onCleanup,
-  onMount,
-} from "solid-js";
+import { For, Show, createEffect, createMemo, createResource, createSignal } from "solid-js";
 import { Button } from "@relay/ui/button";
 import { EmptyState } from "./empty-state";
 import type { CombineEvidenceAnalysisReport } from "@relay/protocol";
@@ -29,11 +20,11 @@ import {
 } from "../lib/combine-verdict";
 import { combineCellAnalysisIndex } from "../lib/combine-evidence-findings";
 import { plural } from "../lib/plural";
-import { modalPanel, modalScrim } from "../lib/ui";
-import { trapFocus } from "../lib/modal";
+import { RepeatResultDialog } from "./repeat-result-dialog";
 
 export function CombineReview(props: {
   review: CombineReviewModel;
+  history: readonly JobInfo[];
   onOpen: (job: JobInfo, frameIndex: number) => void;
   onRetryProblems: () => void;
   onExport: () => void;
@@ -144,7 +135,7 @@ export function CombineReview(props: {
   return (
     <section
       class="flex min-h-0 flex-1 flex-col bg-[var(--background-base)]"
-      aria-label="Combine results"
+      aria-label="Repeat results"
     >
       <header class="grid shrink-0 gap-2.5 border-b border-[var(--border-weak-base)] px-5 py-3.5">
         <div class="flex items-center justify-between gap-4">
@@ -153,7 +144,7 @@ export function CombineReview(props: {
               <Icon name="chevron-left" size={14} />
             </Button>
             <h2 class="m-0 text-title font-semibold tracking-[-0.02em] text-[var(--text-strong)]">
-              Combine results
+              Repeat results
             </h2>
             <span class="shrink-0 text-caption tabular-nums text-[var(--text-weak)]">
               {dimensionsLabel()}
@@ -179,7 +170,7 @@ export function CombineReview(props: {
                 size="sm"
                 disabled={retrying()}
                 aria-busy={retrying()}
-                data-tip="Keeps passing results and queues only failed or incomplete cells"
+                data-tip="Keeps passing results and retries only failed or incomplete values"
                 aria-label={`${combineProblemRetryLabel(props.review)}; keep passing results`}
                 onClick={() => void retryProblems()}
               >
@@ -248,10 +239,10 @@ export function CombineReview(props: {
       <Show when={props.review.captureLabels.length > 0}>
         <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-weak-base)] px-5 py-2.5">
           <label class="flex min-w-[220px] flex-1 items-center gap-2 sm:max-w-[360px]">
-            <span class="sr-only">Screen</span>
+            <span class="sr-only">Checkpoint</span>
             <select
-              aria-label="Screen to review"
-              class="h-8 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-caption font-medium text-[var(--text-strong)] outline-none focus-visible:ring-1 focus-visible:ring-[var(--border-focus)]"
+              aria-label="Checkpoint to review"
+              class="h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-caption font-medium text-[var(--text-strong)] outline-none focus-visible:ring-1 focus-visible:ring-[var(--border-focus)]"
               value={selectedCaptureIndex()}
               onChange={(event) => setSelectedCaptureIndex(Number(event.currentTarget.value))}
             >
@@ -265,20 +256,21 @@ export function CombineReview(props: {
               {selectedCaptureIndex() + 1}/{props.review.captureLabels.length}
             </span>
           </span>
-          <label class="ml-auto flex h-8 min-w-[190px] flex-1 items-center gap-2 rounded-lg bg-[var(--surface-base)] px-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:shadow-[inset_0_0_0_1px_var(--border-strong-base)] sm:max-w-[280px]">
+          <label class="ml-auto flex h-11 min-w-[190px] flex-1 items-center gap-2 rounded-lg bg-[var(--surface-base)] px-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:shadow-[inset_0_0_0_1px_var(--border-strong-base)] sm:max-w-[280px]">
             <Icon name="search" size={12} class="text-[var(--text-weak)]" />
-            <span class="sr-only">Filter variable values</span>
+            <span class="sr-only">Filter Repeat values</span>
             <input
               type="search"
               class="min-w-0 flex-1 border-0 bg-transparent text-caption text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
               value={query()}
-              placeholder="Filter variable values"
+              placeholder="Filter Repeat values"
               onInput={(event) => setQuery(event.currentTarget.value)}
             />
           </label>
           <Button
             variant="secondary"
             size="sm"
+            class="min-h-11"
             aria-pressed={problemsOnly()}
             onClick={() => setProblemsOnly((value) => !value)}
           >
@@ -348,7 +340,7 @@ export function CombineReview(props: {
               <p class="m-0 mt-1 text-micro/[1.45] text-[var(--text-weak)]">
                 {verdictFilter()
                   ? "Try another verdict, or another screen from this Test."
-                  : "Clear the filter to see every value in this Combine."}
+                  : "Clear the filter to see every Repeat value."}
               </p>
               <Show when={verdictFilter() || query() || problemsOnly()}>
                 <Button
@@ -361,7 +353,7 @@ export function CombineReview(props: {
                     setProblemsOnly(false);
                   }}
                 >
-                  Show all cells
+                  Show all results
                 </Button>
               </Show>
             </div>
@@ -373,14 +365,18 @@ export function CombineReview(props: {
             size="sm"
             class="min-h-48 rounded-xl border border-dashed border-[var(--border-weak-base)]"
             title="No screenshots requested"
-            description="This Combine still records pass, failure, timing, and diagnostic evidence."
+            description="This Repeat still records pass, failure, timing, and diagnostic evidence."
           />
         </Show>
         <Show when={pagedRows().length < visibleRows().length}>
-          <div class="grid place-items-center pt-4">
+          <div class="grid place-items-center gap-1 pt-4" role="status" aria-live="polite">
+            <span class="text-micro tabular-nums text-text-weak">
+              Showing {pagedRows().length} of {visibleRows().length} results
+            </span>
             <Button
               variant="secondary"
               size="sm"
+              class="min-h-11"
               onClick={() => setVisibleCount((count) => count + combineReviewPageSize)}
             >
               Show {Math.min(combineReviewPageSize, visibleRows().length - pagedRows().length)} more
@@ -393,11 +389,13 @@ export function CombineReview(props: {
           const capture = () => row().captures[selectedCaptureIndex()];
           const source = () => (capture()?.frame ? frameSrc(row().job, capture()!.frame!) : "");
           return (
-            <CombineScreenshotDialog
-              title={selectedCaptureLabel()}
+            <RepeatResultDialog
+              row={row()}
+              capture={capture()!}
               source={source()}
-              world={row().world}
-              values={row().values}
+              verdict={verdictOf(row())}
+              analysis={analysisFor(row(), selectedCaptureIndex())}
+              history={props.history}
               position={focusedPosition() + 1}
               total={focusedTotal()}
               onPrevious={focusedPosition() > 0 ? () => moveFocusedScreenshot(-1) : undefined}
@@ -415,121 +413,5 @@ export function CombineReview(props: {
         }}
       </Show>
     </section>
-  );
-}
-
-export function CombineScreenshotDialog(props: {
-  title: string;
-  source: string;
-  world: string;
-  values: Array<{ name: string; value: string }>;
-  position: number;
-  total: number;
-  onPrevious?: () => void;
-  onNext?: () => void;
-  onOpenRun: () => void;
-  onClose: () => void;
-}) {
-  let dialog: HTMLDivElement | undefined;
-  onMount(() => {
-    if (dialog) onCleanup(trapFocus(dialog));
-  });
-  const valueLabel = () =>
-    props.values.length
-      ? props.values.map((value) => `${value.name}: ${value.value}`).join(" · ")
-      : props.world;
-
-  return (
-    <div
-      class={`${modalScrim} z-[140] flex items-center justify-center p-4`}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) props.onClose();
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          props.onClose();
-        }
-        if (event.key === "ArrowLeft" && props.onPrevious) {
-          event.preventDefault();
-          props.onPrevious();
-        }
-        if (event.key === "ArrowRight" && props.onNext) {
-          event.preventDefault();
-          props.onNext();
-        }
-      }}
-    >
-      <div
-        ref={(element) => {
-          dialog = element;
-        }}
-        class={`${modalPanel} grid h-[min(92vh,980px)] w-[min(1180px,calc(100vw-32px))] grid-rows-[auto_minmax(0,1fr)_auto]`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="combine-screenshot-title"
-        tabIndex={-1}
-      >
-        <header class="flex items-start justify-between gap-4 border-b border-[var(--border-weak-base)] px-4 py-3">
-          <div class="min-w-0">
-            <h2
-              id="combine-screenshot-title"
-              class="truncate text-body font-semibold text-[var(--text-strong)]"
-            >
-              {props.title}
-            </h2>
-            <p class="mt-0.5 truncate text-caption text-[var(--text-weak)]">
-              {valueLabel()} · {props.position} of {props.total}
-            </p>
-          </div>
-          <Button variant="ghost" size="sm" aria-label="Close screenshot" onClick={props.onClose}>
-            <Icon name="x" size={14} />
-          </Button>
-        </header>
-
-        <div class="relative grid min-h-0 place-items-center bg-[var(--background-deep)] p-4">
-          <img
-            src={props.source}
-            alt={`${props.title} · ${valueLabel()}`}
-            class="h-full w-full object-contain"
-          />
-        </div>
-
-        <footer class="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-t border-[var(--border-weak-base)] px-4 py-3">
-          <span />
-          <div class="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!props.onPrevious}
-              aria-label="Previous screenshot"
-              title="Previous screenshot (Left arrow)"
-              onClick={() => props.onPrevious?.()}
-            >
-              <Icon name="chevron-left" size={14} />
-            </Button>
-            <span class="min-w-16 text-center text-caption tabular-nums text-[var(--text-weak)]">
-              <span class="tabular-nums">
-                {props.position} / {props.total}
-              </span>
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!props.onNext}
-              aria-label="Next screenshot"
-              title="Next screenshot (Right arrow)"
-              onClick={() => props.onNext?.()}
-            >
-              <Icon name="chevron-right" size={14} />
-            </Button>
-          </div>
-          <Button variant="secondary" size="sm" class="justify-self-end" onClick={props.onOpenRun}>
-            Open run details
-          </Button>
-        </footer>
-      </div>
-    </div>
   );
 }

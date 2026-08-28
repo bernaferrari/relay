@@ -558,7 +558,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_verify_change",
     title: "Verify a change",
     description:
-      "Evaluate explicit frozen Tests, Runs, evidence packs, or source revision metadata offline. Returns the deterministic policy rules, evidence, first causal failure, and unresolved uncertainty without changing Tests or posting a check.",
+      "Evaluate explicit frozen Tests, Runs, evidence packs, or source revision metadata offline. Returns one bounded pass, regression, review, or insufficient summary with exact policy rules, evidence completeness, first causal failure, unresolved uncertainty, and the smallest required live verification. Never changes Tests or posts a check.",
     requiresConfirmation: false,
     inputSchema: z
       .object({

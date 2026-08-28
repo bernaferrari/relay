@@ -2,6 +2,7 @@ import type { Writable } from "node:stream";
 import type { OutputMode } from "./config.js";
 import type { CliError } from "./errors.js";
 import type { EventEnvelope } from "@relay/protocol";
+import { formatVerifyChangeResult } from "./verify-change-output.js";
 
 export type OutputStreams = {
   stdout: Writable;
@@ -157,7 +158,10 @@ export class CliOutput {
   result(operationId: string, result: unknown): void {
     const terminal = { type: "result", ok: true, operationId, result } as const;
     if (this.mode === "json" || this.mode === "ndjson") line(this.streams.stdout, terminal);
-    else this.streams.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    else {
+      const verifyChange = formatVerifyChangeResult(result);
+      this.streams.stdout.write(`${verifyChange ?? JSON.stringify(result, null, 2)}\n`);
+    }
   }
 
   error(error: CliError, operationId?: string): void {

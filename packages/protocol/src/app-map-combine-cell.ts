@@ -44,3 +44,56 @@ export function sameAppMapCombineCellValues(
     )
   );
 }
+
+/** Durable identity of one Test case. App Map identity is required because
+ * Test ids and canonical value tuples are only unique inside their App Map. */
+export type AppMapTestTupleIdentity = {
+  appMapId: string;
+  testId: string;
+  values: Record<string, string>;
+};
+
+export function canonicalAppMapTestTupleIdentity(
+  identity: AppMapTestTupleIdentity,
+): AppMapTestTupleIdentity {
+  return {
+    appMapId: identity.appMapId.trim(),
+    testId: identity.testId.trim(),
+    values: canonicalAppMapCombineCellValues(identity.values),
+  };
+}
+
+/** Parse the public identity projection without trusting persisted artifact casts. */
+export function parseAppMapTestTupleIdentity(value: unknown): AppMapTestTupleIdentity | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.appMapId !== "string" ||
+    !candidate.appMapId.trim() ||
+    typeof candidate.testId !== "string" ||
+    !candidate.testId.trim() ||
+    !candidate.values ||
+    typeof candidate.values !== "object" ||
+    Array.isArray(candidate.values)
+  ) {
+    return undefined;
+  }
+  const entries = Object.entries(candidate.values);
+  if (entries.some(([, entry]) => typeof entry !== "string")) return undefined;
+  return canonicalAppMapTestTupleIdentity({
+    appMapId: candidate.appMapId,
+    testId: candidate.testId,
+    values: Object.fromEntries(entries) as Record<string, string>,
+  });
+}
+
+export function sameAppMapTestTupleIdentity(
+  left: AppMapTestTupleIdentity,
+  right: AppMapTestTupleIdentity,
+): boolean {
+  return (
+    left.appMapId === right.appMapId &&
+    left.testId === right.testId &&
+    sameAppMapCombineCellValues(left.values, right.values)
+  );
+}

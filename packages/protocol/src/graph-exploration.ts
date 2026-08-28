@@ -1,4 +1,8 @@
 import type { Connection, ScreenVariant } from "./app-map.js";
+import type {
+  ExplorationActionPolicyDecision,
+  ExplorationFrontierRanking,
+} from "./exploration-policy.js";
 import type { StepTarget } from "./recipes.js";
 import type { AppMapScenarioTest } from "./test-intent.js";
 
@@ -43,6 +47,8 @@ export type GraphExplorationDecision = {
   existingConnectionId?: string;
   proposedConnectionId?: string;
   cleanupConnectionIds?: string[];
+  /** Deterministic admission; model provenance never authorizes this action. */
+  policy?: ExplorationActionPolicyDecision;
 };
 
 /** Pure, review-only output. Applying any connection or Test remains an
@@ -58,6 +64,8 @@ export type GraphExplorationProposal = {
   decisions: GraphExplorationDecision[];
   proposedConnections: Connection[];
   proposedTest: AppMapScenarioTest;
+  /** Proposal priority only. Ranking never schedules or executes an action. */
+  frontier?: ExplorationFrontierRanking;
   summary: {
     controls: number;
     explore: number;

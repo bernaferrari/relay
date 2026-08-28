@@ -9,7 +9,7 @@ import type {
 } from "@relay/protocol";
 import { observeScreenIdentity } from "../screen-identity.js";
 import {
-  commitAppMapRecording,
+  commitAppMapRecording as commitAppMapRecordingUnsafe,
   commitAppMapScreenCapture,
   reviewAppMapScreenCapture,
 } from "./recording-operations.js";
@@ -18,6 +18,26 @@ import { submitAppMapProposal } from "./entity-operations.js";
 
 const beforeFingerprint = "a".repeat(64);
 const afterFingerprint = "b".repeat(64);
+
+const reviewedRelayCapture = {
+  schemaVersion: 1 as const,
+  provenance: {
+    schemaVersion: 1 as const,
+    mode: "control-and-record" as const,
+    origin: "relay-control" as const,
+  },
+  proof: "relay-controlled" as const,
+};
+
+function commitAppMapRecording(
+  ...[map, input, mutation]: Parameters<typeof commitAppMapRecordingUnsafe>
+) {
+  return commitAppMapRecordingUnsafe(
+    map,
+    { captureReview: reviewedRelayCapture, ...input },
+    mutation,
+  );
+}
 
 function mapFixture(): AppMap {
   return {
@@ -650,6 +670,27 @@ test("commits a recording as one immutable App Map revision", () => {
   assert.equal(result.appMap.activity["event-1"]?.subject.id, result.connectionId);
 });
 
+test("recorded commits cannot invent Relay-controlled capture provenance", () => {
+  assert.throws(
+    () =>
+      commitAppMapRecordingUnsafe(
+        mapFixture(),
+        {
+          sessionId: "session-unreviewed-capture",
+          target: { kind: "device", platform: "ios", targetId: "ipad" },
+          takeId: "take-unreviewed-capture",
+          takeRevision: 1,
+          actions: [action()],
+          before: observation("before", beforeFingerprint, "evidence-before"),
+          after: observation("after", afterFingerprint, "evidence-after"),
+          evidenceIds: ["evidence-before", "evidence-after"],
+        },
+        context("event-unreviewed-capture"),
+      ),
+    /require explicit reviewed capture provenance/u,
+  );
+});
+
 test("persists the recorded source control as normalized connection evidence", () => {
   const before = observation("before", beforeFingerprint, "evidence-before");
   before.bounds = { width: 1000, height: 2000 };
@@ -1072,6 +1113,7 @@ test("represents an observe-only recording as a passive transition", () => {
   assert.deepEqual(connection?.actions, [
     { id: "passive-take-passive", kind: "passive", reason: "observe-only" },
   ]);
+  assert.equal(connection?.recordingSource, undefined);
   assert.deepEqual(connection?.destination, { kind: "end" });
 });
 

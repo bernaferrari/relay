@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { JobInfo } from "./api-types";
-import { appMapIdForJob, runStopHeadline, runTargetLabel } from "./run-presentation";
+import { appMapIdForJob, runStopHeadline, runTargetLabel, testIdForJob } from "./run-presentation";
 
 function job(action: string, data?: unknown): JobInfo {
   return {
@@ -26,6 +26,20 @@ test("reports return generated App Map runs to their durable map", () => {
     "checkout",
   );
   assert.equal(appMapIdForJob(job("login")), null);
+});
+
+test("reports correlate a compiled Test Run with its authoring journey", () => {
+  const run = job("generated-recipe");
+  run.artifacts = [
+    {
+      kind: "app-map-test-plan",
+      capturedAt: 1,
+      data: { appMapId: "checkout", test: { id: "test-authoring-1", name: "Checkout" } },
+    },
+  ];
+  assert.equal(testIdForJob(run), "test-authoring-1");
+  assert.equal(appMapIdForJob(run), "checkout");
+  assert.equal(testIdForJob(job("login")), null);
 });
 
 test("zero-step failures never invent a first step", () => {

@@ -72,6 +72,7 @@ test("inferred recording projections are visibly unproved and cannot be approved
   });
 
   assert.equal(snapshot.capture?.mode, "watch-and-infer");
+  assert.equal(snapshot.capture?.proof, "inferred-unproved");
   assert.equal(snapshot.capture?.replayRequiredBeforeApproval, true);
   assert.equal(snapshot.review?.actions[0]?.captureProof, "inferred-unproved");
   assert.equal(snapshot.review?.replayRequired, true);
@@ -97,6 +98,7 @@ test("a passing replay upgrades inferred actions without rewriting their provena
   });
 
   assert.equal(snapshot.capture?.mode, "watch-and-infer");
+  assert.equal(snapshot.capture?.proof, "replay-proved");
   assert.equal(snapshot.review?.actions[0]?.captureProof, "replay-proved");
   assert.equal(snapshot.allowedNextActions.includes("approve"), true);
 });

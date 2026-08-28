@@ -19,6 +19,11 @@ import { seg, segBtn, segBtnOn } from "../lib/ui";
 import type { RunEvidenceEvent, RunEvidenceQuery } from "@relay/protocol";
 import { formatStepDuration, runStateDot } from "../lib/run-review-presentation";
 import { DeviceVideoStream } from "./device-video-stream";
+import { failedStepFromTrace } from "@relay/protocol";
+import { appMapIdForJob, testIdForJob } from "../lib/run-presentation";
+import { goldenLoopTelemetry } from "../lib/golden-loop-telemetry";
+
+const measuredReports = new Set<string>();
 
 type VideoArtifactData = {
   startedAt?: number;
@@ -48,6 +53,37 @@ export function RunReplayStage(props: {
   const [liveVideoRetrying, setLiveVideoRetrying] = createSignal(false);
   const [liveVideoAttempt, setLiveVideoAttempt] = createSignal(0);
   let liveVideoRetryTimer: number | undefined;
+  createEffect(() => {
+    if (measuredReports.has(props.job.id)) return;
+    measuredReports.add(props.job.id);
+    const projectKey = appMapIdForJob(props.job) ?? "local-workspace";
+    const journeyKey = testIdForJob(props.job) ?? props.job.id;
+    void goldenLoopTelemetry.emit({
+      projectKey,
+      journeyKey,
+      type: "boundary",
+      boundary: "report",
+      outcome: "completed",
+    });
+    const channels = Object.values(props.job.evidence?.channels ?? {});
+    const missingChannels = channels.filter((channel) => channel.status !== "captured").length;
+    void goldenLoopTelemetry.emit({
+      projectKey,
+      journeyKey,
+      type: "evidence-completeness",
+      status: props.job.evidence && missingChannels === 0 ? "complete" : "partial",
+      requiredChannels: channels.length,
+      missingChannels,
+    });
+    if (props.job.status === "error" || props.job.status === "cancelled") {
+      void goldenLoopTelemetry.emit({
+        projectKey,
+        journeyKey,
+        type: "causal-failure-surfaced",
+        surfaced: Boolean(failedStepFromTrace(props.job)),
+      });
+    }
+  });
   const cycleSpeed = () => setSpeed((current) => (current >= 8 ? 1 : current * 2));
   const snapshot = () => props.job.recipeSnapshot;
   const nodes = createMemo(() =>

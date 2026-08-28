@@ -19,6 +19,7 @@ export * from "./runs.js";
 export * from "./run-shares.js";
 export * from "./proof-report.js";
 export * from "./approval-policy.js";
+export * from "./exploration-policy.js";
 export * from "./verify-change.js";
 export * from "./execution-risk-compiler.js";
 export * from "./visual-baselines.js";

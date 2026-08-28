@@ -103,7 +103,7 @@ export function AppMapTestSourceDialog(props: {
               Test source
             </strong>
             <span id="test-source-description" class="block text-caption text-text-weak">
-              Bound .relay.test.yaml for this Test only
+              Bound .relay.test.yaml with read-only recording proof metadata
             </span>
           </div>
           <button

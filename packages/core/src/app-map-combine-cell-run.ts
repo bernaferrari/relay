@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { ExecutionTargetRef, TargetProfile } from "@relay/protocol";
+import {
+  canonicalAppMapTestTupleIdentity,
+  type ExecutionTargetRef,
+  type TargetProfile,
+} from "@relay/protocol";
 import { appMapCombineCellExecutionIntentArtifactKind } from "./app-map-combine-cell-intent.js";
 import type { PreparedAppMapCombineCell } from "./app-map-combine-cell-prepare.js";
 import { digestAppMapTestExecutionValue } from "./app-map-test-execution-intent.js";
@@ -57,6 +61,8 @@ function enqueueInputForTarget(
 
 export type EnqueuePreparedAppMapCombineCellsInput = {
   cells: PreparedAppMapCombineCell[];
+  /** Saved Repeat definition. Optional only for legacy/ad-hoc internal callers. */
+  combineId?: string;
   batchId?: string;
   title?: string;
   /** Legacy one-target fallback. New callers bind targets per cell. */
@@ -109,6 +115,11 @@ export function stagePreparedAppMapCombineCells(
         browserTargetId: input.browserTargetId,
       });
     const queuedAt = Date.now();
+    const caseIdentity = canonicalAppMapTestTupleIdentity({
+      appMapId: cell.childIntent.sourcePlan.appMapId,
+      testId: cell.testId,
+      values: cell.values,
+    });
     const enqueue: EnqueueJobInput = {
       recipe: cell.recipeSnapshot.id,
       title: `${title} · ${cell.worldLabel} · ${cell.testName}`,
@@ -154,9 +165,10 @@ export function stagePreparedAppMapCombineCells(
           capturedAt: queuedAt,
           data: {
             kind: "combine-cell",
+            ...caseIdentity,
+            ...(input.combineId ? { combineId: input.combineId } : {}),
+            world: cell.worldLabel,
             cellId: cell.cellId,
-            testId: cell.testId,
-            values: cell.values,
             targetProfileId: cell.targetProfileId,
             /** Audit: `explicit` per-cell binding, or `inherited` from the
              * only saved profile matching this cell's concrete target. */

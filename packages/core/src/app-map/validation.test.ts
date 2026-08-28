@@ -138,6 +138,65 @@ test("connection source evidence must stay inside its normalized viewport", () =
   );
 });
 
+test("recording provenance requires one exact recorded action evidence set", () => {
+  const scope = { organizationId: "org-1", projectId: "project-1", appMapId: "map-1" };
+  const recordingSource = {
+    schemaVersion: 1 as const,
+    takeId: "take-1",
+    takeRevision: 1,
+    capture: {
+      schemaVersion: 1 as const,
+      provenance: {
+        schemaVersion: 1 as const,
+        mode: "control-and-record" as const,
+        origin: "relay-control" as const,
+      },
+      proof: "relay-controlled" as const,
+    },
+    evidenceIds: ["evidence-a", "evidence-b"],
+  };
+  const connection: Connection = {
+    ...scope,
+    id: "connection-recorded",
+    createdAt: 1,
+    updatedAt: 1,
+    fromScreenId: "screen-a",
+    destination: { kind: "screen", screenId: "screen-b" },
+    state: "ready",
+    actions: [],
+    recordingSource,
+  };
+
+  assert.throws(
+    () => assertConnection(connection, scope, "connection"),
+    /recordingSource must match its recorded action evidence/u,
+  );
+  const recorded = {
+    id: "recorded-1",
+    kind: "recorded" as const,
+    takeId: "take-1",
+    takeRevision: 1,
+    steps: [{ id: "step-1", kind: "sleep" as const, ms: 1 }],
+    evidenceIds: ["evidence-b", "evidence-a"],
+  };
+  assert.doesNotThrow(() =>
+    assertConnection({ ...connection, actions: [recorded] }, scope, "connection"),
+  );
+  assert.throws(
+    () =>
+      assertConnection(
+        {
+          ...connection,
+          actions: [recorded],
+          recordingSource: { ...recordingSource, evidenceIds: ["evidence-a", "evidence-c"] },
+        },
+        scope,
+        "connection",
+      ),
+    /recordingSource must match its recorded action evidence/u,
+  );
+});
+
 test("navigation contracts reject weak-before-strong selectors and mismatched proof", () => {
   const map = emptyMap();
   const entity = {

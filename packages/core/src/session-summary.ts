@@ -1,10 +1,19 @@
-import type { CampaignCheckSummary, JobSummary } from "@relay/protocol";
+import {
+  canonicalAppMapCombineCellValues,
+  parseAppMapTestTupleIdentity,
+  type CampaignCheckSummary,
+  type JobSummary,
+} from "@relay/protocol";
 import type { TestJob } from "./session-contract.js";
 
 function summarizeMatrixCase(data: unknown): JobSummary["matrixCase"] {
   if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
   const candidate = data as Record<string, unknown>;
-  if (candidate.kind !== "combine" || typeof candidate.world !== "string") return undefined;
+  if (
+    (candidate.kind !== "combine" && candidate.kind !== "combine-cell") ||
+    typeof candidate.world !== "string"
+  )
+    return undefined;
   if (
     !candidate.values ||
     typeof candidate.values !== "object" ||
@@ -12,21 +21,21 @@ function summarizeMatrixCase(data: unknown): JobSummary["matrixCase"] {
   ) {
     return undefined;
   }
-  const values = Object.fromEntries(
-    Object.entries(candidate.values).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string",
+  const values = canonicalAppMapCombineCellValues(
+    Object.fromEntries(
+      Object.entries(candidate.values).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
     ),
   );
+  const identity = parseAppMapTestTupleIdentity(candidate);
   return {
     kind: "combine",
-    ...(typeof candidate.appMapId === "string" && candidate.appMapId.trim()
-      ? { appMapId: candidate.appMapId.trim() }
-      : {}),
+    ...(identity ? { ...identity } : { values }),
     ...(typeof candidate.combineId === "string" && candidate.combineId.trim()
       ? { combineId: candidate.combineId.trim() }
       : {}),
     world: candidate.world,
-    values,
     ...(typeof candidate.expectedScreenshots === "number" &&
     Number.isFinite(candidate.expectedScreenshots)
       ? { expectedScreenshots: candidate.expectedScreenshots }

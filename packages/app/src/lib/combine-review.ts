@@ -1,7 +1,11 @@
+import { parseAppMapTestTupleIdentity, type AppMapTestTupleIdentity } from "@relay/protocol";
 import type { JobInfo } from "./api-types";
 
 type FrozenCombineInputs = {
   kind?: unknown;
+  appMapId?: unknown;
+  testId?: unknown;
+  combineId?: unknown;
   world?: unknown;
   values?: unknown;
   expectedScreenshots?: unknown;
@@ -50,12 +54,24 @@ function frozenInputs(job: JobInfo): FrozenCombineInputs | undefined {
 }
 
 export function isCombineJob(job: JobInfo): boolean {
-  return job.matrixCase?.kind === "combine" || frozenInputs(job)?.kind === "combine";
+  const kind = frozenInputs(job)?.kind;
+  return kind === "combine" || kind === "combine-cell";
+}
+
+/** One identity projection for live summaries and hydrated persisted Runs. */
+export function combineCaseIdentity(job: JobInfo): AppMapTestTupleIdentity | undefined {
+  const data = frozenInputs(job);
+  if (data?.kind !== "combine" && data?.kind !== "combine-cell") return undefined;
+  return parseAppMapTestTupleIdentity(data);
 }
 
 function readableCaption(caption: string | undefined, index: number): string {
   const value = caption?.replace(/^(screen|tour|final):/, "").trim();
   return value || `Screenshot ${index + 1}`;
+}
+
+function checkpointIdentity(caption: string | undefined): string | undefined {
+  return caption?.trim() || undefined;
 }
 
 function requestedScreenshotFrames(job: JobInfo): Array<{
@@ -69,6 +85,46 @@ function requestedScreenshotFrames(job: JobInfo): Array<{
   // Reusable screenshot tours label their intentional captures. Keep setup
   // before/after evidence in replay, but do not let it double the review grid.
   return requested.length ? requested : frames.map((frame, index) => ({ index, frame }));
+}
+
+type RequestedScreenshot = ReturnType<typeof requestedScreenshotFrames>[number];
+
+function alignScreenshotFrames(
+  screenshots: RequestedScreenshot[],
+  captureLabels: string[],
+  captureIdentities: Array<string | undefined>,
+): Array<RequestedScreenshot | undefined> {
+  const aligned: Array<RequestedScreenshot | undefined> = captureLabels.map(() => undefined);
+  const used = new Set<number>();
+  for (const [captureIndex, identity] of captureIdentities.entries()) {
+    if (!identity) continue;
+    const screenshotIndex = screenshots.findIndex(
+      (screenshot, index) =>
+        !used.has(index) && checkpointIdentity(screenshot.frame.caption) === identity,
+    );
+    if (screenshotIndex < 0) continue;
+    aligned[captureIndex] = screenshots[screenshotIndex];
+    used.add(screenshotIndex);
+  }
+
+  const hasIdentityMatch = used.size > 0;
+  for (const [captureIndex, label] of captureLabels.entries()) {
+    if (aligned[captureIndex]) continue;
+    // Old runs can have localized or unlabeled captions. Positional fallback is
+    // safe only when no checkpoint identity matched, every column is present,
+    // or the column is still an expected-count placeholder. Once an identity
+    // anchor proves a partial run skipped an earlier checkpoint, shifting the
+    // later capture left would present evidence under the wrong checkpoint.
+    const mayUsePosition =
+      !hasIdentityMatch ||
+      screenshots.length >= captureLabels.length ||
+      label === `Screenshot ${captureIndex + 1}`;
+    const positional = screenshots[captureIndex];
+    if (!mayUsePosition || !positional || used.has(captureIndex)) continue;
+    aligned[captureIndex] = positional;
+    used.add(captureIndex);
+  }
+  return aligned;
 }
 
 function valuesFor(job: JobInfo): CombineValue[] {
@@ -106,12 +162,19 @@ export function projectCombineReview(rows: JobInfo[]): CombineReview | null {
       );
     }),
   );
+  const templateScreenshots = combineRuns
+    .map(requestedScreenshotFrames)
+    .reduce<RequestedScreenshot[]>(
+      (template, screenshots) => (screenshots.length > template.length ? screenshots : template),
+      [],
+    );
   const captureLabels = Array.from({ length: captureCount }, (_, index) => {
-    const frame = combineRuns.map(requestedScreenshotFrames).find((frames) => frames[index])?.[
-      index
-    ]?.frame;
+    const frame = templateScreenshots[index]?.frame;
     return readableCaption(frame?.caption, index);
   });
+  const captureIdentities = Array.from({ length: captureCount }, (_, index) =>
+    checkpointIdentity(templateScreenshots[index]?.frame.caption),
+  );
   const projected = combineRuns.map((job, rowIndex): CombineRow => {
     const data = frozenInputs(job);
     const screenshots = requestedScreenshotFrames(job);
@@ -121,12 +184,13 @@ export function projectCombineReview(rows: JobInfo[]): CombineReview | null {
     const terminal = ["ok", "healed", "error", "cancelled"].includes(job.status);
     const expectedCount =
       typeof expected === "number" && Number.isFinite(expected) ? Math.max(0, expected) : undefined;
+    const alignedScreenshots = alignScreenshotFrames(screenshots, captureLabels, captureIdentities);
     return {
       job,
       world,
       values: valuesFor(job),
       captures: captureLabels.map((caption, index) => {
-        const screenshot = screenshots[index];
+        const screenshot = alignedScreenshots[index];
         return {
           index: screenshot?.index ?? index,
           caption,
@@ -135,7 +199,7 @@ export function projectCombineReview(rows: JobInfo[]): CombineReview | null {
       }),
       missingCaptures:
         terminal && expectedCount !== undefined
-          ? Math.max(0, expectedCount - screenshots.length)
+          ? alignedScreenshots.slice(0, expectedCount).filter((screenshot) => !screenshot).length
           : 0,
       ...(expectedCount !== undefined ? { expectedScreenshots: expectedCount } : {}),
     };
@@ -236,7 +300,8 @@ export function combineProblemRetryLabel(review: CombineReview): string {
 
 export type CurrentLocaleRetry = {
   appMapId: string;
-  combineId: string;
+  testId: string;
+  variableIds: string[];
   selected: Record<string, string[]>;
 };
 
@@ -248,15 +313,15 @@ export function currentLocaleCombineRetry(review: CombineReview): CurrentLocaleR
     (row) => row.missingCaptures > 0 || ["error", "cancelled"].includes(row.job.status),
   );
   if (!problems.length) return null;
-  const first = problems[0]!.job.matrixCase;
-  if (!first?.appMapId || !first.combineId) return null;
+  const first = combineCaseIdentity(problems[0]!.job);
+  if (!first) return null;
   const selected = new Map<string, Set<string>>();
   for (const row of problems) {
-    const combineCase = row.job.matrixCase;
+    const combineCase = combineCaseIdentity(row.job);
     if (
       !combineCase ||
       combineCase.appMapId !== first.appMapId ||
-      combineCase.combineId !== first.combineId
+      combineCase.testId !== first.testId
     ) {
       return null;
     }
@@ -272,7 +337,8 @@ export function currentLocaleCombineRetry(review: CombineReview): CurrentLocaleR
   }
   return {
     appMapId: first.appMapId,
-    combineId: first.combineId,
+    testId: first.testId,
+    variableIds: [...selected.keys()].sort((left, right) => left.localeCompare(right)),
     selected: Object.fromEntries(
       [...selected]
         .map(([name, values]): [string, string[]] => [name, [...values]])

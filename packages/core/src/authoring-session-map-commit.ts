@@ -4,6 +4,7 @@ import type {
   AuthoringSession,
   AuthoringTakeRevision,
 } from "@relay/protocol";
+import { authoringCaptureProvenance, captureProofForAuthoring } from "@relay/protocol";
 import { commitAppMapRecording } from "./app-map.js";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { authoringEvidenceExists } from "./authoring-evidence.js";
@@ -64,6 +65,17 @@ export async function commitAuthoringSessionMap(input: {
         evidenceUrisById: Object.fromEntries(evidence.map((item) => [item.id, item.uri])),
         evidenceKindsById: Object.fromEntries(evidence.map((item) => [item.id, item.kind])),
         evidenceById: Object.fromEntries(evidence.map((item) => [item.id, item])),
+        captureReview: {
+          schemaVersion: 1,
+          provenance: authoringCaptureProvenance(session.captureProvenance),
+          proof: captureProofForAuthoring(
+            authoringCaptureProvenance(session.captureProvenance),
+            session.take!.replayAttempts.some(
+              (attempt) =>
+                attempt.takeRevision === revision.revision && attempt.outcome === "passed",
+            ),
+          ),
+        },
         ...(session.commitTestId
           ? { testId: session.commitTestId, testName: session.testName! }
           : {}),

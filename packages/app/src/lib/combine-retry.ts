@@ -4,7 +4,8 @@ import { currentLocaleCombineRetry } from "./combine-review";
 type RetryActions = {
   runCurrent: (input: {
     appMapId: string;
-    combineId: string;
+    testId: string;
+    variableIds: string[];
     selected: Record<string, string[]>;
     title: string;
   }) => Promise<string | { jobId: string | null; campaignId?: string } | null>;

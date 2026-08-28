@@ -379,6 +379,55 @@ test("verify-change is a read-only fail-closed tool with no provider posting fie
   );
 });
 
+test("verify-change returns the canonical bounded decision projection unchanged", async () => {
+  const projection = {
+    schemaVersion: 1,
+    kind: "verify-change",
+    mode: "offline",
+    summary: {
+      verdict: "insufficient",
+      affectedTests: 1,
+      passed: 0,
+      regressions: 0,
+      review: 0,
+      insufficient: 1,
+    },
+    policy: { id: "relay.verify-change", version: 1 },
+    ruleIds: ["evidence.incomplete"],
+    evidenceCompleteness: {
+      status: "partial",
+      complete: 0,
+      partial: 1,
+      missing: ["trace-pack:map-1:test-1"],
+    },
+    unresolvedUncertainty: ["missing:trace-pack:map-1:test-1"],
+    smallestRequiredLiveVerification: {
+      required: true,
+      action: "run-one-affected-test",
+      reason: "One affected Test needs complete fresh evidence before policy can decide.",
+      testId: "test-1",
+      evidenceNeeded: ["trace-pack:map-1:test-1"],
+    },
+    mutation: "none",
+    checkPosting: "none",
+  } as const;
+  const jobs = {
+    ...recordingJobs([]),
+    verifyChange: async () => projection,
+  } as unknown as RelayOutcomeJobs;
+
+  const returned = await invokeRelayOutcomeToolWithJobs({
+    name: "relay_verify_change",
+    argumentsValue: { selection: { kind: "runs", runIds: ["run-1"] } },
+    confirmed: false,
+    jobs,
+  });
+
+  assert.strictEqual(returned, projection);
+  assert.equal(projection.checkPosting, "none");
+  assert.equal("tracePacks" in projection, false);
+});
+
 test("Replay Lab MCP accepts only bounded explicit payloads", async () => {
   const descriptor = relayOutcomeTools.find(({ name }) => name === "relay_replay_lab")!;
   assert.equal(descriptor.annotations.readOnlyHint, true);

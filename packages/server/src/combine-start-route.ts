@@ -349,6 +349,7 @@ async function executeCombineStartUnlocked(
     const stageCells = (acceptedAdmission?: LocalCombineCampaignAdmission) =>
       stagePreparedAppMapCombineCells({
         cells: selectedToQueue,
+        combineId: scopedCombine.id,
         title: body.title ?? scopedCombine.name,
         ...(targetId
           ? {

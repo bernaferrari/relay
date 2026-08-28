@@ -175,6 +175,19 @@ test("classifies unsafe and stateful controls conservatively", () => {
     }).classification,
     "destructive",
   );
+  for (const label of ["Send message", "Post", "Allow", "Install", "Create account", "Enviar"]) {
+    assert.deepEqual(
+      classifyGraphExplorationControl({
+        control: { ...control, label, role: "Button" },
+      }),
+      {
+        classification: "unknown",
+        decision: "defer",
+        reason:
+          "An unreviewed control cannot prove navigation or the absence of external effects from its label and role.",
+      },
+    );
+  }
 });
 
 test("builds one deterministic review-only exploration proposal from a semantic surface", () => {
@@ -198,6 +211,18 @@ test("builds one deterministic review-only exploration proposal from a semantic 
       {
         controlKey: "identifier:noop",
         outcome: { kind: "no-op", reason: "User-owned content is intentionally not traversed." },
+      },
+    ],
+    frontier: [
+      {
+        controlKey: "identifier:privacy",
+        factors: {
+          novelty: 90,
+          coverageValue: 95,
+          changedCodeRelevance: 88,
+          uncertaintyReduction: 80,
+          executionCost: 30,
+        },
       },
     ],
   });
@@ -226,7 +251,7 @@ test("builds one deterministic review-only exploration proposal from a semantic 
     {
       "View memory": ["no-op", "skip"],
       "App Language": ["external", "defer"],
-      Privacy: ["navigation", "explore"],
+      Privacy: ["unknown", "defer"],
       "Kids Mode": ["reversible", "skip"],
       Appearance: ["navigation", "skip"],
       "Delete account": ["destructive", "defer"],
@@ -240,6 +265,29 @@ test("builds one deterministic review-only exploration proposal from a semantic 
     ["reveal", "tap"],
   );
   assert.equal(proposal.proposedConnections[0]?.state, "draft");
+  assert.equal(
+    proposal.decisions.find((decision) => decision.control.label === "Privacy")?.policy?.level,
+    "prohibited",
+  );
+  assert.equal(
+    proposal.decisions.find((decision) => decision.control.label === "Delete account")?.policy
+      ?.level,
+    "destructive",
+  );
+  assert.equal(
+    proposal.decisions.find((decision) => decision.control.label === "Mystery")?.policy?.level,
+    "prohibited",
+  );
+  assert.ok(
+    proposal.decisions
+      .filter((decision) => decision.decision === "explore")
+      .every((decision) => decision.policy?.level === "safe"),
+  );
+  assert.equal(
+    proposal.frontier?.entries.find((entry) => entry.actionId === "identifier:privacy")?.rationale
+      .changedCodeRelevance,
+    88,
+  );
   assert.equal(proposal.proposedTest.steps.length, 7);
   assert.deepEqual(proposal.proposedTest.surfaceBindings?.[0], {
     screenId: "settings",
@@ -253,9 +301,9 @@ test("builds one deterministic review-only exploration proposal from a semantic 
   });
   assert.deepEqual(proposal.summary, {
     controls: 7,
-    explore: 1,
+    explore: 0,
     skipped: 3,
-    deferred: 3,
+    deferred: 4,
     proposedConnections: 1,
   });
 });

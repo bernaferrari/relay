@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { resolveStepPoint } from "@relay/protocol";
 import type {
   AuthoringAction,
+  AuthoringCaptureReview,
   AuthoringCommitDestination,
   AuthoringEvidence,
   AuthoringObservation,
@@ -29,6 +30,7 @@ import type {
 import { appMapFail } from "./errors.js";
 import { mutateAppMap } from "./mutation.js";
 import { attachRecordedTest } from "./recorded-test.js";
+import { recordingSourceForCommit } from "./recording-source.js";
 
 export type AppMapRecordingInput = {
   sessionId: string;
@@ -49,6 +51,8 @@ export type AppMapRecordingInput = {
   testId?: string;
   /** Canonical reviewed Test name, required whenever testId is present. */
   testName?: string;
+  /** Server-reviewed capture origin. It never changes the executable steps. */
+  captureReview?: AuthoringCaptureReview;
 };
 
 export type AppMapRecordingResult = { appMap: AppMap; connectionId: string; testId?: string };
@@ -854,6 +858,7 @@ export function commitAppMapRecording(
       }
 
       const actions = recordedActions(input);
+      const recordingSource = recordingSourceForCommit(input, actions);
       const sourceAnchor = recordedSourceAnchor(input);
       const connection: Connection = {
         ...entityScope(map),
@@ -864,6 +869,7 @@ export function commitAppMapRecording(
         state: "ready",
         actions,
         ...(sourceAnchor ? { sourceAnchor } : {}),
+        ...(recordingSource ? { recordingSource } : {}),
         createdAt: pending?.createdAt ?? context.at,
         updatedAt: context.at,
       };

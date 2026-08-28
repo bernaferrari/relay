@@ -52,6 +52,23 @@ test("TracePack schema is strict and requires a content-addressed frozen run", (
   );
 });
 
+test("TracePack capture proof cannot contradict its recorded origin", () => {
+  assert.throws(() =>
+    parseTracePack({
+      ...fixture(),
+      source: {
+        ...fixture().source,
+        authoringCapture: {
+          schemaVersion: 1,
+          mode: "watch-and-infer",
+          origin: "observed-transition",
+        },
+        authoringCaptureProof: "instrumented-unproved",
+      },
+    }),
+  );
+});
+
 test("offline TracePack analysis can never claim a future transition passed", () => {
   const analysis = {
     schemaVersion: 1,

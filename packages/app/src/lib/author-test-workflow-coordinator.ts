@@ -10,6 +10,7 @@ import type {
   WorkflowProblem,
 } from "@relay/workflows";
 import { createRelayWorkflows, type RelayInvokeClient } from "@relay/workflows";
+import { goldenLoopTelemetry } from "./golden-loop-telemetry";
 
 export type AuthorTestWorkflowAction =
   | {
@@ -29,6 +30,12 @@ export type AuthorTestWorkflowAction =
   | { action: "abandon"; reason: string };
 
 type AbandonUnprovenStartAction = Extract<AuthorTestWorkflowAction, { action: "abandon" }>;
+
+function telemetryJourneyKey(snapshot: AuthorTestSnapshot, fallback: string): string {
+  if (snapshot.authoring?.committedTestId) return snapshot.authoring.committedTestId;
+  if (snapshot.authoring?.sessionId) return `test-${snapshot.authoring.sessionId}`;
+  return fallback;
+}
 
 export function canRetireUnprovenRecording(snapshot: AuthorTestSnapshot | undefined): boolean {
   return Boolean(
@@ -227,11 +234,39 @@ export function createAuthorTestWorkflowCoordinator(input: {
   }
 
   async function start(intent: AuthorTestIntent): Promise<AuthorTestSnapshot> {
+    const startedAt = Date.now();
+    const workflowRequestId = intent.workflowRequestId ?? crypto.randomUUID();
     const snapshot = await input.workflows.start({
       ...intent,
-      workflowRequestId: intent.workflowRequestId ?? crypto.randomUUID(),
+      workflowRequestId,
       continuation: "durable",
     });
+    const journeyKey = telemetryJourneyKey(snapshot, workflowRequestId);
+    for (const boundary of ["connect", "record"] as const) {
+      void goldenLoopTelemetry.emit({
+        projectKey: intent.appMapId,
+        journeyKey,
+        type: "boundary",
+        boundary,
+        outcome: boundary === "connect" ? "completed" : "started",
+      });
+    }
+    void goldenLoopTelemetry.emit({
+      projectKey: intent.appMapId,
+      journeyKey,
+      type: "action-latency",
+      action: "record",
+      durationMs: Math.max(0, Date.now() - startedAt),
+    });
+    if (snapshot.stage === "recording") {
+      void goldenLoopTelemetry.emit({
+        projectKey: intent.appMapId,
+        journeyKey,
+        type: "boundary",
+        boundary: "record",
+        outcome: "completed",
+      });
+    }
     if (snapshot.phase !== "needs-attention") clearAttention(snapshot);
     return publish(snapshot);
   }
@@ -310,7 +345,68 @@ export function createAuthorTestWorkflowCoordinator(input: {
         workflowId: current.workflow.workflowId,
         expectedVersion: current.workflow.expectedVersion,
       } as DurableAuthorTestDecision;
-      return publish(await input.workflows.advanceAuthoring(decision));
+      const startedAt = Date.now();
+      const next = await publish(await input.workflows.advanceAuthoring(decision));
+      const projectKey = next.frozen?.appMapId ?? current.frozen?.appMapId;
+      const journeyKey = telemetryJourneyKey(
+        next,
+        next.frozen?.workflowRequestId ?? current.frozen?.workflowRequestId ?? sessionId,
+      );
+      if (projectKey && journeyKey) {
+        const boundary =
+          action.action === "checkpoint"
+            ? "checkpoint"
+            : action.action === "replay"
+              ? "replay"
+              : action.action === "approve"
+                ? "approve"
+                : undefined;
+        const latencyAction =
+          action.action === "edit"
+            ? "edit-recording"
+            : action.action === "stop"
+              ? "compile"
+              : boundary;
+        if (latencyAction) {
+          void goldenLoopTelemetry.emit({
+            projectKey,
+            journeyKey,
+            type: "action-latency",
+            action: latencyAction,
+            durationMs: Math.max(0, Date.now() - startedAt),
+          });
+        }
+        if (boundary && next.phase !== "needs-attention") {
+          void goldenLoopTelemetry.emit({
+            projectKey,
+            journeyKey,
+            type: "boundary",
+            boundary,
+            outcome: "completed",
+          });
+        }
+        if (action.action === "stop" && next.stage === "reviewing") {
+          for (const completed of ["compile", "review"] as const) {
+            void goldenLoopTelemetry.emit({
+              projectKey,
+              journeyKey,
+              type: "boundary",
+              boundary: completed,
+              outcome: "completed",
+            });
+          }
+        }
+        if (["cancel", "discard"].includes(action.action)) {
+          void goldenLoopTelemetry.emit({
+            projectKey,
+            journeyKey,
+            type: "boundary",
+            boundary: action.action === "cancel" ? "record" : "review",
+            outcome: "abandoned",
+          });
+        }
+      }
+      return next;
     });
   }
 
@@ -352,9 +448,10 @@ export function createAuthorTestWorkflowCoordinator(input: {
       if (!canRetireUnprovenRecording(canonical) || !canonical.workflow) {
         throw new Error("This recording attempt can still be inspected or continued safely");
       }
+      const workflowId = canonical.workflow.workflowId;
       const decision: DurableAuthorTestDecision = {
         ...action,
-        workflowId: canonical.workflow.workflowId,
+        workflowId,
         expectedVersion: canonical.workflow.expectedVersion,
       };
       const retired = await publish(await input.workflows.advanceAuthoring(decision));
@@ -362,6 +459,15 @@ export function createAuthorTestWorkflowCoordinator(input: {
         throw new Error(
           retired.problems.at(-1)?.detail || "Relay could not retire this recording attempt",
         );
+      }
+      if (retired.frozen) {
+        void goldenLoopTelemetry.emit({
+          projectKey: retired.frozen.appMapId,
+          journeyKey: telemetryJourneyKey(retired, retired.frozen.workflowRequestId ?? workflowId),
+          type: "boundary",
+          boundary: "record",
+          outcome: "abandoned",
+        });
       }
       return retired;
     });

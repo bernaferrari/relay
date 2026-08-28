@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   authoringCaptureProvenance,
+  captureProofForAuthoring,
   parseTracePack,
   tracePackOfflineAnalysisSchema,
   type EvidenceChannelStatus,
@@ -69,6 +70,21 @@ function packDigest(pack: Omit<TracePack, "digest">): `sha256:${string}` {
   return sha256(canonicalJson(pack));
 }
 
+function frozenRunAppMapId(run: PersistedRun): string | undefined {
+  for (const artifact of run.artifacts) {
+    if (
+      (artifact.kind === "app-map-test-plan" || artifact.kind === "app-map-flow-plan") &&
+      artifact.data &&
+      typeof artifact.data === "object" &&
+      !Array.isArray(artifact.data)
+    ) {
+      const appMapId = (artifact.data as { appMapId?: unknown }).appMapId;
+      if (typeof appMapId === "string" && appMapId.trim()) return appMapId;
+    }
+  }
+  return undefined;
+}
+
 /** Freeze one immutable run into a portable, artifact-closed JSON document. */
 export async function exportTracePack(
   run: PersistedRun,
@@ -77,9 +93,20 @@ export async function exportTracePack(
   if (!/^[a-f0-9]{64}$/u.test(run.inputDigest)) {
     throw new Error(`run ${run.id} has no valid frozen input digest`);
   }
-  const authoringSession = run.executionProvenance?.authoringSessionId
+  const referencedAuthoringSession = run.executionProvenance?.authoringSessionId
     ? await readAuthoringSession(run.executionProvenance.authoringSessionId)
     : null;
+  const provenance = run.executionProvenance;
+  const runAppMapId = frozenRunAppMapId(run);
+  const authoringSession =
+    referencedAuthoringSession &&
+    provenance &&
+    runAppMapId &&
+    referencedAuthoringSession.organizationId === provenance.organizationId &&
+    referencedAuthoringSession.projectId === provenance.projectId &&
+    referencedAuthoringSession.appMapId === runAppMapId
+      ? referencedAuthoringSession
+      : null;
   const closure = await closeTracePackArtifacts(run, requestedLimits);
   const objects = [jsonObject("run.json", "frozen-run", frozenRun(run)), ...closure.objects].sort(
     (left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0),
@@ -129,7 +156,17 @@ export async function exportTracePack(
       inputDigest: run.inputDigest,
       writtenAt: run.writtenAt,
       ...(authoringSession
-        ? { authoringCapture: authoringCaptureProvenance(authoringSession.captureProvenance) }
+        ? {
+            authoringCapture: authoringCaptureProvenance(authoringSession.captureProvenance),
+            authoringCaptureProof: captureProofForAuthoring(
+              authoringCaptureProvenance(authoringSession.captureProvenance),
+              authoringSession.take?.replayAttempts.some(
+                (attempt) =>
+                  attempt.takeRevision === authoringSession.take?.currentRevision &&
+                  attempt.outcome === "passed",
+              ) === true,
+            ),
+          }
         : {}),
     },
     redaction: {

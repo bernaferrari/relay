@@ -14,6 +14,7 @@ function localeJob(id: string, status: JobInfo["status"]): JobInfo {
     matrixCase: {
       kind: "combine",
       appMapId: "settings",
+      testId: "tour",
       combineId: "language-x-tour",
       world: id,
       values: { language: id },
@@ -40,7 +41,8 @@ test("a repaired locale Combine recompiles current truth and keeps green cells",
   assert.deepEqual(current, [
     {
       appMapId: "settings",
-      combineId: "language-x-tour",
+      testId: "tour",
+      variableIds: ["language"],
       selected: { language: ["it"] },
       title: "Retry 1 problem locale",
     },

@@ -4,13 +4,18 @@ import type {
   AppMapScenarioTestStep,
   Connection,
   GraphExplorationControl,
+  GraphExplorationClassification,
   GraphExplorationDecision,
   GraphExplorationObservation,
   GraphExplorationProposal,
+  ExplorationAction,
+  ExplorationFrontierFactors,
   LogicalScrollSurface,
   NormalizedSemanticNode,
+  StateFixture,
   StepTarget,
 } from "@relay/protocol";
+import { evaluateExplorationActionPolicy, rankExplorationFrontier } from "./exploration-policy.js";
 import { semanticTargetKey, semanticTargetMatches } from "./scroll-surface-semantic-index.js";
 
 const DESTRUCTIVE =
@@ -18,7 +23,6 @@ const DESTRUCTIVE =
 const EXTERNAL =
   /\b(open in (?:browser|chrome|safari)|website|app language|system settings|play store|app store)\b/iu;
 const STATEFUL_ROLE = /switch|toggle|checkbox|radio|slider|seekbar|stepper/iu;
-const NAVIGATION_ROLE = /button|cell|listitem|row|menuitem|preference|link/iu;
 
 function stableId(prefix: string, ...parts: string[]): string {
   return `${prefix}-${createHash("sha256").update(parts.join("\u0000")).digest("hex").slice(0, 16)}`;
@@ -166,17 +170,11 @@ export function classifyGraphExplorationControl(input: {
             reason: "The navigation edge is proven, but its return path is not reviewed.",
           };
   }
-  if (NAVIGATION_ROLE.test(control.role ?? "")) {
-    return {
-      classification: "navigation",
-      decision: "explore",
-      reason: "Unique semantic row with no state-changing or unsafe signal.",
-    };
-  }
   return {
     classification: "unknown",
     decision: "defer",
-    reason: "The semantic role does not prove that activating this control is safe.",
+    reason:
+      "An unreviewed control cannot prove navigation or the absence of external effects from its label and role.",
   };
 }
 
@@ -295,6 +293,78 @@ function proposedConnection(input: {
   };
 }
 
+function explorationPolicyAction(
+  control: GraphExplorationControl,
+  classification: GraphExplorationClassification,
+): ExplorationAction {
+  const destructiveKind = /\b(purchase|subscribe|buy)\b/iu.test(control.label)
+    ? "purchase"
+    : /\b(remove account|sign out|log out|deactivate)\b/iu.test(control.label)
+      ? "account-mutation"
+      : "data-deletion";
+  const kind =
+    classification === "navigation"
+      ? "navigate"
+      : classification === "reversible"
+        ? "state-change"
+        : classification === "destructive"
+          ? destructiveKind
+          : classification === "external"
+            ? "external-app"
+            : classification === "no-op"
+              ? "observe"
+              : "unknown";
+  return {
+    id: control.key,
+    kind,
+    requiredScopes:
+      kind === "state-change"
+        ? [
+            /\b(language|locale)\b/iu.test(control.label)
+              ? "locale"
+              : /\b(theme|dark mode|light mode)\b/iu.test(control.label)
+                ? "theme"
+                : /\bpermission\b/iu.test(control.label)
+                  ? "permission"
+                  : /\bnetwork|wi-?fi\b/iu.test(control.label)
+                    ? "network"
+                    : /\baccount\b/iu.test(control.label)
+                      ? "account"
+                      : "app",
+          ]
+        : [],
+    declaredExternalEffects: [],
+  };
+}
+
+function defaultFrontierFactors(input: {
+  classification: GraphExplorationClassification;
+  existing: boolean;
+  observed: boolean;
+}): ExplorationFrontierFactors {
+  return {
+    novelty: input.existing ? 0 : 100,
+    coverageValue: input.existing ? 20 : input.observed ? 70 : 100,
+    changedCodeRelevance: 0,
+    uncertaintyReduction:
+      input.classification === "unknown"
+        ? 25
+        : input.classification === "no-op"
+          ? 0
+          : input.observed
+            ? 35
+            : 75,
+    executionCost:
+      input.classification === "no-op"
+        ? 5
+        : input.classification === "navigation"
+          ? 35
+          : input.classification === "reversible"
+            ? 60
+            : 85,
+  };
+}
+
 /** Build a deterministic, Android-first exploration proposal from immutable
  * App Map evidence. This function never reads a device and never mutates the
  * supplied map. */
@@ -309,6 +379,8 @@ export function proposeGraphExploration(input: {
   surfaceId?: string;
   captureId?: string;
   observations?: readonly GraphExplorationObservation[];
+  stateFixture?: StateFixture;
+  frontier?: ReadonlyArray<{ controlKey: string; factors: ExplorationFrontierFactors }>;
 }): GraphExplorationProposal {
   const selected = selectedSurface(input);
   const controls = controlsFromSurface(selected.surface, selected.nodes);
@@ -329,7 +401,22 @@ export function proposeGraphExploration(input: {
     if (!controlKeys.has(key))
       throw new Error(`Exploration observation ${key} is not on the surface`);
   }
+  const frontierFactors = new Map<string, ExplorationFrontierFactors>();
+  for (const item of input.frontier ?? []) {
+    if (frontierFactors.has(item.controlKey)) {
+      throw new Error(`Duplicate exploration frontier factors for ${item.controlKey}`);
+    }
+    if (!controlKeys.has(item.controlKey)) {
+      throw new Error(`Exploration frontier action ${item.controlKey} is not on the surface`);
+    }
+    frontierFactors.set(item.controlKey, item.factors);
+  }
   const decisions: GraphExplorationDecision[] = [];
+  const frontierCandidates: Array<{
+    action: ExplorationAction;
+    fixture?: StateFixture;
+    factors: ExplorationFrontierFactors;
+  }> = [];
   const proposedConnections: Connection[] = [];
   const steps: AppMapScenarioTestStep[] = [];
   for (const control of controls) {
@@ -367,6 +454,32 @@ export function proposeGraphExploration(input: {
       cleanupProven,
       returnProven,
     });
+    const action = explorationPolicyAction(control, classified.classification);
+    const stateFixture = action.requiredScopes.length ? input.stateFixture : undefined;
+    const policy = evaluateExplorationActionPolicy({
+      schemaVersion: 1,
+      action,
+      ...(stateFixture ? { fixture: stateFixture } : {}),
+    });
+    const effectiveDecision =
+      classified.decision === "explore" && policy.level !== "safe"
+        ? ("defer" as const)
+        : classified.decision;
+    const effectiveReason =
+      effectiveDecision !== classified.decision
+        ? (policy.reasons[0]?.explanation ?? classified.reason)
+        : classified.reason;
+    frontierCandidates.push({
+      action,
+      ...(stateFixture ? { fixture: stateFixture } : {}),
+      factors:
+        frontierFactors.get(control.key) ??
+        defaultFrontierFactors({
+          classification: classified.classification,
+          existing: Boolean(existing),
+          observed: Boolean(observation),
+        }),
+    });
     let proposed: Connection | undefined;
     if (
       observedDestination &&
@@ -385,13 +498,16 @@ export function proposeGraphExploration(input: {
     decisions.push({
       control,
       ...classified,
+      decision: effectiveDecision,
+      reason: effectiveReason,
+      policy,
       ...(existing ? { existingConnectionId: existing.id } : {}),
       ...(proposed ? { proposedConnectionId: proposed.id } : {}),
       ...(cleanupConnectionIds?.length ? { cleanupConnectionIds: [...cleanupConnectionIds] } : {}),
     });
     const stepId = stableId("explore-step", input.sourceScreenId, control.key);
     const connectionId = existing?.id ?? proposed?.id;
-    const disabled = classified.decision === "defer" || classified.classification === "no-op";
+    const disabled = effectiveDecision === "defer" || classified.classification === "no-op";
     steps.push({
       id: stepId,
       kind: "instruction",
@@ -404,7 +520,7 @@ export function proposeGraphExploration(input: {
               status: "unresolved",
               reason: proposed
                 ? "Review and prove the proposed connection before this check can run."
-                : classified.reason,
+                : effectiveReason,
               ...(connectionId
                 ? { candidates: [{ kind: "connection", id: connectionId, label: control.label }] }
                 : {}),
@@ -413,7 +529,7 @@ export function proposeGraphExploration(input: {
         ? {
             execution: {
               status: "disabled" as const,
-              reason: classified.reason,
+              reason: effectiveReason,
               repairTargetId: `explore:${control.key}`,
               decidedBy: input.actorId,
               decidedAt: input.at,
@@ -457,6 +573,7 @@ export function proposeGraphExploration(input: {
     decisions,
     proposedConnections,
     proposedTest: test,
+    frontier: rankExplorationFrontier({ schemaVersion: 1, candidates: frontierCandidates }),
     summary: {
       controls: decisions.length,
       explore: decisions.filter((decision) => decision.decision === "explore").length,

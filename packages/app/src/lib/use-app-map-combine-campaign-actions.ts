@@ -16,11 +16,11 @@ export function createAppMapCombineCampaignActions(input: {
     resume: (id: string, reviewed: boolean) => Promise<CombineCampaign>;
     cancel: (id: string) => Promise<CombineCampaign>;
   };
+  openRun: (runId?: string) => void;
+  showDevice: () => void;
 }) {
   function openPilot(): void {
-    window.dispatchEvent(
-      new CustomEvent("relay:open-run-history", { detail: { jobId: input.pilotJobId() } }),
-    );
+    input.openRun(input.pilotJobId());
   }
 
   function resume(): void {
@@ -32,7 +32,7 @@ export function createAppMapCombineCampaignActions(input: {
       .then((campaign) => {
         input.setCampaign(campaign);
         toast("Running untouched campaign cases", "success");
-        window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
+        input.showDevice();
       })
       .catch((error) => toast(humanError(error, "Could not resume campaign"), "error"))
       .finally(() => input.setBusy(false));

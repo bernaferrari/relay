@@ -1,7 +1,10 @@
 import { createSignal, onCleanup } from "solid-js";
 
 /** Owns the right-rail device companion open/close lifecycle. */
-export function useAppMapCapturePanel(options: { clearContextSurface: () => void }) {
+export function useAppMapCapturePanel(options: {
+  clearContextSurface: () => void;
+  chooseTarget: () => void;
+}) {
   const [captureOpen, setCaptureOpen] = createSignal(false);
   const [captureClosing, setCaptureClosing] = createSignal(false);
   let captureCloseTimer: number | undefined;
@@ -30,9 +33,9 @@ export function useAppMapCapturePanel(options: { clearContextSurface: () => void
     setCaptureClosing(false);
     options.clearContextSurface();
     setCaptureOpen(true);
-    // DevicePicker subscribes when the companion mounts. Wait one frame so a
-    // request made from the canvas can never race that subscription.
-    requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("relay:open-device-picker")));
+    // DevicePicker connects when the companion mounts. Wait one frame so a
+    // request made from the canvas can never race that typed ownership seam.
+    requestAnimationFrame(options.chooseTarget);
   };
 
   onCleanup(() => {

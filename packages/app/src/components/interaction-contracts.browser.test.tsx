@@ -5,7 +5,6 @@ import type { AppMapPrimaryAction } from "../lib/app-map-primary-action";
 import { AppMapPrimaryActionButton } from "./app-map-primary-action-button";
 import { RunsRefreshControl } from "./runs-refresh-control";
 import { OfflineGate } from "./offline-gate";
-import { CombineScreenshotDialog } from "./combine-review";
 import { AppMapTestProposalReview } from "./app-map-test-proposal-review";
 import type { AppMapScenarioTest, Proposal } from "@relay/protocol";
 import { CommandPalette, CommandProvider, useCommand } from "../context/command";
@@ -187,52 +186,6 @@ test("offline interruption preserves work, owns focus, reports retry failure, an
     await settle();
     expect(root.querySelector('[role="alertdialog"]')).toBeNull();
     expect(root.querySelector("input")?.value).toBe("Checkout flow");
-    expect(browser.window.document.activeElement).toBe(trigger);
-  } finally {
-    browser.restore();
-  }
-});
-
-test("Combine screenshot dialog traps Tab and returns focus to its opener", async () => {
-  const browser = installBrowser();
-  try {
-    const trigger = browser.window.document.createElement("button");
-    const root = browser.window.document.createElement("div");
-    browser.window.document.body.append(trigger, root);
-    trigger.focus();
-    const [open, setOpen] = createSignal(true);
-    let closes = 0;
-    render(
-      () => (
-        <Show when={open()}>
-          <CombineScreenshotDialog
-            title="Checkout"
-            source="data:image/png;base64,iVBORw0KGgo="
-            world="Default"
-            values={[]}
-            position={1}
-            total={1}
-            onOpenRun={() => undefined}
-            onClose={() => {
-              closes += 1;
-              setOpen(false);
-            }}
-          />
-        </Show>
-      ),
-      root,
-    );
-    await settle();
-    const dialog = root.querySelector<HTMLElement>('[role="dialog"]')!;
-    const close = dialog.querySelector<HTMLButtonElement>('[aria-label="Close screenshot"]')!;
-    expect(browser.window.document.activeElement).toBe(close);
-    close.dispatchEvent(new browser.window.KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
-    expect(dialog.contains(browser.window.document.activeElement)).toBe(true);
-
-    close.click();
-    await settle();
-    expect(closes).toBe(1);
-    expect(root.querySelector('[role="dialog"]')).toBeNull();
     expect(browser.window.document.activeElement).toBe(trigger);
   } finally {
     browser.restore();

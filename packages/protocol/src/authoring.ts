@@ -620,6 +620,7 @@ export type AuthoringSessionSummary = {
   state: AuthoringSessionState;
   target: AuthoringTarget;
   captureProvenance: AuthoringCaptureProvenance;
+  captureProof: AuthoringCaptureProof;
   sourceScreenId?: string;
   committedConnectionId?: string;
   committedTestId?: string;

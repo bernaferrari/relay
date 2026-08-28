@@ -92,6 +92,104 @@ test("projects one Variable row by screenshot column without exposing selector h
   assert.equal(stepIndexForCombineCapture(first, 0), 0);
 });
 
+test("aligns missing and reordered captures by checkpoint identity", () => {
+  const review = projectCombineReview([
+    job({
+      id: "canonical",
+      caseIndex: 0,
+      status: "ok",
+      frames: [
+        { path: "settings-en.png", caption: "screen:Settings", capturedAt: 2 },
+        { path: "widget-en.png", caption: "screen:Widget", capturedAt: 3 },
+      ],
+      matrixCase: {
+        kind: "combine",
+        world: "English",
+        values: { language: "en" },
+        expectedScreenshots: 2,
+      },
+    }),
+    job({
+      id: "missing-first",
+      caseIndex: 1,
+      status: "error",
+      frames: [{ path: "widget-it.png", caption: "screen:Widget", capturedAt: 4 }],
+      matrixCase: {
+        kind: "combine",
+        world: "Italiano",
+        values: { language: "it" },
+        expectedScreenshots: 2,
+      },
+    }),
+    job({
+      id: "reordered",
+      caseIndex: 2,
+      status: "ok",
+      frames: [
+        { path: "widget-de.png", caption: "screen:Widget", capturedAt: 5 },
+        { path: "settings-de.png", caption: "screen:Settings", capturedAt: 6 },
+      ],
+      matrixCase: {
+        kind: "combine",
+        world: "Deutsch",
+        values: { language: "de" },
+        expectedScreenshots: 2,
+      },
+    }),
+  ]);
+
+  assert.ok(review);
+  assert.deepEqual(review.captureLabels, ["Settings", "Widget"]);
+  assert.equal(review.rows[1]?.captures[0]?.frame, undefined);
+  assert.equal(review.rows[1]?.captures[1]?.frame?.path, "widget-it.png");
+  assert.equal(review.rows[1]?.captures[1]?.index, 0);
+  assert.equal(review.rows[1]?.missingCaptures, 1);
+  assert.equal(review.rows[2]?.captures[0]?.frame?.path, "settings-de.png");
+  assert.equal(review.rows[2]?.captures[0]?.index, 1);
+  assert.equal(review.rows[2]?.captures[1]?.frame?.path, "widget-de.png");
+  assert.equal(review.rows[2]?.captures[1]?.index, 0);
+});
+
+test("keeps distinct checkpoint identities when their readable labels match", () => {
+  const review = projectCombineReview([
+    job({
+      id: "canonical",
+      caseIndex: 0,
+      status: "ok",
+      frames: [
+        { path: "screen-en.png", caption: "screen:Settings", capturedAt: 2 },
+        { path: "tour-en.png", caption: "tour:Settings", capturedAt: 3 },
+      ],
+      matrixCase: {
+        kind: "combine",
+        world: "English",
+        values: { language: "en" },
+        expectedScreenshots: 2,
+      },
+    }),
+    job({
+      id: "reordered",
+      caseIndex: 1,
+      status: "ok",
+      frames: [
+        { path: "tour-de.png", caption: "tour:Settings", capturedAt: 4 },
+        { path: "screen-de.png", caption: "screen:Settings", capturedAt: 5 },
+      ],
+      matrixCase: {
+        kind: "combine",
+        world: "Deutsch",
+        values: { language: "de" },
+        expectedScreenshots: 2,
+      },
+    }),
+  ]);
+
+  assert.ok(review);
+  assert.deepEqual(review.captureLabels, ["Settings", "Settings"]);
+  assert.equal(review.rows[1]?.captures[0]?.frame?.path, "screen-de.png");
+  assert.equal(review.rows[1]?.captures[1]?.frame?.path, "tour-de.png");
+});
+
 test("problem retry copy stays generic for non-locale Combines", () => {
   const review = projectCombineReview([
     job({
@@ -112,6 +210,7 @@ test("recompiles only problem locale values from one saved Combine", () => {
       matrixCase: {
         kind: "combine",
         appMapId: "settings",
+        testId: "tour",
         combineId: "language-x-tour",
         world: "English",
         values: { language: "en", language_label: "English" },
@@ -123,6 +222,7 @@ test("recompiles only problem locale values from one saved Combine", () => {
       matrixCase: {
         kind: "combine",
         appMapId: "settings",
+        testId: "tour",
         combineId: "language-x-tour",
         world: "Italiano",
         values: { language: "it", language_label: "Italiano" },
@@ -134,6 +234,7 @@ test("recompiles only problem locale values from one saved Combine", () => {
       matrixCase: {
         kind: "combine",
         appMapId: "settings",
+        testId: "tour",
         combineId: "language-x-tour",
         world: "Deutsch",
         values: { language: "de", language_label: "Deutsch" },
@@ -143,7 +244,8 @@ test("recompiles only problem locale values from one saved Combine", () => {
   assert.ok(review);
   assert.deepEqual(currentLocaleCombineRetry(review), {
     appMapId: "settings",
-    combineId: "language-x-tour",
+    testId: "tour",
+    variableIds: ["language"],
     selected: { language: ["it", "de"] },
   });
 });
@@ -156,6 +258,7 @@ test("does not expand multi-dimensional failures into unintended combinations", 
       matrixCase: {
         kind: "combine",
         appMapId: "settings",
+        testId: "tour",
         combineId: "language-theme-tour",
         world: "Italiano · Dark",
         values: { language: "it", theme: "dark" },

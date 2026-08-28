@@ -55,7 +55,6 @@ import { readRememberedDevicePanelPreference } from "../lib/studio-shell-prefere
 import { createStudioBlankMapActions } from "../lib/studio-blank-map-actions";
 import { EmptyAppMap, MapLibrary, RunsWorkspace } from "./studio-shell-workspaces";
 import type { WorkspaceController } from "../lib/workspace-controller";
-import { connectLegacyStudioShellEvents } from "../lib/studio-shell-event-adapter";
 
 export function StudioShell(props: {
   onOpenSettings: (section?: SettingsSection) => void;
@@ -128,16 +127,6 @@ export function StudioShell(props: {
     setMapMode("test");
     restoredInitialMap = true;
     server.setSelectedAppMapId(null);
-  });
-  onMount(() => {
-    const disconnect = connectLegacyStudioShellEvents(window, {
-      onOpenSettings: props.onOpenSettings,
-      onOpenRun: (jobId) => {
-        if (jobId) server.setSelectedJobId(jobId);
-        setArea("runs");
-      },
-    });
-    onCleanup(disconnect);
   });
   const libraryArea = createMemo<MapLibraryArea>(() => area());
   let variablesDialog: HTMLElement | undefined;
@@ -925,6 +914,7 @@ export function StudioShell(props: {
                 </Show>
                 <Show when={combineOpen()}>
                   <StudioShellCombineRail
+                    onOpenRun={(runId) => workspaceController.execute({ kind: "run.open", runId })}
                     combineId={combineFocusId()}
                     focusSection={combineFocusSection()}
                     collapsed={combineCollapsed()}

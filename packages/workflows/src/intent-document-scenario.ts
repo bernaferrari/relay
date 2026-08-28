@@ -5,6 +5,7 @@ import type {
   IntentDocumentStep,
   IntentModuleStep,
   IntentPathStep,
+  IntentRecordingSource,
 } from "./intent-document.js";
 
 function unsupported(step: AppMapScenarioTestStep, detail: string): never {
@@ -92,6 +93,50 @@ function projectStep(map: AppMap, step: AppMapScenarioTestStep): IntentDocumentS
   return unsupported(step, `${step.kind} requires the advanced Test editor`);
 }
 
+function recordingSources(
+  map: AppMap,
+  steps: readonly IntentDocumentStep[],
+): IntentRecordingSource[] {
+  const connectionIds = [
+    ...new Set(steps.flatMap((step) => (step.kind === "path" ? step.connectionIds : []))),
+  ];
+  return connectionIds.flatMap((connectionId) => {
+    const connection = map.connections[connectionId];
+    if (!connection) return [];
+    const recorded = connection.actions.find((action) => action.kind === "recorded");
+    const source = connection.recordingSource;
+    if (!source && !recorded) return [];
+    const legacy =
+      !source && recorded?.kind === "recorded"
+        ? {
+            schemaVersion: 1 as const,
+            takeId: recorded.takeId,
+            takeRevision: recorded.takeRevision,
+            capture: {
+              schemaVersion: 1 as const,
+              provenance: {
+                schemaVersion: 1 as const,
+                mode: "control-and-record" as const,
+                origin: "relay-control" as const,
+              },
+              proof: "relay-controlled" as const,
+            },
+            evidenceIds: recorded.evidenceIds,
+          }
+        : source;
+    if (!legacy) return [];
+    return [
+      {
+        connectionId,
+        takeId: legacy.takeId,
+        takeRevision: legacy.takeRevision,
+        capture: structuredClone(legacy.capture),
+        evidenceIds: [...legacy.evidenceIds].sort(),
+      },
+    ];
+  });
+}
+
 /** Project the golden-loop subset of a canonical Test into concise source.
  * Unsupported or unresolved steps fail closed instead of leaking compiled
  * selectors or pretending that a lossy document can replace the Test. */
@@ -99,13 +144,16 @@ export function intentDocumentFromScenarioTest(
   map: AppMap,
   test: AppMapScenarioTest,
 ): IntentDocument {
+  const steps = test.steps.map((step) => projectStep(map, step));
+  const sources = recordingSources(map, steps);
   return {
     schemaVersion: 1,
     kind: "bound-test",
     name: test.name,
     appMapId: map.id,
     testId: test.id,
-    steps: test.steps.map((step) => projectStep(map, step)),
+    steps,
+    ...(sources.length ? { recordingSources: sources } : {}),
   };
 }
 
@@ -144,7 +192,15 @@ export function applyIntentDocumentToScenarioTest(input: {
   // Validate the complete current document before rebuilding any step. This
   // also prevents a hand-constructed IntentDocument from deleting a semantic
   // field or an advanced step that the normal projection would have rejected.
-  intentDocumentFromScenarioTest(map, current);
+  const canonical = intentDocumentFromScenarioTest(map, current);
+  if (
+    JSON.stringify(document.recordingSources ?? []) !==
+    JSON.stringify(canonical.recordingSources ?? [])
+  ) {
+    throw new Error(
+      "recordingSources is reviewed evidence metadata and must match the open App Map exactly",
+    );
+  }
   if (document.description !== undefined) {
     throw new Error(
       "description is not supported by the canonical Test source adapter and was not applied",

@@ -68,6 +68,7 @@ test("canonical Test names remain distinct from optional App Map grouping", () =
         state: "recording",
         target: { kind: "device", platform: "android", targetId: "device-a" },
         captureProvenance: CONTROL_AND_RECORD_PROVENANCE,
+        captureProof: "relay-controlled",
       },
     },
   );
@@ -208,6 +209,7 @@ test("agent mutation output summarizes a take without repeating evidence or sema
       state: "reviewing",
       target: { kind: "device", platform: "android", targetId: "device-a" },
       captureProvenance: CONTROL_AND_RECORD_PROVENANCE,
+      captureProof: "replay-proved",
       sourceScreenId: "screen-start",
       take: {
         id: "take-a",

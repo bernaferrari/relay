@@ -148,6 +148,56 @@ test("TracePack retains recording capture provenance when the run links an Autho
       mode: "watch-and-infer",
       origin: "observed-transition",
     });
+    assert.equal(pack.source.authoringCaptureProof, "inferred-unproved");
+    assert.deepEqual(verifyTracePack(pack), pack);
+  } finally {
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("TracePack omits recording proof when the referenced Authoring Session crosses scope", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-trace-pack-authoring-scope-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = directory;
+  try {
+    await writeAuthoringSession({
+      schemaVersion: 1,
+      id: "authoring-foreign-1",
+      organizationId: "other-organization",
+      projectId: "other-project",
+      actorId: "agent:test",
+      actorKind: "agent",
+      appMapId: "map-1",
+      state: "reviewing",
+      target: { kind: "device", platform: "android", targetId: "device-1" },
+      captureProvenance: {
+        schemaVersion: 1,
+        mode: "instrumented",
+        origin: "app-instrumentation",
+      },
+      leaseId: "lease-1",
+      expectedAppMapRevision: 1,
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const run = persistedRun();
+    run.executionProvenance = {
+      schemaVersion: 1,
+      actorId: "agent:test",
+      actorKind: "agent",
+      organizationId: "local",
+      projectId: "project-1",
+      operationId: "authoring.session.replay",
+      requestId: "request-1",
+      issuedAt: 1,
+      authoringSessionId: "authoring-foreign-1",
+    };
+
+    const pack = await exportTracePack(run);
+    assert.equal(pack.source.authoringCapture, undefined);
+    assert.equal(pack.source.authoringCaptureProof, undefined);
     assert.deepEqual(verifyTracePack(pack), pack);
   } finally {
     if (previousState === undefined) delete process.env.RELAY_STATE_DIR;

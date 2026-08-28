@@ -393,6 +393,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       appendLog,
       setLiveCaptureIssue,
       setControlIssue,
+      telemetryScope: () => ({
+        projectKey: selectedAppMapId() ?? "local-workspace",
+        journeyKey: selectedJobId() ?? selectedAppMapId() ?? "local-workspace",
+      }),
       refreshEvidence: () => {
         const device = devices().find((candidate) => candidate.serial === selectedDevice());
         return refreshLiveDeviceEvidence({

@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { useServer } from "../context/server";
+import { useWorkspaceController } from "../context/workspace-controller";
 import { useRecorder } from "../context/recorder";
 import { ChooseDeviceEmptyState } from "./choose-device-empty-state";
 import { usePlatform } from "../context/platform";
@@ -65,12 +66,7 @@ import { useDeviceStageLiveGesture } from "./use-device-stage-live-gesture";
 export function DeviceStage(_props: {
   onExpandBoard?: () => void;
   onOpenTargets?: () => void;
-  /**
-   * Capture owns the recording lifecycle in the graph workspace. Keeping a
-   * second switch and task field beneath the same device makes it unclear
-   * which control is authoritative, so embedded stages only keep the useful
-   * device utilities here.
-   */
+  /** Embedded stages leave recording lifecycle ownership with the graph workspace. */
   recordingControls?: "full" | "embedded";
   /** The App Map owns the authoritative stream lifecycle while its device
    * companion is open. Keep transient frame misses in a loading state. */
@@ -78,6 +74,7 @@ export function DeviceStage(_props: {
   onOrientation?: (orientation: "portrait" | "landscape" | "square" | "unknown") => void;
 }) {
   const server = useServer();
+  const workspaceController = useWorkspaceController();
   const rec = useRecorder();
   const platform = usePlatform();
   /** Device selection is intentional. Falling back to the first discovered
@@ -837,7 +834,7 @@ export function DeviceStage(_props: {
             purpose="live"
             scanning={server.deviceDiscoveryStatus() === "scanning"}
             offline={server.health() !== "online"}
-            onChooseDevice={() => window.dispatchEvent(new CustomEvent("relay:open-device-picker"))}
+            onChooseDevice={() => workspaceController.execute({ kind: "target.choose" })}
           />
         }
       >
@@ -908,6 +905,9 @@ export function DeviceStage(_props: {
                   onRetryScreenPreview={() => {
                     void retryScreenPreview();
                   }}
+                  onOpenDeviceSettings={() =>
+                    workspaceController.execute({ kind: "settings.open", section: "devices" })
+                  }
                   onEnterRecordMode={() => {
                     void rec.enterRecordMode();
                   }}
@@ -1283,9 +1283,7 @@ export function DeviceStage(_props: {
               busy={panelRetrying()}
               onOpenXcode={() => void platform.openXcode?.()}
               onOpenSettings={() =>
-                window.dispatchEvent(
-                  new CustomEvent("relay:open-settings", { detail: { section: "devices" } }),
-                )
+                workspaceController.execute({ kind: "settings.open", section: "devices" })
               }
               onRetry={() => {
                 void retryDevicePanel();

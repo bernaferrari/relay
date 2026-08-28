@@ -6,12 +6,34 @@ type AppMapRunIdentity = Pick<JobInfo, "action" | "artifacts">;
 /** App Map execution compiles to a private recipe id. Reports must navigate
  * back to the durable map, never expose that generated recipe as a document. */
 export function appMapIdForJob(job: AppMapRunIdentity): string | null {
-  const plan = job.artifacts?.find((artifact) => artifact.kind === "app-map-flow-plan")?.data;
-  if (plan && typeof plan === "object" && !Array.isArray(plan)) {
-    const appMapId = (plan as { appMapId?: unknown }).appMapId;
-    if (typeof appMapId === "string" && appMapId.trim()) return appMapId;
+  for (const artifact of job.artifacts ?? []) {
+    if (
+      (artifact.kind === "app-map-flow-plan" || artifact.kind === "app-map-test-plan") &&
+      artifact.data &&
+      typeof artifact.data === "object" &&
+      !Array.isArray(artifact.data)
+    ) {
+      const appMapId = (artifact.data as { appMapId?: unknown }).appMapId;
+      if (typeof appMapId === "string" && appMapId.trim()) return appMapId;
+    }
   }
   return /^app-map:([^:]+):(flow|routine):/.exec(job.action)?.[1] ?? null;
+}
+
+export function testIdForJob(job: AppMapRunIdentity): string | null {
+  for (const artifact of job.artifacts ?? []) {
+    if (
+      artifact.kind !== "app-map-test-plan" ||
+      !artifact.data ||
+      typeof artifact.data !== "object" ||
+      Array.isArray(artifact.data)
+    )
+      continue;
+    const plan = artifact.data as { test?: { id?: unknown }; testId?: unknown };
+    const testId = plan.test?.id ?? plan.testId;
+    if (typeof testId === "string" && testId.trim()) return testId;
+  }
+  return null;
 }
 
 export function runStopHeadline(input: {

@@ -43,16 +43,14 @@ import { useAppMapCombineSectionFocus } from "../lib/use-app-map-combine-section
 import { AppMapCombineRunStatus } from "./app-map-combine-run-status";
 
 const [MAX_DEVICE_WORLDS, MAX_PREVIEW_WORLDS] = [250, 40];
-const campaignStorageKey = (appMapId: string, combineId: string) =>
-  `relay:combine-campaign:${appMapId}:${combineId}`;
+const campaignStorageKey = (map: string, grid: string) => `relay:combine-campaign:${map}:${grid}`;
 export function AppMapCombine(props: {
   onClose: () => void;
   onOpenDevice: () => void;
   combineId?: string;
   focusSection?: CanvasCombineSection;
-  /** Compact rail presentation while the device companion is open; the
-   * editor stays mounted so drafted rows survive. */
   collapsed?: boolean;
+  onOpenRun: (runId?: string) => void;
 }) {
   const server = useServer();
   const [selectedVariableIds, setSelectedVariableIds] = createSignal<string[]>([]);
@@ -164,6 +162,8 @@ export function AppMapCombine(props: {
     setBusy,
     setCampaign,
     combineCampaign: server.combineCampaign,
+    openRun: props.onOpenRun,
+    showDevice: props.onOpenDevice,
   });
   const headline = createMemo(() =>
     combineHeadline({
@@ -563,12 +563,12 @@ export function AppMapCombine(props: {
           setPilotJobId(started.jobId ?? undefined);
           setCampaignReviewed(false);
           setCampaign(await server.combineCampaign.get(started.campaignId));
-          window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
+          props.onOpenDevice();
           return;
         }
       }
       props.onClose();
-      window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
+      props.onOpenDevice();
     } catch (error) {
       const readable = humanError(error, "Could not start this combine");
       if (localAdmission.localCampaignMode()) localAdmission.reportFeedback(readable);

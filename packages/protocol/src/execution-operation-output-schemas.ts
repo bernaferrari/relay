@@ -140,6 +140,7 @@ const jobSummarySchema = z
       .object({
         kind: z.literal("combine"),
         appMapId: z.string().optional(),
+        testId: z.string().optional(),
         combineId: z.string().optional(),
         world: z.string(),
         values: z.record(z.string(), z.string()),

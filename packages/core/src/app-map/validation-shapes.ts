@@ -1,4 +1,4 @@
-import type { TargetProfile } from "@relay/protocol";
+import { parseAuthoringCaptureReview, type TargetProfile } from "@relay/protocol";
 import { appMapFail } from "./errors.js";
 import type {
   AddScreenInput,
@@ -423,6 +423,43 @@ export function assertConnection(connection: Connection, scope: AppMapScope, lab
   }
   if (connection.sourceAnchor !== undefined)
     assertConnectionSourceAnchor(connection.sourceAnchor, `${label}.sourceAnchor`);
+  if (connection.recordingSource !== undefined) {
+    const source = connection.recordingSource;
+    objectValue(source, `${label}.recordingSource`);
+    if (source.schemaVersion !== 1)
+      appMapFail("invalid-map", `${label}.recordingSource.schemaVersion must be 1`);
+    identifier(source.takeId, `${label}.recordingSource.takeId`);
+    safeInteger(source.takeRevision, `${label}.recordingSource.takeRevision`);
+    if (source.takeRevision === 0)
+      appMapFail("invalid-map", `${label}.recordingSource.takeRevision must be positive`);
+    try {
+      parseAuthoringCaptureReview(source.capture);
+    } catch (error) {
+      appMapFail(
+        "invalid-map",
+        `${label}.recordingSource.capture is invalid: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    stringArray(source.evidenceIds, `${label}.recordingSource.evidenceIds`);
+    if (source.evidenceIds.length > 256)
+      appMapFail("invalid-map", `${label}.recordingSource.evidenceIds exceeds 256 items`);
+    const recorded = connection.actions.filter((action) => action.kind === "recorded");
+    const sourceEvidence = new Set(source.evidenceIds);
+    if (
+      sourceEvidence.size !== source.evidenceIds.length ||
+      !recorded.some(
+        (action) =>
+          action.kind === "recorded" &&
+          action.takeId === source.takeId &&
+          action.takeRevision === source.takeRevision &&
+          new Set(action.evidenceIds).size === action.evidenceIds.length &&
+          action.evidenceIds.length === source.evidenceIds.length &&
+          action.evidenceIds.every((id) => sourceEvidence.has(id)),
+      )
+    ) {
+      appMapFail("invalid-map", `${label}.recordingSource must match its recorded action evidence`);
+    }
+  }
   if (connection.presentation !== undefined)
     assertConnectionPresentation(connection.presentation, `${label}.presentation`);
 }

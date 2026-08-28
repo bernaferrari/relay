@@ -89,7 +89,7 @@ export function RunsHistoryList(props: {
               size="lg"
               icon="wave"
               title="No runs yet"
-              description="Run a path or Combine from an App Map. Screenshot evidence stays attached to the run that created it."
+              description="Run a Test or Repeat it across values. Checkpoint evidence stays attached to the Run that created it."
               actionLabel="Open maps"
               onAction={props.onOpenTests}
               class="py-14"

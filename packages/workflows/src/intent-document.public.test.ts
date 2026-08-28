@@ -42,6 +42,23 @@ const intent: IntentDocument = {
       testStepId: "no-clipping",
     },
   ],
+  recordingSources: [
+    {
+      connectionId: "open-settings",
+      takeId: "take-settings",
+      takeRevision: 2,
+      capture: {
+        schemaVersion: 1,
+        provenance: {
+          schemaVersion: 1,
+          mode: "watch-and-infer",
+          origin: "observed-transition",
+        },
+        proof: "replay-proved",
+      },
+      evidenceIds: ["pixels-settings", "tree-settings"],
+    },
+  ],
   repeat: {
     strategy: "cartesian",
     pilot: { mode: "specified", case: { language: "en", theme: "dark" } },
@@ -62,7 +79,7 @@ test("IntentDocument YAML preserves ordered semantic steps and Repeat intent", (
   assert.deepEqual(parseIntentDocumentYaml(yaml), intent);
 });
 
-test("IntentDocument contains bindings, never an executable App Map or evidence", () => {
+test("IntentDocument contains bindings and reviewed metadata, never executable evidence", () => {
   const yaml = formatIntentDocumentYaml(intent);
   const references = intentDocumentReferences(intent);
 
@@ -75,10 +92,27 @@ test("IntentDocument contains bindings, never an executable App Map or evidence"
     testStepIds: ["reach-settings", "open-data-controls", "capture-data-controls", "no-clipping"],
     variableIds: ["language", "theme"],
   });
-  assert.doesNotMatch(yaml, /selectors|evidence|screens:|connections:|runs:/u);
+  assert.match(yaml, /recordingSources:\n  - connection: open-settings/u);
+  assert.match(yaml, /mode: watch-and-infer/u);
+  assert.match(yaml, /proof: replay-proved/u);
+  assert.doesNotMatch(yaml, /selectors|screens:|connections:|runs:|content:|base64/u);
   assert.equal(
     intentDocumentYamlFilename(intent.testId),
     "data-controls-localization.relay.test.yaml",
+  );
+});
+
+test("recording source metadata fails closed on stronger or mismatched proof claims", () => {
+  const yaml = formatIntentDocumentYaml(intent);
+  assert.throws(
+    () =>
+      parseIntentDocumentYaml(yaml.replace("origin: observed-transition", "origin: relay-control")),
+    /mode and origin do not agree/u,
+  );
+  assert.throws(
+    () =>
+      parseIntentDocumentYaml(yaml.replace("proof: replay-proved", "proof: instrumented-unproved")),
+    /proof is incompatible/u,
   );
 });
 

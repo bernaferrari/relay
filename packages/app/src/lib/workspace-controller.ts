@@ -1,3 +1,6 @@
+import type { SettingsSection } from "../pages/settings";
+import type { AppMapRunReadiness } from "./app-map-run-readiness";
+
 /**
  * Cross-surface commands for the golden Test workflow.
  *
@@ -14,6 +17,7 @@ export type WorkspaceCommand =
   | { kind: "device.hide" }
   | { kind: "device.state"; open: boolean }
   | { kind: "run.open"; runId?: string }
+  | { kind: "settings.open"; section?: SettingsSection }
   | { kind: "test.run" }
   | { kind: "test.run-readiness"; readiness: AppMapRunReadiness }
   | { kind: "test.record" }
@@ -34,6 +38,7 @@ export type WorkspaceCommandAdapter = {
   hideDevice?: () => void;
   deviceStateChanged?: (open: boolean) => void;
   openRun?: (runId?: string) => void;
+  openSettings?: (section?: SettingsSection) => void;
   runTest?: () => void;
   runReadinessChanged?: (readiness: AppMapRunReadiness) => void;
   recordTest?: () => void;
@@ -77,6 +82,9 @@ function executeOn(adapter: WorkspaceCommandAdapter, command: WorkspaceCommand):
     case "run.open":
       adapter.openRun?.(command.runId);
       return adapter.openRun !== undefined;
+    case "settings.open":
+      adapter.openSettings?.(command.section);
+      return adapter.openSettings !== undefined;
     case "test.run":
       adapter.runTest?.();
       return adapter.runTest !== undefined;
@@ -142,4 +150,3 @@ export function createWorkspaceController(): WorkspaceController {
     },
   };
 }
-import type { AppMapRunReadiness } from "./app-map-run-readiness";

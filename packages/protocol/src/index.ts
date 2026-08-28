@@ -42,6 +42,7 @@ export * from "./trace-pack-visual-localization.js";
 export * from "./replay-lab.js";
 export * from "./visual-verification.js";
 export * from "./approval-policy.js";
+export * from "./exploration-policy.js";
 export * from "./verify-change.js";
 export * from "./target-runtime.js";
 export * from "./campaign-capacity-plan.js";
@@ -56,6 +57,7 @@ export * from "./target-observation.js";
 export * from "./target-supervisor.js";
 export * from "./workflow-record.js";
 export * from "./workflow-record-operation-schemas.js";
+export * from "./golden-loop-telemetry.js";
 export * from "./discovery-contract.js";
 export type {
   CombineEvidenceAnalysis,
@@ -181,6 +183,8 @@ export type JobSummary = {
     kind: "combine";
     /** Durable App Map owning the saved matrix. */
     appMapId?: string;
+    /** App Map-local Test that produced this tuple. */
+    testId?: string;
     /** Saved canvas matrix that produced this case. Lets live/result surfaces
      * reconnect execution to its authoring object without exposing raw inputs. */
     combineId?: string;

@@ -280,6 +280,7 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         const stageCells = (acceptedAdmission?: LocalCombineCampaignAdmission) =>
           stagePreparedAppMapCombineCells({
             cells: toQueue,
+            combineId: projected.combineId,
             batchId: projected.id,
             title: projected.execution.title,
             targetForCell: (cell) => cell.executionTarget,

@@ -99,11 +99,7 @@ export function useFirstOperatorRun(actions: {
     const next = state();
     if (next.action === "device") {
       if (next.stage === "device" && targetStatus().kind === "choose-target") {
-        if (server.devices().length) {
-          window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
-        } else {
-          actions.onOpenTargets();
-        }
+        actions.onOpenTargets();
         return;
       }
       actions.onShowLiveDevice();

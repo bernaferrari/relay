@@ -183,8 +183,36 @@ export const tracePackSchema = z
         writtenAt: z.number().int().nonnegative(),
         /** Present when the frozen run links to a durable Authoring Session. */
         authoringCapture: authoringCaptureProvenanceSchema.optional(),
+        authoringCaptureProof: z
+          .enum(["relay-controlled", "inferred-unproved", "instrumented-unproved", "replay-proved"])
+          .optional(),
       })
-      .strict(),
+      .strict()
+      .superRefine((source, context) => {
+        if (source.authoringCaptureProof && !source.authoringCapture) {
+          context.addIssue({
+            code: "custom",
+            message: "authoring capture proof requires authoring capture provenance",
+          });
+          return;
+        }
+        const expected =
+          source.authoringCapture?.mode === "watch-and-infer"
+            ? "inferred-unproved"
+            : source.authoringCapture?.mode === "instrumented"
+              ? "instrumented-unproved"
+              : "relay-controlled";
+        if (
+          source.authoringCaptureProof &&
+          source.authoringCaptureProof !== expected &&
+          source.authoringCaptureProof !== "replay-proved"
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: "authoring capture proof is incompatible with provenance",
+          });
+        }
+      }),
     redaction: z
       .object({
         status: z.enum(["applied-at-persistence", "unknown"]),

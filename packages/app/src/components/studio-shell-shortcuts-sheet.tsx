@@ -1,5 +1,7 @@
-import { For } from "solid-js";
+import { For, onMount } from "solid-js";
+import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
+import { recordGoldenLoopHelp } from "../lib/golden-loop-telemetry";
 import { modalPanel, modalScrim, productIconButton } from "../lib/ui";
 import { Icon } from "./icon";
 
@@ -8,6 +10,8 @@ import { Icon } from "./icon";
  * so the canvas stays visible behind it.
  */
 export function StudioShellShortcutsSheet(props: { onClose: () => void }) {
+  const server = useServer();
+  onMount(() => recordGoldenLoopHelp(server.selectedAppMapId() ?? "local-workspace"));
   return (
     <div
       class={cn(modalScrim, "z-[var(--z-modal-nested)] flex items-center justify-center p-5")}

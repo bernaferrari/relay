@@ -108,6 +108,63 @@ test("thin source shows readable path and checkpoint without selectors or eviden
   if (edited.ok) assert.equal(edited.test.steps[0]?.intent, "Open app settings");
 });
 
+test("Test Source round-trips reviewed recording mode but rejects proof edits", () => {
+  const { map, scenario } = fixture();
+  map.connections.open!.actions = [
+    {
+      id: "recording-take-1",
+      kind: "recorded",
+      takeId: "take-1",
+      takeRevision: 3,
+      steps: [{ kind: "tap", target: { label: "Settings" } }],
+      evidenceIds: ["tree-1", "pixels-1"],
+    },
+  ];
+  map.connections.open!.recordingSource = {
+    schemaVersion: 1,
+    takeId: "take-1",
+    takeRevision: 3,
+    capture: {
+      schemaVersion: 1,
+      provenance: {
+        schemaVersion: 1,
+        mode: "watch-and-infer",
+        origin: "observed-transition",
+      },
+      proof: "replay-proved",
+    },
+    evidenceIds: ["tree-1", "pixels-1"],
+  };
+
+  const projected = projectAppMapTestSource(map, scenario);
+  assert.equal(projected.kind, "ready");
+  if (projected.kind !== "ready") return;
+  assert.match(projected.source, /mode: watch-and-infer/u);
+  assert.match(projected.source, /proof: replay-proved/u);
+  assert.equal(
+    applyAppMapTestSource({
+      map,
+      current: scenario,
+      source: projected.source.replace("Open Settings", "Open app settings"),
+    }).ok,
+    true,
+  );
+  const tampered = applyAppMapTestSource({
+    map,
+    current: scenario,
+    source: projected.source.replace("mode: watch-and-infer", "mode: instrumented"),
+  });
+  assert.equal(tampered.ok, false);
+  if (!tampered.ok) assert.match(tampered.message, /mode and origin do not agree/u);
+  const deleted = applyAppMapTestSource({
+    map,
+    current: scenario,
+    source: projected.source.replace(/recordingSources:[\s\S]*$/u, ""),
+  });
+  assert.equal(deleted.ok, false);
+  if (!deleted.ok) assert.match(deleted.message, /recordingSources is reviewed evidence/u);
+});
+
 test("invalid and unsupported source never produce a Test to save", () => {
   const { map, scenario } = fixture();
   assert.deepEqual(applyAppMapTestSource({ map, current: scenario, source: "steps: [" }).ok, false);

@@ -75,8 +75,7 @@ import { useAppMapWorkspaceRun } from "../lib/use-app-map-workspace-run";
 import type { WorkspaceController } from "../lib/workspace-controller";
 export function AppMapWorkspace(props: {
   workspaceController?: WorkspaceController;
-  /** Which of the shell's three canvas modes is showing. The shell owns it so
-   * the map has exactly one mode switcher instead of two stacked strips. */
+  /** Shell-owned canvas mode; the map never renders a duplicate switcher. */
   view: MapCanvasView;
   onView: (view: MapCanvasView) => void;
   onOpenTargets: () => void;
@@ -215,6 +214,7 @@ export function AppMapWorkspace(props: {
     openDevicePicker,
   } = useAppMapCapturePanel({
     clearContextSurface: () => setContextSurface(null),
+    chooseTarget: () => props.workspaceController?.execute({ kind: "target.choose" }),
   });
   const contextPanels = useAppMapContextPanels({
     activeAppMap,
@@ -232,7 +232,6 @@ export function AppMapWorkspace(props: {
     pendingProposals,
     Panels: ContextPanels,
   } = contextPanels;
-  // Revision history annotates only the Map view.
   createEffect(() => {
     if (props.view !== "map") setHistoryOpen(false);
   });
@@ -415,7 +414,6 @@ export function AppMapWorkspace(props: {
       setSelectedNodeId(node.id);
     }
     setSelectedConnectionId(null);
-    // Selection is the entry point to object properties; closing Details keeps selection.
     setScreenInspectorOpen(!event?.shiftKey);
     setRenamingNodeId(null);
     if (node.representativeStepIndex >= 0) selectStep(node.representativeStepIndex);
@@ -446,6 +444,8 @@ export function AppMapWorkspace(props: {
     setCaptureOpen,
     openDevicePicker,
     openLiveDevice,
+    openDeviceSettings: () =>
+      props.workspaceController?.execute({ kind: "settings.open", section: "devices" }),
     onPathKept: () => props.onOpenActions(),
   });
   const {

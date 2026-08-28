@@ -166,8 +166,8 @@ export function DevicePicker(props: {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape" && open()) closePicker(true);
     };
-    // Lets distant surfaces (evidence card, blocked-run toasts) open this
-    // picker instead of dead-ending on "choose another device" copy.
+    // Distant surfaces use the typed workspace command so target selection
+    // cannot race or duplicate an untyped window event listener.
     const onOpenRequest = () => {
       setOpen(true);
       queueMicrotask(() => trigger?.scrollIntoView({ block: "nearest" }));
@@ -177,11 +177,9 @@ export function DevicePicker(props: {
     });
     document.addEventListener("mousedown", onPointer);
     window.addEventListener("keydown", onKey);
-    window.addEventListener("relay:open-device-picker", onOpenRequest);
     onCleanup(() => {
       document.removeEventListener("mousedown", onPointer);
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener("relay:open-device-picker", onOpenRequest);
       disconnectWorkspace?.();
     });
   });
@@ -453,11 +451,10 @@ export function DevicePicker(props: {
                         class="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)] transition-colors hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)]"
                         onClick={() => {
                           setOpen(false);
-                          window.dispatchEvent(
-                            new CustomEvent("relay:open-settings", {
-                              detail: { section: "devices" },
-                            }),
-                          );
+                          props.workspaceController?.execute({
+                            kind: "settings.open",
+                            section: "devices",
+                          });
                         }}
                       >
                         Open device setup

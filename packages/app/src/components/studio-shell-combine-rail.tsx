@@ -14,6 +14,7 @@ export function StudioShellCombineRail(props: {
   collapsed: boolean;
   onOpenDevice: () => void;
   onClose: () => void;
+  onOpenRun: (runId?: string) => void;
 }) {
   return (
     <aside
@@ -32,6 +33,7 @@ export function StudioShellCombineRail(props: {
           combineId={props.combineId}
           focusSection={props.focusSection}
           collapsed={props.collapsed}
+          onOpenRun={props.onOpenRun}
           onOpenDevice={props.onOpenDevice}
           onClose={props.onClose}
         />

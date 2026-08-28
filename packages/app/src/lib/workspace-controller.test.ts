@@ -9,6 +9,7 @@ test("workspace controller routes typed commands to their surface owners", () =>
     chooseTarget: () => calls.push("target"),
     targetSelected: (targetId) => calls.push(`selected:${targetId}`),
     openRun: (runId) => calls.push(`run:${runId ?? "latest"}`),
+    openSettings: (section) => calls.push(`settings:${section ?? "appearance"}`),
     runTest: () => calls.push("run-test"),
     recordTest: () => calls.push("record"),
   });
@@ -33,6 +34,7 @@ test("workspace controller routes typed commands to their surface owners", () =>
   assert.equal(controller.execute({ kind: "device.show" }), true);
   assert.equal(controller.execute({ kind: "device.state", open: true }), true);
   assert.equal(controller.execute({ kind: "run.open", runId: "run-7" }), true);
+  assert.equal(controller.execute({ kind: "settings.open", section: "devices" }), true);
   assert.equal(controller.execute({ kind: "test.run" }), true);
   assert.equal(
     controller.execute({
@@ -67,6 +69,7 @@ test("workspace controller routes typed commands to their surface owners", () =>
     "device",
     "device-state:true",
     "run:run-7",
+    "settings:devices",
     "run-test",
     "ready:true",
     "record",
@@ -110,4 +113,40 @@ test("workspace controller uses a stable adapter snapshot during execution", () 
   calls.length = 0;
   controller.execute({ kind: "device.hide" });
   assert.deepEqual(calls, ["first"]);
+});
+
+test("retired DOM event names are inert while typed owners execute once and disconnect safely", () => {
+  const controller = createWorkspaceController();
+  const target = new EventTarget();
+  const calls: string[] = [];
+  const disconnect = controller.connect({
+    chooseTarget: () => calls.push("target"),
+    showDevice: () => calls.push("device"),
+    openSettings: (section) => calls.push(`settings:${section}`),
+    openRun: (runId) => calls.push(`run:${runId}`),
+  });
+
+  for (const name of [
+    "relay:open-device-picker",
+    "relay:toggle-device-panel",
+    "relay:open-device-panel",
+    "relay:close-device-panel",
+    "relay:open-settings",
+    "relay:open-run-history",
+  ]) {
+    target.dispatchEvent(new CustomEvent(name, { detail: { jobId: "legacy" } }));
+  }
+  assert.deepEqual(calls, []);
+
+  assert.equal(controller.execute({ kind: "target.choose" }), true);
+  assert.equal(controller.execute({ kind: "device.show" }), true);
+  assert.equal(controller.execute({ kind: "settings.open", section: "devices" }), true);
+  assert.equal(controller.execute({ kind: "run.open", runId: "run-1" }), true);
+  assert.deepEqual(calls, ["target", "device", "settings:devices", "run:run-1"]);
+
+  disconnect();
+  disconnect();
+  assert.equal(controller.execute({ kind: "target.choose" }), false);
+  assert.equal(controller.execute({ kind: "settings.open" }), false);
+  assert.equal(calls.length, 4);
 });

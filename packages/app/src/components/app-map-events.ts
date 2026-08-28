@@ -119,12 +119,6 @@ export function createAppMapEventOrchestration(options: {
 
   onMount(() => {
     let toolBeforeSpace: AppMapCanvasTool | null = null;
-    const onToggleDevicePanel = () => options.onToggleDevicePanel();
-    const onOpenDevicePanel = () => options.onOpenDevicePanel();
-    const onCloseDevicePanel = () => options.onCloseDevicePanel();
-    const onRunMap = () => options.onRunMap();
-    const onRecordPath = () => options.onRecord();
-    const onCaptureScreen = () => options.onCaptureScreen();
     const onCanvasKey = (event: KeyboardEvent) => {
       if (shouldIgnoreCanvasShortcut(event)) return;
       if (isCaptureScreenShortcut(event)) {
@@ -192,25 +186,10 @@ export function createAppMapEventOrchestration(options: {
       redoMap: () => options.onUndoRequest(true),
     });
 
-    // Compatibility listeners remain for Map-only surfaces that have not yet
-    // joined the typed workspace seam. Golden Test and shell paths use the
-    // WorkspaceController above.
-    window.addEventListener("relay:toggle-device-panel", onToggleDevicePanel);
-    window.addEventListener("relay:open-device-panel", onOpenDevicePanel);
-    window.addEventListener("relay:close-device-panel", onCloseDevicePanel);
-    window.addEventListener("relay:run-app-map", onRunMap);
-    window.addEventListener("relay:record-path", onRecordPath);
-    window.addEventListener("relay:capture-screen", onCaptureScreen);
     window.addEventListener("keydown", onCanvasKey);
     window.addEventListener("keyup", onCanvasKeyUp);
     onCleanup(() => {
       disconnectWorkspace();
-      window.removeEventListener("relay:toggle-device-panel", onToggleDevicePanel);
-      window.removeEventListener("relay:open-device-panel", onOpenDevicePanel);
-      window.removeEventListener("relay:close-device-panel", onCloseDevicePanel);
-      window.removeEventListener("relay:run-app-map", onRunMap);
-      window.removeEventListener("relay:record-path", onRecordPath);
-      window.removeEventListener("relay:capture-screen", onCaptureScreen);
       window.removeEventListener("keydown", onCanvasKey);
       window.removeEventListener("keyup", onCanvasKeyUp);
     });

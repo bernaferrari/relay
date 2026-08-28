@@ -38,6 +38,7 @@ import { createAuthorTestWorkflowBoundary } from "../lib/author-test-workflow-co
 import { createSingleFlightAction } from "../lib/single-flight-action";
 import { createPendingRecordingScopeActions } from "./recorder-pending-scope";
 import { createRecorderAuthoringState } from "./recorder-authoring-state";
+import { useWorkspaceController } from "./workspace-controller";
 
 export {
   authoringTargetFromPhysicalIosStep,
@@ -72,6 +73,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
   gate: false,
   init: () => {
     const server = useServer();
+    const workspaceController = useWorkspaceController();
     const [interacting, setInteracting] = createSignal(false);
     const [localArming, setLocalArming] = createSignal(false);
     const [checkpointBusy, setCheckpointBusy] = createSignal(false);
@@ -186,7 +188,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       if (!targetReady()) {
         toast("Choose a ready device before recording", "info");
-        window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+        workspaceController.execute({ kind: "target.choose" });
         return false;
       }
       const appMapId = server.selectedAppMapId();
@@ -204,6 +206,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       try {
         const appMap = await server.loadAppMap(appMapId);
+        const workflowRequestId = crypto.randomUUID();
         const snapshot = await authoringWorkflow.start({
           kind: "author-test",
           actorId: server.actorId(),
@@ -218,6 +221,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
                   targetId: device.serial,
                 },
           leaseId,
+          workflowRequestId,
           revision: { exact: appMap.revision },
           ...(pendingSourceScreenId() ? { sourceScreenId: pendingSourceScreenId() } : {}),
           ...(pendingConnectionId() ? { pendingConnectionId: pendingConnectionId() } : {}),
@@ -273,7 +277,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       if (!targetReady()) {
         toast("Choose a ready device before capturing the start screen", "info");
-        window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+        workspaceController.execute({ kind: "target.choose" });
         return null;
       }
       const appMapId = appMapIdOverride ?? server.selectedAppMapId();
@@ -380,7 +384,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       if (!targetReady()) {
         toast("Choose a ready device before saving its screen", "info");
-        window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+        workspaceController.execute({ kind: "target.choose" });
         return null;
       }
       const appMapId = appMapIdOverride ?? server.selectedAppMapId();

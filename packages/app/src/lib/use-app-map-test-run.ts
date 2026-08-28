@@ -29,6 +29,7 @@ import {
   sameAppMapTestRunIntent,
   type AppMapTestRunIntent,
 } from "./app-map-test-run-intent";
+import { goldenLoopTelemetry } from "./golden-loop-telemetry";
 
 type SaveState = "saved" | "saving" | "error";
 type RunAttentionMarker = {
@@ -88,6 +89,7 @@ export function createAppMapTestRun(options: {
   let runGeneration = 0;
   let preflightRequest = 0;
   let recoveryRequest = 0;
+  const measuredJobs = new Set<string>();
   let runContextKey: string | undefined;
   let recoveredMarkerKey: string | undefined;
   const fullSurfaceIds = createMemo(() => {
@@ -135,6 +137,26 @@ export function createAppMapTestRun(options: {
   const job = createMemo(() => {
     const id = jobId();
     return id ? options.jobs().find((candidate) => candidate.id === id) : undefined;
+  });
+  createEffect(() => {
+    const current = job();
+    const intent = currentRunIntent();
+    if (
+      !current ||
+      !intent ||
+      measuredJobs.has(current.id) ||
+      !["ok", "healed", "error", "cancelled"].includes(current.status)
+    ) {
+      return;
+    }
+    measuredJobs.add(current.id);
+    void goldenLoopTelemetry.emit({
+      projectKey: intent.appMapId,
+      journeyKey: intent.testId,
+      type: "boundary",
+      boundary: "run",
+      outcome: current.status === "ok" || current.status === "healed" ? "completed" : "failed",
+    });
   });
 
   function currentRunIntent(chosenStartup = startup()): AppMapTestRunIntent | undefined {
@@ -417,6 +439,13 @@ export function createAppMapTestRun(options: {
     setJobId();
     const startedAfter = Date.now();
     const workflowRequestId = crypto.randomUUID();
+    void goldenLoopTelemetry.emit({
+      projectKey: intent.appMapId,
+      journeyKey: intent.testId,
+      type: "boundary",
+      boundary: "run",
+      outcome: "started",
+    });
     const dispatchKey = attentionKey();
     const preliminaryMarker: RunAttentionMarker = {
       schemaVersion: 1,
@@ -456,6 +485,13 @@ export function createAppMapTestRun(options: {
         continuation: "durable",
       });
       setWorkflow(result);
+      void goldenLoopTelemetry.emit({
+        projectKey: intent.appMapId,
+        journeyKey: intent.testId,
+        type: "action-latency",
+        action: "run",
+        durationMs: Math.max(0, Date.now() - startedAfter),
+      });
       if (
         result.phase === "queued" ||
         result.phase === "running" ||

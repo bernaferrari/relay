@@ -132,9 +132,7 @@ export function RunsWorkspace(props: {
   const selectedCombineRuns = createMemo(() => {
     const job = selected();
     if (!job?.batchId || !isCombineJob(job)) return [];
-    // Persisted list rows omit frozen inputs until their detail is loaded. Once
-    // the selected run proves this is a Combine, include every sibling so the
-    // detail-loading effect below can hydrate the complete review.
+    // Include every sibling so detail loading can hydrate the complete review.
     return rows().filter((row) => row.batchId === job.batchId);
   });
   const selectedBatchRunCount = createMemo(() => {
@@ -407,7 +405,7 @@ export function RunsWorkspace(props: {
               Run history
             </h2>
             <p class="mt-0.5 text-caption text-text-weak">
-              Every path and Combine run, including screenshot evidence.
+              Every Test and Repeat result, including checkpoint evidence.
             </p>
           </div>
           <RunsRefreshControl
@@ -469,6 +467,7 @@ export function RunsWorkspace(props: {
               {(review) => (
                 <CombineReview
                   review={review()}
+                  history={rows()}
                   onOpen={openCombineCapture}
                   onRetryProblems={() => void retryProblemCombineRuns()}
                   onExport={() => void exportSelectedCombine()}
@@ -748,7 +747,7 @@ export function RunsWorkspace(props: {
                     onClick={() => setTab("combine")}
                     onKeyDown={onReportTabKeyDown}
                   >
-                    Combine
+                    Repeat results
                     <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-micro/4 tabular-nums text-text-interactive-base">
                       {selectedCombineRuns().length}
                     </span>

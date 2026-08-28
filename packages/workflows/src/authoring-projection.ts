@@ -265,6 +265,13 @@ export function snapshotFromAuthoringSession(input: {
     capture: {
       mode: captureProvenance.mode,
       provenance: captureProvenance,
+      proof: captureProofForAuthoring(
+        captureProvenance,
+        session.take?.replayAttempts.some(
+          (attempt) =>
+            attempt.takeRevision === session.take?.currentRevision && attempt.outcome === "passed",
+        ) === true,
+      ),
       replayRequiredBeforeApproval: authoringCaptureNeedsReplay(captureProvenance),
     },
     ...(review ? { review } : {}),

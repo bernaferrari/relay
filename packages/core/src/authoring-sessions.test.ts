@@ -853,6 +853,15 @@ test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, 
     assert.ok(
       connection.actions[0]?.kind === "recorded" && connection.actions[0].evidenceIds.length > 0,
     );
+    assert.deepEqual(connection.recordingSource?.capture, {
+      schemaVersion: 1,
+      provenance: {
+        schemaVersion: 1,
+        mode: "control-and-record",
+        origin: "relay-control",
+      },
+      proof: "replay-proved",
+    });
     assert.equal(appMap.activity[session.id]?.eventType, "recording.committed");
   });
 });

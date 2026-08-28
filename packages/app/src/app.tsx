@@ -1,4 +1,4 @@
-import { type ParentProps, createSignal, Show } from "solid-js";
+import { type ParentProps, createSignal, onCleanup, Show } from "solid-js";
 import { ThemeProvider, type ThemeAppliedDetail } from "@relay/ui/theme/context";
 import { PlatformProvider, type Platform } from "./context/platform";
 import { ServerProvider } from "./context/server";
@@ -11,7 +11,10 @@ import { StudioShell } from "./components/studio-shell";
 import { SettingsPage, type SettingsSection } from "./pages/settings";
 import { DesktopUpdateDialog } from "./components/desktop-update";
 import { ConfirmDialogHost } from "./components/confirm-dialog";
-import { createWorkspaceController } from "./lib/workspace-controller";
+import {
+  useWorkspaceController,
+  WorkspaceControllerProvider,
+} from "./context/workspace-controller";
 /* Product chrome — must load for every host (web + desktop Electron). */
 import "./styles/app.css";
 
@@ -31,15 +34,17 @@ export function AppBaseProviders(
         defaultColorScheme={props.defaultColorScheme ?? "light"}
         onThemeApplied={props.onThemeApplied}
       >
-        <ServerProvider>
-          <AppMapExecutionProvider>
-            <WorkbenchProvider>
-              <RecorderProvider>
-                <CommandProvider>{props.children}</CommandProvider>
-              </RecorderProvider>
-            </WorkbenchProvider>
-          </AppMapExecutionProvider>
-        </ServerProvider>
+        <WorkspaceControllerProvider>
+          <ServerProvider>
+            <AppMapExecutionProvider>
+              <WorkbenchProvider>
+                <RecorderProvider>
+                  <CommandProvider>{props.children}</CommandProvider>
+                </RecorderProvider>
+              </WorkbenchProvider>
+            </AppMapExecutionProvider>
+          </ServerProvider>
+        </WorkspaceControllerProvider>
       </ThemeProvider>
     </PlatformProvider>
   );
@@ -47,13 +52,15 @@ export function AppBaseProviders(
 
 /** Main product UI — App Map workspace. */
 export function AppInterface() {
-  const workspaceController = createWorkspaceController();
+  const workspaceController = useWorkspaceController();
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [settingsSection, setSettingsSection] = createSignal<SettingsSection>("appearance");
   const openSettings = (section: SettingsSection = "appearance") => {
     setSettingsSection(section);
     setSettingsOpen(true);
   };
+  const disconnectWorkspace = workspaceController.connect({ openSettings });
+  onCleanup(disconnectWorkspace);
 
   return (
     <Layout onOpenSettings={() => openSettings()} workspaceController={workspaceController}>

@@ -181,9 +181,7 @@ export function Layout(props: {
         group: "Jobs",
         keybind: "mod+enter",
         disabled: () => !server.selectedAppMapId() || server.health() !== "online",
-        run: () => {
-          window.dispatchEvent(new CustomEvent("relay:run-app-map"));
-        },
+        run: () => props.workspaceController.execute({ kind: "test.run" }),
       },
       {
         id: "queue.clear",

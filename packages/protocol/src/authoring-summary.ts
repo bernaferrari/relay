@@ -1,4 +1,4 @@
-import { authoringCaptureProvenance } from "./authoring-capture.js";
+import { authoringCaptureProvenance, captureProofForAuthoring } from "./authoring-capture.js";
 import type {
   AuthoringRawEvent,
   AuthoringRawInteractionIntentEvent,
@@ -42,6 +42,7 @@ export function summarizeAuthoringSession(session: AuthoringSession): AuthoringS
     state: session.state,
     target: structuredClone(session.target),
     captureProvenance,
+    captureProof: captureProofForAuthoring(captureProvenance, replayPassed),
     ...(session.sourceScreenId ? { sourceScreenId: session.sourceScreenId } : {}),
     ...(session.committedConnectionId
       ? { committedConnectionId: session.committedConnectionId }

@@ -1,11 +1,18 @@
 import { isAlias, isMap, isNode, isScalar, isSeq, parseDocument, stringify } from "yaml";
-import type { RepeatDimensionSpec, RepeatSpec } from "@relay/protocol";
+import {
+  parseAuthoringCaptureReview,
+  type AuthoringCaptureReview,
+  type RepeatDimensionSpec,
+  type RepeatSpec,
+} from "@relay/protocol";
 
 const INTENT_DOCUMENT_SCHEMA_VERSION = 1 as const;
 const MAX_INTENT_YAML_BYTES = 256_000;
 const MAX_STEPS = 200;
 const MAX_REPEAT_DIMENSIONS = 8;
 const MAX_REPEAT_VALUES = 1_000;
+const MAX_RECORDING_SOURCES = 128;
+const MAX_RECORDING_EVIDENCE_IDS = 256;
 export const BOUND_TEST_YAML_SUFFIX = ".relay.test.yaml" as const;
 
 type IntentStepBase = {
@@ -49,6 +56,16 @@ export type IntentDocumentStep =
 
 export type IntentRepeatDimension = RepeatDimensionSpec;
 
+/** Read-only reviewed evidence metadata. Binding and compilation ignore this
+ * block; Source apply must compare it with the canonical App Map. */
+export type IntentRecordingSource = {
+  connectionId: string;
+  takeId: string;
+  takeRevision: number;
+  capture: AuthoringCaptureReview;
+  evidenceIds: string[];
+};
+
 /**
  * A small authoring projection over one canonical App Map Test.
  *
@@ -63,6 +80,7 @@ export type IntentDocument = {
   appMapId: string;
   testId: string;
   steps: IntentDocumentStep[];
+  recordingSources?: IntentRecordingSource[];
   repeat?: RepeatSpec;
 };
 
@@ -94,6 +112,15 @@ type IntentYamlDocument = {
   appMap: string;
   test: string;
   steps: IntentYamlStep[];
+  recordingSources?: Array<{
+    connection: string;
+    take: string;
+    revision: number;
+    mode: AuthoringCaptureReview["provenance"]["mode"];
+    origin: AuthoringCaptureReview["provenance"]["origin"];
+    proof: AuthoringCaptureReview["proof"];
+    evidence: string[];
+  }>;
   repeat?: {
     strategy?: "cartesian" | "zip" | "pairwise";
     pilot?: RepeatSpec["pilot"];
@@ -330,11 +357,67 @@ function parseRepeat(value: unknown): IntentDocument["repeat"] {
   };
 }
 
+function parseRecordingSources(value: unknown): IntentRecordingSource[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error("recordingSources must be an array");
+  if (value.length > MAX_RECORDING_SOURCES) {
+    throw new Error(`recordingSources exceeds the ${MAX_RECORDING_SOURCES} source limit`);
+  }
+  const seen = new Set<string>();
+  return value.map((item, index) => {
+    const field = `recordingSources[${index}]`;
+    if (!isObject(item)) throw new Error(`${field} must be an object`);
+    assertKnownFields(
+      item,
+      ["connection", "take", "revision", "mode", "origin", "proof", "evidence"],
+      field,
+    );
+    const connectionId = canonicalId(item.connection, `${field}.connection`);
+    if (seen.has(connectionId)) throw new Error(`duplicate recording source: ${connectionId}`);
+    seen.add(connectionId);
+    if (!Number.isSafeInteger(item.revision) || (item.revision as number) < 1) {
+      throw new Error(`${field}.revision must be a positive safe integer`);
+    }
+    if (!Array.isArray(item.evidence)) throw new Error(`${field}.evidence must be an array`);
+    if (item.evidence.length > MAX_RECORDING_EVIDENCE_IDS) {
+      throw new Error(`${field}.evidence exceeds the ${MAX_RECORDING_EVIDENCE_IDS} item limit`);
+    }
+    const evidenceIds = item.evidence.map((id, evidenceIndex) =>
+      canonicalId(id, `${field}.evidence[${evidenceIndex}]`),
+    );
+    if (new Set(evidenceIds).size !== evidenceIds.length) {
+      throw new Error(`${field}.evidence contains duplicate ids`);
+    }
+    const capture = parseAuthoringCaptureReview({
+      schemaVersion: 1,
+      provenance: { schemaVersion: 1, mode: item.mode, origin: item.origin },
+      proof: item.proof,
+    });
+    return {
+      connectionId,
+      takeId: canonicalId(item.take, `${field}.take`),
+      takeRevision: item.revision as number,
+      capture,
+      evidenceIds,
+    };
+  });
+}
+
 function parseIntentValue(value: unknown): IntentDocument {
   if (!isObject(value)) throw new Error("Relay intent YAML must contain an object at the root");
   assertKnownFields(
     value,
-    ["schemaVersion", "kind", "name", "description", "appMap", "test", "steps", "repeat"],
+    [
+      "schemaVersion",
+      "kind",
+      "name",
+      "description",
+      "appMap",
+      "test",
+      "steps",
+      "recordingSources",
+      "repeat",
+    ],
     "Relay intent",
   );
   if (value.schemaVersion !== INTENT_DOCUMENT_SCHEMA_VERSION) {
@@ -352,6 +435,18 @@ function parseIntentValue(value: unknown): IntentDocument {
     stepIds.add(step.id);
   }
   const description = optionalString(value.description, "description", 4_000);
+  const recordingSources = parseRecordingSources(value.recordingSources);
+  const pathConnectionIds = new Set(
+    steps.flatMap((step) => (step.kind === "path" ? step.connectionIds : [])),
+  );
+  const foreignSource = recordingSources?.find(
+    ({ connectionId }) => !pathConnectionIds.has(connectionId),
+  );
+  if (foreignSource) {
+    throw new Error(
+      `recording source ${foreignSource.connectionId} is not referenced by a Test path`,
+    );
+  }
   const repeat = parseRepeat(value.repeat);
   return {
     schemaVersion: INTENT_DOCUMENT_SCHEMA_VERSION,
@@ -361,6 +456,7 @@ function parseIntentValue(value: unknown): IntentDocument {
     appMapId: canonicalId(value.appMap, "appMap"),
     testId: canonicalId(value.test, "test"),
     steps,
+    ...(recordingSources?.length ? { recordingSources } : {}),
     ...(repeat ? { repeat } : {}),
   };
 }
@@ -395,6 +491,19 @@ function yamlShape(document: IntentDocument): IntentYamlDocument {
       }
       return { id: step.id, intent: step.intent, check: step.testStepId };
     }),
+    ...(document.recordingSources?.length
+      ? {
+          recordingSources: document.recordingSources.map((source) => ({
+            connection: source.connectionId,
+            take: source.takeId,
+            revision: source.takeRevision,
+            mode: source.capture.provenance.mode,
+            origin: source.capture.provenance.origin,
+            proof: source.capture.proof,
+            evidence: [...source.evidenceIds].sort(),
+          })),
+        }
+      : {}),
     ...(document.repeat
       ? {
           repeat: {

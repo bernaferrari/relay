@@ -88,6 +88,17 @@ test("verify-change composes frozen risk and evidence into a deterministic read-
   assert.deepEqual(first.ruleIds, ["verification.proved"]);
   assert.deepEqual(first.evidenceRefs, [pack.digest]);
   assert.deepEqual(first.unresolvedUncertainty, []);
+  assert.deepEqual(first.summary, {
+    verdict: "passed",
+    affectedTests: 1,
+    passed: 1,
+    regressions: 0,
+    review: 0,
+    insufficient: 0,
+  });
+  assert.deepEqual(first.confidence, { value: 1, basis: "deterministic-policy" });
+  assert.equal(first.evidenceCompleteness.status, "complete");
+  assert.equal(first.smallestRequiredLiveVerification.required, false);
   assert.equal(first.mutation, "none");
   assert.equal(first.checkPosting, "none");
 });
@@ -102,6 +113,8 @@ test("verify-change fails closed when affected-test selection and evidence are u
   assert.equal(result.decision, "reject");
   assert.deepEqual(result.ruleIds, ["execution.prohibited"]);
   assert.equal(result.affectedTests.length, 0);
+  assert.equal(result.summary.verdict, "insufficient");
+  assert.equal(result.smallestRequiredLiveVerification.action, "select-and-run-one-test");
   assert.ok(
     result.unresolvedUncertainty.includes(
       "affected-test-selection-unavailable:source-revision:abcdef0",
@@ -120,5 +133,152 @@ test("legacy TracePacks without an artifact closure cannot claim complete approv
 
   assert.equal(result.decision, "insufficient-evidence");
   assert.equal(result.evidence[0]?.status, "partial");
+  assert.equal(result.summary.verdict, "insufficient");
+  assert.equal(result.smallestRequiredLiveVerification.action, "run-one-affected-test");
   assert.ok(result.reasons.some((reason) => /evidence/iu.test(reason)));
+});
+
+test("a known causal failure dominates partial corroborating evidence", async () => {
+  const failedRun = frozenRun();
+  failedRun.id = "run-failed";
+  failedRun.status = "error";
+  failedRun.inputDigest = "c".repeat(64);
+  failedRun.artifacts = failedRun.artifacts.map((artifact) =>
+    artifact.kind === "campaign-check-result"
+      ? {
+          ...artifact,
+          data: {
+            ...(artifact.data as Record<string, unknown>),
+            status: "failed",
+            error: "Settings missing",
+          },
+        }
+      : artifact,
+  );
+  const failed = await exportTracePack(failedRun);
+  const partial = structuredClone(await exportTracePack(frozenRun()));
+  delete partial.completeness.artifacts;
+  const { digest: _oldDigest, ...body } = partial;
+  partial.digest = digest(body);
+
+  const result = verifyChangeOffline({
+    selectionKind: "trace-packs",
+    tracePacks: [partial, failed],
+  });
+
+  assert.equal(result.summary.verdict, "regressions");
+  assert.equal(result.decision, "reject");
+  assert.equal(result.firstCausalFailure?.runId, "run-failed");
+  assert.equal(result.smallestRequiredLiveVerification.required, false);
+});
+
+test("reviewed external effects produce an explicit bounded human-review boundary", async () => {
+  const run = frozenRun();
+  run.recipeSnapshot = {
+    id: "root",
+    name: "Root",
+    steps: [
+      {
+        id: "open-provider",
+        kind: "tap",
+        target: { label: "Open provider" },
+        reviewedExternalEffects: {
+          schemaVersion: 1,
+          effects: ["external-app"],
+          reviewedBy: "human:reviewer",
+          reviewedAt: 10,
+          reason: "The provider handoff is an intentional part of this Test.",
+        },
+      },
+    ],
+  } as never;
+  run.recipeGraph = { root: run.recipeSnapshot } as never;
+
+  const result = verifyChangeOffline({
+    selectionKind: "runs",
+    tracePacks: [await exportTracePack(run)],
+  });
+
+  assert.equal(result.summary.verdict, "review");
+  assert.equal(result.execution, "confirmation-required");
+  assert.deepEqual(result.ruleIds, ["execution.confirmation-required"]);
+  assert.equal(result.smallestRequiredLiveVerification.action, "review-and-confirm");
+  assert.equal(result.mutation, "none");
+});
+
+test("verify-change uses the worst frozen risk for one Test independent of pack order", async () => {
+  const safeRun = frozenRun();
+  safeRun.id = "run-safe";
+  safeRun.inputDigest = "d".repeat(64);
+  const guardedRun = frozenRun();
+  guardedRun.id = "run-guarded";
+  guardedRun.inputDigest = "e".repeat(64);
+  guardedRun.recipeSnapshot = {
+    id: "root",
+    name: "Root",
+    steps: [
+      {
+        id: "open-provider",
+        kind: "tap",
+        target: { label: "Open provider" },
+        reviewedExternalEffects: {
+          schemaVersion: 1,
+          effects: ["external-app"],
+          reviewedBy: "human:reviewer",
+          reviewedAt: 10,
+          reason: "This Test intentionally leaves the app.",
+        },
+      },
+    ],
+  } as never;
+  guardedRun.recipeGraph = { root: guardedRun.recipeSnapshot } as never;
+  const safe = await exportTracePack(safeRun);
+  const guarded = await exportTracePack(guardedRun);
+
+  const safeFirst = verifyChangeOffline({
+    selectionKind: "trace-packs",
+    tracePacks: [safe, guarded],
+  });
+  const guardedFirst = verifyChangeOffline({
+    selectionKind: "trace-packs",
+    tracePacks: [guarded, safe],
+  });
+
+  assert.equal(safeFirst.summary.verdict, "review");
+  assert.equal(guardedFirst.summary.verdict, "review");
+  assert.equal(safeFirst.affectedTests[0]?.executionRisk.level, "guarded");
+  assert.deepEqual(safeFirst.affectedTests, guardedFirst.affectedTests);
+  assert.deepEqual(safeFirst.ruleIds, ["execution.confirmation-required"]);
+  assert.deepEqual(safeFirst.affectedTests[0]?.evidenceRunIds, ["run-guarded", "run-safe"]);
+});
+
+test("source-revision selection trusts only matching frozen TracePack provenance", async () => {
+  const run = frozenRun();
+  run.sourceRevision = { vcs: "git", sha: "abcdef1" };
+  const result = verifyChangeOffline({
+    selectionKind: "source-revision",
+    sourceRevision: { vcs: "git", sha: "abcdef0" },
+    tracePacks: [await exportTracePack(run)],
+  });
+
+  assert.equal(result.summary.verdict, "insufficient");
+  assert.equal(result.affectedTests.length, 0);
+  assert.equal(result.evidence.length, 0);
+  assert.ok(
+    result.unresolvedUncertainty.includes("source-revision-provenance-unproved:run-verified"),
+  );
+});
+
+test("verify-change bounds aggregate uncertainty without silently dropping the overflow", () => {
+  const result = verifyChangeOffline({
+    selectionKind: "source-revision",
+    sourceRevision: { vcs: "git", sha: "abcdef0" },
+    selectionUncertainty: Array.from({ length: 300 }, (_, index) => `uncertainty:${index}`),
+  });
+
+  assert.equal(result.unresolvedUncertainty.length, 128);
+  assert.ok(
+    result.unresolvedUncertainty.some((item) => item.startsWith("report-items-truncated:")),
+  );
+  assert.equal(result.summary.verdict, "insufficient");
 });

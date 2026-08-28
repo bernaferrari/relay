@@ -265,6 +265,7 @@ export type AuthorTestSnapshot = {
   capture?: {
     mode: AuthoringCaptureMode;
     provenance: AuthoringCaptureProvenance;
+    proof: AuthoringCaptureProof;
     replayRequiredBeforeApproval: boolean;
   };
   review?: AuthoringReview;

@@ -302,12 +302,11 @@ export type Connection = AppMapEntity & {
   label?: string;
   caseStackId?: string;
   state: "draft" | "ready";
-  /** Additional edge behavior after `navigation` activates the source control. */
   actions: ActionSpec[];
   navigation?: ConnectionNavigationContract;
   return?: ConnectionReturnContract;
-  /** Recorded source control evidence. This is not a mutable canvas-style field. */
   sourceAnchor?: ConnectionSourceAnchor;
+  recordingSource?: import("./authoring-capture.js").AuthoringRecordingSource;
   presentation?: ConnectionPresentation;
 };
 

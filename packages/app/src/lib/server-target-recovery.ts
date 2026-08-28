@@ -2,6 +2,7 @@ import type { OperationInput, OperationOutput } from "@relay/protocol";
 import type { Accessor } from "solid-js";
 import type { DeviceInfo } from "./api-types";
 import { humanError } from "./human-error";
+import { goldenLoopTelemetry } from "./golden-loop-telemetry";
 
 export type TargetRecoveryReason = NonNullable<OperationInput<"target.recover">["reason"]>;
 
@@ -23,6 +24,7 @@ export function createServerTargetRecovery(input: {
   setLiveCaptureIssue: (issue: string | null) => void;
   setControlIssue: (issue: string | null) => void;
   refreshEvidence: () => Promise<void>;
+  telemetryScope?: () => { projectKey: string; journeyKey: string };
 }) {
   let inFlight: Promise<boolean> | null = null;
 
@@ -34,22 +36,38 @@ export function createServerTargetRecovery(input: {
     const device = input.devices().find((candidate) => candidate.serial === serial);
     if (!serial || (device?.platform !== "ios" && device?.platform !== "android")) return false;
     const recovery = (async () => {
+      const startedAt = Date.now();
+      const emitRecovery = (outcome: "recovered" | "human-required" | "unsupported") => {
+        const scope = input.telemetryScope?.();
+        if (!scope) return;
+        const durationMs = Math.max(0, Date.now() - startedAt);
+        void goldenLoopTelemetry.emit({
+          ...scope,
+          type: "action-latency",
+          action: "recover",
+          durationMs,
+        });
+        void goldenLoopTelemetry.emit({ ...scope, type: "recovery-outcome", outcome, durationMs });
+      };
       try {
         await input.selectDevice(serial);
         const result = await input.runAction("target.recover", { serial, reason });
         input.appendLog(result.recovery.summary, result.recovery.ready ? "success" : "error");
         if (!result.recovery.ready) {
           input.setLiveCaptureIssue(result.recovery.session.detail);
+          emitRecovery("human-required");
           return false;
         }
         input.setLiveCaptureIssue(null);
         input.setControlIssue(null);
         await input.refreshEvidence();
+        emitRecovery("recovered");
         return true;
       } catch (error) {
         const message = humanError(error, "Could not reconnect to this device");
         input.setLiveCaptureIssue(message);
         input.appendLog(message, "error");
+        emitRecovery("unsupported");
         return false;
       }
     })();

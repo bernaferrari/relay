@@ -44,6 +44,7 @@ export function useAppMapCaptureActions(options: {
   setCaptureOpen: (open: boolean) => void;
   openDevicePicker: () => void;
   openLiveDevice: () => void;
+  openDeviceSettings: () => void;
   onPathKept?: (testId?: string) => void;
 }) {
   const server = useServer();
@@ -63,9 +64,7 @@ export function useAppMapCaptureActions(options: {
       recordingSourceScreenId = null;
       recorder.setRecordingSourceScreen(undefined);
       recorder.setRecordingGroup("");
-      window.dispatchEvent(
-        new CustomEvent("relay:open-settings", { detail: { section: "devices" } }),
-      );
+      options.openDeviceSettings();
       return;
     }
     if (state !== "ready") return;
@@ -153,9 +152,7 @@ export function useAppMapCaptureActions(options: {
       recordingSourceScreenId = null;
       recorder.setRecordingSourceScreen(undefined);
       recorder.setRecordingGroup("");
-      window.dispatchEvent(
-        new CustomEvent("relay:open-settings", { detail: { section: "devices" } }),
-      );
+      options.openDeviceSettings();
       return;
     }
     if (state !== "ready") {
