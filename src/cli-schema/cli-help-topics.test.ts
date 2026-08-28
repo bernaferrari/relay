@@ -464,6 +464,9 @@ test('usageForCommand resolves remote help topic', async () => {
   assert.match(help, /Multiple agents can share one proxy/);
   assert.match(help, /disconnect releases local connection state/);
   assert.match(help, /A busy direct-proxy device error means another agent owns the device/);
+  assert.match(help, /AGENT_DEVICE_HTTP_AUTH_HOOK configured treats HTTP requests as remote/);
+  assert.match(help, /host-path install sources are rejected/);
+  assert.match(help, /uploaded artifacts remain supported/);
   assert.match(help, /Limrun, BrowserStack, and AWS Device Farm through local provider profiles/);
   assert.match(help, /Limrun uses LIMRUN_API_KEY/);
   assert.match(help, /BrowserStack uses BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY/);

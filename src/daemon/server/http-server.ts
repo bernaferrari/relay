@@ -33,7 +33,11 @@ import {
   shouldStreamRequestProgress,
 } from '../request-progress-protocol.ts';
 import { buildDaemonHealthPayload } from '../http-health.ts';
-import { DAEMON_HTTP_TENANT_HEADER } from '../http-contract.ts';
+import {
+  DAEMON_HTTP_NETWORK_ACCESS_HEADER,
+  DAEMON_HTTP_PUBLIC_NETWORK_ACCESS,
+  DAEMON_HTTP_TENANT_HEADER,
+} from '../http-contract.ts';
 import { sendRestJsonError, statusCodeForNormalizedError } from '../http-errors.ts';
 import { tryHandleUploadHttpRoute } from '../upload-http.ts';
 import { tryHandleDownloadableArtifactHttpRoute } from '../downloadable-artifact-http.ts';
@@ -101,6 +105,35 @@ const LEASE_RPC_METHOD_TO_COMMAND: Record<
   'agent_device.lease.release': 'lease_release',
   'agent-device.lease.release': 'lease_release',
 };
+
+function restrictRemoteHttpRequest(
+  request: DaemonRequest,
+  authHookConfigured: boolean,
+  networkAccessMarker: string | string[] | undefined,
+): DaemonRequest {
+  if (
+    networkAccessMarker !== undefined &&
+    networkAccessMarker !== DAEMON_HTTP_PUBLIC_NETWORK_ACCESS
+  ) {
+    throw new AppError('INVALID_ARGS', 'Invalid daemon HTTP network access marker');
+  }
+  if (!authHookConfigured && networkAccessMarker === undefined) return request;
+  const source = request.meta?.installSource;
+  const uploadedArtifactId = request.meta?.uploadedArtifactId;
+  if (
+    source?.kind === 'path' &&
+    !(typeof uploadedArtifactId === 'string' && uploadedArtifactId.length > 0)
+  ) {
+    throw new AppError(
+      'INVALID_ARGS',
+      'Invalid params: path install sources are disabled on the remote HTTP surface',
+    );
+  }
+  return {
+    ...request,
+    internal: { ...request.internal, publicNetworkOnly: true },
+  };
+}
 const SUPPORTED_RPC_METHODS = new Set([
   ...COMMAND_RPC_METHODS,
   ...INSTALL_FROM_SOURCE_RPC_METHODS,
@@ -491,10 +524,12 @@ async function runHttpAuthHook(
   return { ok: true };
 }
 
-async function loadHttpAuthHook(): Promise<HttpAuthHook | null> {
-  const hookPath = process.env.AGENT_DEVICE_HTTP_AUTH_HOOK;
+async function loadHttpAuthHook(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<HttpAuthHook | null> {
+  const hookPath = env.AGENT_DEVICE_HTTP_AUTH_HOOK;
   if (!hookPath) return null;
-  const exportName = process.env.AGENT_DEVICE_HTTP_AUTH_EXPORT || 'default';
+  const exportName = env.AGENT_DEVICE_HTTP_AUTH_EXPORT || 'default';
   const resolvedPath = path.isAbsolute(hookPath) ? hookPath : path.resolve(hookPath);
   let imported: Record<string, unknown>;
   try {
@@ -519,6 +554,7 @@ export async function createDaemonHttpServer(options: {
   handleRequest: DaemonInvokeFn;
   token?: string;
   retainArtifacts?: boolean;
+  env?: NodeJS.ProcessEnv;
   /**
    * Resolves a request diagnostics record path for the `/sessions/.../requests/...`
    * route (#1801). Omitted by embedded servers with no session store; the route
@@ -527,7 +563,8 @@ export async function createDaemonHttpServer(options: {
    */
   resolveRequestDiagnosticsPath?: (ref: DiagnosticsRecordRef) => string;
 }): Promise<http.Server> {
-  const authHook = await loadHttpAuthHook();
+  const environment = options.env ?? process.env;
+  const authHook = await loadHttpAuthHook(environment);
   const { handleRequest, token, retainArtifacts = false, resolveRequestDiagnosticsPath } = options;
   return http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
@@ -644,7 +681,7 @@ export async function createDaemonHttpServer(options: {
       let handlerCompleted = false;
       try {
         const params = rpcRequest.params as Record<string, unknown>;
-        const daemonRequest = methodToDaemonRequest(rpcRequest.method, params, req.headers);
+        let daemonRequest = methodToDaemonRequest(rpcRequest.method, params, req.headers);
         if (
           isCommandRpcMethod(rpcRequest.method) &&
           (typeof daemonRequest.command !== 'string' || daemonRequest.command.length === 0)
@@ -703,6 +740,11 @@ export async function createDaemonHttpServer(options: {
         if (daemonRequest.flags?.tenant !== undefined) {
           daemonRequest.flags = { ...daemonRequest.flags, tenant: tenantTrust.tenantId };
         }
+        daemonRequest = restrictRemoteHttpRequest(
+          daemonRequest,
+          authHook !== null,
+          req.headers[DAEMON_HTTP_NETWORK_ACCESS_HEADER],
+        );
 
         let canceledInFlight = false;
         // Request-scoped cancellation: mark this request canceled whenever its client

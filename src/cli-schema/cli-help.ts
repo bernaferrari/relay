@@ -822,6 +822,7 @@ Rules:
   disconnect releases local connection state; close releases the active session and device lease.
   A busy direct-proxy device error means another agent owns the device until it closes or its inactivity lease expires.
   Keep the proxy token secret. Anyone with the token can control the proxied daemon.
+  A daemon with AGENT_DEVICE_HTTP_AUTH_HOOK configured treats HTTP requests as remote: host-path install sources are rejected, uploaded artifacts remain supported, and Maestro runScript HTTP helpers allow only public network destinations. No-hook local HTTP and socket flows retain their local behavior.
   If local/proxy iOS reports that the runner is already owned by another agent-device daemon after lease admission, retry after the owning session closes or after lease expiry. If the conflict repeats, clean stale daemon state on the machine with simulator access.
   Do not use --config as a remote profile flag. --config loads CLI defaults; --remote-config selects remote daemon/profile settings.
   For self-contained scripts, pass the same --remote-config to every operational command, including disconnect; a preceding connect is optional but not required.
