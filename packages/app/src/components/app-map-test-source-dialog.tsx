@@ -1,8 +1,8 @@
-import { Show, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import type { AppMap, AppMapScenarioTest } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { applyAppMapTestSource, projectAppMapTestSource } from "../lib/app-map-test-source";
-import type { AppMapTestSourceApply } from "../lib/app-map-test-source";
+import type { AppMapTestSourceApply, AppMapTestSourceMode } from "../lib/app-map-test-source";
 import { trapFocus } from "../lib/modal";
 import { Icon } from "./icon";
 
@@ -15,10 +15,30 @@ export function AppMapTestSourceDialog(props: {
   const openedMap = structuredClone(props.map);
   const openedTest = structuredClone(props.test);
   const openedTestContent = JSON.stringify(openedTest);
-  const projection = projectAppMapTestSource(openedMap, openedTest);
-  const initialSource = projection.kind === "ready" ? projection.source : "";
-  const [source, setSource] = createSignal(initialSource);
+  const projections = {
+    intent: projectAppMapTestSource(openedMap, openedTest, "intent"),
+    bound: projectAppMapTestSource(openedMap, openedTest, "bound"),
+  };
+  const initialMode: AppMapTestSourceMode =
+    projections.intent.kind === "ready" ? "intent" : "bound";
+  const initialSources = {
+    intent: projections.intent.kind === "ready" ? projections.intent.source : "",
+    bound: projections.bound.kind === "ready" ? projections.bound.source : "",
+  };
+  const [mode, setMode] = createSignal<AppMapTestSourceMode>(initialMode);
+  const [sources, setSources] = createSignal(initialSources);
+  const source = () => sources()[mode()];
+  const projection = () => projections[mode()];
+  const projectionMessage = () => {
+    const current = projection();
+    return current.kind === "unsupported" ? current.message : "";
+  };
   const [error, setError] = createSignal("");
+  const [bindingDecisions, setBindingDecisions] = createSignal(
+    projections[initialMode].kind === "ready"
+      ? (projections[initialMode].bindingDecisions ?? [])
+      : [],
+  );
   const [applying, setApplying] = createSignal(false);
   let panel: HTMLElement | undefined;
   let editor: HTMLTextAreaElement | undefined;
@@ -43,10 +63,12 @@ export function AppMapTestSourceDialog(props: {
       map: openedMap,
       current: openedTest,
       source: source(),
+      mode: mode(),
       updatedAt: Date.now(),
     });
     if (!result.ok) {
       setError(`Source was not applied. ${result.message}. Fix the YAML above and try again.`);
+      setBindingDecisions(result.bindingDecisions ?? []);
       queueMicrotask(() => document.getElementById("test-source-error")?.focus());
       return;
     }
@@ -65,9 +87,21 @@ export function AppMapTestSourceDialog(props: {
   }
 
   function reset(): void {
-    setSource(initialSource);
+    setSources((current) => ({ ...current, [mode()]: initialSources[mode()] }));
     setError("");
+    const current = projections[mode()];
+    setBindingDecisions(current.kind === "ready" ? (current.bindingDecisions ?? []) : []);
     queueMicrotask(() => editor?.focus());
+  }
+
+  function selectMode(next: AppMapTestSourceMode): void {
+    setMode(next);
+    setError("");
+    const nextProjection = projections[next];
+    setBindingDecisions(
+      nextProjection.kind === "ready" ? (nextProjection.bindingDecisions ?? []) : [],
+    );
+    queueMicrotask(() => (editor ?? closeButton)?.focus());
   }
 
   onMount(() => {
@@ -103,7 +137,9 @@ export function AppMapTestSourceDialog(props: {
               Test source
             </strong>
             <span id="test-source-description" class="block text-caption text-text-weak">
-              Bound .relay.test.yaml with read-only recording proof metadata
+              {mode() === "intent"
+                ? "Friendly names for authoring; Relay binds them before applying"
+                : "Deterministic identities with read-only recording proof metadata"}
             </span>
           </div>
           <button
@@ -117,8 +153,31 @@ export function AppMapTestSourceDialog(props: {
           </button>
         </header>
 
+        <div
+          class="flex gap-1 border-b border-border-weak-base px-3 py-2"
+          role="group"
+          aria-label="Test source mode"
+        >
+          <For each={["intent", "bound"] as const}>
+            {(sourceMode) => (
+              <button
+                type="button"
+                class={`min-h-9 rounded-lg px-3 text-caption font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus ${
+                  mode() === sourceMode
+                    ? "bg-surface-base-active text-text-strong"
+                    : "text-text-weak hover:bg-surface-base-hover"
+                }`}
+                aria-pressed={mode() === sourceMode}
+                onClick={() => selectMode(sourceMode)}
+              >
+                {sourceMode === "intent" ? "Intent" : "Bound"}
+              </button>
+            )}
+          </For>
+        </div>
+
         <Show
-          when={projection.kind === "ready"}
+          when={projection().kind === "ready"}
           fallback={
             <div class="grid min-h-0 flex-1 place-items-center p-6 text-center">
               <div class="grid max-w-[52ch] justify-items-center gap-3">
@@ -128,8 +187,8 @@ export function AppMapTestSourceDialog(props: {
                 <div class="grid gap-1">
                   <strong class="text-body text-text-strong">Use the advanced Test editor</strong>
                   <p class="m-0 text-body/[1.5] text-text-base">
-                    {projection.kind === "unsupported" ? projection.message : ""}. Source supports
-                    reviewed paths, checkpoints, modules, and existing checks. Nothing has changed.
+                    {projectionMessage()}. Nothing has changed. Choose the other source mode or
+                    return to the Test.
                   </p>
                 </div>
                 <Button variant="secondary" disabled={applying()} onClick={props.onClose}>
@@ -155,15 +214,44 @@ export function AppMapTestSourceDialog(props: {
                   error() ? "test-source-error test-source-safety" : "test-source-safety"
                 }
                 onInput={(event) => {
-                  setSource(event.currentTarget.value);
+                  setSources((current) => ({
+                    ...current,
+                    [mode()]: event.currentTarget.value,
+                  }));
                   if (error()) setError("");
+                  if (bindingDecisions().length) setBindingDecisions([]);
                 }}
               />
               <p id="test-source-safety" class="m-0 text-caption/[1.45] text-text-weak">
-                Apply updates this same Test. Selectors, evidence, and generated topology stay out
-                of source. This bound source uses canonical Relay identities; closing discards edits
-                that you have not applied.
+                {mode() === "intent"
+                  ? "Intent uses friendly names and never executes directly. Apply must bind every name to this exact Test before the canonical Bound source can update it."
+                  : "Bound source uses canonical Relay identities. Selectors and generated topology stay out; recording proof metadata remains read-only."}{" "}
+                Closing discards edits that you have not applied.
               </p>
+              <Show when={bindingDecisions().length > 0}>
+                <div
+                  class="grid gap-2 rounded-lg border border-border-warning-base bg-surface-warning-weak p-2.5"
+                  role="status"
+                  aria-label="Bindings that need review"
+                >
+                  <strong class="text-caption text-text-strong">
+                    Review {bindingDecisions().length} binding
+                    {bindingDecisions().length === 1 ? "" : "s"}
+                  </strong>
+                  <ul class="m-0 grid gap-1 pl-4 text-caption/[1.45] text-text-base">
+                    <For each={bindingDecisions()}>
+                      {(decision) => (
+                        <li>
+                          <code>{decision.path}</code>: “{decision.query}” is {decision.reason}
+                          <Show when={decision.candidates.length > 0}>
+                            {` — ${decision.candidates.map((candidate) => `${candidate.name} (${candidate.id})`).join(", ")}`}
+                          </Show>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </div>
+              </Show>
               <Show when={error()}>
                 <p
                   id="test-source-error"
@@ -176,7 +264,11 @@ export function AppMapTestSourceDialog(props: {
               </Show>
             </div>
             <footer class="flex flex-wrap items-center justify-between gap-2 border-t border-border-weak-base p-3">
-              <Button variant="ghost" disabled={source() === initialSource} onClick={reset}>
+              <Button
+                variant="ghost"
+                disabled={source() === initialSources[mode()]}
+                onClick={reset}
+              >
                 Reset
               </Button>
               <div class="flex items-center gap-2">
@@ -185,10 +277,14 @@ export function AppMapTestSourceDialog(props: {
                 </Button>
                 <Button
                   variant="primary"
-                  disabled={source() === initialSource || applying()}
+                  disabled={source() === initialSources[mode()] || applying()}
                   onClick={() => void apply()}
                 >
-                  {applying() ? "Applying…" : "Apply source"}
+                  {applying()
+                    ? "Applying…"
+                    : mode() === "intent"
+                      ? "Bind and apply"
+                      : "Apply Bound source"}
                 </Button>
               </div>
             </footer>

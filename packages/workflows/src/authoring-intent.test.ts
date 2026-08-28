@@ -166,6 +166,20 @@ test("friendly names bind only when every canonical identity is unique", () => {
   assert.deepEqual(result.document.repeat?.dimensions, [{ id: "language", values: ["pt-BR"] }]);
 });
 
+test("friendly authoring intent preserves supported Repeat selection", () => {
+  const { map, test: current } = fixture();
+  const supported = {
+    ...source,
+    repeat: { dimensions: [{ variable: "Language", values: "supported" as const }] },
+  };
+  assert.deepEqual(parseAuthoringIntentYaml(formatAuthoringIntentYaml(supported)), supported);
+  const result = bindAuthoringIntent({ map, current, document: supported });
+  assert.equal(result.status, "bound");
+  if (result.status === "bound") {
+    assert.deepEqual(result.document.repeat?.dimensions, [{ id: "language", values: "supported" }]);
+  }
+});
+
 test("ambiguous and missing names return review decisions instead of a partial document", () => {
   const { map, test: current } = fixture();
   map.connections.alsoOpen = { ...map.connections.open!, id: "alsoOpen" };

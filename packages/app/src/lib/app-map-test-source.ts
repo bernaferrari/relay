@@ -9,18 +9,31 @@ import {
 } from "@relay/protocol";
 import {
   applyIntentDocumentToScenarioTest,
+  bindAuthoringIntent,
+  formatAuthoringIntentYaml,
   formatIntentDocumentYaml,
   intentDocumentFromScenarioTest,
+  parseAuthoringIntentYaml,
   parseIntentDocumentYaml,
+  type AuthoringIntentBindingDecision,
+  type AuthoringIntentDocument,
+  type IntentDocument,
 } from "@relay/workflows";
 
+export type AppMapTestSourceMode = "intent" | "bound";
+
 export type AppMapTestSourceProjection =
-  | { kind: "ready"; source: string }
-  | { kind: "unsupported"; message: string };
+  | {
+      kind: "ready";
+      mode: AppMapTestSourceMode;
+      source: string;
+      bindingDecisions?: AuthoringIntentBindingDecision[];
+    }
+  | { kind: "unsupported"; mode: AppMapTestSourceMode; message: string };
 
 export type AppMapTestSourceApply =
   | { ok: true; test: AppMapScenarioTest; repeatChanges: AppMapBatchChange[] }
-  | { ok: false; message: string };
+  | { ok: false; message: string; bindingDecisions?: AuthoringIntentBindingDecision[] };
 
 function messageFor(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -63,6 +76,132 @@ function projectRepeat(map: AppMap, combine: AppMapCombine) {
     ...(combine.repeatPolicy?.resume ? { resume: combine.repeatPolicy.resume } : {}),
     dimensions,
   };
+}
+
+function boundDocument(map: AppMap, test: AppMapScenarioTest): IntentDocument {
+  const combine = repeatCombine(map, test);
+  return {
+    ...intentDocumentFromScenarioTest(map, test),
+    ...(combine ? { repeat: projectRepeat(map, combine) } : {}),
+  };
+}
+
+function namedReference(
+  id: string,
+  value: { name?: string; title?: string; label?: string } | undefined,
+  kind: string,
+): string {
+  if (!value) throw new Error(`${kind} ${id} is missing`);
+  return value.name ?? value.title ?? value.label ?? id;
+}
+
+function authoringDocument(
+  map: AppMap,
+  test: AppMapScenarioTest,
+  bound: IntentDocument,
+): AuthoringIntentDocument {
+  if (bound.repeat?.pilot || bound.repeat?.resume) {
+    throw new Error(
+      "Intent mode cannot represent the advanced Repeat pilot or resume policy; use Bound mode",
+    );
+  }
+  return {
+    schemaVersion: 1,
+    kind: "authoring-intent",
+    name: bound.name,
+    ...(bound.description !== undefined ? { description: bound.description } : {}),
+    appMap: map.name,
+    test: test.name,
+    steps: bound.steps.map((step) => {
+      const base = { id: step.id, intent: step.intent };
+      if (step.kind === "module") {
+        return {
+          ...base,
+          use: namedReference(step.moduleId, map.routines[step.moduleId], "module"),
+          ...(step.bindings ? { bindings: { ...step.bindings } } : {}),
+        };
+      }
+      if (step.kind === "path") {
+        return {
+          ...base,
+          path: step.connectionIds.map((id) =>
+            namedReference(id, map.connections[id], "connection"),
+          ),
+          ...(step.checkpointScreenId
+            ? {
+                checkpoint: namedReference(
+                  step.checkpointScreenId,
+                  map.screens[step.checkpointScreenId],
+                  "checkpoint Screen",
+                ),
+              }
+            : {}),
+        };
+      }
+      if (step.kind === "checkpoint") {
+        return {
+          ...base,
+          checkpoint: namedReference(
+            step.screenId,
+            map.screens[step.screenId],
+            "checkpoint Screen",
+          ),
+        };
+      }
+      const check = test.steps.find(
+        (candidate) => candidate.kind === "validation" && candidate.id === step.testStepId,
+      );
+      if (!check) throw new Error(`check ${step.testStepId} is missing`);
+      return { ...base, check: check.intent };
+    }),
+    ...(bound.repeat
+      ? {
+          repeat: {
+            ...(bound.repeat.strategy ? { strategy: bound.repeat.strategy } : {}),
+            dimensions: bound.repeat.dimensions.map((dimension) => {
+              const variable = map.variables[dimension.id];
+              if (!variable) throw new Error(`Repeat Variable ${dimension.id} is missing`);
+              return {
+                variable: variable.name,
+                values: Array.isArray(dimension.values)
+                  ? dimension.values.map((id) => {
+                      const option = variable.options.find((candidate) => candidate.id === id);
+                      if (!option) throw new Error(`Repeat value ${id} is missing`);
+                      return option.label ?? option.text ?? option.identifier ?? option.id;
+                    })
+                  : dimension.values,
+              };
+            }),
+          },
+        }
+      : {}),
+  };
+}
+
+function withoutRecordingSources(document: IntentDocument): IntentDocument {
+  const copy = structuredClone(document);
+  delete copy.recordingSources;
+  return copy;
+}
+
+function projectAuthoringSource(
+  map: AppMap,
+  test: AppMapScenarioTest,
+  bound: IntentDocument,
+): Extract<AppMapTestSourceProjection, { kind: "ready" }> {
+  const document = authoringDocument(map, test, bound);
+  const source = formatAuthoringIntentYaml(document);
+  const binding = bindAuthoringIntent({ map, current: test, document });
+  if (binding.status === "unresolved") {
+    return { kind: "ready", mode: "intent", source, bindingDecisions: binding.decisions };
+  }
+  if (
+    JSON.stringify(withoutRecordingSources(binding.document)) !==
+    JSON.stringify(withoutRecordingSources(bound))
+  ) {
+    throw new Error("Intent mode cannot losslessly represent this bound Test; use Bound mode");
+  }
+  return { kind: "ready", mode: "intent", source };
 }
 
 function repeatChanges(input: {
@@ -137,20 +276,40 @@ function repeatChanges(input: {
 export function projectAppMapTestSource(
   map: AppMap,
   test: AppMapScenarioTest,
+  mode: AppMapTestSourceMode = "bound",
 ): AppMapTestSourceProjection {
   try {
-    const combine = repeatCombine(map, test);
-    const document = intentDocumentFromScenarioTest(map, test);
-    return {
-      kind: "ready",
-      source: formatIntentDocumentYaml({
-        ...document,
-        ...(combine ? { repeat: projectRepeat(map, combine) } : {}),
-      }),
-    };
+    const document = boundDocument(map, test);
+    if (mode === "intent") return projectAuthoringSource(map, test, document);
+    return { kind: "ready", mode, source: formatIntentDocumentYaml(document) };
   } catch (error) {
-    return { kind: "unsupported", message: messageFor(error) };
+    return { kind: "unsupported", mode, message: messageFor(error) };
   }
+}
+
+function applyBoundDocument(input: {
+  map: AppMap;
+  current: AppMapScenarioTest;
+  document: IntentDocument;
+  updatedAt: number;
+}): Extract<AppMapTestSourceApply, { ok: true }> {
+  const testDocument = { ...input.document };
+  delete testDocument.repeat;
+  return {
+    ok: true,
+    test: applyIntentDocumentToScenarioTest({
+      map: input.map,
+      current: input.current,
+      document: testDocument,
+      updatedAt: input.updatedAt,
+    }),
+    repeatChanges: repeatChanges({
+      map: input.map,
+      test: input.current,
+      repeat: input.document.repeat,
+      updatedAt: input.updatedAt,
+    }),
+  };
 }
 
 /** Parse and bind source in memory before the Test document queues a save. No
@@ -159,28 +318,39 @@ export function applyAppMapTestSource(input: {
   map: AppMap;
   current: AppMapScenarioTest;
   source: string;
+  mode?: AppMapTestSourceMode;
   updatedAt?: number;
 }): AppMapTestSourceApply {
   try {
-    const document = parseIntentDocumentYaml(input.source);
-    const testDocument = { ...document };
-    delete testDocument.repeat;
     const updatedAt = input.updatedAt ?? input.current.updatedAt;
-    return {
-      ok: true,
-      test: applyIntentDocumentToScenarioTest({
+    if ((input.mode ?? "bound") === "bound") {
+      return applyBoundDocument({
         map: input.map,
         current: input.current,
-        document: testDocument,
+        document: parseIntentDocumentYaml(input.source),
         updatedAt,
-      }),
-      repeatChanges: repeatChanges({
-        map: input.map,
-        test: input.current,
-        repeat: document.repeat,
-        updatedAt,
-      }),
+      });
+    }
+    const binding = bindAuthoringIntent({
+      map: input.map,
+      current: input.current,
+      document: parseAuthoringIntentYaml(input.source),
+    });
+    if (binding.status === "unresolved") {
+      return {
+        ok: false,
+        message: `Intent needs ${binding.decisions.length} binding decision${binding.decisions.length === 1 ? "" : "s"} before it can be applied`,
+        bindingDecisions: binding.decisions,
+      };
+    }
+    const canonical = boundDocument(input.map, input.current);
+    const document: IntentDocument = {
+      ...binding.document,
+      ...(canonical.recordingSources
+        ? { recordingSources: structuredClone(canonical.recordingSources) }
+        : {}),
     };
+    return applyBoundDocument({ map: input.map, current: input.current, document, updatedAt });
   } catch (error) {
     return { ok: false, message: messageFor(error) };
   }

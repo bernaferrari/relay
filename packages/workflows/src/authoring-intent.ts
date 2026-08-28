@@ -34,7 +34,7 @@ export type AuthoringIntentDocument = {
   steps: AuthoringIntentStep[];
   repeat?: {
     strategy?: "cartesian" | "zip" | "pairwise";
-    dimensions: Array<{ variable: string; values: "all" | string[] }>;
+    dimensions: Array<{ variable: string; values: "all" | "supported" | string[] }>;
   };
 };
 
@@ -204,9 +204,13 @@ function parseValue(value: unknown): AuthoringIntentDocument {
       if (!isObject(raw)) throw new Error(`${field} must be an object`);
       assertKnownFields(raw, ["variable", "values"], field);
       const variable = text(raw.variable, `${field}.variable`, 200);
-      if (raw.values === "all") return { variable, values: "all" as const };
+      if (raw.values === "all" || raw.values === "supported") {
+        return { variable, values: raw.values as "all" | "supported" };
+      }
       if (!Array.isArray(raw.values) || raw.values.length === 0) {
-        throw new Error(`${field}.values must be all or a non-empty list of value names`);
+        throw new Error(
+          `${field}.values must be all, supported, or a non-empty list of value names`,
+        );
       }
       if (raw.values.length > MAX_REPEAT_VALUES) {
         throw new Error(`${field}.values exceeds the ${MAX_REPEAT_VALUES} value limit`);
@@ -473,8 +477,8 @@ export function bindAuthoringIntent(input: {
         return;
       }
       boundVariableIds.add(variableId);
-      if (dimension.values === "all") {
-        dimensions.push({ id: variableId, values: "all" });
+      if (dimension.values === "all" || dimension.values === "supported") {
+        dimensions.push({ id: variableId, values: dimension.values });
         return;
       }
       const options = variable.options.map((option) => ({

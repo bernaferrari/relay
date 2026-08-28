@@ -108,6 +108,75 @@ test("thin source shows readable path and checkpoint without selectors or eviden
   if (edited.ok) assert.equal(edited.test.steps[0]?.intent, "Open app settings");
 });
 
+test("Intent mode reverses Bound identities to friendly names and binds before apply", () => {
+  const { map, scenario } = fixture();
+  map.name = "My App";
+  map.connections.open!.label = "Open settings";
+  const projection = projectAppMapTestSource(map, scenario, "intent");
+  assert.equal(projection.kind, "ready");
+  if (projection.kind !== "ready") return;
+  assert.equal(projection.mode, "intent");
+  assert.equal(projection.bindingDecisions, undefined);
+  assert.match(projection.source, /kind: authoring-intent/u);
+  assert.match(projection.source, /appMap: My App/u);
+  assert.match(projection.source, /path:\n\s+- Open settings/u);
+  assert.match(projection.source, /checkpoint: Settings/u);
+  assert.doesNotMatch(projection.source, /appMap: map|path:\n\s+- open/u);
+
+  const applied = applyAppMapTestSource({
+    map,
+    current: scenario,
+    mode: "intent",
+    source: projection.source.replace("intent: Open Settings", "intent: Open app settings"),
+    updatedAt: 2,
+  });
+  assert.equal(applied.ok, true);
+  if (applied.ok) {
+    assert.equal(applied.test.steps[0]?.intent, "Open app settings");
+    assert.deepEqual(applied.test.steps[0]?.binding, {
+      status: "resolved",
+      kind: "connections",
+      connectionIds: ["open"],
+    });
+  }
+});
+
+test("Intent mode surfaces ambiguous names and cannot apply a partial binding", () => {
+  const { map, scenario } = fixture();
+  map.name = "My App";
+  map.connections.open!.label = "Open settings";
+  map.connections.other = {
+    ...map.connections.open!,
+    id: "other",
+  };
+  const projection = projectAppMapTestSource(map, scenario, "intent");
+  assert.equal(projection.kind, "ready");
+  if (projection.kind !== "ready") return;
+  assert.deepEqual(
+    projection.bindingDecisions?.map(({ path, reason }) => ({ path, reason })),
+    [{ path: "steps[0].path[0]", reason: "ambiguous" }],
+  );
+  const unresolved = applyAppMapTestSource({
+    map,
+    current: scenario,
+    source: projection.source,
+    mode: "intent",
+  });
+  assert.equal(unresolved.ok, false);
+  if (!unresolved.ok) {
+    assert.match(unresolved.message, /1 binding decision/u);
+    assert.equal(unresolved.bindingDecisions?.[0]?.query, "Open settings");
+  }
+
+  const reviewed = applyAppMapTestSource({
+    map,
+    current: scenario,
+    source: projection.source.replace("- Open settings", "- open"),
+    mode: "intent",
+  });
+  assert.equal(reviewed.ok, true);
+});
+
 test("Test Source round-trips reviewed recording mode but rejects proof edits", () => {
   const { map, scenario } = fixture();
   map.connections.open!.actions = [
@@ -233,6 +302,9 @@ test("Repeat YAML round-trips through the Test-owned canonical Combine", () => {
   });
 
   map.combines[save.combine.id] = save.combine;
+  const friendly = projectAppMapTestSource(map, applied.test, "intent");
+  assert.equal(friendly.kind, "unsupported");
+  if (friendly.kind === "unsupported") assert.match(friendly.message, /pilot or resume policy/u);
   const projected = projectAppMapTestSource(map, applied.test);
   assert.equal(projected.kind, "ready");
   if (projected.kind !== "ready") return;
