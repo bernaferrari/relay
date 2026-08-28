@@ -96,8 +96,8 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
         appMapId: "checkout",
         testId: "smoke",
         targetId: "pixel-9",
-        confirmRisk: true,
       },
+      confirmed: true,
       method: "run",
       expected: {
         kind: "run-test",
@@ -341,6 +341,110 @@ test("protected outcome tools reject missing confirmation before workflow dispat
     );
     assert.deepEqual(invocations, []);
   }
+});
+
+test("Run risk consent comes only from transport confirmation and preserves two-call preflight", async () => {
+  const invocations: Invocation[] = [];
+  const jobs = {
+    run: async (intent: { confirmRisk?: true }) => {
+      invocations.push({ method: "run", argumentsValue: [intent] });
+      return intent.confirmRisk
+        ? { phase: "queued" }
+        : {
+            phase: "needs-input",
+            problems: [{ code: "risk-confirmation-required" }],
+          };
+    },
+  } as unknown as RelayOutcomeJobs;
+
+  const preflight = await invokeRelayOutcomeToolWithJobs({
+    name: "relay_run_test",
+    argumentsValue: { appMapId: "checkout", testId: "send-message" },
+    confirmed: false,
+    jobs,
+  });
+  assert.deepEqual(preflight, {
+    phase: "needs-input",
+    problems: [{ code: "risk-confirmation-required" }],
+  });
+  assert.deepEqual(invocations, [
+    {
+      method: "run",
+      argumentsValue: [{ kind: "run-test", appMapId: "checkout", testId: "send-message" }],
+    },
+  ]);
+
+  const confirmed = await invokeRelayOutcomeToolWithJobs({
+    name: "relay_run_test",
+    argumentsValue: { appMapId: "checkout", testId: "send-message" },
+    confirmed: true,
+    jobs,
+  });
+  assert.deepEqual(confirmed, { phase: "queued" });
+  assert.deepEqual(invocations[1], {
+    method: "run",
+    argumentsValue: [
+      {
+        kind: "run-test",
+        appMapId: "checkout",
+        testId: "send-message",
+        confirmRisk: true,
+      },
+    ],
+  });
+});
+
+test("Run and Repeat reject self-asserted confirmRisk before workflow dispatch", async () => {
+  for (const testCase of [
+    {
+      name: "relay_run_test" as const,
+      argumentsValue: { testId: "send-message", confirmRisk: true },
+    },
+    {
+      name: "relay_repeat_test" as const,
+      argumentsValue: {
+        testId: "send-message",
+        repeat: { dimensions: [{ id: "language", values: ["en"] }] },
+        confirmRisk: true,
+      },
+    },
+  ]) {
+    const invocations: Invocation[] = [];
+    await assert.rejects(
+      invokeRelayOutcomeToolWithJobs({
+        ...testCase,
+        confirmed: false,
+        jobs: recordingJobs(invocations),
+      }),
+    );
+    assert.deepEqual(invocations, []);
+  }
+});
+
+test("Repeat transport confirmation authorizes only the frozen pilot preflight", async () => {
+  const invocations: Invocation[] = [];
+  await invokeRelayOutcomeToolWithJobs({
+    name: "relay_repeat_test",
+    argumentsValue: {
+      testId: "locale",
+      repeat: { dimensions: [{ id: "language", values: ["ja", "pt-BR"] }] },
+    },
+    confirmed: true,
+    jobs: recordingJobs(invocations),
+  });
+  assert.deepEqual(invocations, [
+    {
+      method: "repeat",
+      argumentsValue: [
+        {
+          kind: "repeat-test",
+          testId: "locale",
+          repeat: { dimensions: [{ id: "language", values: ["ja", "pt-BR"] }] },
+          confirmRisk: true,
+        },
+      ],
+    },
+  ]);
 });
 
 test("outcome tool schemas reject adapter-only fields instead of leaking raw operations", async () => {

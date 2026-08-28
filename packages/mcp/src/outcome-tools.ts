@@ -326,14 +326,13 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_run_test",
     title: "Run a Test",
     description:
-      "Compile and run one saved Test on the sole ready Device. Returns a server-owned workflow ID, exact version, and immutable Run evidence references.",
+      "Compile and run one saved Test on the sole ready Device. Safe Tests need no confirmation. If preflight reports execution risk, review it and repeat the call with transport confirm: true. Returns a server-owned workflow ID, exact version, and immutable Run evidence references.",
     requiresConfirmation: false,
     inputSchema: z
       .object({
         appMapId: identifier.optional(),
         testId: identifier,
         targetId,
-        confirmRisk: z.literal(true).optional(),
       })
       .strict(),
     annotations: {
@@ -427,7 +426,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_repeat_test",
     title: "Repeat a Test",
     description:
-      "Run one representative pilot over selected values. Inspect the returned workflow, then explicitly call relay_continue_repeat for the remaining values.",
+      "Run one representative pilot over selected values. Safe Tests need no confirmation. If preflight reports execution risk, review it and repeat the call with transport confirm: true. Inspect the returned workflow, then explicitly call relay_continue_repeat for the remaining values.",
     requiresConfirmation: false,
     inputSchema: z
       .object({
@@ -436,7 +435,6 @@ export const relayOutcomeTools = Object.freeze([
         repeat: repeatSpecSchema,
         evidence: z.enum(["visual", "smoke"]).optional(),
         targetId,
-        confirmRisk: z.literal(true).optional(),
       })
       .strict(),
     annotations: {
@@ -719,7 +717,7 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
       ...(typeof parsed.appMapId === "string" ? { appMapId: parsed.appMapId } : {}),
       testId: parsed.testId as string,
       ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
-      ...(parsed.confirmRisk === true ? { confirmRisk: true } : {}),
+      ...(input.confirmed ? { confirmRisk: true } : {}),
     });
   }
   if (input.name === "relay_repeat_test") {
@@ -732,7 +730,7 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
         ? { evidence: parsed.evidence }
         : {}),
       ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
-      ...(parsed.confirmRisk === true ? { confirmRisk: true } : {}),
+      ...(input.confirmed ? { confirmRisk: true } : {}),
     });
   }
   if (input.name === "relay_record_action") {
