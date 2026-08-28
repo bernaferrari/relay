@@ -35,8 +35,14 @@ import {
   emitDiagnostic,
   flushDiagnosticsToSessionFile,
   withDiagnosticsScope,
-} from '../../utils/diagnostics.ts';
-import { isEnvTruthy } from '../../utils/retry.ts';
+} from '@agent-device/host-kit/diagnostics';
+import {
+  createOwnedProcessRecordStore,
+  type OwnedProcessRecordStore,
+  reapOwnedProcessRecordsAtStartup,
+} from '@agent-device/host-kit/process';
+import { isEnvTruthy, sleep } from '@agent-device/host-kit/retry';
+
 import {
   acquireDaemonLock,
   parseIntegerEnv,
@@ -53,8 +59,8 @@ import {
   listenNetServer,
   type DaemonServer,
 } from './transport.ts';
-import { prewarmPngWorker, terminatePngWorker } from '../../utils/png-worker-client.ts';
-import { sleep } from '../../utils/timeouts.ts';
+import { prewarmPngWorker, terminatePngWorker } from '@agent-device/capture-kit/png-worker-client';
+
 import { configureAppleRunnerLeaseOwnerStateDir } from '../../platform-runtime-apple-runner-owner.ts';
 import {
   cleanupManagedWebRuntimeOrphans,
@@ -70,11 +76,6 @@ import { createDaemonRecoveryPlatformScope } from '../platform-request-scope.ts'
 import { createAppLogAdmissionLedger } from '../app-log-admission-ledger.ts';
 import { createAudioProbeAdmissionLedger } from '../audio-probe-admission-ledger.ts';
 import { createScreenRecordingAdmissionLedger } from '../screen-recording-admission-ledger.ts';
-import {
-  createOwnedProcessRecordStore,
-  type OwnedProcessRecordStore,
-} from '../../utils/owned-process-record.ts';
-import { reapOwnedProcessRecordsAtStartup } from '../../utils/owned-process-reaper.ts';
 
 const DAEMON_SESSION_TEARDOWN_TIMEOUT_MS = 5_000;
 export const SCREEN_RECORDING_SESSION_TEARDOWN_BUDGET_MS = 11_000;

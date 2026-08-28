@@ -5,9 +5,10 @@ import {
   DEFAULT_ALERT_TIMEOUT_MS,
 } from '@agent-device/contracts/alert-contract';
 import { AppError } from '@agent-device/kernel/errors';
-import { withDiagnosticTimer } from '../../utils/diagnostics.ts';
-import { successText } from '../../utils/success-text.ts';
-import { sleep } from '../../utils/timeouts.ts';
+import { withDiagnosticTimer } from '@agent-device/host-kit/diagnostics';
+import { sleep } from '@agent-device/host-kit/retry';
+import { successText } from '@agent-device/kernel/success-text';
+
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import type { RawSnapshotNode } from '@agent-device/kernel/snapshot';
 import {

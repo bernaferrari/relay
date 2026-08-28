@@ -14,7 +14,7 @@ import {
   ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
   androidSnapshotHelperOutput,
 } from '../../../src/__tests__/test-utils/android-snapshot-helper.ts';
-import { runCmd, runCmdBackground } from '../../../src/utils/exec.ts';
+import { runCmd, runCmdBackground } from '@agent-device/host-kit/command';
 import { validPng } from './assertions.ts';
 import { PROVIDER_SCENARIO_ANDROID } from './fixtures.ts';
 import {
@@ -274,7 +274,7 @@ function argsStartWith(args: string[], prefix: string[]): boolean {
 // The real device shell unwraps a single-quoted argument (and collapses the
 // `'\''` escape back to `'`) before `cmd` ever sees it, so this harness has
 // to mirror that unwrap to keep modelling what the device actually receives
-// — the inverse of the quoting in src/utils/shell-quote.ts.
+// — the inverse of the quoting in @agent-device/host-kit/command.
 function unquoteAndroidShellArg(value: string): string {
   if (!value.startsWith("'") || !value.endsWith("'") || value.length < 2) return value;
   return value.slice(1, -1).replaceAll("'\\''", "'");

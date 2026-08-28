@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import { isAgentDeviceDaemonProcess } from '../daemon-process.ts';
 
-export { readVersion } from '../../utils/version.ts';
-export { readProcessStartTime } from '../../utils/host-process.ts';
+export { readVersion } from '@agent-device/host-kit/version';
+export { readProcessStartTime } from '@agent-device/host-kit/process';
 export { resolveDaemonCodeSignature } from '../code-signature.ts';
 
 export type DaemonLockInfo = {

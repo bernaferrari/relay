@@ -1,13 +1,14 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { isMacOs, type DeviceInfo } from '@agent-device/kernel/device';
-import { emitDiagnostic } from '../../../utils/diagnostics.ts';
+import { type ExecOptions } from '@agent-device/host-kit/command';
+import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
+import { Deadline, retryWithPolicy } from '@agent-device/host-kit/retry';
 import { AppError } from '@agent-device/kernel/errors';
-import type { ExecOptions } from '../../../utils/exec.ts';
-import { resizePngFile } from '../../../utils/png-resize.ts';
-import { readPngSize } from '../../../utils/png-size.ts';
-import { computeDensityScaledScreenshotSize } from '../../../utils/screenshot-density.ts';
-import { Deadline, retryWithPolicy } from '../../../utils/retry.ts';
+
+import { resizePngFile } from '@agent-device/capture-kit/png-resize';
+import { readPngSize } from '@agent-device/capture-kit/png-size';
+import { computeDensityScaledScreenshotSize } from '@agent-device/capture-kit/screenshot-density';
 
 import {
   IOS_RUNNER_SCREENSHOT_COPY_TIMEOUT_MS,

@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { buildPrimaryEnvVarName, parseSourceValue } from './source-value.ts';
-import type { SourceValueDefinition } from './source-value.ts';
+import {
+  buildPrimaryEnvVarName,
+  parseSourceValue,
+  type SourceValueDefinition,
+} from '@agent-device/kernel/source-value';
 
 const LABEL = 'config file';
 
