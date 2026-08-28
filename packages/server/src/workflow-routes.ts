@@ -7,9 +7,12 @@ import {
   authoringSessions,
   getJob,
   listJobs,
+  findRepeatCampaignsByWorkflow,
   now,
   parseLegacyWorkflowAdoption,
   readDurableWorkflow,
+  readCombineCampaign,
+  projectCombineCampaign,
   transitionDurableWorkflow,
   type DurableWorkflowRead,
   type AuthoringRuntime,
@@ -37,6 +40,16 @@ import {
   reconcileAuthoring,
   type AuthoringWorkflowTransitionInput,
 } from "./workflow-authoring-reconciliation.js";
+import {
+  assertRepeatWorkflowAccess,
+  reconcileRepeat,
+  validateLegacyRepeatAdoption,
+  type RepeatReconciliationRuntime,
+} from "./workflow-repeat-reconciliation.js";
+import {
+  transitionRepeatWorkflow,
+  type RepeatWorkflowTransitionInput,
+} from "./workflow-repeat-transition.js";
 
 const DEFAULT_WORKFLOW_LIFETIME_MS = 24 * 60 * 60 * 1_000;
 const terminalJobStatuses = new Set([
@@ -50,7 +63,7 @@ const terminalJobStatuses = new Set([
   "canceled",
 ]);
 
-export type WorkflowRouteRuntime = {
+export type WorkflowRouteRuntime = RepeatReconciliationRuntime & {
   now: typeof now;
   getJob: typeof getJob;
   listJobs: typeof listJobs;
@@ -97,6 +110,9 @@ const defaultRuntime: WorkflowRouteRuntime = {
   assertAuthoringStartAccess: assertTargetLease,
   assertAuthoringAccess: assertAuthoringTransitionAccess,
   transitionAuthoringSession: executeControlledAuthoringTransition,
+  readRepeatCampaign: readCombineCampaign,
+  findRepeatCampaignsByWorkflow,
+  projectRepeatCampaign: projectCombineCampaign,
 };
 
 type JsonRecord = Record<string, WorkflowJsonValue>;
@@ -307,10 +323,10 @@ export async function handleWorkflowRoute(input: {
     const adoption = body.legacyRef ? parseLegacyWorkflowAdoption(body.legacyRef) : undefined;
     if (body.legacyRef && !adoption)
       throw new HttpError(400, "Legacy workflow reference is invalid");
-    if (adoption && adoption.kind !== "run-test") {
-      throw new HttpError(400, "Only legacy Run references can be adopted safely");
+    if (adoption && adoption.kind !== "run-test" && adoption.kind !== "repeat-test") {
+      throw new HttpError(400, "Only legacy Run and Repeat references can be adopted safely");
     }
-    const requestIdentity = body.workflowId ?? operation.requestId;
+    const requestIdentity = adoption?.digest ?? body.workflowId ?? operation.requestId;
     if (!adoption && body.kind === "run-test") {
       const frozen = body.frozenIdentity ? jsonRecord(body.frozenIdentity) : undefined;
       if (typeof frozen?.workflowRequestId !== "string" || !frozen.workflowRequestId) {
@@ -327,9 +343,40 @@ export async function handleWorkflowRoute(input: {
         throw new HttpError(400, "Authoring workflow request identity is missing or unauthorized");
       }
     }
+    if (!adoption && body.kind === "repeat-test") {
+      const frozen = body.frozenIdentity ? jsonRecord(body.frozenIdentity) : undefined;
+      if (
+        typeof frozen?.workflowRequestId !== "string" ||
+        !frozen.workflowRequestId ||
+        frozen.actorId !== actorId
+      ) {
+        throw new HttpError(400, "Repeat workflow request identity is missing or unauthorized");
+      }
+    }
     if (adoption?.resource.kind === "job") {
       const adoptedJob = runtime.getJob(adoption.resource.id);
       assertJobAccess(input.scope, adoptedJob);
+    }
+    if (adoption?.resource.kind === "campaign") {
+      const campaign = await runtime.readRepeatCampaign(
+        input.scope.projectId,
+        adoption.resource.id,
+      );
+      const repeatIdentity = adoption.repeatIdentity;
+      if (!campaign || !repeatIdentity) workflowNotFound();
+      const legacyFrozen = validateLegacyRepeatAdoption({
+        projectId: input.scope.projectId,
+        actorId,
+        frozenIdentity: adoption.frozenIdentity,
+        campaign,
+        pilotJobId: repeatIdentity.pilotJobId,
+        selectedCaseIds: repeatIdentity.selectedCaseIds,
+      });
+      if (!legacyFrozen) workflowNotFound();
+      const target = jsonRecord(jsonRecord(legacyFrozen)?.target);
+      if (!target || typeof target.targetId !== "string") workflowNotFound();
+      await runtime.assertTargetControl(input.scope, target.targetId);
+      adoption.frozenIdentity = legacyFrozen;
     }
     const created = await createDurableWorkflow({
       organizationId: input.scope.organizationId,
@@ -361,7 +408,13 @@ export async function handleWorkflowRoute(input: {
       workflow: created.workflow,
       ...(adoption?.resource.kind === "job"
         ? { job: runtime.getJob(adoption.resource.id) as unknown as Record<string, unknown> }
-        : {}),
+        : adoption?.resource.kind === "campaign"
+          ? {
+              campaign: (await runtime.projectRepeatCampaign(
+                (await runtime.readRepeatCampaign(input.scope.projectId, adoption.resource.id))!,
+              )) as unknown as Record<string, unknown>,
+            }
+          : {}),
     });
     return true;
   }
@@ -378,10 +431,16 @@ export async function handleWorkflowRoute(input: {
       const frozen = jsonRecord(stored.record.frozenIdentity);
       if (!frozen || frozen.actorId !== actorId) workflowNotFound();
     }
+    const repeatCampaign =
+      stored.record.kind === "repeat-test"
+        ? await assertRepeatWorkflowAccess(input.scope, runtime, stored, actorId)
+        : undefined;
     const reconciled =
       stored.record.kind === "author-test"
         ? await reconcileAuthoring(input.scope, runtime, stored, actorId, at)
-        : await reconcileRun(input.scope, runtime, stored, actorId, at);
+        : stored.record.kind === "repeat-test"
+          ? await reconcileRepeat(input.scope, runtime, stored, actorId, at, repeatCampaign)
+          : await reconcileRun(input.scope, runtime, stored, actorId, at);
     if ("job" in reconciled && reconciled.job) assertJobAccess(input.scope, reconciled.job);
     recordAudit(input.scope, {
       action: "workflow.read",
@@ -405,10 +464,38 @@ export async function handleWorkflowRoute(input: {
       const frozen = jsonRecord(stored.record.frozenIdentity);
       if (!frozen || frozen.actorId !== actorId) workflowNotFound();
     }
+    const repeatCampaign =
+      stored.record.kind === "repeat-test"
+        ? await assertRepeatWorkflowAccess(input.scope, runtime, stored, actorId)
+        : undefined;
     const current = await expireIfNeeded(input.scope, stored, actorId, at);
     if (current.record.status === "expired") throw new HttpError(410, "Workflow expired");
     if (current.record.version !== body.expectedVersion) {
       throw new HttpError(409, "Workflow version changed", { workflow: current });
+    }
+    if (current.record.kind === "repeat-test") {
+      const repeatActions = new Set([
+        "reserve-repeat-pilot",
+        "attach-repeat",
+        "reserve-repeat-resume",
+        "complete-repeat-resume",
+        "reserve-repeat-cancel",
+        "complete-repeat-cancel",
+      ]);
+      if (!repeatActions.has(body.action)) {
+        throw new HttpError(409, "This transition does not apply to Repeat");
+      }
+      const result = await transitionRepeatWorkflow({
+        scope: input.scope,
+        runtime,
+        workflow: current,
+        body: body as RepeatWorkflowTransitionInput,
+        actorId,
+        at,
+        ...(repeatCampaign ? { knownCampaign: repeatCampaign } : {}),
+      });
+      json(input.response, 200, result);
+      return true;
     }
     if (current.record.kind === "author-test") {
       const frozen = jsonRecord(current.record.frozenIdentity);

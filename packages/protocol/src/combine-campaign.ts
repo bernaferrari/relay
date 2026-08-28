@@ -107,6 +107,14 @@ export type RepeatCampaignExecutionIdentity = {
   capture?: { fullSurfaceScreenIds: string[] };
   pilotJobId: string;
   selectedCaseIds: string[];
+  /** Exact durable reservation that authorized the last Repeat mutation. */
+  workflowMutation?: {
+    schemaVersion: 1;
+    workflowId: string;
+    transitionVersion: number;
+    action: "repeat-pilot" | "repeat-resume" | "repeat-cancel";
+    completedAt: number;
+  };
 };
 
 /** Durable, bounded execution state for a saved Combine. App Map/Test data

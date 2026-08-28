@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CombineCampaign, ExecutionRisk, RepeatSpec } from "@relay/protocol";
+import type {
+  CombineCampaign,
+  DurableWorkflowRead,
+  ExecutionRisk,
+  RepeatSpec,
+} from "@relay/protocol";
 import { createRelayWorkflows, type RepeatTestIntent } from "./index.js";
 import { createScriptedRelayClient, type ScriptedRelayStep } from "./testing.js";
 
@@ -229,6 +234,25 @@ function durableRepeat(input: {
       selectedCellIds: [...resultIds],
       strategy: "zip",
       seed: 1,
+      repeat: {
+        schemaVersion: 1,
+        requestedAppMapRevision: 7,
+        executionAppMapRevision: input.sourceRevision ?? 8,
+        testId: "data-controls",
+        testPlanDigest: "plan-7",
+        rootRecipeId: "repeat-root",
+        target,
+        spec: structuredClone(repeat),
+        resolved: {
+          dimensions: [{ id: "language", valueIds: [...values] }],
+          strategy: "zip",
+          pilot: { mode: "representative" },
+          resume: "untouched",
+        },
+        evidence: "visual",
+        pilotJobId: "pilot-job",
+        selectedCaseIds: [...resultIds],
+      },
     },
   };
 }
@@ -265,6 +289,105 @@ function recoverableRepeat() {
     selectedCaseIds: [...resultIds],
   };
   return record;
+}
+
+function adoptedRepeatWorkflow(
+  record: CombineCampaign,
+  version = 1,
+  transition = "legacy-v1-adopted",
+  status: DurableWorkflowRead["record"]["status"] = "active",
+): DurableWorkflowRead {
+  const identity = record.execution!.repeat!;
+  return {
+    record: {
+      schemaVersion: 1,
+      workflowId: "adopted-repeat",
+      organizationId: "local",
+      projectId: "default",
+      kind: "repeat-test",
+      version,
+      status,
+      frozenIdentity: {
+        actorId: "agent:test",
+        appMapId: record.appMapId,
+        requestedAppMapRevision: identity.requestedAppMapRevision,
+        executionAppMapRevision: identity.executionAppMapRevision,
+        testId: identity.testId,
+        testPlanDigest: identity.testPlanDigest,
+        rootRecipeId: identity.rootRecipeId,
+        target: identity.target,
+        repeat: identity.spec,
+        resolved: identity.resolved,
+        evidence: identity.evidence,
+        ...(identity.sourceRevision ? { sourceRevision: identity.sourceRevision } : {}),
+        ...(identity.capture ? { capture: identity.capture } : {}),
+      },
+      resource: { kind: "campaign", id: record.id },
+      createdBy: "agent:test",
+      lastActorId: "agent:test",
+      createdAt: 1,
+      updatedAt: version,
+      expiresAt: 100_000,
+      lastTransition: transition,
+      adoptedLegacyRefDigest: "sha256:legacy",
+    },
+    audit: [],
+  };
+}
+
+function adoptionStep(record: CombineCampaign): ScriptedRelayStep {
+  return {
+    id: "workflow.create",
+    checkInput: (input) => {
+      assert.equal(typeof (input as { legacyRef?: unknown }).legacyRef, "string");
+      assert.deepEqual(Object.keys(input as object), ["legacyRef"]);
+    },
+    output: {
+      disposition: "created",
+      workflow: adoptedRepeatWorkflow(record),
+      campaign: record,
+    },
+  };
+}
+
+function reservedRepeatStep(
+  record: CombineCampaign,
+  action: "repeat-resume" | "repeat-cancel",
+  reviewed = false,
+): ScriptedRelayStep {
+  return {
+    id: "workflow.transition",
+    checkInput: (input) =>
+      assert.deepEqual(input, {
+        workflowId: "adopted-repeat",
+        expectedVersion: 1,
+        action: action === "repeat-resume" ? "reserve-repeat-resume" : "reserve-repeat-cancel",
+        ...(reviewed ? { reviewed: true } : {}),
+      }),
+    output: {
+      workflow: adoptedRepeatWorkflow(record, 2, `${action}-requested`),
+      campaign: record,
+    },
+  };
+}
+
+function completedRepeatStep(
+  record: CombineCampaign,
+  action: "repeat-resume" | "repeat-cancel",
+): ScriptedRelayStep {
+  return {
+    id: "workflow.transition",
+    checkInput: (input) =>
+      assert.deepEqual(input, {
+        workflowId: "adopted-repeat",
+        expectedVersion: 2,
+        action: action === "repeat-resume" ? "complete-repeat-resume" : "complete-repeat-cancel",
+      }),
+    output: {
+      workflow: adoptedRepeatWorkflow(record, 3, `${action}-reconciled`),
+      campaign: record,
+    },
+  };
 }
 
 async function startReadyRef() {
@@ -703,7 +826,7 @@ test("an unproved pilot cannot continue", async () => {
   const first = createScriptedRelayClient([inspectStep(record)]);
   const current = await createRelayWorkflows(first.client).inspect(ref);
   assert.equal(current.kind, "repeat-test");
-  const scripted = createScriptedRelayClient([inspectStep(record)]);
+  const scripted = createScriptedRelayClient([adoptionStep(record)]);
   const snapshot = await createRelayWorkflows(scripted.client).advance({
     action: "continue",
     ref,
@@ -785,7 +908,7 @@ test("a stale decision returns current state without mutation", async () => {
     remaining: "pending",
     updatedAt: 999,
   });
-  const scripted = createScriptedRelayClient([inspectStep(newer)]);
+  const scripted = createScriptedRelayClient([adoptionStep(newer)]);
   const snapshot = await createRelayWorkflows(scripted.client).advance({
     action: "continue",
     ref,
@@ -797,6 +920,31 @@ test("a stale decision returns current state without mutation", async () => {
     scripted.invocations.filter(({ id }) => id === "job.combine.campaign.resume").length,
     0,
   );
+});
+
+test("a copied legacy Repeat ref cannot bypass owner authorization or durable CAS", async () => {
+  const { ref, snapshot } = await startReadyRef();
+  const scripted = createScriptedRelayClient([
+    { id: "workflow.create", error: new Error("Workflow not found") },
+    {
+      id: "job.combine.campaign.resume",
+      output: { campaign: recoverableRepeat(), jobs: [], cells: [] },
+    },
+  ]);
+
+  const denied = await createRelayWorkflows(scripted.client).advance({
+    action: "continue",
+    ref,
+    expectedVersion: snapshot.version,
+  });
+
+  assert.equal(denied.phase, "needs-attention");
+  assert.equal(denied.problems.at(-1)?.code, "operation-unavailable");
+  assert.equal(
+    scripted.invocations.some(({ id }) => id === "job.combine.campaign.resume"),
+    false,
+  );
+  assert.equal(scripted.remaining(), 1);
 });
 
 test("continue resumes once against the frozen execution revision", async () => {
@@ -813,13 +961,28 @@ test("continue resumes once against the frozen execution revision", async () => 
     updatedAt: 120,
   });
   const scripted = createScriptedRelayClient([
-    inspectStep(before),
+    adoptionStep(before),
+    reservedRepeatStep(before, "repeat-resume"),
     {
       id: "job.combine.campaign.resume",
-      checkInput: (input) =>
-        assert.deepEqual(input, { batchId: "repeat-1", expectedAppMapRevision: 8 }),
+      checkInput: (input) => {
+        const value = input as Record<string, unknown>;
+        assert.equal(value.batchId, "repeat-1");
+        assert.equal(value.expectedAppMapRevision, 8);
+        assert.deepEqual(
+          { ...(value.workflowMutation as object), completedAt: 0 },
+          {
+            schemaVersion: 1,
+            workflowId: "adopted-repeat",
+            transitionVersion: 2,
+            action: "repeat-resume",
+            completedAt: 0,
+          },
+        );
+      },
       output: { campaign: after, jobs: [], cells: [] },
     },
+    completedRepeatStep(after, "repeat-resume"),
   ]);
   const snapshot = await createRelayWorkflows(scripted.client).advance({
     action: "continue",
@@ -846,17 +1009,20 @@ test("confirm-and-continue sends explicit review exactly once", async () => {
   const inspection = createScriptedRelayClient([inspectStep(before)]);
   const current = await createRelayWorkflows(inspection.client).inspect(ref);
   const scripted = createScriptedRelayClient([
-    inspectStep(before),
+    adoptionStep(before),
+    reservedRepeatStep(before, "repeat-resume", true),
     {
       id: "job.combine.campaign.resume",
-      checkInput: (input) =>
-        assert.deepEqual(input, {
-          batchId: "repeat-1",
-          expectedAppMapRevision: 8,
-          reviewed: true,
-        }),
+      checkInput: (input) => {
+        const value = input as Record<string, unknown>;
+        assert.equal(value.batchId, "repeat-1");
+        assert.equal(value.expectedAppMapRevision, 8);
+        assert.equal(value.reviewed, true);
+        assert.equal((value.workflowMutation as { action?: unknown }).action, "repeat-resume");
+      },
       output: { campaign: after, jobs: [], cells: [] },
     },
+    completedRepeatStep(after, "repeat-resume"),
   ]);
   const snapshot = await createRelayWorkflows(scripted.client).advance({
     action: "confirm-and-continue",
@@ -879,8 +1045,21 @@ test("continuation transport failure is not retried", async () => {
     remaining: "pending",
   });
   const scripted = createScriptedRelayClient([
-    inspectStep(before),
+    adoptionStep(before),
+    reservedRepeatStep(before, "repeat-resume"),
     { id: "job.combine.campaign.resume", error: new Error("response lost") },
+    {
+      id: "workflow.get",
+      output: {
+        workflow: adoptedRepeatWorkflow(
+          before,
+          3,
+          "repeat-resume-outcome-unknown",
+          "needs-attention",
+        ),
+        campaign: before,
+      },
+    },
     { id: "job.combine.campaign.resume", output: { campaign: before, jobs: [], cells: [] } },
   ]);
   const snapshot = await createRelayWorkflows(scripted.client).advance({
@@ -913,14 +1092,24 @@ test("a malformed continuation response is inspect-only and is not retried", asy
     sourceRevision: 9,
   });
   const scripted = createScriptedRelayClient([
-    inspectStep(before),
+    adoptionStep(before),
+    reservedRepeatStep(before, "repeat-resume"),
     {
       id: "job.combine.campaign.resume",
       output: { campaign: mismatched, jobs: [], cells: [] },
     },
     {
-      id: "job.combine.campaign.resume",
-      output: { campaign: before, jobs: [], cells: [] },
+      id: "workflow.transition",
+      output: {
+        workflow: {
+          ...adoptedRepeatWorkflow(mismatched, 3, "repeat-resume-reconciled"),
+          record: {
+            ...adoptedRepeatWorkflow(mismatched, 3, "repeat-resume-reconciled").record,
+            resource: { kind: "campaign", id: "other-campaign" },
+          },
+        },
+        campaign: mismatched,
+      },
     },
   ]);
   const snapshot = await createRelayWorkflows(scripted.client).advance({
@@ -931,12 +1120,12 @@ test("a malformed continuation response is inspect-only and is not retried", asy
 
   assert.equal(snapshot.phase, "needs-attention");
   assert.deepEqual(snapshot.allowedNextActions, ["inspect"]);
-  assert.equal(snapshot.problems.at(-1)?.code, "mutation-outcome-unknown");
+  assert.equal(snapshot.problems.at(-1)?.code, "malformed-response");
   assert.equal(
     scripted.invocations.filter(({ id }) => id === "job.combine.campaign.resume").length,
     1,
   );
-  assert.equal(scripted.remaining(), 1);
+  assert.equal(scripted.remaining(), 0);
 });
 
 test("cancel is canonical and terminal", async () => {
@@ -951,12 +1140,18 @@ test("cancel is canonical and terminal", async () => {
   const inspection = createScriptedRelayClient([inspectStep(running)]);
   const current = await createRelayWorkflows(inspection.client).inspect(ref);
   const scripted = createScriptedRelayClient([
-    inspectStep(running),
+    adoptionStep(running),
+    reservedRepeatStep(running, "repeat-cancel"),
     {
       id: "job.combine.campaign.cancel",
-      checkInput: (input) => assert.deepEqual(input, { batchId: "repeat-1" }),
+      checkInput: (input) => {
+        const value = input as Record<string, unknown>;
+        assert.equal(value.batchId, "repeat-1");
+        assert.equal((value.workflowMutation as { action?: unknown }).action, "repeat-cancel");
+      },
       output: { campaign: cancelled },
     },
+    completedRepeatStep(cancelled, "repeat-cancel"),
   ]);
   const snapshot = await createRelayWorkflows(scripted.client).advance({
     action: "cancel",
@@ -974,8 +1169,21 @@ test("an uncertain cancel is inspect-only and is not retried", async () => {
   const inspection = createScriptedRelayClient([inspectStep(running)]);
   const current = await createRelayWorkflows(inspection.client).inspect(ref);
   const scripted = createScriptedRelayClient([
-    inspectStep(running),
+    adoptionStep(running),
+    reservedRepeatStep(running, "repeat-cancel"),
     { id: "job.combine.campaign.cancel", error: new Error("response lost") },
+    {
+      id: "workflow.get",
+      output: {
+        workflow: adoptedRepeatWorkflow(
+          running,
+          3,
+          "repeat-cancel-outcome-unknown",
+          "needs-attention",
+        ),
+        campaign: running,
+      },
+    },
     { id: "job.combine.campaign.cancel", output: { campaign: running } },
   ]);
   const snapshot = await createRelayWorkflows(scripted.client).advance({
@@ -1034,6 +1242,8 @@ test("failed resume policy requires review and continues through the canonical c
     pilot: "passed",
     remaining: "failed",
   });
+  failed.execution!.repeat!.spec = structuredClone(retrySpec);
+  failed.execution!.repeat!.resolved.resume = "failed";
   const scripted = createScriptedRelayClient([
     mapStep(),
     compileStep(),
@@ -1049,17 +1259,20 @@ test("failed resume policy requires review and continues through the canonical c
 
   const running = durableRepeat({ status: "running", pilot: "passed", remaining: "running" });
   const continuation = createScriptedRelayClient([
-    inspectStep(failed),
+    adoptionStep(failed),
+    reservedRepeatStep(failed, "repeat-resume", true),
     {
       id: "job.combine.campaign.resume",
-      checkInput: (input) =>
-        assert.deepEqual(input, {
-          batchId: "repeat-1",
-          expectedAppMapRevision: 8,
-          reviewed: true,
-        }),
+      checkInput: (input) => {
+        const value = input as Record<string, unknown>;
+        assert.equal(value.batchId, "repeat-1");
+        assert.equal(value.expectedAppMapRevision, 8);
+        assert.equal(value.reviewed, true);
+        assert.equal((value.workflowMutation as { action?: unknown }).action, "repeat-resume");
+      },
       output: { campaign: running, jobs: [], cells: [] },
     },
+    completedRepeatStep(running, "repeat-resume"),
   ]);
   const continued = await createRelayWorkflows(continuation.client).advance({
     action: "confirm-and-continue",

@@ -55,6 +55,10 @@ export type LegacyWorkflowAdoption = {
   frozenIdentity: WorkflowJsonValue;
   resource: DurableWorkflowResourceRef;
   digest: string;
+  repeatIdentity?: {
+    pilotJobId: string;
+    selectedCaseIds: string[];
+  };
 };
 
 export type DurableWorkflowTransitionResult =
@@ -239,17 +243,36 @@ export function parseLegacyWorkflowAdoption(ref: string): LegacyWorkflowAdoption
     } else if (record.kind === "author-test" && validId(String(record.sessionId ?? ""))) {
       kind = "author-test";
       resource = { kind: "authoring-session", id: String(record.sessionId) };
-    } else if (record.kind === "repeat-test" && validId(String(record.repeatId ?? ""))) {
+    } else if (
+      record.kind === "repeat-test" &&
+      validId(String(record.repeatId ?? "")) &&
+      validId(String(record.pilotJobId ?? "")) &&
+      Array.isArray(record.selectedCaseIds) &&
+      record.selectedCaseIds.length > 0 &&
+      record.selectedCaseIds.length <= 10_000 &&
+      record.selectedCaseIds.every(
+        (candidate): candidate is string => typeof candidate === "string" && validId(candidate),
+      ) &&
+      new Set(record.selectedCaseIds).size === record.selectedCaseIds.length
+    ) {
       kind = "repeat-test";
       resource = { kind: "campaign", id: String(record.repeatId) };
     } else {
       return undefined;
     }
+    const repeatIdentity =
+      kind === "repeat-test"
+        ? {
+            pilotJobId: String(record.pilotJobId),
+            selectedCaseIds: [...(record.selectedCaseIds as string[])],
+          }
+        : undefined;
     return {
       kind,
       frozenIdentity: cloneIdentity(record.frozen),
       resource,
       digest: `sha256:${createHash("sha256").update(ref, "utf8").digest("hex")}`,
+      ...(repeatIdentity ? { repeatIdentity } : {}),
     };
   } catch {
     return undefined;

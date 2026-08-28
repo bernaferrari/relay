@@ -28,6 +28,17 @@ export type AuthorTestWorkflowAction =
   | { action: "cancel" }
   | { action: "abandon"; reason: string };
 
+type AbandonUnprovenStartAction = Extract<AuthorTestWorkflowAction, { action: "abandon" }>;
+
+export function canRetireUnprovenRecording(snapshot: AuthorTestSnapshot | undefined): boolean {
+  return Boolean(
+    snapshot?.workflow &&
+    snapshot.phase === "needs-attention" &&
+    !snapshot.authoring?.sessionId &&
+    snapshot.allowedNextActions.includes("abandon"),
+  );
+}
+
 /**
  * Keeps the opaque workflow reference out of the recorder UI. Every decision
  * first inspects canonical state and then performs at most one mutation.
@@ -256,6 +267,15 @@ export function createAuthorTestWorkflowCoordinator(input: {
     });
   }
 
+  async function inspectDurable(snapshot: AuthorTestSnapshot): Promise<AuthorTestSnapshot> {
+    if (!snapshot.workflow) throw new Error("This recording attempt cannot be inspected safely");
+    return queued(snapshot.workflow.workflowId, async () =>
+      publish(await input.workflows.inspectAuthoring(snapshot.workflow!.workflowId), {
+        acknowledgeAttention: true,
+      }),
+    );
+  }
+
   async function advance(
     sessionId: string,
     action: AuthorTestWorkflowAction,
@@ -317,12 +337,44 @@ export function createAuthorTestWorkflowCoordinator(input: {
     return snapshot;
   }
 
+  async function retireUnprovenRecording(
+    snapshot: AuthorTestSnapshot,
+    action: AbandonUnprovenStartAction,
+  ): Promise<AuthorTestSnapshot> {
+    if (!canRetireUnprovenRecording(snapshot) || !snapshot.workflow) {
+      throw new Error("This recording attempt can still be inspected or continued safely");
+    }
+    return queued(snapshot.workflow.workflowId, async () => {
+      const canonical = await publish(
+        await input.workflows.inspectAuthoring(snapshot.workflow!.workflowId),
+        { acknowledgeAttention: true },
+      );
+      if (!canRetireUnprovenRecording(canonical) || !canonical.workflow) {
+        throw new Error("This recording attempt can still be inspected or continued safely");
+      }
+      const decision: DurableAuthorTestDecision = {
+        ...action,
+        workflowId: canonical.workflow.workflowId,
+        expectedVersion: canonical.workflow.expectedVersion,
+      };
+      const retired = await publish(await input.workflows.advanceAuthoring(decision));
+      if (retired.stage !== "cancelled" || retired.phase !== "cancelled") {
+        throw new Error(
+          retired.problems.at(-1)?.detail || "Relay could not retire this recording attempt",
+        );
+      }
+      return retired;
+    });
+  }
+
   return {
     start,
     hydrate,
     inspect,
+    inspectDurable,
     advance,
     proved,
+    retireUnprovenRecording,
     record: (sessionId: string, interaction: AuthoringInteraction) =>
       proved(sessionId, { action: "record", interaction }),
     hasSession: (sessionId: string) => Boolean(handleFor(sessionId)),

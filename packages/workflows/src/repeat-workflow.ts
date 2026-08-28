@@ -1,5 +1,6 @@
 import type {
   CombineCampaign,
+  DurableWorkflowOperationOutput,
   OfflineTestPreflightFinding,
   OperationOutput,
 } from "@relay/protocol";
@@ -9,6 +10,8 @@ import type { RelayOperationPort } from "./operation-port.js";
 import { snapshotFromRepeatRecord } from "./repeat-projection.js";
 import type {
   FrozenRepeatTestIdentity,
+  DurableRepeatTestDecision,
+  DurableWorkflowHandle,
   RepeatOutcomeCounts,
   RepeatTestDecision,
   RepeatTestIntent,
@@ -191,6 +194,101 @@ function unknownSnapshot(input: {
   };
 }
 
+function unavailableDurableRepeat(input: {
+  workflow: DurableWorkflowHandle;
+  problem: WorkflowProblem;
+  frozen?: FrozenRepeatTestIdentity;
+}): RepeatTestSnapshot {
+  return {
+    schemaVersion: 1,
+    kind: "repeat-test",
+    title: `Repeat ${input.frozen?.testId ?? "Test"}`,
+    phase: "needs-attention",
+    stage: "unknown",
+    version: "unavailable",
+    workflow: input.workflow,
+    ...(input.frozen ? { frozen: input.frozen } : {}),
+    outcomes: emptyOutcomes(0),
+    results: [],
+    progress: { label: input.problem.title },
+    allowedNextActions: ["inspect"],
+    problems: [input.problem],
+    evidenceRefs: [],
+  };
+}
+
+function durableRepeatSnapshot(output: DurableWorkflowOperationOutput): RepeatTestSnapshot {
+  const record = output.workflow.record;
+  const frozen = record.frozenIdentity as FrozenRepeatTestIdentity;
+  const campaign = output.campaign as CombineCampaign | undefined;
+  const repeat = campaign?.execution?.repeat;
+  if (
+    record.kind !== "repeat-test" ||
+    record.resource?.kind !== "campaign" ||
+    !campaign ||
+    !repeat ||
+    campaign.id !== record.resource.id
+  ) {
+    return unavailableDurableRepeat({
+      workflow: { workflowId: record.workflowId, expectedVersion: record.version },
+      frozen,
+      problem: {
+        code: "malformed-response",
+        title: "Relay could not inspect this durable Repeat",
+        detail: "The workflow did not resolve to one matching canonical campaign.",
+        recovery: "Inspect this workflow again. Do not start or resume another Repeat.",
+        retryable: true,
+      },
+    });
+  }
+  const reference: RepeatWorkflowReference = {
+    schemaVersion: 1,
+    kind: "repeat-test",
+    repeatId: campaign.id,
+    pilotJobId: repeat.pilotJobId,
+    selectedCaseIds: [...repeat.selectedCaseIds],
+    frozen,
+  };
+  try {
+    const snapshot = snapshotFromRepeatRecord({
+      workflow: { workflowId: record.workflowId, expectedVersion: record.version },
+      reference,
+      record: campaign,
+    });
+    if (record.status !== "needs-attention") return snapshot;
+    return {
+      ...snapshot,
+      phase: "needs-attention",
+      stage: "unknown",
+      progress: { label: "The Repeat mutation outcome needs inspection" },
+      allowedNextActions: ["inspect"],
+      problems: [
+        ...snapshot.problems,
+        {
+          code: "mutation-outcome-unknown",
+          title: "Relay cannot prove the last Repeat mutation",
+          detail: `The durable workflow stopped at ${record.lastTransition}.`,
+          recovery:
+            "Inspect canonical campaign evidence and resolve this workflow before issuing another decision.",
+          retryable: false,
+        },
+      ],
+    };
+  } catch (error) {
+    return unavailableDurableRepeat({
+      workflow: { workflowId: record.workflowId, expectedVersion: record.version },
+      frozen,
+      problem: {
+        code: "malformed-response",
+        title: "Relay rejected inconsistent durable Repeat identity",
+        detail: publicDetail(error),
+        recovery: "Inspect campaign evidence and resolve the identity mismatch before continuing.",
+        retryable: false,
+      },
+    });
+  }
+}
+
 export class CanonicalRepeatWorkflow {
   constructor(private readonly operations: RelayOperationPort) {}
 
@@ -312,6 +410,75 @@ export class CanonicalRepeatWorkflow {
     if (riskProblem) return initialProblem({ intent, problem: riskProblem });
 
     const evidence = intent.evidence ?? "visual";
+    let durable: DurableWorkflowHandle | undefined;
+    if (intent.continuation === "durable") {
+      if (!validId(intent.workflowRequestId) || !validId(intent.actorId)) {
+        return initialProblem({
+          intent,
+          problem: {
+            code: "invalid-intent",
+            title: "The durable Repeat identity is incomplete",
+            detail: "Durable Repeat requires one stable request ID and actor ID.",
+            recovery: "Start through the outcome workflow so Relay can reserve the request.",
+            retryable: false,
+          },
+        });
+      }
+      const requestIdentity = {
+        actorId: intent.actorId,
+        workflowRequestId: intent.workflowRequestId,
+        appMapId: intent.appMapId,
+        requestedAppMapRevision: requestedRevision,
+        testId: intent.testId,
+        testPlanDigest: checked.preflight.planDigest,
+        target: { ...intent.target },
+        repeat: structuredClone(intent.repeat),
+        resolved: structuredClone(resolved),
+        evidence,
+        ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
+        ...(intent.capture
+          ? { capture: { fullSurfaceScreenIds: [...intent.capture.fullSurfaceScreenIds] } }
+          : {}),
+      };
+      let created: OperationOutput<"workflow.create">;
+      try {
+        created = await this.operations.invoke("workflow.create", {
+          workflowId: intent.workflowRequestId,
+          kind: "repeat-test",
+          frozenIdentity: requestIdentity,
+        });
+      } catch (error) {
+        return initialProblem({
+          intent,
+          problem: unavailableProblem("reserve the durable Repeat workflow", error),
+        });
+      }
+      if (created.disposition === "existing") {
+        return this.inspectDurable(
+          created.workflow.record.workflowId,
+          created.workflow.record.version,
+        );
+      }
+      try {
+        const reserved = await this.operations.invoke("workflow.transition", {
+          workflowId: created.workflow.record.workflowId,
+          expectedVersion: created.workflow.record.version,
+          action: "reserve-repeat-pilot",
+        });
+        durable = {
+          workflowId: reserved.workflow.record.workflowId,
+          expectedVersion: reserved.workflow.record.version,
+        };
+      } catch (error) {
+        return unavailableDurableRepeat({
+          workflow: {
+            workflowId: created.workflow.record.workflowId,
+            expectedVersion: created.workflow.record.version,
+          },
+          problem: mutationUnknownProblem("the pilot reservation completed", error),
+        });
+      }
+    }
     let started: OperationOutput<"app-map.test.run">;
     try {
       started = await this.operations.invoke("app-map.test.run", {
@@ -329,6 +496,17 @@ export class CanonicalRepeatWorkflow {
           testPlanDigest: checked.preflight.planDigest,
           spec: structuredClone(intent.repeat),
           resolved: structuredClone(resolved),
+          ...(durable
+            ? {
+                workflowMutation: {
+                  schemaVersion: 1,
+                  workflowId: durable.workflowId,
+                  transitionVersion: durable.expectedVersion,
+                  action: "repeat-pilot",
+                  completedAt: Date.now(),
+                },
+              }
+            : {}),
         },
         ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
         ...(intent.capture
@@ -338,6 +516,7 @@ export class CanonicalRepeatWorkflow {
           : {}),
       });
     } catch (error) {
+      if (durable) return this.inspectDurable(durable.workflowId, durable.expectedVersion);
       return initialProblem({
         intent,
         phase: "needs-attention",
@@ -367,6 +546,15 @@ export class CanonicalRepeatWorkflow {
       identity.testId !== intent.testId ||
       !validId(identity.rootRecipeId)
     ) {
+      if (durable) {
+        return unavailableDurableRepeat({
+          workflow: durable,
+          problem: mutationUnknownProblem(
+            "the pilot started",
+            "The start response failed frozen execution identity validation.",
+          ),
+        });
+      }
       return initialProblem({
         intent,
         phase: "needs-attention",
@@ -380,6 +568,15 @@ export class CanonicalRepeatWorkflow {
       repeat.selectedCellIds.length === 0 ||
       new Set(repeat.selectedCellIds).size !== repeat.selectedCellIds.length
     ) {
+      if (durable) {
+        return unavailableDurableRepeat({
+          workflow: durable,
+          problem: mutationUnknownProblem(
+            "the pilot started",
+            "The start response did not identify every selected Repeat case exactly once.",
+          ),
+        });
+      }
       return initialProblem({
         intent,
         phase: "needs-attention",
@@ -391,6 +588,8 @@ export class CanonicalRepeatWorkflow {
     }
 
     const frozen: FrozenRepeatTestIdentity = {
+      ...(intent.actorId ? { actorId: intent.actorId } : {}),
+      ...(intent.workflowRequestId ? { workflowRequestId: intent.workflowRequestId } : {}),
       appMapId: intent.appMapId,
       requestedAppMapRevision: requestedRevision,
       executionAppMapRevision: generated.revision,
@@ -414,6 +613,20 @@ export class CanonicalRepeatWorkflow {
       selectedCaseIds: [...repeat.selectedCellIds],
       frozen,
     };
+    if (durable) {
+      try {
+        return durableRepeatSnapshot(
+          await this.operations.invoke("workflow.transition", {
+            workflowId: durable.workflowId,
+            expectedVersion: durable.expectedVersion,
+            action: "attach-repeat",
+            campaignId: repeat.id,
+          }),
+        );
+      } catch {
+        return this.inspectDurable(durable.workflowId, durable.expectedVersion);
+      }
+    }
     const ref = encodeRepeatWorkflowRef(reference);
     return this.readRecord(ref, reference);
   }
@@ -496,16 +709,116 @@ export class CanonicalRepeatWorkflow {
     }
   }
 
+  async inspectDurable(workflowId: string, fallbackVersion = 1): Promise<RepeatTestSnapshot> {
+    try {
+      return durableRepeatSnapshot(await this.operations.invoke("workflow.get", { workflowId }));
+    } catch (error) {
+      return unavailableDurableRepeat({
+        workflow: { workflowId, expectedVersion: fallbackVersion },
+        problem: {
+          ...unavailableProblem("inspect the durable Repeat workflow", error),
+          recovery:
+            "Restore Relay connectivity, then inspect this workflow ID again. Do not start another Repeat.",
+        },
+      });
+    }
+  }
+
+  async advanceDurable(decision: DurableRepeatTestDecision): Promise<RepeatTestSnapshot> {
+    const resume = decision.action !== "cancel";
+    let reserved: DurableWorkflowOperationOutput;
+    try {
+      reserved = await this.operations.invoke("workflow.transition", {
+        workflowId: decision.workflowId,
+        expectedVersion: decision.expectedVersion,
+        action: resume ? "reserve-repeat-resume" : "reserve-repeat-cancel",
+        ...(decision.action === "confirm-and-continue" ? { reviewed: true } : {}),
+      });
+    } catch (error) {
+      const inspected = await this.inspectDurable(decision.workflowId, decision.expectedVersion);
+      return {
+        ...inspected,
+        problems: [
+          ...inspected.problems,
+          mutationUnknownProblem("the Repeat decision was reserved", error),
+        ],
+      };
+    }
+    const resource = reserved.workflow.record.resource;
+    const frozen = reserved.workflow.record.frozenIdentity as FrozenRepeatTestIdentity;
+    if (resource?.kind !== "campaign") {
+      return unavailableDurableRepeat({
+        workflow: {
+          workflowId: decision.workflowId,
+          expectedVersion: reserved.workflow.record.version,
+        },
+        frozen,
+        problem: {
+          code: "malformed-response",
+          title: "Relay could not resolve the canonical Repeat campaign",
+          detail: "The reserved workflow did not retain one campaign resource.",
+          recovery: "Inspect this workflow. Do not issue the decision again.",
+          retryable: false,
+        },
+      });
+    }
+    const mutation = {
+      schemaVersion: 1 as const,
+      workflowId: decision.workflowId,
+      transitionVersion: reserved.workflow.record.version,
+      action: resume ? ("repeat-resume" as const) : ("repeat-cancel" as const),
+      completedAt: Date.now(),
+    };
+    try {
+      if (resume) {
+        await this.operations.invoke("job.combine.campaign.resume", {
+          batchId: resource.id,
+          expectedAppMapRevision: frozen.executionAppMapRevision,
+          ...(decision.action === "confirm-and-continue" ? { reviewed: true } : {}),
+          workflowMutation: mutation,
+        });
+      } else {
+        await this.operations.invoke("job.combine.campaign.cancel", {
+          batchId: resource.id,
+          workflowMutation: mutation,
+        });
+      }
+      return durableRepeatSnapshot(
+        await this.operations.invoke("workflow.transition", {
+          workflowId: decision.workflowId,
+          expectedVersion: reserved.workflow.record.version,
+          action: resume ? "complete-repeat-resume" : "complete-repeat-cancel",
+        }),
+      );
+    } catch {
+      return this.inspectDurable(decision.workflowId, reserved.workflow.record.version);
+    }
+  }
+
   async inspect(ref: WorkflowRef, reference: RepeatWorkflowReference) {
     return this.readRecord(ref, reference);
   }
 
-  async advance(
+  async adoptAndAdvance(
     decision: RepeatTestDecision,
     reference: RepeatWorkflowReference,
   ): Promise<RepeatTestSnapshot> {
-    const current = await this.readRecord(decision.ref, reference);
-    if (current.version === "unavailable") return current;
+    let adopted: DurableWorkflowOperationOutput;
+    try {
+      adopted = await this.operations.invoke("workflow.create", { legacyRef: decision.ref });
+    } catch (error) {
+      return unknownSnapshot({
+        ref: decision.ref,
+        reference,
+        problem: {
+          ...unavailableProblem("adopt this legacy Repeat safely", error),
+          recovery:
+            "Inspect this legacy Repeat only. Do not continue or cancel until Relay can create an authorized durable workflow.",
+        },
+      });
+    }
+    const current = durableRepeatSnapshot(adopted);
+    if (!current.workflow || current.version === "unavailable") return current;
     if (current.version !== decision.expectedVersion) {
       return {
         ...current,
@@ -536,41 +849,11 @@ export class CanonicalRepeatWorkflow {
         ],
       };
     }
-
-    try {
-      let record: CombineCampaign;
-      if (decision.action === "cancel") {
-        record = (
-          await this.operations.invoke("job.combine.campaign.cancel", {
-            batchId: reference.repeatId,
-          })
-        ).campaign;
-      } else {
-        record = (
-          await this.operations.invoke("job.combine.campaign.resume", {
-            batchId: reference.repeatId,
-            expectedAppMapRevision: reference.frozen.executionAppMapRevision,
-            ...(decision.action === "confirm-and-continue" ? { reviewed: true } : {}),
-          })
-        ).campaign;
-      }
-      return snapshotFromRepeatRecord({ ref: decision.ref, reference, record });
-    } catch (error) {
-      return {
-        ...current,
-        phase: "needs-attention",
-        stage: "unknown",
-        progress: { label: "The mutation outcome needs inspection" },
-        allowedNextActions: ["inspect"],
-        problems: [
-          ...current.problems,
-          mutationUnknownProblem(
-            decision.action === "cancel" ? "the Repeat was cancelled" : "the Repeat continued",
-            error,
-          ),
-        ],
-      };
-    }
+    return this.advanceDurable({
+      action: decision.action,
+      workflowId: current.workflow.workflowId,
+      expectedVersion: current.workflow.expectedVersion,
+    });
   }
 
   private async readRecord(

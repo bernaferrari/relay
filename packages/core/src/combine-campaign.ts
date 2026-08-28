@@ -221,6 +221,22 @@ export async function findActiveRepeatCampaigns(
   return matches;
 }
 
+/** Exact durable workflow receipt lookup used only to reconcile a lost pilot
+ * response. It never infers identity from app/test coincidence. */
+export async function findRepeatCampaignsByWorkflow(
+  projectId: string,
+  workflowId: string,
+): Promise<StoredCombineCampaign[]> {
+  const matches: StoredCombineCampaign[] = [];
+  for (const campaignId of await campaignEntries(projectId)) {
+    const campaign = await readCombineCampaign(projectId, campaignId);
+    if (campaign?.execution.repeat?.workflowMutation?.workflowId === workflowId) {
+      matches.push(campaign);
+    }
+  }
+  return matches;
+}
+
 export async function updateCombineCampaign(
   projectId: string,
   campaignId: string,

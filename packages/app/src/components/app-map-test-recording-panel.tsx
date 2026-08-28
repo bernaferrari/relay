@@ -31,6 +31,7 @@ export function AppMapTestRecordingPanel(props: {
   const [approving, setApproving] = createSignal(false);
   const [editingActionId, setEditingActionId] = createSignal<string>();
   const [editBusy, setEditBusy] = createSignal(false);
+  const [retiring, setRetiring] = createSignal(false);
   const [semanticName, setSemanticName] = createSignal("");
   const [tapLabel, setTapLabel] = createSignal("");
 
@@ -96,6 +97,27 @@ export function AppMapTestRecordingPanel(props: {
       toast(humanError(error, "Could not approve this Test"), "warning");
     } finally {
       setApproving(false);
+    }
+  }
+
+  async function retireAttempt(): Promise<void> {
+    if (retiring() || !recorder.canRetireRecordingAttempt()) return;
+    if (
+      !globalThis.confirm(
+        "Retire this unproven recording attempt? No proven recording or Test will be deleted.",
+      )
+    ) {
+      return;
+    }
+    setRetiring(true);
+    try {
+      if (await recorder.retireRecordingAttempt()) {
+        toast("Unproven recording attempt retired", "success");
+      }
+    } catch (error) {
+      toast(humanError(error, "Could not retire this recording attempt"), "warning");
+    } finally {
+      setRetiring(false);
     }
   }
 
@@ -369,6 +391,17 @@ export function AppMapTestRecordingPanel(props: {
             </Show>
           }
         >
+          <Show when={recorder.canRetireRecordingAttempt()}>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={retiring()}
+              aria-busy={retiring()}
+              onClick={() => void retireAttempt()}
+            >
+              {retiring() ? "Retiring…" : "Retire attempt"}
+            </Button>
+          </Show>
           <Button variant="primary" size="sm" onClick={() => void recorder.inspectRecording()}>
             Inspect recording
           </Button>

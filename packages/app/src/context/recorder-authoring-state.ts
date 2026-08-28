@@ -1,6 +1,9 @@
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js";
 import type { AuthorTestSnapshot } from "@relay/workflows";
-import type { createAuthorTestWorkflowCoordinator } from "../lib/author-test-workflow-coordinator";
+import {
+  canRetireUnprovenRecording,
+  type createAuthorTestWorkflowCoordinator,
+} from "../lib/author-test-workflow-coordinator";
 import type { useServer } from "./server";
 import {
   authoringWorkflowNeedsAttention,
@@ -47,6 +50,18 @@ export function createRecorderAuthoringState(input: {
   const needsAttention = createMemo(() =>
     authoringWorkflowNeedsAttention(activeSession(), input.workflowSnapshot()),
   );
+  const canRetireRecordingAttempt = createMemo(() =>
+    canRetireUnprovenRecording(input.workflowSnapshot()),
+  );
+  async function retireRecordingAttempt(): Promise<boolean> {
+    const snapshot = input.workflowSnapshot();
+    if (!snapshot || !canRetireUnprovenRecording(snapshot)) return false;
+    await input.workflow.retireUnprovenRecording(snapshot, {
+      action: "abandon",
+      reason: "The recording start could not be proven and the owner chose to retire it",
+    });
+    return true;
+  }
   return {
     activeSession,
     ownsActiveSession: () => activeSession()?.actorId === input.server.actorId(),
@@ -55,6 +70,8 @@ export function createRecorderAuthoringState(input: {
       return session ? projectTake(session, input.server.authoringEvidenceUrl) : null;
     }),
     needsAttention,
+    canRetireRecordingAttempt,
+    retireRecordingAttempt,
     restoring,
     recording: createMemo(
       () => activeSession()?.state === "recording" && !restoring() && !needsAttention(),

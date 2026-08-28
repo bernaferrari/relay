@@ -492,7 +492,7 @@ export const relayOutcomeTools = Object.freeze([
     description:
       "After reviewing a successful representative pilot, explicitly run the untouched selected values. Uses optimistic workflow versioning.",
     requiresConfirmation: true,
-    inputSchema: z.object({ ref: identifier, expectedVersion: identifier }).strict(),
+    inputSchema: z.object(workflowDecision).strict(),
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -795,8 +795,8 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
   }
   if (input.name === "relay_continue_repeat") {
     return jobs.continueRepeat({
-      ref: parsed.ref as WorkflowRef,
-      expectedVersion: parsed.expectedVersion as string,
+      workflowId: parsed.workflowId as string,
+      expectedVersion: parsed.expectedVersion as number,
       confirmRemaining: true,
     });
   }

@@ -177,6 +177,9 @@ async function withServer(
       authoring.set(id, next);
       return structuredClone(next);
     },
+    readRepeatCampaign: async () => null,
+    findRepeatCampaignsByWorkflow: async () => [],
+    projectRepeatCampaign: async (campaign) => campaign,
   };
   let server = await startServer({
     host: "127.0.0.1",
@@ -979,6 +982,9 @@ test("a network workflow cannot attach or adopt another principal's canonical jo
     transitionAuthoringSession: async () => {
       throw new Error("Authoring is not configured");
     },
+    readRepeatCampaign: async () => null,
+    findRepeatCampaignsByWorkflow: async () => [],
+    projectRepeatCampaign: async (campaign) => campaign,
   };
   const server = await startServer({
     host: "0.0.0.0",

@@ -69,6 +69,7 @@ export type AuthorTestIntent = {
 
 export type RepeatTestIntent = {
   kind: "repeat-test";
+  actorId?: string;
   appMapId: string;
   testId: string;
   target: AuthoringTarget;
@@ -78,6 +79,8 @@ export type RepeatTestIntent = {
   sourceRevision?: SourceRevision;
   capture?: { fullSurfaceScreenIds: readonly string[] };
   confirmRisk?: true;
+  workflowRequestId?: string;
+  continuation?: "durable";
 };
 
 export type WorkflowIntent = RunTestIntent | AuthorTestIntent | RepeatTestIntent;
@@ -160,6 +163,8 @@ export type FrozenAuthorTestIdentity = {
 };
 
 export type FrozenRepeatTestIdentity = {
+  actorId?: string;
+  workflowRequestId?: string;
   appMapId: string;
   requestedAppMapRevision: number;
   executionAppMapRevision: number;
@@ -297,6 +302,7 @@ export type RepeatTestSnapshot = {
   phase: WorkflowPhase;
   stage: "unstarted" | "unknown" | "pilot" | "awaiting-continuation" | "remaining" | "complete";
   version: string;
+  workflow?: DurableWorkflowHandle;
   ref?: WorkflowRef;
   frozen?: FrozenRepeatTestIdentity;
   repeat?: { id: string };
@@ -347,6 +353,9 @@ export type DurableAuthorTestDecision = DurableWorkflowHandle &
 export type RepeatTestDecision = VersionedDecision &
   ({ action: "continue" } | { action: "confirm-and-continue" } | { action: "cancel" });
 
+export type DurableRepeatTestDecision = DurableWorkflowHandle &
+  ({ action: "continue" } | { action: "confirm-and-continue" } | { action: "cancel" });
+
 export type WorkflowDecision = RunTestDecision | AuthorTestDecision | RepeatTestDecision;
 
 export interface RelayWorkflows {
@@ -355,10 +364,14 @@ export interface RelayWorkflows {
   start(intent: RepeatTestIntent): Promise<RepeatTestSnapshot>;
   advance(decision: WorkflowDecision): Promise<WorkflowSnapshot>;
   inspect(ref: WorkflowRef): Promise<WorkflowSnapshot>;
-  inspectDurable(workflowId: string): Promise<RunTestSnapshot | AuthorTestSnapshot>;
+  inspectDurable(
+    workflowId: string,
+  ): Promise<RunTestSnapshot | AuthorTestSnapshot | RepeatTestSnapshot>;
   inspectRun(workflowId: string): Promise<RunTestSnapshot>;
   inspectAuthoring(workflowId: string): Promise<AuthorTestSnapshot>;
+  inspectRepeat(workflowId: string): Promise<RepeatTestSnapshot>;
   advanceAuthoring(decision: DurableAuthorTestDecision): Promise<AuthorTestSnapshot>;
+  advanceRepeat(decision: DurableRepeatTestDecision): Promise<RepeatTestSnapshot>;
   cancelRun(input: DurableWorkflowHandle): Promise<RunTestSnapshot>;
   recover(intent: RunTestRecoveryIntent): Promise<RunTestSnapshot>;
   recover(intent: AuthorTestRecoveryIntent): Promise<AuthorTestSnapshot>;
@@ -423,8 +436,8 @@ export type CancelRunOutcomeIntent = {
 };
 export type ContinueRepeatOutcomeIntent = {
   kind: "continue-repeat";
-  ref: WorkflowRef;
-  expectedVersion: string;
+  workflowId: string;
+  expectedVersion: number;
   confirmRemaining: true;
 };
 
@@ -463,8 +476,8 @@ export interface RelayOutcomeJobs {
   inspect(input: WorkflowLookup): Promise<WorkflowSnapshot>;
   cancelRun(input: CancelRunOutcomeIntent): Promise<RunTestSnapshot>;
   continueRepeat(input: {
-    ref: WorkflowRef;
-    expectedVersion: string;
+    workflowId: string;
+    expectedVersion: number;
     confirmRemaining: true;
   }): Promise<RepeatTestSnapshot>;
   advanceRecording(decision: DurableAuthorTestDecision): Promise<AuthorTestSnapshot>;

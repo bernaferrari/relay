@@ -3,6 +3,7 @@ import {
   appMapTestCompileInputSchema,
   appMapTestRunInputSchema,
   graphTest,
+  repeatWorkflowMutationSchema,
   testSemanticEdits,
 } from "./app-map-test-operation-schemas.js";
 import { reviewedDocumentOriginOperationSchemas } from "./reviewed-document-origin-operation-schemas.js";
@@ -777,10 +778,14 @@ export const operationInputSchemas = {
       batchId: identifier("Combine campaign identifier"),
       reviewed: z.boolean().optional(),
       expectedAppMapRevision: z.number().int().nonnegative().optional(),
+      workflowMutation: repeatWorkflowMutationSchema.optional(),
     })
     .strict(),
   "job.combine.campaign.cancel": z
-    .object({ batchId: identifier("Combine campaign identifier") })
+    .object({
+      batchId: identifier("Combine campaign identifier"),
+      workflowMutation: repeatWorkflowMutationSchema.optional(),
+    })
     .strict(),
   "job.retry": z.object({ jobId: identifier("Job identifier") }).strict(),
   "job.cancel": z.object({ jobId: identifier("Job identifier") }).strict(),

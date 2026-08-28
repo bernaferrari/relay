@@ -12,7 +12,8 @@ import {
 } from "@relay/protocol";
 import { parseCli } from "./config.js";
 import { ExitCode } from "./errors.js";
-import { runCli } from "./index.js";
+import { runCli, waitForOutcome } from "./index.js";
+import type { RelayOutcomeJobs, RepeatTestSnapshot } from "@relay/workflows";
 import type { OperationInvoker } from "./invoke.js";
 
 function capture() {
@@ -54,6 +55,56 @@ const relayEvent: EventEnvelope = {
   occurredAt: 1,
   payload: { type: "resource.updated", at: 1 },
 };
+
+function repeatOutcome(phase: RepeatTestSnapshot["phase"], version: number): RepeatTestSnapshot {
+  return {
+    schemaVersion: 1,
+    kind: "repeat-test",
+    title: "Repeat locale smoke",
+    phase,
+    stage: phase === "succeeded" ? "complete" : "remaining",
+    version: `campaign-${version}`,
+    workflow: { workflowId: "repeat-workflow", expectedVersion: version },
+    outcomes: {
+      selected: 2,
+      observed: phase === "succeeded" ? 2 : 1,
+      untouched: phase === "succeeded" ? 0 : 1,
+      running: phase === "running" ? 1 : 0,
+      passed: phase === "succeeded" ? 2 : 1,
+      failed: 0,
+      needsReview: 0,
+      cancelled: 0,
+    },
+    results: [],
+    progress: { label: phase },
+    allowedNextActions: ["inspect"],
+    problems: [],
+    evidenceRefs: [],
+  };
+}
+
+test("Repeat and continue-repeat waits poll only their durable workflow handle", async () => {
+  for (const operationId of ["outcome.repeat-test", "outcome.continue-repeat"]) {
+    const lookups: unknown[] = [];
+    const snapshots: unknown[] = [];
+    const settled = await waitForOutcome(
+      {
+        inspect: async (lookup: unknown) => {
+          lookups.push(lookup);
+          return repeatOutcome("succeeded", 3);
+        },
+      } as RelayOutcomeJobs,
+      repeatOutcome("running", 2),
+      new AbortController().signal,
+      { snapshot: (_id: string, snapshot: unknown) => snapshots.push(snapshot) } as never,
+      operationId,
+      0,
+    );
+    assert.equal(settled.phase, "succeeded");
+    assert.deepEqual(lookups, [{ workflowId: "repeat-workflow" }]);
+    assert.equal(snapshots.length, 1);
+  }
+});
 
 test("generic invocation calls the operation client with parsed input", async () => {
   const io = capture();

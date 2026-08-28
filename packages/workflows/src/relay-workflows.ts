@@ -44,17 +44,16 @@ import {
 } from "./workflow-ref.js";
 import { executionRiskPreflightProblem, isExecutionRisk } from "./execution-risk-preflight.js";
 import { invalidRefSnapshot } from "./invalid-workflow-snapshot.js";
+import {
+  mutationUnknownWorkflowProblem as mutationUnknownProblem,
+  unavailableWorkflowProblem as unavailableProblem,
+  workflowErrorDetail as errorDetail,
+} from "./workflow-problems.js";
 type ValidCompile = {
   plan: OperationOutput<"app-map.test.compile">["plan"];
   preflight: OperationOutput<"app-map.test.compile">["preflight"];
   blockers: OfflineTestPreflightFinding[];
 };
-
-function errorDetail(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : "Relay did not return a usable response.";
-}
 
 function initialProblem(input: {
   intent: RunTestIntent;
@@ -77,27 +76,6 @@ function initialProblem(input: {
     allowedNextActions: [],
     problems: [input.problem],
     evidenceRefs: [],
-  };
-}
-
-function unavailableProblem(stage: string, error: unknown): WorkflowProblem {
-  return {
-    code: "operation-unavailable",
-    title: `Relay could not ${stage}`,
-    detail: errorDetail(error),
-    recovery: "Resolve the reported Relay problem, then start this workflow again explicitly.",
-    retryable: true,
-  };
-}
-
-function mutationUnknownProblem(action: string, error: unknown): WorkflowProblem {
-  return {
-    code: "mutation-outcome-unknown",
-    title: `Relay cannot prove whether ${action}`,
-    detail: errorDetail(error),
-    recovery:
-      "Inspect canonical jobs before starting or cancelling anything again. Relay will not retry this mutation.",
-    retryable: false,
   };
 }
 
@@ -736,12 +714,18 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     }
   }
 
-  async inspectDurable(workflowId: string): Promise<RunTestSnapshot | AuthorTestSnapshot> {
+  async inspectDurable(
+    workflowId: string,
+  ): Promise<RunTestSnapshot | AuthorTestSnapshot | import("./types.js").RepeatTestSnapshot> {
     try {
       const output = await this.operations.invoke("workflow.get", { workflowId });
-      return output.workflow.record.kind === "author-test"
-        ? this.authoring.snapshotDurable(output)
-        : durableRunSnapshot(output);
+      if (output.workflow.record.kind === "author-test") {
+        return this.authoring.snapshotDurable(output);
+      }
+      if (output.workflow.record.kind === "repeat-test") {
+        return this.repeat.inspectDurable(workflowId);
+      }
+      return durableRunSnapshot(output);
     } catch (error) {
       return unavailableDurableRun({
         workflow: { workflowId, expectedVersion: 1 },
@@ -754,8 +738,16 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     return this.authoring.inspectDurable(workflowId);
   }
 
+  inspectRepeat(workflowId: string) {
+    return this.repeat.inspectDurable(workflowId);
+  }
+
   advanceAuthoring(decision: import("./types.js").DurableAuthorTestDecision) {
     return this.authoring.advanceDurable(decision);
+  }
+
+  advanceRepeat(decision: import("./types.js").DurableRepeatTestDecision) {
+    return this.repeat.advanceDurable(decision);
   }
 
   async cancelRun(input: DurableWorkflowHandle): Promise<RunTestSnapshot> {
@@ -792,7 +784,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
   async advance(decision: WorkflowDecision): Promise<WorkflowSnapshot> {
     const repeatReference = decodeRepeatWorkflowRef(decision.ref);
     if (repeatReference) {
-      return this.repeat.advance(decision as RepeatTestDecision, repeatReference);
+      return this.repeat.adoptAndAdvance(decision as RepeatTestDecision, repeatReference);
     }
     const authoringReference = decodeAuthoringWorkflowRef(decision.ref);
     if (authoringReference) {

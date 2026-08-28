@@ -20,6 +20,16 @@ const forceRecaptureScreenIds = z
     });
   });
 
+export const repeatWorkflowMutationSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    workflowId: identifier("Durable Repeat workflow identifier"),
+    transitionVersion: z.number().int().positive(),
+    action: z.enum(["repeat-pilot", "repeat-resume", "repeat-cancel"]),
+    completedAt: z.number().int().nonnegative(),
+  })
+  .strict();
+
 const shaPattern = /^[0-9a-f]{7,40}$/;
 export const sourceRevisionSchema = z
   .object({
@@ -104,6 +114,7 @@ export const appMapTestRunInputSchema = z
             resume: z.enum(["untouched", "failed", "all"]),
           })
           .strict(),
+        workflowMutation: repeatWorkflowMutationSchema.optional(),
       })
       .strict()
       .optional()

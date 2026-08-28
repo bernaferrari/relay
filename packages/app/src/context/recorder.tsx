@@ -95,6 +95,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       arming,
       issue: recordingIssue,
       group: recordingGroup,
+      canRetireRecordingAttempt,
+      retireRecordingAttempt,
     } = createRecorderAuthoringState({
       server,
       workflow: authoringWorkflow,
@@ -249,9 +251,13 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     }
 
     async function inspectRecording(): Promise<boolean> {
-      const sessionId = workflowSnapshot()?.authoring?.sessionId ?? activeSession()?.id;
-      if (!sessionId) return false;
-      const inspected = await authoringWorkflow.inspect(sessionId);
+      const snapshot = workflowSnapshot();
+      const sessionId = snapshot?.authoring?.sessionId ?? activeSession()?.id;
+      const inspected = sessionId
+        ? await authoringWorkflow.inspect(sessionId)
+        : snapshot?.workflow
+          ? await authoringWorkflow.inspectDurable(snapshot)
+          : undefined;
       return Boolean(inspected && inspected.phase !== "needs-attention");
     }
 
@@ -866,6 +872,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       startNextRecordingGroup,
       enterRecordMode,
       inspectRecording,
+      canRetireRecordingAttempt,
+      retireRecordingAttempt,
       captureStartScreen,
       captureMapScreen,
       stopRecording,

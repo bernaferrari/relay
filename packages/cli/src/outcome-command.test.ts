@@ -87,11 +87,11 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
       },
     },
     {
-      input: tokens(["continue-repeat", "workflow-ref", "v2"], {}, ["--confirm"]),
+      input: tokens(["continue-repeat", "workflow-id", "2"], {}, ["--confirm"]),
       expected: {
         kind: "continue-repeat",
-        ref: "workflow-ref",
-        expectedVersion: "v2",
+        workflowId: "workflow-id",
+        expectedVersion: 2,
         confirmRemaining: true,
       },
     },

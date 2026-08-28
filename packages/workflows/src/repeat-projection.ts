@@ -4,6 +4,7 @@ import type {
   RepeatOutcomeCounts,
   RepeatTestSnapshot,
   RepeatValueResult,
+  DurableWorkflowHandle,
   WorkflowProblem,
   WorkflowRef,
 } from "./types.js";
@@ -213,11 +214,12 @@ function problem(
 }
 
 export function snapshotFromRepeatRecord(input: {
-  ref: WorkflowRef;
+  ref?: WorkflowRef;
+  workflow?: DurableWorkflowHandle;
   reference: RepeatWorkflowReference;
   record: CombineCampaign;
 }): RepeatTestSnapshot {
-  const { ref, reference, record } = input;
+  const { ref, workflow, reference, record } = input;
   const results = selectedRepeatResults(record, reference);
   const outcome = counts(results);
   const pilot = results.find((item) => item.phase === "pilot")!;
@@ -347,7 +349,8 @@ export function snapshotFromRepeatRecord(input: {
     phase,
     stage,
     version: version(record, results),
-    ref,
+    ...(workflow ? { workflow } : {}),
+    ...(ref ? { ref } : {}),
     frozen: reference.frozen,
     repeat: { id: reference.repeatId },
     outcomes: outcome,

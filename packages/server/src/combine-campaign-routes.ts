@@ -33,6 +33,7 @@ import { combineCellContractHttpError } from "./app-map-combine-runtime-contract
 import { queuedAppMapTestTargetProfile } from "./app-map-test-target-profile.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { JobRouteContext } from "./job-routes.js";
+import { assertRepeatWorkflowMutation } from "./repeat-workflow-receipt.js";
 import {
   admitAndStageLocalCombineCampaign,
   localCampaignAdmissionRequestForActiveWorkItems,
@@ -111,12 +112,22 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
     const body = (await parseJsonBody(request)) as {
       reviewed?: boolean;
       expectedAppMapRevision?: number;
+      workflowMutation?: NonNullable<
+        NonNullable<CombineCampaign["execution"]>["repeat"]
+      >["workflowMutation"];
     };
     const campaignId = resumeMatch.batchId!;
     return campaignDecisionLocks.run(`${scope.projectId}:${campaignId}`, async () => {
       const existing = await readCombineCampaign(scope.projectId, campaignId);
       if (!existing || (!scope.localTrusted && existing.ownerId !== scope.subject)) {
         throw new HttpError(404, "Combine campaign not found");
+      }
+      if (body.workflowMutation) {
+        await assertRepeatWorkflowMutation({
+          scope,
+          mutation: body.workflowMutation,
+          campaignId,
+        });
       }
       const projected = await projectCombineCampaign(existing);
       if (projected.status === "pilot-running" || projected.status === "running") {
@@ -244,7 +255,23 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         }
         const pending = pendingSelectedCombineCampaignCells(resumeCampaign);
         if (!pending.length) {
-          json(response, 200, { campaign: projected, jobs: [], cells: prepared.cellStates });
+          const noOp = body.workflowMutation
+            ? await updateCombineCampaign(scope.projectId, campaignId, (current) => ({
+                ...current,
+                updatedAt: Date.now(),
+                execution: {
+                  ...current.execution,
+                  repeat: current.execution.repeat
+                    ? { ...current.execution.repeat, workflowMutation: body.workflowMutation }
+                    : undefined,
+                },
+              }))
+            : projected;
+          json(response, 200, {
+            campaign: await projectCombineCampaign(noOp),
+            jobs: [],
+            cells: prepared.cellStates,
+          });
           return true;
         }
         const toQueue = pending.map((item) => preparedById.get(item.cellId)!);
@@ -344,6 +371,13 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
                 : {}),
             },
           ],
+          execution: {
+            ...current.execution,
+            repeat:
+              current.execution.repeat && body.workflowMutation
+                ? { ...current.execution.repeat, workflowMutation: body.workflowMutation }
+                : current.execution.repeat,
+          },
         }));
         resumePersisted = true;
         const acceptedAdmission = admission;
@@ -419,10 +453,18 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
   const cancelMatch = matchPath(pathname, "/jobs/combine/:batchId/cancel");
   if (method === "POST" && cancelMatch) {
     const campaignId = cancelMatch.batchId!;
+    const body = (await parseJsonBody(request)) as {
+      workflowMutation?: NonNullable<
+        NonNullable<CombineCampaign["execution"]>["repeat"]
+      >["workflowMutation"];
+    };
     return campaignDecisionLocks.run(`${scope.projectId}:${campaignId}`, async () => {
       const existing = await readCombineCampaign(scope.projectId, campaignId);
       if (!existing || (!scope.localTrusted && existing.ownerId !== scope.subject)) {
         throw new HttpError(404, "Combine campaign not found");
+      }
+      if (body.workflowMutation) {
+        await assertRepeatWorkflowMutation({ scope, mutation: body.workflowMutation, campaignId });
       }
       const projected = await projectCombineCampaign(existing);
       for (const item of projected.cases) {
@@ -452,6 +494,13 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
             actorId: currentOperationContext()!.actorId,
           },
         ],
+        execution: {
+          ...current.execution,
+          repeat:
+            current.execution.repeat && body.workflowMutation
+              ? { ...current.execution.repeat, workflowMutation: body.workflowMutation }
+              : current.execution.repeat,
+        },
       }));
       json(response, 200, { campaign: await projectCombineCampaign(updated) });
       return true;

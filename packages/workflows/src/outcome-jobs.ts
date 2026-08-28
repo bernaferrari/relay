@@ -300,11 +300,14 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
     const target = await selectTarget(this.operations, intent.targetId);
     return this.workflows.start({
       kind: "repeat-test",
+      actorId: this.options.actorId,
       appMapId,
       testId: intent.testId,
       target,
       revision: "current",
       repeat: structuredClone(intent.repeat),
+      workflowRequestId: crypto.randomUUID(),
+      continuation: "durable",
       ...(intent.evidence ? { evidence: intent.evidence } : {}),
       ...(intent.confirmRisk ? { confirmRisk: true } : {}),
     });
@@ -433,8 +436,8 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
   }
 
   async continueRepeat(input: Parameters<RelayOutcomeJobs["continueRepeat"]>[0]) {
-    const snapshot = await this.workflows.advance({
-      ref: input.ref,
+    const snapshot = await this.workflows.advanceRepeat({
+      workflowId: input.workflowId,
       expectedVersion: input.expectedVersion,
       action: "confirm-and-continue",
     });

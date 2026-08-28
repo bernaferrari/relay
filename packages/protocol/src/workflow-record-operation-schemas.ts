@@ -74,6 +74,7 @@ const output = z
     workflow,
     job: z.record(z.string(), z.unknown()).optional(),
     session: z.record(z.string(), z.unknown()).optional(),
+    campaign: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -128,9 +129,17 @@ export const workflowRecordOperationInputSchemas = {
         "authoring-discard",
         "authoring-cancel",
         "authoring-abandon",
+        "reserve-repeat-pilot",
+        "attach-repeat",
+        "reserve-repeat-resume",
+        "complete-repeat-resume",
+        "reserve-repeat-cancel",
+        "complete-repeat-cancel",
       ]),
       jobId: identifier.optional(),
+      campaignId: identifier.optional(),
       leaseId: identifier.optional(),
+      reviewed: z.boolean().optional(),
       interaction: authoringInteraction.optional(),
       label: z.string().trim().min(1).max(256).optional(),
       edit: authoringRecordingEdit.optional(),
@@ -156,6 +165,9 @@ export const workflowRecordOperationInputSchemas = {
       if (value.action === "authoring-abandon") {
         required(Boolean(value.reason), "authoring-abandon requires reason");
       }
+      if (value.action === "attach-repeat") {
+        required(Boolean(value.campaignId), "attach-repeat requires campaignId");
+      }
       const allowed = new Set<string>(["workflowId", "expectedVersion", "action"]);
       if (value.action === "attach-run") allowed.add("jobId");
       if (value.action === "start-authoring") allowed.add("leaseId");
@@ -164,6 +176,8 @@ export const workflowRecordOperationInputSchemas = {
       if (value.action === "authoring-edit") allowed.add("edit");
       if (value.action === "authoring-approve") allowed.add("destination");
       if (value.action === "authoring-abandon") allowed.add("reason");
+      if (value.action === "attach-repeat") allowed.add("campaignId");
+      if (value.action === "reserve-repeat-resume") allowed.add("reviewed");
       for (const [key, item] of Object.entries(value)) {
         if (item !== undefined && !allowed.has(key)) {
           context.addIssue({ code: "custom", message: `${value.action} does not accept ${key}` });

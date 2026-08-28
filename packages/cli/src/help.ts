@@ -127,7 +127,7 @@ Usage:
   relay repeat <testId> --each <dimension>=<values|supported|all> [--each ...]
     [--strategy <cartesian|zip|pairwise>] [--pilot <representative|first|dimension=value,...>]
     [--resume <untouched|failed|all>] [--map <id>] [--device <id>] [--confirm]
-  relay continue-repeat <workflowRef> <expectedVersion> --confirm
+  relay continue-repeat <workflowId> <expectedVersion> --confirm
   relay inspect-workflow <workflowId|legacyV1Ref>
   relay cancel-run <workflowId> <expectedVersion> --confirm
   relay inspect-failure <runId>

@@ -260,7 +260,7 @@ function assertOutcomeSucceeded(snapshot: WorkflowSnapshot): void {
   }
 }
 
-async function waitForOutcome(
+export async function waitForOutcome(
   jobs: RelayOutcomeJobs,
   snapshot: WorkflowSnapshot,
   signal: AbortSignal,
@@ -270,16 +270,14 @@ async function waitForOutcome(
 ): Promise<WorkflowSnapshot> {
   let current = snapshot;
   while (
-    (current.ref || (current.kind === "run-test" && current.workflow)) &&
+    (current.ref || current.workflow) &&
     (current.phase === "queued" || current.phase === "running") &&
     current.kind !== "author-test"
   ) {
     output.snapshot(operationId, current);
     await waitForPoll(pollIntervalMs, signal);
     current = await jobs.inspect(
-      current.kind === "run-test" && current.workflow
-        ? { workflowId: current.workflow.workflowId }
-        : { legacyRef: current.ref! },
+      current.workflow ? { workflowId: current.workflow.workflowId } : { legacyRef: current.ref! },
     );
   }
   return current;

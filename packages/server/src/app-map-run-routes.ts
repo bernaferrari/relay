@@ -41,6 +41,7 @@ import {
   queuedAppMapTestTargetProfile,
 } from "./app-map-test-target-profile.js";
 import type { RequestContext } from "./security.js";
+import { assertRepeatWorkflowMutation } from "./repeat-workflow-receipt.js";
 
 export {
   frozenTestRunTargetProfile,
@@ -186,6 +187,12 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       OperationInput<"app-map.test.run">,
       "appMapId" | "testId"
     >;
+    if (body.repeatRecovery?.workflowMutation) {
+      await assertRepeatWorkflowMutation({
+        scope: input.scope,
+        mutation: body.repeatRecovery.workflowMutation,
+      });
+    }
     const map = await readAppMap(input.scope.projectId, testMatch.appMapId!);
     if (!map) throw new HttpError(404, `App Map ${testMatch.appMapId} not found`);
     if (map.revision !== body.expectedRevision) {

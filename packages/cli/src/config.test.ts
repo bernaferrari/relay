@@ -850,21 +850,25 @@ test("outcome commands resolve ordinary intent without raw JSON mechanics", () =
     });
   }
 
-  const continuation = parseCli(["continue-repeat", "opaque-ref", "version-2", "--confirm"], {});
+  const continuation = parseCli(["continue-repeat", "repeat-workflow", "2", "--confirm"], {});
   assert.equal(continuation.command, "outcome");
   if (continuation.command === "outcome") {
     assert.deepEqual(continuation.intent, {
       kind: "continue-repeat",
-      ref: "opaque-ref",
-      expectedVersion: "version-2",
+      workflowId: "repeat-workflow",
+      expectedVersion: 2,
       confirmRemaining: true,
     });
   }
 
   assert.throws(() => parseCli(["record", "Smoke"], {}), /requires --confirm/u);
   assert.throws(
-    () => parseCli(["continue-repeat", "opaque-ref", "version-2"], {}),
+    () => parseCli(["continue-repeat", "repeat-workflow", "2"], {}),
     /requires --confirm/u,
+  );
+  assert.throws(
+    () => parseCli(["continue-repeat", "repeat-workflow", "version-2", "--confirm"], {}),
+    /positive integer/u,
   );
   assert.throws(() => parseCli(["run", "smoke", "--input", "{}"], {}), /do not accept --input/u);
 });

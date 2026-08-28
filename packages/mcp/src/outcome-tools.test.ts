@@ -230,12 +230,12 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
     },
     {
       name: "relay_continue_repeat",
-      argumentsValue: { ref: "repeat-ref", expectedVersion: "v2" },
+      argumentsValue: { workflowId: "repeat-workflow", expectedVersion: 2 },
       confirmed: true,
       method: "continueRepeat",
       expected: {
-        ref: "repeat-ref",
-        expectedVersion: "v2",
+        workflowId: "repeat-workflow",
+        expectedVersion: 2,
         confirmRemaining: true,
       },
     },
@@ -327,7 +327,7 @@ test("protected outcome tools reject missing confirmation before workflow dispat
     },
     {
       name: "relay_continue_repeat" as const,
-      argumentsValue: { ref: "repeat-ref", expectedVersion: "v1" },
+      argumentsValue: { workflowId: "repeat-workflow", expectedVersion: 1 },
     },
   ]) {
     const invocations: Invocation[] = [];

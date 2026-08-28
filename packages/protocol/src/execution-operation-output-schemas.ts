@@ -1,6 +1,9 @@
 import * as z from "zod/v4";
 import { combineCampaignAdmissionSchema } from "./campaign-capacity-operation-output-schemas.js";
-import { sourceRevisionSchema } from "./app-map-test-operation-schemas.js";
+import {
+  repeatWorkflowMutationSchema,
+  sourceRevisionSchema,
+} from "./app-map-test-operation-schemas.js";
 import { repeatPilotSpecSchema, repeatSpecSchema } from "./repeat-spec.js";
 
 const targetCapabilitySchema = z.enum([
@@ -544,6 +547,7 @@ export const combineCampaignSchema = z
               .optional(),
             pilotJobId: z.string(),
             selectedCaseIds: z.array(z.string()),
+            workflowMutation: repeatWorkflowMutationSchema.optional(),
           })
           .strict()
           .optional(),

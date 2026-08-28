@@ -1,4 +1,5 @@
 export { createRelayWorkflows } from "./relay-workflows.js";
+export { isLegacyWorkflowRef } from "./workflow-ref.js";
 export {
   RepeatSpecResolutionError,
   resolveRepeatSpec,
@@ -44,6 +45,7 @@ export type {
   FrozenRunTestIdentity,
   RelayWorkflows,
   RepeatOutcomeCounts,
+  DurableRepeatTestDecision,
   RepeatTestDecision,
   RepeatTestIntent,
   RepeatTestRecoveryIntent,

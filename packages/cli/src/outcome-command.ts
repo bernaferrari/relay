@@ -290,10 +290,14 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
     if (!tokens.switches.has("--confirm")) {
       throw new UsageError("continue-repeat requires --confirm after reviewing the pilot");
     }
+    const expectedVersion = Number(args[1]);
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+      throw new UsageError("continue-repeat expectedVersion must be a positive integer");
+    }
     return {
       kind: "continue-repeat",
-      ref: args[0]! as ContinueRepeatOutcomeIntent["ref"],
-      expectedVersion: args[1]!,
+      workflowId: args[0]!,
+      expectedVersion,
       confirmRemaining: true,
     };
   }

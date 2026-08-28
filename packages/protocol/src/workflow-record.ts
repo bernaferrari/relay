@@ -98,6 +98,12 @@ export type WorkflowTransitionInput = WorkflowTransitionFence &
     | { action: "authoring-discard" }
     | { action: "authoring-cancel" }
     | { action: "authoring-abandon"; reason: string }
+    | { action: "reserve-repeat-pilot" }
+    | { action: "attach-repeat"; campaignId: string }
+    | { action: "reserve-repeat-resume"; reviewed?: boolean }
+    | { action: "complete-repeat-resume" }
+    | { action: "reserve-repeat-cancel" }
+    | { action: "complete-repeat-cancel" }
   );
 
 export type DurableWorkflowOperationOutput = {
@@ -106,6 +112,8 @@ export type DurableWorkflowOperationOutput = {
   job?: Record<string, unknown>;
   /** Current canonical Authoring Session projection. */
   session?: Record<string, unknown>;
+  /** Current canonical Repeat campaign projection. */
+  campaign?: Record<string, unknown>;
 };
 
 export type WorkflowOperationMap = {

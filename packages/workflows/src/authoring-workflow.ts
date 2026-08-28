@@ -137,6 +137,7 @@ function unavailableDurableAuthor(input: {
   frozen?: FrozenAuthorTestIdentity;
   problem: WorkflowProblem;
   sessionId?: string;
+  canAbandon?: boolean;
 }): AuthorTestSnapshot {
   return {
     schemaVersion: 1,
@@ -149,7 +150,7 @@ function unavailableDurableAuthor(input: {
     ...(input.frozen ? { frozen: input.frozen } : {}),
     ...(input.sessionId ? { authoring: { sessionId: input.sessionId } } : {}),
     progress: { label: input.problem.title },
-    allowedNextActions: ["inspect"],
+    allowedNextActions: input.canAbandon ? ["inspect", "abandon"] : ["inspect"],
     problems: [input.problem],
     evidenceRefs: [],
   };
@@ -192,10 +193,16 @@ function durableAuthorSnapshot(
     };
   }
   if (!frozen || record.kind !== "author-test" || !session) {
+    const canAbandon =
+      record.resource?.kind !== "authoring-session" &&
+      (record.status === "needs-attention" ||
+        record.lastTransition === "start-authoring-requested" ||
+        record.lastTransition === "start-authoring-outcome-unknown");
     return unavailableDurableAuthor({
       workflow,
       ...(frozen ? { frozen } : {}),
       ...(record.resource?.kind === "authoring-session" ? { sessionId: record.resource.id } : {}),
+      ...(canAbandon ? { canAbandon: true } : {}),
       problem: {
         code: "mutation-outcome-unknown",
         title: "The recording still needs reconciliation",

@@ -6,7 +6,10 @@ import type {
   DurableAuthorTestDecision,
   RelayWorkflows,
 } from "@relay/workflows";
-import { createAuthorTestWorkflowCoordinator } from "./author-test-workflow-coordinator";
+import {
+  canRetireUnprovenRecording,
+  createAuthorTestWorkflowCoordinator,
+} from "./author-test-workflow-coordinator";
 
 const workflowId = "author-workflow";
 const intent: AuthorTestIntent = {
@@ -317,4 +320,94 @@ test("an uncertain begin remains blocked after remount until explicit inspection
     ),
     true,
   );
+});
+
+test("only a no-session durable snapshot that explicitly allows abandon can be retired", async () => {
+  const unproven: AuthorTestSnapshot = {
+    ...snapshot("unknown", 2, ["inspect", "abandon"]),
+    phase: "needs-attention",
+    authoring: undefined,
+    problems: [
+      {
+        code: "mutation-outcome-unknown",
+        title: "Recording start is unproven",
+        detail: "Relay could not prove that recording began",
+        recovery: "Retire this attempt before starting another.",
+        retryable: false,
+      },
+    ],
+  };
+  const retired: AuthorTestSnapshot = {
+    ...unproven,
+    phase: "cancelled",
+    stage: "cancelled",
+    version: "workflow-v3",
+    workflow: { workflowId, expectedVersion: 3 },
+    allowedNextActions: ["inspect"],
+    problems: [],
+  };
+  const decisions: DurableAuthorTestDecision[] = [];
+  const workflows = {
+    inspectAuthoring: async () => unproven,
+    advanceAuthoring: async (decision: DurableAuthorTestDecision) => {
+      decisions.push(decision);
+      return retired;
+    },
+  } as unknown as RelayWorkflows;
+  const coordinator = createAuthorTestWorkflowCoordinator({
+    workflows,
+    onSnapshot: () => undefined,
+  });
+
+  assert.equal((await coordinator.inspectDurable(unproven)).version, "workflow-v2");
+  assert.equal(canRetireUnprovenRecording(unproven), true);
+  assert.equal(
+    canRetireUnprovenRecording({ ...unproven, authoring: { sessionId: "healthy" } }),
+    false,
+  );
+  assert.equal(canRetireUnprovenRecording({ ...unproven, allowedNextActions: ["inspect"] }), false);
+
+  const result = await coordinator.retireUnprovenRecording(unproven, {
+    action: "abandon",
+    reason: "Owner retired an unproven start",
+  });
+
+  assert.equal(result.stage, "cancelled");
+  assert.deepEqual(decisions, [
+    {
+      action: "abandon",
+      reason: "Owner retired an unproven start",
+      workflowId,
+      expectedVersion: 2,
+    },
+  ]);
+});
+
+test("retirement fails closed when inspection finds a canonical recording session", async () => {
+  const unproven: AuthorTestSnapshot = {
+    ...snapshot("unknown", 2, ["inspect", "abandon"]),
+    phase: "needs-attention",
+    authoring: undefined,
+  };
+  let advances = 0;
+  const workflows = {
+    inspectAuthoring: async () => snapshot("recording", 3, ["inspect", "checkpoint", "stop"]),
+    advanceAuthoring: async () => {
+      advances += 1;
+      return snapshot("recording", 4, ["inspect", "checkpoint", "stop"]);
+    },
+  } as unknown as RelayWorkflows;
+  const coordinator = createAuthorTestWorkflowCoordinator({
+    workflows,
+    onSnapshot: () => undefined,
+  });
+
+  await assert.rejects(
+    coordinator.retireUnprovenRecording(unproven, {
+      action: "abandon",
+      reason: "Stale client request",
+    }),
+    /can still be inspected or continued safely/,
+  );
+  assert.equal(advances, 0);
 });

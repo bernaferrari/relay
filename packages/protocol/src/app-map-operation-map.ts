@@ -592,6 +592,13 @@ export type AppMapOperationMap = {
           pilot: RepeatPilotSpec;
           resume: "untouched" | "failed" | "all";
         };
+        workflowMutation?: {
+          schemaVersion: 1;
+          workflowId: string;
+          transitionVersion: number;
+          action: "repeat-pilot" | "repeat-resume" | "repeat-cancel";
+          completedAt: number;
+        };
       };
       workflowRequestId?: string;
     };

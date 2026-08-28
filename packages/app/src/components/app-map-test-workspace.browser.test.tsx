@@ -199,6 +199,34 @@ function repeatCampaign(status: "ready-to-resume" | "running") {
   };
 }
 
+function repeatWorkflow(
+  version: number,
+  transition: string,
+  input: WorkflowJsonValue,
+  attached = false,
+): DurableWorkflowRead {
+  return {
+    record: {
+      schemaVersion: 1,
+      workflowId: "repeat-workflow",
+      organizationId: "org",
+      projectId: "project",
+      kind: "repeat-test",
+      version,
+      status: "active",
+      frozenIdentity: input,
+      ...(attached ? { resource: { kind: "campaign", id: "repeat-1" } } : {}),
+      createdBy: "human:test",
+      lastActorId: "human:test",
+      createdAt: 1,
+      updatedAt: version,
+      expiresAt: 100_000,
+      lastTransition: transition,
+    },
+    audit: [],
+  };
+}
+
 test("a saved App Map Test opens the canonical Combine strip", async () => {
   document.body.replaceChildren();
   window.localStorage.removeItem("relay:repeat:v1:checkout:checkout-locale");
@@ -255,11 +283,12 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
     createdAt: 1,
     updatedAt: 1,
   };
-  let started = false;
-  const runAction = vi.fn(async (operationId: string, _input?: unknown) => {
+  let frozenIdentity: Record<string, WorkflowJsonValue> = {};
+  let workflowVersion = 1;
+  const runAction = vi.fn(async (operationId: string, operationInput?: unknown) => {
     if (operationId === "app-map.get") return { appMap: map };
     if (operationId === "job.combine.campaign.repeat.active") {
-      return { campaign: started ? repeatCampaign("ready-to-resume") : null };
+      return { campaign: null };
     }
     if (operationId === "app-map.test.compile") {
       return {
@@ -277,9 +306,57 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
         },
       };
     }
+    if (operationId === "workflow.create") {
+      frozenIdentity = (operationInput as { frozenIdentity: Record<string, WorkflowJsonValue> })
+        .frozenIdentity;
+      return {
+        disposition: "created",
+        workflow: repeatWorkflow(1, "created", frozenIdentity),
+      };
+    }
+    if (operationId === "workflow.transition") {
+      const action = (operationInput as { action: string }).action;
+      workflowVersion += 1;
+      if (action === "reserve-repeat-pilot") {
+        return {
+          workflow: repeatWorkflow(2, "repeat-pilot-requested", frozenIdentity),
+        };
+      }
+      const campaign = repeatCampaign(action.includes("resume") ? "running" : "ready-to-resume");
+      return {
+        workflow: repeatWorkflow(
+          workflowVersion,
+          action === "reserve-repeat-resume"
+            ? "repeat-resume-requested"
+            : "repeat-resume-reconciled",
+          {
+            ...frozenIdentity,
+            executionAppMapRevision: 2,
+            rootRecipeId: "repeat-root",
+          },
+          true,
+        ),
+        campaign,
+      };
+    }
     if (operationId === "app-map.test.run") {
-      started = true;
       throw new Error("pilot response lost");
+    }
+    if (operationId === "workflow.get") {
+      workflowVersion = Math.max(workflowVersion, 3);
+      return {
+        workflow: repeatWorkflow(
+          3,
+          "repeat-pilot-reconciled",
+          {
+            ...frozenIdentity,
+            executionAppMapRevision: 2,
+            rootRecipeId: "repeat-root",
+          },
+          true,
+        ),
+        campaign: repeatCampaign("ready-to-resume"),
+      };
     }
     if (operationId === "job.combine.campaign.resume") {
       return { campaign: repeatCampaign("running"), jobs: [], cells: [] };
@@ -294,6 +371,7 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
       { serial: "ipad-1", name: "iPad", platform: "ios", connectionState: "connected" },
     ],
     selectedDevice: () => "ipad-1",
+    actorId: () => "human:test",
     liveFrame: () => null,
     liveCaptureIssue: () => null,
     appleDeviceSetup: () => null,
@@ -366,7 +444,6 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
 
     dispose();
     root.replaceChildren();
-    window.localStorage.removeItem("relay:repeat:v1:checkout:checkout-locale");
     dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
     await settle();
     expect(root.textContent).toContain("Continue remaining 1");
@@ -374,10 +451,11 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
       runAction.mock.calls.filter(([operationId]) => operationId === "app-map.test.run"),
     ).toHaveLength(1);
     expect(
-      runAction.mock.calls.filter(
-        ([operationId]) => operationId === "job.combine.campaign.repeat.active",
-      ).length,
-    ).toBeGreaterThanOrEqual(3);
+      runAction.mock.calls.filter(([operationId]) => operationId === "workflow.get").length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      JSON.parse(window.localStorage.getItem("relay:repeat:v2:checkout:checkout-locale") ?? "null"),
+    ).toEqual({ workflowId: "repeat-workflow", expectedVersion: 3 });
 
     const continueButton = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
       button.textContent?.includes("Continue remaining"),
@@ -387,13 +465,20 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
     const resumeCall = runAction.mock.calls.find(
       ([operationId]) => operationId === "job.combine.campaign.resume",
     );
-    expect(resumeCall?.[1]).toEqual({
-      batchId: "repeat-1",
-      expectedAppMapRevision: 2,
-    });
+    expect(resumeCall?.[1]).toEqual(
+      expect.objectContaining({
+        batchId: "repeat-1",
+        expectedAppMapRevision: 2,
+        workflowMutation: expect.objectContaining({
+          workflowId: "repeat-workflow",
+          action: "repeat-resume",
+        }),
+      }),
+    );
   } finally {
     dispose();
     window.localStorage.removeItem("relay:repeat:v1:checkout:checkout-locale");
+    window.localStorage.removeItem("relay:repeat:v2:checkout:checkout-locale");
     root.remove();
   }
 });
@@ -456,28 +541,40 @@ test("Whole page is disabled when the destination has no frozen full-page captur
     createdAt: 1,
     updatedAt: 1,
   };
-  const runAction = vi.fn(async (operationId: string, _input?: unknown) =>
-    operationId === "app-map.get"
-      ? { appMap: map }
-      : operationId === "job.combine.campaign.repeat.active"
-        ? { campaign: null }
-        : operationId === "app-map.test.compile"
-          ? {
-              plan: { rootRecipeId: "repeat-root" },
-              preflight: {
-                executionRisk: safeExecutionRisk,
-                schemaVersion: 1,
-                mode: "offline-test-preflight",
-                appMapId: "checkout",
-                appMapRevision: 1,
-                testId: scenario.id,
-                planDigest: "plan-1",
-                summary: { blockers: 0 },
-                findings: [],
-              },
-            }
-          : { job: { id: "combine-cell" } },
-  );
+  let singleFrozen: WorkflowJsonValue = {};
+  const runAction = vi.fn(async (operationId: string, operationInput?: unknown) => {
+    if (operationId === "app-map.get") return { appMap: map };
+    if (operationId === "job.combine.campaign.repeat.active") return { campaign: null };
+    if (operationId === "app-map.test.compile") {
+      return {
+        plan: { rootRecipeId: "repeat-root" },
+        preflight: {
+          executionRisk: safeExecutionRisk,
+          schemaVersion: 1,
+          mode: "offline-test-preflight",
+          appMapId: "checkout",
+          appMapRevision: 1,
+          testId: scenario.id,
+          planDigest: "plan-1",
+          summary: { blockers: 0 },
+          findings: [],
+        },
+      };
+    }
+    if (operationId === "workflow.create") {
+      singleFrozen = (operationInput as { frozenIdentity: WorkflowJsonValue }).frozenIdentity;
+      return {
+        disposition: "created",
+        workflow: repeatWorkflow(1, "created", singleFrozen),
+      };
+    }
+    if (operationId === "workflow.transition") {
+      return {
+        workflow: repeatWorkflow(2, "repeat-pilot-requested", singleFrozen),
+      };
+    }
+    return { job: { id: "combine-cell" } };
+  });
   serverMock.current = {
     selectedAppMap: () => map,
     isOffline: () => false,
@@ -486,6 +583,7 @@ test("Whole page is disabled when the destination has no frozen full-page captur
       { serial: "ipad-1", name: "iPad", platform: "ios", connectionState: "connected" },
     ],
     selectedDevice: () => "ipad-1",
+    actorId: () => "human:test",
     liveFrame: () => null,
     liveCaptureIssue: () => null,
     appleDeviceSetup: () => null,

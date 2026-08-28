@@ -1,10 +1,9 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import type { AppMap, AppMapScenarioTest } from "@relay/protocol";
 import {
   createRelayWorkflows,
+  type DurableRepeatTestDecision,
   type RepeatTestDecision,
   type RepeatTestSnapshot,
-  type WorkflowRef,
 } from "@relay/workflows";
 import { Button } from "@relay/ui/button";
 import { Switch } from "@relay/ui/switch";
@@ -13,6 +12,17 @@ import { toast } from "../context/toast";
 import { cn } from "../lib/cn";
 import { humanError } from "../lib/human-error";
 import { combineValueLabel } from "../lib/app-map-combine-presentation";
+import {
+  readStoredRepeat,
+  removeStoredRepeat,
+  repeatStorageKeys,
+  writeStoredRepeat,
+} from "../lib/app-map-test-repeat-storage";
+import {
+  type AppMapTestCombineStripProps,
+  repeatCaseLabel as presentRepeatCaseLabel,
+  repeatStatusLabel,
+} from "../lib/app-map-test-repeat-presentation";
 import {
   applyableVariables,
   projectTestCombineStrip,
@@ -28,20 +38,7 @@ import {
   testSelectedRow,
 } from "../lib/app-map-test-editor-styles";
 
-function repeatStatusLabel(status: RepeatTestSnapshot["results"][number]["status"]): string {
-  if (status === "needs-review") return "Needs review";
-  return `${status.slice(0, 1).toUpperCase()}${status.slice(1)}`;
-}
-
-export function AppMapTestCombineStrip(props: {
-  map: AppMap;
-  test: AppMapScenarioTest;
-  ready: boolean;
-  onStarted?: () => void;
-  onChooseTarget?: () => void;
-  onOpenTarget?: () => void;
-  onOpenRun?: (runId: string) => void;
-}) {
+export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
   const server = useServer();
   const candidates = createMemo(() => applyableVariables(Object.values(props.map.variables ?? {})));
   const [variableId, setVariableId] = createSignal("");
@@ -56,10 +53,10 @@ export function AppMapTestCombineStrip(props: {
     invoke: (operationId, input) => server.runAction(operationId, input),
   });
   const repeatLocked = () => Boolean(repeat()) || restoring();
-  const storageKey = () => `relay:repeat:v1:${props.map.id}:${props.test.id}`;
+  const storageKeys = () => repeatStorageKeys(props.map.id, props.test.id);
   let restoreVersion = 0;
   function rememberRepeat(snapshot: RepeatTestSnapshot): void {
-    if (!snapshot.ref) return;
+    if (!snapshot.workflow) return;
     const dimension = snapshot.frozen!.resolved.dimensions[0];
     if (dimension) {
       setVariableId(dimension.id);
@@ -69,14 +66,14 @@ export function AppMapTestCombineStrip(props: {
     setWholePage(Boolean(snapshot.frozen!.capture?.fullSurfaceScreenIds.length));
     setRepeat(snapshot);
     try {
-      window.localStorage.setItem(storageKey(), snapshot.ref);
+      writeStoredRepeat(window.localStorage, storageKeys(), snapshot.workflow);
     } catch {
       // Canonical recovery remains available when browser storage is unavailable.
     }
   }
 
   function applyRecoverySnapshot(snapshot: RepeatTestSnapshot): void {
-    if (snapshot.ref && snapshot.frozen) rememberRepeat(snapshot);
+    if (snapshot.workflow && snapshot.frozen) rememberRepeat(snapshot);
     else setRepeat(snapshot.phase === "needs-attention" ? snapshot : undefined);
   }
 
@@ -92,24 +89,29 @@ export function AppMapTestCombineStrip(props: {
   }
 
   createEffect(() => {
-    const key = storageKey();
+    const keys = storageKeys();
     const version = ++restoreVersion;
     setRepeat();
     setReviewed(false);
-    let ref: WorkflowRef | undefined;
+    let stored: ReturnType<typeof readStoredRepeat> = {};
     try {
-      const stored = window.localStorage.getItem(key);
-      ref = stored ? (stored as WorkflowRef) : undefined;
+      stored = readStoredRepeat(window.localStorage, keys);
     } catch {
-      ref = undefined;
+      stored = {};
     }
     setRestoring(true);
-    void (ref ? workflows.inspect(ref) : recoverRepeat(version))
+    void (
+      stored.handle
+        ? workflows.inspectRepeat(stored.handle.workflowId)
+        : stored.legacyRef
+          ? workflows.inspect(stored.legacyRef)
+          : recoverRepeat(version)
+    )
       .then((snapshot) => {
         if (version !== restoreVersion) return;
         if (
           snapshot?.kind === "repeat-test" &&
-          snapshot.ref &&
+          (snapshot.workflow || snapshot.ref) &&
           snapshot.frozen &&
           snapshot.frozen.appMapId === props.map.id &&
           snapshot.frozen.testId === props.test.id
@@ -117,9 +119,9 @@ export function AppMapTestCombineStrip(props: {
           rememberRepeat(snapshot);
           return;
         }
-        if (ref) {
+        if (stored.handle || stored.legacyRef) {
           try {
-            window.localStorage.removeItem(key);
+            removeStoredRepeat(window.localStorage, keys);
           } catch {
             // Canonical lookup below remains authoritative.
           }
@@ -183,7 +185,11 @@ export function AppMapTestCombineStrip(props: {
   });
   createEffect(() => {
     const current = repeat();
-    if (!current?.ref || (current.phase !== "queued" && current.phase !== "running")) return;
+    if (
+      (!current?.workflow && !current?.ref) ||
+      (current.phase !== "queued" && current.phase !== "running")
+    )
+      return;
     const timer = window.setInterval(() => void inspectRepeat(), 1_500);
     onCleanup(() => window.clearInterval(timer));
   });
@@ -252,6 +258,9 @@ export function AppMapTestCombineStrip(props: {
           resume: "untouched",
         },
         evidence: lens(),
+        actorId: server.actorId(),
+        workflowRequestId: crypto.randomUUID(),
+        continuation: "durable",
         ...(repeatInput.surfaceCapture
           ? {
               capture: {
@@ -261,7 +270,7 @@ export function AppMapTestCombineStrip(props: {
           : {}),
       });
       setRepeat(snapshot);
-      if (snapshot.ref) {
+      if (snapshot.workflow) {
         rememberRepeat(snapshot);
         toast(`Pilot started with ${projection().worlds[0]!.label}`, "success");
         props.onOpenTarget?.();
@@ -269,7 +278,7 @@ export function AppMapTestCombineStrip(props: {
         void server.refreshJobs();
       } else {
         const recovered = await recoverRepeat();
-        if (recovered?.ref) {
+        if (recovered?.workflow) {
           toast("Restored the already-started Repeat", "success");
           props.onOpenTarget?.();
           void server.refreshJobs();
@@ -281,7 +290,7 @@ export function AppMapTestCombineStrip(props: {
     } catch (error) {
       try {
         const recovered = await recoverRepeat();
-        if (recovered?.ref) {
+        if (recovered?.workflow) {
           toast("Restored the already-started Repeat", "success");
           void server.refreshJobs();
         } else {
@@ -301,16 +310,20 @@ export function AppMapTestCombineStrip(props: {
     if (!current || busy()) return;
     setBusy(true);
     try {
-      const snapshot = current.ref
-        ? await workflows.inspect(current.ref)
-        : await workflows.recover({
-            kind: "repeat-test",
-            appMapId: props.map.id,
-            testId: props.test.id,
-          });
+      const snapshot = current.workflow
+        ? await workflows.inspectRepeat(current.workflow.workflowId)
+        : current.ref
+          ? await workflows.inspect(current.ref)
+          : await workflows.recover({
+              kind: "repeat-test",
+              appMapId: props.map.id,
+              testId: props.test.id,
+            });
       if (snapshot.kind === "repeat-test") {
-        if (current.ref) setRepeat(snapshot);
-        else applyRecoverySnapshot(snapshot);
+        if (current.workflow || current.ref) {
+          if (snapshot.workflow) rememberRepeat(snapshot);
+          else setRepeat(snapshot);
+        } else applyRecoverySnapshot(snapshot);
       }
     } catch (error) {
       toast(humanError(error, "Could not refresh Repeat"), "error");
@@ -320,24 +333,23 @@ export function AppMapTestCombineStrip(props: {
   }
 
   const repeatCaseLabel = (values: Readonly<Record<string, string>>) =>
-    Object.entries(values)
-      .map(([dimensionId, valueId]) =>
-        dimensionId === variableId() ? repeatValueLabel(valueId) : `${dimensionId}: ${valueId}`,
-      )
-      .join(" × ");
+    presentRepeatCaseLabel(values, variableId(), repeatValueLabel);
 
-  async function advanceRepeat(action: RepeatTestDecision["action"]): Promise<void> {
+  async function advanceRepeat(action: DurableRepeatTestDecision["action"]): Promise<void> {
     const current = repeat();
-    if (!current?.ref || busy()) return;
+    if ((!current?.workflow && !current?.ref) || busy()) return;
     setBusy(true);
     try {
-      const snapshot = await workflows.advance({
-        action,
-        ref: current.ref,
-        expectedVersion: current.version,
-      });
+      const snapshot = current.workflow
+        ? await workflows.advanceRepeat({ action, ...current.workflow })
+        : await workflows.advance({
+            action: action as RepeatTestDecision["action"],
+            ref: current.ref!,
+            expectedVersion: current.version,
+          });
       if (snapshot.kind === "repeat-test") {
-        setRepeat(snapshot);
+        if (snapshot.workflow) rememberRepeat(snapshot);
+        else setRepeat(snapshot);
         setReviewed(false);
         void server.refreshJobs();
       }
@@ -663,7 +675,7 @@ export function AppMapTestCombineStrip(props: {
                       size="sm"
                       onClick={() => {
                         try {
-                          window.localStorage.removeItem(storageKey());
+                          removeStoredRepeat(window.localStorage, storageKeys());
                         } catch {
                           // The completed Repeat is safe to leave as durable history.
                         }

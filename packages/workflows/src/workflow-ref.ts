@@ -60,6 +60,10 @@ function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+export function isLegacyWorkflowRef(value: string): value is WorkflowRef {
+  return value.startsWith("relay-workflow.v1.");
+}
+
 function parseTarget(value: unknown): FrozenRunTestIdentity["target"] | undefined {
   if (!value || typeof value !== "object") return undefined;
   const target = value as Record<string, unknown>;
