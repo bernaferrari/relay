@@ -50,6 +50,7 @@ export type DaemonOpenLifecycle = {
 };
 
 type DaemonRequestInternal = {
+  publicNetworkOnly?: true;
   openLifecycle?: DaemonOpenLifecycle;
   /**
    * Request-owned capability used when a fresh replay discovers its device
