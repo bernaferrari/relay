@@ -5,10 +5,12 @@ import {
   VERIFY_CHANGE_MAX_IDS,
   VERIFY_CHANGE_MAX_TRACE_PACKS,
   type AuthoringTarget,
+  type CampaignRepairTargetSummary,
   type DeviceLease,
   type DeviceSummary,
   type SourceRevision,
   type TracePack,
+  type TracePackExportResponse,
 } from "@relay/protocol";
 import type { RelayOperationPort } from "./operation-port.js";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";
@@ -17,10 +19,14 @@ import type {
   ConnectTargetIntent,
   ConnectTargetResult,
   ExportEvidenceIntent,
+  FailureEvidenceSummary,
   FailureInspection,
+  FailureRepairProposal,
+  FailureRunSummary,
   InspectFailureIntent,
   ObserveTargetIntent,
   ProposeRepairIntent,
+  RepairProposalResult,
   RecordTestOutcomeIntent,
   RelayOutcomeJobs,
   RepeatTestOutcomeIntent,
@@ -35,6 +41,10 @@ export type RelayOutcomeJobOptions = { actorId: string };
 const VERIFY_CHANGE_READ_CONCURRENCY = 4;
 const VERIFY_CHANGE_MAX_TOTAL_PACK_BYTES = 128 * 1024 * 1024;
 const VERIFY_CHANGE_MAX_PACK_OBJECTS = 2_000;
+const PUBLIC_ID_MAX_CHARS = 512;
+const PUBLIC_LABEL_MAX_CHARS = 1_024;
+const PUBLIC_ERROR_MAX_CHARS = 8_192;
+const PUBLIC_EVIDENCE_CHANNELS_MAX = 64;
 
 async function mapWithConcurrency<T, R>(
   values: readonly T[],
@@ -178,20 +188,94 @@ async function acquireOwnLease(
   return lease.id;
 }
 
-function repairList(value: unknown, runId: string): unknown[] {
-  if (!value || typeof value !== "object") return [];
-  const record = value as Record<string, unknown>;
-  const candidates = Array.isArray(record.proposals)
-    ? record.proposals
-    : Array.isArray(record.repairs)
-      ? record.repairs
-      : [];
-  return candidates.filter(
-    (candidate) =>
-      candidate &&
-      typeof candidate === "object" &&
-      (!("runId" in candidate) || (candidate as { runId?: unknown }).runId === runId),
+function publicRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function publicString(value: unknown, label: string, maxChars: number): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > maxChars) {
+    throw new TypeError(`${label} must be between 1 and ${maxChars} characters.`);
+  }
+  return value;
+}
+
+function publicNumber(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new TypeError(`${label} must be a finite number.`);
+  }
+  return value;
+}
+
+function optionalPublicNumber(value: unknown, label: string): number | undefined {
+  return value === undefined ? undefined : publicNumber(value, label);
+}
+
+function failureRunSummary(value: unknown, expectedRunId: string): FailureRunSummary {
+  const run = publicRecord(value, "Failure Run");
+  const id = publicString(run.id, "Failure Run id", PUBLIC_ID_MAX_CHARS);
+  if (id !== expectedRunId) throw new TypeError("Relay returned a different Run for inspection.");
+  const startedAt = optionalPublicNumber(run.startedAt, "Failure Run startedAt");
+  const finishedAt = optionalPublicNumber(run.finishedAt, "Failure Run finishedAt");
+  const error =
+    run.error === undefined
+      ? undefined
+      : publicString(run.error, "Failure Run error", PUBLIC_ERROR_MAX_CHARS);
+  return {
+    id,
+    action: publicString(run.action, "Failure Run action", PUBLIC_LABEL_MAX_CHARS),
+    status: publicString(run.status, "Failure Run status", PUBLIC_LABEL_MAX_CHARS),
+    queuedAt: publicNumber(run.queuedAt, "Failure Run queuedAt"),
+    ...(startedAt === undefined ? {} : { startedAt }),
+    ...(finishedAt === undefined ? {} : { finishedAt }),
+    ...(error === undefined ? {} : { error }),
+  };
+}
+
+function failureEvidenceSummary(value: unknown, expectedRunId: string): FailureEvidenceSummary {
+  const evidence = publicRecord(value, "Failure evidence");
+  if (evidence.runId !== undefined && evidence.runId !== expectedRunId) {
+    throw new TypeError("Relay returned evidence for a different Run.");
+  }
+  const events = evidence.events === undefined ? [] : evidence.events;
+  if (!Array.isArray(events)) throw new TypeError("Failure evidence events must be an array.");
+  const channelRecord =
+    evidence.channels === undefined
+      ? {}
+      : publicRecord(evidence.channels, "Failure evidence channels");
+  const channels = Object.keys(channelRecord).sort();
+  if (channels.length > PUBLIC_EVIDENCE_CHANNELS_MAX) {
+    throw new TypeError(
+      `Failure evidence exceeds ${PUBLIC_EVIDENCE_CHANNELS_MAX} public channels.`,
+    );
+  }
+  channels.forEach((channel) =>
+    publicString(channel, "Failure evidence channel", PUBLIC_LABEL_MAX_CHARS),
   );
+  return { runId: expectedRunId, eventCount: events.length, channels };
+}
+
+function repairProposal(
+  value: CampaignRepairTargetSummary,
+  expectedRunId: string,
+): FailureRepairProposal {
+  const runId = publicString(value.source.runId, "Repair Run id", PUBLIC_ID_MAX_CHARS);
+  if (runId !== expectedRunId) {
+    throw new TypeError("Relay returned a repair proposal for a different Run.");
+  }
+  if (!Number.isInteger(value.priorAttemptCount) || value.priorAttemptCount < 0) {
+    throw new TypeError("Repair priorAttemptCount must be a non-negative integer.");
+  }
+  return {
+    id: publicString(value.id, "Repair id", PUBLIC_ID_MAX_CHARS),
+    runId,
+    checkId: publicString(value.source.checkId, "Repair check id", PUBLIC_ID_MAX_CHARS),
+    checkTitle: publicString(value.source.checkTitle, "Repair check title", PUBLIC_LABEL_MAX_CHARS),
+    error: publicString(value.error, "Repair error", PUBLIC_ERROR_MAX_CHARS),
+    priorAttemptCount: value.priorAttemptCount,
+  };
 }
 
 function revisionMatches(candidate: unknown, expected: SourceRevision): boolean {
@@ -321,23 +405,51 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
     ]);
     return {
       runId: intent.runId,
-      run: run.run,
-      evidence: evidence.evidence,
-      repairProposals: repairList(repairs, intent.runId),
+      run: failureRunSummary(run.run, intent.runId),
+      evidence: failureEvidenceSummary(evidence.evidence, intent.runId),
+      repairProposals: repairs.repairs
+        .filter((repair) => repair.source.runId === intent.runId)
+        .map((repair) => repairProposal(repair, intent.runId)),
     };
   }
 
-  proposeRepair(intent: ProposeRepairIntent) {
-    return this.operations.invoke("run.repair.propose", {
+  async proposeRepair(intent: ProposeRepairIntent): Promise<RepairProposalResult> {
+    const result = await this.operations.invoke("run.repair.propose", {
       runId: intent.runId,
       checkId: intent.checkId,
       kind: intent.proposal,
       reason: intent.reason,
     });
+    const repairTargetId = publicString(result.repair.id, "Repair target id", PUBLIC_ID_MAX_CHARS);
+    if (
+      result.repair.source.runId !== intent.runId ||
+      result.repair.source.checkId !== intent.checkId
+    ) {
+      throw new TypeError("Relay returned a repair proposal for a different failed check.");
+    }
+    return {
+      proposalId: publicString(result.proposalId, "Proposal id", PUBLIC_ID_MAX_CHARS),
+      repairTargetId,
+      runId: intent.runId,
+      checkId: intent.checkId,
+      proposal: intent.proposal,
+      reviewRequired: true,
+    };
   }
 
-  exportEvidence(intent: ExportEvidenceIntent) {
-    return this.operations.invoke("run.trace-pack.get", { runId: intent.runId });
+  async exportEvidence(intent: ExportEvidenceIntent): Promise<TracePackExportResponse> {
+    const result = await this.operations.invoke("run.trace-pack.get", { runId: intent.runId });
+    measureBoundedTracePack(result.tracePack);
+    if (
+      result.tracePack.source.runId !== intent.runId ||
+      result.analysis.sourceRunId !== intent.runId
+    ) {
+      throw new TypeError("Relay returned TracePack evidence for a different Run.");
+    }
+    if (result.analysis.tracePackDigest !== result.tracePack.digest) {
+      throw new TypeError("Relay returned TracePack analysis for a different evidence digest.");
+    }
+    return result;
   }
 
   replayLab(intent: ReplayLabOutcomeIntent) {
