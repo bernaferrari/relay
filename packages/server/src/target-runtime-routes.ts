@@ -24,7 +24,7 @@ import {
   preflightRegisteredBuild,
   currentTargetSupervisorStore,
   openApp,
-  recoverTargetRuntime,
+  recoverSupervisedTargetRuntime,
   targetRuntimeReadiness,
   type TargetRuntimeRecovery,
   readBuild,
@@ -64,6 +64,7 @@ export type TargetRuntimeRouteRuntime = {
     serial: string,
     reason?: string,
     force?: boolean,
+    platform?: "android" | "ios",
   ) => Promise<TargetRuntimeRecovery>;
   /** Fresh evidence is captured only when the caller explicitly asks to
    * release a stale durable execution fence after recovery. */
@@ -106,12 +107,18 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
       openApp(createDevice(), app, { relaunch }),
     );
   },
-  recoverTarget: (serial, reason, force) =>
-    recoverTargetRuntime(
-      serial,
-      reason ? new Error(`Recovery requested for ${reason}`) : undefined,
-      { force: force === true },
-    ),
+  recoverTarget: async (serial, reason, force, platform) => {
+    if (!platform) throw new Error("Target platform is required for supervised recovery");
+    const store = currentTargetSupervisorStore();
+    if (!store) throw new Error("Server-owned TargetSupervisor store is unavailable");
+    return await recoverSupervisedTargetRuntime({
+      store,
+      target: { id: serial, kind: platform },
+      channel: reason === "observe" ? "pixels" : "semantics",
+      ...(reason ? { cause: new Error(`Recovery requested for ${reason}`) } : {}),
+      force: force === true,
+    });
+  },
   captureScreenshot,
   captureSnapshot,
   cleanupScreenshot,
@@ -143,19 +150,9 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
       },
     ).health;
   },
-  recordTargetRecovery: (serial, platform, recovery) => {
-    const store = currentTargetSupervisorStore();
-    if (!store) return;
-    store.recordRecoveryReceipt(
-      { id: serial, kind: platform },
-      {
-        channel: platform === "ios" ? "semantics" : "pixels",
-        outcome: recovery.ready ? "succeeded" : "failed",
-        reason: recovery.summary,
-        ...(recovery.readiness ? { readiness: recovery.readiness } : {}),
-      },
-    );
-  },
+  // The production recovery path commits every stage through the coordinator.
+  // Test/runtime adapters may still use this hook to project legacy receipts.
+  recordTargetRecovery: () => {},
 };
 
 function requestedRecoveryFenceAssignmentId(body: {
@@ -570,7 +567,7 @@ export async function handleTargetRuntimeRoute(context: {
       }
     }
     await runtime.assertTargetControl(scope, serial);
-    const recovery = await runtime.recoverTarget(serial, reason, force);
+    const recovery = await runtime.recoverTarget(serial, reason, force, device.platform);
     runtime.recordTargetRecovery(serial, device.platform, recovery);
     await appendActivity({
       eventType: recovery.ready ? "target.recovery.completed" : "target.recovery.failed",

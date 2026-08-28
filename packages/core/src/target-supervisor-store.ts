@@ -241,7 +241,7 @@ export class TargetSupervisorStore {
     if (
       pixel.state === "proven" &&
       pixel.freshness === "current" &&
-      pixel.proof?.at !== health.pixels.lastCapturedAt
+      (health.pixels.state !== "ready" || pixel.proof?.at !== health.pixels.lastCapturedAt)
     ) {
       actor.transition({ kind: "pixels.captured", durationMs: pixel.proof?.durationMs });
     } else if (pixel.state === "unavailable" && health.pixels.state !== "unavailable") {

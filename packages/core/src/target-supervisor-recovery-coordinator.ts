@@ -1,4 +1,4 @@
-import type { TargetSupervisorHealth } from "@relay/protocol";
+import type { TargetRuntimeReadiness, TargetSupervisorHealth } from "@relay/protocol";
 import type { SupervisedTarget, TargetSupervisorStore } from "./target-supervisor-store.js";
 import type { TargetSupervisorEffect } from "./target-supervisor.js";
 
@@ -8,6 +8,20 @@ export type TargetSupervisorRecoveryReceipt = {
   outcome: "succeeded" | "failed";
   durationMs?: number;
   reason?: string;
+  /** Fresh capability proof produced by this exact effect. The coordinator
+   * ingests it only after the effect receipt is durably committed, so a
+   * successful repair cannot manufacture readiness before its proof exists. */
+  readiness?: TargetRuntimeReadiness;
+};
+
+export type TargetSupervisorRecoveryAttempt = {
+  effect: AutomaticRecoveryEffect;
+  receipt: TargetSupervisorRecoveryReceipt;
+};
+
+export type TargetSupervisorRecoveryResult = {
+  health: TargetSupervisorHealth;
+  attempts: readonly TargetSupervisorRecoveryAttempt[];
 };
 
 /** Adapter-owned mechanism; the coordinator remains the sole policy owner. */
@@ -40,9 +54,17 @@ export class TargetSupervisorRecoveryCoordinator {
     target: SupervisedTarget,
     channel: "pixels" | "semantics",
   ): Promise<TargetSupervisorHealth> {
+    return (await this.recoverDetailed(target, channel)).health;
+  }
+
+  async recoverDetailed(
+    target: SupervisedTarget,
+    channel: "pixels" | "semantics",
+  ): Promise<TargetSupervisorRecoveryResult> {
     const key = targetKey(target);
     if (this.#active.has(key)) throw new Error("Target recovery already has an active owner");
     this.#active.add(key);
+    const attempts: TargetSupervisorRecoveryAttempt[] = [];
     try {
       let effects = this.store.transition(target, {
         kind: "recovery.requested",
@@ -63,6 +85,7 @@ export class TargetSupervisorRecoveryCoordinator {
             reason: error instanceof Error ? error.message : String(error),
           };
         }
+        attempts.push({ effect, receipt });
         effects = this.store.transition(target, {
           kind: "recovery.step-completed",
           channel: effect.channel,
@@ -71,8 +94,9 @@ export class TargetSupervisorRecoveryCoordinator {
           durationMs: receipt.durationMs ?? Math.max(0, Date.now() - startedAt),
           reason: receipt.reason,
         }).effects;
+        if (receipt.readiness) this.store.health(target, receipt.readiness);
       }
-      return this.store.health(target);
+      return { health: this.store.health(target), attempts };
     } finally {
       this.#active.delete(key);
     }
