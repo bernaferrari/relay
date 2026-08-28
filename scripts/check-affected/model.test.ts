@@ -70,7 +70,7 @@ test('root node-integration support modules select the node integration suite', 
 });
 
 test('android-adb stub test delegates project ownership to Vitest', () => {
-  const result = ids(['src/platforms/android/__tests__/notifications.test.ts']);
+  const result = ids(['packages/platform-android/src/__tests__/notifications.test.ts']);
   assert.ok(result.includes('vitest-related'));
 });
 
@@ -121,6 +121,25 @@ test('Android helper change selects the android-helpers build', () => {
     'android-helpers',
     'replay-android',
   ]);
+});
+
+test('Android package test fixture selects the unit suite instead of failing open', () => {
+  const fixture =
+    'packages/platform-android/src/__tests__/test-utils/fixtures/android-helper-apk.fixture';
+  const result = plan([fixture]);
+  assert.equal(result.failOpen, false);
+  assert.deepEqual(result.checks, ['unit']);
+  assert.deepEqual(
+    result.reasons.filter((reason) => reason.rule === 'own:android-package-test-fixture'),
+    [
+      {
+        check: 'unit',
+        path: fixture,
+        rule: 'own:android-package-test-fixture',
+        detail: 'the Android package test fixture is consumed by the unit suite',
+      },
+    ],
+  );
 });
 
 test('MCP metadata change selects the mcp-metadata check', () => {
