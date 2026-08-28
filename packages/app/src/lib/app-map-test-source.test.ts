@@ -153,7 +153,7 @@ test("Repeat YAML round-trips through the Test-owned canonical Combine", () => {
   const initial = projectAppMapTestSource(map, scenario);
   assert.equal(initial.kind, "ready");
   if (initial.kind !== "ready") return;
-  const source = `${initial.source}repeat:\n  dimensions:\n    - variable: language\n      values: all\n`;
+  const source = `${initial.source}repeat:\n  strategy: zip\n  pilot:\n    mode: first\n  resume: untouched\n  dimensions:\n    - variable: language\n      values: supported\n`;
   const applied = applyAppMapTestSource({
     map,
     current: scenario,
@@ -167,15 +167,22 @@ test("Repeat YAML round-trips through the Test-owned canonical Combine", () => {
   assert.equal(save?.kind, "combine.save");
   if (save?.kind !== "combine.save") return;
   assert.deepEqual(save.combine.variableIds, ["language"]);
-  assert.equal(save.combine.strategy, undefined);
+  assert.equal(save.combine.strategy, "zip");
   assert.equal(save.combine.selected, undefined);
+  assert.deepEqual(save.combine.repeatPolicy, {
+    pilot: { mode: "first" },
+    resume: "untouched",
+    valueModes: { language: "supported" },
+  });
 
   map.combines[save.combine.id] = save.combine;
   const projected = projectAppMapTestSource(map, applied.test);
   assert.equal(projected.kind, "ready");
   if (projected.kind !== "ready") return;
   assert.match(projected.source, /repeat:\n\s+dimensions:/u);
-  assert.match(projected.source, /variable: language\n\s+values: all/u);
+  assert.match(projected.source, /pilot:\n\s+mode: first/u);
+  assert.match(projected.source, /resume: untouched/u);
+  assert.match(projected.source, /variable: language\n\s+values: supported/u);
 
   const removed = applyAppMapTestSource({
     map,

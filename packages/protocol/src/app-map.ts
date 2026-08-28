@@ -439,6 +439,7 @@ export type AppMapCombine = AppMapEntity & {
    * by a visual sweep and a fast no-screenshot smoke matrix. */
   captures?: Record<string, AppMapCapturePolicy>;
   strategy?: CaseExpansionStrategy;
+  repeatPolicy?: import("./repeat-spec.js").RepeatPolicySpec;
   /** Persisted per-cell target-profile overrides. Missing cells inherit a default. */
   cellRuntimeProfiles?: AppMapCombineCellRuntimeProfile[];
 };

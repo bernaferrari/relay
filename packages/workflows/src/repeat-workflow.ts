@@ -3,6 +3,7 @@ import type {
   OfflineTestPreflightFinding,
   OperationOutput,
 } from "@relay/protocol";
+import { repeatSpecSchema } from "@relay/protocol";
 import { parseCanonicalJob } from "./job-projection.js";
 import type { RelayOperationPort } from "./operation-port.js";
 import { snapshotFromRepeatRecord } from "./repeat-projection.js";
@@ -21,6 +22,11 @@ import {
   encodeRepeatWorkflowRef,
   type RepeatWorkflowReference,
 } from "./workflow-ref.js";
+import {
+  RepeatSpecResolutionError,
+  resolveRepeatSpec,
+  resolvedRepeatSelection,
+} from "./repeat-spec.js";
 
 type ValidCompile = {
   preflight: OperationOutput<"app-map.test.compile">["preflight"];
@@ -39,14 +45,20 @@ const emptyOutcomes = (selected: number): RepeatOutcomeCounts => ({
 });
 
 function publicDetail(error: unknown): string {
-  const detail =
-    error instanceof Error && error.message
-      ? error.message
-      : "Relay did not return a usable response.";
-  return detail.replace(
-    /\b(?:variables?|combines?|campaigns?|cells?|batches?)\b/giu,
-    "internal execution",
-  );
+  return error instanceof Error && error.message
+    ? error.message
+    : "Relay did not return a usable response.";
+}
+
+function sourceCode(error: unknown): string | undefined {
+  if (error instanceof RepeatSpecResolutionError) return error.code;
+  if (!error || typeof error !== "object") return undefined;
+  const direct = (error as { code?: unknown }).code;
+  if (typeof direct === "string") return direct;
+  const body = (error as { body?: unknown }).body;
+  if (!body || typeof body !== "object") return undefined;
+  const code = (body as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
 }
 
 function unavailableProblem(stage: string, error: unknown): WorkflowProblem {
@@ -56,6 +68,7 @@ function unavailableProblem(stage: string, error: unknown): WorkflowProblem {
     detail: publicDetail(error),
     recovery: "Resolve the reported Relay problem, then explicitly inspect or start again.",
     retryable: true,
+    ...(sourceCode(error) ? { sourceCode: sourceCode(error) } : {}),
   };
 }
 
@@ -82,17 +95,8 @@ function validateIntent(intent: RepeatTestIntent): string | undefined {
   if (!validId(intent.appMapId) || !validId(intent.testId) || !validId(intent.target.targetId)) {
     return "App Map, Test, and target identifiers must be non-empty and must not have surrounding whitespace.";
   }
-  if (!validId(intent.over.dimensionId)) {
-    return "The Repeat dimension identifier must be non-empty and must not have surrounding whitespace.";
-  }
-  const values = intent.over.valueIds;
-  if (
-    !values.length ||
-    values.some((id) => !validId(id)) ||
-    new Set(values).size !== values.length
-  ) {
-    return "Repeat value identifiers must be non-empty, unique, and free of surrounding whitespace.";
-  }
+  if (!repeatSpecSchema.safeParse(intent.repeat).success)
+    return "The Repeat specification is invalid.";
   const screenIds = intent.capture?.fullSurfaceScreenIds;
   if (
     screenIds &&
@@ -119,7 +123,7 @@ function initialProblem(input: {
     stage: "unstarted",
     version: "unstarted",
     ...(input.frozen ? { frozen: input.frozen } : {}),
-    outcomes: emptyOutcomes(input.intent.over.valueIds.length),
+    outcomes: emptyOutcomes(0),
     results: [],
     progress: { label: input.problem.title },
     allowedNextActions: [],
@@ -197,12 +201,18 @@ export class CanonicalRepeatWorkflow {
           code: "invalid-intent",
           title: "The Repeat intent is invalid",
           detail: invalid,
-          recovery: "Choose one dimension and at least one unique value, then start again.",
+          recovery: "Choose at least one Repeat dimension and valid values, then start again.",
           retryable: false,
         },
       });
     }
 
+    let map: OperationOutput<"app-map.get">["appMap"];
+    try {
+      map = (await this.operations.invoke("app-map.get", { appMapId: intent.appMapId })).appMap;
+    } catch (error) {
+      return initialProblem({ intent, problem: unavailableProblem("read the current App", error) });
+    }
     let requestedRevision: number;
     if (intent.revision && intent.revision !== "current") {
       requestedRevision = intent.revision.exact;
@@ -219,18 +229,40 @@ export class CanonicalRepeatWorkflow {
         });
       }
     } else {
-      try {
-        const current = await this.operations.invoke("app-map.get", { appMapId: intent.appMapId });
-        requestedRevision = current.appMap.revision;
-        if (!validRevision(requestedRevision))
-          throw new TypeError("App Map response has no valid revision");
-      } catch (error) {
+      requestedRevision = map.revision;
+      if (!validRevision(requestedRevision)) {
         return initialProblem({
           intent,
-          problem: unavailableProblem("read the current App Map", error),
+          problem: unavailableProblem("read the current App", "The App has no valid revision."),
         });
       }
     }
+
+    let resolved;
+    try {
+      resolved = resolveRepeatSpec(map, intent.repeat);
+    } catch (error) {
+      const code = sourceCode(error);
+      return initialProblem({
+        intent,
+        problem: {
+          code:
+            code === "REPEAT_VALUE_NOT_FOUND"
+              ? "repeat-value-unresolved"
+              : code === "REPEAT_RESUME_MODE_UNAVAILABLE"
+                ? "repeat-resume-unsupported"
+                : code === "REPEAT_PILOT_CASE_INVALID"
+                  ? "repeat-pilot-invalid"
+                  : "repeat-dimension-unresolved",
+          title: "Relay could not resolve this Repeat",
+          detail: publicDetail(error),
+          recovery: "Repair the saved dimension, values, or pilot selection, then start again.",
+          retryable: false,
+          ...(code ? { sourceCode: code } : {}),
+        },
+      });
+    }
+    const selection = resolvedRepeatSelection(resolved);
 
     let compiled: OperationOutput<"app-map.test.compile">;
     try {
@@ -281,12 +313,16 @@ export class CanonicalRepeatWorkflow {
         testId: intent.testId,
         expectedRevision: requestedRevision,
         target: { ...intent.target },
-        in: { [intent.over.dimensionId]: [...intent.over.valueIds] },
+        in: selection,
+        strategy: resolved.strategy,
+        ...(resolved.pilot.mode === "specified" ? { pilotCase: { ...resolved.pilot.case } } : {}),
         lens: evidence,
         executionMode: "pilot",
         repeatRecovery: {
           schemaVersion: 1,
           testPlanDigest: checked.preflight.planDigest,
+          spec: structuredClone(intent.repeat),
+          resolved: structuredClone(resolved),
         },
         ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
         ...(intent.capture
@@ -335,7 +371,7 @@ export class CanonicalRepeatWorkflow {
       });
     }
     if (
-      repeat.selectedCellIds.length !== intent.over.valueIds.length ||
+      repeat.selectedCellIds.length === 0 ||
       new Set(repeat.selectedCellIds).size !== repeat.selectedCellIds.length
     ) {
       return initialProblem({
@@ -343,7 +379,7 @@ export class CanonicalRepeatWorkflow {
         phase: "needs-attention",
         problem: mutationUnknownProblem(
           "the pilot started",
-          "The start response did not identify every selected Repeat value exactly once.",
+          "The start response did not identify every selected Repeat case exactly once.",
         ),
       });
     }
@@ -356,7 +392,8 @@ export class CanonicalRepeatWorkflow {
       testPlanDigest: checked.preflight.planDigest,
       rootRecipeId: identity.rootRecipeId,
       target: { ...intent.target },
-      over: { dimensionId: intent.over.dimensionId, valueIds: [...intent.over.valueIds] },
+      repeat: structuredClone(intent.repeat),
+      resolved: structuredClone(resolved),
       evidence,
       ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
       ...(intent.capture
@@ -425,7 +462,8 @@ export class CanonicalRepeatWorkflow {
           testPlanDigest: identity.testPlanDigest,
           rootRecipeId: identity.rootRecipeId,
           target: structuredClone(identity.target),
-          over: structuredClone(identity.over),
+          repeat: structuredClone(identity.spec),
+          resolved: structuredClone(identity.resolved),
           evidence: identity.evidence,
           ...(identity.sourceRevision
             ? { sourceRevision: structuredClone(identity.sourceRevision) }

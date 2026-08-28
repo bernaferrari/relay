@@ -222,7 +222,7 @@ export type AuthoringTakeRevision = {
   revision: number;
   createdAt: number;
   createdBy: string;
-  reason: "recording" | "trim" | "reorder" | "replace" | "manual";
+  reason: "recording" | "trim" | "reorder" | "replace" | "edit" | "manual";
   actions: AuthoringAction[];
   evidence: AuthoringEvidence[];
   /** Bounded, immutable observation index for this revision's action links.
@@ -499,6 +499,9 @@ export type AuthoringSession = {
   actorId: string;
   actorKind: "human" | "agent" | "system";
   appMapId: string;
+  /** Canonical name of the Test this recording will create. Optional only for
+   * legacy sessions and observation-only captures that never create a Test. */
+  testName?: string;
   state: AuthoringSessionState;
   target: AuthoringTarget;
   leaseId: string;
@@ -531,6 +534,9 @@ export type AuthoringSession = {
 
 export type CreateAuthoringSessionInput = {
   appMapId: string;
+  /** Required by the outcome authoring workflow whenever createTest will be
+   * requested; low-level screen captures may omit it. */
+  testName?: string;
   target: AuthoringTarget;
   leaseId: string;
   expectedAppMapRevision: number;
@@ -554,6 +560,22 @@ export type ReplaceAuthoringActionInput = AuthoringSessionRef & {
   interaction: AuthoringInteraction;
 };
 
+/** One semantic review command over a frozen Take revision. The server owns
+ * action lookup, ordering validation, proof invalidation, and the next
+ * immutable revision; callers never reconstruct those rules themselves. */
+export type AuthoringRecordingEdit =
+  | { kind: "clip"; fromMs?: number; toMs?: number }
+  | { kind: "remove"; actionIds: string[] }
+  | { kind: "reorder"; actionIds: string[] }
+  | { kind: "replace"; actionId: string; interaction: AuthoringInteraction }
+  | { kind: "merge"; actionIds: string[]; intent?: string }
+  | { kind: "split"; actionId: string; atStep: number }
+  | { kind: "rename"; actionId: string; intent: string };
+
+export type EditAuthoringTakeInput = AuthoringSessionRef & {
+  edit: AuthoringRecordingEdit;
+};
+
 export type CommitAuthoringSessionInput = AuthoringSessionRef & {
   destination?: AuthoringCommitDestination;
   /** Create the first runnable Test in the same App Map transaction as the
@@ -569,6 +591,7 @@ export type AuthoringSessionSummary = {
   actorId: string;
   actorKind: "human" | "agent" | "system";
   appMapId: string;
+  testName?: string;
   state: AuthoringSessionState;
   target: AuthoringTarget;
   sourceScreenId?: string;
@@ -638,6 +661,7 @@ export function summarizeAuthoringSession(session: AuthoringSession): AuthoringS
     actorId: session.actorId,
     actorKind: session.actorKind,
     appMapId: session.appMapId,
+    ...(session.testName ? { testName: session.testName } : {}),
     state: session.state,
     target: structuredClone(session.target),
     ...(session.sourceScreenId ? { sourceScreenId: session.sourceScreenId } : {}),
@@ -749,6 +773,7 @@ export function parseAuthoringSession(value: unknown): AuthoringSession {
     throw new TypeError(`unsupported authoring session state ${state}`);
   }
   object(input.target, "authoring session target");
+  if (input.testName !== undefined) nonEmpty(input.testName, "authoring session testName");
   return input as AuthoringSession;
 }
 

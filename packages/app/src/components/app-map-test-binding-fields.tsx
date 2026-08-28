@@ -230,7 +230,7 @@ export function ValidationBinding(props: {
             }
           }}
         >
-          <option value="">Choose from the App Map…</option>
+          <option value="">Choose a saved App element…</option>
           <optgroup label="Screens">
             <For each={Object.values(props.map.screens)}>
               {(screen) => <option value={`screen:${screen.id}`}>{screen.title}</option>}

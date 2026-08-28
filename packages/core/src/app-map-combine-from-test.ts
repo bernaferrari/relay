@@ -66,6 +66,10 @@ export function upsertAppMapCombineFromTest(input: {
   map: AppMap;
   testId: string;
   selected: Record<string, string[]>;
+  /** Ordered public Repeat dimensions. Object key order is not a domain contract. */
+  variableIds?: readonly string[];
+  strategy?: "zip" | "cartesian" | "pairwise";
+  repeatPolicy?: AppMapCombine["repeatPolicy"];
   lens?: CombineLensInput;
   now?: number;
 }): { combine: AppMapCombine; created: boolean; capture?: AppMapCapturePolicy } {
@@ -74,7 +78,20 @@ export function upsertAppMapCombineFromTest(input: {
     throw new AppMapCombineWorldError(`Unknown Test ${input.testId}.`, "missing-test");
   }
   assertCombineWorlds(input.map, input.selected);
-  const variableIds = Object.keys(input.selected).sort(compareUtf8Bytewise);
+  const selectedIds = Object.keys(input.selected);
+  const variableIds = input.variableIds
+    ? [...input.variableIds]
+    : selectedIds.sort(compareUtf8Bytewise);
+  if (
+    variableIds.length !== selectedIds.length ||
+    new Set(variableIds).size !== variableIds.length ||
+    variableIds.some((id) => !Object.hasOwn(input.selected, id))
+  ) {
+    throw new AppMapCombineWorldError(
+      "Repeat dimensions do not match the selected values.",
+      "unknown-variable",
+    );
+  }
   const id = combineIdFor(variableIds, [input.testId]);
   const existing = input.map.combines?.[id];
   const now = input.now ?? Date.now();
@@ -97,7 +114,16 @@ export function upsertAppMapCombineFromTest(input: {
       testIds: [input.testId],
       selected,
       ...(captures ? { captures } : {}),
-      ...(existing?.strategy ? { strategy: existing.strategy } : {}),
+      ...(input.strategy
+        ? { strategy: input.strategy }
+        : existing?.strategy
+          ? { strategy: existing.strategy }
+          : {}),
+      ...(input.repeatPolicy
+        ? { repeatPolicy: structuredClone(input.repeatPolicy) }
+        : existing?.repeatPolicy
+          ? { repeatPolicy: structuredClone(existing.repeatPolicy) }
+          : {}),
       ...(existing?.cellRuntimeProfiles
         ? { cellRuntimeProfiles: existing.cellRuntimeProfiles }
         : {}),

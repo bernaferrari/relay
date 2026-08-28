@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * End-to-end proof-loop dogfood against a LIVE Relay server and device.
+ * INTERNAL COMPATIBILITY HARNESS for the end-to-end proof loop against a
+ * LIVE Relay server and device. This is acceptance proof, not a supported
+ * authoring surface or an example for product users.
  *
  * Models docs/LANGUAGE_SWEEP_LOOP.md but for the PROOF loop:
  * health -> lease (if needed) -> `test run … --wait` -> `report emit`
@@ -11,7 +13,10 @@
  * `--json`, first JSON object on stdout parsed as data, stderr read
  * separately. Pure pieces are exported for the colocated offline test.
  *
- * Exit codes mirror ProofReport semantics: 0 pass, 9 fail, 8 unproven/infra.
+ * Do not retire it until `relay verify-change` preserves all four properties:
+ * source/PR provenance, a waited product verdict, emitted report artifacts
+ * plus an evidence share, and 0/9/8 pass/fail/unproven exit semantics. At that
+ * point this file should become a tiny outcome-command invocation or disappear.
  */
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -30,6 +35,10 @@ const TEST_RUN_TIMEOUT_MS = "240000";
 const SHARE_EXPIRES_IN_HOURS = 24;
 
 export const PROOF_EXIT_CODES = { pass: 0, fail: 9, unproven: 8 };
+export const PROOF_LOOP_CLASSIFICATION = Object.freeze({
+  kind: "internal-compatibility-harness",
+  retiresAfter: "relay verify-change owns provenance, verdict, artifacts, sharing, and exit codes",
+});
 
 /** Script failure taxonomy. `fail` means the product regressed; `infra`
  * means Relay could not prove anything (deliberately distinct). */

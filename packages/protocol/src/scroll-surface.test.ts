@@ -29,3 +29,34 @@ test("full-surface semantic indexes are a derived executable protocol contract",
 
   assert.deepEqual(structuredClone(step).navigation?.[0]?.anchors, semanticIndex.anchors);
 });
+
+test("full-surface confidence keeps unknown coverage explicit and source-bound", () => {
+  const confidence: NonNullable<LogicalScrollSurface["confidenceModel"]> = {
+    schemaVersion: 1,
+    classification: "partial",
+    confidence: 0.72,
+    capturedPixels: 1_820,
+    documentExtent: "open",
+    coverage: [
+      {
+        startY: 0,
+        endY: 1_820,
+        state: "captured",
+        confidence: 1,
+        sourceViewportIndexes: [0, 1, 2],
+      },
+      {
+        startY: 1_820,
+        endY: null,
+        state: "not-reached",
+        confidence: 1,
+        sourceViewportIndexes: [],
+      },
+    ],
+    mergeAnchors: [],
+    regions: [],
+  };
+
+  assert.equal(structuredClone(confidence).coverage.at(-1)?.endY, null);
+  assert.equal(confidence.classification, "partial");
+});

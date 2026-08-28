@@ -1,5 +1,7 @@
 import { createEffect, onCleanup, onMount, type Accessor } from "solid-js";
 import type { AppMapRunReadiness } from "../lib/app-map-run-readiness";
+import type { WorkspaceController } from "../lib/workspace-controller";
+import { connectAppMapWorkspaceCommands } from "../lib/app-map-workspace-command-adapter";
 import type { AppMapCanvasTool } from "./app-map-toolbar";
 
 export type CanvasWheelAction =
@@ -85,6 +87,7 @@ export function canvasWheelAction(input: {
 }
 
 export function createAppMapEventOrchestration(options: {
+  workspaceController?: WorkspaceController;
   devicePanelOpen: Accessor<boolean>;
   runReadiness: Accessor<AppMapRunReadiness>;
   canvasTool: Accessor<AppMapCanvasTool>;
@@ -104,19 +107,14 @@ export function createAppMapEventOrchestration(options: {
   onEscape: () => void;
 }) {
   createEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent("relay:device-panel-state", {
-        detail: { open: options.devicePanelOpen() },
-      }),
-    );
+    options.workspaceController?.execute({ kind: "device.state", open: options.devicePanelOpen() });
   });
 
   createEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent("relay:graph-run-readiness", {
-        detail: options.runReadiness(),
-      }),
-    );
+    options.workspaceController?.execute({
+      kind: "test.run-readiness",
+      readiness: options.runReadiness(),
+    });
   });
 
   onMount(() => {
@@ -186,7 +184,19 @@ export function createAppMapEventOrchestration(options: {
       toolBeforeSpace = null;
     };
 
-    window.addEventListener("relay:device-selected", options.onDeviceSelected);
+    const disconnectWorkspace = connectAppMapWorkspaceCommands(options.workspaceController, {
+      targetSelected: options.onDeviceSelected,
+      toggleDevice: options.onToggleDevicePanel,
+      showDevice: options.onOpenDevicePanel,
+      hideDevice: options.onCloseDevicePanel,
+      runTest: options.onRunMap,
+      recordTest: options.onRecord,
+      captureScreen: options.onCaptureScreen,
+    });
+
+    // Compatibility listeners remain for Map-only surfaces that have not yet
+    // joined the typed workspace seam. Golden Test and shell paths use the
+    // WorkspaceController above.
     window.addEventListener("relay:toggle-device-panel", onToggleDevicePanel);
     window.addEventListener("relay:open-device-panel", onOpenDevicePanel);
     window.addEventListener("relay:close-device-panel", onCloseDevicePanel);
@@ -197,7 +207,7 @@ export function createAppMapEventOrchestration(options: {
     window.addEventListener("keydown", onCanvasKey);
     window.addEventListener("keyup", onCanvasKeyUp);
     onCleanup(() => {
-      window.removeEventListener("relay:device-selected", options.onDeviceSelected);
+      disconnectWorkspace();
       window.removeEventListener("relay:toggle-device-panel", onToggleDevicePanel);
       window.removeEventListener("relay:open-device-panel", onOpenDevicePanel);
       window.removeEventListener("relay:close-device-panel", onCloseDevicePanel);

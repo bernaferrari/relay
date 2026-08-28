@@ -212,6 +212,60 @@ export const authoringInteraction = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
+export const authoringRecordingEdit = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("clip"),
+      fromMs: natural("Clip start in milliseconds").optional(),
+      toMs: natural("Clip end in milliseconds").optional(),
+    })
+    .strict()
+    .refine(
+      ({ fromMs, toMs }) => fromMs === undefined || toMs === undefined || fromMs <= toMs,
+      "Clip start must not exceed clip end",
+    ),
+  z
+    .object({
+      kind: z.literal("remove"),
+      actionIds: z.array(identifier("Authoring action identifier")).min(1),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("reorder"),
+      actionIds: z.array(identifier("Authoring action identifier")).min(1),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("replace"),
+      actionId: identifier("Authoring action identifier"),
+      interaction: authoringInteraction,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("merge"),
+      actionIds: z.array(identifier("Authoring action identifier")).min(2),
+      intent: z.string().trim().min(1).max(240).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("split"),
+      actionId: identifier("Authoring action identifier"),
+      atStep: z.number().int().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("rename"),
+      actionId: identifier("Authoring action identifier"),
+      intent: z.string().trim().min(1).max(240),
+    })
+    .strict(),
+]);
+
 export const destination = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("new-screen"), title: z.string().optional() }).strict(),
   z

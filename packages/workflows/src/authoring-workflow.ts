@@ -43,6 +43,10 @@ function validRevision(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
+function canonicalTestName(session: AuthoringSession): string {
+  return session.testName?.trim() || "New Test";
+}
+
 function frozenIdentity(intent: AuthorTestIntent, revision: number): FrozenAuthorTestIdentity {
   return {
     title: intent.title.trim(),
@@ -58,7 +62,7 @@ function frozenIdentity(intent: AuthorTestIntent, revision: number): FrozenAutho
 
 function frozenIdentityFromSession(session: AuthoringSession): FrozenAuthorTestIdentity {
   return {
-    title: session.group?.trim() || "New Test",
+    title: canonicalTestName(session),
     actorId: session.actorId,
     appMapId: session.appMapId,
     appMapRevision: session.expectedAppMapRevision,
@@ -110,6 +114,7 @@ function validStartedSession(
     sameTarget(session.target, intent.target) &&
     session.sourceScreenId === intent.sourceScreenId &&
     session.pendingConnectionId === intent.pendingConnectionId &&
+    session.testName === intent.title.trim() &&
     (session.group?.trim() || undefined) === (intent.group?.trim() || undefined) &&
     session.state === "recording" &&
     session.take?.state === "recording",
@@ -171,6 +176,7 @@ export class CanonicalAuthoringWorkflow {
     try {
       output = await this.operations.invoke("authoring.session.begin", {
         appMapId: intent.appMapId,
+        testName: intent.title.trim(),
         target: { ...intent.target },
         leaseId: intent.leaseId,
         expectedAppMapRevision: revision,
@@ -359,25 +365,10 @@ export class CanonicalAuthoringWorkflow {
     if (decision.action === "stop") {
       return this.operations.invoke("authoring.session.stop", { sessionId });
     }
-    if (decision.action === "trim") {
-      return this.operations.invoke("authoring.take.trim", {
+    if (decision.action === "edit") {
+      return this.operations.invoke("authoring.take.edit", {
         sessionId,
-        ...(decision.fromMs === undefined ? {} : { fromMs: decision.fromMs }),
-        ...(decision.toMs === undefined ? {} : { toMs: decision.toMs }),
-        ...(decision.actionIds ? { actionIds: [...decision.actionIds] } : {}),
-      });
-    }
-    if (decision.action === "reorder") {
-      return this.operations.invoke("authoring.take.reorder", {
-        sessionId,
-        actionIds: [...decision.actionIds],
-      });
-    }
-    if (decision.action === "replace") {
-      return this.operations.invoke("authoring.take.replace", {
-        sessionId,
-        actionId: decision.actionId,
-        interaction: decision.interaction,
+        edit: structuredClone(decision.edit),
       });
     }
     if (decision.action === "replay") {
@@ -416,6 +407,7 @@ export class CanonicalAuthoringWorkflow {
       session.actorId === reference.frozen.actorId &&
       session.appMapId === reference.frozen.appMapId &&
       session.expectedAppMapRevision === reference.frozen.appMapRevision &&
+      canonicalTestName(session) === reference.frozen.title &&
       sameTarget(session.target, reference.frozen.target)
     );
   }

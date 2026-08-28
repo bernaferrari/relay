@@ -60,8 +60,11 @@ export function AppMapTestCombineStrip(props: {
   let restoreVersion = 0;
   function rememberRepeat(snapshot: RepeatTestSnapshot): void {
     if (!snapshot.ref) return;
-    setVariableId(snapshot.frozen!.over.dimensionId);
-    setSelectedIds([...snapshot.frozen!.over.valueIds]);
+    const dimension = snapshot.frozen!.resolved.dimensions[0];
+    if (dimension) {
+      setVariableId(dimension.id);
+      setSelectedIds([...dimension.valueIds]);
+    }
     setLens(snapshot.frozen!.evidence);
     setWholePage(Boolean(snapshot.frozen!.capture?.fullSurfaceScreenIds.length));
     setRepeat(snapshot);
@@ -242,7 +245,12 @@ export function AppMapTestCombineStrip(props: {
         testId: props.test.id,
         revision: { exact: props.map.revision },
         target: { kind: "device", platform, targetId: device.serial },
-        over: { dimensionId: dimension.id, valueIds: [...selectedIds()] },
+        repeat: {
+          dimensions: [{ id: dimension.id, values: [...selectedIds()] }],
+          strategy: "zip",
+          pilot: { mode: "representative" },
+          resume: "untouched",
+        },
         evidence: lens(),
         ...(repeatInput.surfaceCapture
           ? {
@@ -310,6 +318,13 @@ export function AppMapTestCombineStrip(props: {
       setBusy(false);
     }
   }
+
+  const repeatCaseLabel = (values: Readonly<Record<string, string>>) =>
+    Object.entries(values)
+      .map(([dimensionId, valueId]) =>
+        dimensionId === variableId() ? repeatValueLabel(valueId) : `${dimensionId}: ${valueId}`,
+      )
+      .join(" × ");
 
   async function advanceRepeat(action: RepeatTestDecision["action"]): Promise<void> {
     const current = repeat();
@@ -495,7 +510,7 @@ export function AppMapTestCombineStrip(props: {
                   when={selectedDevice()}
                   fallback={
                     <div class="flex items-center justify-between gap-2">
-                      <span class={testEditorHint}>Target: choose a device</span>
+                      <span class={testEditorHint}>Device: choose one</span>
                       <Button variant="secondary" size="sm" onClick={props.onChooseTarget}>
                         Choose device
                       </Button>
@@ -504,7 +519,7 @@ export function AppMapTestCombineStrip(props: {
                 >
                   {(device) => (
                     <span class={testEditorHint}>
-                      Target: {device().name || device().serial} ·{" "}
+                      Device: {device().name || device().serial} ·{" "}
                       {device().platform === "ios" ? "iOS" : "Android"}
                     </span>
                   )}
@@ -578,7 +593,7 @@ export function AppMapTestCombineStrip(props: {
                       {(result) => (
                         <li class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md border border-border-weak-base bg-background-base px-2.5 py-2 text-caption">
                           <span class="min-w-0 truncate font-medium text-text-strong">
-                            {repeatValueLabel(result.valueId)}
+                            {repeatCaseLabel(result.values)}
                           </span>
                           <span class="text-text-weak">
                             {result.phase === "pilot" ? "Pilot · " : ""}
@@ -589,7 +604,7 @@ export function AppMapTestCombineStrip(props: {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                aria-label={`Open ${repeatValueLabel(result.valueId)} result`}
+                                aria-label={`Open ${repeatCaseLabel(result.values)} result`}
                                 onClick={() => props.onOpenRun?.(runId())}
                               >
                                 View

@@ -206,11 +206,11 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       const repeatEntry = Object.entries(body.in);
       if (
         body.repeatRecovery &&
-        (repeatEntry.length !== 1 || (body.lens !== "visual" && body.lens !== "smoke"))
+        (repeatEntry.length === 0 || (body.lens !== "visual" && body.lens !== "smoke"))
       ) {
         throw new HttpError(
           400,
-          "Repeat recovery requires one dimension and an explicit visual or smoke evidence lens",
+          "Repeat recovery requires dimensions and an explicit visual or smoke evidence lens",
         );
       }
       let upserted;
@@ -219,6 +219,29 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
           map,
           testId: test.id,
           selected: body.in,
+          variableIds: body.repeatRecovery?.resolved.dimensions.map((dimension) => dimension.id),
+          strategy: body.strategy,
+          ...(body.repeatRecovery?.spec.pilot ||
+          body.repeatRecovery?.spec.resume ||
+          body.repeatRecovery?.spec.dimensions.some((dimension) => !Array.isArray(dimension.values))
+            ? {
+                repeatPolicy: {
+                  ...(body.repeatRecovery.spec.pilot
+                    ? { pilot: structuredClone(body.repeatRecovery.spec.pilot) }
+                    : {}),
+                  ...(body.repeatRecovery.spec.resume
+                    ? { resume: body.repeatRecovery.spec.resume }
+                    : {}),
+                  valueModes: Object.fromEntries(
+                    body.repeatRecovery.spec.dimensions.flatMap((dimension) =>
+                      Array.isArray(dimension.values)
+                        ? []
+                        : [[dimension.id, dimension.values] as const],
+                    ),
+                  ),
+                },
+              }
+            : {}),
           ...(body.lens ? { lens: body.lens } : {}),
         });
       } catch (error) {
@@ -258,6 +281,8 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
           platform: body.target.platform === "browser" ? undefined : body.target.platform,
           targetKind: body.target.kind,
           selected: body.in,
+          strategy: body.strategy,
+          ...(body.pilotCase ? { pilotCase: body.pilotCase } : {}),
           capture: upserted.capture,
           ...(body.surfaceCapture ? { surfaceCapture: body.surfaceCapture } : {}),
           executionMode: body.executionMode ?? "pilot",
@@ -273,10 +298,8 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
                   testId: test.id,
                   testPlanDigest: body.repeatRecovery.testPlanDigest,
                   target: structuredClone(body.target),
-                  over: {
-                    dimensionId: repeatEntry[0]![0],
-                    valueIds: [...repeatEntry[0]![1]],
-                  },
+                  spec: structuredClone(body.repeatRecovery.spec),
+                  resolved: structuredClone(body.repeatRecovery.resolved),
                   evidence: body.lens === "smoke" ? "smoke" : "visual",
                   ...(body.sourceRevision
                     ? { sourceRevision: structuredClone(body.sourceRevision) }

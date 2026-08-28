@@ -15,6 +15,7 @@ import {
   record,
   string,
 } from "./operation-parser-primitives.js";
+import { createTargetObservationOperationDefinition } from "./target-observation-operation-definition.js";
 
 const scrollSurveyReasons = new Set<ScrollSurveyStopReasonDto>([
   "end-of-content",
@@ -236,6 +237,7 @@ export function createTargetCaptureOperationParsers(input: {
   );
 
   return {
+    targetObservationOperationDefinition: createTargetObservationOperationDefinition(input),
     screenshotParser,
     targetScrollSurveyInputParser,
     targetScrollSurveyOutputParser,

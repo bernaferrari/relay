@@ -61,8 +61,10 @@ export {
 };
 import {
   formatRecipeYaml,
+  legacyRecipeYamlPath,
   listYamlRecipeFiles,
   readYamlRecipeFile,
+  readStoredRecipeYaml,
   recipeYamlPath,
   validateRecipeVariables,
 } from "./recipe-yaml.js";
@@ -117,7 +119,7 @@ export function builtinRecipes(): Recipe[] {
 }
 
 async function readStoredRecipe(id: string): Promise<Recipe | null> {
-  return readYamlRecipeFile(recipeYamlPath(testsRoot(), id));
+  return (await readStoredRecipeYaml(testsRoot(), id))?.recipe ?? null;
 }
 
 /** Packaged flows and stored plan definitions share one execution catalog. A
@@ -266,8 +268,8 @@ async function saveRecipeUnchecked(input: SaveRecipeInput): Promise<Recipe> {
     id = `custom-${slugify(input.title)}-${requestedAt.toString(36)}`;
   }
   // If overwriting, preserve createdAt.
-  const stored = await readStoredRecipe(id);
-  const existing = stored;
+  const stored = await readStoredRecipeYaml(testsRoot(), id);
+  const existing = stored?.recipe ?? null;
   const ts = Math.max(requestedAt, (existing?.updatedAt ?? 0) + 1);
   const quarantineReason = input.quarantineReason ?? existing?.quarantineReason;
   const recipe: Recipe = {
@@ -305,7 +307,7 @@ async function saveRecipeUnchecked(input: SaveRecipeInput): Promise<Recipe> {
     const historyDir = join(recipesRoot(), ".history", id);
     await mkdir(historyDir, { recursive: true });
     await writeFile(
-      join(historyDir, `${existing.updatedAt}.relay.yaml`),
+      join(historyDir, `${existing.updatedAt}.relay.plan.yaml`),
       formatRecipeYaml(existing),
       { encoding: "utf8", flag: "wx" },
     ).catch((error: unknown) => {
@@ -321,6 +323,11 @@ async function saveRecipeUnchecked(input: SaveRecipeInput): Promise<Recipe> {
   }
   const destination = recipeYamlPath(testsRoot(), id);
   await atomicWriteFile(destination, formatRecipeYaml(recipe));
+  if (stored?.contract === "legacy-recipe") {
+    await unlink(stored.path).catch((error: unknown) => {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    });
+  }
   const persisted = await stat(destination);
   recipe.updatedAt = persisted.mtimeMs;
   return recipe;
@@ -378,7 +385,7 @@ export async function listRecipeHistory(id: string): Promise<Recipe[]> {
   const dir = join(recipesRoot(), ".history", evidencePart(id, "recipeId"));
   try {
     const entries = (await readdir(dir))
-      .filter((file) => file.endsWith(".relay.yaml"))
+      .filter((file) => file.endsWith(".relay.plan.yaml") || file.endsWith(".relay.yaml"))
       .sort()
       .reverse();
     const versions: Recipe[] = [];
@@ -417,9 +424,13 @@ export async function deleteRecipe(id: string): Promise<void> {
   await ensureTestsRoot();
   await rm(evidenceDir(id), { recursive: true, force: true });
   const yamlPath = recipeYamlPath(testsRoot(), id);
-  await unlink(yamlPath).catch((error: unknown) => {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-  });
+  await Promise.all(
+    [yamlPath, legacyRecipeYamlPath(testsRoot(), id)].map((path) =>
+      unlink(path).catch((error: unknown) => {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      }),
+    ),
+  );
   publish({
     type: "resource.deleted",
     at: now(),

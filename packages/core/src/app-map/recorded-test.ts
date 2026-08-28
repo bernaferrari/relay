@@ -12,6 +12,7 @@ function stepId(sessionId: string): string {
 export function attachRecordedTest(input: {
   map: AppMap;
   testId: string;
+  testName: string;
   sessionId: string;
   connection: Connection;
   sourceTitle: string;
@@ -29,7 +30,7 @@ export function attachRecordedTest(input: {
   const test: AppMapScenarioTest = {
     ...scope,
     id: input.testId,
-    name: input.connection.label?.trim() || `${input.sourceTitle} to ${input.destinationTitle}`,
+    name: input.testName.trim(),
     kind: "scenario",
     intentSchemaVersion: APP_MAP_TEST_INTENT_SCHEMA_VERSION,
     capture: { mode: "final-screen" },

@@ -20,7 +20,12 @@ desktop (Electron) · web app · CLI · TUI · MCP
         evidence store → App Map projection
 ```
 
-## Canonical product model
+## Public model and canonical engine
+
+Relay's ordinary vocabulary is **App**, **Device**, **Test**, **Checkpoint**, **Run**, and **Report**.
+**Record**, **Repeat**, **Explore**, and **Verify** are outcome actions. Map is a generated topology
+view. The engine entities below remain canonical persisted state, but they are not prerequisites for
+recording or proving a Test.
 
 A project holds one or more **App Maps**. Each App Map’s normalized entities are Screens, Screen
 Variants, Connections, Actions, Routines, Flows, Runs, Target Results, Baselines, Proposals, Notes,
@@ -37,16 +42,18 @@ own a second product workspace. Their output is projected onto the frozen App Ma
 and Target Result evidence. A language sweep is therefore a matrix run of a mapped test—not a
 separate crawl document, gallery, or authoring model.
 
-**Variables** on the App Map are lists (language, theme, location): teach 1–2 rows, infer the rest,
-optionally bind a recorded open/leave path. Inference never invents navigation. The protocol
-collection has always been `variables`, and the UI and CLI now say the same word.
+Internally, **Variables** on the App Map are lists (language, theme, location): teach 1–2 rows, infer
+the rest, optionally bind a recorded open/leave path. Inference never invents navigation. The public
+surface presents their selection as **Repeat**, while advanced graph and diagnostics surfaces retain
+the persisted `variables` collection name.
 **Tests** are graph-native intent documents with stable step IDs. Instruction, validation,
 extraction, manual checkpoint, module, decision, loop, and constrained-script steps bind to reviewed
 App Map entities or remain explicitly unresolved. `scenario` is the only Test contract. Connections
 and Flows may satisfy navigation bindings, but neither is an alternate Test document or conversion
-source. **Combine** is every selected Variable value × those Tests, matching the `combines`
-collection it is stored in. Execution is a durable campaign: one pilot case, untouched pending cases,
-then an explicit reviewed resume that recompiles current App Map truth without discarding lineage.
+source. Internally, **Combine** expands the selected Repeat dimensions and Tests, matching the
+`combines` collection it is stored in. Execution is a durable campaign: one pilot case, untouched
+pending cases, then an explicit reviewed resume that recompiles current App Map truth without
+discarding lineage.
 Case stacks remain typed **test data** expansion (emails, plans), not modes.
 
 **Recipes are compiled executable IR**, not a second authoring surface. A recipe is the
@@ -54,6 +61,13 @@ target-neutral, step-oriented contract the runner executes: reusable modules, YA
 discovery promotion, history/restore, stability signals, and frozen job snapshots. When an App Map
 Flow or Connection runs, Relay compiles verified graph steps into recipe IR. People and agents
 author App Maps; they do not browse a recipe library.
+
+The YAML layers have distinct contracts and suffixes: friendly, unresolved authoring intent uses
+`.relay.intent.yaml`; a canonical identity-bound Test projection uses `.relay.test.yaml`; compiled
+recipe IR uses `.relay.plan.yaml`; and evidence remains a TracePack. Legacy `.relay.yaml` files are
+read only as execution-plan compatibility inputs and migrate on their next successful save. The
+complete fail-closed conversion rules are documented in
+[Source contracts](./docs/SOURCE_CONTRACTS.md).
 
 CLI and MCP hide `recipe.*` CRUD as internal compiled storage. Execution still accepts a recipe id
 on `job.start` when a compiled artifact already exists. Selected canvas state (`selectedAppMapId`
@@ -189,8 +203,9 @@ future transition success structurally `unknown` while proposing the smallest li
 5. Local HTTP uses scoped identity. Non-loopback serving requires authentication and redaction;
    external bearer credentials are accepted only through an explicit, server-side verified-identity
    [bridge](./docs/EXTERNAL_IDENTITY.md).
-6. YAML App Map and recipe import/export, plus run artifacts, are deterministic open projections—not
-   hidden alternate sources of truth.
+6. YAML authoring intent, bound Test source, compiled execution plans, and TracePack evidence have
+   distinct schemas and suffixes. They are deterministic open projections—not hidden alternate
+   sources of truth.
 7. A partial or failed operation remains inspectable and never silently rewrites approved behavior.
 
 ## Development verification

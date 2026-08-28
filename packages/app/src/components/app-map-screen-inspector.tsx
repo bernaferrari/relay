@@ -1,15 +1,7 @@
-import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, onCleanup, onMount } from "solid-js";
 import type { AppMap, MapGroup } from "@relay/protocol";
-import { Button } from "@relay/ui/button";
 import { IconButton } from "@relay/ui/icon-button";
-import { useServer } from "../context/server";
-import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
-import { testEditorHint } from "../lib/app-map-test-editor-styles";
-import {
-  screenAcrossLanguages,
-  type ScreenAcrossLanguagesIntent,
-} from "../lib/app-map-test-combine-strip";
 import type { MapTreeNode } from "../lib/app-map-tree";
 import { cn } from "../lib/cn";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
@@ -42,7 +34,6 @@ export function ScreenInspector(props: {
   onRename: () => void;
   onRemove: () => void;
   onClose: () => void;
-  onOpenCombine?: (combineId?: string, section?: CanvasCombineSection) => void;
 }) {
   let panel: HTMLElement | undefined;
   // Opening Details hands focus into the panel so Escape closes it and a
@@ -77,29 +68,6 @@ export function ScreenInspector(props: {
     }
     return { appMap, screenId, variant, surface };
   };
-  const server = useServer();
-  const [acrossLanguagesBusy, setAcrossLanguagesBusy] = createSignal(false);
-  const acrossLanguages = createMemo(() => screenAcrossLanguages(props.appMap, props.node?.id));
-  async function runAcrossLanguages(): Promise<void> {
-    const map = props.appMap;
-    const intent = acrossLanguages();
-    if (!map || intent.kind === "disabled" || acrossLanguagesBusy()) return;
-    if (intent.kind === "open-combine") {
-      openAcrossLanguagesCombine(intent, props.onOpenCombine);
-      return;
-    }
-    setAcrossLanguagesBusy(true);
-    try {
-      await server.runPathAcrossVariables({
-        appMapId: map.id,
-        testId: intent.testId,
-        variableIds: intent.variableIds,
-        selected: intent.selected,
-      });
-    } finally {
-      setAcrossLanguagesBusy(false);
-    }
-  }
   return (
     <Show when={props.node}>
       {(_node) => (
@@ -166,7 +134,19 @@ export function ScreenInspector(props: {
                 />
                 <span>
                   {scrollSurface.surface()
-                    ? `${scrollSurface.surface()!.status === "completed" ? "Full page" : "Partial page"} · ${scrollSurface.surface()!.viewports.length} views`
+                    ? `${
+                        {
+                          complete: "Full page",
+                          partial: "Partial page",
+                          dynamic: "Dynamic page",
+                          unsupported: "Unsupported page",
+                        }[
+                          scrollSurface.surface()!.confidenceModel?.classification ??
+                            (scrollSurface.surface()!.status === "completed"
+                              ? "complete"
+                              : "partial")
+                        ]
+                      } · ${scrollSurface.surface()!.viewports.length} views`
                     : props.image
                       ? "Screenshot saved"
                       : "No screenshot"}
@@ -346,27 +326,6 @@ export function ScreenInspector(props: {
             </Show>
           </section>
 
-          <section class="grid gap-1.5 border-t border-[var(--border-weak-base)] px-3 py-2.5">
-            <Button
-              variant="secondary"
-              size="sm"
-              class="w-full"
-              disabled={acrossLanguages().kind === "disabled" || acrossLanguagesBusy()}
-              title={acrossLanguagesHint(acrossLanguages()) ?? "Across languages…"}
-              data-across-languages
-              onClick={() => void runAcrossLanguages()}
-            >
-              Across languages…
-            </Button>
-            <Show when={acrossLanguagesHint(acrossLanguages())}>
-              {(hint) => (
-                <p class={cn(testEditorHint, "m-0")} data-across-languages-hint>
-                  {hint()}
-                </p>
-              )}
-            </Show>
-          </section>
-
           <footer class="border-t border-[var(--border-weak-base)] p-2">
             <button
               type="button"
@@ -383,35 +342,6 @@ export function ScreenInspector(props: {
       )}
     </Show>
   );
-}
-
-function openAcrossLanguagesCombine(
-  intent: Extract<ScreenAcrossLanguagesIntent, { kind: "open-combine" }>,
-  onOpenCombine?: (combineId?: string, section?: CanvasCombineSection) => void,
-): void {
-  if (onOpenCombine) {
-    onOpenCombine(intent.combineId, intent.combineId ? "variables" : undefined);
-    return;
-  }
-  if (intent.testId && !intent.combineId) {
-    window.dispatchEvent(new CustomEvent("relay:open-test", { detail: { testId: intent.testId } }));
-    return;
-  }
-  window.dispatchEvent(
-    new CustomEvent("relay:open-combine", {
-      detail: { combineId: intent.combineId, section: intent.combineId ? "variables" : undefined },
-    }),
-  );
-}
-
-function acrossLanguagesHint(intent: ScreenAcrossLanguagesIntent): string | undefined {
-  switch (intent.kind) {
-    case "disabled":
-      return intent.hint;
-    case "run":
-    case "open-combine":
-      return undefined;
-  }
 }
 
 /**

@@ -194,6 +194,7 @@ async function createReadySession(
   assert.ok(appMap);
   let session = await store.create({
     appMapId,
+    testName: "Settings localization",
     target: { kind: "device", platform: "android", targetId: "device-a" },
     leaseId: "lease-a",
     expectedAppMapRevision: appMap.revision,
@@ -856,6 +857,107 @@ test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, 
   });
 });
 
+test("one canonical recording edit command safely composes semantic review changes", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(
+      session.id,
+      {
+        kind: "steps",
+        label: "Open settings",
+        steps: [
+          { kind: "tap", target: { label: "Menu" } },
+          { kind: "tap", target: { label: "Settings" } },
+        ],
+      },
+      runtime,
+    );
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Data controls" } },
+      runtime,
+    );
+    session = await store.interact(session.id, { kind: "wait", ms: 0 }, runtime);
+    session = await store.stop(session.id, runtime);
+
+    const original = session.take!.revisions.at(-1)!;
+    const [navigation, destination, wait] = original.actions;
+    assert.ok(navigation && destination && wait);
+
+    session = await store.edit(session.id, {
+      kind: "rename",
+      actionId: navigation.id,
+      intent: "Open Settings",
+    });
+    assert.equal(session.take!.revisions.at(-1)!.actions[0]!.label, "Open Settings");
+
+    session = await store.edit(session.id, {
+      kind: "split",
+      actionId: navigation.id,
+      atStep: 1,
+    });
+    let actions = session.take!.revisions.at(-1)!.actions;
+    assert.equal(actions.length, 4);
+    assert.deepEqual(
+      actions.slice(0, 2).map((action) => action.steps.length),
+      [1, 1],
+    );
+
+    session = await store.edit(session.id, {
+      kind: "merge",
+      actionIds: actions.slice(0, 2).map((action) => action.id),
+      intent: "Open Settings",
+    });
+    actions = session.take!.revisions.at(-1)!.actions;
+    assert.equal(actions.length, 3);
+    assert.equal(actions[0]!.steps.length, 2);
+    assert.equal(actions[0]!.label, "Open Settings");
+
+    session = await store.edit(session.id, {
+      kind: "replace",
+      actionId: destination.id,
+      interaction: { kind: "tap", target: { label: "Privacy controls" } },
+    });
+    actions = session.take!.revisions.at(-1)!.actions;
+    assert.equal(actions.find((action) => action.id === destination.id)?.steps[0]?.kind, "tap");
+
+    const reversed = actions.map((action) => action.id).reverse();
+    session = await store.edit(session.id, { kind: "reorder", actionIds: reversed });
+    assert.deepEqual(
+      session.take!.revisions.at(-1)!.actions.map((action) => action.id),
+      reversed,
+    );
+
+    session = await store.edit(session.id, { kind: "remove", actionIds: [wait.id] });
+    const edited = session.take!.revisions.at(-1)!;
+    assert.equal(edited.actions.length, 2);
+    assert.ok(edited.actions.every((action) => action.proofStatus === undefined));
+    assert.ok(edited.actions.every((action) => !action.entranceObservationId));
+    assert.equal(edited.reason, "edit");
+    assert.equal(
+      session.take!.replayAttempts.some((attempt) => attempt.takeRevision === edited.revision),
+      false,
+    );
+
+    await assert.rejects(
+      store.edit(session.id, {
+        kind: "merge",
+        actionIds: [...edited.actions].reverse().map((action) => action.id),
+      }),
+      /consecutive actions in their current order/u,
+    );
+    await assert.rejects(
+      store.edit(session.id, {
+        kind: "split",
+        actionId: edited.actions[0]!.id,
+        atStep: edited.actions[0]!.steps.length,
+      }),
+      /between two existing steps/u,
+    );
+  });
+});
+
 test("edited multi-action replays retain an immediate proof for every action", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     let session = await createReadySession(store, runtime, appMapId);
@@ -1245,6 +1347,8 @@ test("an unedited live demonstration can be committed without a second pass", as
     assert.equal(connection?.actions[0]?.kind, "recorded");
     const created = appMap?.tests[session.committedTestId!];
     assert.equal(created?.kind, "scenario");
+    assert.equal(created?.name, "Settings localization");
+    assert.notEqual(created?.name, connection?.label);
     const createdStep = created?.kind === "scenario" ? created.steps[0] : undefined;
     assert.deepEqual(
       createdStep?.kind === "instruction" &&
@@ -1599,7 +1703,10 @@ test("recovery preserves interrupted recording and resolves post-rename commits"
     assert.equal(activity?.eventType, "recording.committed");
     assert.ok(activity && appMap.connections[activity.subject.id]);
     assert.ok(afterCommitRecovery[0]?.committedTestId);
-    assert.ok(appMap.tests[afterCommitRecovery[0]!.committedTestId!]);
+    assert.equal(
+      appMap.tests[afterCommitRecovery[0]!.committedTestId!]?.name,
+      "Settings localization",
+    );
   });
 });
 

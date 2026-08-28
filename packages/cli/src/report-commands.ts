@@ -9,7 +9,7 @@ import type { ProofReport } from "@relay/protocol";
 import type { OutputStreams } from "./output.js";
 import { ExitCode, UsageError } from "./errors.js";
 
-const REPORT_VALUE_FLAGS = ["--run"] as const;
+const REPORT_VALUE_FLAGS = ["--run", "--format"] as const;
 const REPORT_SWITCH_FLAGS = ["--json", "--ndjson", "--quiet", "-h", "--help"] as const;
 
 type ReportArgs = {

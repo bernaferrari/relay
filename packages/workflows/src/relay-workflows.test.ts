@@ -407,6 +407,7 @@ function authoringSession(input: {
   sourceScreenId?: string;
   pendingConnectionId?: string;
   group?: string;
+  testName?: string;
 }) {
   const revision = input.revision ?? 1;
   const actions = (input.actions ?? []).map((action, index) => ({
@@ -445,6 +446,7 @@ function authoringSession(input: {
     actorId: input.actorId ?? "human:local",
     actorKind: "human",
     appMapId: "settings",
+    testName: input.testName ?? "Data Controls path",
     ...(input.sourceScreenId ? { sourceScreenId: input.sourceScreenId } : {}),
     ...(input.pendingConnectionId ? { pendingConnectionId: input.pendingConnectionId } : {}),
     ...(input.group ? { group: input.group } : {}),
@@ -511,6 +513,7 @@ test("authoring starts recording against one frozen App Map revision", async () 
     authoringStep("authoring.session.begin", recording, (input) =>
       assert.deepEqual(input, {
         appMapId: "settings",
+        testName: "Data Controls path",
         target,
         leaseId: "lease-1",
         expectedAppMapRevision: 7,
@@ -551,6 +554,7 @@ test("a lost begin response adopts the one matching canonical recording session"
 
   assert.equal(recovered.stage, "recording");
   assert.equal(recovered.phase, "running");
+  assert.equal(recovered.title, "Data Controls path");
   assert.ok(recovered.ref);
   assert.equal(scripted.invocations.filter(({ id }) => id === "authoring.session.begin").length, 1);
   assert.equal(scripted.remaining(), 0);
@@ -565,7 +569,7 @@ test("a lost begin response never adopts another actor or authoring path", async
   const otherPath = authoringSession({
     state: "recording",
     updatedAt: 101,
-    group: "Another path",
+    testName: "Another path",
   });
   const scripted = createScriptedRelayClient([
     { id: "authoring.session.begin", error: new Error("response lost after dispatch") },
@@ -595,6 +599,7 @@ test("authoring recovery reconstructs an opaque reference from canonical state",
   assert.equal(recovered.stage, "recording");
   assert.ok(recovered.ref);
   assert.equal(recovered.authoring?.sessionId, "authoring-1");
+  assert.equal(recovered.title, "Data Controls path");
   assert.equal(scripted.remaining(), 0);
 });
 
@@ -672,6 +677,13 @@ test("record, checkpoint, compile-review, replay proof, and approval compose can
 
   assert.equal(snapshot.stage, "reviewing");
   assert.equal(snapshot.review?.actionCount, 2);
+  assert.deepEqual(
+    snapshot.review?.actions.map(({ id, intent }) => ({ id, intent })),
+    [
+      { id: "tap-settings", intent: "Press back" },
+      { id: "checkpoint", intent: "Data Controls" },
+    ],
+  );
   assert.equal(snapshot.review?.replayRequired, false);
   assert.ok(snapshot.allowedNextActions.includes("approve"));
   assert.deepEqual(snapshot.evidenceRefs.map(({ id }) => id).sort(), [
@@ -740,7 +752,7 @@ test("an edited review cannot be approved until its exact revision replays", asy
     authoringStep("authoring.session.get", recording),
     authoringStep("authoring.session.stop", reviewing),
     authoringStep("authoring.session.get", reviewing),
-    authoringStep("authoring.take.replace", edited),
+    authoringStep("authoring.take.edit", edited),
     authoringStep("authoring.session.get", edited),
     authoringStep("authoring.session.get", edited),
     authoringStep("authoring.take.replay", replayed),
@@ -753,11 +765,14 @@ test("an edited review cannot be approved until its exact revision replays", asy
     expectedVersion: snapshot.version,
   })) as AuthorTestSnapshot;
   snapshot = (await workflows.advance({
-    action: "replace",
+    action: "edit",
     ref: snapshot.ref!,
     expectedVersion: snapshot.version,
-    actionId: "tap-settings",
-    interaction: { kind: "tap", target: { label: "Preferences" } },
+    edit: {
+      kind: "replace",
+      actionId: "tap-settings",
+      interaction: { kind: "tap", target: { label: "Preferences" } },
+    },
   })) as AuthorTestSnapshot;
 
   assert.equal(snapshot.review?.replayRequired, true);
@@ -816,6 +831,7 @@ test("an uncertain authoring mutation is not retried and permits inspection only
 
   const inspected = await workflows.inspect(started.ref!);
   assert.equal(inspected.kind, "author-test");
+  assert.equal(inspected.title, "Data Controls path");
   assert.equal(inspected.kind === "author-test" ? inspected.review?.actionCount : undefined, 1);
   assert.equal(scripted.remaining(), 0);
 });

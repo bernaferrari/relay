@@ -44,6 +44,34 @@ test("Authoring Session parsing rejects unknown lifecycle states", () => {
   );
 });
 
+test("canonical Test names remain distinct from optional App Map grouping", () => {
+  const value = {
+    ...session("recording"),
+    testName: "Settings localization",
+    group: "Settings",
+  };
+
+  assert.deepEqual(parseAuthoringSession(JSON.parse(serializeAuthoringSession(value))), value);
+  assert.deepEqual(
+    summarizeAuthoringOperationResult("authoring.session.start", { session: value }),
+    {
+      session: {
+        id: "session-a",
+        actorId: "agent:a",
+        actorKind: "agent",
+        appMapId: "map-a",
+        testName: "Settings localization",
+        state: "recording",
+        target: { kind: "device", platform: "android", targetId: "device-a" },
+      },
+    },
+  );
+  assert.throws(
+    () => parseAuthoringSession({ ...value, testName: "  " }),
+    /authoring session testName is required/u,
+  );
+});
+
 test("legacy Takes without raw capture remain wire-compatible", () => {
   const legacy: AuthoringSession = {
     ...session("reviewing"),

@@ -22,6 +22,7 @@ import { validatedDocumentOriginIssuance } from "./document-origin-survey-issuan
 import { appMapFail } from "./app-map/errors.js";
 import { mutateAppMap } from "./app-map/mutation.js";
 import { compileScrollSurfaceSemanticIndex } from "./scroll-surface-semantic-index.js";
+import { deriveScrollSurfaceConfidence } from "./scroll-surface-confidence.js";
 
 type SurfaceWithoutManifest = Omit<LogicalScrollSurface, "manifest">;
 
@@ -302,6 +303,7 @@ export async function persistLogicalScrollSurface(input: {
       frames: input.survey.frames,
       ...(input.survey.stitched ? { compositeHeight: input.survey.stitched.height } : {}),
     }),
+    confidenceModel: deriveScrollSurfaceConfidence(input.survey),
   };
   const manifestEvidence = await persistAuthoringEvidence({
     kind: "snapshot",
@@ -469,6 +471,12 @@ export async function materializeLogicalScrollSurfaceImport(input: {
       nodes: mergedNodes,
       frames,
     }),
+    confidenceModel: deriveScrollSurfaceConfidence({
+      status: "stopped",
+      reason: "seam-ambiguous",
+      frames,
+      diagnosticFrames: [],
+    }),
   };
   const manifestBytes = Buffer.from(
     JSON.stringify({
@@ -561,6 +569,34 @@ export async function regenerateLogicalScrollSurface(input: {
       snapshot,
     });
   }
+  const diagnosticFrames: ScrollSurveyFrame[] = [];
+  for (const viewport of input.surface.diagnosticViewports ?? []) {
+    const [screenshot, treeBytes] = await Promise.all([
+      requireRawEvidence(viewport.screenshot),
+      requireRawEvidence(viewport.accessibilityTree),
+    ]);
+    let snapshot: ScrollSurveyFrame["snapshot"];
+    try {
+      snapshot = JSON.parse(treeBytes.toString("utf8")) as ScrollSurveyFrame["snapshot"];
+    } catch {
+      appMapFail(
+        "invalid-map",
+        `Raw diagnostic scroll tree ${viewport.accessibilityTree.id} is invalid JSON`,
+      );
+    }
+    diagnosticFrames.push({
+      index: viewport.index,
+      offsetY: viewport.offsetY,
+      appendedHeight: 0,
+      screenshot: {
+        base64: screenshot.toString("base64"),
+        width: viewport.width,
+        height: viewport.height,
+        capturedAt: viewport.capturedAt,
+      },
+      snapshot,
+    });
+  }
   const composition = composeScrollSurveyFrames(frames);
   if (!composition?.stitched) {
     appMapFail("invalid-map", `Raw scroll evidence no longer yields one verified visual seam`);
@@ -605,6 +641,12 @@ export async function regenerateLogicalScrollSurface(input: {
       nodes: composition.mergedNodes,
       frames: composition.frames,
       compositeHeight: composition.stitched.height,
+    }),
+    confidenceModel: deriveScrollSurfaceConfidence({
+      status: input.surface.status,
+      reason: input.surface.reason,
+      frames: composition.frames,
+      diagnosticFrames,
     }),
   };
   const manifestEvidence = await persistAuthoringEvidence({

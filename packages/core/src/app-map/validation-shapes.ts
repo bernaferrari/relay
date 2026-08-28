@@ -33,6 +33,7 @@ import {
 import { assertEntity } from "./entity-validation.js";
 import { assertProposalRepair } from "./proposal-repair-validation.js";
 import { assertScenarioTest } from "./test-intent-validation.js";
+import { assertRepeatPolicy } from "./repeat-policy-validation.js";
 import {
   assertLogicalScrollSurface,
   assertScrollSurfaceCapturePolicy,
@@ -515,6 +516,15 @@ export function assertAppMapCombine(
     combine.strategy !== "pairwise"
   ) {
     appMapFail("invalid-map", `${label}.strategy is unsupported`);
+  }
+  assertRepeatPolicy(combine.repeatPolicy, `${label}.repeatPolicy`);
+  for (const dimensionId of Object.keys(combine.repeatPolicy?.valueModes ?? {})) {
+    if (!combine.variableIds.includes(dimensionId)) {
+      appMapFail(
+        "invalid-map",
+        `${label}.repeatPolicy.valueModes.${dimensionId} describes an unused dimension`,
+      );
+    }
   }
   if (combine.cellRuntimeProfiles !== undefined) {
     if (!Array.isArray(combine.cellRuntimeProfiles)) {

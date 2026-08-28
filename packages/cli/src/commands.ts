@@ -73,6 +73,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     exclusion: "internal",
     reason: "Live target video is a media stream, not a CLI command.",
   },
+  {
+    operationId: "target.observation.capture",
+    exclusion: "internal",
+    reason: "The public relay observe outcome owns durable bounded target observation.",
+  },
 
   mapped("workspace.privacy.get", path("policy privacy get")),
   mapped("workspace.privacy.update", path("policy privacy update")),
@@ -241,6 +246,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ...appMapRoutineCommandDescriptors,
 
   ...authoringSessionCommandDescriptors,
+  {
+    operationId: "authoring.take.edit",
+    exclusion: "internal",
+    reason: "The Test-first edit-recording outcome owns this canonical typed mutation.",
+  },
 
   mapped("schedule.list", path("schedule list")),
   mapped("schedule.create", path("schedule create")),

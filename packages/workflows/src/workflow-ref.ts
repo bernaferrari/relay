@@ -4,6 +4,7 @@ import type {
   FrozenRunTestIdentity,
   WorkflowRef,
 } from "./types.js";
+import { repeatPilotSpecSchema, repeatSpecSchema } from "@relay/protocol";
 
 export type RunWorkflowReference = {
   schemaVersion: 1;
@@ -179,7 +180,14 @@ export function decodeRepeatWorkflowRef(ref: WorkflowRef): RepeatWorkflowReferen
     }
     const frozen = record.frozen as Record<string, unknown>;
     const target = parseTarget(frozen.target);
-    const over = frozen.over as Record<string, unknown> | undefined;
+    const repeat = repeatSpecSchema.safeParse(frozen.repeat);
+    const resolved = frozen.resolved as Record<string, unknown> | undefined;
+    const resolvedDimensions = resolved?.dimensions;
+    const resolvedPilot = repeatPilotSpecSchema.safeParse(resolved?.pilot);
+    const specifiedPilot =
+      resolvedPilot.success && resolvedPilot.data.mode === "specified"
+        ? resolvedPilot.data
+        : undefined;
     if (
       !target ||
       !nonEmptyString(frozen.appMapId) ||
@@ -190,13 +198,35 @@ export function decodeRepeatWorkflowRef(ref: WorkflowRef): RepeatWorkflowReferen
       !nonEmptyString(frozen.testId) ||
       !nonEmptyString(frozen.testPlanDigest) ||
       !nonEmptyString(frozen.rootRecipeId) ||
-      !over ||
-      !nonEmptyString(over.dimensionId) ||
-      !Array.isArray(over.valueIds) ||
-      over.valueIds.length === 0 ||
-      over.valueIds.some((id) => !nonEmptyString(id)) ||
-      new Set(over.valueIds).size !== over.valueIds.length ||
-      record.selectedCaseIds.length !== over.valueIds.length
+      !repeat.success ||
+      !resolved ||
+      !Array.isArray(resolvedDimensions) ||
+      resolvedDimensions.length !== repeat.data.dimensions.length ||
+      resolvedDimensions.some((raw, index) => {
+        if (!raw || typeof raw !== "object") return true;
+        const dimension = raw as Record<string, unknown>;
+        const requested = repeat.data.dimensions[index];
+        return (
+          !nonEmptyString(dimension.id) ||
+          dimension.id !== requested?.id ||
+          !Array.isArray(dimension.valueIds) ||
+          dimension.valueIds.length === 0 ||
+          dimension.valueIds.some((id) => !nonEmptyString(id)) ||
+          new Set(dimension.valueIds).size !== dimension.valueIds.length
+        );
+      }) ||
+      (resolved.strategy !== "cartesian" &&
+        resolved.strategy !== "zip" &&
+        resolved.strategy !== "pairwise") ||
+      (resolved.resume !== "untouched" &&
+        resolved.resume !== "failed" &&
+        resolved.resume !== "all") ||
+      !resolvedPilot.success ||
+      (specifiedPilot &&
+        (Object.keys(specifiedPilot.case).length !== repeat.data.dimensions.length ||
+          repeat.data.dimensions.some(
+            (dimension) => !nonEmptyString(specifiedPilot.case[dimension.id]),
+          )))
     ) {
       return undefined;
     }
@@ -222,7 +252,15 @@ export function decodeRepeatWorkflowRef(ref: WorkflowRef): RepeatWorkflowReferen
       frozen: {
         ...(frozen as FrozenRepeatTestIdentity),
         target,
-        over: { dimensionId: over.dimensionId, valueIds: [...over.valueIds] },
+        repeat: repeat.data,
+        resolved: {
+          dimensions: (resolvedDimensions as Array<{ id: string; valueIds: string[] }>).map(
+            (dimension) => ({ id: dimension.id, valueIds: [...dimension.valueIds] }),
+          ),
+          strategy: resolved.strategy as FrozenRepeatTestIdentity["resolved"]["strategy"],
+          pilot: resolvedPilot.data,
+          resume: resolved.resume as FrozenRepeatTestIdentity["resolved"]["resume"],
+        },
       },
     };
   } catch {

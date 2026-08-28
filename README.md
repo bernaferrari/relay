@@ -33,22 +33,22 @@ Where the loop stands today:
 
 [docs/PR_PROOF_CI.md](./docs/PR_PROOF_CI.md) shows the copy-paste CI wiring available today.
 
-Once the loop is trustworthy, **Variables** and **Combine** let a team apply it across languages,
-themes, accounts, devices, builds, or other selected states—without turning every case into a
-separate test. A run preserves the map revision, actions, checks, screenshots, UI trees, logs, and
-failure provenance used to produce it.
+Once the loop is trustworthy, **Repeat** applies the same Test across languages, themes, accounts,
+devices, builds, or other selected states—without turning every case into a separate Test. A Run
+preserves the exact Test, actions, checks, screenshots, UI trees, logs, and failure provenance used
+to produce it.
 
 Relay is pre-release software. It is a strong fit for local and self-managed device workflows; it
 is not a Relay-managed cloud device farm or a turnkey enterprise SaaS product.
 
 ## Who Relay is for
 
-| Good fit today                                                                  | Why                                                                                                               |
-| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Mobile QA, SDET, and platform teams with attached devices or a local device lab | Map real product behavior, replay reviewed paths, and retain evidence instead of relying on ad-hoc manual checks. |
-| Product and engineering teams verifying web, Android, or iOS builds             | Run a focused regression or a state matrix against the targets they already control.                              |
-| Teams using coding agents around real devices                                   | The desktop app, CLI, TUI, and MCP adapter call the same project-scoped operations, leases, and evidence store.   |
-| Privacy-sensitive or local-first teams                                          | The normal desktop path runs a loopback Relay service and keeps the control plane and evidence in the project.    |
+| Good fit today                                                                  | Why                                                                                                                  |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Mobile QA, SDET, and platform teams with attached devices or a local device lab | Record real product behavior, replay reviewed paths, and retain evidence instead of relying on ad-hoc manual checks. |
+| Product and engineering teams verifying web, Android, or iOS builds             | Run a focused regression or a state matrix against the targets they already control.                                 |
+| Teams using coding agents around real devices                                   | The desktop app, CLI, TUI, and MCP adapter use the same project-scoped workflows, policy, and evidence store.        |
+| Privacy-sensitive or local-first teams                                          | The normal desktop path runs a loopback Relay service and keeps the control plane and evidence in the project.       |
 
 Relay is not yet the right choice for a team that needs to upload a build to a managed cloud, rent a
 device fleet, or buy organization-wide SSO, quotas, and published service-level objectives.
@@ -69,32 +69,32 @@ pnpm dev:desktop
 The Electron app starts one loopback Relay service for the project. No hosted Relay account or cloud
 provider is involved in that path.
 
-With a target connected, the first useful workflow is:
+With a Device connected, the first useful workflow is:
 
-1. In **Device**, select the connected browser, Android, or iOS target and save the first useful screen.
-2. Record one meaningful transition, remove accidental inputs in Take review, and replay it.
-3. Add the reviewed Connection to the **App Map**.
-4. In **Tests**, add intent and checks bound to reviewed Connections or saved Flows.
-5. Run one pilot and inspect the exact screenshots, UI trees, actions, and assertions before expanding coverage.
+1. Press **Record Test** and use the app through Relay.
+2. Add a **Checkpoint** where the product state matters.
+3. Stop, remove accidental actions, and replay the proposed Test.
+4. Approve the reviewed Test, then run one representative case.
+5. Read the Report's screenshots, UI trees, actions, assertions, and evidence completeness.
+6. Choose **Repeat this…** only when the representative case proves the path.
 
 Relay fails unresolved steps and changed destinations visibly rather than silently guessing a new
 route. See [Product flows](./docs/PRODUCT_FLOWS.md) for the complete authoring path.
 
 ## What it does
 
-| Capability                | What it gives you                                                                                                                                                     |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **App Map**               | Agents propose Screens and Connections; humans review Takes and approve them; Relay proves approved flows by replaying them with evidence.                            |
-| **Graph-native Tests**    | Intent, checks, extraction, manual checkpoints, decisions, loops, reusable modules, and constrained scripts—all bound to the App Map or explicitly marked unresolved. |
-| **Variables and Combine** | Reuse a Test across selected language, theme, account, build, device, or model values. Preview the expansion, run one pilot, then resume only untouched cases.        |
-| **Targets**               | A Relay-owned Playwright profile for browsers plus Android and iOS adapters. Target capabilities and unsupported actions are reported explicitly.                     |
-| **Evidence and reports**  | Immutable run artifacts, screenshot and UI-tree evidence, logs, failure provenance, visual baselines, and expiring/revocable redacted report links.                   |
-| **People and agents**     | Desktop, CLI, TUI, and MCP use the same operation registry. Device control requires a server-managed lease; observation can be shared.                                |
+| Capability                | What it gives you                                                                                                                                           |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Record and review**     | Turn Device interactions into one readable Test, clean up accidental actions, replay it, and approve only proven behavior.                                  |
+| **Tests and Checkpoints** | Express intent, checks, extraction, human pauses, decisions, loops, reusable modules, and constrained scripts without hand-authoring topology.              |
+| **Repeat**                | Apply one Test across selected languages, themes, accounts, builds, Devices, or models. Run one representative case, then resume only the cases you choose. |
+| **Runs and Reports**      | Retain immutable screenshots, UI trees, logs, failure provenance, baselines, evidence completeness, and shareable redacted proof.                           |
+| **People and agents**     | Desktop, CLI, TUI, and MCP use the same policy-controlled workflows and canonical operation registry.                                                       |
 
-The product model has five terms: a **Screen** is a product state; a **Connection** is a reviewed
-transition; a **Variable** changes one reusable dimension; a **Test** states what should happen; and
-a **Combine** runs selected Variables × Tests. This keeps recordings useful as navigation evidence
-without making them a second test format.
+The ordinary product vocabulary is **App**, **Device**, **Test**, **Checkpoint**, **Run**, and
+**Report**. **Record**, **Repeat**, **Explore**, and **Verify** are actions. Map is a generated
+topology view; internal graph, scheduling, control, and recovery terms appear only in advanced
+diagnostics when they are needed.
 
 ## Local-first, self-managed
 
@@ -112,14 +112,14 @@ commands first:
 pnpm relay connect
 pnpm relay record "Settings localization" --confirm
 pnpm relay run settings-localization
-pnpm relay repeat settings-localization --in language=en,ja,pt-BR --lens visual
+pnpm relay repeat settings-localization --in language=en,ja,pt-BR
 pnpm relay export-evidence <run-id>
 ```
 
-These commands resolve the sole connected device, sole App Map, and current revision. The first
-Record creates a default App Map; `--device` or `--map` is needed only when selection is ambiguous.
-Repeat runs one representative pilot and returns an opaque workflow reference and version; after
-review, continue the remaining values with
+These commands resolve the sole connected Device and current Test workspace. The first Record
+creates its backing topology automatically; `--device` or the advanced `--map` option is needed only
+when selection is ambiguous. Repeat runs one representative pilot and returns a continuation token
+and version; after review, continue the remaining values with
 `pnpm relay continue-repeat <workflow-ref> <expected-version> --confirm`. Raw operation invocation
 and the older command families remain available as an advanced surface.
 
@@ -175,8 +175,9 @@ owned by another host also fails closed until a supervised multi-host lease is a
 
 ## Evidence, privacy, and control
 
-Every consequential operation is attributed. A run freezes the selected App Map and Test revision,
-target, Variables, evidence policy, actions, assertions, frames, UI trees, logs, and failures.
+Every consequential operation is attributed. A Run freezes the selected Test and generated topology
+revision, Device, Repeat selection, evidence policy, actions, assertions, frames, UI trees, logs,
+and failures.
 Finalized artifacts are immutable. Network bodies, audio probes, and crash diagnostics stay off
 until a user enables them; redaction is applied before persistence and transport.
 

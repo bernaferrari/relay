@@ -1,6 +1,20 @@
 export { createRelayWorkflows } from "./relay-workflows.js";
 export { createRelayOutcomeJobs, type RelayOutcomeJobOptions } from "./outcome-jobs.js";
 export {
+  RepeatSpecResolutionError,
+  resolveRepeatSpec,
+  resolvedRepeatSelection,
+  type RepeatPublicErrorCode,
+} from "./repeat-spec.js";
+export {
+  AUTHORING_INTENT_YAML_SUFFIX,
+  authoringIntentYamlFilename,
+  bindAuthoringIntent,
+  formatAuthoringIntentYaml,
+  parseAuthoringIntentYaml,
+} from "./authoring-intent.js";
+export {
+  BOUND_TEST_YAML_SUFFIX,
   formatIntentDocumentYaml,
   intentDocumentReferences,
   intentDocumentYamlFilename,
@@ -11,6 +25,12 @@ export {
   intentDocumentFromScenarioTest,
 } from "./intent-document-scenario.js";
 export type { RelayInvokeClient } from "./operation-port.js";
+export type {
+  AuthoringIntentBindingDecision,
+  AuthoringIntentBindingResult,
+  AuthoringIntentDocument,
+  AuthoringIntentStep,
+} from "./authoring-intent.js";
 export type {
   AuthoringReview,
   AuthorTestDecision,
@@ -39,14 +59,18 @@ export type {
   ConnectTargetIntent,
   ConnectTargetResult,
   ContinueRepeatOutcomeIntent,
+  EditRecordingOutcomeIntent,
   ExportEvidenceIntent,
   FailureInspection,
   InspectFailureIntent,
+  ObserveTargetIntent,
   ProposeRepairIntent,
   RecordTestOutcomeIntent,
   RelayOutcomeJobs,
   RepeatTestOutcomeIntent,
   RunTestOutcomeIntent,
+  TargetObservation,
+  TargetObservationControl,
 } from "./types.js";
 export type {
   IntentCheckStep,

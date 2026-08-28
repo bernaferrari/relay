@@ -41,14 +41,14 @@ export const relayMcpServerInfo = {
 export const relayMcpInstructions = [
   "Use Relay tools only within the configured organization and project scope.",
   "Treat tool results as server-authoritative and preserve Relay actor identity.",
-  "Prefer outcome tools: connect, record, run, repeat, inspect, repair, and export evidence.",
-  "Omit appMapId and targetId when exactly one App Map and one ready device exist.",
-  "Never retry an outcome whose snapshot says the mutation outcome is unknown; inspect its opaque workflow reference.",
+  "Prefer outcome tools: connect, observe, record, run, repeat, inspect, repair, and export evidence.",
+  "Omit the advanced appMapId and targetId fields when exactly one Test workspace and one ready Device exist.",
+  "Never retry an outcome whose snapshot says the mutation outcome is unknown; inspect its continuation reference.",
   "Repeat runs one representative pilot first and requires explicit confirmation before remaining values.",
   "Repair tools create reviewable proposals; they never silently rewrite an approved Test.",
-  "For advanced target control, capture a screenshot before interacting and prefer identifier, then label, text, and point.",
+  "For advanced Device control, capture a screenshot before interacting and prefer identifier, then label, text, and point.",
   "A missing accessibility tree is not a failed session; pixels and point control remain usable.",
-  "Never take over a lease implicitly, and wait or cancel an active reserved Run before sending input.",
+  "Never displace another actor's Device control implicitly, and wait or cancel an active reserved Run before sending input.",
   "Read relay://control/gotchas before advanced interact, recover, snapshot, or launch operations.",
 ].join(" ");
 
@@ -335,6 +335,48 @@ function screenshotResult(result: unknown): CallToolResult {
   };
 }
 
+function targetObservationResult(result: unknown): CallToolResult {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return errorResult(
+      localError(
+        "target.observation.capture",
+        "invalid_target_observation",
+        "Relay returned an invalid target observation.",
+        502,
+      ),
+    );
+  }
+  const observation = result as Record<string, unknown>;
+  const pixels =
+    observation.pixels &&
+    typeof observation.pixels === "object" &&
+    !Array.isArray(observation.pixels)
+      ? (observation.pixels as Record<string, unknown>)
+      : undefined;
+  if (pixels?.status !== "captured") return normalResult(result);
+  if (pixels.presentationBase64 === undefined) return normalResult(result);
+  const bytes = decodePngBase64(pixels.presentationBase64);
+  if (pixels.mime !== "image/png" || !bytes) {
+    return errorResult(
+      localError(
+        "target.observation.capture",
+        "invalid_target_observation_pixels",
+        "Relay returned invalid PNG pixels for the target observation.",
+        502,
+      ),
+    );
+  }
+  const { presentationBase64: _transientPixels, ...pixelMetadata } = pixels;
+  const presented = { ...observation, pixels: pixelMetadata };
+  return {
+    content: [
+      { type: "text", text: JSON.stringify(presented) },
+      { type: "image", data: pixels.presentationBase64 as string, mimeType: "image/png" },
+    ],
+    structuredContent: { result: presented },
+  };
+}
+
 async function invokeRelayTool(
   descriptor: RelayMcpToolDescriptor,
   input: Record<string, unknown>,
@@ -463,6 +505,7 @@ function registerRelayOutcomeTool(
           actorId,
           signal: context.mcpReq.signal,
         });
+        if (descriptor.name === "relay_observe_target") return targetObservationResult(result);
         return normalResult(result);
       } catch (error) {
         return errorResult(relayMcpError(descriptor.name, error));

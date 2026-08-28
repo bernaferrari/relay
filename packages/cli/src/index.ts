@@ -299,6 +299,12 @@ async function runOutcomeCommand(input: {
   );
   const intent = parsed.intent;
   if (intent.kind === "connect-target") return jobs.connect(intent);
+  if (intent.kind === "observe-target") return jobs.observe(intent);
+  if (intent.kind === "edit-recording") {
+    const edited = await jobs.editRecording(intent);
+    assertOutcomeSucceeded(edited);
+    return edited;
+  }
   if (intent.kind === "continue-repeat") {
     const started = await jobs.continueRepeat(intent);
     const settled = parsed.config.wait

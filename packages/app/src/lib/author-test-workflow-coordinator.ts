@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import type { AuthoringInteraction } from "@relay/protocol";
+import type { AuthoringInteraction, AuthoringRecordingEdit } from "@relay/protocol";
 import type {
   AuthorTestDecision,
   AuthorTestIntent,
@@ -17,13 +17,7 @@ export type AuthorTestWorkflowAction =
     }
   | { action: "checkpoint"; label?: string }
   | { action: "stop" }
-  | { action: "trim"; fromMs?: number; toMs?: number; actionIds?: readonly string[] }
-  | { action: "reorder"; actionIds: readonly string[] }
-  | {
-      action: "replace";
-      actionId: string;
-      interaction: Extract<AuthorTestDecision, { action: "replace" }>["interaction"];
-    }
+  | { action: "edit"; edit: AuthoringRecordingEdit }
   | { action: "replay" }
   | {
       action: "approve";

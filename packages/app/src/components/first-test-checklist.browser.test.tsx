@@ -8,7 +8,7 @@ function targetReady() {
   return {
     kind: "ready" as const,
     title: "Test browser is ready",
-    detail: "Relay can now record or run an explicitly chosen test on this target.",
+    detail: "Relay can now record or run an explicitly chosen Test on this Device.",
   };
 }
 
@@ -18,7 +18,7 @@ function state(overrides: Partial<FirstTestChecklistState> = {}): FirstTestCheck
     target: {
       kind: "offline",
       title: "Relay is offline",
-      detail: "Reconnect Relay before choosing a target or starting a test.",
+      detail: "Reconnect Relay before choosing a Device or starting a Test.",
       actionLabel: "Reconnect Relay",
     },
     targetReady: false,
@@ -117,9 +117,9 @@ test("authoring choices are explicit and a starter never triggers a run", () => 
     }),
     { starterAvailable: true },
   );
-  button(view.root, "Check saved screen").click();
+  button(view.root, "Check starting state").click();
   button(view.root, "Start a blank Test").click();
-  button(view.root, "Record a path").click();
+  button(view.root, "Record Test").click();
   expect(view.calls.onCreateStarter).toHaveBeenNthCalledWith(1, "screen-check");
   expect(view.calls.onCreateStarter).toHaveBeenNthCalledWith(2, "blank");
   expect(view.calls.onRecord).toHaveBeenCalledTimes(1);
@@ -128,6 +128,7 @@ test("authoring choices are explicit and a starter never triggers a run", () => 
   expect(view.root.querySelector<HTMLInputElement>("input[type='file']")?.accept).toContain(
     ".yaml",
   );
+  expect(view.root.textContent).not.toMatch(/\b(?:App Map|Take|Variable|Combine|campaign|lease)\b/);
   view.dispose();
 });
 
@@ -144,7 +145,7 @@ test("persisted completion hands off to its report and records only an explicit 
       completedRun: { id: "report-1", status: "ok", writtenAt: 5 },
     }),
   );
-  button(view.root, "Open saved report").click();
+  button(view.root, "Open saved Report").click();
   button(view.root, "Export YAML").click();
   button(view.root, "Hide guide").click();
   expect(view.calls.onOpenReport).toHaveBeenCalledWith("report-1");

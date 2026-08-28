@@ -24,6 +24,7 @@ vi.mock("./app-map-test-workspace", () => ({
 }));
 
 import { StudioAuthoringWorkspace } from "./studio-authoring-workspace";
+import { createWorkspaceController } from "../lib/workspace-controller";
 
 test("Record test remains owned by the Test workspace", async () => {
   document.body.replaceChildren();
@@ -31,6 +32,8 @@ test("Record test remains owned by the Test workspace", async () => {
   document.body.append(root);
   const changeMode = vi.fn();
   const recordTest = vi.fn();
+  const workspaceController = createWorkspaceController();
+  workspaceController.connect({ recordTest });
   const dispose = render(
     () => (
       <StudioAuthoringWorkspace
@@ -43,7 +46,7 @@ test("Record test remains owned by the Test workspace", async () => {
         onOpenRun={() => undefined}
         onImportYaml={() => undefined}
         onExportYaml={() => undefined}
-        onRecordTest={recordTest}
+        workspaceController={workspaceController}
       />
     ),
     root,

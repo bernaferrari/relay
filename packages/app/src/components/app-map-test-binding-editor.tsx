@@ -291,7 +291,7 @@ function ModuleBinding(props: { map: AppMap; step: AppMapScenarioTestStep; onCha
     <EditorField
       label="Module"
       for={`binding-${props.step.id}`}
-      hint="Modules are reusable step groups saved on this App Map."
+      hint="Modules are reusable step groups saved with this App."
     >
       <select
         id={`binding-${props.step.id}`}

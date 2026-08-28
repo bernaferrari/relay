@@ -14,6 +14,7 @@ import { coreTargetOperationInputSchemas } from "./core-target-operation-input-s
 import { combineStartOperationInputSchemas } from "./combine-start-operation-input-schema.js";
 import {
   authoringInteraction,
+  authoringRecordingEdit,
   authoringTarget,
   connectionDestination,
   destination,
@@ -679,6 +680,7 @@ export const operationInputSchemas = {
   "authoring.session.create": z
     .object({
       appMapId: identifier("App Map identifier"),
+      testName: z.string().trim().min(1).optional(),
       target: authoringTarget,
       leaseId: identifier("Actor-owned target lease identifier"),
       expectedAppMapRevision: natural("Current App Map revision"),
@@ -711,6 +713,7 @@ export const operationInputSchemas = {
       interaction: authoringInteraction,
     })
     .strict(),
+  "authoring.take.edit": z.object({ ...sessionReference, edit: authoringRecordingEdit }).strict(),
   "authoring.take.replay": z.object(sessionReference).strict(),
   "authoring.session.commit": z
     .object({

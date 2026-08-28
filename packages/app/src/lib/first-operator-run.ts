@@ -203,7 +203,7 @@ export function deriveFirstOperatorRunState(input: {
       stage: "device",
       title: input.target.title,
       detail: input.target.detail,
-      actionLabel: "actionLabel" in input.target ? input.target.actionLabel : "Open device",
+      actionLabel: "actionLabel" in input.target ? input.target.actionLabel : "Open Device",
       action: "device",
     };
   }

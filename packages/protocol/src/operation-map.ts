@@ -13,6 +13,7 @@ import type {
   AuthoringSessionResponse,
   CommitAuthoringSessionInput,
   CreateAuthoringSessionInput,
+  EditAuthoringTakeInput,
   ReorderAuthoringTakeInput,
   ReplaceAuthoringActionInput,
   TrimAuthoringTakeInput,
@@ -55,6 +56,7 @@ import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import type { OperationFamilyMap } from "./operation-family-map.js";
 import type { OperationRecord, ProjectRole } from "./operation-contract.js";
 import type { ExecutionTargetRef } from "./execution-target.js";
+import type { TargetObservation } from "./target-observation.js";
 
 export type RedactionPolicyDto = {
   enabled: boolean;
@@ -450,6 +452,10 @@ type SpecificOperationMap = {
     };
     output: TargetScreenshotDto;
   };
+  "target.observation.capture": {
+    input: { serial: string };
+    output: TargetObservation;
+  };
   "step.run": { input: { step: RecipeStep; serial: string }; output: StepRunResult };
   "target.scroll-survey.capture": {
     input: { serial: string; maxScrolls?: number; restore?: boolean };
@@ -704,6 +710,10 @@ type SpecificOperationMap = {
   };
   "authoring.take.replace": {
     input: ReplaceAuthoringActionInput;
+    output: AuthoringSessionResponse;
+  };
+  "authoring.take.edit": {
+    input: EditAuthoringTakeInput;
     output: AuthoringSessionResponse;
   };
   "authoring.take.replay": {

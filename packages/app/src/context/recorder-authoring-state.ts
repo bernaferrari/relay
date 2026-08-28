@@ -63,6 +63,6 @@ export function createRecorderAuthoringState(input: {
       () => input.localArming() || restoring() || activeSession()?.state === "preparing",
     ),
     issue: createMemo(() => projectedRecordingIssue(activeSession(), input.workflowSnapshot())),
-    group: createMemo(() => activeSession()?.group ?? input.pendingGroup()),
+    group: createMemo(() => activeSession()?.testName ?? input.pendingGroup()),
   };
 }

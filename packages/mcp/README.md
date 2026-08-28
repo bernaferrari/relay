@@ -30,14 +30,14 @@ deliberately.
 
 ## Tool profiles
 
-Relay defaults to fourteen outcome tools that cover Connect, Record, Checkpoint, Review, Replay,
-Approve, Run, Repeat, failure inspection, repair proposals, and TracePack export. Agents do not need
-to select a profile for the normal workflow. Trusted orchestrators can opt into a lower-level profile
-with `--profile <name>` or `RELAY_MCP_PROFILE`.
+Relay defaults to sixteen outcome tools that cover Connect, Observe, Record, Checkpoint, Review,
+Replay, Approve, Run, Repeat, failure inspection, repair proposals, and TracePack export. Agents do
+not need to select a profile for the normal workflow. Trusted orchestrators can opt into a
+lower-level profile with `--profile <name>` or `RELAY_MCP_PROFILE`.
 
 | Profile   | Intended use                                                                              |
 | --------- | ----------------------------------------------------------------------------------------- |
-| `outcome` | Default Test workflow: connect, record, replay, run, repeat, inspect, repair, export      |
+| `outcome` | Default Test workflow: connect, observe, record, replay, run, repeat, inspect, export     |
 | `control` | Advanced direct target observation, input, recovery, and lease management                 |
 | `map`     | Discovery and observation proposals without full authoring edits                          |
 | `observe` | Read-only project, device, App Map, proposal, run, and evidence inspection                |
@@ -51,8 +51,8 @@ with `--profile <name>` or `RELAY_MCP_PROFILE`.
 | `proof`   | Verify one change: affected flows, runs, proof reports, repair proposals, and share links |
 | `full`    | Every canonical Relay operation; intended for trusted orchestration only                  |
 
-Outcome tools accept job-level intent and resolve the sole App Map, target, current revision, and
-unclaimed control lease internally. Advanced profile tools advertise and take canonical operation
+Outcome tools accept job-level intent and resolve the sole Test workspace, Device, current revision,
+and available control internally. Advanced profile tools advertise and take canonical operation
 fields directly. For example, capture a screenshot with
 `{"serial":"emulator-5554"}`. Wrapped or alternate input envelopes are rejected. Known operation
 contracts expose specific required fields, types, and enums; intentionally generic Relay operations
@@ -63,17 +63,19 @@ remain extensible objects and are still validated by the canonical protocol pars
 Run the Relay service first (`pnpm ensure:serve`), then use the default tools:
 
 1. `relay_connect_target`
-2. `relay_record_test` → `relay_record_action` / `relay_add_checkpoint`
-3. `relay_stop_recording` → `relay_replay_recording` → `relay_approve_recording`
-4. `relay_repeat_test` to run one pilot
-5. `relay_inspect_workflow`, then `relay_continue_repeat` with explicit confirmation
-6. `relay_inspect_failure` or `relay_export_evidence`
+2. `relay_observe_target`
+3. `relay_record_test` → `relay_record_action` / `relay_add_checkpoint`
+4. `relay_stop_recording` → `relay_edit_recording` → `relay_replay_recording`
+5. `relay_approve_recording`
+6. `relay_repeat_test` to run one pilot
+7. `relay_inspect_workflow`, then `relay_continue_repeat` with explicit confirmation
+8. `relay_inspect_failure` or `relay_export_evidence`
 
-Every workflow mutation carries the opaque workflow reference and expected version returned by the
+Every workflow mutation carries the continuation reference and expected version returned by the
 previous step. The language variant is documented in
 [Repeat a Test across languages](../../docs/LANGUAGE_SWEEP_LOOP.md).
 
-## Graph Test loop
+## Advanced graph Test loop
 
 Agents and people use the same scenario-only Test contract:
 
@@ -116,8 +118,8 @@ proposals on failure, and return a structured verdict with share links for revie
   lease, revision, confirmation, and idempotency rules.
 - `relay_target_screenshot_capture` returns the current Target screenshot as native MCP `image/png`
   content plus safe metadata. It never exposes Relay host paths.
-- Curated prompts guide safe app mapping, failed-connection repair, and Take review. Every prompt
-  requires the configured project and the relevant Target, App Map, session, connection, or Take IDs.
+- Curated advanced prompts guide topology exploration, failed-path repair, and recording review.
+  Every prompt requires the configured project and the relevant canonical resource IDs.
 - `relay_export_evidence` returns a content-addressed TracePack for one persisted Run. Offline
   analysis verifies every digest, reports incomplete evidence, and never claims that a future target
   transition will pass.

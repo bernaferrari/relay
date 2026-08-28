@@ -15,7 +15,7 @@ test("first operator run names honest device state and bind/run actions", () => 
         detail="Language × Settings tour has selected cells with no runtime profile."
         actionLabel="Open Combine"
         deviceLabel="Pixel 9 is ready"
-        deviceDetail="Relay can now record or run an explicitly chosen test on this target."
+        deviceDetail="Relay can now record or run an explicitly chosen Test on this Device."
         onAction={onAction}
         onDismiss={onDismiss}
       />

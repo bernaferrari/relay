@@ -122,16 +122,16 @@ export function firstTestTargetStatus(input: {
     return {
       kind: "offline",
       title: "Relay is offline",
-      detail: "Reconnect Relay before choosing a target or starting a test.",
+      detail: "Reconnect Relay before choosing a Device or starting a Test.",
       actionLabel: "Reconnect Relay",
     };
   }
   if (!input.target || input.readiness.kind === "choose-device") {
     return {
       kind: "choose-target",
-      title: "Choose a target",
-      detail: "Select a connected device or browser target to check before authoring.",
-      actionLabel: "Choose target",
+      title: "Choose a Device",
+      detail: "Select a connected Device or browser before recording a Test.",
+      actionLabel: "Choose Device",
     };
   }
   if (input.readiness.kind !== "ready") {
@@ -139,7 +139,7 @@ export function firstTestTargetStatus(input: {
       kind: "needs-attention",
       title: input.readiness.title,
       detail: input.readiness.detail,
-      actionLabel: input.readiness.kind === "screen-preparing" ? "Open device" : "Check target",
+      actionLabel: input.readiness.kind === "screen-preparing" ? "Open Device" : "Check Device",
     };
   }
   const targetName = presentTarget(input.target).displayName;
@@ -148,21 +148,21 @@ export function firstTestTargetStatus(input: {
       kind: "needs-control",
       title: `Open ${targetName}`,
       detail: input.controlIssue,
-      actionLabel: "Open device",
+      actionLabel: "Open Device",
     };
   }
   if (!input.hasControl) {
     return {
       kind: "needs-control",
       title: `Waiting for control of ${targetName}`,
-      detail: "Relay needs an active control session before it can record or run this test.",
-      actionLabel: "Open device",
+      detail: "Relay needs Device control before it can record or run this Test.",
+      actionLabel: "Open Device",
     };
   }
   return {
     kind: "ready",
     title: `${targetName} is ready`,
-    detail: "Relay can now record or run an explicitly chosen test on this target.",
+    detail: "Relay can now record or run an explicitly chosen Test on this Device.",
   };
 }
 
@@ -252,7 +252,7 @@ export function createFirstTestStarter(input: {
 
   const screen = input.screen;
   if (!screen?.identity) {
-    throw new Error("Save a screen with a stable identity before creating this check.");
+    throw new Error("Capture a starting state with a stable identity before creating this check.");
   }
   const screenName = screen.title.trim() || "saved screen";
   return {

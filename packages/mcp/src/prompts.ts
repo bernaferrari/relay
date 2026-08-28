@@ -23,8 +23,9 @@ export type RelayMcpPromptDescriptor = {
 export const relayMcpPrompts = [
   {
     name: relayMcpPromptNames.mapAppSafely,
-    title: "Map this app safely",
-    description: "Observe a Target and extend one App Map without exceeding explicit permission.",
+    title: "Explore this App safely",
+    description:
+      "Observe a Device and propose reviewed topology without exceeding explicit permission.",
     requiredOperationIds: [
       "target.snapshot.capture",
       "target.screenshot.capture",
@@ -37,8 +38,8 @@ export const relayMcpPrompts = [
   },
   {
     name: relayMcpPromptNames.repairFailedConnection,
-    title: "Repair this failed connection",
-    description: "Diagnose, replay, and repair one identified App Map connection.",
+    title: "Repair this failed path",
+    description: "Diagnose, replay, and repair one identified App path.",
     requiredOperationIds: [
       "target.screenshot.capture",
       "lease.list",
@@ -53,8 +54,8 @@ export const relayMcpPrompts = [
   },
   {
     name: relayMcpPromptNames.reviewTake,
-    title: "Review this Take",
-    description: "Inspect and refine one recorded Take before deciding whether to commit it.",
+    title: "Review this recording",
+    description: "Inspect and refine one recording before deciding whether to approve its Test.",
     requiredOperationIds: [
       "target.screenshot.capture",
       "lease.list",
@@ -69,8 +70,8 @@ export const relayMcpPrompts = [
   },
   {
     name: relayMcpPromptNames.planCombine,
-    title: "Plan this Combine",
-    description: "Turn a testing goal into one reviewable Variable × Test plan, then run it.",
+    title: "Plan this Repeat",
+    description: "Turn a testing goal into one reviewable Repeat plan, then run its pilot.",
     requiredOperationIds: [
       "target.screenshot.capture",
       "app-map.test.run",
@@ -90,9 +91,9 @@ export const relayMcpPrompts = [
   },
   {
     name: relayMcpPromptNames.authorGraphTest,
-    title: "Author this graph Test",
+    title: "Author this Test",
     description:
-      "Create or refine one graph-native Test, validate its compiled plan, run it once, and inspect evidence.",
+      "Create or refine one Test, validate its compiled plan, run it once, and inspect evidence.",
     requiredOperationIds: [
       "target.devices.list",
       "target.screenshot.capture",

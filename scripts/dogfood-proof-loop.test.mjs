@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   DogfoodError,
   PROOF_EXIT_CODES,
+  PROOF_LOOP_CLASSIFICATION,
   assertServerReachable,
   buildTestRunArgs,
   cliResultEnvelope,
@@ -20,6 +21,14 @@ import {
   unwrapCliResult,
   verdictToExitCode,
 } from "./dogfood-proof-loop.mjs";
+
+test("proof loop remains an internal compatibility harness until verify-change reaches parity", () => {
+  assert.deepEqual(PROOF_LOOP_CLASSIFICATION, {
+    kind: "internal-compatibility-harness",
+    retiresAfter:
+      "relay verify-change owns provenance, verdict, artifacts, sharing, and exit codes",
+  });
+});
 
 const PROOF_REPORT = {
   schemaVersion: 1,

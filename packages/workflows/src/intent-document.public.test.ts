@@ -10,7 +10,7 @@ import {
 
 const intent: IntentDocument = {
   schemaVersion: 1,
-  kind: "test-intent",
+  kind: "bound-test",
   name: "Data Controls localization",
   description: "One reviewed path, repeated across supported languages.",
   appMapId: "settings",
@@ -44,9 +44,11 @@ const intent: IntentDocument = {
   ],
   repeat: {
     strategy: "cartesian",
+    pilot: { mode: "specified", case: { language: "en", theme: "dark" } },
+    resume: "untouched",
     dimensions: [
-      { variableId: "language", values: "all" },
-      { variableId: "theme", values: ["light", "dark"] },
+      { id: "language", values: "all" },
+      { id: "theme", values: ["light", "dark"] },
     ],
   },
 };
@@ -54,7 +56,7 @@ const intent: IntentDocument = {
 test("IntentDocument YAML preserves ordered semantic steps and Repeat intent", () => {
   const yaml = formatIntentDocumentYaml(intent);
 
-  assert.match(yaml, /^schemaVersion: 1\nkind: test-intent\n/u);
+  assert.match(yaml, /^schemaVersion: 1\nkind: bound-test\n/u);
   assert.ok(yaml.indexOf("use: open-data-controls") < yaml.indexOf("checkpoint: data-controls"));
   assert.ok(yaml.indexOf("checkpoint: data-controls") < yaml.indexOf("check: no-clipping"));
   assert.deepEqual(parseIntentDocumentYaml(yaml), intent);
@@ -74,7 +76,10 @@ test("IntentDocument contains bindings, never an executable App Map or evidence"
     variableIds: ["language", "theme"],
   });
   assert.doesNotMatch(yaml, /selectors|evidence|screens:|connections:|runs:/u);
-  assert.equal(intentDocumentYamlFilename(intent.testId), "data-controls-localization.relay.yaml");
+  assert.equal(
+    intentDocumentYamlFilename(intent.testId),
+    "data-controls-localization.relay.test.yaml",
+  );
 });
 
 test("IntentDocument imports fail closed on unknown or ambiguous fields", () => {
@@ -99,16 +104,24 @@ test("IntentDocument imports fail closed on unknown or ambiguous fields", () => 
     /exactly one of use, path, checkpoint, or check/u,
   );
   assert.throws(
-    () => parseIntentDocumentYaml(valid.replace("kind: test-intent", "kind: app-map")),
-    /kind must be test-intent/u,
+    () => parseIntentDocumentYaml(valid.replace("kind: bound-test", "kind: app-map")),
+    /kind must be bound-test/u,
   );
+});
+
+test("IntentDocument migrates the former test-intent discriminator without changing meaning", () => {
+  const legacy = formatIntentDocumentYaml(intent).replace("kind: bound-test", "kind: test-intent");
+  const migrated = parseIntentDocumentYaml(legacy);
+
+  assert.equal(migrated.kind, "bound-test");
+  assert.match(formatIntentDocumentYaml(migrated), /^schemaVersion: 1\nkind: bound-test\n/u);
 });
 
 test("IntentDocument imports reject aliases, duplicate ids, and duplicate Repeat dimensions", () => {
   assert.throws(
     () =>
       parseIntentDocumentYaml(`schemaVersion: 1
-kind: test-intent
+kind: bound-test
 name: Anchored
 appMap: settings
 test: anchored
@@ -127,6 +140,6 @@ steps:
   assert.throws(() => formatIntentDocumentYaml(duplicateStep), /duplicate step id/u);
 
   const duplicateVariable = structuredClone(intent);
-  duplicateVariable.repeat!.dimensions[1]!.variableId = "language";
+  duplicateVariable.repeat!.dimensions[1]!.id = "language";
   assert.throws(() => formatIntentDocumentYaml(duplicateVariable), /duplicate repeat variable/u);
 });

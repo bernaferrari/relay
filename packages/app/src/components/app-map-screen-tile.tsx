@@ -1,5 +1,5 @@
 import { Show, createEffect, createSignal, on } from "solid-js";
-import type { Screen } from "@relay/protocol";
+import type { LogicalScrollSurface, Screen } from "@relay/protocol";
 import { screenConnectivityLabel } from "../lib/app-map-screen-directory";
 import { cn } from "../lib/cn";
 import { humanizeTitle } from "../lib/humanize-identifier";
@@ -21,7 +21,7 @@ export function AppMapScreenTile(props: {
   screen: Screen;
   image: string;
   orientationEvidence?: ScreenshotOrientationEvidence;
-  scrollSurface?: { viewports: readonly unknown[]; status: "completed" | "stopped" };
+  scrollSurface?: Pick<LogicalScrollSurface, "viewports" | "status" | "confidenceModel">;
   state?: AppMapScreenState;
   incoming: number;
   outgoing: number;
@@ -86,7 +86,10 @@ export function AppMapScreenTile(props: {
           {(surface) => (
             <AppMapScrollSurfaceBadge
               viewportCount={surface().viewports.length}
-              complete={surface().status === "completed"}
+              classification={
+                surface().confidenceModel?.classification ??
+                (surface().status === "completed" ? "complete" : "partial")
+              }
             />
           )}
         </Show>

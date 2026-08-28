@@ -52,6 +52,7 @@ export function createServerAuthoringController(input: {
 
   async function createAuthoringSession(inputValue: {
     appMapId: string;
+    testName?: string;
     target:
       | { kind: "device"; platform: "android" | "ios"; targetId: string }
       | { kind: "browser"; platform: "browser"; targetId: string };

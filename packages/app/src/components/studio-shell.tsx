@@ -54,12 +54,14 @@ import { StudioShellVariablesDialog } from "./studio-shell-variables-dialog";
 import { readRememberedDevicePanelPreference } from "../lib/studio-shell-preferences";
 import { createStudioBlankMapActions } from "../lib/studio-blank-map-actions";
 import { EmptyAppMap, MapLibrary, RunsWorkspace } from "./studio-shell-workspaces";
+import { createWorkspaceController } from "../lib/workspace-controller";
+import { connectLegacyStudioShellEvents } from "../lib/studio-shell-event-adapter";
 
-type ProductArea = MapLibraryArea;
 export function StudioShell(props: { onOpenSettings: (section?: SettingsSection) => void }) {
   const server = useServer();
   const recorder = useRecorder();
-  const [area, setArea] = createSignal<ProductArea>(
+  const workspaceController = createWorkspaceController();
+  const [area, setArea] = createSignal<MapLibraryArea>(
     normalizeMapLibraryArea(
       new URLSearchParams(window.location.search).has("run") ? "runs" : "maps",
     ),
@@ -126,13 +128,16 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     restoredInitialMap = true;
     server.setSelectedAppMapId(null);
   });
-  createEffect(() => {
-    const updateTargetSet = (event: Event) => {
-      const detail = (event as CustomEvent<{ targetSetId?: string }>).detail;
-      setActiveTargetSetId(detail?.targetSetId);
-    };
-    window.addEventListener("relay:target-set-state", updateTargetSet);
-    onCleanup(() => window.removeEventListener("relay:target-set-state", updateTargetSet));
+  onMount(() => {
+    const disconnect = connectLegacyStudioShellEvents(window, {
+      onTargetSet: setActiveTargetSetId,
+      onOpenSettings: props.onOpenSettings,
+      onOpenRun: (jobId) => {
+        if (jobId) server.setSelectedJobId(jobId);
+        setArea("runs");
+      },
+    });
+    onCleanup(disconnect);
   });
   const libraryArea = createMemo<MapLibraryArea>(() => area());
   let variablesDialog: HTMLElement | undefined;
@@ -151,45 +156,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (restoreFocus) queueMicrotask(() => libraryTrigger?.focus());
   };
   createEffect(() => {
-    const openSettings = (event: Event) => {
-      const detail = (event as CustomEvent<{ section?: SettingsSection }>).detail;
-      props.onOpenSettings(detail?.section);
-    };
-    window.addEventListener("relay:open-settings", openSettings);
-    onCleanup(() => window.removeEventListener("relay:open-settings", openSettings));
-  });
-  createEffect(() => {
-    const openRunHistory = (event: Event) => {
-      const detail = (event as CustomEvent<{ jobId?: string }>).detail;
-      if (detail?.jobId) server.setSelectedJobId(detail.jobId);
-      setArea("runs");
-    };
-    window.addEventListener("relay:open-run-history", openRunHistory);
-    onCleanup(() => window.removeEventListener("relay:open-run-history", openRunHistory));
-  });
-  createEffect(() => {
-    const updateDevicePanel = (event: Event) => {
-      const detail = (event as CustomEvent<{ open?: boolean }>).detail;
-      setDevicePanelOpen(detail?.open === true);
-    };
-    window.addEventListener("relay:device-panel-state", updateDevicePanel);
-    onCleanup(() => window.removeEventListener("relay:device-panel-state", updateDevicePanel));
-  });
-  createEffect(() => {
     try {
       localStorage.setItem("relay:device-panel-open", devicePanelOpen() ? "true" : "false");
     } catch {
       // A host can disable storage; panel state is still valid for this session.
     }
-  });
-  createEffect(() => {
-    const updateGraphRunReadiness = (event: Event) => {
-      setGraphRunReadiness((event as CustomEvent<GraphRunReadiness>).detail);
-    };
-    window.addEventListener("relay:graph-run-readiness", updateGraphRunReadiness);
-    onCleanup(() =>
-      window.removeEventListener("relay:graph-run-readiness", updateGraphRunReadiness),
-    );
   });
   createEffect(() => {
     if (!combineOpen()) return;
@@ -291,7 +262,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   createEffect(() => {
     if (!navOpen()) return;
     setSettingsOpen(false);
-    window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
+    workspaceController.execute({ kind: "device.hide" });
   });
   // An App Map is authored on its canvas. The live device remains available
   // inside that workspace, but merely connecting hardware must never change
@@ -331,11 +302,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   });
   const toggleDevicePanel = () => {
     setSettingsOpen(false);
-    if (selectedMap()) {
-      window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
-      return;
-    }
-    setDevicePanelOpen((open) => !open);
+    workspaceController.execute({ kind: "device.toggle" });
   };
   const toggleCombine = (combineId?: string, section?: CanvasCombineSection) => {
     const requestedId = combineId?.trim() || undefined;
@@ -348,7 +315,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     setSettingsOpen(false);
     setVariablesOpen(false);
     setNavOpen(false);
-    window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
+    workspaceController.execute({ kind: "device.hide" });
     setCombineFocusId(requestedId);
     setCombineFocusSection(undefined);
     setCombineOpen(true);
@@ -356,11 +323,31 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (section) queueMicrotask(() => setCombineFocusSection(section));
   };
   const openDevicePicker = () => {
-    if (area() === "maps" && !devicePanelOpen()) {
-      window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
+    if (area() === "maps" && authoringMap() && !devicePanelOpen()) {
+      workspaceController.execute({ kind: "device.show" });
     }
-    requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("relay:open-device-picker")));
+    requestAnimationFrame(() => workspaceController.execute({ kind: "target.choose" }));
   };
+  const disconnectWorkspace = workspaceController.connect({
+    toggleDevice: () => {
+      if (!authoringMap() || !selectedMap()) setDevicePanelOpen((open) => !open);
+    },
+    showDevice: () => {
+      setSettingsOpen(false);
+      if (!authoringMap() || !selectedMap()) setDevicePanelOpen(true);
+    },
+    hideDevice: () => {
+      if (!authoringMap() || !selectedMap()) setDevicePanelOpen(false);
+    },
+    deviceStateChanged: setDevicePanelOpen,
+    openRun: (runId) => {
+      if (runId) server.setSelectedJobId(runId);
+      setArea("runs");
+    },
+    runReadinessChanged: setGraphRunReadiness,
+    recordTest: () => !authoringMap() && void recorder.enterRecordMode(),
+  });
+  onCleanup(disconnectWorkspace);
   const graphPrimaryAction = createMemo(() =>
     appMapPrimaryAction({
       saveState: "saved",
@@ -383,19 +370,17 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     }
     if (action.kind === "view-run") {
       const active = server.activeJob();
-      window.dispatchEvent(
-        new CustomEvent("relay:open-run-history", { detail: { jobId: active?.id } }),
-      );
+      workspaceController.execute({ kind: "run.open", runId: active?.id });
       return;
     }
     if (action.kind === "record-path") {
       if (!devicePanelOpen()) toggleDevicePanel();
-      window.dispatchEvent(new CustomEvent("relay:record-path"));
+      workspaceController.execute({ kind: "test.record" });
       return;
     }
     if (action.kind === "capture-screen") {
       if (!devicePanelOpen()) toggleDevicePanel();
-      window.dispatchEvent(new CustomEvent("relay:capture-screen"));
+      workspaceController.execute({ kind: "screen.capture" });
       return;
     }
     if (action.kind === "keep-path") {
@@ -407,7 +392,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       toast(action.reason, "warning");
       return;
     }
-    window.dispatchEvent(new CustomEvent("relay:run-app-map"));
+    workspaceController.execute({ kind: "test.run" });
   };
   const mapItems = createMemo(() => {
     const needle = query().trim().toLowerCase();
@@ -665,13 +650,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           >
             <Show when={area() === "maps"}>
               <DevicePicker
+                workspaceController={workspaceController}
                 liveOpen={devicePanelOpen()}
                 targetSets={server.matrices()}
                 activeTargetSetId={activeTargetSetId()}
                 onOpenLive={toggleDevicePanel}
                 onChooseTargetSet={(targetSetId) => {
-                  if (targetSetId)
-                    window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
+                  if (targetSetId) workspaceController.execute({ kind: "device.hide" });
                   window.dispatchEvent(
                     new CustomEvent("relay:choose-target-set", { detail: { targetSetId } }),
                   );
@@ -693,9 +678,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   data-tip="Map properties"
                   onClick={() => {
                     const opening = !settingsOpen();
-                    if (opening) {
-                      window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
-                    }
+                    if (opening) workspaceController.execute({ kind: "device.hide" });
                     setSettingsOpen(opening);
                   }}
                 >
@@ -749,7 +732,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       class={cn("hidden max-[760px]:flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
-                        window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
+                        workspaceController.execute({ kind: "device.hide" });
                         setSettingsOpen(true);
                       }}
                     >
@@ -920,6 +903,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 >
                   <div class={cn(shellMapWrap, "flex flex-1")}>
                     <StudioAuthoringWorkspace
+                      workspaceController={workspaceController}
                       mode={mapMode()}
                       navigatorOpen={navOpen()}
                       onMode={setMapMode}
@@ -932,7 +916,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       }}
                       onImportYaml={importTestYaml}
                       onExportYaml={() => void exportSelected()}
-                      onRecordTest={() => void recorder.enterRecordMode()}
                     />
                   </div>
                   <Show when={settingsOpen()}>
@@ -950,9 +933,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     collapsed={combineCollapsed()}
                     onOpenDevice={() => {
                       setCombineCollapsed(true);
-                      if (!devicePanelOpen()) {
-                        window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
-                      }
+                      if (!devicePanelOpen()) workspaceController.execute({ kind: "device.show" });
                     }}
                     onClose={() => {
                       setCombineOpen(false);

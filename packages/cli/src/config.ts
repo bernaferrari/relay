@@ -91,6 +91,10 @@ const valueFlags = new Set([
   "--dir",
   "--max-scrolls",
   "--in",
+  "--each",
+  "--strategy",
+  "--pilot",
+  "--resume",
   "--lens",
   "--cell",
   "--target",
@@ -117,7 +121,7 @@ const switchFlags = new Set([
   "--all",
   "--no-restore",
 ]);
-const repeatableValueFlags = new Set(["--in"]);
+const repeatableValueFlags = new Set(["--in", "--each"]);
 
 const reviewedOriginConfirmationOperations = new Set([
   "app-map.scroll-surface.origin.review",
@@ -522,7 +526,16 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     }
     // These flags only exist on friendly commands; dropping them silently here
     // would make an agent believe a Combine lens/cell was applied when it was not.
-    for (const friendlyOnly of ["--in", "--lens", "--cell", "--all"] as const) {
+    for (const friendlyOnly of [
+      "--in",
+      "--each",
+      "--strategy",
+      "--pilot",
+      "--resume",
+      "--lens",
+      "--cell",
+      "--all",
+    ] as const) {
       if (tokens.values.has(friendlyOnly) || tokens.switches.has(friendlyOnly)) {
         throw new UsageError(
           `${friendlyOnly} is only supported by friendly commands, not 'operation invoke'. Put it in the operation --input JSON.`,
@@ -531,15 +544,6 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     }
     if (rawInput === undefined && inputFile === undefined) {
       throw new UsageError("operation invoke requires --input <json> or --input-file <path>");
-    }
-    // These flags only exist on friendly commands; dropping them silently here
-    // would make an agent believe a Combine lens/cell was applied when it was not.
-    for (const friendlyOnly of ["--in", "--lens", "--cell", "--all"] as const) {
-      if (tokens.values.has(friendlyOnly) || tokens.switches.has(friendlyOnly)) {
-        throw new UsageError(
-          `${friendlyOnly} is only supported by friendly commands, not 'operation invoke'. Put it in the operation --input JSON.`,
-        );
-      }
     }
     const input = applySurveyRestore(
       operationId,
@@ -646,6 +650,11 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   }
   if (tokens.values.has("--device") || tokens.values.has("--map")) {
     throw new UsageError("--device and --map are only valid on outcome commands");
+  }
+  for (const outcomeOnly of ["--each", "--strategy", "--pilot", "--resume"] as const) {
+    if (tokens.values.has(outcomeOnly)) {
+      throw new UsageError(`${outcomeOnly} is only valid on the outcome repeat command`);
+    }
   }
 
   const mark = tokens.values.get("--mark");

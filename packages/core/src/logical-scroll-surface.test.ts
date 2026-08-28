@@ -273,6 +273,24 @@ test("persists every raw viewport and attaches only durable evidence URIs", asyn
     assert.equal(surface.diagnosticViewports?.length, 1);
     assert.equal(surface.composite?.height, 6);
     assert.equal(surface.mergedTree.nodeCount, 2);
+    assert.deepEqual(surface.confidenceModel?.coverage, [
+      {
+        startY: 0,
+        endY: 6,
+        state: "captured",
+        confidence: 1,
+        sourceViewportIndexes: [0, 1],
+      },
+      {
+        startY: 6,
+        endY: null,
+        state: "not-reached",
+        confidence: 1,
+        sourceViewportIndexes: [],
+      },
+    ]);
+    assert.equal(surface.confidenceModel?.classification, "partial");
+    assert.equal(surface.confidenceModel?.mergeAnchors[0]?.basis, "capture-offset");
     assert.deepEqual(surface.semanticIndex?.anchors, [
       {
         order: 0,
@@ -300,6 +318,7 @@ test("persists every raw viewport and attaches only durable evidence URIs", asyn
     assert.equal(parsedManifest.surface.viewports.length, 2);
     assert.equal(parsedManifest.surface.diagnosticViewports.length, 1);
     assert.deepEqual(parsedManifest.surface.semanticIndex, surface.semanticIndex);
+    assert.deepEqual(parsedManifest.surface.confidenceModel, surface.confidenceModel);
 
     const attached = attachAppMapScrollSurface(
       mapFixture(),
@@ -345,6 +364,14 @@ test("persists every raw viewport and attaches only durable evidence URIs", asyn
       updatedAt: 20,
     };
     assert.doesNotThrow(() => validateAppMap(attached));
+    const alteredConfidence = structuredClone(attached);
+    alteredConfidence.screenVariants[
+      "settings-ja"
+    ]!.scrollSurfaces![0]!.confidenceModel!.capturedPixels = 999;
+    assert.throws(
+      () => validateAppMap(alteredConfidence),
+      /capturedPixels must match raw viewports/u,
+    );
     attached.tests!["settings-surface"]!.surfaceBindings![0]!.baselineCaptureId = "missing";
     assert.throws(() => validateAppMap(attached), /missing logical surface baseline/u);
   } finally {

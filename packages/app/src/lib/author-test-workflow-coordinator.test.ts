@@ -213,7 +213,7 @@ test("a stale workflow problem is never reported as a proved mutation", async ()
 
 test("a failed replay remains editable and can be replayed again explicitly", async () => {
   const failedReplay: AuthorTestSnapshot = {
-    ...snapshot("reviewing", "v2", ["inspect", "trim", "replace", "replay", "discard"]),
+    ...snapshot("reviewing", "v2", ["inspect", "edit", "replay", "discard"]),
     problems: [
       {
         code: "operation-unavailable",
@@ -232,7 +232,7 @@ test("a failed replay remains editable and can be replayed again explicitly", as
     advance: async (decision: WorkflowDecision) => {
       decisions.push(decision);
       canonical =
-        decision.action === "trim"
+        decision.action === "edit"
           ? { ...failedReplay, version: "v3" }
           : snapshot("reviewing", "v4", ["inspect", "approve", "replay", "discard"]);
       return canonical;
@@ -244,13 +244,16 @@ test("a failed replay remains editable and can be replayed again explicitly", as
   });
   await coordinator.start(intent);
 
-  await coordinator.proved("session", { action: "trim", actionIds: [] });
+  await coordinator.proved("session", {
+    action: "edit",
+    edit: { kind: "remove", actionIds: ["noise"] },
+  });
   const replayed = await coordinator.advance("session", { action: "replay" });
 
   assert.equal(replayed?.version, "v4");
   assert.deepEqual(
     decisions.map((decision) => decision.action),
-    ["trim", "replay"],
+    ["edit", "replay"],
   );
 });
 

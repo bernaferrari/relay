@@ -216,6 +216,7 @@ export const appMapAuthoringOperationSchemas = {
   "authoring.session.begin": z
     .object({
       appMapId: identifier("App Map identifier"),
+      testName: z.string().trim().min(1).optional(),
       target: authoringTarget,
       leaseId: identifier("Actor-owned target lease identifier"),
       expectedAppMapRevision: natural("Current App Map revision"),

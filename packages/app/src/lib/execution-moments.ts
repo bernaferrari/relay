@@ -70,7 +70,7 @@ export function executionStateDetail(state: ExecutionMomentState): string {
     case "cancelled":
       return "This run was stopped before it finished.";
     default:
-      return "Choose a target, then run the test.";
+      return "Choose a Device, then run the Test.";
   }
 }
 

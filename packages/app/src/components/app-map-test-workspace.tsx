@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, on } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 import type { Proposal } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
@@ -38,6 +38,8 @@ import {
   TestSwitcher,
   TestWorkspaceBar,
 } from "./app-map-test-workspace-chrome";
+import type { WorkspaceController } from "../lib/workspace-controller";
+import { captureTestStartScreen } from "../lib/capture-test-start-screen";
 
 export function AppMapTestWorkspace(props: {
   testId?: string;
@@ -46,6 +48,7 @@ export function AppMapTestWorkspace(props: {
   onChooseTarget?: () => void;
   onOpenTarget?: () => void;
   onRecord?: () => void;
+  workspaceController?: WorkspaceController;
 }) {
   const server = useServer();
   const recorder = useRecorder();
@@ -64,6 +67,32 @@ export function AppMapTestWorkspace(props: {
     steps: testRailPresentation("steps", mode(), railOpen().steps),
     device: testRailPresentation("device", mode(), railOpen().device),
   }));
+  const disconnectWorkspace = props.workspaceController?.connect({
+    toggleDevice: () => setRailOverride((current) => ({ ...current, device: !railOpen().device })),
+    showDevice: () => setRailOverride((current) => ({ ...current, device: true })),
+    hideDevice: () => setRailOverride((current) => ({ ...current, device: false })),
+    captureScreen: () =>
+      void captureTestStartScreen({
+        appMapId: appMap()?.id,
+        capture: recorder.captureMapScreen,
+        refresh: server.refreshAppMaps,
+      }),
+  });
+  onCleanup(() => disconnectWorkspace?.());
+
+  function chooseTarget(): void {
+    if (!props.workspaceController?.execute({ kind: "target.choose" })) props.onChooseTarget?.();
+  }
+
+  function showDevice(): void {
+    if (!props.workspaceController?.execute({ kind: "device.show" })) props.onOpenTarget?.();
+  }
+
+  function openRun(runId: string): void {
+    if (!props.workspaceController?.execute({ kind: "run.open", runId })) {
+      props.onOpenRun?.(runId);
+    }
+  }
 
   createEffect(() => {
     if (
@@ -111,6 +140,7 @@ export function AppMapTestWorkspace(props: {
     restoreDeletedTest,
     awaitPendingSaves,
   } = testDocument;
+
   const { proposalBusyId, proposalError, decideProposal, revertProposal } = useAppMapProposalReview(
     () => appMap() ?? undefined,
   );
@@ -258,7 +288,7 @@ export function AppMapTestWorkspace(props: {
       queueMicrotask(() => document.getElementById("test-offline-preflight")?.focus());
       return;
     }
-    if (!selectedDevice()) window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+    if (!selectedDevice()) chooseTarget();
   }
 
   const runBlockerActionLabel = createMemo(() => {
@@ -331,7 +361,7 @@ export function AppMapTestWorkspace(props: {
                 test={test()}
                 selectedStepId={selectedStepId()}
                 compiledPlan={testRun.plan()}
-                onOpenRun={props.onOpenRun}
+                onOpenRun={openRun}
                 onSelectStep={setSelectedStepId}
                 onClose={() => toggleRail("device")}
               />
@@ -342,7 +372,7 @@ export function AppMapTestWorkspace(props: {
         <AppMapTestRecordingPanel
           appMap={appMap()!}
           onTestCreated={(testId) => selectTest(testId)}
-          onOpenTargets={props.onChooseTarget ?? (() => undefined)}
+          onOpenTargets={chooseTarget}
         />
       </Show>
     );
@@ -470,7 +500,7 @@ export function AppMapTestWorkspace(props: {
             onCancel={() => void testRun.cancel()}
             onOpenResult={() => {
               const id = testRun.consumeResult();
-              if (id) props.onOpenRun?.(id);
+              if (id) openRun(id);
             }}
             onCheckOffline={() => void testRun.checkOffline()}
             checkingOffline={testRun.preflightBusy()}
@@ -598,9 +628,9 @@ export function AppMapTestWorkspace(props: {
                       map={appMap()!}
                       test={test()}
                       ready={saveState() === "saved"}
-                      onChooseTarget={props.onChooseTarget}
-                      onOpenTarget={props.onOpenTarget}
-                      onOpenRun={props.onOpenRun}
+                      onChooseTarget={chooseTarget}
+                      onOpenTarget={showDevice}
+                      onOpenRun={openRun}
                     />
                   )}
                 </Show>

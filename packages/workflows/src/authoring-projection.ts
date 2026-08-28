@@ -15,11 +15,34 @@ function fingerprint(value: string): string {
   return (hash >>> 0).toString(36);
 }
 
+function semanticIntent(
+  action: NonNullable<AuthoringSession["take"]>["revisions"][number]["actions"][number],
+): string {
+  if (action.label?.trim()) return action.label.trim();
+  const step = action.steps[0] as unknown as Record<string, unknown> | undefined;
+  if (action.steps.length !== 1 || !step) return `${action.steps.length} recorded steps`;
+  if (step.kind === "tap") {
+    const target = step.target as Record<string, unknown> | undefined;
+    const name = [target?.label, target?.identifier, target?.text].find(
+      (value): value is string => typeof value === "string" && Boolean(value.trim()),
+    );
+    return name ? `Tap “${name.trim()}”` : "Tap target";
+  }
+  if (step.kind === "type") return "Type text";
+  if (step.kind === "sleep") return `Wait ${String(step.ms ?? "")} ms`.trim();
+  if (step.kind === "screenshot") return "Checkpoint";
+  if (step.kind === "launch") return "Open app";
+  if (step.kind === "swipe") return "Swipe";
+  if (step.kind === "key") return `Press ${String(step.key ?? "key")}`;
+  return "Recorded action";
+}
+
 export function workflowVersionForAuthoringSession(session: AuthoringSession): string {
   const latestReplay = session.take?.replayAttempts.at(-1);
   return `author-v1-${fingerprint(
     JSON.stringify([
       session.id,
+      session.testName,
       session.state,
       session.updatedAt,
       session.take?.id,
@@ -77,6 +100,7 @@ function reviewForSession(session: AuthoringSession): AuthorTestSnapshot["review
     actionCount: revision.actions.length,
     actions: revision.actions.map((action) => ({
       id: action.id,
+      intent: semanticIntent(action),
       ...(action.label ? { label: action.label } : {}),
       stepCount: action.steps.length,
       ...(action.proofStatus ? { proofStatus: action.proofStatus } : {}),
@@ -105,9 +129,7 @@ function allowedActions(
   if (session.state === "reviewing" && !session.archive) {
     return [
       "inspect",
-      "trim",
-      "reorder",
-      "replace",
+      "edit",
       "replay",
       ...(review && !review.replayRequired ? (["approve"] as const) : []),
       "discard",

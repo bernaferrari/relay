@@ -6,6 +6,7 @@ import type {
 import type { ExecutionTargetRef, LocalAgentDeviceExecutionTargetRef } from "./execution-target.js";
 import type { SourceRevision } from "./source-revision.js";
 import type { AuthoringTarget } from "./authoring.js";
+import type { RepeatSpec, ResolvedRepeatSpec } from "./repeat-spec.js";
 
 /**
  * Shared, serialized local-deadline request. Every selected target ×
@@ -95,7 +96,9 @@ export type RepeatCampaignExecutionIdentity = {
   testPlanDigest: string;
   rootRecipeId: string;
   target: AuthoringTarget;
-  over: { dimensionId: string; valueIds: string[] };
+  /** Original user-facing request plus the exact ids resolved before control. */
+  spec: RepeatSpec;
+  resolved: ResolvedRepeatSpec;
   evidence: "visual" | "smoke";
   sourceRevision?: SourceRevision;
   capture?: { fullSurfaceScreenIds: string[] };

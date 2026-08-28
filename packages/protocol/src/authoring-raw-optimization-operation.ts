@@ -6,6 +6,7 @@ import {
 import type { OperationDefinition, RuntimeParser } from "./operation-contract.js";
 import { operationInputContract } from "./operation-builders.js";
 import { objectParser } from "./operation-parser-primitives.js";
+export { authoringTakeEditOperationDefinition } from "./authoring-take-edit-operation.js";
 
 const input = objectParser<{ sessionId: string }>(
   "authoring raw optimization input",

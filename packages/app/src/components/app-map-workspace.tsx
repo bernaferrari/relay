@@ -72,8 +72,9 @@ import { useAppMapWorkspaceShell } from "../lib/use-app-map-workspace-shell";
 import { targetChromeName } from "../lib/target-presentation";
 import { mappedCompanionStatus } from "../lib/mapped-companion-status";
 import { useAppMapWorkspaceRun } from "../lib/use-app-map-workspace-run";
-
+import type { WorkspaceController } from "../lib/workspace-controller";
 export function AppMapWorkspace(props: {
+  workspaceController?: WorkspaceController;
   /** Which of the shell's three canvas modes is showing. The shell owns it so
    * the map has exactly one mode switcher instead of two stacked strips. */
   view: MapCanvasView;
@@ -530,6 +531,7 @@ export function AppMapWorkspace(props: {
     setRenamingNodeId,
   });
   useAppMapWorkspaceEvents({
+    workspaceController: props.workspaceController,
     captureOpen,
     runReadiness: graphRunReadiness,
     canvasTool,
@@ -926,7 +928,6 @@ export function AppMapWorkspace(props: {
                         if (node) removeScreen(node);
                       }}
                       onClose={() => setScreenInspectorOpen(false)}
-                      onOpenCombine={props.onOpenCombine}
                     />
                   }
                 >
@@ -1075,9 +1076,7 @@ export function AppMapWorkspace(props: {
           onOpenRun={() => {
             const job = liveRunJob();
             if (!job) return;
-            window.dispatchEvent(
-              new CustomEvent("relay:open-run-history", { detail: { jobId: job.id } }),
-            );
+            props.onOpenRun?.(job.id);
           }}
           onClose={closeCapturePanel}
           onOpenTargets={props.onOpenTargets}

@@ -265,7 +265,7 @@ test("source import fails closed instead of discarding unsupported semantic fiel
         document: {
           ...document,
           repeat: {
-            dimensions: [{ variableId: "language", values: ["en", "pt-BR"] }],
+            dimensions: [{ id: "language", values: ["en", "pt-BR"] }],
           },
         },
       }),

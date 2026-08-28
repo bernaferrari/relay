@@ -12,7 +12,43 @@ export function LogicalScrollSurfaceViewer(props: {
   regenerating?: boolean;
   onRegenerate?: () => void;
 }) {
-  const complete = () => props.surface.status === "completed";
+  const legacyClassification = () => {
+    if (props.surface.status === "completed" && props.surface.reason === "end-of-content") {
+      return "complete" as const;
+    }
+    if (
+      ["inspection-unavailable", "missing-page-anchor", "dimension-changed"].includes(
+        props.surface.reason,
+      )
+    ) {
+      return "unsupported" as const;
+    }
+    if (
+      props.surface.reason === "seam-ambiguous" &&
+      (props.surface.diagnosticViewports?.length ?? 0) > 0
+    ) {
+      return "dynamic" as const;
+    }
+    return "partial" as const;
+  };
+  const classification = () =>
+    props.surface.confidenceModel?.classification ?? legacyClassification();
+  const complete = () => classification() === "complete";
+  const confidence = () => props.surface.confidenceModel?.confidence;
+  const capturedPixels = () =>
+    props.surface.confidenceModel?.capturedPixels ??
+    props.surface.composite?.height ??
+    Math.max(...props.surface.viewports.map((viewport) => viewport.offsetY + viewport.height));
+  const statusLabel = () =>
+    ({ complete: "Complete", partial: "Partial", dynamic: "Dynamic", unsupported: "Unsupported" })[
+      classification()
+    ];
+  const statusTone = () =>
+    classification() === "complete"
+      ? "bg-[color-mix(in_srgb,var(--icon-success-base)_13%,transparent)] text-[var(--icon-success-base)]"
+      : classification() === "unsupported"
+        ? "bg-[color-mix(in_srgb,var(--icon-critical-base)_12%,transparent)] text-[var(--icon-critical-base)]"
+        : "bg-[color-mix(in_srgb,var(--icon-warning-base)_13%,transparent)] text-[var(--icon-warning-base)]";
   const viewportLabel = () =>
     `${props.surface.viewports.length} source viewport${props.surface.viewports.length === 1 ? "" : "s"}`;
 
@@ -34,13 +70,11 @@ export function LogicalScrollSurfaceViewer(props: {
             <span
               class={cn(
                 "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-micro font-medium",
-                complete()
-                  ? "bg-[color-mix(in_srgb,var(--icon-success-base)_13%,transparent)] text-[var(--icon-success-base)]"
-                  : "bg-[color-mix(in_srgb,var(--icon-warning-base)_13%,transparent)] text-[var(--icon-warning-base)]",
+                statusTone(),
               )}
             >
               <i class="size-1 rounded-full bg-current" aria-hidden="true" />
-              {complete() ? "Complete" : "Partial"}
+              {statusLabel()}
             </span>
           </div>
           <p class="m-0 mt-0.5 text-micro/[1.4] text-[var(--text-weak)]">
@@ -48,6 +82,85 @@ export function LogicalScrollSurfaceViewer(props: {
           </p>
         </div>
       </header>
+
+      <div class="grid gap-1.5 rounded-xl border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-2.5">
+        <div class="flex items-center justify-between gap-3 text-micro/[1.35]">
+          <span class="font-medium text-[var(--text-base)]">
+            {capturedPixels().toLocaleString()} px captured
+          </span>
+          <Show when={confidence() !== undefined}>
+            <span class="font-mono tabular-nums text-[var(--text-weak)]">
+              {Math.round(confidence()! * 100)}% surface confidence
+            </span>
+          </Show>
+        </div>
+        <div
+          class="flex h-2 overflow-hidden rounded-full bg-[var(--background-deep)]"
+          role="img"
+          aria-label={
+            complete()
+              ? `${capturedPixels()} pixels captured; document end reached`
+              : `${capturedPixels()} pixels captured; remaining document not reached`
+          }
+          data-scroll-surface-coverage
+        >
+          <span
+            class={cn(
+              "h-full min-w-0",
+              complete()
+                ? "w-full bg-[var(--text-interactive-base)]"
+                : classification() === "dynamic"
+                  ? "w-3/4 bg-[var(--icon-warning-base)]"
+                  : "w-3/4 bg-[var(--text-interactive-base)]",
+            )}
+            aria-hidden="true"
+          />
+          <Show when={!complete()}>
+            <span
+              class="h-full min-w-6 flex-1 border-l border-dashed border-[var(--border-strong-base)] bg-[repeating-linear-gradient(135deg,transparent_0_4px,color-mix(in_srgb,var(--text-weaker)_18%,transparent)_4px_6px)]"
+              aria-hidden="true"
+              data-scroll-surface-not-reached
+            />
+          </Show>
+        </div>
+        <div class="flex items-center justify-between gap-3 text-micro/[1.35] text-[var(--text-weaker)]">
+          <span>Captured from immutable viewports</span>
+          <span>{complete() ? "Document end reached" : "Remaining extent unknown"}</span>
+        </div>
+      </div>
+
+      <Show when={props.surface.confidenceModel}>
+        {(model) => (
+          <div class="flex flex-wrap gap-1.5 text-micro text-[var(--text-weak)]">
+            <Show when={model().mergeAnchors.length > 0}>
+              <span class="rounded-md bg-[var(--surface-base)] px-1.5 py-1">
+                {model().mergeAnchors.length} merge anchor
+                {model().mergeAnchors.length === 1 ? "" : "s"}
+              </span>
+            </Show>
+            <Show when={model().regions.some((region) => region.kind === "sticky")}>
+              <span class="rounded-md bg-[var(--surface-base)] px-1.5 py-1">
+                {model().regions.filter((region) => region.kind === "sticky").length} sticky
+                {model().regions.filter((region) => region.kind === "sticky").length === 1
+                  ? " region"
+                  : " regions"}
+              </span>
+            </Show>
+            <Show when={model().regions.some((region) => region.kind === "dynamic")}>
+              <span class="rounded-md bg-[var(--surface-base)] px-1.5 py-1">
+                Dynamic region retained for review
+              </span>
+            </Show>
+            <Show when={model().scrollContainer}>
+              {(container) => (
+                <span class="rounded-md bg-[var(--surface-base)] px-1.5 py-1">
+                  {container().nested ? "Nested" : "Primary"} scroll container identified
+                </span>
+              )}
+            </Show>
+          </div>
+        )}
+      </Show>
 
       <Show
         when={props.surface.composite}
@@ -188,7 +301,7 @@ export function LogicalScrollSurfaceViewer(props: {
           </div>
           <Show when={!complete()}>
             <p class="m-0 rounded-lg bg-[color-mix(in_srgb,var(--icon-warning-base)_10%,transparent)] px-2 py-1.5 text-micro/[1.4] text-[var(--text-base)]">
-              Capture stopped: {props.surface.reason.replaceAll("-", " ")}.
+              Capture stopped: {props.surface.reason.replaceAll("-", " ")}. {props.surface.message}
             </p>
           </Show>
         </div>

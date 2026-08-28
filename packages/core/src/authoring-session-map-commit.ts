@@ -64,7 +64,9 @@ export async function commitAuthoringSessionMap(input: {
         evidenceUrisById: Object.fromEntries(evidence.map((item) => [item.id, item.uri])),
         evidenceKindsById: Object.fromEntries(evidence.map((item) => [item.id, item.kind])),
         evidenceById: Object.fromEntries(evidence.map((item) => [item.id, item])),
-        ...(session.commitTestId ? { testId: session.commitTestId } : {}),
+        ...(session.commitTestId
+          ? { testId: session.commitTestId, testName: session.testName! }
+          : {}),
       },
       {
         expectedRevision: session.expectedAppMapRevision,

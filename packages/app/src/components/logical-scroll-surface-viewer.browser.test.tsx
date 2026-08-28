@@ -69,6 +69,50 @@ const surface: LogicalScrollSurface = {
     mime: "application/json",
     nodeCount: 42,
   },
+  confidenceModel: {
+    schemaVersion: 1,
+    classification: "complete",
+    confidence: 0.94,
+    capturedPixels: 320,
+    documentExtent: "known",
+    coverage: [
+      {
+        startY: 0,
+        endY: 320,
+        state: "captured",
+        confidence: 1,
+        sourceViewportIndexes: [0, 1],
+      },
+    ],
+    mergeAnchors: [
+      {
+        fromViewportIndex: 0,
+        toViewportIndex: 1,
+        documentY: 120,
+        shiftY: 120,
+        confidence: 0.94,
+        basis: "semantic-or-visual",
+      },
+    ],
+    regions: [
+      {
+        kind: "sticky",
+        coordinateSpace: "viewport",
+        rect: { x: 0, y: 0, width: 100, height: 24 },
+        confidence: 1,
+        sourceViewportIndexes: [0, 1],
+        target: { identifier: "toolbar" },
+        reason: "Stable toolbar",
+      },
+    ],
+    scrollContainer: {
+      target: { identifier: "settings-list" },
+      role: "list",
+      nested: true,
+      confidence: 1,
+      sourceViewportIndexes: [0, 1],
+    },
+  },
   manifest: { ...evidence("manifest", "application/json"), mime: "application/json" },
 };
 
@@ -93,6 +137,12 @@ test("shows one full-page screen first and keeps source evidence collapsed", () 
   expect(root.querySelector("[data-scroll-surface-composite]")).not.toBeNull();
   expect(root.querySelectorAll("[data-scroll-surface-boundary]")).toHaveLength(1);
   expect(root.textContent).toContain("One mapped screen · 2 source viewports");
+  expect(root.textContent).toContain("320 px captured");
+  expect(root.textContent).toContain("94% surface confidence");
+  expect(root.textContent).toContain("1 merge anchor");
+  expect(root.textContent).toContain("1 sticky region");
+  expect(root.textContent).toContain("Nested scroll container identified");
+  expect(root.querySelector("[data-scroll-surface-not-reached]")).toBeNull();
 
   const evidenceDisclosure = root.querySelector<HTMLDetailsElement>(
     "[data-scroll-surface-evidence]",
@@ -124,6 +174,39 @@ test("does not claim a stitched page when seam detection stopped", () => {
     status: "stopped",
     reason: "seam-ambiguous",
     message: "Raw viewports retained; no visual seam was claimed.",
+    confidenceModel: {
+      ...surface.confidenceModel!,
+      classification: "dynamic",
+      confidence: 0.4,
+      documentExtent: "open",
+      coverage: [
+        {
+          startY: 0,
+          endY: 320,
+          state: "dynamic",
+          confidence: 0.4,
+          sourceViewportIndexes: [0, 1],
+        },
+        {
+          startY: 320,
+          endY: null,
+          state: "not-reached",
+          confidence: 1,
+          sourceViewportIndexes: [],
+        },
+      ],
+      regions: [
+        ...surface.confidenceModel!.regions,
+        {
+          kind: "dynamic",
+          coordinateSpace: "viewport",
+          rect: { x: 0, y: 0, width: 100, height: 200 },
+          confidence: 0.7,
+          sourceViewportIndexes: [1],
+          reason: "Unstable candidate",
+        },
+      ],
+    },
   };
   const dispose = render(
     () => (
@@ -135,7 +218,10 @@ test("does not claim a stitched page when seam detection stopped", () => {
     root,
   );
 
-  expect(root.textContent).toContain("Partial");
+  expect(root.textContent).toContain("Dynamic");
+  expect(root.textContent).toContain("Remaining extent unknown");
+  expect(root.textContent).toContain("Dynamic region retained for review");
+  expect(root.querySelector("[data-scroll-surface-not-reached]")).not.toBeNull();
   expect(root.textContent).toContain("Preview unavailable");
   expect(root.textContent).toContain("source viewports below are intact");
   expect(root.textContent).toContain("Capture stopped: seam ambiguous");
@@ -145,3 +231,53 @@ test("does not claim a stitched page when seam detection stopped", () => {
   dispose();
   document.body.replaceChildren();
 });
+
+test.each([
+  ["partial", "limit-reached", "Partial"],
+  ["unsupported", "inspection-unavailable", "Unsupported"],
+] as const)(
+  "presents %s evidence without hiding its raw viewport",
+  (classification, reason, label) => {
+    document.body.replaceChildren();
+    const root = document.createElement("div");
+    document.body.append(root);
+    const candidate: LogicalScrollSurface = {
+      ...surface,
+      status: "stopped",
+      reason,
+      message: `Stopped because ${reason}`,
+      confidenceModel: {
+        ...surface.confidenceModel!,
+        classification,
+        confidence: classification === "unsupported" ? 0.15 : 0.72,
+        documentExtent: "open",
+        coverage: [
+          ...surface.confidenceModel!.coverage,
+          {
+            startY: 320,
+            endY: null,
+            state: "not-reached",
+            confidence: 1,
+            sourceViewportIndexes: [],
+          },
+        ],
+      },
+    };
+    const dispose = render(
+      () => (
+        <LogicalScrollSurfaceViewer
+          surface={candidate}
+          evidenceUrl={(uri, mime) => `/evidence/${uri.slice(-8)}?mime=${mime}`}
+        />
+      ),
+      root,
+    );
+
+    expect(root.textContent).toContain(label);
+    expect(root.textContent).toContain(`Capture stopped: ${reason.replaceAll("-", " ")}`);
+    expect(root.querySelectorAll("[data-scroll-surface-viewports] li")).toHaveLength(2);
+
+    dispose();
+    document.body.replaceChildren();
+  },
+);

@@ -103,7 +103,7 @@ export function AppMapTestSourceDialog(props: {
               Test source
             </strong>
             <span id="test-source-description" class="block text-caption text-text-weak">
-              Concise .relay.yaml for this Test only
+              Bound .relay.test.yaml for this Test only
             </span>
           </div>
           <button
@@ -160,8 +160,9 @@ export function AppMapTestSourceDialog(props: {
                 }}
               />
               <p id="test-source-safety" class="m-0 text-caption/[1.45] text-text-weak">
-                Apply updates this same Test. Selectors, evidence, and the full App Map stay out of
-                source. Closing discards edits that you have not applied.
+                Apply updates this same Test. Selectors, evidence, and generated topology stay out
+                of source. This bound source uses canonical Relay identities; closing discards edits
+                that you have not applied.
               </p>
               <Show when={error()}>
                 <p

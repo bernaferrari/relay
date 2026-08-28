@@ -1,5 +1,10 @@
 import { createSignal } from "solid-js";
-import type { AuthoringInteraction, AuthoringSession, AuthoringVideoClip } from "@relay/protocol";
+import type {
+  AuthoringInteraction,
+  AuthoringRecordingEdit,
+  AuthoringSession,
+  AuthoringVideoClip,
+} from "@relay/protocol";
 import { createSimpleContext } from "@relay/ui/context/helper";
 import { useServer } from "./server";
 import { nodeAtPoint, targetFromStrategy, type PickStrategy } from "../lib/snapshot";
@@ -214,7 +219,6 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           revision: { exact: appMap.revision },
           ...(pendingSourceScreenId() ? { sourceScreenId: pendingSourceScreenId() } : {}),
           ...(pendingConnectionId() ? { pendingConnectionId: pendingConnectionId() } : {}),
-          ...(pendingGroup().trim() ? { group: pendingGroup().trim() } : {}),
         });
         if (snapshot.stage !== "recording") {
           toast(
@@ -643,6 +647,12 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       return attempt?.outcome === "passed";
     }
 
+    async function editTake(edit: AuthoringRecordingEdit): Promise<void> {
+      const session = activeSession();
+      if (!session || session.state !== "reviewing" || !ownsActiveSession()) return;
+      await authoringWorkflow.proved(session.id, { action: "edit", edit });
+    }
+
     const addCheckpoint = createSingleFlightAction({
       onBusyChange: setCheckpointBusy,
       action: async (label: string = "Checkpoint"): Promise<void> => {
@@ -717,8 +727,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
 
     async function removeTakeStep(index: number): Promise<void> {
       const current = take();
-      const session = activeSession();
-      if (!current || !session || !ownsActiveSession()) return;
+      if (!current) return;
       const actionId = current.actionIds[index];
       if (!actionId) return;
       const indexes = current.actionIds
@@ -726,8 +735,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         .filter((item) => item.id === actionId)
         .map((item) => item.position);
       if (indexes.length > 1) {
-        await authoringWorkflow.proved(session.id, {
-          action: "replace",
+        await editTake({
+          kind: "replace",
           actionId,
           interaction: {
             kind: "steps",
@@ -737,19 +746,12 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           },
         });
       } else {
-        const actionIds = [...new Set(current.actionIds.filter((id) => id !== actionId))];
-        await authoringWorkflow.proved(session.id, { action: "trim", actionIds });
+        await editTake({ kind: "remove", actionIds: [actionId] });
       }
     }
 
     async function reorderTakeActions(actionIds: string[]): Promise<void> {
-      const current = take();
-      const session = activeSession();
-      if (!current || !session || session.state !== "reviewing" || !ownsActiveSession()) return;
-      await authoringWorkflow.proved(session.id, {
-        action: "reorder",
-        actionIds: [...actionIds],
-      });
+      await editTake({ kind: "reorder", actionIds: [...actionIds] });
     }
 
     async function replaceTakeAction(
@@ -757,39 +759,18 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       interaction: AuthoringInteraction,
     ): Promise<void> {
       const current = take();
-      const session = activeSession();
-      if (
-        !current ||
-        !session ||
-        session.state !== "reviewing" ||
-        !ownsActiveSession() ||
-        !current.actions.some((action) => action.id === actionId)
-      )
-        return;
-      await authoringWorkflow.proved(session.id, { action: "replace", actionId, interaction });
+      if (!current?.actions.some((action) => action.id === actionId)) return;
+      await editTake({ kind: "replace", actionId, interaction });
     }
 
     async function removeTakeAction(actionId: string): Promise<void> {
       const current = take();
-      const session = activeSession();
-      if (!current || !session || session.state !== "reviewing" || !ownsActiveSession()) return;
-      if (!current.actions.some((action) => action.id === actionId)) return;
-      await authoringWorkflow.proved(session.id, {
-        action: "trim",
-        actionIds: current.actions
-          .map((action) => action.id)
-          .filter((candidate) => candidate !== actionId),
-      });
+      if (!current?.actions.some((action) => action.id === actionId)) return;
+      await editTake({ kind: "remove", actionIds: [actionId] });
     }
 
     async function setTakeVideoClip(videoClip: AuthoringVideoClip): Promise<void> {
-      const session = activeSession();
-      if (!session || !ownsActiveSession()) return;
-      await authoringWorkflow.proved(session.id, {
-        action: "trim",
-        fromMs: videoClip.startMs,
-        toMs: videoClip.endMs,
-      });
+      await editTake({ kind: "clip", fromMs: videoClip.startMs, toMs: videoClip.endMs });
     }
 
     const [typeBuffer, setTypeBuffer] = createSignal("");
@@ -871,6 +852,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       ownsActiveSession,
       keepTake,
       replayTake,
+      editTake,
       addCheckpoint,
       discardTake,
       removeTakeStep,

@@ -8,6 +8,7 @@ import type {
   ExportEvidenceIntent,
   FailureInspection,
   InspectFailureIntent,
+  ObserveTargetIntent,
   ProposeRepairIntent,
   RecordTestOutcomeIntent,
   RelayOutcomeJobs,
@@ -150,6 +151,30 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
     } satisfies ConnectTargetResult;
   }
 
+  async observe(intent: ObserveTargetIntent = { kind: "observe-target" }) {
+    const target = await selectTarget(this.operations, intent.targetId);
+    const observation = await this.operations.invoke("target.observation.capture", {
+      serial: target.targetId,
+    });
+    if (
+      observation.target.targetId !== target.targetId ||
+      observation.target.platform !== target.platform
+    ) {
+      throw new TypeError("Relay returned durable evidence for a different target.");
+    }
+    if (observation.pixels.status === "captured" && observation.pixels.presentationBase64) {
+      const { presentationBase64, ...boundedPixels } = observation.pixels;
+      // Native MCP presentation may read this property, but normal workflow
+      // and CLI JSON serialization must stay artifact-referenced and bounded.
+      Object.defineProperty(boundedPixels, "presentationBase64", {
+        value: presentationBase64,
+        enumerable: false,
+      });
+      return { ...observation, pixels: boundedPixels };
+    }
+    return observation;
+  }
+
   async record(intent: RecordTestOutcomeIntent) {
     if (intent.confirmControl !== true) {
       throw new TypeError(
@@ -192,7 +217,7 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       testId: intent.testId,
       target,
       revision: "current",
-      over: { dimensionId: intent.over.dimensionId, valueIds: [...intent.over.valueIds] },
+      repeat: structuredClone(intent.repeat),
       ...(intent.evidence ? { evidence: intent.evidence } : {}),
     });
   }
@@ -246,6 +271,15 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       throw new TypeError("The workflow reference does not identify a recording.");
     }
     return snapshot;
+  }
+
+  editRecording(intent: Parameters<RelayOutcomeJobs["editRecording"]>[0]) {
+    return this.advanceRecording({
+      action: "edit",
+      ref: intent.ref,
+      expectedVersion: intent.expectedVersion,
+      edit: structuredClone(intent.edit),
+    });
   }
 }
 

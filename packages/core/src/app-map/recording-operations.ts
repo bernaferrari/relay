@@ -47,6 +47,8 @@ export type AppMapRecordingInput = {
   evidenceById?: Record<string, AuthoringEvidence>;
   /** Stable id prepared by the Authoring Session before its atomic commit. */
   testId?: string;
+  /** Canonical reviewed Test name, required whenever testId is present. */
+  testName?: string;
 };
 
 export type AppMapRecordingResult = { appMap: AppMap; connectionId: string; testId?: string };
@@ -868,6 +870,9 @@ export function commitAppMapRecording(
       map.connections[connection.id] = connection;
       attachToFlow(map, source.id, connection.id, context.at);
       if (input.testId) {
+        if (!input.testName?.trim()) {
+          appMapFail("invalid-map", "A canonical Test name is required with testId");
+        }
         const destinationTitle =
           connection.destination.kind === "screen"
             ? (map.screens[connection.destination.screenId]?.title.trim() ?? "Next screen")
@@ -875,6 +880,7 @@ export function commitAppMapRecording(
         attachRecordedTest({
           map,
           testId: input.testId,
+          testName: input.testName,
           sessionId: input.sessionId,
           connection,
           sourceTitle: source.title.trim() || "Start",

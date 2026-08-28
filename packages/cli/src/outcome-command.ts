@@ -2,23 +2,33 @@ import type {
   ConnectTargetIntent,
   ContinueRepeatOutcomeIntent,
   ExportEvidenceIntent,
+  EditRecordingOutcomeIntent,
   InspectFailureIntent,
+  ObserveTargetIntent,
   ProposeRepairIntent,
   RecordTestOutcomeIntent,
   RepeatTestOutcomeIntent,
   RunTestOutcomeIntent,
 } from "@relay/workflows";
+import type {
+  AuthoringInteraction,
+  AuthoringRecordingEdit,
+  RepeatDimensionSpec,
+  RepeatPilotSpec,
+} from "@relay/protocol";
 import { UsageError } from "./errors.js";
 
 export type OutcomeCliIntent =
   | ConnectTargetIntent
+  | ObserveTargetIntent
   | ContinueRepeatOutcomeIntent
   | RecordTestOutcomeIntent
   | RunTestOutcomeIntent
   | RepeatTestOutcomeIntent
   | InspectFailureIntent
   | ProposeRepairIntent
-  | ExportEvidenceIntent;
+  | ExportEvidenceIntent
+  | EditRecordingOutcomeIntent;
 
 type OutcomeCommandTokens = {
   positionals: readonly string[];
@@ -46,17 +56,137 @@ export function parseInFlags(raw: string | undefined): Record<string, string[]> 
   return worlds;
 }
 
+function repeatDimensions(raw: string, flag: "--each" | "--in"): RepeatDimensionSpec[] {
+  const dimensions: RepeatDimensionSpec[] = [];
+  const seen = new Set<string>();
+  for (const token of raw.split("\u0000")) {
+    const equals = token.indexOf("=");
+    if (equals < 1) throw new UsageError(`${flag} requires dimension=value[,value]`);
+    const id = token.slice(0, equals).trim();
+    const rawValues = token.slice(equals + 1).trim();
+    if (!id || !rawValues) throw new UsageError(`${flag} requires dimension=value[,value]`);
+    if (seen.has(id)) throw new UsageError(`${flag} must name each dimension once`);
+    seen.add(id);
+    if (flag === "--each" && (rawValues === "all" || rawValues === "supported")) {
+      dimensions.push({ id, values: rawValues });
+      continue;
+    }
+    const values = rawValues
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (!values.length || new Set(values).size !== values.length) {
+      throw new UsageError(`${flag} values must be a distinct comma-separated list`);
+    }
+    dimensions.push({ id, values });
+  }
+  return dimensions;
+}
+
+function repeatPilot(raw: string | undefined): RepeatPilotSpec | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === "representative" || raw === "first") return { mode: raw };
+  const entries = raw
+    .split(",")
+    .map((token) => token.trim())
+    .filter(Boolean);
+  const selected: Record<string, string> = {};
+  for (const entry of entries) {
+    const equals = entry.indexOf("=");
+    const id = entry.slice(0, equals).trim();
+    const value = entry.slice(equals + 1).trim();
+    if (equals < 1 || !id || !value || Object.hasOwn(selected, id)) {
+      throw new UsageError(
+        "--pilot must be representative, first, or dimension=value[,dimension=value]",
+      );
+    }
+    selected[id] = value;
+  }
+  if (!Object.keys(selected).length) {
+    throw new UsageError(
+      "--pilot must be representative, first, or dimension=value[,dimension=value]",
+    );
+  }
+  return { mode: "specified", case: selected };
+}
+
+function actionIds(value: string): string[] {
+  const ids = value
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (!ids.length || new Set(ids).size !== ids.length) {
+    throw new UsageError("recording edit action ids must be a distinct comma-separated list");
+  }
+  return ids;
+}
+
+function parseRecordingEdit(args: readonly string[]): AuthoringRecordingEdit {
+  const [kind, subject, detail] = args;
+  if (kind === "remove" && args.length === 2) return { kind, actionIds: actionIds(subject!) };
+  if (kind === "reorder" && args.length === 2) return { kind, actionIds: actionIds(subject!) };
+  if (kind === "merge" && (args.length === 2 || args.length === 3)) {
+    return {
+      kind,
+      actionIds: actionIds(subject!),
+      ...(detail?.trim() ? { intent: detail.trim() } : {}),
+    };
+  }
+  if (kind === "split" && args.length === 3) {
+    const atStep = Number(detail);
+    if (!Number.isInteger(atStep) || atStep < 1) {
+      throw new UsageError("split requires a positive step position");
+    }
+    return { kind, actionId: subject!, atStep };
+  }
+  if (kind === "rename" && args.length === 3 && detail?.trim()) {
+    return { kind, actionId: subject!, intent: detail.trim() };
+  }
+  if (kind === "replace" && args.length === 3) {
+    try {
+      const interaction = JSON.parse(detail!) as AuthoringInteraction;
+      if (!interaction || typeof interaction !== "object" || !("kind" in interaction)) {
+        throw new TypeError("missing interaction kind");
+      }
+      return { kind, actionId: subject!, interaction };
+    } catch {
+      throw new UsageError("replace requires one JSON interaction object");
+    }
+  }
+  throw new UsageError(
+    "edit-recording requires remove, reorder, replace, merge, split, or rename arguments",
+  );
+}
+
 /** Parse only the small outcome vocabulary. Returning undefined lets the
  * caller fall back to the advanced canonical command families. */
 export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliIntent | undefined {
   const [verb, ...args] = tokens.positionals;
   const targetId = tokens.values.get("--device");
   const selectedMap = tokens.values.get("--map");
+  if (
+    verb !== "repeat" &&
+    ["--each", "--strategy", "--pilot", "--resume"].some((flag) => tokens.values.has(flag))
+  ) {
+    throw new UsageError("--each, --strategy, --pilot, and --resume are only valid on repeat");
+  }
   if (verb === "connect" && args.length <= 1) {
     if (selectedMap || tokens.values.has("--in") || tokens.values.has("--lens")) {
       throw new UsageError("connect accepts only an optional device id");
     }
     return { kind: "connect-target", ...(args[0] ? { targetId: args[0] } : {}) };
+  }
+  if (verb === "observe" && args.length <= 1) {
+    if (
+      selectedMap ||
+      tokens.values.has("--in") ||
+      tokens.values.has("--lens") ||
+      tokens.switches.has("--all") ||
+      tokens.switches.has("--confirm")
+    ) {
+      throw new UsageError("observe accepts only an optional device id");
+    }
+    return { kind: "observe-target", ...(args[0] ? { targetId: args[0] } : {}) };
   }
   if (verb === "record" && (args.length === 1 || args.length === 2)) {
     if (tokens.values.has("--in") || tokens.values.has("--lens") || tokens.switches.has("--all")) {
@@ -71,6 +201,14 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       title: args.at(-1)!,
       confirmControl: true,
       ...(targetId ? { targetId } : {}),
+    };
+  }
+  if (verb === "edit-recording" && args.length >= 4) {
+    return {
+      kind: "edit-recording",
+      ref: args[0]! as EditRecordingOutcomeIntent["ref"],
+      expectedVersion: args[1]!,
+      edit: parseRecordingEdit(args.slice(2)),
     };
   }
   if (verb === "run" && (args.length === 1 || args.length === 2)) {
@@ -90,11 +228,32 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
         "repeat always runs a representative pilot first; continue explicitly after review",
       );
     }
-    const dimensions = Object.entries(parseInFlags(tokens.values.get("--in")));
-    if (dimensions.length !== 1) {
-      throw new UsageError("repeat requires exactly one --in dimension=value[,value]");
+    const each = tokens.values.get("--each");
+    const legacy = tokens.values.get("--in");
+    if (each && legacy) throw new UsageError("repeat accepts --each or compatible --in, not both");
+    const dimensions = repeatDimensions(each ?? legacy ?? "", each ? "--each" : "--in");
+    const rawStrategy = tokens.values.get("--strategy");
+    if (
+      rawStrategy &&
+      rawStrategy !== "cartesian" &&
+      rawStrategy !== "zip" &&
+      rawStrategy !== "pairwise"
+    ) {
+      throw new UsageError("repeat --strategy must be cartesian, zip, or pairwise");
     }
-    const [dimensionId, valueIds] = dimensions[0]!;
+    const strategy =
+      rawStrategy === "cartesian" || rawStrategy === "zip" || rawStrategy === "pairwise"
+        ? rawStrategy
+        : undefined;
+    const pilot = repeatPilot(tokens.values.get("--pilot"));
+    const rawResume = tokens.values.get("--resume");
+    if (rawResume && rawResume !== "untouched" && rawResume !== "failed" && rawResume !== "all") {
+      throw new UsageError("repeat --resume must be untouched, failed, or all");
+    }
+    const resume =
+      rawResume === "untouched" || rawResume === "failed" || rawResume === "all"
+        ? rawResume
+        : undefined;
     const evidence = tokens.values.get("--lens");
     if (evidence !== undefined && evidence !== "visual" && evidence !== "smoke") {
       throw new UsageError("repeat --lens must be visual or smoke");
@@ -103,7 +262,12 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       kind: "repeat-test",
       ...(selectedMap || args.length === 2 ? { appMapId: selectedMap ?? args[0]! } : {}),
       testId: args.at(-1)!,
-      over: { dimensionId, valueIds },
+      repeat: {
+        dimensions,
+        ...(strategy ? { strategy } : {}),
+        ...(pilot ? { pilot } : {}),
+        ...(resume ? { resume } : {}),
+      },
       ...(evidence ? { evidence } : {}),
       ...(targetId ? { targetId } : {}),
     };

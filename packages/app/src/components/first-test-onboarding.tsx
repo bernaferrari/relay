@@ -168,18 +168,12 @@ export function useFirstTestOnboarding(actions: FirstTestOnboardingActions) {
   async function checkTarget(): Promise<void> {
     const status = targetStatus();
     if (status.kind === "choose-target") {
-      if (server.devices().length) {
-        window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
-      } else {
-        actions.onOpenTargets();
-      }
+      actions.onOpenTargets();
       return;
     }
     if (status.kind === "needs-control") {
       actions.onShowLiveDevice();
-      requestAnimationFrame(() =>
-        window.dispatchEvent(new CustomEvent("relay:open-device-picker")),
-      );
+      requestAnimationFrame(actions.onOpenTargets);
       return;
     }
     if (targetReadiness().kind === "screen-preparing") {
@@ -190,7 +184,7 @@ export function useFirstTestOnboarding(actions: FirstTestOnboardingActions) {
       return;
     }
 
-    setTargetCheck({ state: "checking", detail: "Checking this target…" });
+    setTargetCheck({ state: "checking", detail: "Checking this Device…" });
     try {
       if (status.kind === "offline") {
         await server.retryConnection();
@@ -218,7 +212,7 @@ export function useFirstTestOnboarding(actions: FirstTestOnboardingActions) {
     } catch (error) {
       setTargetCheck({
         state: "failed",
-        detail: humanError(error, "Relay could not check this target."),
+        detail: humanError(error, "Relay could not check this Device."),
       });
     }
   }
@@ -228,7 +222,7 @@ export function useFirstTestOnboarding(actions: FirstTestOnboardingActions) {
     if (!appMap || creatingStarter()) return;
     const screen = safeStarterScreen();
     if (kind === "screen-check" && !screen) {
-      toast("Save a screen with a stable identity before creating this check.", "warning");
+      toast("Capture the starting state before creating this check.", "warning");
       return;
     }
     setCreatingStarter(kind);
@@ -248,7 +242,7 @@ export function useFirstTestOnboarding(actions: FirstTestOnboardingActions) {
       actions.onOpenTest();
       toast(
         kind === "screen-check"
-          ? "Screen check created · review it, then choose Run"
+          ? "Starting-state check created · review it, then choose Run"
           : "Blank Test created · add a step, then choose Run",
         "success",
       );

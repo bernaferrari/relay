@@ -27,6 +27,23 @@ function sameValues(left: readonly string[], right: readonly string[]): boolean 
   );
 }
 
+function sameSelection(
+  actual: Record<string, string[]> | undefined,
+  frozen: FrozenRepeatTestIdentity,
+): boolean {
+  if (!actual) return false;
+  const expected = frozen.resolved.dimensions;
+  const actualIds = Object.keys(actual);
+  return (
+    actualIds.length === expected.length &&
+    expected.every(
+      (dimension, index) =>
+        actualIds[index] === dimension.id &&
+        sameValues(actual[dimension.id] ?? [], dimension.valueIds),
+    )
+  );
+}
+
 function targetMatches(
   target: CombineCampaign["target"] | SelectedRepeatResult["target"],
   frozen: FrozenRepeatTestIdentity,
@@ -75,8 +92,10 @@ export function selectedRepeatResults(
   if (!executionIds || !sameValues(executionIds, reference.selectedCaseIds)) {
     throw new TypeError("The selected Repeat scope no longer matches its frozen identity.");
   }
-  const selectedValues = record.execution?.selected?.[frozen.over.dimensionId];
-  if (!selectedValues || !sameValues(selectedValues, frozen.over.valueIds)) {
+  if (
+    record.execution?.strategy !== frozen.resolved.strategy ||
+    !sameSelection(record.execution?.selected, frozen)
+  ) {
     throw new TypeError("The selected Repeat values no longer match their frozen identity.");
   }
   const campaignTargetMatches = targetMatches(record.target, frozen);
@@ -84,9 +103,12 @@ export function selectedRepeatResults(
     const entries = Object.entries(item.values);
     if (
       item.testId !== frozen.testId ||
-      entries.length !== 1 ||
-      entries[0]?.[0] !== frozen.over.dimensionId ||
-      !frozen.over.valueIds.includes(entries[0]?.[1] ?? "") ||
+      entries.length !== frozen.resolved.dimensions.length ||
+      frozen.resolved.dimensions.some(
+        (dimension, index) =>
+          entries[index]?.[0] !== dimension.id ||
+          !dimension.valueIds.includes(entries[index]?.[1] ?? ""),
+      ) ||
       (!campaignTargetMatches && !targetMatches(item.target, frozen))
     ) {
       throw new TypeError(
@@ -94,13 +116,25 @@ export function selectedRepeatResults(
       );
     }
   }
-  const valueIds = results.map((item) => item.values[frozen.over.dimensionId]!);
-  if (!sameValues(valueIds, frozen.over.valueIds)) {
-    throw new TypeError("The durable Repeat does not contain each selected value exactly once.");
+  const tupleKeys = results.map((item) =>
+    frozen.resolved.dimensions.map((dimension) => item.values[dimension.id]).join("\u0000"),
+  );
+  if (new Set(tupleKeys).size !== tupleKeys.length) {
+    throw new TypeError("The durable Repeat contains a duplicate selected case tuple.");
   }
   const pilots = results.filter((item) => item.phase === "pilot");
   if (pilots.length !== 1 || pilots[0]?.jobId !== reference.pilotJobId) {
     throw new TypeError("The durable Repeat does not identify exactly one matching pilot.");
+  }
+  const requestedPilot = frozen.resolved.pilot;
+  if (requestedPilot.mode === "specified") {
+    if (
+      frozen.resolved.dimensions.some(
+        (dimension) => pilots[0]!.values[dimension.id] !== requestedPilot.case[dimension.id],
+      )
+    ) {
+      throw new TypeError("The durable Repeat pilot no longer matches the specified case tuple.");
+    }
   }
   return results;
 }
@@ -137,13 +171,10 @@ function counts(results: readonly SelectedRepeatResult[]): RepeatOutcomeCounts {
   return output;
 }
 
-function valueResults(
-  results: readonly SelectedRepeatResult[],
-  dimensionId: string,
-): RepeatValueResult[] {
+function valueResults(results: readonly SelectedRepeatResult[]): RepeatValueResult[] {
   return results.map((result) => ({
     cellId: result.cellId,
-    valueId: result.values[dimensionId]!,
+    values: { ...result.values },
     phase: result.phase === "pilot" ? "pilot" : "remaining",
     status:
       result.status === "pending"
@@ -291,7 +322,7 @@ export function snapshotFromRepeatRecord(input: {
     frozen: reference.frozen,
     repeat: { id: reference.repeatId },
     outcomes: outcome,
-    results: valueResults(results, reference.frozen.over.dimensionId),
+    results: valueResults(results),
     progress: { label, completed, total: outcome.selected },
     allowedNextActions: actions,
     problems,

@@ -124,7 +124,7 @@ function repeatCampaign(status: "ready-to-resume" | "running") {
     execution: {
       selected: { language: ["en", "it"] },
       selectedCellIds: ["result-en", "result-it"],
-      strategy: "cartesian",
+      strategy: "zip",
       seed: 1,
       repeat: {
         schemaVersion: 1,
@@ -134,7 +134,18 @@ function repeatCampaign(status: "ready-to-resume" | "running") {
         testPlanDigest: "plan-1",
         rootRecipeId: "repeat-root",
         target: { kind: "device", platform: "ios", targetId: "ipad-1" },
-        over: { dimensionId: "language", valueIds: ["en", "it"] },
+        spec: {
+          dimensions: [{ id: "language", values: ["en", "it"] }],
+          strategy: "zip",
+          pilot: { mode: "representative" },
+          resume: "untouched",
+        },
+        resolved: {
+          dimensions: [{ id: "language", valueIds: ["en", "it"] }],
+          strategy: "zip",
+          pilot: { mode: "representative" },
+          resume: "untouched",
+        },
         evidence: "visual",
         pilotJobId: "pilot-job",
         selectedCaseIds: ["result-en", "result-it"],
@@ -201,6 +212,7 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
   };
   let started = false;
   const runAction = vi.fn(async (operationId: string, _input?: unknown) => {
+    if (operationId === "app-map.get") return { appMap: map };
     if (operationId === "job.combine.campaign.repeat.active") {
       return { campaign: started ? repeatCampaign("ready-to-resume") : null };
     }
@@ -268,7 +280,7 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
     const pilot = root.querySelector<HTMLButtonElement>("[data-test-repeat-pilot] button");
     expect(pilot?.textContent).toContain("Run pilot");
     expect(root.textContent).toContain("Pilot: English");
-    expect(root.textContent).toContain("Target: iPad · iOS");
+    expect(root.textContent).toContain("Device: iPad · iOS");
     expect(root.textContent).toContain("waits for review before the remaining values");
 
     pilot?.click();
@@ -283,7 +295,16 @@ test("a saved App Map Test opens the canonical Combine strip", async () => {
         in: { language: ["en", "it"] },
         lens: "visual",
         executionMode: "pilot",
-        repeatRecovery: { schemaVersion: 1, testPlanDigest: "plan-1" },
+        repeatRecovery: expect.objectContaining({
+          schemaVersion: 1,
+          testPlanDigest: "plan-1",
+          spec: expect.objectContaining({
+            dimensions: [{ id: "language", values: ["en", "it"] }],
+          }),
+          resolved: expect.objectContaining({
+            dimensions: [{ id: "language", valueIds: ["en", "it"] }],
+          }),
+        }),
       }),
     );
     expect(runCall?.[1]).not.toHaveProperty("executionMode", "all");
@@ -390,23 +411,25 @@ test("Whole page is disabled when the destination has no frozen full-page captur
     updatedAt: 1,
   };
   const runAction = vi.fn(async (operationId: string, _input?: unknown) =>
-    operationId === "job.combine.campaign.repeat.active"
-      ? { campaign: null }
-      : operationId === "app-map.test.compile"
-        ? {
-            plan: { rootRecipeId: "repeat-root" },
-            preflight: {
-              schemaVersion: 1,
-              mode: "offline-test-preflight",
-              appMapId: "checkout",
-              appMapRevision: 1,
-              testId: scenario.id,
-              planDigest: "plan-1",
-              summary: { blockers: 0 },
-              findings: [],
-            },
-          }
-        : { job: { id: "combine-cell" } },
+    operationId === "app-map.get"
+      ? { appMap: map }
+      : operationId === "job.combine.campaign.repeat.active"
+        ? { campaign: null }
+        : operationId === "app-map.test.compile"
+          ? {
+              plan: { rootRecipeId: "repeat-root" },
+              preflight: {
+                schemaVersion: 1,
+                mode: "offline-test-preflight",
+                appMapId: "checkout",
+                appMapRevision: 1,
+                testId: scenario.id,
+                planDigest: "plan-1",
+                summary: { blockers: 0 },
+                findings: [],
+              },
+            }
+          : { job: { id: "combine-cell" } },
   );
   serverMock.current = {
     selectedAppMap: () => map,

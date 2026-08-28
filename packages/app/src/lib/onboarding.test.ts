@@ -120,7 +120,7 @@ test("a first capture stays blocked until Relay has a selected live frame and co
   });
   assert.equal(waitingForFrame.kind, "needs-attention");
   if (waitingForFrame.kind !== "needs-attention") throw new Error("expected live-frame guidance");
-  assert.equal(waitingForFrame.actionLabel, "Open device");
+  assert.equal(waitingForFrame.actionLabel, "Open Device");
 
   const afterFrame = deviceReadiness(browser, true, {
     requireLiveScreen: true,

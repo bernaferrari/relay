@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -18,7 +18,12 @@ import {
   testsRoot,
   freezeRecipeExecution,
 } from "./recipes.js";
-import { formatRecipeYaml, parseRecipeYaml, recipeYamlPath } from "./recipe-yaml.js";
+import {
+  formatRecipeYaml,
+  legacyRecipeYamlPath,
+  parseRecipeYaml,
+  recipeYamlPath,
+} from "./recipe-yaml.js";
 
 // Isolate the on-disk store in a temp dir for the whole suite.
 let tmp = "";
@@ -106,6 +111,7 @@ describe("recipe store roundtrip", () => {
     });
     const source = await readFile(recipeYamlPath(testsRoot(), saved.id), "utf8");
     assert.match(source, /^schemaVersion: 1/m);
+    assert.match(source, /^kind: execution-plan/m);
     assert.match(source, /^recordingFormatVersion: 2/m);
     assert.match(source, /^name: YAML smoke/m);
     assert.match(source, /account_tier: Pro/);
@@ -167,9 +173,45 @@ describe("recipe YAML", () => {
       `schemaVersion: 1\nrecordingFormatVersion: 2\nid: yaml-roundtrip\nname: YAML roundtrip\nsteps:\n  - kind: sleep\n    ms: 10\n`,
     );
     const output = formatRecipeYaml(recipe);
+    assert.match(output, /^kind: execution-plan/m);
     assert.match(output, /^recordingFormatVersion: 2/m);
     assert.equal(output, formatRecipeYaml(parseRecipeYaml(output)));
     assert.equal(recipe.title, "YAML roundtrip");
+  });
+
+  it("reads legacy .relay.yaml recipes and migrates them on the next successful save", async () => {
+    const id = "legacy-plan-migration";
+    const legacyPath = legacyRecipeYamlPath(testsRoot(), id);
+    await writeFile(
+      legacyPath,
+      `schemaVersion: 1\nid: ${id}\nname: Legacy plan\nsteps:\n  - kind: sleep\n    ms: 10\n`,
+      "utf8",
+    );
+
+    const legacy = await readRecipe(id);
+    assert.equal(legacy?.title, "Legacy plan");
+    assert.ok((await listRecipes()).some((recipe) => recipe.id === id));
+    await saveRecipe({
+      ...legacy!,
+      title: "Migrated plan",
+      expectedRevision: legacy!.updatedAt,
+    });
+
+    const canonical = await readFile(recipeYamlPath(testsRoot(), id), "utf8");
+    assert.match(canonical, /^kind: execution-plan/m);
+    await assert.rejects(readFile(legacyPath, "utf8"), { code: "ENOENT" });
+    await deleteRecipe(id);
+  });
+
+  it("fails closed when legacy and canonical executable sources both exist", async () => {
+    const id = "ambiguous-plan-source";
+    const source = `schemaVersion: 1\nid: ${id}\nname: Ambiguous plan\nsteps: []\n`;
+    await writeFile(legacyRecipeYamlPath(testsRoot(), id), source, "utf8");
+    await writeFile(recipeYamlPath(testsRoot(), id), source, "utf8");
+
+    await assert.rejects(readRecipe(id), /ambiguous executable source/u);
+    await assert.rejects(listRecipes(), /ambiguous executable source/u);
+    await deleteRecipe(id);
   });
 
   it("canonicalizes unordered values to avoid noisy Git diffs", () => {
@@ -258,6 +300,13 @@ describe("recipe YAML", () => {
     assert.throws(
       () => parseRecipeYaml(`schemaVersion: 2\nid: future\nname: Future\nsteps: []\n`),
       /unsupported Relay test schemaVersion/i,
+    );
+    assert.throws(
+      () =>
+        parseRecipeYaml(
+          `schemaVersion: 1\nkind: bound-test\nid: wrong-layer\nname: Wrong layer\nsteps: []\n`,
+        ),
+      /kind must be execution-plan/i,
     );
     assert.throws(
       () =>

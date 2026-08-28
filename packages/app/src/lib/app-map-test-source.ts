@@ -5,6 +5,7 @@ import {
   type AppMapBatchChange,
   type AppMapCombine,
   type AppMapScenarioTest,
+  type RepeatSpec,
 } from "@relay/protocol";
 import {
   applyIntentDocumentToScenarioTest,
@@ -48,31 +49,41 @@ function projectRepeat(map: AppMap, combine: AppMapCombine) {
       if (missing)
         throw new Error(`Repeat value ${missing} is missing from Variable ${variableId}`);
     }
-    return { variableId, values: selected ? [...selected] : ("all" as const) };
+    return {
+      id: variableId,
+      values: selected
+        ? [...selected]
+        : (combine.repeatPolicy?.valueModes?.[variableId] ?? ("all" as const)),
+    };
   });
   const strategy = combine.strategy;
-  return { ...(strategy ? { strategy } : {}), dimensions };
+  return {
+    ...(strategy ? { strategy } : {}),
+    ...(combine.repeatPolicy?.pilot ? { pilot: structuredClone(combine.repeatPolicy.pilot) } : {}),
+    ...(combine.repeatPolicy?.resume ? { resume: combine.repeatPolicy.resume } : {}),
+    dimensions,
+  };
 }
 
 function repeatChanges(input: {
   map: AppMap;
   test: AppMapScenarioTest;
-  repeat: ReturnType<typeof projectRepeat> | undefined;
+  repeat: RepeatSpec | undefined;
   updatedAt: number;
 }): AppMapBatchChange[] {
   const previous = repeatCombine(input.map, input.test);
   if (!input.repeat) {
     return previous ? [{ kind: "combine.remove", combineId: previous.id }] : [];
   }
-  const variableIds = input.repeat.dimensions.map((dimension) => dimension.variableId);
+  const variableIds = input.repeat.dimensions.map((dimension) => dimension.id);
   const selected: Record<string, string[]> = {};
   for (const dimension of input.repeat.dimensions) {
-    const variable = input.map.variables[dimension.variableId];
-    if (!variable) throw new Error(`Repeat Variable ${dimension.variableId} is missing`);
+    const variable = input.map.variables[dimension.id];
+    if (!variable) throw new Error(`Repeat Variable ${dimension.id} is missing`);
     if (!variableCanApply(variable)) {
       throw new Error(`Repeat Variable ${variable.name} cannot apply and undo`);
     }
-    if (dimension.values === "all") continue;
+    if (dimension.values === "all" || dimension.values === "supported") continue;
     const available = new Set(variable.options.map((option) => option.id));
     const missing = dimension.values.find((valueId) => !available.has(valueId));
     if (missing) throw new Error(`Repeat value ${missing} is missing from Variable ${variable.id}`);
@@ -91,6 +102,21 @@ function repeatChanges(input: {
     testIds: [input.test.id],
     ...(Object.keys(selected).length ? { selected } : {}),
     ...(input.repeat.strategy ? { strategy: input.repeat.strategy } : {}),
+    ...(input.repeat.pilot ||
+    input.repeat.resume ||
+    input.repeat.dimensions.some((dimension) => !Array.isArray(dimension.values))
+      ? {
+          repeatPolicy: {
+            ...(input.repeat.pilot ? { pilot: structuredClone(input.repeat.pilot) } : {}),
+            ...(input.repeat.resume ? { resume: input.repeat.resume } : {}),
+            valueModes: Object.fromEntries(
+              input.repeat.dimensions.flatMap((dimension) =>
+                Array.isArray(dimension.values) ? [] : [[dimension.id, dimension.values] as const],
+              ),
+            ),
+          },
+        }
+      : {}),
     ...(existing?.captures ? { captures: structuredClone(existing.captures) } : {}),
     ...(existing?.cellRuntimeProfiles
       ? { cellRuntimeProfiles: structuredClone(existing.cellRuntimeProfiles) }

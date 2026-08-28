@@ -70,6 +70,7 @@ type CombineStartRequest = {
   surfaceCapture?: { forceRecaptureScreenIds: string[] };
   executionMode?: "all" | "pilot";
   pilotCaseIndex?: number;
+  pilotCase?: Record<string, string>;
   cell?: string;
   defaultTargetProfileId?: string;
   sourceRevision?: SourceRevision;
@@ -306,6 +307,27 @@ async function executeCombineStartUnlocked(
       if (!selectedCells.length) {
         throw new HttpError(409, `Unknown Combine cell ${body.cell.trim()}.`);
       }
+    }
+    if (body.pilotCase) {
+      const expectedIds = scopedCombine.variableIds;
+      const actualIds = Object.keys(body.pilotCase);
+      if (
+        actualIds.length !== expectedIds.length ||
+        actualIds.some((id) => !expectedIds.includes(id))
+      ) {
+        throw new HttpError(409, "The specified pilot does not name every Repeat dimension", {
+          code: "REPEAT_PILOT_CASE_INVALID",
+        });
+      }
+      const pilot = selectedCells.find((cell) =>
+        expectedIds.every((id) => cell.values[id] === body.pilotCase![id]),
+      );
+      if (!pilot) {
+        throw new HttpError(409, "The specified pilot is not in the selected Repeat scope", {
+          code: "REPEAT_PILOT_CASE_NOT_SELECTED",
+        });
+      }
+      selectedCells = [pilot, ...selectedCells.filter((cell) => cell.cellId !== pilot.cellId)];
     }
     const namedCells = Boolean(body.cell?.trim()) || Boolean(body.selectedCellIds?.length);
     const isPilotRun = body.executionMode !== "all" && !namedCells;

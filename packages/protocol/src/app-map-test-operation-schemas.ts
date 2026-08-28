@@ -6,6 +6,7 @@ import {
   text,
   stepTarget,
 } from "./operation-schema-primitives.js";
+import { repeatPilotSpecSchema, repeatSpecSchema } from "./repeat-spec.js";
 
 const forceRecaptureScreenIds = z
   .array(identifier("Full-surface screen identifier to recapture"))
@@ -69,6 +70,10 @@ export const appMapTestRunInputSchema = z
       .describe(
         "Variable id → selected value ids. Upserts a Combine for this Test × those worlds and starts a campaign.",
       ),
+    strategy: z.enum(["zip", "cartesian", "pairwise"]).optional(),
+    pilotCase: z
+      .record(identifier("Repeat dimension identifier"), identifier("Repeat value identifier"))
+      .optional(),
     lens: z
       .enum(["visual", "smoke", "every-screen", "failures-only", "final-screen", "none"])
       .optional()
@@ -81,6 +86,24 @@ export const appMapTestRunInputSchema = z
       .object({
         schemaVersion: z.literal(1),
         testPlanDigest: text("Frozen Test plan digest"),
+        spec: repeatSpecSchema,
+        resolved: z
+          .object({
+            dimensions: z
+              .array(
+                z
+                  .object({
+                    id: identifier("Repeat dimension identifier"),
+                    valueIds: z.array(identifier("Repeat value identifier")).min(1),
+                  })
+                  .strict(),
+              )
+              .min(1),
+            strategy: z.enum(["cartesian", "zip", "pairwise"]),
+            pilot: repeatPilotSpecSchema,
+            resume: z.enum(["untouched", "failed", "all"]),
+          })
+          .strict(),
       })
       .strict()
       .optional()
@@ -89,12 +112,65 @@ export const appMapTestRunInputSchema = z
   .strict()
   .superRefine((input, context) => {
     if (input.in === undefined) return;
-    if (input.repeatRecovery && Object.keys(input.in).length !== 1) {
-      context.addIssue({
-        code: "custom",
-        message: "repeatRecovery requires exactly one Repeat dimension",
-        path: ["repeatRecovery"],
-      });
+    if (input.repeatRecovery) {
+      const requestedIds = input.repeatRecovery.resolved.dimensions.map((item) => item.id);
+      if (
+        requestedIds.length !== Object.keys(input.in).length ||
+        requestedIds.some((id, index) => id !== Object.keys(input.in!)[index] || !input.in![id])
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "repeatRecovery dimensions must match the ordered resolved selection",
+          path: ["repeatRecovery", "resolved", "dimensions"],
+        });
+      }
+      if (input.strategy !== input.repeatRecovery.resolved.strategy) {
+        context.addIssue({
+          code: "custom",
+          message: "strategy must match the frozen Repeat strategy",
+          path: ["strategy"],
+        });
+      }
+      for (const [index, dimension] of input.repeatRecovery.resolved.dimensions.entries()) {
+        if (new Set(dimension.valueIds).size !== dimension.valueIds.length) {
+          context.addIssue({
+            code: "custom",
+            message: "resolved Repeat values must be unique",
+            path: ["repeatRecovery", "resolved", "dimensions", index, "valueIds"],
+          });
+        }
+        const selected = input.in[dimension.id] ?? [];
+        if (
+          selected.length !== dimension.valueIds.length ||
+          selected.some((id, valueIndex) => id !== dimension.valueIds[valueIndex])
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: "in must match the ordered frozen Repeat values",
+            path: ["in", dimension.id],
+          });
+        }
+      }
+      const pilot = input.repeatRecovery.resolved.pilot;
+      if (pilot.mode === "specified") {
+        if (
+          !input.pilotCase ||
+          Object.keys(input.pilotCase).length !== requestedIds.length ||
+          requestedIds.some((id) => input.pilotCase?.[id] !== pilot.case[id])
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: "pilotCase must match the frozen specified Repeat pilot",
+            path: ["pilotCase"],
+          });
+        }
+      } else if (input.pilotCase !== undefined) {
+        context.addIssue({
+          code: "custom",
+          message: "pilotCase requires a specified Repeat pilot",
+          path: ["pilotCase"],
+        });
+      }
     }
     if (input.startup !== undefined) {
       context.addIssue({

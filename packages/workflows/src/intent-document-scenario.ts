@@ -101,7 +101,7 @@ export function intentDocumentFromScenarioTest(
 ): IntentDocument {
   return {
     schemaVersion: 1,
-    kind: "test-intent",
+    kind: "bound-test",
     name: test.name,
     appMapId: map.id,
     testId: test.id,

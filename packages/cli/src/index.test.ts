@@ -108,6 +108,82 @@ test("only implicit-local outcome commands ensure the Relay daemon", async () =>
   }
 });
 
+test("relay observe emits durable references without transient presentation bytes", async () => {
+  const io = capture();
+  const artifact = (digit: string, kind: "image" | "structured-data", mime: string) => {
+    const sha256 = digit.repeat(64);
+    return {
+      status: "available",
+      artifact: {
+        schemaVersion: 1,
+        id: `sha256:${sha256}`,
+        integrity: { algorithm: "sha256", sha256, bytes: 3 },
+        media: { kind, mime },
+        capturedAt: 10,
+        provenance: { source: "authoring-evidence", capture: "recorded" },
+        retention: {
+          scope: "workspace-content-addressed",
+          recoverability: "content-addressed",
+        },
+        locations: [{ store: "authoring-evidence", opaque: `evidence-${digit}` }],
+      },
+    };
+  };
+  const code = await runCli(["observe", "pixel-9", "--json"], {
+    streams: io.streams,
+    registerSignalHandlers: false,
+    env: { RELAY_URL: "http://127.0.0.1:8787" },
+    createClient: () => ({
+      async invoke(operationId) {
+        if (operationId === "target.devices.list") {
+          return {
+            devices: [
+              {
+                id: "pixel-9",
+                serial: "pixel-9",
+                name: "Pixel 9",
+                kind: "emulator",
+                booted: true,
+                platform: "android",
+              },
+            ],
+          };
+        }
+        if (operationId === "target.observation.capture") {
+          return {
+            schemaVersion: 1,
+            target: { kind: "device", platform: "android", targetId: "pixel-9" },
+            capturedAt: 11,
+            pixels: {
+              status: "captured",
+              capturedAt: 10,
+              mime: "image/png",
+              bytes: 3,
+              artifact: artifact("a", "image", "image/png"),
+              presentationBase64: "cG5n",
+            },
+            semantics: {
+              status: "unavailable",
+              artifact: artifact("b", "structured-data", "application/json"),
+              nodeCount: 0,
+              controls: [],
+              message: "Accessibility unavailable.",
+            },
+          };
+        }
+        throw new Error(`unexpected ${operationId}`);
+      },
+      events: async () => {},
+    }),
+  });
+
+  assert.equal(code, ExitCode.success);
+  const output = JSON.parse(io.stdout()) as { result: Record<string, unknown> };
+  assert.equal(JSON.stringify(output).includes("presentationBase64"), false);
+  const pixels = output.result.pixels as Record<string, unknown>;
+  assert.equal((pixels.artifact as Record<string, unknown>).status, "available");
+});
+
 test("friendly command families invoke through the operation client", async () => {
   const cases: Array<{
     argv: string[];
@@ -747,8 +823,9 @@ test("root and family help are useful without creating a client", async () => {
     {
       argv: ["--help"],
       matches: [
-        /App Map\s+map, screen, connect, flow/,
-        /Author\s+variable, test, combine, proposal, session/,
+        /Start with App, Device, Test, Checkpoint, Run, and Report/,
+        /Topology\s+map, screen, connect, flow/,
+        /Authoring\s+variable, test, combine, proposal, session/,
         /device screenshot <serial>/,
         /--binary/,
       ],

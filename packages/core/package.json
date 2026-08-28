@@ -31,6 +31,8 @@
     "./run-observatory": "./src/run-observatory.ts",
     "./offline-run-replay": "./src/offline-run-replay.ts",
     "./trace-pack": "./src/trace-pack.ts",
+    "./trace-pack-comparison": "./src/trace-pack-comparison.ts",
+    "./trace-pack-visual-localization": "./src/trace-pack-visual-localization.ts",
     "./matrix-yaml": "./src/matrix-yaml.ts",
     "./schedules": "./src/schedules.ts",
     "./targets": "./src/targets.ts",

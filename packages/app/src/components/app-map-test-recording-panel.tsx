@@ -1,5 +1,5 @@
 import { For, Show, createSignal } from "solid-js";
-import type { AppMap } from "@relay/protocol";
+import type { AppMap, AuthoringRecordingEdit } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useRecorder } from "../context/recorder";
 import { toast } from "../context/toast";
@@ -29,6 +29,31 @@ export function AppMapTestRecordingPanel(props: {
   const recorder = useRecorder();
   const [replaying, setReplaying] = createSignal(false);
   const [approving, setApproving] = createSignal(false);
+  const [editingActionId, setEditingActionId] = createSignal<string>();
+  const [editBusy, setEditBusy] = createSignal(false);
+  const [semanticName, setSemanticName] = createSignal("");
+  const [tapLabel, setTapLabel] = createSignal("");
+
+  async function editRecording(edit: AuthoringRecordingEdit): Promise<void> {
+    if (editBusy()) return;
+    setEditBusy(true);
+    try {
+      await recorder.editTake(edit);
+      setEditingActionId(undefined);
+      setSemanticName("");
+      setTapLabel("");
+    } catch (error) {
+      toast(humanError(error, "Could not edit this recording"), "warning");
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  function beginEditing(action: NonNullable<ReturnType<typeof recorder.take>>["actions"][number]) {
+    setEditingActionId(action.id);
+    setSemanticName(action.label?.trim() || "");
+    setTapLabel("");
+  }
 
   async function replay(): Promise<void> {
     if (replaying()) return;
@@ -89,16 +114,191 @@ export function AppMapTestRecordingPanel(props: {
           <div class="min-h-0 flex-1 overflow-y-auto p-3">
             <ol class="m-0 grid list-decimal gap-2 pl-5 text-caption text-text-base">
               <For each={recorder.take()?.actions ?? []}>
-                {(action) => (
-                  <li class="pl-1">
-                    {action.label?.trim() ||
-                      (action.steps.length === 1
-                        ? "Recorded action"
-                        : `${action.steps.length} recorded steps`)}
-                  </li>
-                )}
+                {(action, index) => {
+                  const title = () =>
+                    action.label?.trim() ||
+                    (action.steps.length === 1
+                      ? "Recorded action"
+                      : `${action.steps.length} recorded steps`);
+                  const actionIds = () => recorder.take()?.actions.map((item) => item.id) ?? [];
+                  return (
+                    <li class="rounded-md border border-border-weak-base bg-surface-base p-2 pl-2">
+                      <div class="flex min-w-0 items-center gap-2">
+                        <span class="min-w-0 flex-1 truncate">{title()}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          class="min-h-11"
+                          disabled={index() === 0 || editBusy()}
+                          aria-label={`Move ${title()} earlier`}
+                          onClick={() => {
+                            const ids = actionIds();
+                            const current = index();
+                            [ids[current - 1], ids[current]] = [ids[current]!, ids[current - 1]!];
+                            void editRecording({ kind: "reorder", actionIds: ids });
+                          }}
+                        >
+                          ↑
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          class="min-h-11"
+                          disabled={index() >= actionIds().length - 1 || editBusy()}
+                          aria-label={`Move ${title()} later`}
+                          onClick={() => {
+                            const ids = actionIds();
+                            const current = index();
+                            [ids[current], ids[current + 1]] = [ids[current + 1]!, ids[current]!];
+                            void editRecording({ kind: "reorder", actionIds: ids });
+                          }}
+                        >
+                          ↓
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          class="min-h-11"
+                          disabled={editBusy()}
+                          onClick={() => beginEditing(action)}
+                        >
+                          Edit
+                        </Button>
+                      </div>
+                      <div class="mt-1 flex flex-wrap gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          class="min-h-11"
+                          disabled={index() >= actionIds().length - 1 || editBusy()}
+                          onClick={() =>
+                            void editRecording({
+                              kind: "merge",
+                              actionIds: [action.id, actionIds()[index() + 1]!],
+                            })
+                          }
+                        >
+                          Merge with next
+                        </Button>
+                        <Show when={action.steps.length > 1}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            class="min-h-11"
+                            disabled={editBusy()}
+                            onClick={() =>
+                              void editRecording({ kind: "split", actionId: action.id, atStep: 1 })
+                            }
+                          >
+                            Split after first step
+                          </Button>
+                        </Show>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          class="min-h-11 text-danger-base"
+                          disabled={actionIds().length <= 1 || editBusy()}
+                          onClick={() => {
+                            if (globalThis.confirm(`Remove “${title()}” from this Test?`)) {
+                              void editRecording({ kind: "remove", actionIds: [action.id] });
+                            }
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                      <Show when={editingActionId() === action.id}>
+                        <div class="mt-2 grid gap-2 border-t border-border-weak-base pt-2">
+                          <form
+                            class="grid gap-1"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              if (semanticName().trim()) {
+                                void editRecording({
+                                  kind: "rename",
+                                  actionId: action.id,
+                                  intent: semanticName().trim(),
+                                });
+                              }
+                            }}
+                          >
+                            <label
+                              for={`recording-name-${action.id}`}
+                              class="text-micro text-text-weak"
+                            >
+                              Semantic action name
+                            </label>
+                            <div class="flex gap-2">
+                              <input
+                                id={`recording-name-${action.id}`}
+                                class="min-h-11 min-w-0 flex-1 rounded-md border border-border-base bg-background-base px-2 text-base text-text-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+                                value={semanticName()}
+                                autocomplete="off"
+                                spellcheck={false}
+                                onInput={(event) => setSemanticName(event.currentTarget.value)}
+                              />
+                              <Button
+                                type="submit"
+                                size="sm"
+                                class="min-h-11"
+                                disabled={editBusy()}
+                              >
+                                Rename
+                              </Button>
+                            </div>
+                          </form>
+                          <form
+                            class="grid gap-1"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              if (tapLabel().trim()) {
+                                void editRecording({
+                                  kind: "replace",
+                                  actionId: action.id,
+                                  interaction: {
+                                    kind: "tap",
+                                    target: { label: tapLabel().trim() },
+                                  },
+                                });
+                              }
+                            }}
+                          >
+                            <label
+                              for={`recording-target-${action.id}`}
+                              class="text-micro text-text-weak"
+                            >
+                              Replacement tap target
+                            </label>
+                            <div class="flex gap-2">
+                              <input
+                                id={`recording-target-${action.id}`}
+                                class="min-h-11 min-w-0 flex-1 rounded-md border border-border-base bg-background-base px-2 text-base text-text-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+                                value={tapLabel()}
+                                autocomplete="off"
+                                spellcheck={false}
+                                placeholder="Visible label"
+                                onInput={(event) => setTapLabel(event.currentTarget.value)}
+                              />
+                              <Button
+                                type="submit"
+                                size="sm"
+                                class="min-h-11"
+                                disabled={editBusy()}
+                              >
+                                Replace
+                              </Button>
+                            </div>
+                          </form>
+                        </div>
+                      </Show>
+                    </li>
+                  );
+                }}
               </For>
             </ol>
+            <p class="mt-3 text-micro text-text-weak">
+              Any edit creates a new reviewed revision. Replay that exact revision before approval.
+            </p>
           </div>
         }
       >

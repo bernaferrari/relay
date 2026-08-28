@@ -811,8 +811,42 @@ test("outcome commands resolve ordinary intent without raw JSON mechanics", () =
     assert.deepEqual(repeat.intent, {
       kind: "repeat-test",
       testId: "locale-smoke",
-      over: { dimensionId: "language", valueIds: ["ja", "pt"] },
+      repeat: { dimensions: [{ id: "language", values: ["ja", "pt"] }] },
       evidence: "visual",
+    });
+  }
+
+  const multiRepeat = parseCli(
+    [
+      "repeat",
+      "release-smoke",
+      "--each",
+      "language=supported",
+      "--each",
+      "theme=light,dark",
+      "--strategy",
+      "pairwise",
+      "--pilot",
+      "language=pt-BR,theme=dark",
+      "--resume",
+      "untouched",
+    ],
+    {},
+  );
+  assert.equal(multiRepeat.command, "outcome");
+  if (multiRepeat.command === "outcome") {
+    assert.deepEqual(multiRepeat.intent, {
+      kind: "repeat-test",
+      testId: "release-smoke",
+      repeat: {
+        dimensions: [
+          { id: "language", values: "supported" },
+          { id: "theme", values: ["light", "dark"] },
+        ],
+        strategy: "pairwise",
+        pilot: { mode: "specified", case: { language: "pt-BR", theme: "dark" } },
+        resume: "untouched",
+      },
     });
   }
 

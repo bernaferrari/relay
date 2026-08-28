@@ -1,10 +1,27 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { analyzeTracePack, exportTracePack, verifyTracePack } from "./trace-pack.js";
 import type { PersistedRun } from "./runs.js";
+
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, canonicalValue(item)]),
+  );
+}
+
+function digestManifest(value: unknown): `sha256:${string}` {
+  return `sha256:${createHash("sha256")
+    .update(JSON.stringify(canonicalValue(value)))
+    .digest("hex")}`;
+}
 
 function persistedRun(): PersistedRun {
   return {
@@ -76,6 +93,7 @@ test("TracePack export is deterministic, portable, and verifies every content ad
   assert.match(first.digest, /^sha256:[a-f0-9]{64}$/u);
   assert.equal(first.completeness.status, "complete");
   assert.equal(first.redaction.status, "applied-at-persistence");
+  assert.deepEqual(first.completeness.artifacts, []);
   assert.equal(JSON.stringify(first).includes("/this/local/path"), false);
   assert.deepEqual(verifyTracePack(first), first);
 
@@ -83,6 +101,206 @@ test("TracePack export is deterministic, portable, and verifies every content ad
   const run = tampered.objects.find((object) => object.kind === "frozen-run")!;
   (run.content as { status: string }).status = "error";
   assert.throws(() => verifyTracePack(tampered), /object integrity/u);
+});
+
+test("captured video is embedded and independently digest-verified", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-trace-pack-video-"));
+  try {
+    await mkdir(join(directory, "video"));
+    const video = Buffer.from("bounded video evidence");
+    await writeFile(join(directory, "video", "run.mp4"), video);
+    const run = persistedRun();
+    run.dir = directory;
+    run.artifacts.push({
+      kind: "video",
+      capturedAt: 3,
+      data: { files: [{ path: "video/run.mp4", bytes: video.byteLength }] },
+    });
+    run.evidence!.channels = {
+      video: {
+        channel: "video",
+        status: "captured",
+        entries: 1,
+        bytes: video.byteLength,
+        dropped: 0,
+        redactions: 0,
+      },
+    } as NonNullable<PersistedRun["evidence"]>["channels"];
+
+    const pack = await exportTracePack(run);
+
+    assert.equal(pack.completeness.status, "complete");
+    assert.deepEqual(pack.completeness.artifacts, [
+      {
+        path: "video/run.mp4",
+        status: "embedded",
+        sources: ["run.artifacts[4].data.files[0].path"],
+        channels: ["video"],
+        expectedBytes: video.byteLength,
+        objectPath: "files/video/run.mp4",
+        digest: `sha256:${createHash("sha256").update(video).digest("hex")}`,
+        bytes: video.byteLength,
+        mediaType: "video/mp4",
+      },
+    ]);
+    assert.equal(
+      pack.objects.find((object) => object.path === "files/video/run.mp4")?.kind,
+      "artifact",
+    );
+    assert.deepEqual(verifyTracePack(pack), pack);
+
+    const alteredClosure = structuredClone(pack);
+    alteredClosure.completeness.artifacts![0]!.digest = `sha256:${"0".repeat(64)}`;
+    const { digest: _digest, ...body } = alteredClosure;
+    alteredClosure.digest = digestManifest(body);
+    assert.throws(() => verifyTracePack(alteredClosure), /artifact closure failed/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("captured video with absent or redacted bytes cannot produce a complete pack", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-trace-pack-video-missing-"));
+  try {
+    const run = persistedRun();
+    run.dir = directory;
+    run.evidence!.channels = {
+      video: {
+        channel: "video",
+        status: "captured",
+        entries: 1,
+        bytes: 42,
+        dropped: 0,
+        redactions: 0,
+      },
+    } as NonNullable<PersistedRun["evidence"]>["channels"];
+
+    const unreferenced = await exportTracePack(run);
+    assert.equal(unreferenced.completeness.status, "partial");
+    assert.deepEqual(unreferenced.completeness.missing, [
+      "channel:video:artifact-reference-missing",
+    ]);
+
+    run.artifacts.push({
+      kind: "video",
+      capturedAt: 3,
+      data: { files: [{ path: "video/run.mp4", bytes: 42 }] },
+    });
+
+    const missing = await exportTracePack(run);
+    assert.equal(missing.completeness.status, "partial");
+    assert.deepEqual(missing.completeness.artifacts, [
+      {
+        path: "video/run.mp4",
+        status: "missing",
+        sources: ["run.artifacts[4].data.files[0].path"],
+        channels: ["video"],
+        expectedBytes: 42,
+        reason: "not-found",
+      },
+    ]);
+
+    run.evidence!.channels.video!.status = "redacted";
+    const redacted = await exportTracePack(run);
+    assert.equal(redacted.completeness.status, "partial");
+    assert.equal(redacted.completeness.artifacts![0]?.status, "redacted");
+    assert.equal(redacted.completeness.artifacts![0]?.reason, "redacted-channel");
+    assert.equal(
+      redacted.objects.some((object) => object.path === "files/video/run.mp4"),
+      false,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("artifact closure is bounded without silently dropping references", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-trace-pack-limits-"));
+  try {
+    await mkdir(join(directory, "video"));
+    await writeFile(join(directory, "video", "one.mp4"), "12345");
+    await writeFile(join(directory, "video", "two.mp4"), "67890");
+    const run = persistedRun();
+    run.dir = directory;
+    run.artifacts.push({
+      kind: "video",
+      capturedAt: 3,
+      data: {
+        files: [
+          { path: "video/one.mp4", bytes: 5 },
+          { path: "video/two.mp4", bytes: 5 },
+        ],
+      },
+    });
+
+    const objectBound = await exportTracePack(run, { maxArtifactBytes: 4 });
+    assert.equal(objectBound.completeness.status, "partial");
+    assert.deepEqual(
+      objectBound.completeness.artifacts?.map(({ path, status, reason }) => ({
+        path,
+        status,
+        reason,
+      })),
+      [
+        { path: "video/one.mp4", status: "missing", reason: "object-too-large" },
+        { path: "video/two.mp4", status: "missing", reason: "object-too-large" },
+      ],
+    );
+
+    const aggregateBound = await exportTracePack(run, { maxTotalArtifactBytes: 5 });
+    assert.deepEqual(
+      aggregateBound.completeness.artifacts?.map(({ path, status, reason }) => ({
+        path,
+        status,
+        reason,
+      })),
+      [
+        { path: "video/one.mp4", status: "embedded", reason: undefined },
+        { path: "video/two.mp4", status: "missing", reason: "pack-too-large" },
+      ],
+    );
+    assert.throws(
+      () => verifyTracePack(aggregateBound, { maxArtifactBytes: 4 }),
+      /artifact object exceeds byte limit/u,
+    );
+    await assert.rejects(exportTracePack(run, { maxArtifacts: 1 }), /reference limit exceeded/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("pre-closure schema-v1 TracePacks remain verifiable", async () => {
+  const current = await exportTracePack(persistedRun());
+  const legacy = structuredClone(current);
+  delete legacy.completeness.artifacts;
+  const { digest: _digest, ...body } = legacy;
+  legacy.digest = digestManifest(body);
+
+  assert.deepEqual(verifyTracePack(legacy), legacy);
+});
+
+test("external evidence references remain explicit when bytes cannot be resolved", async () => {
+  const run = persistedRun();
+  const digest = "a".repeat(64);
+  run.artifacts.push({
+    kind: "selector-evidence",
+    capturedAt: 4,
+    data: { observation: { uri: `relay-evidence://${digest}` } },
+  });
+
+  const pack = await exportTracePack(run);
+
+  assert.equal(pack.completeness.status, "partial");
+  assert.deepEqual(pack.completeness.artifacts, [
+    {
+      path: `relay-evidence://${digest}`,
+      status: "missing",
+      sources: ["run.artifacts[4].data.observation.uri"],
+      channels: [],
+      reason: "external-reference-unresolved",
+    },
+  ]);
+  assert.deepEqual(verifyTracePack(pack), pack);
 });
 
 test("offline analysis names historical proof but keeps future behavior unknown", async () => {
@@ -104,6 +322,62 @@ test("offline analysis names historical proof but keeps future behavior unknown"
       "Historical evidence is exhausted; a live replay is the smallest way to learn whether current behavior still agrees.",
     requiresTarget: true,
   });
+});
+
+test("offline analysis recomputes selector robustness without upgrading future proof", async () => {
+  const run = persistedRun();
+  const plan = run.artifacts.find((artifact) => artifact.kind === "app-map-test-plan")!;
+  plan.data = {
+    ...(plan.data as Record<string, unknown>),
+    recipes: {
+      root: {
+        steps: [
+          {
+            kind: "module",
+            recipeId: "open-language",
+            check: { id: "open-language", title: "Open Language" },
+          },
+        ],
+      },
+      "open-language": {
+        steps: [{ kind: "tap", id: "tap-language", target: { label: "Language" } }],
+      },
+    },
+  };
+  run.artifacts.push({
+    kind: "campaign-check-evidence",
+    capturedAt: 3,
+    data: {
+      checkId: "open-language",
+      attempts: [{ kind: "selector", data: { status: "resolved", strategy: "label" } }],
+      nodes: [
+        {
+          role: "button",
+          label: "Language",
+          hittable: true,
+          rect: { x: 10, y: 20, width: 100, height: 40 },
+        },
+      ],
+    },
+  });
+
+  const analysis = analyzeTracePack(await exportTracePack(run));
+
+  assert.deepEqual(analysis.recomputed, [
+    {
+      code: "CURRENT_SELECTOR_MATCHER",
+      algorithm: "semantic-activation-v1",
+      checkId: "open-language",
+      status: "supports-recorded",
+      robustness: 1,
+      statement:
+        "The current pure matcher resolves 1/1 frozen semantic selectors for Open Language.",
+      evidence: analysis.recomputed?.[0]?.evidence,
+      requiresLiveVerification: true,
+    },
+  ]);
+  assert.equal(analysis.futureTransitionVerdict, "unknown");
+  assert.match(analysis.recomputed?.[0]?.evidence[0] ?? "", /^sha256:[a-f0-9]{64}$/u);
 });
 
 test("offline analysis isolates the first failed check as the smallest live experiment", async () => {
@@ -152,7 +426,7 @@ test("degraded channels and invalid frame paths make completeness explicitly par
 
     assert.equal(pack.completeness.status, "partial");
     assert.deepEqual(pack.completeness.missing, [
-      "frame:../outside.png:invalid-path",
+      "artifact:../outside.png:missing:invalid-path",
       "channel:screenshot:partial",
     ]);
     assert.deepEqual(

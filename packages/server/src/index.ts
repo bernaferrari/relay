@@ -111,6 +111,7 @@ import { handleAppMapRunRoute, type AppMapTestRunRouteRuntime } from "./app-map-
 import { handleSettingsRoute } from "./settings-routes.js";
 import { handleTargetRoute } from "./target-routes.js";
 import { handleManualTargetRoute } from "./manual-target-routes.js";
+import { handleTargetObservationRoute } from "./target-observation-route.js";
 import { handleControlPlaneRoute } from "./control-plane-routes.js";
 import { handleWorkspaceRoute } from "./workspace-routes.js";
 import { handleInteractionRoute } from "./interaction-routes.js";
@@ -444,6 +445,7 @@ async function handleRequest(
       })
     )
       return;
+    if (await handleTargetObservationRoute({ method, pathname, url, response: res, scope })) return;
 
     // ---- Project-scoped control plane ----
     if (

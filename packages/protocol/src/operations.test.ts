@@ -637,6 +637,37 @@ test("graph Test proposals accept only bounded semantic edit batches", () => {
   );
 });
 
+test("recording review exposes one bounded semantic edit command", () => {
+  const parse = operationDefinition("authoring.take.edit").input.parse;
+  const merge = {
+    sessionId: "session-1",
+    edit: {
+      kind: "merge" as const,
+      actionIds: ["tap-menu", "tap-settings"],
+      intent: "Open Settings",
+    },
+  };
+  assert.deepEqual(parse(merge), merge);
+  assert.deepEqual(
+    parse({
+      sessionId: "session-1",
+      edit: { kind: "split", actionId: "multi-step", atStep: 1 },
+    }),
+    {
+      sessionId: "session-1",
+      edit: { kind: "split", actionId: "multi-step", atStep: 1 },
+    },
+  );
+  assert.throws(
+    () => parse({ sessionId: "session-1", edit: { kind: "merge", actionIds: ["only-one"] } }),
+    /actionIds|array/u,
+  );
+  assert.throws(
+    () => parse({ sessionId: "session-1", edit: { kind: "split", actionId: "a", atStep: 0 } }),
+    /atStep|>=1/u,
+  );
+});
+
 test("snapshot input accepts optional full and stays valid when omitted", () => {
   const parse = operationDefinition("target.snapshot.capture").input.parse;
   assert.deepEqual(parse({ serial: "ipad-1" }), { serial: "ipad-1" });

@@ -1,6 +1,7 @@
 import * as z from "zod/v4";
 import { combineCampaignAdmissionSchema } from "./campaign-capacity-operation-output-schemas.js";
 import { sourceRevisionSchema } from "./app-map-test-operation-schemas.js";
+import { repeatPilotSpecSchema, repeatSpecSchema } from "./repeat-spec.js";
 
 const targetCapabilitySchema = z.enum([
   "snapshot",
@@ -523,7 +524,17 @@ export const combineCampaignSchema = z
                 })
                 .strict(),
             ]),
-            over: z.object({ dimensionId: z.string(), valueIds: z.array(z.string()) }).strict(),
+            spec: repeatSpecSchema,
+            resolved: z
+              .object({
+                dimensions: z.array(
+                  z.object({ id: z.string(), valueIds: z.array(z.string()).min(1) }).strict(),
+                ),
+                strategy: z.enum(["cartesian", "zip", "pairwise"]),
+                pilot: repeatPilotSpecSchema,
+                resume: z.enum(["untouched", "failed", "all"]),
+              })
+              .strict(),
             evidence: z.enum(["visual", "smoke"]),
             sourceRevision: sourceRevisionSchema.optional(),
             capture: z

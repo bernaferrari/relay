@@ -1,12 +1,17 @@
 import type {
   AuthoringCommitDestination,
   AuthoringInteraction,
+  AuthoringRecordingEdit,
   AuthoringTarget,
   AppMapCompiledTest,
   AppMapTestStartup,
   OfflineTestPreflightReport,
+  RepeatSpec,
+  ResolvedRepeatSpec,
   SourceRevision,
+  TargetObservation,
 } from "@relay/protocol";
+export type { TargetObservation, TargetObservationControl } from "@relay/protocol";
 
 export type WorkflowRef = string & { readonly __workflowRef: unique symbol };
 
@@ -46,7 +51,7 @@ export type RepeatTestIntent = {
   testId: string;
   target: AuthoringTarget;
   revision?: "current" | { exact: number };
-  over: { dimensionId: string; valueIds: readonly string[] };
+  repeat: RepeatSpec;
   evidence?: "visual" | "smoke";
   sourceRevision?: SourceRevision;
   capture?: { fullSurfaceScreenIds: readonly string[] };
@@ -92,7 +97,12 @@ export type WorkflowProblem = {
     | "stale-workflow-version"
     | "invalid-workflow-ref"
     | "unknown-job-status"
-    | "unexpected-authoring-state";
+    | "unexpected-authoring-state"
+    | "repeat-dimension-unresolved"
+    | "repeat-value-unresolved"
+    | "repeat-pilot-invalid"
+    | "repeat-resume-unsupported"
+    | "repeat-scope-changed";
   title: string;
   detail: string;
   recovery: string;
@@ -133,7 +143,8 @@ export type FrozenRepeatTestIdentity = {
   testPlanDigest: string;
   rootRecipeId: string;
   target: AuthoringTarget;
-  over: { dimensionId: string; valueIds: readonly string[] };
+  repeat: RepeatSpec;
+  resolved: ResolvedRepeatSpec;
   evidence: "visual" | "smoke";
   sourceRevision?: SourceRevision;
   capture?: { fullSurfaceScreenIds: readonly string[] };
@@ -145,9 +156,7 @@ export type AuthorWorkflowAction =
   | "record"
   | "checkpoint"
   | "stop"
-  | "trim"
-  | "reorder"
-  | "replace"
+  | "edit"
   | "replay"
   | "approve"
   | "discard"
@@ -175,6 +184,7 @@ export type AuthoringReview = {
   actionCount: number;
   actions: readonly {
     id: string;
+    intent: string;
     label?: string;
     stepCount: number;
     proofStatus?: "verified" | "pixels-only" | "unresolved";
@@ -235,7 +245,8 @@ export type RepeatOutcomeCounts = {
 
 export type RepeatValueResult = {
   cellId: string;
-  valueId: string;
+  /** Exact selected tuple; one value is insufficient for a matrix result. */
+  values: Readonly<Record<string, string>>;
   phase: "pilot" | "remaining";
   status: "untouched" | "running" | "passed" | "failed" | "needs-review" | "cancelled";
   runId?: string;
@@ -253,7 +264,7 @@ export type RepeatTestSnapshot = {
   frozen?: FrozenRepeatTestIdentity;
   repeat?: { id: string };
   outcomes: RepeatOutcomeCounts;
-  /** One inspectable result per selected value; counts are only a summary. */
+  /** One inspectable result per selected case; counts are only a summary. */
   results: readonly RepeatValueResult[];
   progress: { label: string; completed?: number; total?: number };
   allowedNextActions: readonly RepeatWorkflowAction[];
@@ -275,9 +286,7 @@ export type AuthorTestDecision = VersionedDecision &
     | { action: "record"; interaction: AuthoringInteraction }
     | { action: "checkpoint"; label?: string }
     | { action: "stop" }
-    | { action: "trim"; fromMs?: number; toMs?: number; actionIds?: readonly string[] }
-    | { action: "reorder"; actionIds: readonly string[] }
-    | { action: "replace"; actionId: string; interaction: AuthoringInteraction }
+    | { action: "edit"; edit: AuthoringRecordingEdit }
     | { action: "replay" }
     | { action: "approve"; destination?: AuthoringCommitDestination }
     | { action: "discard" }
@@ -304,6 +313,8 @@ export type OutcomeTargetSelection = { targetId?: string };
 
 export type ConnectTargetIntent = OutcomeTargetSelection & { kind: "connect-target" };
 
+export type ObserveTargetIntent = OutcomeTargetSelection & { kind: "observe-target" };
+
 export type RecordTestOutcomeIntent = OutcomeTargetSelection & {
   kind: "record-test";
   appMapId?: string;
@@ -323,7 +334,7 @@ export type RepeatTestOutcomeIntent = OutcomeTargetSelection & {
   kind: "repeat-test";
   appMapId?: string;
   testId: string;
-  over: { dimensionId: string; valueIds: readonly string[] };
+  repeat: RepeatSpec;
   evidence?: "visual" | "smoke";
 };
 
@@ -345,6 +356,13 @@ export type ContinueRepeatOutcomeIntent = {
   confirmRemaining: true;
 };
 
+export type EditRecordingOutcomeIntent = {
+  kind: "edit-recording";
+  ref: WorkflowRef;
+  expectedVersion: string;
+  edit: AuthoringRecordingEdit;
+};
+
 export type ConnectTargetResult = {
   targets: readonly AuthoringTarget[];
   current?: AuthoringTarget;
@@ -361,6 +379,7 @@ export type FailureInspection = {
  * canonical operation registry remains the authority behind every method. */
 export interface RelayOutcomeJobs {
   connect(intent?: ConnectTargetIntent): Promise<ConnectTargetResult>;
+  observe(intent?: ObserveTargetIntent): Promise<TargetObservation>;
   record(intent: RecordTestOutcomeIntent): Promise<AuthorTestSnapshot>;
   run(intent: RunTestOutcomeIntent): Promise<RunTestSnapshot>;
   repeat(intent: RepeatTestOutcomeIntent): Promise<RepeatTestSnapshot>;
@@ -374,4 +393,5 @@ export interface RelayOutcomeJobs {
     confirmRemaining: true;
   }): Promise<RepeatTestSnapshot>;
   advanceRecording(decision: AuthorTestDecision): Promise<AuthorTestSnapshot>;
+  editRecording(intent: EditRecordingOutcomeIntent): Promise<AuthorTestSnapshot>;
 }

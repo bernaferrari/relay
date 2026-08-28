@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CombineCampaign } from "@relay/protocol";
+import type { CombineCampaign, RepeatSpec } from "@relay/protocol";
 import { createRelayWorkflows, type RepeatTestIntent } from "./index.js";
 import { createScriptedRelayClient, type ScriptedRelayStep } from "./testing.js";
 
 const target = { kind: "device", platform: "android", targetId: "pixel-9" } as const;
 const values = ["en", "it", "fr"] as const;
 const resultIds = ["result-en", "result-it", "result-fr"] as const;
+const repeat: RepeatSpec = {
+  dimensions: [{ id: "language", values: [...values] }],
+  strategy: "zip",
+  pilot: { mode: "representative" },
+  resume: "untouched",
+};
 
 function intent(overrides: Partial<RepeatTestIntent> = {}): RepeatTestIntent {
   return {
@@ -14,8 +20,28 @@ function intent(overrides: Partial<RepeatTestIntent> = {}): RepeatTestIntent {
     appMapId: "settings",
     testId: "data-controls",
     target,
-    over: { dimensionId: "language", valueIds: values },
+    repeat,
     ...overrides,
+  };
+}
+
+function mapStep(revision = 7): ScriptedRelayStep {
+  return {
+    id: "app-map.get",
+    output: {
+      appMap: {
+        revision,
+        variables: {
+          language: {
+            id: "language",
+            name: "Language",
+            kind: "language",
+            apply: { kind: "appLocale", app: "com.example.app" },
+            options: values.map((id) => ({ id })),
+          },
+        },
+      },
+    },
   };
 }
 
@@ -184,7 +210,7 @@ function durableRepeat(input: {
     execution: {
       selected: { language: [...values] },
       selectedCellIds: [...resultIds],
-      strategy: "cartesian",
+      strategy: "zip",
       seed: 1,
     },
   };
@@ -208,7 +234,13 @@ function recoverableRepeat() {
     testPlanDigest: "plan-7",
     rootRecipeId: "repeat-root",
     target,
-    over: { dimensionId: "language", valueIds: [...values] },
+    spec: structuredClone(repeat),
+    resolved: {
+      dimensions: [{ id: "language", valueIds: [...values] }],
+      strategy: "zip",
+      pilot: { mode: "representative" },
+      resume: "untouched",
+    },
     evidence: "visual",
     sourceRevision: { vcs: "git", sha: "abc1234" },
     capture: { fullSurfaceScreenIds: ["data-controls"] },
@@ -224,13 +256,18 @@ async function startReadyRef() {
     pilot: "passed",
     remaining: "pending",
   });
-  const scripted = createScriptedRelayClient([compileStep(), runStep(), inspectStep(record)]);
+  const scripted = createScriptedRelayClient([
+    mapStep(),
+    compileStep(),
+    runStep(),
+    inspectStep(record),
+  ]);
   const snapshot = await createRelayWorkflows(scripted.client).start(
     intent({ revision: { exact: 7 } }),
   );
   assert.ok(snapshot.ref);
   assert.equal(snapshot.frozen?.evidence, "visual");
-  const runInvocation = scripted.invocations[1];
+  const runInvocation = scripted.invocations[2];
   assert.ok(runInvocation);
   assert.equal((runInvocation.input as { lens?: unknown }).lens, "visual");
   return { ref: snapshot.ref, snapshot };
@@ -239,7 +276,7 @@ async function startReadyRef() {
 test("invalid Repeat values fail before any canonical operation", async () => {
   const scripted = createScriptedRelayClient([compileStep()]);
   const snapshot = await createRelayWorkflows(scripted.client).start(
-    intent({ over: { dimensionId: "language", valueIds: ["en", "en"] } }),
+    intent({ repeat: { dimensions: [{ id: "language", values: ["en", "en"] }] } }),
   );
 
   assert.equal(snapshot.phase, "blocked");
@@ -268,7 +305,7 @@ test("recover adopts one canonical unfinished Repeat without starting another pi
   assert.equal(snapshot.frozen?.evidence, "visual");
   assert.deepEqual(snapshot.frozen?.capture?.fullSurfaceScreenIds, ["data-controls"]);
   assert.equal(snapshot.frozen?.sourceRevision?.sha, "abc1234");
-  assert.deepEqual(snapshot.frozen?.over.valueIds, values);
+  assert.deepEqual(snapshot.frozen?.resolved.dimensions[0]?.valueIds, values);
   assert.deepEqual(
     scripted.invocations.map((invocation) => invocation.id),
     ["job.combine.campaign.repeat.active"],
@@ -277,6 +314,7 @@ test("recover adopts one canonical unfinished Repeat without starting another pi
 
 test("a lost Repeat start response is recovered explicitly without retrying the mutation", async () => {
   const scripted = createScriptedRelayClient([
+    mapStep(),
     compileStep(),
     { id: "app-map.test.run", error: new Error("response lost") },
     {
@@ -328,7 +366,7 @@ test("recover refuses malformed durable Repeat identity without mutating anythin
 test("Repeat freezes the Test, starts exactly one pilot, then projects durable state", async () => {
   const record = durableRepeat({ status: "pilot-running", pilot: "queued", remaining: "pending" });
   const scripted = createScriptedRelayClient([
-    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    mapStep(),
     compileStep(),
     runStep((input) =>
       assert.deepEqual(input, {
@@ -337,9 +375,20 @@ test("Repeat freezes the Test, starts exactly one pilot, then projects durable s
         expectedRevision: 7,
         target,
         in: { language: values },
+        strategy: "zip",
         lens: "visual",
         executionMode: "pilot",
-        repeatRecovery: { schemaVersion: 1, testPlanDigest: "plan-7" },
+        repeatRecovery: {
+          schemaVersion: 1,
+          testPlanDigest: "plan-7",
+          spec: repeat,
+          resolved: {
+            dimensions: [{ id: "language", valueIds: values }],
+            strategy: "zip",
+            pilot: { mode: "representative" },
+            resume: "untouched",
+          },
+        },
         sourceRevision: { vcs: "git", sha: "abcdef1" },
         surfaceCapture: { forceRecaptureScreenIds: ["data-controls"] },
       }),
@@ -371,19 +420,140 @@ test("Repeat freezes the Test, starts exactly one pilot, then projects durable s
     cancelled: 0,
   });
   assert.deepEqual(
-    snapshot.results.map(({ valueId, phase, status }) => ({ valueId, phase, status })),
+    snapshot.results.map(({ values: selected, phase, status }) => ({ selected, phase, status })),
     [
-      { valueId: "en", phase: "pilot", status: "running" },
-      { valueId: "it", phase: "remaining", status: "untouched" },
-      { valueId: "fr", phase: "remaining", status: "untouched" },
+      { selected: { language: "en" }, phase: "pilot", status: "running" },
+      { selected: { language: "it" }, phase: "remaining", status: "untouched" },
+      { selected: { language: "fr" }, phase: "remaining", status: "untouched" },
     ],
   );
   assert.equal(scripted.invocations.filter(({ id }) => id === "app-map.test.run").length, 1);
   assert.equal(scripted.remaining(), 0);
 });
 
+test("multi-dimensional recovery preserves exact case tuples and rejects tuple drift", async () => {
+  const spec: RepeatSpec = {
+    dimensions: [
+      { id: "language", values: ["en", "it"] },
+      { id: "theme", values: ["light", "dark"] },
+    ],
+    strategy: "cartesian",
+    pilot: { mode: "specified", case: { language: "it", theme: "dark" } },
+    resume: "untouched",
+  };
+  const ids = ["case-it-dark", "case-en-light", "case-en-dark", "case-it-light"];
+  const tuples = [
+    { language: "it", theme: "dark" },
+    { language: "en", theme: "light" },
+    { language: "en", theme: "dark" },
+    { language: "it", theme: "light" },
+  ];
+  const cases = tuples.map((selected, index) => ({
+    index,
+    cellId: ids[index]!,
+    testId: "data-controls",
+    world: Object.values(selected).join(" × "),
+    values: selected,
+    targetProfileId: "pixel-profile",
+    childIntentDigest: `child-${index}`,
+    outerIntentDigest: `outer-${index}`,
+    wrapperGraphDigest: `wrapper-${index}`,
+    staticInputDigest: `input-${index}`,
+    phase: index === 0 ? ("pilot" as const) : ("coverage" as const),
+    status: index === 0 ? ("queued" as const) : ("pending" as const),
+    ...(index === 0 ? { jobId: "pilot-job" } : {}),
+  }));
+  const record: CombineCampaign = {
+    schemaVersion: 1,
+    id: "repeat-multi",
+    projectId: "default",
+    appMapId: "settings",
+    combineId: "generated-repeat",
+    sourceRevision: 8,
+    latestRevision: 8,
+    target: { kind: "device", id: "pixel-9", platform: "android" },
+    status: "pilot-running",
+    createdAt: 100,
+    updatedAt: 110,
+    cases,
+    lineage: [{ kind: "created", at: 100, appMapRevision: 8 }],
+    execution: {
+      selected: { language: ["en", "it"], theme: ["light", "dark"] },
+      selectedCellIds: ids,
+      strategy: "cartesian",
+      seed: 1,
+    },
+  };
+  const scripted = createScriptedRelayClient([
+    {
+      id: "app-map.get",
+      output: {
+        appMap: {
+          revision: 7,
+          variables: {
+            language: {
+              id: "language",
+              name: "Language",
+              kind: "language",
+              apply: { kind: "appLocale", app: "com.example.app" },
+              options: [{ id: "en" }, { id: "it" }],
+            },
+            theme: {
+              id: "theme",
+              name: "Theme",
+              kind: "theme",
+              apply: { kind: "appLocale", app: "com.example.app" },
+              options: [{ id: "light" }, { id: "dark" }],
+            },
+          },
+        },
+      },
+    },
+    compileStep(),
+    {
+      id: "app-map.test.run",
+      checkInput: (input) =>
+        assert.deepEqual((input as { pilotCase?: unknown }).pilotCase, {
+          language: "it",
+          theme: "dark",
+        }),
+      output: {
+        planIdentity: {
+          appMapId: "settings",
+          appMapRevision: 8,
+          testId: "data-controls",
+          rootRecipeId: "repeat-root",
+        },
+        plan: { rootRecipeId: "repeat-root" },
+        job: job(),
+        jobs: [job()],
+        combine: { id: "generated-repeat", revision: 8 },
+        campaign: { id: "repeat-multi", selectedCellIds: ids },
+      },
+    },
+    inspectStep(record),
+  ]);
+  const started = await createRelayWorkflows(scripted.client).start(
+    intent({ revision: { exact: 7 }, repeat: structuredClone(spec) }),
+  );
+  assert.deepEqual(
+    started.results.map((result) => result.values),
+    tuples,
+  );
+  assert.ok(started.ref);
+
+  const tampered = structuredClone(record);
+  tampered.cases[1]!.values.theme = "solarized";
+  const inspection = createScriptedRelayClient([inspectStep(tampered)]);
+  const rejected = await createRelayWorkflows(inspection.client).inspect(started.ref!);
+  assert.equal(rejected.kind, "repeat-test");
+  assert.equal(rejected.phase, "needs-attention");
+  assert.deepEqual(rejected.allowedNextActions, ["inspect"]);
+});
+
 test("a lost pilot-start response is terminal and is never retried", async () => {
   const scripted = createScriptedRelayClient([
+    mapStep(),
     compileStep(),
     { id: "app-map.test.run", error: new Error("response lost after dispatch") },
     runStep(),
@@ -402,6 +572,7 @@ test("a lost pilot-start response is terminal and is never retried", async () =>
 test("a post-start inspection failure retains a usable opaque reference", async () => {
   const record = durableRepeat({ status: "pilot-running", pilot: "queued", remaining: "pending" });
   const scripted = createScriptedRelayClient([
+    mapStep(),
     compileStep(),
     runStep(),
     { id: "job.combine.campaign.get", error: new Error("temporarily unavailable") },
@@ -426,7 +597,12 @@ test("durable identity drift fails closed", async () => {
     remaining: "pending",
     sourceRevision: 9,
   });
-  const scripted = createScriptedRelayClient([compileStep(), runStep(), inspectStep(record)]);
+  const scripted = createScriptedRelayClient([
+    mapStep(),
+    compileStep(),
+    runStep(),
+    inspectStep(record),
+  ]);
   const snapshot = await createRelayWorkflows(scripted.client).start(
     intent({ revision: { exact: 7 } }),
   );

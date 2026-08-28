@@ -188,8 +188,8 @@ function BindingState(props: { resolved: boolean; blocked: boolean }) {
       )}
       title={
         tone() === "bound"
-          ? "This step points at something real in the App Map, so Relay can run it."
-          : "Relay cannot run this step until it points at something real in the App Map."
+          ? "This step points at a saved App path, so Relay can run it."
+          : "Relay cannot run this step until it points at a saved App path."
       }
     >
       {tone() === "bound"

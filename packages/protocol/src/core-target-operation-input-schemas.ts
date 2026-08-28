@@ -68,6 +68,7 @@ export const coreTargetOperationInputSchemas = {
       ephemeral: queryBoolean.optional(),
     })
     .strict(),
+  "target.observation.capture": z.object(targetReference).strict(),
   "target.recover": z
     .object({
       ...targetReference,

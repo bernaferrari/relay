@@ -205,6 +205,7 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
     assert.equal(nameSet.has("relay_lease_create"), false);
     assert.equal(nameSet.has("relay_app_map_test_run"), false);
     for (const name of [
+      "relay_observe_target",
       "relay_record_test",
       "relay_record_action",
       "relay_add_checkpoint",
@@ -234,6 +235,114 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
       current: { kind: "device", platform: "android", targetId: "pixel-9" },
     });
     assert.deepEqual(calls, [{ operationId: "target.devices.list", input: {} }]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("outcome observation returns native pixels and bounded structured semantics", async () => {
+  const png =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+  const calls: Array<{ operationId: OperationId; input: Record<string, unknown> }> = [];
+  const session = await connectMcp(
+    {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        if (operationId === "target.devices.list") {
+          return {
+            devices: [
+              {
+                id: "pixel-9",
+                serial: "pixel-9",
+                name: "Pixel 9",
+                kind: "emulator",
+                booted: true,
+                platform: "android",
+              },
+            ],
+          };
+        }
+        if (operationId === "target.observation.capture") {
+          const imageDigest = "a".repeat(64);
+          const semanticsDigest = "b".repeat(64);
+          const artifact = (sha256: string, kind: "image" | "structured-data", mime: string) => ({
+            status: "available",
+            artifact: {
+              schemaVersion: 1,
+              id: `sha256:${sha256}`,
+              integrity: {
+                algorithm: "sha256",
+                sha256,
+                bytes: Buffer.from(png, "base64").byteLength,
+              },
+              media: { kind, mime },
+              capturedAt: 10,
+              provenance: { source: "authoring-evidence", capture: "recorded" },
+              retention: {
+                scope: "workspace-content-addressed",
+                recoverability: "content-addressed",
+              },
+              locations: [
+                { store: "authoring-evidence", opaque: `evidence-${sha256.slice(0, 8)}` },
+              ],
+            },
+          });
+          return {
+            schemaVersion: 1,
+            target: { kind: "device", platform: "android", targetId: "pixel-9" },
+            capturedAt: 11,
+            pixels: {
+              status: "captured",
+              capturedAt: 10,
+              mime: "image/png",
+              bytes: Buffer.from(png, "base64").byteLength,
+              artifact: artifact(imageDigest, "image", "image/png"),
+              presentationBase64: png,
+              width: 1,
+              height: 1,
+              fingerprint: "visual-1",
+            },
+            semantics: {
+              status: "current",
+              capturedAt: 11,
+              artifact: artifact(semanticsDigest, "structured-data", "application/json"),
+              source: "android-system",
+              fingerprint: "semantic-1",
+              nodeCount: 1,
+              controls: [{ label: "Settings", role: "button" }],
+            },
+            screenCandidate: { fingerprint: "visual-1", confidence: "observed" },
+          };
+        }
+        throw new Error(`unexpected ${operationId}`);
+      },
+    },
+    "outcome",
+  );
+  try {
+    const observed = callResult(
+      await session.request("tools/call", {
+        name: "relay_observe_target",
+        arguments: {},
+      }),
+    );
+    assert.equal(observed.isError, undefined);
+    assert.equal(observed.content[1]?.type, "image");
+    assert.equal(observed.content[1]?.data, png);
+    const structured = observed.structuredContent?.result as Record<string, unknown>;
+    const pixels = structured.pixels as Record<string, unknown>;
+    assert.equal(pixels.status, "captured");
+    assert.equal("base64" in pixels, false);
+    assert.equal("presentationBase64" in pixels, false);
+    assert.equal((pixels.artifact as Record<string, unknown>).status, "available");
+    assert.doesNotMatch(JSON.stringify(structured), /private\/temporary|capture\.png/u);
+    assert.deepEqual(calls, [
+      { operationId: "target.devices.list", input: {} },
+      {
+        operationId: "target.observation.capture",
+        input: { serial: "pixel-9" },
+      },
+    ]);
   } finally {
     await session.close();
   }

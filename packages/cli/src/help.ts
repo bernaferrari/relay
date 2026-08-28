@@ -9,8 +9,8 @@ import { dbHelp } from "./db-commands.js";
 import { UsageError } from "./errors.js";
 
 const familyGroups = [
-  ["App Map", ["map", "screen", "connect", "flow"]],
-  ["Author", ["variable", "test", "combine", "proposal", "session", "routine", "case-stack"]],
+  ["Topology", ["map", "screen", "connect", "flow"]],
+  ["Authoring", ["variable", "test", "combine", "proposal", "session", "routine", "case-stack"]],
   ["Explore", ["discovery"]],
   ["Operate", ["device", "run", "report", "activity"]],
   ["Automation", ["schedule", "matrix"]],
@@ -29,10 +29,10 @@ const globalOptions = `Global options:
   --quiet                          Suppress stderr diagnostics
   --timeout <ms>                   Request timeout (env RELAY_TIMEOUT_MS)
   --wait | --no-wait               Wait policy (env RELAY_WAIT)
-  --target current                 Resolve the only connected target for Test run
-  --revision current               Resolve the latest saved App Map revision for Test run
-  --device <id>                    Choose a connected device for an outcome command
-  --map <id>                       Choose an App Map when more than one exists
+  --target current                 Resolve the only connected Device for an advanced Test run
+  --revision current               Resolve the latest saved topology revision for an advanced run
+  --device <id>                    Choose a connected Device for an outcome command
+  --map <id>                       Choose backing topology when more than one exists (advanced)
 
 Screenshot and snapshot output:
   --file <path>                    Save screenshot PNG or snapshot JSON to a file
@@ -50,7 +50,7 @@ Exit codes:
   3  connection (server unreachable, timeout)
   4  auth (401/403)
   5  validation (client-side input problem: bad flags, malformed payload)
-  6  conflict (lease required, stale revision)
+  6  conflict (Device control unavailable, stale revision)
   7  cancelled (SIGINT/SIGTERM)
   8  server error (the call did not run to a verdict)
   9  operation failed (it ran and reported failure: { ok: false } or job status error)
@@ -120,9 +120,13 @@ function renderRootHelp(): string {
 
 Usage:
   relay connect [device]
+  relay observe [device]
   relay record <title> [--map <id>] [--device <id>] --confirm
+  relay edit-recording <workflowRef> <expectedVersion> <remove|reorder|replace|merge|split|rename> ...
   relay run <testId> [--map <id>] [--device <id>]
-  relay repeat <testId> --in <dimension>=<values> [--map <id>] [--device <id>]
+  relay repeat <testId> --each <dimension>=<values|supported|all> [--each ...]
+    [--strategy <cartesian|zip|pairwise>] [--pilot <representative|first|dimension=value,...>]
+    [--resume <untouched|failed|all>] [--map <id>] [--device <id>]
   relay continue-repeat <workflowRef> <expectedVersion> --confirm
   relay inspect-failure <runId>
   relay propose-repair <runId> <checkId> <accept-current|disable> <reason>
@@ -132,11 +136,13 @@ Usage:
   relay <family> --help
 
 Outcome commands:
-  connect, record, run, repeat, continue-repeat, inspect-failure, propose-repair, export-evidence
+  connect, observe, record, edit-recording, run, repeat, continue-repeat, inspect-failure, propose-repair,
+  export-evidence
 
-These resolve the sole App Map, connected target, and current revision automatically. Use --map
-or --device only when selection is ambiguous. The first Record creates a default App Map. Record
-acquires control only after --confirm and never takes over another actor's lease.
+These resolve the sole connected Device and current Test workspace automatically. Use --device, or
+the advanced --map option, only when selection is ambiguous. The first Record creates its backing
+topology automatically. Record acquires control only after --confirm and never displaces another
+person or agent.
 
 Advanced command families:
 ${groups}
@@ -144,14 +150,15 @@ ${groups}
 Advanced examples:
 ${usages(workflowCommands).join("\n")}
 
-An App Map is screens and paths. A Variable is a list plus the recorded steps that apply
-one value (language, account, model). A Test is what you run. A Combine connects them:
-every selected value × every selected Test. Run one cell or the whole grid.
+Start with App, Device, Test, Checkpoint, Run, and Report. Record, Repeat, Explore, and Verify are
+actions. Topology, scheduling, and Device-control commands below are advanced operations for repair,
+migration, and trusted orchestration.
 
 ${globalOptions}
 
 Friendly commands default --input to '{}'. Explicit path arguments such as <serial> and <sessionId>
-are required where shown. Relay does not start a server automatically.
+are required where shown. Outcome commands start or reuse the default loopback Relay daemon when
+RELAY_URL and --server are unset. Explicit server URLs remain caller-managed.
 `;
 }
 

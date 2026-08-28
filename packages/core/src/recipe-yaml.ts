@@ -7,10 +7,12 @@ import { CURRENT_RECORDING_FORMAT_VERSION } from "./recording-format.js";
 
 const SCHEMA_VERSION = 1;
 const MAX_RECIPE_YAML_BYTES = 1_000_000;
-const YAML_SUFFIX = ".relay.yaml";
+export const EXECUTION_PLAN_YAML_SUFFIX = ".relay.plan.yaml" as const;
+export const LEGACY_RECIPE_YAML_SUFFIX = ".relay.yaml" as const;
 
 export type RecipeYamlDocument = {
   schemaVersion: number;
+  kind: "execution-plan";
   recordingFormatVersion?: typeof CURRENT_RECORDING_FORMAT_VERSION;
   id: string;
   name: string;
@@ -79,6 +81,7 @@ function canonicalStep(step: RecipeStep): RecipeStep {
 function documentFromRecipe(recipe: Recipe): RecipeYamlDocument {
   return {
     schemaVersion: SCHEMA_VERSION,
+    kind: "execution-plan",
     ...(recipe.recordingFormatVersion
       ? { recordingFormatVersion: recipe.recordingFormatVersion }
       : {}),
@@ -119,6 +122,7 @@ export function parseRecipeYaml(
 
   const allowed = new Set([
     "schemaVersion",
+    "kind",
     "recordingFormatVersion",
     "id",
     "name",
@@ -138,6 +142,9 @@ export function parseRecipeYaml(
         ? `unsupported Relay test schemaVersion: ${value.schemaVersion}`
         : "schemaVersion must be 1",
     );
+  }
+  if (value.kind !== undefined && value.kind !== "execution-plan") {
+    throw new Error("kind must be execution-plan");
   }
   if (
     value.recordingFormatVersion !== undefined &&
@@ -193,12 +200,23 @@ export function formatRecipeYaml(recipe: Recipe): string {
 
 export function recipeYamlFilename(id: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,95}$/.test(id)) throw new Error("invalid recipe id");
-  return `${id}${YAML_SUFFIX}`;
+  return `${id}${EXECUTION_PLAN_YAML_SUFFIX}`;
 }
 
 export function recipeYamlPath(testsRoot: string, id: string): string {
   return join(testsRoot, recipeYamlFilename(id));
 }
+
+export function legacyRecipeYamlPath(testsRoot: string, id: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,95}$/.test(id)) throw new Error("invalid recipe id");
+  return join(testsRoot, `${id}${LEGACY_RECIPE_YAML_SUFFIX}`);
+}
+
+export type StoredRecipeYaml = {
+  recipe: Recipe;
+  path: string;
+  contract: "execution-plan" | "legacy-recipe";
+};
 
 export async function readYamlRecipeFile(path: string): Promise<Recipe | null> {
   try {
@@ -213,13 +231,55 @@ export async function readYamlRecipeFile(path: string): Promise<Recipe | null> {
   }
 }
 
+/** Resolve the single executable source for an id. Legacy `.relay.yaml` plans
+ * remain readable, but Relay never guesses when both legacy and canonical
+ * sources exist. A successful save can then migrate the legacy source. */
+export async function readStoredRecipeYaml(
+  testsRoot: string,
+  id: string,
+): Promise<StoredRecipeYaml | null> {
+  const canonicalPath = recipeYamlPath(testsRoot, id);
+  const legacyPath = legacyRecipeYamlPath(testsRoot, id);
+  const [canonical, legacy] = await Promise.all([
+    readYamlRecipeFile(canonicalPath),
+    readYamlRecipeFile(legacyPath),
+  ]);
+  if (canonical && legacy) {
+    throw new Error(
+      `ambiguous executable source for ${id}: both ${recipeYamlFilename(id)} and ${id}${LEGACY_RECIPE_YAML_SUFFIX} exist`,
+    );
+  }
+  if (canonical) return { recipe: canonical, path: canonicalPath, contract: "execution-plan" };
+  if (legacy) return { recipe: legacy, path: legacyPath, contract: "legacy-recipe" };
+  return null;
+}
+
 export async function listYamlRecipeFiles(testsRoot: string): Promise<string[]> {
   try {
-    return (await readdir(testsRoot, { withFileTypes: true }))
-      .filter((entry) => entry.isFile() && entry.name.endsWith(YAML_SUFFIX))
-      .map((entry) => join(testsRoot, entry.name))
+    const names = (await readdir(testsRoot, { withFileTypes: true }))
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          (entry.name.endsWith(EXECUTION_PLAN_YAML_SUFFIX) ||
+            entry.name.endsWith(LEGACY_RECIPE_YAML_SUFFIX)),
+      )
+      .map((entry) => entry.name)
       .sort();
-  } catch {
-    return [];
+    const sources = new Map<string, string>();
+    for (const name of names) {
+      const suffix = name.endsWith(EXECUTION_PLAN_YAML_SUFFIX)
+        ? EXECUTION_PLAN_YAML_SUFFIX
+        : LEGACY_RECIPE_YAML_SUFFIX;
+      const id = name.slice(0, -suffix.length);
+      const prior = sources.get(id);
+      if (prior) {
+        throw new Error(`ambiguous executable source for ${id}: both ${prior} and ${name} exist`);
+      }
+      sources.set(id, name);
+    }
+    return names.map((name) => join(testsRoot, name));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
   }
 }

@@ -1,5 +1,5 @@
-import type { AuthoringInteraction } from "@relay/protocol";
-import { createRelayOutcomeJobs, type WorkflowRef } from "@relay/workflows";
+import { repeatSpecSchema, type AuthoringInteraction, type RepeatSpec } from "@relay/protocol";
+import { createRelayOutcomeJobs, type RelayOutcomeJobs, type WorkflowRef } from "@relay/workflows";
 import * as z from "zod/v4";
 import type { OperationInvoker } from "./server.js";
 
@@ -53,12 +53,51 @@ const recordedInteraction = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("wait"), ms: z.number().int().nonnegative() }).strict(),
 ]);
 
+const recordingEdit = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("remove"), actionIds: z.array(identifier).min(1) }).strict(),
+  z.object({ kind: z.literal("reorder"), actionIds: z.array(identifier).min(1) }).strict(),
+  z
+    .object({ kind: z.literal("replace"), actionId: identifier, interaction: recordedInteraction })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("merge"),
+      actionIds: z.array(identifier).min(2),
+      intent: z.string().trim().min(1).max(240).optional(),
+    })
+    .strict(),
+  z
+    .object({ kind: z.literal("split"), actionId: identifier, atStep: z.number().int().min(1) })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("rename"),
+      actionId: identifier,
+      intent: z.string().trim().min(1).max(240),
+    })
+    .strict(),
+]);
+
 export const relayOutcomeTools = Object.freeze([
   {
     name: "relay_connect_target",
-    title: "Connect to a target",
+    title: "Connect to a Device",
     description:
-      "Discover ready local devices and select the sole target automatically. Supply targetId only when several devices are ready.",
+      "Discover ready local Devices and select the sole Device automatically. Supply targetId only when several Devices are ready.",
+    requiresConfirmation: false,
+    inputSchema: z.object({ targetId }).strict(),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: "relay_observe_target",
+    title: "Observe a Device",
+    description:
+      "Capture one bounded pixel and semantic observation without taking control. Pixels remain available when accessibility is stale or unavailable.",
     requiresConfirmation: false,
     inputSchema: z.object({ targetId }).strict(),
     annotations: {
@@ -72,7 +111,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_record_test",
     title: "Record a Test",
     description:
-      "Start one canonical recording on the sole ready device and current App Map revision. Relay may acquire an unclaimed lease but never takes over another actor's control.",
+      "Start one recording in the current Test workspace on the sole ready Device. Relay may reserve available control but never displaces another person or agent.",
     requiresConfirmation: true,
     inputSchema: z
       .object({ appMapId: identifier.optional(), title: identifier, targetId })
@@ -88,7 +127,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_run_test",
     title: "Run a Test",
     description:
-      "Compile and run one saved Test against the sole ready device and current App Map revision. Returns an inspectable workflow reference and immutable run evidence references.",
+      "Compile and run one saved Test on the sole ready Device. Returns a continuation reference and immutable Run evidence references.",
     requiresConfirmation: false,
     inputSchema: z
       .object({ appMapId: identifier.optional(), testId: identifier, targetId })
@@ -130,7 +169,7 @@ export const relayOutcomeTools = Object.freeze([
   {
     name: "relay_stop_recording",
     title: "Stop and compile a recording",
-    description: "Stop raw capture and compile the canonical Take for review.",
+    description: "Stop raw capture and prepare the recorded Test for review.",
     requiresConfirmation: false,
     inputSchema: z.object(workflowDecision).strict(),
     annotations: {
@@ -141,9 +180,23 @@ export const relayOutcomeTools = Object.freeze([
     },
   },
   {
+    name: "relay_edit_recording",
+    title: "Edit a recording",
+    description:
+      "Transform the reviewed recording with one typed remove, reorder, replace, merge, split, or rename command. Every successful edit creates a new revision that must replay before approval.",
+    requiresConfirmation: false,
+    inputSchema: z.object({ ...workflowDecision, edit: recordingEdit }).strict(),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  {
     name: "relay_replay_recording",
     title: "Replay a recording",
-    description: "Replay the exact reviewed Take revision and return its proof state.",
+    description: "Replay the exact reviewed recording revision and return its proof state.",
     requiresConfirmation: false,
     inputSchema: z.object(workflowDecision).strict(),
     annotations: {
@@ -156,8 +209,7 @@ export const relayOutcomeTools = Object.freeze([
   {
     name: "relay_approve_recording",
     title: "Approve a recorded Test",
-    description:
-      "After a passing replay, explicitly approve the recording into the App Map and generated Test.",
+    description: "After a passing replay, explicitly approve the recording as the named Test.",
     requiresConfirmation: true,
     inputSchema: z.object(workflowDecision).strict(),
     annotations: {
@@ -177,8 +229,7 @@ export const relayOutcomeTools = Object.freeze([
       .object({
         appMapId: identifier.optional(),
         testId: identifier,
-        dimensionId: identifier,
-        valueIds: z.array(identifier).min(1),
+        repeat: repeatSpecSchema,
         evidence: z.enum(["visual", "smoke"]).optional(),
         targetId,
       })
@@ -194,7 +245,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_inspect_workflow",
     title: "Inspect a workflow",
     description:
-      "Read the latest canonical Run, Repeat, or recording state from an opaque workflow reference.",
+      "Read the latest canonical Run, Repeat, or recording state from a continuation reference.",
     requiresConfirmation: false,
     inputSchema: z.object({ ref: identifier }).strict(),
     annotations: {
@@ -257,7 +308,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_export_evidence",
     title: "Export evidence",
     description:
-      "Export the portable content-addressed TracePack for one persisted Run. Advanced Combine export remains available in raw operation profiles.",
+      "Export the portable content-addressed TracePack for one persisted Run. Advanced batch export remains available in raw operation profiles.",
     requiresConfirmation: false,
     inputSchema: z.object({ runId: identifier }).strict(),
     annotations: {
@@ -277,12 +328,6 @@ export async function invokeRelayOutcomeTool(input: {
   actorId: string;
   signal: AbortSignal;
 }): Promise<unknown> {
-  const descriptor = relayOutcomeTools.find(({ name }) => name === input.name);
-  if (!descriptor) throw new TypeError(`Unknown Relay outcome tool: ${input.name}`);
-  if (descriptor.requiresConfirmation && !input.confirmed) {
-    throw new TypeError(`${descriptor.name} requires confirm: true.`);
-  }
-  const parsed = descriptor.inputSchema.parse(input.argumentsValue) as Record<string, unknown>;
   const jobs = createRelayOutcomeJobs(
     {
       invoke: (operationId, operationInput) =>
@@ -290,9 +335,41 @@ export async function invokeRelayOutcomeTool(input: {
     },
     { actorId: input.actorId },
   );
+  return invokeRelayOutcomeToolWithJobs({
+    name: input.name,
+    argumentsValue: input.argumentsValue,
+    confirmed: input.confirmed,
+    jobs,
+  });
+}
+
+/**
+ * Validate and translate the public MCP boundary into the outcome façade.
+ * Kept separate from transport construction so every public tool can be
+ * contract-tested without reproducing canonical workflow behavior in MCP.
+ */
+export async function invokeRelayOutcomeToolWithJobs(input: {
+  name: RelayOutcomeToolDescriptor["name"];
+  argumentsValue: Record<string, unknown>;
+  confirmed: boolean;
+  jobs: RelayOutcomeJobs;
+}): Promise<unknown> {
+  const descriptor = relayOutcomeTools.find(({ name }) => name === input.name);
+  if (!descriptor) throw new TypeError(`Unknown Relay outcome tool: ${input.name}`);
+  if (descriptor.requiresConfirmation && !input.confirmed) {
+    throw new TypeError(`${descriptor.name} requires confirm: true.`);
+  }
+  const parsed = descriptor.inputSchema.parse(input.argumentsValue) as Record<string, unknown>;
+  const { jobs } = input;
   if (input.name === "relay_connect_target") {
     return jobs.connect({
       kind: "connect-target",
+      ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
+    });
+  }
+  if (input.name === "relay_observe_target") {
+    return jobs.observe({
+      kind: "observe-target",
       ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
     });
   }
@@ -318,10 +395,7 @@ export async function invokeRelayOutcomeTool(input: {
       kind: "repeat-test",
       ...(typeof parsed.appMapId === "string" ? { appMapId: parsed.appMapId } : {}),
       testId: parsed.testId as string,
-      over: {
-        dimensionId: parsed.dimensionId as string,
-        valueIds: parsed.valueIds as string[],
-      },
+      repeat: parsed.repeat as RepeatSpec,
       ...(parsed.evidence === "visual" || parsed.evidence === "smoke"
         ? { evidence: parsed.evidence }
         : {}),
@@ -349,6 +423,14 @@ export async function invokeRelayOutcomeTool(input: {
       action: "stop",
       ref: parsed.ref as WorkflowRef,
       expectedVersion: parsed.expectedVersion as string,
+    });
+  }
+  if (input.name === "relay_edit_recording") {
+    return jobs.editRecording({
+      kind: "edit-recording",
+      ref: parsed.ref as WorkflowRef,
+      expectedVersion: parsed.expectedVersion as string,
+      edit: parsed.edit as Parameters<RelayOutcomeJobs["editRecording"]>[0]["edit"],
     });
   }
   if (input.name === "relay_replay_recording") {

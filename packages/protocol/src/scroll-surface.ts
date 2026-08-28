@@ -117,6 +117,66 @@ export type ScrollSurfaceSemanticIndex = {
   anchors: ScrollSurfaceSemanticAnchor[];
 };
 
+/** Honest, derived review status for a logical surface. This deliberately
+ * does not replace the capture's historical `status` / `reason`: older maps
+ * remain readable and raw viewport evidence remains the authority. */
+export type ScrollSurfaceClassification = "complete" | "partial" | "dynamic" | "unsupported";
+
+export type ScrollSurfaceCoverageInterval = {
+  /** Inclusive document-space start in pixels. */
+  startY: number;
+  /** Exclusive document-space end. `null` means the remaining extent is
+   * unknown, rather than pretending an incomplete capture measured it. */
+  endY: number | null;
+  state: "captured" | "dynamic" | "not-reached";
+  confidence: number;
+  sourceViewportIndexes: number[];
+};
+
+export type ScrollSurfaceRegion = {
+  kind: "sticky" | "dynamic";
+  coordinateSpace: "viewport";
+  rect: { x: number; y: number; width: number; height: number };
+  confidence: number;
+  sourceViewportIndexes: number[];
+  /** Stable semantic identity when accessibility supplied one. */
+  target?: StepTarget;
+  reason: string;
+};
+
+export type ScrollSurfaceMergeAnchor = {
+  fromViewportIndex: number;
+  toViewportIndex: number;
+  documentY: number;
+  shiftY: number;
+  confidence: number;
+  basis: "semantic-or-visual" | "capture-offset";
+};
+
+export type ScrollSurfaceContainerIdentity = {
+  target: StepTarget;
+  role?: string;
+  viewportRect?: { x: number; y: number; width: number; height: number };
+  nested: boolean;
+  confidence: number;
+  sourceViewportIndexes: number[];
+};
+
+/** Regenerable confidence projection compiled only from terminal capture facts
+ * and the immutable raw PNG/tree pairs. It is optional for schema-v1 backward
+ * compatibility and must never be used as document-origin proof. */
+export type ScrollSurfaceConfidenceModel = {
+  schemaVersion: 1;
+  classification: ScrollSurfaceClassification;
+  confidence: number;
+  capturedPixels: number;
+  documentExtent: "known" | "open";
+  coverage: ScrollSurfaceCoverageInterval[];
+  mergeAnchors: ScrollSurfaceMergeAnchor[];
+  regions: ScrollSurfaceRegion[];
+  scrollContainer?: ScrollSurfaceContainerIdentity;
+};
+
 /** Frozen subset of one captured surface carried by an executable reveal. */
 export type SemanticRevealPlan = ScrollSurfaceSemanticIndex & {
   surfaceId: string;
@@ -178,6 +238,9 @@ export type LogicalScrollSurface = {
   };
   /** Regenerable semantic ordering for viewport-independent reveal steps. */
   semanticIndex?: ScrollSurfaceSemanticIndex;
+  /** Optional for legacy captures. New captures and regenerations derive this
+   * from raw evidence without changing capture identity or provenance. */
+  confidenceModel?: ScrollSurfaceConfidenceModel;
   /** Self-contained JSON manifest for tools that need to reconstruct this
    * surface without loading the entire App Map. */
   manifest: ScrollSurfaceEvidence & { mime: "application/json" };

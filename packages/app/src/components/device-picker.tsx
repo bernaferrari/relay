@@ -5,6 +5,7 @@ import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { presentTarget, targetGroupMatchesQuery, targetIsReady } from "../lib/target-presentation";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
+import type { WorkspaceController } from "../lib/workspace-controller";
 
 type TargetGroup = { items: DeviceInfo[]; item: DeviceInfo; count: number };
 
@@ -15,6 +16,7 @@ export function DevicePicker(props: {
   targetSets?: readonly CompatibilityMatrix[];
   activeTargetSetId?: string;
   onChooseTargetSet?: (targetSetId?: string) => void;
+  workspaceController?: WorkspaceController;
 }) {
   let trigger: HTMLButtonElement | undefined;
   let dialog: HTMLDivElement | undefined;
@@ -129,17 +131,14 @@ export function DevicePicker(props: {
     selectTarget(serial);
   }
 
-  /**
-   * Selection is visible immediately, while the control plane refreshes the
-   * target's readiness in the background. The event lets an empty map
-   * advance from “Choose a device” to “Preparing” without waiting for the
-   * next polling interval.
-   */
+  /** Selection is visible immediately while the control plane refreshes the
+   * target's readiness in the background. The typed workspace notification
+   * lets the active editor advance without waiting for the next poll. */
   function selectTarget(serial: string): void {
     closePicker(true);
     props.onChooseTargetSet?.();
     void server.setSelectedDevice(serial).then(() => server.refreshDevices());
-    window.dispatchEvent(new CustomEvent("relay:device-selected", { detail: { serial } }));
+    props.workspaceController?.execute({ kind: "target.selected", targetId: serial });
   }
 
   const closePicker = (restoreFocus = false) => {
@@ -173,6 +172,9 @@ export function DevicePicker(props: {
       setOpen(true);
       queueMicrotask(() => trigger?.scrollIntoView({ block: "nearest" }));
     };
+    const disconnectWorkspace = props.workspaceController?.connect({
+      chooseTarget: onOpenRequest,
+    });
     document.addEventListener("mousedown", onPointer);
     window.addEventListener("keydown", onKey);
     window.addEventListener("relay:open-device-picker", onOpenRequest);
@@ -180,6 +182,7 @@ export function DevicePicker(props: {
       document.removeEventListener("mousedown", onPointer);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("relay:open-device-picker", onOpenRequest);
+      disconnectWorkspace?.();
     });
   });
 

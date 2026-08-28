@@ -6,9 +6,11 @@ import type { AppMapCanvasTool } from "../components/app-map-toolbar";
 import type { AppMapRunReadiness } from "./app-map-run-readiness";
 import type { CanvasConnection } from "./app-map-connection-draft";
 import type { MapTreeNode } from "./app-map-tree";
+import type { WorkspaceController } from "./workspace-controller";
 
 /** Global shell and keyboard events translated into workspace-level intents. */
 export function useAppMapWorkspaceEvents(options: {
+  workspaceController?: WorkspaceController;
   captureOpen: Accessor<boolean>;
   runReadiness: Accessor<AppMapRunReadiness>;
   canvasTool: Accessor<AppMapCanvasTool>;
@@ -43,6 +45,7 @@ export function useAppMapWorkspaceEvents(options: {
   const recorder = useRecorder();
 
   createAppMapEventOrchestration({
+    workspaceController: options.workspaceController,
     devicePanelOpen: options.captureOpen,
     runReadiness: options.runReadiness,
     canvasTool: options.canvasTool,

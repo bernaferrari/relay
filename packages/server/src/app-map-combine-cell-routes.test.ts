@@ -1322,6 +1322,19 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
       actorKind: "human",
     });
     await saveLocaleCombine(client);
+    const beforeRegion = await readAppMap("mobile", "store");
+    if (!beforeRegion) throw new Error("expected store App Map before Region");
+    await client.invoke("app-map.variable.save", {
+      appMapId: "store",
+      variableId: "region",
+      expectedRevision: beforeRegion.revision,
+      variable: {
+        name: "Region",
+        kind: "custom",
+        apply: { kind: "appLocale", app: "com.example" },
+        options: [{ id: "us" }, { id: "ca" }],
+      } as never,
+    });
     const map = await readAppMap("mobile", "store");
     if (!map) throw new Error("expected store App Map");
     const sourceRevision = {
@@ -1335,9 +1348,32 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
       expectedRevision: map.revision,
       target: { kind: "device", platform: "android", targetId: "pixel-1" },
       targetProfileId: "pixel-en",
-      in: { language: ["en", "it", "fr"] },
+      in: { language: ["en", "it", "fr"], region: ["us", "ca"] },
+      strategy: "cartesian",
+      pilotCase: { language: "it", region: "ca" },
       lens: "visual",
-      repeatRecovery: { schemaVersion: 1, testPlanDigest: "script-only-plan" },
+      repeatRecovery: {
+        schemaVersion: 1,
+        testPlanDigest: "script-only-plan",
+        spec: {
+          dimensions: [
+            { id: "language", values: ["en", "it", "fr"] },
+            { id: "region", values: ["us", "ca"] },
+          ],
+          strategy: "cartesian",
+          pilot: { mode: "specified", case: { language: "it", region: "ca" } },
+          resume: "untouched",
+        },
+        resolved: {
+          dimensions: [
+            { id: "language", valueIds: ["en", "it", "fr"] },
+            { id: "region", valueIds: ["us", "ca"] },
+          ],
+          strategy: "cartesian",
+          pilot: { mode: "specified", case: { language: "it", region: "ca" } },
+          resume: "untouched",
+        },
+      },
       sourceRevision,
     });
     const repeatId = started.campaign?.id;
@@ -1347,7 +1383,11 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
     assert.equal(((started.jobs as unknown[]) ?? []).length, 1);
     assert.equal(campaign.cases.filter((item) => item.phase === "pilot").length, 1);
     assert.equal(campaign.status, "pilot-running");
-    assert.equal(campaign.execution?.selectedCellIds?.length, 3);
+    assert.equal(campaign.execution?.selectedCellIds?.length, 6);
+    assert.deepEqual(campaign.cases.find((item) => item.phase === "pilot")?.values, {
+      language: "it",
+      region: "ca",
+    });
     assert.deepEqual(campaign.execution?.repeat, {
       schemaVersion: 1,
       requestedAppMapRevision: map.revision,
@@ -1356,7 +1396,24 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
       testPlanDigest: "script-only-plan",
       rootRecipeId: started.planIdentity.rootRecipeId,
       target: { kind: "device", platform: "android", targetId: "pixel-1" },
-      over: { dimensionId: "language", valueIds: ["en", "it", "fr"] },
+      spec: {
+        dimensions: [
+          { id: "language", values: ["en", "it", "fr"] },
+          { id: "region", values: ["us", "ca"] },
+        ],
+        strategy: "cartesian",
+        pilot: { mode: "specified", case: { language: "it", region: "ca" } },
+        resume: "untouched",
+      },
+      resolved: {
+        dimensions: [
+          { id: "language", valueIds: ["en", "it", "fr"] },
+          { id: "region", valueIds: ["us", "ca"] },
+        ],
+        strategy: "cartesian",
+        pilot: { mode: "specified", case: { language: "it", region: "ca" } },
+        resume: "untouched",
+      },
       evidence: "visual",
       sourceRevision,
       pilotJobId: started.job.id,
@@ -1377,7 +1434,8 @@ test("Test Repeat queues one pilot cell and preserves its source revision", asyn
         expectedRevision: afterPilot.revision,
         target: { kind: "device", platform: "android", targetId: "pixel-1" },
         targetProfileId: "pixel-en",
-        in: { language: ["en", "it", "fr"] },
+        in: { language: ["en", "it", "fr"], region: ["us", "ca"] },
+        strategy: "cartesian",
         sourceRevision,
       }),
       (error: unknown) =>
@@ -1545,8 +1603,19 @@ test("concurrent outcome Repeat starts create one campaign and one pilot for a T
         target: { kind: "device", platform: "android", targetId: "pixel-1" },
         targetProfileId: "pixel-en",
         in: { [dimensionId]: valueIds },
+        strategy: "zip",
         lens: "visual",
-        repeatRecovery: { schemaVersion: 1, testPlanDigest: "script-only-plan" },
+        repeatRecovery: {
+          schemaVersion: 1,
+          testPlanDigest: "script-only-plan",
+          spec: { dimensions: [{ id: dimensionId, values: valueIds }] },
+          resolved: {
+            dimensions: [{ id: dimensionId, valueIds }],
+            strategy: "zip",
+            pilot: { mode: "representative" },
+            resume: "untouched",
+          },
+        },
       });
     const languageStart = run(before.revision, "language", ["en", "it"]);
     await firstControl;

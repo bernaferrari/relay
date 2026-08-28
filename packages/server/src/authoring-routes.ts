@@ -32,6 +32,7 @@ import type {
   AuthoringTarget,
   CommitAuthoringSessionInput,
   CreateAuthoringSessionInput,
+  EditAuthoringTakeInput,
   RecipeStep,
   ReorderAuthoringTakeInput,
   ReplaceAuthoringActionInput,
@@ -712,6 +713,11 @@ export async function handleAuthoringRoute(input: {
     if (action === "reorder") {
       const value = await body<ReorderAuthoringTakeInput>(request);
       json(response, 200, { session: await authoringSessions.reorder(sessionId, value.actionIds) });
+      return true;
+    }
+    if (action === "edit") {
+      const value = await body<EditAuthoringTakeInput>(request);
+      json(response, 200, { session: await authoringSessions.edit(sessionId, value.edit) });
       return true;
     }
     if (action === "replay") {

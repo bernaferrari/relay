@@ -4,6 +4,7 @@ import { FirstOperatorRunCard, useFirstOperatorRun } from "./first-operator-run"
 import { FirstTestChecklist, useFirstTestOnboarding } from "./first-test-onboarding";
 import type { MapCanvasView, MapMode } from "./map-mode-switch";
 import { WorkspaceSkeleton } from "./workspace-skeleton";
+import type { WorkspaceController } from "../lib/workspace-controller";
 
 const AppMapWorkspace = lazy(() =>
   import("./app-map-workspace").then((module) => ({ default: module.AppMapWorkspace })),
@@ -22,16 +23,25 @@ export function StudioAuthoringWorkspace(props: {
   onOpenRun: (id: string) => void;
   onImportYaml: (yaml: string) => Promise<void> | void;
   onExportYaml: () => void;
-  onRecordTest: () => void;
+  workspaceController: WorkspaceController;
 }) {
   function recordTest(): void {
     if (props.mode !== "test") props.onMode("test");
-    props.onRecordTest();
+    props.workspaceController.execute({ kind: "test.record" });
+  }
+  function showLiveDevice(): void {
+    props.workspaceController.execute({ kind: "device.show" });
+  }
+  function chooseTarget(): void {
+    props.workspaceController.execute({ kind: "target.choose" });
+  }
+  function captureScreen(): void {
+    props.workspaceController.execute({ kind: "screen.capture" });
   }
   const onboarding = useFirstTestOnboarding({
-    onOpenTargets: props.onOpenTargets,
-    onShowLiveDevice: () => window.dispatchEvent(new CustomEvent("relay:open-device-panel")),
-    onSaveStartScreen: () => window.dispatchEvent(new CustomEvent("relay:capture-screen")),
+    onOpenTargets: chooseTarget,
+    onShowLiveDevice: showLiveDevice,
+    onSaveStartScreen: captureScreen,
     onRecord: recordTest,
     onImportYaml: props.onImportYaml,
     onOpenTest: () => props.onMode("test"),
@@ -40,8 +50,8 @@ export function StudioAuthoringWorkspace(props: {
   });
   const operatorRun = useFirstOperatorRun({
     firstTestVisible: () => onboarding.visible(),
-    onOpenTargets: props.onOpenTargets,
-    onShowLiveDevice: () => window.dispatchEvent(new CustomEvent("relay:open-device-panel")),
+    onOpenTargets: chooseTarget,
+    onShowLiveDevice: showLiveDevice,
     onOpenCombine: (combineId) => props.onOpenCombine(combineId),
     onOpenTest: () => props.onMode("test"),
   });
@@ -53,6 +63,7 @@ export function StudioAuthoringWorkspace(props: {
         fallback={
           <Suspense fallback={<WorkspaceSkeleton label="map" />}>
             <AppMapWorkspace
+              workspaceController={props.workspaceController}
               navigatorOpen={props.navigatorOpen}
               view={props.mode as MapCanvasView}
               onView={props.onMode}
@@ -67,9 +78,10 @@ export function StudioAuthoringWorkspace(props: {
       >
         <Suspense fallback={<WorkspaceSkeleton label="test editor" />}>
           <AppMapTestWorkspace
+            workspaceController={props.workspaceController}
             onOpenRun={props.onOpenRun}
             onChooseTarget={props.onOpenTargets}
-            onOpenTarget={() => window.dispatchEvent(new CustomEvent("relay:open-device-panel"))}
+            onOpenTarget={showLiveDevice}
             onRecord={onboarding.checklistProps().onRecord}
           />
         </Suspense>

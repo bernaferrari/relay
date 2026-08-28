@@ -36,10 +36,10 @@ export type FirstTestChecklistProps = {
 };
 
 const STEPS: Array<{ id: FirstTestStage; label: string }> = [
-  { id: "target", label: "Check target" },
-  { id: "capture", label: "Save a screen" },
+  { id: "target", label: "Connect Device" },
+  { id: "capture", label: "Capture start" },
   { id: "author", label: "Create a Test" },
-  { id: "run", label: "Review and run" },
+  { id: "run", label: "Run and review" },
 ];
 
 function stepIsDone(state: FirstTestChecklistState, step: FirstTestStage): boolean {
@@ -71,7 +71,7 @@ function targetCheckIcon(check: TargetCheck): "check" | "alert" | "refresh" | "i
 }
 
 function targetActionLabel(target: FirstTestTargetStatus): string {
-  return target.kind === "ready" ? "Check target" : target.actionLabel;
+  return target.kind === "ready" ? "Check Device" : target.actionLabel;
 }
 
 /**
@@ -94,7 +94,9 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
     } catch {
       // The shell already gives the product-specific parse failure a toast.
       // This is only a local, accessible fallback for a host file-read issue.
-      setImportIssue("Relay could not read that file. Choose a YAML map and try again.");
+      setImportIssue(
+        "Relay could not read that file. Choose an advanced YAML export and try again.",
+      );
     }
   }
 
@@ -118,7 +120,7 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
             id="first-test-checklist-title"
             class="mt-1 mb-0 text-body/[1.25] font-semibold text-[var(--text-strong)]"
           >
-            Build it from a real screen
+            Record one trusted path
           </h2>
         </div>
         <button
@@ -232,11 +234,11 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
           <div class="grid gap-3">
             <div class="grid gap-1">
               <h3 class="m-0 text-caption font-semibold text-[var(--text-strong)]">
-                Save the starting screen
+                Capture the starting state
               </h3>
               <p class="m-0 text-caption/[1.5] text-[var(--text-weak)]">
-                Relay uses the screen you save as visible evidence. Nothing is captured until you
-                choose this action.
+                Relay keeps this first frame as visible evidence and can use it as a Checkpoint.
+                Nothing is captured until you choose this action.
               </p>
             </div>
             <Show
@@ -248,7 +250,7 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
               }
             >
               <Button variant="primary" size="lg" class="w-full" onClick={props.onSaveStartScreen}>
-                <Icon name="camera" size={14} /> Save start screen
+                <Icon name="camera" size={14} /> Capture starting state
               </Button>
             </Show>
           </div>
@@ -279,11 +281,13 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
               >
                 <Icon name="refresh" size={14} class="ui-refresh-spin" />
               </Show>
-              {props.creatingStarter === "screen-check" ? "Creating check…" : "Check saved screen"}
+              {props.creatingStarter === "screen-check"
+                ? "Creating check…"
+                : "Check starting state"}
             </Button>
             <Show when={!props.starterAvailable}>
               <p class="-mt-1 mb-0 text-caption/[1.45] text-[var(--text-weaker)]">
-                Save a screen with a stable identity to create this safe starter.
+                Capture the starting state before creating this safe starter.
               </p>
             </Show>
             <Button
@@ -303,10 +307,10 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
             </Button>
             <div class="grid grid-cols-2 gap-2">
               <Button variant="ghost" size="sm" onClick={props.onRecord}>
-                <Icon name="video" size={13} /> Record a path
+                <Icon name="video" size={13} /> Record Test
               </Button>
               <Button variant="ghost" size="sm" onClick={() => importInput?.click()}>
-                <Icon name="upload" size={13} /> Import map YAML
+                <Icon name="upload" size={13} /> Import advanced YAML
               </Button>
             </div>
             <input
@@ -316,7 +320,7 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
               class="sr-only"
               type="file"
               accept=".yaml,.yml,application/yaml,text/yaml"
-              aria-label="Choose map YAML file"
+              aria-label="Choose advanced YAML export"
               onChange={(event) => void importSelectedFile(event)}
             />
             <Show when={importIssue()}>
@@ -376,7 +380,7 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
               </h3>
               <p class="m-0 text-caption/[1.5] text-[var(--text-weak)]">
                 This completion comes from the saved report, not from a local checklist. Keep the
-                Test, inspect its evidence, or export the map for review.
+                Test, inspect its evidence, or export advanced YAML for review.
               </p>
             </div>
             <Button
@@ -385,7 +389,7 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
               class="w-full"
               onClick={() => props.onOpenReport(props.state.completedRun!.id)}
             >
-              <Icon name="folder" size={14} /> Open saved report
+              <Icon name="folder" size={14} /> Open saved Report
             </Button>
             <div class="grid grid-cols-2 gap-2">
               <Button variant="secondary" size="sm" onClick={props.onOpenTest}>

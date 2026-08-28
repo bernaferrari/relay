@@ -1,6 +1,4 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
 import {
   parseTracePack,
   tracePackOfflineAnalysisSchema,
@@ -11,6 +9,13 @@ import {
 } from "@relay/protocol";
 import { replayPersistedRunOffline } from "./offline-run-replay.js";
 import type { PersistedRun } from "./runs.js";
+import {
+  assertTracePackArtifactBounds,
+  closeTracePackArtifacts,
+  type TracePackExportLimits,
+} from "./trace-pack-artifact-closure.js";
+
+export type { TracePackExportLimits } from "./trace-pack-artifact-closure.js";
 
 function canonicalValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalValue);
@@ -44,46 +49,6 @@ function jsonObject(path: string, kind: "frozen-run", content: unknown): TracePa
   };
 }
 
-type PortableFrame = { absolute: string; logicalPath: string };
-
-function portableFrame(run: PersistedRun, path: string): PortableFrame | undefined {
-  const absolute = resolve(run.dir, path);
-  const child = relative(run.dir, absolute);
-  if (!child || child === ".." || child.startsWith(`..${sep}`) || isAbsolute(child))
-    return undefined;
-  const logicalPath = child.split(sep).join("/");
-  if (logicalPath.split("/").some((segment) => !segment || segment === "." || segment === "..")) {
-    return undefined;
-  }
-  return { absolute, logicalPath };
-}
-
-async function frameObject(frame: PortableFrame): Promise<TracePackObject | undefined> {
-  try {
-    const bytes = await readFile(frame.absolute);
-    return {
-      path: `files/${frame.logicalPath}`,
-      kind: "frame",
-      mediaType: "image/png",
-      encoding: "base64",
-      digest: sha256(bytes),
-      bytes: bytes.byteLength,
-      content: bytes.toString("base64"),
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function allFramePaths(run: PersistedRun): string[] {
-  return [
-    ...new Set([
-      ...run.frames.map((frame) => frame.path),
-      ...run.steps.flatMap((step) => step.frames.map((frame) => frame.path)),
-    ]),
-  ].sort();
-}
-
 function frozenRun(run: PersistedRun): Omit<PersistedRun, "dir"> {
   const { dir: _localPath, ...portable } = structuredClone(run);
   return portable;
@@ -102,39 +67,42 @@ function packDigest(pack: Omit<TracePack, "digest">): `sha256:${string}` {
   return sha256(canonicalJson(pack));
 }
 
-/**
- * Freeze one immutable persisted run into a self-contained JSON document.
- * Binary frames are embedded as content-addressed base64 objects; the local
- * run directory is deliberately omitted so the pack can move between hosts.
- */
-export async function exportTracePack(run: PersistedRun): Promise<TracePack> {
+/** Freeze one immutable run into a portable, artifact-closed JSON document. */
+export async function exportTracePack(
+  run: PersistedRun,
+  requestedLimits: TracePackExportLimits = {},
+): Promise<TracePack> {
   if (!/^[a-f0-9]{64}$/u.test(run.inputDigest)) {
     throw new Error(`run ${run.id} has no valid frozen input digest`);
   }
-  const requestedFrames = allFramePaths(run);
-  const invalidFrames: string[] = [];
-  const portableFrames = new Map<string, PortableFrame>();
-  for (const path of requestedFrames) {
-    const frame = portableFrame(run, path);
-    if (!frame) {
-      invalidFrames.push(path);
-      continue;
-    }
-    portableFrames.set(frame.logicalPath, frame);
-  }
-  const frames = await Promise.all([...portableFrames.values()].map(frameObject));
-  const objects = [jsonObject("run.json", "frozen-run", frozenRun(run)), ...frames.filter(Boolean)]
-    .filter((object): object is TracePackObject => object !== undefined)
-    .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
-  const capturedFrames = new Set(
-    objects.filter((object) => object.kind === "frame").map((object) => object.path.slice(6)),
+  const closure = await closeTracePackArtifacts(run, requestedLimits);
+  const objects = [jsonObject("run.json", "frozen-run", frozenRun(run)), ...closure.objects].sort(
+    (left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0),
   );
+  const artifactReferences = closure.references;
+  const unreferencedCapturedFileChannels = ["screenshot", "video"].filter((channel) => {
+    const record = (
+      run.evidence?.channels as
+        | Record<string, { status: EvidenceChannelStatus; entries: number; bytes: number }>
+        | undefined
+    )?.[channel];
+    return (
+      record?.status === "captured" &&
+      (record.entries > 0 || record.bytes > 0) &&
+      !artifactReferences.some((reference) => reference.channels.includes(channel))
+    );
+  });
   const missing = [
     ...(!run.evidence ? ["evidence-manifest"] : []),
-    ...invalidFrames.map((path) => `frame:${path}:invalid-path`),
-    ...[...portableFrames.keys()]
-      .filter((path) => !capturedFrames.has(path))
-      .map((path) => `frame:${path}:missing`),
+    ...unreferencedCapturedFileChannels.map(
+      (channel) => `channel:${channel}:artifact-reference-missing`,
+    ),
+    ...artifactReferences
+      .filter((reference) => reference.status !== "embedded")
+      .map(
+        (reference) =>
+          `artifact:${reference.path}:${reference.status}:${reference.reason ?? "unknown"}`,
+      ),
     ...Object.entries(run.evidence?.channels ?? {})
       .filter(([, record]) => record.status !== "captured")
       .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
@@ -164,6 +132,7 @@ export async function exportTracePack(run: PersistedRun): Promise<TracePack> {
       status: missing.length ? ("partial" as const) : ("complete" as const),
       channels: channels(run),
       missing,
+      artifacts: artifactReferences,
     },
     objects,
   };
@@ -175,17 +144,57 @@ function objectBytes(object: TracePackObject): Buffer {
   return Buffer.from(canonicalJson(object.content));
 }
 
-/** Validate both the schema and every content address before evidence is used. */
-export function verifyTracePack(value: unknown): TracePack {
+/** Validate the schema, manifest, object hashes, and artifact closure. */
+export function verifyTracePack(
+  value: unknown,
+  requestedLimits: TracePackExportLimits = {},
+): TracePack {
   const pack = parseTracePack(value);
+  assertTracePackArtifactBounds(pack.objects, requestedLimits);
   const paths = new Set<string>();
   for (const object of pack.objects) {
-    if (paths.has(object.path))
+    if (paths.has(object.path)) {
       throw new Error(`TracePack object path is duplicated: ${object.path}`);
+    }
     paths.add(object.path);
     const bytes = objectBytes(object);
     if (bytes.byteLength !== object.bytes || sha256(bytes) !== object.digest) {
       throw new Error(`TracePack object integrity failed: ${object.path}`);
+    }
+  }
+  const references = pack.completeness.artifacts;
+  if (references) {
+    const referencedObjects = new Set<string>();
+    const referencedArtifacts = new Set<string>();
+    for (const reference of references) {
+      if (referencedArtifacts.has(reference.path)) {
+        throw new Error(`TracePack artifact reference is duplicated: ${reference.path}`);
+      }
+      referencedArtifacts.add(reference.path);
+      if (reference.status !== "embedded") continue;
+      const object = pack.objects.find((candidate) => candidate.path === reference.objectPath);
+      if (
+        !object ||
+        object.kind === "frozen-run" ||
+        object.digest !== reference.digest ||
+        object.bytes !== reference.bytes ||
+        object.mediaType !== reference.mediaType ||
+        (reference.expectedBytes !== undefined && reference.expectedBytes !== object.bytes)
+      ) {
+        throw new Error(`TracePack artifact closure failed: ${reference.path}`);
+      }
+      referencedObjects.add(object.path);
+    }
+    for (const object of pack.objects) {
+      if (object.kind !== "frozen-run" && !referencedObjects.has(object.path)) {
+        throw new Error(`TracePack object is not in the artifact closure: ${object.path}`);
+      }
+    }
+    if (
+      pack.completeness.status === "complete" &&
+      references.some((reference) => reference.status !== "embedded")
+    ) {
+      throw new Error("TracePack completeness cannot be complete with unembedded artifacts");
     }
   }
   const { digest: _digest, ...body } = pack;
@@ -207,11 +216,7 @@ function runFromPack(pack: TracePack): PersistedRun {
   return { ...structuredClone(run), dir: "" };
 }
 
-/**
- * Analyze only the pack's frozen evidence. The return type structurally fixes
- * futureTransitionVerdict to `unknown`, so an offline caller cannot turn a
- * historical proof or a newly-resolving selector into a future-device pass.
- */
+/** Analyze frozen evidence without claiming a future-device pass. */
 export function analyzeTracePack(value: unknown): TracePackOfflineAnalysis {
   const pack = verifyTracePack(value);
   const run = runFromPack(pack);
@@ -259,6 +264,42 @@ export function analyzeTracePack(value: unknown): TracePackOfflineAnalysis {
     : replay.summary.checks > 0 && replay.summary.proved === replay.summary.checks
       ? "proved"
       : "insufficient-evidence";
+  const recomputed: NonNullable<TracePackOfflineAnalysis["recomputed"]> = replay.checks.flatMap(
+    (check) => {
+      const matcher = check.currentMatcher;
+      if (!matcher) return [];
+      const comparable = matcher.selectors.filter((selector) => selector.status !== "unavailable");
+      const resolved = comparable.filter((selector) => selector.status === "resolved").length;
+      const robustness = comparable.length === 0 ? 0 : resolved / comparable.length;
+      const status =
+        matcher.comparison === "changed"
+          ? ("changed" as const)
+          : matcher.status === "resolved"
+            ? ("supports-recorded" as const)
+            : matcher.status === "blocked"
+              ? ("blocked" as const)
+              : ("unavailable" as const);
+      return [
+        {
+          code: "CURRENT_SELECTOR_MATCHER" as const,
+          algorithm: "semantic-activation-v1" as const,
+          checkId: check.id,
+          status,
+          robustness,
+          statement:
+            status === "supports-recorded"
+              ? `The current pure matcher resolves ${resolved}/${comparable.length} frozen semantic selectors for ${check.title}.`
+              : status === "changed"
+                ? `The current pure matcher disagrees with the recorded selector result for ${check.title}.`
+                : status === "blocked"
+                  ? `The current pure matcher cannot resolve every comparable frozen selector for ${check.title}.`
+                  : `The TracePack does not contain enough comparable semantic evidence for ${check.title}.`,
+          evidence: [runObject.digest],
+          requiresLiveVerification: true as const,
+        },
+      ];
+    },
+  );
   return tracePackOfflineAnalysisSchema.parse({
     schemaVersion: 1,
     mode: "trace-pack-offline-analysis",
@@ -267,6 +308,7 @@ export function analyzeTracePack(value: unknown): TracePackOfflineAnalysis {
     historicalVerdict,
     futureTransitionVerdict: "unknown",
     proved,
+    recomputed,
     unknown,
     smallestLiveVerification: missingPlan
       ? {

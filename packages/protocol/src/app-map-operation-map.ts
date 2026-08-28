@@ -25,6 +25,7 @@ import type {
   ScreenVariant,
   UpdateScreenInput,
 } from "./app-map.js";
+import type { RepeatPilotSpec, RepeatSpec } from "./repeat-spec.js";
 import type { RunReview } from "./run-review.js";
 import {
   REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
@@ -565,6 +566,10 @@ export type AppMapOperationMap = {
       /** Variable id → selected value ids. When present, Relay upserts a
        * Combine for this Test × those worlds and starts a campaign. */
       in?: Record<string, string[]>;
+      /** Expansion strategy for the ordered Repeat dimensions in `in`. */
+      strategy?: "zip" | "cartesian" | "pairwise";
+      /** Exact resolved value tuple to run as the sole pilot. */
+      pilotCase?: Record<string, string>;
       /** Capture lens for the upserted Combine. Visual/smoke aliases or a raw
        * capture-policy name. Screenshots are never a Variable. */
       lens?: CombineLensInput;
@@ -577,7 +582,17 @@ export type AppMapOperationMap = {
       sourceRevision?: SourceRevision;
       /** Internal identity required to adopt an already-started Repeat after
        * the initiating client loses its response or local opaque reference. */
-      repeatRecovery?: { schemaVersion: 1; testPlanDigest: string };
+      repeatRecovery?: {
+        schemaVersion: 1;
+        testPlanDigest: string;
+        spec: RepeatSpec;
+        resolved: {
+          dimensions: Array<{ id: string; valueIds: string[] }>;
+          strategy: "cartesian" | "zip" | "pairwise";
+          pilot: RepeatPilotSpec;
+          resume: "untouched" | "failed" | "all";
+        };
+      };
       workflowRequestId?: string;
     };
     output: {

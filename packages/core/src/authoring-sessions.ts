@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type {
   AuthoringCommitDestination,
   AuthoringInteraction,
+  AuthoringRecordingEdit,
   AuthoringReplayAttempt,
   AuthoringSession,
   AuthoringSessionState,
@@ -9,7 +10,6 @@ import type {
   CreateAuthoringSessionInput,
 } from "@relay/protocol";
 export { recordedPauseDuration } from "./authoring-recorded-pause.js";
-import { actionSource, stepsForInteraction } from "./authoring-action-steps.js";
 import { AuthoringStateError, transition } from "./authoring-session-state.js";
 import {
   approvedAfterObservation,
@@ -35,6 +35,7 @@ import { readAppMap } from "./collaboration.js";
 import { persistAuthoringEvidence } from "./authoring-evidence.js";
 import { commitAuthoringSessionMap } from "./authoring-session-map-commit.js";
 import { invalidateAuthoringActionProof } from "./authoring-transition-proof.js";
+import { editAuthoringTakeRevision } from "./authoring-recording-edit.js";
 import {
   MAX_AUTHORING_RETAINED_OBSERVATIONS,
   authoringReplayActionProof,
@@ -199,6 +200,7 @@ export class AuthoringSessionStore {
       actorId: operation.actorId,
       actorKind: operation.actorKind,
       appMapId: input.appMapId,
+      ...(input.testName?.trim() ? { testName: input.testName.trim() } : {}),
       state: "preparing",
       target: clone(input.target),
       leaseId: input.leaseId,
@@ -450,25 +452,7 @@ export class AuthoringSessionStore {
   }
 
   async reorder(id: string, actionIds: string[]): Promise<AuthoringSession> {
-    return this.#mutate(id, async (session) => {
-      assertOwner(session);
-      requireState(session, "reviewing");
-      const previous = currentRevision(session);
-      if (
-        actionIds.length !== previous.actions.length ||
-        new Set(actionIds).size !== actionIds.length ||
-        actionIds.some((actionId) => !previous.actions.some((action) => action.id === actionId))
-      ) {
-        throw new AuthoringStateError("Reorder must contain every action exactly once");
-      }
-      const byId = new Map(previous.actions.map((action) => [action.id, action]));
-      return nextRevision(session, "reorder", (revision) => ({
-        ...revision,
-        actions: actionIds.map((actionId) =>
-          invalidateAuthoringActionProof(clone(byId.get(actionId)!)),
-        ),
-      }));
-    });
+    return this.edit(id, { kind: "reorder", actionIds });
   }
 
   async replace(
@@ -476,33 +460,23 @@ export class AuthoringSessionStore {
     actionId: string,
     interaction: AuthoringInteraction,
   ): Promise<AuthoringSession> {
+    return this.edit(id, { kind: "replace", actionId, interaction });
+  }
+
+  /** Deep recording-review module: callers express one semantic edit while
+   * canonical state owns action lookup, structural validation, proof
+   * invalidation, and the immutable next revision. */
+  async edit(id: string, edit: AuthoringRecordingEdit): Promise<AuthoringSession> {
     return this.#mutate(id, async (session) => {
       assertOwner(session);
       requireState(session, "reviewing");
-      const previous = currentRevision(session);
-      if (!previous.actions.some((action) => action.id === actionId)) {
-        throw new AuthoringStateError("Authoring action not found");
-      }
-      return nextRevision(session, "replace", (revision) => ({
-        ...revision,
-        actions: revision.actions.map((action) => {
-          const invalidated = invalidateAuthoringActionProof(action);
-          return action.id === actionId
-            ? {
-                ...invalidated,
-                source: actionSource(interaction),
-                steps: stepsForInteraction(interaction, action.id, session.group),
-                label: undefined,
-                ...((interaction.kind === "observe" ||
-                  interaction.kind === "screenshot" ||
-                  interaction.kind === "steps") &&
-                interaction.label
-                  ? { label: interaction.label }
-                  : {}),
-              }
-            : invalidated;
+      return nextRevision(session, "edit", (revision) =>
+        editAuthoringTakeRevision({
+          revision,
+          edit,
+          ...(session.group ? { group: session.group } : {}),
         }),
-      }));
+      );
     });
   }
 
@@ -691,6 +665,9 @@ export class AuthoringSessionStore {
       const revision = currentRevision(session);
       const destination = await destinationForSession(session, input.destination);
       const approvedAfter = await approvedAfterObservation(session, revision, destination);
+      if (input.createTest && !session.testName?.trim()) {
+        throw new AuthoringStateError("A canonical Test name is required before approval");
+      }
       session = transition(session, "committing");
       session.commitTransactionId = session.id;
       session.commitTestId = input.createTest ? `test-${session.id}` : undefined;

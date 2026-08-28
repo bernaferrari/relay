@@ -1,10 +1,12 @@
 import { isAlias, isMap, isNode, isScalar, isSeq, parseDocument, stringify } from "yaml";
+import type { RepeatDimensionSpec, RepeatSpec } from "@relay/protocol";
 
 const INTENT_DOCUMENT_SCHEMA_VERSION = 1 as const;
 const MAX_INTENT_YAML_BYTES = 256_000;
 const MAX_STEPS = 200;
 const MAX_REPEAT_DIMENSIONS = 8;
 const MAX_REPEAT_VALUES = 1_000;
+export const BOUND_TEST_YAML_SUFFIX = ".relay.test.yaml" as const;
 
 type IntentStepBase = {
   /** Stable id of the canonical Test step this sentence projects. */
@@ -45,12 +47,7 @@ export type IntentDocumentStep =
   | IntentCheckpointStep
   | IntentCheckStep;
 
-export type IntentRepeatDimension = {
-  /** Canonical App Map Variable id. */
-  variableId: string;
-  /** `all` resolves against that Variable when the canonical Combine is compiled. */
-  values: "all" | string[];
-};
+export type IntentRepeatDimension = RepeatDimensionSpec;
 
 /**
  * A small authoring projection over one canonical App Map Test.
@@ -60,16 +57,13 @@ export type IntentRepeatDimension = {
  */
 export type IntentDocument = {
   schemaVersion: typeof INTENT_DOCUMENT_SCHEMA_VERSION;
-  kind: "test-intent";
+  kind: "bound-test";
   name: string;
   description?: string;
   appMapId: string;
   testId: string;
   steps: IntentDocumentStep[];
-  repeat?: {
-    strategy?: "cartesian" | "zip" | "pairwise";
-    dimensions: IntentRepeatDimension[];
-  };
+  repeat?: RepeatSpec;
 };
 
 export type IntentDocumentReferences = {
@@ -94,7 +88,7 @@ type IntentYamlStep = {
 
 type IntentYamlDocument = {
   schemaVersion: number;
-  kind: "test-intent";
+  kind: "bound-test";
   name: string;
   description?: string;
   appMap: string;
@@ -102,7 +96,9 @@ type IntentYamlDocument = {
   steps: IntentYamlStep[];
   repeat?: {
     strategy?: "cartesian" | "zip" | "pairwise";
-    dimensions: Array<{ variable: string; values: "all" | string[] }>;
+    pilot?: RepeatSpec["pilot"];
+    resume?: RepeatSpec["resume"];
+    dimensions: Array<{ variable: string; values: "all" | "supported" | string[] }>;
   };
 };
 
@@ -254,7 +250,7 @@ function parseStep(value: unknown, index: number): IntentDocumentStep {
 function parseRepeat(value: unknown): IntentDocument["repeat"] {
   if (value === undefined) return undefined;
   if (!isObject(value)) throw new Error("repeat must be an object");
-  assertKnownFields(value, ["strategy", "dimensions"], "repeat");
+  assertKnownFields(value, ["strategy", "pilot", "resume", "dimensions"], "repeat");
   const strategy = value.strategy;
   if (
     strategy !== undefined &&
@@ -275,10 +271,10 @@ function parseRepeat(value: unknown): IntentDocument["repeat"] {
     const field = `repeat.dimensions[${index}]`;
     if (!isObject(raw)) throw new Error(`${field} must be an object`);
     assertKnownFields(raw, ["variable", "values"], field);
-    const variableId = canonicalId(raw.variable, `${field}.variable`);
-    if (seen.has(variableId)) throw new Error(`duplicate repeat variable: ${variableId}`);
-    seen.add(variableId);
-    if (raw.values === "all") return { variableId, values: "all" };
+    const id = canonicalId(raw.variable, `${field}.variable`);
+    if (seen.has(id)) throw new Error(`duplicate repeat variable: ${id}`);
+    seen.add(id);
+    if (raw.values === "all" || raw.values === "supported") return { id, values: raw.values };
     if (!Array.isArray(raw.values) || raw.values.length === 0) {
       throw new Error(`${field}.values must be all or a non-empty list of canonical value ids`);
     }
@@ -291,9 +287,47 @@ function parseRepeat(value: unknown): IntentDocument["repeat"] {
     if (new Set(values).size !== values.length) {
       throw new Error(`${field}.values must not contain duplicates`);
     }
-    return { variableId, values };
+    return { id, values };
   });
-  return { ...(strategy ? { strategy } : {}), dimensions };
+  const pilot = value.pilot;
+  let normalizedPilot: RepeatSpec["pilot"];
+  if (pilot !== undefined) {
+    if (!isObject(pilot)) throw new Error("repeat.pilot must be an object");
+    assertKnownFields(pilot, ["mode", "case"], "repeat.pilot");
+    if (pilot.mode !== "representative" && pilot.mode !== "first" && pilot.mode !== "specified") {
+      throw new Error("repeat.pilot.mode must be representative, first, or specified");
+    }
+    if (pilot.mode === "specified") {
+      if (!isObject(pilot.case)) throw new Error("repeat.pilot.case must be an object");
+      const specified = Object.fromEntries(
+        Object.entries(pilot.case).map(([id, rawValue]) => [
+          canonicalId(id, "repeat.pilot.case dimension"),
+          canonicalId(rawValue, `repeat.pilot.case.${id}`),
+        ]),
+      );
+      if (
+        Object.keys(specified).length !== dimensions.length ||
+        dimensions.some((dimension) => !Object.hasOwn(specified, dimension.id))
+      ) {
+        throw new Error("repeat.pilot.case must name every Repeat dimension exactly once");
+      }
+      normalizedPilot = { mode: "specified", case: specified };
+    } else if (pilot.case !== undefined) {
+      throw new Error("repeat.pilot.case is supported only for specified pilots");
+    } else {
+      normalizedPilot = { mode: pilot.mode };
+    }
+  }
+  const resume = value.resume;
+  if (resume !== undefined && resume !== "untouched" && resume !== "failed" && resume !== "all") {
+    throw new Error("repeat.resume must be untouched, failed, or all");
+  }
+  return {
+    ...(strategy ? { strategy } : {}),
+    ...(normalizedPilot ? { pilot: normalizedPilot } : {}),
+    ...(resume ? { resume } : {}),
+    dimensions,
+  };
 }
 
 function parseIntentValue(value: unknown): IntentDocument {
@@ -306,7 +340,9 @@ function parseIntentValue(value: unknown): IntentDocument {
   if (value.schemaVersion !== INTENT_DOCUMENT_SCHEMA_VERSION) {
     throw new Error("unsupported Relay intent schemaVersion");
   }
-  if (value.kind !== "test-intent") throw new Error("kind must be test-intent");
+  if (value.kind !== "bound-test" && value.kind !== "test-intent") {
+    throw new Error("kind must be bound-test");
+  }
   if (!Array.isArray(value.steps)) throw new Error("steps must be an array");
   if (value.steps.length > MAX_STEPS) throw new Error(`steps exceeds the ${MAX_STEPS} step limit`);
   const steps = value.steps.map(parseStep);
@@ -319,7 +355,7 @@ function parseIntentValue(value: unknown): IntentDocument {
   const repeat = parseRepeat(value.repeat);
   return {
     schemaVersion: INTENT_DOCUMENT_SCHEMA_VERSION,
-    kind: "test-intent",
+    kind: "bound-test",
     name: stringValue(value.name, "name", 200),
     ...(description !== undefined ? { description } : {}),
     appMapId: canonicalId(value.appMap, "appMap"),
@@ -362,11 +398,13 @@ function yamlShape(document: IntentDocument): IntentYamlDocument {
     ...(document.repeat
       ? {
           repeat: {
-            ...(document.repeat.strategy ? { strategy: document.repeat.strategy } : {}),
             dimensions: document.repeat.dimensions.map((dimension) => ({
-              variable: dimension.variableId,
+              variable: dimension.id,
               values: dimension.values,
             })),
+            ...(document.repeat.strategy ? { strategy: document.repeat.strategy } : {}),
+            ...(document.repeat.pilot ? { pilot: document.repeat.pilot } : {}),
+            ...(document.repeat.resume ? { resume: document.repeat.resume } : {}),
           },
         }
       : {}),
@@ -420,10 +458,10 @@ export function intentDocumentReferences(document: IntentDocument): IntentDocume
       return [];
     }),
     testStepIds: canonical.steps.map((step) => (step.kind === "check" ? step.testStepId : step.id)),
-    variableIds: canonical.repeat?.dimensions.map((dimension) => dimension.variableId) ?? [],
+    variableIds: canonical.repeat?.dimensions.map((dimension) => dimension.id) ?? [],
   };
 }
 
 export function intentDocumentYamlFilename(testId: string): string {
-  return `${canonicalId(testId, "testId")}.relay.yaml`;
+  return `${canonicalId(testId, "testId")}${BOUND_TEST_YAML_SUFFIX}`;
 }

@@ -374,7 +374,7 @@ export function createAppMapTestRun(options: {
       return `Review ${offlineBlockers} offline ${offlineBlockers === 1 ? "issue" : "issues"} before Relay controls the device.`;
     }
     const device = options.selectedDevice();
-    if (!device) return "Choose a target before running this Test.";
+    if (!device) return "Choose a Device before running this Test.";
     if (!device.platform) return "Refresh the selected target before running this Test.";
     if (targetProfileScope().status === "no-compatible-profile") {
       return "No saved evidence profile matches this target. Capture one for the selected target before running.";

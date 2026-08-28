@@ -1,4 +1,3 @@
-// Keep operations at the bottom of the protocol graph. Do not import `index.ts`.
 import {
   assertAuthoringSessionRef,
   parseAuthoringSessionListResponse,
@@ -16,7 +15,7 @@ import { assertIosSessionOperationLifecycle } from "./ios-session-lifecycle.js";
 import { isExecutionTargetRef } from "./execution-target.js";
 import { createTargetRecoveryOperationParsers } from "./target-recovery-operation-parsers.js";
 import { createTargetCaptureOperationParsers } from "./target-capture-operation-parsers.js";
-import { authoringRawOptimizationOperationDefinition } from "./authoring-raw-optimization-operation.js";
+import * as authoringOperations from "./authoring-raw-optimization-operation.js";
 import { appleDeviceOperationDefinitions } from "./apple-device-operation-definitions.js";
 import { runRepairOperationDefinitions } from "./run-repair-operations.js";
 import { runEvidenceOperationDefinitions } from "./run-evidence-operation-definitions.js";
@@ -130,7 +129,6 @@ const targetRuntimeCapabilityReasons = new Set([
   "input-changed",
   "visual-changed",
 ]);
-
 function assertTargetRuntimeReadiness(value: unknown, label: string): void {
   const readiness = record(value, label);
   for (const capability of Object.keys(targetRuntimeCapabilityModeByKey) as Array<
@@ -270,16 +268,15 @@ const actionsParser = objectParser<{ actions: ActionSummary[] }>("actions respon
     string(action.title, "action title");
   }
 });
-
 const {
   screenshotParser,
+  targetObservationOperationDefinition,
   targetScrollSurveyInputParser,
   targetScrollSurveyOutputParser,
   targetSnapshotOutputParser,
   targetScreenshotInputParser,
   targetSnapshotInputParser,
 } = createTargetCaptureOperationParsers({ assertTargetRuntimeReadiness });
-
 const jobsParser = objectParser<OperationOutput<"job.list">>("jobs response", (input) => {
   if (!Array.isArray(input.jobs)) fail("jobs", "must be an array");
   for (const item of input.jobs) {
@@ -843,6 +840,7 @@ const createAuthoringSessionParser = objectParser<CreateAuthoringSessionInput>(
   "create authoring session input",
   (input) => {
     string(input.appMapId, "appMapId");
+    if (input.testName !== undefined) string(input.testName, "testName");
     string(input.leaseId, "leaseId");
     const target = record(input.target, "authoring target");
     string(target.targetId, "authoring target targetId");
@@ -1183,6 +1181,7 @@ export const operationDefinitions = [
     input: targetScreenshotInputParser,
     output: screenshotParser,
   }),
+  targetObservationOperationDefinition,
   command(
     "target.scroll-survey.capture",
     "Capture a bounded scrollable-page survey",
@@ -1484,7 +1483,7 @@ export const operationDefinitions = [
       lease: "exclusive",
     },
   ),
-  authoringRawOptimizationOperationDefinition,
+  authoringOperations.authoringRawOptimizationOperationDefinition,
   command(
     "authoring.take.trim",
     "Trim Authoring Take",
@@ -1518,6 +1517,7 @@ export const operationDefinitions = [
       output: authoringSessionResponseParser,
     },
   ),
+  authoringOperations.authoringTakeEditOperationDefinition,
   command(
     "authoring.take.replay",
     "Replay Authoring Take",
