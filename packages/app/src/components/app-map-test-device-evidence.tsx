@@ -145,6 +145,7 @@ export function AppMapTestDeviceEvidence(props: {
     try {
       await server.pollLiveFrame();
       await server.pollLiveSnapshot();
+      await server.refreshTargetHealth?.();
     } catch (error) {
       setRefreshError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -155,6 +156,18 @@ export function AppMapTestDeviceEvidence(props: {
   const interactionBlocker = createMemo(() => {
     if (server.health() !== "online") return "Relay is offline. Reconnect to control this device.";
     if (!selectedDevice()) return "Choose a device before interacting with its screen.";
+    const health = server.targetHealth?.();
+    if (health?.input.state === "uncertain") {
+      return "Review the last device action before sending another one.";
+    }
+    if (health?.input.state === "blocked") {
+      return "Relay has stopped device input until its blocker is resolved.";
+    }
+    if (health && ["recovering", "needs-human", "quarantined"].includes(health.overall)) {
+      return health.overall === "recovering"
+        ? "Relay is restoring device control."
+        : "Review the device status before sending another action.";
+    }
     if (readiness().kind !== "ready") {
       return "Keep the device connected and unlocked before interacting.";
     }
@@ -175,6 +188,7 @@ export function AppMapTestDeviceEvidence(props: {
       return interactionSucceeded(await server.interactStep(step, "test preview tap"));
     } finally {
       setInteracting(false);
+      void server.refreshTargetHealth?.();
     }
   }
 
@@ -252,6 +266,7 @@ export function AppMapTestDeviceEvidence(props: {
           platform={selectedDevice()?.platform}
           deviceSelected={Boolean(selectedDevice())}
           deviceName={selectedDevice()?.name}
+          targetHealth={server.targetHealth?.() ?? undefined}
           readiness={readiness()}
           offline={server.health() !== "online"}
           refreshing={refreshing()}

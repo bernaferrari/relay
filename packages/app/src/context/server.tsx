@@ -49,6 +49,7 @@ import { createServerTargetSessionController } from "../lib/server-target-sessio
 import { createServerProviderLifecycle } from "../lib/server-provider-lifecycle";
 import { createServerWorkspaceController } from "../lib/server-workspace-controller";
 import { createServerConnectionController } from "../lib/server-connection-controller";
+import { createServerTargetHealthController } from "../lib/server-target-health-controller";
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
 export type {
@@ -140,6 +141,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       platform,
       beforeServerChange: () => clearPrivacyPolicies(),
       afterServerChange: () => connectSse(),
+    });
+    const { targetHealth, refreshTargetHealth } = createServerTargetHealthController({
+      selectedDevice,
+      serverHealth: health,
+      runAction,
     });
 
     const {
@@ -582,7 +588,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         ]);
       },
       refreshPoll: async () => {
-        await Promise.allSettled([refreshDevices(), refreshJobs(), refreshAppMaps()]);
+        await Promise.allSettled([
+          refreshDevices(),
+          refreshJobs(),
+          refreshAppMaps(),
+          refreshTargetHealth(),
+        ]);
       },
       refreshRecovered: async () => {
         await Promise.allSettled([
@@ -716,6 +727,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setRedactionEnabled: updateRedactionEnabled,
       setSensitiveEvidenceConsent: updateSensitiveEvidenceConsent,
       selectedDevice,
+      targetHealth,
+      refreshTargetHealth,
       selectedLeaseId,
       controlIssue,
       canTakeControlOfSelectedDevice,

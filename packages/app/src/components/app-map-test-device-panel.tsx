@@ -1,4 +1,5 @@
 import { createMemo, createSignal, Show } from "solid-js";
+import type { TargetSupervisorHealth } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import { productIconButton } from "../lib/ui";
 import type { SnapshotNode, SnapshotState } from "../context/server";
@@ -23,6 +24,7 @@ import {
 import { TestContextEmpty, formatTestContextTime } from "./app-map-test-context-primitives";
 import { Icon } from "./icon";
 import { ScrollSurfaceCaptureAction } from "./scroll-surface-capture-action";
+import { TargetHealthStatus } from "./target-health-status";
 
 export function AppMapTestDevicePanel(props: {
   frame?: {
@@ -37,6 +39,7 @@ export function AppMapTestDevicePanel(props: {
   platform?: "android" | "ios" | "browser";
   deviceSelected: boolean;
   deviceName?: string;
+  targetHealth?: TargetSupervisorHealth;
   readiness: ReturnType<typeof deviceReadiness>;
   offline: boolean;
   refreshing: boolean;
@@ -223,6 +226,8 @@ export function AppMapTestDevicePanel(props: {
           <Icon name="refresh" size={14} class={props.refreshing ? "ui-refresh-spin" : undefined} />
         </button>
       </header>
+
+      <Show when={props.targetHealth}>{(health) => <TargetHealthStatus health={health()} />}</Show>
 
       <Show
         when={props.frame}
