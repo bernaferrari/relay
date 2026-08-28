@@ -15,6 +15,7 @@ import {
 import type { RelayOperationPort } from "./operation-port.js";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";
 import { createRelayWorkflows } from "./relay-workflows.js";
+import { watchWorkflow, type WorkflowEventSource } from "./workflow-watch.js";
 import type {
   ConnectTargetIntent,
   ConnectTargetResult,
@@ -300,7 +301,12 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
   ) {
     this.operations = createRelayOperationPort(client);
     this.workflows = createRelayWorkflows(client);
+    this.eventSource = client.events
+      ? (client as RelayInvokeClient & WorkflowEventSource)
+      : undefined;
   }
+
+  private readonly eventSource?: WorkflowEventSource;
 
   async connect(intent: ConnectTargetIntent = { kind: "connect-target" }) {
     const available = await targets(this.operations);
@@ -535,6 +541,14 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
     return "workflowId" in input
       ? this.workflows.inspectDurable(input.workflowId)
       : this.workflows.inspect(input.legacyRef);
+  }
+
+  watchWorkflow(input: Parameters<RelayOutcomeJobs["watchWorkflow"]>[0]) {
+    return watchWorkflow({
+      ...input,
+      source: this.eventSource,
+      inspect: () => this.workflows.inspectDurable(input.workflowId),
+    });
   }
 
   cancelRun(input: Parameters<RelayOutcomeJobs["cancelRun"]>[0]) {

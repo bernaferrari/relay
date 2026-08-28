@@ -31,6 +31,7 @@ import {
   testWholePageAvailability,
   type TestCombineLens,
 } from "../lib/app-map-test-combine-strip";
+import { repeatNeedsWatch, watchActiveRepeat } from "../lib/app-map-test-repeat-watch";
 import {
   testEditorHint,
   testEditorSection,
@@ -185,13 +186,16 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
   });
   createEffect(() => {
     const current = repeat();
-    if (
-      (!current?.workflow && !current?.ref) ||
-      (current.phase !== "queued" && current.phase !== "running")
-    )
-      return;
-    const timer = window.setInterval(() => void inspectRepeat(), 1_500);
-    onCleanup(() => window.clearInterval(timer));
+    if (!repeatNeedsWatch(current)) return;
+    onCleanup(
+      watchActiveRepeat({
+        workflowId: current.workflow?.workflowId,
+        currentVersion: () => repeat()?.workflow?.expectedVersion ?? 0,
+        sseConnected: server.sseConnected,
+        subscribe: server.watchWorkflow,
+        refresh: () => void inspectRepeat(),
+      }),
+    );
   });
 
   function combineRunInput(input: { cell?: string; executionMode?: "pilot" | "all" }) {

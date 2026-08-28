@@ -5,6 +5,7 @@ import type {
   RelayEventPayload,
   ResourceEvent,
   StreamGapPayload,
+  WorkflowChangedPayload,
 } from "@relay/protocol";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
 
@@ -16,6 +17,7 @@ import { currentOperationContext, type OperationContext } from "./operation-cont
 export type DeviceEventPayload =
   | ResourceEvent
   | StreamGapPayload
+  | WorkflowChangedPayload
   | { type: "server.ready"; at: number; host: string; port: number }
   | { type: "device.list"; at: number; count: number }
   | { type: "device.booted"; at: number; serial: string }
@@ -161,7 +163,10 @@ function systemContext(): OperationContext {
   };
 }
 
-export function envelopeEvent<T extends RelayEventPayload>(payload: T): EventEnvelope<T> {
+export function envelopeEvent<T extends RelayEventPayload>(
+  payload: T,
+  scope?: { organizationId: string; projectId: string },
+): EventEnvelope<T> {
   const context = currentOperationContext() ?? systemContext();
   sequence += 1;
   return {
@@ -170,8 +175,8 @@ export function envelopeEvent<T extends RelayEventPayload>(payload: T): EventEnv
     sequence,
     actorId: context.actorId,
     actorKind: context.actorKind,
-    organizationId: context.organizationId,
-    projectId: context.projectId,
+    organizationId: scope?.organizationId ?? context.organizationId,
+    projectId: scope?.projectId ?? context.projectId,
     operationId: context.operationId,
     requestId: context.requestId,
     occurredAt: now(),
@@ -183,8 +188,11 @@ export function envelopeEvent<T extends RelayEventPayload>(payload: T): EventEnv
   };
 }
 
-export function publish(payload: DeviceEventPayload): DeviceEvent {
-  const event = envelopeEvent(payload);
+export function publish(
+  payload: DeviceEventPayload,
+  scope?: { organizationId: string; projectId: string },
+): DeviceEvent {
+  const event = envelopeEvent(payload, scope);
   const write = controlWrites.getStore();
   if (write) {
     if (isDurableControlEvent(payload)) persistControlEvent(write.db, event);

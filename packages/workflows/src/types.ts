@@ -516,6 +516,14 @@ export interface RelayOutcomeJobs {
   replayLab(intent: ReplayLabOutcomeIntent): Promise<ReplayLabReport>;
   verifyChange(intent: VerifyChangeOutcomeIntent): Promise<VerifyChangeResult>;
   inspect(input: WorkflowLookup): Promise<WorkflowSnapshot>;
+  watchWorkflow(input: {
+    workflowId: string;
+    initial: WorkflowSnapshot;
+    signal?: AbortSignal;
+    onSnapshot?: (snapshot: WorkflowSnapshot) => void;
+    disconnectedRefreshMs?: number;
+    reconnectMs?: number;
+  }): Promise<WorkflowSnapshot>;
   cancelRun(input: CancelRunOutcomeIntent): Promise<RunTestSnapshot>;
   continueRepeat(input: {
     workflowId: string;

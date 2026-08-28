@@ -1,6 +1,11 @@
 export { createRelayWorkflows } from "./relay-workflows.js";
 export { isLegacyWorkflowRef } from "./workflow-ref.js";
 export {
+  watchWorkflow,
+  type WatchWorkflowInput,
+  type WorkflowEventSource,
+} from "./workflow-watch.js";
+export {
   RepeatSpecResolutionError,
   resolveRepeatSpec,
   resolvedRepeatSelection,

@@ -4,6 +4,10 @@ import type { EventEnvelope } from "@relay/protocol";
 import type { Frame, LogLine, TraceFrameRef } from "./api-types";
 import { projectRelayEvent, type EventActivity, type EventRefresh } from "./event-projection";
 
+export type WorkflowWatchNotice =
+  | { kind: "changed"; version: number; status: string }
+  | { kind: "gap" };
+
 export function createServerEventController(input: {
   client: Accessor<RelayClient | null>;
   refreshers: Record<EventRefresh, () => Promise<unknown>>;
@@ -25,6 +29,36 @@ export function createServerEventController(input: {
   let cursor = 0;
   let abort: AbortController | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  const workflowListeners = new Map<string, Set<(notice: WorkflowWatchNotice) => void>>();
+
+  function notifyWorkflow(workflowId: string | undefined, notice: WorkflowWatchNotice): void {
+    const listeners = workflowId
+      ? workflowListeners.get(workflowId)
+      : [...workflowListeners.values()].flatMap((set) => [...set]);
+    for (const listener of listeners ?? []) {
+      try {
+        listener(notice);
+      } catch {
+        // A broken panel must not interrupt the shared server event stream.
+      }
+    }
+  }
+
+  function watchWorkflow(
+    workflowId: string,
+    listener: (notice: WorkflowWatchNotice) => void,
+  ): () => void {
+    let listeners = workflowListeners.get(workflowId);
+    if (!listeners) {
+      listeners = new Set();
+      workflowListeners.set(workflowId, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      listeners?.delete(listener);
+      if (!listeners?.size) workflowListeners.delete(workflowId);
+    };
+  }
 
   function refreshFromEvent(kind: EventRefresh): void {
     void input.refreshers[kind]();
@@ -44,6 +78,19 @@ export function createServerEventController(input: {
     for (const refresh of projection.refresh) refreshOnce(refresh);
     const event = envelope.payload as Record<string, unknown>;
     const type = String(event.type ?? "");
+    if (type === "stream.gap") notifyWorkflow(undefined, { kind: "gap" });
+    if (
+      type === "workflow.changed" &&
+      typeof event.workflowId === "string" &&
+      typeof event.version === "number" &&
+      typeof event.status === "string"
+    ) {
+      notifyWorkflow(event.workflowId, {
+        kind: "changed",
+        version: event.version,
+        status: event.status,
+      });
+    }
     switch (type) {
       case "job.queued":
         input.appendLog(`queued ${event.action}`, "info", event.jobId as string);
@@ -183,5 +230,5 @@ export function createServerEventController(input: {
     if (reconnectTimer) clearTimeout(reconnectTimer);
   }
 
-  return { sseConnected, eventActivity, connect, dispose };
+  return { sseConnected, eventActivity, watchWorkflow, connect, dispose };
 }

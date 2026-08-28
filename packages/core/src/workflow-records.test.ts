@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { resetControlDatabaseCache } from "./collaboration-db.js";
+import { subscribe, type DeviceEvent } from "./events.js";
 import {
   createDurableWorkflow,
   parseLegacyWorkflowAdoption,
@@ -64,6 +65,93 @@ test("server-owned workflow state survives restart with append-only audit", asyn
         [2, "human:reviewer", "review-required"],
       ],
     );
+  });
+});
+
+test("workflow notifications expose only committed scoped identity and version", async () => {
+  await withStateRoot(async () => {
+    const events: DeviceEvent[] = [];
+    const unsubscribe = subscribe((event) => {
+      if (event.payload.type === "workflow.changed" && event.payload.workflowId === "events") {
+        events.push(event);
+      }
+    });
+    try {
+      const input = {
+        ...scope,
+        workflowId: "events",
+        kind: "run-test" as const,
+        frozenIdentity: { secret: "must-not-be-published" },
+        actorId: "agent:author",
+        at: 100,
+        expiresAt: 10_000,
+      };
+      assert.equal((await createDurableWorkflow(input)).status, "created");
+      assert.equal((await createDurableWorkflow({ ...input, at: 101 })).status, "exists");
+      assert.equal(
+        (
+          await transitionDurableWorkflow({
+            ...scope,
+            workflowId: "events",
+            expectedVersion: 9,
+            actorId: "agent:author",
+            transition: "stale",
+            status: "active",
+            at: 102,
+          })
+        ).status,
+        "stale",
+      );
+      assert.equal(
+        (
+          await transitionDurableWorkflow({
+            ...scope,
+            workflowId: "events",
+            expectedVersion: 1,
+            actorId: "agent:author",
+            transition: "finished",
+            status: "terminal",
+            at: 103,
+          })
+        ).status,
+        "updated",
+      );
+    } finally {
+      unsubscribe();
+    }
+
+    assert.deepEqual(
+      events.map((event) => ({
+        organizationId: event.organizationId,
+        projectId: event.projectId,
+        payload: event.payload,
+      })),
+      [
+        {
+          organizationId: "acme",
+          projectId: "mobile",
+          payload: {
+            type: "workflow.changed",
+            at: 100,
+            workflowId: "events",
+            version: 1,
+            status: "active",
+          },
+        },
+        {
+          organizationId: "acme",
+          projectId: "mobile",
+          payload: {
+            type: "workflow.changed",
+            at: 103,
+            workflowId: "events",
+            version: 2,
+            status: "terminal",
+          },
+        },
+      ],
+    );
+    assert.equal(JSON.stringify(events).includes("must-not-be-published"), false);
   });
 });
 

@@ -269,6 +269,21 @@ export async function waitForOutcome(
   pollIntervalMs: number,
 ): Promise<WorkflowSnapshot> {
   let current = snapshot;
+  if (
+    current.workflow &&
+    current.kind !== "author-test" &&
+    (current.phase === "queued" || current.phase === "running") &&
+    typeof jobs.watchWorkflow === "function"
+  ) {
+    output.snapshot(operationId, current);
+    return jobs.watchWorkflow({
+      workflowId: current.workflow.workflowId,
+      initial: current,
+      signal,
+      disconnectedRefreshMs: Math.max(15_000, pollIntervalMs * 60),
+      onSnapshot: (next) => output.snapshot(operationId, next),
+    });
+  }
   while (
     (current.ref || current.workflow) &&
     (current.phase === "queued" || current.phase === "running") &&
@@ -294,6 +309,7 @@ async function runOutcomeCommand(input: {
   const jobs = createRelayOutcomeJobs(
     {
       invoke: (operationId, operationInput) => invoke(client, operationId, operationInput, signal),
+      events: (onEvent, options) => client.events(onEvent, options),
     },
     { actorId: parsed.config.connection.actorId },
   );

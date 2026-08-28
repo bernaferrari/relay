@@ -1,5 +1,6 @@
 import {
   operationDefinition,
+  type EventEnvelope,
   type OperationId,
   type OperationInput,
   type OperationOutput,
@@ -7,6 +8,15 @@ import {
 
 export type RelayInvokeClient = {
   invoke<Id extends OperationId>(id: Id, input: OperationInput<Id>): Promise<unknown>;
+  events?(
+    onEvent: (event: EventEnvelope) => void,
+    options?: {
+      signal?: AbortSignal;
+      onOpen?: () => void;
+      afterSequence?: number;
+      onGap?: (event: EventEnvelope) => void;
+    },
+  ): Promise<void>;
 };
 
 export type RelayOperationPort = {

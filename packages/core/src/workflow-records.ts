@@ -11,6 +11,7 @@ import type {
   WorkflowJsonValue,
 } from "@relay/protocol";
 import { readControlStore, withControlStore, type ControlStore } from "./collaboration-store.js";
+import { publish } from "./events.js";
 
 const MAX_ID_LENGTH = 256;
 const MAX_TRANSITION_LENGTH = 128;
@@ -138,6 +139,19 @@ function readFromStore(
   return { record, audit: store.workflowRecordEvents(workflowId) };
 }
 
+function publishWorkflowChanged(record: DurableWorkflowRecord): void {
+  publish(
+    {
+      type: "workflow.changed",
+      at: record.updatedAt,
+      workflowId: record.workflowId,
+      version: record.version,
+      status: record.status,
+    },
+    { organizationId: record.organizationId, projectId: record.projectId },
+  );
+}
+
 export async function createDurableWorkflow(
   input: CreateDurableWorkflowInput,
 ): Promise<
@@ -197,6 +211,9 @@ export async function createDurableWorkflow(
   };
   return withControlStore((store) => {
     if (store.insertWorkflowRecord(record, event)) {
+      // withControlStore defers dispatch until after the transaction commits.
+      // Publishing here therefore cannot announce an uncommitted identity.
+      publishWorkflowChanged(record);
       return { status: "created", workflow: { record, audit: [event] } } as const;
     }
     const existing = readFromStore(store, input, workflowId);
@@ -335,7 +352,8 @@ export async function transitionDurableWorkflow(
         ...(record.resource ? { resource: record.resource } : {}),
         at: input.at,
       };
-      store.compareAndSetWorkflowRecord(current.record.version, record, event);
+      const result = store.compareAndSetWorkflowRecord(current.record.version, record, event);
+      if (result === "updated") publishWorkflowChanged(record);
       return {
         status: "expired",
         current: readFromStore(store, input, input.workflowId) ?? current,
@@ -374,6 +392,7 @@ export async function transitionDurableWorkflow(
       if (!latest) return { status: "missing" } as const;
       return { status: "stale", current: latest } as const;
     }
+    publishWorkflowChanged(record);
     return {
       status: "updated",
       workflow: { record, audit: [...current.audit, event] },

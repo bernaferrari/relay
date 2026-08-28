@@ -66,9 +66,21 @@ export type StreamGapPayload = {
   requiresRefresh: true;
 };
 
+/** Bounded notification that one durable workflow record changed. The event
+ * deliberately carries no frozen identity, resource payload, or audit body;
+ * consumers refresh the canonical workflow through its scoped read API. */
+export type WorkflowChangedPayload = {
+  type: "workflow.changed";
+  at: number;
+  workflowId: string;
+  version: number;
+  status: "active" | "needs-attention" | "terminal" | "expired";
+};
+
 export type RelayEventPayload =
   | ResourceEventPayload
   | StreamGapPayload
+  | WorkflowChangedPayload
   | ({ type: string; at: number } & Record<string, unknown>);
 
 function object(value: unknown, label: string): Record<string, unknown> {

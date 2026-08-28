@@ -106,6 +106,34 @@ test("Repeat and continue-repeat waits poll only their durable workflow handle",
   }
 });
 
+test("durable outcome waits prefer workflow events over fixed polling", async () => {
+  const snapshots: unknown[] = [];
+  let watched: unknown;
+  const settled = await waitForOutcome(
+    {
+      inspect: async () => {
+        throw new Error("fixed polling must not run");
+      },
+      watchWorkflow: async (input: unknown) => {
+        watched = input;
+        const callback = (input as { onSnapshot?: (value: RepeatTestSnapshot) => void }).onSnapshot;
+        const terminal = repeatOutcome("succeeded", 3);
+        callback?.(terminal);
+        return terminal;
+      },
+    } as unknown as RelayOutcomeJobs,
+    repeatOutcome("running", 2),
+    new AbortController().signal,
+    { snapshot: (_id: string, value: unknown) => snapshots.push(value) } as never,
+    "outcome.repeat-test",
+    250,
+  );
+  assert.equal(settled.phase, "succeeded");
+  assert.equal((watched as { workflowId?: unknown }).workflowId, "repeat-workflow");
+  assert.equal((watched as { disconnectedRefreshMs?: unknown }).disconnectedRefreshMs, 15_000);
+  assert.equal(snapshots.length, 2);
+});
+
 test("generic invocation calls the operation client with parsed input", async () => {
   const io = capture();
   const calls: Array<{ operationId: OperationId; input: unknown }> = [];

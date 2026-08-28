@@ -82,3 +82,65 @@ test("a burst of job events causes one effective job refresh", async () => {
   assert.equal(reads, 1);
   controller.dispose();
 });
+
+test("workflow watchers receive only their bounded change and all watchers refresh on gaps", async () => {
+  let emit: ((event: EventEnvelope) => void) | undefined;
+  const client = {
+    events: async (onEvent: (event: EventEnvelope) => void) => {
+      emit = onEvent;
+    },
+  } as unknown as RelayClient;
+  const [, setRunning] = createSignal(false);
+  const [, setSelectedJobId] = createSignal<string | null>(null);
+  const ignore = async () => undefined;
+  const controller = createServerEventController({
+    client: () => client,
+    refreshers: {
+      devices: ignore,
+      appMaps: ignore,
+      jobs: ignore,
+      runs: ignore,
+      variables: ignore,
+      matrices: ignore,
+      discoveries: ignore,
+      authoring: ignore,
+    },
+    appendLog: () => undefined,
+    pushFrame: () => ({}) as never,
+    setRunning,
+    selectedJobId: () => null,
+    setSelectedJobId,
+    loadRunDetail: ignore,
+    captureUiScreenshot: async () => ({}) as never,
+  });
+  const first: unknown[] = [];
+  const second: unknown[] = [];
+  controller.watchWorkflow("workflow-1", (notice) => first.push(notice));
+  controller.watchWorkflow("workflow-2", (notice) => second.push(notice));
+  controller.connect();
+  assert.ok(emit);
+  emit!({
+    ...jobStep(1),
+    payload: {
+      type: "workflow.changed",
+      at: 1,
+      workflowId: "workflow-1",
+      version: 3,
+      status: "active",
+    },
+  });
+  emit!({
+    ...jobStep(2),
+    payload: {
+      type: "stream.gap",
+      at: 2,
+      requestedAfter: 1,
+      oldestAvailable: 9,
+      latestAvailable: 10,
+      requiresRefresh: true,
+    },
+  });
+  assert.deepEqual(first, [{ kind: "changed", version: 3, status: "active" }, { kind: "gap" }]);
+  assert.deepEqual(second, [{ kind: "gap" }]);
+  controller.dispose();
+});
