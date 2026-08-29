@@ -817,6 +817,69 @@ test("preserves confirmed lease takeover consent for the canonical protocol oper
   }
 });
 
+test("preserves confirmed Proof lifecycle consent for canonical protocol operations", async () => {
+  const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
+  const session = await connectMcp(
+    {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        return {};
+      },
+    },
+    "proof",
+  );
+  try {
+    const approve = callResult(
+      await session.request("tools/call", {
+        name: "relay_proof_plan_approve",
+        arguments: {
+          proofId: "proof-1",
+          expectedVersion: 1,
+          decisionId: "decision-1",
+          reason: "Human reviewer approved the frozen plan.",
+          confirm: true,
+        },
+      }),
+    );
+    const cancel = callResult(
+      await session.request("tools/call", {
+        name: "relay_proof_cancel",
+        arguments: {
+          proofId: "proof-1",
+          expectedVersion: 1,
+          reason: "Human reviewer requested cancellation.",
+          confirm: true,
+        },
+      }),
+    );
+    assert.notEqual(approve.isError, true, JSON.stringify(approve.content));
+    assert.notEqual(cancel.isError, true, JSON.stringify(cancel.content));
+    assert.deepEqual(calls, [
+      {
+        operationId: "proof.plan.approve",
+        input: {
+          proofId: "proof-1",
+          expectedVersion: 1,
+          decisionId: "decision-1",
+          reason: "Human reviewer approved the frozen plan.",
+          confirm: true,
+        },
+      },
+      {
+        operationId: "proof.cancel",
+        input: {
+          proofId: "proof-1",
+          expectedVersion: 1,
+          reason: "Human reviewer requested cancellation.",
+          confirm: true,
+        },
+      },
+    ]);
+  } finally {
+    await session.close();
+  }
+});
+
 test("translates confirmed reviewed-origin MCP consent into the signed protocol confirmation", async () => {
   const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
   const session = await connectMcp(

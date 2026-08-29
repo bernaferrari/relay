@@ -613,6 +613,13 @@ test("defines deterministic advanced profiles behind the compact outcome default
 test("the proof profile composes the verify-change loop and CLI-parity share tools", () => {
   const proof = new Set(relayMcpToolsForProfile("proof").map(({ operationId }) => operationId));
   for (const operationId of [
+    "proof.start",
+    "proof.list",
+    "proof.inspect",
+    "proof.plan.approve",
+    "proof.continue",
+    "proof.cancel",
+    "proof.rerun-affected",
     "app-map.test.run",
     "job.get",
     "run.evidence.get",
@@ -631,9 +638,29 @@ test("the proof profile composes the verify-change loop and CLI-parity share too
   const routineImpactId: string = "app-map.routine.impact";
   const routineImpactRegistered = operationDefinitions.some(({ id }) => id === routineImpactId);
   assert.equal((proof as ReadonlySet<string>).has(routineImpactId), routineImpactRegistered);
-  // The proof profile proves and shares; it does not author or approve.
+  // The Proof profile exposes the lifecycle's explicit plan authority while
+  // keeping unrelated App Map authoring out of the profile.
   assert.equal(proof.has("app-map.test.save"), false);
   assert.equal(proof.has("app-map.proposal.approve"), false);
+});
+
+test("Proof lifecycle tools preserve canonical names and approval metadata", () => {
+  for (const [operationId, requiresConfirmation] of [
+    ["proof.start", false],
+    ["proof.list", false],
+    ["proof.inspect", false],
+    ["proof.plan.approve", true],
+    ["proof.continue", false],
+    ["proof.cancel", true],
+    ["proof.rerun-affected", false],
+  ] as const) {
+    const descriptor = relayMcpTools.find((tool) => tool.operationId === operationId);
+    assert.ok(descriptor, `${operationId} is not registered as an MCP tool`);
+    assert.equal(descriptor.name, relayToolName(operationId));
+    assert.equal(descriptor.requiresConfirmation, requiresConfirmation);
+    assert.match(descriptor.description, /Proof/u);
+    if (requiresConfirmation) assert.match(descriptor.description, /confirm: true/u);
+  }
 });
 
 test("share tools mirror their CLI operation ids with confirmation metadata", () => {

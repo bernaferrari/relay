@@ -147,6 +147,8 @@ test("every friendly command path parses to its descriptor operation", () => {
       const confirmed = [
         "app-map.scroll-surface.origin.review",
         "app-map.scroll-surface.origin.revoke",
+        "proof.plan.approve",
+        "proof.cancel",
       ].includes(descriptor.operationId);
       const parsed = parseCli(
         [...candidate.command.split(" "), ...arguments_, ...(confirmed ? ["--confirm"] : [])],
@@ -233,6 +235,65 @@ test("friendly inputs default to an object and path arguments override JSON fiel
       patch: { name: "Checkout" },
     });
   }
+});
+
+test("Proof CLI flags preserve exact lifecycle inputs and explicit safety controls", () => {
+  const inspected = parseCli(["proof", "inspect", "proof-1", "--history"], {});
+  assert.equal(inspected.command, "invoke");
+  if (inspected.command === "invoke") {
+    assert.equal(inspected.operationId, "proof.inspect");
+    assert.deepEqual(inspected.input, { proofId: "proof-1", includeHistory: true });
+  }
+
+  const approved = parseCli(
+    [
+      "proof",
+      "approve-plan",
+      "proof-1",
+      "--confirm",
+      "--input",
+      '{"expectedVersion":3,"decisionId":"review-1","reason":"Reviewed plan."}',
+    ],
+    {},
+  );
+  assert.equal(approved.command, "invoke");
+  if (approved.command === "invoke") {
+    assert.equal(approved.operationId, "proof.plan.approve");
+    assert.deepEqual(approved.input, {
+      proofId: "proof-1",
+      expectedVersion: 3,
+      decisionId: "review-1",
+      reason: "Reviewed plan.",
+      confirm: true,
+    });
+  }
+
+  const continued = parseCli(
+    [
+      "proof",
+      "continue",
+      "proof-1",
+      "--input",
+      '{"expectedVersion":4,"action":"request-plan-review","reason":"Needs review."}',
+    ],
+    {},
+  );
+  assert.equal(continued.command, "invoke");
+  if (continued.command === "invoke") {
+    assert.equal(continued.operationId, "proof.continue");
+    assert.deepEqual(continued.input, {
+      proofId: "proof-1",
+      expectedVersion: 4,
+      action: "request-plan-review",
+      reason: "Needs review.",
+    });
+  }
+
+  assert.throws(
+    () => parseCli(["proof", "approve-plan", "proof-1", "--input", "{}"], {}),
+    /requires --confirm/u,
+  );
+  assert.throws(() => parseCli(["proof", "list", "--history"], {}), /only valid on proof inspect/u);
 });
 
 test("event follow retains its command path and rejects single-object JSON output", () => {

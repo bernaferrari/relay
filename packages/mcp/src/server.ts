@@ -48,6 +48,7 @@ export const relayMcpInstructions = [
   "Repeat runs one representative pilot first and requires explicit confirmation before remaining values.",
   "Replay Lab accepts only explicit bounded TracePack payloads and always keeps future target behavior unknown.",
   "Repair tools create reviewable proposals; they never silently rewrite an approved Test.",
+  "For change verification, use the proof.* lifecycle with the returned Proof id and exact version; only a human may approve a Verification Plan.",
   "For advanced Device control, capture a screenshot before interacting and prefer identifier, then label, text, and point.",
   "A missing accessibility tree is not a failed session; pixels and point control remain usable.",
   "Never displace another actor's Device control implicitly, and wait or cancel an active reserved Run before sending input.",
@@ -62,16 +63,22 @@ const reviewedOriginConfirmationOperationIds = new Set<OperationId>([
   "app-map.scroll-surface.origin.revoke",
 ]);
 
+const canonicalConfirmOperationIds = new Set<OperationId>([
+  "lease.takeover",
+  "proof.plan.approve",
+  "proof.cancel",
+]);
+
 /** `confirm: true` is the MCP-facing consent affordance. After the generic
- * confirmation guard accepts it, preserve it for the canonical lease-takeover
- * protocol field and translate it into the signed field required by the two
- * durable reviewed-origin authority operations. */
+ * confirmation guard accepts it, preserve it for canonical operations whose
+ * protocol input carries that field, and translate it into the signed field
+ * required by the two durable reviewed-origin authority operations. */
 function confirmedInput(
   operationId: OperationId,
   input: Record<string, unknown>,
   confirmed: boolean,
 ): Record<string, unknown> {
-  if (operationId === "lease.takeover") {
+  if (canonicalConfirmOperationIds.has(operationId)) {
     return confirmed ? { ...input, confirm: true } : input;
   }
   return reviewedOriginConfirmationOperationIds.has(operationId)

@@ -37,6 +37,44 @@ test("friendly command paths are unique", () => {
   assert.equal(new Set(paths).size, paths.length);
 });
 
+test("Proof lifecycle commands resolve to canonical operations", () => {
+  assert.deepEqual(resolveCommand(["proof", "start"]), {
+    operationId: "proof.start",
+    commandPath: "proof start",
+    input: {},
+  });
+  assert.deepEqual(resolveCommand(["proof", "list"], { state: "ready", limit: 10 }), {
+    operationId: "proof.list",
+    commandPath: "proof list",
+    input: { state: "ready", limit: 10 },
+  });
+  assert.deepEqual(resolveCommand(["proof", "inspect", "proof-1"]), {
+    operationId: "proof.inspect",
+    commandPath: "proof inspect",
+    input: { proofId: "proof-1" },
+  });
+  assert.deepEqual(resolveCommand(["proof", "approve-plan", "proof-1"], { expectedVersion: 3 }), {
+    operationId: "proof.plan.approve",
+    commandPath: "proof approve-plan",
+    input: { proofId: "proof-1", expectedVersion: 3 },
+  });
+  assert.deepEqual(resolveCommand(["proof", "continue", "proof-1"], { expectedVersion: 3 }), {
+    operationId: "proof.continue",
+    commandPath: "proof continue",
+    input: { proofId: "proof-1", expectedVersion: 3 },
+  });
+  assert.deepEqual(resolveCommand(["proof", "cancel", "proof-1"], { expectedVersion: 3 }), {
+    operationId: "proof.cancel",
+    commandPath: "proof cancel",
+    input: { proofId: "proof-1", expectedVersion: 3 },
+  });
+  assert.deepEqual(resolveCommand(["proof", "rerun-affected", "proof-1"], { expectedVersion: 3 }), {
+    operationId: "proof.rerun-affected",
+    commandPath: "proof rerun-affected",
+    input: { proofId: "proof-1", expectedVersion: 3 },
+  });
+});
+
 test("compiled Recipe storage has no public CLI namespace", () => {
   assert.deepEqual(
     cliOperationDescriptors.filter(({ operationId }) => operationId.startsWith("recipe.")),

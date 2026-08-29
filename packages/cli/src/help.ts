@@ -12,6 +12,7 @@ const familyGroups = [
   ["Topology", ["map", "screen", "connect", "flow"]],
   ["Authoring", ["variable", "test", "combine", "proposal", "session", "routine", "case-stack"]],
   ["Explore", ["discovery"]],
+  ["Proof", ["proof"]],
   ["Operate", ["device", "run", "report", "activity"]],
   ["Automation", ["schedule", "matrix"]],
   ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],
@@ -42,6 +43,7 @@ Screenshot and snapshot output:
   --mark <x>,<y>                   Draw a tap preview ring on a screenshot (no tap)
   --preview                        On interact: show selection overlay, do not tap
   --confirm                        Confirm a reviewed-origin or destructive operation
+  --history                        Include immutable Proof history on proof inspect
   -h, --help                       Print help for the root or the given family
 
 Exit codes:
@@ -114,6 +116,7 @@ function renderRootHelp(): string {
     "proposal accept",
     "run watch",
     "activity follow",
+    "proof list",
   ];
 
   return `Relay — record once, prove every build
@@ -137,6 +140,13 @@ Usage:
   relay verify-change run <runId...>
   relay verify-change test <appMapId> <testId...>
   relay verify-change revision <gitSha>
+  relay proof start --input-file ./proof.json
+  relay proof list
+  relay proof inspect <proof-id> [--history]
+  relay proof approve-plan <proof-id> --confirm --input <json>
+  relay proof continue <proof-id> --input <json>
+  relay proof cancel <proof-id> --confirm --input <json>
+  relay proof rerun-affected <proof-id> --input-file ./replacement-proof.json
   relay <family> <command> [arguments] [--input <json> | --input-file <path>] [global options]
   relay operation invoke <operationId> (--input <json> | --input-file <path>) [global options]
   relay <family> --help
@@ -150,6 +160,10 @@ These resolve the sole connected Device and current Test workspace automatically
 the advanced --map option, only when selection is ambiguous. The first Record creates its backing
 topology automatically. Record acquires control only after --confirm and never displaces another
 person or agent. The current command is Control and record: interactions pass through Relay.
+
+Proof commands:
+  proof start, proof list, proof inspect, proof approve-plan, proof continue,
+  proof cancel, proof rerun-affected
 
 Replay Lab reads only the explicitly named local TracePack JSON files. It does not start the Relay
 daemon, read a Device or workspace, contact a network service, or mutate Tests and evidence.

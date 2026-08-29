@@ -116,6 +116,13 @@ export const relayMcpPrompts = [
     description:
       "Prove one code change on real devices: pick the affected flows, run them, read the proof report, and return a structured verdict.",
     requiredOperationIds: [
+      "proof.start",
+      "proof.list",
+      "proof.inspect",
+      "proof.plan.approve",
+      "proof.continue",
+      "proof.cancel",
+      "proof.rerun-affected",
       "target.devices.list",
       "target.screenshot.capture",
       "lease.list",
@@ -436,18 +443,23 @@ function registerVerifyChangePrompt(server: McpServer, scope: RelayPromptScope):
           } and changedFiles to get the affected Test ids. Never guess flows that neither the tool nor the changed files name.`,
           `2. Read ${relayMcpResourceUris.appMaps}${appMapId ? "" : " to find candidate maps"} and relay://app-maps/${appMapId ?? "{appMapId}"}/tests. Select the smallest set of saved graph Tests whose steps traverse the impacted screens and connections. Prefer existing Tests; propose new authoring only if nothing covers the change, and stop for approval before creating anything.`,
           "",
-          "Run (only after explicit confirmation):",
-          `3. Verify or acquire only the required Target lease without displacing another actor. Run each selected Test once with relay_app_map_test_run using expectedRevision and an explicit target${
+          "Create and approve the Proof (with the appropriate human decision):",
+          `3. Assemble one exact Verification Plan from the changed source, matching builds, affected Test journeys, target cases, evidence policy, coverage gaps, and residual risk. Start it with relay_proof_start, then retain its proof id and version. Use relay_proof_list to find existing project Proofs before starting a duplicate.`,
+          "4. Inspect the server-owned record with relay_proof_inspect before every decision. A human reviewer must approve the frozen plan with relay_proof_plan_approve and confirm: true; agents must not approve their own plan. Use relay_proof_continue with the exact version for a bounded plan revision, review request, or return to planning.",
+          "",
+          "Run (only after the Proof is approved):",
+          `5. Verify or acquire only the required Target lease without displacing another actor. Run each selected Test once with relay_app_map_test_run using expectedRevision and an explicit target${
             commitSha
               ? `, and bind the proof to this change by passing sourceRevision {vcs: "git", sha: "${commitSha}"}`
               : ' (pass sourceRevision {vcs: "git", sha} when verifying committed work so proofs attach to the commit)'
           }. Do not widen to unrelated Tests to look thorough.`,
-          "4. Follow each returned job ID with relay_job_get. Do not infer success from transport success.",
+          "6. Follow each returned job ID with relay_job_get. Do not infer success from transport success. Keep the Proof version and receipt authoritative; never acknowledge a changed request body as an idempotent replay.",
           "",
           "Proof and verdict:",
-          `5. For every terminal run, read relay://runs/{runId}, relay_run_evidence_get, and relay_run_story_get. Read relay://runs/{runId}/repair-proposals on failure instead of re-deriving screen mismatches by hand.`,
-          "6. On failure, call relay_run_repair_list and relay_run_repair_propose for the failed check, then return a precise failure digest to the coding agent: failed authored step, expected versus observed destination, repair proposals with confidence, immutable evidence counts, and the exact rerun command. Never weaken a check to make it pass.",
-          "7. Return a structured verdict: verdict passed | product-failure | harness-failure | uncertain, per-run outcomes with run IDs and share links created through relay_run_share_create for reviewers, affected Tests executed, evidence references, and remaining uncertainty. Rerun only the affected flows after a fix — never the whole suite unless asked.",
+          `7. For every terminal run, read relay://runs/{runId}, relay_run_evidence_get, and relay_run_story_get. Read relay://runs/{runId}/repair-proposals on failure instead of re-deriving screen mismatches by hand.`,
+          "8. On failure, call relay_run_repair_list and relay_run_repair_propose for the failed check, then return a precise failure digest to the coding agent: failed authored step, expected versus observed destination, repair proposals with confidence, immutable evidence counts, and the exact rerun command. Never weaken a check to make it pass.",
+          "9. Return a structured verdict: verdict passed | product-failure | harness-failure | uncertain, per-run outcomes with run IDs and share links created through relay_run_share_create for reviewers, affected Tests executed, evidence references, and remaining uncertainty.",
+          "10. After a code fix, call relay_proof_rerun_affected with the prior Proof's exact version and the affected change/plan scope to create a replacement Proof. Rerun only the affected flows after a fix — never the whole suite unless asked. Use relay_proof_continue for a bounded plan correction and relay_proof_cancel with confirm: true only when explicitly asked to stop.",
         ].join("\n"),
         descriptor.description,
       ),

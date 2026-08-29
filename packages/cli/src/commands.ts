@@ -17,6 +17,7 @@ import {
 import { UsageError } from "./errors.js";
 import { cliResourceDescriptors } from "./resource-commands.js";
 import { runEvidenceCommandDescriptors } from "./run-share-commands.js";
+import { proofCommandDescriptors } from "./proof-commands.js";
 import { targetCommandDescriptors } from "./target-commands.js";
 
 export type {
@@ -132,6 +133,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("device-pool.preflight", path("device-pool preflight", ["poolId"])),
   mapped("target-worker.list", path("target worker list")),
   ...campaignCapacityCommandDescriptors,
+  ...proofCommandDescriptors,
   mapped(
     "lease.list",
     path(

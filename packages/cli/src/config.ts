@@ -118,6 +118,7 @@ const switchFlags = new Set([
   "--full",
   "--preview",
   "--confirm",
+  "--history",
   "--all",
   "--no-restore",
 ]);
@@ -395,6 +396,29 @@ function applySurveyRestore(
   return { ...input, restore: false };
 }
 
+function applyProofFlags(
+  operationId: string,
+  input: Record<string, unknown>,
+  tokens: ParsedTokens,
+): Record<string, unknown> {
+  const history = tokens.switches.has("--history");
+  if (history && operationId !== "proof.inspect") {
+    throw new UsageError("--history is only valid on proof inspect");
+  }
+
+  const requiresConfirmation =
+    operationId === "proof.plan.approve" || operationId === "proof.cancel";
+  if (requiresConfirmation && !tokens.switches.has("--confirm")) {
+    throw new UsageError(`${operationId} requires --confirm`);
+  }
+
+  return {
+    ...input,
+    ...(history ? { includeHistory: true } : {}),
+    ...(requiresConfirmation ? { confirm: true } : {}),
+  };
+}
+
 function surveyDirForce(operationId: string, tokens: ParsedTokens): boolean {
   return (
     operationId === "target.scroll-survey.capture" &&
@@ -547,19 +571,23 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     }
     const input = applySurveyRestore(
       operationId,
-      applySurveyDir(
+      applyProofFlags(
         operationId,
-        applySurveyMaxScrolls(
+        applySurveyDir(
           operationId,
-          applySnapshotPresentation(
+          applySurveyMaxScrolls(
             operationId,
-            confirmedReviewedOriginInput(
+            applySnapshotPresentation(
               operationId,
-              readInput(tokens, env),
-              tokens.switches.has("--confirm"),
+              confirmedReviewedOriginInput(
+                operationId,
+                readInput(tokens, env),
+                tokens.switches.has("--confirm"),
+              ),
+              tokens,
+              output,
             ),
             tokens,
-            output,
           ),
           tokens,
         ),
@@ -678,23 +706,27 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   }
   resolved.input = applySurveyRestore(
     resolved.operationId,
-    applySurveyDir(
+    applyProofFlags(
       resolved.operationId,
-      applySurveyMaxScrolls(
+      applySurveyDir(
         resolved.operationId,
-        applySnapshotPresentation(
+        applySurveyMaxScrolls(
           resolved.operationId,
-          applyCombineRunFlags(
+          applySnapshotPresentation(
             resolved.operationId,
-            confirmedReviewedOriginInput(
+            applyCombineRunFlags(
               resolved.operationId,
-              resolved.input,
-              tokens.switches.has("--confirm"),
+              confirmedReviewedOriginInput(
+                resolved.operationId,
+                resolved.input,
+                tokens.switches.has("--confirm"),
+              ),
+              tokens,
             ),
             tokens,
+            output,
           ),
           tokens,
-          output,
         ),
         tokens,
       ),

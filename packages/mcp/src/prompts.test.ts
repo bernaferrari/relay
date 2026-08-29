@@ -527,6 +527,13 @@ test("verify-change prompt renders the proof loop with commit and file scope", a
     assert.match(text, /restricted to App Map map-1/);
     assert.match(text, /from the provided list \(2 files\)/);
     assert.match(text, /relay_app_map_diff_impact/);
+    assert.match(text, /relay_proof_start/);
+    assert.match(text, /relay_proof_list/);
+    assert.match(text, /relay_proof_inspect/);
+    assert.match(text, /relay_proof_plan_approve/);
+    assert.match(text, /relay_proof_continue/);
+    assert.match(text, /relay_proof_cancel/);
+    assert.match(text, /relay_proof_rerun_affected/);
     assert.match(
       text,
       /sourceRevision \{vcs: "git", sha: "9a1c2e4b7d8f0a3b5c6d7e8f9a0b1c2d3e4f5a6b"\}/,
@@ -544,6 +551,7 @@ test("verify-change prompt renders the proof loop with commit and file scope", a
     assert.match(text, /relay_run_share_create/);
     assert.match(text, /Rerun only the affected flows after a fix/);
     assert.match(text, /Never weaken a check to make it pass/);
+    assert.doesNotMatch(text, /campaign/i);
   } finally {
     await session.close();
   }

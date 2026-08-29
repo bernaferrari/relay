@@ -118,6 +118,20 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Read active, expired, and revoked links for one run before minting a duplicate.",
   "run.share.revoke":
     " Immediately invalidate a signed link. Use when a PR closes or a link leaked.",
+  "proof.start":
+    " Start one versioned Proof for an exact source change, builds, Verification Plan, and policy. Keep the returned proof id and version for every later lifecycle call.",
+  "proof.list":
+    " List the project's change-level Proof records. Filter by state when narrowing review work.",
+  "proof.inspect":
+    " Inspect one Proof and optionally its bounded immutable lifecycle history before deciding the next action.",
+  "proof.plan.approve":
+    " Approve the Proof's frozen Verification Plan as a human reviewer. Approval is human-only and requires explicit confirm: true.",
+  "proof.continue":
+    " Continue one Proof with an exact version and one bounded plan action: revise the plan, request review, or return to planning.",
+  "proof.cancel":
+    " Cancel one Proof with an exact version and reason. This is durable and requires explicit confirm: true.",
+  "proof.rerun-affected":
+    " Create a replacement Proof for the affected verification scope after a change. Preserve the prior Proof and pass its exact version.",
 };
 
 function toolDescriptor(
@@ -462,9 +476,17 @@ const adminOperations = [
  * Relay as the proof layer for AI-written code: verify one change by running
  * the affected flows on real devices, reading the proof report, and turning
  * a failure into a precise digest the coding agent can fix. Read-heavy by
- * design; execution reuses app-map.test.run and job tools.
+ * design; execution reuses app-map.test.run and job tools, while the
+ * versioned Proof lifecycle remains available for explicit human decisions.
  */
 const proofOperations = [
+  "proof.start",
+  "proof.list",
+  "proof.inspect",
+  "proof.plan.approve",
+  "proof.continue",
+  "proof.cancel",
+  "proof.rerun-affected",
   "system.health.get",
   "system.doctor.get",
   "target.devices.list",

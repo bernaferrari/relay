@@ -1,4 +1,17 @@
 export { createRelayWorkflows } from "./relay-workflows.js";
+export {
+  createChangeVerificationWorkflow,
+  createProofWorkflow,
+  type ApproveVerificationPlanInput,
+  type CancelChangeVerificationInput,
+  type ChangeVerificationWorkflow,
+  type ContinueChangeVerificationInput,
+  type InspectChangeVerificationInput,
+  type ListChangeVerificationsInput,
+  type ProofWorkflow,
+  type RerunAffectedVerificationInput,
+  type StartChangeVerificationInput,
+} from "./proof-workflow.js";
 export { isLegacyWorkflowRef } from "./workflow-ref.js";
 export {
   watchWorkflow,
@@ -29,7 +42,11 @@ export {
   applyIntentDocumentToScenarioTest,
   intentDocumentFromScenarioTest,
 } from "./intent-document-scenario.js";
-export type { RelayInvokeClient } from "./operation-port.js";
+export {
+  createRelayOperationPort,
+  type RelayInvokeClient,
+  type RelayOperationPort,
+} from "./operation-port.js";
 export type {
   AuthoringIntentBindingDecision,
   AuthoringIntentBindingResult,
