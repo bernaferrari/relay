@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { browserEnvironmentInputSchema, browserViewportSchema } from "./browser-case-profile.js";
 import {
   appMapTestCompileInputSchema,
   appMapTestRunInputSchema,
@@ -60,6 +61,8 @@ export const operationInputSchemas = {
       name: text("Human-readable target name"),
       startUrl: z.url(),
       headless: z.boolean().optional(),
+      viewport: browserViewportSchema.optional(),
+      environment: browserEnvironmentInputSchema.optional(),
     })
     .strict(),
   "target.delete": z.object({ targetId: identifier("Managed target identifier") }).strict(),

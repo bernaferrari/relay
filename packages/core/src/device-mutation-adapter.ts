@@ -29,10 +29,11 @@ const execFileAsync = promisify(execFile);
 export function bindNativeDeviceMutations(
   native: NativeDevice,
   targetId: string,
+  platform: "android" | "ios",
 ): NativeDeviceMutations {
   const mutate = <T>(operation: () => Promise<T>) =>
     runTargetMutation(targetId, getExecutingJobId(), () =>
-      dispatchSupervisedIosMutation(targetId, operation),
+      platform === "ios" ? dispatchSupervisedIosMutation(targetId, operation) : operation(),
     );
   return {
     devices: { ...native.devices, boot: (options) => mutate(() => native.devices.boot(options)) },

@@ -7,7 +7,11 @@ import type {
   TargetKind,
   TargetPreflight,
 } from "@relay/protocol";
-import { chromium } from "playwright-core";
+import { compileBrowserEnvironment, validateBrowserEnvironment } from "@relay/protocol";
+import type { BrowserEnvironmentInput, BrowserViewport } from "@relay/protocol";
+import { chromium, firefox, webkit } from "playwright-core";
+import type { BrowserType } from "playwright-core";
+import { unsupportedBrowserCaseProfileFields } from "./browser-profile-support.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 
 const DEFAULT_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -53,6 +57,10 @@ function targetDefinitionProblem(value: unknown): string | null {
     }
     const browser = entry.browser as Record<string, unknown>;
     if (typeof browser.startUrl !== "string") return "browser.startUrl must be a string";
+    if (browser.environment !== undefined) {
+      const validation = validateBrowserEnvironment(browser.environment);
+      if (!validation.ok) return `browser.environment is invalid: ${validation.errors.join("; ")}`;
+    }
   }
   return null;
 }
@@ -104,7 +112,8 @@ export async function saveBrowserTarget(input: {
   /** @deprecated Host executable selection is server-owned and this value is ignored. */
   executablePath?: string;
   headless?: boolean;
-  viewport?: { width: number; height: number };
+  viewport?: BrowserViewport;
+  environment?: BrowserEnvironmentInput;
 }): Promise<TargetDefinition> {
   if (!input.name.trim()) throw new Error("target name is required");
   const requestedId = input.id?.trim();
@@ -123,6 +132,8 @@ export async function saveBrowserTarget(input: {
     throw new Error("start URL must use http or https");
   const targets = await listTargets();
   const existing = requestedId ? targets.find((target) => target.id === requestedId) : undefined;
+  const environment =
+    input.environment === undefined ? undefined : compileBrowserEnvironment(input.environment);
   const now = Date.now();
   const target: TargetDefinition = {
     id: requestedId ?? existing?.id ?? `browser-${randomUUID()}`,
@@ -137,6 +148,7 @@ export async function saveBrowserTarget(input: {
       // people often need to complete login or MFA before recording a test.
       headless: input.headless ?? false,
       viewport: input.viewport ?? { width: 1280, height: 800 },
+      ...(environment ? { environment } : {}),
     },
   };
   await writeTargets([...targets.filter((item) => item.id !== target.id), target]);
@@ -163,40 +175,70 @@ export const BROWSER_TARGET_CAPABILITIES: readonly TargetCapability[] = [
 export async function preflightTarget(target: TargetDefinition): Promise<TargetPreflight> {
   if (target.kind !== "browser" || !target.browser)
     throw new Error("only managed browser targets use this preflight");
+  const environment = compileBrowserEnvironment(target.browser.environment ?? {});
+  const browserType: BrowserType =
+    environment.engine === "chromium"
+      ? chromium
+      : environment.engine === "firefox"
+        ? firefox
+        : webkit;
   let executablePath: string;
   const checks: TargetPreflight["checks"] = [];
-  try {
-    executablePath = browserExecutable(target);
-  } catch (error) {
+  const unsupportedProfileFields = unsupportedBrowserCaseProfileFields(environment);
+  if (unsupportedProfileFields.length > 0) {
     checks.push({
-      id: "executable-policy",
-      label: "Browser executable policy",
+      id: "environment-fixtures",
+      label: "Browser environment fixtures",
       status: "fail",
-      message: error instanceof Error ? error.message : String(error),
+      message: `Fixture resolvers are unavailable for: ${unsupportedProfileFields.join(", ")}`,
     });
-    return {
-      targetId: target.id,
-      ok: false,
-      checkedAt: Date.now(),
-      capabilities: [...BROWSER_TARGET_CAPABILITIES],
-      checks,
-    };
   }
-  try {
-    await access(executablePath);
+  if (environment.engine === "chromium" && environment.channel === undefined) {
+    try {
+      executablePath = browserExecutable(target);
+    } catch (error) {
+      checks.push({
+        id: "executable-policy",
+        label: "Browser executable policy",
+        status: "fail",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return {
+        targetId: target.id,
+        ok: false,
+        checkedAt: Date.now(),
+        capabilities: [...BROWSER_TARGET_CAPABILITIES],
+        checks,
+      };
+    }
+  } else {
+    // Non-Chromium engines use their own Playwright browser binary. Do not
+    // inspect or substitute the Chromium executable for these profiles.
+    executablePath = "";
     checks.push({
-      id: "executable",
-      label: "Browser executable",
+      id: "engine",
+      label: "Browser engine",
       status: "pass",
-      message: executablePath,
+      message: `Playwright ${environment.engine} selected without Chromium fallback`,
     });
-  } catch {
-    checks.push({
-      id: "executable",
-      label: "Browser executable",
-      status: "fail",
-      message: `Chrome was not found at ${executablePath}`,
-    });
+  }
+  if (environment.engine === "chromium" && environment.channel === undefined) {
+    try {
+      await access(executablePath);
+      checks.push({
+        id: "executable",
+        label: "Browser executable",
+        status: "pass",
+        message: executablePath,
+      });
+    } catch {
+      checks.push({
+        id: "executable",
+        label: "Browser executable",
+        status: "fail",
+        message: `Chrome was not found at ${executablePath}`,
+      });
+    }
   }
   try {
     await mkdir(browserProfileDir(target.id), { recursive: true });
@@ -217,8 +259,20 @@ export async function preflightTarget(target: TargetDefinition): Promise<TargetP
   if (!checks.some((check) => check.status === "fail")) {
     let browser;
     try {
-      browser = await chromium.launch({ executablePath, headless: true });
-      const page = await browser.newPage();
+      browser = await browserType.launch({
+        ...(executablePath ? { executablePath } : {}),
+        ...(environment.channel ? { channel: environment.channel } : {}),
+        headless: true,
+      });
+      const context = await browser.newContext({
+        viewport: environment.viewport,
+        locale: environment.locale,
+        timezoneId: environment.timezoneId,
+        colorScheme: environment.colorScheme,
+        reducedMotion: environment.reducedMotion,
+        offline: environment.offline,
+      });
+      const page = await context.newPage();
       await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 15_000 });
       checks.push({
         id: "navigation",

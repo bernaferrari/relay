@@ -53,6 +53,7 @@ export * from "./artifact-ref.js";
 export * from "./source-revision.js";
 export * from "./repeat-spec.js";
 export * from "./target-contract.js";
+export * from "./browser-case-profile.js";
 export * from "./target-observation.js";
 export * from "./target-supervisor.js";
 export * from "./workflow-record.js";

@@ -55,6 +55,7 @@ import { readRememberedDevicePanelPreference } from "../lib/studio-shell-prefere
 import { createStudioBlankMapActions } from "../lib/studio-blank-map-actions";
 import { EmptyAppMap, MapLibrary, RunsWorkspace } from "./studio-shell-workspaces";
 import type { WorkspaceController } from "../lib/workspace-controller";
+import { useStudioWorkspaceController } from "../lib/use-studio-workspace-controller";
 
 export function StudioShell(props: {
   onOpenSettings: (section?: SettingsSection) => void;
@@ -250,7 +251,7 @@ export function StudioShell(props: {
   createEffect(() => {
     if (!navOpen()) return;
     setSettingsOpen(false);
-    workspaceController.execute({ kind: "device.hide" });
+    workspaceController.request({ kind: "device.hide" });
   });
   // An App Map is authored on its canvas. The live device remains available
   // inside that workspace, but merely connecting hardware must never change
@@ -290,7 +291,7 @@ export function StudioShell(props: {
   });
   const toggleDevicePanel = () => {
     setSettingsOpen(false);
-    workspaceController.execute({ kind: "device.toggle" });
+    workspaceController.request({ kind: "device.toggle" });
   };
   const toggleCombine = (combineId?: string, section?: CanvasCombineSection) => {
     const requestedId = combineId?.trim() || undefined;
@@ -303,7 +304,7 @@ export function StudioShell(props: {
     setSettingsOpen(false);
     setVariablesOpen(false);
     setNavOpen(false);
-    workspaceController.execute({ kind: "device.hide" });
+    workspaceController.request({ kind: "device.hide" });
     setCombineFocusId(requestedId);
     setCombineFocusSection(undefined);
     setCombineOpen(true);
@@ -312,21 +313,21 @@ export function StudioShell(props: {
   };
   const openDevicePicker = () => {
     if (area() === "maps" && authoringMap() && !devicePanelOpen()) {
-      workspaceController.execute({ kind: "device.show" });
+      workspaceController.request({ kind: "device.show" });
     }
-    requestAnimationFrame(() => workspaceController.execute({ kind: "target.choose" }));
+    requestAnimationFrame(() => workspaceController.request({ kind: "target.choose" }));
   };
-  const disconnectWorkspace = workspaceController.connect({
-    toggleDevice: () => {
-      if (!authoringMap() || !selectedMap()) setDevicePanelOpen((open) => !open);
-    },
+  useStudioWorkspaceController({
+    controller: workspaceController,
+    ownsDevicePanel: () => area() !== "maps" || !selectedMap(),
+    ownsRecording: () => !authoringMap(),
+    toggleDevice: () => setDevicePanelOpen((open) => !open),
     showDevice: () => {
       setSettingsOpen(false);
-      if (!authoringMap() || !selectedMap()) setDevicePanelOpen(true);
+      setDevicePanelOpen(true);
     },
-    hideDevice: () => {
-      if (!authoringMap() || !selectedMap()) setDevicePanelOpen(false);
-    },
+    hideDevice: () => setDevicePanelOpen(false),
+    recordTest: () => void recorder.enterRecordMode(),
     deviceStateChanged: setDevicePanelOpen,
     openRun: (runId) => {
       if (runId) server.setSelectedJobId(runId);
@@ -334,9 +335,7 @@ export function StudioShell(props: {
     },
     runReadinessChanged: setGraphRunReadiness,
     mapTargetSetChanged: setActiveTargetSetId,
-    recordTest: () => !authoringMap() && void recorder.enterRecordMode(),
   });
-  onCleanup(disconnectWorkspace);
   const graphPrimaryAction = createMemo(() =>
     appMapPrimaryAction({
       saveState: "saved",
@@ -359,17 +358,17 @@ export function StudioShell(props: {
     }
     if (action.kind === "view-run") {
       const active = server.activeJob();
-      workspaceController.execute({ kind: "run.open", runId: active?.id });
+      workspaceController.request({ kind: "run.open", runId: active?.id });
       return;
     }
     if (action.kind === "record-path") {
       if (!devicePanelOpen()) toggleDevicePanel();
-      workspaceController.execute({ kind: "test.record" });
+      workspaceController.request({ kind: "test.record" });
       return;
     }
     if (action.kind === "capture-screen") {
       if (!devicePanelOpen()) toggleDevicePanel();
-      workspaceController.execute({ kind: "screen.capture" });
+      workspaceController.request({ kind: "screen.capture" });
       return;
     }
     if (action.kind === "keep-path") {
@@ -381,7 +380,7 @@ export function StudioShell(props: {
       toast(action.reason, "warning");
       return;
     }
-    workspaceController.execute({ kind: "test.run" });
+    workspaceController.request({ kind: "test.run" });
   };
   const mapItems = createMemo(() => {
     const needle = query().trim().toLowerCase();
@@ -645,8 +644,8 @@ export function StudioShell(props: {
                 activeTargetSetId={activeTargetSetId()}
                 onOpenLive={toggleDevicePanel}
                 onChooseTargetSet={(targetSetId) => {
-                  if (targetSetId) workspaceController.execute({ kind: "device.hide" });
-                  workspaceController.execute({
+                  if (targetSetId) workspaceController.request({ kind: "device.hide" });
+                  workspaceController.request({
                     kind: "map.target-set.choose",
                     ...(targetSetId !== undefined ? { targetSetId } : {}),
                   });
@@ -668,7 +667,7 @@ export function StudioShell(props: {
                   data-tip="Map properties"
                   onClick={() => {
                     const opening = !settingsOpen();
-                    if (opening) workspaceController.execute({ kind: "device.hide" });
+                    if (opening) workspaceController.request({ kind: "device.hide" });
                     setSettingsOpen(opening);
                   }}
                 >
@@ -722,7 +721,7 @@ export function StudioShell(props: {
                       class={cn("hidden max-[760px]:flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
-                        workspaceController.execute({ kind: "device.hide" });
+                        workspaceController.request({ kind: "device.hide" });
                         setSettingsOpen(true);
                       }}
                     >
@@ -734,7 +733,7 @@ export function StudioShell(props: {
                       class={cn("flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
-                        workspaceController.execute({ kind: "map.undo" });
+                        workspaceController.request({ kind: "map.undo" });
                       }}
                     >
                       <Icon name="undo" size={14} />
@@ -747,7 +746,7 @@ export function StudioShell(props: {
                       class={cn("flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
-                        workspaceController.execute({ kind: "map.redo" });
+                        workspaceController.request({ kind: "map.redo" });
                       }}
                     >
                       <Icon name="redo" size={14} />
@@ -762,7 +761,7 @@ export function StudioShell(props: {
                       data-tip="Arrange every screen into a compact path"
                       onClick={() => {
                         setStudioActionsOpen(false);
-                        workspaceController.execute({ kind: "map.tidy" });
+                        workspaceController.request({ kind: "map.tidy" });
                         queueMicrotask(() => studioActionsTrigger?.focus());
                       }}
                     >
@@ -774,7 +773,7 @@ export function StudioShell(props: {
                       class={cn("flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
-                        workspaceController.execute({ kind: "map.history.toggle" });
+                        workspaceController.request({ kind: "map.history.toggle" });
                       }}
                     >
                       <Icon name="clock" size={14} /> Version history
@@ -914,13 +913,13 @@ export function StudioShell(props: {
                 </Show>
                 <Show when={combineOpen()}>
                   <StudioShellCombineRail
-                    onOpenRun={(runId) => workspaceController.execute({ kind: "run.open", runId })}
+                    onOpenRun={(runId) => workspaceController.request({ kind: "run.open", runId })}
                     combineId={combineFocusId()}
                     focusSection={combineFocusSection()}
                     collapsed={combineCollapsed()}
                     onOpenDevice={() => {
                       setCombineCollapsed(true);
-                      if (!devicePanelOpen()) workspaceController.execute({ kind: "device.show" });
+                      if (!devicePanelOpen()) workspaceController.request({ kind: "device.show" });
                     }}
                     onClose={() => {
                       setCombineOpen(false);

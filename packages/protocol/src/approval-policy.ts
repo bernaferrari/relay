@@ -57,14 +57,35 @@ export const APPROVAL_FINDING_CATEGORIES = [
 ] as const;
 export type ApprovalFindingCategory = (typeof APPROVAL_FINDING_CATEGORIES)[number];
 
+/**
+ * Durable authority for setting one finding aside. The scope is deliberately
+ * nested and exact: a review for another finding, run, or evidence revision
+ * must never authorize this finding.
+ */
+export type ApprovalPolicyFindingReview = {
+  schemaVersion: 1;
+  decisionId: string;
+  reviewedBy: string;
+  reviewedAt: number;
+  reason: string;
+  scope: {
+    findingId: string;
+    runId: string;
+    /** Exact complete evidence set current when the decision was recorded. */
+    evidenceRefs: readonly string[];
+  };
+};
+
 export type ApprovalPolicyFinding = {
   id: string;
+  /** The persisted run whose current evidence produced this finding. */
+  runId: string;
   category: ApprovalFindingCategory;
   severity: "blocker" | "regression" | "review" | "info";
   summary: string;
   evidenceRefs: readonly string[];
-  /** A reviewed finding is still reported, but no longer blocks this exact decision. */
-  reviewed?: boolean;
+  /** A finding review is usable only when its exact scope is current. */
+  review?: ApprovalPolicyFindingReview;
 };
 
 export type ApprovalPolicyInput = {
@@ -78,6 +99,9 @@ export type ApprovalPolicyInput = {
     missing: readonly string[];
     tracePackDigest?: string;
     tracePackDigests?: readonly string[];
+    /** Current run/evidence scope used to validate finding reviews. */
+    runIds?: readonly string[];
+    evidenceRefs?: readonly string[];
   };
   verification: {
     requiredPaths: "passed" | "failed" | "unproven";

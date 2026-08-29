@@ -241,12 +241,20 @@ export function verifyChangeOffline(input: OfflineVerifyChangeInput): VerifyChan
       .filter(({ status }) => status === "changed" || status === "blocked")
       .map((matcher) => ({
         id: `${pack.source.runId}:${matcher.checkId}:selector`,
+        runId: pack.source.runId,
         category: "selector" as const,
         severity: "review" as const,
         summary: matcher.statement,
-        evidenceRefs: matcher.evidence,
+        evidenceRefs: [...new Set([pack.digest, ...matcher.evidence])],
       })),
   );
+  const currentEvidenceRefs = [
+    ...new Set(
+      selectedPacks
+        .flatMap((pack) => [pack.digest, ...pack.objects.map((object) => object.digest)])
+        .concat(findings.flatMap((finding) => finding.evidenceRefs)),
+    ),
+  ];
   const policy = evaluateApprovalPolicy({
     schemaVersion: 1,
     policy: VERIFY_CHANGE_POLICY,
@@ -261,6 +269,8 @@ export function verifyChangeOffline(input: OfflineVerifyChangeInput): VerifyChan
       requiredChannels: ["frozen-run", "trace-pack"],
       missing: boundedUniqueSorted(evidenceMissing, "evidence-missing"),
       tracePackDigests: selectedPacks.map((pack) => pack.digest).sort(),
+      runIds: selectedPacks.map((pack) => pack.source.runId).sort(),
+      evidenceRefs: currentEvidenceRefs,
     },
     verification: {
       requiredPaths: anyFailed ? "failed" : everyAffectedProved ? "passed" : "unproven",

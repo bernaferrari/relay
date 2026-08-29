@@ -2,6 +2,7 @@
 import {
   runWithTargetDriverRegistry,
   runWithTargetSupervisorStore,
+  runWithIosSupervisionMode,
   TargetSupervisorStore,
   type TargetDriverRegistry,
 } from "@relay/core";
@@ -15,8 +16,10 @@ export function createTargetRuntimeScope(registry: TargetDriverRegistry): Target
   const supervisors = new TargetSupervisorStore();
   return {
     run: (operation) =>
-      runWithTargetSupervisorStore(supervisors, () =>
-        runWithTargetDriverRegistry(registry, operation),
+      runWithIosSupervisionMode("required", () =>
+        runWithTargetSupervisorStore(supervisors, () =>
+          runWithTargetDriverRegistry(registry, operation),
+        ),
       ),
     close: () => supervisors.close(),
   };

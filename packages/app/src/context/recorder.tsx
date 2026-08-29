@@ -188,7 +188,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       if (!targetReady()) {
         toast("Choose a ready device before recording", "info");
-        workspaceController.execute({ kind: "target.choose" });
+        workspaceController.request({ kind: "target.choose" });
         return false;
       }
       const appMapId = server.selectedAppMapId();
@@ -277,7 +277,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       if (!targetReady()) {
         toast("Choose a ready device before capturing the start screen", "info");
-        workspaceController.execute({ kind: "target.choose" });
+        workspaceController.request({ kind: "target.choose" });
         return null;
       }
       const appMapId = appMapIdOverride ?? server.selectedAppMapId();
@@ -384,7 +384,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       if (!targetReady()) {
         toast("Choose a ready device before saving its screen", "info");
-        workspaceController.execute({ kind: "target.choose" });
+        workspaceController.request({ kind: "target.choose" });
         return null;
       }
       const appMapId = appMapIdOverride ?? server.selectedAppMapId();

@@ -181,7 +181,7 @@ export function Layout(props: {
         group: "Jobs",
         keybind: "mod+enter",
         disabled: () => !server.selectedAppMapId() || server.health() !== "online",
-        run: () => props.workspaceController.execute({ kind: "test.run" }),
+        run: () => props.workspaceController.request({ kind: "test.run" }),
       },
       {
         id: "queue.clear",
@@ -294,7 +294,7 @@ export function Layout(props: {
             server.setSelectedAppMapId(appMap.id);
             window.setTimeout(
               () =>
-                props.workspaceController.execute({
+                props.workspaceController.request({
                   kind: "map.screen.reveal",
                   appMapId: appMap.id,
                   screenId: screen.id,

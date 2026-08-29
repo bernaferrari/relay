@@ -1,6 +1,7 @@
 /** Test-run sessions with action traces, heal retries, and disk persistence. */
 import { now, publish } from "./events.js";
 import { resetDeviceClient, type Device } from "./device.js";
+import { closeBrowserTarget } from "./browser-target.js";
 import { runWithTargetContext } from "./target-context.js";
 import type { Glyph, TraceFrameRef, TraceStep } from "./trace.js";
 import { persistRun, writeFramePng, ensureRunDir, type PersistedRun } from "./runs.js";
@@ -67,6 +68,10 @@ import {
 } from "./session-batch-admission.js";
 import { commitTerminalSessionRun } from "./session-terminal-persistence.js";
 import { shutdownSessionExecutions } from "./session-execution-shutdown.js";
+import {
+  currentTargetSupervisorStore,
+  runWithTargetSupervisorStore,
+} from "./target-supervisor-store.js";
 import {
   AppMapTestExecutionReviewRequiredError,
   appMapTestExecutionSourceFromJob,
@@ -210,42 +215,49 @@ export function prepareJobBatch(inputs: readonly SessionBatchInput[]): DeferredS
       }
     },
     scheduler,
-    schedule: (job) =>
-      scheduledSessionJob({
+    schedule: (job) => {
+      // Worker callbacks run after request-local AsyncLocalStorage has ended.
+      // Capture the server-owned supervisor explicitly so physical iOS proof
+      // Runs retain the same durable mutation boundary when the queue drains.
+      const supervisorStore = currentTargetSupervisorStore();
+      return scheduledSessionJob({
         job,
         run: async () => {
           try {
-            await runScheduledSessionJob({
-              job,
-              execute: (workerInstanceId) => {
-                const execute = () =>
-                  runWithJobControl(job.id, () =>
-                    runWithTargetContext(job.targetContext, () =>
-                      executeJob(job.id, workerInstanceId),
-                    ),
-                  );
-                return job.operationContext
-                  ? runWithOperationContext(job.operationContext, execute)
-                  : execute();
-              },
-              onDispatchFailure: (error) =>
-                finishPreExecutionFailure(
-                  job,
-                  `Durable worker dispatch failed: ${error instanceof Error ? error.message : String(error)}`,
-                ),
-              onDurabilityFailure: (error) =>
-                publish({
-                  type: "error",
-                  at: now(),
-                  message: error instanceof Error ? error.message : String(error),
-                  where: "session.durable-worker.finish",
-                }),
-            });
+            const run = () =>
+              runScheduledSessionJob({
+                job,
+                execute: (workerInstanceId) => {
+                  const execute = () =>
+                    runWithJobControl(job.id, () =>
+                      runWithTargetContext(job.targetContext, () =>
+                        executeJob(job.id, workerInstanceId),
+                      ),
+                    );
+                  return job.operationContext
+                    ? runWithOperationContext(job.operationContext, execute)
+                    : execute();
+                },
+                onDispatchFailure: (error) =>
+                  finishPreExecutionFailure(
+                    job,
+                    `Durable worker dispatch failed: ${error instanceof Error ? error.message : String(error)}`,
+                  ),
+                onDurabilityFailure: (error) =>
+                  publish({
+                    type: "error",
+                    at: now(),
+                    message: error instanceof Error ? error.message : String(error),
+                    where: "session.durable-worker.finish",
+                  }),
+              });
+            await (supervisorStore ? runWithTargetSupervisorStore(supervisorStore, run) : run());
           } finally {
             jobCompletions.get(job)?.resolve();
           }
         },
-      }),
+      });
+    },
   });
 }
 
@@ -799,6 +811,12 @@ async function executeJobOnTarget(
     try {
       await finishEvidence();
     } finally {
+      if (job.targetKind === "browser" && job.browserTargetId) {
+        // Proof contexts are one-shot and must never leak cookies, storage, or
+        // service workers into the next Run. Authoring's persistent profile is
+        // intentionally left open for the explicit target.open path.
+        await closeBrowserTarget(job.browserTargetId, { mode: "proof" }).catch(() => undefined);
+      }
       releaseOccupiedTarget();
       activeJobIds.delete(id);
       clearControl(id);

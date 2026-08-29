@@ -5,7 +5,7 @@
  */
 import { getExecutingJobId } from "./control.js";
 import { launchIosAppOutsideXctest, resolveIosLaunchBundleId } from "./ios-app-launch.js";
-import { runIosMutationOnce } from "./ios-mutation-policy.js";
+import { dispatchSupervisedIosMutation, runIosMutationOnce } from "./ios-mutation-policy.js";
 import { runTargetMutation } from "./target-control.js";
 import type { DeviceTargetContext } from "./target-context.js";
 
@@ -35,9 +35,11 @@ export async function openPhysicalIosApp(
   const bundleId = runtime.resolveBundleId(input.app);
   const launched = await runTargetMutation(input.context.serial, getExecutingJobId(), () =>
     runIosMutationOnce(input.context.serial, "app-open", () =>
-      runtime.launch(input.context.serial, bundleId, {
-        relaunch: input.relaunch,
-      }),
+      dispatchSupervisedIosMutation(input.context.serial, () =>
+        runtime.launch(input.context.serial, bundleId, {
+          relaunch: input.relaunch,
+        }),
+      ),
     ),
   );
   await input.rememberApplication(launched.bundleId);

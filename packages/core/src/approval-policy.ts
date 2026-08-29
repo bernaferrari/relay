@@ -17,6 +17,73 @@ function unique(values: readonly string[]): string[] {
   return [...new Set(values)];
 }
 
+function exactStringSet(left: readonly string[], right: readonly string[]): boolean {
+  if (
+    !Array.isArray(left) ||
+    !Array.isArray(right) ||
+    left.some((value) => typeof value !== "string") ||
+    right.some((value) => typeof value !== "string") ||
+    new Set(left).size !== left.length ||
+    new Set(right).size !== right.length
+  ) {
+    return false;
+  }
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  return (
+    sortedLeft.length === sortedRight.length &&
+    sortedLeft.every((value, index) => value === sortedRight[index])
+  );
+}
+
+/**
+ * A finding review is an authority over one immutable evidence observation,
+ * not a free-standing boolean. Keep this validation next to policy evaluation
+ * so every caller gets the same fail-closed behavior, including callers that
+ * do not pass through an operation parser first.
+ */
+export function approvalPolicyFindingReviewIsValid(
+  input: ApprovalPolicyInput,
+  finding: ApprovalPolicyFinding,
+): boolean {
+  const review = finding.review;
+  if (!review || review.schemaVersion !== 1) return false;
+  if (
+    typeof finding.id !== "string" ||
+    !finding.id.trim() ||
+    typeof finding.runId !== "string" ||
+    !finding.runId.trim() ||
+    typeof review.decisionId !== "string" ||
+    !review.decisionId.trim() ||
+    typeof review.reviewedBy !== "string" ||
+    !review.reviewedBy.trim() ||
+    typeof review.reason !== "string" ||
+    !review.reason.trim() ||
+    !Number.isSafeInteger(review.reviewedAt) ||
+    review.reviewedAt < 0
+  ) {
+    return false;
+  }
+  if (
+    !review.scope ||
+    review.scope.findingId !== finding.id ||
+    review.scope.runId !== finding.runId ||
+    !Array.isArray(review.scope.evidenceRefs) ||
+    !exactStringSet(finding.evidenceRefs, finding.evidenceRefs) ||
+    !finding.evidenceRefs.every((ref) => review.scope.evidenceRefs.includes(ref))
+  ) {
+    return false;
+  }
+  const currentRunIds = input.evidence.runIds;
+  const currentEvidenceRefs = input.evidence.evidenceRefs;
+  return (
+    Array.isArray(currentRunIds) &&
+    currentRunIds.includes(finding.runId) &&
+    Array.isArray(currentEvidenceRefs) &&
+    exactStringSet(review.scope.evidenceRefs, currentEvidenceRefs)
+  );
+}
+
 function result(
   input: ApprovalPolicyInput,
   value: Omit<ApprovalPolicyDecision, "schemaVersion" | "policy" | "evidenceRefs">,
@@ -49,7 +116,9 @@ export function evaluateApprovalPolicy(input: ApprovalPolicyInput): ApprovalPoli
     });
   }
 
-  const activeFindings = input.findings.filter((finding) => !finding.reviewed);
+  const activeFindings = input.findings.filter(
+    (finding) => !approvalPolicyFindingReviewIsValid(input, finding),
+  );
   const definitiveFailures = activeFindings.filter(
     (finding) =>
       finding.severity === "blocker" ||

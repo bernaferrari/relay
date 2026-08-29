@@ -138,7 +138,7 @@ export function DevicePicker(props: {
     closePicker(true);
     props.onChooseTargetSet?.();
     void server.setSelectedDevice(serial).then(() => server.refreshDevices());
-    props.workspaceController?.execute({ kind: "target.selected", targetId: serial });
+    props.workspaceController?.publish({ kind: "target.selected", targetId: serial });
   }
 
   const closePicker = (restoreFocus = false) => {
@@ -451,7 +451,7 @@ export function DevicePicker(props: {
                         class="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)] transition-colors hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)]"
                         onClick={() => {
                           setOpen(false);
-                          props.workspaceController?.execute({
+                          props.workspaceController?.request({
                             kind: "settings.open",
                             section: "devices",
                           });

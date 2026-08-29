@@ -1,5 +1,8 @@
 # Relay architecture
 
+Major capabilities also follow the measurable [Relay 9/10 quality constitution](./docs/QUALITY_9.md)
+and its accepted architectural decisions.
+
 Relay is a local-first application mapping and verification system for people and agents. Product UI
 work also follows [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md): `@relay/ui` owns semantic tokens and shared
 primitives, while product components use Tailwind utilities for ordinary styling.

@@ -69,7 +69,7 @@ import {
 } from "@relay/core";
 import { collectVisibleReports } from "./report-access.js";
 import { createSseHub } from "./sse.js";
-import { startScheduler } from "./scheduler.js";
+import { runDueSchedules, startScheduler } from "./scheduler.js";
 import { createRequestHandlerLifecycle } from "./request-handler-lifecycle.js";
 import { createFailClosedServerShutdown } from "./server-shutdown.js";
 import { createTargetRuntimeScope } from "./target-runtime-scope.js";
@@ -822,7 +822,9 @@ async function startServerWithStateLease(
       json(res, 503, { error: "Relay server is shutting down" });
     }
   });
-  const scheduler = startScheduler();
+  // Scheduled admissions originate outside an HTTP request, so give them the
+  // same durable target runtime scope before they freeze and queue a Run.
+  const scheduler = startScheduler(30_000, () => targetRuntimeScope.run(runDueSchedules));
   try {
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);

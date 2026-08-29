@@ -45,15 +45,15 @@ test("workspace commands replace the legacy run, capture, and device-panel event
     return <div />;
   }, root);
 
-  expect(controller.execute({ kind: "test.run" })).toBe(true);
-  expect(controller.execute({ kind: "test.record" })).toBe(true);
-  expect(controller.execute({ kind: "screen.capture" })).toBe(true);
+  expect(controller.request({ kind: "test.run" })).toBe(true);
+  expect(controller.request({ kind: "test.record" })).toBe(true);
+  expect(controller.request({ kind: "screen.capture" })).toBe(true);
   expect(run).toHaveBeenCalledOnce();
   expect(record).toHaveBeenCalledOnce();
   expect(capture).toHaveBeenCalledOnce();
-  expect(controller.execute({ kind: "device.toggle" })).toBe(true);
-  expect(controller.execute({ kind: "device.show" })).toBe(true);
-  expect(controller.execute({ kind: "device.hide" })).toBe(true);
+  expect(controller.request({ kind: "device.toggle" })).toBe(true);
+  expect(controller.request({ kind: "device.show" })).toBe(true);
+  expect(controller.request({ kind: "device.hide" })).toBe(true);
   expect(toggleDevice).toHaveBeenCalledOnce();
   expect(showDevice).toHaveBeenCalledOnce();
   expect(hideDevice).toHaveBeenCalledOnce();
@@ -82,6 +82,6 @@ test("workspace commands replace the legacy run, capture, and device-panel event
 
   dispose();
   root.remove();
-  expect(controller.execute({ kind: "test.run" })).toBe(false);
-  expect(controller.execute({ kind: "device.show" })).toBe(false);
+  expect(controller.request({ kind: "test.run" })).toBe(false);
+  expect(controller.request({ kind: "device.show" })).toBe(false);
 });

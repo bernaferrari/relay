@@ -186,7 +186,10 @@ export async function acquirePreparedSessionDevice(
         .join("; ");
       throw new Error(`environment preflight failed: ${failures}`);
     }
-    return await getBrowserDevice(target.browserTarget.id);
+    // A scheduled proof owns a fresh, non-persistent context. The persistent
+    // authoring profile remains available only through the explicit authoring
+    // path (openBrowserTarget/getBrowserDevice({ mode: "authoring" })).
+    return await getBrowserDevice(target.browserTarget.id, { mode: "proof" });
   }
 
   // A physical iOS target uses one long-lived XCTest process. Stopping it

@@ -19,6 +19,7 @@ import { captureFullSurfaceEvidence } from "./discovery-surface.js";
 import { dismissTowardParent } from "./explore.js";
 import { postLoginNotifications } from "./grok.js";
 import { openPhysicalIosApp } from "./ios-app-open.js";
+import { runWithIosSupervisionMode } from "./ios-mutation-policy.js";
 import { runRecipeStep } from "./recipe-runner.js";
 import { captureScrollableSurvey } from "./scrollable-survey.js";
 import { runWithTargetContext } from "./target-context.js";
@@ -168,7 +169,9 @@ async function appOpenTrace(
 
   if (outcome === "unknown") {
     try {
-      await runWithTargetContext(ios(serial), open);
+      await runWithIosSupervisionMode("test-optional", () =>
+        runWithTargetContext(ios(serial), open),
+      );
       throw new Error("Expected app-open to retain an unknown sidecar outcome");
     } catch (error) {
       assert.ok(error instanceof IosMutationOutcomeUnknownError);
@@ -179,7 +182,7 @@ async function appOpenTrace(
     }
   }
 
-  await runWithTargetContext(ios(serial), open);
+  await runWithIosSupervisionMode("test-optional", () => runWithTargetContext(ios(serial), open));
   assert.deepEqual(remembered, ["ai.x.GrokApp"]);
   return { nativeDispatches, status: "handled" };
 }

@@ -28,16 +28,16 @@ test("workspace controller routes typed commands to their surface owners", () =>
     revealMapScreen: ({ appMapId, screenId }) => calls.push(`reveal:${appMapId}:${screenId}`),
   });
 
-  assert.equal(controller.execute({ kind: "target.choose" }), true);
-  assert.equal(controller.execute({ kind: "target.selected", targetId: "ipad-1" }), true);
-  assert.equal(controller.execute({ kind: "device.toggle" }), true);
-  assert.equal(controller.execute({ kind: "device.show" }), true);
-  assert.equal(controller.execute({ kind: "device.state", open: true }), true);
-  assert.equal(controller.execute({ kind: "run.open", runId: "run-7" }), true);
-  assert.equal(controller.execute({ kind: "settings.open", section: "devices" }), true);
-  assert.equal(controller.execute({ kind: "test.run" }), true);
+  assert.equal(controller.request({ kind: "target.choose" }), true);
+  assert.equal(controller.publish({ kind: "target.selected", targetId: "ipad-1" }), true);
+  assert.equal(controller.request({ kind: "device.toggle" }), true);
+  assert.equal(controller.request({ kind: "device.show" }), true);
+  assert.equal(controller.publish({ kind: "device.state", open: true }), true);
+  assert.equal(controller.request({ kind: "run.open", runId: "run-7" }), true);
+  assert.equal(controller.request({ kind: "settings.open", section: "devices" }), true);
+  assert.equal(controller.request({ kind: "test.run" }), true);
   assert.equal(
-    controller.execute({
+    controller.publish({
       kind: "test.run-readiness",
       readiness: {
         visible: true,
@@ -50,16 +50,16 @@ test("workspace controller routes typed commands to their surface owners", () =>
     }),
     true,
   );
-  assert.equal(controller.execute({ kind: "test.record" }), true);
-  assert.equal(controller.execute({ kind: "screen.capture" }), true);
-  assert.equal(controller.execute({ kind: "map.target-set.choose", targetSetId: "release" }), true);
-  assert.equal(controller.execute({ kind: "map.target-set.state" }), true);
-  assert.equal(controller.execute({ kind: "map.undo" }), true);
-  assert.equal(controller.execute({ kind: "map.redo" }), true);
-  assert.equal(controller.execute({ kind: "map.tidy" }), true);
-  assert.equal(controller.execute({ kind: "map.history.toggle" }), true);
+  assert.equal(controller.request({ kind: "test.record" }), true);
+  assert.equal(controller.request({ kind: "screen.capture" }), true);
+  assert.equal(controller.request({ kind: "map.target-set.choose", targetSetId: "release" }), true);
+  assert.equal(controller.publish({ kind: "map.target-set.state" }), true);
+  assert.equal(controller.request({ kind: "map.undo" }), true);
+  assert.equal(controller.request({ kind: "map.redo" }), true);
+  assert.equal(controller.request({ kind: "map.tidy" }), true);
+  assert.equal(controller.request({ kind: "map.history.toggle" }), true);
   assert.equal(
-    controller.execute({ kind: "map.screen.reveal", appMapId: "map-1", screenId: "settings" }),
+    controller.request({ kind: "map.screen.reveal", appMapId: "map-1", screenId: "settings" }),
     true,
   );
   assert.deepEqual(calls, [
@@ -89,33 +89,56 @@ test("workspace controller disconnect is idempotent and reports unhandled comman
   let calls = 0;
   const disconnect = controller.connect({ showDevice: () => calls++ });
 
-  assert.equal(controller.execute({ kind: "device.show" }), true);
+  assert.equal(controller.request({ kind: "device.show" }), true);
   disconnect();
   disconnect();
-  assert.equal(controller.execute({ kind: "device.show" }), false);
+  assert.equal(controller.request({ kind: "device.show" }), false);
   assert.equal(calls, 1);
 });
 
-test("workspace controller uses a stable adapter snapshot during execution", () => {
+test("workspace controller uses a stable adapter snapshot during notification delivery", () => {
   const controller = createWorkspaceController();
   const calls: string[] = [];
   let disconnectSecond: () => void = () => undefined;
   controller.connect({
-    hideDevice: () => {
+    deviceStateChanged: () => {
       calls.push("first");
       disconnectSecond();
     },
   });
-  disconnectSecond = controller.connect({ hideDevice: () => calls.push("second") });
+  disconnectSecond = controller.connect({ deviceStateChanged: () => calls.push("second") });
 
-  assert.equal(controller.execute({ kind: "device.hide" }), true);
+  assert.equal(controller.publish({ kind: "device.state", open: false }), true);
   assert.deepEqual(calls, ["first", "second"]);
   calls.length = 0;
-  controller.execute({ kind: "device.hide" });
+  controller.publish({ kind: "device.state", open: false });
   assert.deepEqual(calls, ["first"]);
 });
 
-test("retired DOM event names are inert while typed owners execute once and disconnect safely", () => {
+test("workspace controller rejects duplicate imperative owners before any effect", () => {
+  const controller = createWorkspaceController();
+  const calls: string[] = [];
+  controller.connect({ showDevice: () => calls.push("first") });
+  controller.connect({ showDevice: () => calls.push("second") });
+
+  assert.throws(
+    () => controller.request({ kind: "device.show" }),
+    /Workspace request "device\.show" has 2 owners/,
+  );
+  assert.deepEqual(calls, []);
+});
+
+test("workspace controller publishes notifications to every observer", () => {
+  const controller = createWorkspaceController();
+  const calls: string[] = [];
+  controller.connect({ deviceStateChanged: (open) => calls.push(`first:${open}`) });
+  controller.connect({ deviceStateChanged: (open) => calls.push(`second:${open}`) });
+
+  assert.equal(controller.publish({ kind: "device.state", open: true }), true);
+  assert.deepEqual(calls, ["first:true", "second:true"]);
+});
+
+test("retired DOM event names are inert while typed owners request once and disconnect safely", () => {
   const controller = createWorkspaceController();
   const target = new EventTarget();
   const calls: string[] = [];
@@ -138,15 +161,15 @@ test("retired DOM event names are inert while typed owners execute once and disc
   }
   assert.deepEqual(calls, []);
 
-  assert.equal(controller.execute({ kind: "target.choose" }), true);
-  assert.equal(controller.execute({ kind: "device.show" }), true);
-  assert.equal(controller.execute({ kind: "settings.open", section: "devices" }), true);
-  assert.equal(controller.execute({ kind: "run.open", runId: "run-1" }), true);
+  assert.equal(controller.request({ kind: "target.choose" }), true);
+  assert.equal(controller.request({ kind: "device.show" }), true);
+  assert.equal(controller.request({ kind: "settings.open", section: "devices" }), true);
+  assert.equal(controller.request({ kind: "run.open", runId: "run-1" }), true);
   assert.deepEqual(calls, ["target", "device", "settings:devices", "run:run-1"]);
 
   disconnect();
   disconnect();
-  assert.equal(controller.execute({ kind: "target.choose" }), false);
-  assert.equal(controller.execute({ kind: "settings.open" }), false);
+  assert.equal(controller.request({ kind: "target.choose" }), false);
+  assert.equal(controller.request({ kind: "settings.open" }), false);
   assert.equal(calls.length, 4);
 });

@@ -219,8 +219,17 @@ test("does not claim a stitched page when seam detection stopped", () => {
   );
 
   expect(root.textContent).toContain("Dynamic");
-  expect(root.textContent).toContain("Remaining extent unknown");
+  expect(root.textContent).toContain("Document end unknown");
   expect(root.textContent).toContain("Dynamic region retained for review");
+  expect(
+    root.querySelector("[data-scroll-surface-coverage]")?.getAttribute("aria-label"),
+  ).toContain("document end unknown");
+  expect(
+    Array.from(root.querySelectorAll("[data-scroll-surface-coverage] span")).some((span) =>
+      span.className.includes("w-3/4"),
+    ),
+  ).toBe(false);
+  expect(root.querySelector("[data-scroll-surface-captured]")).not.toBeNull();
   expect(root.querySelector("[data-scroll-surface-not-reached]")).not.toBeNull();
   expect(root.textContent).toContain("Preview unavailable");
   expect(root.textContent).toContain("source viewports below are intact");

@@ -1,15 +1,19 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { BrowserContext, Page, Request, Video } from "playwright-core";
-import { chromium } from "playwright-core";
+import type { BrowserCaseProfile } from "@relay/protocol";
 import type { Device, SnapshotNode } from "./device.js";
+import { createBrowserContextFactory, type BrowserContextPurpose } from "./browser-context.js";
 import { createDeviceObservationFacade } from "./device-observation-membrane.js";
-import { browserExecutable, browserProfileDir, readTarget } from "./targets.js";
+import { browserProfileDir, readTarget } from "./targets.js";
 
 type BrowserSession = {
   context: BrowserContext;
+  close: () => Promise<void>;
   page: Page;
   targetId: string;
+  purpose: BrowserContextPurpose;
+  profile: BrowserCaseProfile;
   headless: boolean;
   recordingUnavailable?: string;
   recordingPath?: string;
@@ -46,41 +50,53 @@ const MAX_NETWORK_BODY_BYTES = 256 * 1024;
 
 async function createSession(
   targetId: string,
-  options: { headless?: boolean } = {},
+  options: {
+    headless?: boolean;
+    mode: BrowserContextPurpose;
+    profile?: BrowserCaseProfile;
+  },
 ): Promise<BrowserSession> {
   const target = await readTarget(targetId);
   if (!target?.browser) throw new Error(`managed browser target not found: ${targetId}`);
-  type ContextOptions = Parameters<typeof chromium.launchPersistentContext>[1];
-  const baseOptions: ContextOptions = {
-    executablePath: browserExecutable(target),
-    headless: options.headless ?? target.browser.headless ?? false,
-    viewport: target.browser.viewport ?? { width: 1280, height: 800 },
-    acceptDownloads: true,
-    permissions: ["clipboard-read", "clipboard-write"],
-  };
+  const factory = createBrowserContextFactory(target);
+  const profile = options.profile ?? factory.profile;
+  const recordingDir = join(
+    browserProfileDir(targetId),
+    options.mode === "authoring" ? "recordings" : "proof-recordings",
+  );
   let recordingUnavailable: string | undefined;
-  let context: BrowserContext;
+  let contextHandle;
   try {
-    context = await chromium.launchPersistentContext(browserProfileDir(targetId), {
-      ...baseOptions,
-      recordVideo: {
-        dir: join(browserProfileDir(targetId), "recordings"),
-        size: target.browser.viewport ?? { width: 1280, height: 800 },
-      },
-    });
+    contextHandle =
+      options.mode === "authoring"
+        ? await factory.openAuthoring({
+            headless: options.headless,
+            recordVideoDir: recordingDir,
+          })
+        : await factory.openProof(profile, {
+            headless: options.headless,
+            recordVideoDir: recordingDir,
+          });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!/ffmpeg|video rendering|recordvideo/i.test(message)) throw error;
     recordingUnavailable =
       "Video recording is unavailable on this machine. Screenshots, steps, and logs are still captured.";
-    context = await chromium.launchPersistentContext(browserProfileDir(targetId), baseOptions);
+    contextHandle =
+      options.mode === "authoring"
+        ? await factory.openAuthoring({ headless: options.headless })
+        : await factory.openProof(profile, { headless: options.headless });
   }
+  const context = contextHandle.context;
   const page = context.pages()[0] ?? (await context.newPage());
   const session: BrowserSession = {
     context,
+    close: contextHandle.close,
     page,
     targetId,
-    headless: Boolean(baseOptions.headless),
+    purpose: options.mode,
+    profile: contextHandle.profile,
+    headless: options.headless ?? target.browser.headless ?? false,
     ...(recordingUnavailable ? { recordingUnavailable } : {}),
     console: [],
     network: [],
@@ -180,20 +196,32 @@ export async function performBrowserFind(
 
 async function sessionFor(
   targetId: string,
-  options: { headless?: boolean } = {},
+  options: {
+    headless?: boolean;
+    mode?: BrowserContextPurpose;
+    profile?: BrowserCaseProfile;
+  } = {},
 ): Promise<BrowserSession> {
-  const existing = sessions.get(targetId);
+  const mode = options.mode ?? "authoring";
+  const key = `${mode}:${targetId}`;
+  const existing = sessions.get(key);
   if (existing) {
     const session = await existing;
-    if (options.headless === undefined || session.headless === options.headless) return session;
-    sessions.delete(targetId);
-    await session.context.close().catch(() => undefined);
+    // Proof contexts are deliberately one-shot. Even if a caller forgot to
+    // close the prior handle, never reuse its cookies/storage for another Run.
+    if (
+      mode === "authoring" &&
+      (options.headless === undefined || session.headless === options.headless)
+    )
+      return session;
+    sessions.delete(key);
+    await session.close().catch(() => undefined);
   }
-  const pending = createSession(targetId, options).catch((error) => {
-    sessions.delete(targetId);
+  const pending = createSession(targetId, { ...options, mode }).catch((error) => {
+    sessions.delete(key);
     throw error;
   });
-  sessions.set(targetId, pending);
+  sessions.set(key, pending);
   return pending;
 }
 
@@ -211,7 +239,7 @@ export type OpenBrowserTargetResult = {
 export async function openBrowserTarget(targetId: string): Promise<OpenBrowserTargetResult> {
   const target = await readTarget(targetId);
   if (!target?.browser) throw new Error(`managed browser target not found: ${targetId}`);
-  const session = await sessionFor(targetId, { headless: false });
+  const session = await sessionFor(targetId, { headless: false, mode: "authoring" });
   const page = await activePage(session);
   if (page.url() === "about:blank") {
     await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
@@ -303,8 +331,16 @@ function unsupported(capability: string): never {
  * Adapts a managed browser to Relay's existing device contract. This keeps the
  * canonical recipe IR target-neutral while richer TargetAdapter APIs evolve.
  */
-export async function getBrowserDevice(targetId: string): Promise<Device> {
-  const session = await sessionFor(targetId);
+export type BrowserDeviceOptions = {
+  mode?: BrowserContextPurpose;
+  profile?: BrowserCaseProfile;
+};
+
+export async function getBrowserDevice(
+  targetId: string,
+  options: BrowserDeviceOptions = {},
+): Promise<Device> {
+  const session = await sessionFor(targetId, options);
   const identifiers = { serial: targetId, appPath: "managed-browser" };
   const api = {
     devices: {
@@ -585,14 +621,23 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
   return createDeviceObservationFacade(api);
 }
 
-export async function closeBrowserTarget(targetId?: string): Promise<void> {
-  const entries: Array<[string, Promise<BrowserSession> | undefined]> = targetId
-    ? [[targetId, sessions.get(targetId)]]
-    : [...sessions.entries()];
-  for (const [id, pending] of entries) {
+export async function closeBrowserTarget(
+  targetId?: string,
+  options: { mode?: BrowserContextPurpose } = {},
+): Promise<void> {
+  const entries = [...sessions.entries()].filter(([key]) => {
+    const separator = key.indexOf(":");
+    const mode = key.slice(0, separator);
+    const id = key.slice(separator + 1);
+    return (
+      (targetId === undefined || id === targetId) &&
+      (options.mode === undefined || mode === options.mode)
+    );
+  });
+  for (const [key, pending] of entries) {
     if (!pending) continue;
-    sessions.delete(id);
+    sessions.delete(key);
     const session = await pending.catch(() => null);
-    await session?.context.close().catch(() => undefined);
+    await session?.close().catch(() => undefined);
   }
 }

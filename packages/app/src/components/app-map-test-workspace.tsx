@@ -84,15 +84,15 @@ export function AppMapTestWorkspace(props: {
   onCleanup(() => disconnectWorkspace?.());
 
   function chooseTarget(): void {
-    if (!props.workspaceController?.execute({ kind: "target.choose" })) props.onChooseTarget?.();
+    if (!props.workspaceController?.request({ kind: "target.choose" })) props.onChooseTarget?.();
   }
 
   function showDevice(): void {
-    if (!props.workspaceController?.execute({ kind: "device.show" })) props.onOpenTarget?.();
+    if (!props.workspaceController?.request({ kind: "device.show" })) props.onOpenTarget?.();
   }
 
   function openRun(runId: string): void {
-    if (!props.workspaceController?.execute({ kind: "run.open", runId })) {
+    if (!props.workspaceController?.request({ kind: "run.open", runId })) {
       props.onOpenRun?.(runId);
     }
   }

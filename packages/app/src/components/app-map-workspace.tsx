@@ -214,7 +214,7 @@ export function AppMapWorkspace(props: {
     openDevicePicker,
   } = useAppMapCapturePanel({
     clearContextSurface: () => setContextSurface(null),
-    chooseTarget: () => props.workspaceController?.execute({ kind: "target.choose" }),
+    chooseTarget: () => props.workspaceController?.request({ kind: "target.choose" }),
   });
   const contextPanels = useAppMapContextPanels({
     activeAppMap,
@@ -445,7 +445,7 @@ export function AppMapWorkspace(props: {
     openDevicePicker,
     openLiveDevice,
     openDeviceSettings: () =>
-      props.workspaceController?.execute({ kind: "settings.open", section: "devices" }),
+      props.workspaceController?.request({ kind: "settings.open", section: "devices" }),
     onPathKept: () => props.onOpenActions(),
   });
   const {

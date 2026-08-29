@@ -34,7 +34,7 @@ export function useAppMapWorkspaceShell(options: {
   };
   createEffect(() => {
     const targetSetId = options.activeFlow()?.targetSetId;
-    options.workspaceController?.execute({
+    options.workspaceController?.publish({
       kind: "map.target-set.state",
       ...(targetSetId !== undefined ? { targetSetId } : {}),
     });

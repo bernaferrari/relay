@@ -21,15 +21,15 @@ test("Map editor owns typed target, device, Run, record, and capture commands", 
     redoMap: () => calls.push("redo"),
   });
 
-  controller.execute({ kind: "target.selected", targetId: "ipad-1" });
-  controller.execute({ kind: "device.toggle" });
-  controller.execute({ kind: "device.show" });
-  controller.execute({ kind: "device.hide" });
-  controller.execute({ kind: "test.run" });
-  controller.execute({ kind: "test.record" });
-  controller.execute({ kind: "screen.capture" });
-  controller.execute({ kind: "map.undo" });
-  controller.execute({ kind: "map.redo" });
+  controller.publish({ kind: "target.selected", targetId: "ipad-1" });
+  controller.request({ kind: "device.toggle" });
+  controller.request({ kind: "device.show" });
+  controller.request({ kind: "device.hide" });
+  controller.request({ kind: "test.run" });
+  controller.request({ kind: "test.record" });
+  controller.request({ kind: "screen.capture" });
+  controller.request({ kind: "map.undo" });
+  controller.request({ kind: "map.redo" });
   assert.deepEqual(calls, [
     "selected",
     "toggle",
@@ -43,7 +43,7 @@ test("Map editor owns typed target, device, Run, record, and capture commands", 
   ]);
 
   disconnect();
-  assert.equal(controller.execute({ kind: "test.run" }), false);
+  assert.equal(controller.request({ kind: "test.run" }), false);
 });
 
 test("Map command connection is a no-op without a shell controller", () => {
@@ -72,10 +72,10 @@ test("Map shell owns typed target-set, tidy, history, and screen-reveal commands
     revealScreen: ({ appMapId, screenId }) => calls.push(["reveal", appMapId, screenId]),
   });
 
-  controller.execute({ kind: "map.target-set.choose", targetSetId: "release" });
-  controller.execute({ kind: "map.tidy" });
-  controller.execute({ kind: "map.history.toggle" });
-  controller.execute({ kind: "map.screen.reveal", appMapId: "map-1", screenId: "settings" });
+  controller.request({ kind: "map.target-set.choose", targetSetId: "release" });
+  controller.request({ kind: "map.tidy" });
+  controller.request({ kind: "map.history.toggle" });
+  controller.request({ kind: "map.screen.reveal", appMapId: "map-1", screenId: "settings" });
   assert.deepEqual(calls, [
     ["target-set", "release"],
     ["tidy"],
@@ -83,5 +83,5 @@ test("Map shell owns typed target-set, tidy, history, and screen-reveal commands
     ["reveal", "map-1", "settings"],
   ]);
   disconnect();
-  assert.equal(controller.execute({ kind: "map.tidy" }), false);
+  assert.equal(controller.request({ kind: "map.tidy" }), false);
 });

@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { browserEnvironmentInputSchema } from "./browser-case-profile.js";
 
 const text = z.string().min(1);
 const natural = z.number().int().nonnegative();
@@ -115,6 +116,7 @@ const targetDefinition = z
         executablePath: text.optional(),
         headless: z.boolean().optional(),
         viewport: viewport.optional(),
+        environment: browserEnvironmentInputSchema.optional(),
       })
       .strict()
       .optional(),

@@ -834,7 +834,7 @@ export function DeviceStage(_props: {
             purpose="live"
             scanning={server.deviceDiscoveryStatus() === "scanning"}
             offline={server.health() !== "online"}
-            onChooseDevice={() => workspaceController.execute({ kind: "target.choose" })}
+            onChooseDevice={() => workspaceController.request({ kind: "target.choose" })}
           />
         }
       >
@@ -906,7 +906,7 @@ export function DeviceStage(_props: {
                     void retryScreenPreview();
                   }}
                   onOpenDeviceSettings={() =>
-                    workspaceController.execute({ kind: "settings.open", section: "devices" })
+                    workspaceController.request({ kind: "settings.open", section: "devices" })
                   }
                   onEnterRecordMode={() => {
                     void rec.enterRecordMode();
@@ -1283,7 +1283,7 @@ export function DeviceStage(_props: {
               busy={panelRetrying()}
               onOpenXcode={() => void platform.openXcode?.()}
               onOpenSettings={() =>
-                workspaceController.execute({ kind: "settings.open", section: "devices" })
+                workspaceController.request({ kind: "settings.open", section: "devices" })
               }
               onRetry={() => {
                 void retryDevicePanel();

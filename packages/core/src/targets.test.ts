@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { closeBrowserTarget, getBrowserDevice } from "./browser-target.js";
+import { createBrowserContextFactory } from "./browser-context.js";
 import { pressLabel, pressRef, recordDeviceVideo, screenshot, typeText } from "./device.js";
 import { runWithTargetContext } from "./target-context.js";
 import { deleteTarget, listTargets, preflightTarget, saveBrowserTarget } from "./targets.js";
@@ -82,6 +83,20 @@ test("managed browser targets preserve an explicit, path-safe id", async () => {
     else process.env.RELAY_WORKSPACE_ROOT = previous;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("browser environment viewport takes precedence over the legacy target viewport", async () => {
+  const target = await saveBrowserTarget({
+    id: "profile-viewport-precedence",
+    name: "Profile viewport",
+    startUrl,
+    headless: true,
+    viewport: { width: 1280, height: 800 },
+    environment: { viewport: { width: 390, height: 844 } },
+  });
+  const factory = createBrowserContextFactory(target);
+  assert.deepEqual(factory.profile.viewport, { width: 390, height: 844 });
+  await deleteTarget(target.id);
 });
 
 test("listTargets skips invalid entries but keeps valid ones", async () => {

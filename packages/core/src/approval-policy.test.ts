@@ -63,6 +63,7 @@ describe("evaluateApprovalPolicy", () => {
         findings: [
           {
             id: "crash-1",
+            runId: "run-crash-1",
             category: "crash",
             severity: "regression",
             summary: "The app crashed after Save.",
@@ -94,6 +95,7 @@ describe("evaluateApprovalPolicy", () => {
         findings: [
           {
             id: "crash-1",
+            runId: "run-crash-1",
             category: "crash",
             severity: "regression",
             summary: "The app crashed after Save.",
@@ -137,21 +139,127 @@ describe("evaluateApprovalPolicy", () => {
     assert.deepEqual(decision.ruleIds, ["execution.prohibited"]);
   });
 
-  it("requires review for visual changes unless the exact finding was reviewed", () => {
+  it("requires provenance-bound review for visual changes", () => {
     const visualFinding = {
       id: "visual-1",
+      runId: "run-visual-1",
       category: "visual" as const,
       severity: "regression" as const,
       summary: "The approved surface changed.",
-      evidenceRefs: [],
+      evidenceRefs: ["sha256:visual-evidence"],
+    };
+    const currentEvidence = {
+      ...input().evidence,
+      runIds: [visualFinding.runId],
+      evidenceRefs: visualFinding.evidenceRefs,
     };
     assert.equal(
       evaluateApprovalPolicy(input({ findings: [visualFinding] })).decision,
       "ask-human",
     );
     assert.equal(
-      evaluateApprovalPolicy(input({ findings: [{ ...visualFinding, reviewed: true }] })).decision,
+      evaluateApprovalPolicy(
+        input({
+          evidence: currentEvidence,
+          findings: [
+            {
+              ...visualFinding,
+              review: {
+                schemaVersion: 1,
+                decisionId: "decision-visual-1",
+                reviewedBy: "human:reviewer",
+                reviewedAt: 10,
+                reason: "Inspected the exact changed surface.",
+                scope: {
+                  findingId: visualFinding.id,
+                  runId: visualFinding.runId,
+                  evidenceRefs: visualFinding.evidenceRefs,
+                },
+              },
+            },
+          ],
+        }),
+      ).decision,
       "approve",
+    );
+  });
+
+  it("fails closed for forged, stale, or legacy finding review authority", () => {
+    const finding = {
+      id: "selector-1",
+      runId: "run-current",
+      category: "selector" as const,
+      severity: "review" as const,
+      summary: "The selector needs review.",
+      evidenceRefs: ["sha256:selector-evidence"],
+    };
+    const evidence = {
+      ...input().evidence,
+      runIds: [finding.runId],
+      evidenceRefs: finding.evidenceRefs,
+    };
+    const validReview = {
+      schemaVersion: 1 as const,
+      decisionId: "decision-selector-1",
+      reviewedBy: "human:reviewer",
+      reviewedAt: 10,
+      reason: "Inspected the exact selector evidence.",
+      scope: {
+        findingId: finding.id,
+        runId: finding.runId,
+        evidenceRefs: finding.evidenceRefs,
+      },
+    };
+
+    for (const review of [
+      { ...validReview, scope: { ...validReview.scope, findingId: "other-finding" } },
+      { ...validReview, scope: { ...validReview.scope, runId: "run-stale" } },
+      {
+        ...validReview,
+        scope: { ...validReview.scope, evidenceRefs: ["sha256:stale-evidence"] },
+      },
+      {
+        ...validReview,
+        scope: { ...validReview.scope, evidenceRefs: undefined as never },
+      },
+      { ...validReview, reviewedAt: -1 },
+    ]) {
+      assert.equal(
+        evaluateApprovalPolicy(input({ evidence, findings: [{ ...finding, review }] })).decision,
+        "ask-human",
+      );
+    }
+
+    assert.equal(
+      evaluateApprovalPolicy(
+        input({
+          evidence: { ...evidence, runIds: ["run-stale"] },
+          findings: [{ ...finding, review: validReview }],
+        }),
+      ).decision,
+      "ask-human",
+    );
+    assert.equal(
+      evaluateApprovalPolicy(
+        input({
+          evidence: {
+            ...evidence,
+            evidenceRefs: [...finding.evidenceRefs, "sha256:new-evidence"],
+          },
+          findings: [{ ...finding, review: validReview }],
+        }),
+      ).decision,
+      "ask-human",
+    );
+
+    assert.equal(
+      evaluateApprovalPolicy(
+        input({
+          evidence,
+          findings: [{ ...finding, review: true as never }],
+        }),
+      ).decision,
+      "ask-human",
     );
   });
 });

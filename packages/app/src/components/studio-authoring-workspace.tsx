@@ -27,16 +27,16 @@ export function StudioAuthoringWorkspace(props: {
 }) {
   function recordTest(): void {
     if (props.mode !== "test") props.onMode("test");
-    props.workspaceController.execute({ kind: "test.record" });
+    props.workspaceController.request({ kind: "test.record" });
   }
   function showLiveDevice(): void {
-    props.workspaceController.execute({ kind: "device.show" });
+    props.workspaceController.request({ kind: "device.show" });
   }
   function chooseTarget(): void {
-    props.workspaceController.execute({ kind: "target.choose" });
+    props.workspaceController.request({ kind: "target.choose" });
   }
   function captureScreen(): void {
-    props.workspaceController.execute({ kind: "screen.capture" });
+    props.workspaceController.request({ kind: "screen.capture" });
   }
   const onboarding = useFirstTestOnboarding({
     onOpenTargets: chooseTarget,

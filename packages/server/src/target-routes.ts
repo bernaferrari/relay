@@ -7,6 +7,7 @@ import {
   readTarget,
   saveBrowserTarget,
 } from "@relay/core";
+import type { BrowserEnvironmentInput, BrowserViewport } from "@relay/protocol";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 
 export type TargetRouteContext = {
@@ -30,6 +31,8 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
       name?: string;
       startUrl?: string;
       headless?: boolean;
+      viewport?: BrowserViewport;
+      environment?: BrowserEnvironmentInput;
     };
     if (!body.name || !body.startUrl) throw new HttpError(400, "name and startUrl are required");
     json(res, 201, {
@@ -38,6 +41,8 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
         name: body.name,
         startUrl: body.startUrl,
         headless: body.headless,
+        viewport: body.viewport,
+        environment: body.environment,
       }),
     });
     return true;

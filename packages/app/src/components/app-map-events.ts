@@ -107,11 +107,11 @@ export function createAppMapEventOrchestration(options: {
   onEscape: () => void;
 }) {
   createEffect(() => {
-    options.workspaceController?.execute({ kind: "device.state", open: options.devicePanelOpen() });
+    options.workspaceController?.publish({ kind: "device.state", open: options.devicePanelOpen() });
   });
 
   createEffect(() => {
-    options.workspaceController?.execute({
+    options.workspaceController?.publish({
       kind: "test.run-readiness",
       readiness: options.runReadiness(),
     });

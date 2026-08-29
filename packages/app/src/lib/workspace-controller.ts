@@ -2,33 +2,37 @@ import type { SettingsSection } from "../pages/settings";
 import type { AppMapRunReadiness } from "./app-map-run-readiness";
 
 /**
- * Cross-surface commands for the golden Test workflow.
+ * Cross-surface requests and notifications for the golden Test workflow.
  *
  * Local editor behavior stays local. This seam is only for commands that must
  * cross shell ownership (for example, a Test asking the shell-owned target
  * picker to open). Keeping those commands here prevents product flow from
  * depending on untyped DOM event names.
  */
-export type WorkspaceCommand =
+/** Imperative requests that must have one and only one mounted owner. */
+export type WorkspaceRequest =
   | { kind: "target.choose" }
-  | { kind: "target.selected"; targetId: string }
   | { kind: "device.toggle" }
   | { kind: "device.show" }
   | { kind: "device.hide" }
-  | { kind: "device.state"; open: boolean }
   | { kind: "run.open"; runId?: string }
   | { kind: "settings.open"; section?: SettingsSection }
   | { kind: "test.run" }
-  | { kind: "test.run-readiness"; readiness: AppMapRunReadiness }
   | { kind: "test.record" }
   | { kind: "screen.capture" }
   | { kind: "map.target-set.choose"; targetSetId?: string }
-  | { kind: "map.target-set.state"; targetSetId?: string }
   | { kind: "map.undo" }
   | { kind: "map.redo" }
   | { kind: "map.tidy" }
   | { kind: "map.history.toggle" }
   | { kind: "map.screen.reveal"; appMapId: string; screenId: string };
+
+/** State notifications may be observed by any number of mounted surfaces. */
+export type WorkspaceNotification =
+  | { kind: "target.selected"; targetId: string }
+  | { kind: "device.state"; open: boolean }
+  | { kind: "test.run-readiness"; readiness: AppMapRunReadiness }
+  | { kind: "map.target-set.state"; targetSetId?: string };
 
 export type WorkspaceCommandAdapter = {
   chooseTarget?: () => void;
@@ -53,89 +57,103 @@ export type WorkspaceCommandAdapter = {
 };
 
 export type WorkspaceController = {
-  /** Execute one typed command against every currently connected owner. */
-  execute(command: WorkspaceCommand): boolean;
+  /** Request one imperative command from exactly one currently connected owner. */
+  request(command: WorkspaceRequest): boolean;
+  /** Publish one state notification to every currently connected observer. */
+  publish(notification: WorkspaceNotification): boolean;
   /** Connect a surface owner. Disconnecting is idempotent. */
   connect(adapter: WorkspaceCommandAdapter): () => void;
 };
 
-function executeOn(adapter: WorkspaceCommandAdapter, command: WorkspaceCommand): boolean {
+function handlerFor(
+  adapter: WorkspaceCommandAdapter,
+  command: WorkspaceRequest | WorkspaceNotification,
+): (() => void) | undefined {
   switch (command.kind) {
     case "target.choose":
-      adapter.chooseTarget?.();
-      return adapter.chooseTarget !== undefined;
+      return adapter.chooseTarget;
     case "target.selected":
-      adapter.targetSelected?.(command.targetId);
-      return adapter.targetSelected !== undefined;
+      return adapter.targetSelected ? () => adapter.targetSelected!(command.targetId) : undefined;
     case "device.toggle":
-      adapter.toggleDevice?.();
-      return adapter.toggleDevice !== undefined;
+      return adapter.toggleDevice;
     case "device.show":
-      adapter.showDevice?.();
-      return adapter.showDevice !== undefined;
+      return adapter.showDevice;
     case "device.hide":
-      adapter.hideDevice?.();
-      return adapter.hideDevice !== undefined;
+      return adapter.hideDevice;
     case "device.state":
-      adapter.deviceStateChanged?.(command.open);
-      return adapter.deviceStateChanged !== undefined;
+      return adapter.deviceStateChanged
+        ? () => adapter.deviceStateChanged!(command.open)
+        : undefined;
     case "run.open":
-      adapter.openRun?.(command.runId);
-      return adapter.openRun !== undefined;
+      return adapter.openRun ? () => adapter.openRun!(command.runId) : undefined;
     case "settings.open":
-      adapter.openSettings?.(command.section);
-      return adapter.openSettings !== undefined;
+      return adapter.openSettings ? () => adapter.openSettings!(command.section) : undefined;
     case "test.run":
-      adapter.runTest?.();
-      return adapter.runTest !== undefined;
+      return adapter.runTest;
     case "test.run-readiness":
-      adapter.runReadinessChanged?.(command.readiness);
-      return adapter.runReadinessChanged !== undefined;
+      return adapter.runReadinessChanged
+        ? () => adapter.runReadinessChanged!(command.readiness)
+        : undefined;
     case "test.record":
-      adapter.recordTest?.();
-      return adapter.recordTest !== undefined;
+      return adapter.recordTest;
     case "screen.capture":
-      adapter.captureScreen?.();
-      return adapter.captureScreen !== undefined;
+      return adapter.captureScreen;
     case "map.target-set.choose":
-      adapter.chooseMapTargetSet?.(command.targetSetId);
-      return adapter.chooseMapTargetSet !== undefined;
+      return adapter.chooseMapTargetSet
+        ? () => adapter.chooseMapTargetSet!(command.targetSetId)
+        : undefined;
     case "map.target-set.state":
-      adapter.mapTargetSetChanged?.(command.targetSetId);
-      return adapter.mapTargetSetChanged !== undefined;
+      return adapter.mapTargetSetChanged
+        ? () => adapter.mapTargetSetChanged!(command.targetSetId)
+        : undefined;
     case "map.undo":
-      adapter.undoMap?.();
-      return adapter.undoMap !== undefined;
+      return adapter.undoMap;
     case "map.redo":
-      adapter.redoMap?.();
-      return adapter.redoMap !== undefined;
+      return adapter.redoMap;
     case "map.tidy":
-      adapter.tidyMap?.();
-      return adapter.tidyMap !== undefined;
+      return adapter.tidyMap;
     case "map.history.toggle":
-      adapter.toggleMapHistory?.();
-      return adapter.toggleMapHistory !== undefined;
+      return adapter.toggleMapHistory;
     case "map.screen.reveal":
-      adapter.revealMapScreen?.({ appMapId: command.appMapId, screenId: command.screenId });
-      return adapter.revealMapScreen !== undefined;
+      return adapter.revealMapScreen
+        ? () => adapter.revealMapScreen!({ appMapId: command.appMapId, screenId: command.screenId })
+        : undefined;
   }
 }
 
 /**
- * Create a controller whose interface is also its test seam. A command is
- * broadcast because shell chrome and the active workspace can each own one
- * part of the response (showing the Test device rail while closing shell
- * properties, for example). The adapter snapshot makes connect/disconnect
- * during a command safe and deterministic.
+ * Create a controller whose interface is also its test seam. Imperative
+ * requests are resolved against an adapter snapshot and rejected when zero or
+ * multiple owners would handle them. Notifications intentionally fan out to
+ * every observer in that same stable snapshot.
  */
 export function createWorkspaceController(): WorkspaceController {
   const adapters = new Set<WorkspaceCommandAdapter>();
 
   return {
-    execute(command) {
+    request(command) {
+      const handlers = Array.from(adapters)
+        .map((adapter) => handlerFor(adapter, command))
+        .filter((handler): handler is () => void => handler !== undefined);
+      if (handlers.length > 1) {
+        throw new Error(
+          [
+            `Workspace request ${JSON.stringify(command.kind)} has ${handlers.length} owners`,
+            "expected exactly one",
+          ].join("; "),
+        );
+      }
+      if (handlers.length === 0) return false;
+      handlers[0]!();
+      return true;
+    },
+    publish(notification) {
       let handled = false;
       for (const adapter of Array.from(adapters)) {
-        handled = executeOn(adapter, command) || handled;
+        const handler = handlerFor(adapter, notification);
+        if (!handler) continue;
+        handler();
+        handled = true;
       }
       return handled;
     },

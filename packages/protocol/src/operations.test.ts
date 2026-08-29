@@ -40,6 +40,43 @@ test("registered descriptors and schema-first registries stay in exact parity", 
   );
 });
 
+test("browser target operations round-trip the frozen environment contract", () => {
+  const environment = {
+    engine: "webkit" as const,
+    viewport: { width: 1024, height: 768 },
+    locale: "pt-BR",
+    timezoneId: "UTC",
+    environmentRevision: "relay.browser-environment.v1",
+  };
+  const input = {
+    id: "browser-staging",
+    name: "Browser staging",
+    startUrl: "https://example.test/",
+    headless: true,
+    viewport: { width: 1280, height: 800 },
+    environment,
+  };
+  assert.deepEqual(operationDefinition("target.create").input.parse(input), input);
+
+  const target = {
+    id: "browser-staging",
+    name: "Browser staging",
+    kind: "browser" as const,
+    createdAt: 1,
+    updatedAt: 2,
+    browser: {
+      startUrl: input.startUrl,
+      headless: true,
+      viewport: input.viewport,
+      environment,
+    },
+  };
+  assert.deepEqual(operationDefinition("target.create").output.parse({ target }).target, target);
+  assert.deepEqual(operationDefinition("target.list").output.parse({ targets: [target] }).targets, [
+    target,
+  ]);
+});
+
 test("compiled Recipe storage is absent from the public operation registry", () => {
   assert.deepEqual(
     operationDefinitions.filter(({ id }) => id.startsWith("recipe.")),

@@ -163,7 +163,7 @@ export function createDevice(explicitContext?: TargetContext): Device {
     });
     device = observationDevice.createDeviceObservationFacade({
       ...native,
-      ...bindNativeDeviceMutations(native, targetIdentity(context)),
+      ...bindNativeDeviceMutations(native, targetIdentity(context), selectedPlatform(context)),
       observability: {
         ...native.observability,
         crashes: ({ action, since }) =>

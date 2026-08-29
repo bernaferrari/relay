@@ -1,4 +1,5 @@
 import type { ActorKind } from "./coordination.js";
+import type { BrowserEnvironmentInput, BrowserViewport } from "./browser-case-profile.js";
 
 export type ConnectionAuth =
   | { type: "none" }
@@ -166,7 +167,10 @@ export type TargetDefinition = {
     startUrl: string;
     executablePath?: string;
     headless?: boolean;
-    viewport?: { width: number; height: number };
+    /** Host/browser defaults. A run may override these with a frozen case
+     * profile without mutating the saved authoring target. */
+    environment?: BrowserEnvironmentInput;
+    viewport?: BrowserViewport;
   };
 };
 

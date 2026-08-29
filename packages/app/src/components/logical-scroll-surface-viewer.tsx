@@ -99,21 +99,22 @@ export function LogicalScrollSurfaceViewer(props: {
           role="img"
           aria-label={
             complete()
-              ? `${capturedPixels()} pixels captured; document end reached`
-              : `${capturedPixels()} pixels captured; remaining document not reached`
+              ? `${capturedPixels().toLocaleString()} pixels captured; document end reached`
+              : `${capturedPixels().toLocaleString()} pixels captured; document end unknown; coverage continues beyond the captured evidence`
           }
           data-scroll-surface-coverage
         >
           <span
             class={cn(
-              "h-full min-w-0",
+              "h-full shrink-0",
               complete()
                 ? "w-full bg-[var(--text-interactive-base)]"
                 : classification() === "dynamic"
-                  ? "w-3/4 bg-[var(--icon-warning-base)]"
-                  : "w-3/4 bg-[var(--text-interactive-base)]",
+                  ? "w-2 bg-[var(--icon-warning-base)]"
+                  : "w-2 bg-[var(--text-interactive-base)]",
             )}
             aria-hidden="true"
+            data-scroll-surface-captured
           />
           <Show when={!complete()}>
             <span
@@ -125,7 +126,7 @@ export function LogicalScrollSurfaceViewer(props: {
         </div>
         <div class="flex items-center justify-between gap-3 text-micro/[1.35] text-[var(--text-weaker)]">
           <span>Captured from immutable viewports</span>
-          <span>{complete() ? "Document end reached" : "Remaining extent unknown"}</span>
+          <span>{complete() ? "Document end reached" : "Document end unknown"}</span>
         </div>
       </div>
 

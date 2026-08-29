@@ -106,6 +106,38 @@ type SupervisedIosMutationContext = {
 const supervisedIosMutations = new AsyncLocalStorage<SupervisedIosMutationContext>();
 
 /**
+ * Controls whether a physical iOS dispatch may proceed without the durable
+ * supervisor. Production target scopes use `required`; the two explicit
+ * escape hatches are reserved for low-level tests and carefully isolated
+ * diagnostics that cannot persist a receipt.
+ */
+export type IosSupervisionMode = "required" | "test-optional" | "unsupervised";
+
+const iosSupervisionModes = new AsyncLocalStorage<IosSupervisionMode>();
+
+/** Run an iOS mutation under an explicit supervision policy. */
+export function runWithIosSupervisionMode<T>(mode: IosSupervisionMode, operation: () => T): T {
+  return iosSupervisionModes.run(mode, operation);
+}
+
+export function currentIosSupervisionMode(): IosSupervisionMode {
+  return iosSupervisionModes.getStore() ?? "required";
+}
+
+/** Raised before any native callback when required durability is unavailable. */
+export class IosSupervisionRequiredError extends Error {
+  readonly serial: string;
+
+  constructor(serial: string) {
+    super(
+      `Physical iOS mutation for ${serial} requires a durable supervisor before native dispatch`,
+    );
+    this.name = "IosSupervisionRequiredError";
+    this.serial = serial;
+  }
+}
+
+/**
  * Enter the durable supervisor exactly at the private native transport seam.
  * Target-lane admission has already succeeded when this callback runs, while
  * no SDK command has been sent yet. The enclosing exact-once policy owns the
@@ -116,13 +148,18 @@ export async function dispatchSupervisedIosMutation<T>(
   targetId: string,
   operation: () => Promise<T>,
 ): Promise<T> {
+  const supervisionMode = currentIosSupervisionMode();
+  if (supervisionMode === "unsupervised") return operation();
+  const store = currentTargetSupervisorStore();
+  if (!store) {
+    if (supervisionMode === "required") throw new IosSupervisionRequiredError(targetId);
+    return operation();
+  }
   const active = supervisedIosMutations.getStore();
   if (!active || active.serial !== targetId) return operation();
   if (active.receipt) {
     throw new Error("A physical iOS intention attempted more than one native dispatch");
   }
-  const store = currentTargetSupervisorStore();
-  if (!store) return operation();
   const target = { id: targetId, kind: "ios" } as const;
   const mutationId = `ios-input-${randomUUID()}`;
   store.transition(target, {
@@ -320,7 +357,12 @@ export async function runIosMutationOnce<T>(
     // The target lane rejects before it invokes the native SDK callback, so
     // this is not an ambiguous device outcome and must not manufacture a
     // “one native attempt” diagnostic for a command that never left Relay.
-    if (error instanceof TargetControlReservedError) throw error;
+    if (
+      error instanceof TargetControlReservedError ||
+      error instanceof IosSupervisionRequiredError
+    ) {
+      throw error;
+    }
     const diagnostic = mutationDiagnostic(
       serial,
       operation,
