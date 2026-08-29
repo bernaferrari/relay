@@ -1,4 +1,10 @@
-import { listDevices, type AppMap } from "@relay/core";
+import {
+  BROWSER_TARGET_CAPABILITIES,
+  browserAuthoringCaseProfileForTarget,
+  digestAppMapTestExecutionValue,
+  listDevices,
+  type AppMap,
+} from "@relay/core";
 import type {
   ActionSpec,
   AuthoringInteraction,
@@ -198,14 +204,19 @@ export async function profileForCapture(
       ...(viewport ? { viewport } : {}),
     };
   }
+  const browserCaseProfile = await browserAuthoringCaseProfileForTarget(target.targetId);
+  const browserViewport = structuredClone(browserCaseProfile.viewport);
+  const browserViewportKey = `-${browserViewport.width}x${browserViewport.height}`;
+  const environmentKey = digestAppMapTestExecutionValue(browserCaseProfile).slice(0, 12);
   return {
-    id: `browser:${target.targetId}${viewportKey}`,
+    id: `browser:${target.targetId}${browserViewportKey}-${environmentKey}`,
     targetId: target.targetId,
     source: "browser",
     platform: "browser",
     name: target.targetId,
-    capabilities: ["snapshot", "screenshot"],
+    capabilities: [...BROWSER_TARGET_CAPABILITIES],
     observedAt,
-    ...(viewport ? { viewport } : {}),
+    viewport: browserViewport,
+    browserCaseProfile,
   };
 }

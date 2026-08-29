@@ -8,6 +8,7 @@ import type {
   TargetProfile,
   UpdateScreenInput,
 } from "@relay/protocol";
+import { compileBrowserEnvironment } from "@relay/protocol";
 import {
   AppMapDomainError,
   addAppMapScreen,
@@ -1001,6 +1002,26 @@ test("validates variant ownership, baseline provenance, and one variant per targ
     "https://example.com/untrusted.png",
   ];
   expectError("invalid-map", () => validateAppMap(externalEvidence), /Relay evidence resource/u);
+
+  const malformedBrowser = mapFixture();
+  const malformedProfile = malformedBrowser.screenVariants["variant-home"]!.targetProfile;
+  malformedProfile.source = "browser";
+  malformedProfile.platform = "browser";
+  malformedProfile.browserCaseProfile = {
+    ...compileBrowserEnvironment(),
+    locale: "not a locale",
+  };
+  expectError("invalid-map", () => validateAppMap(malformedBrowser), /browserCaseProfile/u);
+
+  const conflictingBrowser = mapFixture();
+  const conflictingProfile = conflictingBrowser.screenVariants["variant-home"]!.targetProfile;
+  conflictingProfile.source = "browser";
+  conflictingProfile.platform = "browser";
+  conflictingProfile.viewport = { width: 800, height: 600 };
+  conflictingProfile.browserCaseProfile = compileBrowserEnvironment({
+    viewport: { width: 1_280, height: 800 },
+  });
+  expectError("invalid-map", () => validateAppMap(conflictingBrowser), /viewport conflicts/u);
 });
 
 test("rejects routine cycles, missing routine references, and missing asserted screens", () => {

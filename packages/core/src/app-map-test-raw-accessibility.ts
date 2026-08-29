@@ -5,10 +5,10 @@ import type {
   AppMapCompiledRawAccessibilityVariant,
   AppMapCompiledTest,
 } from "@relay/protocol";
-
-function viewportKey(viewport: { width: number; height: number } | undefined): string {
-  return viewport ? `${viewport.width}x${viewport.height}` : "";
-}
+import {
+  appMapRuntimeTargetProfileFromSaved,
+  appMapRuntimeTargetProfileKey,
+} from "./app-map-runtime-target-profile.js";
 
 function rawSourceKey(source: AppMapCompiledRawAccessibilitySource): string {
   const origin =
@@ -37,24 +37,23 @@ function rawSourceKey(source: AppMapCompiledRawAccessibilitySource): string {
 function sourceVariant(
   variant: AppMap["screenVariants"][string],
 ): AppMapCompiledRawAccessibilityVariant {
+  const profile = appMapRuntimeTargetProfileFromSaved(variant.targetProfile);
   return {
     id: variant.id,
-    targetProfileId: variant.targetProfile.id,
-    targetId: variant.targetProfile.targetId,
-    platform: variant.targetProfile.platform,
-    ...(variant.targetProfile.viewport ? { viewport: { ...variant.targetProfile.viewport } } : {}),
+    targetProfileId: profile.id,
+    targetId: profile.targetId,
+    platform: profile.platform,
+    ...(profile.viewport ? { viewport: structuredClone(profile.viewport) } : {}),
+    ...(profile.browserCaseProfile
+      ? { browserCaseProfile: structuredClone(profile.browserCaseProfile) }
+      : {}),
   };
 }
 
 function sourceTargetProfile(
   variant: AppMap["screenVariants"][string],
 ): AppMapCompiledRawAccessibilityTargetProfile {
-  return {
-    id: variant.targetProfile.id,
-    targetId: variant.targetProfile.targetId,
-    platform: variant.targetProfile.platform,
-    ...(variant.targetProfile.viewport ? { viewport: { ...variant.targetProfile.viewport } } : {}),
-  };
+  return appMapRuntimeTargetProfileFromSaved(variant.targetProfile);
 }
 
 /** Freeze every distinct saved target/profile identity for the whole Test.
@@ -68,22 +67,13 @@ export function frozenRawAccessibilityTargetProfiles(
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
   )) {
     const profile = sourceTargetProfile(variant);
-    const key = [
-      profile.id,
-      profile.targetId,
-      profile.platform,
-      viewportKey(profile.viewport),
-    ].join("\u0000");
+    const key = appMapRuntimeTargetProfileKey(profile);
     if (!profiles.has(key)) profiles.set(key, profile);
   }
   return [...profiles.values()]
     .sort((left, right) => {
-      const leftKey = [left.id, left.targetId, left.platform, viewportKey(left.viewport)].join(
-        "\u0000",
-      );
-      const rightKey = [right.id, right.targetId, right.platform, viewportKey(right.viewport)].join(
-        "\u0000",
-      );
+      const leftKey = appMapRuntimeTargetProfileKey(left);
+      const rightKey = appMapRuntimeTargetProfileKey(right);
       return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
     })
     .map((profile) => structuredClone(profile));

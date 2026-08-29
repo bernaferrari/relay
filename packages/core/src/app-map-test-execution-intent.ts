@@ -8,6 +8,10 @@ import { createHash } from "node:crypto";
 import { compileExecutionRisk } from "./execution-risk-compiler.js";
 import { validateRecipeParameters, validateRecipeSteps, type Recipe } from "./recipes.js";
 import { CURRENT_RECORDING_FORMAT_VERSION } from "./recording-format.js";
+import {
+  appMapRuntimeTargetProfileKey,
+  parseAppMapRuntimeTargetProfile,
+} from "./app-map-runtime-target-profile.js";
 
 export const appMapTestExecutionIntentArtifactKind = "app-map-test-execution-intent" as const;
 
@@ -32,9 +36,7 @@ export type AppMapTestExecutionIntent = {
 };
 
 function profileKey(profile: AppMapCompiledRuntimeTargetProfile | undefined): string {
-  if (!profile) return "";
-  const viewport = profile.viewport ? `${profile.viewport.width}x${profile.viewport.height}` : "";
-  return [profile.id, profile.targetId, profile.platform, viewport].join("\u0000");
+  return profile ? appMapRuntimeTargetProfileKey(profile) : "";
 }
 
 function sameProfile(
@@ -458,36 +460,7 @@ function digest(value: unknown): value is string {
 }
 
 function profile(value: unknown): AppMapCompiledRuntimeTargetProfile | undefined {
-  if (
-    !isRecord(value) ||
-    !ownKeys(value, ["id", "targetId", "platform", "viewport"]) ||
-    !string(value.id) ||
-    !string(value.targetId)
-  ) {
-    return undefined;
-  }
-  if (value.platform !== "android" && value.platform !== "ios" && value.platform !== "browser") {
-    return undefined;
-  }
-  if (value.viewport === undefined) {
-    return { id: value.id, targetId: value.targetId, platform: value.platform };
-  }
-  if (
-    !isRecord(value.viewport) ||
-    !ownKeys(value.viewport, ["width", "height"]) ||
-    !number(value.viewport.width) ||
-    !number(value.viewport.height) ||
-    value.viewport.width <= 0 ||
-    value.viewport.height <= 0
-  ) {
-    return undefined;
-  }
-  return {
-    id: value.id,
-    targetId: value.targetId,
-    platform: value.platform,
-    viewport: { width: value.viewport.width, height: value.viewport.height },
-  };
+  return parseAppMapRuntimeTargetProfile(value);
 }
 
 /** Build the canonical immutable Test execution handoff. Retry/replay/repair

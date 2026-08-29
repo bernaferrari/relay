@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMapCompiledRuntimeTargetProfile } from "@relay/protocol";
+import {
+  compileBrowserEnvironment,
+  type AppMap,
+  type AppMapCompiledRuntimeTargetProfile,
+  type TargetProfile,
+} from "@relay/protocol";
 import {
   frozenEvidenceTargetProfileForTarget,
+  frozenTestRunTargetProfile,
   offlinePreflightProfileRecovery,
 } from "./app-map-run-routes.js";
 import { HttpError } from "./http.js";
@@ -24,12 +30,109 @@ const ipadEn: AppMapCompiledRuntimeTargetProfile = {
 };
 const pixel = { targetId: "pixel-1", platform: "android" } as const;
 
+function browserMap(...profiles: TargetProfile[]): AppMap {
+  return {
+    screenVariants: Object.fromEntries(
+      profiles.map((targetProfile, index) => [
+        `variant-${index}`,
+        { id: `variant-${index}`, targetProfile },
+      ]),
+    ),
+  } as unknown as AppMap;
+}
+
 test("the offline-preflight path inherits the only saved profile for the target", () => {
   const resolved = frozenEvidenceTargetProfileForTarget({
     target: { ...pixel },
     profiles: [pixelEn, ipadEn],
   });
   assert.deepEqual(resolved, pixelEn);
+});
+
+test("explicit browser profile selection freezes every saved environment field", () => {
+  const browserCaseProfile = compileBrowserEnvironment({
+    engine: "firefox",
+    viewport: { width: 1_024, height: 768 },
+    locale: "it-IT",
+    timezoneId: "Europe/Rome",
+    networkProfile: "wifi",
+    authenticationFixtureId: "signed-in",
+  });
+  const profile: TargetProfile = {
+    id: "browser:shop",
+    targetId: "shop",
+    source: "browser",
+    platform: "browser",
+    name: "Shop",
+    browserCaseProfile,
+    capabilities: ["snapshot"],
+    observedAt: 1,
+  };
+  assert.deepEqual(
+    frozenTestRunTargetProfile({
+      map: browserMap(profile),
+      targetProfileId: profile.id,
+      target: { targetId: "shop", platform: "browser" },
+    }),
+    {
+      id: profile.id,
+      targetId: "shop",
+      platform: "browser",
+      viewport: browserCaseProfile.viewport,
+      browserCaseProfile,
+    },
+  );
+  assert.throws(
+    () =>
+      frozenTestRunTargetProfile({
+        map: browserMap(profile, {
+          ...profile,
+          browserCaseProfile: { ...browserCaseProfile, locale: "en-US" },
+        }),
+        targetProfileId: profile.id,
+        target: { targetId: "shop", platform: "browser" },
+      }),
+    /conflicting saved identities/u,
+  );
+});
+
+test("legacy browser profiles stop for recapture before execution", () => {
+  const legacy: TargetProfile = {
+    id: "browser:legacy",
+    targetId: "legacy",
+    source: "browser",
+    platform: "browser",
+    name: "Legacy",
+    viewport: { width: 800, height: 600 },
+    capabilities: ["snapshot"],
+    observedAt: 1,
+  };
+  assert.throws(
+    () =>
+      frozenTestRunTargetProfile({
+        map: browserMap(legacy),
+        targetProfileId: legacy.id,
+        target: { targetId: "legacy", platform: "browser" },
+      }),
+    (error: unknown) =>
+      error instanceof HttpError && error.body?.code === "FROZEN_BROWSER_PROFILE_REQUIRED",
+  );
+  assert.throws(
+    () =>
+      frozenEvidenceTargetProfileForTarget({
+        target: { targetId: "legacy", platform: "browser" },
+        profiles: [
+          {
+            id: legacy.id,
+            targetId: legacy.targetId,
+            platform: legacy.platform,
+            viewport: legacy.viewport,
+          },
+        ],
+      }),
+    (error: unknown) =>
+      error instanceof HttpError && error.body?.code === "FROZEN_BROWSER_PROFILE_REQUIRED",
+  );
 });
 
 test("several matching saved profiles fail with the candidate ids in the recovery", () => {

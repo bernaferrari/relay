@@ -272,6 +272,8 @@ test("session factory freezes browser environment identity across queue and retr
   assert.equal(job.browserCaseProfile?.locale, "pt-BR");
   assert(Object.isFrozen(job.browserCaseProfile));
   assert(Object.isFrozen(job.browserCaseProfile?.viewport));
+  assert.equal(job.targetProfile?.browserCaseProfile?.locale, "pt-BR");
+  assert(Object.isFrozen(job.targetProfile));
 
   const retry = createSessionJob(retryInputFromJob(job), {
     findJob: (id) => (id === job.id ? job : undefined),
@@ -287,5 +289,19 @@ test("session factory freezes browser environment identity across queue and retr
         { findJob: () => undefined, toTransport: (value) => value },
       ),
     /require a frozen browser case profile/u,
+  );
+  assert.throws(
+    () =>
+      createSessionJob(
+        {
+          recipe: "mismatched-browser-proof",
+          targetKind: "browser",
+          browserTargetId: "chat",
+          browserCaseProfile: { ...mutableProfile, locale: "it-IT" },
+          targetProfile,
+        },
+        { findJob: () => undefined, toTransport: (value) => value },
+      ),
+    /does not match its frozen target profile/u,
   );
 });

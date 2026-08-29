@@ -65,17 +65,20 @@ export function buildTargetProfiles(input: {
   }));
   const browsers = input.targets
     .filter((target) => target.kind === "browser")
-    .map((target) => ({
-      id: `browser:${target.id}`,
-      targetId: target.id,
-      source: "browser" as const,
-      platform: "browser" as const,
-      name: target.name,
-      ...(target.browser?.viewport ? { viewport: { ...target.browser.viewport } } : {}),
-      browserCaseProfile: browserCaseProfileForTarget(target),
-      capabilities: [...BROWSER_TARGET_CAPABILITIES],
-      observedAt,
-    }));
+    .map((target) => {
+      const browserCaseProfile = browserCaseProfileForTarget(target);
+      return {
+        id: `browser:${target.id}`,
+        targetId: target.id,
+        source: "browser" as const,
+        platform: "browser" as const,
+        name: target.name,
+        viewport: { ...browserCaseProfile.viewport },
+        browserCaseProfile,
+        capabilities: [...BROWSER_TARGET_CAPABILITIES],
+        observedAt,
+      };
+    });
   return [...mobile, ...browsers].sort((left, right) => left.id.localeCompare(right.id));
 }
 

@@ -4,6 +4,11 @@ import type {
   OperationInput,
   TargetProfile,
 } from "@relay/protocol";
+import {
+  appMapRuntimeTargetProfileFromSaved,
+  appMapRuntimeTargetProfileKey,
+  unsupportedBrowserCaseProfileFields,
+} from "@relay/core";
 import { HttpError } from "./http.js";
 
 /** Resolve a run's profile from the saved App Map before it can touch a
@@ -50,12 +55,7 @@ export function frozenTestRunTargetProfile(input: {
     );
   }
   const identity = (profile: (typeof profiles)[number]) =>
-    [
-      profile.id,
-      profile.targetId,
-      profile.platform,
-      profile.viewport ? `${profile.viewport.width}x${profile.viewport.height}` : "",
-    ].join("\u0000");
+    appMapRuntimeTargetProfileKey(appMapRuntimeTargetProfileFromSaved(profile));
   if (new Set(profiles.map(identity)).size !== 1) {
     throw new HttpError(409, `Target profile ${targetProfileId} has conflicting saved identities`, {
       code: "TARGET_PROFILE_AMBIGUOUS",
@@ -64,13 +64,20 @@ export function frozenTestRunTargetProfile(input: {
         "Repair or recapture the conflicting saved evidence profile before using it to scope a Test run.",
     });
   }
-  const profile = profiles[0]!;
-  return {
-    id: profile.id,
-    targetId: profile.targetId,
-    platform: profile.platform,
-    ...(profile.viewport ? { viewport: structuredClone(profile.viewport) } : {}),
-  };
+  const frozen = appMapRuntimeTargetProfileFromSaved(profiles[0]!);
+  if (frozen.platform === "browser" && !frozen.browserCaseProfile) {
+    throw new HttpError(
+      409,
+      `Saved runtime profile ${frozen.id} has no frozen browser environment`,
+      {
+        code: "FROZEN_BROWSER_PROFILE_REQUIRED",
+        targetProfileId: frozen.id,
+        recovery:
+          "Recapture this browser target profile and compile the Test again before controlling the browser.",
+      },
+    );
+  }
+  return frozen;
 }
 
 /** The job must carry the exact saved evidence-profile identity, not the
@@ -106,6 +113,56 @@ export function queuedAppMapTestTargetProfile(input: {
       },
     );
   }
+  const savedBrowser = saved.browserCaseProfile;
+  if (saved.platform === "browser" && !savedBrowser) {
+    throw new HttpError(
+      409,
+      `Saved runtime profile ${saved.id} has no frozen browser environment`,
+      {
+        code: "FROZEN_BROWSER_PROFILE_REQUIRED",
+        targetProfileId: saved.id,
+        recovery:
+          "Recapture this browser target profile and compile the Test again before controlling the browser.",
+      },
+    );
+  }
+  if (saved.platform === "browser") {
+    const frozenBrowser = savedBrowser!;
+    const observedBrowser = observed?.browserCaseProfile;
+    if (!observedBrowser) {
+      throw new HttpError(409, `Managed browser target ${saved.targetId} is unavailable`, {
+        code: "TARGET_PROFILE_TARGET_MISMATCH",
+        targetProfileId: saved.id,
+        recovery: "Restore the saved managed browser target before running this Test.",
+      });
+    }
+    if (observedBrowser.engine !== frozenBrowser.engine) {
+      throw new HttpError(
+        409,
+        `Managed browser target ${saved.targetId} no longer provides ${frozenBrowser.engine}`,
+        {
+          code: "TARGET_PROFILE_TARGET_MISMATCH",
+          targetProfileId: saved.id,
+          recovery:
+            "Restore the saved browser engine, or capture and review a profile for the current engine.",
+        },
+      );
+    }
+    const unsupported = unsupportedBrowserCaseProfileFields(frozenBrowser);
+    if (unsupported.length) {
+      throw new HttpError(
+        409,
+        `Saved browser profile ${saved.id} requires unavailable host resolvers: ${unsupported.join(", ")}`,
+        {
+          code: "BROWSER_PROFILE_UNSUPPORTED",
+          targetProfileId: saved.id,
+          unsupported,
+          recovery:
+            "Remove unsupported fixture references or install their host resolvers before running this Test.",
+        },
+      );
+    }
+  }
   return {
     id: saved.id,
     targetId: saved.targetId,
@@ -115,8 +172,8 @@ export function queuedAppMapTestTargetProfile(input: {
     ...(observed?.model ? { model: observed.model } : {}),
     ...(observed?.osVersion ? { osVersion: observed.osVersion } : {}),
     ...(saved.viewport ? { viewport: structuredClone(saved.viewport) } : {}),
-    ...(observed?.browserCaseProfile
-      ? { browserCaseProfile: structuredClone(observed.browserCaseProfile) }
+    ...(saved.browserCaseProfile
+      ? { browserCaseProfile: structuredClone(saved.browserCaseProfile) }
       : {}),
     capabilities: observed ? [...observed.capabilities] : [],
     observedAt: observed?.observedAt ?? Date.now(),

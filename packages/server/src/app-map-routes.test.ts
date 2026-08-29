@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { ApiError, RelayClient } from "@relay/client";
+import { compileBrowserEnvironment } from "@relay/protocol";
 import {
   createAppMapTestExecutionIntent,
   createDiscoverySession,
@@ -21,6 +22,7 @@ import {
   releaseDeviceLease,
   resetControlDatabaseCache,
   resetDeviceClients,
+  saveBrowserTarget,
   setLocalDeviceProvider,
   regenerateLogicalScrollSurface,
   setDiscoveryStatus,
@@ -213,6 +215,121 @@ test("queued Tests preserve the exact viewport-suffixed saved runtime profile", 
         target: { kind: "device", targetId: "pixel-9", platform: "ios" },
       }),
     /does not bind/u,
+  );
+});
+
+test("queued browser Tests use the complete saved profile, never the mutable observed one", () => {
+  const saved = compileBrowserEnvironment({
+    engine: "webkit",
+    viewport: { width: 390, height: 844 },
+    locale: "pt-BR",
+    timezoneId: "America/Maceio",
+    colorScheme: "dark",
+  });
+  const observed = compileBrowserEnvironment({
+    engine: "webkit",
+    viewport: { width: 1_280, height: 800 },
+    locale: "en-US",
+  });
+  const targetProfile = queuedAppMapTestTargetProfile({
+    runtimeTargetProfile: {
+      id: "browser:checkout",
+      targetId: "checkout",
+      platform: "browser",
+      viewport: saved.viewport,
+      browserCaseProfile: saved,
+    },
+    observedTargetProfile: {
+      id: "browser:checkout",
+      targetId: "checkout",
+      source: "browser",
+      platform: "browser",
+      name: "Checkout",
+      viewport: observed.viewport,
+      browserCaseProfile: observed,
+      capabilities: ["screenshot", "snapshot"],
+      observedAt: 100,
+    },
+    target: { kind: "browser", targetId: "checkout", platform: "browser" },
+  });
+  assert.deepEqual(targetProfile?.browserCaseProfile, saved);
+  assert.deepEqual(targetProfile?.viewport, saved.viewport);
+  assert.throws(
+    () =>
+      queuedAppMapTestTargetProfile({
+        runtimeTargetProfile: {
+          id: "browser:checkout",
+          targetId: "checkout",
+          platform: "browser",
+          viewport: saved.viewport,
+          browserCaseProfile: saved,
+        },
+        observedTargetProfile: {
+          id: "browser:checkout",
+          targetId: "checkout",
+          source: "browser",
+          platform: "browser",
+          name: "Checkout",
+          browserCaseProfile: compileBrowserEnvironment({ engine: "chromium" }),
+          capabilities: ["screenshot"],
+          observedAt: 100,
+        },
+        target: { kind: "browser", targetId: "checkout", platform: "browser" },
+      }),
+    /no longer provides webkit/u,
+  );
+  assert.throws(
+    () =>
+      queuedAppMapTestTargetProfile({
+        runtimeTargetProfile: {
+          id: "browser:checkout",
+          targetId: "checkout",
+          platform: "browser",
+          viewport: saved.viewport,
+          browserCaseProfile: saved,
+        },
+        observedTargetProfile: undefined,
+        target: { kind: "browser", targetId: "checkout", platform: "browser" },
+      }),
+    /is unavailable/u,
+  );
+  assert.throws(
+    () =>
+      queuedAppMapTestTargetProfile({
+        runtimeTargetProfile: {
+          id: "browser:unsupported",
+          targetId: "checkout",
+          platform: "browser",
+          viewport: saved.viewport,
+          browserCaseProfile: { ...saved, networkProfile: "wifi-slow" },
+        },
+        observedTargetProfile: {
+          id: "browser:checkout",
+          targetId: "checkout",
+          source: "browser",
+          platform: "browser",
+          name: "Checkout",
+          browserCaseProfile: observed,
+          capabilities: ["screenshot"],
+          observedAt: 100,
+        },
+        target: { kind: "browser", targetId: "checkout", platform: "browser" },
+      }),
+    /unavailable host resolvers: networkProfile/u,
+  );
+  assert.throws(
+    () =>
+      queuedAppMapTestTargetProfile({
+        runtimeTargetProfile: {
+          id: "browser:legacy",
+          targetId: "checkout",
+          platform: "browser",
+          viewport: { width: 390, height: 844 },
+        },
+        observedTargetProfile: undefined,
+        target: { kind: "browser", targetId: "checkout", platform: "browser" },
+      }),
+    /no frozen browser environment/u,
   );
 });
 
@@ -1391,7 +1508,9 @@ test("a graph Test run freezes one exact revision before enqueueing", async () =
 test("a saved App Map flow runs without an auxiliary canvas document", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-app-map-run-"));
   const previous = process.env.RELAY_STATE_DIR;
+  const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
   process.env.RELAY_STATE_DIR = root;
+  process.env.RELAY_WORKSPACE_ROOT = root;
   const server = await startServer({ host: "127.0.0.1", port: 0 });
   try {
     const client = new RelayClient({
@@ -1543,6 +1662,35 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
     assert.equal(connectionResult.jobs.length, 5);
     assert.equal(JSON.stringify(connectionResult).includes("person@example.test"), false);
 
+    const browserCaseProfile = compileBrowserEnvironment({
+      engine: "webkit",
+      viewport: { width: 390, height: 844 },
+      locale: "pt-BR",
+      timezoneId: "America/Maceio",
+      colorScheme: "dark",
+    });
+    await saveBrowserTarget({
+      id: "browser-flow",
+      name: "Browser flow",
+      startUrl: "https://example.test",
+      environment: browserCaseProfile,
+    });
+    const browserResult = await client.invoke("app-map.flow.run", {
+      appMapId: "store",
+      flowId: "main",
+      serial: "browser-flow",
+      targetKind: "browser",
+      variables: { login_email: "person@example.test" },
+    });
+    const browserJob = browserResult.job as {
+      targetKind?: string;
+      browserTargetId?: string;
+      targetProfile?: { browserCaseProfile?: unknown };
+    };
+    assert.equal(browserJob.targetKind, "browser");
+    assert.equal(browserJob.browserTargetId, "browser-flow");
+    assert.deepEqual(browserJob.targetProfile?.browserCaseProfile, browserCaseProfile);
+
     // A renderer cannot release the server-owned local control session out
     // from under the other local windows and agents that joined it.
     const retained = await client.invoke("lease.release", { leaseId: virtualLease.lease.id });
@@ -1552,6 +1700,8 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;
+    if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
     await rm(root, { recursive: true, force: true });
   }
 });

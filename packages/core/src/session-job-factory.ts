@@ -5,6 +5,7 @@ import {
   parseBrowserCaseProfile,
   type BrowserCaseProfile,
   type ExecutionTargetRef,
+  type TargetProfile,
 } from "@relay/protocol";
 import { now } from "./events.js";
 import { getEvidenceCollectionPolicy } from "./evidence-policy.js";
@@ -35,6 +36,18 @@ function freezeExecutionTarget(target: ExecutionTargetRef): ExecutionTargetRef {
 
 function freezeBrowserCaseProfile(profile: BrowserCaseProfile): BrowserCaseProfile {
   return parseBrowserCaseProfile(structuredClone(profile));
+}
+
+function freezeTargetProfile(profile: TargetProfile): TargetProfile {
+  const clone = structuredClone(profile);
+  return Object.freeze({
+    ...clone,
+    ...(clone.viewport ? { viewport: Object.freeze({ ...clone.viewport }) } : {}),
+    ...(clone.browserCaseProfile
+      ? { browserCaseProfile: freezeBrowserCaseProfile(clone.browserCaseProfile) }
+      : {}),
+    capabilities: Object.freeze([...clone.capabilities]),
+  }) as TargetProfile;
 }
 
 function legacyTargetKind(target: ExecutionTargetRef): "device" | "browser" {
@@ -309,6 +322,18 @@ export function createSessionJob(
   const browserCaseProfile = suppliedBrowserCaseProfile
     ? freezeBrowserCaseProfile(suppliedBrowserCaseProfile)
     : undefined;
+  const suppliedTargetProfile = input.targetProfile ?? parent?.targetProfile;
+  const selectedTargetProfile = suppliedTargetProfile
+    ? freezeTargetProfile(suppliedTargetProfile)
+    : undefined;
+  if (
+    browserCaseProfile &&
+    selectedTargetProfile?.browserCaseProfile &&
+    JSON.stringify(browserCaseProfile) !==
+      JSON.stringify(freezeBrowserCaseProfile(selectedTargetProfile.browserCaseProfile))
+  ) {
+    throw new Error("Browser job profile does not match its frozen target profile");
+  }
   const schedulingKey = executionTargetSchedulingKey(executionTarget);
   if (!schedulingKey) throw new Error("Every Relay job requires an explicit target");
   const operationContext = currentOperationContext() ?? parent?.operationContext;
@@ -350,7 +375,7 @@ export function createSessionJob(
     targetKind,
     browserTargetId: targetContext.kind === "browser" ? targetContext.targetId : undefined,
     browserCaseProfile,
-    targetProfile: input.targetProfile ?? parent?.targetProfile,
+    targetProfile: selectedTargetProfile,
     sourceRevision: input.sourceRevision
       ? structuredClone(input.sourceRevision)
       : parent?.sourceRevision,

@@ -1,6 +1,7 @@
 import {
   AppMapCombineCellContractError,
   KeyedSerialQueue,
+  buildTargetProfiles,
   cancelJob,
   activeReviewedDocumentOriginsForAppMap,
   currentOperationContext,
@@ -11,6 +12,7 @@ import {
   listDeviceLeases,
   listDevices,
   listTargetWorkers,
+  listTargets,
   localExecutionTargetRef,
   pendingSelectedCombineCampaignCells,
   prepareSelectedCombineCampaignResume,
@@ -276,6 +278,10 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         }
         const toQueue = pending.map((item) => preparedById.get(item.cellId)!);
         resumedCellIds = new Set(toQueue.map((cell) => cell.cellId));
+        const observedTargetProfiles = buildTargetProfiles({
+          devices: await (runtime.listDevices ?? listDevices)().catch(() => []),
+          targets: await listTargets(),
+        });
         const localAdmission = resumeCampaign.execution.localAdmission;
         const stageCells = (acceptedAdmission?: LocalCombineCampaignAdmission) =>
           stagePreparedAppMapCombineCells({
@@ -288,7 +294,12 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
             queuedTargetProfile: (cell) =>
               queuedAppMapTestTargetProfile({
                 runtimeTargetProfile: cell.selectedRuntimeTargetProfile,
-                observedTargetProfile: undefined,
+                observedTargetProfile: observedTargetProfiles.find(
+                  (profile) =>
+                    profile.targetId === cell.executionTarget.targetId &&
+                    profile.source ===
+                      (cell.executionTarget.kind === "local-browser" ? "browser" : "device"),
+                ),
                 target: queuedProfileTarget(cell),
               }),
             projectId: scope.projectId,

@@ -11,6 +11,10 @@ import type {
   ExecutionTargetRef,
 } from "@relay/protocol";
 import {
+  appMapRuntimeTargetProfileFromSaved,
+  appMapRuntimeTargetProfileKey,
+} from "./app-map-runtime-target-profile.js";
+import {
   appMapCombineCellBindingId,
   appMapCombineCellId,
   canonicalAppMapCombineCellRuntimeProfile,
@@ -231,12 +235,7 @@ export function resolveSavedAppMapRuntimeTargetProfile(input: {
     );
   }
   const identity = (profile: (typeof profiles)[number]) =>
-    [
-      profile.id,
-      profile.targetId,
-      profile.platform,
-      profile.viewport ? `${profile.viewport.width}x${profile.viewport.height}` : "",
-    ].join("\u0000");
+    appMapRuntimeTargetProfileKey(appMapRuntimeTargetProfileFromSaved(profile));
   if (new Set(profiles.map(identity)).size !== 1) {
     throw new AppMapCombineCellContractError(
       `Target profile ${targetProfileId} has conflicting saved identities`,
@@ -252,13 +251,20 @@ export function resolveSavedAppMapRuntimeTargetProfile(input: {
       [],
     );
   }
-  const profile = profiles[0]!;
-  return {
-    id: profile.id,
-    targetId: profile.targetId,
-    platform: profile.platform,
-    ...(profile.viewport ? { viewport: structuredClone(profile.viewport) } : {}),
-  };
+  const frozen = appMapRuntimeTargetProfileFromSaved(profiles[0]!);
+  if (frozen.platform === "browser" && !frozen.browserCaseProfile) {
+    const message = `Saved runtime profile ${frozen.id} has no frozen browser environment`;
+    throw new AppMapCombineCellContractError(
+      message,
+      [
+        issue("mismatched-binding", message, {
+          targetProfileId: frozen.id,
+        }),
+      ],
+      [],
+    );
+  }
+  return frozen;
 }
 
 export type AppMapCombineEnumeratedCell = {

@@ -8,6 +8,7 @@ import type {
   RawAccessibilityTreeEvidence,
   StepTarget,
 } from "@relay/protocol";
+import { compileBrowserEnvironment } from "@relay/protocol";
 import { loadFrozenRawAccessibilityEvidence } from "./frozen-raw-accessibility.js";
 import { preflightCompiledAppMapTestOffline } from "./offline-test-preflight.js";
 
@@ -590,6 +591,98 @@ test("does not reuse an identifier across a different runtime viewport", async (
   assert.equal(
     report.selectors[0]?.rawVariantScope?.candidates.find(
       (candidate) => candidate.variant.id === englishProfileVariant.id,
+    )?.reason,
+    "target-platform-or-viewport-mismatch",
+  );
+});
+
+test("does not reuse a browser identifier across a different non-locale environment", async () => {
+  const viewport = { width: 390, height: 844 };
+  const englishBrowser = {
+    id: "profile-browser-en",
+    targetProfileId: "browser-en-US",
+    targetId: "browser-1",
+    platform: "browser" as const,
+    viewport,
+    browserCaseProfile: compileBrowserEnvironment({
+      viewport,
+      locale: "en-US",
+      networkProfile: "wifi",
+    }),
+  };
+  const portugueseBrowser = {
+    id: "profile-browser-pt",
+    targetProfileId: "browser-pt-BR",
+    targetId: "browser-1",
+    platform: "browser" as const,
+    viewport,
+    browserCaseProfile: compileBrowserEnvironment({
+      viewport,
+      locale: "pt-BR",
+      networkProfile: "offline-fixture",
+    }),
+  };
+  const english = rawTree(
+    "profile-browser-en-identifier",
+    buttonTree({ identifier: "settings.voice", label: "Voice" }),
+  );
+  const compiled = scopedSelectorPlan({
+    sources: [boundSource(english, englishBrowser, 10)],
+    variants: [englishBrowser, portugueseBrowser],
+    target: { identifier: "settings.voice", label: "Voice" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) => (sha256 === english.reference.sha256 ? english.bytes : null),
+  });
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: portugueseBrowser.targetProfileId,
+  });
+  assert.equal(report.selectors[0]?.status, "variant-incompatible");
+  assert.equal(
+    report.selectors[0]?.rawVariantScope?.candidates.find(
+      (candidate) => candidate.variant.id === englishBrowser.id,
+    )?.reason,
+    "target-platform-or-viewport-mismatch",
+  );
+});
+
+test("does not reuse a browser identifier across a different locale", async () => {
+  const viewport = { width: 390, height: 844 };
+  const englishBrowser = {
+    id: "profile-browser-en-locale",
+    targetProfileId: "browser-en-US-locale",
+    targetId: "browser-1",
+    platform: "browser" as const,
+    viewport,
+    browserCaseProfile: compileBrowserEnvironment({ viewport, locale: "en-US" }),
+  };
+  const portugueseBrowser = {
+    id: "profile-browser-pt-locale",
+    targetProfileId: "browser-pt-BR-locale",
+    targetId: "browser-1",
+    platform: "browser" as const,
+    viewport,
+    browserCaseProfile: compileBrowserEnvironment({ viewport, locale: "pt-BR" }),
+  };
+  const english = rawTree(
+    "profile-browser-en-locale-identifier",
+    buttonTree({ identifier: "settings.voice", label: "Voice" }),
+  );
+  const compiled = scopedSelectorPlan({
+    sources: [boundSource(english, englishBrowser, 10)],
+    variants: [englishBrowser, portugueseBrowser],
+    target: { identifier: "settings.voice", label: "Voice" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) => (sha256 === english.reference.sha256 ? english.bytes : null),
+  });
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: portugueseBrowser.targetProfileId,
+  });
+  assert.equal(report.selectors[0]?.status, "variant-incompatible");
+  assert.equal(
+    report.selectors[0]?.rawVariantScope?.candidates.find(
+      (candidate) => candidate.variant.id === englishBrowser.id,
     )?.reason,
     "target-platform-or-viewport-mismatch",
   );

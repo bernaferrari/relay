@@ -8,6 +8,10 @@ import type {
 import { preflightSemanticActivation } from "./device-target-resolution.js";
 import type { SnapshotNode } from "./device.js";
 import type { OfflineTestPreflightRawSource } from "./offline-test-preflight-raw.js";
+import {
+  appMapRuntimeTargetProfileKey,
+  sameAppMapRuntimeTargetProfile,
+} from "./app-map-runtime-target-profile.js";
 
 type StableSelector =
   | { kind: "identifier"; identifier: string; role?: string }
@@ -15,7 +19,7 @@ type StableSelector =
 
 type RuntimeShape = Pick<
   AppMapCompiledRawAccessibilityTargetProfile,
-  "targetId" | "platform" | "viewport"
+  "targetId" | "platform" | "viewport" | "browserCaseProfile"
 >;
 
 export type RawVariantScopeDecision = {
@@ -41,24 +45,14 @@ function compareVariants(
   return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
 }
 
-function viewportKey(viewport: { width: number; height: number } | undefined): string {
-  return viewport ? `${viewport.width}x${viewport.height}` : "";
-}
-
 function variantKey(variant: AppMapCompiledRawAccessibilityVariant): string {
-  return [
-    variant.id,
-    variant.targetProfileId,
-    variant.targetId,
-    variant.platform,
-    viewportKey(variant.viewport),
-  ].join("\u0000");
+  return [variant.id, appMapRuntimeTargetProfileKey(targetProfileFromVariant(variant))].join(
+    "\u0000",
+  );
 }
 
 function targetProfileKey(profile: AppMapCompiledRawAccessibilityTargetProfile): string {
-  return [profile.id, profile.targetId, profile.platform, viewportKey(profile.viewport)].join(
-    "\u0000",
-  );
+  return appMapRuntimeTargetProfileKey(profile);
 }
 
 function compareTargetProfiles(
@@ -86,16 +80,25 @@ function sameViewport(left: RuntimeShape, right: RuntimeShape): boolean {
   );
 }
 
-/** A stable selector can cross a locale only on the same device/platform and
- * exact viewport. Copy, broad text, and an absent viewport are intentionally
- * not enough: responsive layout or a different app target can change the
- * ownership relation even when the label happens to match. */
+/** A stable selector can cross a mobile locale only on the same
+ * device/platform and exact viewport. Browser proof additionally requires the
+ * complete frozen case profile: locale, theme, auth, network, engine, and
+ * emulation can all change the rendered ownership relation. */
 function sameRuntimeShape(left: RuntimeShape, right: RuntimeShape): boolean {
   return (
     left.targetId === right.targetId &&
     left.platform === right.platform &&
-    sameViewport(left, right)
+    sameViewport(left, right) &&
+    sameBrowserSelectorShape(left, right)
   );
+}
+
+function sameBrowserSelectorShape(left: RuntimeShape, right: RuntimeShape): boolean {
+  if (left.platform !== "browser" && right.platform !== "browser") return true;
+  if (!left.browserCaseProfile || !right.browserCaseProfile) {
+    return left.browserCaseProfile === right.browserCaseProfile;
+  }
+  return JSON.stringify(left.browserCaseProfile) === JSON.stringify(right.browserCaseProfile);
 }
 
 function targetProfileFromVariant(
@@ -106,6 +109,9 @@ function targetProfileFromVariant(
     targetId: variant.targetId,
     platform: variant.platform,
     ...(variant.viewport ? { viewport: { ...variant.viewport } } : {}),
+    ...(variant.browserCaseProfile
+      ? { browserCaseProfile: structuredClone(variant.browserCaseProfile) }
+      : {}),
   };
 }
 
@@ -113,12 +119,7 @@ export function variantMatchesRawTargetProfile(
   variant: AppMapCompiledRawAccessibilityVariant,
   profile: AppMapCompiledRawAccessibilityTargetProfile,
 ): boolean {
-  return (
-    variant.targetProfileId === profile.id &&
-    variant.targetId === profile.targetId &&
-    variant.platform === profile.platform &&
-    viewportKey(variant.viewport) === viewportKey(profile.viewport)
-  );
+  return sameAppMapRuntimeTargetProfile(targetProfileFromVariant(variant), profile);
 }
 
 function stableSelector(target: StepTarget): StableSelector | undefined {

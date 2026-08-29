@@ -1,11 +1,12 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { BrowserContext, Page, Request, Video } from "playwright-core";
-import type { BrowserCaseProfile } from "@relay/protocol";
+import { parseBrowserCaseProfile, type BrowserCaseProfile } from "@relay/protocol";
 import type { Device, SnapshotNode } from "./device.js";
 import { createBrowserContextFactory, type BrowserContextPurpose } from "./browser-context.js";
 import { createDeviceObservationFacade } from "./device-observation-membrane.js";
 import { LEGACY_POSITIONAL_BROWSER_REF_ERROR } from "./browser-locator-contract.js";
+import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { browserProfileDir, readTarget } from "./targets.js";
 
 type BrowserSession = {
@@ -288,6 +289,20 @@ export async function openBrowserAuthoringRuntime(
       session.mutationVersion += 1;
     },
   };
+}
+
+/** Return the exact profile of the current authoring context when one exists;
+ * otherwise return the deterministic saved-target profile. Captures use this
+ * seam so a Browser Device viewport/environment override is not collapsed
+ * back to mutable target defaults. */
+export async function browserAuthoringCaseProfileForTarget(
+  targetId: string,
+): Promise<BrowserCaseProfile> {
+  const current = sessions.get(`authoring:${targetId}`);
+  if (current) return parseBrowserCaseProfile((await current).profile);
+  const target = await readTarget(targetId);
+  if (!target) throw new Error(`managed browser target not found: ${targetId}`);
+  return parseBrowserCaseProfile(browserCaseProfileForTarget(target));
 }
 
 export type OpenBrowserTargetResult = {

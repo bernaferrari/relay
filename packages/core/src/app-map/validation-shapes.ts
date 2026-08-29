@@ -1,5 +1,6 @@
 import { parseAuthoringCaptureReview, type TargetProfile } from "@relay/protocol";
 import { appMapFail } from "./errors.js";
+import { browserTargetProfileProblem } from "./validation-target-profile.js";
 import type {
   AddScreenInput,
   AppMapNote,
@@ -134,6 +135,8 @@ function assertTargetProfile(value: TargetProfile, label: string): void {
       appMapFail("invalid-map", `${label}.viewport dimensions must be positive`);
     }
   }
+  const browserProblem = browserTargetProfileProblem(value);
+  if (browserProblem) appMapFail("invalid-map", `${label}.${browserProblem}`);
 }
 
 export function assertScreen(screen: Screen, scope: AppMapScope, label: string): void {

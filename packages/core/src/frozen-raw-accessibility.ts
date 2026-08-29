@@ -71,6 +71,9 @@ function source(
             ...(provenance.variant.viewport
               ? { viewport: { ...provenance.variant.viewport } }
               : {}),
+            ...(provenance.variant.browserCaseProfile
+              ? { browserCaseProfile: structuredClone(provenance.variant.browserCaseProfile) }
+              : {}),
           },
           origin: structuredClone(provenance.origin),
         }

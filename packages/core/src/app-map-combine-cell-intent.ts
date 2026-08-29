@@ -15,6 +15,10 @@ import {
   type AppMapTestExecutionIntent,
 } from "./app-map-test-execution-intent.js";
 import type { Recipe } from "./recipes.js";
+import {
+  parseAppMapRuntimeTargetProfile,
+  sameAppMapRuntimeTargetProfile,
+} from "./app-map-runtime-target-profile.js";
 
 export const appMapCombineCellExecutionIntentArtifactKind =
   "app-map-combine-cell-execution-intent" as const;
@@ -99,34 +103,7 @@ function sameRecipeGraph(left: Record<string, Recipe>, right: Record<string, Rec
 }
 
 function profile(value: unknown): AppMapCompiledRuntimeTargetProfile | undefined {
-  if (
-    !isRecord(value) ||
-    !ownKeys(value, ["id", "targetId", "platform", "viewport"]) ||
-    !string(value.id) ||
-    !string(value.targetId)
-  ) {
-    return undefined;
-  }
-  if (value.platform !== "android" && value.platform !== "ios" && value.platform !== "browser") {
-    return undefined;
-  }
-  if (value.viewport === undefined) {
-    return { id: value.id, targetId: value.targetId, platform: value.platform };
-  }
-  if (
-    !isRecord(value.viewport) ||
-    !ownKeys(value.viewport, ["width", "height"]) ||
-    typeof value.viewport.width !== "number" ||
-    typeof value.viewport.height !== "number"
-  ) {
-    return undefined;
-  }
-  return {
-    id: value.id,
-    targetId: value.targetId,
-    platform: value.platform,
-    viewport: { width: value.viewport.width, height: value.viewport.height },
-  };
+  return parseAppMapRuntimeTargetProfile(value);
 }
 
 function parseStaticInputs(value: unknown): CombineCellStaticInputs | undefined {
@@ -352,9 +329,8 @@ function parseAppMapCombineCellExecutionIntentValue(
   if (!reachableChild || !sameRecipeGraph(reachableChild, child.recipeGraph)) return undefined;
   if (wrapperChildModuleRoot(root) !== child.sourcePlan.rootRecipeId) return undefined;
   if (
-    selected.id !== child.selectedRuntimeTargetProfile?.id ||
-    selected.targetId !== child.selectedRuntimeTargetProfile.targetId ||
-    selected.platform !== child.selectedRuntimeTargetProfile.platform
+    !child.selectedRuntimeTargetProfile ||
+    !sameAppMapRuntimeTargetProfile(selected, child.selectedRuntimeTargetProfile)
   ) {
     return undefined;
   }

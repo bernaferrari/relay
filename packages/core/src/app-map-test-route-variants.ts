@@ -7,6 +7,10 @@ import type {
   AppMapTestViewportClass,
   TargetProfile,
 } from "@relay/protocol";
+import {
+  appMapRuntimeTargetProfileFromSaved,
+  sameAppMapRuntimeTargetProfile,
+} from "./app-map-runtime-target-profile.js";
 
 export type AppMapTestRouteSelectionErrorCode =
   | "target-surface-required"
@@ -41,6 +45,7 @@ function targetProfileSelectionKey(profile: TargetProfile): string {
     platform: profile.platform,
     viewport,
     browserEngine: profile.browserCaseProfile?.engine,
+    browserCaseProfile: profile.browserCaseProfile,
     capabilities: [...profile.capabilities].sort(),
   });
 }
@@ -59,7 +64,7 @@ export function savedTestRouteTargetProfile(
         profile.id === runtime.id &&
         profile.targetId === runtime.targetId &&
         profile.platform === runtime.platform &&
-        JSON.stringify(profile.viewport) === JSON.stringify(runtime.viewport),
+        sameAppMapRuntimeTargetProfile(appMapRuntimeTargetProfileFromSaved(profile), runtime),
     );
   if (!profiles.length) {
     throw new AppMapTestRouteSelectionError(

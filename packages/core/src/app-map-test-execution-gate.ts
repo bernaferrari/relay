@@ -14,7 +14,16 @@ import {
 } from "./app-map-test-execution-intent.js";
 import { loadFrozenRawAccessibilityEvidence } from "./frozen-raw-accessibility.js";
 import { preflightCompiledAppMapTestOffline } from "./offline-test-preflight.js";
-import type { AppMapCompiledTest, RecipeStep, TargetProfile } from "@relay/protocol";
+import type {
+  AppMapCompiledTest,
+  BrowserCaseProfile,
+  RecipeStep,
+  TargetProfile,
+} from "@relay/protocol";
+import {
+  appMapRuntimeTargetProfileFromSaved,
+  sameAppMapRuntimeTargetProfile,
+} from "./app-map-runtime-target-profile.js";
 import type { Recipe } from "./recipes.js";
 import type { PersistedRun } from "./runs.js";
 import type { TestJob } from "./session-contract.js";
@@ -34,6 +43,7 @@ export type AppMapTestExecutionSource = {
   /** The scheduler-facing target identity must retain the selected evidence
    * profile, including its viewport namespace. */
   targetProfile?: TargetProfile;
+  browserCaseProfile?: BrowserCaseProfile;
 };
 
 export type AppMapTestExecutionIntentAssessment =
@@ -96,33 +106,34 @@ function artifactHasCanonicalTestPlan(value: unknown): boolean {
   }
 }
 
-function sameViewport(
-  left: { width: number; height: number } | undefined,
-  right: { width: number; height: number } | undefined,
-): boolean {
-  return (
-    (left === undefined && right === undefined) ||
-    (left !== undefined &&
-      right !== undefined &&
-      left.width === right.width &&
-      left.height === right.height)
-  );
-}
-
 function queuedTargetProfileMismatch(
   intent: AppMapTestExecutionIntent,
   targetProfile: TargetProfile | undefined,
+  browserCaseProfile: BrowserCaseProfile | undefined,
 ): string | undefined {
   const selected = intent.selectedRuntimeTargetProfile;
   if (!selected) return undefined;
   if (
     !targetProfile ||
-    targetProfile.id !== selected.id ||
-    targetProfile.targetId !== selected.targetId ||
-    targetProfile.platform !== selected.platform ||
-    !sameViewport(targetProfile.viewport, selected.viewport)
+    !sameAppMapRuntimeTargetProfile(appMapRuntimeTargetProfileFromSaved(targetProfile), selected)
   ) {
     return "The queued target profile no longer matches the selected frozen evidence profile.";
+  }
+  if (
+    selected.browserCaseProfile &&
+    (!browserCaseProfile ||
+      !sameAppMapRuntimeTargetProfile(
+        {
+          id: selected.id,
+          targetId: selected.targetId,
+          platform: selected.platform,
+          viewport: browserCaseProfile.viewport,
+          browserCaseProfile,
+        },
+        selected,
+      ))
+  ) {
+    return "The queued browser case profile no longer matches the selected frozen evidence profile.";
   }
   return undefined;
 }
@@ -173,7 +184,17 @@ function executionSourceMismatch(
   if (profile && (profile.targetId !== targetId || profile.platform !== platform)) {
     return "The selected runtime evidence profile no longer matches this target.";
   }
-  const targetProfileMismatch = queuedTargetProfileMismatch(intent, source.targetProfile);
+  if (
+    platform === "browser" &&
+    (!profile?.browserCaseProfile || !source.targetProfile?.browserCaseProfile)
+  ) {
+    return "The frozen browser environment is missing; recapture the profile and compile the Test again.";
+  }
+  const targetProfileMismatch = queuedTargetProfileMismatch(
+    intent,
+    source.targetProfile,
+    source.browserCaseProfile,
+  );
   if (targetProfileMismatch) return targetProfileMismatch;
   return undefined;
 }
@@ -404,6 +425,7 @@ export function appMapTestExecutionSourceFromJob(
     | "browserTargetId"
     | "platform"
     | "targetProfile"
+    | "browserCaseProfile"
     | "targetContext"
   >,
 ): AppMapTestExecutionSource {
@@ -419,6 +441,7 @@ export function appMapTestExecutionSourceFromJob(
       platform: job.targetContext.platform ?? job.platform,
     },
     targetProfile: job.targetProfile,
+    browserCaseProfile: job.browserCaseProfile,
   };
 }
 
@@ -432,6 +455,7 @@ export function appMapTestExecutionSourceFromRun(
     | "serial"
     | "platform"
     | "targetProfile"
+    | "browserCaseProfile"
   >,
 ): AppMapTestExecutionSource {
   return {
@@ -441,5 +465,6 @@ export function appMapTestExecutionSourceFromRun(
     recipeGraph: run.recipeGraph,
     target: { targetId: run.serial, platform: run.platform },
     targetProfile: run.targetProfile,
+    browserCaseProfile: run.browserCaseProfile,
   };
 }

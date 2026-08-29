@@ -4,6 +4,7 @@ import {
   AppMapCompileError,
   AppMapTestCompileError,
   activeReviewedDocumentOriginsForAppMap,
+  appMapRuntimeTargetProfileKey,
   CasePlanError,
   buildTargetProfiles,
   compileAppMapConnection,
@@ -28,6 +29,7 @@ import {
   savedAppMapTargetProfileIdsForTarget,
   saveAppMapCombine,
   sensitiveInputNames,
+  unsupportedBrowserCaseProfileFields,
   upsertAppMapCombineFromTest,
   type Recipe,
 } from "@relay/core";
@@ -80,15 +82,7 @@ export function frozenEvidenceTargetProfileForTarget(input: {
 }): AppMapCompiledRuntimeTargetProfile | undefined {
   const profiles = [
     ...new Map(
-      (input.profiles ?? []).map((profile) => [
-        [
-          profile.id,
-          profile.targetId,
-          profile.platform,
-          profile.viewport ? `${profile.viewport.width}x${profile.viewport.height}` : "",
-        ].join("\u0000"),
-        profile,
-      ]),
+      (input.profiles ?? []).map((profile) => [appMapRuntimeTargetProfileKey(profile), profile]),
     ).values(),
   ];
   if (!profiles.length) return undefined;
@@ -96,7 +90,22 @@ export function frozenEvidenceTargetProfileForTarget(input: {
     (profile) =>
       profile.targetId === input.target.targetId && profile.platform === input.target.platform,
   );
-  if (matching.length === 1) return structuredClone(matching[0]!);
+  if (matching.length === 1) {
+    const selected = matching[0]!;
+    if (selected.platform === "browser" && !selected.browserCaseProfile) {
+      throw new HttpError(
+        409,
+        `Saved runtime profile ${selected.id} has no frozen browser environment`,
+        {
+          code: "FROZEN_BROWSER_PROFILE_REQUIRED",
+          targetProfileId: selected.id,
+          recovery:
+            "Recapture this browser target profile and compile the Test again before controlling the browser.",
+        },
+      );
+    }
+    return structuredClone(selected);
+  }
   const savedTargets = [
     ...new Set(profiles.map((profile) => `${profile.platform}:${profile.targetId}`)),
   ]
@@ -604,12 +613,42 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
   >;
   const targetId = body.browserTargetId?.trim() || body.serial?.trim();
   if (!targetId) throw new HttpError(400, "Choose a target before running this flow");
+  const targetKind = body.browserTargetId ? ("browser" as const) : (body.targetKind ?? "device");
 
   // A stale physical serial should not produce a lease-recovery message. A
   // valid existing lease remains authoritative for remote and test-double
   // targets, so only preflight when this actor does not already hold one.
   let observedDevices: Awaited<ReturnType<typeof listDevices>> | undefined;
-  if (body.serial?.trim()) {
+  const observedTargets = await listTargets();
+  const observedBrowserTarget = observedTargets.find(
+    (target) => target.id === targetId && target.kind === "browser",
+  );
+  if (targetKind === "browser" && !observedBrowserTarget) {
+    throw new HttpError(409, `Managed browser target ${targetId} is unavailable`, {
+      code: "TARGET_NOT_CONNECTED",
+      targetId,
+      recovery: "Restore or recreate the managed browser target before running this flow.",
+    });
+  }
+  if (targetKind === "browser" && observedBrowserTarget) {
+    const browserProfile = buildTargetProfiles({ devices: [], targets: [observedBrowserTarget] })[0]
+      ?.browserCaseProfile;
+    const unsupported = browserProfile ? unsupportedBrowserCaseProfileFields(browserProfile) : [];
+    if (unsupported.length) {
+      throw new HttpError(
+        409,
+        `Managed browser target ${targetId} requires unavailable host resolvers: ${unsupported.join(", ")}`,
+        {
+          code: "BROWSER_PROFILE_UNSUPPORTED",
+          targetId,
+          unsupported,
+          recovery:
+            "Remove unsupported fixture references or install their host resolvers before running this flow.",
+        },
+      );
+    }
+  }
+  if (targetKind === "device" && body.serial?.trim()) {
     const operation = currentOperationContext();
     const activeLease = operation
       ? (await listDeviceLeases(input.scope.projectId)).some(
@@ -736,10 +775,20 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
   const targetProfile = (
     await buildTargetProfiles({
       devices: observedDevices ?? (await listDevices().catch(() => [])),
-      targets: await listTargets(),
+      targets: observedTargets,
     })
-  ).find((profile) => profile.targetId === targetId);
-  const platform = body.platform ?? (await resolveJobDevicePlatform(body.serial));
+  ).find(
+    (profile) =>
+      profile.targetId === targetId &&
+      profile.source === targetKind &&
+      (targetKind === "browser" ||
+        profile.platform === body.platform ||
+        body.platform === undefined),
+  );
+  const platform =
+    targetKind === "browser"
+      ? undefined
+      : (body.platform ?? (await resolveJobDevicePlatform(body.serial)));
   const jobs = cases.map((item) => {
     const variables = { ...constantVariables, ...item.values };
     return enqueueJob({
@@ -749,7 +798,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       recipeGraph,
       serial: body.serial,
       platform,
-      targetKind: body.targetKind,
+      targetKind,
       browserTargetId: body.browserTargetId,
       ...(targetProfile ? { targetProfile } : {}),
       variables,

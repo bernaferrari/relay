@@ -3,7 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { AppMapCompiledTest, TargetProfile } from "@relay/protocol";
+import {
+  compileBrowserEnvironment,
+  type AppMapCompiledTest,
+  type TargetProfile,
+} from "@relay/protocol";
 import {
   AppMapTestExecutionReviewRequiredError,
   appMapTestExecutionSourceFromJob,
@@ -136,12 +140,24 @@ function scopedTestJob(input: {
   const target = input.target ?? { kind: "device", targetId: "android-1", platform: "android" };
   const graph = recipeGraph(input.graph ?? "simple");
   const root = graph[rootRecipeId]!;
+  const browserCaseProfile =
+    target.kind === "browser"
+      ? compileBrowserEnvironment({
+          engine: "webkit",
+          viewport: { width: 1_280, height: 2_400 },
+          locale: "pt-BR",
+          timezoneId: "America/Maceio",
+          networkProfile: "wifi-slow",
+          authenticationFixtureId: "member-session",
+        })
+      : undefined;
   const runtimeTargetProfile = input.profile
     ? {
         id: `${target.targetId}-profile`,
         targetId: target.targetId,
         platform: target.platform,
         viewport: { width: target.kind === "browser" ? 1280 : 1080, height: 2400 },
+        ...(browserCaseProfile ? { browserCaseProfile } : {}),
       }
     : undefined;
   const plan = {
@@ -206,6 +222,7 @@ function scopedTestJob(input: {
     platform: target.kind === "browser" ? "android" : target.platform,
     targetKind: target.kind,
     ...(targetProfile ? { targetProfile } : {}),
+    ...(browserCaseProfile ? { browserCaseProfile } : {}),
     status,
     queuedAt: at,
     ...(status === "error" ? { startedAt: at, finishedAt: at + 1 } : {}),
@@ -737,6 +754,84 @@ test("browser Test profile and target identity persist exactly through replay tr
       assert.deepEqual(replayInput?.targetProfile, browser.targetProfile);
       assert.deepEqual(replayInput?.artifacts, persisted.artifacts);
       assert.notEqual(replayInput?.artifacts, persisted.artifacts);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test("browser environment drift stops retry before target control", async () => {
+  await withIsolatedRunState(async () => {
+    const current = scopedTestJob({
+      id: "browser-profile-drift",
+      target: { kind: "browser", targetId: "browser-chat", platform: "browser" },
+      profile: true,
+    });
+    current.targetProfile!.browserCaseProfile = {
+      ...current.targetProfile!.browserCaseProfile!,
+      locale: "en-US",
+    };
+    let controls = 0;
+    let retried = 0;
+    const server = await startServer({
+      host: "127.0.0.1",
+      port: 0,
+      jobRouteRuntime: {
+        getJob: () => current,
+        assertTargetControl: async () => {
+          controls += 1;
+          throw new Error("browser profile drift must stop before target control");
+        },
+        retryJob: () => {
+          retried += 1;
+          return current;
+        },
+      },
+    });
+    try {
+      const response = await post(
+        `http://127.0.0.1:${server.port}`,
+        `/jobs/${current.id}/retry`,
+        "job.retry",
+      );
+      await assertReviewRequired(response, /queued target profile no longer matches/i);
+      assert.equal(controls, 0);
+      assert.equal(retried, 0);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test("a divergent executable browser profile stops retry before target control", async () => {
+  await withIsolatedRunState(async () => {
+    const current = scopedTestJob({
+      id: "browser-executable-profile-drift",
+      target: { kind: "browser", targetId: "browser-chat", platform: "browser" },
+      profile: true,
+    });
+    current.browserCaseProfile = { ...current.browserCaseProfile!, timezoneId: "Europe/Rome" };
+    let controls = 0;
+    const server = await startServer({
+      host: "127.0.0.1",
+      port: 0,
+      jobRouteRuntime: {
+        getJob: () => current,
+        assertTargetControl: async () => {
+          controls += 1;
+          throw new Error("executable profile drift must stop before target control");
+        },
+        retryJob: () => current,
+      },
+    });
+    try {
+      const response = await post(
+        `http://127.0.0.1:${server.port}`,
+        `/jobs/${current.id}/retry`,
+        "job.retry",
+      );
+      await assertReviewRequired(response, /queued browser case profile no longer matches/i);
+      assert.equal(controls, 0);
     } finally {
       await server.close();
     }

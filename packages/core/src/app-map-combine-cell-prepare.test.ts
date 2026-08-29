@@ -7,6 +7,7 @@ import type {
   ScreenVariant,
   TargetProfile,
 } from "@relay/protocol";
+import { compileBrowserEnvironment } from "@relay/protocol";
 import { runWithOperationContext } from "./operation-context.js";
 import {
   AppMapCombineCellContractError,
@@ -158,6 +159,68 @@ test("resolveSavedAppMapRuntimeTargetProfile inherits the only saved profile for
     platform: "android",
     viewport: { width: 1080, height: 2340 },
   });
+});
+
+test("Combine freezes the complete saved browser profile", () => {
+  const browserCaseProfile = compileBrowserEnvironment({
+    engine: "webkit",
+    viewport: { width: 390, height: 844 },
+    locale: "pt-BR",
+    timezoneId: "America/Maceio",
+    colorScheme: "dark",
+    networkProfile: "wifi-slow",
+    authenticationFixtureId: "member-session",
+  });
+  const map = mapWithProfiles([
+    {
+      id: "browser:checkout",
+      targetId: "checkout",
+      source: "browser",
+      platform: "browser",
+      name: "Checkout",
+      browserCaseProfile,
+      capabilities: ["snapshot"],
+      observedAt: 1,
+    },
+  ]);
+  assert.deepEqual(
+    resolveSavedAppMapRuntimeTargetProfile({
+      map,
+      target: { targetId: "checkout", platform: "browser" },
+    }),
+    {
+      id: "browser:checkout",
+      targetId: "checkout",
+      platform: "browser",
+      viewport: browserCaseProfile.viewport,
+      browserCaseProfile,
+    },
+  );
+});
+
+test("Combine refuses a legacy browser profile before staging", () => {
+  const map = mapWithProfiles([
+    {
+      id: "browser:legacy",
+      targetId: "legacy",
+      source: "browser",
+      platform: "browser",
+      name: "Legacy",
+      viewport: { width: 800, height: 600 },
+      capabilities: ["snapshot"],
+      observedAt: 1,
+    },
+  ]);
+  assert.throws(
+    () =>
+      resolveSavedAppMapRuntimeTargetProfile({
+        map,
+        target: { targetId: "legacy", platform: "browser" },
+      }),
+    (error: unknown) =>
+      error instanceof AppMapCombineCellContractError &&
+      error.message.includes("no frozen browser environment"),
+  );
 });
 
 test("resolveSavedAppMapRuntimeTargetProfile fails closed listing candidates when several match", () => {

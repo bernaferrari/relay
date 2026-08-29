@@ -380,6 +380,7 @@ export type AppMapCompiledRawAccessibilityVariant = {
   targetId: string;
   platform: TargetProfile["platform"];
   viewport?: { width: number; height: number };
+  browserCaseProfile?: TargetProfile["browserCaseProfile"];
 };
 
 /** The immutable runtime identity ledger for a compiled Test. This is global
@@ -389,7 +390,7 @@ export type AppMapCompiledRawAccessibilityVariant = {
  * selector reuse is only safe at an exact captured shape. */
 export type AppMapCompiledRawAccessibilityTargetProfile = Pick<
   TargetProfile,
-  "id" | "targetId" | "platform" | "viewport"
+  "id" | "targetId" | "platform" | "viewport" | "browserCaseProfile"
 >;
 
 /** The saved target/profile binding selected for one queued Test. It is
@@ -397,7 +398,7 @@ export type AppMapCompiledRawAccessibilityTargetProfile = Pick<
  * never changes the App Map or tries to infer locale from rendered copy. */
 export type AppMapCompiledRuntimeTargetProfile = Pick<
   TargetProfile,
-  "id" | "targetId" | "platform" | "viewport"
+  "id" | "targetId" | "platform" | "viewport" | "browserCaseProfile"
 >;
 
 /** One immutable raw AX blob with the exact App Map Variant that supplied it.

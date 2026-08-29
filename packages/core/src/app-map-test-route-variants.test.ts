@@ -285,12 +285,21 @@ test("compiler applies one route and freezes inspectable family provenance", () 
       targetId: "browser-target",
       platform: "browser",
       viewport: { width: 390, height: 800 },
+      browserCaseProfile: compileBrowserEnvironment({
+        engine: "webkit",
+        viewport: { width: 390, height: 800 },
+      }),
     },
   });
   assert.equal(compiled.plan.testFamily?.selectedRouteVariant?.id, "compact-webkit");
   assert.equal(compiled.plan.testFamily?.logicalIntentRevision, 3);
   assert.equal(compiled.plan.testFamily?.bindingRevision, 5);
   assert.equal(compiled.plan.testFamily?.targetSurface?.browserEngine, "webkit");
+  assert.deepEqual(
+    compiled.plan.rawAccessibilityTargetProfiles?.find(({ id }) => id === "webkit-compact")
+      ?.browserCaseProfile,
+    map.screenVariants["browser-home"]!.targetProfile.browserCaseProfile,
+  );
   assert.deepEqual(compiled.plan.testFamily?.actionIntentBindings, [
     {
       connectionId: "browser-route",
