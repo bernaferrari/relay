@@ -5,6 +5,7 @@ import type { BrowserCaseProfile } from "@relay/protocol";
 import type { Device, SnapshotNode } from "./device.js";
 import { createBrowserContextFactory, type BrowserContextPurpose } from "./browser-context.js";
 import { createDeviceObservationFacade } from "./device-observation-membrane.js";
+import { LEGACY_POSITIONAL_BROWSER_REF_ERROR } from "./browser-locator-contract.js";
 import { browserProfileDir, readTarget } from "./targets.js";
 
 type BrowserSession = {
@@ -188,6 +189,9 @@ export async function performBrowserFind(
     return { ok: true, exists: true };
   }
   if (action === undefined || action === "press" || action === "click") {
+    const count = await locator.count();
+    if (count === 0) throw new Error(`No match for ${query}`);
+    if (count > 1) throw new Error(`Ambiguous browser match for ${query}`);
     await locator.click();
     return { ok: true };
   }
@@ -256,69 +260,80 @@ async function activePage(session: BrowserSession): Promise<Page> {
 }
 
 async function snapshotPage(page: Page): Promise<SnapshotNode[]> {
-  return await page.locator(INTERACTIVE).evaluateAll((elements) =>
-    elements
-      .filter((element) => {
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden";
-      })
-      .map((element, index) => {
-        const html = element as HTMLElement;
-        const input = element as HTMLInputElement;
-        const rect = element.getBoundingClientRect();
-        const role = element.getAttribute("role") || element.tagName.toLowerCase();
-        const label =
-          element.getAttribute("aria-label") ||
-          element.getAttribute("title") ||
-          (input.labels?.[0]?.textContent ?? "") ||
-          html.innerText?.trim() ||
-          input.placeholder ||
-          input.name ||
-          "";
-        return {
-          ref: `@browser-${index}`,
-          index,
-          role,
-          type: role,
-          label: label.slice(0, 500),
-          value: input.type === "password" ? "••••••••" : String(input.value ?? "").slice(0, 500),
-          identifier: element.id || element.getAttribute("data-testid") || undefined,
-          enabled: !(input.disabled || element.getAttribute("aria-disabled") === "true"),
-          selected: element.getAttribute("aria-selected") === "true",
-          focused: document.activeElement === element,
-          visibleToUser: true,
-          hittable: true,
-          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-        };
-      }),
-  );
+  return await page.locator(INTERACTIVE).evaluateAll((elements) => {
+    const identifierCounts = new Map<string, number>();
+    for (const element of elements) {
+      const identifier = element.id || element.getAttribute("data-testid");
+      if (identifier) identifierCounts.set(identifier, (identifierCounts.get(identifier) ?? 0) + 1);
+    }
+    const visible = elements.filter((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden";
+    });
+    return visible.map((element, index) => {
+      const html = element as HTMLElement;
+      const input = element as HTMLInputElement;
+      const rect = element.getBoundingClientRect();
+      const role = element.getAttribute("role") || element.tagName.toLowerCase();
+      const identifier = element.id || element.getAttribute("data-testid") || undefined;
+      const label =
+        element.getAttribute("aria-label") ||
+        element.getAttribute("title") ||
+        (input.labels?.[0]?.textContent ?? "") ||
+        html.innerText?.trim() ||
+        input.placeholder ||
+        input.name ||
+        "";
+      return {
+        index,
+        role,
+        type: role,
+        label: label.slice(0, 500),
+        value: input.type === "password" ? "••••••••" : String(input.value ?? "").slice(0, 500),
+        identifier: identifier && identifierCounts.get(identifier) === 1 ? identifier : undefined,
+        enabled: !(input.disabled || element.getAttribute("aria-disabled") === "true"),
+        selected: element.getAttribute("aria-selected") === "true",
+        focused: document.activeElement === element,
+        visibleToUser: true,
+        hittable: true,
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      };
+    });
+  });
 }
 
-function indexFromRef(ref?: string): number | undefined {
-  const match = ref?.match(/browser-(\d+)/);
-  return match ? Number(match[1]) : undefined;
-}
-
-function quotedSelector(selector: string): { kind: "exact" | "contains"; value: string } | null {
-  const match = selector.match(/label(\*?)="((?:\\.|[^"])*)"/);
+function quotedSelector(
+  selector: string,
+): { field: "identifier" | "label"; match: "exact" | "contains"; value: string } | null {
+  const parsed = selector.match(/^(id|label)(\*?)="((?:\\.|[^"])*)"$/u);
+  const match = parsed;
   if (!match) return null;
   return {
-    kind: match[1] === "*" ? "contains" : "exact",
-    value: (match[2] ?? "").replaceAll('\\"', '"'),
+    field: match[1] === "id" ? "identifier" : "label",
+    match: match[2] === "*" ? "contains" : "exact",
+    value: (match[3] ?? "").replaceAll('\\"', '"'),
   };
 }
 
 async function locatorFor(page: Page, input: { ref?: string; selector?: string }) {
-  const index = indexFromRef(input.ref);
-  if (index !== undefined) return page.locator(INTERACTIVE).nth(index);
+  if (input.ref) {
+    throw new Error(LEGACY_POSITIONAL_BROWSER_REF_ERROR);
+  }
   const parsed = input.selector ? quotedSelector(input.selector) : null;
   if (parsed) {
-    const exact = parsed.kind === "exact";
-    return page
-      .getByLabel(parsed.value, { exact })
-      .or(page.getByText(parsed.value, { exact }))
-      .first();
+    const locator =
+      parsed.field === "identifier"
+        ? page.locator(
+            `[id=${JSON.stringify(parsed.value)}], [data-testid=${JSON.stringify(parsed.value)}]`,
+          )
+        : page
+            .getByLabel(parsed.value, { exact: parsed.match === "exact" })
+            .or(page.getByText(parsed.value, { exact: parsed.match === "exact" }));
+    const count = await locator.count();
+    if (count === 0) throw new Error(`Browser locator did not match ${parsed.field}`);
+    if (count > 1) throw new Error(`Browser locator was ambiguous for ${parsed.field}`);
+    return locator.first();
   }
   throw new Error("browser interaction requires a recorded element or label");
 }
@@ -447,7 +462,7 @@ export async function getBrowserDevice(
       },
       find: async (input: { query: string; action?: string }) => {
         const page = await activePage(session);
-        const locator = page.getByText(input.query, { exact: false }).first();
+        const locator = page.getByText(input.query, { exact: false });
         return await performBrowserFind(locator, input.query, input.action);
       },
       scroll: async (input: { direction?: string; amount?: number }) => {

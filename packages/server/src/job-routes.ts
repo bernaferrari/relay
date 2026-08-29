@@ -3,6 +3,7 @@ import {
   appMapTestExecutionSourceFromJob,
   appMapTestExecutionSourceFromRun,
   analyzeCombineEvidenceBatch,
+  browserCaseProfileForTarget,
   captureHumanInterventionReproof,
   captureScreenshot,
   captureSnapshot,
@@ -22,6 +23,7 @@ import {
   pauseJob,
   prepareCasePlan,
   readProjectVariables,
+  readTarget,
   referencedRuntimeInputs,
   referencedVariableIds,
   redactCasePlan,
@@ -98,6 +100,16 @@ export const defaultJobRouteRuntime: JobRouteRuntime = {
   replayPersistedRun,
   resumeJob,
 };
+
+async function browserCaseProfileForAdmission(targetId: string | undefined) {
+  const id = targetId?.trim();
+  if (!id) return undefined;
+  const target = await readTarget(id);
+  if (!target || target.kind !== "browser") {
+    throw new HttpError(404, `Managed browser target not found: ${id}`);
+  }
+  return browserCaseProfileForTarget(target);
+}
 
 export type JobRouteContext = {
   method: string;
@@ -339,6 +351,9 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     const platform =
       body.platform ??
       (body.browserTargetId ? undefined : await resolveJobDevicePlatform(body.serial));
+    const browserCaseProfile = await browserCaseProfileForAdmission(
+      body.browserTargetId ?? (body.targetKind === "browser" ? body.serial : undefined),
+    );
     if (body.projectId?.trim() && body.projectId.trim() !== scope.projectId) {
       recordAudit(scope, { action: "run.matrix", resource: "project", result: "deny" });
       throw new HttpError(403, "Project is outside the authenticated scope");
@@ -360,6 +375,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         platform,
         targetKind: body.targetKind,
         browserTargetId: body.browserTargetId,
+        browserCaseProfile,
         prodAccountMatch: body.prodAccountMatch,
         variables: item.values,
         sensitiveInputNames: sensitiveInputNames(definitions.value, item.values),
@@ -505,6 +521,11 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       (executionTarget?.platform === "browser" ? undefined : executionTarget?.platform) ??
       body.platform ??
       (body.browserTargetId ? undefined : await resolveJobDevicePlatform(body.serial));
+    const admittedBrowserTargetId =
+      executionTarget?.kind === "local-browser"
+        ? executionTarget.identity.value
+        : (body.browserTargetId ?? (body.targetKind === "browser" ? body.serial : undefined));
+    const browserCaseProfile = await browserCaseProfileForAdmission(admittedBrowserTargetId);
     let job;
     try {
       const frozenRecipe = body.recipe ? await freezeRecipeExecution(body.recipe) : undefined;
@@ -524,6 +545,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         platform,
         targetKind: body.targetKind,
         browserTargetId: body.browserTargetId,
+        browserCaseProfile,
         prodAccountMatch: body.prodAccountMatch,
         variables,
         sensitiveInputNames: definitions

@@ -4,6 +4,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { compileBrowserEnvironment } from "@relay/protocol";
 import type { TestJob } from "./session.js";
 import {
   listPersistedRuns,
@@ -300,11 +301,24 @@ test("persisted browser runs retain browser identity instead of becoming Android
     ...job(join(root, "run")),
     targetKind: "browser" as const,
     browserTargetId: "browser-chat",
+    browserCaseProfile: compileBrowserEnvironment({
+      locale: "pt-BR",
+      timezoneId: "America/Maceio",
+    }),
   };
   try {
     const persisted = await persistRun(run);
     assert.equal(persisted.platform, "browser");
     assert.equal(persisted.serial, "browser-chat");
+    assert.deepEqual(persisted.browserCaseProfile, run.browserCaseProfile);
+    const replay = replayInputFromPersistedRun({
+      ...persisted,
+      recipeSnapshot: { id: "evidence-test", title: "Evidence test", steps: [] } as never,
+      recipeGraph: {
+        "evidence-test": { id: "evidence-test", title: "Evidence test", steps: [] },
+      } as never,
+    });
+    assert.deepEqual(replay.browserCaseProfile, run.browserCaseProfile);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

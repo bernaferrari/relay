@@ -1,4 +1,5 @@
 import type {
+  BrowserCaseProfile,
   EvidenceCollectionPolicy,
   EvidenceManifest,
   ExecutionTargetRef,
@@ -47,6 +48,9 @@ export type TestJob = {
   platform: DevicePlatform;
   targetKind?: "device" | "browser";
   browserTargetId?: string;
+  /** Exact browser environment accepted with this Run. Never re-read from a
+   * mutable managed target during proof execution. */
+  browserCaseProfile?: BrowserCaseProfile;
   /** Frozen facts used to select this run from a compatibility matrix. */
   targetProfile?: TargetProfile;
   /** Immutable commit/build binding captured when the run was accepted.
@@ -135,6 +139,8 @@ export type EnqueueJobInput = {
   platform?: DevicePlatform;
   targetKind?: "device" | "browser";
   browserTargetId?: string;
+  /** Exact browser environment frozen before the job enters the queue. */
+  browserCaseProfile?: BrowserCaseProfile;
   targetProfile?: TargetProfile;
   /** Frozen at enqueue time into the run manifest; never rewritten. */
   sourceRevision?: SourceRevision;

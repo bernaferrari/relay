@@ -1,5 +1,6 @@
 import type { StepTargetRelation } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
+import { isLegacyPositionalBrowserRef } from "./browser-locator-contract.js";
 
 type Rect = { x: number; y: number; width: number; height: number };
 
@@ -54,7 +55,12 @@ export function relationAnchorMatches(node: SnapshotNode, relation: StepTargetRe
       target.role.trim().toLocaleLowerCase();
   if (!roleMatches) return false;
   if (target.identifier && node.identifier === target.identifier) return true;
-  if (target.ref && node.ref?.replace(/^@/u, "") === target.ref.replace(/^@/u, "")) return true;
+  if (
+    target.ref &&
+    !isLegacyPositionalBrowserRef(target.ref) &&
+    node.ref?.replace(/^@/u, "") === target.ref.replace(/^@/u, "")
+  )
+    return true;
   if (target.label) {
     const query = target.label.trim().toLocaleLowerCase();
     const live = node.label?.trim().toLocaleLowerCase();

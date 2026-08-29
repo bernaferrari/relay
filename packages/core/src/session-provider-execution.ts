@@ -177,6 +177,9 @@ export async function acquirePreparedSessionDevice(
 ): Promise<Device> {
   if (target.providerDevice) return target.providerDevice;
   if (job.targetKind === "browser" && target.browserTarget) {
+    if (!job.browserCaseProfile) {
+      throw new Error("Browser proof is missing its frozen browser case profile");
+    }
     const preflight = await preflightTarget(target.browserTarget);
     job.artifacts.push({ kind: "target-preflight", capturedAt: now(), data: preflight });
     if (!preflight.ok) {
@@ -189,7 +192,10 @@ export async function acquirePreparedSessionDevice(
     // A scheduled proof owns a fresh, non-persistent context. The persistent
     // authoring profile remains available only through the explicit authoring
     // path (openBrowserTarget/getBrowserDevice({ mode: "authoring" })).
-    return await getBrowserDevice(target.browserTarget.id, { mode: "proof" });
+    return await getBrowserDevice(target.browserTarget.id, {
+      mode: "proof",
+      profile: job.browserCaseProfile,
+    });
   }
 
   // A physical iOS target uses one long-lived XCTest process. Stopping it

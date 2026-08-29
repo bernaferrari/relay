@@ -9,9 +9,11 @@ import type { TestJob } from "./session.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
 import {
   assertExecutionTargetRef,
+  parseBrowserCaseProfile,
   parseOptionalSourceRevision,
   type ActorKind,
   type ArtifactRefProjection,
+  type BrowserCaseProfile,
   type EvidenceManifest,
   type ExecutionTargetRef,
   type FailureCategory,
@@ -74,6 +76,8 @@ export type PersistedRun = {
   platform?: string;
   /** Additive v5 metadata; old reports remain readable without it. */
   executionTarget?: ExecutionTargetRef;
+  /** Exact browser environment accepted with the Run. */
+  browserCaseProfile?: BrowserCaseProfile;
   targetProfile?: TargetProfile;
   status: string;
   healed?: boolean;
@@ -253,6 +257,7 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
       platform: job.targetKind === "browser" ? "browser" : (job.platform ?? "android"),
     },
     executionTarget: executionTarget ?? null,
+    browserCaseProfile: job.browserCaseProfile ?? null,
     recipe: job.recipeSnapshot ?? null,
     recipeGraph: job.recipeGraph ?? null,
     variables: job.resolvedInputs,
@@ -268,6 +273,7 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     deviceName: job.deviceName,
     platform: job.targetKind === "browser" ? "browser" : (job.platform ?? "android"),
     executionTarget,
+    browserCaseProfile: job.browserCaseProfile,
     targetProfile: job.targetProfile,
     ...(job.sourceRevision ? { sourceRevision: job.sourceRevision } : {}),
     status: job.status,
@@ -344,6 +350,9 @@ async function readCompletedRun(dir: string): Promise<PersistedRun | null> {
   try {
     const raw = await readFile(join(dir, "run.json"), "utf8");
     const parsed = JSON.parse(raw) as PersistedRun;
+    if (parsed.browserCaseProfile !== undefined) {
+      parsed.browserCaseProfile = parseBrowserCaseProfile(parsed.browserCaseProfile);
+    }
     if (parsed.sourceRevision !== undefined) {
       parsed.sourceRevision = parseOptionalSourceRevision(parsed.sourceRevision);
     }

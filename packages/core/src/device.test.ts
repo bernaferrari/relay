@@ -709,6 +709,25 @@ test("following-row relation fails closed when its heading is ambiguous", () => 
   if (result.status === "blocked") assert.equal(result.code, "ambiguous");
 });
 
+test("offline semantic preflight rejects historical positional browser refs", () => {
+  assert.equal(
+    resolveSnapshotTargetPoint(
+      [
+        {
+          ref: "@browser-0",
+          type: "button",
+          label: "Delete",
+          enabled: true,
+          hittable: true,
+          rect: { x: 10, y: 10, width: 100, height: 40 },
+        },
+      ],
+      { ref: "@browser-0" },
+    ),
+    undefined,
+  );
+});
+
 test("a caption with no row of its own still refuses to become a tap", () => {
   const application = {
     index: 0,

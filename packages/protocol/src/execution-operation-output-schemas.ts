@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { browserCaseProfileSchema } from "./browser-case-profile.js";
 import { combineCampaignAdmissionSchema } from "./campaign-capacity-operation-output-schemas.js";
 import {
   repeatWorkflowMutationSchema,
@@ -35,6 +36,7 @@ const targetProfileSchema = z
     model: z.string().optional(),
     osVersion: z.string().optional(),
     viewport: z.object({ width: z.number(), height: z.number() }).strict().optional(),
+    browserCaseProfile: browserCaseProfileSchema.optional(),
     capabilities: z.array(targetCapabilitySchema),
     observedAt: z.number(),
   })

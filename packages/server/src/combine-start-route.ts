@@ -18,12 +18,14 @@ import {
   activeReviewedDocumentOriginsForAppMap,
   applyFullSurfaceDestinationBindings,
   combineCampaignCaseFromPreparedCell,
+  buildTargetProfiles,
   createCombineCampaign,
   currentOperationContext,
   findActiveCombineCampaignForCombine,
   findActiveRepeatCampaigns,
   prepareAppMapCombineCells,
   readAppMap,
+  listTargets,
   resolveCombineCellSelector,
   stagePreparedAppMapCombineCells,
   summarizeJob,
@@ -346,6 +348,10 @@ async function executeCombineStartUnlocked(
         },
       );
     }
+    const observedTargetProfiles = buildTargetProfiles({
+      devices: await runtime.listDevices().catch(() => []),
+      targets: await listTargets(),
+    });
     const stageCells = (acceptedAdmission?: LocalCombineCampaignAdmission) =>
       stagePreparedAppMapCombineCells({
         cells: selectedToQueue,
@@ -364,7 +370,12 @@ async function executeCombineStartUnlocked(
         queuedTargetProfile: (cell, executionTarget) =>
           queuedAppMapTestTargetProfile({
             runtimeTargetProfile: cell.selectedRuntimeTargetProfile,
-            observedTargetProfile: undefined,
+            observedTargetProfile: observedTargetProfiles.find(
+              (profile) =>
+                profile.targetId === executionTarget.targetId &&
+                profile.source ===
+                  (executionTarget.kind === "local-browser" ? "browser" : "device"),
+            ),
             target: {
               kind: executionTarget.kind === "local-browser" ? "browser" : "device",
               targetId: executionTarget.targetId,

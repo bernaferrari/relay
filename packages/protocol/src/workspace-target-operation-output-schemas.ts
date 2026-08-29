@@ -1,5 +1,5 @@
 import * as z from "zod/v4";
-import { browserEnvironmentInputSchema } from "./browser-case-profile.js";
+import { browserCaseProfileSchema, browserEnvironmentInputSchema } from "./browser-case-profile.js";
 
 const text = z.string().min(1);
 const natural = z.number().int().nonnegative();
@@ -290,6 +290,7 @@ const targetProfile = z
     model: z.string().optional(),
     osVersion: z.string().optional(),
     viewport: viewport.optional(),
+    browserCaseProfile: browserCaseProfileSchema.optional(),
     capabilities: z.array(targetCapability),
     observedAt: natural,
   })
@@ -522,6 +523,7 @@ const job = z
     platform: z.enum(["android", "ios"]),
     targetKind: z.enum(["device", "browser"]).optional(),
     browserTargetId: z.string().optional(),
+    browserCaseProfile: browserCaseProfileSchema.optional(),
     targetProfile: targetProfile.optional(),
     workerId: z.string().optional(),
     workerCapacity: z.number().int().positive().optional(),

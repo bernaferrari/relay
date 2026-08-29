@@ -6,7 +6,14 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { closeBrowserTarget, getBrowserDevice } from "./browser-target.js";
 import { createBrowserContextFactory } from "./browser-context.js";
-import { pressLabel, pressRef, recordDeviceVideo, screenshot, typeText } from "./device.js";
+import {
+  pressIdentifier,
+  pressLabel,
+  pressRef,
+  recordDeviceVideo,
+  screenshot,
+  typeText,
+} from "./device.js";
 import { runWithTargetContext } from "./target-context.js";
 import { deleteTarget, listTargets, preflightTarget, saveBrowserTarget } from "./targets.js";
 
@@ -21,7 +28,7 @@ before(async () => {
   server = http.createServer((_request, response) => {
     response.setHeader("content-type", "text/html");
     response.end(
-      `<!doctype html><button aria-label="Continue">Continue</button><input aria-label="Message" />`,
+      `<!doctype html><button aria-label="Continue">Continue</button><button>Duplicate</button><button>Duplicate</button><input id="message" aria-label="Message" />`,
     );
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -148,10 +155,16 @@ test("managed browser adapter supports canonical snapshots, clicks, video, and s
       const snapshot = await device.capture.snapshot({ platform: "android" });
       assert(snapshot.nodes?.some((node) => node.label === "Continue"));
       const input = snapshot.nodes?.find((node) => node.label === "Message");
-      assert(input?.ref);
-      await pressRef(device, input.ref);
+      assert.equal(input?.identifier, "message");
+      assert.equal(input?.ref, undefined);
+      await pressIdentifier(device, input.identifier);
       await typeText(device, "Hello Relay");
+      await assert.rejects(
+        pressRef(device, "@browser-0"),
+        /Legacy positional browser refs cannot be replayed safely/u,
+      );
       await pressLabel(device, "Continue");
+      await assert.rejects(pressLabel(device, "Duplicate"), /ambiguous/u);
       const output = join(root, "shot.png");
       await screenshot(device, output);
       await access(output);

@@ -3,6 +3,7 @@
  */
 import type { StepPoint, StepTarget } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
+import { isLegacyPositionalBrowserRef } from "./browser-locator-contract.js";
 
 export function nodeText(node: SnapshotNode): string[] {
   const type = (node.type ?? node.role ?? "").toLowerCase();
@@ -25,7 +26,12 @@ export function nodeMatchesTarget(node: SnapshotNode, target: StepTarget): boole
       target.role.trim().toLocaleLowerCase();
   if (!roleMatches) return false;
   if (target.identifier && node.identifier === target.identifier) return true;
-  if (target.ref && node.ref?.replace(/^@/, "") === target.ref.replace(/^@/, "")) return true;
+  if (
+    target.ref &&
+    !isLegacyPositionalBrowserRef(target.ref) &&
+    node.ref?.replace(/^@/, "") === target.ref.replace(/^@/, "")
+  )
+    return true;
   if (target.label && node.label === target.label) return true;
   if (target.text) {
     const query = target.text.toLowerCase();
@@ -54,7 +60,7 @@ export function resolveElementRelativePoint(
   }
   const selector: StepTarget = target.identifier
     ? { identifier: target.identifier, ...(target.role ? { role: target.role } : {}) }
-    : target.ref
+    : target.ref && !isLegacyPositionalBrowserRef(target.ref)
       ? { ref: target.ref, ...(target.role ? { role: target.role } : {}) }
       : target.label
         ? { label: target.label, ...(target.role ? { role: target.role } : {}) }
@@ -101,7 +107,7 @@ export function resolveElementRelativePoint(
  * reuse must fall through to semantic targeting instead of tapping whatever
  * now happens to own the old token. */
 export function refMatchesRecordedTarget(nodes: SnapshotNode[], target: StepTarget): boolean {
-  if (!target.ref) return false;
+  if (!target.ref || isLegacyPositionalBrowserRef(target.ref)) return false;
   const ref = target.ref.replace(/^@/, "");
   const candidate = nodes.find((node) => node.ref?.replace(/^@/, "") === ref);
   if (!candidate) return false;

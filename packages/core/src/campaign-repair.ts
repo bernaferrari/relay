@@ -807,6 +807,7 @@ export function campaignCheckRepairInput(
     title: root.title,
     ...targetInput,
     targetProfile: run.targetProfile,
+    browserCaseProfile: run.browserCaseProfile,
     variables: structuredClone(run.resolvedInputs),
     recipeSnapshot: root,
     recipeGraph: {

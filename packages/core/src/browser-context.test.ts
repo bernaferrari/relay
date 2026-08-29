@@ -4,8 +4,9 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import type { TargetDefinition } from "@relay/protocol";
-import { createBrowserContextFactory } from "./browser-context.js";
+import { compileBrowserEnvironment, type TargetDefinition } from "@relay/protocol";
+import { chromium } from "playwright-core";
+import { browserContextOptionsForProfile, createBrowserContextFactory } from "./browser-context.js";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 let root = "";
@@ -16,6 +17,11 @@ before(async () => {
   root = await mkdtemp(join(tmpdir(), "relay-browser-context-"));
   process.env.RELAY_WORKSPACE_ROOT = root;
   server = http.createServer((request, response) => {
+    if (request.url === "/proof-worker.js") {
+      response.setHeader("content-type", "text/javascript");
+      response.end("self.addEventListener('fetch', () => undefined)");
+      return;
+    }
     response.setHeader("content-type", "text/html");
     if (request.url?.startsWith("/seed")) {
       response.setHeader("set-cookie", "relay-authoring=present; Path=/");
@@ -110,6 +116,65 @@ test("authoring context is separate while proof contexts are fresh and explicitl
     await proof?.close().catch(() => undefined);
     await secondProof?.close().catch(() => undefined);
     await thirdProof?.close().catch(() => undefined);
+  }
+});
+
+test("100 sequential proof Run contexts leak no browser state", async (t) => {
+  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  if (t.signal.aborted) return;
+
+  const profile = compileBrowserEnvironment({
+    viewport: { width: 390, height: 844 },
+    locale: "pt-BR",
+    timezoneId: "America/Maceio",
+    colorScheme: "dark",
+    touch: true,
+  });
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  try {
+    for (let index = 0; index < 100; index += 1) {
+      const marker = `proof-${String(index).padStart(2, "0")}`;
+      const context = await browser.newContext(
+        browserContextOptionsForProfile(profile, { headless: true }),
+      );
+      try {
+        const page = await context.newPage();
+        await page.goto(startUrl);
+        assert.deepEqual(await context.cookies(), []);
+        assert.deepEqual(
+          await page.evaluate(async () => ({
+            local: localStorage.getItem("relay-proof"),
+            caches: await caches.keys(),
+            workers: (await navigator.serviceWorker.getRegistrations()).length,
+            language: navigator.language,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            dark: matchMedia("(prefers-color-scheme: dark)").matches,
+          })),
+          {
+            local: null,
+            caches: [],
+            workers: 0,
+            language: "pt-BR",
+            timezone: "America/Maceio",
+            dark: true,
+          },
+        );
+        await context.addCookies([
+          { name: "relay-proof", value: marker, url: startUrl, httpOnly: true },
+        ]);
+        await page.evaluate(async (value) => {
+          localStorage.setItem("relay-proof", value);
+          const cache = await caches.open("relay-proof");
+          await cache.put("/proof-cache", new Response(value));
+          await navigator.serviceWorker.register("/proof-worker.js");
+          await navigator.serviceWorker.ready;
+        }, marker);
+      } finally {
+        await context.close();
+      }
+    }
+  } finally {
+    await browser.close();
   }
 });
 

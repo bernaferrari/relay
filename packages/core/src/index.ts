@@ -52,6 +52,7 @@ export * from "./schedules.js";
 export * from "./targets.js";
 export * from "./browser-target.js";
 export * from "./browser-context.js";
+export * from "./browser-case-profile-target.js";
 export * from "./target-context.js";
 export * from "./device-factory.js";
 export * from "./target-driver.js";

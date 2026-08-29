@@ -1,5 +1,9 @@
 import type { ActorKind } from "./coordination.js";
-import type { BrowserEnvironmentInput, BrowserViewport } from "./browser-case-profile.js";
+import type {
+  BrowserCaseProfile,
+  BrowserEnvironmentInput,
+  BrowserViewport,
+} from "./browser-case-profile.js";
 
 export type ConnectionAuth =
   | { type: "none" }
@@ -197,6 +201,8 @@ export type TargetProfile = {
   model?: string;
   osVersion?: string;
   viewport?: { width: number; height: number };
+  /** Exact managed-browser environment frozen with matrix selection. */
+  browserCaseProfile?: BrowserCaseProfile;
   capabilities: TargetCapability[];
   observedAt: number;
 };

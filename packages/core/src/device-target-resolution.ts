@@ -1,5 +1,6 @@
 import type { StepTargetRelation } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
+import { isLegacyPositionalBrowserRef } from "./browser-locator-contract.js";
 import { relationAnchorMatches, resolveFollowingRow } from "./semantic-row-activation.js";
 
 export function center(rect: { x: number; y: number; width: number; height: number }): {
@@ -263,8 +264,10 @@ function resolveSnapshotTarget(
       if (normalized.identifier) {
         return node.identifier?.trim().toLocaleLowerCase() === normalized.identifier;
       }
-      if (normalized.ref)
+      if (normalized.ref) {
+        if (isLegacyPositionalBrowserRef(normalized.ref)) return false;
         return node.ref?.replace(/^@/u, "").toLocaleLowerCase() === normalized.ref;
+      }
       if (normalized.label) return snapshotLabelMatches(normalized.label, node.label);
       if (normalized.text) {
         return [node.label, node.value, node.identifier].some((value) =>

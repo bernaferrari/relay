@@ -8,6 +8,7 @@ import type {
 } from "@relay/protocol";
 import type { ListedDevice } from "./workspace.js";
 import { BROWSER_TARGET_CAPABILITIES } from "./targets.js";
+import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 
 const MOBILE_CAPABILITIES: Record<"android" | "ios", TargetCapability[]> = {
   android: [
@@ -71,6 +72,7 @@ export function buildTargetProfiles(input: {
       platform: "browser" as const,
       name: target.name,
       ...(target.browser?.viewport ? { viewport: { ...target.browser.viewport } } : {}),
+      browserCaseProfile: browserCaseProfileForTarget(target),
       capabilities: [...BROWSER_TARGET_CAPABILITIES],
       observedAt,
     }));

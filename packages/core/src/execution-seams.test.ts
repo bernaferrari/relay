@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { executionTargetRefKey, type RecipeStep } from "@relay/protocol";
+import {
+  compileBrowserEnvironment,
+  executionTargetRefKey,
+  type RecipeStep,
+  type TargetProfile,
+} from "@relay/protocol";
 import type { Device } from "./device.js";
 import { independentlySourceProvenLeafRecipe } from "./recipe-runner-campaign-support.js";
 import { runReusableRecipe } from "./recipe-runner-reusable.js";
@@ -236,5 +241,51 @@ test("session factory freezes provider-scoped targets and rejects split-brain in
         { findJob: () => undefined, toTransport: (value) => value },
       ),
     /executionTarget must agree/i,
+  );
+});
+
+test("session factory freezes browser environment identity across queue and retry", () => {
+  const mutableProfile = structuredClone(
+    compileBrowserEnvironment({
+      viewport: { width: 390, height: 844 },
+      locale: "pt-BR",
+      timezoneId: "America/Maceio",
+      touch: true,
+    }),
+  );
+  const targetProfile: TargetProfile = {
+    id: "browser:chat",
+    targetId: "chat",
+    source: "browser",
+    platform: "browser",
+    name: "Chat",
+    browserCaseProfile: mutableProfile,
+    capabilities: ["snapshot", "tap", "type"],
+    observedAt: 1,
+  };
+  const job = createSessionJob(
+    { recipe: "browser-proof", targetKind: "browser", browserTargetId: "chat", targetProfile },
+    { findJob: () => undefined, toTransport: (value) => value },
+  );
+
+  mutableProfile.locale = "en-US";
+  assert.equal(job.browserCaseProfile?.locale, "pt-BR");
+  assert(Object.isFrozen(job.browserCaseProfile));
+  assert(Object.isFrozen(job.browserCaseProfile?.viewport));
+
+  const retry = createSessionJob(retryInputFromJob(job), {
+    findJob: (id) => (id === job.id ? job : undefined),
+    toTransport: (value) => value,
+  });
+  assert.deepEqual(retry.browserCaseProfile, job.browserCaseProfile);
+  assert.notEqual(retry.browserCaseProfile, job.browserCaseProfile);
+
+  assert.throws(
+    () =>
+      createSessionJob(
+        { recipe: "unsafe-browser-proof", targetKind: "browser", browserTargetId: "chat" },
+        { findJob: () => undefined, toTransport: (value) => value },
+      ),
+    /require a frozen browser case profile/u,
   );
 });

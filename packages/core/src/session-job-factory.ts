@@ -1,6 +1,11 @@
 /** Build frozen replay jobs without coupling construction to the scheduler. */
 import { randomUUID } from "node:crypto";
-import { assertExecutionTargetRef, type ExecutionTargetRef } from "@relay/protocol";
+import {
+  assertExecutionTargetRef,
+  parseBrowserCaseProfile,
+  type BrowserCaseProfile,
+  type ExecutionTargetRef,
+} from "@relay/protocol";
 import { now } from "./events.js";
 import { getEvidenceCollectionPolicy } from "./evidence-policy.js";
 import { currentOperationContext } from "./operation-context.js";
@@ -26,6 +31,10 @@ function freezeExecutionTarget(target: ExecutionTargetRef): ExecutionTargetRef {
     provider: Object.freeze({ ...clone.provider }),
     identity: Object.freeze({ ...clone.identity }),
   }) as ExecutionTargetRef;
+}
+
+function freezeBrowserCaseProfile(profile: BrowserCaseProfile): BrowserCaseProfile {
+  return parseBrowserCaseProfile(structuredClone(profile));
 }
 
 function legacyTargetKind(target: ExecutionTargetRef): "device" | "browser" {
@@ -116,6 +125,7 @@ export function replayInputFromPersistedRun(
     | "serial"
     | "platform"
     | "targetProfile"
+    | "browserCaseProfile"
     | "title"
     | "resolvedInputs"
     | "recipeSnapshot"
@@ -160,6 +170,9 @@ export function replayInputFromPersistedRun(
       ...targetInput,
       sourceRevision: structuredClone(run.sourceRevision),
       targetProfile: run.targetProfile,
+      browserCaseProfile: run.browserCaseProfile
+        ? freezeBrowserCaseProfile(run.browserCaseProfile)
+        : undefined,
       title: `${run.title ?? run.action} · replay`,
       variables: structuredClone(run.resolvedInputs),
       recipeSnapshot: structuredClone(run.recipeSnapshot),
@@ -183,6 +196,9 @@ export function replayInputFromPersistedRun(
       ? { targetKind: "browser" as const, browserTargetId: targetId }
       : { targetKind: "device" as const, serial: targetId, platform }),
     targetProfile: run.targetProfile,
+    browserCaseProfile: run.browserCaseProfile
+      ? freezeBrowserCaseProfile(run.browserCaseProfile)
+      : undefined,
     ...(run.sourceRevision ? { sourceRevision: structuredClone(run.sourceRevision) } : {}),
     title: `${run.title ?? run.action} · replay`,
     variables: structuredClone(run.resolvedInputs),
@@ -238,6 +254,7 @@ export function retryInputFromJob(job: TestJob): EnqueueJobInput {
     caseIndex: job.caseIndex,
     caseCount: job.caseCount,
     targetProfile: job.targetProfile,
+    browserCaseProfile: job.browserCaseProfile,
     sourceRevision: structuredClone(job.sourceRevision),
     hostWorkerId: job.hostWorkerId,
     hostWorkerCapacity: job.hostWorkerCapacity,
@@ -278,6 +295,20 @@ export function createSessionJob(
     selectedTarget ?? executionTargetRefFromTargetContext(targetContext),
   );
   const targetKind = legacyTargetKind(executionTarget);
+  const explicitBrowserCaseProfile =
+    input.browserCaseProfile ?? input.targetProfile?.browserCaseProfile;
+  const suppliedBrowserCaseProfile =
+    explicitBrowserCaseProfile ??
+    (targetKind === "browser" ? parent?.browserCaseProfile : undefined);
+  if (targetKind === "browser" && !suppliedBrowserCaseProfile) {
+    throw new Error("Browser jobs require a frozen browser case profile");
+  }
+  if (targetKind !== "browser" && explicitBrowserCaseProfile) {
+    throw new Error("A browser case profile can only be attached to a browser job");
+  }
+  const browserCaseProfile = suppliedBrowserCaseProfile
+    ? freezeBrowserCaseProfile(suppliedBrowserCaseProfile)
+    : undefined;
   const schedulingKey = executionTargetSchedulingKey(executionTarget);
   if (!schedulingKey) throw new Error("Every Relay job requires an explicit target");
   const operationContext = currentOperationContext() ?? parent?.operationContext;
@@ -318,6 +349,7 @@ export function createSessionJob(
     platform: targetContext.kind === "browser" ? ("android" as const) : targetContext.platform,
     targetKind,
     browserTargetId: targetContext.kind === "browser" ? targetContext.targetId : undefined,
+    browserCaseProfile,
     targetProfile: input.targetProfile ?? parent?.targetProfile,
     sourceRevision: input.sourceRevision
       ? structuredClone(input.sourceRevision)
