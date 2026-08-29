@@ -1,16 +1,10 @@
 import path from 'node:path';
+import { PLATFORMS } from '@agent-device/kernel/device';
 import { parseImports, type LayeringViolation } from './model.ts';
 import { checkPlatformComposition } from './platform-composition-policy.ts';
 import { checkPlatformPackageSourcePolicy } from './platform-package-source-policy.ts';
 
-export const CANONICAL_PLATFORM_FAMILIES = [
-  'apple',
-  'android',
-  'harmonyos',
-  'vega',
-  'linux',
-  'web',
-] as const;
+export const CANONICAL_PLATFORM_FAMILIES = PLATFORMS;
 type PlatformFamily = (typeof CANONICAL_PLATFORM_FAMILIES)[number];
 export type PlatformPackageDeclaration = {
   dir: string;
