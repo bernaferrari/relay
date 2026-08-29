@@ -266,6 +266,10 @@ export const operationInputSchemas = {
       platform: z.enum(["android", "ios"]),
       sourceUrl: z.string().optional(),
       sourceSha256: z.string().optional(),
+      sourceSha: z.string().optional(),
+      configuration: z.string().optional(),
+      environmentRevision: z.string().optional(),
+      applicationId: z.string().optional(),
       status: z.string().optional(),
     })
     .strict(),

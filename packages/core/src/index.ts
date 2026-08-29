@@ -80,6 +80,7 @@ export * from "./campaign-duration-estimate.js";
 export * from "./local-campaign-capacity-preflight.js";
 export * from "./device-pool.js";
 export * from "./builds.js";
+export * from "./change-build-binding.js";
 export * from "./redaction.js";
 export * from "./evidence-policy.js";
 export * from "./run-catalog.js";

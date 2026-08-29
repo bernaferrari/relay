@@ -78,6 +78,13 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
     }
     let sourceUrl: string | undefined;
     let sourceSha256: string | undefined;
+    const sourceSha = body.sourceSha?.trim() || undefined;
+    if (sourceSha && !/^[a-f0-9]{40}$/u.test(sourceSha)) {
+      throw new HttpError(400, "sourceSha must be an exact lowercase 40-character Git SHA");
+    }
+    const configuration = body.configuration?.trim() || undefined;
+    const environmentRevision = body.environmentRevision?.trim() || undefined;
+    const applicationId = body.applicationId?.trim() || undefined;
     const rawSource = body.sourceUrl?.trim();
     if (rawSource) {
       if (/^[a-z][a-z0-9+.-]*:\/\//i.test(rawSource)) {
@@ -111,6 +118,10 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
       platform: body.platform,
       sourceUrl,
       sourceSha256,
+      sourceSha,
+      configuration,
+      environmentRevision,
+      applicationId,
       status: body.status ?? "uploaded",
     });
     json(response, 201, { build });

@@ -237,6 +237,10 @@ export type BuildDto = {
   platform: "android" | "ios";
   sourceUrl?: string;
   sourceSha256?: string;
+  sourceSha?: string;
+  configuration?: string;
+  environmentRevision?: string;
+  applicationId?: string;
   status: "uploaded" | "ready" | "failed" | "archived";
   createdAt: number;
   updatedAt: number;

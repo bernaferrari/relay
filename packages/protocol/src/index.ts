@@ -599,6 +599,15 @@ export type Build = {
   sourceUrl?: string;
   /** Hex sha256 of the remote artifact; verified when the source is ingested. */
   sourceSha256?: string;
+  /** Exact source revision that produced these bytes. Legacy builds without
+   * provenance remain usable for manual install, but cannot bind a Proof. */
+  sourceSha?: string;
+  /** Reviewed build configuration, for example android.release or ios.simulator. */
+  configuration?: string;
+  /** Deployment/runtime environment revision frozen with the build. */
+  environmentRevision?: string;
+  /** Package or bundle identity observed during build ingestion. */
+  applicationId?: string;
   status: "uploaded" | "ready" | "failed" | "archived";
   createdAt: number;
   updatedAt: number;

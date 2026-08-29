@@ -35,15 +35,30 @@ test("POST /builds accepts local paths and https sources but rejects other schem
         name: "Local build",
         platform: "android",
         sourceUrl: "/tmp/app.apk",
+        sourceSha: "1".repeat(40),
+        configuration: "android.debug",
+        environmentRevision: "local-v1",
+        applicationId: "com.example.app",
         status: "ready",
       }),
     });
     assert.equal(local.status, 201);
     const localBody = (await local.json()) as {
-      build: { sourceUrl?: string; sourceSha256?: string };
+      build: {
+        sourceUrl?: string;
+        sourceSha256?: string;
+        sourceSha?: string;
+        configuration?: string;
+        environmentRevision?: string;
+        applicationId?: string;
+      };
     };
     assert.equal(localBody.build.sourceUrl, "/tmp/app.apk");
     assert.equal(localBody.build.sourceSha256, undefined);
+    assert.equal(localBody.build.sourceSha, "1".repeat(40));
+    assert.equal(localBody.build.configuration, "android.debug");
+    assert.equal(localBody.build.environmentRevision, "local-v1");
+    assert.equal(localBody.build.applicationId, "com.example.app");
 
     const https = await fetch(`${base}/builds`, {
       method: "POST",
@@ -92,6 +107,20 @@ test("POST /builds accepts local paths and https sources but rejects other schem
       }),
     });
     assert.equal(badSha.status, 400);
+
+    const badSourceSha = await fetch(`${base}/builds`, {
+      method: "POST",
+      headers: headers("build.save"),
+      body: JSON.stringify({
+        id: "bad-source-sha-build",
+        name: "Bad source SHA build",
+        platform: "android",
+        sourceUrl: "/tmp/app.apk",
+        sourceSha: "ABC123",
+        status: "ready",
+      }),
+    });
+    assert.equal(badSourceSha.status, 400);
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
