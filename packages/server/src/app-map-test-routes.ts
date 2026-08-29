@@ -6,6 +6,7 @@ import {
   AppMapTestCompileError,
   loadFrozenRawAccessibilityEvidence,
   compileAppMapTest,
+  frozenRawAccessibilityTargetProfiles,
   compileIntentWalk,
   currentOperationContext,
   editAppMapScenarioTest,
@@ -88,6 +89,22 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
       const search = new URL(request.url ?? pathname, "http://relay.local").searchParams;
       const entryCheckpointScreenId = search.get("entryCheckpointScreenId");
       const targetProfileId = search.get("targetProfileId")?.trim() || undefined;
+      const runtimeTargetProfiles = targetProfileId
+        ? frozenRawAccessibilityTargetProfiles(appMap).filter(
+            (profile) => profile.id === targetProfileId,
+          )
+        : [];
+      const runtimeTargetProfile = runtimeTargetProfiles[0];
+      if (targetProfileId && runtimeTargetProfiles.length === 0) {
+        throw new HttpError(409, `Target profile ${targetProfileId} is not saved in this App Map`, {
+          code: "TARGET_PROFILE_NOT_SAVED",
+        });
+      }
+      if (runtimeTargetProfiles.length > 1) {
+        throw new HttpError(409, `Target profile ${targetProfileId} has conflicting identities`, {
+          code: "TARGET_PROFILE_AMBIGUOUS",
+        });
+      }
       const forceRecaptureScreenIds = search.getAll("forceRecaptureScreenIds");
       const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(appMap);
       const plan = compileAppMapTest(appMap, test, {
@@ -96,6 +113,7 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
           ? { forceRecaptureSurfaceScreenIds: forceRecaptureScreenIds }
           : {}),
         reviewedDocumentOrigins,
+        ...(runtimeTargetProfile ? { runtimeTargetProfile } : {}),
       }).plan;
       const evidence = await loadFrozenRawAccessibilityEvidence(plan);
       json(response, 200, {

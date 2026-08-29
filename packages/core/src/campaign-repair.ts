@@ -16,6 +16,7 @@ import type { EnqueueJobInput } from "./session-contract.js";
 import type { Recipe, RecipeStep } from "./recipes.js";
 import { compileAppMapConnection } from "./app-map-compiler.js";
 import { compileAppMapTest } from "./map-work.js";
+import { parseCanonicalAppMapTestPlan } from "./app-map-test-execution-intent.js";
 
 type RecordValue = Record<string, unknown>;
 
@@ -97,6 +98,12 @@ function frozenCheckStep(
       (step): step is RecipeStep & { check: NonNullable<RecipeStep["check"]> } =>
         step.check?.id === checkId,
     );
+}
+
+function frozenCompiledTestPlan(run: PersistedRun): AppMapCompiledTest | undefined {
+  return parseCanonicalAppMapTestPlan(
+    lastMatching(run.artifacts, (artifact) => artifact.kind === "app-map-test-plan")?.data,
+  );
 }
 
 function expectedScreenId(recipe: Recipe | undefined): string | undefined {
@@ -294,7 +301,28 @@ export function reconcileCampaignCheckRepair(
   const sourceTerminal = sourceCheckStep?.check.transitionDependencies?.at(-1);
   if (!sourceCheckStep || !sourceTerminal) return undefined;
 
-  const compiledTest = compileAppMapTest(map, test);
+  const frozenPlan = frozenCompiledTestPlan(run);
+  if (test.family && !frozenPlan?.runtimeTargetProfile) return undefined;
+  const compiledTest = compileAppMapTest(
+    map,
+    test,
+    frozenPlan?.runtimeTargetProfile
+      ? { runtimeTargetProfile: frozenPlan.runtimeTargetProfile }
+      : {},
+  );
+  if (frozenPlan?.testFamily?.mode === "reviewed-route-variant") {
+    const frozenFamily = frozenPlan.testFamily;
+    const currentFamily = compiledTest.plan.testFamily;
+    if (
+      currentFamily?.mode !== "reviewed-route-variant" ||
+      currentFamily.logicalIntentRevision !== frozenFamily.logicalIntentRevision ||
+      currentFamily.bindingRevision !== frozenFamily.bindingRevision ||
+      currentFamily.selectedRouteVariant?.id !== frozenFamily.selectedRouteVariant?.id ||
+      currentFamily.selectedRouteVariant?.revision !== frozenFamily.selectedRouteVariant?.revision
+    ) {
+      return undefined;
+    }
+  }
   const currentCheckStep = uniqueCheckStep(compiledTest.root, compiledTest.graph, checkId);
   const currentTerminal = currentCheckStep?.check.transitionDependencies?.at(-1);
   if (

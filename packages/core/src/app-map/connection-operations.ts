@@ -38,6 +38,9 @@ export function patchConnection(
   if (patch.destination !== undefined) connection.destination = structuredClone(patch.destination);
   if (patch.label === null) delete connection.label;
   else if (patch.label !== undefined) connection.label = patch.label;
+  if (patch.actionIntentBinding === null) delete connection.actionIntentBinding;
+  else if (patch.actionIntentBinding !== undefined)
+    connection.actionIntentBinding = structuredClone(patch.actionIntentBinding);
   if (patch.caseStackId === null) delete connection.caseStackId;
   else if (patch.caseStackId !== undefined) connection.caseStackId = patch.caseStackId;
   if (patch.state !== undefined) connection.state = patch.state;

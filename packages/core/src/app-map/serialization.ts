@@ -175,6 +175,8 @@ export function serializeAppMap(value: AppMap): SerializedAppMap {
       ...group,
       screenIds: sortedStrings(group.screenIds),
     })),
+    logicalStates: sortedEntities(map.logicalStates ?? {}),
+    actionIntents: sortedEntities(map.actionIntents ?? {}),
     screens: sortedEntities(map.screens).map(normalizedScreen),
     screenVariants: sortedEntities(map.screenVariants).map(normalizedVariant),
     connections: sortedEntities(map.connections).map(normalizedConnection),

@@ -120,6 +120,8 @@ export async function preflightAppMapCombine(
     blockers.push(issue("missing-variable", "Choose at least one Variable."));
   }
   if (!combine.testIds.length) blockers.push(issue("missing-test", "Choose at least one Test."));
+  const requiresCellCompilation =
+    !compileOptions.runtimeTargetProfile && tests.some((test) => test.family !== undefined);
 
   const sets: OptionRunSet[] = variables.map((variable) => {
     const available = variable.options.map((option) => option.id);
@@ -139,6 +141,9 @@ export async function preflightAppMapCombine(
   });
 
   const testPreflights = tests.map((test) => {
+    if (requiresCellCompilation && test.family) {
+      return { id: test.id, name: test.name, kind: test.kind };
+    }
     try {
       const compiled = compileAppMapTest(
         map,
@@ -180,35 +185,45 @@ export async function preflightAppMapCombine(
         map,
       });
       worlds = matrix.cases.length;
-      const compiled = compileAppMapCombine(map, effectiveCombine, compileOptions);
-      const composed = composeOptionRunRecipes({
-        body: compiled.root,
-        bodyGraph: compiled.graph,
-        // Saved tests own their evidence policy. Match the execution route;
-        // otherwise a dry run would incorrectly invent legacy before/after
-        // screenshots around a capture-free matrix.
-        request: {
-          sets,
-          selected: effectiveCombine.selected,
-          strategy,
-          map,
-          screenshotEach: false,
-        },
-        batchId: `preflight-${combine.id}`,
-      });
-      const perWorld = expectedRecipeScreenshotCount(composed.root, composed.graph);
-      if (perWorld === undefined) {
+      if (requiresCellCompilation) {
         warnings.push(
           issue(
             "unknown-screenshot-count",
-            "Screenshot count depends on a live branch or list and will be confirmed during the run.",
+            "Screenshot count depends on each cell's reviewed target route and will be confirmed after binding.",
           ),
         );
       } else {
-        expectedScreenshots = perWorld * worlds;
+        const compiled = compileAppMapCombine(map, effectiveCombine, compileOptions);
+        const composed = composeOptionRunRecipes({
+          body: compiled.root,
+          bodyGraph: compiled.graph,
+          // Saved tests own their evidence policy. Match the execution route;
+          // otherwise a dry run would incorrectly invent legacy before/after
+          // screenshots around a capture-free matrix.
+          request: {
+            sets,
+            selected: effectiveCombine.selected,
+            strategy,
+            map,
+            screenshotEach: false,
+          },
+          batchId: `preflight-${combine.id}`,
+        });
+        const perWorld = expectedRecipeScreenshotCount(composed.root, composed.graph);
+        if (perWorld === undefined) {
+          warnings.push(
+            issue(
+              "unknown-screenshot-count",
+              "Screenshot count depends on a live branch or list and will be confirmed during the run.",
+            ),
+          );
+        } else {
+          expectedScreenshots = perWorld * worlds;
+        }
+        estimatedDurationMs =
+          estimateRecipeDuration(composed.root, composed.graph, new Set([composed.root.id])) *
+          worlds;
       }
-      estimatedDurationMs =
-        estimateRecipeDuration(composed.root, composed.graph, new Set([composed.root.id])) * worlds;
     } catch (error) {
       blockers.push(
         issue(

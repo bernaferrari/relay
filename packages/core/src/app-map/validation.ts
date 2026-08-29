@@ -28,6 +28,10 @@ import {
   requiredText,
   safeInteger,
 } from "./validation-shapes.js";
+import {
+  assertLogicalProductState,
+  assertProductActionIntent,
+} from "./reviewed-bindings-validation.js";
 
 type ActionOwner = {
   ownerKind: "connection" | "routine";
@@ -606,6 +610,12 @@ export function validateAppMap(value: unknown): AppMap {
   assertEntityRecord(input.groups, "App Map.groups", (item, label) =>
     assertMapGroup(item, scope, label),
   );
+  assertEntityRecord(input.logicalStates ?? {}, "App Map.logicalStates", (item, label) =>
+    assertLogicalProductState(item, scope, label),
+  );
+  assertEntityRecord(input.actionIntents ?? {}, "App Map.actionIntents", (item, label) =>
+    assertProductActionIntent(item, scope, label),
+  );
   assertEntityRecord(input.screenVariants, "App Map.screenVariants", (item, label) =>
     assertVariant(item, scope, label),
   );
@@ -639,9 +649,30 @@ export function validateAppMap(value: unknown): AppMap {
     assertActivity(item, scope, label, input.revision),
   );
 
+  for (const screen of Object.values(input.screens)) {
+    const logicalStateId = screen.logicalStateBinding?.logicalStateId;
+    if (logicalStateId && !input.logicalStates?.[logicalStateId]) {
+      appMapFail(
+        "missing-reference",
+        `Screen ${screen.id} references missing logical product state ${logicalStateId}`,
+      );
+    }
+  }
+  for (const connection of Object.values(input.connections)) {
+    const intentId = connection.actionIntentBinding?.intentId;
+    if (intentId && !input.actionIntents?.[intentId]) {
+      appMapFail(
+        "missing-reference",
+        `Connection ${connection.id} references missing product action intent ${intentId}`,
+      );
+    }
+  }
+
   const collections = {
     notes: input.notes,
     groups: input.groups,
+    logicalStates: input.logicalStates ?? {},
+    actionIntents: input.actionIntents ?? {},
     screens: input.screens,
     screenVariants: input.screenVariants,
     connections: input.connections,

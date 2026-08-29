@@ -11,6 +11,8 @@ export * from "./authoring.js";
 export * from "./authoring-capture.js";
 export * from "./collaboration.js";
 export * from "./app-map.js";
+export * from "./product-intent.js";
+export * from "./connection-presentation.js";
 export * from "./connection-execution.js";
 export {
   APP_MAP_GET_LISTS,

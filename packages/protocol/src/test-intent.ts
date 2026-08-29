@@ -1,7 +1,9 @@
+import type { BrowserEngine } from "./browser-case-profile.js";
 import type { AppMapCapturePolicy, AppMapEntity, AssertionSpec } from "./app-map.js";
+import type { ReviewedActionIntentBinding, ReviewedLogicalStateBinding } from "./product-intent.js";
 import type { HumanCheckpointReason, RecipeStep, StepTarget } from "./recipes.js";
 import type { RawAccessibilityTreeEvidence, ScrollSurfaceTestBinding } from "./scroll-surface.js";
-import type { TargetProfile } from "./target-contract.js";
+import type { TargetCapability, TargetProfile } from "./target-contract.js";
 
 export const APP_MAP_TEST_INTENT_SCHEMA_VERSION = 1 as const;
 
@@ -165,11 +167,47 @@ export type AppMapScenarioTestStep =
   | AppMapLoopTestStep
   | AppMapScriptTestStep;
 
+export type AppMapTestViewportClass = "compact" | "medium" | "expanded";
+
+/** Omitted dimensions are wildcards. Each supplied dimension is an allow-list
+ * and all supplied dimensions must match the frozen saved target profile. */
+export type AppMapTestSurfacePredicate = {
+  platforms?: TargetProfile["platform"][];
+  browserEngines?: BrowserEngine[];
+  viewportClasses?: AppMapTestViewportClass[];
+  requiredCapabilities?: TargetCapability[];
+};
+
+export type AppMapTestResolvedBinding = Extract<
+  AppMapScenarioTestStep["binding"],
+  { status: "resolved" }
+>;
+
+/** One reviewed implementation of stable Test step IDs for a target surface.
+ * The friendly intent and graph structure stay on the Test; only concrete
+ * bindings vary. */
+export type AppMapTestRouteVariant = {
+  id: string;
+  revision: number;
+  predicate: AppMapTestSurfacePredicate;
+  bindings: Record<string, AppMapTestResolvedBinding>;
+  reviewedAt: number;
+  reviewedBy: string;
+};
+
+export type AppMapTestFamily = {
+  logicalIntentRevision: number;
+  bindingRevision: number;
+  routeVariants: AppMapTestRouteVariant[];
+};
+
 export type AppMapScenarioTest = AppMapEntity & {
   name: string;
   kind: "scenario";
   intentSchemaVersion: typeof APP_MAP_TEST_INTENT_SCHEMA_VERSION;
   steps: AppMapScenarioTestStep[];
+  /** Absent means an intentionally unjoined, legacy single-surface family. */
+  family?: AppMapTestFamily;
   capture?: AppMapCapturePolicy;
   /** Logical surface coverage is independent from graph navigation. */
   surfaceBindings?: ScrollSurfaceTestBinding[];
@@ -197,7 +235,14 @@ export type AppMapTestStepPatch = {
 };
 
 export type AppMapScenarioTestEdit =
-  | { kind: "test.patch"; patch: { name?: string; capture?: AppMapCapturePolicy | null } }
+  | {
+      kind: "test.patch";
+      patch: {
+        name?: string;
+        capture?: AppMapCapturePolicy | null;
+        family?: AppMapTestFamily | null;
+      };
+    }
   | {
       kind: "step.add";
       step: AppMapScenarioTestStep;
@@ -392,6 +437,33 @@ export type AppMapCompiledTest = {
   /** Present only on a queued run after Relay bound the selected saved profile
    * to the requested control target and preflighted this exact frozen plan. */
   runtimeTargetProfile?: AppMapCompiledRuntimeTargetProfile;
+  /** Immutable Test-family and reviewed-binding provenance selected before
+   * target control. Legacy Tests receive an explicit single-surface migration
+   * record and are never heuristically joined. */
+  testFamily?: {
+    schemaVersion: 1;
+    mode: "legacy-single-surface" | "reviewed-route-variant";
+    testRevision: number;
+    logicalIntentRevision: number;
+    bindingRevision: number;
+    selectedRouteVariant?: {
+      id: string;
+      revision: number;
+      reviewedAt: number;
+      reviewedBy: string;
+    };
+    targetSurface?: {
+      targetProfileId: string;
+      targetId: string;
+      platform: TargetProfile["platform"];
+      viewport?: { width: number; height: number };
+      viewportClass?: AppMapTestViewportClass;
+      browserEngine?: BrowserEngine;
+      capabilities: TargetCapability[];
+    };
+    logicalStateBindings: Array<{ screenId: string } & ReviewedLogicalStateBinding>;
+    actionIntentBindings: Array<{ connectionId: string } & ReviewedActionIntentBinding>;
+  };
   surfaceBindings?: ScrollSurfaceTestBinding[];
   /** Content-addressed raw AX evidence frozen at compile time, with its
    * source Variant/profile retained beside every blob. This gives offline

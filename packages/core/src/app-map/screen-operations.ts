@@ -130,6 +130,9 @@ export function patchScreen(
   screen.title = input.patch.title ?? screen.title;
   if (input.patch.description === null) delete screen.description;
   else if (input.patch.description !== undefined) screen.description = input.patch.description;
+  if (input.patch.logicalStateBinding === null) delete screen.logicalStateBinding;
+  else if (input.patch.logicalStateBinding !== undefined)
+    screen.logicalStateBinding = structuredClone(input.patch.logicalStateBinding);
   if (input.patch.handoff === null) delete screen.handoff;
   else if (input.patch.handoff !== undefined) screen.handoff = structuredClone(input.patch.handoff);
   if (input.patch.identity === null) delete screen.identity;

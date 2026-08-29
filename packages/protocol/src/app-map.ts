@@ -10,6 +10,13 @@ import type {
 import type { TargetProfile } from "./target-contract.js";
 import type { ExecutionTargetRef } from "./execution-target.js";
 import type { ConnectionExecutionObservation } from "./connection-execution.js";
+import type { ConnectionPresentation, ConnectionSourceAnchor } from "./connection-presentation.js";
+import type {
+  LogicalProductState,
+  ProductActionIntent,
+  ReviewedActionIntentBinding,
+  ReviewedLogicalStateBinding,
+} from "./product-intent.js";
 import type { ScreenConsolidationPreview } from "./screen-consolidation.js";
 import type {
   LogicalScrollSurface,
@@ -23,6 +30,13 @@ export type {
   ConnectionScreenProof,
   DestinationEvidenceSurface,
 } from "./connection-navigation.js";
+export type {
+  ConnectionArrowStyle,
+  ConnectionPort,
+  ConnectionPresentation,
+  ConnectionRouteStyle,
+  ConnectionSourceAnchor,
+} from "./connection-presentation.js";
 export type {
   LogicalScrollSurface,
   LogicalScrollSurfaceImport,
@@ -120,6 +134,7 @@ export type MapGroup = AppMapEntity & {
 export type Screen = AppMapEntity & {
   title: string;
   description?: string;
+  logicalStateBinding?: ReviewedLogicalStateBinding;
   /** A surface intentionally owned outside the application under test. It is
    * still a first-class test checkpoint, but can only be authored through an
    * explicit expected handoff and has a declared reversible exit. */
@@ -265,41 +280,11 @@ export type ActionSpec = ActionMetadata &
 
 export type ConnectionDestination = { kind: "screen"; screenId: string } | { kind: "end" };
 
-/** Visual presentation for a connection on the App Map canvas. These values
- * never change execution; they are durable author overrides applied after the
- * automatic layout has produced its baseline. */
-export type ConnectionRouteStyle = "elbow" | "curve" | "straight";
-/** Arrowheads are visual-only connector affordances. Keeping the two endpoints
- * explicit makes a collaborative canvas merge their choice independently from
- * route, port, and weight fields. */
-export type ConnectionArrowStyle = "none" | "start" | "end" | "both";
-export type ConnectionPort = "auto" | "left" | "right" | "top" | "bottom";
-/** Immutable source-side evidence for a recorded connection. Values are
- * normalized to the captured source viewport, so an App Map can reliably mark
- * the control that initiated a transition at any canvas size or zoom. */
-export type ConnectionSourceAnchor = {
-  point: AppMapPoint;
-  rect?: AppMapPoint & { width: number; height: number };
-};
-export type ConnectionPresentation = {
-  /** Omitted routes use the rounded bent connector. */
-  route?: ConnectionRouteStyle;
-  strokeWidth?: 1 | 2 | 3;
-  arrow?: ConnectionArrowStyle;
-  sourcePort?: ConnectionPort;
-  targetPort?: ConnectionPort;
-  /** Position along the selected source edge, from 0 to 1. */
-  sourceOffset?: number;
-  /** Position along the selected target edge, from 0 to 1. */
-  targetOffset?: number;
-  /** Canvas-space nudge for an explicit curved connector. */
-  controlOffset?: AppMapPoint;
-};
-
 export type Connection = AppMapEntity & {
   fromScreenId: string;
   destination: ConnectionDestination;
   label?: string;
+  actionIntentBinding?: ReviewedActionIntentBinding;
   caseStackId?: string;
   state: "draft" | "ready";
   actions: ActionSpec[];
@@ -633,6 +618,7 @@ export type AddScreenInput = { screen: Screen; variants?: ScreenVariant[] };
 export type ScreenPatch = {
   title?: string;
   description?: string | null;
+  logicalStateBinding?: ReviewedLogicalStateBinding | null;
   handoff?: Screen["handoff"] | null;
   identity?: ScreenIdentity | null;
   evidenceSurface?: DestinationEvidenceSurface | null;
@@ -649,6 +635,7 @@ export type ConnectionPatch = {
   fromScreenId?: string;
   destination?: ConnectionDestination;
   label?: string | null;
+  actionIntentBinding?: ReviewedActionIntentBinding | null;
   caseStackId?: string | null;
   state?: Connection["state"];
   actions?: ActionSpec[];
@@ -663,13 +650,20 @@ export type ConnectionPatch = {
 /** Public intent-level inputs. Relay owns scope and audit timestamps so a
  * human, CLI, or agent never has to manufacture persistence metadata. */
 export type CreateScreenInput = Pick<Screen, "id" | "title"> &
-  Partial<Pick<Screen, "description" | "identity" | "position">>;
+  Partial<Pick<Screen, "description" | "logicalStateBinding" | "identity" | "position">>;
 
 export type CreateConnectionInput = Pick<Connection, "id" | "fromScreenId" | "destination"> &
   Partial<
     Pick<
       Connection,
-      "label" | "caseStackId" | "state" | "actions" | "navigation" | "return" | "presentation"
+      | "label"
+      | "actionIntentBinding"
+      | "caseStackId"
+      | "state"
+      | "actions"
+      | "navigation"
+      | "return"
+      | "presentation"
     >
   >;
 
@@ -822,6 +816,9 @@ export type AppMap = {
   revision: number;
   notes: Record<string, AppMapNote>;
   groups: Record<string, MapGroup>;
+  /** Optional in historical documents; absence is the canonical empty set. */
+  logicalStates?: Record<string, LogicalProductState>;
+  actionIntents?: Record<string, ProductActionIntent>;
   screens: Record<string, Screen>;
   screenVariants: Record<string, ScreenVariant>;
   connections: Record<string, Connection>;
@@ -866,6 +863,8 @@ export type SerializedAppMap = Omit<
   | "screens"
   | "notes"
   | "groups"
+  | "logicalStates"
+  | "actionIntents"
   | "screenVariants"
   | "connections"
   | "caseStacks"
@@ -881,6 +880,8 @@ export type SerializedAppMap = Omit<
 > & {
   notes: AppMapNote[];
   groups: MapGroup[];
+  logicalStates?: LogicalProductState[];
+  actionIntents?: ProductActionIntent[];
   screens: Screen[];
   screenVariants: ScreenVariant[];
   connections: Connection[];

@@ -8,6 +8,7 @@ import type {
   AppMapTestStepProvenance,
   RecipeStep,
   ReviewedDocumentOriginProjection,
+  TargetProfile,
 } from "@relay/protocol";
 import { assertScenarioTest } from "./app-map/test-intent-validation.js";
 import {
@@ -30,6 +31,16 @@ import {
 import { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
 import { attachMappedInboundPrelude } from "./app-map-test-inbound-prelude.js";
 import type { Recipe } from "./recipes.js";
+import {
+  AppMapTestRouteSelectionError,
+  savedTestRouteTargetProfile,
+  selectReviewedTestRouteVariant,
+  testWithSelectedRouteVariant,
+} from "./app-map-test-route-variants.js";
+import { compiledTestFamilyProvenance } from "./app-map-test-family-provenance.js";
+import { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
+
+export { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
 
 export { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
 
@@ -39,7 +50,11 @@ export type AppMapTestCompileErrorCode =
   | "draft-connection"
   | "compiled-step-limit"
   | "cold-coverage-effect"
-  | "unresolved-navigation";
+  | "unresolved-navigation"
+  | "target-surface-required"
+  | "target-profile-ambiguous"
+  | "route-variant-not-found"
+  | "route-variant-ambiguous";
 
 export class AppMapTestCompileError extends Error {
   constructor(
@@ -60,23 +75,9 @@ const MAX_COMPILED_STEPS = 4_096;
  * never costs more than one manual `device survey`. */
 const DESTINATION_SURVEY_MAX_SCROLLS = 4;
 
-type ReturnRequirementStep = Extract<RecipeStep, { kind: "expect-screen" }>;
-
-/** Resolve the actual repair direction represented by a runtime return marker.
- * The marker's forward-edge origin is historical context; the expect-screen
- * target is authoritative, including repeated-state paths. */
-export function appMapTestReturnRepairEndpoints(
-  step: ReturnRequirementStep,
-): { sourceScreenId: string; destinationScreenId: string } | undefined {
-  if (!step.returnRequirement) return undefined;
-  const sourceScreenId = step.returnRequirement.destinationScreenId;
-  const destinationScreenId = step.screenId;
-  return sourceScreenId === destinationScreenId
-    ? undefined
-    : { sourceScreenId, destinationScreenId };
-}
-
 export type AppMapTestCompileOptions = {
+  /** Frozen saved profile used to choose one reviewed Test implementation. */
+  runtimeTargetProfile?: import("@relay/protocol").AppMapCompiledRuntimeTargetProfile;
   /** Run-scoped cache bypass for selected full-surface Test bindings. */
   forceRecaptureSurfaceScreenIds?: readonly string[];
   /** Start from a live product checkpoint instead of executing earlier setup.
@@ -151,11 +152,31 @@ function compiledPerformance(
 
 export function compileAppMapScenarioTest(
   map: AppMap,
-  test: AppMapScenarioTest,
+  authoredTest: AppMapScenarioTest,
   options: AppMapTestCompileOptions = {},
 ): { root: Recipe; graph: Record<string, Recipe>; plan: AppMapCompiledTest } {
   validateAppMap(map);
-  assertScenarioTest(test, `Test ${test.id}`);
+  assertScenarioTest(authoredTest, `Test ${authoredTest.id}`);
+  let selectedRouteTargetProfile: TargetProfile | undefined;
+  let selectedRouteVariant: ReturnType<typeof selectReviewedTestRouteVariant>;
+  try {
+    selectedRouteTargetProfile = options.runtimeTargetProfile
+      ? savedTestRouteTargetProfile(map, options.runtimeTargetProfile)
+      : undefined;
+    selectedRouteVariant = selectReviewedTestRouteVariant(authoredTest, selectedRouteTargetProfile);
+  } catch (error) {
+    if (error instanceof AppMapTestRouteSelectionError) {
+      throw new AppMapTestCompileError(
+        error.code,
+        authoredTest.id,
+        authoredTest.steps[0]?.id ?? authoredTest.id,
+        error.message,
+      );
+    }
+    throw error;
+  }
+  const test = testWithSelectedRouteVariant(authoredTest, selectedRouteVariant);
+  assertScenarioTest(test, `Selected Test ${test.id}`);
   if (
     test.organizationId !== map.organizationId ||
     test.projectId !== map.projectId ||
@@ -786,6 +807,16 @@ export function compileAppMapScenarioTest(
       kind: "scenario",
       intentSchemaVersion: test.intentSchemaVersion,
     },
+    ...(options.runtimeTargetProfile
+      ? { runtimeTargetProfile: structuredClone(options.runtimeTargetProfile) }
+      : {}),
+    testFamily: compiledTestFamilyProvenance({
+      map,
+      authoredTest,
+      ...(selectedRouteVariant ? { selectedRouteVariant } : {}),
+      ...(selectedRouteTargetProfile ? { selectedTargetProfile: selectedRouteTargetProfile } : {}),
+      stepProvenance: provenance,
+    }),
     surfaceBindings: structuredClone(test.surfaceBindings ?? []),
     rawAccessibilitySourcesByScreenId: frozenRawAccessibilitySources(map),
     rawAccessibilityVariantsByScreenId: frozenRawAccessibilityVariants(map),

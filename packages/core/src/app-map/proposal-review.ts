@@ -52,6 +52,7 @@ function summarizeEdit(test: AppMapScenarioTest, edit: AppMapScenarioTestEdit): 
           ? [`Rename “${test.name}” to “${edit.patch.name}”`]
           : []),
         ...(edit.patch.capture !== undefined ? ["Change evidence capture policy"] : []),
+        ...(edit.patch.family !== undefined ? ["Change reviewed Test family routes"] : []),
       ];
       return changes.join("; ") || "Update Test settings";
     }

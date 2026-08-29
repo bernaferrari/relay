@@ -18,7 +18,6 @@ import type {
   Routine,
   RunReference,
   Screen,
-  ScreenPatch,
   ScreenVariant,
   TargetResultReference,
   UpdateScreenInput,
@@ -34,6 +33,9 @@ import { assertEntity } from "./entity-validation.js";
 import { assertProposalRepair } from "./proposal-repair-validation.js";
 import { assertScenarioTest } from "./test-intent-validation.js";
 import { assertRepeatPolicy } from "./repeat-policy-validation.js";
+import { assertReviewedBinding } from "./reviewed-bindings-validation.js";
+import { assertScreenPatch } from "./screen-patch-validation.js";
+export { assertScreenPatch } from "./screen-patch-validation.js";
 import {
   assertLogicalScrollSurface,
   assertScrollSurfaceCapturePolicy,
@@ -138,6 +140,13 @@ export function assertScreen(screen: Screen, scope: AppMapScope, label: string):
   assertEntity(screen, scope, label);
   requiredText(screen.title, `${label}.title`);
   optionalText(screen.description, `${label}.description`);
+  if (screen.logicalStateBinding !== undefined) {
+    assertReviewedBinding(
+      screen.logicalStateBinding,
+      "logicalStateId",
+      `${label}.logicalStateBinding`,
+    );
+  }
   if (screen.handoff !== undefined) {
     objectValue(screen.handoff, `${label}.handoff`);
     requiredText(screen.handoff.ownerApp, `${label}.handoff.ownerApp`, 240);
@@ -411,6 +420,13 @@ export function assertConnection(connection: Connection, scope: AppMapScope, lab
   else if (connection.destination.kind !== "end")
     appMapFail("invalid-map", `${label}.destination.kind is unsupported`);
   optionalText(connection.label, `${label}.label`);
+  if (connection.actionIntentBinding !== undefined) {
+    assertReviewedBinding(
+      connection.actionIntentBinding,
+      "intentId",
+      `${label}.actionIntentBinding`,
+    );
+  }
   if (connection.caseStackId !== undefined)
     identifier(connection.caseStackId, `${label}.caseStackId`);
   if (!(connection.state === "draft" || connection.state === "ready"))
@@ -681,36 +697,6 @@ export function assertTargetResult(
   if (result.finishedAt !== undefined) finiteTimestamp(result.finishedAt, `${label}.finishedAt`);
 }
 
-export function assertScreenPatch(patch: ScreenPatch, label: string): void {
-  objectValue(patch, label);
-  if (patch.title !== undefined) requiredText(patch.title, `${label}.title`);
-  if (patch.description !== undefined && patch.description !== null)
-    requiredText(patch.description, `${label}.description`);
-  if (patch.handoff !== undefined && patch.handoff !== null) {
-    objectValue(patch.handoff, `${label}.handoff`);
-    requiredText(patch.handoff.ownerApp, `${label}.handoff.ownerApp`, 240);
-    if (patch.handoff.returnAction !== "back" && patch.handoff.returnAction !== "relaunch-source") {
-      appMapFail("invalid-map", `${label}.handoff.returnAction is unsupported`);
-    }
-  }
-  if (patch.identity !== undefined && patch.identity !== null)
-    assertIdentity(patch.identity, `${label}.identity`);
-  if (
-    patch.evidenceSurface !== undefined &&
-    patch.evidenceSurface !== null &&
-    !["ordinary", "modal", "preview", "confirmation", "dead-end"].includes(patch.evidenceSurface)
-  ) {
-    appMapFail("invalid-map", `${label}.evidenceSurface is unsupported`);
-  }
-  if (
-    patch.position !== undefined &&
-    patch.position !== null &&
-    (!Number.isFinite(patch.position.x) || !Number.isFinite(patch.position.y))
-  ) {
-    appMapFail("invalid-map", `${label}.position must contain finite coordinates`);
-  }
-}
-
 export function assertConnectionPatch(patch: ConnectionPatch, label: string): void {
   objectValue(patch, label);
   if (patch.fromScreenId !== undefined) identifier(patch.fromScreenId, `${label}.fromScreenId`);
@@ -723,6 +709,9 @@ export function assertConnectionPatch(patch: ConnectionPatch, label: string): vo
   }
   if (patch.label !== undefined && patch.label !== null)
     requiredText(patch.label, `${label}.label`);
+  if (patch.actionIntentBinding !== undefined && patch.actionIntentBinding !== null) {
+    assertReviewedBinding(patch.actionIntentBinding, "intentId", `${label}.actionIntentBinding`);
+  }
   if (patch.caseStackId !== undefined && patch.caseStackId !== null)
     identifier(patch.caseStackId, `${label}.caseStackId`);
   if (patch.state !== undefined && patch.state !== "draft" && patch.state !== "ready")

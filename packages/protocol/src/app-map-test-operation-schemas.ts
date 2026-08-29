@@ -464,6 +464,73 @@ const anyTestBinding = z.union([
   scriptBinding,
 ]);
 
+const resolvedRouteBinding = anyTestBinding.refine(
+  (binding) => binding.status === "resolved",
+  "Route variants require resolved bindings",
+);
+
+const testSurfacePredicate = z
+  .object({
+    platforms: z
+      .array(z.enum(["android", "ios", "browser"]))
+      .min(1)
+      .optional(),
+    browserEngines: z
+      .array(z.enum(["chromium", "firefox", "webkit"]))
+      .min(1)
+      .optional(),
+    viewportClasses: z
+      .array(z.enum(["compact", "medium", "expanded"]))
+      .min(1)
+      .optional(),
+    requiredCapabilities: z
+      .array(
+        z.enum([
+          "snapshot",
+          "screenshot",
+          "stream",
+          "recording",
+          "tap",
+          "type",
+          "scroll",
+          "clipboard",
+          "network",
+          "logs",
+          "permissions",
+          "location",
+          "rotation",
+          "lock-screen",
+          "app-switcher",
+          "install",
+          "launch",
+        ]),
+      )
+      .min(1)
+      .optional(),
+  })
+  .strict();
+
+const testFamily = z
+  .object({
+    logicalIntentRevision: z.number().int().positive(),
+    bindingRevision: z.number().int().positive(),
+    routeVariants: z
+      .array(
+        z
+          .object({
+            id: identifier("Route variant identifier"),
+            revision: z.number().int().positive(),
+            predicate: testSurfacePredicate,
+            bindings: z.record(identifier("Stable Test step identifier"), resolvedRouteBinding),
+            reviewedAt: z.number().int().nonnegative(),
+            reviewedBy: text("Route variant reviewer"),
+          })
+          .strict(),
+      )
+      .min(1),
+  })
+  .strict();
+
 const testStepBase = {
   id: identifier("Stable Test step identifier"),
   intent: text("Human-readable Test step intent").max(2_000),
@@ -511,6 +578,7 @@ export const graphTest = z
     kind: z.literal("scenario"),
     intentSchemaVersion: z.literal(1),
     steps: z.array(graphTestStep).max(200),
+    family: testFamily.optional(),
     capture: testCapturePolicy.optional(),
   })
   .strict()
@@ -574,6 +642,7 @@ const testSemanticEdit = z.discriminatedUnion("kind", [
         .object({
           name: text("New Test name").optional(),
           capture: testCapturePolicy.nullable().optional(),
+          family: testFamily.nullable().optional(),
         })
         .strict()
         .refine((patch) => Object.keys(patch).length > 0, "Test patch must change a field"),

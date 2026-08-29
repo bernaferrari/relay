@@ -386,7 +386,7 @@ export function applyScenarioTestStepEdits(
       switch (edit.kind) {
         case "test.patch": {
           const keys = Object.keys(edit.patch);
-          const unknown = keys.find((key) => !["name", "capture"].includes(key));
+          const unknown = keys.find((key) => !["name", "capture", "family"].includes(key));
           if (unknown) {
             fail(
               "invalid-patch",
@@ -396,17 +396,25 @@ export function applyScenarioTestStepEdits(
             );
           }
           if (keys.length === 0) fail("invalid-patch", "Test patch must change a field");
-          const base =
+          const withoutCapture =
             edit.patch.capture === null
               ? (() => {
                   const { capture: _capture, ...withoutCapture } = current;
                   return withoutCapture;
                 })()
               : current;
+          const base =
+            edit.patch.family === null
+              ? (() => {
+                  const { family: _family, ...withoutFamily } = withoutCapture;
+                  return withoutFamily;
+                })()
+              : withoutCapture;
           return validated({
             ...base,
             ...(edit.patch.name !== undefined ? { name: edit.patch.name } : {}),
             ...(edit.patch.capture && { capture: structuredClone(edit.patch.capture) }),
+            ...(edit.patch.family && { family: structuredClone(edit.patch.family) }),
           });
         }
         case "step.add":

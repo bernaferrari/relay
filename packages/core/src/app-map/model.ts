@@ -46,6 +46,8 @@ export {
   type Flow,
   type GestureSpec,
   type MapGroup,
+  type LogicalProductState,
+  type ProductActionIntent,
   type LogicalScrollSurface,
   type Proposal,
   type ProposalChange,

@@ -1,10 +1,12 @@
 import type {
+  AppMapTestResolvedBinding,
   AppMapScenarioTest,
   AppMapScenarioTestStep,
   AssertionSpec,
   RecipeStep,
 } from "@relay/protocol";
 import { APP_MAP_TEST_INTENT_LIMITS, APP_MAP_TEST_INTENT_SCHEMA_VERSION } from "@relay/protocol";
+import { BROWSER_ENGINES } from "@relay/protocol";
 import { validateRecipeSteps } from "../recipes.js";
 import { appMapFail } from "./errors.js";
 import { assertActions, assertTarget } from "./action-validation.js";
@@ -281,6 +283,125 @@ function assertSteps(
   }
 }
 
+function indexedSteps(
+  steps: AppMapScenarioTestStep[],
+  indexed = new Map<string, AppMapScenarioTestStep>(),
+): Map<string, AppMapScenarioTestStep> {
+  for (const step of steps) {
+    indexed.set(step.id, step);
+    if (step.kind === "decision") {
+      indexedSteps(step.thenSteps, indexed);
+      if (step.elseSteps) indexedSteps(step.elseSteps, indexed);
+    } else if (step.kind === "loop") {
+      indexedSteps(step.steps, indexed);
+    }
+  }
+  return indexed;
+}
+
+function assertFamily(test: AppMapScenarioTest, label: string): void {
+  if (test.family === undefined) return;
+  const family = objectValue(test.family, `${label}.family`);
+  allowedKeys(
+    family,
+    ["logicalIntentRevision", "bindingRevision", "routeVariants"],
+    `${label}.family`,
+  );
+  for (const field of ["logicalIntentRevision", "bindingRevision"] as const) {
+    safeInteger(family[field], `${label}.family.${field}`);
+    if (family[field] === 0) appMapFail("invalid-map", `${label}.family.${field} must be positive`);
+  }
+  if (!Array.isArray(family.routeVariants) || family.routeVariants.length === 0) {
+    appMapFail("invalid-map", `${label}.family.routeVariants must contain a variant`);
+  }
+  const steps = indexedSteps(test.steps);
+  const requiredRouteStepIds = [...steps.values()]
+    .filter((step) => step.kind === "instruction" || step.kind === "module")
+    .map((step) => step.id)
+    .sort();
+  const variantIds = new Set<string>();
+  const capabilities = new Set([
+    "snapshot",
+    "screenshot",
+    "stream",
+    "recording",
+    "tap",
+    "type",
+    "scroll",
+    "clipboard",
+    "network",
+    "logs",
+    "permissions",
+    "location",
+    "rotation",
+    "lock-screen",
+    "app-switcher",
+    "install",
+    "launch",
+  ]);
+  family.routeVariants.forEach((raw, index) => {
+    const item = `${label}.family.routeVariants[${index}]`;
+    const variant = objectValue(raw, item);
+    allowedKeys(
+      variant,
+      ["id", "revision", "predicate", "bindings", "reviewedAt", "reviewedBy"],
+      item,
+    );
+    identifier(variant.id, `${item}.id`);
+    if (variantIds.has(variant.id))
+      appMapFail("duplicate-id", `${label}.family.routeVariants contains duplicate ${variant.id}`);
+    variantIds.add(variant.id);
+    safeInteger(variant.revision, `${item}.revision`);
+    if (variant.revision === 0) appMapFail("invalid-map", `${item}.revision must be positive`);
+    safeInteger(variant.reviewedAt, `${item}.reviewedAt`);
+    requiredText(variant.reviewedBy, `${item}.reviewedBy`);
+    const predicate = objectValue(variant.predicate, `${item}.predicate`);
+    allowedKeys(
+      predicate,
+      ["platforms", "browserEngines", "viewportClasses", "requiredCapabilities"],
+      `${item}.predicate`,
+    );
+    const dimensions = [
+      ["platforms", new Set(["android", "ios", "browser"])],
+      ["browserEngines", new Set(BROWSER_ENGINES)],
+      ["viewportClasses", new Set(["compact", "medium", "expanded"])],
+      ["requiredCapabilities", capabilities],
+    ] as const;
+    for (const [field, allowed] of dimensions) {
+      if (predicate[field] === undefined) continue;
+      stringArray(predicate[field], `${item}.predicate.${field}`);
+      if (predicate[field].length === 0)
+        appMapFail("invalid-map", `${item}.predicate.${field} cannot be empty`);
+      if (new Set(predicate[field]).size !== predicate[field].length)
+        appMapFail("duplicate-id", `${item}.predicate.${field} contains duplicates`);
+      if (predicate[field].some((value) => !allowed.has(value as never)))
+        appMapFail("invalid-map", `${item}.predicate.${field} contains an unsupported value`);
+    }
+    const bindings = objectValue(variant.bindings, `${item}.bindings`);
+    if (Object.keys(bindings).length === 0)
+      appMapFail("invalid-map", `${item}.bindings must override at least one Test step`);
+    for (const [stepId, binding] of Object.entries(bindings)) {
+      identifier(stepId, `${item}.bindings key`);
+      const step = steps.get(stepId);
+      if (!step) appMapFail("invalid-map", `${item}.bindings references unknown step ${stepId}`);
+      const resolved = objectValue(binding, `${item}.bindings.${stepId}`);
+      if (resolved.status !== "resolved")
+        appMapFail("invalid-map", `${item}.bindings.${stepId} must be resolved`);
+      assertBinding(
+        { ...step, binding: resolved as AppMapTestResolvedBinding } as AppMapScenarioTestStep,
+        `${item}.bindings.${stepId}`,
+      );
+    }
+    const missingRouteStepIds = requiredRouteStepIds.filter((stepId) => !(stepId in bindings));
+    if (missingRouteStepIds.length) {
+      appMapFail(
+        "invalid-map",
+        `${item}.bindings must implement every route step; missing ${missingRouteStepIds.join(", ")}`,
+      );
+    }
+  });
+}
+
 export function assertScenarioTest(test: AppMapScenarioTest, label: string): void {
   objectValue(test, label);
   allowedKeys(
@@ -294,6 +415,7 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
       "kind",
       "intentSchemaVersion",
       "steps",
+      "family",
       "capture",
       "surfaceBindings",
       "createdAt",
@@ -372,4 +494,5 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
     });
   }
   assertSteps(test.steps, `${label}.steps`, new Set(), 0, { value: 0 });
+  assertFamily(test, label);
 }

@@ -115,6 +115,9 @@ export function queuedAppMapTestTargetProfile(input: {
     ...(observed?.model ? { model: observed.model } : {}),
     ...(observed?.osVersion ? { osVersion: observed.osVersion } : {}),
     ...(saved.viewport ? { viewport: structuredClone(saved.viewport) } : {}),
+    ...(observed?.browserCaseProfile
+      ? { browserCaseProfile: structuredClone(observed.browserCaseProfile) }
+      : {}),
     capabilities: observed ? [...observed.capabilities] : [],
     observedAt: observed?.observedAt ?? Date.now(),
   };

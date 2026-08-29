@@ -554,12 +554,12 @@ async function prepareOneCell(input: {
   const compiled = compileAppMapTest(
     input.map,
     effectiveTest,
-    compileOptionsForVisualSurface(effectiveTest, input.compileOptions),
+    compileOptionsForVisualSurface(effectiveTest, {
+      ...input.compileOptions,
+      runtimeTargetProfile: selectedRuntimeTargetProfile,
+    }),
   );
-  const plan = {
-    ...compiled.plan,
-    runtimeTargetProfile: structuredClone(selectedRuntimeTargetProfile),
-  };
+  const plan = compiled.plan;
   const preflight = preflightCompiledAppMapTestOffline(
     plan,
     await loadFrozenRawAccessibilityEvidence(plan),

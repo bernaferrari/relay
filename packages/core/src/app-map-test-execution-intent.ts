@@ -232,6 +232,152 @@ function canonicalStartup(value: unknown): boolean {
   );
 }
 
+function canonicalTestFamily(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (
+    !ownKeys(value, [
+      "schemaVersion",
+      "mode",
+      "testRevision",
+      "logicalIntentRevision",
+      "bindingRevision",
+      "selectedRouteVariant",
+      "targetSurface",
+      "logicalStateBindings",
+      "actionIntentBindings",
+    ]) ||
+    value.schemaVersion !== 1 ||
+    (value.mode !== "legacy-single-surface" && value.mode !== "reviewed-route-variant") ||
+    !integer(value.testRevision) ||
+    !integer(value.logicalIntentRevision) ||
+    value.logicalIntentRevision === 0 ||
+    !integer(value.bindingRevision) ||
+    value.bindingRevision === 0 ||
+    !Array.isArray(value.logicalStateBindings) ||
+    !Array.isArray(value.actionIntentBindings)
+  ) {
+    return false;
+  }
+  if (value.selectedRouteVariant !== undefined) {
+    const selected = value.selectedRouteVariant;
+    if (
+      !isRecord(selected) ||
+      !ownKeys(selected, ["id", "revision", "reviewedAt", "reviewedBy"]) ||
+      !string(selected.id) ||
+      !integer(selected.revision) ||
+      selected.revision === 0 ||
+      !integer(selected.reviewedAt) ||
+      !string(selected.reviewedBy)
+    ) {
+      return false;
+    }
+  }
+  if ((value.mode === "reviewed-route-variant") !== (value.selectedRouteVariant !== undefined)) {
+    return false;
+  }
+  if (value.targetSurface !== undefined) {
+    const surface = value.targetSurface;
+    if (
+      !isRecord(surface) ||
+      !ownKeys(surface, [
+        "targetProfileId",
+        "targetId",
+        "platform",
+        "viewport",
+        "viewportClass",
+        "browserEngine",
+        "capabilities",
+      ]) ||
+      !string(surface.targetProfileId) ||
+      !string(surface.targetId) ||
+      !["android", "ios", "browser"].includes(surface.platform as string) ||
+      !Array.isArray(surface.capabilities) ||
+      !surface.capabilities.every(
+        (capability) =>
+          typeof capability === "string" &&
+          [
+            "snapshot",
+            "screenshot",
+            "stream",
+            "recording",
+            "tap",
+            "type",
+            "scroll",
+            "clipboard",
+            "network",
+            "logs",
+            "permissions",
+            "location",
+            "rotation",
+            "lock-screen",
+            "app-switcher",
+            "install",
+            "launch",
+          ].includes(capability),
+      ) ||
+      new Set(surface.capabilities).size !== surface.capabilities.length ||
+      (surface.viewportClass !== undefined &&
+        !["compact", "medium", "expanded"].includes(surface.viewportClass as string)) ||
+      (surface.browserEngine !== undefined &&
+        !["chromium", "firefox", "webkit"].includes(surface.browserEngine as string))
+    ) {
+      return false;
+    }
+    if (surface.viewport !== undefined) {
+      if (
+        !isRecord(surface.viewport) ||
+        !ownKeys(surface.viewport, ["width", "height"]) ||
+        !number(surface.viewport.width) ||
+        !number(surface.viewport.height) ||
+        surface.viewport.width <= 0 ||
+        surface.viewport.height <= 0
+      ) {
+        return false;
+      }
+    }
+  }
+  if (value.mode === "reviewed-route-variant" && value.targetSurface === undefined) return false;
+  const reviewed = (
+    entry: unknown,
+    identityField: "logicalStateId" | "intentId",
+    ownerField: "screenId" | "connectionId",
+  ): boolean =>
+    isRecord(entry) &&
+    ownKeys(entry, [ownerField, identityField, "revision", "reviewedAt", "reviewedBy"]) &&
+    string(entry[ownerField]) &&
+    string(entry[identityField]) &&
+    integer(entry.revision) &&
+    entry.revision > 0 &&
+    integer(entry.reviewedAt) &&
+    string(entry.reviewedBy);
+  const logicalOwnerIds = value.logicalStateBindings.flatMap((entry) =>
+    isRecord(entry) && string(entry.screenId) ? [entry.screenId] : [],
+  );
+  const actionOwnerIds = value.actionIntentBindings.flatMap((entry) =>
+    isRecord(entry) && string(entry.connectionId) ? [entry.connectionId] : [],
+  );
+  return (
+    new Set(logicalOwnerIds).size === value.logicalStateBindings.length &&
+    new Set(actionOwnerIds).size === value.actionIntentBindings.length &&
+    value.logicalStateBindings.every((entry) => reviewed(entry, "logicalStateId", "screenId")) &&
+    value.actionIntentBindings.every((entry) => reviewed(entry, "intentId", "connectionId"))
+  );
+}
+
+function familyTargetMatchesRuntime(plan: AppMapCompiledTest): boolean {
+  const surface = plan.testFamily?.targetSurface;
+  const runtime = plan.runtimeTargetProfile;
+  if (!surface) return plan.testFamily?.mode !== "reviewed-route-variant";
+  if (!runtime) return false;
+  return (
+    surface.targetProfileId === runtime.id &&
+    surface.targetId === runtime.targetId &&
+    surface.platform === runtime.platform &&
+    (runtime.viewport === undefined ||
+      JSON.stringify(surface.viewport) === JSON.stringify(runtime.viewport))
+  );
+}
+
 /** The registered historical plan shape. This deliberately checks the
  * App-Map-Test discriminators, compiled root, and parsed recipe projection;
  * labels, recipe IDs, and opaque artifact fields never classify a legacy job
@@ -245,6 +391,7 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
       "appMapRevision",
       "test",
       "runtimeTargetProfile",
+      "testFamily",
       "surfaceBindings",
       "rawAccessibilitySourcesByScreenId",
       "rawAccessibilityVariantsByScreenId",
@@ -272,7 +419,8 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
     !Object.keys(value.recipes).length ||
     !Array.isArray(value.stepProvenance) ||
     !isRecord(value.performance) ||
-    !canonicalStartup(value.startup)
+    !canonicalStartup(value.startup) ||
+    (value.testFamily !== undefined && !canonicalTestFamily(value.testFamily))
   ) {
     return undefined;
   }
@@ -282,7 +430,8 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
   if (!canonicalPlanRecipe(value.recipes[value.rootRecipeId], value.rootRecipeId)) return undefined;
   if (value.runtimeTargetProfile !== undefined && !profile(value.runtimeTargetProfile))
     return undefined;
-  return structuredClone(value) as AppMapCompiledTest;
+  const plan = structuredClone(value) as AppMapCompiledTest;
+  return familyTargetMatchesRuntime(plan) ? plan : undefined;
 }
 
 function stableValue(value: unknown): unknown {

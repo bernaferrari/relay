@@ -10,6 +10,7 @@ import {
   compileAppMapFlow,
   compileAppMapTest,
   findActiveCombineCampaignForCombine,
+  frozenRawAccessibilityTargetProfiles,
   createAppMapTestExecutionIntent,
   currentOperationContext,
   enqueueJob,
@@ -354,6 +355,14 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     const explicitlySelectedRuntimeTargetProfile = targetProfileId
       ? frozenTestRunTargetProfile({ map, targetProfileId, target: requestedTarget })
       : undefined;
+    const inferredRuntimeTargetProfile = explicitlySelectedRuntimeTargetProfile
+      ? undefined
+      : frozenEvidenceTargetProfileForTarget({
+          target: requestedTarget,
+          profiles: frozenRawAccessibilityTargetProfiles(map),
+        });
+    const runtimeTargetProfile =
+      explicitlySelectedRuntimeTargetProfile ?? inferredRuntimeTargetProfile;
     let compiled;
     try {
       const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);
@@ -362,6 +371,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         entryCheckpointScreenId:
           body.startup?.mode === "verified-checkpoint" ? body.startup.screenId : undefined,
         reviewedDocumentOrigins,
+        runtimeTargetProfile,
       });
     } catch (error) {
       if (error instanceof AppMapTestCompileError) {
@@ -378,20 +388,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       }
       throw new HttpError(409, error instanceof Error ? error.message : String(error));
     }
-    const inferredRuntimeTargetProfile = explicitlySelectedRuntimeTargetProfile
-      ? undefined
-      : frozenEvidenceTargetProfileForTarget({
-          target: requestedTarget,
-          profiles: compiled.plan.rawAccessibilityTargetProfiles,
-        });
-    const runtimeTargetProfile =
-      explicitlySelectedRuntimeTargetProfile ?? inferredRuntimeTargetProfile;
-    const plan = {
-      ...compiled.plan,
-      ...(runtimeTargetProfile
-        ? { runtimeTargetProfile: structuredClone(runtimeTargetProfile) }
-        : {}),
-    };
+    const plan = compiled.plan;
     const preflight = preflightCompiledAppMapTestOffline(
       plan,
       await loadFrozenRawAccessibilityEvidence(plan),
@@ -511,6 +508,31 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       observedTargetProfile,
       target: body.target,
     });
+    const selectedSurface = plan.testFamily?.targetSurface;
+    if (
+      plan.testFamily?.mode === "reviewed-route-variant" &&
+      selectedSurface?.platform === "browser"
+    ) {
+      const observedBrowser = targetProfile?.browserCaseProfile;
+      if (
+        !observedBrowser ||
+        observedBrowser.engine !== selectedSurface.browserEngine ||
+        (selectedSurface.viewport !== undefined &&
+          (observedBrowser.viewport.width !== selectedSurface.viewport.width ||
+            observedBrowser.viewport.height !== selectedSurface.viewport.height))
+      ) {
+        throw new HttpError(
+          409,
+          `Managed browser target ${targetId} no longer matches reviewed route ${plan.testFamily?.selectedRouteVariant?.id ?? "surface"}`,
+          {
+            code: "TARGET_PROFILE_TARGET_MISMATCH",
+            targetProfileId: selectedSurface.targetProfileId,
+            recovery:
+              "Restore the reviewed browser engine and viewport, or review a new route variant before running this Test.",
+          },
+        );
+      }
+    }
     await runtime.assertTargetControl(input.scope, targetId);
     const planIdentity = {
       appMapId: plan.appMapId,

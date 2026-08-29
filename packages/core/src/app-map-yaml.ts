@@ -20,6 +20,8 @@ const APP_MAP_FIELDS = new Set([
   "revision",
   "notes",
   "groups",
+  "logicalStates",
+  "actionIntents",
   "screens",
   "screenVariants",
   "connections",
@@ -39,6 +41,8 @@ const APP_MAP_FIELDS = new Set([
 const ENTITY_FIELDS = [
   "notes",
   "groups",
+  "logicalStates",
+  "actionIntents",
   "screens",
   "screenVariants",
   "connections",
@@ -155,6 +159,8 @@ export function rescopeAppMap(
     projectId: destination.projectId,
     notes: mapEntities(value.notes),
     groups: mapEntities(value.groups),
+    logicalStates: mapEntities(value.logicalStates ?? {}),
+    actionIntents: mapEntities(value.actionIntents ?? {}),
     screens: mapEntities(value.screens),
     screenVariants: mapEntities(value.screenVariants),
     connections: mapEntities(value.connections),
@@ -197,7 +203,13 @@ export function parseAppMapYaml(
   for (const field of ENTITY_FIELDS) {
     const raw =
       value[field] ??
-      (field === "variables" || field === "tests" || field === "combines" ? [] : value[field]);
+      (field === "variables" ||
+      field === "tests" ||
+      field === "combines" ||
+      field === "logicalStates" ||
+      field === "actionIntents"
+        ? []
+        : value[field]);
     value[field] = entityRecord(raw, field);
   }
   const appMap = validateAppMap(value as AppMap);
