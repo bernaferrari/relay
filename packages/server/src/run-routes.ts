@@ -26,6 +26,7 @@ import {
   listRunShares,
   loadFrozenRawAccessibilityEvidence,
   readFrameFile,
+  readTarget,
   readAppMap,
   readVisualBaselineFrame,
   readPersistedRun,
@@ -62,6 +63,7 @@ import { assertTargetControl } from "./access-control.js";
 import { requireScopedAppMapTestExecution } from "./app-map-test-execution-guard.js";
 import { applyRebasableAppMapMutation } from "./app-map-route-mutations.js";
 import { assertEnqueueExecutionTargetRouteControl } from "./execution-target-route-control.js";
+import { assertCurrentBrowserExecutionProfile } from "./browser-execution-profile-admission.js";
 import { sendHumanInterventionReproofEvidence } from "./human-intervention-reproof-evidence.js";
 import { recordAudit, resolveCommandActor, type RequestContext } from "./security.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
@@ -69,9 +71,10 @@ import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, parseLimit } f
 export type RunRouteRuntime = {
   assertTargetControl: typeof assertTargetControl;
   enqueueJob: typeof enqueueJob;
+  readTarget: typeof readTarget;
 };
 
-const defaultRunRouteRuntime: RunRouteRuntime = { assertTargetControl, enqueueJob };
+const defaultRunRouteRuntime: RunRouteRuntime = { assertTargetControl, enqueueJob, readTarget };
 
 export type RunRouteContext = {
   method: string;
@@ -345,6 +348,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
         repairInput: campaignCheckRepairInput(run, repairRetryMatch.checkId!, reconciliation),
         ...(reconciliation ? { reconciliation } : {}),
       });
+      await assertCurrentBrowserExecutionProfile({ execution: repairInput, runtime });
       await assertEnqueueExecutionTargetRouteControl({
         scope,
         enqueue: repairInput,

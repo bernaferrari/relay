@@ -6,6 +6,8 @@ import test from "node:test";
 import {
   compileBrowserEnvironment,
   type AppMapCompiledTest,
+  type BrowserCaseProfile,
+  type TargetDefinition,
   type TargetProfile,
 } from "@relay/protocol";
 import {
@@ -83,6 +85,20 @@ function lease(targetId: string, id = "lease") {
     status: "leased" as const,
     leasedAt: 1,
     expiresAt: Date.now() + 60_000,
+  };
+}
+
+function browserTarget(profile: BrowserCaseProfile, id = "browser-chat"): TargetDefinition {
+  return {
+    id,
+    name: `Browser ${id}`,
+    kind: "browser",
+    createdAt: 1,
+    updatedAt: 1,
+    browser: {
+      startUrl: "https://relay.invalid",
+      environment: profile,
+    },
   };
 }
 
@@ -733,6 +749,7 @@ test("browser Test profile and target identity persist exactly through replay tr
       host: "127.0.0.1",
       port: 0,
       jobRouteRuntime: {
+        readTarget: async () => browserTarget(browser.browserCaseProfile!),
         assertTargetControl: async (_scope, targetId) => {
           controlledTarget = targetId;
           return lease(targetId ?? "missing", "browser-lease");
@@ -767,17 +784,16 @@ test("browser environment drift stops retry before target control", async () => 
       target: { kind: "browser", targetId: "browser-chat", platform: "browser" },
       profile: true,
     });
-    current.targetProfile!.browserCaseProfile = {
-      ...current.targetProfile!.browserCaseProfile!,
-      locale: "en-US",
-    };
+    await persistRun(current);
     let controls = 0;
     let retried = 0;
+    let replayed = 0;
     const server = await startServer({
       host: "127.0.0.1",
       port: 0,
       jobRouteRuntime: {
         getJob: () => current,
+        readTarget: async () => browserTarget({ ...current.browserCaseProfile!, locale: "en-US" }),
         assertTargetControl: async () => {
           controls += 1;
           throw new Error("browser profile drift must stop before target control");
@@ -786,17 +802,26 @@ test("browser environment drift stops retry before target control", async () => 
           retried += 1;
           return current;
         },
+        replayPersistedRun: () => {
+          replayed += 1;
+          return current;
+        },
       },
     });
     try {
-      const response = await post(
-        `http://127.0.0.1:${server.port}`,
-        `/jobs/${current.id}/retry`,
-        "job.retry",
-      );
-      await assertReviewRequired(response, /queued target profile no longer matches/i);
+      for (const [path, operation] of [
+        [`/jobs/${current.id}/retry`, "job.retry"],
+        [`/runs/${current.id}/replay`, "run.replay"],
+      ] as const) {
+        const response = await post(`http://127.0.0.1:${server.port}`, path, operation);
+        assert.equal(response.status, 409);
+        const body = (await response.json()) as { code?: string; error?: string };
+        assert.equal(body.code, "TARGET_PROFILE_TARGET_MISMATCH");
+        assert.match(body.error ?? "", /has drifted since this Run/i);
+      }
       assert.equal(controls, 0);
       assert.equal(retried, 0);
+      assert.equal(replayed, 0);
     } finally {
       await server.close();
     }

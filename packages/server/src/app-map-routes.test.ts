@@ -218,7 +218,7 @@ test("queued Tests preserve the exact viewport-suffixed saved runtime profile", 
   );
 });
 
-test("queued browser Tests use the complete saved profile, never the mutable observed one", () => {
+test("queued browser Tests require the complete saved profile to match the observed target", () => {
   const saved = compileBrowserEnvironment({
     engine: "webkit",
     viewport: { width: 390, height: 844 },
@@ -231,29 +231,44 @@ test("queued browser Tests use the complete saved profile, never the mutable obs
     viewport: { width: 1_280, height: 800 },
     locale: "en-US",
   });
+  const runtimeTargetProfile = {
+    id: "browser:checkout",
+    targetId: "checkout",
+    platform: "browser" as const,
+    viewport: saved.viewport,
+    browserCaseProfile: saved,
+  };
+  const currentTargetProfile = {
+    id: "browser:checkout",
+    targetId: "checkout",
+    source: "browser" as const,
+    platform: "browser" as const,
+    name: "Checkout",
+    viewport: saved.viewport,
+    browserCaseProfile: saved,
+    capabilities: ["screenshot" as const, "snapshot" as const],
+    observedAt: 100,
+  };
   const targetProfile = queuedAppMapTestTargetProfile({
-    runtimeTargetProfile: {
-      id: "browser:checkout",
-      targetId: "checkout",
-      platform: "browser",
-      viewport: saved.viewport,
-      browserCaseProfile: saved,
-    },
-    observedTargetProfile: {
-      id: "browser:checkout",
-      targetId: "checkout",
-      source: "browser",
-      platform: "browser",
-      name: "Checkout",
-      viewport: observed.viewport,
-      browserCaseProfile: observed,
-      capabilities: ["screenshot", "snapshot"],
-      observedAt: 100,
-    },
+    runtimeTargetProfile,
+    observedTargetProfile: currentTargetProfile,
     target: { kind: "browser", targetId: "checkout", platform: "browser" },
   });
   assert.deepEqual(targetProfile?.browserCaseProfile, saved);
   assert.deepEqual(targetProfile?.viewport, saved.viewport);
+  assert.throws(
+    () =>
+      queuedAppMapTestTargetProfile({
+        runtimeTargetProfile,
+        observedTargetProfile: {
+          ...currentTargetProfile,
+          viewport: observed.viewport,
+          browserCaseProfile: observed,
+        },
+        target: { kind: "browser", targetId: "checkout", platform: "browser" },
+      }),
+    /no longer matches frozen profile/u,
+  );
   assert.throws(
     () =>
       queuedAppMapTestTargetProfile({
@@ -276,7 +291,7 @@ test("queued browser Tests use the complete saved profile, never the mutable obs
         },
         target: { kind: "browser", targetId: "checkout", platform: "browser" },
       }),
-    /no longer provides webkit/u,
+    /no longer matches frozen profile/u,
   );
   assert.throws(
     () =>

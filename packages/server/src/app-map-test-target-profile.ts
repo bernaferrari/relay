@@ -7,6 +7,7 @@ import type {
 import {
   appMapRuntimeTargetProfileFromSaved,
   appMapRuntimeTargetProfileKey,
+  sameAppMapRuntimeTargetProfile,
   unsupportedBrowserCaseProfileFields,
 } from "@relay/core";
 import { HttpError } from "./http.js";
@@ -128,26 +129,6 @@ export function queuedAppMapTestTargetProfile(input: {
   }
   if (saved.platform === "browser") {
     const frozenBrowser = savedBrowser!;
-    const observedBrowser = observed?.browserCaseProfile;
-    if (!observedBrowser) {
-      throw new HttpError(409, `Managed browser target ${saved.targetId} is unavailable`, {
-        code: "TARGET_PROFILE_TARGET_MISMATCH",
-        targetProfileId: saved.id,
-        recovery: "Restore the saved managed browser target before running this Test.",
-      });
-    }
-    if (observedBrowser.engine !== frozenBrowser.engine) {
-      throw new HttpError(
-        409,
-        `Managed browser target ${saved.targetId} no longer provides ${frozenBrowser.engine}`,
-        {
-          code: "TARGET_PROFILE_TARGET_MISMATCH",
-          targetProfileId: saved.id,
-          recovery:
-            "Restore the saved browser engine, or capture and review a profile for the current engine.",
-        },
-      );
-    }
     const unsupported = unsupportedBrowserCaseProfileFields(frozenBrowser);
     if (unsupported.length) {
       throw new HttpError(
@@ -159,6 +140,33 @@ export function queuedAppMapTestTargetProfile(input: {
           unsupported,
           recovery:
             "Remove unsupported fixture references or install their host resolvers before running this Test.",
+        },
+      );
+    }
+    const observedBrowser = observed?.browserCaseProfile;
+    if (!observedBrowser) {
+      throw new HttpError(409, `Managed browser target ${saved.targetId} is unavailable`, {
+        code: "TARGET_PROFILE_TARGET_MISMATCH",
+        targetProfileId: saved.id,
+        recovery: "Restore the saved managed browser target before running this Test.",
+      });
+    }
+    const observedRuntimeProfile: AppMapCompiledRuntimeTargetProfile = {
+      id: saved.id,
+      targetId: observed!.targetId,
+      platform: "browser",
+      viewport: structuredClone(observedBrowser.viewport),
+      browserCaseProfile: structuredClone(observedBrowser),
+    };
+    if (!sameAppMapRuntimeTargetProfile(saved, observedRuntimeProfile)) {
+      throw new HttpError(
+        409,
+        `Managed browser target ${saved.targetId} no longer matches frozen profile ${saved.id}`,
+        {
+          code: "TARGET_PROFILE_TARGET_MISMATCH",
+          targetProfileId: saved.id,
+          recovery:
+            "Restore the complete saved browser environment, or capture and review a profile for the current environment.",
         },
       );
     }

@@ -56,6 +56,7 @@ import { handleCombineStartRoute } from "./combine-start-route.js";
 import { HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
 import { handleCombineCampaignRoute } from "./combine-campaign-routes.js";
+import { assertCurrentBrowserExecutionProfile } from "./browser-execution-profile-admission.js";
 import { sendHumanInterventionReproofEvidence } from "./human-intervention-reproof-evidence.js";
 import type { verifyCampaignDurationCohortEvidence } from "./campaign-duration-cohort-evidence.js";
 import {
@@ -66,6 +67,7 @@ import {
 
 export type JobRouteRuntime = {
   getJob: typeof getJob;
+  readTarget: typeof readTarget;
   assertTargetControl: typeof assertTargetControl;
   admitTargetControl: typeof admitTargetControl;
   listDevices: typeof listDevices;
@@ -86,6 +88,7 @@ export type JobRouteRuntime = {
 
 export const defaultJobRouteRuntime: JobRouteRuntime = {
   getJob,
+  readTarget,
   assertTargetControl,
   admitTargetControl,
   listDevices,
@@ -201,6 +204,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     const previous = runtime.getJob(retryMatch.id!);
     assertJobAccess(scope, previous);
     await requireScopedAppMapTestExecution(appMapTestExecutionSourceFromJob(previous));
+    await assertCurrentBrowserExecutionProfile({ execution: previous, runtime });
     await assertJobExecutionTargetRouteControl({
       scope,
       job: previous,
@@ -222,6 +226,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       throw new HttpError(404, "Recorded run not found");
     }
     await requireScopedAppMapTestExecution(appMapTestExecutionSourceFromRun(run));
+    await assertCurrentBrowserExecutionProfile({ execution: run, runtime });
     await assertPersistedRunExecutionTargetRouteControl({
       scope,
       run,
@@ -257,6 +262,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     const paused = runtime.getJob(resumeMatch.id!);
     assertJobAccess(scope, paused);
     await requireScopedAppMapTestExecution(appMapTestExecutionSourceFromJob(paused));
+    await assertCurrentBrowserExecutionProfile({ execution: paused, runtime });
     if (humanInterventionNeedsReproof(paused)) {
       const operation = currentOperationContext();
       if (!operation) throw new HttpError(400, "Actor-aware operation context is required");
@@ -484,6 +490,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       const previous = runtime.getJob(body.retryOf);
       assertJobAccess(scope, previous);
       await requireScopedAppMapTestExecution(appMapTestExecutionSourceFromJob(previous));
+      await assertCurrentBrowserExecutionProfile({ execution: previous, runtime });
       await assertJobExecutionTargetRouteControl({
         scope,
         job: previous,
