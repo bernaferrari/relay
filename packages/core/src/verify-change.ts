@@ -12,13 +12,16 @@ import type {
   VerifyChangeResult,
   VerifyChangeVerdict,
 } from "@relay/protocol";
-import { VERIFY_CHANGE_MAX_REPORT_ITEMS } from "@relay/protocol";
+import {
+  VERIFY_CHANGE_MAX_REPORT_ITEMS,
+  VERIFY_CHANGE_POLICY as PROTOCOL_VERIFY_CHANGE_POLICY,
+} from "@relay/protocol";
 import { evaluateApprovalPolicy } from "./approval-policy.js";
 import { compileExecutionRisk } from "./execution-risk-compiler.js";
 import { replayPersistedRunOffline } from "./offline-run-replay.js";
 import { analyzeTracePack, frozenRunFromTracePack, verifyTracePack } from "./trace-pack.js";
 
-export const VERIFY_CHANGE_POLICY = { id: "relay.verify-change", version: 1 } as const;
+export { VERIFY_CHANGE_POLICY } from "@relay/protocol";
 
 export type FrozenVerifyChangeTest = {
   appMap: AppMap;
@@ -257,7 +260,7 @@ export function verifyChangeOffline(input: OfflineVerifyChangeInput): VerifyChan
   ];
   const policy = evaluateApprovalPolicy({
     schemaVersion: 1,
-    policy: VERIFY_CHANGE_POLICY,
+    policy: PROTOCOL_VERIFY_CHANGE_POLICY,
     executionRisk: aggregateRisk(affected.map(({ risk }) => risk)),
     confirmationSatisfied: input.confirmationSatisfied === true,
     evidence: {

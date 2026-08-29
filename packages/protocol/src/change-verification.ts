@@ -23,6 +23,9 @@ export const CHANGE_VERIFICATION_DECISIONS = [
   "insufficient-evidence",
 ] as const;
 
+/** The deterministic policy used by the canonical Change Proof workflow. */
+export const VERIFY_CHANGE_POLICY = { id: "relay.verify-change", version: 1 } as const;
+
 export const CHANGE_VERIFICATION_MUTATIONS = [
   "legacy-v1-migration",
   "start",

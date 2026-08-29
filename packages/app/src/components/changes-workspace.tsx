@@ -1,13 +1,10 @@
-import {
-  For,
-  Show,
-  createEffect,
-  createMemo,
-  createSignal,
-  onMount,
-} from "solid-js";
+import { For, Show, type JSX, createEffect, createMemo, createSignal, onMount } from "solid-js";
 import { Button } from "@relay/ui/button";
-import type { ChangeVerification, ChangeVerificationState } from "@relay/protocol";
+import {
+  VERIFY_CHANGE_POLICY,
+  type ChangeVerification,
+  type ChangeVerificationState,
+} from "@relay/protocol";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { humanError } from "../lib/human-error";
@@ -15,23 +12,90 @@ import { eyebrow, mono, productIconButton, productPage } from "../lib/ui";
 import { Icon } from "./icon";
 import { StatusChip, type StatusChipTone } from "./status-chip";
 
-const statePresentation: Record<
-  ChangeVerificationState,
-  { label: string; tone: StatusChipTone }
-> = {
-  planning: { label: "Planning", tone: "idle" },
-  "awaiting-build": { label: "Awaiting build", tone: "attention" },
-  ready: { label: "Ready", tone: "idle" },
-  "running-pilot": { label: "Running pilot", tone: "run" },
-  "awaiting-expansion": { label: "Pilot passed", tone: "run" },
-  running: { label: "Running coverage", tone: "run" },
-  proved: { label: "Proved", tone: "pass" },
-  rejected: { label: "Rejected", tone: "fail" },
-  "needs-review": { label: "Needs review", tone: "attention" },
-  "insufficient-evidence": { label: "Insufficient evidence", tone: "attention" },
-  cancelled: { label: "Cancelled", tone: "idle" },
-  superseded: { label: "Superseded", tone: "idle" },
+const statePresentation: Record<ChangeVerificationState, { label: string; tone: StatusChipTone }> =
+  {
+    planning: { label: "Planning", tone: "idle" },
+    "awaiting-build": { label: "Awaiting build", tone: "attention" },
+    ready: { label: "Ready", tone: "idle" },
+    "running-pilot": { label: "Running pilot", tone: "run" },
+    "awaiting-expansion": { label: "Pilot passed", tone: "run" },
+    running: { label: "Running coverage", tone: "run" },
+    proved: { label: "Proved", tone: "pass" },
+    rejected: { label: "Rejected", tone: "fail" },
+    "needs-review": { label: "Needs review", tone: "attention" },
+    "insufficient-evidence": { label: "Insufficient evidence", tone: "attention" },
+    cancelled: { label: "Cancelled", tone: "idle" },
+    superseded: { label: "Superseded", tone: "idle" },
+  };
+
+type ProofDraft = {
+  repository: string;
+  baseSha: string;
+  headSha: string;
+  pullRequest: string;
+  summary: string;
+  acceptanceCriteria: string;
 };
+
+type ProofDraftField = keyof ProofDraft;
+type ProofDraftErrors = Partial<Record<ProofDraftField, string>>;
+
+const emptyProofDraft: ProofDraft = {
+  repository: "",
+  baseSha: "",
+  headSha: "",
+  pullRequest: "",
+  summary: "",
+  acceptanceCriteria: "",
+};
+
+const exactGitSha = /^[a-f0-9]{40}$/u;
+const proofInput =
+  "min-h-11 w-full rounded-lg border border-border-weak-base bg-surface-base px-3 py-2 text-title/[1.4] text-text-strong outline-none transition-[border-color,box-shadow] placeholder:text-text-weaker focus-visible:border-border-focus focus-visible:ring-2 focus-visible:ring-border-strong-focus disabled:cursor-not-allowed disabled:text-text-weaker aria-[invalid=true]:border-border-critical-base";
+
+function normalizedDraft(draft: ProofDraft): ProofDraft {
+  return {
+    repository: draft.repository.trim(),
+    baseSha: draft.baseSha.trim().toLowerCase(),
+    headSha: draft.headSha.trim().toLowerCase(),
+    pullRequest: draft.pullRequest.trim(),
+    summary: draft.summary.trim(),
+    acceptanceCriteria: draft.acceptanceCriteria.trim(),
+  };
+}
+
+function validateProofDraft(draftInput: ProofDraft): ProofDraftErrors {
+  const draft = normalizedDraft(draftInput);
+  const errors: ProofDraftErrors = {};
+  if (!draft.repository) errors.repository = "Enter the repository, for example acme/settings.";
+  if (!exactGitSha.test(draft.baseSha)) {
+    errors.baseSha = "Enter the exact 40-character base commit SHA.";
+  }
+  if (!exactGitSha.test(draft.headSha)) {
+    errors.headSha = "Enter the exact 40-character head commit SHA.";
+  } else if (draft.headSha === draft.baseSha) {
+    errors.headSha = "Head must identify a different commit from base.";
+  }
+  if (draft.pullRequest) {
+    const value = Number(draft.pullRequest);
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      errors.pullRequest = "Pull request must be a positive whole number.";
+    }
+  }
+  if (draft.acceptanceCriteria && !draft.summary) {
+    errors.summary = "Summarize the change before adding acceptance criteria.";
+  }
+  const criteria = draft.acceptanceCriteria
+    .split("\n")
+    .map((criterion) => criterion.trim())
+    .filter(Boolean);
+  if (criteria.length > 64) {
+    errors.acceptanceCriteria = "Keep the claim to 64 acceptance criteria or fewer.";
+  } else if (criteria.some((criterion) => criterion.length > 4096)) {
+    errors.acceptanceCriteria = "Each acceptance criterion must be 4,096 characters or fewer.";
+  }
+  return errors;
+}
 
 function shortSha(value: string): string {
   return value.slice(0, 12);
@@ -40,7 +104,9 @@ function shortSha(value: string): string {
 function changeTitle(proof: ChangeVerification): string {
   return (
     proof.change.agentClaim?.summary ||
-    (proof.change.pullRequest ? `Pull request #${proof.change.pullRequest}` : shortSha(proof.change.headSha))
+    (proof.change.pullRequest
+      ? `Pull request #${proof.change.pullRequest}`
+      : shortSha(proof.change.headSha))
   );
 }
 
@@ -70,6 +136,83 @@ export function ChangesWorkspace(props: {
   const [history, setHistory] = createSignal<readonly ChangeVerification[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [creating, setCreating] = createSignal(false);
+  const [submitting, setSubmitting] = createSignal(false);
+  const [draft, setDraft] = createSignal<ProofDraft>({ ...emptyProofDraft });
+  const [draftErrors, setDraftErrors] = createSignal<ProofDraftErrors>({});
+  const [createError, setCreateError] = createSignal<string | null>(null);
+
+  function setDraftField(field: ProofDraftField, value: string): void {
+    const nextDraft = { ...draft(), [field]: value };
+    setDraft(nextDraft);
+    const visibleErrors = draftErrors();
+    if (!Object.keys(visibleErrors).length) return;
+    const nextErrors = validateProofDraft(nextDraft);
+    const remainingErrors: ProofDraftErrors = {};
+    for (const visibleField of Object.keys(visibleErrors) as ProofDraftField[]) {
+      const nextError = nextErrors[visibleField];
+      if (nextError) remainingErrors[visibleField] = nextError;
+    }
+    setDraftErrors(remainingErrors);
+  }
+
+  function validateDraftField(field: ProofDraftField): void {
+    setDraftErrors((current) => ({ ...current, [field]: validateProofDraft(draft())[field] }));
+  }
+
+  function closeCreation(): void {
+    if (submitting()) return;
+    setCreating(false);
+    setCreateError(null);
+    setDraftErrors({});
+  }
+
+  async function submitProof(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    if (submitting()) return;
+    const normalized = normalizedDraft(draft());
+    const validation = validateProofDraft(normalized);
+    setDraftErrors(validation);
+    const firstInvalid = Object.keys(validation)[0] as ProofDraftField | undefined;
+    if (firstInvalid) {
+      document.getElementById(`proof-${firstInvalid}`)?.focus();
+      return;
+    }
+
+    setSubmitting(true);
+    setCreateError(null);
+    try {
+      const criteria = normalized.acceptanceCriteria
+        .split("\n")
+        .map((criterion) => criterion.trim())
+        .filter(Boolean);
+      const result = await server.runAction("proof.start", {
+        change: {
+          repository: normalized.repository,
+          baseSha: normalized.baseSha,
+          headSha: normalized.headSha,
+          ...(normalized.pullRequest ? { pullRequest: Number(normalized.pullRequest) } : {}),
+          ...(normalized.summary
+            ? {
+                agentClaim: {
+                  summary: normalized.summary,
+                  acceptanceCriteria: criteria,
+                },
+              }
+            : {}),
+        },
+        policy: VERIFY_CHANGE_POLICY,
+      });
+      setDraft({ ...emptyProofDraft });
+      setCreating(false);
+      await refresh();
+      setSelectedId(result.proof.id);
+    } catch (cause) {
+      setCreateError(humanError(cause, "Could not start this Proof"));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function refresh(): Promise<void> {
     setLoading(true);
@@ -127,7 +270,7 @@ export function ChangesWorkspace(props: {
 
   return (
     <section class={cn(productPage, "flex flex-col gap-6")} aria-label="Changes and Proofs">
-      <header class="mx-auto flex w-full max-w-[1180px] items-start justify-between gap-6">
+      <header class="mx-auto flex w-full max-w-[1180px] items-start justify-between gap-6 max-[620px]:flex-col">
         <div class="grid max-w-[760px] gap-2">
           <span class={eyebrow}>Merge trust</span>
           <h1 class="m-0 text-display font-semibold tracking-[-0.035em] text-text-strong">
@@ -138,16 +281,214 @@ export function ChangesWorkspace(props: {
             evidence is complete, and whether this head earned permission to merge.
           </p>
         </div>
-        <button
-          type="button"
-          class={productIconButton}
-          aria-label="Refresh Proofs"
-          disabled={loading()}
-          onClick={() => void refresh()}
-        >
-          <Icon name="refresh" size={16} />
-        </button>
+        <div class="flex shrink-0 items-center gap-2 max-[620px]:self-stretch">
+          <Button
+            variant="primary"
+            onClick={() => {
+              setCreating(true);
+              setCreateError(null);
+            }}
+          >
+            Start a Proof
+          </Button>
+          <button
+            type="button"
+            class={productIconButton}
+            aria-label="Refresh Proofs"
+            disabled={loading()}
+            onClick={() => void refresh()}
+          >
+            <Icon name="refresh" size={16} />
+          </button>
+        </div>
       </header>
+
+      <Show when={creating()}>
+        <form
+          class="mx-auto grid w-full max-w-[760px] gap-5 rounded-2xl bg-surface-raised-stronger-non-alpha p-[clamp(1rem,3vw,1.75rem)] ring-1 ring-inset ring-border-weak-base"
+          aria-label="Start a Proof"
+          onSubmit={(event) => void submitProof(event)}
+        >
+          <div class="grid gap-1">
+            <h2 class="m-0 text-title font-semibold text-text-strong">Bind the exact change</h2>
+            <p class="m-0 text-body/[1.5] text-text-base">
+              This starts an awaiting-build Proof. It cannot clear a merge until exact builds,
+              affected journeys, required targets, and complete evidence are attached.
+            </p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4 max-[620px]:grid-cols-1">
+            <ProofField label="Repository" field="repository" error={draftErrors().repository}>
+              <input
+                id="proof-repository"
+                class={proofInput}
+                type="text"
+                value={draft().repository}
+                maxLength={512}
+                required
+                disabled={submitting()}
+                spellcheck={false}
+                autocomplete="off"
+                data-1p-ignore
+                aria-invalid={Boolean(draftErrors().repository)}
+                aria-describedby={draftErrors().repository ? "proof-repository-error" : undefined}
+                placeholder="acme/settings"
+                onInput={(event) => setDraftField("repository", event.currentTarget.value)}
+                onBlur={() => validateDraftField("repository")}
+              />
+            </ProofField>
+            <ProofField
+              label="Pull request (optional)"
+              field="pullRequest"
+              error={draftErrors().pullRequest}
+            >
+              <input
+                id="proof-pullRequest"
+                class={proofInput}
+                type="number"
+                inputmode="numeric"
+                value={draft().pullRequest}
+                min="1"
+                step="1"
+                disabled={submitting()}
+                autocomplete="off"
+                data-1p-ignore
+                aria-invalid={Boolean(draftErrors().pullRequest)}
+                aria-describedby={draftErrors().pullRequest ? "proof-pullRequest-error" : undefined}
+                placeholder="184"
+                onInput={(event) => setDraftField("pullRequest", event.currentTarget.value)}
+                onBlur={() => validateDraftField("pullRequest")}
+              />
+            </ProofField>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4 max-[620px]:grid-cols-1">
+            <ProofField label="Base commit SHA" field="baseSha" error={draftErrors().baseSha}>
+              <input
+                id="proof-baseSha"
+                class={cn(proofInput, mono)}
+                type="text"
+                value={draft().baseSha}
+                maxLength={40}
+                required
+                disabled={submitting()}
+                spellcheck={false}
+                autocomplete="off"
+                data-1p-ignore
+                aria-invalid={Boolean(draftErrors().baseSha)}
+                aria-describedby={draftErrors().baseSha ? "proof-baseSha-error" : undefined}
+                placeholder="40-character SHA"
+                onInput={(event) => setDraftField("baseSha", event.currentTarget.value)}
+                onBlur={() => validateDraftField("baseSha")}
+              />
+            </ProofField>
+            <ProofField label="Head commit SHA" field="headSha" error={draftErrors().headSha}>
+              <input
+                id="proof-headSha"
+                class={cn(proofInput, mono)}
+                type="text"
+                value={draft().headSha}
+                maxLength={40}
+                required
+                disabled={submitting()}
+                spellcheck={false}
+                autocomplete="off"
+                data-1p-ignore
+                aria-invalid={Boolean(draftErrors().headSha)}
+                aria-describedby={draftErrors().headSha ? "proof-headSha-error" : undefined}
+                placeholder="40-character SHA"
+                onInput={(event) => setDraftField("headSha", event.currentTarget.value)}
+                onBlur={() => validateDraftField("headSha")}
+              />
+            </ProofField>
+          </div>
+
+          <ProofField
+            label="Agent completion claim (optional)"
+            field="summary"
+            error={draftErrors().summary}
+          >
+            <textarea
+              id="proof-summary"
+              class={cn(proofInput, "min-h-24 resize-y")}
+              value={draft().summary}
+              maxLength={4096}
+              rows={3}
+              disabled={submitting()}
+              spellcheck
+              autocomplete="off"
+              aria-invalid={Boolean(draftErrors().summary)}
+              aria-describedby={draftErrors().summary ? "proof-summary-error" : undefined}
+              placeholder="What did the coding agent say it finished?"
+              onInput={(event) => setDraftField("summary", event.currentTarget.value)}
+              onBlur={() => validateDraftField("summary")}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+            />
+          </ProofField>
+
+          <ProofField
+            label="Acceptance criteria (optional, one per line)"
+            field="acceptanceCriteria"
+            error={draftErrors().acceptanceCriteria}
+          >
+            <textarea
+              id="proof-acceptanceCriteria"
+              class={cn(proofInput, "min-h-24 resize-y")}
+              value={draft().acceptanceCriteria}
+              maxLength={16384}
+              rows={3}
+              disabled={submitting()}
+              spellcheck
+              autocomplete="off"
+              aria-invalid={Boolean(draftErrors().acceptanceCriteria)}
+              aria-describedby={
+                draftErrors().acceptanceCriteria ? "proof-acceptanceCriteria-error" : undefined
+              }
+              placeholder={"Settings render in Arabic\nCompact layouts have no overlap"}
+              onInput={(event) => setDraftField("acceptanceCriteria", event.currentTarget.value)}
+              onBlur={() => validateDraftField("acceptanceCriteria")}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+            />
+          </ProofField>
+
+          <div class="flex flex-wrap items-center justify-between gap-3 border-t border-border-weak-base pt-4">
+            <span class="text-caption text-text-weak">
+              Policy:{" "}
+              <span class={mono}>
+                {VERIFY_CHANGE_POLICY.id}@{VERIFY_CHANGE_POLICY.version}
+              </span>
+            </span>
+            <div class="flex gap-2">
+              <Button
+                variant="secondary"
+                type="button"
+                disabled={submitting()}
+                onClick={closeCreation}
+              >
+                Cancel
+              </Button>
+              <Button class="min-w-28" variant="primary" type="submit" disabled={submitting()}>
+                {submitting() ? "Starting…" : "Start Proof"}
+              </Button>
+            </div>
+          </div>
+          <Show when={createError()}>
+            {(message) => (
+              <p class="m-0 text-body text-text-critical-base" role="alert">
+                {message()}
+              </p>
+            )}
+          </Show>
+        </form>
+      </Show>
 
       <Show when={error()}>
         {(message) => (
@@ -169,9 +510,12 @@ export function ChangesWorkspace(props: {
             </span>
             <h2 class="m-0 text-title font-semibold text-text-strong">No Proofs yet</h2>
             <p class="m-0 max-w-[50ch] text-body/[1.5] text-text-base">
-              Start with <span class={mono}>relay proof start</span>. Relay will keep unknown impact,
-              missing builds, and incomplete evidence visible instead of inventing a pass.
+              Bind the exact base and head commits. Relay will keep unknown impact, missing builds,
+              and incomplete evidence visible instead of inventing a pass.
             </p>
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              Start a Proof
+            </Button>
           </div>
         }
       >
@@ -224,7 +568,11 @@ export function ChangesWorkspace(props: {
 
           <Show
             when={selected()}
-            fallback={<div class="grid place-items-center p-8 text-body text-text-weak">Select a Proof.</div>}
+            fallback={
+              <div class="grid place-items-center p-8 text-body text-text-weak">
+                Select a Proof.
+              </div>
+            }
           >
             {(proof) => (
               <article class="min-w-0 overflow-y-auto p-[clamp(1.25rem,3vw,2.5rem)]">
@@ -279,7 +627,10 @@ export function ChangesWorkspace(props: {
 
                   <div class="grid grid-cols-2 gap-6 max-[1020px]:grid-cols-1">
                     <ProofSection title="Exact builds">
-                      <For each={proof().builds} fallback={<EmptyFact>Exact build required.</EmptyFact>}>
+                      <For
+                        each={proof().builds}
+                        fallback={<EmptyFact>Exact build required.</EmptyFact>}
+                      >
                         {(build) => (
                           <FactRow
                             title={`${build.platform} · ${build.configuration}`}
@@ -310,7 +661,11 @@ export function ChangesWorkspace(props: {
                       <div class="mt-2 flex flex-wrap gap-2">
                         <For each={proof().runIds}>
                           {(runId) => (
-                            <Button variant="secondary" size="sm" onClick={() => props.onOpenRun(runId)}>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => props.onOpenRun(runId)}
+                            >
                               Open {runId}
                             </Button>
                           )}
@@ -369,11 +724,39 @@ export function ChangesWorkspace(props: {
   );
 }
 
-function ProofSection(props: { title: string; children: unknown }) {
+function ProofField(props: {
+  label: string;
+  field: ProofDraftField;
+  error?: string;
+  children: JSX.Element;
+}) {
+  return (
+    <label
+      for={`proof-${props.field}`}
+      class="grid content-start gap-1.5 text-caption font-medium text-text-strong"
+    >
+      <span>{props.label}</span>
+      {props.children}
+      <Show when={props.error}>
+        {(message) => (
+          <span
+            id={`proof-${props.field}-error`}
+            class="text-caption/[1.4] text-text-critical-base"
+            role="alert"
+          >
+            {message()}
+          </span>
+        )}
+      </Show>
+    </label>
+  );
+}
+
+function ProofSection(props: { title: string; children: JSX.Element }) {
   return (
     <section class="grid content-start gap-2">
       <h3 class={cn(eyebrow, "m-0")}>{props.title}</h3>
-      {props.children as never}
+      {props.children}
     </section>
   );
 }
@@ -396,14 +779,14 @@ function Metric(props: { label: string; value: number }) {
   );
 }
 
-function EmptyFact(props: { children: unknown }) {
-  return <p class="m-0 text-body/[1.45] text-text-weak">{props.children as never}</p>;
+function EmptyFact(props: { children: JSX.Element }) {
+  return <p class="m-0 text-body/[1.45] text-text-weak">{props.children}</p>;
 }
 
-function ListFact(props: { children: unknown }) {
+function ListFact(props: { children: JSX.Element }) {
   return (
     <p class="m-0 rounded-lg bg-surface-base px-3 py-2 text-caption/[1.45] text-text-base">
-      {props.children as never}
+      {props.children}
     </p>
   );
 }
