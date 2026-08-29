@@ -118,6 +118,7 @@ import { handleControlPlaneRoute } from "./control-plane-routes.js";
 import { handleWorkspaceRoute } from "./workspace-routes.js";
 import { handleInteractionRoute } from "./interaction-routes.js";
 import { handleStepRunRoute, type StepRunRouteRuntime } from "./step-run-route.js";
+import { handleAndroidAvdRoute } from "./android-avd-routes.js";
 import type { AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
 import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";
 import type { TargetRuntimeRouteRuntime } from "./target-runtime-routes.js";
@@ -125,6 +126,8 @@ import type { StartServerOptions, StartedServer } from "./server-types.js";
 import type { WorkflowRouteRuntime } from "./workflow-routes.js";
 import { handlePrimaryOperationRoutes } from "./primary-operation-routes.js";
 import type { ChangeVerificationRouteRuntime } from "./change-verification-routes.js";
+import { createProofPublicationWorker } from "./proof-publication-runtime.js";
+import { runServerCli } from "./server-cli.js";
 import { requestsBearerAuthentication, setCorsOrigin } from "./cors.js";
 export type { StartServerOptions, StartedServer } from "./server-types.js";
 
@@ -413,6 +416,10 @@ async function handleRequest(
       const devices = [...mobile, ...browsers];
       lastKnownDeviceCount = mobile.length;
       json(res, 200, { devices });
+      return;
+    }
+
+    if (await handleAndroidAvdRoute({ method, pathname, request: req, response: res, scope })) {
       return;
     }
 
@@ -727,6 +734,7 @@ async function startServerWithStateLease(
   // request runs under this explicit registry; core captures it at admission
   // so a queued job cannot later resolve a provider against ambient defaults.
   const targetDriverRegistry = opts.targetDriverRegistry ?? defaultTargetDriverRegistry;
+  const proofPublicationWorker = createProofPublicationWorker(opts.proofRouteRuntime);
   const redaction = await loadRedactionPolicy();
   await loadEvidenceCollectionPolicy();
   for (const recoveryScope of await authoringSessions.recoveryScopes()) {
@@ -768,6 +776,7 @@ async function startServerWithStateLease(
   // reconcile any immutable manifest that committed just before the process
   // stopped so it cannot leave its target/host fence behind.
   await recoverDurableWorkerAssignments();
+  await proofPublicationWorker.recover();
   // Retention sweep for expired share records. A corrupt or locked store must
   // never block the server from coming up; the next start retries the sweep.
   await pruneExpiredShares(runsRoot()).catch((error: unknown) => {
@@ -817,6 +826,7 @@ async function startServerWithStateLease(
   // Scheduled admissions originate outside an HTTP request, so give them the
   // same durable target runtime scope before they freeze and queue a Run.
   const scheduler = startScheduler(30_000, () => targetRuntimeScope.run(runDueSchedules));
+  proofPublicationWorker.start();
   try {
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
@@ -826,6 +836,7 @@ async function startServerWithStateLease(
       });
     });
   } catch (error) {
+    proofPublicationWorker.stop();
     targetRuntimeScope.close();
     await scheduler.close().catch(() => undefined);
     sse.close();
@@ -843,7 +854,10 @@ async function startServerWithStateLease(
         server.close((error) => (error ? reject(error) : resolve()));
       }),
     drainRequestHandlers: () => requestHandlers.drain(),
-    closeScheduler: () => scheduler.close(),
+    closeScheduler: async () => {
+      proofPublicationWorker.stop();
+      await scheduler.close();
+    },
     closeSse: () => sse.close(),
     drainSessionExecutions: shutdownServerSessions,
     flushActivity: flushOperationActivity,
@@ -855,23 +869,6 @@ async function startServerWithStateLease(
   return { port, host, close };
 }
 
-async function main(): Promise<void> {
-  const argv = process.argv.slice(2);
-  const portIdx = argv.indexOf("--port");
-  const hostIdx = argv.indexOf("--host");
-  const tokenIdx = argv.indexOf("--token");
-  const port = portIdx >= 0 ? Number(argv[portIdx + 1]) : 8787;
-  const host = hostIdx >= 0 ? (argv[hostIdx + 1] ?? "127.0.0.1") : "127.0.0.1";
-  const token = tokenIdx >= 0 ? argv[tokenIdx + 1] : process.env.RELAY_AUTH_TOKEN;
-  const started = await startServer({
-    port,
-    host,
-    token,
-  });
-  console.log(`@relay/server listening on http://${started.host}:${started.port}`);
-  console.log(`  runs → ${runsRoot()}`);
-}
-
 const invokedDirectly =
   process.argv[1]?.endsWith("/server/src/index.ts") ||
   process.argv[1]?.endsWith("\\server\\src\\index.ts") ||
@@ -880,7 +877,7 @@ const invokedDirectly =
   process.argv[1]?.includes("@relay/server");
 
 if (invokedDirectly) {
-  main().catch((err: unknown) => {
+  runServerCli(startServer).catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : err);
     process.exit(1);
   });

@@ -23,7 +23,7 @@ export async function captureGoldenFixtureEvidence(api, writer, fixture, phase) 
     const before = await captureScreenshot();
     await writer.screenshot(`${directory}/before.png`, before);
     const snapshot = await captureSnapshot();
-    assertSnapshot(snapshot, "iOS");
+    assertGoldenSemanticSnapshot(snapshot, fixture);
     await writer.json(`${directory}/tree.json`, snapshot);
     const after = await captureScreenshot();
     await writer.screenshot(`${directory}/after.png`, after);
@@ -31,15 +31,59 @@ export async function captureGoldenFixtureEvidence(api, writer, fixture, phase) 
   }
 
   const [snapshot, screenshot] = await Promise.all([captureSnapshot(), captureScreenshot()]);
-  assertSnapshot(snapshot, "Android");
+  assertGoldenSemanticSnapshot(snapshot, fixture);
   await writer.json(`${directory}/tree.json`, snapshot);
   await writer.screenshot(`${directory}/screen.png`, screenshot);
   return { snapshot, screenshot };
 }
 
-function assertSnapshot(snapshot, platform) {
+function usableSemanticNode(node) {
+  if (!isRecord(node)) return false;
+  const role = String(node.role ?? node.type ?? "")
+    .trim()
+    .toLowerCase();
+  if (role === "application" || role === "window") return false;
+  if (node.enabled === false || node.visibleToUser === false) return false;
+  const rect = node.rect;
+  if (
+    !isRecord(rect) ||
+    !Number.isFinite(Number(rect.width)) ||
+    !Number.isFinite(Number(rect.height)) ||
+    Number(rect.width) <= 0 ||
+    Number(rect.height) <= 0
+  ) {
+    return false;
+  }
+  return [node.identifier, node.ref, node.label, node.value].some(
+    (value) => typeof value === "string" && value.trim().length > 0,
+  );
+}
+
+/** Strict golden lanes require a current, app-scoped semantic observation.
+ * Pixels-only observations remain useful elsewhere, but cannot satisfy this
+ * fixture's accessibility proof requirement. */
+export function assertGoldenSemanticSnapshot(snapshot, fixture) {
+  const platform = fixture.platform === "ios" ? "iOS" : "Android";
   if (!isRecord(snapshot) || !Array.isArray(snapshot.nodes)) {
     fail(`Golden ${platform} snapshot response was malformed`, "GOLDEN_SNAPSHOT_INVALID");
+  }
+  if (snapshot.inspectable !== true || !snapshot.nodes.some(usableSemanticNode)) {
+    fail(
+      `Golden ${platform} snapshot had no current usable semantic controls`,
+      "GOLDEN_SNAPSHOT_UNUSABLE",
+    );
+  }
+  const owners = new Set(
+    snapshot.nodes
+      .map((node) => (isRecord(node) && typeof node.bundleId === "string" ? node.bundleId : ""))
+      .filter(Boolean),
+  );
+  const foregroundMatches = snapshot.foregroundApp === fixture.app || owners.has(fixture.app);
+  if (!foregroundMatches) {
+    fail(
+      `Golden ${platform} snapshot did not prove foreground app ${fixture.app}`,
+      "GOLDEN_SNAPSHOT_WRONG_APP",
+    );
   }
 }
 

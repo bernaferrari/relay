@@ -82,6 +82,22 @@ function proof(): ChangeVerification {
         },
       ],
       targetCases: [targetCase("chromium-ar"), targetCase("webkit-ar")],
+      cells: [
+        {
+          id: "cell-settings-chromium",
+          journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 1 },
+          targetCaseId: "chromium-ar",
+          buildId: "web",
+          cleanupRequired: false,
+        },
+        {
+          id: "cell-settings-webkit",
+          journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 1 },
+          targetCaseId: "webkit-ar",
+          buildId: "web",
+          cleanupRequired: false,
+        },
+      ],
     },
     planApproval: {
       decisionId: "decision-1",
@@ -269,13 +285,13 @@ test("live Proof stops after the first causal regression and publishes only when
   assert.equal(value.published, true);
 });
 
-test("live Proof refuses ambiguous build binding before target execution", () => {
+test("live Proof uses the exact build pinned by each frozen cell", () => {
   const value = proof();
   value.builds = [
     ...value.builds,
     { ...value.builds[0]!, id: "web-second", artifactDigest: digest("d") },
   ];
-  assert.throws(() => changeProofRequiredRunCases(value), /exactly one frozen web build/u);
+  assert.equal(changeProofRequiredRunCases(value)[0]!.buildId, "web");
 });
 
 test("live Proof requires one frozen App Map revision before target execution", () => {
@@ -332,7 +348,64 @@ test("persisted Run projection accepts complete recorded selector proof", async 
   assert.equal(projected.evidenceComplete, true);
   assert.equal(projected.selectorResolution, "deterministic");
   assert.equal(projected.inputOutcome, "reconciled");
-  assert.equal(projected.cleanup, "restored");
+  assert.equal(projected.cleanup, "not-required");
+});
+
+test("required cleanup without a recorded restoration cannot prove a case", async () => {
+  const base = proof();
+  const value: ChangeVerification = {
+    ...base,
+    selection: {
+      ...base.selection,
+      targetCases: base.selection.targetCases.map((targetCase) => ({
+        ...targetCase,
+        cleanupRequired: true,
+      })),
+      cells: base.selection.cells!.map((cell) => ({ ...cell, cleanupRequired: true })),
+    },
+  };
+  const projected = await changeProofCaseResultFromPersistedRun({
+    proof: value,
+    run: passedPersistedRun(),
+  });
+  assert.equal(projected.cleanup, "unproved");
+  assert.equal(projected.outcome, "insufficient-evidence");
+});
+
+test("live Proof rejects a materialized-cell count over budget before target control", async () => {
+  let executed = 0;
+  await assert.rejects(
+    executeLiveChangeProof({
+      proof: proof(),
+      authority: "confirmed",
+      maxCases: 1,
+      runCase: async () => {
+        executed += 1;
+        return passedPersistedRun();
+      },
+    }),
+    /materializes 2 Verification Cells/u,
+  );
+  assert.equal(executed, 0);
+});
+
+test("live Proof rejects an expired duration budget before target control", async () => {
+  let clockReads = 0;
+  let executed = 0;
+  await assert.rejects(
+    executeLiveChangeProof({
+      proof: proof(),
+      authority: "confirmed",
+      maxDurationMs: 1,
+      now: () => (clockReads++ === 0 ? 100 : 101),
+      runCase: async () => {
+        executed += 1;
+        return passedPersistedRun();
+      },
+    }),
+    /duration budget expired before target control/u,
+  );
+  assert.equal(executed, 0);
 });
 
 test("persisted Run projection keeps target infrastructure failure distinct", async () => {

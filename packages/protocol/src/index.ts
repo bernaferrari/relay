@@ -48,6 +48,7 @@ export * from "./exploration-policy.js";
 export * from "./verify-change.js";
 export * from "./change-verification.js";
 export * from "./change-proof-decision.js";
+export * from "./change-proof-publication-outbox.js";
 export * from "./change-impact.js";
 export * from "./target-runtime.js";
 export * from "./campaign-capacity-plan.js";
@@ -56,6 +57,7 @@ export * from "./accessibility-defaults.js";
 export * from "./execution-target.js";
 export * from "./artifact-ref.js";
 export * from "./source-revision.js";
+export * from "./workspace-change-context.js";
 export * from "./repeat-spec.js";
 export * from "./repeat-failure.js";
 export * from "./target-contract.js";
@@ -124,6 +126,9 @@ export type EvidenceConsentGrant = {
 export type EvidenceCollectionPolicy = {
   schemaVersion: 1;
   sensitive: Partial<Record<SensitiveEvidenceChannel, EvidenceConsentGrant>>;
+  /** Effective privacy policy frozen with the Run. A missing value identifies
+   * a legacy record and must never let a collector silently widen access. */
+  redaction?: RedactionPolicy;
   updatedAt?: number;
 };
 

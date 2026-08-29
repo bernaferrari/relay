@@ -1,5 +1,9 @@
 import { For, Show, type JSX } from "solid-js";
-import type { ChangeProofPublicationReceipt, ChangeVerification } from "@relay/protocol";
+import type {
+  ChangeProofPublicationOutboxRecord,
+  ChangeProofPublicationReceipt,
+  ChangeVerification,
+} from "@relay/protocol";
 import { cn } from "../lib/cn";
 import { mono, eyebrow } from "../lib/ui";
 import { Button } from "@relay/ui/button";
@@ -12,12 +16,14 @@ export function ProofDetail(props: {
   status: ProofStatus;
   history: readonly ChangeVerification[];
   publications: readonly ChangeProofPublicationReceipt[];
+  publicationOutbox: readonly ChangeProofPublicationOutboxRecord[];
   onOpenRun: (runId: string) => void;
   onOpenMap: (appMapId: string) => void;
 }) {
   const requiredTargets = () =>
     props.proof.selection.targetCases.filter(({ required }) => required);
   const latestPublication = () => props.publications.at(-1);
+  const latestPublicationAttempt = () => props.publicationOutbox.at(-1);
 
   return (
     <article class="min-w-0 overflow-y-auto p-[clamp(1.25rem,3vw,2.5rem)]">
@@ -25,17 +31,27 @@ export function ProofDetail(props: {
         <header class="grid gap-3 border-b border-border-weak-base pb-6">
           <div class="flex flex-wrap items-center gap-2">
             <StatusChip tone={props.status.tone} label={props.status.label} />
-            <span class={cn("text-caption text-text-weak", mono)}>
-              {shortSha(props.proof.change.baseSha)} → {shortSha(props.proof.change.headSha)}
-            </span>
           </div>
           <h2 class="m-0 text-title font-semibold tracking-[-0.02em] text-text-strong">
             {changeTitle(props.proof)}
           </h2>
           <p class="m-0 text-body text-text-base">
-            {props.proof.change.repository}
-            {props.proof.change.pullRequest ? ` · PR #${props.proof.change.pullRequest}` : ""}
+            {projectName(props.proof)}
+            {props.proof.change.pullRequest
+              ? ` · Pull request #${props.proof.change.pullRequest}`
+              : ""}
           </p>
+          <details class="w-fit text-caption text-text-weak">
+            <summary class="cursor-pointer select-none font-medium text-text-base">
+              Technical identity
+            </summary>
+            <div class={cn("mt-2 grid gap-1 rounded-lg bg-surface-base px-3 py-2", mono)}>
+              <span>{props.proof.change.repository}</span>
+              <span>
+                {shortSha(props.proof.change.baseSha)} → {shortSha(props.proof.change.headSha)}
+              </span>
+            </div>
+          </details>
           <Show when={props.proof.change.agentClaim?.acceptanceCriteria.length}>
             <ul class="m-0 grid gap-1.5 pl-5 text-body/[1.45] text-text-base">
               <For each={props.proof.change.agentClaim!.acceptanceCriteria}>
@@ -108,7 +124,27 @@ export function ProofDetail(props: {
           <Show
             when={latestPublication()}
             fallback={
-              <EmptyFact>No provider check has acknowledged this exact Proof head yet.</EmptyFact>
+              <Show
+                when={latestPublicationAttempt()}
+                fallback={
+                  <EmptyFact>
+                    No merge provider has acknowledged this exact Proof revision yet.
+                  </EmptyFact>
+                }
+              >
+                {(attempt) => (
+                  <div class="grid gap-1 rounded-xl bg-surface-base px-3 py-2.5 ring-1 ring-inset ring-border-weak-base">
+                    <strong class="text-body font-semibold text-text-strong">
+                      {attempt().status === "retry" && attempt().attempts >= attempt().maxAttempts
+                        ? "Merge check needs attention"
+                        : "Merge check publication pending"}
+                    </strong>
+                    <span class="text-caption text-text-weak">
+                      {attempt().attempts} of {attempt().maxAttempts} publication attempts
+                    </span>
+                  </div>
+                )}
+              </Show>
             }
           >
             {(publication) => (
@@ -192,6 +228,10 @@ function changeTitle(proof: ChangeVerification): string {
       ? `Pull request #${proof.change.pullRequest}`
       : shortSha(proof.change.headSha))
   );
+}
+
+function projectName(proof: ChangeVerification): string {
+  return proof.change.repository.split("/").at(-1) ?? proof.change.repository;
 }
 
 function targetLabel(targetCase: ChangeVerification["selection"]["targetCases"][number]): string {

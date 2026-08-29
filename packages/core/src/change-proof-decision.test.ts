@@ -17,6 +17,7 @@ import {
   readChangeVerificationHistory,
 } from "./change-verification-store.js";
 import { resetControlDatabaseCache } from "./collaboration-db.js";
+import { materializeChangeVerificationIntegrity } from "./change-proof-integrity.js";
 
 const headSha = "2".repeat(40);
 const digest = (character: string) => `sha256:${character.repeat(64)}` as const;
@@ -97,6 +98,22 @@ function proof(): ChangeVerification {
         },
       ],
       targetCases: [targetCase("chromium-compact-ar"), targetCase("webkit-compact-ar")],
+      cells: [
+        {
+          id: "cell-settings-chromium",
+          journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 7 },
+          targetCaseId: "chromium-compact-ar",
+          buildId: "web",
+          cleanupRequired: false,
+        },
+        {
+          id: "cell-settings-webkit",
+          journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 7 },
+          targetCaseId: "webkit-compact-ar",
+          buildId: "web",
+          cleanupRequired: false,
+        },
+      ],
     },
     planApproval: {
       decisionId: "decision-1",
@@ -195,6 +212,29 @@ test("missing or incomplete mandatory proof is action-required, never green", ()
   assert.match(incomplete.coverageGaps[0]!, /did not produce complete mandatory proof/);
 });
 
+test("a required cell cannot accept a not-required cleanup result", () => {
+  const base = proof();
+  const value: ChangeVerification = {
+    ...base,
+    selection: {
+      ...base.selection,
+      targetCases: base.selection.targetCases.map((targetCase) => ({
+        ...targetCase,
+        cleanupRequired: true,
+      })),
+      cells: base.selection.cells!.map((cell) => ({ ...cell, cleanupRequired: true })),
+    },
+  };
+  assert.throws(
+    () =>
+      decideChangeVerification({
+        proof: value,
+        caseResults: [result("chromium-compact-ar", { cleanup: "not-required" })],
+      }),
+    /omits cleanup proof required by its Verification Cell/u,
+  );
+});
+
 test("provider checks distinguish infrastructure failure from ordinary missing evidence", () => {
   const infrastructure = result("chromium-compact-ar", {
     outcome: "infrastructure-failure",
@@ -211,7 +251,7 @@ test("provider checks distinguish infrastructure failure from ordinary missing e
   assert.equal(check.conclusion, "action-required");
   assert.equal(check.classification, "infrastructure-failure");
   assert.equal(check.title, "Relay Proof — INFRASTRUCTURE FAILURE");
-  const stored = {
+  const stored = materializeChangeVerificationIntegrity({
     ...proof(),
     state: decision.state,
     decision: decision.decision,
@@ -220,7 +260,7 @@ test("provider checks distinguish infrastructure failure from ordinary missing e
     coverageGaps: decision.coverageGaps,
     residualRisk: decision.residualRisk,
     smallestNextVerification: decision.smallestNextVerification,
-  } as ChangeVerification;
+  });
   assert.equal(
     providerCheckForStoredChangeProof({ proof: stored }).classification,
     "infrastructure-failure",

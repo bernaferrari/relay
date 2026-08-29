@@ -114,6 +114,18 @@ export function queuedAppMapTestTargetProfile(input: {
       },
     );
   }
+  if (saved.androidAvdName && observed?.androidAvdName !== saved.androidAvdName) {
+    throw new HttpError(
+      409,
+      `Android emulator ${saved.targetId} no longer matches frozen AVD ${saved.androidAvdName}`,
+      {
+        code: "TARGET_PROFILE_TARGET_MISMATCH",
+        targetProfileId: saved.id,
+        recovery:
+          "Boot and select the exact saved Android AVD, or capture and review a profile for the current emulator.",
+      },
+    );
+  }
   const savedBrowser = saved.browserCaseProfile;
   if (saved.platform === "browser" && !savedBrowser) {
     throw new HttpError(
@@ -178,6 +190,7 @@ export function queuedAppMapTestTargetProfile(input: {
     source: input.target.kind,
     name: observed?.name ?? saved.targetId,
     ...(observed?.model ? { model: observed.model } : {}),
+    ...(saved.androidAvdName ? { androidAvdName: saved.androidAvdName } : {}),
     ...(observed?.osVersion ? { osVersion: observed.osVersion } : {}),
     ...(saved.viewport ? { viewport: structuredClone(saved.viewport) } : {}),
     ...(saved.browserCaseProfile

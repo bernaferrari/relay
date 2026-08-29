@@ -28,12 +28,14 @@ import { durableOperationDefinitions } from "./durable-operation-definitions.js"
 import { scheduleOperationDefinitions } from "./schedule-operation-definitions.js";
 import { createDiscoveryOperationDefinitions } from "./discovery-operation-definitions.js";
 import { combineOperationDefinitions } from "./combine-operation-definitions.js";
+import { workspaceOperationDefinitions } from "./workspace-operation-definitions.js";
 import { createOperationBuilders } from "./operation-builders.js";
 import { validateOperationDefinitions as validateDefinitions } from "./operation-definition-validation.js";
 import type {
   ActionSummary,
   DeviceSummary,
-  EvidenceCollectionPolicyDto,
+  AndroidAvdBootResult,
+  AndroidAvdInventory,
   GenerationRequestDto,
   GenerationResultDto,
   HealthSummary,
@@ -42,7 +44,6 @@ import type {
   OperationInput,
   OperationOutput,
   RelayOperationMap,
-  RedactionPolicyDto,
   RevisionedDto,
   TestDataDto,
 } from "./operation-map.js";
@@ -259,6 +260,31 @@ const targetDevicesInputParser = objectParser<{ phase?: "android" }>(
     if (input.phase !== undefined && input.phase !== "android") {
       fail("target devices phase", "must be android when provided");
     }
+  },
+);
+const androidAvdInventoryParser = objectParser<{ inventory: AndroidAvdInventory }>(
+  "target.avds.list output",
+  (input) => {
+    const inventory = record(input.inventory, "Android AVD inventory");
+    if (inventory.available !== true && inventory.available !== false)
+      fail("Android AVD inventory available", "must be a boolean");
+    if (!Array.isArray(inventory.avds)) fail("Android AVD inventory avds", "must be an array");
+    for (const item of inventory.avds) {
+      const avd = record(item, "Android AVD");
+      string(avd.avdName, "Android AVD name");
+      string(avd.name, "Android AVD display name");
+      string(avd.platform, "Android AVD platform");
+      string(avd.kind, "Android AVD kind");
+    }
+  },
+);
+const androidAvdBootParser = objectParser<{ boot: AndroidAvdBootResult }>(
+  "target.avd.boot output",
+  (input) => {
+    const boot = record(input.boot, "Android AVD boot");
+    string(boot.avdName, "Android AVD name");
+    string(boot.serial, "Android AVD serial");
+    if (boot.booted !== true) fail("Android AVD booted", "must be true");
   },
 );
 const actionsParser = objectParser<{ actions: ActionSummary[] }>("actions response", (input) => {
@@ -585,29 +611,6 @@ const startJobInputParser = objectParser<OperationInput<"job.start">>("job input
     fail("job executionTarget", "must be a valid execution target reference");
   }
 });
-
-const enabledInputParser = objectParser<{ enabled: boolean }>("enabled input", (input) => {
-  boolean(input.enabled, "enabled");
-});
-
-const redactionPolicyParser = objectParser<{ policy: RedactionPolicyDto }>(
-  "redaction policy response",
-  (input) => {
-    const policy = record(input.policy, "redaction policy");
-    boolean(policy.enabled, "redaction enabled");
-    string(policy.source, "redaction source");
-    boolean(policy.locked, "redaction locked");
-  },
-);
-
-const evidencePolicyParser = objectParser<{ policy: EvidenceCollectionPolicyDto }>(
-  "evidence policy response",
-  (input) => {
-    const policy = record(input.policy, "evidence policy");
-    if (policy.schemaVersion !== 1) fail("evidence policy schemaVersion", "must be 1");
-    record(policy.sensitive, "evidence policy sensitive grants");
-  },
-);
 
 const revisionedVariablesParser = objectParser<RevisionedDto<TestDataDto[]>>(
   "variables response",
@@ -1080,28 +1083,7 @@ export const operationDefinitions = [
     category: "system",
     idempotency: "inherent",
   }),
-  query("workspace.privacy.get", "Get privacy policy", "/settings/privacy", {
-    minimumRole: "admin",
-    input: emptyInputParser,
-    output: redactionPolicyParser,
-  }),
-  command("workspace.privacy.update", "Update privacy policy", "PUT", "/settings/privacy", {
-    input: enabledInputParser,
-    output: redactionPolicyParser,
-  }),
-  query("workspace.evidence.get", "Get evidence policy", "/settings/evidence", {
-    minimumRole: "admin",
-    input: emptyInputParser,
-    output: evidencePolicyParser,
-  }),
-  command("workspace.evidence.update", "Update evidence consent", "PUT", "/settings/evidence", {
-    input: objectParser("evidence consent", (input) => {
-      string(input.channel, "evidence channel");
-      boolean(input.enabled, "evidence enabled");
-    }),
-    output: evidencePolicyParser,
-    confirmation: "confirm",
-  }),
+  ...workspaceOperationDefinitions,
   ...appleDeviceOperationDefinitions,
   query("target.actions.list", "List available actions", "/actions", {
     category: "target",
@@ -1112,6 +1094,11 @@ export const operationDefinitions = [
     category: "target",
     input: targetDevicesInputParser,
     output: devicesParser,
+  }),
+  query("target.avds.list", "List configured Android emulators", "/devices/avds", {
+    category: "target",
+    input: emptyInputParser,
+    output: androidAvdInventoryParser,
   }),
   query("target.list", "List managed targets", "/targets", { category: "target" }),
   command("target.create", "Create managed target", "POST", "/targets", {
@@ -1128,6 +1115,17 @@ export const operationDefinitions = [
   }),
   ...browserDeviceOperationDefinitions,
   command("target.boot", "Boot target", "POST", "/device/boot", { category: "target" }),
+  command("target.avd.boot", "Boot a named Android emulator", "POST", "/device/avd/boot", {
+    category: "target",
+    input: objectParser("Android AVD boot", (input) => {
+      string(input.avdName, "Android AVD name");
+      if (input.timeoutMs !== undefined) number(input.timeoutMs, "Android AVD timeoutMs");
+      if (input.headless !== undefined) boolean(input.headless, "Android AVD headless");
+    }),
+    output: androidAvdBootParser,
+    minimumRole: "runner",
+    idempotency: "optional",
+  }),
   command("target.authorize", "Authorize target", "POST", "/device/authorize", {
     category: "target",
     confirmation: "confirm",

@@ -28,6 +28,7 @@ import {
 } from "./target-context.js";
 import { targetRuntimeReadiness } from "./target-runtime-readiness.js";
 import type { TargetRuntimeReadiness } from "@relay/protocol";
+import { androidAvdNameForSerial, observeAndroidAvdName } from "./android-avd.js";
 
 export type ListedDevice = {
   id: string;
@@ -36,6 +37,8 @@ export type ListedDevice = {
   kind: string | null;
   booted: boolean | null;
   platform: DevicePlatform;
+  /** Exact configured AVD name when this emulator was observed by Relay. */
+  avdName?: string;
   /** Direct platform-tool state, used to explain why attached hardware is not selectable. */
   connectionState?: AndroidConnectionState;
   /** Observed by the adapter or the platform tool; omitted when unavailable. */
@@ -301,6 +304,11 @@ export async function listDevices(): Promise<ListedDevice[]> {
     listGoIosDeviceSerials(),
   ]);
   const adbDevices = adbInventory.devices;
+  await Promise.all(
+    adbDevices
+      .filter((device) => device.kind === "Emulator" && device.connectionState === "connected")
+      .map((device) => observeAndroidAvdName(device.serial).catch(() => undefined)),
+  );
   if (adapterResult.error && adbDevices.length === 0 && appleHardware.devices.length === 0) {
     throw adapterResult.error;
   }
@@ -323,6 +331,12 @@ export async function listDevices(): Promise<ListedDevice[]> {
           kind: d.kind ?? null,
           booted: d.booted ?? null,
           platform,
+          ...(platform === "android" && d.kind && /emulator/i.test(d.kind)
+            ? (() => {
+                const avdName = androidAvdNameForSerial(serial);
+                return avdName ? { avdName } : {};
+              })()
+            : {}),
           ...(platform === "android" ? { connectionState: "connected" as const } : {}),
           ...(osVersion ? { osVersion } : {}),
         };
@@ -451,6 +465,9 @@ function mergeAdbObservation(
       booted: connected,
       platform: "android",
       connectionState: observed.connectionState,
+      ...(androidAvdNameForSerial(observed.serial)
+        ? { avdName: androidAvdNameForSerial(observed.serial) }
+        : {}),
     };
   }
 
@@ -460,6 +477,9 @@ function mergeAdbObservation(
     kind: existing.kind ?? observed.kind,
     booted: connected ? true : false,
     connectionState: observed.connectionState,
+    ...(androidAvdNameForSerial(observed.serial)
+      ? { avdName: androidAvdNameForSerial(observed.serial) }
+      : {}),
   };
 }
 

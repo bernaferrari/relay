@@ -8,6 +8,7 @@ import {
   createChangeVerification,
   readChangeProofPublications,
   resetControlDatabaseCache,
+  supersedeChangeVerification,
 } from "@relay/core";
 import { publishChangeProofToGitHub } from "./change-proof-github-publisher.js";
 
@@ -29,7 +30,7 @@ async function withStateRoot(operation: () => Promise<void>): Promise<void> {
   }
 }
 
-async function createTerminalProof(): Promise<void> {
+async function createTerminalProof() {
   const created = await createChangeVerification({
     ...scope,
     id: "proof-1",
@@ -41,7 +42,7 @@ async function createTerminalProof(): Promise<void> {
     requestDigest: digest,
     at: 100,
   });
-  await advanceChangeVerification({
+  return advanceChangeVerification({
     ...scope,
     proofId: created.id,
     expectedVersion: created.version,
@@ -122,5 +123,59 @@ test("a repository mismatch fails before provider network access", async () => {
       /does not match the exact Proof repository/u,
     );
     assert.equal(calls, 0);
+  });
+});
+
+test("restart publication acknowledges the exact queued historical Proof version", async () => {
+  await withStateRoot(async () => {
+    const terminal = await createTerminalProof();
+    await supersedeChangeVerification({
+      ...scope,
+      proofId: terminal.id,
+      expectedVersion: terminal.version,
+      actorId: "agent:coder",
+      requestId: "rerun",
+      requestDigest: `sha256:${"c".repeat(64)}`,
+      at: 250,
+      replacement: {
+        id: "proof-2",
+        change: {
+          repository: "acme/settings",
+          baseSha: headSha,
+          headSha: "3".repeat(40),
+        },
+        policy: { id: "relay.verify-change", version: 1 },
+        requestedBy: "agent:coder",
+        actorId: "agent:coder",
+        requestId: "rerun",
+        requestDigest: `sha256:${"c".repeat(64)}`,
+        action: "rerun-affected",
+        at: 250,
+      },
+    });
+    let publishedHead: string | undefined;
+    await publishChangeProofToGitHub({
+      ...scope,
+      proofId: terminal.id,
+      proofVersion: terminal.version,
+      config: { owner: "acme", repository: "settings", token: "installation-token" },
+      fetchImpl: async (_url, init) => {
+        if (init?.method === "GET") {
+          return new Response(JSON.stringify({ total_count: 0, check_runs: [] }), { status: 200 });
+        }
+        const body = JSON.parse(String(init?.body)) as { head_sha?: string };
+        publishedHead = body.head_sha;
+        return new Response(
+          JSON.stringify({ id: 84, head_sha: headSha, external_id: terminal.id }),
+          { status: 201 },
+        );
+      },
+      now: () => 300,
+    });
+
+    assert.equal(publishedHead, headSha);
+    const receipt = (await readChangeProofPublications(scope, terminal.id)).at(-1);
+    assert.equal(receipt?.proofVersion, terminal.version);
+    assert.equal(receipt?.conclusion, "action-required");
   });
 });

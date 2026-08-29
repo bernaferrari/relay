@@ -10,12 +10,16 @@ import {
   decideChangeVerification,
   currentOperationContext,
   listChangeVerifications,
+  listChangeProofPublicationOutbox,
   now,
   readChangeProofPublications,
   readChangeVerification,
   readChangeVerificationHistory,
   readPersistedRun,
   supersedeChangeVerification,
+  ChangeProofIntegrityError,
+  canonicalSha256,
+  verifyDurableChangeVerification,
   type AdvanceChangeVerificationInput,
   type ChangeVerificationScope,
   type PersistedRun,
@@ -28,6 +32,10 @@ import {
 } from "@relay/protocol";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
+import {
+  processTerminalChangeProofPublication,
+  type ChangeProofTerminalPublisher,
+} from "./change-proof-publication-worker.js";
 
 export type ChangeVerificationRouteRuntime = {
   now: typeof now;
@@ -36,16 +44,15 @@ export type ChangeVerificationRouteRuntime = {
   history: typeof readChangeVerificationHistory;
   list: typeof listChangeVerifications;
   publications: typeof readChangeProofPublications;
+  publicationOutbox: typeof listChangeProofPublicationOutbox;
   advance: typeof advanceChangeVerification;
   supersede: typeof supersedeChangeVerification;
   readRun: typeof readPersistedRun;
   caseResultFromRun: typeof changeProofCaseResultFromPersistedRun;
   /** Optional host-configured provider boundary. Relay never publishes unless
    * the embedding server supplies this integration explicitly. */
-  publishTerminal?: (input: {
-    scope: ChangeVerificationScope;
-    proof: ChangeVerification;
-  }) => Promise<void>;
+  publishTerminal?: ChangeProofTerminalPublisher;
+  publicationDetailsUrl?: string;
 };
 
 const defaultRuntime: ChangeVerificationRouteRuntime = {
@@ -55,6 +62,7 @@ const defaultRuntime: ChangeVerificationRouteRuntime = {
   history: readChangeVerificationHistory,
   list: listChangeVerifications,
   publications: readChangeProofPublications,
+  publicationOutbox: listChangeProofPublicationOutbox,
   advance: advanceChangeVerification,
   supersede: supersedeChangeVerification,
   readRun: readPersistedRun,
@@ -80,22 +88,8 @@ function sameValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .filter(([, item]) => item !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
 function requestDigest(proofId: string | undefined, body: unknown): `sha256:${string}` {
-  return `sha256:${createHash("sha256")
-    .update(canonicalJson(proofId ? { proofId, body } : body), "utf8")
-    .digest("hex")}`;
+  return canonicalSha256(proofId ? { proofId, body } : body);
 }
 
 function sameStartIntent(
@@ -143,7 +137,11 @@ async function publishTerminalProof(
       proof.state,
     )
   ) {
-    await runtime.publishTerminal({ scope, proof });
+    await processTerminalChangeProofPublication({
+      scope,
+      proof,
+      publish: runtime.publishTerminal,
+    });
   }
 }
 
@@ -252,6 +250,11 @@ async function replayedReceipt(
 }
 
 function routeError(error: unknown): never {
+  if (error instanceof ChangeProofIntegrityError) {
+    throw new HttpError(error.code === "POLICY_UNSUPPORTED" ? 400 : 409, error.message, {
+      code: error.code,
+    });
+  }
   if (error instanceof ChangeVerificationNotFoundError) {
     throw new HttpError(404, "Proof not found");
   }
@@ -268,7 +271,11 @@ async function currentProof(
 ): Promise<ChangeVerification> {
   const proof = await runtime.read(scope, proofId);
   if (!proof) throw new HttpError(404, "Proof not found");
-  return proof;
+  try {
+    return verifyDurableChangeVerification(proof);
+  } catch (error) {
+    routeError(error);
+  }
 }
 
 async function advanceProof(
@@ -282,6 +289,16 @@ async function advanceProof(
       projectId: current.projectId,
       proofId: current.id,
       ...input,
+      ...(runtime.publishTerminal
+        ? {
+            publication: {
+              provider: "github" as const,
+              ...(runtime.publicationDetailsUrl
+                ? { detailsUrl: runtime.publicationDetailsUrl }
+                : {}),
+            },
+          }
+        : {}),
     });
   } catch (error) {
     routeError(error);
@@ -318,9 +335,15 @@ export async function handleChangeVerificationRoute(input: {
       throw new HttpError(400, "Proof list limit must be a positive integer");
     }
     const limit = limitValue ? Math.min(100, Math.max(1, Number(limitValue))) : 50;
-    const proofs = (await runtime.list(scope))
-      .filter((proof) => !state || proof.state === state)
-      .slice(0, Number.isFinite(limit) ? limit : 50);
+    let proofs: ChangeVerification[];
+    try {
+      proofs = (await runtime.list(scope))
+        .map(verifyDurableChangeVerification)
+        .filter((proof) => !state || proof.state === state)
+        .slice(0, Number.isFinite(limit) ? limit : 50);
+    } catch (error) {
+      routeError(error);
+    }
     json(input.response, 200, { proofs });
     return true;
   }
@@ -379,11 +402,19 @@ export async function handleChangeVerificationRoute(input: {
     ).searchParams.get("includeHistory");
     recordAudit(input.scope, { action: "proof.read", resource: proof.id, result: "allow" });
     const publications = await runtime.publications(scope, proof.id);
+    const publicationOutbox = (await runtime.publicationOutbox(scope)).filter(
+      (record) => record.proofId === proof.id,
+    );
     json(input.response, 200, {
       proof,
       publications,
+      publicationOutbox,
       ...(includeHistory === "true"
-        ? { history: (await runtime.history(scope, proof.id)).slice(-100) }
+        ? {
+            history: (await runtime.history(scope, proof.id))
+              .map(verifyDurableChangeVerification)
+              .slice(-100),
+          }
         : {}),
     });
     return true;
@@ -721,6 +752,16 @@ export async function handleChangeVerificationRoute(input: {
         requestId,
         requestDigest: digest,
         at,
+        ...(runtime.publishTerminal
+          ? {
+              publication: {
+                provider: "github" as const,
+                ...(runtime.publicationDetailsUrl
+                  ? { detailsUrl: runtime.publicationDetailsUrl }
+                  : {}),
+              },
+            }
+          : {}),
         replacement: {
           id: scopedProofId(input.scope, requestId),
           change: body.change,

@@ -379,6 +379,7 @@ export type AppMapCompiledRawAccessibilityVariant = {
   targetProfileId: string;
   targetId: string;
   platform: TargetProfile["platform"];
+  androidAvdName?: TargetProfile["androidAvdName"];
   viewport?: { width: number; height: number };
   browserCaseProfile?: TargetProfile["browserCaseProfile"];
 };
@@ -390,7 +391,7 @@ export type AppMapCompiledRawAccessibilityVariant = {
  * selector reuse is only safe at an exact captured shape. */
 export type AppMapCompiledRawAccessibilityTargetProfile = Pick<
   TargetProfile,
-  "id" | "targetId" | "platform" | "viewport" | "browserCaseProfile"
+  "id" | "targetId" | "platform" | "androidAvdName" | "viewport" | "browserCaseProfile"
 >;
 
 /** The saved target/profile binding selected for one queued Test. It is
@@ -398,7 +399,7 @@ export type AppMapCompiledRawAccessibilityTargetProfile = Pick<
  * never changes the App Map or tries to infer locale from rendered copy. */
 export type AppMapCompiledRuntimeTargetProfile = Pick<
   TargetProfile,
-  "id" | "targetId" | "platform" | "viewport" | "browserCaseProfile"
+  "id" | "targetId" | "platform" | "androidAvdName" | "viewport" | "browserCaseProfile"
 >;
 
 /** One immutable raw AX blob with the exact App Map Variant that supplied it.

@@ -4,10 +4,21 @@
 by the app and CLI. It uses the MCP v2 stdio transport only; stdout is reserved for MCP protocol
 messages and diagnostics go to stderr.
 
-## Configure a client
+## Install and configure a client
 
-Run the package from this workspace. The local defaults use the loopback Relay service, the local
-project, a process-scoped agent identity, and the compact outcome tool set:
+For a released host installation, use the host-neutral executable. Codex, Claude Code, and
+ChatGPT-compatible MCP bridges all launch this same package; no host has a second Relay schema:
+
+```bash
+npm install --global @relay/mcp@0.1.0
+relay-mcp doctor --profile proof
+```
+
+For development inside this repository, `pnpm --filter @relay/mcp start` remains available. A
+clean host does not need pnpm or the Relay workspace.
+
+The local defaults use the loopback Relay service, the local project, a process-scoped agent
+identity, and the compact outcome tool set. The Proof plugin selects `RELAY_MCP_PROFILE=proof`:
 
 ```json
 {
@@ -19,6 +30,16 @@ project, a process-scoped agent identity, and the compact outcome tool set:
   }
 }
 ```
+
+The executable also exposes a fail-closed setup check:
+
+```bash
+relay-mcp doctor --profile proof --json
+```
+
+It checks server reachability, organization/project scope, the configured agent identity, the
+selected profile's role requirements, human-only plan approval, and every canonical Proof tool in
+the server operation manifest. The report never prints `RELAY_AUTH_TOKEN`.
 
 For a remote authenticated service, set `RELAY_AUTH_TOKEN` in the environment that launches the MCP
 client and configure its URL and project. Never place a literal token in client configuration,

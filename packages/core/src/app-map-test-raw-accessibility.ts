@@ -27,6 +27,7 @@ function rawSourceKey(source: AppMapCompiledRawAccessibilitySource): string {
     source.variant.targetProfileId,
     source.variant.targetId,
     source.variant.platform,
+    source.variant.androidAvdName ?? "",
     ...origin,
     source.tree.uri,
     source.tree.id,
@@ -43,6 +44,7 @@ function sourceVariant(
     targetProfileId: profile.id,
     targetId: profile.targetId,
     platform: profile.platform,
+    ...(profile.androidAvdName ? { androidAvdName: profile.androidAvdName } : {}),
     ...(profile.viewport ? { viewport: structuredClone(profile.viewport) } : {}),
     ...(profile.browserCaseProfile
       ? { browserCaseProfile: structuredClone(profile.browserCaseProfile) }

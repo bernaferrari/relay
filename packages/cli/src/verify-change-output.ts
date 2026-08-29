@@ -18,9 +18,21 @@ type VerifyChangePlanResult = {
         reason: string;
       }>;
       targetCases: ReadonlyArray<{ id: string; required: boolean }>;
+      cells?: ReadonlyArray<{
+        id: string;
+        targetCaseId: string;
+        buildId: string;
+        cleanupRequired: boolean;
+      }>;
     };
     pilotTargetCaseId?: string;
-    expansion: { targetCaseIds: readonly string[]; maxCases: number; maxDurationMs: number };
+    pilotCellId?: string;
+    expansion: {
+      targetCaseIds: readonly string[];
+      cellIds?: readonly string[];
+      maxCases: number;
+      maxDurationMs: number;
+    };
     coverageGaps: ReadonlyArray<{ code: string; reason: string }>;
   };
   proof?: { id?: string; state?: string };
@@ -70,6 +82,10 @@ function list(label: string, values: readonly string[]): string[] {
   return values.length ? [`${label}:`, ...values.map((value) => `  - ${value}`)] : [];
 }
 
+function shortRevision(value: string): string {
+  return value.slice(0, 12);
+}
+
 /** Human projection of the same bounded protocol result returned to JSON and
  * MCP clients. It intentionally renders references, never raw TracePack data. */
 export function formatVerifyChangeResult(value: unknown): string | undefined {
@@ -82,10 +98,11 @@ export function formatVerifyChangeResult(value: unknown): string | undefined {
     const targets = plan.selection.targetCases.map(
       (target) => `  - ${target.id}${target.required ? " (required)" : ""}`,
     );
+    const cells = plan.selection.cells ?? [];
     const gaps = plan.coverageGaps.map((gap) => `  - ${gap.code}: ${gap.reason}`);
     return [
       `Verify change plan: ${plan.status}`,
-      `Git: ${git.baseRef} (${git.baseSha}) → HEAD (${git.headSha})`,
+      `Change: ${git.baseRef} (${shortRevision(git.baseSha)}) → current revision (${shortRevision(git.headSha)})`,
       `Changed files: ${git.changedFiles.length}`,
       ...(git.changedFiles.length ? git.changedFiles.map((path) => `  - ${path}`) : []),
       `Affected Tests: ${plan.selection.affectedJourneys.length}`,
@@ -93,7 +110,9 @@ export function formatVerifyChangeResult(value: unknown): string | undefined {
       `Pilot: ${plan.pilotTargetCaseId ?? "none"}`,
       `Target cases: ${plan.selection.targetCases.length}`,
       ...(targets.length ? targets : ["  - none (a required target case is missing)"]),
-      `Expansion: ${plan.expansion.targetCaseIds.length} additional target case(s), max ${plan.expansion.maxCases} case(s) / ${plan.expansion.maxDurationMs}ms`,
+      `Verification Cells: ${cells.length}`,
+      `Pilot Cell: ${plan.pilotCellId ?? "none"}`,
+      `Expansion: ${(plan.expansion.cellIds ?? plan.expansion.targetCaseIds).length} additional Verification Cell(s), max ${plan.expansion.maxCases} case(s) / ${plan.expansion.maxDurationMs}ms`,
       `Coverage gaps: ${plan.coverageGaps.length}`,
       ...gaps,
       `Proof: ${execution.proofStarted ? (value.proof?.id ?? "created") : "not created (confirmation required)"}`,

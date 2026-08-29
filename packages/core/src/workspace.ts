@@ -18,6 +18,17 @@ export {
   resolveJobDevicePlatform,
 } from "./workspace-devices.js";
 export {
+  type AndroidAvdBootResult,
+  type AndroidAvdErrorCode,
+  type AndroidAvdInventory,
+  type AndroidAvdStatus,
+  type AndroidAvdSummary,
+  androidAvdNameForSerial,
+  bootAndroidAvd,
+  listAndroidAvds,
+  rememberAndroidAvd,
+} from "./android-avd.js";
+export {
   resetIosRunnerState,
   type TargetRuntimeRecovery,
   recoverTargetRuntime,

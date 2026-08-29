@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   TargetCapability,
@@ -39,12 +39,15 @@ function targetRoot(): string {
 }
 
 const VALID_TARGET_KINDS: Record<TargetKind, true> = { android: true, ios: true, browser: true };
+const SAFE_TARGET_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/;
 
 /** Returns why `value` is not a usable TargetDefinition, or null when it validates. */
 function targetDefinitionProblem(value: unknown): string | null {
   if (typeof value !== "object" || value === null) return "entry is not an object";
   const entry = value as Record<string, unknown>;
-  if (typeof entry.id !== "string" || entry.id === "") return "id must be a non-empty string";
+  if (typeof entry.id !== "string" || !SAFE_TARGET_ID.test(entry.id)) {
+    return "id must use letters, numbers, hyphens, and underscores only";
+  }
   if (typeof entry.name !== "string" || entry.name === "") return "name must be a non-empty string";
   if (typeof entry.kind !== "string" || !(entry.kind in VALID_TARGET_KINDS)) {
     return "kind must be one of android, ios, browser";
@@ -114,12 +117,13 @@ export async function saveBrowserTarget(input: {
   headless?: boolean;
   viewport?: BrowserViewport;
   environment?: BrowserEnvironmentInput;
+  profileRetention?: "retain" | "ephemeral";
 }): Promise<TargetDefinition> {
   if (!input.name.trim()) throw new Error("target name is required");
   const requestedId = input.id?.trim();
   // Target ids become isolated-browser-profile directory names. Keep them
   // portable and path-safe when callers need a stable ID for YAML or schedules.
-  if (requestedId && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(requestedId)) {
+  if (requestedId && !SAFE_TARGET_ID.test(requestedId)) {
     throw new Error("target id must use letters, numbers, hyphens, and underscores only");
   }
   let url: URL;
@@ -148,6 +152,7 @@ export async function saveBrowserTarget(input: {
       // people often need to complete login or MFA before recording a test.
       headless: input.headless ?? false,
       viewport: input.viewport ?? { width: 1280, height: 800 },
+      profileRetention: input.profileRetention ?? existing?.browser?.profileRetention ?? "retain",
       ...(environment ? { environment } : {}),
     },
   };
@@ -156,7 +161,19 @@ export async function saveBrowserTarget(input: {
 }
 
 export async function deleteTarget(id: string): Promise<void> {
-  await writeTargets((await listTargets()).filter((target) => target.id !== id));
+  const targets = await listTargets();
+  const target = targets.find((item) => item.id === id);
+  // A normal authoring target deletion only removes its registry entry. An
+  // explicitly ephemeral target owns its isolated browser profile, including
+  // recordings, so deleting that target also removes only that safe path.
+  if (
+    target?.kind === "browser" &&
+    target.browser?.profileRetention === "ephemeral" &&
+    SAFE_TARGET_ID.test(target.id)
+  ) {
+    await rm(browserProfileDir(target.id), { recursive: true, force: true });
+  }
+  await writeTargets(targets.filter((item) => item.id !== id));
 }
 
 /** Capabilities implemented by the managed Playwright adapter. */

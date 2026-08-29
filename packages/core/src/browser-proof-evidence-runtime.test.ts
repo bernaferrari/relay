@@ -4,10 +4,17 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { BrowserProofEvidence, TargetProfile } from "@relay/protocol";
+import {
+  compileBrowserEnvironment,
+  type BrowserProofEvidence,
+  type TargetProfile,
+} from "@relay/protocol";
 import { closeBrowserHostPool } from "./browser-host-pool.js";
 import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
+import { captureBrowserProofEvidence } from "./browser-proof-evidence-runtime.js";
+import type { BrowserProofRuntime } from "./browser-proof-runtime.js";
 import { closeBrowserTarget, getBrowserDevice } from "./browser-target.js";
+import { loadRedactionPolicy } from "./redaction.js";
 import { initializeRunEvidence, stopRunEvidence } from "./run-evidence.js";
 import { exportTracePack, verifyTracePack } from "./trace-pack.js";
 import type { PersistedRun } from "./runs.js";
@@ -30,6 +37,126 @@ function listen(server: http.Server): Promise<number> {
 function close(server: http.Server): Promise<void> {
   return new Promise((resolve) => server.close(() => resolve()));
 }
+
+test("browser proof collection denies visual and body secrets before durable writes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-browser-proof-policy-"));
+  const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
+  const previousRedaction = process.env.RELAY_REDACTION_MODE;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  process.env.RELAY_REDACTION_MODE = "off";
+  await loadRedactionPolicy();
+  const environment = compileBrowserEnvironment({ viewport: { width: 800, height: 600 } });
+  const calls = { screenshot: 0, accessibility: 0, pages: 0, trace: 0 };
+  const runtime: BrowserProofRuntime = {
+    profile: environment,
+    version: "test-browser",
+    screenshot: async () => {
+      calls.screenshot += 1;
+    },
+    ariaSnapshot: async () => {
+      calls.accessibility += 1;
+      return "semantic secret sentinel";
+    },
+    pages: async () => {
+      calls.pages += 1;
+      return {
+        pages: [
+          {
+            id: "page-1",
+            kind: "page",
+            title: "secret sentinel",
+            url: "https://example.test/?token=secret-sentinel",
+            active: true,
+            closed: false,
+          },
+        ],
+        dropped: 0,
+      };
+    },
+    console: [{ level: "error", text: "Authorization: Bearer secret-sentinel", at: 1 }],
+    consoleDropped: 0,
+    pageErrors: [{ at: 1, source: "page", message: "Cookie: secret-sentinel" }],
+    pageErrorsDropped: 0,
+    network: [
+      {
+        method: "POST",
+        url: "https://example.test/api?token=secret-sentinel",
+        status: 200,
+        at: 1,
+        requestHeaders: { Authorization: "Bearer secret-sentinel" },
+        requestBody: "request secret sentinel",
+        responseHeaders: { "set-cookie": "session=secret-sentinel" },
+        responseBody: "response secret sentinel",
+        responseBodyEncoding: "utf8",
+      },
+    ],
+    networkDropped: 0,
+    stopTrace: async () => {
+      calls.trace += 1;
+    },
+  };
+  const runDir = join(root, "run");
+  try {
+    const evidence = await captureBrowserProofEvidence({
+      targetId: "policy-target",
+      runId: "policy-run",
+      targetProfileId: "policy-profile",
+      sourceSha: "a".repeat(40),
+      artifactDigest: `sha256:${"b".repeat(64)}`,
+      environment,
+      runDir,
+      evidencePolicy: {
+        schemaVersion: 1,
+        sensitive: {},
+        redaction: { enabled: true, source: "workspace", locked: false },
+      },
+      runtime,
+    });
+    assert.equal(evidence.completeness.status, "partial");
+    assert.deepEqual(evidence.completeness.missing, [
+      "screenshot",
+      "accessibility",
+      "trace",
+      "popup-topology",
+    ]);
+    for (const name of ["screenshot", "accessibility", "trace", "popup-topology"] as const) {
+      assert.equal(evidence.channels[name].status, "denied");
+      assert.equal(evidence.channels[name].redactions, 1);
+    }
+    assert.equal(calls.screenshot, 0);
+    assert.equal(calls.accessibility, 0);
+    assert.equal(calls.pages, 0);
+    assert.equal(calls.trace, 0);
+    for (const path of [
+      "browser/checkpoint.png",
+      "browser/accessibility.json",
+      "browser/trace.zip",
+      "browser/popup-topology.json",
+    ]) {
+      await assert.rejects(stat(join(runDir, path)), path);
+    }
+    const consoleArtifact = await readFile(join(runDir, "browser/console-errors.json"), "utf8");
+    const networkArtifact = await readFile(join(runDir, "browser/network.json"), "utf8");
+    assert.doesNotMatch(consoleArtifact, /secret-sentinel/u);
+    assert.doesNotMatch(networkArtifact, /secret-sentinel/u);
+    assert.equal(evidence.channels["console-errors"].redactions, 1);
+    assert.equal(evidence.channels["page-errors"].redactions, 1);
+    assert.equal(evidence.channels.network.redactions, 1);
+    const network = JSON.parse(networkArtifact) as { entries: Array<Record<string, unknown>> };
+    const firstEntry = network.entries[0];
+    assert.ok(firstEntry);
+    assert.equal(firstEntry.requestBody, undefined);
+    assert.equal(firstEntry.responseBody, undefined);
+    assert.equal((firstEntry.requestHeaders as Record<string, string>).Authorization, "[REDACTED]");
+  } finally {
+    if (previousRedaction === undefined) delete process.env.RELAY_REDACTION_MODE;
+    else process.env.RELAY_REDACTION_MODE = previousRedaction;
+    await loadRedactionPolicy();
+    if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("production browser proof captures one complete artifact across multiple steps", async (t) => {
   await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));

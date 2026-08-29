@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { EvidenceChannel, EvidenceChannelRecord, EvidenceManifest } from "@relay/protocol";
 import { base, bindAndroidAppSession, recordDeviceVideo, type Device } from "./device.js";
 import { now } from "./events.js";
-import { redactValue, visualEvidenceAllowed } from "./redaction.js";
+import { getRedactionPolicy, redactValue, visualEvidenceAllowed } from "./redaction.js";
 import { hasSensitiveEvidenceConsent } from "./evidence-policy.js";
 import { ensureRunDir, type RunArtifact } from "./runs.js";
 import type { TestJob } from "./session.js";
@@ -72,7 +72,7 @@ export function initializeRunEvidence(job: TestJob): RunEvidenceHandle {
   channel(handle, "screenshot").startedAt = startedAt;
   channel(handle, "ui-tree").status = "partial";
   channel(handle, "ui-tree").startedAt = startedAt;
-  if (!visualEvidenceAllowed()) {
+  if (!visualEvidenceAllowed(job.evidencePolicy.redaction ?? getRedactionPolicy())) {
     for (const name of ["screenshot", "video", "ui-tree"] as const) {
       const record = channel(handle, name);
       record.status = "redacted";
@@ -181,6 +181,7 @@ async function stopBrowserProofEvidence(job: TestJob, log: (line: string) => voi
       artifactDigest: sourceRevision.artifactDigest,
       environment,
       runDir: await ensureRunDir(job),
+      evidencePolicy: job.evidencePolicy,
     });
     addArtifact(job, {
       kind: "browser-proof-evidence",
@@ -516,7 +517,9 @@ export async function startRunEvidence(
     });
   }
 
-  const videoUnsupported = visualEvidenceAllowed()
+  const videoUnsupported = visualEvidenceAllowed(
+    job.evidencePolicy.redaction ?? getRedactionPolicy(),
+  )
     ? hasStepScopedCampaignEvidence(job)
       ? "step-scoped campaign frames already provide reviewable visual evidence"
       : options.physicalIos

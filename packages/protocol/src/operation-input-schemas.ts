@@ -72,6 +72,7 @@ export const operationInputSchemas = {
       headless: z.boolean().optional(),
       viewport: browserViewportSchema.optional(),
       environment: browserEnvironmentInputSchema.optional(),
+      profileRetention: z.enum(["retain", "ephemeral"]).optional(),
     })
     .strict(),
   "target.delete": z.object({ targetId: identifier("Managed target identifier") }).strict(),
@@ -85,6 +86,14 @@ export const operationInputSchemas = {
   "system.doctor.get": empty,
   "target.list": empty,
   "target.devices.list": z.object({ phase: z.literal("android").optional() }).strict(),
+  "target.avds.list": empty,
+  "target.avd.boot": z
+    .object({
+      avdName: identifier("Exact configured Android AVD name"),
+      timeoutMs: z.number().int().min(1_000).max(300_000).optional(),
+      headless: z.boolean().optional(),
+    })
+    .strict(),
   "target.boot": z.object(targetReference).strict(),
   "target.authorize": z.object(targetReference).strict(),
   "lease.list": z.object({ status: z.enum(["active", "all"]).optional() }).strict(),

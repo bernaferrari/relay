@@ -9,7 +9,11 @@ import {
   changeVerificationPolicySchema,
   journeyAssociationSchema,
 } from "@relay/protocol";
-import { compileVerificationPlan, proofStartInputFromVerificationPlan } from "@relay/core";
+import {
+  compileVerificationPlan,
+  proofStartInputFromVerificationPlan,
+  verificationCellId,
+} from "@relay/core";
 import { invokeOperation, type OperationInvoker } from "./invoke.js";
 import { UsageError } from "./errors.js";
 import {
@@ -339,7 +343,7 @@ export async function runVerifyChangeCommand(
   if (!repositoryRoot || !isAbsolute(repositoryRoot) || repositoryRoot.includes("\0")) {
     throw new UsageError("Git did not return one absolute repository root");
   }
-  const baseSha = exactSha(
+  const baseTipSha = exactSha(
     await git(
       runner,
       ["rev-parse", "--verify", "--end-of-options", `${baseRef}^{commit}`],
@@ -354,6 +358,10 @@ export async function runVerifyChangeCommand(
       repositoryRoot,
     ),
     "HEAD",
+  );
+  const baseSha = exactSha(
+    await git(runner, ["merge-base", "--", baseTipSha, headSha], repositoryRoot),
+    "merge base",
   );
   const diffOutput = await git(
     runner,
@@ -429,6 +437,20 @@ export async function runVerifyChangeCommand(
           affectedJourneys: plan.selection.affectedJourneys.map((journey) => ({
             ...journey,
             appMapRevision: revisions.get(journey.appMapId)!,
+          })),
+          cells: plan.selection.cells?.map((cell) => ({
+            ...cell,
+            id: verificationCellId({
+              appMapId: cell.journey.appMapId,
+              testId: cell.journey.testId,
+              appMapRevision: revisions.get(cell.journey.appMapId)!,
+              targetCaseId: cell.targetCaseId,
+              buildId: cell.buildId,
+            }),
+            journey: {
+              ...cell.journey,
+              appMapRevision: revisions.get(cell.journey.appMapId)!,
+            },
           })),
         },
       };

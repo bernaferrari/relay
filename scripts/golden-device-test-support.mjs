@@ -256,7 +256,27 @@ export function createFakeGoldenApi(options = {}) {
         }
         return { ok: true, durationMs: 1, logs: [] };
       }
-      if (path.startsWith("/snapshot?")) return { nodes: [], tree: "" };
+      if (path.startsWith("/snapshot?")) {
+        const serial = new URLSearchParams(path.split("?")[1]).get("serial");
+        const platform = serial === "ios-fixture" ? "ios" : "android";
+        const app = platform === "ios" ? "com.example.RelayFixture" : "com.example.relayfixture";
+        return {
+          inspectable: true,
+          foregroundApp: app,
+          nodes: [
+            {
+              identifier: "fixture-home",
+              label: "Fixture home",
+              role: "button",
+              enabled: true,
+              visibleToUser: true,
+              rect: { x: 10, y: 10, width: 80, height: 44 },
+              bundleId: app,
+            },
+          ],
+          tree: "",
+        };
+      }
       if (path.startsWith("/screenshot?")) {
         const serial = new URLSearchParams(path.split("?")[1]).get("serial");
         const landscape = orientation.get(serial) !== "portrait";

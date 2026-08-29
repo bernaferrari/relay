@@ -20,6 +20,7 @@ import {
   supersedeChangeVerification,
 } from "./change-verification-store.js";
 import { resetControlDatabaseCache } from "./collaboration-db.js";
+import { materializeChangeVerificationIntegrity } from "./change-proof-integrity.js";
 import { analyzeTracePack } from "./trace-pack.js";
 
 const scope = {
@@ -108,7 +109,7 @@ test("golden Proof fixture detects RTL regression and only expands after a passi
   );
   assert.equal(
     providerCheckForStoredChangeProof({
-      proof: {
+      proof: materializeChangeVerificationIntegrity({
         ...demo.repairedProof,
         state: "proved",
         decision: "proved",
@@ -118,7 +119,7 @@ test("golden Proof fixture detects RTL regression and only expands after a passi
           kind: "none",
           reason: "Every policy-required case has complete proof.",
         },
-      },
+      }),
     }).conclusion,
     "success",
   );

@@ -15,7 +15,11 @@ test("sensitive evidence consent is explicit, persisted, and revocable", async (
   const previous = process.env.RELAY_WORKSPACE_ROOT;
   process.env.RELAY_WORKSPACE_ROOT = root;
   try {
-    assert.deepEqual(await loadEvidenceCollectionPolicy(), { schemaVersion: 1, sensitive: {} });
+    assert.deepEqual(await loadEvidenceCollectionPolicy(), {
+      schemaVersion: 1,
+      sensitive: {},
+      redaction: { enabled: false, source: "default", locked: false },
+    });
     const enabled = await setSensitiveEvidenceConsent({
       channel: "network-body",
       enabled: true,

@@ -1,0 +1,29 @@
+{
+  "name": "relay-proof",
+  "version": "0.1.0",
+  "description": "Runtime proof for AI-authored changes across web, Android, and iOS.",
+  "author": {
+    "name": "Relay",
+    "url": "https://github.com/bernaferrari/relay"
+  },
+  "homepage": "https://github.com/bernaferrari/relay#readme",
+  "repository": "https://github.com/bernaferrari/relay",
+  "license": "MIT",
+  "keywords": ["runtime-proof", "ai-agents", "merge-gate", "mcp", "android", "ios", "web"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Relay Proof",
+    "shortDescription": "Prove an agent-authored change before merge.",
+    "longDescription": "Relay turns an agent's completion claim into an explainable, reproducible runtime Proof across web, Android, and iOS. It selects affected journeys, binds exact builds and targets, preserves evidence, and reports deterministic residual risk.",
+    "developerName": "Relay",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://github.com/bernaferrari/relay",
+    "defaultPrompt": [
+      "Prove the current change before merge.",
+      "Explain why this Proof is blocked.",
+      "Rerun only the affected journeys after my fix."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

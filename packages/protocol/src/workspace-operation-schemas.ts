@@ -34,6 +34,9 @@ export const workspaceOperationSchemas = {
   "activity.export": empty,
   "workspace.privacy.get": empty,
   "workspace.evidence.get": empty,
+  "workspace.change.inspect": z
+    .object({ baseRef: z.string().trim().min(1).max(512).optional() })
+    .strict(),
   "workspace.variables.get": empty,
   "workspace.apple-device.update": z
     .object({

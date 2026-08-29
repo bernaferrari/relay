@@ -1,4 +1,5 @@
 import type { EvidenceCollectionPolicy, SensitiveEvidenceChannel } from "@relay/protocol";
+import { getRedactionPolicy } from "./redaction.js";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
 
 const EVIDENCE_POLICY_FILE = "evidence.json";
@@ -12,7 +13,7 @@ function clonePolicy(policy: EvidenceCollectionPolicy): EvidenceCollectionPolicy
 }
 
 export function getEvidenceCollectionPolicy(): EvidenceCollectionPolicy {
-  return clonePolicy(activePolicy);
+  return { ...clonePolicy(activePolicy), redaction: getRedactionPolicy() };
 }
 
 export async function loadEvidenceCollectionPolicy(): Promise<EvidenceCollectionPolicy> {

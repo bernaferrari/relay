@@ -59,6 +59,7 @@ export function buildTargetProfiles(input: {
     platform: device.platform,
     name: device.name || device.serial,
     ...(device.kind ? { model: device.kind } : {}),
+    ...(device.avdName ? { androidAvdName: device.avdName } : {}),
     ...(device.osVersion ? { osVersion: device.osVersion } : {}),
     capabilities: [...MOBILE_CAPABILITIES[device.platform]],
     observedAt,

@@ -123,6 +123,7 @@ export const relayMcpPrompts = [
       "proof.continue",
       "proof.cancel",
       "proof.rerun-affected",
+      "workspace.change.inspect",
       "target.devices.list",
       "target.screenshot.capture",
       "lease.list",
@@ -434,13 +435,13 @@ function registerVerifyChangePrompt(server: McpServer, scope: RelayPromptScope):
           sharedSafety(projectId),
           "",
           "Scope (no mutation):",
-          `1. Establish impact. Derive the changed file paths ${
+          `1. Establish impact. Call relay_workspace_change_inspect first. The active Relay workspace is authoritative; restored tabs, browser history, and manually supplied Git/SHA text never choose the change. ${
             changedFiles
-              ? `from the provided list (${changedFiles.split("\n").filter(Boolean).length} files)`
-              : "from your VCS context (for example git diff --name-only against the base branch)"
-          }, then call the relay_app_map_diff_impact tool with ${
+              ? `Use the provided changed-file list only as an explicit comparison (${changedFiles.split("\n").filter(Boolean).length} files).`
+              : "Use its server-owned changed-file list; do not infer a base or head from UI history."
+          } Then call the relay_app_map_diff_impact tool with ${
             appMapId ?? "{appMapId}"
-          } and changedFiles to get the affected Test ids. Never guess flows that neither the tool nor the changed files name.`,
+          } and the authoritative changedFiles to get affected Test ids. Never guess flows that neither Relay nor the workspace change names.`,
           `2. Read ${relayMcpResourceUris.appMaps}${appMapId ? "" : " to find candidate maps"} and relay://app-maps/${appMapId ?? "{appMapId}"}/tests. Select the smallest set of saved graph Tests whose steps traverse the impacted screens and connections. Prefer existing Tests; propose new authoring only if nothing covers the change, and stop for approval before creating anything.`,
           "",
           "Create and approve the Proof (with the appropriate human decision):",

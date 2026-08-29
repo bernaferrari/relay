@@ -16,6 +16,7 @@ import {
   type VerificationPlan,
   type VerificationPlanTargetCase,
 } from "@relay/protocol";
+import { createHash } from "node:crypto";
 
 export type ComputeChangeImpactInput = {
   change: unknown;
@@ -30,6 +31,24 @@ export type CompileVerificationPlanInput = ComputeChangeImpactInput & {
   maxCases?: number;
   maxDurationMs?: number;
 };
+
+/** Stable across equivalent plan compiles and independent of array order. */
+export function verificationCellId(input: {
+  appMapId: string;
+  testId: string;
+  appMapRevision?: number;
+  targetCaseId: string;
+  buildId: string;
+}): string {
+  const identity = [
+    input.appMapId,
+    input.testId,
+    input.appMapRevision === undefined ? "unbound" : String(input.appMapRevision),
+    input.targetCaseId,
+    input.buildId,
+  ].join("\0");
+  return `cell-${createHash("sha256").update(identity, "utf8").digest("hex").slice(0, 24)}`;
+}
 
 type SignalMatch = { kind: (typeof CHANGE_SIGNAL_KINDS)[number]; value: string };
 
@@ -170,7 +189,7 @@ export function compileVerificationPlan(input: CompileVerificationPlanInput): Ve
     throw new Error("target case ids must be unique");
   }
   const policy = changeVerificationPolicySchema.parse(input.policy);
-  const affectedJourneys = impact.journeys
+  const affectedJourneys: VerificationPlan["selection"]["affectedJourneys"] = impact.journeys
     .filter(({ classification }) => classification !== "unrelated")
     .map(({ appMapId, testId, classification, reason }) => ({
       appMapId,
@@ -180,8 +199,44 @@ export function compileVerificationPlan(input: CompileVerificationPlanInput): Ve
         classification === "definitely-affected" ? ("definite" as const) : ("probable" as const),
     }));
   const requiredCases = targetCases.filter(({ required }) => required);
+  const cells = builds.length
+    ? affectedJourneys.flatMap((journey) =>
+        requiredCases.map((targetCase) => {
+          const platform =
+            targetCase.executionTarget.platform === "browser"
+              ? "web"
+              : targetCase.executionTarget.platform;
+          const matchingBuilds = builds.filter((build) => build.platform === platform);
+          if (matchingBuilds.length !== 1) {
+            throw new Error(
+              `Verification Cell ${journey.appMapId}/${journey.testId}/${targetCase.id} requires exactly one frozen ${platform} build; found ${matchingBuilds.length}.`,
+            );
+          }
+          const build = matchingBuilds[0]!;
+          return {
+            id: verificationCellId({
+              appMapId: journey.appMapId,
+              testId: journey.testId,
+              appMapRevision: journey.appMapRevision,
+              targetCaseId: targetCase.id,
+              buildId: build.id,
+            }),
+            journey: {
+              appMapId: journey.appMapId,
+              testId: journey.testId,
+              ...(journey.appMapRevision === undefined
+                ? {}
+                : { appMapRevision: journey.appMapRevision }),
+            },
+            targetCaseId: targetCase.id,
+            buildId: build.id,
+            cleanupRequired: targetCase.cleanupRequired ?? false,
+          };
+        }),
+      )
+    : [];
   const pilot = requiredCases[0];
-  const maxCases = input.maxCases ?? Math.max(1, requiredCases.length);
+  const maxCases = input.maxCases ?? Math.max(1, cells.length);
   const maxDurationMs = input.maxDurationMs ?? 1_800_000;
   const planGaps: ChangeCoverageGap[] = [...impact.coverageGaps];
   if (!pilot) {
@@ -190,10 +245,10 @@ export function compileVerificationPlan(input: CompileVerificationPlanInput): Ve
       reason: "The Verification Plan requires at least one policy-required frozen target case.",
     });
   }
-  if (requiredCases.length > maxCases) {
+  if (cells.length > maxCases) {
     planGaps.push({
       code: "required-case-budget-exceeded",
-      reason: `The policy requires ${requiredCases.length} cases but the plan limit is ${maxCases}.`,
+      reason: `The frozen Verification Plan materializes ${cells.length} journey/target cells but the plan limit is ${maxCases}.`,
     });
   }
   const status = !builds.length
@@ -208,11 +263,13 @@ export function compileVerificationPlan(input: CompileVerificationPlanInput): Ve
     change: impact.change,
     impact,
     builds,
-    selection: { affectedJourneys, targetCases },
+    selection: { affectedJourneys, targetCases, ...(cells.length ? { cells } : {}) },
     policy,
     ...(pilot ? { pilotTargetCaseId: pilot.id } : {}),
+    ...(cells[0] ? { pilotCellId: cells[0].id } : {}),
     expansion: {
-      targetCaseIds: requiredCases.slice(1).map(({ id }) => id),
+      cellIds: cells.slice(1).map(({ id }) => id),
+      targetCaseIds: [...new Set(cells.slice(1).map(({ targetCaseId }) => targetCaseId))],
       maxCases,
       maxDurationMs,
       conditions: ["pilot-passed", "evidence-complete", "no-unreconciled-input"],

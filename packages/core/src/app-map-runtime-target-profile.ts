@@ -6,7 +6,7 @@ import {
 
 type SavedTargetProfile = Pick<
   TargetProfile,
-  "id" | "targetId" | "platform" | "viewport" | "browserCaseProfile"
+  "id" | "targetId" | "platform" | "androidAvdName" | "viewport" | "browserCaseProfile"
 >;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -51,6 +51,9 @@ export function appMapRuntimeTargetProfileFromSaved(
   if (browserCaseProfile && profile.platform !== "browser") {
     throw new Error("A browser case profile can only belong to a browser runtime profile");
   }
+  if (profile.androidAvdName && profile.platform !== "android") {
+    throw new Error("An Android AVD name can only belong to an Android runtime profile");
+  }
   if (
     browserCaseProfile &&
     profile.viewport &&
@@ -63,6 +66,7 @@ export function appMapRuntimeTargetProfileFromSaved(
     id: profile.id,
     targetId: profile.targetId,
     platform: profile.platform,
+    ...(profile.androidAvdName ? { androidAvdName: profile.androidAvdName } : {}),
     ...(viewport ? { viewport: structuredClone(viewport) } : {}),
     ...(browserCaseProfile ? { browserCaseProfile } : {}),
   };
@@ -77,13 +81,17 @@ export function parseAppMapRuntimeTargetProfile(
   if (
     !isRecord(value) ||
     !Object.keys(value).every((key) =>
-      ["id", "targetId", "platform", "viewport", "browserCaseProfile"].includes(key),
+      ["id", "targetId", "platform", "androidAvdName", "viewport", "browserCaseProfile"].includes(
+        key,
+      ),
     ) ||
     typeof value.id !== "string" ||
     !value.id.trim() ||
     typeof value.targetId !== "string" ||
     !value.targetId.trim() ||
     (value.platform !== "android" && value.platform !== "ios" && value.platform !== "browser") ||
+    (value.androidAvdName !== undefined &&
+      (typeof value.androidAvdName !== "string" || !value.androidAvdName.trim())) ||
     (value.viewport !== undefined && !validViewport(value.viewport))
   ) {
     return undefined;
@@ -98,6 +106,7 @@ export function parseAppMapRuntimeTargetProfile(
     return undefined;
   }
   if (browserCaseProfile && value.platform !== "browser") return undefined;
+  if (value.androidAvdName !== undefined && value.platform !== "android") return undefined;
   if (
     browserCaseProfile &&
     value.viewport !== undefined &&
@@ -109,6 +118,7 @@ export function parseAppMapRuntimeTargetProfile(
     id: value.id,
     targetId: value.targetId,
     platform: value.platform,
+    ...(value.androidAvdName === undefined ? {} : { androidAvdName: value.androidAvdName }),
     ...(value.viewport === undefined ? {} : { viewport: value.viewport }),
     ...(browserCaseProfile ? { browserCaseProfile } : {}),
   });

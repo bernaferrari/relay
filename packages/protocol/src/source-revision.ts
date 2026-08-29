@@ -12,6 +12,8 @@ export type SourceRevision = {
   branch?: string;
   /** Digest of the built artifact under test, when the build is known. */
   artifactDigest?: string;
+  /** Registered build/deployment identity used for an executable Proof. */
+  buildId?: string;
 };
 
 const GIT_SHA_PATTERN = /^[0-9a-f]{7,40}$/;
@@ -54,12 +56,15 @@ export function parseSourceRevision(value: unknown): SourceRevision {
   if (input.artifactDigest !== undefined) {
     artifactDigest = requiredText(input.artifactDigest, "artifactDigest");
   }
+  let buildId: string | undefined;
+  if (input.buildId !== undefined) buildId = requiredText(input.buildId, "buildId");
   return {
     vcs: "git",
     sha,
     ...(prNumber !== undefined ? { prNumber } : {}),
     ...(branch !== undefined ? { branch } : {}),
     ...(artifactDigest !== undefined ? { artifactDigest } : {}),
+    ...(buildId !== undefined ? { buildId } : {}),
   };
 }
 

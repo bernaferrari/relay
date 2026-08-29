@@ -497,6 +497,7 @@ const proofOperations = [
   "target.list",
   "target.screenshot.capture",
   "lease.list",
+  "workspace.change.inspect",
   "app-map.list",
   "app-map.get",
   "app-map.test.run",

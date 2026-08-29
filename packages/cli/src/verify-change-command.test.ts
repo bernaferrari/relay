@@ -160,6 +160,7 @@ function fakeGit(calls: string[][]): VerifyChangeGitRunner {
     if (args[0] === "rev-parse" && args.at(-1) === "HEAD^{commit}") {
       return { stdout: `${headSha}\n` };
     }
+    if (args[0] === "merge-base") return { stdout: `${baseSha}\n` };
     if (args[0] === "diff") return { stdout: "src/settings/Language.tsx\0" };
     throw new Error(`unexpected git call: ${args.join(" ")}`);
   };
@@ -200,7 +201,8 @@ test("verify-change compiles exact local Git provenance without mutating when un
   assert.equal(result.execution.nextAction.kind, "confirm");
   assert.match(result.execution.nextAction.command ?? "", /--confirm/u);
   assert.equal(calls[1]?.[3], "main^{commit}");
-  assert.equal(calls[3]?.[0], "diff");
+  assert.equal(calls[3]?.[0], "merge-base");
+  assert.equal(calls[4]?.[0], "diff");
 });
 
 test("verify-change safely passes an untrusted base ref to execFile and starts one Proof only when confirmed", async () => {
@@ -226,6 +228,7 @@ test("verify-change safely passes an untrusted base ref to execFile and starts o
       if (args[0] === "rev-parse" && args.at(-1)?.endsWith("^{commit}")) {
         return { stdout: args.at(-1) === "HEAD^{commit}" ? `${headSha}\n` : `${baseSha}\n` };
       }
+      if (args[0] === "merge-base") return { stdout: `${baseSha}\n` };
       return { stdout: "src/settings/Language.tsx\0" };
     },
     client: {

@@ -15,8 +15,9 @@ import {
   executeLiveChangeProof,
   type ChangeProofRunCase,
 } from "./change-proof-live-run.js";
+import { materializeChangeVerificationIntegrity } from "./change-proof-integrity.js";
 import { agentRepairPacketForDecision } from "./change-proof-decision.js";
-import { compileVerificationPlan } from "./change-impact.js";
+import { compileVerificationPlan, verificationCellId } from "./change-impact.js";
 import { exportTracePack } from "./trace-pack.js";
 import type { PersistedRun } from "./runs.js";
 
@@ -256,7 +257,7 @@ export function goldenDemoReadyProof(
   baseSha: string = CHANGE_PROOF_GOLDEN_DEMO.baseSha,
 ): ChangeVerification {
   const plan = goldenDemoVerificationPlan(headSha, baseSha);
-  return {
+  return materializeChangeVerificationIntegrity({
     schemaVersion: 2,
     id,
     organizationId: CHANGE_PROOF_GOLDEN_DEMO.organizationId,
@@ -270,6 +271,20 @@ export function goldenDemoReadyProof(
       affectedJourneys: plan.selection.affectedJourneys.map((journey) => ({
         ...journey,
         appMapRevision: CHANGE_PROOF_GOLDEN_DEMO.appMapRevision,
+      })),
+      cells: plan.selection.cells?.map((cell) => ({
+        ...cell,
+        id: verificationCellId({
+          appMapId: cell.journey.appMapId,
+          testId: cell.journey.testId,
+          appMapRevision: CHANGE_PROOF_GOLDEN_DEMO.appMapRevision,
+          targetCaseId: cell.targetCaseId,
+          buildId: cell.buildId,
+        }),
+        journey: {
+          ...cell.journey,
+          appMapRevision: CHANGE_PROOF_GOLDEN_DEMO.appMapRevision,
+        },
       })),
     },
     planApproval: {
@@ -299,7 +314,7 @@ export function goldenDemoReadyProof(
     },
     createdAt: 100,
     updatedAt: approvedAt,
-  };
+  });
 }
 
 function planArtifact(item: ChangeProofRunCase): PersistedRun["artifacts"][number] {

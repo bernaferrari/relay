@@ -4,6 +4,7 @@ import {
   getRedactionPolicy,
   inspectAndroidDeviceSetup,
   inspectAppleDeviceSetup,
+  inspectWorkspaceChange,
   readDeviceSetup,
   RedactionPolicyLockedError,
   resetDeviceClients,
@@ -29,6 +30,22 @@ export type SettingsRouteContext = {
 
 export async function handleSettingsRoute(context: SettingsRouteContext): Promise<boolean> {
   const { method, pathname, request: req, response: res, scope } = context;
+
+  if (method === "GET" && pathname === "/workspace/change") {
+    const search = new URL(req.url ?? pathname, "http://relay.local").searchParams;
+    const baseRef = search.get("baseRef")?.trim();
+    json(res, 200, {
+      change: await inspectWorkspaceChange({
+        ...(baseRef ? { baseRef } : {}),
+        ...(process.env.RELAY_PROOF_BASE_REF?.trim()
+          ? { preferredBaseRef: process.env.RELAY_PROOF_BASE_REF.trim() }
+          : process.env.GITHUB_BASE_REF?.trim()
+            ? { preferredBaseRef: process.env.GITHUB_BASE_REF.trim() }
+            : {}),
+      }),
+    });
+    return true;
+  }
 
   if (method === "GET" && pathname === "/settings/privacy") {
     json(res, 200, { policy: getRedactionPolicy() });

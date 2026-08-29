@@ -16,6 +16,15 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "target.avds.list",
+    path("target avd list"),
+    path("device avd list", [], undefined, {
+      summary: "List configured Android emulators (including stopped AVDs)",
+      examples: ["relay device avd list --json"],
+      note: "Read-only. AVDs are separate from connected devices; a stopped AVD has no ADB serial until it boots.",
+    }),
+  ),
+  mapped(
     "target.health.get",
     path("target health", ["serial"]),
     path("device health", ["serial"], undefined, {
@@ -54,6 +63,20 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
     path("device boot", ["serial"], undefined, {
       summary: "Boot a device",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+    }),
+  ),
+  mapped(
+    "target.avd.boot",
+    path("target avd boot", ["avdName"]),
+    path("device avd boot", ["avdName"], undefined, {
+      summary: "Boot exactly one named Android emulator",
+      argumentHelp: [{ name: "avdName", type: "string", description: "Exact configured AVD name" }],
+      inputHelp: [
+        { name: "headless", type: "boolean", description: "Boot without a window or audio" },
+        { name: "timeoutMs", type: "number", description: "Readiness budget, 1000–300000 ms" },
+      ],
+      examples: ["relay device avd boot Pixel_9_API_36 --headless --json"],
+      note: "Local-host only. Relay never guesses an AVD or reuses a tab/session; it returns the observed ADB serial after sys.boot_completed=1.",
     }),
   ),
   mapped(

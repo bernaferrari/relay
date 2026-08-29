@@ -3,6 +3,7 @@ import type {
   AppMap,
   Build,
   ChangeProofPublicationReceipt,
+  ChangeProofPublicationOutboxRecord,
   ChangeVerification,
   CompatibilityMatrix,
   DeviceLease,
@@ -26,6 +27,11 @@ import {
   listControlEventRows,
   metaDelete,
   metaGet,
+  changeProofPublicationOutbox,
+  changeProofPublicationOutboxByLogicalKey,
+  changeProofPublicationOutboxes,
+  insertChangeProofPublicationOutbox,
+  updateChangeProofPublicationOutbox,
   insertReviewedDocumentOriginProjection,
   parseRowDocument,
   RECOVERED_FROM_BACKUP_META,
@@ -158,6 +164,24 @@ export type ControlStore = {
     provider: ChangeProofPublicationReceipt["provider"],
   ): ChangeProofPublicationReceipt[];
   insertChangeProofPublication(receipt: ChangeProofPublicationReceipt): boolean;
+  changeProofPublicationOutbox(
+    organizationId: string,
+    projectId: string,
+    id: string,
+  ): ChangeProofPublicationOutboxRecord | undefined;
+  changeProofPublicationOutboxes(
+    organizationId?: string,
+    projectId?: string,
+  ): ChangeProofPublicationOutboxRecord[];
+  changeProofPublicationOutboxByLogicalKey(
+    organizationId: string,
+    projectId: string,
+    proofId: string,
+    proofVersion: number,
+    provider: ChangeProofPublicationOutboxRecord["provider"],
+  ): ChangeProofPublicationOutboxRecord | undefined;
+  insertChangeProofPublicationOutbox(record: ChangeProofPublicationOutboxRecord): boolean;
+  updateChangeProofPublicationOutbox(record: ChangeProofPublicationOutboxRecord): boolean;
   appMap(key: string): AppMap | undefined;
   appMapRecoveryDocument(key: string): AppMapRecoveryDocument | undefined;
   hasAppMap(key: string): boolean;
@@ -490,6 +514,34 @@ function createStore(db: DatabaseSync): ControlStore {
             receipt.publishedAt,
           ).changes > 0
       );
+    },
+    changeProofPublicationOutbox(organizationId, projectId, id) {
+      return changeProofPublicationOutbox(db, organizationId, projectId, id);
+    },
+    changeProofPublicationOutboxes(organizationId, projectId) {
+      return changeProofPublicationOutboxes(db, organizationId, projectId);
+    },
+    changeProofPublicationOutboxByLogicalKey(
+      organizationId,
+      projectId,
+      proofId,
+      proofVersion,
+      provider,
+    ) {
+      return changeProofPublicationOutboxByLogicalKey(
+        db,
+        organizationId,
+        projectId,
+        proofId,
+        proofVersion,
+        provider,
+      );
+    },
+    insertChangeProofPublicationOutbox(record) {
+      return insertChangeProofPublicationOutbox(db, record);
+    },
+    updateChangeProofPublicationOutbox(record) {
+      return updateChangeProofPublicationOutbox(db, record);
     },
     appMap(key) {
       const row = db.prepare("SELECT document, status FROM app_maps WHERE map_key = ?").get(key) as

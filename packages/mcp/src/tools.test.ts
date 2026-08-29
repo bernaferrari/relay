@@ -626,6 +626,7 @@ test("the proof profile composes the verify-change loop and CLI-parity share too
     "proof.continue",
     "proof.cancel",
     "proof.rerun-affected",
+    "workspace.change.inspect",
     "app-map.test.run",
     "job.get",
     "run.evidence.get",

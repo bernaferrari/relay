@@ -24,7 +24,7 @@ import {
 } from "./collaboration-json.js";
 import type { StoredAppMapDisposition } from "./app-map/stored-map-repair.js";
 import { ensureChangeVerificationSchema } from "./change-verification-db.js";
-
+export * from "./change-proof-publication-outbox-db.js";
 export const CONTROL_DB_NAME = "control.sqlite",
   CONTROL_SCHEMA_VERSION = 7,
   JSON_MIGRATED_META = "json_migrated",

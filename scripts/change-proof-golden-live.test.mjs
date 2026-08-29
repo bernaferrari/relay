@@ -212,6 +212,37 @@ test("live harness executes web evidence but refuses a cross-platform claim with
   }
 });
 
+test("fixture cleanup failure downgrades the completed web lane", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-change-proof-golden-cleanup-"));
+  try {
+    const report = await runChangeProofGoldenLive({
+      runWeb: true,
+      artifactDir: root,
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ ok: true, product: "relay", version: "test" }), {
+          status: 200,
+        }),
+      invoke: fakeBrowserInvoker(),
+      startFixture: async () => ({
+        baseUrl: "http://fixture.invalid",
+        close: async () => {
+          throw new Error("fixture close failed");
+        },
+      }),
+      command: async (name) =>
+        name === "adb"
+          ? { code: 0, stdout: "List of devices attached\n", stderr: "" }
+          : { code: 0, stdout: "", stderr: "" },
+      env: {},
+    });
+    assert.equal(report.web.status, "failed");
+    assert.ok(report.web.blockers.some(({ id }) => id === "browser.fixture.cleanup.failed"));
+    assert.ok(report.finalProof.blockers.some(({ id }) => id === "browser.fixture.cleanup.failed"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("apparently ready Android and exact-head inputs still cannot produce a false green", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-change-proof-golden-ready-"));
   const apk = join(root, "settings-fixture.apk");

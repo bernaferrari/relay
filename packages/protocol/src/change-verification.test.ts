@@ -88,6 +88,15 @@ function fixture(overrides: Partial<ChangeVerification> = {}): ChangeVerificatio
           required: true,
         },
       ],
+      cells: [
+        {
+          id: "cell-settings-chromium",
+          journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 7 },
+          targetCaseId: "chromium-compact-ar",
+          buildId: "web",
+          cleanupRequired: false,
+        },
+      ],
     },
     planApproval: {
       decisionId: "decision-1",
@@ -162,6 +171,61 @@ test("legacy v1 Proofs migrate fail-closed before execution or merge", () => {
   assert.equal(migrated.lastMutation.version, migrated.version);
   assert.match(migrated.coverageGaps.at(-1)!, /predates durable Verification Plan approval/u);
   assert.equal(migrated.smallestNextVerification?.kind, "review");
+});
+
+test("approved v2 Proofs without cells migrate to review before execution or merge", () => {
+  const value = fixture();
+  const { cells: _cells, ...selection } = value.selection;
+  const migrated = parseChangeVerification({ ...value, selection });
+
+  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.state, "needs-review");
+  assert.equal(migrated.decision, "needs-review");
+  assert.equal(migrated.planApproval, undefined);
+  assert.equal(migrated.lastMutation.action, "legacy-plan-cell-migration");
+  assert.equal(migrated.lastMutation.requestId, "legacy-plan-cell-migration");
+  assert.match(migrated.coverageGaps.at(-1)!, /predates explicit Verification Cells/u);
+  assert.equal(migrated.smallestNextVerification?.kind, "review");
+});
+
+test("a Proof cannot omit one required journey and target cell", () => {
+  const value = fixture();
+  const targetCase = value.selection.targetCases[0]!;
+  assert.throws(
+    () =>
+      parseChangeVerification({
+        ...value,
+        selection: {
+          ...value.selection,
+          targetCases: [
+            targetCase,
+            {
+              ...targetCase,
+              id: "webkit-compact-ar",
+              targetProfile: {
+                ...targetCase.targetProfile,
+                id: "web:compact:webkit:ar",
+                browserCaseProfile: {
+                  ...targetCase.targetProfile.browserCaseProfile!,
+                  engine: "webkit",
+                },
+              },
+            },
+          ],
+        },
+      }),
+    /materialize exactly one cell/u,
+  );
+});
+
+test("historical non-approved v2 planning records without cells remain readable", () => {
+  const value = fixture({ state: "planning", planApproval: undefined });
+  const { cells: _cells, ...selection } = value.selection;
+  const parsed = parseChangeVerification({ ...value, selection });
+
+  assert.equal(parsed.state, "planning");
+  assert.equal(parsed.planApproval, undefined);
+  assert.equal(parsed.selection.cells, undefined);
 });
 
 test("source metadata alone can never claim that a change is proved", () => {

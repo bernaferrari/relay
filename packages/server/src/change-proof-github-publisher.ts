@@ -2,6 +2,7 @@ import {
   providerCheckForStoredChangeProof,
   readChangeProofPublications,
   readChangeVerification,
+  readChangeVerificationHistory,
   recordChangeProofPublication,
   type ChangeVerificationScope,
 } from "@relay/core";
@@ -22,13 +23,18 @@ function exactRepository(config: GitHubProofCheckConfig): string {
 export async function publishChangeProofToGitHub(
   input: ChangeVerificationScope & {
     proofId: string;
+    proofVersion?: number;
     config: GitHubProofCheckConfig;
     detailsUrl?: string;
     fetchImpl?: typeof fetch;
     now?: () => number;
   },
 ) {
-  const proof = await readChangeVerification(input, input.proofId);
+  const proof = input.proofVersion
+    ? (await readChangeVerificationHistory(input, input.proofId)).find(
+        ({ version }) => version === input.proofVersion,
+      )
+    : await readChangeVerification(input, input.proofId);
   if (!proof) throw new ProofCheckPublishError("Change Verification not found in this project");
   const repository = exactRepository(input.config);
   if (repository !== proof.change.repository) {
@@ -61,6 +67,7 @@ export async function publishChangeProofToGitHub(
     organizationId: input.organizationId,
     projectId: input.projectId,
     proofId: proof.id,
+    proofVersion: proof.version,
     repository,
     check,
     provider: published.provider,

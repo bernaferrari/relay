@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   GoldenAcceptanceError,
   GoldenArtifactWriter,
+  assertGoldenSemanticSnapshot,
   createGoldenApi,
   parseGoldenFixtureConfig,
   runGoldenFixtureAcceptance,
@@ -20,6 +21,48 @@ import {
   goldenRecipe,
   recordingArtifacts,
 } from "./golden-device-test-support.mjs";
+
+const strictFixture = {
+  platform: "android",
+  app: "com.example.relayfixture",
+};
+
+test("strict golden semantics reject empty, uninspectable, and wrong-app snapshots", () => {
+  const usableNode = {
+    identifier: "fixture-home",
+    role: "button",
+    rect: { x: 1, y: 1, width: 44, height: 44 },
+    bundleId: strictFixture.app,
+  };
+  assert.throws(
+    () =>
+      assertGoldenSemanticSnapshot(
+        { inspectable: true, foregroundApp: strictFixture.app, nodes: [] },
+        strictFixture,
+      ),
+    (error) => error instanceof GoldenAcceptanceError && error.code === "GOLDEN_SNAPSHOT_UNUSABLE",
+  );
+  assert.throws(
+    () =>
+      assertGoldenSemanticSnapshot(
+        { inspectable: false, foregroundApp: strictFixture.app, nodes: [usableNode] },
+        strictFixture,
+      ),
+    (error) => error instanceof GoldenAcceptanceError && error.code === "GOLDEN_SNAPSHOT_UNUSABLE",
+  );
+  assert.throws(
+    () =>
+      assertGoldenSemanticSnapshot(
+        {
+          inspectable: true,
+          foregroundApp: "com.example.other",
+          nodes: [{ ...usableNode, bundleId: "com.example.other" }],
+        },
+        strictFixture,
+      ),
+    (error) => error instanceof GoldenAcceptanceError && error.code === "GOLDEN_SNAPSHOT_WRONG_APP",
+  );
+});
 
 test("strict acceptance executes exact Android+iOS fixtures and preserves an evidence bundle", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-golden-test-"));

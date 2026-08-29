@@ -21,6 +21,8 @@ import {
   loadFrozenRawAccessibilityEvidence,
   prepareCaseStackPlan,
   preflightCompiledAppMapTestOffline,
+  prepareRegisteredBuildForProof,
+  readBuild,
   readAppMap,
   readProjectVariables,
   referencedRuntimeInputs,
@@ -67,6 +69,8 @@ export type AppMapTestRunRouteRuntime = {
   assertTargetControl: typeof assertTargetControl;
   createAppMapTestExecutionIntent: typeof createAppMapTestExecutionIntent;
   enqueueJob: typeof enqueueJob;
+  readBuild: typeof readBuild;
+  prepareBuildForProof: typeof prepareRegisteredBuildForProof;
 };
 
 const defaultTestRunRuntime: AppMapTestRunRouteRuntime = {
@@ -74,6 +78,8 @@ const defaultTestRunRuntime: AppMapTestRunRouteRuntime = {
   assertTargetControl,
   createAppMapTestExecutionIntent,
   enqueueJob,
+  readBuild,
+  prepareBuildForProof: prepareRegisteredBuildForProof,
 };
 
 export function frozenEvidenceTargetProfileForTarget(input: {
@@ -542,6 +548,50 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         );
       }
     }
+    let buildProvenance: Awaited<ReturnType<typeof prepareRegisteredBuildForProof>> | undefined;
+    const sourceRevision = body.sourceRevision;
+    const buildId = sourceRevision?.buildId;
+    if (buildId) {
+      if (body.target.kind !== "device") {
+        throw new HttpError(
+          409,
+          "Browser Proof execution requires a provider-verified deployment identity",
+          {
+            code: "PROOF_INSUFFICIENT_EVIDENCE",
+            targetId,
+            recovery:
+              "Bind a verified deployment digest to this browser target before starting the Proof.",
+          },
+        );
+      }
+      const build = await runtime.readBuild(input.scope.projectId, buildId);
+      if (!build) {
+        throw new HttpError(409, `Registered Proof build ${buildId} was not found`, {
+          code: "PROOF_BUILD_NOT_FOUND",
+          buildId,
+        });
+      }
+      const targetKind = observedDevices?.find((device) => device.serial === targetId)?.kind;
+      try {
+        buildProvenance = await runtime.prepareBuildForProof({
+          build,
+          target: { kind: "device", platform: body.target.platform, serial: targetId },
+          targetKind,
+          sourceSha: sourceRevision!.sha,
+          artifactDigest: sourceRevision!.artifactDigest ?? "",
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new HttpError(409, message, {
+          code: message.startsWith("PROOF_INSUFFICIENT_EVIDENCE")
+            ? "PROOF_INSUFFICIENT_EVIDENCE"
+            : "PROOF_BUILD_INVALID",
+          buildId,
+          targetId,
+          recovery: "Install and verify the exact registered build before retrying this Proof.",
+        });
+      }
+    }
     await runtime.assertTargetControl(input.scope, targetId);
     const planIdentity = {
       appMapId: plan.appMapId,
@@ -561,6 +611,15 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       ...(targetProfile ? { targetProfile } : {}),
       ...(body.sourceRevision ? { sourceRevision: body.sourceRevision } : {}),
       artifacts: [
+        ...(buildProvenance
+          ? [
+              {
+                kind: "proof-build-provenance",
+                capturedAt: buildProvenance.observation.observedAt,
+                data: structuredClone(buildProvenance),
+              },
+            ]
+          : []),
         ...(body.workflowRequestId
           ? [
               {

@@ -14,6 +14,7 @@ import type { PersistedRun } from "./runs.js";
 import { analyzeTracePack, exportTracePack } from "./trace-pack.js";
 
 export type ChangeProofRunCase = Readonly<{
+  cellId: string;
   appMapId: string;
   testId: string;
   appMapRevision: number;
@@ -27,39 +28,45 @@ function platformForTargetCase(
   return item.executionTarget.platform === "browser" ? "web" : item.executionTarget.platform;
 }
 
-function buildForTargetCase(
-  proof: ChangeVerification,
-  targetCase: ChangeVerification["selection"]["targetCases"][number],
-): ChangeVerification["builds"][number] {
-  const matching = proof.builds.filter(
-    (build) => build.platform === platformForTargetCase(targetCase),
-  );
-  if (matching.length !== 1) {
-    throw new Error(
-      `Target case ${targetCase.id} requires exactly one frozen ${platformForTargetCase(targetCase)} build; found ${matching.length}.`,
-    );
-  }
-  return matching[0]!;
-}
-
-/** Deterministic required Cartesian coverage. The first entry is the pilot;
- * the remainder is the smallest policy-required expansion. */
+/** Return the exact frozen cells. The first entry is the pilot; the remainder
+ * is the smallest policy-required expansion. */
 export function changeProofRequiredRunCases(value: unknown): ChangeProofRunCase[] {
   const proof = parseChangeVerification(value);
-  const targets = proof.selection.targetCases.filter(({ required }) => required);
-  return proof.selection.affectedJourneys.flatMap((journey) => {
-    if (journey.appMapRevision === undefined) {
+  const cells = proof.selection.cells;
+  if (!cells?.length) throw new Error("Proof has no frozen Verification Cells.");
+  const targetCases = new Map(
+    proof.selection.targetCases.map((targetCase) => [targetCase.id, targetCase]),
+  );
+  const builds = new Map(proof.builds.map((build) => [build.id, build]));
+  return cells.map((cell) => {
+    const journey = proof.selection.affectedJourneys.find(
+      (candidate) =>
+        candidate.appMapId === cell.journey.appMapId &&
+        candidate.testId === cell.journey.testId &&
+        candidate.appMapRevision === cell.journey.appMapRevision,
+    );
+    if (!journey || journey.appMapRevision === undefined) {
       throw new Error(
-        `Affected journey ${journey.appMapId}/${journey.testId} has no frozen App Map revision.`,
+        `Verification Cell ${cell.id} has no frozen App Map revision for ${cell.journey.appMapId}/${cell.journey.testId}.`,
       );
     }
-    return targets.map((targetCase) => ({
+    const targetCase = targetCases.get(cell.targetCaseId);
+    const build = builds.get(cell.buildId);
+    if (!targetCase || !build) {
+      throw new Error(`Verification Cell ${cell.id} references a missing frozen target or build.`);
+    }
+    const expectedPlatform = platformForTargetCase(targetCase);
+    if (build.platform !== expectedPlatform || build.sourceSha !== proof.change.headSha) {
+      throw new Error(`Verification Cell ${cell.id} does not bind a compatible exact build.`);
+    }
+    return {
+      cellId: cell.id,
       appMapId: journey.appMapId,
       testId: journey.testId,
-      appMapRevision: journey.appMapRevision!,
+      appMapRevision: journey.appMapRevision,
       targetCaseId: targetCase.id,
-      buildId: buildForTargetCase(proof, targetCase).id,
-    }));
+      buildId: build.id,
+    };
   });
 }
 
@@ -127,7 +134,9 @@ function buildForRun(
   const revision = run.sourceRevision;
   const matching = proof.builds.filter(
     (build) =>
-      build.sourceSha === revision?.sha && build.artifactDigest === revision.artifactDigest,
+      (!revision?.buildId || build.id === revision.buildId) &&
+      build.sourceSha === revision?.sha &&
+      build.artifactDigest === revision.artifactDigest,
   );
   if (matching.length !== 1) {
     throw new Error(
@@ -137,9 +146,53 @@ function buildForRun(
   return matching[0]!;
 }
 
-function cleanupOutcome(run: PersistedRun): ChangeProofCaseResult["cleanup"] {
+function assertBuildProvenanceReceipt(
+  run: PersistedRun,
+  targetCase: ChangeVerification["selection"]["targetCases"][number],
+  build: ChangeVerification["builds"][number],
+): void {
+  if (!run.sourceRevision?.buildId) return;
+  const artifact = run.artifacts.find((item) => item.kind === "proof-build-provenance");
+  const receipt = artifact?.data;
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    throw new Error(`Run ${run.id} has no target-specific Proof build provenance receipt.`);
+  }
+  const value = receipt as Record<string, unknown>;
+  const target = value.target;
+  const observation = value.observation;
+  const targetRecord: Record<string, unknown> =
+    target && typeof target === "object" && !Array.isArray(target)
+      ? (target as Record<string, unknown>)
+      : {};
+  const observationRecord =
+    observation && typeof observation === "object" && !Array.isArray(observation)
+      ? (observation as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+  if (
+    value.schemaVersion !== 1 ||
+    value.buildId !== build.id ||
+    value.artifactDigest !== build.artifactDigest ||
+    targetRecord.id !== targetCase.executionTarget.targetId ||
+    targetRecord.platform !==
+      (targetCase.executionTarget.platform === "browser"
+        ? "browser"
+        : targetCase.executionTarget.platform) ||
+    observationRecord.status !== "verified" ||
+    observationRecord.artifactDigest !== build.artifactDigest
+  ) {
+    throw new Error(
+      `Run ${run.id} has target-specific Proof build provenance that does not match.`,
+    );
+  }
+}
+
+function cleanupOutcome(
+  run: PersistedRun,
+  cleanupRequired: boolean,
+): ChangeProofCaseResult["cleanup"] {
+  if (!cleanupRequired) return "not-required";
   const cleanup = run.artifacts.filter((artifact) => artifact.kind === "campaign-check-cleanup");
-  if (!cleanup.length) return "restored";
+  if (!cleanup.length) return "unproved";
   return cleanup.every((artifact) => {
     const data = artifact.data;
     return (
@@ -150,7 +203,7 @@ function cleanupOutcome(run: PersistedRun): ChangeProofCaseResult["cleanup"] {
     );
   })
     ? "restored"
-    : "unproved";
+    : "failed";
 }
 
 /** Derive one case fact only from the immutable Run and its verified
@@ -179,6 +232,16 @@ export async function changeProofCaseResultFromPersistedRun(input: {
   }
   const targetCase = targetCaseForRun(proof, run);
   const build = buildForRun(proof, run);
+  assertBuildProvenanceReceipt(run, targetCase, build);
+  const cell = proof.selection.cells?.find(
+    (candidate) =>
+      candidate.journey.appMapId === identity.appMapId &&
+      candidate.journey.testId === identity.testId &&
+      candidate.journey.appMapRevision === identity.appMapRevision &&
+      candidate.targetCaseId === targetCase.id &&
+      candidate.buildId === build.id,
+  );
+  if (!cell) throw new Error(`Run ${run.id} does not bind one frozen Verification Cell.`);
   const pack = await exportTracePack(run);
   const analysis = analyzeTracePack(pack);
   const recomputed = analysis.recomputed ?? [];
@@ -198,6 +261,7 @@ export async function changeProofCaseResultFromPersistedRun(input: {
       ? "unreconciled"
       : "reconciled";
   const evidenceComplete = pack.completeness.status === "complete";
+  const cleanup = cleanupOutcome(run, cell.cleanupRequired);
   const infrastructureFailure =
     run.outcome === "harness-failure" &&
     (run.failureCategory === "environment" || run.failureCategory === "target-state");
@@ -212,7 +276,8 @@ export async function changeProofCaseResultFromPersistedRun(input: {
               evidenceComplete &&
               selectorResolution === "deterministic" &&
               inputOutcome === "reconciled" &&
-              cleanupOutcome(run) === "restored"
+              cleanup !== "failed" &&
+              cleanup !== "unproved"
             ? "passed"
             : "insufficient-evidence";
   return changeProofCaseResultSchema.parse({
@@ -228,7 +293,7 @@ export async function changeProofCaseResultFromPersistedRun(input: {
     evidenceComplete,
     selectorResolution,
     inputOutcome,
-    cleanup: cleanupOutcome(run),
+    cleanup,
     ...(outcome === "rejected" || outcome === "infrastructure-failure"
       ? {
           failure: {
@@ -263,6 +328,11 @@ export async function executeLiveChangeProof(input: {
   /** The execution boundary returns only Relay's immutable persisted Run.
    * Per-case verdicts are always re-derived below from its verified TracePack. */
   runCase: (item: ChangeProofRunCase) => Promise<PersistedRun>;
+  /** Maximum number of materialized cells accepted by this execution. */
+  maxCases?: number;
+  /** Wall-clock budget checked before each target-control call. */
+  maxDurationMs?: number;
+  now?: () => number;
   publish?: (decision: ReturnType<typeof decideChangeVerification>) => Promise<void>;
 }): Promise<LiveChangeProofExecution> {
   const proof = parseChangeVerification(input.proof);
@@ -271,10 +341,30 @@ export async function executeLiveChangeProof(input: {
     throw new Error("Live Proof execution requires an approved ready Verification Plan.");
   }
   const cases = changeProofRequiredRunCases(proof);
+  const maxCases = input.maxCases ?? cases.length;
+  if (!Number.isSafeInteger(maxCases) || maxCases < 1 || cases.length > maxCases) {
+    throw new Error(
+      `Proof materializes ${cases.length} Verification Cells, exceeding its ${maxCases}-case limit.`,
+    );
+  }
+  const maxDurationMs = input.maxDurationMs ?? 1_800_000;
+  if (!Number.isSafeInteger(maxDurationMs) || maxDurationMs < 1) {
+    throw new Error("Live Proof maxDurationMs must be a positive safe integer.");
+  }
+  const now = input.now ?? Date.now;
+  const startedAt = now();
+  const assertDurationBudget = (): void => {
+    if (now() - startedAt >= maxDurationMs) {
+      throw new Error("Live Proof duration budget expired before target control.");
+    }
+  };
   const pilot = cases[0];
   if (!pilot) throw new Error("Live Proof execution requires at least one policy-required case.");
-  const runAndProject = async (item: ChangeProofRunCase): Promise<ChangeProofCaseResult> =>
-    changeProofCaseResultFromPersistedRun({ proof, run: await input.runCase(item) });
+  const runAndProject = async (item: ChangeProofRunCase): Promise<ChangeProofCaseResult> => {
+    assertDurationBudget();
+    const run = await input.runCase(item);
+    return changeProofCaseResultFromPersistedRun({ proof, run });
+  };
   const results: ChangeProofCaseResult[] = [await runAndProject(pilot)];
   if (results[0]!.outcome === "passed") {
     for (const item of cases.slice(1)) {

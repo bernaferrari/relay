@@ -1,11 +1,22 @@
 import {
-  parseChangeVerification,
   type ChangeVerification,
   type ChangeVerificationDecision,
   type ChangeVerificationMutation,
   type ChangeVerificationState,
 } from "@relay/protocol";
 import { readControlStore, withControlStore } from "./collaboration-store.js";
+import {
+  materializeChangeVerificationIntegrity,
+  verifyDurableChangeVerification,
+} from "./change-proof-integrity.js";
+import { providerCheckForStoredChangeProof } from "./change-proof-decision.js";
+import { enqueueChangeProofPublicationOutboxInStore } from "./change-proof-publication-outbox.js";
+
+export type ChangeProofPublicationRequest = {
+  provider: "github";
+  detailsUrl?: string;
+  maxAttempts?: number;
+};
 
 export type ChangeVerificationScope = {
   organizationId: string;
@@ -47,6 +58,7 @@ export type AdvanceChangeVerificationInput = ChangeVerificationScope & {
   coverageGaps?: ChangeVerification["coverageGaps"];
   residualRisk?: ChangeVerification["residualRisk"];
   smallestNextVerification?: ChangeVerification["smallestNextVerification"] | null;
+  publication?: ChangeProofPublicationRequest;
 };
 
 export type SupersedeChangeVerificationInput = ChangeVerificationScope & {
@@ -60,6 +72,7 @@ export type SupersedeChangeVerificationInput = ChangeVerificationScope & {
   requestId: string;
   requestDigest: ChangeVerification["lastMutation"]["requestDigest"];
   at: number;
+  publication?: ChangeProofPublicationRequest;
 };
 
 export class ChangeVerificationConflictError extends Error {
@@ -137,6 +150,38 @@ function decisionForState(state: ChangeVerificationState): ChangeVerificationDec
   }
 }
 
+function enqueueTerminalPublication(
+  store: Parameters<typeof enqueueChangeProofPublicationOutboxInStore>[0],
+  proof: ChangeVerification,
+  publication: ChangeProofPublicationRequest | undefined,
+): void {
+  if (
+    !publication ||
+    !["proved", "rejected", "needs-review", "insufficient-evidence", "superseded"].includes(
+      proof.state,
+    )
+  ) {
+    return;
+  }
+  const check = providerCheckForStoredChangeProof({
+    proof,
+    ...(publication.detailsUrl ? { detailsUrl: publication.detailsUrl } : {}),
+  });
+  enqueueChangeProofPublicationOutboxInStore(store, {
+    organizationId: proof.organizationId,
+    projectId: proof.projectId,
+    proofId: proof.id,
+    proofVersion: proof.version,
+    provider: publication.provider,
+    repository: proof.change.repository,
+    headSha: proof.change.headSha,
+    externalId: proof.id,
+    check,
+    ...(publication.maxAttempts ? { maxAttempts: publication.maxAttempts } : {}),
+    createdAt: proof.updatedAt,
+  });
+}
+
 function belongsToScope(proof: ChangeVerification, scope: ChangeVerificationScope): boolean {
   return proof.organizationId === scope.organizationId && proof.projectId === scope.projectId;
 }
@@ -166,11 +211,12 @@ function assertExecutablePlan(proof: ChangeVerification): void {
     !proof.builds.length ||
     !proof.selection.affectedJourneys.length ||
     proof.selection.affectedJourneys.some(({ appMapRevision }) => appMapRevision === undefined) ||
-    !proof.selection.targetCases.length
+    !proof.selection.targetCases.length ||
+    !proof.selection.cells?.length
   ) {
     throw new ChangeVerificationConflictError(
       "PROOF_IMMUTABLE",
-      `state ${proof.state} requires exact builds, App Map revisions, affected journeys, and target cases`,
+      `state ${proof.state} requires exact builds, App Map revisions, affected journeys, target cases, and Verification Cells`,
     );
   }
 }
@@ -178,7 +224,7 @@ function assertExecutablePlan(proof: ChangeVerification): void {
 function initialProof(input: CreateChangeVerificationInput): ChangeVerification {
   const builds = input.builds ?? [];
   const state: ChangeVerificationState = builds.length ? "planning" : "awaiting-build";
-  return parseChangeVerification({
+  return materializeChangeVerificationIntegrity({
     schemaVersion: 2,
     id: input.id,
     organizationId: input.organizationId,
@@ -292,7 +338,16 @@ function advancedProof(
       `state ${input.state} requires one exact App Map revision for every affected journey`,
     );
   }
-  const next = parseChangeVerification({
+  const planChanged =
+    (input.builds !== undefined && !sameValue(input.builds, current.builds)) ||
+    (input.selection !== undefined && !sameValue(input.selection, current.selection));
+  const policyChanged = input.policy !== undefined && !sameValue(input.policy, current.policy);
+  const terminalDecision =
+    input.state === "proved" ||
+    input.state === "rejected" ||
+    input.state === "needs-review" ||
+    input.state === "insufficient-evidence";
+  const next = materializeChangeVerificationIntegrity({
     ...current,
     version: current.version + 1,
     state: input.state,
@@ -302,6 +357,9 @@ function advancedProof(
       input.planApproval === null ? undefined : (input.planApproval ?? current.planApproval),
     cancellation: input.cancellation,
     policy: input.policy ?? current.policy,
+    ...(planChanged ? { planDigest: undefined } : {}),
+    ...(policyChanged ? { policyDigest: undefined } : {}),
+    ...(!terminalDecision ? { decisionDigest: undefined } : {}),
     runIds,
     evidenceDigests,
     decision: decisionForState(input.state),
@@ -363,7 +421,7 @@ export async function readChangeVerification(
   return readControlStore((store) => {
     const raw = store.changeVerification(proofId);
     if (!raw) return undefined;
-    const proof = parseChangeVerification(raw);
+    const proof = verifyDurableChangeVerification(raw);
     return belongsToScope(proof, scope) ? proof : undefined;
   });
 }
@@ -373,7 +431,7 @@ export async function readChangeVerificationHistory(
   proofId: string,
 ): Promise<ChangeVerification[]> {
   return readControlStore((store) => {
-    const proofs = store.changeVerificationVersions(proofId).map(parseChangeVerification);
+    const proofs = store.changeVerificationVersions(proofId).map(verifyDurableChangeVerification);
     if (proofs.length && !belongsToScope(proofs[0]!, scope)) return [];
     return proofs;
   });
@@ -383,7 +441,9 @@ export async function listChangeVerifications(
   scope: ChangeVerificationScope,
 ): Promise<ChangeVerification[]> {
   return readControlStore((store) =>
-    store.changeVerifications(scope.organizationId, scope.projectId).map(parseChangeVerification),
+    store
+      .changeVerifications(scope.organizationId, scope.projectId)
+      .map(verifyDurableChangeVerification),
   );
 }
 
@@ -393,7 +453,7 @@ export async function advanceChangeVerification(
   return withControlStore((store) => {
     const raw = store.changeVerification(input.proofId);
     if (!raw) throw new ChangeVerificationNotFoundError();
-    const current = parseChangeVerification(raw);
+    const current = verifyDurableChangeVerification(raw);
     assertScope(current, input);
     if (current.version !== input.expectedVersion) {
       throw new ChangeVerificationConflictError(
@@ -410,6 +470,7 @@ export async function advanceChangeVerification(
         "Change Verification version is stale",
       );
     }
+    enqueueTerminalPublication(store, next, input.publication);
     return next;
   });
 }
@@ -420,7 +481,7 @@ export async function supersedeChangeVerification(
   return withControlStore((store) => {
     const raw = store.changeVerification(input.proofId);
     if (!raw) throw new ChangeVerificationNotFoundError();
-    const current = parseChangeVerification(raw);
+    const current = verifyDurableChangeVerification(raw);
     assertScope(current, input);
     if (current.version !== input.expectedVersion) {
       throw new ChangeVerificationConflictError(
@@ -456,11 +517,12 @@ export async function supersedeChangeVerification(
     if (!store.insertChangeVerification(replacement)) {
       throw new ChangeVerificationConflictError("PROOF_EXISTS", "replacement Proof already exists");
     }
-    const previous = parseChangeVerification({
+    const previous = materializeChangeVerificationIntegrity({
       ...current,
       version: current.version + 1,
       state: "superseded",
       decision: undefined,
+      decisionDigest: undefined,
       supersededByProofId: replacement.id,
       updatedBy: input.actorId,
       lastMutation: {
@@ -484,6 +546,7 @@ export async function supersedeChangeVerification(
         "Change Verification version is stale",
       );
     }
+    enqueueTerminalPublication(store, previous, input.publication);
     return { previous, replacement };
   });
 }

@@ -38,6 +38,7 @@ export const sourceRevisionSchema = z
     prNumber: z.number().int().positive().optional(),
     branch: text("Branch name").optional(),
     artifactDigest: text("Built artifact digest").optional(),
+    buildId: identifier("Registered build or deployment identity").optional(),
   })
   .strict()
   .describe("Immutable commit/build identity frozen with the run as audit-grade evidence");

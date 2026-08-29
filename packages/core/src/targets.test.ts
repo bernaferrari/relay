@@ -26,7 +26,13 @@ import {
 } from "./device.js";
 import { runWithTargetContext } from "./target-context.js";
 import { runWithTargetSupervisorStore, TargetSupervisorStore } from "./target-supervisor-store.js";
-import { deleteTarget, listTargets, preflightTarget, saveBrowserTarget } from "./targets.js";
+import {
+  browserProfileDir,
+  deleteTarget,
+  listTargets,
+  preflightTarget,
+  saveBrowserTarget,
+} from "./targets.js";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 let root = "";
@@ -385,6 +391,41 @@ test("managed browser targets have full CRUD and reject unsafe URLs", async () =
   assert.equal((await listTargets())[0]?.name, "Assistant web");
   await deleteTarget(target.id);
   assert.deepEqual(await listTargets(), []);
+});
+
+test("ephemeral browser deletion purges its profile while retained authoring data survives", async () => {
+  const isolatedRoot = await mkdtemp(join(tmpdir(), "relay-target-retention-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = isolatedRoot;
+  try {
+    const ephemeral = await saveBrowserTarget({
+      id: "ephemeral-browser",
+      name: "Ephemeral browser",
+      startUrl: "https://example.test/",
+      profileRetention: "ephemeral",
+    });
+    const ephemeralRecording = join(browserProfileDir(ephemeral.id), "recordings", "secret.txt");
+    await mkdir(join(browserProfileDir(ephemeral.id), "recordings"), { recursive: true });
+    await writeFile(ephemeralRecording, "authoring recording sentinel", "utf8");
+    await deleteTarget(ephemeral.id);
+    await assert.rejects(access(ephemeralRecording));
+
+    const retained = await saveBrowserTarget({
+      id: "retained-browser",
+      name: "Retained browser",
+      startUrl: "https://example.test/",
+      profileRetention: "retain",
+    });
+    const retainedRecording = join(browserProfileDir(retained.id), "recordings", "keep.txt");
+    await mkdir(join(browserProfileDir(retained.id), "recordings"), { recursive: true });
+    await writeFile(retainedRecording, "explicitly retained authoring sentinel", "utf8");
+    await deleteTarget(retained.id);
+    assert.equal(await access(retainedRecording), undefined);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(isolatedRoot, { recursive: true, force: true });
+  }
 });
 
 test("managed browser targets preserve an explicit, path-safe id", async () => {

@@ -21,7 +21,9 @@ import { compileExecutionRisk } from "./execution-risk-compiler.js";
 import { replayPersistedRunOffline } from "./offline-run-replay.js";
 import { analyzeTracePack, frozenRunFromTracePack, verifyTracePack } from "./trace-pack.js";
 
-export { VERIFY_CHANGE_POLICY } from "@relay/protocol";
+// Preserve the historical core export while making the full definition
+// server-owned and frozen in the integrity module.
+export { VERIFY_CHANGE_POLICY_DEFINITION as VERIFY_CHANGE_POLICY } from "./change-proof-integrity.js";
 
 export type FrozenVerifyChangeTest = {
   appMap: AppMap;

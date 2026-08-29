@@ -15,6 +15,13 @@ import {
   readChangeVerification,
   type ChangeVerificationScope,
 } from "./change-verification-store.js";
+import {
+  verifyChangeDecisionDigest,
+  verifyChangePlanDigest,
+  verifyChangePolicyDigest,
+  verifyDurableChangeVerification,
+  materializeChangeVerificationIntegrity,
+} from "./change-proof-integrity.js";
 
 function identityKey(value: { appMapId: string; testId: string; targetCaseId: string }): string {
   return `${value.appMapId}\0${value.testId}\0${value.targetCaseId}`;
@@ -69,6 +76,21 @@ function validateCaseResults(
   const journeys = new Set(
     proof.selection.affectedJourneys.map(({ appMapId, testId }) => `${appMapId}\0${testId}`),
   );
+  const cells = proof.selection.cells;
+  if (!cells?.length) throw new Error("Proof has no frozen Verification Cells");
+  const cellByIdentity = new Map(
+    cells.map(
+      (cell) =>
+        [
+          identityKey({
+            appMapId: cell.journey.appMapId,
+            testId: cell.journey.testId,
+            targetCaseId: cell.targetCaseId,
+          }),
+          cell,
+        ] as const,
+    ),
+  );
   const targetCases = new Map(proof.selection.targetCases.map((item) => [item.id, item]));
   const builds = new Map(proof.builds.map((item) => [item.id, item]));
   for (const result of results) {
@@ -89,14 +111,20 @@ function validateCaseResults(
     ) {
       throw new Error(`Run ${result.runId} provenance does not match the exact Proof build`);
     }
+    const cell = cellByIdentity.get(identityKey(result));
+    if (!cell || cell.buildId !== result.buildId) {
+      throw new Error(`Run ${result.runId} does not match its frozen Verification Cell`);
+    }
+    if (cell.cleanupRequired && result.cleanup === "not-required") {
+      throw new Error(`Run ${result.runId} omits cleanup proof required by its Verification Cell`);
+    }
   }
   return results;
 }
 
-/** Aggregate immutable per-journey/per-target Run facts. A definitive product
- * regression rejects; ambiguity requires review; every other missing proof
- * channel remains insufficient evidence. Only the complete Cartesian set of
- * required journeys and target cases can become proved. */
+/** Aggregate immutable per-cell Run facts. A definitive product regression
+ * rejects; ambiguity requires review; every other missing proof channel
+ * remains insufficient evidence. Only every explicit frozen cell can prove. */
 export function decideChangeVerification(input: {
   proof: unknown;
   caseResults: readonly unknown[];
@@ -105,14 +133,11 @@ export function decideChangeVerification(input: {
   if (!proof.planApproval)
     throw new Error("A Proof decision requires an approved Verification Plan");
   const results = validateCaseResults(proof, input.caseResults);
-  const requiredCases = proof.selection.targetCases.filter(({ required }) => required);
-  const requiredIdentities = proof.selection.affectedJourneys.flatMap((journey) =>
-    requiredCases.map((targetCase) => ({
-      appMapId: journey.appMapId,
-      testId: journey.testId,
-      targetCaseId: targetCase.id,
-    })),
-  );
+  const requiredIdentities = proof.selection.cells!.map((cell) => ({
+    appMapId: cell.journey.appMapId,
+    testId: cell.journey.testId,
+    targetCaseId: cell.targetCaseId,
+  }));
   const byIdentity = new Map(results.map((result) => [identityKey(result), result]));
   const requiredResults = requiredIdentities
     .map((identity) => byIdentity.get(identityKey(identity)))
@@ -138,7 +163,7 @@ export function decideChangeVerification(input: {
       result.outcome === "infrastructure-failure" ||
       !result.evidenceComplete ||
       result.selectorResolution === "unproven" ||
-      result.cleanup === "unproved",
+      (result.cleanup !== "restored" && result.cleanup !== "not-required"),
   );
   const coverageGaps = bounded([
     ...proof.coverageGaps,
@@ -281,6 +306,22 @@ export function providerCheckForChangeProof(input: {
   const proof = parseChangeVerification(input.proof);
   const decision = changeProofDecisionSchema.parse(input.decision);
   const classification = providerClassification(proof, decision);
+  const policyDigest = proof.policyDigest ?? verifyChangePolicyDigest(proof.policy);
+  const planDigest = proof.planDigest ?? verifyChangePlanDigest(proof);
+  const terminalProof = {
+    ...proof,
+    state: decision.state,
+    decision: decision.decision,
+    runIds: decision.runIds,
+    evidenceDigests: decision.evidenceDigests,
+    firstCausalFailure: decision.firstCausalFailure,
+    coverageGaps: decision.coverageGaps,
+    residualRisk: decision.residualRisk,
+    smallestNextVerification: decision.smallestNextVerification,
+    policyDigest,
+    planDigest,
+  } as ChangeVerification;
+  const decisionDigest = verifyChangeDecisionDigest(terminalProof);
   const conclusion =
     decision.decision === "proved"
       ? "success"
@@ -314,6 +355,9 @@ export function providerCheckForChangeProof(input: {
     title,
     summary: decision.smallestNextVerification.reason,
     text: lines.join("\n"),
+    policyDigest,
+    planDigest,
+    decisionDigest,
     ...(input.detailsUrl ? { detailsUrl: input.detailsUrl } : {}),
   });
 }
@@ -325,7 +369,36 @@ export function providerCheckForStoredChangeProof(input: {
   proof: unknown;
   detailsUrl?: string;
 }): ChangeProofProviderCheck {
-  const proof = parseChangeVerification(input.proof);
+  const rawProof = parseChangeVerification(input.proof);
+  let proof = verifyDurableChangeVerification(rawProof);
+  // Historical terminal documents are projected as review-required, with
+  // identities materialized only for this non-authorizing provider view. A
+  // planning/running document remains an invalid publication target.
+  const rawTerminal =
+    rawProof.state === "proved" ||
+    rawProof.state === "rejected" ||
+    rawProof.state === "needs-review" ||
+    rawProof.state === "insufficient-evidence" ||
+    rawProof.state === "superseded";
+  if (!rawProof.policyDigest || !rawProof.planDigest || (rawTerminal && !rawProof.decisionDigest)) {
+    if (
+      rawProof.state !== "proved" &&
+      rawProof.state !== "rejected" &&
+      rawProof.state !== "needs-review" &&
+      rawProof.state !== "insufficient-evidence" &&
+      rawProof.state !== "superseded"
+    ) {
+      throw new Error("A provider check requires a terminal Proof");
+    }
+    proof = materializeChangeVerificationIntegrity(proof);
+  }
+  if (
+    !proof.policyDigest ||
+    !proof.planDigest ||
+    (proof.state !== "cancelled" && proof.state !== "superseded" && !proof.decisionDigest)
+  ) {
+    throw new Error("A provider check requires a terminal Proof with verified integrity digests");
+  }
   const classification = providerClassification(proof);
   const conclusion =
     classification === "proved"
@@ -333,9 +406,9 @@ export function providerCheckForStoredChangeProof(input: {
       : classification === "rejected"
         ? "failure"
         : "action-required";
-  const requiredCases =
-    proof.selection.affectedJourneys.length *
-    proof.selection.targetCases.filter(({ required }) => required).length;
+  // A legacy approved Proof without cells is migrated to needs-review by the
+  // protocol parser, so this count can never grant it green authority.
+  const requiredCases = proof.selection.cells?.length ?? 0;
   const lines = [
     `Head: ${proof.change.headSha}`,
     `Required cases: ${requiredCases}`,
@@ -372,6 +445,9 @@ export function providerCheckForStoredChangeProof(input: {
             ? "Every policy-required case has complete proof."
             : "Review the durable Proof before merge.")),
     text: lines.join("\n"),
+    policyDigest: proof.policyDigest,
+    planDigest: proof.planDigest,
+    ...(proof.decisionDigest ? { decisionDigest: proof.decisionDigest } : {}),
     ...(input.detailsUrl ? { detailsUrl: input.detailsUrl } : {}),
   });
 }

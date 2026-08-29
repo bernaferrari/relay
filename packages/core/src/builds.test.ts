@@ -10,9 +10,11 @@ import test from "node:test";
 import {
   installRegisteredBuild,
   launchRegisteredBuild,
+  prepareRegisteredBuildForProof,
   preflightRegisteredBuild,
   resolveRegisteredBuildArtifact,
 } from "./builds.js";
+import { artifactDigestForProof } from "./artifact-digest.js";
 
 test("preflights, installs, and launches a registered Android artifact", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-build-"));
@@ -48,6 +50,139 @@ test("preflights, installs, and launches a registered Android artifact", async (
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("prepares an Android Proof only when the installed APK bytes are exact", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-apk-"));
+  const artifact = join(root, "app.apk");
+  await writeFile(artifact, "exact-apk-bytes");
+  const sourceSha256 = createHash("sha256").update("exact-apk-bytes").digest("hex");
+  const artifactDigest = await artifactDigestForProof(artifact);
+  const build = {
+    id: "android-proof",
+    projectId: "project",
+    name: "Android Proof",
+    platform: "android" as const,
+    sourceUrl: artifact,
+    sourceSha: "2".repeat(40),
+    sourceSha256,
+    configuration: "android.release",
+    environmentRevision: "device-image-1",
+    applicationId: "com.example.app",
+    status: "ready" as const,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const target = { kind: "device" as const, platform: "android" as const, serial: "pixel" };
+  const run = async (command: string, args: string[]) => {
+    if (command === "apkanalyzer") return { stdout: "com.example.app\n" };
+    if (command === "adb" && args.includes("pm")) return { stdout: "package:/data/app/base.apk\n" };
+    if (command === "adb" && args.includes("sha256sum")) {
+      return { stdout: `${sourceSha256}  /data/app/base.apk\n` };
+    }
+    return { stdout: "" };
+  };
+  try {
+    const receipt = await prepareRegisteredBuildForProof({
+      build,
+      target,
+      sourceSha: build.sourceSha,
+      artifactDigest,
+      run,
+      at: 20,
+    });
+    assert.deepEqual(receipt, {
+      schemaVersion: 1,
+      buildId: build.id,
+      target: { kind: "device", id: "pixel", platform: "android" },
+      artifactDigest,
+      applicationId: "com.example.app",
+      install: "verified",
+      launch: "not-requested",
+      observation: {
+        status: "verified",
+        observedAt: 20,
+        applicationId: "com.example.app",
+        artifactDigest,
+        sourceSha256: `sha256:${sourceSha256}`,
+      },
+    });
+    await assert.rejects(
+      prepareRegisteredBuildForProof({
+        build,
+        target,
+        sourceSha: build.sourceSha,
+        artifactDigest,
+        run: async (command, args) => {
+          if (command === "apkanalyzer") return { stdout: "com.example.app\n" };
+          if (command === "adb" && args.includes("pm"))
+            return { stdout: "package:/data/app/base.apk\n" };
+          if (command === "adb" && args.includes("sha256sum")) {
+            return { stdout: `${"0".repeat(64)}  /data/app/base.apk\n` };
+          }
+          return { stdout: "" };
+        },
+      }),
+      /stale or unverified/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects a launch application override unrelated to the registered APK", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-build-override-"));
+  const artifact = join(root, "app.apk");
+  await writeFile(artifact, "apk");
+  try {
+    await assert.rejects(
+      launchRegisteredBuild({
+        build: {
+          id: "android",
+          projectId: "project",
+          name: "Android",
+          platform: "android",
+          sourceUrl: artifact,
+          applicationId: "com.example.app",
+          status: "ready",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        target: { kind: "device", platform: "android", serial: "pixel" },
+        applicationId: "com.example.other",
+        run: async (command) =>
+          command === "apkanalyzer" ? { stdout: "com.example.app\n" } : { stdout: "" },
+      }),
+      /override does not match/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("keeps physical iOS Proof execution explicitly insufficient", async () => {
+  await assert.rejects(
+    prepareRegisteredBuildForProof({
+      build: {
+        id: "ios-proof",
+        projectId: "project",
+        name: "iOS Proof",
+        platform: "ios",
+        sourceUrl: "/tmp/Relay.app",
+        sourceSha: "2".repeat(40),
+        sourceSha256: "0".repeat(64),
+        applicationId: "com.example.app",
+        status: "ready",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      target: { kind: "device", platform: "ios", serial: "physical" },
+      targetKind: "Physical device",
+      sourceSha: "2".repeat(40),
+      artifactDigest: `sha256:${"0".repeat(64)}`,
+    }),
+    /PROOF_INSUFFICIENT_EVIDENCE.*physical iOS/,
+  );
 });
 
 test("supports iOS simulator app bundles and rejects platform mismatches", async () => {

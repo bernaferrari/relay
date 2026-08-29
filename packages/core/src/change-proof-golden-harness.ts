@@ -78,10 +78,10 @@ export type ChangeProofGoldenHarnessReport = Readonly<{
 }>;
 
 function requiredCaseCount(proof: ChangeVerification): number {
-  return (
-    proof.selection.affectedJourneys.length *
-    proof.selection.targetCases.filter(({ required }) => required).length
-  );
+  // The durable Proof owns the frozen execution cells. Never reconstruct a
+  // journey × target product here: a cell also pins the exact build and
+  // cleanup obligation used by the live decision.
+  return proof.selection.cells?.length ?? 0;
 }
 
 function sha(value: string): string {

@@ -359,6 +359,7 @@ export async function runChangeProofGoldenLive({
   cli = defaultCliRunner,
   command = defaultCommand,
   invoke: injectedInvoke,
+  startFixture = startGoldenFixtureServer,
 } = {}) {
   await mkdir(artifactDir, { recursive: true });
   const android = await inspectAndroidPrerequisites({ env, command });
@@ -392,8 +393,9 @@ export async function runChangeProofGoldenLive({
   blockers.push(androidExecution);
   let fixture;
   if (runWeb && health.status === "ready") {
+    let journeyCompleted = false;
     try {
-      fixture = await startGoldenFixtureServer();
+      fixture = await startFixture();
       for (const phase of ["old", "repaired"]) {
         const targetId = `change-proof-golden-${phase}-${process.pid}`;
         await invoke("target.create", {
@@ -403,6 +405,7 @@ export async function runChangeProofGoldenLive({
           headless: true,
           viewport: CHANGE_PROOF_GOLDEN_LIVE.browser.viewport,
           environment: browserEnvironment(),
+          profileRetention: "ephemeral",
         });
         ephemeralTargets.push(targetId);
         web[phase] = await runManagedBrowserJourney({
@@ -427,16 +430,13 @@ export async function runChangeProofGoldenLive({
             "Repaired-head Chromium fixture still exposes the RTL regression",
           ),
         );
-      if (web.blockers.length > 0) blockers.push(...web.blockers);
-      web.status = web.blockers.length === 0 ? "passed" : "failed";
+      journeyCompleted = true;
     } catch (error) {
-      web.status = "unsupported";
       const detail =
         error instanceof GoldenLiveError ? error.message : bounded(error?.message ?? error);
       web.blockers.push(
         blocker("browser.journey.unavailable", "Managed Chromium journey did not complete", detail),
       );
-      blockers.push(...web.blockers);
     } finally {
       for (const targetId of ephemeralTargets.reverse()) {
         try {
@@ -448,22 +448,27 @@ export async function runChangeProofGoldenLive({
             error?.message ?? error,
           );
           web.blockers.push(cleanup);
-          blockers.push(cleanup);
         }
       }
-      if (fixture)
-        await fixture
-          .close()
-          .catch((error) =>
-            blockers.push(
-              blocker(
-                "browser.fixture.cleanup.failed",
-                "Could not close local fixture server",
-                error?.message ?? error,
-              ),
-            ),
+      if (fixture) {
+        try {
+          await fixture.close();
+        } catch (error) {
+          const cleanup = blocker(
+            "browser.fixture.cleanup.failed",
+            "Could not close local fixture server",
+            error?.message ?? error,
           );
+          web.blockers.push(cleanup);
+        }
+      }
     }
+    blockers.push(...web.blockers);
+    web.status = journeyCompleted
+      ? web.blockers.length === 0
+        ? "passed"
+        : "failed"
+      : "unsupported";
   }
   const seededRegression = {
     expected: CHANGE_PROOF_GOLDEN_LIVE.seededFailure,

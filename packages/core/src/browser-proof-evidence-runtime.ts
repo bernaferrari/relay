@@ -4,14 +4,22 @@ import { join } from "node:path";
 import {
   BROWSER_PROOF_REQUIRED_CHANNELS,
   parseBrowserProofEvidence,
+  type EvidenceCollectionPolicy,
   type BrowserProofEvidence,
   type BrowserProofEvidenceChannel,
   type BrowserProofEvidenceChannelRecord,
   type BrowserCaseProfile,
 } from "@relay/protocol";
 import { browserProofRuntimeForTarget, type BrowserProofRuntime } from "./browser-proof-runtime.js";
+import { hasSensitiveEvidenceConsent } from "./evidence-policy.js";
+import {
+  getRedactionPolicy,
+  redactSensitiveEvidenceValue,
+  redactValueForPolicy,
+  visualEvidenceAllowed,
+} from "./redaction.js";
 
-type CaptureInput = Readonly<{
+export type CaptureInput = Readonly<{
   targetId: string;
   runId: string;
   targetProfileId: string;
@@ -19,6 +27,10 @@ type CaptureInput = Readonly<{
   artifactDigest: string;
   environment: BrowserCaseProfile;
   runDir: string;
+  /** Frozen with the Run before browser collection starts. */
+  evidencePolicy: EvidenceCollectionPolicy;
+  /** Test seam for exercising collection policy without a live browser. */
+  runtime?: BrowserProofRuntime;
 }>;
 
 type CapturedFile = Readonly<{
@@ -54,13 +66,14 @@ function channel(
   file?: CapturedFile,
   message?: string,
   dropped = 0,
+  redactions = 0,
 ): BrowserProofEvidenceChannelRecord {
   return {
     status,
     entries: file ? 1 : 0,
     bytes: file?.bytes ?? 0,
     dropped,
-    redactions: 0,
+    redactions,
     artifactRefs: file ? [file.path] : [],
     ...(message ? { message } : {}),
   };
@@ -86,11 +99,11 @@ async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, JSON.stringify(value), "utf8");
 }
 
-function networkSummary(runtime: BrowserProofRuntime) {
+function networkSummary(network: ReadonlyArray<BrowserProofRuntime["network"][number]>) {
   const statusCodes: Record<string, number> = {};
   let failedRequests = 0;
   let pendingRequests = 0;
-  for (const entry of runtime.network) {
+  for (const entry of network) {
     if (entry.status === undefined && !entry.failed) pendingRequests += 1;
     if (entry.status !== undefined) {
       const key = String(entry.status);
@@ -103,7 +116,7 @@ function networkSummary(runtime: BrowserProofRuntime) {
     }
   }
   return {
-    requests: runtime.network.length,
+    requests: network.length,
     failedRequests,
     pendingRequests,
     statusCodes,
@@ -116,10 +129,19 @@ function networkSummary(runtime: BrowserProofRuntime) {
 export async function captureBrowserProofEvidence(
   input: CaptureInput,
 ): Promise<BrowserProofEvidence> {
-  const runtime = await browserProofRuntimeForTarget(input.targetId);
+  const runtime = input.runtime ?? (await browserProofRuntimeForTarget(input.targetId));
   if (!sameValue(runtime.profile, input.environment)) {
     throw new Error("Playwright proof environment differs from the frozen Run profile");
   }
+  // Pixels and accessibility text are intentionally all-or-nothing: this
+  // collector has no safe masking primitive for them. Network bodies are
+  // omitted unless the frozen Run has explicit consent *and* the redaction
+  // policy permits collecting them. These checks happen immediately before
+  // any Run-local write so a caller cannot widen the capture set later.
+  const redactionPolicy = input.evidencePolicy.redaction ?? getRedactionPolicy();
+  const visualAllowed = visualEvidenceAllowed(redactionPolicy);
+  const networkBodyAllowed =
+    visualAllowed && hasSensitiveEvidenceConsent(input.evidencePolicy, "network-body");
   const channels = {} as Record<BrowserProofEvidenceChannel, BrowserProofEvidenceChannelRecord>;
   const payloads: {
     consoleErrors?: BrowserProofEvidence["consoleErrors"];
@@ -151,29 +173,56 @@ export async function captureBrowserProofEvidence(
   };
 
   const screenshotPath = artifact("checkpoint.png");
-  const screenshot = await capture("screenshot", screenshotPath, () =>
-    runtime.screenshot(absoluteArtifactPath(input.runDir, screenshotPath)),
-  );
-  if (screenshot) channels.screenshot = channel("captured", screenshot);
+  if (!visualAllowed) {
+    channels.screenshot = channel(
+      "denied",
+      undefined,
+      "disabled because visual content cannot be safely redacted",
+      0,
+      1,
+    );
+  } else {
+    const screenshot = await capture("screenshot", screenshotPath, () =>
+      runtime.screenshot(absoluteArtifactPath(input.runDir, screenshotPath)),
+    );
+    if (screenshot) channels.screenshot = channel("captured", screenshot);
+  }
 
   const accessibilityPath = artifact("accessibility.json");
-  let accessibility: string | undefined;
-  const accessibilityFile = await capture("accessibility", accessibilityPath, async () => {
-    accessibility = await runtime.ariaSnapshot();
-    await writeJson(absoluteArtifactPath(input.runDir, accessibilityPath), {
-      ariaSnapshot: accessibility,
+  if (!visualAllowed) {
+    channels.accessibility = channel(
+      "denied",
+      undefined,
+      "disabled because accessibility text cannot be safely redacted",
+      0,
+      1,
+    );
+  } else {
+    const accessibilityFile = await capture("accessibility", accessibilityPath, async () => {
+      const accessibility = await runtime.ariaSnapshot();
+      await writeJson(absoluteArtifactPath(input.runDir, accessibilityPath), {
+        ariaSnapshot: accessibility,
+      });
     });
-  });
-  if (accessibilityFile) channels.accessibility = channel("captured", accessibilityFile);
+    if (accessibilityFile) channels.accessibility = channel("captured", accessibilityFile);
+  }
 
-  const consoleErrors = runtime.console
+  const safeConsole = runtime.console.map(
+    (entry) =>
+      redactValueForPolicy(redactSensitiveEvidenceValue(entry), redactionPolicy) as typeof entry,
+  );
+  const consoleRedactions = runtime.console.reduce(
+    (count, entry, index) => count + (sameValue(entry, safeConsole[index]) ? 0 : 1),
+    0,
+  );
+  const consoleErrors = safeConsole
     .filter(({ level }) => level.toLowerCase() === "error")
     .map(({ text }) => text)
     .filter(Boolean);
   const consolePath = artifact("console-errors.json");
   const consoleFile = await capture("console-errors", consolePath, () =>
     writeJson(absoluteArtifactPath(input.runDir, consolePath), {
-      entries: runtime.console,
+      entries: safeConsole,
       errors: consoleErrors,
     }),
   );
@@ -189,6 +238,7 @@ export async function captureBrowserProofEvidence(
           })`
         : undefined,
       runtime.consoleDropped,
+      consoleRedactions,
     );
     if (!incomplete) {
       payloads.consoleErrors = {
@@ -198,11 +248,19 @@ export async function captureBrowserProofEvidence(
     }
   }
 
-  const pageErrors = runtime.pageErrors.map(({ message }) => message).filter(Boolean);
+  const safePageErrors = runtime.pageErrors.map(
+    (entry) =>
+      redactValueForPolicy(redactSensitiveEvidenceValue(entry), redactionPolicy) as typeof entry,
+  );
+  const pageErrorRedactions = runtime.pageErrors.reduce(
+    (count, entry, index) => count + (sameValue(entry, safePageErrors[index]) ? 0 : 1),
+    0,
+  );
+  const pageErrors = safePageErrors.map(({ message }) => message).filter(Boolean);
   const pageErrorsPath = artifact("page-errors.json");
   const pageErrorsFile = await capture("page-errors", pageErrorsPath, () =>
     writeJson(absoluteArtifactPath(input.runDir, pageErrorsPath), {
-      entries: runtime.pageErrors,
+      entries: safePageErrors,
     }),
   );
   if (pageErrorsFile) {
@@ -217,6 +275,7 @@ export async function captureBrowserProofEvidence(
           })`
         : undefined,
       runtime.pageErrorsDropped,
+      pageErrorRedactions,
     );
     if (!incomplete) {
       payloads.pageErrors = {
@@ -226,21 +285,43 @@ export async function captureBrowserProofEvidence(
     }
   }
 
-  const summary = networkSummary(runtime);
+  const safeNetwork = runtime.network.map((entry) => {
+    // A missing consent grant must never leave request or response bodies in
+    // the durable artifact. The redaction policy also denies bodies because
+    // arbitrary binary/text payloads do not have a safe masking primitive.
+    const withoutBody = networkBodyAllowed
+      ? entry
+      : {
+          ...entry,
+          requestBody: undefined,
+          responseBody: undefined,
+          responseBodyEncoding: undefined,
+          responseBodyTruncated: undefined,
+        };
+    return redactValueForPolicy(
+      redactSensitiveEvidenceValue(withoutBody),
+      redactionPolicy,
+    ) as typeof entry;
+  });
+  const networkRedactions = runtime.network.reduce(
+    (count, entry, index) => count + (sameValue(entry, safeNetwork[index]) ? 0 : 1),
+    0,
+  );
+  const summary = networkSummary(safeNetwork);
   const networkPath = artifact("network.json");
   const networkFile = await capture(
     "network",
     networkPath,
     () =>
       writeJson(absoluteArtifactPath(input.runDir, networkPath), {
-        entries: runtime.network,
+        entries: safeNetwork,
         dropped: runtime.networkDropped,
         summary,
       }),
     runtime.networkDropped,
   );
   if (networkFile) {
-    const bodyTruncated = runtime.network.some((entry) => entry.responseBodyTruncated === true);
+    const bodyTruncated = safeNetwork.some((entry) => entry.responseBodyTruncated === true);
     const incomplete = runtime.networkDropped > 0 || summary.pendingRequests > 0 || bodyTruncated;
     channels.network = channel(
       incomplete ? "partial" : "captured",
@@ -255,48 +336,69 @@ export async function captureBrowserProofEvidence(
             .join(", ")})`
         : undefined,
       runtime.networkDropped,
+      networkRedactions,
     );
     if (!incomplete) payloads.networkSummary = summary;
   }
 
   const tracePath = artifact("trace.zip");
-  const traceFile = await capture("trace", tracePath, () =>
-    runtime.stopTrace(absoluteArtifactPath(input.runDir, tracePath)),
-  );
-  if (traceFile) {
-    const bytes = await readFile(absoluteArtifactPath(input.runDir, tracePath));
-    channels.trace = channel("captured", { path: tracePath, bytes: bytes.byteLength });
-    payloads.traceReference = {
-      path: tracePath,
-      digest: digest(bytes),
-      format: "playwright-trace",
-    };
+  if (!visualAllowed) {
+    channels.trace = channel(
+      "denied",
+      undefined,
+      "disabled because trace snapshots can contain visual and semantic content",
+      0,
+      1,
+    );
+  } else {
+    const traceFile = await capture("trace", tracePath, () =>
+      runtime.stopTrace(absoluteArtifactPath(input.runDir, tracePath)),
+    );
+    if (traceFile) {
+      const bytes = await readFile(absoluteArtifactPath(input.runDir, tracePath));
+      channels.trace = channel("captured", { path: tracePath, bytes: bytes.byteLength });
+      payloads.traceReference = {
+        path: tracePath,
+        digest: digest(bytes),
+        format: "playwright-trace",
+      };
+    }
   }
 
-  let pages: Awaited<ReturnType<BrowserProofRuntime["pages"]>>["pages"] = [];
-  let pagesDropped = 0;
   const popupPath = artifact("popup-topology.json");
-  const popupFile = await capture("popup-topology", popupPath, async () => {
-    const projection = await runtime.pages();
-    pages = projection.pages;
-    pagesDropped = projection.dropped;
-    await writeJson(absoluteArtifactPath(input.runDir, popupPath), {
-      pages,
-      dropped: pagesDropped,
-    });
-  });
-  if (popupFile) {
+  if (!visualAllowed) {
     channels["popup-topology"] = channel(
-      pagesDropped > 0 ? "partial" : "captured",
-      popupFile,
-      pagesDropped > 0 ? `${pagesDropped} popup pages omitted by the evidence bound` : undefined,
-      pagesDropped,
+      "denied",
+      undefined,
+      "disabled because popup URLs and titles are semantic browser evidence",
+      0,
+      1,
     );
-    if (pagesDropped === 0) {
-      payloads.popupTopology = {
+  } else {
+    let pages: Awaited<ReturnType<BrowserProofRuntime["pages"]>>["pages"] = [];
+    let pagesDropped = 0;
+    const popupFile = await capture("popup-topology", popupPath, async () => {
+      const projection = await runtime.pages();
+      pages = projection.pages;
+      pagesDropped = projection.dropped;
+      await writeJson(absoluteArtifactPath(input.runDir, popupPath), {
         pages,
-        activePageId: pages.find(({ active }) => active)?.id ?? pages[0]?.id ?? "page-1",
-      };
+        dropped: pagesDropped,
+      });
+    });
+    if (popupFile) {
+      channels["popup-topology"] = channel(
+        pagesDropped > 0 ? "partial" : "captured",
+        popupFile,
+        pagesDropped > 0 ? `${pagesDropped} popup pages omitted by the evidence bound` : undefined,
+        pagesDropped,
+      );
+      if (pagesDropped === 0) {
+        payloads.popupTopology = {
+          pages,
+          activePageId: pages.find(({ active }) => active)?.id ?? pages[0]?.id ?? "page-1",
+        };
+      }
     }
   }
 

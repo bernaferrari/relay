@@ -9,7 +9,8 @@ Relay is the local-first trust layer for turning AI-authored changes into reprod
 proof across web, Android, and iOS. It selects explained user journeys, binds exact
 source/build/target identities, replays reviewed Tests, and retains immutable evidence—such as
 screenshots, UI trees, actions, assertions, and failure provenance—for a deterministic merge
-decision. Automatic CI orchestration and GitHub check posting remain explicit work in progress.
+decision. End-to-end build and execution orchestration remains explicit work in progress; terminal
+Proof publication is durable and opt-in through the server's GitHub Checks configuration.
 
 The loop Relay exists to close:
 
@@ -29,9 +30,14 @@ Where the loop stands today:
 | Loop edge                                                                                                                                    | Status      |
 | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
 | Immutable, versioned Proof lifecycle; explained Verification Plan compiler; authoring, replay, repair, evidence, and source-revision binding | **Shipped** |
-| Automatic repository diff ingestion, build orchestration, execution expansion, and GitHub check-run posting                                  | **Pending** |
+| Active-workspace diff resolution and durable, exact-revision GitHub check publication                                                        | **Shipped** |
+| Automatic build ingestion and server-owned execution expansion                                                                               | **Pending** |
 
 [docs/PR_PROOF_CI.md](./docs/PR_PROOF_CI.md) shows the copy-paste CI wiring available today.
+
+For direct server publication, set both `RELAY_GITHUB_REPOSITORY=owner/repository` and a
+GitHub Checks-capable `RELAY_GITHUB_TOKEN`. `RELAY_PROOF_DETAILS_URL` is optional. A terminal Proof
+and its publication intent commit together; provider failures remain visible and retry after restart.
 
 Once the loop is trustworthy, **Repeat** applies the same Test across languages, themes, accounts,
 devices, builds, or other selected states—without turning every case into a separate Test. A Run

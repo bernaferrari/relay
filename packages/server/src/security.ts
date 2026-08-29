@@ -194,6 +194,7 @@ export function isLocalWorkspacePath(pathname: string): boolean {
     "/discovery",
     "/settings/privacy",
     "/settings/evidence",
+    "/workspace/change",
   ].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 

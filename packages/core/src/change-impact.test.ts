@@ -254,3 +254,40 @@ test("mismatched builds fail closed and missing builds or required cases cannot 
     "needs-review",
   );
 });
+
+test("case budgets count explicit journey and target cells", () => {
+  const plan = compileVerificationPlan({
+    change,
+    changed: signals({ localizationKeys: ["settings.language.title"] }),
+    associations: [
+      association(
+        "settings-language-copy",
+        "settings-language",
+        signals({ localizationKeys: ["settings.language.title"] }),
+      ),
+      association(
+        "settings-language-help",
+        "settings-language-help",
+        signals({ localizationKeys: ["settings.language.title"] }),
+      ),
+    ],
+    builds: [
+      {
+        id: "web",
+        platform: "web",
+        artifactDigest: digest,
+        sourceSha: headSha,
+        configuration: "production",
+        environmentRevision: "deploy-184",
+      },
+    ],
+    targetCases: [browserCase("compact", 390)],
+    policy: { id: "relay.default", version: 3 },
+    maxCases: 1,
+  });
+
+  assert.equal(plan.selection.cells?.length, 2);
+  assert.equal(plan.expansion.maxCases, 1);
+  assert.equal(plan.status, "needs-review");
+  assert.ok(plan.coverageGaps.some(({ code }) => code === "required-case-budget-exceeded"));
+});

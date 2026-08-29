@@ -168,7 +168,9 @@ export function isExecutableVerificationPlan(plan: VerificationPlan): boolean {
     plan.coverageGaps.length === 0 &&
     plan.builds.length > 0 &&
     plan.selection.affectedJourneys.length > 0 &&
-    plan.selection.targetCases.some(({ required }) => required)
+    plan.selection.targetCases.some(({ required }) => required) &&
+    (plan.selection.cells?.length ?? 0) > 0 &&
+    plan.pilotCellId !== undefined
   );
 }
 
@@ -308,6 +310,7 @@ async function runRequiredCase(input: {
       vcs: "git",
       sha: build.sourceSha,
       artifactDigest: build.artifactDigest,
+      ...(targetCase.executionTarget.platform === "browser" ? {} : { buildId: build.id }),
     },
   };
   const response = await invokeOperation(
@@ -534,6 +537,11 @@ export async function executeVerifyChangeLive(input: {
   if (!requiredCases.length) {
     throw new UsageError("The approved Proof has no policy-required run cases");
   }
+  if (requiredCases.length > input.plan.expansion.maxCases) {
+    throw new UsageError(
+      `The approved Proof materializes ${requiredCases.length} Verification Cells, exceeding the plan limit of ${input.plan.expansion.maxCases}; no target was controlled`,
+    );
+  }
   const pollIntervalMs = input.pollIntervalMs ?? VERIFY_CHANGE_DEFAULT_POLL_INTERVAL_MS;
   const pollTimeoutMs = input.pollTimeoutMs ?? VERIFY_CHANGE_DEFAULT_POLL_TIMEOUT_MS;
   if (
@@ -562,6 +570,14 @@ export async function executeVerifyChangeLive(input: {
   }
   const sleep = input.sleep ?? defaultSleep;
   const now = input.now ?? Date.now;
+  const startedAt = now();
+  const assertDurationBudget = (): void => {
+    if (now() - startedAt >= input.plan.expansion.maxDurationMs) {
+      throw new UsageError(
+        `The Verification Plan duration budget of ${input.plan.expansion.maxDurationMs}ms expired before target control`,
+      );
+    }
+  };
   const runSummaries: Array<VerifyChangePlanResult["execution"]["runs"][number]> = [];
   let pilot: VerifyChangePlanResult["execution"]["pilot"] = {
     available: false,
@@ -590,6 +606,7 @@ export async function executeVerifyChangeLive(input: {
         );
       }
     }
+    assertDurationBudget();
     const run = await runRequiredCase({
       client: input.client,
       plan: input.plan,

@@ -26,7 +26,7 @@ export const changeProofCaseResultSchema = z
     evidenceComplete: z.boolean(),
     selectorResolution: z.enum(["deterministic", "ambiguous", "unproven"]),
     inputOutcome: z.enum(["reconciled", "unreconciled"]),
-    cleanup: z.enum(["restored", "unproved"]),
+    cleanup: z.enum(["not-required", "restored", "failed", "unproved"]),
     failure: z
       .object({
         checkId: identifier.optional(),
@@ -140,6 +140,11 @@ export const changeProofProviderCheckSchema = z
     title: boundedText,
     summary: boundedText,
     text: z.string().max(65_535),
+    /** Server-verified Proof identities. Optional only for parsing provider
+     * acknowledgements written before digest identities were introduced. */
+    policyDigest: sha256.optional(),
+    planDigest: sha256.optional(),
+    decisionDigest: sha256.optional(),
     detailsUrl: z.string().url().optional(),
   })
   .strict();
@@ -154,6 +159,9 @@ export const changeProofPublicationReceiptSchema = z
     organizationId: identifier,
     projectId: identifier,
     proofId: identifier,
+    /** Exact immutable Proof version acknowledged by the provider. Historical
+     * receipts may omit this and are resolved by their frozen digests. */
+    proofVersion: z.number().int().positive().optional(),
     provider: z.literal("github"),
     repository: z.string().trim().min(1).max(512),
     headSha: exactGitSha,
@@ -161,6 +169,10 @@ export const changeProofPublicationReceiptSchema = z
     checkRunId: z.number().int().positive(),
     checkDigest: sha256,
     conclusion: z.enum(["success", "failure", "action-required"]),
+    /** Copied from the verified terminal Proof at publication time. */
+    policyDigest: sha256.optional(),
+    planDigest: sha256.optional(),
+    decisionDigest: sha256.optional(),
     htmlUrl: z.string().url().optional(),
     publishedAt: z.number().int().nonnegative(),
   })

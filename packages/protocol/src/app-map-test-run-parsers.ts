@@ -218,6 +218,9 @@ export function createAppMapTestRunParsers(dependencies: AppMapParserDependencie
         if (revision.artifactDigest !== undefined) {
           string(revision.artifactDigest, "Test run sourceRevision artifactDigest");
         }
+        if (revision.buildId !== undefined) {
+          string(revision.buildId, "Test run sourceRevision buildId");
+        }
       }
     },
   );

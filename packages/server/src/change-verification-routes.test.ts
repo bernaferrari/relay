@@ -82,6 +82,15 @@ function selection(): ChangeVerification["selection"] {
         required: true,
       },
     ],
+    cells: [
+      {
+        id: "cell-settings-chromium",
+        journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 7 },
+        targetCaseId: "chromium-compact-ar",
+        buildId: "web",
+        cleanupRequired: false,
+      },
+    ],
   };
 }
 
@@ -460,6 +469,10 @@ test("Proof execution records only server-derived Run facts and advances pilot t
           affectedJourneys: initial.selection!.affectedJourneys.map(
             ({ appMapRevision: _revision, ...journey }) => journey,
           ),
+          cells: initial.selection!.cells!.map((cell) => ({
+            ...cell,
+            journey: (({ appMapRevision: _revision, ...journey }) => journey)(cell.journey),
+          })),
         },
       },
       { requestId: "revisionless-proof-start" },
@@ -490,6 +503,14 @@ test("Proof execution records only server-derived Run facts and advances pilot t
         selection: {
           ...initial.selection!,
           targetCases: [initial.selection!.targetCases[0]!, secondCase],
+          cells: [
+            ...initial.selection!.cells!,
+            {
+              ...initial.selection!.cells![0]!,
+              id: "cell-settings-desktop",
+              targetCaseId: secondCase.id,
+            },
+          ],
         },
       },
       { requestId: "execution-proof-start" },
@@ -586,7 +607,24 @@ test("Proof execution records only server-derived Run facts and advances pilot t
     assert.equal(proved.proof.state, "proved");
     assert.equal(proved.proof.decision, "proved");
     assert.deepEqual(proved.proof.runIds, ["pilot-run", "expansion-run"]);
-    assert.deepEqual(published, [{ state: "proved", headSha }]);
+    assert.ok(published.length >= 1);
+    assert.ok(
+      published.every(
+        (publication) => publication.state === "proved" && publication.headSha === headSha,
+      ),
+      "at-least-once publisher retries retain the exact terminal Proof identity",
+    );
+    const pendingPublication = await relay.invoke("proof.inspect", {
+      proofId: proved.proof.id,
+      includeHistory: false,
+    });
+    assert.equal(pendingPublication.publications.length, 0);
+    assert.equal(pendingPublication.publicationOutbox.length, 1);
+    assert.equal(pendingPublication.publicationOutbox[0]?.status, "retry");
+    assert.equal(
+      pendingPublication.publicationOutbox[0]?.lastFailure?.kind,
+      "reconciliation-error",
+    );
 
     const repeatedProved = await relay.invoke(
       "proof.continue",
@@ -599,10 +637,11 @@ test("Proof execution records only server-derived Run facts and advances pilot t
       { requestId: "execution-record-expansion" },
     );
     assert.equal(repeatedProved.proof.state, "proved");
-    assert.deepEqual(published, [
-      { state: "proved", headSha },
-      { state: "proved", headSha },
-    ]);
+    assert.ok(
+      published.every(
+        (publication) => publication.state === "proved" && publication.headSha === headSha,
+      ),
+    );
 
     const soloCreated = await relay.invoke(
       "proof.start",

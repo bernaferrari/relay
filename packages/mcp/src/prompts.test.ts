@@ -525,7 +525,7 @@ test("verify-change prompt renders the proof loop with commit and file scope", a
     assert.equal(description, relayMcpPrompts[5].description);
     assert.match(text, /at commit 9a1c2e4b7d8f0a3b5c6d7e8f9a0b1c2d3e4f5a6b/);
     assert.match(text, /restricted to App Map map-1/);
-    assert.match(text, /from the provided list \(2 files\)/);
+    assert.match(text, /provided changed-file list.*2 files/);
     assert.match(text, /relay_app_map_diff_impact/);
     assert.match(text, /relay_proof_start/);
     assert.match(text, /relay_proof_list/);
@@ -534,11 +534,13 @@ test("verify-change prompt renders the proof loop with commit and file scope", a
     assert.match(text, /relay_proof_continue/);
     assert.match(text, /relay_proof_cancel/);
     assert.match(text, /relay_proof_rerun_affected/);
+    assert.match(text, /relay_workspace_change_inspect/);
     assert.match(
       text,
       /sourceRevision \{vcs: "git", sha: "9a1c2e4b7d8f0a3b5c6d7e8f9a0b1c2d3e4f5a6b"\}/,
     );
     assert.match(text, /Establish impact/);
+    assert.match(text, /restored tabs.*never choose the change/i);
     assert.match(text, /smallest set of saved graph Tests/);
     assert.match(text, /relay_app_map_test_run/);
     assert.match(text, /expectedRevision/);
@@ -567,7 +569,7 @@ test("verify-change prompt renders without optional scope arguments", async () =
       }),
     );
     assert.doesNotMatch(text, /at commit/);
-    assert.match(text, /from your VCS context/);
+    assert.match(text, /server-owned changed-file list/);
     assert.match(text, /relay_app_map_diff_impact/);
   } finally {
     await session.close();

@@ -59,6 +59,9 @@ import type { ExecutionTargetRef } from "./execution-target.js";
 import type { TargetObservation } from "./target-observation.js";
 import type { TargetSupervisorHealth } from "./target-supervisor.js";
 import type { WorkflowOperationMap } from "./workflow-record.js";
+import type { WorkspaceChangeContext } from "./workspace-change-context.js";
+import type { AndroidAvdBootResult, AndroidAvdInventory } from "./target-contract.js";
+export type { AndroidAvdBootResult, AndroidAvdInventory } from "./target-contract.js";
 
 export type RedactionPolicyDto = {
   enabled: boolean;
@@ -74,6 +77,7 @@ export type EvidenceCollectionPolicyDto = {
   sensitive: Partial<
     Record<SensitiveEvidenceChannelDto, { grantedAt: number; grantedBy: string; reason: string }>
   >;
+  redaction?: RedactionPolicyDto;
   updatedAt?: number;
 };
 
@@ -422,6 +426,10 @@ type SpecificOperationMap = {
     input: Record<string, never>;
     output: { export: ActivityExport };
   };
+  "workspace.change.inspect": {
+    input: { baseRef?: string };
+    output: { change: WorkspaceChangeContext };
+  };
   "workspace.privacy.get": {
     input: Record<string, never>;
     output: { policy: RedactionPolicyDto };
@@ -442,6 +450,14 @@ type SpecificOperationMap = {
   "target.devices.list": {
     input: { phase?: "android" };
     output: { devices: DeviceSummary[] };
+  };
+  "target.avds.list": {
+    input: Record<string, never>;
+    output: { inventory: AndroidAvdInventory };
+  };
+  "target.avd.boot": {
+    input: { avdName: string; timeoutMs?: number; headless?: boolean };
+    output: { boot: AndroidAvdBootResult };
   };
   "target.health.get": {
     input: { serial: string };

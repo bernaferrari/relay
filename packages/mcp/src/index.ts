@@ -2,6 +2,7 @@
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { pathToFileURL } from "node:url";
 import { parseMcpConfig } from "./config.js";
+import { runRelayMcpDoctorCommand } from "./doctor.js";
 import { createMcpServer, createRelayOperationInvoker } from "./server.js";
 
 function diagnostic(error: unknown): void {
@@ -13,6 +14,11 @@ export function runMcp(
   argv: readonly string[] = process.argv.slice(2),
   env: Record<string, string | undefined> = process.env,
 ) {
+  if (argv[0] === "doctor") {
+    return runRelayMcpDoctorCommand(argv.slice(1), env).then((exitCode) => {
+      process.exitCode = exitCode;
+    });
+  }
   const config = parseMcpConfig(argv, env);
   const invoker = createRelayOperationInvoker(config);
   return serveStdio(
@@ -29,10 +35,12 @@ export function runMcp(
 
 const isEntryPoint = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isEntryPoint) {
-  try {
-    runMcp();
-  } catch (error) {
-    diagnostic(error);
-    process.exitCode = 1;
-  }
+  Promise.resolve()
+    .then(async () => {
+      await runMcp();
+    })
+    .catch((error: unknown) => {
+      diagnostic(error);
+      process.exitCode = 1;
+    });
 }

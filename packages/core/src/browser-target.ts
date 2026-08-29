@@ -11,6 +11,8 @@ import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js";
 import { runBrowserMutationAdmission } from "./browser-mutation-admission.js";
 import { browserProfileDir, readTarget } from "./targets.js";
+import { getEvidenceCollectionPolicy, hasSensitiveEvidenceConsent } from "./evidence-policy.js";
+import { redactValue, visualEvidenceAllowed } from "./redaction.js";
 
 export type BrowserSession = {
   sessionId: string;
@@ -782,11 +784,27 @@ export async function getBrowserDevice(
         if (input?.action === "log") {
           session.network = [];
           session.networkDropped = 0;
-          session.networkInclude = input.include ?? "summary";
-          return { started: true, include: session.networkInclude };
+          const requested = input.include ?? "summary";
+          const sensitive = requested === "body" || requested === "all";
+          const consented = hasSensitiveEvidenceConsent(
+            getEvidenceCollectionPolicy(),
+            "network-body",
+          );
+          session.networkInclude =
+            sensitive && (!consented || !visualEvidenceAllowed()) ? "summary" : requested;
+          return {
+            started: true,
+            include: session.networkInclude,
+            ...(sensitive && session.networkInclude === "summary"
+              ? { message: "network bodies require explicit consent and an unredacted policy" }
+              : {}),
+          };
         }
         await Promise.allSettled(session.networkPending);
-        return { entries: [...session.network], dropped: session.networkDropped };
+        return {
+          entries: session.network.map((entry) => redactValue(entry)),
+          dropped: session.networkDropped,
+        };
       },
       audio: async () => unsupported("browser audio probe"),
       crashes: async (input: Parameters<Device["observability"]["crashes"]>[0]) => {

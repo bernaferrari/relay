@@ -90,6 +90,7 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
       headless?: boolean;
       viewport?: BrowserViewport;
       environment?: BrowserEnvironmentInput;
+      profileRetention?: "retain" | "ephemeral";
     };
     if (!body.name || !body.startUrl) throw new HttpError(400, "name and startUrl are required");
     json(res, 201, {
@@ -100,6 +101,7 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
         headless: body.headless,
         viewport: body.viewport,
         environment: body.environment,
+        profileRetention: body.profileRetention,
       }),
     });
     return true;

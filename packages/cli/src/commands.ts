@@ -125,6 +125,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("workspace.privacy.update", path("policy privacy update")),
   mapped("workspace.evidence.get", path("policy evidence get")),
   mapped("workspace.evidence.update", path("policy evidence update")),
+  mapped("workspace.change.inspect", path("change inspect")),
   mapped("workspace.apple-device.update", path("workspace apple-device update")),
   mapped("workspace.apple-live-preview.update", path("workspace apple-live-preview update")),
   mapped("workspace.variables.get", path("data variables get")),

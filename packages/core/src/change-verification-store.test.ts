@@ -22,6 +22,7 @@ import {
   resetControlDatabaseCache,
 } from "./collaboration-db.js";
 import { withControlStore } from "./collaboration-store.js";
+import { listChangeProofPublicationOutbox } from "./change-proof-publication-outbox.js";
 
 const baseSha = "1".repeat(40);
 const headSha = "2".repeat(40);
@@ -134,6 +135,19 @@ function selection(): ChangeVerification["selection"] {
         required: true,
       },
     ],
+    cells: [
+      {
+        id: "settings-language__chromium-compact-ar",
+        journey: {
+          appMapId: "settings",
+          testId: "settings-language",
+          appMapRevision: 7,
+        },
+        targetCaseId: "chromium-compact-ar",
+        buildId: "web",
+        cleanupRequired: false,
+      },
+    ],
   };
 }
 
@@ -198,8 +212,14 @@ test("Change Verification persistence is append-only and compare-and-set", async
         summary: "Primary action overlaps the Arabic description.",
         evidenceRefs: [digest],
       },
+      publication: { provider: "github" },
     });
     assert.equal(rejected.decision, "rejected");
+    const publicationOutbox = await listChangeProofPublicationOutbox(scope);
+    assert.equal(publicationOutbox.length, 1);
+    assert.equal(publicationOutbox[0]?.proofId, rejected.id);
+    assert.equal(publicationOutbox[0]?.proofVersion, rejected.version);
+    assert.equal(publicationOutbox[0]?.status, "pending");
 
     const history = await readChangeVerificationHistory(scope, created.id);
     assert.deepEqual(

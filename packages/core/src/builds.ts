@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import type { Build } from "@relay/protocol";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import type { TargetContext } from "./target-context.js";
+import { artifactDigestForProof, artifactSourceSha256 } from "./artifact-digest.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -35,6 +36,27 @@ export type RegisteredBuildPreflight = {
     status: "pass" | "warning" | "fail";
     message: string;
   }>;
+};
+
+export type ProofBuildProvenanceReceipt = {
+  schemaVersion: 1;
+  buildId: string;
+  target: {
+    kind: "device";
+    id: string;
+    platform: "android" | "ios";
+  };
+  artifactDigest: `sha256:${string}`;
+  applicationId: string;
+  install: "not-requested" | "installed" | "verified";
+  launch: "not-requested" | "launched";
+  observation: {
+    status: "verified";
+    observedAt: number;
+    applicationId: string;
+    artifactDigest: `sha256:${string}`;
+    sourceSha256: `sha256:${string}`;
+  };
 };
 
 function localArtifactPath(sourceUrl: string | undefined): string | undefined {
@@ -339,6 +361,148 @@ export async function installRegisteredBuild(input: {
   };
 }
 
+function installedPackagePath(stdout: string): string | undefined {
+  return stdout
+    .split(/\r?\n/u)
+    .map((line) => line.trim().match(/^package:(\S+)$/u)?.[1])
+    .find((path): path is string => Boolean(path));
+}
+
+function installedPackageDigest(stdout: string): `sha256:${string}` | undefined {
+  const digest = stdout
+    .trim()
+    .match(/^([a-f0-9]{64})\s+/iu)?.[1]
+    ?.toLowerCase();
+  return digest ? `sha256:${digest}` : undefined;
+}
+
+/** Verify that the bytes currently installed on a target are the exact
+ * artifact selected by an executable Proof. This is intentionally separate
+ * from manual install/launch: a Proof cannot trust a package merely because
+ * it has the expected application id. */
+export async function prepareRegisteredBuildForProof(input: {
+  build: Build;
+  target: Extract<TargetContext, { kind: "device" }>;
+  targetKind?: string | null;
+  sourceSha: string;
+  artifactDigest: string;
+  run?: BuildCommandRunner;
+  install?: boolean;
+  launch?: boolean;
+  at?: number;
+}): Promise<ProofBuildProvenanceReceipt> {
+  const at = input.at ?? Date.now();
+  const run = input.run ?? defaultCommandRunner;
+  if (input.build.platform !== input.target.platform) {
+    throw new Error(
+      `Proof build ${input.build.id} targets ${input.build.platform}, not ${input.target.platform}`,
+    );
+  }
+  if (input.build.platform === "ios" && !/simulator/i.test(input.targetKind ?? "")) {
+    throw new Error(
+      "PROOF_INSUFFICIENT_EVIDENCE: physical iOS Proof execution requires an exact IPA installer",
+    );
+  }
+  if (input.build.status !== "ready") throw new Error("Proof build must be ready");
+  if (input.build.sourceSha !== input.sourceSha) {
+    throw new Error("Proof build sourceSha does not match the exact requested revision");
+  }
+  if (!input.build.sourceSha256 || !HEX_SHA256.test(input.build.sourceSha256)) {
+    throw new Error("PROOF_INSUFFICIENT_EVIDENCE: Proof build requires a verified sourceSha256");
+  }
+  const preflight = await preflightRegisteredBuild(input.build, {
+    target: input.target,
+    run,
+    at,
+  });
+  if (!preflight.ok || !preflight.artifact) {
+    throw new Error(
+      preflight.checks
+        .filter((check) => check.status === "fail")
+        .map((check) => check.message)
+        .join("; ") || "Proof build preflight failed",
+    );
+  }
+  const artifactDigest = await artifactDigestForProof(preflight.artifact.path);
+  if (
+    (await artifactSourceSha256(preflight.artifact.path)) !== input.build.sourceSha256.toLowerCase()
+  ) {
+    throw new Error("Proof artifact digest does not match registered sourceSha256");
+  }
+  if (artifactDigest !== input.artifactDigest) {
+    throw new Error("Proof artifact digest does not match the requested build identity");
+  }
+  const applicationId = input.build.applicationId?.trim();
+  if (!applicationId || !preflight.applicationId || applicationId !== preflight.applicationId) {
+    throw new Error("PROOF_INSUFFICIENT_EVIDENCE: artifact application identity is not verified");
+  }
+  let install: ProofBuildProvenanceReceipt["install"] = "not-requested";
+  if (input.install) {
+    await installRegisteredBuild({
+      build: input.build,
+      target: input.target,
+      targetKind: input.targetKind,
+      run,
+    });
+    install = "installed";
+  }
+  if (input.target.platform !== "android") {
+    throw new Error(
+      "PROOF_INSUFFICIENT_EVIDENCE: exact installed iOS application observation is unavailable",
+    );
+  }
+  const pathResult = await run("adb", [
+    "-s",
+    input.target.serial,
+    "shell",
+    "pm",
+    "path",
+    applicationId,
+  ]);
+  const packagePath = installedPackagePath(String(pathResult.stdout ?? ""));
+  if (!packagePath) {
+    throw new Error(
+      "PROOF_INSUFFICIENT_EVIDENCE: exact application is not installed on the target",
+    );
+  }
+  const digestResult = await run("adb", [
+    "-s",
+    input.target.serial,
+    "shell",
+    "sha256sum",
+    packagePath,
+  ]);
+  const observedDigest = installedPackageDigest(String(digestResult.stdout ?? ""));
+  const expectedInstalledDigest = `sha256:${input.build.sourceSha256.toLowerCase()}` as const;
+  if (!observedDigest || observedDigest !== expectedInstalledDigest) {
+    throw new Error(
+      "PROOF_INSUFFICIENT_EVIDENCE: installed application bytes are stale or unverified",
+    );
+  }
+  let launch: ProofBuildProvenanceReceipt["launch"] = "not-requested";
+  if (input.launch) {
+    await launchRegisteredBuild({ build: input.build, target: input.target, run });
+    launch = "launched";
+  }
+  install = install === "installed" ? "installed" : "verified";
+  return {
+    schemaVersion: 1,
+    buildId: input.build.id,
+    target: { kind: "device", id: input.target.serial, platform: input.target.platform },
+    artifactDigest,
+    applicationId,
+    install,
+    launch,
+    observation: {
+      status: "verified",
+      observedAt: at,
+      applicationId,
+      artifactDigest,
+      sourceSha256: observedDigest,
+    },
+  };
+}
+
 export async function launchRegisteredBuild(input: {
   build: Build;
   target: TargetContext;
@@ -356,6 +520,12 @@ export async function launchRegisteredBuild(input: {
     );
   }
   const applicationId = input.applicationId?.trim() || preflight.applicationId;
+  if (
+    input.applicationId?.trim() &&
+    (!preflight.applicationId || input.applicationId.trim() !== preflight.applicationId)
+  ) {
+    throw new Error("applicationId override does not match the registered artifact identity");
+  }
   if (!applicationId)
     throw new Error("applicationId is required because it could not be inferred from the artifact");
   if (input.target.kind !== "device") throw new Error("Build launch requires a device target");

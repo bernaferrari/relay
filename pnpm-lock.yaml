@@ -429,6 +429,9 @@ importers:
       '@relay/workflows':
         specifier: workspace:*
         version: link:../workflows
+      tsx:
+        specifier: ^4.23.6
+        version: 4.23.6
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -436,9 +439,6 @@ importers:
       '@types/node':
         specifier: ^26.1.2
         version: 26.1.2
-      tsx:
-        specifier: ^4.23.6
-        version: 4.23.6
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

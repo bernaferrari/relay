@@ -1,12 +1,13 @@
-import { createHash } from "node:crypto";
 import {
   changeProofProviderCheckSchema,
   changeProofPublicationReceiptSchema,
   parseChangeVerification,
   type ChangeProofPublicationReceipt,
 } from "@relay/protocol";
+import { canonicalSha256 } from "./canonical-json.js";
 import { readControlStore, withControlStore } from "./collaboration-store.js";
 import { providerCheckForStoredChangeProof } from "./change-proof-decision.js";
+import { verifyDurableChangeVerification } from "./change-proof-integrity.js";
 import type { ChangeVerificationScope } from "./change-verification-store.js";
 
 export class ChangeProofPublicationConflictError extends Error {
@@ -24,7 +25,7 @@ export class ChangeProofPublicationConflictError extends Error {
 }
 
 function checkDigest(check: unknown): `sha256:${string}` {
-  return `sha256:${createHash("sha256").update(JSON.stringify(check), "utf8").digest("hex")}`;
+  return canonicalSha256(check);
 }
 
 function samePublication(
@@ -32,6 +33,7 @@ function samePublication(
   right: ChangeProofPublicationReceipt,
 ): boolean {
   return (
+    left.proofVersion === right.proofVersion &&
     left.checkDigest === right.checkDigest &&
     left.conclusion === right.conclusion &&
     left.htmlUrl === right.htmlUrl
@@ -64,15 +66,47 @@ export async function readChangeProofPublications(
   proofId: string,
 ): Promise<ChangeProofPublicationReceipt[]> {
   return readControlStore((store) => {
-    const rawProof = store.changeVerification(proofId);
-    if (!rawProof) return [];
-    const proof = parseChangeVerification(rawProof);
-    if (proof.organizationId !== scope.organizationId || proof.projectId !== scope.projectId) {
+    const rawVersions = store.changeVerificationVersions(proofId);
+    if (!rawVersions.length) return [];
+    const parsedVersions = rawVersions.map((value) => parseChangeVerification(value));
+    const parsedProof = parsedVersions.at(-1)!;
+    if (
+      parsedProof.organizationId !== scope.organizationId ||
+      parsedProof.projectId !== scope.projectId
+    ) {
       return [];
     }
-    return store
+    const proofs = parsedVersions.map((value) => verifyDurableChangeVerification(value));
+    const receipts = store
       .changeProofPublications(proofId, "github")
       .map((receipt) => changeProofPublicationReceiptSchema.parse(receipt));
+    for (const receipt of receipts) {
+      const candidates = proofs.filter(
+        (proof) =>
+          (receipt.proofVersion === undefined || proof.version === receipt.proofVersion) &&
+          receipt.policyDigest === proof.policyDigest &&
+          receipt.planDigest === proof.planDigest &&
+          (proof.state === "superseded" || receipt.decisionDigest === proof.decisionDigest),
+      );
+      if (candidates.length !== 1) {
+        throw new ChangeProofPublicationConflictError(
+          "PROOF_CHECK_MISMATCH",
+          "a durable Proof publication does not identify one exact verified Proof version",
+        );
+      }
+      const proof = candidates[0]!;
+      if (
+        receipt.policyDigest !== proof.policyDigest ||
+        receipt.planDigest !== proof.planDigest ||
+        (proof.state !== "superseded" && receipt.decisionDigest !== proof.decisionDigest)
+      ) {
+        throw new ChangeProofPublicationConflictError(
+          "PROOF_CHECK_MISMATCH",
+          "a durable Proof publication does not retain the verified Proof digests",
+        );
+      }
+    }
+    return receipts;
   });
 }
 
@@ -82,6 +116,7 @@ export async function readChangeProofPublications(
 export async function recordChangeProofPublication(
   input: ChangeVerificationScope & {
     proofId: string;
+    proofVersion?: number;
     repository: string;
     check: unknown;
     provider: "github";
@@ -94,12 +129,20 @@ export async function recordChangeProofPublication(
 ): Promise<ChangeProofPublicationReceipt> {
   const check = changeProofProviderCheckSchema.parse(input.check);
   return withControlStore((store) => {
-    const rawProof = store.changeVerification(input.proofId);
+    const rawProof = input.proofVersion
+      ? store
+          .changeVerificationVersions(input.proofId)
+          .find(({ version }) => version === input.proofVersion)
+      : store.changeVerification(input.proofId);
     if (!rawProof) throw new Error("Change Verification not found in this project");
-    const proof = parseChangeVerification(rawProof);
-    if (proof.organizationId !== input.organizationId || proof.projectId !== input.projectId) {
+    const parsedProof = parseChangeVerification(rawProof);
+    if (
+      parsedProof.organizationId !== input.organizationId ||
+      parsedProof.projectId !== input.projectId
+    ) {
       throw new Error("Change Verification not found in this project");
     }
+    const proof = verifyDurableChangeVerification(parsedProof);
     if (
       input.repository !== proof.change.repository ||
       input.headSha !== proof.change.headSha ||
@@ -132,7 +175,21 @@ export async function recordChangeProofPublication(
       proof,
       ...(check.detailsUrl ? { detailsUrl: check.detailsUrl } : {}),
     });
-    if (JSON.stringify(check) !== JSON.stringify(canonicalCheck)) {
+    for (const field of ["policyDigest", "planDigest", "decisionDigest"] as const) {
+      if (check[field] !== undefined && check[field] !== proof[field]) {
+        throw new ChangeProofPublicationConflictError(
+          "PROOF_CHECK_MISMATCH",
+          `a provider acknowledgement has an incorrect ${field}`,
+        );
+      }
+    }
+    const normalizedCheck = changeProofProviderCheckSchema.parse({
+      ...check,
+      policyDigest: proof.policyDigest,
+      planDigest: proof.planDigest,
+      ...(proof.decisionDigest ? { decisionDigest: proof.decisionDigest } : {}),
+    });
+    if (JSON.stringify(normalizedCheck) !== JSON.stringify(canonicalCheck)) {
       throw new ChangeProofPublicationConflictError(
         "PROOF_CHECK_MISMATCH",
         "a provider acknowledgement must retain Relay's exact stored Proof projection",
@@ -148,6 +205,7 @@ export async function recordChangeProofPublication(
       organizationId: input.organizationId,
       projectId: input.projectId,
       proofId: proof.id,
+      proofVersion: proof.version,
       provider: input.provider,
       repository: input.repository,
       headSha: input.headSha,
@@ -168,8 +226,11 @@ export async function recordChangeProofPublication(
     const receipt = changeProofPublicationReceiptSchema.parse({
       ...identity,
       sequence: (latest?.sequence ?? 0) + 1,
-      checkDigest: checkDigest(check),
+      checkDigest: checkDigest(canonicalCheck),
       conclusion: check.conclusion,
+      policyDigest: proof.policyDigest,
+      planDigest: proof.planDigest,
+      ...(proof.decisionDigest ? { decisionDigest: proof.decisionDigest } : {}),
     });
     if (latest && samePublication(latest, receipt)) return latest;
     if (!store.insertChangeProofPublication(receipt)) {

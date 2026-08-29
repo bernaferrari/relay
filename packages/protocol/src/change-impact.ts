@@ -5,6 +5,7 @@ import {
   changeVerificationPolicySchema,
   changeVerificationSelectionSchema,
   frozenVerificationTargetCaseSchema,
+  verificationCellSchema,
 } from "./change-verification.js";
 
 const identifier = z.string().trim().min(1).max(256);
@@ -147,8 +148,12 @@ export const verificationPlanSchema = z
     selection: changeVerificationSelectionSchema,
     policy: changeVerificationPolicySchema,
     pilotTargetCaseId: identifier.optional(),
+    pilotCellId: identifier.optional(),
     expansion: z
       .object({
+        /** Explicitly materialized required cells; targetCaseIds remains a
+         * compatibility projection for historical plan consumers. */
+        cellIds: z.array(identifier).max(1_000).readonly().optional(),
         targetCaseIds: z.array(identifier).max(250).readonly(),
         maxCases: z.number().int().positive().max(10_000),
         maxDurationMs: z.number().int().positive().max(86_400_000),
@@ -193,12 +198,44 @@ export const verificationPlanSchema = z
         message: "must name a frozen target case",
       });
     }
+    const cellIds = new Set(plan.selection.cells?.map(({ id }) => id) ?? []);
+    if (plan.pilotCellId && !cellIds.has(plan.pilotCellId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["pilotCellId"],
+        message: "must name a materialized Verification Cell",
+      });
+    }
     if (plan.expansion.targetCaseIds.some((id) => !targetIds.has(id))) {
       context.addIssue({
         code: "custom",
         path: ["expansion", "targetCaseIds"],
         message: "must contain only frozen target cases",
       });
+    }
+    if (plan.expansion.cellIds) {
+      if (plan.expansion.cellIds.some((id) => !cellIds.has(id))) {
+        context.addIssue({
+          code: "custom",
+          path: ["expansion", "cellIds"],
+          message: "must contain only materialized Verification Cells",
+        });
+      }
+      const expectedCellIds = plan.selection.cells?.slice(1).map(({ id }) => id) ?? [];
+      if (JSON.stringify(plan.expansion.cellIds) !== JSON.stringify(expectedCellIds)) {
+        context.addIssue({
+          code: "custom",
+          path: ["expansion", "cellIds"],
+          message: "must preserve the frozen pilot-first cell order",
+        });
+      }
+      if (new Set(plan.expansion.cellIds).size !== plan.expansion.cellIds.length) {
+        context.addIssue({
+          code: "custom",
+          path: ["expansion", "cellIds"],
+          message: "must not contain duplicates",
+        });
+      }
     }
     if (new Set(plan.expansion.targetCaseIds).size !== plan.expansion.targetCaseIds.length) {
       context.addIssue({
@@ -240,7 +277,13 @@ export const verificationPlanSchema = z
         message: "must retain every change-impact coverage gap",
       });
     }
-    if (plan.status === "ready-for-approval" && (!plan.builds.length || plan.coverageGaps.length)) {
+    if (
+      plan.status === "ready-for-approval" &&
+      (!plan.builds.length ||
+        plan.coverageGaps.length ||
+        !plan.selection.cells?.length ||
+        !plan.pilotCellId)
+    ) {
       context.addIssue({
         code: "custom",
         message: "a plan is ready only with exact builds and no coverage gaps",
@@ -254,3 +297,4 @@ export type ChangeImpact = z.output<typeof changeImpactSchema>;
 export type ChangeCoverageGap = z.output<typeof changeCoverageGapSchema>;
 export type VerificationPlan = z.output<typeof verificationPlanSchema>;
 export type VerificationPlanTargetCase = z.output<typeof frozenVerificationTargetCaseSchema>;
+export type VerificationPlanCell = z.output<typeof verificationCellSchema>;

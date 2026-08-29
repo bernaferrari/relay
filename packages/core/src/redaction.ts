@@ -101,8 +101,8 @@ function isRedactionEnabled(): boolean {
 }
 
 /** Visual pixels and accessibility text cannot currently be safely masked. */
-export function visualEvidenceAllowed(): boolean {
-  return !isRedactionEnabled();
+export function visualEvidenceAllowed(policy: RedactionPolicy = getRedactionPolicy()): boolean {
+  return !policy.enabled;
 }
 
 export function digestValue(value: string): string {
@@ -111,19 +111,27 @@ export function digestValue(value: string): string {
 
 export function redactUrl(value: string): string {
   if (!isRedactionEnabled()) return value;
-  return value.replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/gi, "$1?[REDACTED]");
+  return redactUrlContent(value);
 }
 
 export function redactText(value: string): string {
   if (!isRedactionEnabled()) return value;
-  return redactUrl(value).replace(BEARER, "$1 [REDACTED]").replace(COOKIE, "$1: [REDACTED]");
+  return redactTextContent(value);
 }
 
-export function redactValue(value: unknown, key = ""): unknown {
-  if (!isRedactionEnabled()) return value;
+function redactUrlContent(value: string): string {
+  return value.replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/gi, "$1?[REDACTED]");
+}
+
+function redactTextContent(value: string): string {
+  return redactUrlContent(value).replace(BEARER, "$1 [REDACTED]").replace(COOKIE, "$1: [REDACTED]");
+}
+
+function redactValueForEnabledPolicy(value: unknown, key: string, enabled: boolean): unknown {
+  if (!enabled) return value;
   if (SENSITIVE_KEY.test(key)) return REDACTED;
-  if (typeof value === "string") return redactText(value);
-  if (Array.isArray(value)) return value.map((item) => redactValue(item));
+  if (typeof value === "string") return redactTextContent(value);
+  if (Array.isArray(value)) return value.map((item) => redactValueForEnabledPolicy(item, "", true));
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
     const secretBearingCommand = record.kind === "type" || record.kind === "clipboard";
@@ -132,7 +140,37 @@ export function redactValue(value: unknown, key = ""): unknown {
         childKey,
         secretBearingCommand && (childKey === "text" || childKey === "expect")
           ? REDACTED
-          : redactValue(child, childKey),
+          : redactValueForEnabledPolicy(child, childKey, true),
+      ]),
+    );
+  }
+  return value;
+}
+
+export function redactValueForPolicy(value: unknown, policy: RedactionPolicy): unknown {
+  return redactValueForEnabledPolicy(value, "", policy.enabled);
+}
+
+export function redactValue(value: unknown, key = ""): unknown {
+  return redactValueForEnabledPolicy(value, key, isRedactionEnabled());
+}
+
+function redactSensitiveEvidenceText(value: string): string {
+  return redactTextContent(value);
+}
+
+/** Mandatory secret masking for durable evidence. This is deliberately
+ * independent of the optional broad redaction mode: consent may authorize a
+ * body, but it never authorizes credentials, cookies, tokens, or URL queries. */
+export function redactSensitiveEvidenceValue(value: unknown, key = ""): unknown {
+  if (SENSITIVE_KEY.test(key)) return REDACTED;
+  if (typeof value === "string") return redactSensitiveEvidenceText(value);
+  if (Array.isArray(value)) return value.map((item) => redactSensitiveEvidenceValue(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([childKey, child]) => [
+        childKey,
+        redactSensitiveEvidenceValue(child, childKey),
       ]),
     );
   }

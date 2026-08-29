@@ -159,7 +159,7 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
   mocks.runAction.mockImplementation(async (operationId: string) => {
     if (operationId === "proof.list") return { proofs: [proof] };
     if (operationId === "proof.inspect") {
-      return { proof, history: [proof], publications: [publication] };
+      return { proof, history: [proof], publications: [publication], publicationOutbox: [] };
     }
     throw new Error(`unexpected ${operationId}`);
   });
@@ -200,7 +200,7 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
   root.remove();
 });
 
-test("starts one exact awaiting-build Proof and rejects invalid provenance locally", async () => {
+test("starts from the active workspace and never asks humans to type revision plumbing", async () => {
   const createdProof = {
     ...proof,
     id: "proof-new",
@@ -238,19 +238,44 @@ test("starts one exact awaiting-build Proof and rejects invalid provenance local
     },
   } as unknown as ChangeVerification;
   let created = false;
+  let workspaceFrozen = false;
   let finishStart!: () => void;
   const startBarrier = new Promise<void>((resolve) => {
     finishStart = resolve;
   });
   mocks.runAction.mockImplementation(async (operationId: string) => {
     if (operationId === "proof.list") return { proofs: created ? [createdProof] : [] };
+    if (operationId === "workspace.change.inspect") {
+      return {
+        change: {
+          status: "resolved",
+          workspace: { name: "settings" },
+          repository: "acme/settings",
+          branch: "feature/arabic-settings",
+          head: { sha: "b".repeat(40), label: "Add Arabic Settings support" },
+          base: { sha: "a".repeat(40), label: "main" },
+          baseCandidates: [{ ref: "origin/main", sha: "a".repeat(40), label: "main" }],
+          changedFileCount: 3,
+          changedFiles: ["src/settings.tsx", "src/rtl.css", "strings/ar.json"],
+          localChangeCount: workspaceFrozen ? 0 : 1,
+          localChanges: workspaceFrozen ? [] : ["src/settings.tsx"],
+          readyForProof: workspaceFrozen,
+          blockers: workspaceFrozen ? [] : ["1 local change is not part of the frozen head."],
+        },
+      };
+    }
     if (operationId === "proof.start") {
       await startBarrier;
       created = true;
       return { proof: createdProof, receipt: createdProof.lastMutation, disposition: "created" };
     }
     if (operationId === "proof.inspect") {
-      return { proof: createdProof, history: [createdProof], publications: [] };
+      return {
+        proof: createdProof,
+        history: [createdProof],
+        publications: [],
+        publicationOutbox: [],
+      };
     }
     throw new Error(`unexpected ${operationId}`);
   });
@@ -263,18 +288,27 @@ test("starts one exact awaiting-build Proof and rejects invalid provenance local
   [...root.querySelectorAll<HTMLButtonElement>("button")]
     .find((button) => button.textContent?.trim() === "Start a Proof")
     ?.click();
-  expect(root.textContent).toContain("Bind the exact change");
+  await vi.waitFor(() => expect(root.textContent).toContain("Add Arabic Settings support"));
+  expect(root.textContent).toContain("feature/arabic-settings · 3 changed files");
+  expect(root.textContent).toContain(
+    "Restored tabs and previous-session views never choose the change.",
+  );
+  expect(root.textContent).toContain("1 local change is not part of the frozen head.");
+  expect(root.querySelector("#proof-repository")).toBeNull();
+  expect(root.querySelector("#proof-baseSha")).toBeNull();
+  expect(root.querySelector("#proof-headSha")).toBeNull();
+  expect(
+    [...root.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Start Proof",
+    )?.disabled,
+  ).toBe(true);
 
-  enterValue(root, "proof-repository", "acme/settings");
-  enterValue(root, "proof-baseSha", "not-a-sha");
-  enterValue(root, "proof-headSha", "b".repeat(40));
-  root
-    .querySelector<HTMLFormElement>('form[aria-label="Start a Proof"]')!
-    .dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
-  expect(root.textContent).toContain("Enter the exact 40-character base commit SHA.");
-  expect(mocks.runAction).not.toHaveBeenCalledWith("proof.start", expect.anything());
+  workspaceFrozen = true;
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.getAttribute("aria-label") === "Inspect the active workspace again")
+    ?.click();
+  await vi.waitFor(() => expect(root.textContent).not.toContain("not part of the frozen head"));
 
-  enterValue(root, "proof-baseSha", "A".repeat(40));
   enterValue(root, "proof-pullRequest", "184");
   enterValue(root, "proof-summary", "Add Arabic Settings support");
   enterValue(root, "proof-acceptanceCriteria", "Settings render in Arabic without RTL overlap");

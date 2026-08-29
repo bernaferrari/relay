@@ -124,6 +124,7 @@ const targetDefinition = z
         headless: z.boolean().optional(),
         viewport: viewport.optional(),
         environment: browserEnvironmentInputSchema.optional(),
+        profileRetention: z.enum(["retain", "ephemeral"]).optional(),
       })
       .strict()
       .optional(),
@@ -295,10 +296,45 @@ const targetProfile = z
     platform: z.enum(["android", "ios", "browser"]),
     name: text,
     model: z.string().optional(),
+    androidAvdName: z.string().optional(),
     osVersion: z.string().optional(),
     viewport: viewport.optional(),
     browserCaseProfile: browserCaseProfileSchema.optional(),
     capabilities: z.array(targetCapability),
+    observedAt: natural,
+  })
+  .strict();
+
+const androidAvd = z
+  .object({
+    avdName: text,
+    serial: text.optional(),
+    name: text,
+    platform: z.literal("android"),
+    kind: z.literal("emulator"),
+    target: z.enum(["mobile", "tv"]),
+    booted: z.boolean(),
+    status: z.enum(["stopped", "booting", "booted"]),
+    source: z.literal("android-sdk"),
+  })
+  .strict();
+const androidAvdInventory = z
+  .object({
+    source: z.enum(["android-sdk", "unavailable"]),
+    available: z.boolean(),
+    avds: z.array(androidAvd),
+    reason: z.enum(["sdk-unavailable", "inventory-failed"]).optional(),
+  })
+  .strict();
+const androidAvdBoot = z
+  .object({
+    avdName: text,
+    serial: text,
+    platform: z.literal("android"),
+    kind: z.literal("emulator"),
+    booted: z.literal(true),
+    status: z.enum(["booted", "already-booted"]),
+    reused: z.boolean(),
     observedAt: natural,
   })
   .strict();
@@ -511,6 +547,15 @@ const evidencePolicy = z
           .optional(),
       })
       .strict(),
+    redaction: z
+      .object({
+        enabled: z.boolean(),
+        source: z.enum(["default", "workspace", "environment"]),
+        locked: z.boolean(),
+        updatedAt: natural.optional(),
+      })
+      .strict()
+      .optional(),
     updatedAt: natural.optional(),
   })
   .strict();
@@ -662,6 +707,8 @@ export const workspaceTargetOperationOutputSchemas = {
     })
     .strict(),
   "target.boot": z.object({ ok: z.literal(true), serial: text }).strict(),
+  "target.avds.list": z.object({ inventory: androidAvdInventory }).strict(),
+  "target.avd.boot": z.object({ boot: androidAvdBoot }).strict(),
   "target.authorize": z.object({ ok: z.literal(true), serial: text }).strict(),
   "target.interact": z.union([
     z

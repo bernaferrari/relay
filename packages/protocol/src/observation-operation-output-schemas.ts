@@ -30,6 +30,7 @@ const targetProfileSchema = z
     platform: z.enum(["android", "ios", "browser"]),
     name: z.string(),
     model: z.string().optional(),
+    androidAvdName: z.string().optional(),
     osVersion: z.string().optional(),
     viewport: z.object({ width: z.number(), height: z.number() }).strict().optional(),
     browserCaseProfile: browserCaseProfileSchema.optional(),

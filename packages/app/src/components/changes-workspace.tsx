@@ -3,8 +3,10 @@ import { Button } from "@relay/ui/button";
 import {
   VERIFY_CHANGE_POLICY,
   type ChangeProofPublicationReceipt,
+  type ChangeProofPublicationOutboxRecord,
   type ChangeVerification,
   type ChangeVerificationState,
+  type WorkspaceChangeContext,
 } from "@relay/protocol";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
@@ -31,9 +33,6 @@ const statePresentation: Record<ChangeVerificationState, { label: string; tone: 
   };
 
 type ProofDraft = {
-  repository: string;
-  baseSha: string;
-  headSha: string;
   pullRequest: string;
   summary: string;
   acceptanceCriteria: string;
@@ -43,23 +42,16 @@ type ProofDraftField = keyof ProofDraft;
 type ProofDraftErrors = Partial<Record<ProofDraftField, string>>;
 
 const emptyProofDraft: ProofDraft = {
-  repository: "",
-  baseSha: "",
-  headSha: "",
   pullRequest: "",
   summary: "",
   acceptanceCriteria: "",
 };
 
-const exactGitSha = /^[a-f0-9]{40}$/u;
 const proofInput =
   "min-h-11 w-full rounded-lg border border-border-weak-base bg-surface-base px-3 py-2 text-title/[1.4] text-text-strong outline-none transition-[border-color,box-shadow] placeholder:text-text-weaker focus-visible:border-border-focus focus-visible:ring-2 focus-visible:ring-border-strong-focus disabled:cursor-not-allowed disabled:text-text-weaker aria-[invalid=true]:border-border-critical-base";
 
 function normalizedDraft(draft: ProofDraft): ProofDraft {
   return {
-    repository: draft.repository.trim(),
-    baseSha: draft.baseSha.trim().toLowerCase(),
-    headSha: draft.headSha.trim().toLowerCase(),
     pullRequest: draft.pullRequest.trim(),
     summary: draft.summary.trim(),
     acceptanceCriteria: draft.acceptanceCriteria.trim(),
@@ -69,15 +61,6 @@ function normalizedDraft(draft: ProofDraft): ProofDraft {
 function validateProofDraft(draftInput: ProofDraft): ProofDraftErrors {
   const draft = normalizedDraft(draftInput);
   const errors: ProofDraftErrors = {};
-  if (!draft.repository) errors.repository = "Enter the repository, for example acme/settings.";
-  if (!exactGitSha.test(draft.baseSha)) {
-    errors.baseSha = "Enter the exact 40-character base commit SHA.";
-  }
-  if (!exactGitSha.test(draft.headSha)) {
-    errors.headSha = "Enter the exact 40-character head commit SHA.";
-  } else if (draft.headSha === draft.baseSha) {
-    errors.headSha = "Head must identify a different commit from base.";
-  }
   if (draft.pullRequest) {
     const value = Number(draft.pullRequest);
     if (!Number.isSafeInteger(value) || value <= 0) {
@@ -126,6 +109,9 @@ export function ChangesWorkspace(props: {
   const [publications, setPublications] = createSignal<readonly ChangeProofPublicationReceipt[]>(
     [],
   );
+  const [publicationOutbox, setPublicationOutbox] = createSignal<
+    readonly ChangeProofPublicationOutboxRecord[]
+  >([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [creating, setCreating] = createSignal(false);
@@ -133,6 +119,8 @@ export function ChangesWorkspace(props: {
   const [draft, setDraft] = createSignal<ProofDraft>({ ...emptyProofDraft });
   const [draftErrors, setDraftErrors] = createSignal<ProofDraftErrors>({});
   const [createError, setCreateError] = createSignal<string | null>(null);
+  const [workspaceChange, setWorkspaceChange] = createSignal<WorkspaceChangeContext | null>(null);
+  const [resolvingWorkspace, setResolvingWorkspace] = createSignal(false);
 
   function setDraftField(field: ProofDraftField, value: string): void {
     const nextDraft = { ...draft(), [field]: value };
@@ -159,10 +147,35 @@ export function ChangesWorkspace(props: {
     setDraftErrors({});
   }
 
+  async function resolveWorkspaceChange(baseRef?: string): Promise<void> {
+    setResolvingWorkspace(true);
+    setCreateError(null);
+    try {
+      const result = await server.runAction("workspace.change.inspect", baseRef ? { baseRef } : {});
+      setWorkspaceChange(result.change);
+    } catch (cause) {
+      setWorkspaceChange(null);
+      setCreateError(humanError(cause, "Could not inspect the active workspace"));
+    } finally {
+      setResolvingWorkspace(false);
+    }
+  }
+
+  function openCreation(): void {
+    setCreating(true);
+    setCreateError(null);
+    void resolveWorkspaceChange();
+  }
+
   async function submitProof(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     if (submitting()) return;
     const normalized = normalizedDraft(draft());
+    const change = workspaceChange();
+    if (!change?.readyForProof || !change.repository || !change.base || !change.head) {
+      setCreateError("Relay could not bind this Proof to one exact workspace change.");
+      return;
+    }
     const validation = validateProofDraft(normalized);
     setDraftErrors(validation);
     const firstInvalid = Object.keys(validation)[0] as ProofDraftField | undefined;
@@ -180,9 +193,9 @@ export function ChangesWorkspace(props: {
         .filter(Boolean);
       const result = await server.runAction("proof.start", {
         change: {
-          repository: normalized.repository,
-          baseSha: normalized.baseSha,
-          headSha: normalized.headSha,
+          repository: change.repository,
+          baseSha: change.base.sha,
+          headSha: change.head.sha,
           ...(normalized.pullRequest ? { pullRequest: Number(normalized.pullRequest) } : {}),
           ...(normalized.summary
             ? {
@@ -232,6 +245,7 @@ export function ChangesWorkspace(props: {
       setSelected(null);
       setHistory([]);
       setPublications([]);
+      setPublicationOutbox([]);
       return;
     }
     const immediate = proofs().find(({ id }) => id === proofId) ?? null;
@@ -245,6 +259,7 @@ export function ChangesWorkspace(props: {
         setSelected(result.proof);
         setHistory(result.history ?? []);
         setPublications(result.publications);
+        setPublicationOutbox(result.publicationOutbox);
       })
       .catch((cause) => {
         if (selectedId() === proofId) setError(humanError(cause, "Could not inspect this Proof"));
@@ -267,19 +282,15 @@ export function ChangesWorkspace(props: {
           </h1>
           <p class="m-0 text-body/[1.5] text-text-base">
             Inspect why Relay selected each journey, which exact builds and targets ran, what
-            evidence is complete, and whether this head earned permission to merge.
+            evidence is complete, and whether this change earned permission to merge.
           </p>
         </div>
         <div class="flex shrink-0 items-center gap-2 max-[620px]:self-stretch">
-          <Button
-            variant="primary"
-            onClick={() => {
-              setCreating(true);
-              setCreateError(null);
-            }}
-          >
-            Start a Proof
-          </Button>
+          <Show when={!creating()}>
+            <Button variant="primary" onClick={openCreation}>
+              Start a Proof
+            </Button>
+          </Show>
           <button
             type="button"
             class={productIconButton}
@@ -299,33 +310,95 @@ export function ChangesWorkspace(props: {
           onSubmit={(event) => void submitProof(event)}
         >
           <div class="grid gap-1">
-            <h2 class="m-0 text-title font-semibold text-text-strong">Bind the exact change</h2>
+            <h2 class="m-0 text-title font-semibold text-text-strong">Review the current change</h2>
             <p class="m-0 text-body/[1.5] text-text-base">
               This starts an awaiting-build Proof. It cannot clear a merge until exact builds,
               affected journeys, required targets, and complete evidence are attached.
             </p>
           </div>
 
+          <div class="grid gap-4 rounded-xl bg-surface-base p-4 ring-1 ring-inset ring-border-weak-base">
+            <div class="flex min-w-0 items-start justify-between gap-4 max-[620px]:flex-col">
+              <div class="grid min-w-0 gap-1">
+                <span class={eyebrow}>Active workspace</span>
+                <Show
+                  when={!resolvingWorkspace() && workspaceChange()}
+                  fallback={
+                    <strong class="text-body font-semibold text-text-strong" aria-live="polite">
+                      Inspecting the current change…
+                    </strong>
+                  }
+                >
+                  {(change) => (
+                    <>
+                      <strong class="truncate text-title font-semibold text-text-strong">
+                        {change().workspace.name}
+                      </strong>
+                      <span class="text-body text-text-base">
+                        {change().head?.label ?? "Current revision unavailable"}
+                      </span>
+                      <span class="text-caption text-text-weak">
+                        {change().branch ? `${change().branch} · ` : ""}
+                        {change().changedFileCount} changed{" "}
+                        {change().changedFileCount === 1 ? "file" : "files"}
+                      </span>
+                    </>
+                  )}
+                </Show>
+              </div>
+              <button
+                type="button"
+                class={cn(productIconButton, "shrink-0")}
+                aria-label="Inspect the active workspace again"
+                disabled={resolvingWorkspace() || submitting()}
+                onClick={() => void resolveWorkspaceChange()}
+              >
+                <Icon name="refresh" size={16} />
+              </button>
+            </div>
+
+            <Show when={workspaceChange()?.status === "needs-selection"}>
+              <label
+                class="grid gap-1.5 text-caption font-medium text-text-strong"
+                for="proof-base"
+              >
+                <span>Compare this change with</span>
+                <select
+                  id="proof-base"
+                  class={proofInput}
+                  disabled={resolvingWorkspace() || submitting()}
+                  value=""
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    if (value) void resolveWorkspaceChange(value);
+                  }}
+                >
+                  <option value="">Choose a reviewed branch…</option>
+                  <For each={workspaceChange()?.baseCandidates ?? []}>
+                    {(candidate) => <option value={candidate.ref}>{candidate.label}</option>}
+                  </For>
+                </select>
+              </label>
+            </Show>
+
+            <Show when={workspaceChange()?.blockers.length}>
+              <ul
+                class="m-0 grid gap-1 pl-5 text-caption/[1.45] text-text-critical-base"
+                role="alert"
+              >
+                <For each={workspaceChange()?.blockers ?? []}>
+                  {(blocker) => <li>{blocker}</li>}
+                </For>
+              </ul>
+            </Show>
+
+            <p class="m-0 text-caption/[1.45] text-text-weak">
+              Relay reads this from the active workspace. Restored tabs and previous-session views
+              never choose the change.
+            </p>
+          </div>
+
           <div class="grid grid-cols-2 gap-4 max-[620px]:grid-cols-1">
-            <ProofField label="Repository" field="repository" error={draftErrors().repository}>
-              <input
-                id="proof-repository"
-                class={proofInput}
-                type="text"
-                value={draft().repository}
-                maxLength={512}
-                required
-                disabled={submitting()}
-                spellcheck={false}
-                autocomplete="off"
-                data-1p-ignore
-                aria-invalid={Boolean(draftErrors().repository)}
-                aria-describedby={draftErrors().repository ? "proof-repository-error" : undefined}
-                placeholder="acme/settings"
-                onInput={(event) => setDraftField("repository", event.currentTarget.value)}
-                onBlur={() => validateDraftField("repository")}
-              />
-            </ProofField>
             <ProofField
               label="Pull request (optional)"
               field="pullRequest"
@@ -347,47 +420,6 @@ export function ChangesWorkspace(props: {
                 placeholder="184"
                 onInput={(event) => setDraftField("pullRequest", event.currentTarget.value)}
                 onBlur={() => validateDraftField("pullRequest")}
-              />
-            </ProofField>
-          </div>
-
-          <div class="grid grid-cols-2 gap-4 max-[620px]:grid-cols-1">
-            <ProofField label="Base commit SHA" field="baseSha" error={draftErrors().baseSha}>
-              <input
-                id="proof-baseSha"
-                class={cn(proofInput, mono)}
-                type="text"
-                value={draft().baseSha}
-                maxLength={40}
-                required
-                disabled={submitting()}
-                spellcheck={false}
-                autocomplete="off"
-                data-1p-ignore
-                aria-invalid={Boolean(draftErrors().baseSha)}
-                aria-describedby={draftErrors().baseSha ? "proof-baseSha-error" : undefined}
-                placeholder="40-character SHA"
-                onInput={(event) => setDraftField("baseSha", event.currentTarget.value)}
-                onBlur={() => validateDraftField("baseSha")}
-              />
-            </ProofField>
-            <ProofField label="Head commit SHA" field="headSha" error={draftErrors().headSha}>
-              <input
-                id="proof-headSha"
-                class={cn(proofInput, mono)}
-                type="text"
-                value={draft().headSha}
-                maxLength={40}
-                required
-                disabled={submitting()}
-                spellcheck={false}
-                autocomplete="off"
-                data-1p-ignore
-                aria-invalid={Boolean(draftErrors().headSha)}
-                aria-describedby={draftErrors().headSha ? "proof-headSha-error" : undefined}
-                placeholder="40-character SHA"
-                onInput={(event) => setDraftField("headSha", event.currentTarget.value)}
-                onBlur={() => validateDraftField("headSha")}
               />
             </ProofField>
           </div>
@@ -464,7 +496,12 @@ export function ChangesWorkspace(props: {
               >
                 Cancel
               </Button>
-              <Button class="min-w-28" variant="primary" type="submit" disabled={submitting()}>
+              <Button
+                class="min-w-28"
+                variant="primary"
+                type="submit"
+                disabled={submitting() || resolvingWorkspace() || !workspaceChange()?.readyForProof}
+              >
                 {submitting() ? "Starting…" : "Start Proof"}
               </Button>
             </div>
@@ -493,19 +530,21 @@ export function ChangesWorkspace(props: {
       <Show
         when={proofs().length > 0}
         fallback={
-          <div class="mx-auto grid w-full max-w-[760px] justify-items-center gap-3 rounded-2xl bg-surface-raised-stronger-non-alpha px-8 py-14 text-center ring-1 ring-inset ring-border-weak-base">
-            <span class="grid size-12 place-items-center rounded-2xl bg-[var(--product-accent-soft)] text-text-interactive-base">
-              <Icon name="check" size={21} />
-            </span>
-            <h2 class="m-0 text-title font-semibold text-text-strong">No Proofs yet</h2>
-            <p class="m-0 max-w-[50ch] text-body/[1.5] text-text-base">
-              Bind the exact base and head commits. Relay will keep unknown impact, missing builds,
-              and incomplete evidence visible instead of inventing a pass.
-            </p>
-            <Button variant="primary" onClick={() => setCreating(true)}>
-              Start a Proof
-            </Button>
-          </div>
+          <Show when={!creating()}>
+            <div class="mx-auto grid w-full max-w-[760px] justify-items-center gap-3 rounded-2xl bg-surface-raised-stronger-non-alpha px-8 py-14 text-center ring-1 ring-inset ring-border-weak-base">
+              <span class="grid size-12 place-items-center rounded-2xl bg-[var(--product-accent-soft)] text-text-interactive-base">
+                <Icon name="check" size={21} />
+              </span>
+              <h2 class="m-0 text-title font-semibold text-text-strong">No Proofs yet</h2>
+              <p class="m-0 max-w-[50ch] text-body/[1.5] text-text-base">
+                Relay binds the active workspace to one exact change. Unknown impact, missing
+                builds, and incomplete evidence stay visible instead of becoming an invented pass.
+              </p>
+              <Button variant="primary" onClick={openCreation}>
+                Start a Proof
+              </Button>
+            </div>
+          </Show>
         }
       >
         <div class="mx-auto grid min-h-[520px] w-full max-w-[1180px] grid-cols-[minmax(240px,320px)_minmax(0,1fr)] overflow-hidden rounded-2xl bg-surface-raised-stronger-non-alpha ring-1 ring-inset ring-border-weak-base max-[820px]:grid-cols-1">
@@ -546,7 +585,8 @@ export function ChangesWorkspace(props: {
                       />
                     </span>
                     <small class="truncate text-caption text-text-weak">
-                      {proof.change.repository} · {shortSha(proof.change.headSha)}
+                      {proof.change.repository.split("/").at(-1) ?? proof.change.repository}
+                      {proof.change.pullRequest ? ` · #${proof.change.pullRequest}` : ""}
                     </small>
                     <small class="text-micro font-medium text-text-weaker">{status.label}</small>
                   </button>
@@ -569,6 +609,7 @@ export function ChangesWorkspace(props: {
                 status={selectedStatus()}
                 history={history()}
                 publications={publications()}
+                publicationOutbox={publicationOutbox()}
                 onOpenRun={props.onOpenRun}
                 onOpenMap={props.onOpenMap}
               />

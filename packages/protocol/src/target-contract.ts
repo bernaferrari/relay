@@ -175,6 +175,9 @@ export type TargetDefinition = {
      * profile without mutating the saved authoring target. */
     environment?: BrowserEnvironmentInput;
     viewport?: BrowserViewport;
+    /** Ephemeral targets may be removed together with their isolated profile.
+     * Authoring targets retain that profile by default. */
+    profileRetention?: "retain" | "ephemeral";
   };
 };
 
@@ -199,11 +202,44 @@ export type TargetProfile = {
   platform: "android" | "ios" | "browser";
   name: string;
   model?: string;
+  /** Exact configured Android emulator identity, when the target is an AVD. */
+  androidAvdName?: string;
   osVersion?: string;
   viewport?: { width: number; height: number };
   /** Exact managed-browser environment frozen with matrix selection. */
   browserCaseProfile?: BrowserCaseProfile;
   capabilities: TargetCapability[];
+  observedAt: number;
+};
+
+/** A configured local Android emulator, distinct from attached ADB devices. */
+export type AndroidAvdSummary = {
+  avdName: string;
+  serial?: string;
+  name: string;
+  platform: "android";
+  kind: "emulator";
+  target: "mobile" | "tv";
+  booted: boolean;
+  status: "stopped" | "booting" | "booted";
+  source: "android-sdk";
+};
+
+export type AndroidAvdInventory = {
+  source: "android-sdk" | "unavailable";
+  available: boolean;
+  avds: AndroidAvdSummary[];
+  reason?: "sdk-unavailable" | "inventory-failed";
+};
+
+export type AndroidAvdBootResult = {
+  avdName: string;
+  serial: string;
+  platform: "android";
+  kind: "emulator";
+  booted: true;
+  status: "booted" | "already-booted";
+  reused: boolean;
   observedAt: number;
 };
 

@@ -79,3 +79,25 @@ test("runtime profile equality covers every browser field while legacy profiles 
     /viewport conflicts/u,
   );
 });
+
+test("Android emulator identity survives compilation and prevents serial-only equality", () => {
+  const pixel = appMapRuntimeTargetProfileFromSaved({
+    id: "android:pixel",
+    targetId: "emulator-5554",
+    platform: "android",
+    androidAvdName: "Pixel_9_API_36",
+  });
+  assert.deepEqual(parseAppMapRuntimeTargetProfile(structuredClone(pixel)), pixel);
+  assert.equal(
+    sameAppMapRuntimeTargetProfile(pixel, { ...pixel, androidAvdName: "Tablet_API_36" }),
+    false,
+  );
+  assert.throws(
+    () =>
+      appMapRuntimeTargetProfileFromSaved({
+        ...pixel,
+        platform: "ios",
+      }),
+    /Android AVD name/u,
+  );
+});

@@ -8,12 +8,52 @@ import {
   getRedactionPolicy,
   loadRedactionPolicy,
   redactResolvedInputs,
+  redactSensitiveEvidenceValue,
   redactValue,
+  redactValueForPolicy,
   setRedactionEnabled,
   visualEvidenceAllowed,
 } from "./redaction.js";
 import { initializeRunEvidence } from "./run-evidence.js";
 import type { TestJob } from "./session.js";
+
+test("frozen redaction and mandatory credential masking do not follow mutable global state", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-redaction-frozen-"));
+  const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
+  const previousMode = process.env.RELAY_REDACTION_MODE;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  process.env.RELAY_REDACTION_MODE = "off";
+  try {
+    await loadRedactionPolicy();
+    const sentinel = "frozen-secret-sentinel";
+    const value = {
+      authorization: `Bearer ${sentinel}`,
+      url: `https://example.test/path?token=${sentinel}`,
+      message: `Cookie: session=${sentinel}`,
+      requestBody: "reviewed diagnostic body",
+    };
+    const mandatory = redactSensitiveEvidenceValue(value) as Record<string, unknown>;
+    assert.equal(JSON.stringify(mandatory).includes(sentinel), false);
+    assert.equal(mandatory.requestBody, "reviewed diagnostic body");
+    assert.equal(
+      JSON.stringify(
+        redactValueForPolicy(value, { enabled: true, source: "workspace", locked: false }),
+      ).includes(sentinel),
+      false,
+    );
+    assert.equal(
+      visualEvidenceAllowed({ enabled: true, source: "workspace", locked: false }),
+      false,
+    );
+  } finally {
+    if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
+    if (previousMode === undefined) delete process.env.RELAY_REDACTION_MODE;
+    else process.env.RELAY_REDACTION_MODE = previousMode;
+    await loadRedactionPolicy();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("redaction defaults off, persists changes, and can be environment-locked", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-redaction-"));

@@ -12,6 +12,7 @@ export {
   validateGoldenScenarioRecipe,
 } from "./golden-device-contract.mjs";
 export { createGoldenApi, GoldenArtifactWriter } from "./golden-device-transport.mjs";
+export { assertGoldenSemanticSnapshot } from "./golden-device-evidence.mjs";
 export {
   GOLDEN_HOST_FAULT_SCENARIOS,
   validateGoldenFaultReceipt,

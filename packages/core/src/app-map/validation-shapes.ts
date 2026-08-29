@@ -91,6 +91,12 @@ function assertTargetProfile(value: TargetProfile, label: string): void {
   if (!(value.platform === "android" || value.platform === "ios" || value.platform === "browser")) {
     appMapFail("invalid-map", `${label}.platform is unsupported`);
   }
+  if (value.androidAvdName !== undefined) {
+    requiredText(value.androidAvdName, `${label}.androidAvdName`);
+    if (value.platform !== "android") {
+      appMapFail("invalid-map", `${label}.androidAvdName requires an Android target`);
+    }
+  }
   requiredText(value.name, `${label}.name`);
   if (!Array.isArray(value.capabilities)) {
     appMapFail("invalid-map", `${label}.capabilities must be an array`);
