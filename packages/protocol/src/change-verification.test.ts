@@ -12,7 +12,7 @@ const digest = `sha256:${"a".repeat(64)}`;
 
 function fixture(overrides: Partial<ChangeVerification> = {}): ChangeVerification {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "proof-1",
     organizationId: "acme",
     projectId: "relay",
@@ -88,6 +88,12 @@ function fixture(overrides: Partial<ChangeVerification> = {}): ChangeVerificatio
         },
       ],
     },
+    planApproval: {
+      decisionId: "decision-1",
+      approvedBy: "human:reviewer",
+      approvedAt: 100,
+      reason: "The selected journeys and targets cover the stated change.",
+    },
     policy: { id: "relay.default", version: 3 },
     runIds: [],
     evidenceDigests: [],
@@ -96,6 +102,17 @@ function fixture(overrides: Partial<ChangeVerification> = {}): ChangeVerificatio
     smallestNextVerification: { kind: "run-pilot", reason: "Run the representative case." },
     requestedBy: "agent:coder",
     updatedBy: "agent:coder",
+    lastMutation: {
+      schemaVersion: 1,
+      requestId: "request-1",
+      requestDigest: digest,
+      action: "start",
+      actorId: "agent:coder",
+      proofId: "proof-1",
+      previousVersion: 0,
+      version: 1,
+      at: 100,
+    },
     createdAt: 100,
     updatedAt: 100,
     ...overrides,
@@ -111,6 +128,27 @@ test("Change Verification freezes one exact change, build, plan, and policy", ()
     }),
   );
   assert.throws(() => parseChangeVerification({ ...fixture(), extra: true }));
+});
+
+test("legacy v1 Proofs migrate fail-closed before execution or merge", () => {
+  const { planApproval: _approval, lastMutation: _receipt, ...legacy } = fixture();
+  const migrated = parseChangeVerification({
+    ...legacy,
+    schemaVersion: 1,
+    state: "proved",
+    decision: "proved",
+    runIds: ["run-1"],
+    evidenceDigests: [digest],
+  });
+
+  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.state, "needs-review");
+  assert.equal(migrated.decision, "needs-review");
+  assert.equal(migrated.planApproval, undefined);
+  assert.equal(migrated.lastMutation.action, "legacy-v1-migration");
+  assert.equal(migrated.lastMutation.version, migrated.version);
+  assert.match(migrated.coverageGaps.at(-1)!, /predates durable Verification Plan approval/u);
+  assert.equal(migrated.smallestNextVerification?.kind, "review");
 });
 
 test("source metadata alone can never claim that a change is proved", () => {
@@ -144,6 +182,17 @@ test("supersession is explicit and never turns an older head green", () => {
     version: 2,
     state: "superseded",
     supersededByProofId: "proof-2",
+    lastMutation: {
+      schemaVersion: 1,
+      requestId: "request-2",
+      requestDigest: digest,
+      action: "rerun-affected",
+      actorId: "agent:coder",
+      proofId: "proof-1",
+      previousVersion: 1,
+      version: 2,
+      at: 200,
+    },
     updatedAt: 200,
   });
   assert.deepEqual(parseChangeVerification(superseded), superseded);
@@ -163,6 +212,15 @@ test("every lifecycle state has an unambiguous merge-decision projection", () =>
       ...(decision ? { decision } : {}),
       ...(state === "proved" ? { runIds: ["run-1"], evidenceDigests: [digest] } : {}),
       ...(state === "superseded" ? { supersededByProofId: "proof-2" } : {}),
+      ...(state === "cancelled"
+        ? {
+            cancellation: {
+              reason: "Cancelled by the requester.",
+              cancelledBy: "agent:coder",
+              cancelledAt: 100,
+            },
+          }
+        : {}),
     });
     assert.equal(parseChangeVerification(proof).state, state);
     assert.throws(() =>

@@ -1,0 +1,124 @@
+import * as z from "zod/v4";
+import {
+  CHANGE_VERIFICATION_STATES,
+  changeVerificationBuildSchema,
+  changeVerificationChangeSchema,
+  changeVerificationNextSchema,
+  changeVerificationMutationReceiptSchema,
+  changeVerificationPolicySchema,
+  changeVerificationSchema,
+  changeVerificationSelectionSchema,
+} from "./change-verification.js";
+
+const identifier = z.string().trim().min(1).max(256);
+const reason = z.string().trim().min(1).max(4_096);
+const expectedVersion = z.number().int().positive();
+
+const initialProofFields = {
+  change: changeVerificationChangeSchema,
+  builds: z.array(changeVerificationBuildSchema).max(32).readonly().optional(),
+  selection: changeVerificationSelectionSchema.optional(),
+  policy: changeVerificationPolicySchema,
+  coverageGaps: z.array(reason).max(128).readonly().optional(),
+  residualRisk: z.array(reason).max(128).readonly().optional(),
+  smallestNextVerification: changeVerificationNextSchema.optional(),
+} as const;
+
+export const changeVerificationOperationInputSchemas = {
+  "proof.start": z.object(initialProofFields).strict(),
+  "proof.list": z
+    .object({
+      state: z.enum(CHANGE_VERIFICATION_STATES).optional(),
+      limit: z.coerce.number().int().positive().max(100).optional(),
+    })
+    .strict(),
+  "proof.inspect": z
+    .object({
+      proofId: identifier,
+      includeHistory: z
+        .union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")])
+        .optional(),
+    })
+    .strict(),
+  "proof.plan.approve": z
+    .object({
+      proofId: identifier,
+      expectedVersion,
+      decisionId: identifier,
+      reason,
+      confirm: z.literal(true),
+    })
+    .strict(),
+  "proof.continue": z
+    .object({
+      proofId: identifier,
+      expectedVersion,
+      action: z.enum(["revise-plan", "request-plan-review", "return-to-planning"]),
+      builds: z.array(changeVerificationBuildSchema).max(32).readonly().optional(),
+      selection: changeVerificationSelectionSchema.optional(),
+      coverageGaps: z.array(reason).max(128).readonly().optional(),
+      residualRisk: z.array(reason).max(128).readonly().optional(),
+      smallestNextVerification: changeVerificationNextSchema.optional(),
+      reason: reason.optional(),
+    })
+    .strict()
+    .superRefine((input, context) => {
+      if (input.action === "revise-plan" && (!input.builds || !input.selection)) {
+        context.addIssue({
+          code: "custom",
+          message: "revise-plan requires exact builds and selection",
+        });
+      }
+      if (input.action !== "revise-plan" && !input.reason) {
+        context.addIssue({ code: "custom", message: `${input.action} requires a reason` });
+      }
+    }),
+  "proof.cancel": z
+    .object({
+      proofId: identifier,
+      expectedVersion,
+      reason,
+      confirm: z.literal(true),
+    })
+    .strict(),
+  "proof.rerun-affected": z
+    .object({
+      proofId: identifier,
+      expectedVersion,
+      change: changeVerificationChangeSchema,
+      builds: z.array(changeVerificationBuildSchema).max(32).readonly().optional(),
+      selection: changeVerificationSelectionSchema.optional(),
+      policy: changeVerificationPolicySchema.optional(),
+      coverageGaps: z.array(reason).max(128).readonly().optional(),
+      residualRisk: z.array(reason).max(128).readonly().optional(),
+      smallestNextVerification: changeVerificationNextSchema.optional(),
+    })
+    .strict(),
+} as const;
+
+const mutationOutputSchema = z
+  .object({ proof: changeVerificationSchema, receipt: changeVerificationMutationReceiptSchema })
+  .strict();
+
+export const changeVerificationOperationOutputSchemas = {
+  "proof.start": mutationOutputSchema.extend({ disposition: z.enum(["created", "existing"]) }),
+  "proof.list": z
+    .object({ proofs: z.array(changeVerificationSchema).max(100).readonly() })
+    .strict(),
+  "proof.inspect": z
+    .object({
+      proof: changeVerificationSchema,
+      history: z.array(changeVerificationSchema).max(100).readonly().optional(),
+    })
+    .strict(),
+  "proof.plan.approve": mutationOutputSchema,
+  "proof.continue": mutationOutputSchema,
+  "proof.cancel": mutationOutputSchema,
+  "proof.rerun-affected": z
+    .object({
+      previous: changeVerificationSchema,
+      replacement: changeVerificationSchema,
+      receipt: changeVerificationMutationReceiptSchema,
+    })
+    .strict(),
+} as const;

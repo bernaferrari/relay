@@ -9,11 +9,14 @@ import type { TargetRuntimeRouteRuntime } from "./target-runtime-routes.js";
 import { handleTargetRuntimeRoute } from "./target-runtime-routes.js";
 import type { WorkflowRouteRuntime } from "./workflow-routes.js";
 import { handleWorkflowRoute } from "./workflow-routes.js";
+import type { ChangeVerificationRouteRuntime } from "./change-verification-routes.js";
+import { handleChangeVerificationRoute } from "./change-verification-routes.js";
 
 export type PrimaryOperationRouteRuntimes = {
   appMapTestRun?: Partial<AppMapTestRunRouteRuntime>;
   jobs?: Partial<JobRouteRuntime>;
   workflow?: Partial<WorkflowRouteRuntime>;
+  proof?: Partial<ChangeVerificationRouteRuntime>;
   target?: Partial<TargetRuntimeRouteRuntime>;
   campaignDuration?: CampaignDurationRouteRuntime;
 };
@@ -41,6 +44,7 @@ export async function handlePrimaryOperationRoutes(input: {
       combineRuntime: input.runtimes.jobs,
     })) ||
     (await handleAppMapRoute(shared)) ||
+    (await handleChangeVerificationRoute({ ...shared, runtime: input.runtimes.proof })) ||
     (await handleWorkflowRoute({ ...shared, runtime: input.runtimes.workflow })) ||
     (await handleTargetRuntimeRoute({
       ...shared,

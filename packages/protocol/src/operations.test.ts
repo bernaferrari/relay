@@ -96,6 +96,123 @@ test("campaign capacity preflight remains composed into the central operation re
   assert.equal(definition.output.description, "campaign capacity preflight response");
 });
 
+test("Proof exposes six canonical lifecycle operations plus its additive list query", () => {
+  const proofIds = operationDefinitions
+    .filter(({ id }) => id.startsWith("proof."))
+    .map(({ id }) => id);
+  assert.deepEqual(proofIds, [
+    "proof.start",
+    "proof.list",
+    "proof.inspect",
+    "proof.plan.approve",
+    "proof.continue",
+    "proof.cancel",
+    "proof.rerun-affected",
+  ]);
+  assert.deepEqual(
+    proofIds.filter((id) => id !== "proof.list"),
+    [
+      "proof.start",
+      "proof.inspect",
+      "proof.plan.approve",
+      "proof.continue",
+      "proof.cancel",
+      "proof.rerun-affected",
+    ],
+  );
+
+  const metadata = Object.fromEntries(
+    proofIds.map((id) => {
+      const definition = operationDefinition(id);
+      return [
+        id,
+        {
+          role: definition.minimumRole,
+          confirmation: definition.confirmation,
+          lease: definition.lease,
+          progress: definition.progress,
+          cancellable: definition.cancellable,
+          transport: definition.transport,
+        },
+      ];
+    }),
+  );
+  assert.deepEqual(metadata, {
+    "proof.start": {
+      role: "author",
+      confirmation: "none",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "POST", path: "/proofs" },
+    },
+    "proof.list": {
+      role: "viewer",
+      confirmation: "none",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "GET", path: "/proofs" },
+    },
+    "proof.inspect": {
+      role: "viewer",
+      confirmation: "none",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "GET", path: "/proofs/:proofId" },
+    },
+    "proof.plan.approve": {
+      role: "author",
+      confirmation: "confirm",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "POST", path: "/proofs/:proofId/plan/approve" },
+    },
+    "proof.continue": {
+      role: "author",
+      confirmation: "none",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "POST", path: "/proofs/:proofId/continue" },
+    },
+    "proof.cancel": {
+      role: "author",
+      confirmation: "confirm",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "POST", path: "/proofs/:proofId/cancel" },
+    },
+    "proof.rerun-affected": {
+      role: "author",
+      confirmation: "none",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "POST", path: "/proofs/:proofId/rerun-affected" },
+    },
+  });
+
+  assert.throws(() =>
+    operationDefinition("proof.start").input.parse({
+      change: { repository: "acme/relay", baseSha: "1".repeat(40), headSha: "2".repeat(40) },
+      policy: { id: "relay.default", version: 1 },
+      organizationId: "forged",
+    }),
+  );
+  assert.throws(() =>
+    operationDefinition("proof.cancel").input.parse({
+      proofId: "proof-1",
+      expectedVersion: 0,
+      reason: "stop",
+      confirm: true,
+    }),
+  );
+});
+
 test("run review can request another human decision without resolving the Run", () => {
   const review = operationDefinition("run.review");
   assert.deepEqual(review.input.parse({ runId: "run-1", action: "defer", note: "Ask Ada" }), {

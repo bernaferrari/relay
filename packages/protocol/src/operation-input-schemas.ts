@@ -20,6 +20,7 @@ import { workspaceOperationSchemas } from "./workspace-operation-schemas.js";
 import { coreTargetOperationInputSchemas } from "./core-target-operation-input-schemas.js";
 import { combineStartOperationInputSchemas } from "./combine-start-operation-input-schema.js";
 import { workflowRecordOperationInputSchemas } from "./workflow-record-operation-schemas.js";
+import { changeVerificationOperationInputSchemas } from "./change-verification-operation-schemas.js";
 import {
   authoringInteraction,
   authoringRecordingEdit,
@@ -51,6 +52,7 @@ export const operationInputSchemas = {
   ...coreTargetOperationInputSchemas,
   ...combineStartOperationInputSchemas,
   ...workflowRecordOperationInputSchemas,
+  ...changeVerificationOperationInputSchemas,
   "system.audit.list": z.object({ limit: z.number().int().positive().optional() }).strict(),
   "workspace.privacy.update": z.object({ enabled: z.boolean() }).strict(),
   "workspace.evidence.update": z

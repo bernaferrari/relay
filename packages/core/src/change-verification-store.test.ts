@@ -63,6 +63,8 @@ function createInput(
     policy: { id: "relay.default", version: 3 },
     requestedBy: "agent:coder",
     actorId: "agent:coder",
+    requestId: "request-start",
+    requestDigest: digest,
     at: 100,
     ...overrides,
   };
@@ -134,6 +136,15 @@ function selection(): ChangeVerification["selection"] {
   };
 }
 
+function planApproval(): NonNullable<ChangeVerification["planApproval"]> {
+  return {
+    decisionId: "decision-1",
+    approvedBy: "human:reviewer",
+    approvedAt: 200,
+    reason: "The selected journeys and targets cover the stated change.",
+  };
+}
+
 test("Change Verification persistence is append-only and compare-and-set", async () => {
   await withStateRoot(async () => {
     const created = await createChangeVerification(createInput());
@@ -146,9 +157,13 @@ test("Change Verification persistence is append-only and compare-and-set", async
       expectedVersion: created.version,
       state: "ready",
       actorId: "human:reviewer",
+      requestId: "request-approve",
+      requestDigest: digest,
+      action: "approve-plan",
       at: 200,
       builds: buildsFor(),
       selection: selection(),
+      planApproval: planApproval(),
     });
     assert.equal(ready.version, 2);
 
@@ -158,6 +173,9 @@ test("Change Verification persistence is append-only and compare-and-set", async
       expectedVersion: ready.version,
       state: "running-pilot",
       actorId: "agent:relay",
+      requestId: "request-pilot",
+      requestDigest: digest,
+      action: "start-pilot",
       at: 300,
       runIds: ["run-1"],
       evidenceDigests: [digest],
@@ -168,6 +186,9 @@ test("Change Verification persistence is append-only and compare-and-set", async
       expectedVersion: running.version,
       state: "rejected",
       actorId: "agent:relay",
+      requestId: "request-reject",
+      requestDigest: digest,
+      action: "record-decision",
       at: 400,
       firstCausalFailure: {
         runId: "run-1",
@@ -198,6 +219,9 @@ test("Change Verification persistence is append-only and compare-and-set", async
         expectedVersion: ready.version,
         state: "running-pilot",
         actorId: "agent:stale",
+        requestId: "request-stale",
+        requestDigest: digest,
+        action: "start-pilot",
         at: 500,
       }),
       (error) => error instanceof ChangeVerificationConflictError && error.code === "PROOF_STALE",
@@ -234,7 +258,11 @@ test("a repaired head creates a new Proof and supersedes without rewriting histo
       expectedVersion: created.version,
       state: "ready",
       actorId: "human:reviewer",
+      requestId: "request-approve",
+      requestDigest: digest,
+      action: "approve-plan",
       at: 200,
+      planApproval: planApproval(),
     });
     const running = await advanceChangeVerification({
       ...scope,
@@ -242,6 +270,9 @@ test("a repaired head creates a new Proof and supersedes without rewriting histo
       expectedVersion: ready.version,
       state: "running-pilot",
       actorId: "agent:relay",
+      requestId: "request-pilot",
+      requestDigest: digest,
+      action: "start-pilot",
       at: 300,
       runIds: ["run-1"],
       evidenceDigests: [digest],
@@ -252,6 +283,9 @@ test("a repaired head creates a new Proof and supersedes without rewriting histo
       expectedVersion: running.version,
       state: "rejected",
       actorId: "agent:relay",
+      requestId: "request-reject",
+      requestDigest: digest,
+      action: "record-decision",
       at: 400,
     });
 
@@ -260,6 +294,8 @@ test("a repaired head creates a new Proof and supersedes without rewriting histo
       proofId: rejected.id,
       expectedVersion: rejected.version,
       actorId: "agent:relay",
+      requestId: "request-rerun",
+      requestDigest: digest,
       at: 500,
       replacement: createInput({
         id: "proof-2",
@@ -286,6 +322,34 @@ test("a repaired head creates a new Proof and supersedes without rewriting histo
   });
 });
 
+test("stale supersession rolls back the replacement Proof atomically", async () => {
+  await withStateRoot(async () => {
+    const created = await createChangeVerification(createInput());
+    await assert.rejects(
+      supersedeChangeVerification({
+        ...scope,
+        proofId: created.id,
+        expectedVersion: created.version + 1,
+        actorId: "agent:coder",
+        requestId: "request-stale-rerun",
+        requestDigest: digest,
+        at: 200,
+        replacement: createInput({
+          id: "orphan-must-not-exist",
+          change: { ...createInput().change, baseSha: headSha, headSha: repairedHeadSha },
+          at: 200,
+        }),
+      }),
+      (error) => error instanceof ChangeVerificationConflictError && error.code === "PROOF_STALE",
+    );
+    assert.equal(await readChangeVerification(scope, "orphan-must-not-exist"), undefined);
+    assert.deepEqual(
+      (await listChangeVerifications(scope)).map(({ id }) => id),
+      [created.id],
+    );
+  });
+});
+
 test("recorded runs, evidence, and the first causal failure cannot be rewritten", async () => {
   await withStateRoot(async () => {
     const created = await createChangeVerification(
@@ -297,7 +361,11 @@ test("recorded runs, evidence, and the first causal failure cannot be rewritten"
       expectedVersion: created.version,
       state: "ready",
       actorId: "human:reviewer",
+      requestId: "request-approve",
+      requestDigest: digest,
+      action: "approve-plan",
       at: 200,
+      planApproval: planApproval(),
     });
     const running = await advanceChangeVerification({
       ...scope,
@@ -305,6 +373,9 @@ test("recorded runs, evidence, and the first causal failure cannot be rewritten"
       expectedVersion: ready.version,
       state: "running-pilot",
       actorId: "agent:relay",
+      requestId: "request-pilot",
+      requestDigest: digest,
+      action: "start-pilot",
       at: 300,
       runIds: ["run-1"],
       evidenceDigests: [digest],
@@ -321,6 +392,9 @@ test("recorded runs, evidence, and the first causal failure cannot be rewritten"
         expectedVersion: running.version,
         state: "rejected",
         actorId: "agent:relay",
+        requestId: "request-reject",
+        requestDigest: digest,
+        action: "record-decision",
         at: 400,
         runIds: [],
         firstCausalFailure: {
@@ -384,5 +458,30 @@ test("malformed persisted Proofs fail closed when read", async () => {
     });
     await assert.rejects(readChangeVerification(scope, "malformed"));
     await assert.rejects(listChangeVerifications(scope));
+  });
+});
+
+test("persisted v1 Proof documents project to review-required v2", async () => {
+  await withStateRoot(async () => {
+    const current = await createChangeVerification(createInput({ id: "current-shape" }));
+    const {
+      lastMutation: _receipt,
+      planApproval: _approval,
+      cancellation: _cancellation,
+      ...legacy
+    } = current;
+    await withControlStore((store) => {
+      store.insertChangeVerification({
+        ...legacy,
+        schemaVersion: 1,
+        id: "legacy-proof",
+      } as unknown as ChangeVerification);
+    });
+
+    const migrated = await readChangeVerification(scope, "legacy-proof");
+    assert.equal(migrated?.schemaVersion, 2);
+    assert.equal(migrated?.state, "needs-review");
+    assert.equal(migrated?.decision, "needs-review");
+    assert.equal(migrated?.lastMutation.action, "legacy-v1-migration");
   });
 });

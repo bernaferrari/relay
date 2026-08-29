@@ -2,6 +2,7 @@ import {
   parseChangeVerification,
   type ChangeVerification,
   type ChangeVerificationDecision,
+  type ChangeVerificationMutation,
   type ChangeVerificationState,
 } from "@relay/protocol";
 import { readControlStore, withControlStore } from "./collaboration-store.js";
@@ -20,6 +21,9 @@ export type CreateChangeVerificationInput = ChangeVerificationScope &
     smallestNextVerification?: ChangeVerification["smallestNextVerification"];
     supersedesProofId?: string;
     actorId: string;
+    requestId: string;
+    requestDigest: ChangeVerification["lastMutation"]["requestDigest"];
+    action?: Extract<ChangeVerificationMutation, "start" | "rerun-affected">;
     at: number;
   };
 
@@ -28,9 +32,14 @@ export type AdvanceChangeVerificationInput = ChangeVerificationScope & {
   expectedVersion: number;
   state: ChangeVerificationState;
   actorId: string;
+  requestId: string;
+  requestDigest: ChangeVerification["lastMutation"]["requestDigest"];
+  action: Exclude<ChangeVerificationMutation, "start" | "rerun-affected">;
   at: number;
   builds?: ChangeVerification["builds"];
   selection?: ChangeVerification["selection"];
+  planApproval?: ChangeVerification["planApproval"] | null;
+  cancellation?: ChangeVerification["cancellation"];
   policy?: ChangeVerification["policy"];
   runIds?: ChangeVerification["runIds"];
   evidenceDigests?: ChangeVerification["evidenceDigests"];
@@ -48,6 +57,8 @@ export type SupersedeChangeVerificationInput = ChangeVerificationScope & {
     keyof ChangeVerificationScope | "supersedesProofId"
   >;
   actorId: string;
+  requestId: string;
+  requestDigest: ChangeVerification["lastMutation"]["requestDigest"];
   at: number;
 };
 
@@ -167,7 +178,7 @@ function initialProof(input: CreateChangeVerificationInput): ChangeVerification 
   const builds = input.builds ?? [];
   const state: ChangeVerificationState = builds.length ? "planning" : "awaiting-build";
   return parseChangeVerification({
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: input.id,
     organizationId: input.organizationId,
     projectId: input.projectId,
@@ -187,6 +198,17 @@ function initialProof(input: CreateChangeVerificationInput): ChangeVerification 
     ...(input.supersedesProofId ? { supersedesProofId: input.supersedesProofId } : {}),
     requestedBy: input.requestedBy,
     updatedBy: input.actorId,
+    lastMutation: {
+      schemaVersion: 1,
+      requestId: input.requestId,
+      requestDigest: input.requestDigest,
+      action: input.action ?? "start",
+      actorId: input.actorId,
+      proofId: input.id,
+      previousVersion: 0,
+      version: 1,
+      at: input.at,
+    },
     createdAt: input.at,
     updatedAt: input.at,
   });
@@ -226,6 +248,17 @@ function advancedProof(
       "the approved Verification Plan is frozen once execution is ready",
     );
   }
+  if (
+    current.planApproval &&
+    input.planApproval !== undefined &&
+    input.planApproval !== null &&
+    !sameValue(input.planApproval, current.planApproval)
+  ) {
+    throw new ChangeVerificationConflictError(
+      "PROOF_IMMUTABLE",
+      "Verification Plan approval provenance is immutable once recorded",
+    );
+  }
   const runIds = input.runIds ?? current.runIds;
   const evidenceDigests = input.evidenceDigests ?? current.evidenceDigests;
   assertAppendOnly(current.runIds, runIds, "runIds");
@@ -246,6 +279,9 @@ function advancedProof(
     state: input.state,
     builds: input.builds ?? current.builds,
     selection: input.selection ?? current.selection,
+    planApproval:
+      input.planApproval === null ? undefined : (input.planApproval ?? current.planApproval),
+    cancellation: input.cancellation,
     policy: input.policy ?? current.policy,
     runIds,
     evidenceDigests,
@@ -261,6 +297,17 @@ function advancedProof(
         ? undefined
         : (input.smallestNextVerification ?? current.smallestNextVerification),
     updatedBy: input.actorId,
+    lastMutation: {
+      schemaVersion: 1,
+      requestId: input.requestId,
+      requestDigest: input.requestDigest,
+      action: input.action,
+      actorId: input.actorId,
+      proofId: current.id,
+      previousVersion: current.version,
+      version: current.version + 1,
+      at: input.at,
+    },
     updatedAt: input.at,
   });
   if (
@@ -383,6 +430,9 @@ export async function supersedeChangeVerification(
       organizationId: input.organizationId,
       projectId: input.projectId,
       supersedesProofId: current.id,
+      requestId: input.requestId,
+      requestDigest: input.requestDigest,
+      action: "rerun-affected",
     });
     if (!store.insertChangeVerification(replacement)) {
       throw new ChangeVerificationConflictError("PROOF_EXISTS", "replacement Proof already exists");
@@ -394,6 +444,17 @@ export async function supersedeChangeVerification(
       decision: undefined,
       supersededByProofId: replacement.id,
       updatedBy: input.actorId,
+      lastMutation: {
+        schemaVersion: 1,
+        requestId: input.requestId,
+        requestDigest: input.requestDigest,
+        action: "rerun-affected",
+        actorId: input.actorId,
+        proofId: current.id,
+        previousVersion: current.version,
+        version: current.version + 1,
+        at: input.at,
+      },
       updatedAt: input.at,
     });
     const result = store.appendChangeVerification(input.expectedVersion, previous);

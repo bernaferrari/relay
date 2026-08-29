@@ -24,7 +24,7 @@ import { runEvidenceOperationDefinitions } from "./run-evidence-operation-defini
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
 import { campaignCapacityOperationDefinitions } from "./campaign-capacity-operation-definitions.js";
-import { workflowOperationDefinitions } from "./workflow-operation-definitions.js";
+import { durableOperationDefinitions } from "./durable-operation-definitions.js";
 import { scheduleOperationDefinitions } from "./schedule-operation-definitions.js";
 import { createDiscoveryOperationDefinitions } from "./discovery-operation-definitions.js";
 import { combineOperationDefinitions } from "./combine-operation-definitions.js";
@@ -1547,7 +1547,7 @@ export const operationDefinitions = [
   ...discoveryOperationDefinitions,
   query("job.list", "List jobs", "/jobs", { category: "execution", output: jobsParser }),
   query("job.get", "Get job", "/jobs/:jobId", { category: "execution", input: jobIdInputParser }),
-  ...workflowOperationDefinitions,
+  ...durableOperationDefinitions,
   command("job.start", "Start job", "POST", "/jobs", {
     category: "execution",
     input: startJobInputParser,
