@@ -26,6 +26,7 @@ export function reconcileCausalCombineRerun(
   campaign: StoredCombineCampaign,
   map: AppMap,
   preparedCells: readonly PreparedCombineCellContract[],
+  options: { onlyCellIds?: readonly string[] } = {},
 ): CausalCombineRerun {
   const repairs = Object.values(map.proposals)
     .filter(
@@ -44,10 +45,13 @@ export function reconcileCausalCombineRerun(
   const affectedTestIds = new Set(repairs.map((proposal) => proposal.repair!.testId));
   const preparedById = new Map(preparedCells.map((cell) => [cell.cellId, cell]));
   const selected = new Set(campaign.execution.selectedCellIds);
+  const onlyCellIds = options.onlyCellIds === undefined ? undefined : new Set(options.onlyCellIds);
   const affectedCellIds: string[] = [];
   const changedTestIds = new Set<string>();
   const cases = campaign.cases.map((item) => {
-    if (!affectedTestIds.has(item.testId)) return item;
+    if (!affectedTestIds.has(item.testId) || (onlyCellIds && !onlyCellIds.has(item.cellId))) {
+      return item;
+    }
     const prepared = preparedById.get(item.cellId);
     if (!prepared || prepared.testId !== item.testId) return item;
     if (
@@ -60,7 +64,10 @@ export function reconcileCausalCombineRerun(
     }
     affectedCellIds.push(item.cellId);
     changedTestIds.add(item.testId);
-    const { jobId: _jobId, error: _error, ...stable } = item;
+    const priorRunIds = item.runId
+      ? [...new Set([...(item.priorRunIds ?? []), item.runId])]
+      : item.priorRunIds;
+    const { jobId: _jobId, runId: _runId, error: _error, ...stable } = item;
     return {
       ...stable,
       childIntentDigest: prepared.childIntentDigest,
@@ -68,6 +75,7 @@ export function reconcileCausalCombineRerun(
       wrapperGraphDigest: prepared.wrapperGraphDigest,
       staticInputDigest: prepared.staticInputDigest,
       status: selected.has(item.cellId) ? ("pending" as const) : item.status,
+      ...(priorRunIds?.length ? { priorRunIds } : {}),
     };
   });
   const contributingRepairs = repairs.filter((proposal) =>

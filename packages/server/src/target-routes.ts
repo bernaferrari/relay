@@ -1,6 +1,8 @@
 import type http from "node:http";
 import {
   BrowserDeviceConflictError,
+  BrowserMutationOutcomeUnknownError,
+  BrowserSupervisionRequiredError,
   browserCaseProfileForTarget,
   captureBrowserDeviceFrame,
   closeBrowserDeviceSession,
@@ -199,6 +201,20 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
           ...(error.currentSequence === undefined
             ? {}
             : { currentSequence: error.currentSequence }),
+        });
+      }
+      if (error instanceof BrowserMutationOutcomeUnknownError) {
+        throw new HttpError(409, error.message, {
+          code: "BROWSER_MUTATION_OUTCOME_UNKNOWN",
+          mutationId: error.mutationId,
+          recovery:
+            "Capture the current page and reconcile the mutation outcome before issuing another browser input.",
+        });
+      }
+      if (error instanceof BrowserSupervisionRequiredError) {
+        throw new HttpError(503, error.message, {
+          code: "BROWSER_SUPERVISION_REQUIRED",
+          recovery: "Restart Relay so the durable target supervisor is available.",
         });
       }
       throw error;

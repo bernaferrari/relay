@@ -111,18 +111,52 @@ function retryableTerminalStatus(
 /** Select exact frozen cases for one continuation. Every mode continues
  * untouched work; failed/all additionally reopen reviewed terminal outcomes.
  * Passed and active cases are never eligible. */
-export function prepareSelectedCombineCampaignResume(campaign: StoredCombineCampaign): {
+/** An explicit cellIds scope is the reviewed selective-rerun path. */
+export function prepareSelectedCombineCampaignResume(
+  campaign: StoredCombineCampaign,
+  options: { cellIds?: readonly string[] } = {},
+): {
   campaign: StoredCombineCampaign;
   selectedCellIds: string[];
   retriedTerminalCellIds: string[];
 } {
-  const selected = new Set(campaign.execution.selectedCellIds ?? []);
+  const explicitCellIds = options.cellIds;
+  const selected = new Set(
+    explicitCellIds === undefined
+      ? (campaign.execution.selectedCellIds ?? [])
+      : explicitCellIds.map((id) => id.trim()).filter(Boolean),
+  );
+  if (explicitCellIds !== undefined) {
+    if (!selected.size || selected.size !== explicitCellIds.length) {
+      throw new Error("An explicit Repeat rerun scope must contain unique non-empty cell ids.");
+    }
+    const known = new Set(campaign.cases.map((item) => item.cellId));
+    const unknown = [...selected].filter((id) => !known.has(id));
+    if (unknown.length) {
+      throw new Error(`Repeat rerun scope names unknown campaign cell ${unknown[0]}.`);
+    }
+  }
   const mode = repeatResumeMode(campaign);
   const selectedCellIds: string[] = [];
   const retriedTerminalCellIds: string[] = [];
   const cases = campaign.cases.map((item) => {
     if (!selected.has(item.cellId)) return item;
-    const terminalRetry = retryableTerminalStatus(mode, item.status);
+    const terminalRetry = retryableTerminalStatus(
+      explicitCellIds === undefined ? mode : "all",
+      item.status,
+    );
+    if (explicitCellIds !== undefined) {
+      if (!retryableTerminalStatus("all", item.status)) {
+        throw new Error(
+          `Repeat rerun scope may include only failed, blocked, or cancelled cells; ${item.cellId} is ${item.status}.`,
+        );
+      }
+      if (!item.jobId || !item.runId) {
+        throw new Error(
+          `Campaign cell ${item.cellId} cannot retry without immutable Run evidence.`,
+        );
+      }
+    }
     if (item.status !== "pending" && !terminalRetry) return item;
     if (terminalRetry && (!item.jobId || !item.runId)) {
       throw new Error(`Campaign cell ${item.cellId} cannot retry without immutable Run evidence.`);

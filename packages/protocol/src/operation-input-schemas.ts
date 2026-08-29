@@ -21,6 +21,7 @@ import { coreTargetOperationInputSchemas } from "./core-target-operation-input-s
 import { combineStartOperationInputSchemas } from "./combine-start-operation-input-schema.js";
 import { workflowRecordOperationInputSchemas } from "./workflow-record-operation-schemas.js";
 import { changeVerificationOperationInputSchemas } from "./change-verification-operation-schemas.js";
+import { repeatFailureKindSchema } from "./repeat-failure.js";
 import {
   authoringInteraction,
   authoringRecordingEdit,
@@ -790,11 +791,20 @@ export const operationInputSchemas = {
       testId: identifier("Test identifier"),
     })
     .strict(),
+  "job.combine.campaign.repeat.clusters": z
+    .object({
+      batchId: identifier("Combine campaign identifier"),
+      failureKind: repeatFailureKindSchema.optional(),
+      cohort: identifier("Repeat target cohort").optional(),
+    })
+    .strict(),
   "job.combine.campaign.resume": z
     .object({
       batchId: identifier("Combine campaign identifier"),
       reviewed: z.boolean().optional(),
       expectedAppMapRevision: z.number().int().nonnegative().optional(),
+      cellIds: z.array(identifier("Repeat rerun cell identifier")).max(1_000).optional(),
+      clusterIds: z.array(identifier("Repeat failure cluster identifier")).max(1_000).optional(),
       workflowMutation: repeatWorkflowMutationSchema.optional(),
     })
     .strict(),

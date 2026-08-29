@@ -4,9 +4,50 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
-import { createCombineCampaign } from "@relay/core";
+import { createCombineCampaign, persistRun } from "@relay/core";
 import type { CombineCampaign } from "@relay/protocol";
+import type { TestJob } from "@relay/core";
 import { startServer } from "./index.js";
+
+function failedRun(id: string, error: string): TestJob {
+  const at = Date.now();
+  return {
+    id,
+    action: "app-map:settings",
+    platform: "android",
+    targetContext: { kind: "device", platform: "android", serial: "android-1" },
+    targetKind: "device",
+    status: "error",
+    queuedAt: at - 20,
+    startedAt: at - 10,
+    finishedAt: at,
+    logs: ["failed"],
+    attempts: 1,
+    steps: [],
+    frames: [],
+    artifacts: [
+      {
+        kind: "campaign-check-result",
+        capturedAt: at,
+        data: {
+          id: "check-settings",
+          title: "Settings check",
+          status: "failed",
+          error,
+          startedAt: at - 10,
+          finishedAt: at,
+        },
+      },
+    ],
+    glyphs: [],
+    kind: "Replay",
+    tone: "acc",
+    title: "Settings check",
+    resolvedInputs: {},
+    sensitiveInputNames: [],
+    evidencePolicy: { schemaVersion: 1, sensitive: {} },
+  };
+}
 
 test("campaign continuation rejects a changed App Map before scheduling untouched cases", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-combine-campaign-server-"));
@@ -128,6 +169,93 @@ test("campaign continuation rejects a changed App Map before scheduling untouche
     const cancelledCampaign = cancelled.campaign as CombineCampaign;
     assert.equal(cancelledCampaign.status, "cancelled");
     assert.equal(cancelledCampaign.cases[1]?.status, "cancelled");
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Repeat failure clusters expose immutable member evidence and deterministic filters", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-repeat-clusters-server-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    await persistRun(failedRun("run-en", "Content assertion: expected title"));
+    await persistRun(failedRun("run-pt", "Content assertion: expected title"));
+    await createCombineCampaign({
+      schemaVersion: 1,
+      id: "repeat-clusters",
+      projectId: "android",
+      ownerId: "human:test",
+      appMapId: "settings",
+      combineId: "locales",
+      sourceRevision: 1,
+      latestRevision: 1,
+      status: "completed-with-problems",
+      createdAt: 1,
+      updatedAt: 1,
+      cases: [
+        {
+          index: 0,
+          cellId: "cell-en",
+          testId: "settings",
+          world: "English",
+          values: { language: "en" },
+          targetProfileId: "android-1",
+          childIntentDigest: "a",
+          outerIntentDigest: "b",
+          wrapperGraphDigest: "c",
+          staticInputDigest: "d",
+          phase: "coverage",
+          status: "failed",
+          jobId: "run-en",
+          runId: "run-en",
+        },
+        {
+          index: 1,
+          cellId: "cell-pt",
+          testId: "settings",
+          world: "Português",
+          values: { language: "pt-BR" },
+          targetProfileId: "android-1",
+          childIntentDigest: "a",
+          outerIntentDigest: "b",
+          wrapperGraphDigest: "c",
+          staticInputDigest: "d",
+          phase: "coverage",
+          status: "failed",
+          jobId: "run-pt",
+          runId: "run-pt",
+        },
+      ],
+      lineage: [],
+      execution: { selectedCellIds: ["cell-en", "cell-pt"], seed: 1 },
+    });
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "android",
+      actorId: "human:test",
+      actorKind: "human",
+    });
+    const result = await client.invoke("job.combine.campaign.repeat.clusters", {
+      batchId: "repeat-clusters",
+      cohort: "android-1",
+      failureKind: "causal",
+    });
+    assert.equal(result.campaignId, "repeat-clusters");
+    assert.equal(result.clusters.length, 1);
+    assert.deepEqual(
+      result.clusters[0]?.cases.map((item) => [item.cellId, item.runId]),
+      [
+        ["cell-en", "run-en"],
+        ["cell-pt", "run-pt"],
+      ],
+    );
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

@@ -57,6 +57,7 @@ export * from "./execution-target.js";
 export * from "./artifact-ref.js";
 export * from "./source-revision.js";
 export * from "./repeat-spec.js";
+export * from "./repeat-failure.js";
 export * from "./target-contract.js";
 export * from "./browser-case-profile.js";
 export * from "./browser-device.js";

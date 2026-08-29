@@ -7,6 +7,7 @@ export type CombineOperationId =
   | "job.combine.analysis"
   | "job.combine.campaign.get"
   | "job.combine.campaign.repeat.active"
+  | "job.combine.campaign.repeat.clusters"
   | "job.combine.campaign.resume"
   | "job.combine.campaign.cancel";
 
@@ -37,6 +38,12 @@ export const combineOperationDefinitions = [
     "Find unfinished Repeat work",
     "/jobs/combine/repeat/active",
     { category: "execution" },
+  ),
+  query(
+    "job.combine.campaign.repeat.clusters",
+    "Review equivalent Repeat failure clusters",
+    "/jobs/combine/:batchId/repeat/clusters",
+    { category: "evidence", minimumRole: "viewer" },
   ),
   command(
     "job.combine.campaign.resume",

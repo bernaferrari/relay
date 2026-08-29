@@ -7,6 +7,7 @@ import { createBrowserContextFactory, type BrowserContextPurpose } from "./brows
 import { createDeviceObservationFacade } from "./device-observation-membrane.js";
 import { LEGACY_POSITIONAL_BROWSER_REF_ERROR } from "./browser-locator-contract.js";
 import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
+import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js";
 import { browserProfileDir, readTarget } from "./targets.js";
 
 type BrowserSession = {
@@ -433,6 +434,33 @@ export async function getBrowserDevice(
 ): Promise<Device> {
   const session = await sessionFor(targetId, options);
   const identifiers = { serial: targetId, appPath: "managed-browser" };
+  const mutatePrepared = <T>(
+    intent: string,
+    prepare: () => Promise<() => Promise<T>>,
+  ): Promise<T> => {
+    let prepared: (() => Promise<T>) | undefined;
+    return runSupervisedBrowserMutation({
+      targetId,
+      intent,
+      beforeDispatch: async () => {
+        prepared = await prepare();
+      },
+      dispatch: async () => {
+        if (!prepared) throw new Error("Browser mutation was not prepared before dispatch");
+        session.mutationVersion += 1;
+        return prepared();
+      },
+    });
+  };
+  const mutate = <T>(intent: string, dispatch: () => Promise<T>) =>
+    runSupervisedBrowserMutation({
+      targetId,
+      intent,
+      dispatch: async () => {
+        session.mutationVersion += 1;
+        return dispatch();
+      },
+    });
   const api = {
     devices: {
       list: async () => [
@@ -450,19 +478,19 @@ export async function getBrowserDevice(
       },
     },
     apps: {
-      open: async (input: { url?: string; app?: string; relaunch?: boolean }) => {
-        session.mutationVersion += 1;
-        const page = await activePage(session);
-        if (input.url) await page.goto(input.url, { waitUntil: "domcontentloaded" });
-        else if (input.app?.startsWith("http"))
-          await page.goto(input.app, { waitUntil: "domcontentloaded" });
-        return { appId: input.app ?? input.url ?? targetId };
-      },
-      close: async () => {
-        session.mutationVersion += 1;
-        await (await activePage(session)).close();
-        return { session: targetId, identifiers };
-      },
+      open: async (input: { url?: string; app?: string; relaunch?: boolean }) =>
+        mutate("Open browser application", async () => {
+          const page = await activePage(session);
+          if (input.url) await page.goto(input.url, { waitUntil: "domcontentloaded" });
+          else if (input.app?.startsWith("http"))
+            await page.goto(input.app, { waitUntil: "domcontentloaded" });
+          return { appId: input.app ?? input.url ?? targetId };
+        }),
+      close: async () =>
+        mutate("Close browser application", async () => {
+          await (await activePage(session)).close();
+          return { session: targetId, identifiers };
+        }),
     },
     capture: {
       snapshot: async () => ({
@@ -482,101 +510,133 @@ export async function getBrowserDevice(
       },
     },
     interactions: {
-      press: async (input: { ref?: string; selector?: string; x?: number; y?: number }) => {
-        session.mutationVersion += 1;
-        const page = await activePage(session);
-        if (input.x !== undefined && input.y !== undefined)
-          await page.mouse.click(input.x, input.y);
-        else await (await locatorFor(page, input)).click();
-        return { ok: true };
-      },
+      press: async (input: { ref?: string; selector?: string; x?: number; y?: number }) =>
+        mutatePrepared("Press browser target", async () => {
+          const page = await activePage(session);
+          if (input.x !== undefined && input.y !== undefined) {
+            return async () => {
+              await page.mouse.click(input.x!, input.y!);
+              return { ok: true };
+            };
+          }
+          const locator = await locatorFor(page, input);
+          return async () => {
+            await locator.click();
+            return { ok: true };
+          };
+        }),
       longPress: async (input: {
         ref?: string;
         selector?: string;
         x?: number;
         y?: number;
         durationMs?: number;
-      }) => {
-        session.mutationVersion += 1;
-        const page = await activePage(session);
-        if (input.x !== undefined && input.y !== undefined) {
-          await page.mouse.move(input.x, input.y);
-          await page.mouse.down();
-          await page.waitForTimeout(input.durationMs ?? 700);
-          await page.mouse.up();
-        } else {
+      }) =>
+        mutatePrepared("Long-press browser target", async () => {
+          const page = await activePage(session);
+          if (input.x !== undefined && input.y !== undefined) {
+            return async () => {
+              await page.mouse.move(input.x!, input.y!);
+              await page.mouse.down();
+              await page.waitForTimeout(input.durationMs ?? 700);
+              await page.mouse.up();
+              return { ok: true };
+            };
+          }
           const locator = await locatorFor(page, input);
           const box = await locator.boundingBox();
           if (!box) throw new Error("target is not visible");
-          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-          await page.mouse.down();
-          await page.waitForTimeout(input.durationMs ?? 700);
-          await page.mouse.up();
-        }
-        return { ok: true };
-      },
+          return async () => {
+            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+            await page.mouse.down();
+            await page.waitForTimeout(input.durationMs ?? 700);
+            await page.mouse.up();
+            return { ok: true };
+          };
+        }),
       fill: async (input: {
         text: string;
         ref?: string;
         selector?: string;
         x?: number;
         y?: number;
-      }) => {
-        session.mutationVersion += 1;
-        const page = await activePage(session);
-        if (input.ref || input.selector) {
-          await (await locatorFor(page, input)).fill(input.text);
-        } else if (input.x !== undefined && input.y !== undefined) {
-          await page.mouse.click(input.x, input.y);
-          await page.keyboard.press("ControlOrMeta+A");
-          await page.keyboard.insertText(input.text);
-        } else {
-          throw new Error("replace text requires a target");
-        }
-        return { ok: true };
-      },
-      type: async (input: { text: string; ref?: string; selector?: string }) => {
-        session.mutationVersion += 1;
-        const page = await activePage(session);
-        if (input.ref || input.selector) await (await locatorFor(page, input)).fill(input.text);
-        else await page.keyboard.insertText(input.text);
-        return { ok: true };
-      },
+      }) =>
+        mutatePrepared("Fill browser target", async () => {
+          const page = await activePage(session);
+          if (input.ref || input.selector) {
+            const locator = await locatorFor(page, input);
+            return async () => {
+              await locator.fill(input.text);
+              return { ok: true };
+            };
+          }
+          if (input.x === undefined || input.y === undefined) {
+            throw new Error("replace text requires a target");
+          }
+          return async () => {
+            await page.mouse.click(input.x!, input.y!);
+            await page.keyboard.press("ControlOrMeta+A");
+            await page.keyboard.insertText(input.text);
+            return { ok: true };
+          };
+        }),
+      type: async (input: { text: string; ref?: string; selector?: string }) =>
+        mutatePrepared("Type browser text", async () => {
+          const page = await activePage(session);
+          const locator = input.ref || input.selector ? await locatorFor(page, input) : undefined;
+          return async () => {
+            if (locator) await locator.fill(input.text);
+            else await page.keyboard.insertText(input.text);
+            return { ok: true };
+          };
+        }),
       find: async (input: { query: string; action?: string }) => {
         const page = await activePage(session);
         const locator = page.getByText(input.query, { exact: false });
-        if (input.action !== "exists") session.mutationVersion += 1;
-        return await performBrowserFind(locator, input.query, input.action);
-      },
-      scroll: async (input: { direction?: string; amount?: number }) => {
-        session.mutationVersion += 1;
-        const page = await activePage(session);
-        const viewportHeight = page.viewportSize()?.height ?? 1_000;
-        const distance = viewportHeight * (input.amount ?? 0.5);
-        const y = input.direction === "up" ? -distance : distance;
-        await page.mouse.wheel(0, y);
-        return { ok: true };
-      },
-      swipe: async (input: { from: { x: number; y: number }; to: { x: number; y: number } }) => {
-        session.mutationVersion += 1;
-        const page = await activePage(session);
-        await page.mouse.move(input.from.x, input.from.y);
-        await page.mouse.down();
-        await page.mouse.move(input.to.x, input.to.y, { steps: 12 });
-        await page.mouse.up();
-        return { ok: true };
-      },
-      pan: async (input: { x: number; y: number; dx: number; dy: number; durationMs?: number }) => {
-        session.mutationVersion += 1;
-        const page = await activePage(session);
-        await page.mouse.move(input.x, input.y);
-        await page.mouse.down();
-        await page.mouse.move(input.x + input.dx, input.y + input.dy, {
-          steps: Math.max(12, Math.round((input.durationMs ?? 250) / 20)),
+        if (input.action === "exists")
+          return performBrowserFind(locator, input.query, input.action);
+        return mutatePrepared("Find and press browser target", async () => {
+          if (input.action !== undefined && input.action !== "press" && input.action !== "click") {
+            throw new Error(`unsupported browser find action: ${input.action}`);
+          }
+          const count = await locator.count();
+          if (count === 0) throw new Error(`No match for ${input.query}`);
+          if (count > 1) throw new Error(`Ambiguous browser match for ${input.query}`);
+          return async () => {
+            await locator.click();
+            return { ok: true };
+          };
         });
-        await page.mouse.up();
-        return { ok: true };
       },
+      scroll: async (input: { direction?: string; amount?: number }) =>
+        mutate("Scroll browser page", async () => {
+          const page = await activePage(session);
+          const viewportHeight = page.viewportSize()?.height ?? 1_000;
+          const distance = viewportHeight * (input.amount ?? 0.5);
+          const y = input.direction === "up" ? -distance : distance;
+          await page.mouse.wheel(0, y);
+          return { ok: true };
+        }),
+      swipe: async (input: { from: { x: number; y: number }; to: { x: number; y: number } }) =>
+        mutate("Swipe browser page", async () => {
+          const page = await activePage(session);
+          await page.mouse.move(input.from.x, input.from.y);
+          await page.mouse.down();
+          await page.mouse.move(input.to.x, input.to.y, { steps: 12 });
+          await page.mouse.up();
+          return { ok: true };
+        }),
+      pan: async (input: { x: number; y: number; dx: number; dy: number; durationMs?: number }) =>
+        mutate("Pan browser page", async () => {
+          const page = await activePage(session);
+          await page.mouse.move(input.x, input.y);
+          await page.mouse.down();
+          await page.mouse.move(input.x + input.dx, input.y + input.dy, {
+            steps: Math.max(12, Math.round((input.durationMs ?? 250) / 20)),
+          });
+          await page.mouse.up();
+          return { ok: true };
+        }),
     },
     command: {
       wait: async (input: { durationMs?: number; text?: string; selector?: string }) => {
@@ -586,18 +646,18 @@ export async function getBrowserDevice(
         else await page.waitForTimeout(input.durationMs ?? 0);
         return { ok: true };
       },
-      back: async () => {
-        session.mutationVersion += 1;
-        await (await activePage(session)).goBack();
-        return { action: "back", mode: "global", message: "Back" };
-      },
-      home: async () => {
-        session.mutationVersion += 1;
-        const target = await readTarget(targetId);
-        if (!target?.browser) throw new Error("browser target no longer exists");
-        await (await activePage(session)).goto(target.browser.startUrl);
-        return { action: "home", message: "Home" };
-      },
+      back: async () =>
+        mutate("Navigate browser back", async () => {
+          await (await activePage(session)).goBack();
+          return { action: "back", mode: "global", message: "Back" };
+        }),
+      home: async () =>
+        mutate("Navigate browser home", async () => {
+          const target = await readTarget(targetId);
+          if (!target?.browser) throw new Error("browser target no longer exists");
+          await (await activePage(session)).goto(target.browser.startUrl);
+          return { action: "home", message: "Home" };
+        }),
       clipboard: async (input: {
         action: "read" | "write" | "paste" | "copy";
         text?: string;
@@ -612,9 +672,10 @@ export async function getBrowserDevice(
         }
         const page = await activePage(session);
         if (input.action === "write") {
-          session.mutationVersion += 1;
-          await page.evaluate((text) => navigator.clipboard.writeText(text), input.text ?? "");
-          return { action: "write", textLength: (input.text ?? "").length, message: "Written" };
+          return mutate("Write browser clipboard", async () => {
+            await page.evaluate((text) => navigator.clipboard.writeText(text), input.text ?? "");
+            return { action: "write", textLength: (input.text ?? "").length, message: "Written" };
+          });
         }
         return { action: "read", text: await page.evaluate(() => navigator.clipboard.readText()) };
       },
@@ -623,13 +684,13 @@ export async function getBrowserDevice(
         package: "managed-browser",
         activity: (await activePage(session)).url(),
       }),
-      keyboard: async (input?: { action?: "dismiss" | "enter" }) => {
-        session.mutationVersion += 1;
-        await (
-          await activePage(session)
-        ).keyboard.press(input?.action === "enter" ? "Enter" : "Escape");
-        return { platform: "android", action: input?.action ?? "dismiss" };
-      },
+      keyboard: async (input?: { action?: "dismiss" | "enter" }) =>
+        mutate("Press browser keyboard key", async () => {
+          await (
+            await activePage(session)
+          ).keyboard.press(input?.action === "enter" ? "Enter" : "Escape");
+          return { platform: "android", action: input?.action ?? "dismiss" };
+        }),
       alert: async () => unsupported("native alerts"),
       appSwitcher: async () => unsupported("app switcher"),
       rotate: async () => unsupported("rotation"),
@@ -682,46 +743,46 @@ export async function getBrowserDevice(
       },
     },
     recording: {
-      record: async (input: { action: "start" | "stop"; path?: string }) => {
-        session.mutationVersion += 1;
-        if (input.action === "start") {
-          session.recordingPath = input.path;
-          session.console = [];
-          session.network = [];
-          session.consoleDropped = 0;
-          session.networkDropped = 0;
-          if (session.recordingUnavailable) {
-            return { started: false, warning: session.recordingUnavailable };
+      record: async (input: { action: "start" | "stop"; path?: string }) =>
+        mutate(`${input.action === "start" ? "Start" : "Stop"} browser recording`, async () => {
+          if (input.action === "start") {
+            session.recordingPath = input.path;
+            session.console = [];
+            session.network = [];
+            session.consoleDropped = 0;
+            session.networkDropped = 0;
+            if (session.recordingUnavailable) {
+              return { started: false, warning: session.recordingUnavailable };
+            }
+            // Persistent cookies survive, but a fresh page creates a strict
+            // recording boundary so setup/login activity is excluded.
+            const previous = await activePage(session);
+            const returnUrl = previous.url();
+            await previous.close();
+            session.page = await session.context.newPage();
+            attachEvidence(session, session.page);
+            if (returnUrl && returnUrl !== "about:blank") {
+              await session.page.goto(returnUrl, { waitUntil: "domcontentloaded" });
+            }
+            session.recordingVideo = session.page.video();
+            return { started: Boolean(session.recordingVideo) };
           }
-          // Persistent cookies survive, but a fresh page creates a strict
-          // recording boundary so setup/login activity is excluded.
-          const previous = await activePage(session);
-          const returnUrl = previous.url();
-          await previous.close();
+          const page = await activePage(session);
+          const returnUrl = page.url();
+          const output = session.recordingPath?.replace(/\.mp4$/i, ".webm");
+          await page.close();
+          if (output && session.recordingVideo) {
+            await mkdir(dirname(output), { recursive: true });
+            await session.recordingVideo.saveAs(output);
+          }
           session.page = await session.context.newPage();
           attachEvidence(session, session.page);
           if (returnUrl && returnUrl !== "about:blank") {
             await session.page.goto(returnUrl, { waitUntil: "domcontentloaded" });
           }
-          session.recordingVideo = session.page.video();
-          return { started: Boolean(session.recordingVideo) };
-        }
-        const page = await activePage(session);
-        const returnUrl = page.url();
-        const output = session.recordingPath?.replace(/\.mp4$/i, ".webm");
-        await page.close();
-        if (output && session.recordingVideo) {
-          await mkdir(dirname(output), { recursive: true });
-          await session.recordingVideo.saveAs(output);
-        }
-        session.page = await session.context.newPage();
-        attachEvidence(session, session.page);
-        if (returnUrl && returnUrl !== "about:blank") {
-          await session.page.goto(returnUrl, { waitUntil: "domcontentloaded" });
-        }
-        session.recordingVideo = null;
-        return { stopped: true, path: output };
-      },
+          session.recordingVideo = null;
+          return { stopped: true, path: output };
+        }),
     },
   };
   return createDeviceObservationFacade(api);

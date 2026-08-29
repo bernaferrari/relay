@@ -14,19 +14,22 @@ import {
   listTargetWorkers,
   listTargets,
   localExecutionTargetRef,
-  pendingSelectedCombineCampaignCells,
   prepareSelectedCombineCampaignResume,
   prepareAppMapCombineCells,
   projectCombineCampaign,
   reconcileCausalCombineRerun,
   readAppMap,
   readCombineCampaign,
+  readPersistedRun,
+  buildRepeatFailureClusters,
+  repeatFailureClusterCellIds,
   releaseDeviceLease,
   summarizeJob,
   updateCombineCampaign,
 } from "@relay/core";
 import {
   executionTargetRefKey,
+  repeatFailureKindSchema,
   type AppMapCombineCellTargetBinding,
   type CombineCampaign,
 } from "@relay/protocol";
@@ -42,6 +45,45 @@ import {
   localCampaignAdmissionWorkItemsForCombine,
   type LocalCombineCampaignAdmission,
 } from "./local-combine-campaign-admission.js";
+
+function repeatRerunCellIds(
+  body: {
+    cellIds?: string[];
+    clusterIds?: string[];
+  },
+  report: ReturnType<typeof buildRepeatFailureClusters>,
+): string[] | undefined {
+  if (body.cellIds === undefined && body.clusterIds === undefined) return undefined;
+  const requested = new Set((body.cellIds ?? []).map((id) => id.trim()).filter(Boolean));
+  if (body.cellIds && requested.size !== body.cellIds.length) {
+    throw new HttpError(400, "cellIds must contain unique non-empty ids", {
+      code: "REPEAT_RERUN_SCOPE_INVALID",
+    });
+  }
+  if (body.clusterIds !== undefined) {
+    const clusterIds = body.clusterIds.map((id) => id.trim()).filter(Boolean);
+    if (!clusterIds.length || new Set(clusterIds).size !== clusterIds.length) {
+      throw new HttpError(400, "clusterIds must contain unique non-empty ids", {
+        code: "REPEAT_RERUN_SCOPE_INVALID",
+      });
+    }
+    const known = new Set(report.clusters.map((cluster) => cluster.id));
+    const unknown = clusterIds.find((id) => !known.has(id));
+    if (unknown) {
+      throw new HttpError(409, `Repeat failure cluster ${unknown} is not present`, {
+        code: "REPEAT_FAILURE_CLUSTER_NOT_FOUND",
+        recovery: "Inspect the current immutable Repeat failure clusters before rerunning.",
+      });
+    }
+    for (const id of repeatFailureClusterCellIds(report, clusterIds)) requested.add(id);
+  }
+  if (!requested.size) {
+    throw new HttpError(400, "The Repeat rerun scope cannot be empty", {
+      code: "REPEAT_RERUN_SCOPE_INVALID",
+    });
+  }
+  return [...requested].sort();
+}
 
 const campaignDecisionLocks = new KeyedSerialQueue();
 
@@ -80,6 +122,37 @@ function queuedProfileTarget(
 
 export async function handleCombineCampaignRoute(context: JobRouteContext): Promise<boolean> {
   const { method, pathname, request, response, scope } = context;
+  const clusterMatch = matchPath(pathname, "/jobs/combine/:batchId/repeat/clusters");
+  if (method === "GET" && clusterMatch) {
+    const campaign = await readCombineCampaign(scope.projectId, clusterMatch.batchId!);
+    if (!campaign || (!scope.localTrusted && campaign.ownerId !== scope.subject)) {
+      throw new HttpError(404, "Combine campaign not found");
+    }
+    const projected = await projectCombineCampaign(campaign);
+    const search = new URL(request.url ?? pathname, "http://relay.local").searchParams;
+    const rawFailureKind = search.get("failureKind");
+    const parsedFailureKind = rawFailureKind
+      ? repeatFailureKindSchema.safeParse(rawFailureKind)
+      : undefined;
+    if (rawFailureKind && !parsedFailureKind?.success) {
+      throw new HttpError(400, "failureKind is unsupported", {
+        code: "REPEAT_FAILURE_FILTER_INVALID",
+      });
+    }
+    const failureKind = parsedFailureKind?.success ? parsedFailureKind.data : undefined;
+    const cohort = search.get("cohort")?.trim() || undefined;
+    const runs = (
+      await Promise.all(
+        projected.cases.filter((item) => item.runId).map((item) => readPersistedRun(item.runId!)),
+      )
+    ).filter((run): run is NonNullable<typeof run> => Boolean(run));
+    const report = buildRepeatFailureClusters(projected, runs, {
+      ...(failureKind ? { failureKind } : {}),
+      ...(cohort ? { cohort } : {}),
+    });
+    json(response, 200, report);
+    return true;
+  }
   if (method === "GET" && pathname === "/jobs/combine/repeat/active") {
     const search = new URL(request.url ?? pathname, "http://relay.local").searchParams;
     const appMapId = search.get("appMapId")?.trim() ?? "";
@@ -114,6 +187,8 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
     const body = (await parseJsonBody(request)) as {
       reviewed?: boolean;
       expectedAppMapRevision?: number;
+      cellIds?: string[];
+      clusterIds?: string[];
       workflowMutation?: NonNullable<
         NonNullable<CombineCampaign["execution"]>["repeat"]
       >["workflowMutation"];
@@ -132,6 +207,27 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         });
       }
       const projected = await projectCombineCampaign(existing);
+      const hasExplicitRerunScope = body.cellIds !== undefined || body.clusterIds !== undefined;
+      let explicitRerunCellIds: string[] | undefined;
+      if (hasExplicitRerunScope) {
+        const runs = (
+          await Promise.all(
+            projected.cases
+              .filter((item) => item.runId)
+              .map((item) => readPersistedRun(item.runId!)),
+          )
+        ).filter((run): run is NonNullable<typeof run> => Boolean(run));
+        const report = buildRepeatFailureClusters(projected, runs);
+        explicitRerunCellIds = repeatRerunCellIds(body, report);
+        if (body.reviewed !== true) {
+          throw new HttpError(409, "Selective Repeat reruns require explicit evidence review.", {
+            code: "REPEAT_TERMINAL_REVIEW_REQUIRED",
+            cellIds: explicitRerunCellIds,
+            recovery:
+              "Inspect the immutable representative and member Runs, then resume with reviewed=true.",
+          });
+        }
+      }
       if (projected.status === "pilot-running" || projected.status === "running") {
         throw new HttpError(409, "Combine campaign is still running");
       }
@@ -204,8 +300,11 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
             wrapperGraphDigest: cell.outerIntent.wrapper.recipeGraphDigest,
             staticInputDigest: digestAppMapTestExecutionValue(cell.staticInputs),
           })),
+          explicitRerunCellIds ? { onlyCellIds: explicitRerunCellIds } : {},
         );
-        const resumePlan = prepareSelectedCombineCampaignResume(causalRerun.campaign);
+        const resumePlan = prepareSelectedCombineCampaignResume(causalRerun.campaign, {
+          ...(explicitRerunCellIds ? { cellIds: explicitRerunCellIds } : {}),
+        });
         if (resumePlan.retriedTerminalCellIds.length && body.reviewed !== true) {
           throw new HttpError(
             409,
@@ -255,7 +354,10 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
             );
           }
         }
-        const pending = pendingSelectedCombineCampaignCells(resumeCampaign);
+        const pendingIds = new Set(resumePlan.selectedCellIds);
+        const pending = resumeCampaign.cases.filter(
+          (item) => item.status === "pending" && pendingIds.has(item.cellId),
+        );
         if (!pending.length) {
           const noOp = body.workflowMutation
             ? await updateCombineCampaign(scope.projectId, campaignId, (current) => ({

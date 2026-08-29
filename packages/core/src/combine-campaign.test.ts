@@ -258,6 +258,40 @@ test("terminal Repeat results cannot reopen without immutable Run evidence", () 
   );
 });
 
+test("explicit Repeat rerun scope retries only reviewed failure cells and preserves evidence lineage", () => {
+  const campaign = fixture("passed");
+  campaign.status = "completed-with-problems";
+  campaign.execution.repeat!.resolved.resume = "untouched";
+  campaign.cases[0] = {
+    ...campaign.cases[0]!,
+    status: "failed",
+    jobId: "failed-job",
+    runId: "failed-run",
+  };
+  campaign.cases[1] = {
+    ...campaign.cases[1]!,
+    status: "failed",
+    jobId: "other-failed-job",
+    runId: "other-failed-run",
+  };
+
+  const rerun = prepareSelectedCombineCampaignResume(campaign, {
+    cellIds: [campaign.cases[1]!.cellId],
+  });
+  assert.deepEqual(rerun.selectedCellIds, [campaign.cases[1]!.cellId]);
+  assert.deepEqual(rerun.retriedTerminalCellIds, [campaign.cases[1]!.cellId]);
+  assert.equal(rerun.campaign.cases[0]?.status, "failed");
+  assert.equal(rerun.campaign.cases[0]?.runId, "failed-run");
+  assert.equal(rerun.campaign.cases[1]?.status, "pending");
+  assert.equal(rerun.campaign.cases[1]?.runId, undefined);
+  assert.deepEqual(rerun.campaign.cases[1]?.priorRunIds, ["other-failed-run"]);
+  campaign.cases[0] = { ...campaign.cases[0]!, status: "passed" };
+  assert.throws(
+    () => prepareSelectedCombineCampaignResume(campaign, { cellIds: [campaign.cases[0]!.cellId] }),
+    /only failed, blocked, or cancelled/u,
+  );
+});
+
 async function withDurableCampaignState(operation: () => Promise<void> | void): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), "relay-combine-campaign-recovery-"));
   const previous = process.env.RELAY_STATE_DIR;

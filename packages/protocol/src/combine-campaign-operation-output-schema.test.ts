@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CombineCampaign } from "./combine-campaign.js";
 import { combineCampaignSchema } from "./execution-operation-output-schemas.js";
+import { repeatFailureClusterReportSchema } from "./repeat-failure.js";
 
 const target = {
   schemaVersion: 1 as const,
@@ -126,4 +127,53 @@ test("Combine campaign output rejects truncated admission evidence", () => {
   };
   delete truncated.execution.localAdmission.request.durationEvidence;
   assert.throws(() => combineCampaignSchema.parse(truncated), /durationEvidence/);
+});
+
+test("Repeat failure clusters require immutable digest and retain per-cell evidence", () => {
+  const signature = {
+    schemaVersion: 1 as const,
+    kind: "causal" as const,
+    digest: `sha256:${"a".repeat(64)}`,
+    key: '{"checks":[{"id":"check-1"}]}',
+    summary: "causal failure in check-1",
+    checkIds: ["check-1"],
+  };
+  const report = {
+    schemaVersion: 1 as const,
+    campaignId: "campaign-1",
+    clusters: [
+      {
+        schemaVersion: 1 as const,
+        id: "repeat-cluster:causal:pixel-1",
+        kind: "causal" as const,
+        signature,
+        cohort: "pixel-1",
+        representativeCellId: "cell-1",
+        representativeRunId: "run-1",
+        cases: [
+          {
+            cellId: "cell-1",
+            runId: "run-1",
+            priorRunIds: ["old-run-1"],
+            values: { language: "en" },
+            world: "English",
+            targetProfileId: "pixel-1",
+            status: "failed" as const,
+            signature,
+            evidenceRefs: ["run:run-1", "run:run-1#frame:0"],
+            decision: { status: "pending" as const, reason: "Review this case" },
+          },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(repeatFailureClusterReportSchema.parse(report), report);
+  assert.throws(
+    () =>
+      repeatFailureClusterReportSchema.parse({
+        ...report,
+        clusters: [{ ...report.clusters[0]!, signature: { ...signature, digest: "not-a-digest" } }],
+      }),
+    /digest/u,
+  );
 });

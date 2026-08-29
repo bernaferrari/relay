@@ -12,6 +12,7 @@ import {
   openBrowserAuthoringRuntime,
   type BrowserAuthoringRuntime,
 } from "./browser-target.js";
+import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js";
 
 export type BrowserDeviceRuntimeSession = Omit<BrowserDeviceSession, "ownership">;
 
@@ -336,6 +337,22 @@ async function applyInput(state: SessionState, input: BrowserDeviceInput): Promi
   }
 }
 
+function validateInputBeforeDispatch(state: SessionState, input: BrowserDeviceInput): void {
+  assertInput(state, input);
+  if (input.kind === "navigate") {
+    const destination = new URL(input.url);
+    if (destination.protocol !== "http:" && destination.protocol !== "https:") {
+      throw new Error("Browser Device navigation requires an http or https URL");
+    }
+  }
+  if (input.kind === "page.close" || input.kind === "page.activate") {
+    const selected = state.pages.get(input.targetPageId);
+    if (!selected || selected.isClosed()) {
+      throw new BrowserDeviceConflictError("BROWSER_PAGE_STALE", "That browser tab is closed");
+    }
+  }
+}
+
 export async function controlBrowserDevice(
   targetId: string,
   input: BrowserDeviceInput,
@@ -344,8 +361,15 @@ export async function controlBrowserDevice(
   const state = stateForTarget(targetId);
   const operation = state.input.then(async () => {
     if (state.capture) await state.capture;
-    await beforeDispatch?.();
-    await applyInput(state, input);
+    await runSupervisedBrowserMutation({
+      targetId,
+      intent: `Browser Device ${input.kind}`,
+      beforeDispatch: async () => {
+        validateInputBeforeDispatch(state, input);
+        await beforeDispatch?.();
+      },
+      dispatch: () => applyInput(state, input),
+    });
   });
   state.input = operation.catch(() => undefined);
   await operation;

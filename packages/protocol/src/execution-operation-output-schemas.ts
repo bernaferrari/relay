@@ -6,6 +6,7 @@ import {
   sourceRevisionSchema,
 } from "./app-map-test-operation-schemas.js";
 import { repeatPilotSpecSchema, repeatSpecSchema } from "./repeat-spec.js";
+import { repeatFailureClusterReportSchema } from "./repeat-failure.js";
 
 const targetCapabilitySchema = z.enum([
   "snapshot",
@@ -709,6 +710,7 @@ export const executionOperationOutputSchemas = {
   "job.combine.campaign.repeat.active": z
     .object({ campaign: combineCampaignSchema.nullable() })
     .strict(),
+  "job.combine.campaign.repeat.clusters": repeatFailureClusterReportSchema,
   "job.combine.campaign.resume": z
     .object({
       campaign: combineCampaignSchema,

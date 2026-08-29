@@ -22,6 +22,7 @@ import {
   typeText,
 } from "./device.js";
 import { runWithTargetContext } from "./target-context.js";
+import { runWithTargetSupervisorStore, TargetSupervisorStore } from "./target-supervisor-store.js";
 import { deleteTarget, listTargets, preflightTarget, saveBrowserTarget } from "./targets.js";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -57,105 +58,123 @@ after(async () => {
 test("in-app Browser Device sequences frames and rejects stale page input", async (t) => {
   await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
   if (t.signal.aborted) return;
-  const target = await saveBrowserTarget({
-    name: "In-app browser",
-    startUrl,
-    executablePath: CHROME,
-    headless: true,
-    environment: { viewport: { width: 800, height: 600 } },
-  });
-  const opened = await openBrowserDeviceSession(target.id);
-  assert.equal(opened.status, "starting");
-  const first = await captureBrowserDeviceFrame(target.id);
-  assert.equal(first.frame.sequence, 1);
-  assert.equal(first.frame.sessionId, opened.sessionId);
-  const unchanged = await captureBrowserDeviceFrame(target.id);
-  assert.equal(unchanged.frame.sequence, 2);
-  assert.equal(unchanged.frame.visualFingerprint, first.frame.visualFingerprint);
-  await assert.rejects(
-    controlBrowserDevice(target.id, {
-      sessionId: opened.sessionId,
-      pageId: first.frame.pageId,
-      expectedSequence: first.frame.sequence,
-      kind: "click",
-      x: 10,
-      y: 10,
-    }),
-    (error) => error instanceof BrowserDeviceConflictError && error.code === "BROWSER_STALE_INPUT",
-  );
-  await controlBrowserDevice(target.id, {
-    sessionId: opened.sessionId,
-    pageId: unchanged.frame.pageId,
-    expectedSequence: unchanged.frame.sequence,
-    kind: "navigate",
-    url: `${startUrl}/next`,
-  });
-  await assert.rejects(
-    controlBrowserDevice(target.id, {
-      sessionId: opened.sessionId,
-      pageId: first.frame.pageId,
-      expectedSequence: first.frame.sequence,
-      kind: "click",
-      x: 10,
-      y: 10,
-    }),
-    (error) => error instanceof BrowserDeviceConflictError && error.code === "BROWSER_STALE_INPUT",
-  );
-  const second = await captureBrowserDeviceFrame(target.id);
-  assert.equal(second.frame.sequence, 3);
-  assert.match(second.frame.pageUrl, /\/next$/u);
-  const device = await getBrowserDevice(target.id, { mode: "authoring" });
-  await runWithTargetContext({ kind: "browser", platform: "browser", targetId: target.id }, () =>
-    pressLabel(device, "Continue"),
-  );
-  await assert.rejects(
-    controlBrowserDevice(target.id, {
-      sessionId: opened.sessionId,
-      pageId: second.frame.pageId,
-      expectedSequence: second.frame.sequence,
-      kind: "click",
-      x: 10,
-      y: 10,
-    }),
-    (error) => error instanceof BrowserDeviceConflictError && error.code === "BROWSER_STALE_INPUT",
-  );
-  const afterGeneric = await captureBrowserDeviceFrame(target.id);
-  await controlBrowserDevice(target.id, {
-    sessionId: opened.sessionId,
-    pageId: afterGeneric.frame.pageId,
-    expectedSequence: afterGeneric.frame.sequence,
-    kind: "text",
-    text: "a",
-  });
-  await assert.rejects(
-    controlBrowserDevice(target.id, {
-      sessionId: opened.sessionId,
-      pageId: afterGeneric.frame.pageId,
-      expectedSequence: afterGeneric.frame.sequence,
-      kind: "text",
-      text: "b",
-    }),
-    (error) => error instanceof BrowserDeviceConflictError && error.code === "BROWSER_STALE_INPUT",
-  );
-  const recording = await runWithTargetContext(
-    { kind: "browser", platform: "browser", targetId: target.id },
-    () =>
-      recordDeviceVideo(device, {
-        action: "start",
-        path: join(root, "browser-device.mp4"),
-      }),
-  );
-  const recordingFrame = await captureBrowserDeviceFrame(target.id);
-  assert.equal(recordingFrame.session.status, "streaming");
-  if (recording.started) {
-    await runWithTargetContext({ kind: "browser", platform: "browser", targetId: target.id }, () =>
-      recordDeviceVideo(device, { action: "stop" }),
-    );
-    assert.equal((await captureBrowserDeviceFrame(target.id)).session.status, "streaming");
+  const supervisor = new TargetSupervisorStore(":memory:");
+  try {
+    await runWithTargetSupervisorStore(supervisor, async () => {
+      const target = await saveBrowserTarget({
+        name: "In-app browser",
+        startUrl,
+        executablePath: CHROME,
+        headless: true,
+        environment: { viewport: { width: 800, height: 600 } },
+      });
+      const opened = await openBrowserDeviceSession(target.id);
+      assert.equal(opened.status, "starting");
+      const first = await captureBrowserDeviceFrame(target.id);
+      assert.equal(first.frame.sequence, 1);
+      assert.equal(first.frame.sessionId, opened.sessionId);
+      const unchanged = await captureBrowserDeviceFrame(target.id);
+      assert.equal(unchanged.frame.sequence, 2);
+      assert.equal(unchanged.frame.visualFingerprint, first.frame.visualFingerprint);
+      await assert.rejects(
+        controlBrowserDevice(target.id, {
+          sessionId: opened.sessionId,
+          pageId: first.frame.pageId,
+          expectedSequence: first.frame.sequence,
+          kind: "click",
+          x: 10,
+          y: 10,
+        }),
+        (error) =>
+          error instanceof BrowserDeviceConflictError && error.code === "BROWSER_STALE_INPUT",
+      );
+      await controlBrowserDevice(target.id, {
+        sessionId: opened.sessionId,
+        pageId: unchanged.frame.pageId,
+        expectedSequence: unchanged.frame.sequence,
+        kind: "navigate",
+        url: `${startUrl}/next`,
+      });
+      await assert.rejects(
+        controlBrowserDevice(target.id, {
+          sessionId: opened.sessionId,
+          pageId: first.frame.pageId,
+          expectedSequence: first.frame.sequence,
+          kind: "click",
+          x: 10,
+          y: 10,
+        }),
+        (error) =>
+          error instanceof BrowserDeviceConflictError && error.code === "BROWSER_STALE_INPUT",
+      );
+      const second = await captureBrowserDeviceFrame(target.id);
+      assert.equal(second.frame.sequence, 3);
+      assert.match(second.frame.pageUrl, /\/next$/u);
+      const device = await getBrowserDevice(target.id, { mode: "authoring" });
+      await runWithTargetContext(
+        { kind: "browser", platform: "browser", targetId: target.id },
+        () => pressLabel(device, "Continue"),
+      );
+      await assert.rejects(
+        controlBrowserDevice(target.id, {
+          sessionId: opened.sessionId,
+          pageId: second.frame.pageId,
+          expectedSequence: second.frame.sequence,
+          kind: "click",
+          x: 10,
+          y: 10,
+        }),
+        (error) =>
+          error instanceof BrowserDeviceConflictError && error.code === "BROWSER_STALE_INPUT",
+      );
+      const afterGeneric = await captureBrowserDeviceFrame(target.id);
+      await controlBrowserDevice(target.id, {
+        sessionId: opened.sessionId,
+        pageId: afterGeneric.frame.pageId,
+        expectedSequence: afterGeneric.frame.sequence,
+        kind: "text",
+        text: "a",
+      });
+      await assert.rejects(
+        controlBrowserDevice(target.id, {
+          sessionId: opened.sessionId,
+          pageId: afterGeneric.frame.pageId,
+          expectedSequence: afterGeneric.frame.sequence,
+          kind: "text",
+          text: "b",
+        }),
+        (error) =>
+          error instanceof BrowserDeviceConflictError && error.code === "BROWSER_STALE_INPUT",
+      );
+      const recording = await runWithTargetContext(
+        { kind: "browser", platform: "browser", targetId: target.id },
+        () =>
+          recordDeviceVideo(device, {
+            action: "start",
+            path: join(root, "browser-device.mp4"),
+          }),
+      );
+      const recordingFrame = await captureBrowserDeviceFrame(target.id);
+      assert.equal(recordingFrame.session.status, "streaming");
+      if (recording.started) {
+        await runWithTargetContext(
+          { kind: "browser", platform: "browser", targetId: target.id },
+          () => recordDeviceVideo(device, { action: "stop" }),
+        );
+        assert.equal((await captureBrowserDeviceFrame(target.id)).session.status, "streaming");
+      }
+      await closeBrowserTarget(target.id, { mode: "authoring" });
+      await deleteTarget(target.id);
+      assert.ok(
+        supervisor
+          .health({ id: target.id, kind: "browser" })
+          .events.some(({ code }) => code === "INPUT_COMPLETED"),
+      );
+      resetBrowserDeviceSessionsForTests();
+    });
+  } finally {
+    supervisor.close();
   }
-  await closeBrowserTarget(target.id, { mode: "authoring" });
-  await deleteTarget(target.id);
-  resetBrowserDeviceSessionsForTests();
 });
 
 test("managed browser targets have full CRUD and reject unsafe URLs", async () => {
@@ -249,39 +268,51 @@ test("listTargets skips invalid entries but keeps valid ones", async () => {
 test("managed browser adapter supports canonical snapshots, clicks, video, and screenshots", async (t) => {
   await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
   if (t.signal.aborted) return;
-  const target = await saveBrowserTarget({
-    name: "Browser integration",
-    startUrl,
-    executablePath: CHROME,
-    headless: true,
-  });
-  const preflight = await preflightTarget(target);
-  assert.equal(preflight.ok, true);
-  await runWithTargetContext(
-    { kind: "browser", platform: "browser", targetId: target.id },
-    async () => {
-      const device = await getBrowserDevice(target.id);
-      const videoPath = join(root, "run.mp4");
-      const recording = await recordDeviceVideo(device, { action: "start", path: videoPath });
-      assert(recording.started || recording.warning);
-      const snapshot = await device.capture.snapshot({ platform: "android" });
-      assert(snapshot.nodes?.some((node) => node.label === "Continue"));
-      const input = snapshot.nodes?.find((node) => node.label === "Message");
-      assert.equal(input?.identifier, "message");
-      assert.equal(input?.ref, undefined);
-      await pressIdentifier(device, input.identifier);
-      await typeText(device, "Hello Relay");
-      await assert.rejects(
-        pressRef(device, "@browser-0"),
-        /Legacy positional browser refs cannot be replayed safely/u,
+  const supervisor = new TargetSupervisorStore(":memory:");
+  try {
+    await runWithTargetSupervisorStore(supervisor, async () => {
+      const target = await saveBrowserTarget({
+        name: "Browser integration",
+        startUrl,
+        executablePath: CHROME,
+        headless: true,
+      });
+      const preflight = await preflightTarget(target);
+      assert.equal(preflight.ok, true);
+      await runWithTargetContext(
+        { kind: "browser", platform: "browser", targetId: target.id },
+        async () => {
+          const device = await getBrowserDevice(target.id);
+          const videoPath = join(root, "run.mp4");
+          const recording = await recordDeviceVideo(device, { action: "start", path: videoPath });
+          assert(recording.started || recording.warning);
+          const snapshot = await device.capture.snapshot({ platform: "android" });
+          assert(snapshot.nodes?.some((node) => node.label === "Continue"));
+          const input = snapshot.nodes?.find((node) => node.label === "Message");
+          assert.equal(input?.identifier, "message");
+          assert.equal(input?.ref, undefined);
+          await pressIdentifier(device, input.identifier);
+          await typeText(device, "Hello Relay");
+          await assert.rejects(
+            pressRef(device, "@browser-0"),
+            /Legacy positional browser refs cannot be replayed safely/u,
+          );
+          await pressLabel(device, "Continue");
+          await assert.rejects(pressLabel(device, "Duplicate"), /ambiguous/u);
+          const output = join(root, "shot.png");
+          await screenshot(device, output);
+          await access(output);
+          await recordDeviceVideo(device, { action: "stop" });
+          if (recording.started) await access(join(root, "run.webm"));
+        },
       );
-      await pressLabel(device, "Continue");
-      await assert.rejects(pressLabel(device, "Duplicate"), /ambiguous/u);
-      const output = join(root, "shot.png");
-      await screenshot(device, output);
-      await access(output);
-      await recordDeviceVideo(device, { action: "stop" });
-      if (recording.started) await access(join(root, "run.webm"));
-    },
-  );
+      assert.ok(
+        supervisor
+          .health({ id: target.id, kind: "browser" })
+          .events.some(({ code }) => code === "INPUT_COMPLETED"),
+      );
+    });
+  } finally {
+    supervisor.close();
+  }
 });
