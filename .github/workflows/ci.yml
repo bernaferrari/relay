@@ -14,7 +14,9 @@ concurrency:
 
 jobs:
   check:
-    name: typecheck
+    # Neutral at the job boundary: GitHub can fail before assigning a runner,
+    # in which case none of the stage-specific repository checks ran.
+    name: repository verification
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
