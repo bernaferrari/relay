@@ -23,12 +23,13 @@ import {
   type CollaborationState,
 } from "./collaboration-json.js";
 import type { StoredAppMapDisposition } from "./app-map/stored-map-repair.js";
+import { ensureChangeVerificationSchema } from "./change-verification-db.js";
 
-export const CONTROL_DB_NAME = "control.sqlite";
-export const CONTROL_SCHEMA_VERSION = 6;
-export const JSON_MIGRATED_META = "json_migrated";
-export const RECOVERED_FROM_BACKUP_META = "recovered_from_json_backup";
-export const REPAIRED_ON_MIGRATE_META = "repaired_on_migrate";
+export const CONTROL_DB_NAME = "control.sqlite",
+  CONTROL_SCHEMA_VERSION = 7,
+  JSON_MIGRATED_META = "json_migrated",
+  RECOVERED_FROM_BACKUP_META = "recovered_from_json_backup",
+  REPAIRED_ON_MIGRATE_META = "repaired_on_migrate";
 
 export const CONTROL_EVENTS_RETAIN = 5_000;
 
@@ -202,6 +203,7 @@ export function applyControlSchema(db: DatabaseSync): void {
       revoked_at INTEGER NOT NULL
     );
   `);
+  ensureChangeVerificationSchema(db);
   migrateControlSchema(db);
 }
 
@@ -215,11 +217,7 @@ function appMapsHasColumn(db: DatabaseSync, name: string): boolean {
   return rows.some((row) => row.name === name);
 }
 
-/**
- * SQLite ALTER TABLE can be interrupted after one additive column. Checking
- * each column makes this migration resume safely on the next startup rather
- * than treating an already-added column as a fatal migration error.
- */
+/** Resume safely when SQLite ALTER TABLE stopped after one additive column. */
 function ensureAppMapRecoveryColumns(db: DatabaseSync): void {
   if (!appMapsHasColumn(db, "source_document")) {
     db.exec("ALTER TABLE app_maps ADD COLUMN source_document TEXT");
@@ -316,6 +314,11 @@ function migrateControlSchema(db: DatabaseSync): void {
       );
       PRAGMA user_version = 6;
     `);
+    version = 6;
+  }
+  if (version < 7) {
+    ensureChangeVerificationSchema(db);
+    db.exec("PRAGMA user_version = 7");
   }
 }
 

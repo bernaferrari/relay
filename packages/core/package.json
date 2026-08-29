@@ -34,6 +34,7 @@
     "./trace-pack-comparison": "./src/trace-pack-comparison.ts",
     "./trace-pack-visual-localization": "./src/trace-pack-visual-localization.ts",
     "./verify-change": "./src/verify-change.ts",
+    "./change-verification-store": "./src/change-verification-store.ts",
     "./matrix-yaml": "./src/matrix-yaml.ts",
     "./schedules": "./src/schedules.ts",
     "./targets": "./src/targets.ts",

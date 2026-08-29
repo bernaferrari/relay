@@ -35,3 +35,14 @@ _Avoid_: Test suite, copied Tests
 **Checkpoint**:
 A logical product state whose arrival or content is explicitly proved during a Test.
 _Avoid_: Screenshot, pause
+
+**Proof**:
+The change-level, versioned record that binds one exact source change and its builds to an explained
+Verification Plan, immutable runtime evidence, a deterministic policy, and one merge decision.
+Internally this record is a Change Verification. A Proof never replaces a Test, Run, or TracePack.
+_Avoid_: Test report, CI job, device batch
+
+**Verification Plan**:
+The frozen explanation of which Tests, target cases, and evidence policy are required to prove one
+change, including explicit coverage gaps and pilot/expansion rules.
+_Avoid_: Test suite, campaign configuration

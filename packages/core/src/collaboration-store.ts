@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type {
   AppMap,
   Build,
+  ChangeVerification,
   CompatibilityMatrix,
   DeviceLease,
   DevicePool,
@@ -142,6 +143,14 @@ export type ControlStore = {
     expectedVersion: number,
     record: DurableWorkflowRecord,
     event: DurableWorkflowAuditEvent,
+  ): "updated" | "stale" | "missing";
+  changeVerification(proofId: string): ChangeVerification | undefined;
+  changeVerificationVersions(proofId: string): ChangeVerification[];
+  changeVerifications(organizationId: string, projectId: string): ChangeVerification[];
+  insertChangeVerification(proof: ChangeVerification): boolean;
+  appendChangeVerification(
+    expectedVersion: number,
+    proof: ChangeVerification,
   ): "updated" | "stale" | "missing";
   appMap(key: string): AppMap | undefined;
   appMapRecoveryDocument(key: string): AppMapRecoveryDocument | undefined;
@@ -351,6 +360,99 @@ function createStore(db: DatabaseSync): ControlStore {
          VALUES (?, ?, ?, ?, ?)`,
       ).run(event.workflowId, event.sequence, event.version, JSON.stringify(event), event.at);
       return "updated";
+    },
+    changeVerification(proofId) {
+      return parseRowDocument<ChangeVerification>(
+        db
+          .prepare(
+            `SELECT document FROM change_verification_versions
+             WHERE proof_id = ? ORDER BY version DESC LIMIT 1`,
+          )
+          .get(proofId) as { document?: string } | undefined,
+      );
+    },
+    changeVerificationVersions(proofId) {
+      return documents<ChangeVerification>(
+        db
+          .prepare(
+            `SELECT document FROM change_verification_versions
+             WHERE proof_id = ? ORDER BY version`,
+          )
+          .all(proofId) as Array<{ document?: string }>,
+      );
+    },
+    changeVerifications(organizationId, projectId) {
+      return documents<ChangeVerification>(
+        db
+          .prepare(
+            `SELECT versions.document
+             FROM change_verification_versions AS versions
+             INNER JOIN (
+               SELECT proof_id, MAX(version) AS version
+               FROM change_verification_versions
+               WHERE organization_id = ? AND project_id = ?
+               GROUP BY proof_id
+             ) AS latest
+               ON latest.proof_id = versions.proof_id AND latest.version = versions.version
+             ORDER BY versions.updated_at DESC, versions.proof_id`,
+          )
+          .all(organizationId, projectId) as Array<{ document?: string }>,
+      );
+    },
+    insertChangeVerification(proof) {
+      return (
+        db
+          .prepare(
+            `INSERT OR IGNORE INTO change_verification_versions(
+              proof_id, version, organization_id, project_id, repository,
+              base_sha, head_sha, state, document, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            proof.id,
+            proof.version,
+            proof.organizationId,
+            proof.projectId,
+            proof.change.repository,
+            proof.change.baseSha,
+            proof.change.headSha,
+            proof.state,
+            JSON.stringify(proof),
+            proof.updatedAt,
+          ).changes > 0
+      );
+    },
+    appendChangeVerification(expectedVersion, proof) {
+      const current = db
+        .prepare(
+          `SELECT version FROM change_verification_versions
+           WHERE proof_id = ? ORDER BY version DESC LIMIT 1`,
+        )
+        .get(proof.id) as { version?: number } | undefined;
+      if (!current) return "missing";
+      if (Number(current.version) !== expectedVersion || proof.version !== expectedVersion + 1) {
+        return "stale";
+      }
+      const inserted = db
+        .prepare(
+          `INSERT OR IGNORE INTO change_verification_versions(
+            proof_id, version, organization_id, project_id, repository,
+            base_sha, head_sha, state, document, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          proof.id,
+          proof.version,
+          proof.organizationId,
+          proof.projectId,
+          proof.change.repository,
+          proof.change.baseSha,
+          proof.change.headSha,
+          proof.state,
+          JSON.stringify(proof),
+          proof.updatedAt,
+        ).changes;
+      return inserted > 0 ? "updated" : "stale";
     },
     appMap(key) {
       const row = db.prepare("SELECT document, status FROM app_maps WHERE map_key = ?").get(key) as
