@@ -2,7 +2,7 @@
   "name": "relay",
   "version": "0.1.0",
   "private": true,
-  "description": "Relay — record, automate, and inspect mobile app tests on real devices",
+  "description": "Runtime proof for AI-authored changes across web, Android, and iOS",
   "type": "module",
   "scripts": {
     "dev": "node node_modules/tsx/dist/cli.mjs packages/cli/src/index.ts",

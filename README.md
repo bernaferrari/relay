@@ -1,15 +1,15 @@
 # Relay
 
-**An AI agent just changed your mobile app. Can you trust what it did?**
+## Your coding agent says it’s done. Relay proves it.
 
-The agent says it fixed the bug. The diff looks plausible. But nobody replayed the
-critical flow on a real device, so "looks done" ships instead of "proven done."
+The agent says it fixed the bug. The diff looks plausible. But nobody proved the affected
+user journey on the exact build, so "looks done" ships instead of "proven done."
 
-Relay closes that gap: **prove AI-written mobile code works before merge.**
-Relay is a local-first proof layer for agent-written mobile code. It replays reviewed
-product flows against browsers, Android devices, and iOS devices that _you_ attach, then
-attaches immutable evidence—screenshots, UI trees, actions, assertions, failure provenance—
-to the result.
+Relay is the local-first trust layer for turning AI-authored changes into reproducible runtime
+proof across web, Android, and iOS. It selects explained user journeys, binds exact
+source/build/target identities, replays reviewed Tests, and retains immutable evidence—such as
+screenshots, UI trees, actions, assertions, and failure provenance—for a deterministic merge
+decision. Automatic CI orchestration and GitHub check posting remain explicit work in progress.
 
 The loop Relay exists to close:
 
@@ -28,8 +28,8 @@ Where the loop stands today:
 
 | Loop edge                                                                                                                                               | Status      |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| Authoring (agents propose Tests via MCP/CLI), replay on real targets, repair, evidence, source-revision tagging (`--commit/--pr/--branch`), report emit | **Shipped** |
-| Build ingest automation and GitHub check-run posting from CI                                                                                            | **Pending** |
+| Immutable, versioned Proof lifecycle; explained Verification Plan compiler; authoring, replay, repair, evidence, and source-revision binding | **Shipped** |
+| Automatic repository diff ingestion, build orchestration, execution expansion, and GitHub check-run posting                               | **Pending** |
 
 [docs/PR_PROOF_CI.md](./docs/PR_PROOF_CI.md) shows the copy-paste CI wiring available today.
 
@@ -45,7 +45,7 @@ is not a Relay-managed cloud device farm or a turnkey enterprise SaaS product.
 
 | Good fit today                                                                  | Why                                                                                                                  |
 | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Mobile QA, SDET, and platform teams with attached devices or a local device lab | Record real product behavior, replay reviewed paths, and retain evidence instead of relying on ad-hoc manual checks. |
+| QA, SDET, and platform teams with browsers, attached devices, or a local device lab | Record real product behavior, replay reviewed paths, and retain evidence instead of relying on ad-hoc manual checks. |
 | Product and engineering teams verifying web, Android, or iOS builds             | Run a focused regression or a state matrix against the targets they already control.                                 |
 | Teams using coding agents around real devices                                   | The desktop app, CLI, TUI, and MCP adapter use the same project-scoped workflows, policy, and evidence store.        |
 | Privacy-sensitive or local-first teams                                          | The normal desktop path runs a loopback Relay service and keeps the control plane and evidence in the project.       |
@@ -91,8 +91,8 @@ route. See [Product flows](./docs/PRODUCT_FLOWS.md) for the complete authoring p
 | **Runs and Reports**      | Review immutable proof per Run or across a Checkpoint-first Repeat matrix, with baselines, completeness, and first-failure provenance.                      |
 | **People and agents**     | Desktop, CLI, TUI, and MCP use the same policy-controlled workflows and canonical operation registry.                                                       |
 
-The ordinary product vocabulary is **App**, **Device**, **Test**, **Checkpoint**, **Run**, and
-**Report**. **Record**, **Repeat**, **Explore**, and **Verify** are actions. Map is a generated
+The ordinary product vocabulary is **Change**, **Proof**, **App**, **Target**, **Test**,
+**Checkpoint**, **Run**, and **Report**. **Record**, **Repeat**, **Explore**, and **Verify** are actions. Map is a generated
 topology view; internal graph, scheduling, control, and recovery terms appear only in advanced
 diagnostics when they are needed.
 
