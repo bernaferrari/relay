@@ -347,3 +347,46 @@ test("Proof start rejects reuse of one request id for another change", async () 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Verification Plan approval fails closed while impact coverage gaps remain", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-coverage-gap-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  resetControlDatabaseCache();
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  const relay = client(server.port);
+  const reviewer = client(server.port, projectId, "human");
+  try {
+    const created = await relay.invoke(
+      "proof.start",
+      {
+        ...startInput(),
+        coverageGaps: ["No reviewed user journey is associated with src/shared/unknown.ts."],
+      },
+      { requestId: "coverage-gap-proof" },
+    );
+    await assert.rejects(
+      reviewer.invoke(
+        "proof.plan.approve",
+        {
+          proofId: created.proof.id,
+          expectedVersion: created.proof.version,
+          decisionId: "decision-gap",
+          reason: "This must not override an unknown impact gap.",
+          confirm: true,
+        },
+        { requestId: "coverage-gap-approval" },
+      ),
+      (error) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        JSON.stringify(error.body).includes("PROOF_COVERAGE_GAPS"),
+    );
+  } finally {
+    await server.close();
+    resetControlDatabaseCache();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -279,6 +279,12 @@ export async function handleChangeVerificationRoute(input: {
     }
     const body = (await parseJsonBody(input.request)) as OperationInput<"proof.plan.approve">;
     const current = await currentProof(runtime, scope, approveMatch.proofId!);
+    if (current.coverageGaps.length) {
+      throw new HttpError(409, "Verification Plan has unresolved coverage gaps", {
+        code: "PROOF_COVERAGE_GAPS",
+        coverageGapCount: current.coverageGaps.length,
+      });
+    }
     const digest = requestDigest(current.id, body);
     const replay = await replayedReceipt(
       runtime,
