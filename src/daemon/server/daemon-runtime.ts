@@ -444,6 +444,7 @@ export async function startDaemonRuntime(
     if (startHttpServer) {
       const httpServer = await createDaemonHttpServer({
         handleRequest,
+        leaseRegistry,
         token,
         retainArtifacts,
         env,

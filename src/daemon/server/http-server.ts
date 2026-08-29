@@ -43,6 +43,8 @@ import { tryHandleUploadHttpRoute } from '../upload-http.ts';
 import { tryHandleDownloadableArtifactHttpRoute } from '../downloadable-artifact-http.ts';
 import { tryHandleRequestDiagnosticsHttpRoute } from '../request-diagnostics-http.ts';
 import { resolveTrustedTenant, tenantTrustRejectionError } from './tenant-trust.ts';
+import { tryHandleHumanControlHttpRoute } from '../human-control-http.ts';
+import type { LeaseRegistry } from '../lease-registry.ts';
 
 type JsonRpcRequest = JsonRpcRequestEnvelope;
 
@@ -552,6 +554,7 @@ async function loadHttpAuthHook(
 
 export async function createDaemonHttpServer(options: {
   handleRequest: DaemonInvokeFn;
+  leaseRegistry?: LeaseRegistry;
   token?: string;
   retainArtifacts?: boolean;
   env?: NodeJS.ProcessEnv;
@@ -571,6 +574,19 @@ export async function createDaemonHttpServer(options: {
       res.statusCode = 200;
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify(buildDaemonHealthPayload('agent-device-daemon')));
+      return;
+    }
+
+    if (
+      token &&
+      options.leaseRegistry &&
+      tryHandleHumanControlHttpRoute({
+        req,
+        res,
+        expectedToken: token,
+        registry: options.leaseRegistry,
+      })
+    ) {
       return;
     }
 
@@ -813,7 +829,7 @@ export async function createDaemonHttpServer(options: {
             daemonResponse.error.message,
             daemonResponse.error,
           ),
-          statusCodeForNormalizedError(daemonResponse.error.code),
+          statusCodeForDaemonError(daemonResponse.error),
         );
       } catch (error) {
         handlerCompleted = true;
@@ -836,6 +852,16 @@ export async function createDaemonHttpServer(options: {
       }
     });
   });
+}
+
+function statusCodeForDaemonError(error: {
+  code: string;
+  details?: Record<string, unknown>;
+}): number {
+  if (error.code === 'DEVICE_IN_USE' && error.details?.reason === 'human_control_active') {
+    return 423;
+  }
+  return statusCodeForNormalizedError(error.code);
 }
 
 async function authorizeAuxiliaryHttpRequest(params: {

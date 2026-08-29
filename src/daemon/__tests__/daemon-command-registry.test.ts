@@ -6,6 +6,7 @@ import {
   canRunReplayScopedAction,
   getDaemonCommandRoute,
   getSessionCommandKind,
+  isHumanControlMutation,
   isLeaseAdmissionExempt,
   shouldBlockForInvalidRecording,
   shouldGuardAndroidBlockingDialog,
@@ -18,6 +19,7 @@ import {
 import type { DaemonRequest } from '../types.ts';
 
 test('daemon command registry owns specialized handler routes', () => {
+  assert.equal(getDaemonCommandRoute(INTERNAL_COMMANDS.humanControl), 'humanControl');
   for (const command of [
     INTERNAL_COMMANDS.leaseAllocate,
     INTERNAL_COMMANDS.leaseHeartbeat,
@@ -247,6 +249,54 @@ test('every lease-route command skips sessionless provider-device resolution', (
       'skip',
       `${command} must not resolve a provider device sessionless`,
     );
+  }
+});
+
+test('takeover passes lease admission and uses the normal execution lock', () => {
+  assert.equal(isLeaseAdmissionExempt(INTERNAL_COMMANDS.humanControl), false);
+  assert.equal(shouldLockSessionExecution(INTERNAL_COMMANDS.humanControl), true);
+});
+
+test('human-control admission derives existing semantics and treats unclassified requests as mutations', () => {
+  for (const command of [
+    'snapshot',
+    'screenshot',
+    'get',
+    'is',
+    'logs',
+    'network',
+    'events',
+    'audio',
+    'trace',
+    'devices',
+    'apps',
+    'appstate',
+    'doctor',
+    'human_control',
+    'lease_heartbeat',
+  ]) {
+    assert.equal(isHumanControlMutation(makeRequest(command)), false, command);
+  }
+  for (const [command, positionals] of [
+    ['clipboard', ['read']],
+    ['keyboard', ['status']],
+    ['alert', ['get']],
+    ['find', ['text', 'Save', 'get', 'text']],
+  ] as const) {
+    assert.equal(isHumanControlMutation(makeRequest(command, [...positionals])), false, command);
+  }
+  for (const [command, positionals] of [
+    ['clipboard', ['write', 'value']],
+    ['clipboard', []],
+    ['keyboard', ['dismiss']],
+    ['alert', ['accept']],
+    ['find', ['text', 'Save', 'click']],
+    ['click', []],
+    ['viewport', []],
+    ['lease_release', []],
+    ['future-command', []],
+  ] as const) {
+    assert.equal(isHumanControlMutation(makeRequest(command, [...positionals])), true, command);
   }
 });
 

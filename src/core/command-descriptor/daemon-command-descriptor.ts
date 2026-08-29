@@ -8,6 +8,7 @@ export type SessionCommandKind = 'inventory' | 'state' | 'observability' | 'publ
  * `request-handler-chain.ts` must cover every member (`satisfies Record<…>`).
  */
 export type DaemonCommandRoute =
+  | 'humanControl'
   | 'lease'
   | 'session'
   | 'snapshot'
