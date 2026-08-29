@@ -214,6 +214,9 @@ const findRecordingEffect = (req: DispatchedCommand): RecordingEffect => {
   }
 };
 
+const clipboardRecordingEffect = (req: DispatchedCommand): RecordingEffect =>
+  readOnlySubactionRecordingEffect(req, new Set(['read']), '');
+
 function readOnlySubactionRefFrameEffect(
   req: DispatchedCommand,
   readOnlyActions: ReadonlySet<string>,
@@ -400,7 +403,37 @@ function postActionObservation(command: string): PostActionObservationSupport {
 
 const ownerFilesEnabled = typeof __OWNER_FILES__ === 'undefined' || __OWNER_FILES__;
 
+const DEPLOY_APP_COMMAND_DESCRIPTOR = {
+  deviceClaimPolicy: 'transient-exclusive',
+  ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/install.ts'] as const } : {}),
+  catalog: { group: 'public' },
+  frameworkTier: 'extended',
+  recordsSessionAction: true,
+  recordingEffect: 'mutates-app',
+  daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
+  platformExecution: { kind: 'device-runtime', use: deployAppUse },
+  timeoutPolicy: INSTALL_TIMEOUT_POLICY,
+  batchable: true,
+} as const;
+
 export const RAW_COMMAND_DESCRIPTORS = [
+  {
+    name: 'human_control',
+    deviceClaimPolicy: 'none',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/human-control.ts'] as const } : {}),
+    catalog: { group: 'internal', key: 'humanControl' },
+    recordsSessionAction: false,
+    daemon: {
+      route: 'humanControl',
+      refFrameEffect: 'preserve',
+      selectorValidationExempt: true,
+      skipSessionlessProviderDevice: allowAnyDeviceSessionless,
+    },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    platformExecution: NO_PLATFORM_EXECUTION,
+  },
+
   // -- lease (route: lease) --
   {
     name: 'lease_allocate',
@@ -408,7 +441,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/lease.ts'] as const } : {}),
     catalog: { group: 'internal', key: 'leaseAllocate' },
     recordsSessionAction: false,
-    daemon: { route: 'lease', refFrameEffect: 'preserve', ...ADMISSION_AND_LOCK_EXEMPT },
+    daemon: {
+      route: 'lease',
+      refFrameEffect: 'preserve',
+      ...ADMISSION_AND_LOCK_EXEMPT,
+    },
     timeoutPolicy: LEASE_ALLOCATE_TIMEOUT_POLICY,
     batchable: false,
     platformExecution: NO_PLATFORM_EXECUTION,
@@ -419,7 +456,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/lease.ts'] as const } : {}),
     catalog: { group: 'internal', key: 'leaseHeartbeat' },
     recordsSessionAction: false,
-    daemon: { route: 'lease', refFrameEffect: 'preserve', ...ADMISSION_AND_LOCK_EXEMPT },
+    daemon: {
+      route: 'lease',
+      refFrameEffect: 'preserve',
+      ...ADMISSION_AND_LOCK_EXEMPT,
+    },
     timeoutPolicy: LEASE_TIMEOUT_POLICY,
     batchable: false,
     platformExecution: NO_PLATFORM_EXECUTION,
@@ -430,7 +471,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/lease.ts'] as const } : {}),
     catalog: { group: 'internal', key: 'leaseRelease' },
     recordsSessionAction: false,
-    daemon: { route: 'lease', refFrameEffect: 'preserve', ...ADMISSION_AND_LOCK_EXEMPT },
+    daemon: {
+      route: 'lease',
+      refFrameEffect: 'preserve',
+      ...ADMISSION_AND_LOCK_EXEMPT,
+    },
     timeoutPolicy: LEASE_TIMEOUT_POLICY,
     batchable: false,
     platformExecution: NO_PLATFORM_EXECUTION,
@@ -442,7 +487,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     frameworkTier: 'extended',
     recordsSessionAction: false,
-    daemon: { route: 'lease', refFrameEffect: 'preserve', ...ADMISSION_AND_LOCK_EXEMPT },
+    daemon: {
+      route: 'lease',
+      refFrameEffect: 'preserve',
+      ...ADMISSION_AND_LOCK_EXEMPT,
+    },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
     platformExecution: NO_PLATFORM_EXECUTION,
@@ -570,7 +619,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     frameworkTier: 'extended',
     recordsSessionAction: false,
-    daemon: { route: 'session', refFrameEffect: 'may-invalidate', sessionKind: 'state' },
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'may-invalidate',
+      sessionKind: 'state',
+    },
     platformExecution: { kind: 'device-runtime', uses: deviceBootRuntimeUses },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
@@ -582,7 +635,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     frameworkTier: 'extended',
     recordsSessionAction: false,
-    daemon: { route: 'session', refFrameEffect: 'may-invalidate', sessionKind: 'state' },
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'may-invalidate',
+      sessionKind: 'state',
+    },
     platformExecution: { kind: 'device-runtime', use: shutdownTargetUse },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
@@ -594,7 +651,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public', key: 'appState' },
     frameworkTier: 'extended',
     recordsSessionAction: false,
-    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'state' },
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'preserve',
+      sessionKind: 'state',
+    },
     platformExecution: { kind: 'device-runtime', uses: appStateRuntimeUses },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
@@ -607,7 +668,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     frameworkTier: 'extended',
     recordsSessionAction: true,
     recordingEffect: 'observes-app',
-    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'preserve',
+      sessionKind: 'observability',
+    },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
     platformExecution: { kind: 'device-runtime', uses: perfRuntimePlanUses },
@@ -619,7 +684,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     frameworkTier: 'extended',
     recordsSessionAction: false,
-    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'preserve',
+      sessionKind: 'observability',
+    },
     platformExecution: { kind: 'device-runtime', uses: appLogRuntimePlanUses },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
@@ -651,7 +720,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     frameworkTier: 'extended',
     recordsSessionAction: false,
-    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'preserve',
+      sessionKind: 'observability',
+    },
     platformExecution: { kind: 'device-runtime', use: networkDumpUse },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
@@ -663,7 +736,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     frameworkTier: 'extended',
     recordsSessionAction: false,
-    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'preserve',
+      sessionKind: 'observability',
+    },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
     platformExecution: { kind: 'device-runtime', uses: audioRuntimePlanUses },
@@ -742,8 +819,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     // whichever action-selected fact (`readClipboard`/`writeClipboard`) the parsed subcommand
     // names, and the only execution is that one bound operation (ADR 0019 §9).
     recordsSessionAction: true,
-    recordingEffect: 'observes-app',
-    daemon: { route: 'session', refFrameEffect: 'preserve' },
+    recordingEffect: clipboardRecordingEffect,
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'preserve',
+    },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
     platformExecution: { kind: 'device-runtime', uses: clipboardRuntimePlanUses },
@@ -770,29 +850,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'install',
-    deviceClaimPolicy: 'transient-exclusive',
-    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/install.ts'] as const } : {}),
-    catalog: { group: 'public' },
-    frameworkTier: 'extended',
-    recordsSessionAction: true,
-    recordingEffect: 'mutates-app',
-    daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
-    platformExecution: { kind: 'device-runtime', use: deployAppUse },
-    timeoutPolicy: INSTALL_TIMEOUT_POLICY,
-    batchable: true,
+    ...DEPLOY_APP_COMMAND_DESCRIPTOR,
   },
   {
     name: 'reinstall',
-    deviceClaimPolicy: 'transient-exclusive',
-    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/install.ts'] as const } : {}),
-    catalog: { group: 'public' },
-    frameworkTier: 'extended',
-    recordsSessionAction: true,
-    recordingEffect: 'mutates-app',
-    daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
-    platformExecution: { kind: 'device-runtime', use: deployAppUse },
-    timeoutPolicy: INSTALL_TIMEOUT_POLICY,
-    batchable: true,
+    ...DEPLOY_APP_COMMAND_DESCRIPTOR,
   },
   {
     name: 'install_source',
@@ -816,7 +878,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
       : {}),
     catalog: { group: 'internal', key: 'releaseMaterializedPaths' },
     recordsSessionAction: false,
-    daemon: { route: 'session', refFrameEffect: 'preserve', ...REQUEST_EXECUTION_EXEMPT },
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'preserve',
+      ...REQUEST_EXECUTION_EXEMPT,
+    },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
     platformExecution: NO_PLATFORM_EXECUTION,
@@ -996,7 +1062,10 @@ export const RAW_COMMAND_DESCRIPTORS = [
     // how long a transient sheet takes to appear is family mechanics, not request policy.
     recordsSessionAction: true,
     recordingEffect: alertRecordingEffect,
-    daemon: { route: 'snapshot', refFrameEffect: alertRefFrameEffect },
+    daemon: {
+      route: 'snapshot',
+      refFrameEffect: alertRefFrameEffect,
+    },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
     platformExecution: { kind: 'device-runtime', uses: alertRuntimePlanUses },
@@ -1075,7 +1144,10 @@ export const RAW_COMMAND_DESCRIPTORS = [
     frameworkTier: 'core',
     recordsSessionAction: true,
     recordingEffect: findRecordingEffect,
-    daemon: { route: 'find', refFrameEffect: 'may-invalidate' },
+    daemon: {
+      route: 'find',
+      refFrameEffect: 'may-invalidate',
+    },
     timeoutPolicy: PRESERVE_DAEMON_TIMEOUT_POLICY,
     batchable: true,
     platformExecution: { kind: 'device-runtime', uses: findRuntimePlanUses },
@@ -1520,6 +1592,17 @@ export const RAW_COMMAND_DESCRIPTORS = [
     batchable: false,
     mcpExposed: false,
     platformExecution: NO_PLATFORM_EXECUTION,
+  },
+  {
+    name: 'takeover',
+    deviceClaimPolicy: 'observe',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/takeover.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    mcpExposed: false,
+    platformExecution: { kind: 'inventory', use: inventoryUse },
   },
   {
     name: 'react-devtools',

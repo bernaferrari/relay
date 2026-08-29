@@ -66,6 +66,10 @@ type RequestHandlerChainParams = {
 };
 
 const DAEMON_ROUTE_HANDLERS = {
+  humanControl: defineDaemonRoute({
+    load: () => import('./handlers/human-control.ts'),
+    run: runHumanControlHandler,
+  }),
   lease: defineDaemonRoute({
     load: () => import('./handlers/lease.ts'),
     run: runLeaseHandler,
@@ -119,6 +123,16 @@ export async function loadGenericRequestHandlerModule(): Promise<
   typeof import('./request-generic-dispatch.ts')
 > {
   return await DAEMON_ROUTE_HANDLERS.generic.loadModule();
+}
+
+async function runHumanControlHandler(
+  { handleHumanControlCommand }: typeof import('./handlers/human-control.ts'),
+  params: RequestHandlerChainParams,
+): Promise<DaemonResponse> {
+  return await handleHumanControlCommand({
+    req: params.req,
+    registry: params.leaseRegistry,
+  });
 }
 
 async function runLeaseHandler(

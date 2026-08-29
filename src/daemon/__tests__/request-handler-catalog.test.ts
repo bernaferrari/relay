@@ -29,6 +29,7 @@ import { createAudioProbeAdmissionLedger } from '../audio-probe-admission-ledger
 import { createPerfCaptureAdmissionLedger } from '../perf-capture-admission-ledger.ts';
 
 const SPECIALIZED_ROUTES = [
+  'humanControl',
   'lease',
   'session',
   'snapshot',

@@ -91,6 +91,7 @@ const REMOTE_MATERIALIZATION_DEFERRED_COMMANDS = new Set([
   'metro',
   'proxy',
   'session',
+  'takeover',
 ]);
 
 export async function runCli(argv: string[], deps: CliDeps = DEFAULT_CLI_DEPS): Promise<void> {

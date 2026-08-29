@@ -142,6 +142,29 @@ const SCHEMA_ONLY_CLI_COMMAND_SCHEMAS = {
     listUsageOverride: 'proxy',
     allowedFlags: ['proxyHost', 'proxyPort', 'daemonAuthToken', 'stateDir'],
   },
+  takeover: {
+    text: {
+      summary: 'Pause agent interactions while a person controls a device',
+      description:
+        'Temporarily hand control of the active remote lease device to a person. The foreground command pauses state-changing agent commands, renews the hold until Ctrl+C, and then releases it. Read-only diagnostics remain available. Uses the active connection and --session, with normal tenant and lease admission. status lists holds on that device; release removes a hold owned by the admitted lease. The host-only /admin/human-control/holds API uses the separate local daemon token. Holds do not survive daemon restart. Local takeover without a remote device lease is not supported.',
+    },
+    usageOverride: 'takeover [status | release <hold-id>] [--session <name>]',
+    listUsageOverride: 'takeover [status|release]',
+    positionalArgs: ['status|release?', 'hold-id?'],
+    supportedFlags: [
+      'stateDir',
+      'session',
+      'remoteConfig',
+      'daemonBaseUrl',
+      'daemonAuthToken',
+      'daemonTransport',
+      'tenant',
+      'runId',
+      'leaseId',
+      'leaseBackend',
+      'sessionIsolation',
+    ],
+  },
   'react-devtools': {
     text: {
       summary: 'Inspect components, hooks, and render profiles',
