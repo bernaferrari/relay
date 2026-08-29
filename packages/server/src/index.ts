@@ -24,6 +24,12 @@ export {
   type ExternalIdentityVerificationRequest,
   type VerifiedExternalIdentity,
 } from "./external-identity.js";
+export {
+  ProofCheckPublishError,
+  publishGitHubProofCheck,
+  type GitHubProofCheckConfig,
+  type PublishedProofCheck,
+} from "./github-proof-check.js";
 import {
   captureScreenshot,
   currentOperationContext,
