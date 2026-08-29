@@ -141,16 +141,38 @@ test("Browser Device routes bind input to the painted page sequence", async (t) 
     assert.equal(second.frame.sequence, 4);
     assert.match(second.frame.pageUrl, /\/next$/u);
 
-    const slowInput = client.invoke("target.browser-device.control", {
+    const semanticClick = await client.invoke("target.browser-device.control", {
       targetId: target.id,
       input: {
         sessionId: second.session.sessionId,
         pageId: second.frame.pageId,
         expectedSequence: second.frame.sequence,
+        kind: "click",
+        x: 10,
+        y: 10,
+      },
+    });
+    assert.equal(semanticClick.resolution?.outcome, "semantic");
+    assert.equal(semanticClick.resolution?.reviewedCoordinateFallback, false);
+    const controlFrame = await client.invoke("target.browser-device.frame", {
+      targetId: target.id,
+      afterSequence: second.frame.sequence,
+    });
+
+    const slowInput = client.invoke("target.browser-device.control", {
+      targetId: target.id,
+      input: {
+        sessionId: controlFrame.session.sessionId,
+        pageId: controlFrame.frame.pageId,
+        expectedSequence: controlFrame.frame.sequence,
         kind: "navigate",
         url: `${startUrl}/slow`,
       },
     });
+    // Attach a terminal observer immediately. Under a saturated full-suite
+    // runner the request may settle before the admission assertions below;
+    // delaying allSettled until then would create an unhandled rejection.
+    const slowInputSettled = Promise.allSettled([slowInput]);
     for (let attempt = 0; attempt < 100; attempt += 1) {
       if (browserMutationAdmissionStats(target.id).pending > 0) break;
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -160,15 +182,16 @@ test("Browser Device routes bind input to the painted page sequence", async (t) 
       client.invoke("target.browser-device.control", {
         targetId: target.id,
         input: {
-          sessionId: second.session.sessionId,
-          pageId: second.frame.pageId,
-          expectedSequence: second.frame.sequence,
+          sessionId: controlFrame.session.sessionId,
+          pageId: controlFrame.frame.pageId,
+          expectedSequence: controlFrame.frame.sequence,
           kind: "click",
           x: 10,
           y: 10,
         },
       }),
     );
+    const queuedInputsSettled = Promise.allSettled(queuedInputs);
     for (let attempt = 0; attempt < 100; attempt += 1) {
       if (browserMutationAdmissionStats(target.id).pending >= MAX_BROWSER_DEVICE_INPUT_QUEUE) break;
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -178,9 +201,9 @@ test("Browser Device routes bind input to the painted page sequence", async (t) 
       client.invoke("target.browser-device.control", {
         targetId: target.id,
         input: {
-          sessionId: second.session.sessionId,
-          pageId: second.frame.pageId,
-          expectedSequence: second.frame.sequence,
+          sessionId: controlFrame.session.sessionId,
+          pageId: controlFrame.frame.pageId,
+          expectedSequence: controlFrame.frame.sequence,
           kind: "click",
           x: 10,
           y: 10,
@@ -191,9 +214,9 @@ test("Browser Device routes bind input to the painted page sequence", async (t) 
         error.status === 429 &&
         (error.body as { code?: unknown } | undefined)?.code === "BROWSER_INPUT_OVERLOADED",
     );
-    await Promise.allSettled([slowInput, ...queuedInputs]);
+    await Promise.all([slowInputSettled, queuedInputsSettled]);
     const binary = await client.binaryResource(
-      `/targets/${encodeURIComponent(target.id)}/browser-device/frame.bin?afterSequence=${second.frame.sequence}`,
+      `/targets/${encodeURIComponent(target.id)}/browser-device/frame.bin?afterSequence=${controlFrame.frame.sequence}`,
     );
     assert.equal(binary.headers.get("x-relay-browser-device-transport"), "binary");
     assert.equal(binary.headers.get("content-type"), "application/x-relay-browser-device-frame");
@@ -210,10 +233,10 @@ test("Browser Device routes bind input to the painted page sequence", async (t) 
       frame: { sessionId: string; pageId: string; sequence: number; visualFingerprint: string };
     };
     assert.equal(metadata.transport, "binary");
-    assert.equal(metadata.session.sessionId, second.session.sessionId);
-    assert.equal(metadata.frame.sessionId, second.frame.sessionId);
-    assert.equal(metadata.frame.pageId, second.frame.pageId);
-    assert.equal(metadata.frame.sequence, second.frame.sequence + 1);
+    assert.equal(metadata.session.sessionId, controlFrame.session.sessionId);
+    assert.equal(metadata.frame.sessionId, controlFrame.frame.sessionId);
+    assert.equal(metadata.frame.pageId, controlFrame.frame.pageId);
+    assert.equal(metadata.frame.sequence, controlFrame.frame.sequence + 1);
     assert.equal(typeof metadata.frame.visualFingerprint, "string");
     await client.invoke("target.delete", { targetId: target.id });
     await assert.rejects(

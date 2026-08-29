@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import type { Page } from "playwright-core";
+import type { Locator, Page } from "playwright-core";
 import type {
   BrowserCaseProfile,
   BrowserDeviceFrame,
   BrowserDeviceInput,
   BrowserDevicePage,
+  BrowserDeviceInputResolution,
   BrowserDeviceSemanticCandidate,
   BrowserDeviceSemanticOverlay,
   BrowserDeviceSession,
@@ -24,7 +25,11 @@ export type BrowserDeviceRuntimeSession = Omit<BrowserDeviceSession, "ownership"
 
 export class BrowserDeviceConflictError extends Error {
   constructor(
-    readonly code: "BROWSER_STALE_INPUT" | "BROWSER_PAGE_STALE" | "BROWSER_SESSION_STALE",
+    readonly code:
+      | "BROWSER_STALE_INPUT"
+      | "BROWSER_PAGE_STALE"
+      | "BROWSER_SESSION_STALE"
+      | "BROWSER_SEMANTIC_TARGET_REQUIRED",
     message: string,
     readonly currentSequence?: number,
   ) {
@@ -32,6 +37,11 @@ export class BrowserDeviceConflictError extends Error {
     this.name = "BrowserDeviceConflictError";
   }
 }
+
+type ResolvedBrowserClick = {
+  resolution: BrowserDeviceInputResolution;
+  dispatch: () => Promise<void>;
+};
 
 /** Maximum number of closed browser pages retained as inspectable tombstones. */
 export const MAX_BROWSER_DEVICE_PAGE_TOMBSTONES = 32;
@@ -530,14 +540,20 @@ function assertInput(state: SessionState, input: BrowserDeviceInput): Page {
   return page;
 }
 
-async function applyInput(state: SessionState, input: BrowserDeviceInput): Promise<void> {
+async function applyInput(
+  state: SessionState,
+  input: BrowserDeviceInput,
+  resolvedClick?: ResolvedBrowserClick,
+): Promise<void> {
   const page = assertInput(state, input);
   // Fail closed before dispatch: a rejected or uncertain Playwright mutation
   // still requires a new observation before any later input.
   state.needsFreshFrame = true;
   state.runtime.markMutation();
-  if (input.kind === "click") await page.mouse.click(input.x, input.y);
-  else if (input.kind === "wheel") {
+  if (input.kind === "click") {
+    if (resolvedClick) await resolvedClick.dispatch();
+    else await page.mouse.click(input.x, input.y);
+  } else if (input.kind === "wheel") {
     await page.mouse.move(input.x, input.y);
     await page.mouse.wheel(input.deltaX, input.deltaY);
   } else if (input.kind === "text") await page.keyboard.insertText(input.text);
@@ -566,6 +582,157 @@ async function applyInput(state: SessionState, input: BrowserDeviceInput): Promi
   }
 }
 
+function pointInCandidate(
+  candidate: BrowserDeviceSemanticCandidate,
+  x: number,
+  y: number,
+): boolean {
+  return (
+    x >= candidate.rect.x &&
+    x <= candidate.rect.x + candidate.rect.width &&
+    y >= candidate.rect.y &&
+    y <= candidate.rect.y + candidate.rect.height
+  );
+}
+
+function semanticLocator(
+  page: Page,
+  candidate: BrowserDeviceSemanticCandidate,
+): Locator | undefined {
+  const locator = candidate.locator;
+  if (!locator || locator.strategy === "text") return undefined;
+  if (locator.strategy === "identifier") {
+    // JSON string quoting is valid CSS attribute-value syntax and avoids
+    // treating an authored id/test id as executable selector text.
+    return page.locator(
+      `[id=${JSON.stringify(locator.value)}], [data-testid=${JSON.stringify(locator.value)}]`,
+    );
+  }
+  if (locator.strategy === "label") return page.getByLabel(locator.value, { exact: true });
+  const role =
+    (
+      { a: "link", input: "textbox", textarea: "textbox", select: "combobox" } as Record<
+        string,
+        string
+      >
+    )[locator.role ?? ""] ?? locator.role;
+  if (!role) return undefined;
+  return page.getByRole(role as never, { name: locator.value, exact: locator.exact ?? true });
+}
+
+/** Resolve a point against the same exact frame that the renderer painted.
+ * Semantic resolution is deliberately strict: stale, hidden, disabled, or
+ * ambiguous candidates cannot silently become coordinate actions. */
+async function resolveBrowserClick(
+  state: SessionState,
+  input: Extract<BrowserDeviceInput, { kind: "click" }>,
+): Promise<ResolvedBrowserClick> {
+  const frame = assertInspectableFrame(state, input);
+  const page = state.pages.get(input.pageId)!;
+  const beforeFingerprint = await browserPageVisualFingerprint(page);
+  if (beforeFingerprint !== frame.visualFingerprint) {
+    state.needsFreshFrame = true;
+    throw new BrowserDeviceConflictError(
+      "BROWSER_STALE_INPUT",
+      "The browser changed after this frame. Capture the current frame before clicking.",
+      state.sequence,
+    );
+  }
+  const snapshot = await snapshotBrowserPageSemantics(page, MAX_BROWSER_DEVICE_SEMANTIC_CANDIDATES);
+  const afterFingerprint = await browserPageVisualFingerprint(page);
+  if (afterFingerprint !== beforeFingerprint) {
+    state.needsFreshFrame = true;
+    throw new BrowserDeviceConflictError(
+      "BROWSER_STALE_INPUT",
+      "The browser changed while its controls were being resolved. Capture a fresh frame and retry.",
+      state.sequence,
+    );
+  }
+
+  const candidates = semanticCandidates(snapshot.nodes).candidates.filter(
+    (candidate) =>
+      candidate.enabled &&
+      candidate.locator !== undefined &&
+      candidate.locator.strategy !== "text" &&
+      pointInCandidate(candidate, input.x, input.y),
+  );
+  const live: Array<{ candidate: BrowserDeviceSemanticCandidate; locator: Locator }> = [];
+  for (const candidate of candidates) {
+    try {
+      const locator = semanticLocator(page, candidate);
+      if (!locator || (await locator.count()) !== 1) continue;
+      const element = locator.first();
+      if (!(await element.isVisible()) || !(await element.isEnabled())) continue;
+      const box = await element.boundingBox();
+      if (
+        !box ||
+        input.x < box.x ||
+        input.x > box.x + box.width ||
+        input.y < box.y ||
+        input.y > box.y + box.height
+      ) {
+        continue;
+      }
+      live.push({ candidate, locator: element });
+    } catch {
+      // Invalid or unsupported ARIA roles fail closed and can still use an
+      // explicit reviewed coordinate fallback.
+    }
+  }
+
+  // Locator checks are asynchronous too. Re-bracket them with the painted
+  // raster so a DOM transition during resolution cannot be dispatched as if
+  // it belonged to the original frame.
+  const finalFingerprint = await browserPageVisualFingerprint(page);
+  if (finalFingerprint !== beforeFingerprint) {
+    state.needsFreshFrame = true;
+    throw new BrowserDeviceConflictError(
+      "BROWSER_STALE_INPUT",
+      "The browser changed while its target was being resolved. Capture a fresh frame and retry.",
+      state.sequence,
+    );
+  }
+
+  const selected = live[0];
+  if (live.length === 1 && selected) {
+    const candidate = selected.candidate;
+    const locator = candidate.locator!;
+    return {
+      resolution: {
+        outcome: "semantic",
+        strategy: locator.strategy,
+        candidateId: candidate.id,
+        locator,
+        reviewedCoordinateFallback: false,
+        reasoning: `Resolved ${JSON.stringify(locator.strategy)} ${JSON.stringify(locator.value)}: one visible enabled match at the exact painted point.`,
+      },
+      dispatch: () => selected.locator.click(),
+    };
+  }
+
+  if (input.coordinateFallback === "reviewed") {
+    return {
+      resolution: {
+        outcome: "coordinate-fallback",
+        strategy: "coordinate",
+        reviewedCoordinateFallback: true,
+        reasoning:
+          live.length > 1
+            ? "No unique visible enabled stable locator matched this point; coordinate fallback was explicitly reviewed."
+            : "No visible enabled stable locator matched this point; coordinate fallback was explicitly reviewed.",
+      },
+      dispatch: () => page.mouse.click(input.x, input.y),
+    };
+  }
+  throw new BrowserDeviceConflictError(
+    "BROWSER_SEMANTIC_TARGET_REQUIRED",
+    live.length > 1
+      ? "This point matches multiple visible enabled controls. Inspect the frame or explicitly review coordinate fallback."
+      : "This point has no unique visible enabled semantic control. Inspect the frame or explicitly review coordinate fallback.",
+    state.sequence,
+  );
+}
+
 function validateInputBeforeDispatch(state: SessionState, input: BrowserDeviceInput): void {
   assertInput(state, input);
   if (input.kind === "navigate") {
@@ -586,8 +753,13 @@ export async function controlBrowserDevice(
   targetId: string,
   input: BrowserDeviceInput,
   beforeDispatch?: () => Promise<void>,
-): Promise<{ ok: true; session: BrowserDeviceRuntimeSession }> {
+): Promise<{
+  ok: true;
+  session: BrowserDeviceRuntimeSession;
+  resolution?: BrowserDeviceInputResolution;
+}> {
   const state = stateForTarget(targetId);
+  let resolvedClick: ResolvedBrowserClick | undefined;
   const operation = runBrowserMutationAdmission(targetId, async () => {
     if (state.capture) await state.capture;
     await runSupervisedBrowserMutation({
@@ -595,13 +767,18 @@ export async function controlBrowserDevice(
       intent: `Browser Device ${input.kind}`,
       beforeDispatch: async () => {
         validateInputBeforeDispatch(state, input);
+        if (input.kind === "click") resolvedClick = await resolveBrowserClick(state, input);
         await beforeDispatch?.();
       },
-      dispatch: () => applyInput(state, input),
+      dispatch: () => applyInput(state, input, resolvedClick),
     });
   });
   await operation;
-  return { ok: true, session: await projection(state) };
+  return {
+    ok: true,
+    session: await projection(state),
+    ...(resolvedClick ? { resolution: resolvedClick.resolution } : {}),
+  };
 }
 
 export async function closeBrowserDeviceSession(targetId?: string): Promise<void> {

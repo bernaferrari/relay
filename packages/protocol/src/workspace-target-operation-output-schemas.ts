@@ -3,6 +3,7 @@ import { browserCaseProfileSchema, browserEnvironmentInputSchema } from "./brows
 import {
   browserDeviceBinaryFrameMetadataSchema,
   browserDeviceFrameSchema,
+  browserDeviceInputResolutionSchema,
   browserDeviceSemanticOverlaySchema,
   browserDeviceSessionSchema,
 } from "./browser-device.js";
@@ -654,7 +655,11 @@ export const workspaceTargetOperationOutputSchemas = {
     .object({ overlay: browserDeviceSemanticOverlaySchema })
     .strict(),
   "target.browser-device.control": z
-    .object({ ok: z.literal(true), session: browserDeviceSessionSchema })
+    .object({
+      ok: z.literal(true),
+      session: browserDeviceSessionSchema,
+      resolution: browserDeviceInputResolutionSchema.optional(),
+    })
     .strict(),
   "target.boot": z.object({ ok: z.literal(true), serial: text }).strict(),
   "target.authorize": z.object({ ok: z.literal(true), serial: text }).strict(),

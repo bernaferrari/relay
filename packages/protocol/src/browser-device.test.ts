@@ -4,6 +4,7 @@ import {
   browserDeviceControlInputSchema,
   browserDeviceBinaryFrameMetadataSchema,
   browserDeviceFrameSchema,
+  browserDeviceInputResolutionSchema,
   browserDeviceSemanticOverlaySchema,
   browserDeviceSessionSchema,
   compileBrowserEnvironment,
@@ -96,6 +97,7 @@ test("Browser Device contracts retain exact session, page, and frame identity", 
         kind: "click",
         x: 10,
         y: 20,
+        coordinateFallback: "reviewed",
       },
     }).success,
     true,
@@ -149,6 +151,59 @@ test("Browser Device input fails schema validation without frame provenance", ()
         kind: "key",
         key: "Meta+Alt+Unbounded",
       },
+    }).success,
+    false,
+  );
+});
+
+test("Browser Device click resolution is bounded and distinguishes reviewed fallback", () => {
+  assert.deepEqual(
+    browserDeviceInputResolutionSchema.parse({
+      outcome: "semantic",
+      strategy: "role-name",
+      candidateId: "candidate-0",
+      locator: { strategy: "role-name", value: "Continue", role: "button", exact: true },
+      reviewedCoordinateFallback: false,
+      reasoning: "One visible enabled match at the exact painted point.",
+    }).outcome,
+    "semantic",
+  );
+  assert.equal(
+    browserDeviceInputResolutionSchema.safeParse({
+      outcome: "coordinate-fallback",
+      strategy: "coordinate",
+      reviewedCoordinateFallback: true,
+      reasoning: "Reviewed coordinate fallback.",
+    }).success,
+    true,
+  );
+  assert.equal(
+    browserDeviceInputResolutionSchema.safeParse({
+      outcome: "coordinate-fallback",
+      strategy: "coordinate",
+      reviewedCoordinateFallback: false,
+      reasoning: "x".repeat(321),
+    }).success,
+    false,
+  );
+  assert.equal(
+    browserDeviceInputResolutionSchema.safeParse({
+      outcome: "semantic",
+      strategy: "role-name",
+      candidateId: "candidate-0",
+      locator: { strategy: "label", value: "Continue" },
+      reviewedCoordinateFallback: false,
+      reasoning: "mismatched strategy",
+    }).success,
+    false,
+  );
+  assert.equal(
+    browserDeviceInputResolutionSchema.safeParse({
+      outcome: "coordinate-fallback",
+      strategy: "coordinate",
+      candidateId: "candidate-0",
+      reviewedCoordinateFallback: true,
+      reasoning: "coordinate fallback cannot carry a candidate",
     }).success,
     false,
   );

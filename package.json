@@ -38,7 +38,7 @@
     "test:golden:require": "GOLDEN_ACCEPTANCE_MODE=required node scripts/golden-device.mjs",
     "test:golden:acceptance": "GOLDEN_ACCEPTANCE_MODE=required node scripts/golden-device.mjs",
     "test:golden:unit": "node --test scripts/golden-device.test.mjs",
-    "test:architecture": "node --test scripts/check-source-budgets.test.mjs scripts/check-ios-mutation-boundaries.test.mjs scripts/check-canonical-product-model.test.mjs scripts/ensure-server-bootstrap.test.mjs scripts/ensure-server-lease-recovery.test.mjs scripts/golden-device.test.mjs && node node_modules/tsx/dist/cli.mjs --test scripts/check-renderer-operation-transport.test.mjs",
+    "test:architecture": "node --test scripts/check-source-budgets.test.mjs scripts/check-ios-mutation-boundaries.test.mjs scripts/check-canonical-product-model.test.mjs scripts/ensure-server-bootstrap.test.mjs scripts/ensure-server-lease-recovery.test.mjs scripts/golden-device.test.mjs scripts/change-proof-golden-live.test.mjs && node node_modules/tsx/dist/cli.mjs --test scripts/check-renderer-operation-transport.test.mjs",
     "check:workflows": "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12",
     "check:docs": "node scripts/check-docs.mjs",
     "check:architecture": "node scripts/check-source-budgets.mjs && node scripts/check-ios-mutation-boundaries.mjs && node scripts/check-canonical-product-model.mjs && node scripts/check-renderer-operation-transport.mjs",

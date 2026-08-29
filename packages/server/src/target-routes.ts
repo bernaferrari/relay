@@ -320,7 +320,11 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
       const result = await controlBrowserDevice(targetId, parsed.input, () =>
         assertTargetLease(scope, targetId, lease.id),
       );
-      json(res, 200, { ok: true, session: await withOwnership(scope, result.session) });
+      json(res, 200, {
+        ok: true,
+        session: await withOwnership(scope, result.session),
+        ...(result.resolution ? { resolution: result.resolution } : {}),
+      });
     } catch (error) {
       if (error instanceof BrowserDeviceInputOverloadedError) {
         throw new HttpError(429, error.message, {

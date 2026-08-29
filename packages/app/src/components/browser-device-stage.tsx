@@ -357,10 +357,17 @@ export function BrowserDeviceStage() {
             ariaLabel="Interactive Browser Device preview. Click the page or use the keyboard to record browser actions."
             onTap={({ point }) => {
               markInteraction();
-              void server.clickBrowserDevice(point.logical.x, point.logical.y).then((applied) => {
+              void server.clickBrowserDevice(point.logical.x, point.logical.y).then((result) => {
+                const applied = typeof result === "boolean" ? result : result.applied;
                 if (!applied) return poll();
                 return recorder
-                  .driveTap(point.logical.x, point.logical.y, true, dimensions())
+                  .driveTap(
+                    point.logical.x,
+                    point.logical.y,
+                    true,
+                    dimensions(),
+                    typeof result === "boolean" ? undefined : result.resolution,
+                  )
                   .then(poll);
               });
             }}

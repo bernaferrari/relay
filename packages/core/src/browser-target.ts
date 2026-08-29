@@ -12,7 +12,7 @@ import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js"
 import { runBrowserMutationAdmission } from "./browser-mutation-admission.js";
 import { browserProfileDir, readTarget } from "./targets.js";
 
-type BrowserSession = {
+export type BrowserSession = {
   sessionId: string;
   context: BrowserContext;
   close: () => Promise<void>;
@@ -31,16 +31,22 @@ type BrowserSession = {
   networkInclude: "summary" | "headers" | "body" | "all";
   networkPending: Set<Promise<void>>;
   crashes: Array<{ at: number; source: string; message: string }>;
+  pageErrors: Array<{ at: number; source: string; message: string }>;
+  pageErrorsDropped: number;
   crashCapture: boolean;
   consoleDropped: number;
   networkDropped: number;
   mutationVersion: number;
+  traceStarted: boolean;
 };
 
-type BrowserNetworkEntry = {
+export type BrowserNetworkEntry = {
   method: string;
   url: string;
   status?: number;
+  /** Playwright requestfailed is distinct from an HTTP error response. */
+  failed?: boolean;
+  failureText?: string;
   at: number;
   requestHeaders?: Record<string, string>;
   requestBody?: string;
@@ -119,11 +125,24 @@ async function createSession(
     networkInclude: "summary",
     networkPending: new Set(),
     crashes: [],
+    pageErrors: [],
+    pageErrorsDropped: 0,
     crashCapture: false,
     consoleDropped: 0,
     networkDropped: 0,
     mutationVersion: 0,
+    traceStarted: false,
   };
+  context.on("page", (next) => attachEvidence(session, next));
+  if (options.mode === "proof") {
+    try {
+      await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
+      session.traceStarted = true;
+    } catch {
+      // The evidence collector records the trace channel as partial when the
+      // host cannot start Playwright tracing. Other channels remain useful.
+    }
+  }
   attachEvidence(session, page);
   if (page.url() === "about:blank") {
     await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
@@ -140,9 +159,19 @@ function attachEvidence(session: BrowserSession, page: Page): void {
     session.console.push({ level: message.type(), text: message.text(), at: Date.now() });
   });
   page.on("pageerror", (error) => {
-    if (!session.crashCapture) return;
-    if (session.crashes.length >= MAX_EVIDENCE_ENTRIES) session.crashes.shift();
-    session.crashes.push({ at: Date.now(), source: "browser-pageerror", message: error.message });
+    if (session.pageErrors.length >= MAX_EVIDENCE_ENTRIES) {
+      session.pageErrors.shift();
+      session.pageErrorsDropped += 1;
+    }
+    session.pageErrors.push({
+      at: Date.now(),
+      source: "browser-pageerror",
+      message: error.message,
+    });
+    if (session.crashCapture) {
+      if (session.crashes.length >= MAX_EVIDENCE_ENTRIES) session.crashes.shift();
+      session.crashes.push({ at: Date.now(), source: "browser-pageerror", message: error.message });
+    }
   });
   page.on("request", (request) => {
     if (session.network.length >= MAX_EVIDENCE_ENTRIES) {
@@ -173,6 +202,13 @@ function attachEvidence(session: BrowserSession, page: Page): void {
       session.networkPending.add(pending);
       void pending.finally(() => session.networkPending.delete(pending));
     }
+  });
+  page.on("requestfailed", (request) => {
+    const entry = session.networkByRequest.get(request);
+    if (!entry) return;
+    entry.failed = true;
+    const failureText = request.failure()?.errorText?.trim();
+    if (failureText) entry.failureText = failureText.slice(0, 512);
   });
 }
 
@@ -331,7 +367,7 @@ export async function openBrowserTarget(targetId: string): Promise<OpenBrowserTa
   return { targetId, name: target.name, url: page.url() };
 }
 
-async function activePage(session: BrowserSession): Promise<Page> {
+export async function activePage(session: BrowserSession): Promise<Page> {
   if (!session.page.isClosed()) return session.page;
   session.page = await session.context.newPage();
   attachEvidence(session, session.page);
@@ -449,6 +485,7 @@ function unsupported(capability: string): never {
 export type BrowserDeviceOptions = {
   mode?: BrowserContextPurpose;
   profile?: BrowserCaseProfile;
+  recordVideo?: boolean;
 };
 
 export async function getBrowserDevice(
@@ -813,6 +850,12 @@ export async function getBrowserDevice(
     },
   };
   return createDeviceObservationFacade(api);
+}
+
+export async function browserProofSessionForTarget(targetId: string): Promise<BrowserSession> {
+  const pending = sessions.get(`proof:${targetId}`);
+  if (!pending) throw new Error(`managed browser proof session is not open: ${targetId}`);
+  return pending;
 }
 
 export async function closeBrowserTarget(

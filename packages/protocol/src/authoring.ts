@@ -1,4 +1,5 @@
 import type { RecipeStep, StepTarget } from "./recipes.js";
+import type { BrowserDeviceInputResolution } from "./browser-device.js";
 import {
   parseAuthoringCaptureProvenance,
   type AuthoringCaptureProvenance,
@@ -132,6 +133,9 @@ export type AuthoringAction = {
   exitObservationId?: string;
   proofStatus?: AuthoringTransitionProofStatus;
   label?: string;
+  /** Exact server-side Browser Device target resolution retained with the
+   * reviewed action for later authoring inspection and replay diagnosis. */
+  browserResolution?: BrowserDeviceInputResolution;
 };
 
 /** Whether one replay action ran, failed, or could only be observed as part
@@ -159,7 +163,16 @@ export type AuthoringReplayActionProof = {
 };
 
 export type AuthoringInteraction =
-  | { kind: "tap"; target: StepTarget; expectedApp?: string; applied?: boolean }
+  | {
+      kind: "tap";
+      target: StepTarget;
+      expectedApp?: string;
+      applied?: boolean;
+      /** Server-derived Browser Device locator proof retained with the raw
+       * recording. It is bounded and descriptive, never an executable DOM
+       * handle. */
+      browserResolution?: BrowserDeviceInputResolution;
+    }
   | {
       kind: "type";
       text: string;
@@ -300,6 +313,10 @@ export type AuthoringRawInteraction =
       target?: AuthoringRawTargetMetadata;
       hasExpectedApp?: boolean;
       applied?: boolean;
+      browserResolution?: Pick<
+        BrowserDeviceInputResolution,
+        "outcome" | "strategy" | "candidateId" | "reviewedCoordinateFallback" | "reasoning"
+      >;
     }
   | {
       kind: "type";

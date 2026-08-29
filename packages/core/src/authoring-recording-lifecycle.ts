@@ -222,6 +222,9 @@ export async function recordAuthoringInteraction<Captured>(
       : interaction.kind === "steps" && interaction.label
         ? { label: interaction.label }
         : {}),
+    ...(interaction.kind === "tap" && interaction.browserResolution
+      ? { browserResolution: interaction.browserResolution }
+      : {}),
   };
   const next = nextRevision(session, "recording", (revision) => {
     // Human cadence is meaningful recording data. Agent wall-clock gaps are

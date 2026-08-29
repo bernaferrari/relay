@@ -39,7 +39,9 @@ before(async () => {
   server = http.createServer((_request, response) => {
     response.setHeader("content-type", "text/html");
     response.end(
-      `<!doctype html><button aria-label="Continue">Continue</button><button>Duplicate</button><button>Duplicate</button><input id="message" aria-label="Message" />`,
+      _request.url === "/ambiguous"
+        ? `<!doctype html><button style="position:absolute;left:10px;top:10px">Same</button><button style="position:absolute;left:10px;top:10px">Same</button>`
+        : `<!doctype html><button aria-label="Continue">Continue</button><button>Duplicate</button><button>Duplicate</button><input id="message" aria-label="Message" />`,
     );
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -176,6 +178,82 @@ test("in-app Browser Device sequences frames and rejects stale page input", asyn
       resetBrowserDeviceSessionsForTests();
     });
   } finally {
+    supervisor.close();
+  }
+});
+
+test("in-app Browser Device resolves one exact-frame semantic click and requires reviewed fallback", async (t) => {
+  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  if (t.signal.aborted) return;
+  const supervisor = new TargetSupervisorStore(":memory:");
+  const target = await saveBrowserTarget({
+    name: "Semantic Browser Device",
+    startUrl,
+    executablePath: CHROME,
+    headless: true,
+    environment: { viewport: { width: 800, height: 600 } },
+  });
+  try {
+    await runWithTargetSupervisorStore(supervisor, async () => {
+      const opened = await openBrowserDeviceSession(target.id);
+      const first = await captureBrowserDeviceFrame(target.id);
+      const semantic = await controlBrowserDevice(target.id, {
+        sessionId: opened.sessionId,
+        pageId: first.frame.pageId,
+        expectedSequence: first.frame.sequence,
+        kind: "click",
+        x: 20,
+        y: 20,
+      });
+      assert.equal(semantic.resolution?.outcome, "semantic");
+      assert.equal(semantic.resolution?.strategy, "role-name");
+      assert.equal(semantic.resolution?.reviewedCoordinateFallback, false);
+      assert.match(semantic.resolution?.reasoning ?? "", /one visible enabled match/u);
+
+      const afterSemantic = await captureBrowserDeviceFrame(target.id);
+      await controlBrowserDevice(target.id, {
+        sessionId: opened.sessionId,
+        pageId: first.frame.pageId,
+        expectedSequence: afterSemantic.frame.sequence,
+        kind: "navigate",
+        url: `${startUrl}/ambiguous`,
+      });
+      const ambiguousFrame = await captureBrowserDeviceFrame(target.id);
+      const beforeRejectedClickEvents = supervisor.health({ id: target.id, kind: "browser" }).events
+        .length;
+      await assert.rejects(
+        controlBrowserDevice(target.id, {
+          sessionId: opened.sessionId,
+          pageId: ambiguousFrame.frame.pageId,
+          expectedSequence: ambiguousFrame.frame.sequence,
+          kind: "click",
+          x: 20,
+          y: 20,
+        }),
+        (error) =>
+          error instanceof BrowserDeviceConflictError &&
+          error.code === "BROWSER_SEMANTIC_TARGET_REQUIRED",
+      );
+      const afterRejectedClickEvents = supervisor.health({ id: target.id, kind: "browser" });
+      assert.ok(afterRejectedClickEvents.events.length > beforeRejectedClickEvents);
+      assert.ok(
+        afterRejectedClickEvents.events.some(({ code }) => code === "INPUT_NOT_DISPATCHED"),
+      );
+      const fallback = await controlBrowserDevice(target.id, {
+        sessionId: opened.sessionId,
+        pageId: ambiguousFrame.frame.pageId,
+        expectedSequence: ambiguousFrame.frame.sequence,
+        kind: "click",
+        x: 20,
+        y: 20,
+        coordinateFallback: "reviewed",
+      });
+      assert.equal(fallback.resolution?.outcome, "coordinate-fallback");
+      assert.equal(fallback.resolution?.reviewedCoordinateFallback, true);
+    });
+  } finally {
+    await closeBrowserTarget(target.id, { mode: "authoring" });
+    await deleteTarget(target.id);
     supervisor.close();
   }
 });

@@ -4,6 +4,7 @@ import type {
   AuthoringRecordingEdit,
   AuthoringSession,
   AuthoringVideoClip,
+  BrowserDeviceInputResolution,
 } from "@relay/protocol";
 import { createSimpleContext } from "@relay/ui/context/helper";
 import { useServer } from "./server";
@@ -451,6 +452,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       fy: number,
       alreadyApplied = false,
       imageSize?: { width: number; height: number },
+      browserResolution?: BrowserDeviceInputResolution,
     ): Promise<boolean> {
       if (server.health() !== "online") return false;
       try {
@@ -496,6 +498,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
             kind: "tap",
             target: physicalIosTarget,
             ...(alreadyApplied ? { applied: true } : {}),
+            ...(browserResolution ? { browserResolution } : {}),
           });
           return true;
         }

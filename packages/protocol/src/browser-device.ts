@@ -129,6 +129,54 @@ export const browserDeviceSemanticOverlaySchema = z
   })
   .strict();
 
+/** The bounded result of resolving one point against the exact painted frame.
+ * A coordinate action is only accepted when the caller explicitly reviewed
+ * the fallback; otherwise Browser Device input must use one deterministic
+ * visible, enabled semantic locator. */
+export const browserDeviceInputResolutionSchema = z
+  .object({
+    outcome: z.enum(["semantic", "coordinate-fallback"]),
+    strategy: z.enum(["identifier", "role-name", "label", "text", "coordinate"]),
+    candidateId: id.optional(),
+    locator: browserDeviceSemanticLocatorSchema.optional(),
+    reviewedCoordinateFallback: z.boolean(),
+    reasoning: z.string().trim().min(1).max(320),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.outcome === "semantic") {
+      if (value.strategy === "coordinate") {
+        context.addIssue({ code: "custom", message: "Semantic resolution needs a stable locator" });
+      }
+      if (!value.candidateId) {
+        context.addIssue({ code: "custom", message: "Semantic resolution needs a candidate id" });
+      }
+      if (!value.locator) {
+        context.addIssue({ code: "custom", message: "Semantic resolution needs a locator" });
+      } else if (value.locator.strategy !== value.strategy) {
+        context.addIssue({ code: "custom", message: "Resolution strategy must match its locator" });
+      }
+      if (value.reviewedCoordinateFallback) {
+        context.addIssue({
+          code: "custom",
+          message: "Semantic resolution cannot be a reviewed fallback",
+        });
+      }
+      return;
+    }
+    if (
+      value.strategy !== "coordinate" ||
+      value.locator !== undefined ||
+      value.candidateId !== undefined ||
+      !value.reviewedCoordinateFallback
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Coordinate fallback must be reviewed and must not carry a semantic locator",
+      });
+    }
+  });
+
 const frameBound = {
   sessionId: id,
   pageId: id,
@@ -136,7 +184,16 @@ const frameBound = {
 } as const;
 
 export const browserDeviceInputSchema = z.discriminatedUnion("kind", [
-  z.object({ ...frameBound, kind: z.literal("click"), x: z.number(), y: z.number() }).strict(),
+  z
+    .object({
+      ...frameBound,
+      kind: z.literal("click"),
+      x: z.number(),
+      y: z.number(),
+      /** Required when the click intentionally bypasses semantic targeting. */
+      coordinateFallback: z.literal("reviewed").optional(),
+    })
+    .strict(),
   z
     .object({
       ...frameBound,
@@ -214,4 +271,5 @@ export type BrowserDeviceBinaryFrameMetadata = z.infer<
 export type BrowserDeviceSemanticLocator = z.infer<typeof browserDeviceSemanticLocatorSchema>;
 export type BrowserDeviceSemanticCandidate = z.infer<typeof browserDeviceSemanticCandidateSchema>;
 export type BrowserDeviceSemanticOverlay = z.infer<typeof browserDeviceSemanticOverlaySchema>;
+export type BrowserDeviceInputResolution = z.infer<typeof browserDeviceInputResolutionSchema>;
 export type BrowserDeviceInput = z.infer<typeof browserDeviceInputSchema>;

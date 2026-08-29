@@ -6,6 +6,7 @@
  * copied by individual transports.
  */
 import * as z from "zod/v4";
+import { browserDeviceInputResolutionSchema } from "./browser-device.js";
 
 export const text = (description: string) => z.string().min(1).describe(description);
 export const natural = (description: string) => z.number().nonnegative().describe(description);
@@ -112,7 +113,12 @@ export const stepTarget = z
 
 export const authoringInteraction = z.discriminatedUnion("kind", [
   z
-    .object({ kind: z.literal("tap"), target: stepTarget, applied: z.boolean().optional() })
+    .object({
+      kind: z.literal("tap"),
+      target: stepTarget,
+      applied: z.boolean().optional(),
+      browserResolution: browserDeviceInputResolutionSchema.optional(),
+    })
     .strict(),
   z
     .object({

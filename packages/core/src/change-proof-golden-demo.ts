@@ -55,7 +55,10 @@ let goldenBrowserEvidenceDir: string | undefined;
  * measurements. */
 function browserEvidenceDirectory(): string {
   if (goldenBrowserEvidenceDir) return goldenBrowserEvidenceDir;
-  goldenBrowserEvidenceDir = join(tmpdir(), "relay-change-proof-golden-browser");
+  // Node's test runner executes test files in parallel processes. Keep each
+  // fixture writer on its own path so one process cannot truncate evidence
+  // while another process is closing the same TracePack.
+  goldenBrowserEvidenceDir = join(tmpdir(), `relay-change-proof-golden-browser-${process.pid}`);
   mkdirSync(join(goldenBrowserEvidenceDir, "frames"), { recursive: true });
   mkdirSync(join(goldenBrowserEvidenceDir, "artifacts"), { recursive: true });
   // Valid 1x1 PNG bytes keep the synthetic screenshot artifact parseable

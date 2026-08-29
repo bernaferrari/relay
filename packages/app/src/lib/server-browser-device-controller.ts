@@ -2,10 +2,12 @@ import { createSignal, type Accessor } from "solid-js";
 import type { RelayClient } from "@relay/client";
 import type {
   BrowserDeviceFrame,
+  BrowserDeviceInputResolution,
   BrowserDeviceInput,
   BrowserDeviceSession,
   BrowserDeviceSemanticOverlay,
   BrowserEnvironmentInput,
+  OperationOutput,
 } from "@relay/protocol";
 import type { Frame } from "./api-types";
 import {
@@ -21,6 +23,11 @@ export function createServerBrowserDeviceController(deps: {
   setLiveFrame: (frame: Frame | null) => void;
   setLiveCaptureIssue: (issue: string | null) => void;
 }) {
+  type ControlResult = OperationOutput<"target.browser-device.control">;
+  type BrowserDeviceClickResult = {
+    applied: boolean;
+    resolution?: BrowserDeviceInputResolution;
+  };
   const [session, setSession] = createSignal<BrowserDeviceSession | null>(null);
   const [semanticOverlay, setSemanticOverlay] = createSignal<BrowserDeviceSemanticOverlay | null>(
     null,
@@ -165,21 +172,21 @@ export function createServerBrowserDeviceController(deps: {
 
   async function send(
     makeInput: (bound: NonNullable<ReturnType<typeof currentBoundInput>>) => BrowserDeviceInput,
-  ): Promise<boolean> {
+  ): Promise<ControlResult | null> {
     const targetId = deps.selectedDevice();
     const bound = currentBoundInput();
-    if (!targetId || !bound) return false;
+    if (!targetId || !bound) return null;
     const requestGeneration = generation;
     try {
       const result = await controlBrowserDevice(await deps.client(), targetId, makeInput(bound));
-      if (requestGeneration !== generation || deps.selectedDevice() !== targetId) return false;
+      if (requestGeneration !== generation || deps.selectedDevice() !== targetId) return null;
       setSession(result.session);
-      return true;
+      return result;
     } catch (error) {
-      if (requestGeneration !== generation || deps.selectedDevice() !== targetId) return false;
+      if (requestGeneration !== generation || deps.selectedDevice() !== targetId) return null;
       deps.setLiveCaptureIssue(error instanceof Error ? error.message : String(error));
       await poll();
-      return false;
+      return null;
     }
   }
 
@@ -190,13 +197,20 @@ export function createServerBrowserDeviceController(deps: {
     poll,
     semanticOverlay,
     inspect,
-    click: (fx: number, fy: number) =>
-      send((bound) => ({
+    click: async (fx: number, fy: number): Promise<BrowserDeviceClickResult> => {
+      const result = await send((bound) => ({
         ...bound,
         kind: "click",
         x: fx * (frame?.width ?? 0),
         y: fy * (frame?.height ?? 0),
-      })),
+        // A human clicking the painted raster has explicitly reviewed the
+        // coordinate. The server still prefers a unique semantic locator.
+        coordinateFallback: "reviewed" as const,
+      }));
+      return result
+        ? { applied: true, ...(result.resolution ? { resolution: result.resolution } : {}) }
+        : { applied: false };
+    },
     wheel: (fx: number, fy: number, deltaX: number, deltaY: number) =>
       send((bound) => ({
         ...bound,
@@ -205,7 +219,7 @@ export function createServerBrowserDeviceController(deps: {
         y: fy * (frame?.height ?? 0),
         deltaX,
         deltaY,
-      })),
+      })).then(Boolean),
     key: async (
       input:
         | {
@@ -226,15 +240,16 @@ export function createServerBrowserDeviceController(deps: {
               key: input.key === "enter" ? "Enter" : "Backspace",
             },
       );
-      if (applied) await poll();
-      return applied;
+      const succeeded = Boolean(applied);
+      if (succeeded) await poll();
+      return succeeded;
     },
-    navigate: (url: string) => send((bound) => ({ ...bound, kind: "navigate", url })),
+    navigate: (url: string) => send((bound) => ({ ...bound, kind: "navigate", url })).then(Boolean),
     history: (direction: "back" | "forward" | "reload") =>
-      send((bound) => ({ ...bound, kind: "history", direction })),
+      send((bound) => ({ ...bound, kind: "history", direction })).then(Boolean),
     activatePage: (targetPageId: string) =>
-      send((bound) => ({ ...bound, kind: "page.activate", targetPageId })),
+      send((bound) => ({ ...bound, kind: "page.activate", targetPageId })).then(Boolean),
     closePage: (targetPageId: string) =>
-      send((bound) => ({ ...bound, kind: "page.close", targetPageId })),
+      send((bound) => ({ ...bound, kind: "page.close", targetPageId })).then(Boolean),
   };
 }

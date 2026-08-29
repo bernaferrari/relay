@@ -112,6 +112,20 @@ export function redactAuthoringRawInteraction(
         kind: "tap",
         ...(interaction.target ? { target: rawTarget(interaction.target) } : {}),
         ...(interaction.expectedApp ? { hasExpectedApp: true } : {}),
+        ...(interaction.browserResolution
+          ? {
+              browserResolution: {
+                outcome: interaction.browserResolution.outcome,
+                strategy: interaction.browserResolution.strategy,
+                ...(interaction.browserResolution.candidateId
+                  ? { candidateId: interaction.browserResolution.candidateId }
+                  : {}),
+                reviewedCoordinateFallback:
+                  interaction.browserResolution.reviewedCoordinateFallback,
+                reasoning: interaction.browserResolution.reasoning,
+              },
+            }
+          : {}),
         ...applied,
       };
     case "type":

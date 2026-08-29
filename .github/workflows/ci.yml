@@ -37,8 +37,47 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Verify
-        run: pnpm run verify
+      # Keep these stages aligned with `pnpm verify`, but expose each trust
+      # boundary separately. A setup/install failure therefore cannot look
+      # like a repository typecheck or test failure in the Check UI.
+      - name: Format, lint, and static checks
+        run: vp check
+
+      - name: Validate GitHub workflows
+        run: pnpm run check:workflows
+
+      - name: Validate documentation
+        run: pnpm run check:docs
+
+      - name: Validate architecture boundaries
+        run: pnpm run check:architecture
+
+      - name: Run architecture contract tests
+        run: pnpm run test:architecture
+
+      - name: Typecheck packages
+        run: pnpm typecheck
+
+      - name: Test iOS preview producer
+        run: pnpm run ios-preview:test
+
+      - name: Test packages
+        run: pnpm run test:packages
+
+      - name: Test Vite+ workspace
+        run: vp test
+
+      - name: Validate UI boundaries
+        run: pnpm --filter @relay/app check:ui
+
+      - name: Build app
+        run: pnpm --filter @relay/app build
+
+      - name: Build desktop
+        run: pnpm --filter @relay/desktop build
+
+      - name: Verify installed iOS preview sidecar
+        run: pnpm run ios-preview:verify
 
       - name: Verify packaged iOS preview sidecar provenance
         run: |

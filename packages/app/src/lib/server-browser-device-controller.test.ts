@@ -170,3 +170,54 @@ test("Browser Device clears semantic labels when a newer frame arrives", async (
   await controller.poll();
   assert.equal(controller.semanticOverlay(), null);
 });
+
+test("Browser Device click returns bounded server resolution for recording", async () => {
+  const [selectedDevice] = createSignal<string | null>("browser-a");
+  let controlInput: unknown;
+  const client = {
+    invoke: async (operationId: string, input: { targetId: string }) => {
+      if (operationId === "target.browser-device.open") {
+        return { session: session(input.targetId) };
+      }
+      if (operationId === "target.browser-device.frame") {
+        return { session: session(input.targetId), frame: frameFor(input.targetId) };
+      }
+      if (operationId === "target.browser-device.control") {
+        controlInput = input;
+        return {
+          ok: true,
+          session: session(input.targetId),
+          resolution: {
+            outcome: "semantic",
+            strategy: "role-name",
+            candidateId: "candidate-0",
+            locator: { strategy: "role-name", value: "Continue", role: "button", exact: true },
+            reviewedCoordinateFallback: false,
+            reasoning: "One visible enabled match at the exact painted point.",
+          },
+        };
+      }
+      throw new Error(`unexpected operation: ${operationId}`);
+    },
+  };
+  const controller = createServerBrowserDeviceController({
+    client: async () => client as never,
+    selectedDevice,
+    setLiveFrame: () => undefined,
+    setLiveCaptureIssue: () => undefined,
+  });
+
+  await controller.poll();
+  const result = await controller.click(0.25, 0.5);
+  assert.equal(result.applied, true);
+  assert.equal(result.resolution?.candidateId, "candidate-0");
+  assert.deepEqual((controlInput as { input: { coordinateFallback?: string } }).input, {
+    sessionId: "session-browser-a",
+    pageId: "page-browser-a",
+    expectedSequence: 1,
+    kind: "click",
+    x: 200,
+    y: 300,
+    coordinateFallback: "reviewed",
+  });
+});
