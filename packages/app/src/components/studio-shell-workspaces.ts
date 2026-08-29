@@ -11,6 +11,9 @@ export const DataWorkspace = lazy(() =>
 export const RunsWorkspace = lazy(() =>
   import("./runs-workspace").then((module) => ({ default: module.RunsWorkspace })),
 );
+export const ChangesWorkspace = lazy(() =>
+  import("./changes-workspace").then((module) => ({ default: module.ChangesWorkspace })),
+);
 export const EmptyAppMap = lazy(() =>
   import("./app-map-empty").then((module) => ({ default: module.EmptyAppMap })),
 );

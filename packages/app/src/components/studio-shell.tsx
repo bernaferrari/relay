@@ -53,7 +53,12 @@ import { StudioShellCombineRail } from "./studio-shell-combine-rail";
 import { StudioShellVariablesDialog } from "./studio-shell-variables-dialog";
 import { readRememberedDevicePanelPreference } from "../lib/studio-shell-preferences";
 import { createStudioBlankMapActions } from "../lib/studio-blank-map-actions";
-import { EmptyAppMap, MapLibrary, RunsWorkspace } from "./studio-shell-workspaces";
+import {
+  ChangesWorkspace,
+  EmptyAppMap,
+  MapLibrary,
+  RunsWorkspace,
+} from "./studio-shell-workspaces";
 import type { WorkspaceController } from "../lib/workspace-controller";
 import { useStudioWorkspaceController } from "../lib/use-studio-workspace-controller";
 
@@ -577,7 +582,7 @@ export function StudioShell(props: {
             // Run history / tree crawl already own the main pane. Keeping the
             // navigator's second copy open makes the same work compete in two
             // columns, so the report surface takes focus immediately.
-            if (nextArea === "runs") setNavOpen(false);
+            if (nextArea === "changes" || nextArea === "runs") setNavOpen(false);
           }}
           query={query()}
           onQuery={setQuery}
@@ -606,7 +611,7 @@ export function StudioShell(props: {
               type="button"
               class={productIconButton}
               aria-label={navOpen() ? "Close library" : "Open library"}
-              data-tip={navOpen() ? "Close library" : "Maps and runs"}
+              data-tip={navOpen() ? "Close library" : "Changes, maps, and runs"}
               onClick={() => setNavOpen((value) => !value)}
             >
               <Icon name="panel-left" size={17} />
@@ -938,6 +943,18 @@ export function StudioShell(props: {
                 onOpenMap={openMap}
                 onOpenTest={openTest}
                 onOpenTests={() => setArea("maps")}
+              />
+            </Suspense>
+          </Show>
+
+          <Show when={area() === "changes"}>
+            <Suspense fallback={<WorkspaceSkeleton label="changes" />}>
+              <ChangesWorkspace
+                onOpenRun={(runId) => {
+                  server.setSelectedJobId(runId);
+                  setArea("runs");
+                }}
+                onOpenMap={openMap}
               />
             </Suspense>
           </Show>

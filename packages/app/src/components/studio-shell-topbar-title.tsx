@@ -3,10 +3,10 @@ import { shellTopbarTitle } from "../lib/shell-layout";
 import { displayTitle } from "../lib/job";
 
 /** The left edge of the shell header: an editable map name in Tests, a static
- * label elsewhere. Kept out of studio-shell so the rename affordance's own
+ * Change or Run label elsewhere. Kept out of studio-shell so the rename affordance's own
  * escape/commit behaviour lives next to the field it belongs to. */
 export function ShellTopbarTitle(props: {
-  area: "maps" | "runs";
+  area: "changes" | "maps" | "runs";
   name: string;
   disabled: boolean;
   onNameInput: (value: string) => void;
@@ -20,7 +20,11 @@ export function ShellTopbarTitle(props: {
       <Show
         when={props.area === "maps"}
         fallback={
-          props.area === "runs" ? (
+          props.area === "changes" ? (
+            <strong class="max-w-full truncate px-2 text-body font-medium text-[var(--text-base)]">
+              Changes
+            </strong>
+          ) : props.area === "runs" ? (
             <strong class="max-w-full truncate px-2 text-body font-medium text-[var(--text-base)]">
               Run history
             </strong>

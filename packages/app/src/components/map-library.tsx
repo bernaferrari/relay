@@ -19,6 +19,7 @@ import { Icon, type IconName } from "./icon";
 type RunFilter = "all" | "attention" | "active";
 
 const AREA_TABS: { id: MapLibraryArea; label: string }[] = [
+  { id: "changes", label: "Changes" },
   { id: "maps", label: "Maps" },
   { id: "runs", label: "Runs" },
 ];
