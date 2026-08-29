@@ -64,6 +64,16 @@ function target(): TargetDefinition {
   };
 }
 
+test("Playwright contexts receive no implicit permissions", () => {
+  const defaultProfile = compileBrowserEnvironment();
+  assert.deepEqual(browserContextOptionsForProfile(defaultProfile, {}).permissions, []);
+
+  const reviewedProfile = compileBrowserEnvironment({ permissions: ["clipboard-read"] });
+  assert.deepEqual(browserContextOptionsForProfile(reviewedProfile, {}).permissions, [
+    "clipboard-read",
+  ]);
+});
+
 test("authoring context is separate while proof contexts are fresh and explicitly closable", async (t) => {
   await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
   if (t.signal.aborted) return;

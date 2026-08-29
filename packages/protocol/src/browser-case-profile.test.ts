@@ -36,6 +36,14 @@ test("browser environment compilation is deterministic and immutable", () => {
   assert.equal(first.offline, true);
 });
 
+test("browser permissions default to none and remain explicit when reviewed", () => {
+  assert.deepEqual(compileBrowserEnvironment().permissions, []);
+  assert.deepEqual(
+    compileBrowserEnvironment({ permissions: ["clipboard-read", "clipboard-write"] }).permissions,
+    ["clipboard-read", "clipboard-write"],
+  );
+});
+
 test("browser profile validation fails closed for unknown fields and engine channels", () => {
   assert.equal(validateBrowserEnvironment({ engine: "safari" }).ok, false);
   assert.equal(validateBrowserEnvironment({ engine: "firefox", channel: "chrome" }).ok, false);

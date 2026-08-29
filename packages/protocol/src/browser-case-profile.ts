@@ -216,7 +216,7 @@ export function compileBrowserEnvironment(input: BrowserEnvironmentInput = {}): 
     colorScheme: parsed.colorScheme ?? "light",
     reducedMotion: parsed.reducedMotion ?? "no-preference",
     ...(parsed.geolocation === undefined ? {} : { geolocation: parsed.geolocation }),
-    permissions: parsed.permissions ?? ["clipboard-read", "clipboard-write"],
+    permissions: parsed.permissions ?? [],
     offline: parsed.offline ?? false,
     ...(parsed.networkProfile === undefined ? {} : { networkProfile: parsed.networkProfile }),
     ...(parsed.authenticationFixtureId === undefined
