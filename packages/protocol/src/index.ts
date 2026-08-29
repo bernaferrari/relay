@@ -47,6 +47,7 @@ export * from "./approval-policy.js";
 export * from "./exploration-policy.js";
 export * from "./verify-change.js";
 export * from "./change-verification.js";
+export * from "./change-proof-decision.js";
 export * from "./change-impact.js";
 export * from "./target-runtime.js";
 export * from "./campaign-capacity-plan.js";

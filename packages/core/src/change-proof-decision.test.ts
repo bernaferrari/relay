@@ -1,0 +1,330 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import type { ChangeProofCaseResult, ChangeVerification } from "@relay/protocol";
+import {
+  agentRepairPacketForDecision,
+  decideChangeVerification,
+  providerCheckForChangeProof,
+  recordChangeVerificationDecision,
+} from "./change-proof-decision.js";
+import {
+  advanceChangeVerification,
+  createChangeVerification,
+  readChangeVerificationHistory,
+} from "./change-verification-store.js";
+import { resetControlDatabaseCache } from "./collaboration-db.js";
+
+const headSha = "2".repeat(40);
+const digest = (character: string) => `sha256:${character.repeat(64)}` as const;
+
+function targetCase(id: string): ChangeVerification["selection"]["targetCases"][number] {
+  return {
+    id,
+    executionTarget: {
+      schemaVersion: 1,
+      kind: "local-browser",
+      provider: { key: "relay.local.browser", scope: "local" },
+      targetId: "web",
+      platform: "browser",
+      identity: { kind: "browser-target", value: "web" },
+    },
+    targetProfile: {
+      id: `web:${id}`,
+      targetId: "web",
+      source: "browser",
+      platform: "browser",
+      name: id,
+      viewport: { width: 390, height: 844 },
+      browserCaseProfile: {
+        schemaVersion: 1,
+        engine: id.includes("webkit") ? "webkit" : "chromium",
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: 2,
+        mobile: true,
+        touch: true,
+        locale: "ar",
+        timezoneId: "UTC",
+        colorScheme: "dark",
+        reducedMotion: "no-preference",
+        permissions: [],
+        offline: false,
+        environmentRevision: "fixture-v1",
+      },
+      capabilities: ["snapshot", "screenshot", "tap"],
+      observedAt: 100,
+    },
+    dimensions: { locale: "ar", engine: id.includes("webkit") ? "webkit" : "chromium" },
+    required: true,
+  };
+}
+
+function proof(): ChangeVerification {
+  return {
+    schemaVersion: 2,
+    id: "proof-1",
+    organizationId: "acme",
+    projectId: "relay",
+    version: 3,
+    state: "running",
+    change: {
+      repository: "acme/settings",
+      baseSha: "1".repeat(40),
+      headSha,
+      pullRequest: 184,
+    },
+    builds: [
+      {
+        id: "web",
+        platform: "web",
+        artifactDigest: digest("a"),
+        sourceSha: headSha,
+        configuration: "production",
+        environmentRevision: "fixture-v1",
+      },
+    ],
+    selection: {
+      affectedJourneys: [
+        {
+          appMapId: "settings",
+          testId: "settings-language",
+          reason: "Settings localization changed.",
+          confidence: "definite",
+        },
+      ],
+      targetCases: [targetCase("chromium-compact-ar"), targetCase("webkit-compact-ar")],
+    },
+    planApproval: {
+      decisionId: "decision-1",
+      approvedBy: "human:reviewer",
+      approvedAt: 200,
+      reason: "Reviewed exact plan.",
+    },
+    policy: { id: "relay.default", version: 3 },
+    runIds: [],
+    evidenceDigests: [],
+    coverageGaps: [],
+    residualRisk: [],
+    smallestNextVerification: { kind: "expand", reason: "Run required coverage." },
+    requestedBy: "agent:coder",
+    updatedBy: "agent:relay",
+    lastMutation: {
+      schemaVersion: 1,
+      requestId: "request-run",
+      requestDigest: digest("f"),
+      action: "start-required-coverage",
+      actorId: "agent:relay",
+      proofId: "proof-1",
+      previousVersion: 2,
+      version: 3,
+      at: 300,
+    },
+    createdAt: 100,
+    updatedAt: 300,
+  };
+}
+
+function result(
+  targetCaseId: string,
+  overrides: Partial<ChangeProofCaseResult> = {},
+): ChangeProofCaseResult {
+  return {
+    appMapId: "settings",
+    testId: "settings-language",
+    targetCaseId,
+    runId: `run-${targetCaseId}`,
+    sourceSha: headSha,
+    buildId: "web",
+    artifactDigest: digest("a"),
+    outcome: "passed",
+    evidenceDigests: [digest(targetCaseId.startsWith("chromium") ? "b" : "c")],
+    evidenceComplete: true,
+    selectorResolution: "deterministic",
+    inputOutcome: "reconciled",
+    cleanup: "restored",
+    ...overrides,
+  };
+}
+
+test("proves only the complete required journey and target matrix", () => {
+  const decision = decideChangeVerification({
+    proof: proof(),
+    caseResults: [result("chromium-compact-ar"), result("webkit-compact-ar")],
+  });
+  assert.equal(decision.decision, "proved");
+  assert.deepEqual(decision.summary, {
+    required: 2,
+    passed: 2,
+    rejected: 0,
+    needsReview: 0,
+    insufficient: 0,
+    missing: 0,
+  });
+  assert.equal(decision.smallestNextVerification.kind, "none");
+  const check = providerCheckForChangeProof({ proof: proof(), decision });
+  assert.equal(check.headSha, headSha);
+  assert.equal(check.conclusion, "success");
+  assert.match(check.text, /Required cases: 2\/2 passed/);
+});
+
+test("missing or incomplete mandatory proof is action-required, never green", () => {
+  const missing = decideChangeVerification({
+    proof: proof(),
+    caseResults: [result("chromium-compact-ar")],
+  });
+  assert.equal(missing.decision, "insufficient-evidence");
+  assert.equal(missing.summary.missing, 1);
+  assert.equal(missing.smallestNextVerification.targetCaseId, "webkit-compact-ar");
+  assert.equal(
+    providerCheckForChangeProof({ proof: proof(), decision: missing }).conclusion,
+    "action-required",
+  );
+
+  const incomplete = decideChangeVerification({
+    proof: proof(),
+    caseResults: [
+      result("chromium-compact-ar", { evidenceComplete: false }),
+      result("webkit-compact-ar"),
+    ],
+  });
+  assert.equal(incomplete.decision, "insufficient-evidence");
+  assert.match(incomplete.coverageGaps[0]!, /did not produce complete mandatory proof/);
+});
+
+test("a definitive causal regression rejects and creates one bounded repair packet", () => {
+  const failed = result("chromium-compact-ar", {
+    outcome: "rejected",
+    failure: {
+      checkId: "rtl-overlap",
+      summary: "Primary action overlaps the Arabic description by 22 px.",
+      expected: "Primary action does not overlap translated content.",
+      observed: "Primary action overlaps the description by 22 px.",
+      evidenceRefs: [digest("d")],
+      relevantLogs: ["visual-check: overlap=22"],
+      suggestedScope: ["src/settings/LanguagePanel.tsx"],
+    },
+  });
+  const decision = decideChangeVerification({ proof: proof(), caseResults: [failed] });
+  assert.equal(decision.decision, "rejected", "a definitive failure dominates missing expansion");
+  assert.equal(decision.firstCausalFailure?.checkId, "rtl-overlap");
+  assert.equal(
+    providerCheckForChangeProof({ proof: proof(), decision }).conclusion,
+    "failure",
+  );
+  const packet = agentRepairPacketForDecision({ proof: proof(), caseResults: [failed] });
+  assert.equal(packet?.proofId, "proof-1");
+  assert.equal(packet?.targetCaseId, "chromium-compact-ar");
+  assert.deepEqual(packet?.rerun, {
+    operationId: "proof.rerun-affected",
+    proofId: "proof-1",
+  });
+  assert.deepEqual(packet?.suggestedScope, ["src/settings/LanguagePanel.tsx"]);
+});
+
+test("ambiguous selectors and unreconciled input require review", () => {
+  for (const drift of [
+    { selectorResolution: "ambiguous" as const },
+    { inputOutcome: "unreconciled" as const },
+    { outcome: "needs-review" as const },
+  ]) {
+    const decision = decideChangeVerification({
+      proof: proof(),
+      caseResults: [
+        result("chromium-compact-ar", drift),
+        result("webkit-compact-ar"),
+      ],
+    });
+    assert.equal(decision.decision, "needs-review");
+    assert.equal(
+      providerCheckForChangeProof({ proof: proof(), decision }).conclusion,
+      "action-required",
+    );
+  }
+});
+
+test("forged head, artifact, build, target, and duplicate result identities fail closed", () => {
+  const valid = result("chromium-compact-ar");
+  for (const forged of [
+    { ...valid, sourceSha: "3".repeat(40) },
+    { ...valid, artifactDigest: digest("e") },
+    { ...valid, buildId: "other" },
+    { ...valid, targetCaseId: "other" },
+    { ...valid, testId: "other" },
+  ]) {
+    assert.throws(() => decideChangeVerification({ proof: proof(), caseResults: [forged] }));
+  }
+  assert.throws(
+    () => decideChangeVerification({ proof: proof(), caseResults: [valid, valid] }),
+    /identities must be unique/,
+  );
+});
+
+test("the server-owned decision transition appends Run and evidence identities", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-decision-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const scope = { organizationId: "acme", projectId: "relay" } as const;
+  try {
+    const template = proof();
+    const created = await createChangeVerification({
+      ...scope,
+      id: template.id,
+      change: template.change,
+      builds: template.builds,
+      selection: template.selection,
+      policy: template.policy,
+      requestedBy: "agent:coder",
+      actorId: "agent:coder",
+      requestId: "start",
+      requestDigest: digest("1"),
+      at: 100,
+    });
+    const ready = await advanceChangeVerification({
+      ...scope,
+      proofId: created.id,
+      expectedVersion: created.version,
+      state: "ready",
+      actorId: "human:reviewer",
+      requestId: "approve",
+      requestDigest: digest("2"),
+      action: "approve-plan",
+      at: 200,
+      planApproval: template.planApproval,
+    });
+    const running = await advanceChangeVerification({
+      ...scope,
+      proofId: ready.id,
+      expectedVersion: ready.version,
+      state: "running-pilot",
+      actorId: "system:relay",
+      requestId: "pilot",
+      requestDigest: digest("3"),
+      action: "start-pilot",
+      at: 300,
+    });
+    const proved = await recordChangeVerificationDecision({
+      ...scope,
+      proofId: running.id,
+      expectedVersion: running.version,
+      caseResults: [result("chromium-compact-ar"), result("webkit-compact-ar")],
+      actorId: "system:relay",
+      requestId: "decision",
+      requestDigest: digest("4"),
+      at: 400,
+    });
+    assert.equal(proved.state, "proved");
+    assert.deepEqual(proved.runIds, ["run-chromium-compact-ar", "run-webkit-compact-ar"]);
+    assert.deepEqual(proved.evidenceDigests, [digest("b"), digest("c")]);
+    assert.deepEqual(
+      (await readChangeVerificationHistory(scope, proved.id)).map(({ state }) => state),
+      ["planning", "ready", "running-pilot", "proved"],
+    );
+  } finally {
+    resetControlDatabaseCache();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
