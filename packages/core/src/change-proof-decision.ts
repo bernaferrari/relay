@@ -30,6 +30,25 @@ function bounded(values: readonly string[], limit = 128): string[] {
   return [...result.slice(0, limit - 1), `Additional items omitted: ${result.length - limit + 1}`];
 }
 
+const INFRASTRUCTURE_GAP_PREFIX = "Infrastructure failure in Run ";
+
+function providerClassification(
+  proof: ChangeVerification,
+  decision?: ChangeProofDecision,
+): ChangeProofProviderCheck["classification"] {
+  if (proof.state === "superseded") return "superseded";
+  const durableDecision = decision?.decision ?? proof.decision;
+  const gaps = decision?.coverageGaps ?? proof.coverageGaps;
+  if (
+    durableDecision === "insufficient-evidence" &&
+    gaps.some((gap) => gap.startsWith(INFRASTRUCTURE_GAP_PREFIX))
+  ) {
+    return "infrastructure-failure";
+  }
+  if (!durableDecision) throw new Error("A provider check requires a terminal Proof decision");
+  return durableDecision;
+}
+
 function platformForTargetCase(
   targetCase: ChangeVerification["selection"]["targetCases"][number],
 ): ChangeVerification["builds"][number]["platform"] {
@@ -110,9 +129,13 @@ export function decideChangeVerification(input: {
       result.selectorResolution === "ambiguous" ||
       result.inputOutcome === "unreconciled",
   );
+  const firstInfrastructure = requiredResults.find(
+    ({ outcome }) => outcome === "infrastructure-failure",
+  );
   const insufficient = requiredResults.filter(
     (result) =>
       result.outcome === "insufficient-evidence" ||
+      result.outcome === "infrastructure-failure" ||
       !result.evidenceComplete ||
       result.selectorResolution === "unproven" ||
       result.cleanup === "unproved",
@@ -124,6 +147,11 @@ export function decideChangeVerification(input: {
         `Missing required Run for ${appMapId}/${testId} on target case ${targetCaseId}.`,
     ),
     ...insufficient.map(({ runId }) => `Run ${runId} did not produce complete mandatory proof.`),
+    ...(firstInfrastructure?.failure
+      ? [
+          `${INFRASTRUCTURE_GAP_PREFIX}${firstInfrastructure.runId}: ${firstInfrastructure.failure.summary}`,
+        ]
+      : []),
   ]);
   const residualRisk = bounded([
     ...proof.residualRisk,
@@ -252,13 +280,14 @@ export function providerCheckForChangeProof(input: {
 }): ChangeProofProviderCheck {
   const proof = parseChangeVerification(input.proof);
   const decision = changeProofDecisionSchema.parse(input.decision);
+  const classification = providerClassification(proof, decision);
   const conclusion =
     decision.decision === "proved"
       ? "success"
       : decision.decision === "rejected"
         ? "failure"
         : "action-required";
-  const title = `Relay Proof — ${decision.decision.toUpperCase().replaceAll("-", " ")}`;
+  const title = `Relay Proof — ${classification.toUpperCase().replaceAll("-", " ")}`;
   const lines = [
     `Head: ${proof.change.headSha}`,
     `Required cases: ${decision.summary.passed}/${decision.summary.required} passed`,
@@ -281,6 +310,7 @@ export function providerCheckForChangeProof(input: {
     headSha: proof.change.headSha,
     status: "completed",
     conclusion,
+    classification,
     title,
     summary: decision.smallestNextVerification.reason,
     text: lines.join("\n"),
@@ -296,11 +326,11 @@ export function providerCheckForStoredChangeProof(input: {
   detailsUrl?: string;
 }): ChangeProofProviderCheck {
   const proof = parseChangeVerification(input.proof);
-  if (!proof.decision) throw new Error("A provider check requires a terminal Proof decision");
+  const classification = providerClassification(proof);
   const conclusion =
-    proof.decision === "proved"
+    classification === "proved"
       ? "success"
-      : proof.decision === "rejected"
+      : classification === "rejected"
         ? "failure"
         : "action-required";
   const requiredCases =
@@ -312,6 +342,9 @@ export function providerCheckForStoredChangeProof(input: {
     `Recorded Runs: ${proof.runIds.length}`,
     `Evidence objects: ${proof.evidenceDigests.length}`,
     `Policy: ${proof.policy.id}.v${proof.policy.version}`,
+    ...(proof.state === "superseded" && proof.supersededByProofId
+      ? [`Superseded by Proof: ${proof.supersededByProofId}`]
+      : []),
     ...(proof.firstCausalFailure
       ? [`First causal failure: ${proof.firstCausalFailure.summary}`]
       : []),
@@ -329,12 +362,15 @@ export function providerCheckForStoredChangeProof(input: {
     headSha: proof.change.headSha,
     status: "completed",
     conclusion,
-    title: `Relay Proof — ${proof.decision.toUpperCase().replaceAll("-", " ")}`,
+    classification,
+    title: `Relay Proof — ${classification.toUpperCase().replaceAll("-", " ")}`,
     summary:
-      proof.smallestNextVerification?.reason ??
-      (proof.decision === "proved"
-        ? "Every policy-required case has complete proof."
-        : "Review the durable Proof before merge."),
+      classification === "superseded"
+        ? `This Proof was superseded by ${proof.supersededByProofId}. Merge authority belongs to the replacement head.`
+        : (proof.smallestNextVerification?.reason ??
+          (classification === "proved"
+            ? "Every policy-required case has complete proof."
+            : "Review the durable Proof before merge.")),
     text: lines.join("\n"),
     ...(input.detailsUrl ? { detailsUrl: input.detailsUrl } : {}),
   });

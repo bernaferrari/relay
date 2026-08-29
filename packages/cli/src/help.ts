@@ -13,7 +13,7 @@ const familyGroups = [
   ["Authoring", ["variable", "test", "combine", "proposal", "session", "routine", "case-stack"]],
   ["Explore", ["discovery"]],
   ["Proof", ["proof"]],
-  ["Operate", ["device", "run", "report", "activity"]],
+  ["Operate", ["device", "run", "report", "activity", "verify-change"]],
   ["Automation", ["schedule", "matrix"]],
   ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],
 ] as const;
@@ -80,6 +80,7 @@ function familyNames(): Set<string> {
     ...friendlyPaths().map(({ descriptor }) => descriptor.command.split(" ")[0]!),
     "db",
     "report",
+    "verify-change",
   ]);
 }
 
@@ -140,6 +141,7 @@ Usage:
   relay verify-change run <runId...>
   relay verify-change test <appMapId> <testId...>
   relay verify-change revision <gitSha>
+  relay verify-change --base <ref> [--config-file <path>] [--confirm]
   relay proof start --input-file ./proof.json
   relay proof list
   relay proof inspect <proof-id> [--history]
@@ -237,6 +239,32 @@ Usage:
   relay operation invoke <operationId> (--input <json> | --input-file <path>) [global options]
 
 Unlike friendly commands, operation invoke always requires --input or --input-file.
+
+${globalOptions}
+`;
+  }
+  if (family === "verify-change") {
+    return `Relay verify-change commands
+
+Usage:
+  relay verify-change --base <ref> [--config-file <path>] [--confirm]
+  relay verify-change run <runId...>
+  relay verify-change test <appMapId> <testId...>
+  relay verify-change revision <gitSha>
+
+The --base form reads the reviewed .relay/change-proof.json (or --config-file),
+resolves exact local Git base/HEAD SHAs and changed files, compiles an explained
+Verification Plan, and creates one durable Proof only with --confirm. For a
+complete executable plan, --confirm also requests human approval, runs the
+deterministic local pilot, records its persisted Run, and expands required cases
+sequentially. The server derives the terminal Proof decision from Run evidence;
+provider-session targets fail closed.
+
+Options for the --base form:
+  --base <ref>                     Exact local Git base ref (required)
+  --config-file <path>             Reviewed JSON config (default .relay/change-proof.json)
+  --config <path>                  Alias for --config-file
+  --confirm                        Authorize Proof creation and its live local lifecycle
 
 ${globalOptions}
 `;

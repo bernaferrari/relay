@@ -8,6 +8,7 @@ import type { RunRouteRuntime } from "./run-routes.js";
 import type { StepRunRouteRuntime } from "./step-run-route.js";
 import type { TargetRuntimeRouteRuntime } from "./target-runtime-routes.js";
 import type { WorkflowRouteRuntime } from "./workflow-routes.js";
+import type { ChangeVerificationRouteRuntime } from "./change-verification-routes.js";
 
 /** Host-owned server seams, kept separate from the HTTP router implementation. */
 export type StartServerOptions = {
@@ -37,6 +38,8 @@ export type StartServerOptions = {
   workflowRouteRuntime?: Partial<WorkflowRouteRuntime>;
   /** Test seam for repair-retry intent ordering. */
   runRouteRuntime?: Partial<RunRouteRuntime>;
+  /** Test seam for server-owned Proof Run projection and lifecycle transitions. */
+  proofRouteRuntime?: Partial<ChangeVerificationRouteRuntime>;
   /** Test seam for standalone-step execution without a physical target. */
   stepRunRuntime?: Partial<StepRunRouteRuntime>;
 };

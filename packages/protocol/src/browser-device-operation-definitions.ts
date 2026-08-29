@@ -5,6 +5,8 @@ type BrowserDeviceOperationId =
   | "target.open"
   | "target.browser-device.open"
   | "target.browser-device.frame"
+  | "target.browser-device.frame-binary"
+  | "target.browser-device.inspect"
   | "target.browser-device.control";
 
 const { command, query } =
@@ -29,6 +31,18 @@ export const browserDeviceOperationDefinitions = [
     "Capture Browser Device frame",
     "/targets/:targetId/browser-device/frame",
     { category: "target", lease: "shared", targetCapabilities: ["screenshot"] },
+  ),
+  query(
+    "target.browser-device.frame-binary",
+    "Capture Browser Device binary frame",
+    "/targets/:targetId/browser-device/frame.bin",
+    { category: "target", lease: "shared", targetCapabilities: ["screenshot"] },
+  ),
+  query(
+    "target.browser-device.inspect",
+    "Inspect Browser Device labels",
+    "/targets/:targetId/browser-device/inspect",
+    { category: "target", lease: "shared", targetCapabilities: ["snapshot"] },
   ),
   command(
     "target.browser-device.control",

@@ -1,5 +1,4 @@
 import type {
-  Browser,
   BrowserContext,
   BrowserContextOptions,
   BrowserType,
@@ -11,6 +10,7 @@ import { compileBrowserEnvironment } from "@relay/protocol";
 import { browserExecutable, browserProfileDir } from "./targets.js";
 import { assertSupportedBrowserCaseProfile } from "./browser-profile-support.js";
 import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
+import { browserHostPool } from "./browser-host-pool.js";
 
 export type BrowserContextPurpose = "authoring" | "proof";
 
@@ -83,21 +83,6 @@ function launchOptions(
   return browserOptions;
 }
 
-async function closeBrowserAndContext(browser: Browser, context: BrowserContext): Promise<void> {
-  let firstError: unknown;
-  try {
-    await context.close();
-  } catch (error) {
-    firstError = error;
-  }
-  try {
-    await browser.close();
-  } catch (error) {
-    firstError ??= error;
-  }
-  if (firstError) throw firstError;
-}
-
 function idempotentClose(operation: () => Promise<void>): () => Promise<void> {
   let closed: Promise<void> | undefined;
   return () => {
@@ -130,21 +115,23 @@ async function openFreshProofContext(
   profile: BrowserCaseProfile,
   options: BrowserContextOpenOptions,
 ): Promise<BrowserContextHandle> {
-  const browser = await BROWSER_TYPES[profile.engine].launch(
-    launchOptions(target, profile, options),
-  );
-  try {
-    const context = await browser.newContext(browserContextOptionsForProfile(profile, options));
-    return {
-      context,
-      profile,
-      purpose: "proof",
-      close: idempotentClose(() => closeBrowserAndContext(browser, context)),
-    };
-  } catch (error) {
-    await browser.close().catch(() => undefined);
-    throw error;
-  }
+  const launch = launchOptions(target, profile, options);
+  const lease = await browserHostPool.openContext({
+    identity: {
+      engine: profile.engine,
+      ...(profile.channel === undefined ? {} : { channel: profile.channel }),
+      ...(profile.revision === undefined ? {} : { revision: profile.revision }),
+      launchOptions: launch,
+    },
+    browserType: BROWSER_TYPES[profile.engine],
+    contextOptions: browserContextOptionsForProfile(profile, options),
+  });
+  return {
+    context: lease.context,
+    profile,
+    purpose: "proof",
+    close: idempotentClose(lease.close),
+  };
 }
 
 /** Build an explicit factory for one managed target. The profile is compiled

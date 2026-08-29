@@ -7,7 +7,13 @@ export type OperationInvoker = {
   invoke(
     operationId: OperationId,
     input: never,
-    options?: { signal?: AbortSignal },
+    options?: {
+      signal?: AbortSignal;
+      requestId?: string;
+      idempotencyKey?: string;
+      causationId?: string;
+      correlationId?: string;
+    },
   ): Promise<unknown>;
   events(
     callback: (event: EventEnvelope) => void,
@@ -40,9 +46,10 @@ export async function invokeOperation(
   operationId: string,
   input: unknown,
   signal: AbortSignal,
+  identity?: { requestId: string; idempotencyKey: string },
 ): Promise<unknown> {
   validateOperationId(operationId);
-  return client.invoke(operationId, input as never, { signal });
+  return client.invoke(operationId, input as never, { signal, ...identity });
 }
 
 export async function readResource(

@@ -270,6 +270,30 @@ function requestedArtifacts(run: PersistedRun, maxArtifacts: number): RequestedA
       emit,
     ),
   );
+  // Browser proof envelopes name the portable files backing each required
+  // channel. Treat those names as ordinary run artifacts so a captured
+  // channel cannot claim a path that the TracePack does not contain.
+  run.artifacts.forEach((artifact, index) => {
+    if (artifact.kind !== "browser-proof-evidence") return;
+    const data = artifact.data;
+    if (!data || typeof data !== "object" || Array.isArray(data)) return;
+    const channels = (data as { channels?: unknown }).channels;
+    if (!channels || typeof channels !== "object" || Array.isArray(channels)) return;
+    for (const [channel, record] of Object.entries(channels as Record<string, unknown>)) {
+      if (!record || typeof record !== "object" || Array.isArray(record)) continue;
+      const refs = (record as { artifactRefs?: unknown }).artifactRefs;
+      if (!Array.isArray(refs)) continue;
+      for (const [refIndex, ref] of refs.entries()) {
+        if (typeof ref === "string") {
+          emit(
+            ref,
+            `run.artifacts[${index}].data.channels.${channel}.artifactRefs[${refIndex}]`,
+            channel,
+          );
+        }
+      }
+    }
+  });
   collectNestedPaths(run.result, "run.result", undefined, emit);
   run.evidence?.events.forEach((event, index) => {
     collectNestedPaths(event.data, `run.evidence.events[${index}].data`, event.channel, emit);

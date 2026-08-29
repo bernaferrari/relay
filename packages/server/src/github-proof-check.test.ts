@@ -11,6 +11,7 @@ const check: ChangeProofProviderCheck = {
   headSha,
   status: "completed",
   conclusion: "action-required",
+  classification: "insufficient-evidence",
   title: "Relay Proof — INSUFFICIENT EVIDENCE",
   summary: "Run the smallest missing required case.",
   text: "Required cases: 2/3 passed",

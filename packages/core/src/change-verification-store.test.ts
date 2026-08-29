@@ -89,6 +89,7 @@ function selection(): ChangeVerification["selection"] {
       {
         appMapId: "settings",
         testId: "settings-language",
+        appMapRevision: 7,
         reason: "The changed localization resources are bound to this Test.",
         confidence: "definite",
       },
@@ -243,6 +244,63 @@ test("Proof reads and lists are isolated by organization and project", async () 
     assert.deepEqual(
       await listChangeVerifications({ organizationId: scope.organizationId, projectId: "other" }),
       [],
+    );
+  });
+});
+
+test("running Proofs only permit same-state append through record-runs", async () => {
+  await withStateRoot(async () => {
+    const created = await createChangeVerification(
+      createInput({ builds: buildsFor(), selection: selection() }),
+    );
+    const ready = await advanceChangeVerification({
+      ...scope,
+      proofId: created.id,
+      expectedVersion: created.version,
+      state: "ready",
+      actorId: "human:reviewer",
+      requestId: "request-approve",
+      requestDigest: digest,
+      action: "approve-plan",
+      at: 200,
+      planApproval: planApproval(),
+    });
+    const pilot = await advanceChangeVerification({
+      ...scope,
+      proofId: ready.id,
+      expectedVersion: ready.version,
+      state: "running-pilot",
+      actorId: "agent:relay",
+      requestId: "request-pilot",
+      requestDigest: digest,
+      action: "start-pilot",
+      at: 300,
+    });
+    const running = await advanceChangeVerification({
+      ...scope,
+      proofId: pilot.id,
+      expectedVersion: pilot.version,
+      state: "running",
+      actorId: "agent:relay",
+      requestId: "request-expansion",
+      requestDigest: digest,
+      action: "start-required-coverage",
+      at: 400,
+    });
+    await assert.rejects(
+      advanceChangeVerification({
+        ...scope,
+        proofId: running.id,
+        expectedVersion: running.version,
+        state: "running",
+        actorId: "agent:relay",
+        requestId: "request-invalid-same-state",
+        requestDigest: digest,
+        action: "approve-plan",
+        at: 500,
+      }),
+      (error) =>
+        error instanceof ChangeVerificationConflictError && error.code === "PROOF_IMMUTABLE",
     );
   });
 });

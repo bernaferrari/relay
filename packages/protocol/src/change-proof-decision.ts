@@ -15,7 +15,13 @@ export const changeProofCaseResultSchema = z
     sourceSha: exactGitSha,
     buildId: identifier,
     artifactDigest: sha256,
-    outcome: z.enum(["passed", "rejected", "needs-review", "insufficient-evidence"]),
+    outcome: z.enum([
+      "passed",
+      "rejected",
+      "needs-review",
+      "insufficient-evidence",
+      "infrastructure-failure",
+    ]),
     evidenceDigests: z.array(sha256).min(1).max(128).readonly(),
     evidenceComplete: z.boolean(),
     selectorResolution: z.enum(["deterministic", "ambiguous", "unproven"]),
@@ -39,8 +45,15 @@ export const changeProofCaseResultSchema = z
     if (new Set(result.evidenceDigests).size !== result.evidenceDigests.length) {
       context.addIssue({ code: "custom", path: ["evidenceDigests"], message: "must be unique" });
     }
-    if (result.outcome === "rejected" && !result.failure) {
-      context.addIssue({ code: "custom", path: ["failure"], message: "is required for rejection" });
+    if (
+      (result.outcome === "rejected" || result.outcome === "infrastructure-failure") &&
+      !result.failure
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["failure"],
+        message: "is required for rejection or infrastructure failure",
+      });
     }
   });
 
@@ -116,6 +129,14 @@ export const changeProofProviderCheckSchema = z
     headSha: exactGitSha,
     status: z.literal("completed"),
     conclusion: z.enum(["success", "failure", "action-required"]),
+    classification: z.enum([
+      "proved",
+      "rejected",
+      "needs-review",
+      "insufficient-evidence",
+      "infrastructure-failure",
+      "superseded",
+    ]),
     title: boundedText,
     summary: boundedText,
     text: z.string().max(65_535),

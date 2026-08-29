@@ -90,6 +90,17 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     reason: "Browser Device frames are renderer media transport, not a CLI command.",
   },
   {
+    operationId: "target.browser-device.frame-binary",
+    exclusion: "internal",
+    reason: "Browser Device binary frames are renderer media transport, not a CLI command.",
+  },
+  {
+    operationId: "target.browser-device.inspect",
+    exclusion: "internal",
+    reason:
+      "Browser Device semantic overlays are renderer-bound frame inspection, not a CLI command.",
+  },
+  {
     operationId: "target.browser-device.control",
     exclusion: "internal",
     reason: "Browser Device input must stay bound to the renderer's painted frame.",
@@ -480,6 +491,25 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     exclusion: "internal",
     reason: "The Repeat workflow uses this read-only lookup to adopt durable unfinished work.",
   },
+  mapped(
+    "job.combine.campaign.repeat.clusters",
+    path("combine campaign failures", ["batchId"], undefined, {
+      summary: "Review equivalent Repeat failure clusters before a selective rerun",
+      argumentHelp: [{ name: "batchId", type: "string", description: "Combine campaign ID" }],
+      inputHelp: [
+        {
+          name: "failureKind",
+          type: "causal | visual | localization | network | crash",
+          description: "Optional deterministic failure-signature filter",
+        },
+        {
+          name: "cohort",
+          type: "string",
+          description: "Optional exact target cohort filter",
+        },
+      ],
+    }),
+  ),
   mapped(
     "job.combine.campaign.resume",
     path("combine campaign resume", ["batchId"], undefined, {

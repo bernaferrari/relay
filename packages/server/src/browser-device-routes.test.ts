@@ -6,8 +6,11 @@ import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
 import {
+  browserMutationAdmissionStats,
   closeBrowserTarget,
+  MAX_BROWSER_DEVICE_INPUT_QUEUE,
   resetBrowserDeviceSessionsForTests,
+  resetBrowserMutationAdmissionsForTests,
   resetControlDatabaseCache,
 } from "@relay/core";
 import { startServer } from "./index.js";
@@ -23,9 +26,14 @@ test("Browser Device routes bind input to the painted page sequence", async (t) 
   process.env.RELAY_STATE_DIR = root;
   process.env.RELAY_WORKSPACE_ROOT = root;
   resetControlDatabaseCache();
-  const product = http.createServer((_request, response) => {
+  const product = http.createServer(async (request, response) => {
+    if (request.url === "/slow") await new Promise((resolve) => setTimeout(resolve, 1_000));
     response.setHeader("content-type", "text/html");
-    response.end("<!doctype html><title>Browser Device test</title><button>Continue</button>");
+    response.end(
+      request.url === "/mutating"
+        ? "<!doctype html><title>Browser Device test</title><button>Continue</button><script>setTimeout(() => { document.body.style.background = 'rgb(255, 0, 0)'; document.querySelector('button').textContent = 'Changed'; }, 600)</script>"
+        : "<!doctype html><title>Browser Device test</title><button>Continue</button>",
+    );
   });
   await new Promise<void>((resolve) => product.listen(0, "127.0.0.1", resolve));
   const productAddress = product.address();
@@ -53,6 +61,18 @@ test("Browser Device routes bind input to the painted page sequence", async (t) 
     const first = await client.invoke("target.browser-device.frame", { targetId: target.id });
     assert.equal(first.frame.sequence, 1);
     assert.equal(first.frame.sessionId, opened.session.sessionId);
+    const inspected = await client.invoke("target.browser-device.inspect", {
+      targetId: target.id,
+      sessionId: first.frame.sessionId,
+      pageId: first.frame.pageId,
+      expectedSequence: first.frame.sequence,
+    });
+    assert.equal(inspected.overlay.sessionId, first.frame.sessionId);
+    assert.equal(inspected.overlay.pageId, first.frame.pageId);
+    assert.equal(inspected.overlay.sequence, first.frame.sequence);
+    assert.equal(inspected.overlay.visualFingerprint, first.frame.visualFingerprint);
+    assert.equal(inspected.overlay.candidates[0]?.label, "Continue");
+    assert.equal(inspected.overlay.candidates[0]?.locator?.strategy, "role-name");
     await client.invoke("target.browser-device.control", {
       targetId: target.id,
       input: {
@@ -60,14 +80,51 @@ test("Browser Device routes bind input to the painted page sequence", async (t) 
         pageId: first.frame.pageId,
         expectedSequence: first.frame.sequence,
         kind: "navigate",
+        url: `${startUrl}/mutating`,
+      },
+    });
+    const autonomousFrame = await client.invoke("target.browser-device.frame", {
+      targetId: target.id,
+      afterSequence: first.frame.sequence,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    await assert.rejects(
+      client.invoke("target.browser-device.inspect", {
+        targetId: target.id,
+        sessionId: autonomousFrame.frame.sessionId,
+        pageId: autonomousFrame.frame.pageId,
+        expectedSequence: autonomousFrame.frame.sequence,
+      }),
+      (error) => error instanceof ApiError && error.status === 409,
+    );
+    const freshAutonomousFrame = await client.invoke("target.browser-device.frame", {
+      targetId: target.id,
+      afterSequence: autonomousFrame.frame.sequence,
+    });
+    await client.invoke("target.browser-device.control", {
+      targetId: target.id,
+      input: {
+        sessionId: freshAutonomousFrame.frame.sessionId,
+        pageId: freshAutonomousFrame.frame.pageId,
+        expectedSequence: freshAutonomousFrame.frame.sequence,
+        kind: "navigate",
         url: `${startUrl}/next`,
       },
     });
     await assert.rejects(
+      client.invoke("target.browser-device.inspect", {
+        targetId: target.id,
+        sessionId: first.frame.sessionId,
+        pageId: first.frame.pageId,
+        expectedSequence: first.frame.sequence,
+      }),
+      (error) => error instanceof ApiError && error.status === 409,
+    );
+    await assert.rejects(
       client.invoke("target.browser-device.control", {
         targetId: target.id,
         input: {
-          sessionId: first.session.sessionId,
+          sessionId: first.frame.sessionId,
           pageId: first.frame.pageId,
           expectedSequence: first.frame.sequence,
           kind: "click",
@@ -79,10 +136,85 @@ test("Browser Device routes bind input to the painted page sequence", async (t) 
     );
     const second = await client.invoke("target.browser-device.frame", {
       targetId: target.id,
-      afterSequence: first.frame.sequence,
+      afterSequence: freshAutonomousFrame.frame.sequence,
     });
-    assert.equal(second.frame.sequence, 2);
+    assert.equal(second.frame.sequence, 4);
     assert.match(second.frame.pageUrl, /\/next$/u);
+
+    const slowInput = client.invoke("target.browser-device.control", {
+      targetId: target.id,
+      input: {
+        sessionId: second.session.sessionId,
+        pageId: second.frame.pageId,
+        expectedSequence: second.frame.sequence,
+        kind: "navigate",
+        url: `${startUrl}/slow`,
+      },
+    });
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (browserMutationAdmissionStats(target.id).pending > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(browserMutationAdmissionStats(target.id).pending, 1);
+    const queuedInputs = Array.from({ length: MAX_BROWSER_DEVICE_INPUT_QUEUE - 1 }, () =>
+      client.invoke("target.browser-device.control", {
+        targetId: target.id,
+        input: {
+          sessionId: second.session.sessionId,
+          pageId: second.frame.pageId,
+          expectedSequence: second.frame.sequence,
+          kind: "click",
+          x: 10,
+          y: 10,
+        },
+      }),
+    );
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (browserMutationAdmissionStats(target.id).pending >= MAX_BROWSER_DEVICE_INPUT_QUEUE) break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(browserMutationAdmissionStats(target.id).pending, MAX_BROWSER_DEVICE_INPUT_QUEUE);
+    await assert.rejects(
+      client.invoke("target.browser-device.control", {
+        targetId: target.id,
+        input: {
+          sessionId: second.session.sessionId,
+          pageId: second.frame.pageId,
+          expectedSequence: second.frame.sequence,
+          kind: "click",
+          x: 10,
+          y: 10,
+        },
+      }),
+      (error) =>
+        error instanceof ApiError &&
+        error.status === 429 &&
+        (error.body as { code?: unknown } | undefined)?.code === "BROWSER_INPUT_OVERLOADED",
+    );
+    await Promise.allSettled([slowInput, ...queuedInputs]);
+    const binary = await client.binaryResource(
+      `/targets/${encodeURIComponent(target.id)}/browser-device/frame.bin?afterSequence=${second.frame.sequence}`,
+    );
+    assert.equal(binary.headers.get("x-relay-browser-device-transport"), "binary");
+    assert.equal(binary.headers.get("content-type"), "application/x-relay-browser-device-frame");
+    assert(binary.bytes.byteLength > 4);
+    const metadataLength = new DataView(binary.bytes.buffer, binary.bytes.byteOffset, 4).getUint32(
+      0,
+    );
+    const metadataEnd = 4 + metadataLength;
+    const metadata = JSON.parse(
+      new TextDecoder().decode(binary.bytes.subarray(4, metadataEnd)),
+    ) as {
+      transport: string;
+      session: { sessionId: string };
+      frame: { sessionId: string; pageId: string; sequence: number; visualFingerprint: string };
+    };
+    assert.equal(metadata.transport, "binary");
+    assert.equal(metadata.session.sessionId, second.session.sessionId);
+    assert.equal(metadata.frame.sessionId, second.frame.sessionId);
+    assert.equal(metadata.frame.pageId, second.frame.pageId);
+    assert.equal(metadata.frame.sequence, second.frame.sequence + 1);
+    assert.equal(typeof metadata.frame.visualFingerprint, "string");
     await client.invoke("target.delete", { targetId: target.id });
     await assert.rejects(
       client.invoke("target.browser-device.frame", { targetId: target.id }),
@@ -105,6 +237,7 @@ test("Browser Device routes bind input to the painted page sequence", async (t) 
   } finally {
     await closeBrowserTarget(undefined, { mode: "authoring" });
     resetBrowserDeviceSessionsForTests();
+    resetBrowserMutationAdmissionsForTests();
     await server.close();
     await new Promise<void>((resolve, reject) =>
       product.close((error) => (error ? reject(error) : resolve())),

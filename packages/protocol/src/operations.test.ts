@@ -211,6 +211,64 @@ test("Proof exposes six canonical lifecycle operations plus its additive list qu
       confirm: true,
     }),
   );
+  const proofContinue = operationDefinition("proof.continue").input;
+  assert.doesNotThrow(() =>
+    proofContinue.parse({
+      proofId: "proof-1",
+      expectedVersion: 1,
+      action: "start-pilot",
+      reason: "Run the representative Proof case.",
+    }),
+  );
+  assert.doesNotThrow(() =>
+    proofContinue.parse({
+      proofId: "proof-1",
+      expectedVersion: 1,
+      action: "start-required-coverage",
+      reason: "Run the remaining required Proof cases.",
+    }),
+  );
+  assert.doesNotThrow(() =>
+    proofContinue.parse({
+      proofId: "proof-1",
+      expectedVersion: 1,
+      action: "record-runs",
+      runIds: ["run-1"],
+    }),
+  );
+  assert.throws(
+    () =>
+      proofContinue.parse({
+        proofId: "proof-1",
+        expectedVersion: 1,
+        action: "record-runs",
+        runIds: ["run-1"],
+        verdict: "passed",
+      }),
+    /Unrecognized key/u,
+  );
+  assert.throws(
+    () =>
+      proofContinue.parse({
+        proofId: "proof-1",
+        expectedVersion: 1,
+        action: "start-pilot",
+        reason: "Run it.",
+        runIds: ["run-1"],
+      }),
+    /only valid for record-runs/u,
+  );
+  assert.throws(
+    () =>
+      proofContinue.parse({
+        proofId: "proof-1",
+        expectedVersion: 1,
+        action: "record-runs",
+        runIds: ["run-1"],
+        reason: "This cannot become a client verdict.",
+      }),
+    /only runIds/u,
+  );
 });
 
 test("run review can request another human decision without resolving the Run", () => {

@@ -29,6 +29,13 @@ import { runDbCommand } from "./db-commands.js";
 import { runReportCommand } from "./report-commands.js";
 import { ensureLocalRelayServer, type LocalServerResult } from "./local-server.js";
 import { readReplayLabTracePacks } from "./replay-lab-files.js";
+import {
+  runVerifyChangeCommand,
+  type VerifyChangeJobPoller,
+  type VerifyChangeConfigReader,
+  type VerifyChangeGitRunner,
+  type VerifyChangeSleep,
+} from "./verify-change-command.js";
 
 export type CliDependencies = {
   env?: Record<string, string | undefined>;
@@ -37,6 +44,15 @@ export type CliDependencies = {
   registerSignalHandlers?: boolean;
   pollIntervalMs?: number;
   ensureOutcomeServer?: (serverUrl: string) => Promise<LocalServerResult>;
+  verifyChange?: {
+    readConfig?: VerifyChangeConfigReader;
+    git?: VerifyChangeGitRunner;
+    cwd?: string;
+    poll?: VerifyChangeJobPoller;
+    sleep?: VerifyChangeSleep;
+    pollIntervalMs?: number;
+    pollTimeoutMs?: number;
+  };
 };
 
 const processStreams: OutputStreams = { stdout: process.stdout, stderr: process.stderr };
@@ -465,7 +481,9 @@ export async function runCli(
         ? parsed.operationId
         : parsed.command === "resource"
           ? parsed.resourceId
-          : outcomeOperationId(parsed.intent.kind);
+          : parsed.command === "verify-change"
+            ? "proof.start"
+            : outcomeOperationId(parsed.intent.kind);
     const commandPath = "commandPath" in parsed ? parsed.commandPath : undefined;
     const abort = new AbortController();
     const cancel = () => abort.abort();
@@ -476,8 +494,8 @@ export async function runCli(
     try {
       if (parsed.command === "invoke") validateOperationId(operationId);
       if (
-        parsed.command === "outcome" &&
-        parsed.intent.kind !== "replay-lab" &&
+        ((parsed.command === "outcome" && parsed.intent.kind !== "replay-lab") ||
+          (parsed.command === "verify-change" && parsed.confirm)) &&
         parsed.config.ensureLocalServer
       ) {
         output.heartbeat("Ensuring the local Relay server is ready");
@@ -486,7 +504,24 @@ export async function runCli(
         );
       }
       const client = (dependencies.createClient ?? createClient)(parsed.config);
-      if (parsed.command === "outcome") {
+      if (parsed.command === "verify-change") {
+        const result = await runVerifyChangeCommand({
+          base: parsed.base,
+          configFile: parsed.configFile,
+          confirm: parsed.confirm,
+          cwd: dependencies.verifyChange?.cwd ?? (dependencies.env ?? process.env).INIT_CWD,
+          readConfig: dependencies.verifyChange?.readConfig,
+          git: dependencies.verifyChange?.git,
+          actorKind: parsed.config.connection.actorKind,
+          poll: dependencies.verifyChange?.poll,
+          sleep: dependencies.verifyChange?.sleep,
+          pollIntervalMs: dependencies.verifyChange?.pollIntervalMs ?? dependencies.pollIntervalMs,
+          pollTimeoutMs: dependencies.verifyChange?.pollTimeoutMs,
+          client,
+          signal: abort.signal,
+        });
+        output.result(operationId, result);
+      } else if (parsed.command === "outcome") {
         output.progress(operationId, "invoking");
         const result = await runOutcomeCommand({
           parsed,

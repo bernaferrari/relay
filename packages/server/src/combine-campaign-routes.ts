@@ -302,9 +302,10 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           })),
           explicitRerunCellIds ? { onlyCellIds: explicitRerunCellIds } : {},
         );
-        const resumePlan = prepareSelectedCombineCampaignResume(causalRerun.campaign, {
-          ...(explicitRerunCellIds ? { cellIds: explicitRerunCellIds } : {}),
-        });
+        const resumePlan = prepareSelectedCombineCampaignResume(
+          causalRerun.campaign,
+          explicitRerunCellIds ? { cellIds: explicitRerunCellIds } : {},
+        );
         if (resumePlan.retriedTerminalCellIds.length && body.reviewed !== true) {
           throw new HttpError(
             409,

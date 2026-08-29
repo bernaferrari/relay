@@ -9,7 +9,10 @@ import {
   BrowserDeviceConflictError,
   captureBrowserDeviceFrame,
   controlBrowserDevice,
+  MAX_BROWSER_DEVICE_OPEN_POPUPS,
+  MAX_BROWSER_DEVICE_PAGE_TOMBSTONES,
   openBrowserDeviceSession,
+  readBrowserDeviceSession,
   resetBrowserDeviceSessionsForTests,
 } from "./browser-device-session.js";
 import { createBrowserContextFactory } from "./browser-context.js";
@@ -171,6 +174,117 @@ test("in-app Browser Device sequences frames and rejects stale page input", asyn
           .events.some(({ code }) => code === "INPUT_COMPLETED"),
       );
       resetBrowserDeviceSessionsForTests();
+    });
+  } finally {
+    supervisor.close();
+  }
+});
+
+test("in-app Browser Device bounds popup admission and retained page tombstones", async (t) => {
+  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  if (t.signal.aborted) return;
+  const supervisor = new TargetSupervisorStore(":memory:");
+  try {
+    await runWithTargetSupervisorStore(supervisor, async () => {
+      const popupServer = http.createServer((_request, response) => {
+        response.setHeader("content-type", "text/html");
+        response.end(`<!doctype html><title>Popup</title><p>Popup</p>`);
+      });
+      await new Promise<void>((resolve) => popupServer.listen(0, "127.0.0.1", resolve));
+      const popupAddress = popupServer.address();
+      assert(popupAddress && typeof popupAddress === "object");
+      const popupUrl = `http://127.0.0.1:${popupAddress.port}`;
+      const rootServer = http.createServer((_request, response) => {
+        response.setHeader("content-type", "text/html");
+        response.end(
+          `<!doctype html><button id="spawn" onclick="window.open('${popupUrl}/popup-' + Date.now(), '_blank')">Spawn popup</button>`,
+        );
+      });
+      await new Promise<void>((resolve) => rootServer.listen(0, "127.0.0.1", resolve));
+      const rootAddress = rootServer.address();
+      assert(rootAddress && typeof rootAddress === "object");
+      const target = await saveBrowserTarget({
+        name: "Bound Browser Device",
+        startUrl: `http://127.0.0.1:${rootAddress.port}`,
+        executablePath: CHROME,
+        headless: true,
+        environment: { viewport: { width: 800, height: 600 } },
+      });
+      try {
+        const opened = await openBrowserDeviceSession(target.id);
+        let frame = (await captureBrowserDeviceFrame(target.id)).frame;
+        const device = await getBrowserDevice(target.id, { mode: "authoring" });
+        await runWithTargetContext(
+          { kind: "browser", platform: "browser", targetId: target.id },
+          async () => {
+            for (let index = 0; index < MAX_BROWSER_DEVICE_OPEN_POPUPS + 4; index += 1) {
+              await pressIdentifier(device, "spawn");
+            }
+            for (let attempt = 0; attempt < 40; attempt += 1) {
+              const openPopups = (await readBrowserDeviceSession(target.id)).pages.filter(
+                (page) => page.kind === "popup" && !page.closed,
+              );
+              if (openPopups.length >= MAX_BROWSER_DEVICE_OPEN_POPUPS) break;
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            const admitted = await readBrowserDeviceSession(target.id);
+            assert.equal(
+              admitted.pages.filter((page) => page.kind === "popup" && !page.closed).length,
+              MAX_BROWSER_DEVICE_OPEN_POPUPS,
+            );
+            for (;;) {
+              const current = await readBrowserDeviceSession(target.id);
+              const popup = current.pages.find((page) => page.kind === "popup" && !page.closed);
+              if (!popup) break;
+              frame = (await captureBrowserDeviceFrame(target.id)).frame;
+              await controlBrowserDevice(target.id, {
+                sessionId: opened.sessionId,
+                pageId: frame.pageId,
+                expectedSequence: frame.sequence,
+                kind: "page.close",
+                targetPageId: popup.id,
+              });
+            }
+            for (let index = 0; index < MAX_BROWSER_DEVICE_PAGE_TOMBSTONES + 4; index += 1) {
+              await pressIdentifier(device, "spawn");
+              for (let attempt = 0; attempt < 20; attempt += 1) {
+                const current = await readBrowserDeviceSession(target.id);
+                if (current.pages.some((page) => page.kind === "popup" && !page.closed)) break;
+                await new Promise((resolve) => setTimeout(resolve, 10));
+              }
+              const current = await readBrowserDeviceSession(target.id);
+              const popup = current.pages.find((page) => page.kind === "popup" && !page.closed);
+              assert(popup, "the popup should be admitted before it is closed");
+              frame = (await captureBrowserDeviceFrame(target.id)).frame;
+              await controlBrowserDevice(target.id, {
+                sessionId: opened.sessionId,
+                pageId: frame.pageId,
+                expectedSequence: frame.sequence,
+                kind: "page.close",
+                targetPageId: popup.id,
+              });
+              frame = (await captureBrowserDeviceFrame(target.id)).frame;
+            }
+
+            const final = await readBrowserDeviceSession(target.id);
+            assert.ok(final.pages.length <= MAX_BROWSER_DEVICE_PAGE_TOMBSTONES);
+            assert.ok(final.pages.some((page) => page.id === final.activePageId && page.active));
+            assert.ok(
+              final.pages.filter((page) => page.kind === "popup" && !page.closed).length <=
+                MAX_BROWSER_DEVICE_OPEN_POPUPS,
+            );
+          },
+        );
+      } finally {
+        await closeBrowserTarget(target.id, { mode: "authoring" });
+        await deleteTarget(target.id);
+        await new Promise<void>((resolve, reject) =>
+          rootServer.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
+      await new Promise<void>((resolve, reject) =>
+        popupServer.close((error) => (error ? reject(error) : resolve())),
+      );
     });
   } finally {
     supervisor.close();

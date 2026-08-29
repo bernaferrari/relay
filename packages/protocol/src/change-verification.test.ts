@@ -43,6 +43,7 @@ function fixture(overrides: Partial<ChangeVerification> = {}): ChangeVerificatio
         {
           appMapId: "settings",
           testId: "settings-language",
+          appMapRevision: 7,
           reason: "The changed localization resource is bound to this Test.",
           confidence: "definite",
         },
@@ -121,6 +122,18 @@ function fixture(overrides: Partial<ChangeVerification> = {}): ChangeVerificatio
 
 test("Change Verification freezes one exact change, build, plan, and policy", () => {
   assert.deepEqual(parseChangeVerification(fixture()), fixture());
+  assert.throws(() =>
+    parseChangeVerification(
+      fixture({
+        selection: {
+          ...fixture().selection,
+          affectedJourneys: fixture().selection.affectedJourneys.map(
+            ({ appMapRevision: _revision, ...journey }) => journey,
+          ),
+        },
+      }),
+    ),
+  );
   assert.throws(() =>
     parseChangeVerification({
       ...fixture(),

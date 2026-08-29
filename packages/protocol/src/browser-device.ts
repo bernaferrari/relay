@@ -4,6 +4,13 @@ import { browserCaseProfileSchema, browserEnvironmentInputSchema } from "./brows
 const id = z.string().trim().min(1).max(256);
 const natural = z.number().int().nonnegative();
 
+/** The binary Browser Device envelope is a bounded resource, not an inline
+ * operation response. Its first four bytes are a big-endian metadata length,
+ * followed by strict JSON metadata and the JPEG payload. */
+export const BROWSER_DEVICE_BINARY_FRAME_CONTENT_TYPE = "application/x-relay-browser-device-frame";
+export const MAX_BROWSER_DEVICE_BINARY_FRAME_BYTES = 18 * 1024 * 1024;
+export const MAX_BROWSER_DEVICE_BINARY_METADATA_BYTES = 512 * 1024;
+
 export const browserDevicePageSchema = z
   .object({
     id,
@@ -45,6 +52,80 @@ export const browserDeviceFrameSchema = z
     bytes: natural,
     width: z.number().int().positive(),
     height: z.number().int().positive(),
+  })
+  .strict();
+
+/** Metadata carried alongside a binary Browser Device raster. The JPEG is
+ * deliberately not represented here: transport clients receive it as raw
+ * bytes and reconstruct the existing frame shape locally. Keeping the full
+ * session projection in the metadata means page/status/profile changes are
+ * not guessed from a prior poll. */
+export const browserDeviceBinaryFrameMetadataSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    transport: z.literal("binary"),
+    session: browserDeviceSessionSchema,
+    frame: browserDeviceFrameSchema.omit({ base64: true }),
+    gap: z
+      .object({ afterSequence: natural, currentSequence: natural, dropped: natural })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+const browserDeviceSemanticRectSchema = z
+  .object({
+    x: z.number().finite(),
+    y: z.number().finite(),
+    width: z.number().finite().positive(),
+    height: z.number().finite().positive(),
+  })
+  .strict();
+
+/** A server-derived locator hint. It is descriptive only: the renderer never
+ * receives a DOM handle or executable selector. */
+export const browserDeviceSemanticLocatorSchema = z
+  .object({
+    strategy: z.enum(["identifier", "role-name", "label", "text"]),
+    value: z.string().trim().min(1).max(256),
+    role: z.string().trim().min(1).max(128).optional(),
+    exact: z.boolean().optional(),
+  })
+  .strict();
+
+/** One bounded semantic candidate painted over an exact Browser Device frame. */
+export const browserDeviceSemanticCandidateSchema = z
+  .object({
+    id: id,
+    role: z.string().trim().min(1).max(128),
+    label: z.string().max(256).optional(),
+    value: z.string().max(256).optional(),
+    identifier: z.string().trim().min(1).max(256).optional(),
+    rect: browserDeviceSemanticRectSchema,
+    enabled: z.boolean(),
+    selected: z.boolean(),
+    focused: z.boolean(),
+    locator: browserDeviceSemanticLocatorSchema.optional(),
+    reasoning: z.string().trim().min(1).max(320),
+  })
+  .strict();
+
+/**
+ * Accessibility hints for a Browser Device frame. Every field that can
+ * decorate pixels is tied to the same session, page, sequence, and visual
+ * fingerprint as the raster observation. A newer frame must be inspected
+ * again; it may never inherit old browser semantics.
+ */
+export const browserDeviceSemanticOverlaySchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    sessionId: id,
+    pageId: id,
+    sequence: natural,
+    visualFingerprint: id,
+    capturedAt: natural,
+    candidates: z.array(browserDeviceSemanticCandidateSchema).max(128),
+    truncated: z.boolean(),
   })
   .strict();
 
@@ -111,6 +192,15 @@ export const browserDeviceFrameInputSchema = z
   .object({ targetId: id, afterSequence: z.coerce.number().int().nonnegative().optional() })
   .strict();
 
+export const browserDeviceInspectInputSchema = z
+  .object({
+    targetId: id,
+    sessionId: id,
+    pageId: id,
+    expectedSequence: z.coerce.number().int().nonnegative(),
+  })
+  .strict();
+
 export const browserDeviceControlInputSchema = z
   .object({ targetId: id, input: browserDeviceInputSchema })
   .strict();
@@ -118,4 +208,10 @@ export const browserDeviceControlInputSchema = z
 export type BrowserDevicePage = z.infer<typeof browserDevicePageSchema>;
 export type BrowserDeviceSession = z.infer<typeof browserDeviceSessionSchema>;
 export type BrowserDeviceFrame = z.infer<typeof browserDeviceFrameSchema>;
+export type BrowserDeviceBinaryFrameMetadata = z.infer<
+  typeof browserDeviceBinaryFrameMetadataSchema
+>;
+export type BrowserDeviceSemanticLocator = z.infer<typeof browserDeviceSemanticLocatorSchema>;
+export type BrowserDeviceSemanticCandidate = z.infer<typeof browserDeviceSemanticCandidateSchema>;
+export type BrowserDeviceSemanticOverlay = z.infer<typeof browserDeviceSemanticOverlaySchema>;
 export type BrowserDeviceInput = z.infer<typeof browserDeviceInputSchema>;

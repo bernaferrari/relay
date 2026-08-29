@@ -54,12 +54,20 @@ export const changeVerificationOperationInputSchemas = {
     .object({
       proofId: identifier,
       expectedVersion,
-      action: z.enum(["revise-plan", "request-plan-review", "return-to-planning"]),
+      action: z.enum([
+        "revise-plan",
+        "request-plan-review",
+        "return-to-planning",
+        "start-pilot",
+        "start-required-coverage",
+        "record-runs",
+      ]),
       builds: z.array(changeVerificationBuildSchema).max(32).readonly().optional(),
       selection: changeVerificationSelectionSchema.optional(),
       coverageGaps: z.array(reason).max(128).readonly().optional(),
       residualRisk: z.array(reason).max(128).readonly().optional(),
       smallestNextVerification: changeVerificationNextSchema.optional(),
+      runIds: z.array(identifier).min(1).max(1_000).readonly().optional(),
       reason: reason.optional(),
     })
     .strict()
@@ -71,7 +79,58 @@ export const changeVerificationOperationInputSchemas = {
         });
       }
       if (input.action !== "revise-plan" && !input.reason) {
-        context.addIssue({ code: "custom", message: `${input.action} requires a reason` });
+        if (
+          input.action === "request-plan-review" ||
+          input.action === "return-to-planning" ||
+          input.action === "start-pilot" ||
+          input.action === "start-required-coverage"
+        ) {
+          context.addIssue({ code: "custom", message: `${input.action} requires a reason` });
+        }
+      }
+      if (input.action === "record-runs" && !input.runIds) {
+        context.addIssue({ code: "custom", message: "record-runs requires runIds" });
+      }
+      if (input.action !== "record-runs" && input.runIds) {
+        context.addIssue({
+          code: "custom",
+          path: ["runIds"],
+          message: "is only valid for record-runs",
+        });
+      }
+      if (input.action === "record-runs" && input.reason) {
+        context.addIssue({
+          code: "custom",
+          path: ["reason"],
+          message: "is not accepted; record-runs accepts only runIds",
+        });
+      }
+      if (
+        input.action === "record-runs" &&
+        (input.builds ||
+          input.selection ||
+          input.coverageGaps ||
+          input.residualRisk ||
+          input.smallestNextVerification)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "record-runs accepts only runIds",
+        });
+      }
+      if (
+        input.action !== "revise-plan" &&
+        input.action !== "record-runs" &&
+        (input.builds ||
+          input.selection ||
+          input.coverageGaps ||
+          input.residualRisk ||
+          input.smallestNextVerification)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: `${input.action} cannot include Verification Plan fields`,
+        });
       }
     }),
   "proof.cancel": z

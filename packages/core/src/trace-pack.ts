@@ -11,6 +11,10 @@ import {
 } from "@relay/protocol";
 import { replayPersistedRunOffline } from "./offline-run-replay.js";
 import type { PersistedRun } from "./runs.js";
+import {
+  checkBrowserProofEvidenceReferences,
+  inspectBrowserProofEvidence,
+} from "./browser-proof-evidence.js";
 import { readAuthoringSession } from "./authoring-session-storage.js";
 import {
   assertTracePackArtifactBounds,
@@ -112,6 +116,23 @@ export async function exportTracePack(
     (left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0),
   );
   const artifactReferences = closure.references;
+  const browserEvidence = inspectBrowserProofEvidence(run);
+  const browserReferenceCheck = browserEvidence.evidence
+    ? checkBrowserProofEvidenceReferences(
+        browserEvidence.evidence,
+        new Set(
+          artifactReferences
+            .filter((reference) => reference.status === "embedded")
+            .map((reference) => reference.path),
+        ),
+      )
+    : { missing: [] };
+  const browserEvidenceForPack =
+    browserEvidence.evidence &&
+    browserEvidence.missing.every((item) => item.startsWith("browser:")) &&
+    browserReferenceCheck.missing.length === 0
+      ? browserEvidence.evidence
+      : undefined;
   const unreferencedCapturedFileChannels = ["screenshot", "video"].filter((channel) => {
     const record = (
       run.evidence?.channels as
@@ -139,6 +160,8 @@ export async function exportTracePack(
       .filter(([, record]) => record.status !== "captured")
       .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
       .map(([channel, record]) => `channel:${channel}:${record.status}`),
+    ...browserEvidence.missing,
+    ...browserReferenceCheck.missing,
   ];
   const redactedChannels = Object.entries(run.evidence?.channels ?? {})
     .filter(([, record]) => record.status === "redacted")
@@ -179,6 +202,7 @@ export async function exportTracePack(
       missing,
       artifacts: artifactReferences,
     },
+    ...(browserEvidenceForPack ? { browserEvidence: browserEvidenceForPack } : {}),
     objects,
   };
   return parseTracePack({ ...body, digest: packDigest(body) });
@@ -205,6 +229,39 @@ export function verifyTracePack(
     const bytes = objectBytes(object);
     if (bytes.byteLength !== object.bytes || sha256(bytes) !== object.digest) {
       throw new Error(`TracePack object integrity failed: ${object.path}`);
+    }
+  }
+  if (pack.browserEvidence) {
+    const frozen = pack.objects.find((object) => object.kind === "frozen-run");
+    if (
+      !frozen ||
+      !frozen.content ||
+      typeof frozen.content !== "object" ||
+      Array.isArray(frozen.content)
+    ) {
+      throw new Error("TracePack browser evidence has no frozen run binding");
+    }
+    const inspection = inspectBrowserProofEvidence(frozen.content as PersistedRun);
+    const bindingMissing = inspection.missing.filter((item) =>
+      item.startsWith("browser-evidence:"),
+    );
+    if (!inspection.evidence || bindingMissing.length) {
+      throw new Error("TracePack browser evidence binding or completeness failed");
+    }
+    const references = pack.completeness.artifacts;
+    const missingReferences = checkBrowserProofEvidenceReferences(
+      pack.browserEvidence,
+      new Set(
+        (references ?? [])
+          .filter((reference) => reference.status === "embedded")
+          .map((reference) => reference.path),
+      ),
+    );
+    if (missingReferences.missing.length) {
+      throw new Error("TracePack browser evidence artifact reference is unresolved");
+    }
+    if (JSON.stringify(inspection.evidence) !== JSON.stringify(pack.browserEvidence)) {
+      throw new Error("TracePack browser evidence does not match the frozen run");
     }
   }
   const references = pack.completeness.artifacts;

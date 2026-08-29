@@ -7,8 +7,12 @@ import { useDeviceStageLiveFrame } from "../lib/use-device-stage-live-frame";
 import { DeviceInteractionSurface } from "./device-interaction-surface";
 import { useDeviceStageKeyboard } from "../lib/use-device-stage-keyboard";
 import { Icon } from "./icon";
+import { BrowserDeviceSemanticOverlay } from "./browser-device-semantic-overlay";
+import { BrowserDeviceEnvironmentSummary } from "./browser-device-environment-summary";
 
-const FRAME_INTERVAL_MS = 240;
+const INTERACTION_FRAME_INTERVAL_MS = 50;
+const IDLE_FRAME_INTERVAL_MS = 500;
+const INTERACTION_BURST_MS = 1_500;
 const WHEEL_BURST_MS = 90;
 
 /** Raster-only view of the canonical server-owned Playwright page. No page
@@ -20,8 +24,9 @@ export function BrowserDeviceStage() {
   const [url, setUrl] = createSignal("");
   const [urlDirty, setUrlDirty] = createSignal(false);
   const [visible, setVisible] = createSignal(!document.hidden);
+  const [semanticOverlayVisible, setSemanticOverlayVisible] = createSignal(false);
   let screen: HTMLDivElement | undefined;
-  let timer: ReturnType<typeof setInterval> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   let wheelTimer: ReturnType<typeof setTimeout> | undefined;
   let wheelBurst:
     | {
@@ -32,6 +37,8 @@ export function BrowserDeviceStage() {
       }
     | undefined;
   let pollInFlight = false;
+  let pollingGeneration = 0;
+  let lastInteractionAt = Number.NEGATIVE_INFINITY;
 
   const session = () => server.browserDeviceSession();
   const activePage = createMemo(() =>
@@ -47,6 +54,8 @@ export function BrowserDeviceStage() {
     session()?.ownership === "controlled" && Boolean(server.selectedLeaseId());
   const setupDisabled = () => !controlled() || recorder.recording();
   const streamReady = () => session()?.status === "streaming" && Boolean(frameSrc());
+  const semanticLabelsVisible = () =>
+    semanticOverlayVisible() && Boolean(server.browserDeviceSemanticOverlay());
   const viewportKey = () =>
     `${session()?.profile.viewport.width ?? 1280}x${session()?.profile.viewport.height ?? 800}`;
 
@@ -60,6 +69,26 @@ export function BrowserDeviceStage() {
     }
   }
 
+  function pollInterval(): number {
+    return performance.now() - lastInteractionAt < INTERACTION_BURST_MS
+      ? INTERACTION_FRAME_INTERVAL_MS
+      : IDLE_FRAME_INTERVAL_MS;
+  }
+
+  function schedulePoll(generation: number, delay = pollInterval()): void {
+    if (generation !== pollingGeneration || !visible()) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = undefined;
+      void poll().finally(() => schedulePoll(generation));
+    }, delay);
+  }
+
+  function markInteraction(): void {
+    lastInteractionAt = performance.now();
+    schedulePoll(pollingGeneration, 0);
+  }
+
   createEffect(() => {
     const pageUrl = activePage()?.url;
     if (pageUrl && !urlDirty()) setUrl(pageUrl);
@@ -67,14 +96,24 @@ export function BrowserDeviceStage() {
   createEffect(() => {
     const targetId = server.selectedDevice();
     if (!targetId) return;
-    void poll();
-    timer = setInterval(() => void poll(), FRAME_INTERVAL_MS);
+    const generation = ++pollingGeneration;
+    void poll().finally(() => schedulePoll(generation));
     onCleanup(() => {
-      if (timer) clearInterval(timer);
+      pollingGeneration += 1;
+      if (timer) clearTimeout(timer);
       timer = undefined;
     });
   });
-  const onVisibility = () => setVisible(!document.hidden);
+  const onVisibility = () => {
+    const nextVisible = !document.hidden;
+    setVisible(nextVisible);
+    if (!nextVisible) {
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+      return;
+    }
+    markInteraction();
+  };
   document.addEventListener("visibilitychange", onVisibility);
   onCleanup(() => {
     document.removeEventListener("visibilitychange", onVisibility);
@@ -88,6 +127,7 @@ export function BrowserDeviceStage() {
 
   async function navigate(event: SubmitEvent): Promise<void> {
     event.preventDefault();
+    markInteraction();
     const destination = url().trim();
     setUrlDirty(false);
     if (await server.navigateBrowserDevice(destination)) await poll();
@@ -99,6 +139,7 @@ export function BrowserDeviceStage() {
     durationMs: number,
     point = from,
   ): Promise<void> {
+    markInteraction();
     const deltaX = (from.x - to.x) * 600;
     const deltaY = (from.y - to.y) * 600;
     const applied = await server.scrollDevice(point.x, point.y, deltaX / 600, deltaY / 600);
@@ -127,6 +168,7 @@ export function BrowserDeviceStage() {
       aria-label="Browser Device stage"
       class="flex h-full min-h-0 w-full flex-col items-center gap-2 p-3"
       data-browser-device-stage
+      onKeyDown={markInteraction}
     >
       <div class="flex w-full max-w-[1100px] shrink-0 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-stronger-non-alpha shadow-[var(--map-elevation-control)]">
         <div class="flex min-h-11 items-center gap-1 border-b border-border-weak-base px-1.5">
@@ -137,7 +179,10 @@ export function BrowserDeviceStage() {
             aria-label="Go back"
             title={recorder.recording() ? "Setup controls pause while recording" : undefined}
             disabled={setupDisabled()}
-            onClick={() => void server.browserDeviceHistory("back").then(poll)}
+            onClick={() => {
+              markInteraction();
+              void server.browserDeviceHistory("back").then(poll);
+            }}
           >
             <Icon name="chevron-left" size={14} />
           </IconButton>
@@ -148,7 +193,10 @@ export function BrowserDeviceStage() {
             aria-label="Reload page"
             title={recorder.recording() ? "Setup controls pause while recording" : undefined}
             disabled={setupDisabled()}
-            onClick={() => void server.browserDeviceHistory("reload").then(poll)}
+            onClick={() => {
+              markInteraction();
+              void server.browserDeviceHistory("reload").then(poll);
+            }}
           >
             <Icon name="refresh" size={14} />
           </IconButton>
@@ -173,13 +221,26 @@ export function BrowserDeviceStage() {
               Go
             </Button>
           </form>
-          <span
-            class="hidden shrink-0 text-micro tabular-nums text-text-weak sm:inline"
-            title="Frozen browser environment"
+          <BrowserDeviceEnvironmentSummary profile={() => session()?.profile} />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-pressed={semanticLabelsVisible()}
+            disabled={!streamReady()}
+            title="Inspect semantic labels from this exact frame"
+            onClick={() => {
+              if (semanticLabelsVisible()) {
+                setSemanticOverlayVisible(false);
+                return;
+              }
+              void server.inspectBrowserDevice().then((overlay) => {
+                setSemanticOverlayVisible(Boolean(overlay));
+              });
+            }}
           >
-            {session()?.profile.engine ?? "browser"} · {session()?.profile.viewport.width ?? "?"}×
-            {session()?.profile.viewport.height ?? "?"}
-          </span>
+            {semanticLabelsVisible() ? "Hide labels" : "Inspect labels"}
+          </Button>
           <label class="sr-only" for="browser-device-viewport">
             Browser viewport
           </label>
@@ -192,6 +253,7 @@ export function BrowserDeviceStage() {
             onChange={(event) => {
               const [width, height] = event.currentTarget.value.split("x").map(Number);
               if (!width || !height) return;
+              markInteraction();
               void server.openBrowserDevice({ viewport: { width, height } }).then(poll);
             }}
           >
@@ -220,7 +282,10 @@ export function BrowserDeviceStage() {
                     class="min-h-10 min-w-0 flex-1 truncate rounded-lg px-3 text-left text-caption outline-none focus-visible:ring-2 focus-visible:ring-border-strong-focus"
                     aria-pressed={page.active}
                     disabled={page.closed || setupDisabled()}
-                    onClick={() => void server.activateBrowserDevicePage(page.id).then(poll)}
+                    onClick={() => {
+                      markInteraction();
+                      void server.activateBrowserDevicePage(page.id).then(poll);
+                    }}
                   >
                     {page.title || "Untitled"}
                     {page.kind === "popup" ? " · Popup" : ""}
@@ -231,7 +296,10 @@ export function BrowserDeviceStage() {
                     class="!size-9 shrink-0"
                     aria-label={`Close ${page.title || (page.kind === "popup" ? "popup" : "page")}`}
                     disabled={page.closed || setupDisabled()}
-                    onClick={() => void server.closeBrowserDevicePage(page.id).then(poll)}
+                    onClick={() => {
+                      markInteraction();
+                      void server.closeBrowserDevicePage(page.id).then(poll);
+                    }}
                   >
                     <Icon name="x" size={12} />
                   </IconButton>
@@ -255,7 +323,10 @@ export function BrowserDeviceStage() {
                   variant="secondary"
                   size="sm"
                   disabled={!controlled()}
-                  onClick={() => void server.openBrowserDevice().then(poll)}
+                  onClick={() => {
+                    markInteraction();
+                    void server.openBrowserDevice().then(poll);
+                  }}
                 >
                   Reopen browser
                 </Button>
@@ -271,6 +342,11 @@ export function BrowserDeviceStage() {
             width={dimensions()?.width}
             height={dimensions()?.height}
           />
+          <BrowserDeviceSemanticOverlay
+            overlay={server.browserDeviceSemanticOverlay}
+            frame={server.liveFrame}
+            visible={semanticOverlayVisible}
+          />
           <DeviceInteractionSurface
             sourceDimensions={dimensions}
             disabled={() => !streamReady()}
@@ -280,6 +356,7 @@ export function BrowserDeviceStage() {
             }}
             ariaLabel="Interactive Browser Device preview. Click the page or use the keyboard to record browser actions."
             onTap={({ point }) => {
+              markInteraction();
               void server.clickBrowserDevice(point.logical.x, point.logical.y).then((applied) => {
                 if (!applied) return poll();
                 return recorder
@@ -291,6 +368,7 @@ export function BrowserDeviceStage() {
               void applySwipe(start.logical, end.logical, Math.max(80, Math.min(durationMs, 800)));
             }}
             onWheel={({ point, deltaX, deltaY }) => {
+              markInteraction();
               wheelBurst = wheelBurst
                 ? {
                     ...wheelBurst,

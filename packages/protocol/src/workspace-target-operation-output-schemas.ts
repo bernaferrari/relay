@@ -1,6 +1,11 @@
 import * as z from "zod/v4";
 import { browserCaseProfileSchema, browserEnvironmentInputSchema } from "./browser-case-profile.js";
-import { browserDeviceFrameSchema, browserDeviceSessionSchema } from "./browser-device.js";
+import {
+  browserDeviceBinaryFrameMetadataSchema,
+  browserDeviceFrameSchema,
+  browserDeviceSemanticOverlaySchema,
+  browserDeviceSessionSchema,
+} from "./browser-device.js";
 
 const text = z.string().min(1);
 const natural = z.number().int().nonnegative();
@@ -643,6 +648,10 @@ export const workspaceTargetOperationOutputSchemas = {
         .strict()
         .optional(),
     })
+    .strict(),
+  "target.browser-device.frame-binary": browserDeviceBinaryFrameMetadataSchema,
+  "target.browser-device.inspect": z
+    .object({ overlay: browserDeviceSemanticOverlaySchema })
     .strict(),
   "target.browser-device.control": z
     .object({ ok: z.literal(true), session: browserDeviceSessionSchema })

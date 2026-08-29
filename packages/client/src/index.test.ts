@@ -159,6 +159,58 @@ test("resource transport cannot bypass the registry for mutations", async () => 
   );
 });
 
+test("binary resources retain operation identity while returning bounded bytes", async () => {
+  let request: Request | undefined;
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+    },
+    {
+      fetch: async (input, init) => {
+        request = new Request(input, init);
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { "Content-Type": "application/x-relay-browser-device-frame" },
+        });
+      },
+    },
+  );
+
+  const result = await client.binaryResource(
+    "/targets/browser/browser-device/frame.bin?afterSequence=2",
+  );
+  assert.deepEqual([...result.bytes], [1, 2, 3]);
+  assert.equal(request?.headers.get("accept"), "application/octet-stream, image/jpeg;q=0.9");
+  assert.equal(request?.headers.get("x-relay-operation-id"), "target.browser-device.frame-binary");
+});
+
+test("binary resources reject oversized declared bodies before reading them", async () => {
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+    },
+    {
+      fetch: async () =>
+        new Response(new Uint8Array([1]), {
+          status: 200,
+          headers: { "Content-Length": "4" },
+        }),
+    },
+  );
+
+  await assert.rejects(() => client.binaryResource("/unregistered", {}, 3), /3-byte limit/u);
+});
+
 test("device discovery accepts the registered fast Android phase", async () => {
   let request: Request | undefined;
   const client = new RelayClient(

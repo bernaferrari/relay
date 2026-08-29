@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   browserDeviceControlInputSchema,
+  browserDeviceBinaryFrameMetadataSchema,
   browserDeviceFrameSchema,
+  browserDeviceSemanticOverlaySchema,
   browserDeviceSessionSchema,
   compileBrowserEnvironment,
 } from "./index.js";
@@ -47,6 +49,43 @@ test("Browser Device contracts retain exact session, page, and frame identity", 
     height: 600,
   };
   assert.deepEqual(browserDeviceFrameSchema.parse(frame), frame);
+  assert.deepEqual(
+    browserDeviceBinaryFrameMetadataSchema.parse({
+      schemaVersion: 1,
+      transport: "binary",
+      session,
+      frame: Object.fromEntries(Object.entries(frame).filter(([key]) => key !== "base64")),
+    }),
+    {
+      schemaVersion: 1,
+      transport: "binary",
+      session,
+      frame: Object.fromEntries(Object.entries(frame).filter(([key]) => key !== "base64")),
+    },
+  );
+  const overlay = {
+    schemaVersion: 1 as const,
+    sessionId: "session-1",
+    pageId: "page-1",
+    sequence: 4,
+    visualFingerprint: "sha256-frame",
+    capturedAt: 2,
+    truncated: false,
+    candidates: [
+      {
+        id: "candidate-0",
+        role: "button",
+        label: "Continue",
+        rect: { x: 10, y: 20, width: 100, height: 40 },
+        enabled: true,
+        selected: false,
+        focused: false,
+        locator: { strategy: "role-name" as const, value: "Continue", role: "button", exact: true },
+        reasoning: 'Role "button" with accessible name "Continue".',
+      },
+    ],
+  };
+  assert.deepEqual(browserDeviceSemanticOverlaySchema.parse(overlay), overlay);
   assert.equal(
     browserDeviceControlInputSchema.safeParse({
       targetId: "browser-1",
@@ -60,6 +99,35 @@ test("Browser Device contracts retain exact session, page, and frame identity", 
       },
     }).success,
     true,
+  );
+});
+
+test("Browser Device semantic overlays reject unbounded or stale-shaped data", () => {
+  const valid = {
+    schemaVersion: 1 as const,
+    sessionId: "session-1",
+    pageId: "page-1",
+    sequence: 1,
+    visualFingerprint: "frame-1",
+    capturedAt: 1,
+    truncated: false,
+    candidates: [],
+  };
+  assert.equal(browserDeviceSemanticOverlaySchema.safeParse(valid).success, true);
+  assert.equal(
+    browserDeviceSemanticOverlaySchema.safeParse({
+      ...valid,
+      candidates: Array.from({ length: 129 }, (_, index) => ({
+        id: `candidate-${index}`,
+        role: "button",
+        rect: { x: 0, y: 0, width: 1, height: 1 },
+        enabled: true,
+        selected: false,
+        focused: false,
+        reasoning: "bounded",
+      })),
+    }).success,
+    false,
   );
 });
 

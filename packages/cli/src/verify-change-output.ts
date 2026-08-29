@@ -1,5 +1,52 @@
 import type { VerifyChangeResult } from "@relay/protocol";
 
+type VerifyChangePlanResult = {
+  kind: "verify-change-plan";
+  git: {
+    baseRef: string;
+    baseSha: string;
+    headSha: string;
+    changedFiles: readonly string[];
+  };
+  plan: {
+    status: string;
+    selection: {
+      affectedJourneys: ReadonlyArray<{
+        appMapId: string;
+        testId: string;
+        confidence: string;
+        reason: string;
+      }>;
+      targetCases: ReadonlyArray<{ id: string; required: boolean }>;
+    };
+    pilotTargetCaseId?: string;
+    expansion: { targetCaseIds: readonly string[]; maxCases: number; maxDurationMs: number };
+    coverageGaps: ReadonlyArray<{ code: string; reason: string }>;
+  };
+  proof?: { id?: string; state?: string };
+  execution: {
+    confirmed: boolean;
+    proofStarted: boolean;
+    planApproved: boolean;
+    pilot: {
+      available: boolean;
+      attempted: boolean;
+      reason: string;
+      targetCaseId?: string;
+      runId?: string;
+    };
+    runs: ReadonlyArray<{
+      appMapId: string;
+      testId: string;
+      targetCaseId: string;
+      jobId: string;
+      runId: string;
+    }>;
+    terminalState?: string;
+    nextAction: { kind: string; reason: string; command?: string };
+  };
+};
+
 function isVerifyChangeResult(value: unknown): value is VerifyChangeResult {
   return (
     value !== null &&
@@ -10,6 +57,15 @@ function isVerifyChangeResult(value: unknown): value is VerifyChangeResult {
   );
 }
 
+function isVerifyChangePlanResult(value: unknown): value is VerifyChangePlanResult {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as Partial<VerifyChangePlanResult>).kind === "verify-change-plan"
+  );
+}
+
 function list(label: string, values: readonly string[]): string[] {
   return values.length ? [`${label}:`, ...values.map((value) => `  - ${value}`)] : [];
 }
@@ -17,6 +73,45 @@ function list(label: string, values: readonly string[]): string[] {
 /** Human projection of the same bounded protocol result returned to JSON and
  * MCP clients. It intentionally renders references, never raw TracePack data. */
 export function formatVerifyChangeResult(value: unknown): string | undefined {
+  if (isVerifyChangePlanResult(value)) {
+    const { git, plan, execution } = value;
+    const journeys = plan.selection.affectedJourneys.map(
+      (journey) =>
+        `  - ${journey.appMapId}/${journey.testId} (${journey.confidence}): ${journey.reason}`,
+    );
+    const targets = plan.selection.targetCases.map(
+      (target) => `  - ${target.id}${target.required ? " (required)" : ""}`,
+    );
+    const gaps = plan.coverageGaps.map((gap) => `  - ${gap.code}: ${gap.reason}`);
+    return [
+      `Verify change plan: ${plan.status}`,
+      `Git: ${git.baseRef} (${git.baseSha}) → HEAD (${git.headSha})`,
+      `Changed files: ${git.changedFiles.length}`,
+      ...(git.changedFiles.length ? git.changedFiles.map((path) => `  - ${path}`) : []),
+      `Affected Tests: ${plan.selection.affectedJourneys.length}`,
+      ...(journeys.length ? journeys : ["  - none (coverage is unresolved)"]),
+      `Pilot: ${plan.pilotTargetCaseId ?? "none"}`,
+      `Target cases: ${plan.selection.targetCases.length}`,
+      ...(targets.length ? targets : ["  - none (a required target case is missing)"]),
+      `Expansion: ${plan.expansion.targetCaseIds.length} additional target case(s), max ${plan.expansion.maxCases} case(s) / ${plan.expansion.maxDurationMs}ms`,
+      `Coverage gaps: ${plan.coverageGaps.length}`,
+      ...gaps,
+      `Proof: ${execution.proofStarted ? (value.proof?.id ?? "created") : "not created (confirmation required)"}`,
+      `Plan approval: ${execution.planApproved ? "recorded" : "not recorded"}`,
+      `Pilot execution: ${execution.pilot.attempted ? "completed" : "not attempted"}${execution.pilot.targetCaseId ? ` (${execution.pilot.targetCaseId})` : ""} — ${execution.pilot.reason}`,
+      ...(execution.runs.length
+        ? [
+            "Recorded Runs:",
+            ...execution.runs.map(
+              (run) => `  - ${run.appMapId}/${run.testId}/${run.targetCaseId}: ${run.runId}`,
+            ),
+          ]
+        : []),
+      ...(execution.terminalState ? [`Proof terminal state: ${execution.terminalState}`] : []),
+      `Next action: ${execution.nextAction.reason}`,
+      ...(execution.nextAction.command ? [`  ${execution.nextAction.command}`] : []),
+    ].join("\n");
+  }
   if (!isVerifyChangeResult(value)) return undefined;
   const { summary, evidenceCompleteness, smallestRequiredLiveVerification: live } = value;
   const affected = value.affectedTests.map(

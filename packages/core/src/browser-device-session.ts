@@ -5,14 +5,20 @@ import type {
   BrowserDeviceFrame,
   BrowserDeviceInput,
   BrowserDevicePage,
+  BrowserDeviceSemanticCandidate,
+  BrowserDeviceSemanticOverlay,
   BrowserDeviceSession,
 } from "@relay/protocol";
 import {
   closeBrowserTarget,
+  browserPageVisualFingerprint,
   openBrowserAuthoringRuntime,
+  snapshotBrowserPageSemantics,
   type BrowserAuthoringRuntime,
 } from "./browser-target.js";
+import type { SnapshotNode } from "./device.js";
 import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js";
+import { runBrowserMutationAdmission } from "./browser-mutation-admission.js";
 
 export type BrowserDeviceRuntimeSession = Omit<BrowserDeviceSession, "ownership">;
 
@@ -27,6 +33,11 @@ export class BrowserDeviceConflictError extends Error {
   }
 }
 
+/** Maximum number of closed browser pages retained as inspectable tombstones. */
+export const MAX_BROWSER_DEVICE_PAGE_TOMBSTONES = 32;
+/** Maximum number of untrusted popup pages allowed to remain open. */
+export const MAX_BROWSER_DEVICE_OPEN_POPUPS = 8;
+
 type SessionState = {
   runtime: BrowserAuthoringRuntime;
   startedAt: number;
@@ -36,16 +47,18 @@ type SessionState = {
   activePageId: string;
   pageIds: WeakMap<Page, string>;
   pages: Map<string, Page>;
+  pageKinds: Map<string, "page" | "popup">;
+  pageClosedAt: Map<string, number>;
   attached: WeakSet<Page>;
   frame?: BrowserDeviceFrame;
   observedMutationVersion: number;
   needsFreshFrame: boolean;
   capture?: Promise<BrowserDeviceFrame>;
-  input: Promise<unknown>;
 };
 
 const states = new Map<string, SessionState>();
 const FRAME_DEGRADED_MS = 1_000;
+export const MAX_BROWSER_DEVICE_SEMANTIC_CANDIDATES = 128;
 
 function message(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 480);
@@ -67,8 +80,39 @@ function pageId(state: SessionState, page: Page): string {
   return id;
 }
 
-function attachPage(state: SessionState, page: Page): string {
+function prunePageTombstones(state: SessionState): void {
+  const tombstones = [...state.pages.keys()].filter((id) => {
+    const page = state.pages.get(id);
+    return Boolean(page && (page.isClosed() || state.pageClosedAt.has(id)));
+  });
+  let excess = tombstones.length - MAX_BROWSER_DEVICE_PAGE_TOMBSTONES;
+  for (const id of tombstones) {
+    if (excess <= 0) break;
+    if (id === state.activePageId) continue;
+    state.pages.delete(id);
+    state.pageKinds.delete(id);
+    state.pageClosedAt.delete(id);
+    excess -= 1;
+  }
+}
+
+function openPopupCount(state: SessionState): number {
+  return [...state.pages.entries()].filter(
+    ([id, page]) =>
+      state.pageKinds.get(id) === "popup" && !page.isClosed() && !state.pageClosedAt.has(id),
+  ).length;
+}
+
+/** Close a newly-created untrusted popup before Relay attaches any listeners or
+ * retains its identity. The close promise is deliberately not queued or kept
+ * in session state: hostile popup churn cannot grow Relay's memory graph. */
+function closeUntrustedPopup(page: Page): void {
+  void page.close().catch(() => undefined);
+}
+
+function attachPage(state: SessionState, page: Page, kind: "page" | "popup" = "popup"): string {
   const id = pageId(state, page);
+  state.pageKinds.set(id, state.pageKinds.get(id) ?? kind);
   if (state.attached.has(page)) return id;
   state.attached.add(page);
   page.on("crash", () => {
@@ -78,6 +122,7 @@ function attachPage(state: SessionState, page: Page): string {
   });
   page.on("close", () => {
     state.needsFreshFrame = true;
+    state.pageClosedAt.set(id, Date.now());
     if (state.activePageId === id) {
       const replacement = [...state.pages.entries()].find(([, candidate]) => !candidate.isClosed());
       if (replacement) state.activePageId = replacement[0];
@@ -86,35 +131,34 @@ function attachPage(state: SessionState, page: Page): string {
         state.issue = "Every browser page is closed. Reopen the Browser Device.";
       }
     }
+    prunePageTombstones(state);
   });
   return id;
 }
 
 async function pageProjection(state: SessionState, page: Page): Promise<BrowserDevicePage> {
   const id = attachPage(state, page);
-  const opener = await page.opener().catch(() => null);
+  const closed = page.isClosed() || state.pageClosedAt.has(id);
   return {
     id,
-    kind: opener ? "popup" : "page",
-    title: (page.isClosed()
-      ? "Closed page"
-      : await page.title().catch(() => "Untitled page")
-    ).slice(0, 512),
-    url: (page.isClosed() ? "" : page.url()).slice(0, 4_096),
+    kind: state.pageKinds.get(id) ?? "page",
+    title: (closed ? "Closed page" : await page.title().catch(() => "Untitled page")).slice(0, 512),
+    url: (closed ? "" : page.url()).slice(0, 4_096),
     active: state.activePageId === id,
-    closed: page.isClosed(),
+    closed,
   };
 }
 
 async function projection(state: SessionState): Promise<BrowserDeviceRuntimeSession> {
-  const allPages = [...state.pages.values()];
-  const projectedPages = allPages.slice(-32);
+  prunePageTombstones(state);
+  const allPages = [...state.pages.entries()];
+  const projectedPages = allPages.slice(-MAX_BROWSER_DEVICE_PAGE_TOMBSTONES);
   const activePage = state.pages.get(state.activePageId);
-  if (activePage && !projectedPages.includes(activePage)) {
+  if (activePage && !projectedPages.some(([id]) => id === state.activePageId)) {
     projectedPages.shift();
-    projectedPages.unshift(activePage);
+    projectedPages.unshift([state.activePageId, activePage]);
   }
-  const pages = await Promise.all(projectedPages.map((page) => pageProjection(state, page)));
+  const pages = await Promise.all(projectedPages.map(([, page]) => pageProjection(state, page)));
   return {
     schemaVersion: 1,
     sessionId: state.runtime.sessionId,
@@ -154,15 +198,28 @@ export async function openBrowserDeviceSession(
     activePageId: "",
     pageIds: new WeakMap(),
     pages: new Map(),
+    pageKinds: new Map(),
+    pageClosedAt: new Map(),
     attached: new WeakSet(),
     needsFreshFrame: true,
     observedMutationVersion: runtime.mutationVersion(),
-    input: Promise.resolve(),
   };
-  state.activePageId = attachPage(state, page);
-  for (const existing of runtime.context.pages()) attachPage(state, existing);
+  state.activePageId = attachPage(state, page, "page");
+  for (const existing of runtime.context.pages()) {
+    if (existing === page) continue;
+    if (openPopupCount(state) >= MAX_BROWSER_DEVICE_OPEN_POPUPS) closeUntrustedPopup(existing);
+    else attachPage(state, existing, "popup");
+  }
   runtime.context.on("page", (created) => {
-    const createdId = attachPage(state, created);
+    // The context emits a Page before Relay can inspect it. Count only already
+    // admitted live popups and close the next untrusted one before attaching
+    // listeners or adding a tombstone. The root/replacement page remains the
+    // only page that can be admitted while the session is terminal.
+    if (state.status !== "closed" && openPopupCount(state) >= MAX_BROWSER_DEVICE_OPEN_POPUPS) {
+      closeUntrustedPopup(created);
+      return;
+    }
+    const createdId = attachPage(state, created, state.status === "closed" ? "page" : "popup");
     // Canonical recording creates a replacement page immediately after
     // closing its prior video boundary. Follow that explicit context-owned
     // replacement; closing the final tab without a replacement stays terminal.
@@ -199,7 +256,7 @@ async function capture(state: SessionState): Promise<BrowserDeviceFrame> {
     // create a clean video boundary. Follow that owned replacement only;
     // ordinary popups never steal the selected page.
     page = await state.runtime.activePage();
-    state.activePageId = attachPage(state, page);
+    state.activePageId = attachPage(state, page, "page");
     state.needsFreshFrame = true;
   }
   try {
@@ -246,6 +303,178 @@ async function capture(state: SessionState): Promise<BrowserDeviceFrame> {
   }
 }
 
+function bounded(value: string | undefined, max: number): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.slice(0, max) : undefined;
+}
+
+function semanticCandidate(
+  node: SnapshotNode,
+  index: number,
+): BrowserDeviceSemanticCandidate | null {
+  const rect = node.rect;
+  if (
+    !rect ||
+    !Number.isFinite(rect.x) ||
+    !Number.isFinite(rect.y) ||
+    !Number.isFinite(rect.width) ||
+    !Number.isFinite(rect.height) ||
+    rect.width <= 0 ||
+    rect.height <= 0
+  ) {
+    return null;
+  }
+  const role = bounded(node.role ?? node.type, 128) ?? "element";
+  const label = bounded(node.label, 256);
+  const value = bounded(node.value, 256);
+  const identifier = bounded(node.identifier, 256);
+  const locator = identifier
+    ? { strategy: "identifier" as const, value: identifier, exact: true }
+    : label
+      ? { strategy: "role-name" as const, value: label, role, exact: true }
+      : value
+        ? { strategy: "text" as const, value, exact: true }
+        : undefined;
+  const reasoning = identifier
+    ? `Stable identifier ${JSON.stringify(identifier)}.`
+    : label
+      ? `Role ${JSON.stringify(role)} with accessible name ${JSON.stringify(label)}.`
+      : value
+        ? `Visible text ${JSON.stringify(value)}; review before using it.`
+        : "No stable semantic name; coordinate fallback requires explicit review.";
+  return {
+    id: `candidate-${node.index ?? index}`,
+    role,
+    ...(label ? { label } : {}),
+    ...(value ? { value } : {}),
+    ...(identifier ? { identifier } : {}),
+    rect: {
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+    },
+    enabled: node.enabled !== false,
+    selected: node.selected === true,
+    focused: node.focused === true,
+    ...(locator ? { locator } : {}),
+    reasoning,
+  };
+}
+
+function semanticCandidates(nodes: SnapshotNode[]): {
+  candidates: BrowserDeviceSemanticCandidate[];
+  truncated: boolean;
+} {
+  const candidates: BrowserDeviceSemanticCandidate[] = [];
+  for (const [index, node] of nodes.entries()) {
+    const candidate = semanticCandidate(node, index);
+    if (candidate) candidates.push(candidate);
+  }
+  return {
+    candidates: candidates.slice(0, MAX_BROWSER_DEVICE_SEMANTIC_CANDIDATES),
+    truncated: candidates.length > MAX_BROWSER_DEVICE_SEMANTIC_CANDIDATES,
+  };
+}
+
+function assertInspectableFrame(
+  state: SessionState,
+  input: { sessionId: string; pageId: string; expectedSequence: number },
+): BrowserDeviceFrame {
+  const frame = state.frame;
+  if (
+    !frame ||
+    input.sessionId !== state.runtime.sessionId ||
+    input.sessionId !== frame.sessionId
+  ) {
+    throw new BrowserDeviceConflictError(
+      "BROWSER_SESSION_STALE",
+      "The Browser Device session changed",
+    );
+  }
+  if (
+    input.expectedSequence !== state.sequence ||
+    input.expectedSequence !== frame.sequence ||
+    state.needsFreshFrame ||
+    state.observedMutationVersion !== state.runtime.mutationVersion()
+  ) {
+    throw new BrowserDeviceConflictError(
+      "BROWSER_STALE_INPUT",
+      "The browser changed after this frame. Capture the current frame before inspecting it.",
+      state.sequence,
+    );
+  }
+  if (input.pageId !== frame.pageId || input.pageId !== state.activePageId) {
+    throw new BrowserDeviceConflictError("BROWSER_PAGE_STALE", "The selected browser tab changed");
+  }
+  const page = state.pages.get(input.pageId);
+  if (!page || page.isClosed()) {
+    throw new BrowserDeviceConflictError(
+      "BROWSER_PAGE_STALE",
+      "The selected browser page is closed",
+    );
+  }
+  if (state.status === "crashed" || state.status === "closed") {
+    throw new BrowserDeviceConflictError(
+      "BROWSER_PAGE_STALE",
+      state.issue ?? "Browser page unavailable",
+    );
+  }
+  return frame;
+}
+
+/**
+ * Inspect only the server-owned page associated with one painted frame. The
+ * renderer receives bounded JSON candidates, never a Page, DOM, script, or
+ * executable selector. Callers must capture a fresh frame after any mutation.
+ */
+export async function inspectBrowserDevice(
+  targetId: string,
+  input: { sessionId: string; pageId: string; expectedSequence: number },
+): Promise<{ overlay: BrowserDeviceSemanticOverlay }> {
+  const state = stateForTarget(targetId);
+  return runBrowserMutationAdmission(targetId, async () => {
+    if (state.capture) await state.capture;
+    const frame = assertInspectableFrame(state, input);
+    const page = state.pages.get(input.pageId)!;
+    const beforeFingerprint = await browserPageVisualFingerprint(page);
+    if (beforeFingerprint !== frame.visualFingerprint) {
+      state.needsFreshFrame = true;
+      throw new BrowserDeviceConflictError(
+        "BROWSER_STALE_INPUT",
+        "The browser changed after this frame. Capture the current frame before inspecting it.",
+        state.sequence,
+      );
+    }
+    const snapshot = await snapshotBrowserPageSemantics(
+      page,
+      MAX_BROWSER_DEVICE_SEMANTIC_CANDIDATES,
+    );
+    const afterFingerprint = await browserPageVisualFingerprint(page);
+    if (afterFingerprint !== beforeFingerprint) {
+      state.needsFreshFrame = true;
+      throw new BrowserDeviceConflictError(
+        "BROWSER_STALE_INPUT",
+        "The browser changed while its labels were being inspected. Capture a fresh frame and retry.",
+        state.sequence,
+      );
+    }
+    const projected = semanticCandidates(snapshot.nodes);
+    return {
+      overlay: {
+        schemaVersion: 1,
+        sessionId: frame.sessionId,
+        pageId: frame.pageId,
+        sequence: frame.sequence,
+        visualFingerprint: frame.visualFingerprint,
+        capturedAt: frame.capturedAt,
+        candidates: projected.candidates,
+        truncated: snapshot.truncated || projected.truncated,
+      },
+    };
+  });
+}
+
 /** Request-driven newest-frame transport: there is one capture in flight per
  * session, so slow renderers create backpressure instead of an unbounded JPEG
  * queue. Sequence gaps are derived by the caller from its last painted frame. */
@@ -254,10 +483,10 @@ export async function captureBrowserDeviceFrame(targetId: string): Promise<{
   frame: BrowserDeviceFrame;
 }> {
   const state = stateForTarget(targetId);
-  // Captures and input share one strict ordering boundary. A frame can never
-  // finish between input validation and Playwright dispatch.
-  await state.input;
-  state.capture ??= capture(state).finally(() => {
+  // Captures and every browser mutation occupy one target-scoped lane. A
+  // generic browser adapter mutation therefore cannot dispatch after this
+  // frame's freshness checks but before its pixels are captured.
+  state.capture ??= runBrowserMutationAdmission(targetId, () => capture(state)).finally(() => {
     state.capture = undefined;
   });
   const frame = await state.capture;
@@ -359,7 +588,7 @@ export async function controlBrowserDevice(
   beforeDispatch?: () => Promise<void>,
 ): Promise<{ ok: true; session: BrowserDeviceRuntimeSession }> {
   const state = stateForTarget(targetId);
-  const operation = state.input.then(async () => {
+  const operation = runBrowserMutationAdmission(targetId, async () => {
     if (state.capture) await state.capture;
     await runSupervisedBrowserMutation({
       targetId,
@@ -371,7 +600,6 @@ export async function controlBrowserDevice(
       dispatch: () => applyInput(state, input),
     });
   });
-  state.input = operation.catch(() => undefined);
   await operation;
   return { ok: true, session: await projection(state) };
 }

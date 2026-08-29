@@ -1,6 +1,7 @@
 import type http from "node:http";
 import {
   BrowserDeviceConflictError,
+  BrowserDeviceInputOverloadedError,
   BrowserMutationOutcomeUnknownError,
   BrowserSupervisionRequiredError,
   browserCaseProfileForTarget,
@@ -9,6 +10,7 @@ import {
   controlBrowserDevice,
   currentOperationContext,
   deleteTarget,
+  inspectBrowserDevice,
   listDeviceLeases,
   listTargets,
   now,
@@ -20,8 +22,13 @@ import {
 } from "@relay/core";
 import {
   browserDeviceControlInputSchema,
+  browserDeviceBinaryFrameMetadataSchema,
   browserDeviceFrameInputSchema,
+  browserDeviceInspectInputSchema,
   browserDeviceOpenInputSchema,
+  BROWSER_DEVICE_BINARY_FRAME_CONTENT_TYPE,
+  MAX_BROWSER_DEVICE_BINARY_FRAME_BYTES,
+  MAX_BROWSER_DEVICE_BINARY_METADATA_BYTES,
   compileBrowserEnvironment,
   type BrowserDeviceSession,
   type BrowserEnvironmentInput,
@@ -33,7 +40,7 @@ import {
   assertTargetObservation,
   targetLeaseBelongsToCaller,
 } from "./access-control.js";
-import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
+import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
 
 export type TargetRouteContext = {
@@ -143,6 +150,82 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
     return true;
   }
 
+  const browserBinaryFrameMatch = matchPath(pathname, "/targets/:id/browser-device/frame.bin");
+  if (method === "GET" && browserBinaryFrameMatch) {
+    const targetId = browserBinaryFrameMatch.id!;
+    const target = await readTarget(targetId);
+    if (!target?.browser) throw new HttpError(404, "Managed browser target not found");
+    assertTargetObservation(scope, targetId);
+    const afterRaw = url.searchParams.get("afterSequence");
+    const { afterSequence } = browserDeviceFrameInputSchema.parse({
+      targetId,
+      ...(afterRaw === null ? {} : { afterSequence: afterRaw }),
+    });
+    try {
+      const result = await captureBrowserDeviceFrame(targetId);
+      const session = await withOwnership(scope, result.session);
+      const bytes = Buffer.from(result.frame.base64, "base64");
+      if (bytes.byteLength !== result.frame.bytes) {
+        throw new HttpError(502, "Browser Device frame bytes do not match their metadata");
+      }
+      if (bytes.byteLength > MAX_BROWSER_DEVICE_BINARY_FRAME_BYTES) {
+        throw new HttpError(413, "Browser Device frame is too large for binary transport");
+      }
+      const dropped =
+        afterSequence === undefined ? 0 : Math.max(0, result.frame.sequence - afterSequence - 1);
+      const metadata = browserDeviceBinaryFrameMetadataSchema.parse({
+        schemaVersion: 1,
+        transport: "binary",
+        session,
+        frame: (({ base64: _base64, ...frame }) => frame)(result.frame),
+        ...(dropped > 0
+          ? {
+              gap: {
+                afterSequence,
+                currentSequence: result.frame.sequence,
+                dropped,
+              },
+            }
+          : {}),
+      });
+      const metadataBytes = Buffer.from(JSON.stringify(metadata), "utf8");
+      if (metadataBytes.byteLength > MAX_BROWSER_DEVICE_BINARY_METADATA_BYTES) {
+        throw new HttpError(502, "Browser Device frame metadata is too large for binary transport");
+      }
+      const envelope = Buffer.allocUnsafe(4 + metadataBytes.byteLength + bytes.byteLength);
+      envelope.writeUInt32BE(metadataBytes.byteLength, 0);
+      metadataBytes.copy(envelope, 4);
+      bytes.copy(envelope, 4 + metadataBytes.byteLength);
+      res.writeHead(200, {
+        "Content-Type": BROWSER_DEVICE_BINARY_FRAME_CONTENT_TYPE,
+        "Content-Length": envelope.byteLength,
+        "Cache-Control": "no-store",
+        "X-Relay-Browser-Device-Transport": "binary",
+        ...CORS_HEADERS,
+      });
+      res.end(envelope);
+    } catch (error) {
+      if (error instanceof BrowserDeviceInputOverloadedError) {
+        throw new HttpError(429, error.message, {
+          code: error.code,
+          pending: error.pending,
+          limit: error.limit,
+          retryable: true,
+        });
+      }
+      if (error instanceof BrowserDeviceConflictError) {
+        throw new HttpError(409, error.message, {
+          code: error.code,
+          ...(error.currentSequence === undefined
+            ? {}
+            : { currentSequence: error.currentSequence }),
+        });
+      }
+      throw error;
+    }
+    return true;
+  }
+
   const browserFrameMatch = matchPath(pathname, "/targets/:id/browser-device/frame");
   if (method === "GET" && browserFrameMatch) {
     const targetId = browserFrameMatch.id!;
@@ -166,6 +249,50 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
           : {}),
       });
     } catch (error) {
+      if (error instanceof BrowserDeviceInputOverloadedError) {
+        throw new HttpError(429, error.message, {
+          code: error.code,
+          pending: error.pending,
+          limit: error.limit,
+          retryable: true,
+        });
+      }
+      if (error instanceof BrowserDeviceConflictError) {
+        throw new HttpError(409, error.message, {
+          code: error.code,
+          ...(error.currentSequence === undefined
+            ? {}
+            : { currentSequence: error.currentSequence }),
+        });
+      }
+      throw error;
+    }
+    return true;
+  }
+
+  const browserInspectMatch = matchPath(pathname, "/targets/:id/browser-device/inspect");
+  if (method === "GET" && browserInspectMatch) {
+    const targetId = browserInspectMatch.id!;
+    const target = await readTarget(targetId);
+    if (!target?.browser) throw new HttpError(404, "Managed browser target not found");
+    assertTargetObservation(scope, targetId);
+    const parsed = browserDeviceInspectInputSchema.parse({
+      targetId,
+      sessionId: url.searchParams.get("sessionId"),
+      pageId: url.searchParams.get("pageId"),
+      expectedSequence: url.searchParams.get("expectedSequence"),
+    });
+    try {
+      json(res, 200, await inspectBrowserDevice(targetId, parsed));
+    } catch (error) {
+      if (error instanceof BrowserDeviceInputOverloadedError) {
+        throw new HttpError(429, error.message, {
+          code: error.code,
+          pending: error.pending,
+          limit: error.limit,
+          retryable: true,
+        });
+      }
       if (error instanceof BrowserDeviceConflictError) {
         throw new HttpError(409, error.message, {
           code: error.code,
@@ -195,6 +322,14 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
       );
       json(res, 200, { ok: true, session: await withOwnership(scope, result.session) });
     } catch (error) {
+      if (error instanceof BrowserDeviceInputOverloadedError) {
+        throw new HttpError(429, error.message, {
+          code: error.code,
+          pending: error.pending,
+          limit: error.limit,
+          retryable: true,
+        });
+      }
       if (error instanceof BrowserDeviceConflictError) {
         throw new HttpError(409, error.message, {
           code: error.code,

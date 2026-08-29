@@ -6,13 +6,15 @@ import {
   type ChangeProofPublicationReceipt,
 } from "@relay/protocol";
 import { readControlStore, withControlStore } from "./collaboration-store.js";
+import { providerCheckForStoredChangeProof } from "./change-proof-decision.js";
 import type { ChangeVerificationScope } from "./change-verification-store.js";
 
 export class ChangeProofPublicationConflictError extends Error {
   readonly code:
     | "PUBLICATION_IDENTITY_MISMATCH"
     | "PUBLICATION_TIME_REVERSED"
-    | "PROOF_DECISION_REQUIRED";
+    | "PROOF_DECISION_REQUIRED"
+    | "PROOF_CHECK_MISMATCH";
 
   constructor(code: ChangeProofPublicationConflictError["code"], message: string) {
     super(message);
@@ -111,17 +113,29 @@ export async function recordChangeProofPublication(
       );
     }
     const expectedConclusion =
-      proof.decision === "proved"
-        ? "success"
-        : proof.decision === "rejected"
-          ? "failure"
-          : proof.decision === "needs-review" || proof.decision === "insufficient-evidence"
-            ? "action-required"
-            : undefined;
+      proof.state === "superseded"
+        ? "action-required"
+        : proof.decision === "proved"
+          ? "success"
+          : proof.decision === "rejected"
+            ? "failure"
+            : proof.decision === "needs-review" || proof.decision === "insufficient-evidence"
+              ? "action-required"
+              : undefined;
     if (!expectedConclusion || check.conclusion !== expectedConclusion) {
       throw new ChangeProofPublicationConflictError(
         "PROOF_DECISION_REQUIRED",
         "a completed provider check must match the Proof's deterministic terminal decision",
+      );
+    }
+    const canonicalCheck = providerCheckForStoredChangeProof({
+      proof,
+      ...(check.detailsUrl ? { detailsUrl: check.detailsUrl } : {}),
+    });
+    if (JSON.stringify(check) !== JSON.stringify(canonicalCheck)) {
+      throw new ChangeProofPublicationConflictError(
+        "PROOF_CHECK_MISMATCH",
+        "a provider acknowledgement must retain Relay's exact stored Proof projection",
       );
     }
 

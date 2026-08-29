@@ -91,6 +91,7 @@ function proof(): ChangeVerification {
         {
           appMapId: "settings",
           testId: "settings-language",
+          appMapRevision: 7,
           reason: "Settings localization changed.",
           confidence: "definite",
         },
@@ -192,6 +193,38 @@ test("missing or incomplete mandatory proof is action-required, never green", ()
   });
   assert.equal(incomplete.decision, "insufficient-evidence");
   assert.match(incomplete.coverageGaps[0]!, /did not produce complete mandatory proof/);
+});
+
+test("provider checks distinguish infrastructure failure from ordinary missing evidence", () => {
+  const infrastructure = result("chromium-compact-ar", {
+    outcome: "infrastructure-failure",
+    evidenceComplete: false,
+    failure: {
+      summary: "The required browser worker exited before the page was available.",
+      evidenceRefs: [digest("e")],
+    },
+  });
+  const decision = decideChangeVerification({ proof: proof(), caseResults: [infrastructure] });
+  assert.equal(decision.decision, "insufficient-evidence");
+  assert.ok(decision.coverageGaps.some((gap) => gap.startsWith("Infrastructure failure in Run")));
+  const check = providerCheckForChangeProof({ proof: proof(), decision });
+  assert.equal(check.conclusion, "action-required");
+  assert.equal(check.classification, "infrastructure-failure");
+  assert.equal(check.title, "Relay Proof — INFRASTRUCTURE FAILURE");
+  const stored = {
+    ...proof(),
+    state: decision.state,
+    decision: decision.decision,
+    runIds: decision.runIds,
+    evidenceDigests: decision.evidenceDigests,
+    coverageGaps: decision.coverageGaps,
+    residualRisk: decision.residualRisk,
+    smallestNextVerification: decision.smallestNextVerification,
+  } as ChangeVerification;
+  assert.equal(
+    providerCheckForStoredChangeProof({ proof: stored }).classification,
+    "infrastructure-failure",
+  );
 });
 
 test("a definitive causal regression rejects and creates one bounded repair packet", () => {
@@ -347,4 +380,19 @@ test("provider publication projects only the durable terminal Proof", () => {
   assert.match(check.text, /Recorded Runs: 1/u);
   assert.match(check.text, /Missing required Run.*webkit-compact-ar/u);
   assert.throws(() => providerCheckForStoredChangeProof({ proof: source }), /terminal Proof/u);
+});
+
+test("provider publication makes superseded Proofs explicitly action-required", () => {
+  const source = proof();
+  const superseded = {
+    ...source,
+    state: "superseded",
+    decision: undefined,
+    supersededByProofId: "proof-2",
+  } as ChangeVerification;
+  const check = providerCheckForStoredChangeProof({ proof: superseded });
+  assert.equal(check.conclusion, "action-required");
+  assert.equal(check.classification, "superseded");
+  assert.match(check.summary, /proof-2/u);
+  assert.match(check.text, /Superseded by Proof: proof-2/u);
 });

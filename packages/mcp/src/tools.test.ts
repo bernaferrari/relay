@@ -34,7 +34,13 @@ test("maps every tool-eligible operation exactly once", () => {
   );
   assert.deepEqual(
     relayMcpExclusions.map(({ operationId }) => operationId),
-    ["event.stream", "target.stream.open", "activity.export", "discovery.promote"],
+    [
+      "event.stream",
+      "target.stream.open",
+      "target.browser-device.frame-binary",
+      "activity.export",
+      "discovery.promote",
+    ],
   );
   assert.ok(relayMcpExclusions.every(({ reason }) => reason.trim().length > 0));
   assert.equal(

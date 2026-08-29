@@ -68,9 +68,19 @@ function check(summary = "Bind the exact head build."): ChangeProofProviderCheck
     headSha,
     status: "completed",
     conclusion: "action-required",
+    classification: "insufficient-evidence",
     title: "Relay Proof — INSUFFICIENT EVIDENCE",
     summary,
-    text: "Exact build evidence is missing.",
+    text: [
+      `Head: ${headSha}`,
+      "Required cases: 0",
+      "Recorded Runs: 0",
+      "Evidence objects: 0",
+      "Policy: relay.verify-change.v1",
+      "",
+      "Coverage gaps:",
+      "- Exact build evidence is missing.",
+    ].join("\n"),
   };
 }
 
@@ -101,10 +111,17 @@ test("persists one check identity and appends only materially changed publicatio
     assert.deepEqual(repeated, first);
 
     const changed = await recordChangeProofPublication(
-      publication(check("Build the exact head, then continue this Proof."), 500),
+      publication({ ...check(), detailsUrl: "https://relay.example.com/proofs/proof-1" }, 500),
     );
     assert.equal(changed.sequence, 2);
     assert.notEqual(changed.checkDigest, first.checkDigest);
+
+    await assert.rejects(
+      recordChangeProofPublication(publication(check("A friendlier forged summary."), 600)),
+      (error) =>
+        error instanceof ChangeProofPublicationConflictError &&
+        error.code === "PROOF_CHECK_MISMATCH",
+    );
 
     resetControlDatabaseCache();
     assert.deepEqual(

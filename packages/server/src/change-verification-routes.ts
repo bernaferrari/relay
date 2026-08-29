@@ -5,18 +5,24 @@ import {
   ChangeVerificationConflictError,
   ChangeVerificationNotFoundError,
   createChangeVerification,
+  changeProofCaseResultFromPersistedRun,
+  changeProofRequiredRunCases,
+  decideChangeVerification,
   currentOperationContext,
   listChangeVerifications,
   now,
   readChangeProofPublications,
   readChangeVerification,
   readChangeVerificationHistory,
+  readPersistedRun,
   supersedeChangeVerification,
   type AdvanceChangeVerificationInput,
   type ChangeVerificationScope,
+  type PersistedRun,
 } from "@relay/core";
 import {
   CHANGE_VERIFICATION_STATES,
+  changeProofCaseResultSchema,
   type ChangeVerification,
   type OperationInput,
 } from "@relay/protocol";
@@ -32,6 +38,14 @@ export type ChangeVerificationRouteRuntime = {
   publications: typeof readChangeProofPublications;
   advance: typeof advanceChangeVerification;
   supersede: typeof supersedeChangeVerification;
+  readRun: typeof readPersistedRun;
+  caseResultFromRun: typeof changeProofCaseResultFromPersistedRun;
+  /** Optional host-configured provider boundary. Relay never publishes unless
+   * the embedding server supplies this integration explicitly. */
+  publishTerminal?: (input: {
+    scope: ChangeVerificationScope;
+    proof: ChangeVerification;
+  }) => Promise<void>;
 };
 
 const defaultRuntime: ChangeVerificationRouteRuntime = {
@@ -43,6 +57,8 @@ const defaultRuntime: ChangeVerificationRouteRuntime = {
   publications: readChangeProofPublications,
   advance: advanceChangeVerification,
   supersede: supersedeChangeVerification,
+  readRun: readPersistedRun,
+  caseResultFromRun: changeProofCaseResultFromPersistedRun,
 };
 
 function scopeOf(scope: RequestContext): ChangeVerificationScope {
@@ -114,6 +130,103 @@ function idempotentMutation(
 
 function mutationOutput(proof: ChangeVerification) {
   return { proof, receipt: proof.lastMutation };
+}
+
+async function publishTerminalProof(
+  runtime: ChangeVerificationRouteRuntime,
+  scope: ChangeVerificationScope,
+  proof: ChangeVerification,
+): Promise<void> {
+  if (
+    runtime.publishTerminal &&
+    ["proved", "rejected", "needs-review", "insufficient-evidence", "superseded"].includes(
+      proof.state,
+    )
+  ) {
+    await runtime.publishTerminal({ scope, proof });
+  }
+}
+
+function proofRunConflict(message: string, details?: Record<string, unknown>): never {
+  throw new HttpError(409, message, { code: "PROOF_RUN_INVALID", ...details });
+}
+
+function runIdentity(value: { appMapId: string; testId: string; targetCaseId: string }): string {
+  return `${value.appMapId}\0${value.testId}\0${value.targetCaseId}`;
+}
+
+async function projectProofRunResults(
+  runtime: ChangeVerificationRouteRuntime,
+  scope: ChangeVerificationScope,
+  proof: ChangeVerification,
+  requestedRunIds: readonly string[],
+): Promise<Awaited<ReturnType<ChangeVerificationRouteRuntime["caseResultFromRun"]>>[]> {
+  const runs: PersistedRun[] = [];
+  for (const runId of requestedRunIds) {
+    const run = await runtime.readRun(runId);
+    if (!run) proofRunConflict(`Persisted Run ${runId} was not found`, { runId });
+    if (run.id !== runId)
+      proofRunConflict(`Persisted Run identity does not match ${runId}`, { runId });
+    if (run.projectId !== scope.projectId) {
+      proofRunConflict(`Persisted Run ${runId} belongs to another project`, { runId });
+    }
+    if (
+      run.executionProvenance?.organizationId !== scope.organizationId ||
+      run.executionProvenance.projectId !== scope.projectId
+    ) {
+      proofRunConflict(`Persisted Run ${runId} has no matching scoped execution provenance`, {
+        runId,
+      });
+    }
+    runs.push(run);
+  }
+  try {
+    return await Promise.all(
+      runs.map(async (run) =>
+        changeProofCaseResultSchema.parse(await runtime.caseResultFromRun({ proof, run })),
+      ),
+    );
+  } catch (error) {
+    proofRunConflict(
+      error instanceof Error ? error.message : "Persisted Run could not be bound to this Proof",
+    );
+  }
+}
+
+async function trustedProofRunResults(
+  runtime: ChangeVerificationRouteRuntime,
+  scope: ChangeVerificationScope,
+  proof: ChangeVerification,
+  requestedRunIds: readonly string[],
+): Promise<Awaited<ReturnType<ChangeVerificationRouteRuntime["caseResultFromRun"]>>[]> {
+  if (new Set(requestedRunIds).size !== requestedRunIds.length) {
+    proofRunConflict("record-runs cannot contain duplicate Run ids");
+  }
+  const alreadyRecorded = new Set(proof.runIds);
+  const duplicate = requestedRunIds.find((runId) => alreadyRecorded.has(runId));
+  if (duplicate) {
+    proofRunConflict(`Run ${duplicate} is already recorded on this Proof`, { runId: duplicate });
+  }
+  return projectProofRunResults(runtime, scope, proof, requestedRunIds);
+}
+
+function appendUnique<T>(before: readonly T[], additions: readonly T[]): T[] {
+  return [...new Set([...before, ...additions])];
+}
+
+function decideTrustedProof(input: {
+  proof: ChangeVerification;
+  caseResults: readonly unknown[];
+}): ReturnType<typeof decideChangeVerification> {
+  try {
+    return decideChangeVerification(input);
+  } catch (error) {
+    proofRunConflict(
+      error instanceof Error
+        ? error.message
+        : "Persisted Run facts could not form a Proof decision",
+    );
+  }
 }
 
 async function replayedReceipt(
@@ -335,6 +448,7 @@ export async function handleChangeVerificationRoute(input: {
     const digest = requestDigest(current.id, body);
     const replay = await replayedReceipt(runtime, scope, current, requestId, body.action, digest);
     if (replay) {
+      await publishTerminalProof(runtime, scope, current);
       json(input.response, 200, { proof: current, receipt: replay });
       return true;
     }
@@ -346,38 +460,197 @@ export async function handleChangeVerificationRoute(input: {
       action: body.action,
       at,
     } as const;
-    const proof =
-      body.action === "revise-plan"
-        ? await advanceProof(runtime, current, {
+    let proof: ChangeVerification;
+    if (body.action === "start-pilot") {
+      if (current.state !== "ready" || !current.planApproval) {
+        throw new HttpError(409, "Only an approved ready Proof can start its pilot", {
+          code: "PROOF_EXECUTION_NOT_READY",
+        });
+      }
+      try {
+        changeProofRequiredRunCases(current);
+      } catch (error) {
+        throw new HttpError(
+          409,
+          error instanceof Error ? error.message : "Proof has no executable required cases",
+          { code: "PROOF_EXECUTION_NOT_READY" },
+        );
+      }
+      proof = await advanceProof(runtime, current, {
+        ...common,
+        state: "running-pilot",
+        smallestNextVerification: {
+          kind: "run-pilot",
+          reason: body.reason ?? "Run the first deterministic Verification Plan pilot case.",
+        },
+      });
+    } else if (body.action === "start-required-coverage") {
+      if (current.state !== "awaiting-expansion") {
+        throw new HttpError(409, "Required coverage can start only after a passing pilot", {
+          code: "PROOF_EXPANSION_NOT_READY",
+        });
+      }
+      let requiredCases: ReturnType<typeof changeProofRequiredRunCases>;
+      try {
+        requiredCases = changeProofRequiredRunCases(current);
+      } catch (error) {
+        throw new HttpError(
+          409,
+          error instanceof Error ? error.message : "Proof has no executable required cases",
+          { code: "PROOF_EXPANSION_NOT_READY" },
+        );
+      }
+      if (current.runIds.length >= requiredCases.length) {
+        throw new HttpError(409, "Proof has no remaining required coverage to start", {
+          code: "PROOF_EXPANSION_COMPLETE",
+        });
+      }
+      proof = await advanceProof(runtime, current, {
+        ...common,
+        state: "running",
+        smallestNextVerification: {
+          kind: "expand",
+          reason: body.reason ?? "Run the remaining policy-required Verification Plan cases.",
+        },
+      });
+    } else if (body.action === "record-runs") {
+      if (current.state !== "running-pilot" && current.state !== "running") {
+        throw new HttpError(409, "Runs can be recorded only while a Proof is executing", {
+          code: "PROOF_EXECUTION_NOT_RUNNING",
+        });
+      }
+      const runIds = body.runIds!;
+      if (current.state === "running-pilot" && runIds.length !== 1) {
+        throw new HttpError(409, "The pilot must record exactly one completed Run", {
+          code: "PROOF_PILOT_RUN_REQUIRED",
+        });
+      }
+      const newResults = await trustedProofRunResults(runtime, scope, current, runIds);
+      const allResults =
+        current.state === "running"
+          ? [
+              ...(current.runIds.length
+                ? await projectProofRunResults(runtime, scope, current, current.runIds)
+                : []),
+              ...newResults,
+            ]
+          : newResults;
+      const appendedRunIds = appendUnique(current.runIds, runIds);
+      const appendedEvidence = appendUnique(
+        current.evidenceDigests,
+        newResults.flatMap(({ evidenceDigests }) => evidenceDigests),
+      );
+
+      if (current.state === "running-pilot") {
+        const pilot = newResults[0]!;
+        const pilotCase = changeProofRequiredRunCases(current)[0];
+        if (
+          !pilotCase ||
+          runIdentity(pilot) !==
+            runIdentity({
+              appMapId: pilotCase.appMapId,
+              testId: pilotCase.testId,
+              targetCaseId: pilotCase.targetCaseId,
+            })
+        ) {
+          throw new HttpError(409, "Recorded Run is not the deterministic Proof pilot", {
+            code: "PROOF_PILOT_RUN_MISMATCH",
+          });
+        }
+        const requiredCases = changeProofRequiredRunCases(current);
+        if (pilot.outcome === "passed" && requiredCases.length > 1) {
+          proof = await advanceProof(runtime, current, {
             ...common,
-            state: body.builds!.length ? "planning" : "awaiting-build",
-            builds: body.builds!,
-            selection: body.selection!,
-            planApproval: null,
-            coverageGaps: body.coverageGaps,
-            residualRisk: body.residualRisk,
-            smallestNextVerification: body.smallestNextVerification ?? {
-              kind: body.builds!.length ? "approve-plan" : "provide-build",
-              reason: body.builds!.length
-                ? "Review and approve the revised Verification Plan."
-                : "Provide an exact build for the current head.",
+            state: "awaiting-expansion",
+            action: "record-runs",
+            runIds: appendedRunIds,
+            evidenceDigests: appendedEvidence,
+            smallestNextVerification: {
+              kind: "expand",
+              reason: "The pilot passed; run the smallest remaining required coverage.",
             },
-          })
-        : body.action === "request-plan-review"
+          });
+        } else {
+          const decision = decideTrustedProof({ proof: current, caseResults: allResults });
+          proof = await advanceProof(runtime, current, {
+            ...common,
+            state: decision.state,
+            action: "record-runs",
+            runIds: appendedRunIds,
+            evidenceDigests: appendedEvidence,
+            firstCausalFailure: decision.firstCausalFailure ?? null,
+            coverageGaps: decision.coverageGaps,
+            residualRisk: decision.residualRisk,
+            smallestNextVerification: decision.smallestNextVerification,
+          });
+        }
+      } else {
+        const decision = decideTrustedProof({ proof: current, caseResults: allResults });
+        const partial =
+          decision.decision === "insufficient-evidence" &&
+          decision.summary.insufficient === 0 &&
+          decision.summary.missing > 0;
+        proof = await advanceProof(runtime, current, {
+          ...common,
+          state: partial ? "running" : decision.state,
+          action: "record-runs",
+          runIds: appendedRunIds,
+          evidenceDigests: appendedEvidence,
+          firstCausalFailure: decision.firstCausalFailure ?? null,
+          coverageGaps: partial ? current.coverageGaps : decision.coverageGaps,
+          residualRisk: decision.residualRisk,
+          smallestNextVerification: partial
+            ? {
+                kind: "expand",
+                reason: "Continue with the smallest missing required Verification case.",
+                ...(decision.smallestNextVerification.appMapId
+                  ? { appMapId: decision.smallestNextVerification.appMapId }
+                  : {}),
+                ...(decision.smallestNextVerification.testId
+                  ? { testId: decision.smallestNextVerification.testId }
+                  : {}),
+                ...(decision.smallestNextVerification.targetCaseId
+                  ? { targetCaseId: decision.smallestNextVerification.targetCaseId }
+                  : {}),
+              }
+            : decision.smallestNextVerification,
+        });
+      }
+    } else {
+      proof =
+        body.action === "revise-plan"
           ? await advanceProof(runtime, current, {
               ...common,
-              state: "needs-review",
-              smallestNextVerification: { kind: "review", reason: body.reason! },
-            })
-          : await advanceProof(runtime, current, {
-              ...common,
-              state: current.builds.length ? "planning" : "awaiting-build",
+              state: body.builds!.length ? "planning" : "awaiting-build",
+              builds: body.builds!,
+              selection: body.selection!,
               planApproval: null,
-              smallestNextVerification: {
-                kind: current.builds.length ? "approve-plan" : "provide-build",
-                reason: body.reason!,
+              coverageGaps: body.coverageGaps,
+              residualRisk: body.residualRisk,
+              smallestNextVerification: body.smallestNextVerification ?? {
+                kind: body.builds!.length ? "approve-plan" : "provide-build",
+                reason: body.builds!.length
+                  ? "Review and approve the revised Verification Plan."
+                  : "Provide an exact build for the current head.",
               },
-            });
+            })
+          : body.action === "request-plan-review"
+            ? await advanceProof(runtime, current, {
+                ...common,
+                state: "needs-review",
+                smallestNextVerification: { kind: "review", reason: body.reason! },
+              })
+            : await advanceProof(runtime, current, {
+                ...common,
+                state: current.builds.length ? "planning" : "awaiting-build",
+                planApproval: null,
+                smallestNextVerification: {
+                  kind: current.builds.length ? "approve-plan" : "provide-build",
+                  reason: body.reason!,
+                },
+              });
+    }
+    await publishTerminalProof(runtime, scope, proof);
     recordAudit(input.scope, { action: "proof.continue", resource: proof.id, result: "allow" });
     json(input.response, 200, mutationOutput(proof));
     return true;
@@ -431,6 +704,7 @@ export async function handleChangeVerificationRoute(input: {
       const replacementId = current.supersededByProofId;
       if (!replacementId) throw new HttpError(409, "Supersession receipt is incomplete");
       const replacement = await currentProof(runtime, scope, replacementId);
+      await publishTerminalProof(runtime, scope, current);
       json(input.response, 200, {
         previous: current,
         replacement,
@@ -469,6 +743,7 @@ export async function handleChangeVerificationRoute(input: {
         resource: result.replacement.id,
         result: "allow",
       });
+      await publishTerminalProof(runtime, scope, result.previous);
       json(input.response, 201, {
         ...result,
         receipt: result.previous.lastMutation,

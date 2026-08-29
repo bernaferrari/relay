@@ -4,12 +4,14 @@ import type {
   BrowserDeviceFrame,
   BrowserDeviceInput,
   BrowserDeviceSession,
+  BrowserDeviceSemanticOverlay,
   BrowserEnvironmentInput,
 } from "@relay/protocol";
 import type { Frame } from "./api-types";
 import {
   captureBrowserDeviceFrame,
   controlBrowserDevice,
+  inspectBrowserDevice,
   openBrowserDevice,
 } from "./server-target-remote";
 
@@ -20,6 +22,9 @@ export function createServerBrowserDeviceController(deps: {
   setLiveCaptureIssue: (issue: string | null) => void;
 }) {
   const [session, setSession] = createSignal<BrowserDeviceSession | null>(null);
+  const [semanticOverlay, setSemanticOverlay] = createSignal<BrowserDeviceSemanticOverlay | null>(
+    null,
+  );
   let frame: BrowserDeviceFrame | undefined;
   let generation = 0;
   let reopenNeeded = false;
@@ -29,6 +34,7 @@ export function createServerBrowserDeviceController(deps: {
     frame = undefined;
     reopenNeeded = false;
     setSession(null);
+    setSemanticOverlay(null);
     deps.setLiveFrame(null);
     deps.setLiveCaptureIssue(null);
   }
@@ -44,6 +50,7 @@ export function createServerBrowserDeviceController(deps: {
     if (requestGeneration !== generation || deps.selectedDevice() !== targetId) return opened;
     if (session()?.sessionId !== opened.sessionId) {
       frame = undefined;
+      setSemanticOverlay(null);
       deps.setLiveFrame(null);
     }
     reopenNeeded = false;
@@ -75,6 +82,10 @@ export function createServerBrowserDeviceController(deps: {
         return;
       setSession(result.session);
       frame = result.frame;
+      // A semantic overlay is a proof of one exact raster observation. Any
+      // later frame, even identical pixels, invalidates it until explicitly
+      // re-inspected.
+      setSemanticOverlay(null);
       deps.setLiveFrame({
         id: `browser-${result.session.sessionId}-${result.frame.sequence}`,
         capturedAt: result.frame.capturedAt,
@@ -85,6 +96,7 @@ export function createServerBrowserDeviceController(deps: {
         caption: `browser · frame ${result.frame.sequence}`,
         width: result.frame.width,
         height: result.frame.height,
+        visualFingerprint: result.frame.visualFingerprint,
         browserDevice: {
           sessionId: result.session.sessionId,
           pageId: result.frame.pageId,
@@ -108,6 +120,33 @@ export function createServerBrowserDeviceController(deps: {
         setSession({ ...current, status: "degraded", issue });
       }
       deps.setLiveCaptureIssue(issue);
+    }
+  }
+
+  async function inspect(): Promise<BrowserDeviceSemanticOverlay | null> {
+    const targetId = deps.selectedDevice();
+    const bound = currentBoundInput();
+    if (!targetId || !bound) return null;
+    const requestGeneration = generation;
+    try {
+      const result = await inspectBrowserDevice(await deps.client(), targetId, bound);
+      if (requestGeneration !== generation || deps.selectedDevice() !== targetId) return null;
+      if (
+        result.overlay.sessionId !== bound.sessionId ||
+        result.overlay.pageId !== bound.pageId ||
+        result.overlay.sequence !== bound.expectedSequence ||
+        result.overlay.visualFingerprint !== frame?.visualFingerprint
+      ) {
+        setSemanticOverlay(null);
+        return null;
+      }
+      setSemanticOverlay(result.overlay);
+      return result.overlay;
+    } catch (error) {
+      if (requestGeneration === generation && deps.selectedDevice() === targetId) {
+        deps.setLiveCaptureIssue(error instanceof Error ? error.message : String(error));
+      }
+      return null;
     }
   }
 
@@ -149,6 +188,8 @@ export function createServerBrowserDeviceController(deps: {
     reset,
     open,
     poll,
+    semanticOverlay,
+    inspect,
     click: (fx: number, fy: number) =>
       send((bound) => ({
         ...bound,

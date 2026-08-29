@@ -145,7 +145,7 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
         },
         {
           name: "action",
-          type: "revise-plan | request-plan-review | return-to-planning",
+          type: "revise-plan | request-plan-review | return-to-planning | start-pilot | start-required-coverage | record-runs",
           required: true,
           description: "Next Verification Plan action",
         },
@@ -177,13 +177,20 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
         {
           name: "reason",
           type: "string",
-          description: "Required reason for request-plan-review or return-to-planning",
+          description:
+            "Required reason for review, return-to-planning, pilot, and expansion actions",
+        },
+        {
+          name: "runIds",
+          type: "array",
+          description:
+            "Persisted Relay Run IDs for record-runs; the server derives every outcome from their verified TracePacks",
         },
       ],
       examples: [
         'relay proof continue <proof-id> --input \'{"expectedVersion":2,"action":"request-plan-review","reason":"A new affected journey needs review."}\'',
       ],
-      note: "Continue is CAS-bound to expectedVersion. revise-plan requires exact replacement builds and selection; review and return actions require a reason.",
+      note: "Continue is CAS-bound to expectedVersion. revise-plan requires exact replacement builds and selection. Live execution normally uses relay verify-change --base; record-runs accepts only durable Run IDs and never a client verdict.",
     }),
   ),
   mapped(

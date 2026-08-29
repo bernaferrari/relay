@@ -11,7 +11,8 @@ import { cn } from "../lib/cn";
 import { humanError } from "../lib/human-error";
 import { eyebrow, mono, productIconButton, productPage } from "../lib/ui";
 import { Icon } from "./icon";
-import { StatusChip, type StatusChipTone } from "./status-chip";
+import type { StatusChipTone } from "./status-chip";
+import { ProofDetail } from "./proof-detail";
 
 const statePresentation: Record<ChangeVerificationState, { label: string; tone: StatusChipTone }> =
   {
@@ -109,15 +110,6 @@ function changeTitle(proof: ChangeVerification): string {
       ? `Pull request #${proof.change.pullRequest}`
       : shortSha(proof.change.headSha))
   );
-}
-
-function targetLabel(targetCase: ChangeVerification["selection"]["targetCases"][number]): string {
-  const profile = targetCase.targetProfile;
-  const browser = profile.browserCaseProfile;
-  if (browser) {
-    return `${browser.engine} · ${browser.viewport.width} × ${browser.viewport.height} · ${browser.locale}`;
-  }
-  return [profile.platform, profile.model, profile.osVersion].filter(Boolean).join(" · ");
 }
 
 export function ChangesWorkspace(props: {
@@ -265,12 +257,6 @@ export function ChangesWorkspace(props: {
     const proof = selected();
     return proof ? statePresentation[proof.state] : statePresentation.planning;
   });
-  const requiredTargets = createMemo(
-    () => selected()?.selection.targetCases.filter(({ required }) => required) ?? [],
-  );
-  const evidenceCount = createMemo(() => selected()?.evidenceDigests.length ?? 0);
-  const latestPublication = createMemo(() => publications().at(-1));
-
   return (
     <section class={cn(productPage, "flex flex-col gap-6")} aria-label="Changes and Proofs">
       <header class="mx-auto flex w-full max-w-[1180px] items-start justify-between gap-6 max-[620px]:flex-col">
@@ -578,181 +564,14 @@ export function ChangesWorkspace(props: {
             }
           >
             {(proof) => (
-              <article class="min-w-0 overflow-y-auto p-[clamp(1.25rem,3vw,2.5rem)]">
-                <div class="grid gap-8">
-                  <header class="grid gap-3 border-b border-border-weak-base pb-6">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <StatusChip tone={selectedStatus().tone} label={selectedStatus().label} />
-                      <span class={cn("text-caption text-text-weak", mono)}>
-                        {shortSha(proof().change.baseSha)} → {shortSha(proof().change.headSha)}
-                      </span>
-                    </div>
-                    <h2 class="m-0 text-title font-semibold tracking-[-0.02em] text-text-strong">
-                      {changeTitle(proof())}
-                    </h2>
-                    <p class="m-0 text-body text-text-base">
-                      {proof().change.repository}
-                      {proof().change.pullRequest ? ` · PR #${proof().change.pullRequest}` : ""}
-                    </p>
-                    <Show when={proof().change.agentClaim?.acceptanceCriteria.length}>
-                      <ul class="m-0 grid gap-1.5 pl-5 text-body/[1.45] text-text-base">
-                        <For each={proof().change.agentClaim!.acceptanceCriteria}>
-                          {(criterion) => <li>{criterion}</li>}
-                        </For>
-                      </ul>
-                    </Show>
-                  </header>
-
-                  <ProofSection title="Why these journeys">
-                    <For
-                      each={proof().selection.affectedJourneys}
-                      fallback={<EmptyFact>No affected journey has been proved yet.</EmptyFact>}
-                    >
-                      {(journey) => (
-                        <button
-                          type="button"
-                          class="grid min-h-12 w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 rounded-xl px-3 py-2 text-left hover:bg-surface-raised-base-hover"
-                          onClick={() => props.onOpenMap(journey.appMapId)}
-                        >
-                          <strong class="text-body font-semibold text-text-strong">
-                            {journey.testId}
-                          </strong>
-                          <span class="text-caption font-medium text-text-weak">
-                            {journey.confidence}
-                          </span>
-                          <span class="col-span-2 text-caption/[1.45] text-text-base">
-                            {journey.reason}
-                          </span>
-                        </button>
-                      )}
-                    </For>
-                  </ProofSection>
-
-                  <div class="grid grid-cols-2 gap-6 max-[1020px]:grid-cols-1">
-                    <ProofSection title="Exact builds">
-                      <For
-                        each={proof().builds}
-                        fallback={<EmptyFact>Exact build required.</EmptyFact>}
-                      >
-                        {(build) => (
-                          <FactRow
-                            title={`${build.platform} · ${build.configuration}`}
-                            detail={`${build.artifactDigest.slice(0, 23)}… · ${build.environmentRevision}`}
-                          />
-                        )}
-                      </For>
-                    </ProofSection>
-                    <ProofSection title="Required targets">
-                      <For
-                        each={requiredTargets()}
-                        fallback={<EmptyFact>Required target coverage is not frozen.</EmptyFact>}
-                      >
-                        {(targetCase) => (
-                          <FactRow title={targetCase.id} detail={targetLabel(targetCase)} />
-                        )}
-                      </For>
-                    </ProofSection>
-                  </div>
-
-                  <ProofSection title="Runs and evidence">
-                    <div class="grid grid-cols-3 gap-3 max-[760px]:grid-cols-1">
-                      <Metric label="Runs" value={proof().runIds.length} />
-                      <Metric label="Evidence objects" value={evidenceCount()} />
-                      <Metric label="Plan versions" value={history().length || 1} />
-                    </div>
-                    <Show when={proof().runIds.length > 0}>
-                      <div class="mt-2 flex flex-wrap gap-2">
-                        <For each={proof().runIds}>
-                          {(runId) => (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => props.onOpenRun(runId)}
-                            >
-                              Open {runId}
-                            </Button>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
-                  </ProofSection>
-
-                  <ProofSection title="Merge check">
-                    <Show
-                      when={latestPublication()}
-                      fallback={
-                        <EmptyFact>
-                          No provider check has acknowledged this exact Proof head yet.
-                        </EmptyFact>
-                      }
-                    >
-                      {(publication) => (
-                        <div class="grid gap-1 rounded-xl bg-surface-base px-3 py-2.5 ring-1 ring-inset ring-border-weak-base">
-                          <strong class="text-body font-semibold text-text-strong">
-                            GitHub · {publication().conclusion}
-                          </strong>
-                          <span class={cn("text-caption text-text-weak", mono)}>
-                            Check #{publication().checkRunId} · {shortSha(publication().headSha)}
-                          </span>
-                          <Show when={publication().htmlUrl}>
-                            {(url) => (
-                              <a
-                                class="w-fit text-caption font-semibold text-text-interactive-base hover:underline"
-                                href={url()}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Open merge check
-                              </a>
-                            )}
-                          </Show>
-                        </div>
-                      )}
-                    </Show>
-                  </ProofSection>
-
-                  <Show when={proof().firstCausalFailure}>
-                    {(failure) => (
-                      <section class="grid gap-2 rounded-xl bg-surface-critical-weak p-4 ring-1 ring-inset ring-border-critical-base/35">
-                        <span class={eyebrow}>First causal failure</span>
-                        <strong class="text-body font-semibold text-text-critical-base">
-                          {failure().summary}
-                        </strong>
-                        <button
-                          type="button"
-                          class="w-fit text-caption font-semibold text-text-interactive-base hover:underline"
-                          onClick={() => props.onOpenRun(failure().runId)}
-                        >
-                          Open {failure().runId}
-                        </button>
-                      </section>
-                    )}
-                  </Show>
-
-                  <Show when={proof().coverageGaps.length || proof().residualRisk.length}>
-                    <div class="grid grid-cols-2 gap-6 max-[1020px]:grid-cols-1">
-                      <ProofSection title="Coverage gaps">
-                        <For each={proof().coverageGaps} fallback={<EmptyFact>None.</EmptyFact>}>
-                          {(gap) => <ListFact>{gap}</ListFact>}
-                        </For>
-                      </ProofSection>
-                      <ProofSection title="Residual risk">
-                        <For each={proof().residualRisk} fallback={<EmptyFact>None.</EmptyFact>}>
-                          {(risk) => <ListFact>{risk}</ListFact>}
-                        </For>
-                      </ProofSection>
-                    </div>
-                  </Show>
-
-                  <section class="grid gap-2 rounded-xl bg-surface-base p-4 ring-1 ring-inset ring-border-weak-base">
-                    <span class={eyebrow}>Next required action</span>
-                    <strong class="text-body font-semibold text-text-strong">
-                      {proof().smallestNextVerification?.reason ??
-                        "No further action is recorded for this Proof."}
-                    </strong>
-                  </section>
-                </div>
-              </article>
+              <ProofDetail
+                proof={proof()}
+                status={selectedStatus()}
+                history={history()}
+                publications={publications()}
+                onOpenRun={props.onOpenRun}
+                onOpenMap={props.onOpenMap}
+              />
             )}
           </Show>
         </div>
@@ -786,44 +605,5 @@ function ProofField(props: {
         )}
       </Show>
     </label>
-  );
-}
-
-function ProofSection(props: { title: string; children: JSX.Element }) {
-  return (
-    <section class="grid content-start gap-2">
-      <h3 class={cn(eyebrow, "m-0")}>{props.title}</h3>
-      {props.children}
-    </section>
-  );
-}
-
-function FactRow(props: { title: string; detail: string }) {
-  return (
-    <div class="grid gap-1 rounded-xl bg-surface-base px-3 py-2.5 ring-1 ring-inset ring-border-weak-base">
-      <strong class="truncate text-body font-semibold text-text-strong">{props.title}</strong>
-      <span class={cn("truncate text-caption text-text-weak", mono)}>{props.detail}</span>
-    </div>
-  );
-}
-
-function Metric(props: { label: string; value: number }) {
-  return (
-    <div class="grid gap-1 rounded-xl bg-surface-base px-3 py-3 ring-1 ring-inset ring-border-weak-base">
-      <strong class={cn("text-title font-semibold text-text-strong", mono)}>{props.value}</strong>
-      <span class="text-caption text-text-weak">{props.label}</span>
-    </div>
-  );
-}
-
-function EmptyFact(props: { children: JSX.Element }) {
-  return <p class="m-0 text-body/[1.45] text-text-weak">{props.children}</p>;
-}
-
-function ListFact(props: { children: JSX.Element }) {
-  return (
-    <p class="m-0 rounded-lg bg-surface-base px-3 py-2 text-caption/[1.45] text-text-base">
-      {props.children}
-    </p>
   );
 }

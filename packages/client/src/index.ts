@@ -90,6 +90,13 @@ export type InvokeOptions = {
   authoringSessionId?: string;
 };
 
+export type BinaryResource = {
+  bytes: Uint8Array;
+  headers: Headers;
+};
+
+const DEFAULT_MAX_BINARY_RESOURCE_BYTES = 32 * 1024 * 1024;
+
 function operationRequest<Id extends OperationId>(
   id: Id,
   input: OperationInput<Id>,
@@ -176,9 +183,13 @@ export class RelayClient {
     this.timeoutMs = options.timeoutMs ?? 20_000;
   }
 
-  private async requestUnknown(path: string, init: RequestInit = {}): Promise<unknown> {
+  private async requestResponse(
+    path: string,
+    init: RequestInit = {},
+    accept = "application/json",
+  ): Promise<Response> {
     const headers = new Headers(init.headers);
-    headers.set("Accept", "application/json");
+    headers.set("Accept", accept);
     headers.set("X-Organization-Id", this.connection.organizationId);
     headers.set("X-Project-Id", this.connection.projectId);
     headers.set("X-Relay-Actor-Id", this.connection.actorId);
@@ -189,11 +200,15 @@ export class RelayClient {
     }
     const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
     const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
-    const response = await this.fetcher(`${this.connection.url}${path}`, {
+    return this.fetcher(`${this.connection.url}${path}`, {
       ...init,
       headers,
       signal,
     });
+  }
+
+  private async requestUnknown(path: string, init: RequestInit = {}): Promise<unknown> {
+    const response = await this.requestResponse(path, init);
     const text = await response.text();
     let body: unknown;
     try {
@@ -273,6 +288,82 @@ export class RelayClient {
       }
     }
     return response as T;
+  }
+
+  /** Fetch an explicitly registered read resource without materializing it as
+   * JSON. This is used for bounded binary frame bodies; response metadata is
+   * returned separately so callers can validate it before painting bytes. */
+  async binaryResource(
+    path: string,
+    init: RequestInit = {},
+    maxBytes = DEFAULT_MAX_BINARY_RESOURCE_BYTES,
+  ): Promise<BinaryResource> {
+    const method = (init.method ?? "GET").toUpperCase();
+    if (method !== "GET") throw new TypeError(`Binary resources must use GET: ${method} ${path}`);
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+      throw new TypeError("Binary resource byte limit must be a positive safe integer");
+    }
+    const registered = registeredTransport(path, method);
+    const response = await this.requestResponse(
+      path,
+      {
+        ...init,
+        ...(registered ? { headers: this.operationHeaders(registered.definition.id) } : {}),
+      },
+      "application/octet-stream, image/jpeg;q=0.9",
+    );
+    if (!response.ok) {
+      const text = await response.text();
+      let body: unknown;
+      try {
+        body = text ? JSON.parse(text) : undefined;
+      } catch {
+        body = text;
+      }
+      throw new ApiError(
+        response.status,
+        httpErrorMessage(response.status, response.statusText, body),
+        body,
+      );
+    }
+    const declaredLength = response.headers.get("content-length");
+    if (declaredLength !== null) {
+      const parsedLength = Number(declaredLength);
+      if (!Number.isSafeInteger(parsedLength) || parsedLength < 0 || parsedLength > maxBytes) {
+        throw new TypeError(`Binary resource exceeds its ${maxBytes}-byte limit`);
+      }
+    }
+    if (!response.body) {
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength > maxBytes) {
+        throw new TypeError(`Binary resource exceeds its ${maxBytes}-byte limit`);
+      }
+      return { bytes, headers: response.headers };
+    }
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel("binary resource byte limit exceeded");
+          throw new TypeError(`Binary resource exceeds its ${maxBytes}-byte limit`);
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { bytes, headers: response.headers };
   }
 
   async invoke<Id extends OperationId>(

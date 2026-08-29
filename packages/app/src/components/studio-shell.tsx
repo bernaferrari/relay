@@ -52,6 +52,7 @@ import { StudioShellShortcutsSheet } from "./studio-shell-shortcuts-sheet";
 import { StudioShellCombineRail } from "./studio-shell-combine-rail";
 import { StudioShellVariablesDialog } from "./studio-shell-variables-dialog";
 import { readRememberedDevicePanelPreference } from "../lib/studio-shell-preferences";
+import { createStudioActionMenuBehavior } from "../lib/studio-action-menu-behavior";
 import { createStudioBlankMapActions } from "../lib/studio-blank-map-actions";
 import {
   ChangesWorkspace,
@@ -140,12 +141,12 @@ export function StudioShell(props: {
   let libraryTrigger: HTMLButtonElement | undefined;
   let studioActionsTrigger: HTMLButtonElement | undefined;
   let studioActionsMenu: HTMLDivElement | undefined;
-  const visibleStudioActionItems = () =>
-    studioActionsMenu
-      ? [...studioActionsMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].filter(
-          (item) => !item.disabled && item.offsetParent !== null,
-        )
-      : [];
+  const studioActionMenu = createStudioActionMenuBehavior({
+    open: studioActionsOpen,
+    setOpen: setStudioActionsOpen,
+    trigger: () => studioActionsTrigger,
+    menu: () => studioActionsMenu,
+  });
   const closeLibrary = (restoreFocus = true) => {
     setNavOpen(false);
     if (restoreFocus) queueMicrotask(() => libraryTrigger?.focus());
@@ -194,10 +195,6 @@ export function StudioShell(props: {
       releaseFocus?.();
     });
   });
-  createEffect(() => {
-    if (!studioActionsOpen()) return;
-    queueMicrotask(() => visibleStudioActionItems()[0]?.focus());
-  });
   onMount(() => {
     const closeNavigator = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || !navOpen()) return;
@@ -207,29 +204,6 @@ export function StudioShell(props: {
     };
     window.addEventListener("keydown", closeNavigator, true);
     onCleanup(() => window.removeEventListener("keydown", closeNavigator, true));
-  });
-  onMount(() => {
-    const dismissStudioActions = (event: MouseEvent) => {
-      if (
-        studioActionsOpen() &&
-        !studioActionsMenu?.contains(event.target as Node) &&
-        !studioActionsTrigger?.contains(event.target as Node)
-      ) {
-        setStudioActionsOpen(false);
-      }
-    };
-    const closeStudioActions = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !studioActionsOpen()) return;
-      event.stopPropagation();
-      setStudioActionsOpen(false);
-      queueMicrotask(() => studioActionsTrigger?.focus());
-    };
-    document.addEventListener("mousedown", dismissStudioActions);
-    window.addEventListener("keydown", closeStudioActions, true);
-    onCleanup(() => {
-      document.removeEventListener("mousedown", dismissStudioActions);
-      window.removeEventListener("keydown", closeStudioActions, true);
-    });
   });
   onMount(() => {
     const onWorkspaceShortcut = (event: KeyboardEvent) => {
@@ -705,7 +679,7 @@ export function StudioShell(props: {
                     }}
                     onKeyDown={(event) => {
                       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-                      const items = visibleStudioActionItems();
+                      const items = studioActionMenu.visibleItems();
                       if (!items.length) return;
                       event.preventDefault();
                       const current = items.indexOf(document.activeElement as HTMLButtonElement);

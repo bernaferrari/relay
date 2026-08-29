@@ -123,3 +123,50 @@ test("Browser Device clears stale pixels and degrades after capture failure", as
   assert.equal(controller.session()?.status, "degraded");
   assert.equal(issue, "capture stopped");
 });
+
+test("Browser Device clears semantic labels when a newer frame arrives", async () => {
+  const [selectedDevice] = createSignal<string | null>("browser-a");
+  let frameCalls = 0;
+  const client = {
+    invoke: async (operationId: string, input: { targetId: string }) => {
+      if (operationId === "target.browser-device.open") {
+        return { session: session(input.targetId) };
+      }
+      if (operationId === "target.browser-device.frame") {
+        frameCalls += 1;
+        const sequence = frameCalls;
+        return {
+          session: { ...session(input.targetId), sequence },
+          frame: { ...frameFor(input.targetId), sequence, visualFingerprint: `digest-${sequence}` },
+        };
+      }
+      if (operationId === "target.browser-device.inspect") {
+        return {
+          overlay: {
+            schemaVersion: 1,
+            sessionId: "session-browser-a",
+            pageId: "page-browser-a",
+            sequence: 1,
+            visualFingerprint: "digest-1",
+            capturedAt: 2,
+            candidates: [],
+            truncated: false,
+          },
+        };
+      }
+      throw new Error(`unexpected operation: ${operationId}`);
+    },
+  };
+  const controller = createServerBrowserDeviceController({
+    client: async () => client as never,
+    selectedDevice,
+    setLiveFrame: () => undefined,
+    setLiveCaptureIssue: () => undefined,
+  });
+
+  await controller.poll();
+  assert.equal((await controller.inspect())?.sequence, 1);
+  assert.equal(controller.semanticOverlay()?.visualFingerprint, "digest-1");
+  await controller.poll();
+  assert.equal(controller.semanticOverlay(), null);
+});

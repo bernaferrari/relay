@@ -57,6 +57,13 @@ export type ParsedCli =
       config: GlobalConfig;
       command: "outcome";
       intent: OutcomeCliIntent;
+    }
+  | {
+      config: GlobalConfig;
+      command: "verify-change";
+      base: string;
+      configFile: string;
+      confirm: boolean;
     };
 
 type Environment = Record<string, string | undefined>;
@@ -104,6 +111,9 @@ const valueFlags = new Set([
   "--branch",
   "--device",
   "--map",
+  "--base",
+  "--config",
+  "--config-file",
 ]);
 const switchFlags = new Set([
   "-h",
@@ -623,6 +633,52 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       ),
       ...(surveyDirForce(operationId, tokens) ? { surveyForce: true } : {}),
     };
+  }
+
+  // `verify-change --base` is the local source-to-Proof workflow. Keep it as
+  // a CLI-native command: unlike the historical `verify-change run|test|revision`
+  // outcome, it must inspect local Git and a reviewed config before it can
+  // optionally call proof.start. This branch intentionally comes before the
+  // generic input reader so --input cannot smuggle an unreviewed config in.
+  if (group === "verify-change" && tokens.values.has("--base")) {
+    if (action !== undefined || operationId !== undefined || extra.length > 0) {
+      throw new UsageError("Expected: relay verify-change --base <ref> [--config-file <path>]");
+    }
+    if (rawInput !== undefined || inputFile !== undefined) {
+      throw new UsageError(
+        "verify-change --base reads a reviewed config file; use --config-file instead of --input",
+      );
+    }
+    const base = tokens.values.get("--base")!.trim();
+    if (!base || base.includes("\0") || base.length > 512) {
+      throw new UsageError("--base must be a bounded local Git ref");
+    }
+    const config = tokens.values.get("--config");
+    const configFile = tokens.values.get("--config-file");
+    if (config && configFile) {
+      throw new UsageError("Use only one of --config or --config-file");
+    }
+    return {
+      config: {
+        connection,
+        credentialSource,
+        output,
+        quiet: tokens.switches.has("--quiet"),
+        timeoutMs,
+        wait,
+        ensureLocalServer,
+      },
+      command: "verify-change",
+      base,
+      configFile: config ?? configFile ?? ".relay/change-proof.json",
+      confirm: tokens.switches.has("--confirm"),
+    };
+  }
+
+  for (const verifyChangeOnly of ["--base", "--config", "--config-file"] as const) {
+    if (tokens.values.has(verifyChangeOnly)) {
+      throw new UsageError(`${verifyChangeOnly} is only valid on verify-change --base`);
+    }
   }
 
   const input = readInput(tokens, env);

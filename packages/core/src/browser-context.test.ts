@@ -7,6 +7,7 @@ import { after, before, test } from "node:test";
 import { compileBrowserEnvironment, type TargetDefinition } from "@relay/protocol";
 import { chromium } from "playwright-core";
 import { browserContextOptionsForProfile, createBrowserContextFactory } from "./browser-context.js";
+import { closeBrowserHostPool } from "./browser-host-pool.js";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 let root = "";
@@ -37,6 +38,7 @@ before(async () => {
 });
 
 after(async () => {
+  await closeBrowserHostPool();
   await new Promise<void>((resolve, reject) =>
     server.close((error) => (error ? reject(error) : resolve())),
   );
@@ -109,9 +111,12 @@ test("authoring context is separate while proof contexts are fresh and explicitl
     assert.equal(await proofPage.evaluate(() => localStorage.getItem("relay-authoring")), null);
     await proof.close();
     proof = undefined;
-    assert.equal(proofBrowser?.isConnected(), false);
+    // Proof contexts are fresh, but their compatible browser process remains
+    // pooled for the next proof Run.
+    assert.equal(proofBrowser?.isConnected(), true);
 
     secondProof = await factory.openProof(undefined, { headless: true });
+    assert.equal(secondProof.context.browser(), proofBrowser);
     const secondPage = await secondProof.context.newPage();
     await secondPage.goto(`${startUrl}/seed`);
     await secondProof.close();

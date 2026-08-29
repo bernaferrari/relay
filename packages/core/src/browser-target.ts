@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { BrowserContext, Page, Request, Video } from "playwright-core";
@@ -8,6 +9,7 @@ import { createDeviceObservationFacade } from "./device-observation-membrane.js"
 import { LEGACY_POSITIONAL_BROWSER_REF_ERROR } from "./browser-locator-contract.js";
 import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js";
+import { runBrowserMutationAdmission } from "./browser-mutation-admission.js";
 import { browserProfileDir, readTarget } from "./targets.js";
 
 type BrowserSession = {
@@ -336,8 +338,8 @@ async function activePage(session: BrowserSession): Promise<Page> {
   return session.page;
 }
 
-async function snapshotPage(page: Page): Promise<SnapshotNode[]> {
-  return await page.locator(INTERACTIVE).evaluateAll((elements) => {
+async function snapshotPage(page: Page, maxNodes = 256): Promise<SnapshotNode[]> {
+  return await page.locator(INTERACTIVE).evaluateAll((elements, limit) => {
     const identifierCounts = new Map<string, number>();
     for (const element of elements) {
       const identifier = element.id || element.getAttribute("data-testid");
@@ -348,7 +350,7 @@ async function snapshotPage(page: Page): Promise<SnapshotNode[]> {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden";
     });
-    return visible.map((element, index) => {
+    return visible.slice(0, limit).map((element, index) => {
       const html = element as HTMLElement;
       const input = element as HTMLInputElement;
       const rect = element.getBoundingClientRect();
@@ -377,7 +379,28 @@ async function snapshotPage(page: Page): Promise<SnapshotNode[]> {
         rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
       };
     });
-  });
+  }, maxNodes);
+}
+
+/**
+ * Read a bounded semantic view from the server-owned page. The page handle is
+ * intentionally not serializable and this function is never exposed to the
+ * renderer; Browser Device callers receive only validated candidate data.
+ */
+export async function snapshotBrowserPageSemantics(
+  page: Page,
+  maxNodes = 128,
+): Promise<{ nodes: SnapshotNode[]; truncated: boolean }> {
+  const nodes = await snapshotPage(page, maxNodes + 1);
+  return { nodes: nodes.slice(0, maxNodes), truncated: nodes.length > maxNodes };
+}
+
+/** Fingerprint one Browser Device screenshot with the same bounded capture
+ * settings used for the painted frame. This remains server-side and brackets
+ * semantic inspection against autonomous page changes. */
+export async function browserPageVisualFingerprint(page: Page): Promise<string> {
+  const buffer = await page.screenshot({ type: "jpeg", quality: 76, animations: "disabled" });
+  return createHash("sha256").update(buffer).digest("base64url");
 }
 
 function quotedSelector(
@@ -439,28 +462,32 @@ export async function getBrowserDevice(
     prepare: () => Promise<() => Promise<T>>,
   ): Promise<T> => {
     let prepared: (() => Promise<T>) | undefined;
-    return runSupervisedBrowserMutation({
-      targetId,
-      intent,
-      beforeDispatch: async () => {
-        prepared = await prepare();
-      },
-      dispatch: async () => {
-        if (!prepared) throw new Error("Browser mutation was not prepared before dispatch");
-        session.mutationVersion += 1;
-        return prepared();
-      },
-    });
+    return runBrowserMutationAdmission(targetId, () =>
+      runSupervisedBrowserMutation({
+        targetId,
+        intent,
+        beforeDispatch: async () => {
+          prepared = await prepare();
+        },
+        dispatch: async () => {
+          if (!prepared) throw new Error("Browser mutation was not prepared before dispatch");
+          session.mutationVersion += 1;
+          return prepared();
+        },
+      }),
+    );
   };
   const mutate = <T>(intent: string, dispatch: () => Promise<T>) =>
-    runSupervisedBrowserMutation({
-      targetId,
-      intent,
-      dispatch: async () => {
-        session.mutationVersion += 1;
-        return dispatch();
-      },
-    });
+    runBrowserMutationAdmission(targetId, () =>
+      runSupervisedBrowserMutation({
+        targetId,
+        intent,
+        dispatch: async () => {
+          session.mutationVersion += 1;
+          return dispatch();
+        },
+      }),
+    );
   const api = {
     devices: {
       list: async () => [

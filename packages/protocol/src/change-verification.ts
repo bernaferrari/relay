@@ -36,6 +36,7 @@ export const CHANGE_VERIFICATION_MUTATIONS = [
   "start-pilot",
   "await-expansion",
   "start-required-coverage",
+  "record-runs",
   "record-decision",
   "cancel",
   "rerun-affected",
@@ -85,6 +86,9 @@ export const changeVerificationAffectedJourneySchema = z
   .object({
     appMapId: identifier,
     testId: identifier,
+    /** Exact reviewed App Map revision. Historical/planning documents may
+     * omit it, but live execution requires it before target control. */
+    appMapRevision: z.number().int().positive().optional(),
     reason: boundedText,
     confidence: z.enum(["definite", "probable", "coverage-gap"]),
   })
@@ -410,9 +414,19 @@ function validateChangeVerification(
       proof.state === "running") &&
     (!proof.builds.length ||
       !proof.selection.affectedJourneys.length ||
+      proof.selection.affectedJourneys.some(({ appMapRevision }) => appMapRevision === undefined) ||
       !proof.selection.targetCases.length ||
       (requiresDurableLifecycle && !proof.planApproval))
   ) {
+    if (
+      proof.selection.affectedJourneys.some(({ appMapRevision }) => appMapRevision === undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["selection", "affectedJourneys"],
+        message: `state ${proof.state} has no frozen App Map revision for every affected journey`,
+      });
+    }
     context.addIssue({
       code: "custom",
       message: `state ${proof.state} requires an executable frozen Verification Plan`,

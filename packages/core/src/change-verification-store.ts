@@ -165,11 +165,12 @@ function assertExecutablePlan(proof: ChangeVerification): void {
   if (
     !proof.builds.length ||
     !proof.selection.affectedJourneys.length ||
+    proof.selection.affectedJourneys.some(({ appMapRevision }) => appMapRevision === undefined) ||
     !proof.selection.targetCases.length
   ) {
     throw new ChangeVerificationConflictError(
       "PROOF_IMMUTABLE",
-      `state ${proof.state} requires exact builds, affected journeys, and target cases`,
+      `state ${proof.state} requires exact builds, App Map revisions, affected journeys, and target cases`,
     );
   }
 }
@@ -218,7 +219,9 @@ function advancedProof(
   current: ChangeVerification,
   input: AdvanceChangeVerificationInput,
 ): ChangeVerification {
-  if (!ALLOWED_TRANSITIONS[current.state].includes(input.state)) {
+  const sameRunningRecord =
+    current.state === "running" && input.state === "running" && input.action === "record-runs";
+  if (!ALLOWED_TRANSITIONS[current.state].includes(input.state) && !sameRunningRecord) {
     throw new ChangeVerificationConflictError(
       "PROOF_IMMUTABLE",
       `cannot move Change Verification from ${current.state} to ${input.state}`,
@@ -271,6 +274,22 @@ function advancedProof(
     throw new ChangeVerificationConflictError(
       "PROOF_IMMUTABLE",
       "the first causal failure is immutable once recorded",
+    );
+  }
+  const entersExecutableState =
+    input.state === "ready" ||
+    input.state === "running-pilot" ||
+    input.state === "awaiting-expansion" ||
+    input.state === "running" ||
+    input.state === "proved";
+  const effectiveSelection = input.selection ?? current.selection;
+  if (
+    entersExecutableState &&
+    effectiveSelection.affectedJourneys.some(({ appMapRevision }) => appMapRevision === undefined)
+  ) {
+    throw new ChangeVerificationConflictError(
+      "PROOF_IMMUTABLE",
+      `state ${input.state} requires one exact App Map revision for every affected journey`,
     );
   }
   const next = parseChangeVerification({

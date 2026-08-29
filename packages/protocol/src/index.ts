@@ -76,6 +76,7 @@ export type {
 export * from "./combine-evidence-pack-contract.js";
 export * from "./app-map-canvas.js";
 export * from "./ios-mutation-terminality-contract.js";
+export * from "./browser-proof-evidence.js";
 import type { ResourceEventPayload } from "./coordination.js";
 import type { ServerConnection, TargetProfile, TargetSelector } from "./target-contract.js";
 import type { SourceRevision } from "./source-revision.js";

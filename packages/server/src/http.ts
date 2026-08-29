@@ -6,6 +6,7 @@ export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
     "Content-Type, Authorization, X-Organization-Id, X-Project-Id, X-Relay-Actor-Id, X-Relay-Actor-Kind, X-Relay-Operation-Id, X-Relay-Request-Id, X-Relay-Command-At, X-Relay-Causation-Id, X-Relay-Correlation-Id, X-Relay-Authoring-Session-Id, Idempotency-Key, Last-Event-ID",
+  "Access-Control-Expose-Headers": "Content-Length, X-Relay-Browser-Device-Transport",
   "Access-Control-Max-Age": "600",
 };
 

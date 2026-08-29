@@ -62,6 +62,33 @@ test("global configuration uses CLI over environment over defaults", () => {
   assert.equal(environmentLocal.config.ensureLocalServer, false);
 });
 
+test("verify-change --base selects the reviewed local plan path", () => {
+  const preview = parseCli(
+    ["verify-change", "--base", "main", "--config-file", "./reviewed.json", "--json"],
+    {},
+  );
+  assert.deepEqual(
+    preview.command === "verify-change"
+      ? { base: preview.base, configFile: preview.configFile, confirm: preview.confirm }
+      : undefined,
+    { base: "main", configFile: "./reviewed.json", confirm: false },
+  );
+
+  const confirmed = parseCli(
+    ["verify-change", "--base=main", "--config", "proof.json", "--confirm"],
+    {},
+  );
+  assert.equal(confirmed.command, "verify-change");
+  if (confirmed.command === "verify-change") {
+    assert.equal(confirmed.confirm, true);
+    assert.equal(confirmed.configFile, "proof.json");
+  }
+  assert.throws(
+    () => parseCli(["verify-change", "--base", "main", "--config", "a", "--config-file", "b"], {}),
+    /only one/u,
+  );
+});
+
 test("credential source reads a named environment variable and redacts its value", () => {
   const secret = "super-secret-token";
   const parsed = parseCli(

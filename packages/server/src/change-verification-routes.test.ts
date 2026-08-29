@@ -5,7 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
 import { resetControlDatabaseCache } from "@relay/core";
-import type { ChangeVerification, OperationInput } from "@relay/protocol";
+import type { ChangeProofCaseResult, ChangeVerification, OperationInput } from "@relay/protocol";
+import type { PersistedRun } from "@relay/core";
 import { startServer } from "./index.js";
 
 const organizationId = "acme";
@@ -36,6 +37,7 @@ function selection(): ChangeVerification["selection"] {
       {
         appMapId: "settings",
         testId: "settings-language",
+        appMapRevision: 7,
         reason: "The changed localization resource is bound to this Test.",
         confidence: "definite",
       },
@@ -382,6 +384,277 @@ test("Verification Plan approval fails closed while impact coverage gaps remain"
         error instanceof ApiError &&
         error.status === 409 &&
         JSON.stringify(error.body).includes("PROOF_COVERAGE_GAPS"),
+    );
+  } finally {
+    await server.close();
+    resetControlDatabaseCache();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Proof execution records only server-derived Run facts and advances pilot to required coverage", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-execution-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  resetControlDatabaseCache();
+  const runs = new Map<string, PersistedRun & { targetCaseId: string }>();
+  const published: Array<{ state: ChangeVerification["state"]; headSha: string }> = [];
+  const scopedRun = (id: string, targetCaseId: string) =>
+    ({
+      id,
+      projectId,
+      targetCaseId,
+      executionProvenance: {
+        schemaVersion: 1,
+        actorId: "agent:relay",
+        actorKind: "agent",
+        organizationId,
+        projectId,
+        operationId: "app-map.test.run",
+        requestId: `request-${id}`,
+        issuedAt: 1,
+      },
+    }) as PersistedRun & { targetCaseId: string };
+  const caseResultFromRun = async (input: {
+    proof: ChangeVerification;
+    run: PersistedRun & { targetCaseId: string };
+  }): Promise<ChangeProofCaseResult> => ({
+    appMapId: "settings",
+    testId: "settings-language",
+    targetCaseId: input.run.targetCaseId,
+    runId: input.run.id,
+    sourceSha: input.proof.change.headSha,
+    buildId: "web",
+    artifactDigest: digest,
+    outcome: "passed",
+    evidenceDigests: [`sha256:${input.run.id === "pilot-run" ? "b" : "c"}${"0".repeat(63)}`],
+    evidenceComplete: true,
+    selectorResolution: "deterministic",
+    inputOutcome: "reconciled",
+    cleanup: "restored",
+  });
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    proofRouteRuntime: {
+      readRun: async (id) => runs.get(id) ?? null,
+      caseResultFromRun: caseResultFromRun as never,
+      publishTerminal: async ({ proof }) => {
+        published.push({ state: proof.state, headSha: proof.change.headSha });
+      },
+    },
+  });
+  const relay = client(server.port);
+  const reviewer = client(server.port, projectId, "human");
+  try {
+    const initial = startInput();
+    const revisionless = await relay.invoke(
+      "proof.start",
+      {
+        ...initial,
+        change: { ...initial.change, pullRequest: 183 },
+        selection: {
+          ...initial.selection!,
+          affectedJourneys: initial.selection!.affectedJourneys.map(
+            ({ appMapRevision: _revision, ...journey }) => journey,
+          ),
+        },
+      },
+      { requestId: "revisionless-proof-start" },
+    );
+    await assert.rejects(
+      reviewer.invoke(
+        "proof.plan.approve",
+        {
+          proofId: revisionless.proof.id,
+          expectedVersion: revisionless.proof.version,
+          decisionId: "revisionless-plan",
+          reason: "Historical plan fixture without an App Map revision.",
+          confirm: true,
+        },
+        { requestId: "revisionless-plan-approve" },
+      ),
+      (error) => error instanceof ApiError && error.status === 409,
+    );
+    const secondCase = {
+      ...initial.selection!.targetCases[0]!,
+      id: "chromium-desktop-ar",
+      dimensions: { locale: "ar", viewport: "desktop" },
+    };
+    const created = await relay.invoke(
+      "proof.start",
+      {
+        ...initial,
+        selection: {
+          ...initial.selection!,
+          targetCases: [initial.selection!.targetCases[0]!, secondCase],
+        },
+      },
+      { requestId: "execution-proof-start" },
+    );
+    const approved = await reviewer.invoke(
+      "proof.plan.approve",
+      {
+        proofId: created.proof.id,
+        expectedVersion: created.proof.version,
+        decisionId: "execution-plan",
+        reason: "Reviewed the exact pilot and expansion target cases.",
+        confirm: true,
+      },
+      { requestId: "execution-plan-approve" },
+    );
+    const runningPilot = await relay.invoke(
+      "proof.continue",
+      {
+        proofId: approved.proof.id,
+        expectedVersion: approved.proof.version,
+        action: "start-pilot",
+        reason: "Start one representative case before expansion.",
+      },
+      { requestId: "execution-start-pilot" },
+    );
+    assert.equal(runningPilot.proof.state, "running-pilot");
+    runs.set("unscoped-run", {
+      id: "unscoped-run",
+      projectId,
+      targetCaseId: "chromium-compact-ar",
+    } as PersistedRun & { targetCaseId: string });
+    await assert.rejects(
+      relay.invoke(
+        "proof.continue",
+        {
+          proofId: runningPilot.proof.id,
+          expectedVersion: runningPilot.proof.version,
+          action: "record-runs",
+          runIds: ["unscoped-run"],
+        },
+        { requestId: "execution-reject-unscoped-run" },
+      ),
+      (error) => error instanceof ApiError && error.status === 409,
+    );
+    runs.set("pilot-run", scopedRun("pilot-run", "chromium-compact-ar"));
+    const awaitingExpansion = await relay.invoke(
+      "proof.continue",
+      {
+        proofId: runningPilot.proof.id,
+        expectedVersion: runningPilot.proof.version,
+        action: "record-runs",
+        runIds: ["pilot-run"],
+      },
+      { requestId: "execution-record-pilot" },
+    );
+    assert.equal(awaitingExpansion.proof.state, "awaiting-expansion");
+    assert.deepEqual(awaitingExpansion.proof.runIds, ["pilot-run"]);
+
+    await assert.rejects(
+      relay.invoke(
+        "proof.continue",
+        {
+          proofId: awaitingExpansion.proof.id,
+          expectedVersion: awaitingExpansion.proof.version,
+          action: "record-runs",
+          runIds: ["forged-run"],
+          verdict: "passed",
+        } as never,
+        { requestId: "execution-forged-verdict" },
+      ),
+    );
+
+    const running = await relay.invoke(
+      "proof.continue",
+      {
+        proofId: awaitingExpansion.proof.id,
+        expectedVersion: awaitingExpansion.proof.version,
+        action: "start-required-coverage",
+        reason: "Run the remaining required target case.",
+      },
+      { requestId: "execution-start-expansion" },
+    );
+    runs.set("expansion-run", scopedRun("expansion-run", "chromium-desktop-ar"));
+    const proved = await relay.invoke(
+      "proof.continue",
+      {
+        proofId: running.proof.id,
+        expectedVersion: running.proof.version,
+        action: "record-runs",
+        runIds: ["expansion-run"],
+      },
+      { requestId: "execution-record-expansion" },
+    );
+    assert.equal(proved.proof.state, "proved");
+    assert.equal(proved.proof.decision, "proved");
+    assert.deepEqual(proved.proof.runIds, ["pilot-run", "expansion-run"]);
+    assert.deepEqual(published, [{ state: "proved", headSha }]);
+
+    const repeatedProved = await relay.invoke(
+      "proof.continue",
+      {
+        proofId: running.proof.id,
+        expectedVersion: running.proof.version,
+        action: "record-runs",
+        runIds: ["expansion-run"],
+      },
+      { requestId: "execution-record-expansion" },
+    );
+    assert.equal(repeatedProved.proof.state, "proved");
+    assert.deepEqual(published, [
+      { state: "proved", headSha },
+      { state: "proved", headSha },
+    ]);
+
+    const soloCreated = await relay.invoke(
+      "proof.start",
+      { ...initial, change: { ...initial.change, pullRequest: 185 } },
+      { requestId: "solo-proof-start" },
+    );
+    const soloApproved = await reviewer.invoke(
+      "proof.plan.approve",
+      {
+        proofId: soloCreated.proof.id,
+        expectedVersion: soloCreated.proof.version,
+        decisionId: "solo-plan",
+        reason: "The single target case is the complete required matrix.",
+        confirm: true,
+      },
+      { requestId: "solo-plan-approve" },
+    );
+    const soloRunning = await relay.invoke(
+      "proof.continue",
+      {
+        proofId: soloApproved.proof.id,
+        expectedVersion: soloApproved.proof.version,
+        action: "start-pilot",
+        reason: "Run the only required case.",
+      },
+      { requestId: "solo-start-pilot" },
+    );
+    runs.set("solo-run", scopedRun("solo-run", "chromium-compact-ar"));
+    const soloProved = await relay.invoke(
+      "proof.continue",
+      {
+        proofId: soloRunning.proof.id,
+        expectedVersion: soloRunning.proof.version,
+        action: "record-runs",
+        runIds: ["solo-run"],
+      },
+      { requestId: "solo-record-pilot" },
+    );
+    assert.equal(soloProved.proof.state, "proved");
+    assert.deepEqual(published.at(-1), { state: "proved", headSha });
+    await assert.rejects(
+      relay.invoke(
+        "proof.continue",
+        {
+          proofId: soloProved.proof.id,
+          expectedVersion: soloProved.proof.version,
+          action: "start-required-coverage",
+          reason: "There should be no expansion after a complete pilot.",
+        },
+        { requestId: "solo-start-expansion" },
+      ),
+      (error) => error instanceof ApiError && error.status === 409,
     );
   } finally {
     await server.close();
