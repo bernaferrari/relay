@@ -63,7 +63,6 @@ import {
   pruneExpiredShares,
   acquireRelayStateServerLease,
   beginDurableWorkerServerLifecycle,
-  shutdownSessionExecution,
   type AuthoringRuntime,
   type RelayStateServerLease,
 } from "@relay/core";
@@ -73,6 +72,7 @@ import { runDueSchedules, startScheduler } from "./scheduler.js";
 import { createRequestHandlerLifecycle } from "./request-handler-lifecycle.js";
 import { createFailClosedServerShutdown } from "./server-shutdown.js";
 import { createTargetRuntimeScope } from "./target-runtime-scope.js";
+import { shutdownServerSessions } from "./server-session-shutdown.js";
 import { handleRunRoute, type RunRouteRuntime } from "./run-routes.js";
 import { handlePublicRunShareRoute } from "./run-share-routes.js";
 import { handleJobRoute, type JobRouteRuntime } from "./job-routes.js";
@@ -431,8 +431,10 @@ async function handleRequest(
       await handleTargetRoute({
         method,
         pathname,
+        url,
         request: req,
         response: res,
+        scope,
       })
     )
       return;
@@ -853,7 +855,7 @@ async function startServerWithStateLease(
     drainRequestHandlers: () => requestHandlers.drain(),
     closeScheduler: () => scheduler.close(),
     closeSse: () => sse.close(),
-    drainSessionExecutions: (timeoutMs) => shutdownSessionExecution(timeoutMs),
+    drainSessionExecutions: shutdownServerSessions,
     flushActivity: flushOperationActivity,
     releaseStateLease: () => {
       targetRuntimeScope.close();

@@ -49,6 +49,10 @@ export type CaptureServerDeps = {
     jobId?: string,
   ) => void;
   refreshDiscoverySessions: () => Promise<void>;
+  resetBrowserDevice?: () => void;
+  pollBrowserDeviceFrame?: () => Promise<void>;
+  browserDeviceWheel?: (x: number, y: number, deltaX: number, deltaY: number) => Promise<boolean>;
+  browserDeviceKey?: (input: LiveKeyboardInput) => Promise<boolean>;
 };
 
 type ScrollSurveyResponse = OperationOutput<"target.scroll-survey.capture">;
@@ -208,6 +212,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
     deps.setLiveFrame(null);
     deps.setSnapshot(null);
     deps.setLiveCaptureIssue?.(null);
+    deps.resetBrowserDevice?.();
   }
 
   async function recordIosVideo(action: "start" | "stop"): Promise<DeviceVideoTake | null> {
@@ -245,6 +250,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
     scrollX: number,
     scrollY: number,
   ): Promise<boolean> {
+    if (deps.selectedDevicePlatform() === "browser") {
+      return (await deps.browserDeviceWheel?.(x, y, scrollX * 600, scrollY * 600)) ?? false;
+    }
     if (!hasAndroidLiveInput(deps)) return false;
     const serial = deps.selectedDevice();
     if (!serial) return false;
@@ -264,6 +272,11 @@ export function createServerCapture(deps: CaptureServerDeps) {
 
   function keyDevice(input: LiveKeyboardInput): Promise<InteractionAttemptOutcome> {
     const send = async () => {
+      if (deps.selectedDevicePlatform() === "browser") {
+        return (await deps.browserDeviceKey?.(input))
+          ? ({ status: "succeeded" } as const)
+          : ({ status: "failed" } as const);
+      }
       if (!hasAndroidLiveInput(deps)) return { status: "failed" } as const;
       const serial = deps.selectedDevice();
       if (!serial) return { status: "failed" } as const;
@@ -510,6 +523,10 @@ export function createServerCapture(deps: CaptureServerDeps) {
   }
 
   async function pollLiveFrame(): Promise<void> {
+    if (deps.selectedDevicePlatform() === "browser" && deps.pollBrowserDeviceFrame) {
+      await deps.pollBrowserDeviceFrame();
+      return;
+    }
     try {
       const serial = serialFor(deps);
       // The first iOS read may install/sign the local XCTest runner. It is a

@@ -53,6 +53,7 @@ export * from "./private-inputs.js";
 export * from "./schedules.js";
 export * from "./targets.js";
 export * from "./browser-target.js";
+export * from "./browser-device-session.js";
 export * from "./browser-context.js";
 export * from "./browser-case-profile-target.js";
 export * from "./target-context.js";

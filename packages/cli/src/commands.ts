@@ -79,6 +79,21 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     reason: "The public relay observe outcome owns durable bounded target observation.",
   },
   {
+    operationId: "target.browser-device.open",
+    exclusion: "internal",
+    reason: "The in-app Browser Device owns its renderer session lifecycle.",
+  },
+  {
+    operationId: "target.browser-device.frame",
+    exclusion: "internal",
+    reason: "Browser Device frames are renderer media transport, not a CLI command.",
+  },
+  {
+    operationId: "target.browser-device.control",
+    exclusion: "internal",
+    reason: "Browser Device input must stay bound to the renderer's painted frame.",
+  },
+  {
     operationId: "workflow.create",
     exclusion: "internal",
     reason: "Outcome commands reserve durable workflows without exposing protocol mechanics.",

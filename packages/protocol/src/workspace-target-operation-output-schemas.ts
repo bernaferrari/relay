@@ -1,5 +1,6 @@
 import * as z from "zod/v4";
 import { browserCaseProfileSchema, browserEnvironmentInputSchema } from "./browser-case-profile.js";
+import { browserDeviceFrameSchema, browserDeviceSessionSchema } from "./browser-device.js";
 
 const text = z.string().min(1);
 const natural = z.number().int().nonnegative();
@@ -631,6 +632,20 @@ export const workspaceTargetOperationOutputSchemas = {
   "target.preflight": z.object({ preflight: targetPreflight }).strict(),
   "target.open": z
     .object({ session: z.object({ targetId: text, name: text, url: z.url() }).strict() })
+    .strict(),
+  "target.browser-device.open": z.object({ session: browserDeviceSessionSchema }).strict(),
+  "target.browser-device.frame": z
+    .object({
+      session: browserDeviceSessionSchema,
+      frame: browserDeviceFrameSchema,
+      gap: z
+        .object({ afterSequence: natural, currentSequence: natural, dropped: natural })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+  "target.browser-device.control": z
+    .object({ ok: z.literal(true), session: browserDeviceSessionSchema })
     .strict(),
   "target.boot": z.object({ ok: z.literal(true), serial: text }).strict(),
   "target.authorize": z.object({ ok: z.literal(true), serial: text }).strict(),

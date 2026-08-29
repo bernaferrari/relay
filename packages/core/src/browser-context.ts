@@ -33,6 +33,7 @@ export type BrowserContextFactory = Readonly<{
 export type BrowserContextOpenOptions = {
   headless?: boolean;
   recordVideoDir?: string;
+  profile?: BrowserCaseProfile;
 };
 
 const BROWSER_TYPES: Record<BrowserEngine, BrowserType> = { chromium, firefox, webkit };
@@ -154,8 +155,16 @@ export function createBrowserContextFactory(target: TargetDefinition): BrowserCo
   return {
     profile,
     openAuthoring: async (options = {}) => {
-      assertSupportedBrowserCaseProfile(profile);
-      return await openPersistentAuthoringContext(target, profile, options);
+      const authoringProfile = options.profile
+        ? compileBrowserEnvironment(options.profile)
+        : profile;
+      assertSupportedBrowserCaseProfile(authoringProfile);
+      if (authoringProfile.engine !== profile.engine) {
+        throw new Error(
+          `browser authoring engine ${authoringProfile.engine} does not match target engine ${profile.engine}`,
+        );
+      }
+      return await openPersistentAuthoringContext(target, authoringProfile, options);
     },
     openProof: async (proofProfile = profile, options = {}) => {
       const frozen = compileBrowserEnvironment(proofProfile);

@@ -2,6 +2,7 @@ import { Show } from "solid-js";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { DeviceStage } from "./stage";
+import { BrowserDeviceStage } from "./browser-device-stage";
 
 export type DeviceCompanionOrientation = "portrait" | "landscape" | "square" | "unknown";
 
@@ -17,6 +18,9 @@ export function DeviceCompanionStage(props: {
   onOrientation?: (orientation: DeviceCompanionOrientation) => void;
 }) {
   const server = useServer();
+  const browserSelected = () =>
+    server.devices().find((device) => device.serial === server.selectedDevice())?.platform ===
+    "browser";
 
   return (
     <div
@@ -27,12 +31,19 @@ export function DeviceCompanionStage(props: {
         "[&_.phone-screen]:!rounded-lg [&_.phone-screen]:shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)]",
       )}
     >
-      <DeviceStage
-        onOpenTargets={props.onOpenTargets}
-        recordingControls="embedded"
-        preparing={props.preparing}
-        onOrientation={props.onOrientation}
-      />
+      <Show
+        when={browserSelected()}
+        fallback={
+          <DeviceStage
+            onOpenTargets={props.onOpenTargets}
+            recordingControls="embedded"
+            preparing={props.preparing}
+            onOrientation={props.onOrientation}
+          />
+        }
+      >
+        <BrowserDeviceStage />
+      </Show>
       <Show when={server.health() !== "online" && server.liveFrame()?.base64}>
         <div class="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-4">
           <span class="rounded-full bg-black/72 px-2.5 py-1 text-micro font-medium text-white shadow-sm backdrop-blur-sm">

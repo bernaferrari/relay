@@ -274,6 +274,9 @@ export type Frame = {
   proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
   /** Pixel proof is independent from XCTest semantic control. */
   readiness?: TargetRuntimeReadiness;
+  /** Browser pixels are actionable only against this exact server-owned page
+   * observation. The renderer never treats the raster as executable content. */
+  browserDevice?: { sessionId: string; pageId: string; sequence: number };
   /**
    * Evidence retained from a bounded scrollable-page survey.  The stitched
    * image is only a convenience preview: each viewport keeps the exact tree

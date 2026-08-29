@@ -1,5 +1,10 @@
 import type { RelayClient } from "@relay/client";
-import type { OperationInput, OperationOutput, TargetProfile } from "@relay/protocol";
+import type {
+  BrowserDeviceInput,
+  OperationInput,
+  OperationOutput,
+  TargetProfile,
+} from "@relay/protocol";
 
 type TargetClient = Pick<RelayClient, "invoke">;
 
@@ -71,4 +76,34 @@ export async function openBrowserTarget(
 ): Promise<OperationOutput<"target.open">["session"]> {
   return (await client.invoke("target.open", { targetId }, { signal: AbortSignal.timeout(30_000) }))
     .session;
+}
+
+export async function openBrowserDevice(
+  client: TargetClient,
+  input: OperationInput<"target.browser-device.open">,
+): Promise<OperationOutput<"target.browser-device.open">["session"]> {
+  return (
+    await client.invoke("target.browser-device.open", input, {
+      signal: AbortSignal.timeout(30_000),
+    })
+  ).session;
+}
+
+export async function captureBrowserDeviceFrame(
+  client: TargetClient,
+  targetId: string,
+  afterSequence?: number,
+): Promise<OperationOutput<"target.browser-device.frame">> {
+  return client.invoke("target.browser-device.frame", {
+    targetId,
+    ...(afterSequence === undefined ? {} : { afterSequence }),
+  });
+}
+
+export async function controlBrowserDevice(
+  client: TargetClient,
+  targetId: string,
+  input: BrowserDeviceInput,
+): Promise<OperationOutput<"target.browser-device.control">> {
+  return client.invoke("target.browser-device.control", { targetId, input });
 }

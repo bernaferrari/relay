@@ -1,6 +1,11 @@
 import * as z from "zod/v4";
 import { browserEnvironmentInputSchema, browserViewportSchema } from "./browser-case-profile.js";
 import {
+  browserDeviceControlInputSchema,
+  browserDeviceFrameInputSchema,
+  browserDeviceOpenInputSchema,
+} from "./browser-device.js";
+import {
   appMapTestCompileInputSchema,
   appMapTestRunInputSchema,
   graphTest,
@@ -68,6 +73,9 @@ export const operationInputSchemas = {
   "target.delete": z.object({ targetId: identifier("Managed target identifier") }).strict(),
   "target.preflight": z.object({ targetId: identifier("Managed target identifier") }).strict(),
   "target.open": z.object({ targetId: identifier("Managed browser target identifier") }).strict(),
+  "target.browser-device.open": browserDeviceOpenInputSchema,
+  "target.browser-device.frame": browserDeviceFrameInputSchema,
+  "target.browser-device.control": browserDeviceControlInputSchema,
   "system.doctor.get": empty,
   "target.list": empty,
   "target.devices.list": z.object({ phase: z.literal("android").optional() }).strict(),

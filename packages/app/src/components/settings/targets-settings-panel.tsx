@@ -75,8 +75,8 @@ export function TargetsSettingsPanel() {
       <div class="mb-4">
         <h3 class="m-0 text-body font-medium text-text-strong">Browser targets</h3>
         <p class="mt-1 mb-0 text-caption leading-relaxed text-text-weak">
-          Give each website a private browser. Sign in once, then record and replay the same tests
-          you use on iOS and Android.
+          Give each website a private browser. Open it inside Relay, then record and replay the same
+          tests you use on iOS and Android.
         </p>
       </div>
 
@@ -156,7 +156,7 @@ export function TargetsSettingsPanel() {
                       disabled={openingTargetId() === target.id}
                       onClick={() => void openTarget(target.id)}
                     >
-                      {openingTargetId() === target.id ? "Opening…" : "Open & sign in"}
+                      {openingTargetId() === target.id ? "Opening…" : "Open in Relay"}
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => void checkTarget(target.id)}>
                       Check setup

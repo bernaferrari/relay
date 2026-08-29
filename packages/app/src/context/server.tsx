@@ -50,6 +50,7 @@ import { createServerProviderLifecycle } from "../lib/server-provider-lifecycle"
 import { createServerWorkspaceController } from "../lib/server-workspace-controller";
 import { createServerConnectionController } from "../lib/server-connection-controller";
 import { createServerTargetHealthController } from "../lib/server-target-health-controller";
+import { createServerBrowserDeviceController } from "../lib/server-browser-device-controller";
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
 export type {
@@ -123,6 +124,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
     const [liveFrame, setLiveFrame] = createSignal<Frame | null>(null);
     const [liveCaptureIssue, setLiveCaptureIssue] = createSignal<string | null>(null);
+    let resetBrowserDeviceForConnection = (): void => undefined;
     const [clock, setClock] = createSignal(Date.now());
     let clockTimer: NodeJS.Timeout | undefined;
 
@@ -139,7 +141,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       projectId,
     } = createServerConnectionController({
       platform,
-      beforeServerChange: () => clearPrivacyPolicies(),
+      beforeServerChange: () => {
+        clearPrivacyPolicies();
+        resetBrowserDeviceForConnection();
+      },
       afterServerChange: () => connectSse(),
     });
     const { targetHealth, refreshTargetHealth } = createServerTargetHealthController({
@@ -462,6 +467,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    const browserDevice = createServerBrowserDeviceController({
+      client: connectedClient,
+      selectedDevice,
+      setLiveFrame,
+      setLiveCaptureIssue,
+    });
+    resetBrowserDeviceForConnection = browserDevice.reset;
+
     const {
       resetLivePreview,
       captureUiSnapshot,
@@ -498,6 +511,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       copyImage: platform.copyImage,
       appendLog,
       refreshDiscoverySessions,
+      resetBrowserDevice: browserDevice.reset,
+      pollBrowserDeviceFrame: browserDevice.poll,
+      browserDeviceWheel: browserDevice.wheel,
+      browserDeviceKey: browserDevice.key,
     });
     const {
       sseConnected,
@@ -855,6 +872,13 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       videoUrlForRun,
       recordIosVideo,
       iosVideoUrl,
+      browserDeviceSession: browserDevice.session,
+      openBrowserDevice: browserDevice.open,
+      clickBrowserDevice: browserDevice.click,
+      navigateBrowserDevice: browserDevice.navigate,
+      browserDeviceHistory: browserDevice.history,
+      activateBrowserDevicePage: browserDevice.activatePage,
+      closeBrowserDevicePage: browserDevice.closePage,
     };
   },
 });

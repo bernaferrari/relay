@@ -22,7 +22,6 @@ import {
   deleteTarget,
   listTargetProfiles,
   listTargets,
-  openBrowserTarget as openBrowserTargetRemote,
   preflightTarget,
   saveBrowserTarget as saveBrowserTargetRemote,
 } from "./server-target-remote";
@@ -118,8 +117,8 @@ export function createServerTargetController(deps: TargetControllerDependencies)
     return preflightTarget(await deps.client(), id);
   }
   async function openBrowserTarget(id: string): Promise<void> {
-    const session = await openBrowserTargetRemote(await deps.client(), id);
-    toast(`${session.name} is ready for sign in`, "success");
+    await deps.selectDevice(id);
+    toast("Browser Device is ready in Relay", "success");
   }
   return {
     refreshTargets,

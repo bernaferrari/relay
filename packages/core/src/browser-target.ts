@@ -9,6 +9,7 @@ import { LEGACY_POSITIONAL_BROWSER_REF_ERROR } from "./browser-locator-contract.
 import { browserProfileDir, readTarget } from "./targets.js";
 
 type BrowserSession = {
+  sessionId: string;
   context: BrowserContext;
   close: () => Promise<void>;
   page: Page;
@@ -16,6 +17,7 @@ type BrowserSession = {
   purpose: BrowserContextPurpose;
   profile: BrowserCaseProfile;
   headless: boolean;
+  recordVideo: boolean;
   recordingUnavailable?: string;
   recordingPath?: string;
   recordingVideo?: Video | null;
@@ -28,6 +30,7 @@ type BrowserSession = {
   crashCapture: boolean;
   consoleDropped: number;
   networkDropped: number;
+  mutationVersion: number;
 };
 
 type BrowserNetworkEntry = {
@@ -55,6 +58,7 @@ async function createSession(
     headless?: boolean;
     mode: BrowserContextPurpose;
     profile?: BrowserCaseProfile;
+    recordVideo?: boolean;
   },
 ): Promise<BrowserSession> {
   const target = await readTarget(targetId);
@@ -65,18 +69,22 @@ async function createSession(
     browserProfileDir(targetId),
     options.mode === "authoring" ? "recordings" : "proof-recordings",
   );
-  let recordingUnavailable: string | undefined;
+  const recordVideo = options.recordVideo !== false;
+  let recordingUnavailable = recordVideo
+    ? undefined
+    : "Live Browser Device video is disabled. Screenshots, steps, and logs are still captured.";
   let contextHandle;
   try {
     contextHandle =
       options.mode === "authoring"
         ? await factory.openAuthoring({
             headless: options.headless,
-            recordVideoDir: recordingDir,
+            ...(recordVideo ? { recordVideoDir: recordingDir } : {}),
+            profile,
           })
         : await factory.openProof(profile, {
             headless: options.headless,
-            recordVideoDir: recordingDir,
+            ...(recordVideo ? { recordVideoDir: recordingDir } : {}),
           });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -85,12 +93,13 @@ async function createSession(
       "Video recording is unavailable on this machine. Screenshots, steps, and logs are still captured.";
     contextHandle =
       options.mode === "authoring"
-        ? await factory.openAuthoring({ headless: options.headless })
+        ? await factory.openAuthoring({ headless: options.headless, profile })
         : await factory.openProof(profile, { headless: options.headless });
   }
   const context = contextHandle.context;
   const page = context.pages()[0] ?? (await context.newPage());
   const session: BrowserSession = {
+    sessionId: crypto.randomUUID(),
     context,
     close: contextHandle.close,
     page,
@@ -98,6 +107,7 @@ async function createSession(
     purpose: options.mode,
     profile: contextHandle.profile,
     headless: options.headless ?? target.browser.headless ?? false,
+    recordVideo,
     ...(recordingUnavailable ? { recordingUnavailable } : {}),
     console: [],
     network: [],
@@ -108,6 +118,7 @@ async function createSession(
     crashCapture: false,
     consoleDropped: 0,
     networkDropped: 0,
+    mutationVersion: 0,
   };
   attachEvidence(session, page);
   if (page.url() === "about:blank") {
@@ -204,6 +215,7 @@ async function sessionFor(
     headless?: boolean;
     mode?: BrowserContextPurpose;
     profile?: BrowserCaseProfile;
+    recordVideo?: boolean;
   } = {},
 ): Promise<BrowserSession> {
   const mode = options.mode ?? "authoring";
@@ -213,8 +225,13 @@ async function sessionFor(
     const session = await existing;
     // Proof contexts are deliberately one-shot. Even if a caller forgot to
     // close the prior handle, never reuse its cookies/storage for another Run.
+    const profileMatches =
+      options.profile === undefined ||
+      JSON.stringify(session.profile) === JSON.stringify(options.profile);
     if (
       mode === "authoring" &&
+      profileMatches &&
+      (options.recordVideo === undefined || session.recordVideo === options.recordVideo) &&
       (options.headless === undefined || session.headless === options.headless)
     )
       return session;
@@ -227,6 +244,50 @@ async function sessionFor(
   });
   sessions.set(key, pending);
   return pending;
+}
+
+/** Narrow Playwright capability for the server-owned in-app Browser Device.
+ * Server and renderer never receive this handle; they cross typed pixel and
+ * input operations instead. */
+export type BrowserAuthoringRuntime = Readonly<{
+  sessionId: string;
+  targetId: string;
+  profile: BrowserCaseProfile;
+  context: BrowserContext;
+  activePage: () => Promise<Page>;
+  setActivePage: (page: Page) => void;
+  mutationVersion: () => number;
+  markMutation: () => void;
+}>;
+
+export async function openBrowserAuthoringRuntime(
+  targetId: string,
+  options: { headless: boolean; profile?: BrowserCaseProfile },
+): Promise<BrowserAuthoringRuntime> {
+  const session = await sessionFor(targetId, {
+    mode: "authoring",
+    headless: options.headless,
+    profile: options.profile,
+    // Browser Device and canonical authoring intentionally share this one
+    // recordable context. Starting a Take must not replace the page supervisor
+    // (or vice versa) merely because their video options differ.
+    recordVideo: true,
+  });
+  return {
+    sessionId: session.sessionId,
+    targetId,
+    profile: session.profile,
+    context: session.context,
+    activePage: () => activePage(session),
+    setActivePage: (page) => {
+      session.page = page;
+      attachEvidence(session, page);
+    },
+    mutationVersion: () => session.mutationVersion,
+    markMutation: () => {
+      session.mutationVersion += 1;
+    },
+  };
 }
 
 export type OpenBrowserTargetResult = {
@@ -375,6 +436,7 @@ export async function getBrowserDevice(
     },
     apps: {
       open: async (input: { url?: string; app?: string; relaunch?: boolean }) => {
+        session.mutationVersion += 1;
         const page = await activePage(session);
         if (input.url) await page.goto(input.url, { waitUntil: "domcontentloaded" });
         else if (input.app?.startsWith("http"))
@@ -382,6 +444,7 @@ export async function getBrowserDevice(
         return { appId: input.app ?? input.url ?? targetId };
       },
       close: async () => {
+        session.mutationVersion += 1;
         await (await activePage(session)).close();
         return { session: targetId, identifiers };
       },
@@ -405,6 +468,7 @@ export async function getBrowserDevice(
     },
     interactions: {
       press: async (input: { ref?: string; selector?: string; x?: number; y?: number }) => {
+        session.mutationVersion += 1;
         const page = await activePage(session);
         if (input.x !== undefined && input.y !== undefined)
           await page.mouse.click(input.x, input.y);
@@ -418,6 +482,7 @@ export async function getBrowserDevice(
         y?: number;
         durationMs?: number;
       }) => {
+        session.mutationVersion += 1;
         const page = await activePage(session);
         if (input.x !== undefined && input.y !== undefined) {
           await page.mouse.move(input.x, input.y);
@@ -442,6 +507,7 @@ export async function getBrowserDevice(
         x?: number;
         y?: number;
       }) => {
+        session.mutationVersion += 1;
         const page = await activePage(session);
         if (input.ref || input.selector) {
           await (await locatorFor(page, input)).fill(input.text);
@@ -455,6 +521,7 @@ export async function getBrowserDevice(
         return { ok: true };
       },
       type: async (input: { text: string; ref?: string; selector?: string }) => {
+        session.mutationVersion += 1;
         const page = await activePage(session);
         if (input.ref || input.selector) await (await locatorFor(page, input)).fill(input.text);
         else await page.keyboard.insertText(input.text);
@@ -463,9 +530,11 @@ export async function getBrowserDevice(
       find: async (input: { query: string; action?: string }) => {
         const page = await activePage(session);
         const locator = page.getByText(input.query, { exact: false });
+        if (input.action !== "exists") session.mutationVersion += 1;
         return await performBrowserFind(locator, input.query, input.action);
       },
       scroll: async (input: { direction?: string; amount?: number }) => {
+        session.mutationVersion += 1;
         const page = await activePage(session);
         const viewportHeight = page.viewportSize()?.height ?? 1_000;
         const distance = viewportHeight * (input.amount ?? 0.5);
@@ -474,6 +543,7 @@ export async function getBrowserDevice(
         return { ok: true };
       },
       swipe: async (input: { from: { x: number; y: number }; to: { x: number; y: number } }) => {
+        session.mutationVersion += 1;
         const page = await activePage(session);
         await page.mouse.move(input.from.x, input.from.y);
         await page.mouse.down();
@@ -482,6 +552,7 @@ export async function getBrowserDevice(
         return { ok: true };
       },
       pan: async (input: { x: number; y: number; dx: number; dy: number; durationMs?: number }) => {
+        session.mutationVersion += 1;
         const page = await activePage(session);
         await page.mouse.move(input.x, input.y);
         await page.mouse.down();
@@ -501,10 +572,12 @@ export async function getBrowserDevice(
         return { ok: true };
       },
       back: async () => {
+        session.mutationVersion += 1;
         await (await activePage(session)).goBack();
         return { action: "back", mode: "global", message: "Back" };
       },
       home: async () => {
+        session.mutationVersion += 1;
         const target = await readTarget(targetId);
         if (!target?.browser) throw new Error("browser target no longer exists");
         await (await activePage(session)).goto(target.browser.startUrl);
@@ -524,6 +597,7 @@ export async function getBrowserDevice(
         }
         const page = await activePage(session);
         if (input.action === "write") {
+          session.mutationVersion += 1;
           await page.evaluate((text) => navigator.clipboard.writeText(text), input.text ?? "");
           return { action: "write", textLength: (input.text ?? "").length, message: "Written" };
         }
@@ -535,6 +609,7 @@ export async function getBrowserDevice(
         activity: (await activePage(session)).url(),
       }),
       keyboard: async (input?: { action?: "dismiss" | "enter" }) => {
+        session.mutationVersion += 1;
         await (
           await activePage(session)
         ).keyboard.press(input?.action === "enter" ? "Enter" : "Escape");
@@ -593,6 +668,7 @@ export async function getBrowserDevice(
     },
     recording: {
       record: async (input: { action: "start" | "stop"; path?: string }) => {
+        session.mutationVersion += 1;
         if (input.action === "start") {
           session.recordingPath = input.path;
           session.console = [];

@@ -18,6 +18,7 @@ import { createTargetCaptureOperationParsers } from "./target-capture-operation-
 import { createTargetSupervisorOperationDefinitions } from "./target-supervisor-operation-definition.js";
 import * as authoringOperations from "./authoring-raw-optimization-operation.js";
 import { appleDeviceOperationDefinitions } from "./apple-device-operation-definitions.js";
+import { browserDeviceOperationDefinitions } from "./browser-device-operation-definitions.js";
 import { runRepairOperationDefinitions } from "./run-repair-operations.js";
 import { runEvidenceOperationDefinitions } from "./run-evidence-operation-definitions.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
@@ -1125,10 +1126,7 @@ export const operationDefinitions = [
     category: "target",
     idempotency: "inherent",
   }),
-  command("target.open", "Open managed target", "POST", "/targets/:targetId/open", {
-    category: "target",
-    confirmation: "confirm",
-  }),
+  ...browserDeviceOperationDefinitions,
   command("target.boot", "Boot target", "POST", "/device/boot", { category: "target" }),
   command("target.authorize", "Authorize target", "POST", "/device/authorize", {
     category: "target",
