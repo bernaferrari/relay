@@ -432,9 +432,15 @@ test("schema v7 migration preserves existing control data", async () => {
           "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'change_verification_versions'",
         )
         .get() as { name?: string } | undefined;
+      const publicationTable = migrated
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'change_proof_publications'",
+        )
+        .get() as { name?: string } | undefined;
       assert.equal(Number(version.user_version), CONTROL_SCHEMA_VERSION);
       assert.equal(marker.value, "preserved");
       assert.equal(proofTable?.name, "change_verification_versions");
+      assert.equal(publicationTable?.name, "change_proof_publications");
     } finally {
       migrated.close();
     }

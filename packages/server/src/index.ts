@@ -30,6 +30,7 @@ export {
   type GitHubProofCheckConfig,
   type PublishedProofCheck,
 } from "./github-proof-check.js";
+export { publishChangeProofToGitHub } from "./change-proof-github-publisher.js";
 import {
   captureScreenshot,
   currentOperationContext,

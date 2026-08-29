@@ -23,6 +23,7 @@ export * from "./exploration-policy.js";
 export * from "./verify-change.js";
 export * from "./change-verification-store.js";
 export * from "./change-proof-decision.js";
+export * from "./change-proof-publication.js";
 export * from "./change-impact.js";
 export * from "./execution-risk-compiler.js";
 export * from "./visual-baselines.js";

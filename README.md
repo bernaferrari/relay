@@ -26,10 +26,10 @@ PR opened
 
 Where the loop stands today:
 
-| Loop edge                                                                                                                                               | Status      |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Loop edge                                                                                                                                    | Status      |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
 | Immutable, versioned Proof lifecycle; explained Verification Plan compiler; authoring, replay, repair, evidence, and source-revision binding | **Shipped** |
-| Automatic repository diff ingestion, build orchestration, execution expansion, and GitHub check-run posting                               | **Pending** |
+| Automatic repository diff ingestion, build orchestration, execution expansion, and GitHub check-run posting                                  | **Pending** |
 
 [docs/PR_PROOF_CI.md](./docs/PR_PROOF_CI.md) shows the copy-paste CI wiring available today.
 
@@ -43,12 +43,12 @@ is not a Relay-managed cloud device farm or a turnkey enterprise SaaS product.
 
 ## Who Relay is for
 
-| Good fit today                                                                  | Why                                                                                                                  |
-| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Good fit today                                                                      | Why                                                                                                                  |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | QA, SDET, and platform teams with browsers, attached devices, or a local device lab | Record real product behavior, replay reviewed paths, and retain evidence instead of relying on ad-hoc manual checks. |
-| Product and engineering teams verifying web, Android, or iOS builds             | Run a focused regression or a state matrix against the targets they already control.                                 |
-| Teams using coding agents around real devices                                   | The desktop app, CLI, TUI, and MCP adapter use the same project-scoped workflows, policy, and evidence store.        |
-| Privacy-sensitive or local-first teams                                          | The normal desktop path runs a loopback Relay service and keeps the control plane and evidence in the project.       |
+| Product and engineering teams verifying web, Android, or iOS builds                 | Run a focused regression or a state matrix against the targets they already control.                                 |
+| Teams using coding agents around real devices                                       | The desktop app, CLI, TUI, and MCP adapter use the same project-scoped workflows, policy, and evidence store.        |
+| Privacy-sensitive or local-first teams                                              | The normal desktop path runs a loopback Relay service and keeps the control plane and evidence in the project.       |
 
 Relay is not yet the right choice for a team that needs to upload a build to a managed cloud, rent a
 device fleet, or buy organization-wide SSO, quotas, and published service-level objectives.

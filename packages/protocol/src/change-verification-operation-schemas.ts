@@ -9,6 +9,7 @@ import {
   changeVerificationSchema,
   changeVerificationSelectionSchema,
 } from "./change-verification.js";
+import { changeProofPublicationReceiptSchema } from "./change-proof-decision.js";
 
 const identifier = z.string().trim().min(1).max(256);
 const reason = z.string().trim().min(1).max(4_096);
@@ -109,6 +110,7 @@ export const changeVerificationOperationOutputSchemas = {
     .object({
       proof: changeVerificationSchema,
       history: z.array(changeVerificationSchema).max(100).readonly().optional(),
+      publications: z.array(changeProofPublicationReceiptSchema).max(100).readonly(),
     })
     .strict(),
   "proof.plan.approve": mutationOutputSchema,

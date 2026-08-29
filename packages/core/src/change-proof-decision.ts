@@ -16,11 +16,7 @@ import {
   type ChangeVerificationScope,
 } from "./change-verification-store.js";
 
-function identityKey(value: {
-  appMapId: string;
-  testId: string;
-  targetCaseId: string;
-}): string {
+function identityKey(value: { appMapId: string; testId: string; targetCaseId: string }): string {
   return `${value.appMapId}\0${value.testId}\0${value.targetCaseId}`;
 }
 
@@ -49,7 +45,8 @@ function validateCaseResults(
   if (values.length > 1_000) throw new Error("Proof decisions are bounded to 1,000 Run results");
   const results = values.map((value) => changeProofCaseResultSchema.parse(value));
   const keys = results.map(identityKey);
-  if (new Set(keys).size !== keys.length) throw new Error("Proof Run result identities must be unique");
+  if (new Set(keys).size !== keys.length)
+    throw new Error("Proof Run result identities must be unique");
   const journeys = new Set(
     proof.selection.affectedJourneys.map(({ appMapId, testId }) => `${appMapId}\0${testId}`),
   );
@@ -86,7 +83,8 @@ export function decideChangeVerification(input: {
   caseResults: readonly unknown[];
 }): ChangeProofDecision {
   const proof = parseChangeVerification(input.proof);
-  if (!proof.planApproval) throw new Error("A Proof decision requires an approved Verification Plan");
+  if (!proof.planApproval)
+    throw new Error("A Proof decision requires an approved Verification Plan");
   const results = validateCaseResults(proof, input.caseResults);
   const requiredCases = proof.selection.targetCases.filter(({ required }) => required);
   const requiredIdentities = proof.selection.affectedJourneys.flatMap((journey) =>
@@ -131,7 +129,10 @@ export function decideChangeVerification(input: {
     ...proof.residualRisk,
     ...advisory
       .filter(({ outcome }) => outcome !== "passed")
-      .map(({ targetCaseId, runId }) => `Advisory target case ${targetCaseId} did not pass (${runId}).`),
+      .map(
+        ({ targetCaseId, runId }) =>
+          `Advisory target case ${targetCaseId} did not pass (${runId}).`,
+      ),
   ]);
 
   const decision = firstRejected
@@ -287,17 +288,71 @@ export function providerCheckForChangeProof(input: {
   });
 }
 
+/** Project a completed provider check exclusively from the durable terminal
+ * Proof. This is the publication boundary: callers cannot supply a friendlier
+ * summary than Relay actually persisted. */
+export function providerCheckForStoredChangeProof(input: {
+  proof: unknown;
+  detailsUrl?: string;
+}): ChangeProofProviderCheck {
+  const proof = parseChangeVerification(input.proof);
+  if (!proof.decision) throw new Error("A provider check requires a terminal Proof decision");
+  const conclusion =
+    proof.decision === "proved"
+      ? "success"
+      : proof.decision === "rejected"
+        ? "failure"
+        : "action-required";
+  const requiredCases =
+    proof.selection.affectedJourneys.length *
+    proof.selection.targetCases.filter(({ required }) => required).length;
+  const lines = [
+    `Head: ${proof.change.headSha}`,
+    `Required cases: ${requiredCases}`,
+    `Recorded Runs: ${proof.runIds.length}`,
+    `Evidence objects: ${proof.evidenceDigests.length}`,
+    `Policy: ${proof.policy.id}.v${proof.policy.version}`,
+    ...(proof.firstCausalFailure
+      ? [`First causal failure: ${proof.firstCausalFailure.summary}`]
+      : []),
+    ...(proof.coverageGaps.length
+      ? ["", "Coverage gaps:", ...proof.coverageGaps.map((gap) => `- ${gap}`)]
+      : []),
+    ...(proof.residualRisk.length
+      ? ["", "Residual risk:", ...proof.residualRisk.map((risk) => `- ${risk}`)]
+      : []),
+  ];
+  return changeProofProviderCheckSchema.parse({
+    schemaVersion: 1,
+    name: "Relay Proof",
+    externalId: proof.id,
+    headSha: proof.change.headSha,
+    status: "completed",
+    conclusion,
+    title: `Relay Proof — ${proof.decision.toUpperCase().replaceAll("-", " ")}`,
+    summary:
+      proof.smallestNextVerification?.reason ??
+      (proof.decision === "proved"
+        ? "Every policy-required case has complete proof."
+        : "Review the durable Proof before merge."),
+    text: lines.join("\n"),
+    ...(input.detailsUrl ? { detailsUrl: input.detailsUrl } : {}),
+  });
+}
+
 /** Server-owned terminal transition. Callers supply immutable Run facts; this
  * function recomputes the decision before appending Run/evidence identities. */
-export async function recordChangeVerificationDecision(input: ChangeVerificationScope & {
-  proofId: string;
-  expectedVersion: number;
-  caseResults: readonly unknown[];
-  actorId: string;
-  requestId: string;
-  requestDigest: ChangeVerification["lastMutation"]["requestDigest"];
-  at: number;
-}): Promise<ChangeVerification> {
+export async function recordChangeVerificationDecision(
+  input: ChangeVerificationScope & {
+    proofId: string;
+    expectedVersion: number;
+    caseResults: readonly unknown[];
+    actorId: string;
+    requestId: string;
+    requestDigest: ChangeVerification["lastMutation"]["requestDigest"];
+    at: number;
+  },
+): Promise<ChangeVerification> {
   const proof = await readChangeVerification(input, input.proofId);
   if (!proof) throw new Error("Change Verification not found in this project");
   const decision = decideChangeVerification({ proof, caseResults: input.caseResults });

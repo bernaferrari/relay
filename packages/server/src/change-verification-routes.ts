@@ -8,6 +8,7 @@ import {
   currentOperationContext,
   listChangeVerifications,
   now,
+  readChangeProofPublications,
   readChangeVerification,
   readChangeVerificationHistory,
   supersedeChangeVerification,
@@ -28,6 +29,7 @@ export type ChangeVerificationRouteRuntime = {
   read: typeof readChangeVerification;
   history: typeof readChangeVerificationHistory;
   list: typeof listChangeVerifications;
+  publications: typeof readChangeProofPublications;
   advance: typeof advanceChangeVerification;
   supersede: typeof supersedeChangeVerification;
 };
@@ -38,6 +40,7 @@ const defaultRuntime: ChangeVerificationRouteRuntime = {
   read: readChangeVerification,
   history: readChangeVerificationHistory,
   list: listChangeVerifications,
+  publications: readChangeProofPublications,
   advance: advanceChangeVerification,
   supersede: supersedeChangeVerification,
 };
@@ -262,8 +265,10 @@ export async function handleChangeVerificationRoute(input: {
       "http://relay.local",
     ).searchParams.get("includeHistory");
     recordAudit(input.scope, { action: "proof.read", resource: proof.id, result: "allow" });
+    const publications = await runtime.publications(scope, proof.id);
     json(input.response, 200, {
       proof,
+      publications,
       ...(includeHistory === "true"
         ? { history: (await runtime.history(scope, proof.id)).slice(-100) }
         : {}),

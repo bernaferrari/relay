@@ -26,5 +26,18 @@ export function ensureChangeVerificationSchema(db: DatabaseSync): void {
       ON change_verification_versions(organization_id, project_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS change_verification_versions_change
       ON change_verification_versions(repository, head_sha, updated_at DESC);
+    CREATE TABLE IF NOT EXISTS change_proof_publications (
+      proof_id TEXT NOT NULL,
+      provider TEXT NOT NULL CHECK (provider IN ('github')),
+      sequence INTEGER NOT NULL CHECK (sequence >= 1),
+      organization_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      check_run_id INTEGER NOT NULL CHECK (check_run_id >= 1),
+      document TEXT NOT NULL,
+      published_at INTEGER NOT NULL,
+      PRIMARY KEY (proof_id, provider, sequence)
+    );
+    CREATE INDEX IF NOT EXISTS change_proof_publications_project
+      ON change_proof_publications(organization_id, project_id, published_at DESC);
   `);
 }

@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type {
   AppMap,
   Build,
+  ChangeProofPublicationReceipt,
   ChangeVerification,
   CompatibilityMatrix,
   DeviceLease,
@@ -152,6 +153,11 @@ export type ControlStore = {
     expectedVersion: number,
     proof: ChangeVerification,
   ): "updated" | "stale" | "missing";
+  changeProofPublications(
+    proofId: string,
+    provider: ChangeProofPublicationReceipt["provider"],
+  ): ChangeProofPublicationReceipt[];
+  insertChangeProofPublication(receipt: ChangeProofPublicationReceipt): boolean;
   appMap(key: string): AppMap | undefined;
   appMapRecoveryDocument(key: string): AppMapRecoveryDocument | undefined;
   hasAppMap(key: string): boolean;
@@ -453,6 +459,37 @@ function createStore(db: DatabaseSync): ControlStore {
           proof.updatedAt,
         ).changes;
       return inserted > 0 ? "updated" : "stale";
+    },
+    changeProofPublications(proofId, provider) {
+      return documents<ChangeProofPublicationReceipt>(
+        db
+          .prepare(
+            `SELECT document FROM change_proof_publications
+             WHERE proof_id = ? AND provider = ? ORDER BY sequence`,
+          )
+          .all(proofId, provider) as Array<{ document?: string }>,
+      );
+    },
+    insertChangeProofPublication(receipt) {
+      return (
+        db
+          .prepare(
+            `INSERT OR IGNORE INTO change_proof_publications(
+              proof_id, provider, sequence, organization_id, project_id,
+              check_run_id, document, published_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            receipt.proofId,
+            receipt.provider,
+            receipt.sequence,
+            receipt.organizationId,
+            receipt.projectId,
+            receipt.checkRunId,
+            JSON.stringify(receipt),
+            receipt.publishedAt,
+          ).changes > 0
+      );
     },
     appMap(key) {
       const row = db.prepare("SELECT document, status FROM app_maps WHERE map_key = ?").get(key) as

@@ -141,6 +141,7 @@ test("Proof routes share one scoped, idempotent, versioned lifecycle", async () 
     });
     assert.equal(inspected.proof.version, 1);
     assert.equal(inspected.history?.length, 1);
+    assert.deepEqual(inspected.publications, []);
     assert.equal((await client(server.port, "other").invoke("proof.list", {})).proofs.length, 0);
 
     const reviewRequested = await relay.invoke(

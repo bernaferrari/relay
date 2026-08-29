@@ -38,12 +38,13 @@ test("posts one exact-head GitHub check with action_required uncertainty", async
     },
   });
   assert.equal(calledUrl, "https://api.github.com/repos/acme/settings/check-runs");
-  assert.equal((request?.headers as Record<string, string>)["X-GitHub-Api-Version"], "2026-03-10");
+  assert.ok(request);
+  assert.equal((request.headers as Record<string, string>)["X-GitHub-Api-Version"], "2026-03-10");
   assert.equal(
-    (request?.headers as Record<string, string>).Authorization,
+    (request.headers as Record<string, string>).Authorization,
     "Bearer github-app-install-token",
   );
-  assert.deepEqual(JSON.parse(String(request?.body)), {
+  assert.deepEqual(JSON.parse(String(request.body)), {
     name: "Relay Proof",
     head_sha: headSha,
     status: "completed",
@@ -81,6 +82,130 @@ test("maps proved and rejected conclusions without changing the frozen head", as
     });
   }
   assert.deepEqual(conclusions, ["success", "failure"]);
+});
+
+test("updates a previously published check run instead of creating a duplicate", async () => {
+  let calledUrl = "";
+  let request: RequestInit | undefined;
+  const published = await publishGitHubProofCheck({
+    check: { ...check, conclusion: "success", title: "Relay Proof — PROVED" },
+    existing: {
+      provider: "github",
+      checkRunId: 42,
+      externalId: check.externalId,
+      headSha,
+      htmlUrl: "https://github.com/acme/settings/runs/42",
+    },
+    config: { owner: "acme", repository: "settings", token: "github-app-install-token" },
+    fetchImpl: async (url, init) => {
+      calledUrl = String(url);
+      request = init;
+      return new Response(
+        JSON.stringify({
+          id: 42,
+          head_sha: headSha,
+          external_id: check.externalId,
+          html_url: "https://github.com/acme/settings/runs/42",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+  assert.equal(calledUrl, "https://api.github.com/repos/acme/settings/check-runs/42");
+  assert.equal(request?.method, "PATCH");
+  const body = JSON.parse(String(request?.body));
+  assert.equal(body.conclusion, "success");
+  assert.equal(body.head_sha, undefined);
+  assert.equal(published.checkRunId, 42);
+  assert.equal(published.headSha, headSha);
+});
+
+test("does not update a receipt from another Proof or acknowledge another check run", async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return new Response(
+      JSON.stringify({ id: 43, head_sha: headSha, external_id: check.externalId }),
+      { status: 200 },
+    );
+  };
+  await assert.rejects(
+    publishGitHubProofCheck({
+      check,
+      existing: {
+        provider: "github",
+        checkRunId: 42,
+        externalId: "other-proof",
+        headSha,
+      },
+      config: { owner: "acme", repository: "settings", token: "token" },
+      fetchImpl,
+    }),
+    /existing GitHub Proof receipt does not match/,
+  );
+  assert.equal(calls, 0);
+
+  await assert.rejects(
+    publishGitHubProofCheck({
+      check,
+      existing: {
+        provider: "github",
+        checkRunId: 42,
+        externalId: check.externalId,
+        headSha,
+      },
+      config: { owner: "acme", repository: "settings", token: "token" },
+      fetchImpl,
+    }),
+    /did not confirm the exact Proof head and identity/,
+  );
+  assert.equal(calls, 1);
+});
+
+test("reconciles an unacknowledged exact Proof check before creating", async () => {
+  const methods: string[] = [];
+  const published = await publishGitHubProofCheck({
+    check,
+    reconcileUnacknowledged: true,
+    config: { owner: "acme", repository: "settings", token: "token" },
+    fetchImpl: async (_url, init) => {
+      methods.push(String(init?.method));
+      if (init?.method === "GET") {
+        return new Response(
+          JSON.stringify({
+            total_count: 1,
+            check_runs: [{ id: 42, head_sha: headSha, external_id: check.externalId }],
+          }),
+          { status: 200 },
+        );
+      }
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.head_sha, undefined);
+      return new Response(
+        JSON.stringify({ id: 42, head_sha: headSha, external_id: check.externalId }),
+        { status: 200 },
+      );
+    },
+  });
+  assert.deepEqual(methods, ["GET", "PATCH"]);
+  assert.equal(published.checkRunId, 42);
+});
+
+test("incomplete reconciliation fails closed before creating a duplicate", async () => {
+  let calls = 0;
+  await assert.rejects(
+    publishGitHubProofCheck({
+      check,
+      reconcileUnacknowledged: true,
+      config: { owner: "acme", repository: "settings", token: "token" },
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ total_count: 101, check_runs: [] }), { status: 200 });
+      },
+    }),
+    /will not risk a duplicate/u,
+  );
+  assert.equal(calls, 1);
 });
 
 test("invalid configuration performs no network I/O", async () => {

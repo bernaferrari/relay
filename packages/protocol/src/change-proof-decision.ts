@@ -123,7 +123,30 @@ export const changeProofProviderCheckSchema = z
   })
   .strict();
 
+/** Token-free provider acknowledgement retained beside the immutable Proof.
+ * Repeated publications append receipts while preserving one provider check
+ * identity for the exact head. */
+export const changeProofPublicationReceiptSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    sequence: z.number().int().positive(),
+    organizationId: identifier,
+    projectId: identifier,
+    proofId: identifier,
+    provider: z.literal("github"),
+    repository: z.string().trim().min(1).max(512),
+    headSha: exactGitSha,
+    externalId: identifier,
+    checkRunId: z.number().int().positive(),
+    checkDigest: sha256,
+    conclusion: z.enum(["success", "failure", "action-required"]),
+    htmlUrl: z.string().url().optional(),
+    publishedAt: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export type ChangeProofCaseResult = z.output<typeof changeProofCaseResultSchema>;
 export type ChangeProofDecision = z.output<typeof changeProofDecisionSchema>;
 export type AgentRepairPacket = z.output<typeof agentRepairPacketSchema>;
 export type ChangeProofProviderCheck = z.output<typeof changeProofProviderCheckSchema>;
+export type ChangeProofPublicationReceipt = z.output<typeof changeProofPublicationReceiptSchema>;

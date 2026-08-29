@@ -2,6 +2,7 @@ import { For, Show, type JSX, createEffect, createMemo, createSignal, onMount } 
 import { Button } from "@relay/ui/button";
 import {
   VERIFY_CHANGE_POLICY,
+  type ChangeProofPublicationReceipt,
   type ChangeVerification,
   type ChangeVerificationState,
 } from "@relay/protocol";
@@ -119,10 +120,6 @@ function targetLabel(targetCase: ChangeVerification["selection"]["targetCases"][
   return [profile.platform, profile.model, profile.osVersion].filter(Boolean).join(" · ");
 }
 
-function unique<T>(values: readonly T[]): T[] {
-  return [...new Set(values)];
-}
-
 export function ChangesWorkspace(props: {
   onOpenRun: (runId: string) => void;
   onOpenMap: (appMapId: string) => void;
@@ -134,6 +131,9 @@ export function ChangesWorkspace(props: {
   );
   const [selected, setSelected] = createSignal<ChangeVerification | null>(null);
   const [history, setHistory] = createSignal<readonly ChangeVerification[]>([]);
+  const [publications, setPublications] = createSignal<readonly ChangeProofPublicationReceipt[]>(
+    [],
+  );
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [creating, setCreating] = createSignal(false);
@@ -239,6 +239,7 @@ export function ChangesWorkspace(props: {
       inspectedId = null;
       setSelected(null);
       setHistory([]);
+      setPublications([]);
       return;
     }
     const immediate = proofs().find(({ id }) => id === proofId) ?? null;
@@ -251,6 +252,7 @@ export function ChangesWorkspace(props: {
         if (selectedId() !== proofId) return;
         setSelected(result.proof);
         setHistory(result.history ?? []);
+        setPublications(result.publications);
       })
       .catch((cause) => {
         if (selectedId() === proofId) setError(humanError(cause, "Could not inspect this Proof"));
@@ -267,6 +269,7 @@ export function ChangesWorkspace(props: {
     () => selected()?.selection.targetCases.filter(({ required }) => required) ?? [],
   );
   const evidenceCount = createMemo(() => selected()?.evidenceDigests.length ?? 0);
+  const latestPublication = createMemo(() => publications().at(-1));
 
   return (
     <section class={cn(productPage, "flex flex-col gap-6")} aria-label="Changes and Proofs">
@@ -671,6 +674,40 @@ export function ChangesWorkspace(props: {
                           )}
                         </For>
                       </div>
+                    </Show>
+                  </ProofSection>
+
+                  <ProofSection title="Merge check">
+                    <Show
+                      when={latestPublication()}
+                      fallback={
+                        <EmptyFact>
+                          No provider check has acknowledged this exact Proof head yet.
+                        </EmptyFact>
+                      }
+                    >
+                      {(publication) => (
+                        <div class="grid gap-1 rounded-xl bg-surface-base px-3 py-2.5 ring-1 ring-inset ring-border-weak-base">
+                          <strong class="text-body font-semibold text-text-strong">
+                            GitHub · {publication().conclusion}
+                          </strong>
+                          <span class={cn("text-caption text-text-weak", mono)}>
+                            Check #{publication().checkRunId} · {shortSha(publication().headSha)}
+                          </span>
+                          <Show when={publication().htmlUrl}>
+                            {(url) => (
+                              <a
+                                class="w-fit text-caption font-semibold text-text-interactive-base hover:underline"
+                                href={url()}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Open merge check
+                              </a>
+                            )}
+                          </Show>
+                        </div>
+                      )}
                     </Show>
                   </ProofSection>
 

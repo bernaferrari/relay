@@ -118,7 +118,10 @@ export async function bindRegisteredBuildToProof(
   }
   const artifactDigest = await artifactDigestForProof(preflight.artifact.path);
   const expectedDigest = input.build.sourceSha256?.trim().toLowerCase();
-  if (expectedDigest && (!HEX_SHA256.test(expectedDigest) || artifactDigest !== `sha256:${expectedDigest}`)) {
+  if (
+    expectedDigest &&
+    (!HEX_SHA256.test(expectedDigest) || artifactDigest !== `sha256:${expectedDigest}`)
+  ) {
     throw new Error("Build artifact digest does not match registered sourceSha256");
   }
   return changeVerificationBuildSchema.parse({

@@ -8,6 +8,7 @@ import {
   agentRepairPacketForDecision,
   decideChangeVerification,
   providerCheckForChangeProof,
+  providerCheckForStoredChangeProof,
   recordChangeVerificationDecision,
 } from "./change-proof-decision.js";
 import {
@@ -209,10 +210,7 @@ test("a definitive causal regression rejects and creates one bounded repair pack
   const decision = decideChangeVerification({ proof: proof(), caseResults: [failed] });
   assert.equal(decision.decision, "rejected", "a definitive failure dominates missing expansion");
   assert.equal(decision.firstCausalFailure?.checkId, "rtl-overlap");
-  assert.equal(
-    providerCheckForChangeProof({ proof: proof(), decision }).conclusion,
-    "failure",
-  );
+  assert.equal(providerCheckForChangeProof({ proof: proof(), decision }).conclusion, "failure");
   const packet = agentRepairPacketForDecision({ proof: proof(), caseResults: [failed] });
   assert.equal(packet?.proofId, "proof-1");
   assert.equal(packet?.targetCaseId, "chromium-compact-ar");
@@ -231,10 +229,7 @@ test("ambiguous selectors and unreconciled input require review", () => {
   ]) {
     const decision = decideChangeVerification({
       proof: proof(),
-      caseResults: [
-        result("chromium-compact-ar", drift),
-        result("webkit-compact-ar"),
-      ],
+      caseResults: [result("chromium-compact-ar", drift), result("webkit-compact-ar")],
     });
     assert.equal(decision.decision, "needs-review");
     assert.equal(
@@ -327,4 +322,29 @@ test("the server-owned decision transition appends Run and evidence identities",
     else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("provider publication projects only the durable terminal Proof", () => {
+  const source = proof();
+  const decided = decideChangeVerification({
+    proof: source,
+    caseResults: [result("chromium-compact-ar")],
+  });
+  const stored = {
+    ...source,
+    state: decided.state,
+    decision: decided.decision,
+    runIds: decided.runIds,
+    evidenceDigests: decided.evidenceDigests,
+    coverageGaps: decided.coverageGaps,
+    residualRisk: decided.residualRisk,
+    smallestNextVerification: decided.smallestNextVerification,
+    firstCausalFailure: decided.firstCausalFailure,
+  } as ChangeVerification;
+  const check = providerCheckForStoredChangeProof({ proof: stored });
+  assert.equal(check.conclusion, "action-required");
+  assert.match(check.text, /Required cases: 2/u);
+  assert.match(check.text, /Recorded Runs: 1/u);
+  assert.match(check.text, /Missing required Run.*webkit-compact-ar/u);
+  assert.throws(() => providerCheckForStoredChangeProof({ proof: source }), /terminal Proof/u);
 });

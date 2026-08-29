@@ -127,6 +127,23 @@ const proof = {
   updatedAt: 400,
 } satisfies ChangeVerification;
 
+const publication = {
+  schemaVersion: 1,
+  sequence: 1,
+  organizationId: "acme",
+  projectId: "relay",
+  proofId: proof.id,
+  provider: "github",
+  repository: proof.change.repository,
+  headSha,
+  externalId: proof.id,
+  checkRunId: 42,
+  checkDigest: digest,
+  conclusion: "failure",
+  htmlUrl: "https://github.com/acme/settings/runs/42",
+  publishedAt: 500,
+} as const;
+
 beforeEach(() => {
   mocks.runAction.mockReset();
 });
@@ -141,7 +158,9 @@ function enterValue(root: HTMLElement, id: string, value: string): void {
 test("presents one Change-first Proof without internal orchestration vocabulary", async () => {
   mocks.runAction.mockImplementation(async (operationId: string) => {
     if (operationId === "proof.list") return { proofs: [proof] };
-    if (operationId === "proof.inspect") return { proof, history: [proof] };
+    if (operationId === "proof.inspect") {
+      return { proof, history: [proof], publications: [publication] };
+    }
     throw new Error(`unexpected ${operationId}`);
   });
   const onOpenRun = vi.fn();
@@ -160,6 +179,10 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
   expect(root.textContent).toContain("chromium · 390 × 844 · ar");
   expect(root.textContent).toContain("Primary action overlaps the Arabic description by 22 px.");
   expect(root.textContent).toContain("Physical iOS is advisory for this repository.");
+  await vi.waitFor(() => expect(root.textContent).toContain("GitHub · failure"));
+  expect(root.querySelector<HTMLAnchorElement>('a[href$="/runs/42"]')?.textContent).toContain(
+    "Open merge check",
+  );
   expect(root.textContent).toContain(
     "Repair the first causal regression, then create a new Proof for the new head.",
   );
@@ -226,7 +249,9 @@ test("starts one exact awaiting-build Proof and rejects invalid provenance local
       created = true;
       return { proof: createdProof, receipt: createdProof.lastMutation, disposition: "created" };
     }
-    if (operationId === "proof.inspect") return { proof: createdProof, history: [createdProof] };
+    if (operationId === "proof.inspect") {
+      return { proof: createdProof, history: [createdProof], publications: [] };
+    }
     throw new Error(`unexpected ${operationId}`);
   });
 
