@@ -101,7 +101,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
         </div>
         <main class="grid min-h-0 flex-1 grid-cols-[210px_1fr] max-[760px]:grid-cols-1">
           <nav
-            class="flex flex-col gap-px border-r border-border-weak-base bg-background-base p-2 text-text-strong max-[760px]:flex-row max-[760px]:flex-wrap max-[760px]:border-r-0 max-[760px]:border-b"
+            class="flex flex-col gap-px border-r border-border-weak-base bg-background-base p-2 text-text-strong max-[760px]:flex-row max-[760px]:flex-nowrap max-[760px]:overflow-x-auto max-[760px]:border-r-0 max-[760px]:border-b"
             aria-label="Settings sections"
           >
             <For each={SECTIONS}>
@@ -109,9 +109,10 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                 <button
                   type="button"
                   class={cn(
-                    "rounded-md px-2.5 py-[7px] text-left text-caption font-medium text-text-base transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong",
+                    "min-h-10 rounded-md px-2.5 py-[7px] text-left text-caption font-medium text-text-base transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong max-[760px]:min-h-11 max-[760px]:shrink-0",
                     section() === id && "bg-surface-base-active text-text-strong",
                   )}
+                  aria-current={section() === id ? "page" : undefined}
                   onClick={() => setSection(id)}
                 >
                   {label}
@@ -119,7 +120,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
               )}
             </For>
           </nav>
-          <div class="flex flex-col gap-1 overflow-y-auto bg-surface-raised-stronger-non-alpha px-5 pt-[18px] pb-6 text-caption text-text-strong">
+          <div class="flex flex-col gap-1 overflow-y-auto bg-surface-raised-stronger-non-alpha px-5 pt-[18px] pb-6 text-caption text-text-strong max-[520px]:[&_button]:min-h-11">
             <Show when={section() === "appearance"}>
               <AppearanceSettingsPanel />
             </Show>

@@ -86,6 +86,42 @@ test("runtime capture receipts update the server-owned durable actor", async () 
   }
 });
 
+test("a fresh Android traversal replaces stale foreground context even when nodes omit package ids", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-supervisor-android-context-"));
+  const store = new TargetSupervisorStore(join(root, "supervisors.sqlite"));
+  const androidTarget = { id: "emulator-context", kind: "android" } as const;
+  try {
+    store.recordSemanticReceipt(androidTarget, {
+      state: "current",
+      foregroundApp: "com.android.systemui",
+    });
+    runWithTargetSupervisorStore(store, () => {
+      recordTargetSemanticSnapshot(
+        { serial: androidTarget.id, platform: "android" },
+        {
+          inspectable: true,
+          foregroundApp: "com.google.android.apps.nexuslauncher",
+          nodes: [
+            {
+              label: "Relay",
+              enabled: true,
+              visibleToUser: true,
+              rect: { x: 1, y: 1, width: 20, height: 20 },
+            },
+          ],
+        },
+      );
+    });
+    assert.equal(
+      store.health(androidTarget).context.foregroundApp,
+      "com.google.android.apps.nexuslauncher",
+    );
+  } finally {
+    store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a new server store rehydrates checkpoints and downgrades old liveness", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-target-supervisor-restart-"));
   const path = join(root, "supervisors.sqlite");

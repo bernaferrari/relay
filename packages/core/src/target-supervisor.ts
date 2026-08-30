@@ -17,6 +17,7 @@ import type {
 import {
   deriveTargetSupervisorOverall,
   deriveTargetSupervisorReadiness,
+  initialTargetSupervisorCounters,
   summarizeTargetSupervisorLatency,
 } from "./target-supervisor-health.js";
 
@@ -173,19 +174,6 @@ const RECOVERY_STAGES: Record<AutomaticRecoveryChannel, AutomaticRecoveryStage[]
   semantics: ["refresh-semantics", "restart-semantic-runner", "prepare-platform-services"],
 };
 
-function initialCounters(): Counters {
-  return {
-    pixelCaptures: 0,
-    semanticTraversals: 0,
-    semanticTimeouts: 0,
-    semanticWedges: 0,
-    uncertainMutations: 0,
-    reconciliations: 0,
-    recoveryAttempts: 0,
-    recoveryFailures: 0,
-  };
-}
-
 function boundedText(value: string): string {
   const normalized = value.trim().replace(/\s+/gu, " ");
   return (normalized || "No detail was provided.").slice(0, 480);
@@ -286,7 +274,7 @@ export class TargetSupervisor {
         context: {},
         needsHuman: false,
         quarantined: false,
-        counters: initialCounters(),
+        counters: initialTargetSupervisorCounters(),
         latencySamples: { pixels: [], semantics: [], recovery: [] },
         events: [],
       },

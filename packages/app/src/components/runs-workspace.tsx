@@ -706,7 +706,7 @@ export function RunsWorkspace(props: {
                     aria-selected={tab() === id}
                     tabindex={tab() === id ? 0 : -1}
                     class={cn(
-                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] max-[900px]:min-h-11",
                       tab() === id &&
                         "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}
@@ -740,7 +740,7 @@ export function RunsWorkspace(props: {
                     aria-selected={tab() === "combine"}
                     tabindex={tab() === "combine" ? 0 : -1}
                     class={cn(
-                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] max-[900px]:min-h-11",
                       tab() === "combine" &&
                         "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}
@@ -762,7 +762,7 @@ export function RunsWorkspace(props: {
                     aria-selected={tab() === "compatibility"}
                     tabindex={tab() === "compatibility" ? 0 : -1}
                     class={cn(
-                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] max-[900px]:min-h-11",
                       tab() === "compatibility" &&
                         "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}

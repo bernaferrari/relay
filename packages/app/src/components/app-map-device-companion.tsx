@@ -82,7 +82,7 @@ export function AppMapDeviceCompanion(props: {
             </button>
           </Show>
           <label
-            class="relative inline-flex h-7 items-center rounded-md pl-2 text-caption text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-base)]"
+            class="relative inline-flex h-9 items-center rounded-md pl-2 text-caption text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-base)] max-[900px]:h-11"
             data-tip={ACCESSIBILITY_OVERLAY_MODE_DESCRIPTIONS[server.accessibilityMode()]}
           >
             <span class="pointer-events-none font-medium text-[var(--text-base)]">Elements</span>

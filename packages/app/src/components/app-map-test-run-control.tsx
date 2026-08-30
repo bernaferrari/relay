@@ -73,6 +73,15 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
     if (props.blockedReason && props.blockedActionLabel) return props.blockedActionLabel;
     return "Run test";
   };
+  const compactLabel = () => {
+    if (props.launchState === "preparing") return "Starting";
+    if (props.launchState === "canceling") return "Stopping";
+    if (active()) return "Cancel";
+    if (props.launchState === "error") return "Retry";
+    if (finished()) return "Result";
+    if (props.blockedReason && props.blockedActionLabel) return "Fix issue";
+    return "Run";
+  };
   const status = () => {
     if (props.launchState === "preparing") return "Starting the exact saved Test revision…";
     if (props.launchState === "canceling") return "Cancellation requested. Waiting for Relay…";
@@ -147,9 +156,10 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
             class="flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-base transition-[color,background-color,transform] duration-hover marker:hidden hover:bg-surface-base-hover hover:text-text-strong active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus motion-reduce:transition-none [&::-webkit-details-marker]:hidden"
             aria-controls="test-run-options-panel"
             aria-expanded={optionsOpen()}
+            aria-label="Run options"
           >
             <Icon name="sliders" size={14} />
-            Run options
+            <span class="max-[560px]:hidden">Run options</span>
             <Icon
               name="chevron-down"
               size={13}
@@ -272,16 +282,18 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
         <Button
           data-test-run-primary
           size="md"
-          class="min-w-[11.5rem] shrink-0 justify-center max-[760px]:min-w-36"
+          class="shrink-0 justify-center"
           variant={active() ? "danger" : "primary"}
           disabled={busy() || (Boolean(props.blockedReason) && !props.onResolveBlocked)}
           aria-busy={busy()}
+          aria-label={label()}
           aria-describedby={status() ? "test-run-control-status" : undefined}
           title={status() || undefined}
           onClick={activate}
         >
           <Icon name={active() ? "square" : finished() ? "arrow-right" : "play"} size={13} />
-          {label()}
+          <span class="max-[560px]:hidden">{label()}</span>
+          <span class="hidden max-[560px]:inline">{compactLabel()}</span>
         </Button>
       </div>
     </div>

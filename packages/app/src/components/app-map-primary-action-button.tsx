@@ -32,7 +32,10 @@ export function AppMapPrimaryActionButton(props: {
           size={13}
           class={cn(props.action.icon === "refresh" && "ui-refresh-spin motion-reduce:opacity-70")}
         />
-        <span class="max-[620px]:hidden">{control().label}</span>
+        {/* The complete label remains the accessible name and tooltip. Compact
+            windows keep one unambiguous icon action instead of letting this
+            long, state-dependent label collide with workspace navigation. */}
+        <span class="max-[1320px]:hidden">{control().label}</span>
       </Button>
       <Show when={control().reason}>
         {(reason) => (

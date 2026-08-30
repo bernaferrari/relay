@@ -540,7 +540,7 @@ export function compileAppMapScenarioTest(
               const isTerminalDestination =
                 terminalConnectionId !== undefined &&
                 recipeStep.id === `relay-destination-${terminalConnectionId}`;
-              const isLiveEntry = recipeStep.id?.endsWith(":live-entry") === true;
+              const isLiveEntry = recipeStep.id?.endsWith("-live-entry") === true;
               const capture =
                 (sourceExpectation && !isLiveEntry) || (!isTerminalDestination && !isLiveEntry)
                   ? undefined

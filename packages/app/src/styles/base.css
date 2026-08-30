@@ -560,7 +560,7 @@
 }
 .tip-layer {
   position: fixed;
-  z-index: 300;
+  z-index: var(--z-tooltip);
   pointer-events: none;
   max-width: 240px;
   padding: 5px 8px;

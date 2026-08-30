@@ -111,7 +111,7 @@ export function RepeatResultDialog(props: {
 
   return (
     <div
-      class={`${modalScrim} z-[140] flex items-center justify-center p-4`}
+      class={cn(modalScrim, "z-[var(--z-modal-nested)] flex items-center justify-center p-4")}
       onClick={(event) => {
         if (event.target === event.currentTarget) props.onClose();
       }}

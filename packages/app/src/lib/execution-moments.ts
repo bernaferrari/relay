@@ -153,10 +153,12 @@ export function executionMoments(input: {
     return {
       index,
       title:
-        trace?.title ??
-        (step
+        step && ["module", "repeat", "branch"].includes(step.kind)
           ? sentenceForStep(step, input.recipes)
-          : `Step ${String(index + 1).padStart(2, "0")}`),
+          : (trace?.title ??
+            (step
+              ? sentenceForStep(step, input.recipes)
+              : `Step ${String(index + 1).padStart(2, "0")}`)),
       state: stateForTrace(input.job ?? undefined, trace),
       actions:
         trace?.actions !== undefined

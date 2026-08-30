@@ -9,6 +9,17 @@ import { targetValid } from "./step-target";
 import { identifierControlPhrase } from "./humanize-identifier";
 import { titleize, type TitledId } from "./job";
 
+function savedTestTitle(id: string, known?: Iterable<TitledId>): string {
+  if (known) {
+    for (const recipe of known) {
+      if (recipe.id === id) return recipe.title;
+    }
+  }
+  // Frozen recipe identities frequently contain map IDs, compiler node kinds,
+  // and revisions. They are valuable evidence, but not useful action copy.
+  return "saved Test";
+}
+
 function targetPhrase(t: StepTarget | undefined): string {
   if (!t) return "an element";
   if (t.label) return `"${t.label}"`;
@@ -154,11 +165,11 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
       // Human title only — "Built-in:" was opaque jargon in the step list.
       return titleize(step.flow, recipes);
     case "module":
-      return `Run ${titleize(step.recipeId, recipes)}`;
+      return `Run ${savedTestTitle(step.recipeId, recipes)}`;
     case "branch":
-      return `When ${humanInput(step.input)} ${step.operator.replace("-", " ")}${step.expected ? ` "${step.expected}"` : ""}, run ${titleize(step.thenRecipeId, recipes)}`;
+      return `When ${humanInput(step.input)} ${step.operator.replace("-", " ")}${step.expected ? ` "${step.expected}"` : ""}, run ${savedTestTitle(step.thenRecipeId, recipes)}`;
     case "repeat":
-      return `Repeat ${titleize(step.recipeId, recipes)} ${step.count} times`;
+      return `Repeat ${savedTestTitle(step.recipeId, recipes)} ${step.count} times`;
     case "script":
       return "Transform variables with safe script";
     case "clipboard":

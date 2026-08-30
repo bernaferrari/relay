@@ -57,7 +57,13 @@ function ExactDeviceSelector(props: {
   onQueryChange: (query: string) => void;
   onSelectionChange: (targetIds: string[]) => void;
 }) {
-  const filteredProfiles = createMemo(() => filterTargetProfiles(props.profiles, props.query));
+  // A physical/virtual target may have several observed viewport profiles, but
+  // an environment selects target identities, not observations. Showing every
+  // profile produced duplicate checkboxes that all toggled the same device.
+  const targetProfiles = createMemo(() => [
+    ...new Map(props.profiles.map((profile) => [profile.targetId, profile])).values(),
+  ]);
+  const filteredProfiles = createMemo(() => filterTargetProfiles(targetProfiles(), props.query));
   const groupedProfiles = createMemo(() =>
     targetPlatformOrder
       .map((platform) => ({
@@ -132,7 +138,7 @@ function ExactDeviceSelector(props: {
         </div>
         <div class="app-map-panel-scroll max-h-64 overflow-y-auto overscroll-contain p-1.5">
           <Show
-            when={props.profiles.length > 0}
+            when={targetProfiles().length > 0}
             fallback={
               <div class="grid min-h-28 place-items-center px-6 text-center">
                 <div>

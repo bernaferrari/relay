@@ -38,7 +38,7 @@ export function TestWorkspaceBar(props: {
 }) {
   return (
     <header
-      class="flex min-h-14 items-center gap-2 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-3"
+      class="flex min-h-14 min-w-0 w-full items-center gap-2 overflow-hidden border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-3"
       data-test-workspace-bar
     >
       <div class="flex min-w-0 flex-1 items-center gap-2">
@@ -84,7 +84,7 @@ export function RailStrip(props: {
     >
       <button
         type="button"
-        class={cn(productIconButton, "size-8")}
+        class={cn(productIconButton, "size-8 max-[900px]:size-11")}
         aria-label={`Show ${props.label.toLocaleLowerCase()}`}
         aria-expanded={false}
         data-tip={`Show ${props.label.toLocaleLowerCase()}`}
@@ -181,7 +181,7 @@ export function TestSwitcher(props: {
           type="button"
           id="app-map-test-switcher"
           class={cn(
-            "flex min-h-9 min-w-0 items-center gap-1.5 rounded-md px-2 text-left transition-colors duration-hover motion-reduce:transition-none",
+            "flex min-h-9 min-w-0 items-center gap-1.5 rounded-md px-2 text-left transition-colors duration-hover motion-reduce:transition-none max-[900px]:min-h-11",
             "hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-strong-focus",
             open() && "bg-surface-base-active",
           )}

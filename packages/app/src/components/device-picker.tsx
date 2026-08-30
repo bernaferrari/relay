@@ -279,7 +279,12 @@ export function DevicePicker(props: {
                 scanning() && !presentedDevice() && "ui-refresh-spin motion-reduce:opacity-70",
               )}
             />
-            <span class="max-w-[150px] truncate max-[560px]:hidden">{targetLabel()}</span>
+            {/* The workspace modes and proof action are higher-level navigation.
+                At compact desktop widths the device name used to overrun them,
+                leaving visually separate controls with overlapping hit targets.
+                Keep the labelled trigger for assistive tech and reveal the name
+                again as soon as the shell has room. */}
+            <span class="max-w-[150px] truncate max-[1320px]:hidden">{targetLabel()}</span>
           </button>
           <button
             ref={(element) => (trigger = element)}

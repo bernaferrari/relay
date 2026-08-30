@@ -527,6 +527,9 @@ export function recordTargetSemanticSnapshot(
   input: {
     inspectable: boolean;
     nodes: readonly SnapshotNode[];
+    /** Authoritative app observed beside this exact traversal. Android's
+     * window nodes do not consistently repeat the owning package. */
+    foregroundApp?: string;
     at?: number;
     durationMs?: number;
     errorMessage?: string;
@@ -556,8 +559,10 @@ export function recordTargetSemanticSnapshot(
         : "unavailable",
     durationMs: input.durationMs,
     reason: input.errorMessage,
-    ...(input.nodes.find((node) => node.bundleId)?.bundleId
-      ? { foregroundApp: input.nodes.find((node) => node.bundleId)!.bundleId }
+    ...((input.foregroundApp ?? input.nodes.find((node) => node.bundleId)?.bundleId)
+      ? {
+          foregroundApp: input.foregroundApp ?? input.nodes.find((node) => node.bundleId)!.bundleId,
+        }
       : {}),
   });
 }
@@ -633,6 +638,7 @@ export function recordTargetSemanticCapture(
   input: {
     inspectable: boolean;
     nodes: readonly SnapshotNode[];
+    foregroundApp?: string;
     inFlight?: boolean;
     at?: number;
     durationMs?: number;

@@ -31,12 +31,12 @@ const RUN_FILTERS: { id: RunFilter; label: string }[] = [
 ];
 
 const segmentedControl = cn(
-  "flex h-10 items-center gap-0.5 rounded-xl bg-[var(--background-deep)] p-1",
+  "flex h-10 items-center gap-0.5 rounded-xl bg-[var(--background-deep)] p-1 max-[900px]:h-[52px]",
   "shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
 );
 
 const segmentedTab = cn(
-  "min-h-8 flex-1 rounded-lg px-2 text-caption font-medium text-text-weak",
+  "min-h-8 flex-1 rounded-lg px-2 text-caption font-medium text-text-weak max-[900px]:min-h-11",
   "transition-[background-color,color,box-shadow] duration-hover",
   "hover:bg-surface-base-hover hover:text-text-base",
   "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
@@ -447,7 +447,7 @@ function MapLibraryRow(props: {
       <button
         type="button"
         class={cn(
-          "grid size-7 shrink-0 place-items-center rounded-md text-text-weaker transition-[background-color,color,opacity] duration-press hover:bg-[var(--background-base)] hover:text-[var(--icon-critical-base)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
+          "grid size-7 shrink-0 place-items-center rounded-md text-text-weaker transition-[background-color,color,opacity] duration-press hover:bg-[var(--background-base)] hover:text-[var(--icon-critical-base)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus max-[900px]:size-11",
           !props.selected && "invisible pointer-events-none",
         )}
         aria-label={`Delete ${displayTitle(props.appMap.name)}`}

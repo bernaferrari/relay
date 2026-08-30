@@ -1,7 +1,8 @@
-import { For, onMount } from "solid-js";
+import { For, onCleanup, onMount } from "solid-js";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { recordGoldenLoopHelp } from "../lib/golden-loop-telemetry";
+import { trapFocus } from "../lib/modal";
 import { modalPanel, modalScrim, productIconButton } from "../lib/ui";
 import { Icon } from "./icon";
 
@@ -11,7 +12,19 @@ import { Icon } from "./icon";
  */
 export function StudioShellShortcutsSheet(props: { onClose: () => void }) {
   const server = useServer();
-  onMount(() => recordGoldenLoopHelp(server.selectedAppMapId() ?? "local-workspace"));
+  let panel: HTMLElement | undefined;
+  onMount(() => {
+    recordGoldenLoopHelp(server.selectedAppMapId() ?? "local-workspace");
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      props.onClose();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    onCleanup(() => window.removeEventListener("keydown", onKeyDown, true));
+    if (panel) onCleanup(trapFocus(panel));
+  });
   return (
     <div
       class={cn(modalScrim, "z-[var(--z-modal-nested)] flex items-center justify-center p-5")}
@@ -20,10 +33,12 @@ export function StudioShellShortcutsSheet(props: { onClose: () => void }) {
       }}
     >
       <section
+        ref={(element) => (panel = element)}
         class={cn(modalPanel, "w-[min(100%,420px)] outline-none")}
         role="dialog"
         aria-modal="true"
         aria-label="Keyboard shortcuts"
+        tabIndex={-1}
       >
         <header class="flex items-center justify-between border-b border-border-weak-base px-4 py-3">
           <h2 class="m-0 text-title font-medium tracking-tight text-text-strong">
@@ -62,8 +77,7 @@ export function StudioShellShortcutsSheet(props: { onClose: () => void }) {
             )}
           </For>
           <p class="m-0 px-2 pt-2 text-micro/[1.5] text-text-weak">
-            Product flows and walkthroughs live in{" "}
-            <code class="font-mono">docs/PRODUCT_FLOWS.md</code>.
+            Press ⌘K anytime to find an action without leaving your work.
           </p>
         </div>
       </section>

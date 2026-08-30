@@ -39,20 +39,11 @@ import {
   TestSwitcher,
   TestWorkspaceBar,
 } from "./app-map-test-workspace-chrome";
-import type { WorkspaceController } from "../lib/workspace-controller";
 import { captureTestStartScreen } from "../lib/capture-test-start-screen";
 import { useRecordingActionSelection } from "../lib/use-recording-action-selection";
+import type { AppMapTestWorkspaceProps } from "./app-map-test-workspace-types";
 
-export function AppMapTestWorkspace(props: {
-  testId?: string;
-  onTestChange?: (testId: string) => void;
-  onOpenRun?: (runId: string) => void;
-  onChooseTarget?: () => void;
-  onOpenTarget?: () => void;
-  onOpenVariables?: () => void;
-  onRecord?: () => void;
-  workspaceController?: WorkspaceController;
-}) {
+export function AppMapTestWorkspace(props: AppMapTestWorkspaceProps) {
   const server = useServer();
   const recorder = useRecorder();
   const [proposalReviewOpen, setProposalReviewOpen] = createSignal(false);
@@ -426,7 +417,7 @@ export function AppMapTestWorkspace(props: {
 
   return (
     <section
-      class="relative grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background-base text-text-strong"
+      class="relative grid min-h-0 min-w-0 w-full flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background-base text-text-strong"
       onKeyDown={(event) => {
         const target = event.target as HTMLElement;
         const typing =

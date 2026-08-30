@@ -23,19 +23,18 @@ export function RunsHistoryList(props: {
   return (
     <div class={cn("w-full max-w-none", props.rows().length === 0 && "max-w-[680px] rounded-3xl")}>
       <Show when={props.rows().length > 0}>
-        <div class="mb-2.5 flex min-h-10 items-center justify-between gap-3">
+        <div class="mb-2.5 flex min-h-10 items-center justify-between gap-3 max-[520px]:flex-col max-[520px]:items-stretch max-[520px]:gap-1.5">
           <div
-            class="flex items-center gap-1 rounded-xl border border-border-weak-base bg-background-stronger p-1"
-            role="tablist"
+            class="flex items-center gap-1 overflow-x-auto rounded-xl border border-border-weak-base bg-background-stronger p-1 max-[520px]:w-full"
+            role="group"
             aria-label="Filter runs"
           >
             {RUN_FILTER_TABS.map(([id, label]) => (
               <button
                 type="button"
-                role="tab"
-                aria-selected={props.runFilter() === id}
+                aria-pressed={props.runFilter() === id}
                 class={cn(
-                  "min-h-7 rounded-md px-3 text-caption font-medium text-text-weaker transition-[background-color,color,transform] duration-hover active:scale-[0.97]",
+                  "min-h-9 shrink-0 rounded-md px-3 text-caption font-medium text-text-weaker transition-[background-color,color,transform] duration-hover active:scale-[0.97] max-[900px]:min-h-11 max-[520px]:min-w-0 max-[520px]:flex-1 max-[520px]:px-2",
                   props.runFilter() === id
                     ? "bg-surface-base-active text-text-strong"
                     : "hover:bg-surface-base-hover hover:text-text-base",
@@ -46,13 +45,13 @@ export function RunsHistoryList(props: {
               </button>
             ))}
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex min-h-8 items-center justify-end gap-2 max-[520px]:justify-between">
             <Show
               when={props.runFilter() === "all" && props.rows().length > props.visibleRows().length}
             >
               <button
                 type="button"
-                class="rounded-md px-2 py-1 text-micro font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
+                class="min-h-9 rounded-md px-2 py-1 text-micro font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base max-[900px]:min-h-11"
                 onClick={() => props.setHistoryExpanded((expanded) => !expanded)}
               >
                 {props.historyExpanded() ? "Latest only" : `All ${props.rows().length}`}

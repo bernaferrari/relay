@@ -36,5 +36,10 @@ test("Test leads the workspace views and every mode keeps a one-word label", () 
   expect(root.getAttribute("aria-label")).toBeNull();
   expect(root.querySelector('[role="tablist"]')?.getAttribute("aria-label")).toBe("Workspace view");
   expect(root.querySelector('[role="tab"]')?.getAttribute("data-map-mode")).toBe("test");
+  expect(
+    [...root.querySelectorAll<HTMLElement>('[role="tab"] span')].every(
+      (label) => !label.className.includes("hidden"),
+    ),
+  ).toBe(true);
   dispose();
 });

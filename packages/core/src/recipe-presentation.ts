@@ -88,11 +88,14 @@ export function describeRecipeStep(step: RecipeStep): string {
     case "flow":
       return `Flow: ${step.flow}`;
     case "module":
-      return `Run reusable test: ${step.recipeId}`;
+      // recipeId is a frozen execution identity, not a title. It may contain
+      // map IDs, compiler node kinds and revisions; exposing it in a Run report
+      // makes an ordinary saved Test read like an internal stack trace.
+      return "Run saved Test";
     case "branch":
       return `Branch when ${step.input} ${step.operator}${step.expected ? ` ${JSON.stringify(step.expected)}` : ""}`;
     case "repeat":
-      return `Repeat ${step.recipeId} ${step.count}×`;
+      return `Repeat saved Test ${step.count}×`;
     case "script":
       return "Transform test variables";
     case "clipboard":

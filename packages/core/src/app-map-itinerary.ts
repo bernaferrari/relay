@@ -550,7 +550,7 @@ export function compiledFlowGraphFromLiveCheckpoint(
       steps: [
         {
           ...scrollFamilyExpectation(map, checkpoint),
-          id: `${checkpoint.id ?? `relay-source-${checkpointScreenId}`}:live-entry`,
+          id: `${checkpoint.id ?? `relay-source-${checkpointScreenId}`}-live-entry`,
           recovery: undefined,
           returnRequirement: undefined,
         },

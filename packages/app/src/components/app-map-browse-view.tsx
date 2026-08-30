@@ -130,7 +130,7 @@ export function AppMapBrowseView(props: {
   return (
     <div
       class={cn(
-        "absolute inset-0 min-h-0 overflow-y-auto overscroll-contain bg-[var(--map-canvas)] pt-7 pb-20 transition-[padding] duration-hover",
+        "absolute inset-0 min-h-0 overflow-y-auto overscroll-contain bg-[var(--map-canvas)] pt-7 pb-20",
         props.deviceOpen && "pr-[calc(var(--app-map-device-panel-width)+32px)] max-[900px]:pr-0",
       )}
     >
@@ -143,7 +143,7 @@ export function AppMapBrowseView(props: {
         <header class="mb-3 flex items-center justify-between gap-4 max-[720px]:items-start max-[720px]:flex-col">
           <div class="min-w-0">
             <h2 class="text-title/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
-              {props.mode === "screens" ? "Screens" : "Coverage"}
+              {props.mode === "screens" ? "Screens" : "Results"}
             </h2>
             <p class="mt-0.5 max-w-[680px] text-caption/[1.45] tabular-nums text-[var(--text-weak)]">
               {props.mode === "screens"
@@ -171,7 +171,9 @@ export function AppMapBrowseView(props: {
               <span class="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-[var(--text-weak)] transition-colors group-focus-within/search:text-[var(--text-interactive-base)]">
                 <Icon name="search" size={14} />
               </span>
-              <span class="sr-only">Search {props.mode}</span>
+              <span class="sr-only">
+                {props.mode === "screens" ? "Search screens" : "Search results"}
+              </span>
               <input
                 class="h-9 w-full rounded-lg border-0 bg-transparent pr-3 pl-9 text-body text-[var(--text-strong)] outline-none transition-colors duration-hover placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base)]"
                 value={query()}
@@ -435,7 +437,7 @@ function CoverageTable(props: {
       }
     >
       <div class="overflow-hidden rounded-2xl bg-[var(--background-base)] shadow-[0_0_0_1px_var(--border-weak-base),0_10px_28px_rgb(0_0_0/6%)]">
-        <div class="grid grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] gap-4 border-b border-[var(--border-weak-base)] px-4 py-2.5 text-micro font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden">
+        <div class="grid grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] gap-4 border-b border-[var(--border-weak-base)] px-4 py-2.5 text-micro font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden max-[520px]:hidden">
           <span>Run</span>
           <span>Target</span>
           <span>Actor</span>
@@ -446,10 +448,10 @@ function CoverageTable(props: {
           {(row) => (
             <button
               type="button"
-              class="grid min-h-14 w-full grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] items-center gap-4 border-b border-[var(--border-weak-base)] px-4 text-left text-caption outline-none transition-colors duration-hover last:border-b-0 hover:bg-[var(--surface-base)] focus-visible:bg-[var(--product-accent-soft)] max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden"
+              class="grid min-h-14 w-full grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] items-center gap-4 border-b border-[var(--border-weak-base)] px-4 text-left text-caption outline-none transition-colors duration-hover last:border-b-0 hover:bg-[var(--surface-base)] focus-visible:bg-[var(--product-accent-soft)] max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden max-[520px]:grid-cols-[minmax(0,1fr)_auto] max-[520px]:gap-x-3 max-[520px]:gap-y-1 max-[520px]:px-3 max-[520px]:py-3"
               onClick={() => props.onOpenRun(row.id)}
             >
-              <span class="min-w-0">
+              <span class="min-w-0 max-[520px]:col-start-1 max-[520px]:row-start-1">
                 <strong class="block truncate font-medium text-[var(--text-strong)]">
                   {row.label}
                 </strong>
@@ -459,7 +461,7 @@ function CoverageTable(props: {
                   </small>
                 </Show>
               </span>
-              <span class="flex min-w-0 items-center gap-2 text-[var(--text-base)]">
+              <span class="flex min-w-0 items-center gap-2 text-[var(--text-base)] max-[520px]:col-start-1 max-[520px]:row-start-2">
                 <Icon
                   name={row.platform === "browser" ? "server" : "smartphone"}
                   size={13}
@@ -468,7 +470,14 @@ function CoverageTable(props: {
                 <span class="truncate">{row.target}</span>
               </span>
               <span class="truncate text-[var(--text-base)]">{row.actor}</span>
-              <span class={outcomePill(row.outcome)}>{browseOutcomeLabel(row.outcome)}</span>
+              <span
+                class={cn(
+                  outcomePill(row.outcome),
+                  "max-[520px]:col-start-2 max-[520px]:row-start-1 max-[520px]:row-span-2 max-[520px]:self-center max-[520px]:justify-self-end",
+                )}
+              >
+                {browseOutcomeLabel(row.outcome)}
+              </span>
               <time
                 class="font-mono text-micro tabular-nums text-[var(--text-weak)]"
                 datetime={new Date(row.finishedAt).toISOString()}

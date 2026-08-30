@@ -6,6 +6,22 @@ describe("sentenceForStep", () => {
   it("formats tap with label", () => {
     assert.equal(sentenceForStep({ kind: "tap", target: { label: "Sign in" } }), 'Tap "Sign in"');
   });
+  it("keeps frozen reusable-test identities out of ordinary action copy", () => {
+    const step = {
+      kind: "module" as const,
+      recipeId: "app-map:avd-acceptance:tests:launcher-proof@10",
+    };
+    assert.equal(sentenceForStep(step), "Run saved Test");
+    assert.equal(
+      sentenceForStep(step, [
+        {
+          id: "app-map:avd-acceptance:tests:launcher-proof@10",
+          title: "Launcher checkpoint proof",
+        },
+      ]),
+      "Run Launcher checkpoint proof",
+    );
+  });
   it("describes multi-tap and hold gestures without changing the target", () => {
     assert.equal(
       sentenceForStep({

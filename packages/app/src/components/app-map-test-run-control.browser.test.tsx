@@ -49,7 +49,9 @@ test("keeps one primary Run action visible and places expert controls in one dis
   expect(actions.className).toContain("flex");
   expect(actions.className).not.toContain("grid-cols");
   expect(run.getAttribute("data-variant")).toBe("primary");
-  expect(run.className).toContain("min-w-[11.5rem]");
+  expect(run.className).toContain("shrink-0");
+  expect(run.getAttribute("aria-label")).toBe("Run test");
+  expect(run.textContent).toContain("Run");
   expect(details.querySelector("[data-test-startup-policy]")).not.toBeNull();
   expect(details.querySelector("[data-test-runtime-profile]")).not.toBeNull();
   expect(details.querySelector("[data-test-runtime-profile]")?.className).toContain("min-h-11");

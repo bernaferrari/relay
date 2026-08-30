@@ -21,6 +21,19 @@ export type TargetSupervisorPlaneFacts = {
   };
 };
 
+export function initialTargetSupervisorCounters(): TargetSupervisorHealth["counters"] {
+  return {
+    pixelCaptures: 0,
+    semanticTraversals: 0,
+    semanticTimeouts: 0,
+    semanticWedges: 0,
+    uncertainMutations: 0,
+    reconciliations: 0,
+    recoveryAttempts: 0,
+    recoveryFailures: 0,
+  };
+}
+
 export function summarizeTargetSupervisorLatency(
   samples: readonly number[],
 ): TargetSupervisorHealth["latency"]["pixels"] {

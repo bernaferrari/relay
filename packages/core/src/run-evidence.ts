@@ -8,8 +8,8 @@ import { hasSensitiveEvidenceConsent } from "./evidence-policy.js";
 import { ensureRunDir, type RunArtifact } from "./runs.js";
 import type { TestJob } from "./session.js";
 import { captureAndroidForegroundApp } from "./android-ui-snapshot.js";
-import { captureBrowserProofEvidence } from "./browser-proof-evidence-runtime.js";
 import { hardStopDeviceSession } from "./control.js";
+import { stopBrowserProofEvidence } from "./run-evidence-browser.js";
 
 const CHANNELS: EvidenceChannel[] = [
   "input",
@@ -162,45 +162,6 @@ function event(
 
 function addArtifact(job: TestJob, artifact: RunArtifact): void {
   job.artifacts.push(artifact);
-}
-
-async function stopBrowserProofEvidence(job: TestJob, log: (line: string) => void): Promise<void> {
-  if (job.targetKind !== "browser" || !job.browserTargetId) return;
-  const targetProfile = job.targetProfile;
-  const environment = job.browserCaseProfile ?? targetProfile?.browserCaseProfile;
-  const sourceRevision = job.sourceRevision;
-  if (!targetProfile?.id || !environment || !sourceRevision?.artifactDigest) {
-    log("warn: browser proof evidence unavailable: frozen target/build identity is incomplete");
-    return;
-  }
-  try {
-    const evidence = await captureBrowserProofEvidence({
-      targetId: job.browserTargetId,
-      runId: job.id,
-      targetProfileId: targetProfile.id,
-      sourceSha: sourceRevision.sha,
-      artifactDigest: sourceRevision.artifactDigest,
-      environment,
-      runDir: await ensureRunDir(job),
-      evidencePolicy: job.evidencePolicy,
-    });
-    addArtifact(job, {
-      kind: "browser-proof-evidence",
-      capturedAt: now(),
-      data: evidence,
-    });
-    log(
-      evidence.completeness.status === "complete"
-        ? "evidence: browser proof channels captured"
-        : `warn: browser proof evidence partial (${evidence.completeness.missing.join(", ")})`,
-    );
-  } catch (error) {
-    log(
-      `warn: browser proof evidence unavailable: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-  }
 }
 
 function failed(

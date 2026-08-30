@@ -9,6 +9,7 @@ import {
   proposeAppMapTestExecutionSchedule,
 } from "./app-map-test-compiler.js";
 import { stayAppLocaleDestinationCheck } from "./stay-app-locale-destination.js";
+import { validateRecipeSteps } from "./recipe-validation.js";
 
 const at = 1;
 const scope = { organizationId: "org", projectId: "project", appMapId: "checkout" };
@@ -1236,7 +1237,9 @@ test("verified checkpoint startup skips cold setup but begins with fresh destina
     firstRecipe?.steps[0]?.kind === "expect-screen" ? firstRecipe.steps[0].screenId : undefined,
     "cart",
   );
-  assert.equal(firstRecipe?.steps[0]?.id?.endsWith(":live-entry"), true);
+  assert.equal(firstRecipe?.steps[0]?.id?.endsWith("-live-entry"), true);
+  assert.match(firstRecipe?.steps[0]?.id ?? "", /^[A-Za-z0-9][A-Za-z0-9-]{0,95}$/u);
+  assert.doesNotThrow(() => validateRecipeSteps(firstRecipe?.steps));
   assert.equal(
     Object.values(compiled.graph).some((recipe) =>
       recipe.steps.some((step) => step.kind === "sleep" && step.ms === 50),

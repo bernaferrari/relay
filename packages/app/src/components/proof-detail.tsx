@@ -6,10 +6,12 @@ import type {
   ChangeVerification,
 } from "@relay/protocol";
 import { cn } from "../lib/cn";
-import { mono, eyebrow } from "../lib/ui";
+import { mono, eyebrow, productIconButton } from "../lib/ui";
 import { Button } from "@relay/ui/button";
 import { StatusChip, type StatusChipTone } from "./status-chip";
 import type { ProofPrimaryAction } from "../lib/proof-actions";
+import { toast } from "../context/toast";
+import { Icon } from "./icon";
 
 type ProofStatus = { label: string; tone: StatusChipTone };
 
@@ -35,7 +37,7 @@ export function ProofDetail(props: {
   const latestPublicationAttempt = () => props.publicationOutbox.at(-1);
 
   return (
-    <article class="min-w-0 overflow-y-auto p-[clamp(1.25rem,3vw,2.5rem)]">
+    <article class="min-h-0 min-w-0 flex-1 overflow-y-auto p-[clamp(1.25rem,3vw,2.5rem)]">
       <div class="grid gap-8">
         <header class="grid gap-3 border-b border-border-weak-base pb-6">
           <div class="flex flex-wrap items-center gap-2">
@@ -54,11 +56,15 @@ export function ProofDetail(props: {
             <summary class="cursor-pointer select-none font-medium text-text-base">
               Technical identity
             </summary>
-            <div class={cn("mt-2 grid gap-1 rounded-lg bg-surface-base px-3 py-2", mono)}>
-              <span>{props.proof.change.repository}</span>
-              <span>
-                {shortSha(props.proof.change.baseSha)} → {shortSha(props.proof.change.headSha)}
-              </span>
+            <div
+              class={cn(
+                "mt-2 grid max-w-[min(76ch,calc(100vw-3rem))] gap-1 rounded-lg bg-surface-base px-3 py-2",
+                mono,
+              )}
+            >
+              <span class="break-all">{props.proof.change.repository}</span>
+              <span class="break-all">base {props.proof.change.baseSha}</span>
+              <span class="break-all">head {props.proof.change.headSha}</span>
             </div>
           </details>
           <Show when={props.proof.change.agentClaim?.acceptanceCriteria.length}>
@@ -142,6 +148,11 @@ export function ProofDetail(props: {
                 <FactRow
                   title={`${build.platform} · ${build.configuration}`}
                   detail={`${build.artifactDigest.slice(0, 23)}… · ${build.environmentRevision}`}
+                  copyValue={[
+                    `artifact ${build.artifactDigest}`,
+                    `source ${build.sourceSha}`,
+                    `environment ${build.environmentRevision}`,
+                  ].join("\n")}
                 />
               )}
             </For>
@@ -151,7 +162,20 @@ export function ProofDetail(props: {
               each={requiredTargets()}
               fallback={<EmptyFact>Required target coverage is not frozen.</EmptyFact>}
             >
-              {(targetCase) => <FactRow title={targetCase.id} detail={targetLabel(targetCase)} />}
+              {(targetCase) => (
+                <FactRow
+                  title={targetCase.id}
+                  detail={targetLabel(targetCase)}
+                  copyValue={JSON.stringify(
+                    {
+                      executionTarget: targetCase.executionTarget,
+                      targetProfile: targetCase.targetProfile,
+                    },
+                    null,
+                    2,
+                  )}
+                />
+              )}
             </For>
           </ProofSection>
         </div>
@@ -263,13 +287,25 @@ export function ProofDetail(props: {
         <section class="grid gap-2 rounded-xl bg-surface-base p-4 ring-1 ring-inset ring-border-weak-base">
           <span class={eyebrow}>Next required action</span>
           <strong class="text-body font-semibold text-text-strong">
-            {props.proof.smallestNextVerification?.reason ??
-              "No further action is recorded for this Proof."}
+            {nextRequiredAction(props.proof)}
           </strong>
         </section>
       </div>
     </article>
   );
+}
+
+function nextRequiredAction(proof: ChangeVerification): string {
+  if (proof.state === "proved") {
+    return "No further verification is required for this exact change.";
+  }
+  if (proof.state === "superseded") {
+    return "Open the newer Proof for the current change.";
+  }
+  if (proof.state === "cancelled") {
+    return "This Proof was cancelled. Start a new Proof to verify the change.";
+  }
+  return proof.smallestNextVerification?.reason ?? "No further action is recorded for this Proof.";
 }
 
 function executionHeadline(execution: ChangeProofExecutionSummary): string {
@@ -323,11 +359,35 @@ function ProofSection(props: { title: string; children: JSX.Element }) {
   );
 }
 
-function FactRow(props: { title: string; detail: string }) {
+function FactRow(props: { title: string; detail: string; copyValue?: string }) {
+  const copy = () => {
+    if (!props.copyValue) return;
+    void navigator.clipboard
+      .writeText(props.copyValue)
+      .then(() => toast("Exact identity copied", "success"))
+      .catch(() => toast("Could not copy the exact identity", "error"));
+  };
   return (
-    <div class="grid gap-1 rounded-xl bg-surface-base px-3 py-2.5 ring-1 ring-inset ring-border-weak-base">
-      <strong class="truncate text-body font-semibold text-text-strong">{props.title}</strong>
-      <span class={cn("truncate text-caption text-text-weak", mono)}>{props.detail}</span>
+    <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-surface-base px-3 py-2.5 ring-1 ring-inset ring-border-weak-base">
+      <span class="grid min-w-0 gap-1">
+        <strong class="truncate text-body font-semibold text-text-strong" title={props.title}>
+          {props.title}
+        </strong>
+        <span class={cn("truncate text-caption text-text-weak", mono)} title={props.detail}>
+          {props.detail}
+        </span>
+      </span>
+      <Show when={props.copyValue}>
+        <button
+          type="button"
+          class={cn(productIconButton, "size-9 max-[820px]:size-11")}
+          aria-label={`Copy exact identity for ${props.title}`}
+          data-tip="Copy exact identity"
+          onClick={copy}
+        >
+          <Icon name="copy" size={14} />
+        </button>
+      </Show>
     </div>
   );
 }

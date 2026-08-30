@@ -148,6 +148,30 @@ beforeEach(() => {
   mocks.runAction.mockReset();
 });
 
+test("keeps loading distinct from an empty Proof library", async () => {
+  let finish!: (value: { proofs: readonly ChangeVerification[] }) => void;
+  mocks.runAction.mockImplementation(
+    () =>
+      new Promise<{ proofs: readonly ChangeVerification[] }>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const root = document.createElement("div");
+  document.body.append(root);
+  const dispose = render(() => <ChangesWorkspace onOpenRun={vi.fn()} onOpenMap={vi.fn()} />, root);
+
+  await vi.waitFor(() =>
+    expect(root.querySelector('[aria-label="Loading Proofs"]')).not.toBeNull(),
+  );
+  expect(root.textContent).not.toContain("No Proofs yet");
+
+  finish({ proofs: [] });
+  await vi.waitFor(() => expect(root.textContent).toContain("No Proofs yet"));
+
+  dispose();
+  root.remove();
+});
+
 function enterValue(root: HTMLElement, id: string, value: string): void {
   const element = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(`#${id}`);
   if (!element) throw new Error(`missing #${id}`);

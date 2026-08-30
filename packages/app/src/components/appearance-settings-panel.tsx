@@ -22,8 +22,12 @@ export function AppearanceSettingsPanel() {
             Relay keeps the same visual language in light and dark mode.
           </span>
         </div>
-        <div class="shrink-0">
-          <div class={seg} role="group" aria-label="Color scheme">
+        <div class="shrink-0 max-[520px]:w-full">
+          <div
+            class={cn(seg, "max-[520px]:h-12 max-[520px]:w-full")}
+            role="group"
+            aria-label="Color scheme"
+          >
             {(
               [
                 ["system", "System"],
@@ -33,7 +37,11 @@ export function AppearanceSettingsPanel() {
             ).map(([id, label]) => (
               <button
                 type="button"
-                class={cn(segBtn, theme.colorScheme() === id && segBtnOn)}
+                class={cn(
+                  segBtn,
+                  "max-[520px]:h-11 max-[520px]:min-w-0 max-[520px]:flex-1",
+                  theme.colorScheme() === id && segBtnOn,
+                )}
                 onClick={() => theme.setColorScheme(id as ColorScheme)}
               >
                 {label}
@@ -49,13 +57,21 @@ export function AppearanceSettingsPanel() {
             {ACCESSIBILITY_OVERLAY_MODE_DESCRIPTIONS[server.accessibilityMode()]}
           </span>
         </div>
-        <div class="shrink-0">
-          <div class={seg} role="group" aria-label="Accessibility overlay">
+        <div class="shrink-0 max-[520px]:w-full">
+          <div
+            class={cn(seg, "max-[520px]:h-12 max-[520px]:w-full")}
+            role="group"
+            aria-label="Accessibility overlay"
+          >
             <For each={ACCESSIBILITY_OVERLAY_MODES}>
               {(mode) => (
                 <button
                   type="button"
-                  class={cn(segBtn, server.accessibilityMode() === mode && segBtnOn)}
+                  class={cn(
+                    segBtn,
+                    "max-[520px]:h-11 max-[520px]:min-w-0 max-[520px]:flex-1",
+                    server.accessibilityMode() === mode && segBtnOn,
+                  )}
                   aria-pressed={server.accessibilityMode() === mode}
                   onClick={() => server.setAccessibilityMode(mode)}
                 >

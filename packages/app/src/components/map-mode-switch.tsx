@@ -41,7 +41,7 @@ export function MapModeSwitch(props: { value: MapMode; onChange: (value: MapMode
 
   return (
     <div
-      class="flex h-9 items-center rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-0.5"
+      class="flex h-10 items-center rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-0.5 max-[900px]:h-11 max-[560px]:w-full"
       role="tablist"
       aria-label="Workspace view"
     >
@@ -54,7 +54,7 @@ export function MapModeSwitch(props: { value: MapMode; onChange: (value: MapMode
           aria-selected={props.value === mode}
           tabindex={props.value === mode ? 0 : -1}
           class={cn(
-            "inline-flex min-h-8 items-center gap-1.5 rounded-md px-2.5 text-caption font-medium transition-[background-color,color,box-shadow] duration-hover active:scale-[0.96] motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-[var(--border-strong-focus)]",
+            "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md px-2.5 text-caption font-medium transition-[background-color,color,box-shadow] duration-hover active:scale-[0.96] motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-[var(--border-strong-focus)] max-[900px]:min-h-10 max-[560px]:flex-1",
             props.value === mode
               ? "bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-sm"
               : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
@@ -64,11 +64,10 @@ export function MapModeSwitch(props: { value: MapMode; onChange: (value: MapMode
           onKeyDown={(event) => moveFocus(event, index)}
         >
           <Icon name={icon} size={12} />
-          {/* Four labelled segments plus the device picker overrun a narrow
-              window, so the three modes a person is not in give up their labels
-              first. The one they are in never does: "where am I" has to stay
-              answered without hovering for a tooltip. */}
-          <span class={cn(props.value !== mode && "max-[1320px]:hidden")}>{label}</span>
+          {/* These are primary destinations, so their names must remain visible
+              on touch screens where hover-only tips do not exist. At phone
+              widths the shell gives this switcher its own full-width row. */}
+          <span>{label}</span>
         </button>
       ))}
     </div>

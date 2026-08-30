@@ -480,6 +480,7 @@ export async function captureSnapshot(opts?: {
       recordTargetSemanticCapture(readinessTarget, {
         inspectable: capture.inspectable,
         nodes,
+        ...(capture.foregroundApp ? { foregroundApp: capture.foregroundApp } : {}),
         inFlight: semanticProbeInFlight,
         at: semanticCapturedAt,
         durationMs: Math.max(0, semanticCapturedAt - captureStartedAt),

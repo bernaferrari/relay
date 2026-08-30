@@ -62,10 +62,10 @@ export function ChangesWorkspace(props: {
   onOpenMap: (appMapId: string) => void;
 }) {
   const server = useServer();
+  const initialProofId = new URLSearchParams(window.location.search).get("proof");
   const [proofs, setProofs] = createSignal<readonly ChangeVerification[]>([]);
-  const [selectedId, setSelectedId] = createSignal<string | null>(
-    new URLSearchParams(window.location.search).get("proof"),
-  );
+  const [selectedId, setSelectedId] = createSignal<string | null>(initialProofId);
+  const [mobileDetailOpen, setMobileDetailOpen] = createSignal(Boolean(initialProofId));
   const [selected, setSelected] = createSignal<ChangeVerification | null>(null);
   const [history, setHistory] = createSignal<readonly ChangeVerification[]>([]);
   const [publications, setPublications] = createSignal<readonly ChangeProofPublicationReceipt[]>(
@@ -86,6 +86,13 @@ export function ChangesWorkspace(props: {
   const [proofActionBusy, setProofActionBusy] = createSignal<string | null>(null);
   const [proofActionError, setProofActionError] = createSignal<string | null>(null);
   const [execution, setExecution] = createSignal<ChangeProofExecutionSummary | null>(null);
+  let page: HTMLElement | undefined;
+
+  function resetMobileScroll(): void {
+    queueMicrotask(() => {
+      if (page) page.scrollTop = 0;
+    });
+  }
 
   function adoptProof(proof: ChangeVerification): void {
     setProofs((current) => {
@@ -181,6 +188,8 @@ export function ChangesWorkspace(props: {
       });
       adoptProof(result.replacement);
       setSelectedId(result.replacement.id);
+      setMobileDetailOpen(true);
+      resetMobileScroll();
     } catch (cause) {
       setProofActionError(humanError(cause, "Could not prepare the affected rerun"));
     } finally {
@@ -312,6 +321,8 @@ export function ChangesWorkspace(props: {
       setCreating(false);
       await refresh();
       setSelectedId(result.proof.id);
+      setMobileDetailOpen(true);
+      resetMobileScroll();
     } catch (cause) {
       setCreateError(humanError(cause, "Could not start this Proof"));
     } finally {
@@ -377,8 +388,17 @@ export function ChangesWorkspace(props: {
     return proof ? statePresentation[proof.state] : statePresentation.planning;
   });
   return (
-    <section class={cn(productPage, "flex flex-col gap-6")} aria-label="Changes and Proofs">
-      <header class="mx-auto flex w-full max-w-[1180px] items-start justify-between gap-6 max-[620px]:flex-col">
+    <section
+      ref={(element) => (page = element)}
+      class={cn(productPage, "flex flex-col gap-6")}
+      aria-label="Changes and Proofs"
+    >
+      <header
+        class={cn(
+          "mx-auto flex w-full max-w-[1180px] items-start justify-between gap-6 max-[620px]:flex-col",
+          mobileDetailOpen() && "max-[820px]:hidden",
+        )}
+      >
         <div class="grid max-w-[760px] gap-2">
           <span class={eyebrow}>Merge trust</span>
           <h1 class="m-0 text-display font-semibold tracking-[-0.035em] text-text-strong">
@@ -437,26 +457,53 @@ export function ChangesWorkspace(props: {
       <Show
         when={proofs().length > 0}
         fallback={
-          <Show when={!creating()}>
-            <div class="mx-auto grid w-full max-w-[760px] justify-items-center gap-3 rounded-2xl bg-surface-raised-stronger-non-alpha px-8 py-14 text-center ring-1 ring-inset ring-border-weak-base">
-              <span class="grid size-12 place-items-center rounded-2xl bg-[var(--product-accent-soft)] text-text-interactive-base">
-                <Icon name="check" size={21} />
-              </span>
-              <h2 class="m-0 text-title font-semibold text-text-strong">No Proofs yet</h2>
-              <p class="m-0 max-w-[50ch] text-body/[1.5] text-text-base">
-                Relay binds the active workspace to one exact change. Unknown impact, missing
-                builds, and incomplete evidence stay visible instead of becoming an invented pass.
-              </p>
-              <Button variant="primary" onClick={openCreation}>
-                Start a Proof
-              </Button>
-            </div>
+          <Show
+            when={!loading()}
+            fallback={
+              <div
+                class="mx-auto grid min-h-[280px] w-full max-w-[1180px] grid-cols-[280px_minmax(0,1fr)] overflow-hidden rounded-2xl bg-surface-raised-stronger-non-alpha ring-1 ring-inset ring-border-weak-base max-[820px]:grid-cols-1"
+                role="status"
+                aria-label="Loading Proofs"
+              >
+                <div class="grid content-start gap-3 border-r border-border-weak-base p-4 max-[820px]:hidden">
+                  <span class="h-16 animate-pulse rounded-xl bg-surface-base motion-reduce:animate-none" />
+                  <span class="h-16 animate-pulse rounded-xl bg-surface-base motion-reduce:animate-none" />
+                  <span class="h-16 animate-pulse rounded-xl bg-surface-base motion-reduce:animate-none" />
+                </div>
+                <div class="grid content-start gap-4 p-8">
+                  <span class="h-6 w-24 animate-pulse rounded-md bg-surface-base motion-reduce:animate-none" />
+                  <span class="h-8 w-3/4 animate-pulse rounded-md bg-surface-base motion-reduce:animate-none" />
+                  <span class="h-24 animate-pulse rounded-xl bg-surface-base motion-reduce:animate-none" />
+                </div>
+              </div>
+            }
+          >
+            <Show when={!creating()}>
+              <div class="mx-auto grid w-full max-w-[760px] justify-items-center gap-3 rounded-2xl bg-surface-raised-stronger-non-alpha px-8 py-14 text-center ring-1 ring-inset ring-border-weak-base">
+                <span class="grid size-12 place-items-center rounded-2xl bg-[var(--product-accent-soft)] text-text-interactive-base">
+                  <Icon name="check" size={21} />
+                </span>
+                <h2 class="m-0 text-title font-semibold text-text-strong">No Proofs yet</h2>
+                <p class="m-0 max-w-[50ch] text-body/[1.5] text-text-base">
+                  Relay binds the active workspace to one exact change. Unknown impact, missing
+                  builds, and incomplete evidence stay visible instead of becoming an invented pass.
+                </p>
+                <Button variant="primary" onClick={openCreation}>
+                  Start a Proof
+                </Button>
+              </div>
+            </Show>
           </Show>
         }
       >
         <div class="mx-auto grid min-h-[520px] w-full max-w-[1180px] grid-cols-[minmax(240px,320px)_minmax(0,1fr)] overflow-hidden rounded-2xl bg-surface-raised-stronger-non-alpha ring-1 ring-inset ring-border-weak-base max-[820px]:grid-cols-1">
           <nav
-            class="min-h-0 border-r border-border-weak-base p-2 max-[820px]:max-h-[260px] max-[820px]:overflow-y-auto max-[820px]:border-r-0 max-[820px]:border-b"
+            class={cn(
+              "min-h-0 border-r border-border-weak-base p-2",
+              mobileDetailOpen()
+                ? "max-[820px]:hidden"
+                : "max-[820px]:max-h-none max-[820px]:overflow-visible max-[820px]:border-r-0",
+            )}
             aria-label="Proofs"
           >
             <For each={proofs()}>
@@ -471,7 +518,11 @@ export function ChangesWorkspace(props: {
                       active() ? "bg-surface-base-active" : "hover:bg-surface-raised-base-hover",
                     )}
                     aria-current={active() ? "page" : undefined}
-                    onClick={() => setSelectedId(proof.id)}
+                    onClick={() => {
+                      setSelectedId(proof.id);
+                      setMobileDetailOpen(true);
+                      resetMobileScroll();
+                    }}
                   >
                     <span class="flex min-w-0 items-center justify-between gap-2">
                       <strong class="truncate text-body font-semibold text-text-strong">
@@ -511,22 +562,39 @@ export function ChangesWorkspace(props: {
             }
           >
             {(proof) => (
-              <ProofDetail
-                proof={proof()}
-                status={selectedStatus()}
-                history={history()}
-                publications={publications()}
-                publicationOutbox={publicationOutbox()}
-                execution={execution()}
-                primaryAction={proofPrimaryAction(proof())}
-                actionBusy={proofActionBusy()}
-                actionError={proofActionError()}
-                canCancel={proofCanCancel(proof())}
-                onPrimaryAction={() => invokePrimaryProofAction(proof())}
-                onCancel={() => cancelProof(proof())}
-                onOpenRun={props.onOpenRun}
-                onOpenMap={props.onOpenMap}
-              />
+              <div
+                class={cn(
+                  "min-h-0 min-w-0 overflow-hidden max-[820px]:flex max-[820px]:flex-col",
+                  !mobileDetailOpen() && "max-[820px]:hidden",
+                )}
+              >
+                <button
+                  type="button"
+                  class="hidden min-h-11 items-center gap-2 border-b border-border-weak-base px-4 text-left text-body font-medium text-text-base max-[820px]:flex"
+                  onClick={() => {
+                    setMobileDetailOpen(false);
+                    resetMobileScroll();
+                  }}
+                >
+                  <Icon name="chevron-left" size={14} /> Back to Proofs
+                </button>
+                <ProofDetail
+                  proof={proof()}
+                  status={selectedStatus()}
+                  history={history()}
+                  publications={publications()}
+                  publicationOutbox={publicationOutbox()}
+                  execution={execution()}
+                  primaryAction={proofPrimaryAction(proof())}
+                  actionBusy={proofActionBusy()}
+                  actionError={proofActionError()}
+                  canCancel={proofCanCancel(proof())}
+                  onPrimaryAction={() => invokePrimaryProofAction(proof())}
+                  onCancel={() => cancelProof(proof())}
+                  onOpenRun={props.onOpenRun}
+                  onOpenMap={props.onOpenMap}
+                />
+              </div>
             )}
           </Show>
         </div>

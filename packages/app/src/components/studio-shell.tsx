@@ -100,7 +100,6 @@ export function StudioShell(props: {
   });
   const [activeTargetSetId, setActiveTargetSetId] = createSignal<string>();
   const [importReview, setImportReview] = createSignal<ImportReview | null>(null);
-
   const selectedMap = createMemo(() => server.selectedAppMap());
   const [mapNameDraft, setMapNameDraft] = createSignal("");
   createEffect(() => setMapNameDraft(selectedMap()?.name ?? "My map"));
@@ -383,7 +382,6 @@ export function StudioShell(props: {
     },
     clearWorkspace: () => server.setSelectedAppMapId(null),
   });
-
   async function importTestYaml(yaml: string): Promise<void> {
     try {
       const preview = await server.runAction("app-map.import", { yaml, dryRun: true });
@@ -784,6 +782,7 @@ export function StudioShell(props: {
                       class={cn("flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
+                        studioActionsTrigger?.focus({ preventScroll: true });
                         setHelpOpen(true);
                       }}
                     >
@@ -900,6 +899,7 @@ export function StudioShell(props: {
                       setCombineCollapsed(true);
                       if (!devicePanelOpen()) workspaceController.request({ kind: "device.show" });
                     }}
+                    onExpand={() => setCombineCollapsed(false)}
                     onClose={() => {
                       setCombineOpen(false);
                       setCombineFocusId(undefined);

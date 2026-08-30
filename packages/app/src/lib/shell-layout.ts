@@ -52,6 +52,8 @@ export const shellMain =
 export const shellTopbar = cn(
   "shell-drag relative z-[var(--z-shell-header)] grid min-h-[54px] shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 overflow-visible border-b border-[var(--border-weak-base)]",
   "bg-[color-mix(in_srgb,var(--background-base)_78%,var(--background-deep))] px-4",
+  "max-[560px]:grid-cols-[minmax(0,1fr)_auto] max-[560px]:grid-rows-[54px_46px] max-[560px]:gap-x-2 max-[560px]:gap-y-0 max-[560px]:px-3",
+  "max-[560px]:has-[.shell-topbar-modes:empty]:grid-rows-[54px]",
 );
 
 export const shellTopbarContext = "flex min-w-0 items-center gap-1.5";
@@ -60,9 +62,10 @@ export const shellTopbarContext = "flex min-w-0 items-center gap-1.5";
  * the two clusters either side of it. */
 export const shellTopbarTitle =
   "pointer-events-auto flex min-w-0 items-center overflow-hidden max-[720px]:hidden";
-export const shellTopbarModes = "flex items-center justify-center";
+export const shellTopbarModes =
+  "shell-topbar-modes flex items-center justify-center max-[560px]:col-span-2 max-[560px]:row-start-2 max-[560px]:w-full";
 export const shellTopbarActions =
-  "flex shrink-0 items-center justify-end gap-2.5 max-[680px]:gap-1";
+  "flex shrink-0 items-center justify-end gap-2.5 max-[900px]:gap-1 max-[560px]:col-start-2 max-[560px]:row-start-1";
 
 export const shellBreadcrumb = cn(
   "flex min-w-0 items-center gap-1.5 text-body text-[var(--text-weak)]",
