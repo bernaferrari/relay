@@ -1,23 +1,21 @@
 package dev.relay.prooffixture;
 
 import android.app.Activity;
-import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowInsets;
 import android.widget.Button;
-import android.widget.TextView;
 
-public final class MainActivity extends Activity {
+public final class PassedActivity extends Activity {
   private static final String LOG_TAG = "RelayProofFixture";
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
-    setContentView(R.layout.activity_main);
+    setContentView(R.layout.activity_passed);
 
-    View root = findViewById(R.id.proof_root);
+    View root = findViewById(R.id.passed_root);
     int horizontal = dp(24);
     int top = dp(48);
     int bottom = dp(32);
@@ -28,21 +26,16 @@ public final class MainActivity extends Activity {
       return insets;
     });
 
-    Button prove = findViewById(R.id.prove_button);
     Button reset = findViewById(R.id.reset_button);
-
-    prove.setOnClickListener(view -> {
-      Log.i(LOG_TAG, "transition=checkpoint-requested");
-      startActivity(new Intent(this, PassedActivity.class));
-    });
     reset.setOnClickListener(view -> {
       Log.i(LOG_TAG, "checkpoint=reset");
+      finish();
     });
 
     getWindow().setStatusBarColor(getColor(R.color.relay_background));
     getWindow().setNavigationBarColor(getColor(R.color.relay_background));
     getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-    Log.i(LOG_TAG, "fixture=ready version=1");
+    Log.i(LOG_TAG, "checkpoint=passed");
   }
 
   private int dp(int value) {

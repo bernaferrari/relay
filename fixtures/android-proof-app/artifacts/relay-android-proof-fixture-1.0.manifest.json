@@ -11,16 +11,18 @@
     "app/build.gradle",
     "app/src/main/AndroidManifest.xml",
     "app/src/main/java/dev/relay/prooffixture/MainActivity.java",
+    "app/src/main/java/dev/relay/prooffixture/PassedActivity.java",
     "app/src/main/res/drawable/proof_button.xml",
     "app/src/main/res/drawable/proof_card.xml",
     "app/src/main/res/drawable/reset_button.xml",
     "app/src/main/res/layout/activity_main.xml",
+    "app/src/main/res/layout/activity_passed.xml",
     "app/src/main/res/values/colors.xml",
     "app/src/main/res/values/strings.xml",
     "app/src/main/res/values/styles.xml"
   ],
-  "sourceDigest": "sha256:637b2273a5bf88f3c49cd88e36a87e7f98e24547202aef2ba2cfe134eae69b38",
-  "sourceSha256": "59245b0d90b3ee5774a94b5b33e7e20dfeaa2198b110d08cc8f377cdc1c38e74",
-  "artifactDigest": "sha256:4534878f094d4f215f2ce58e7e85f48ca3a97c2f74606baf90e321f86863e4f9",
+  "sourceDigest": "sha256:2cfca6fa7eb9cee8aeed64936d8507d94b2a3a691c2efe1f6405597e111fb01d",
+  "sourceSha256": "57de5c5e82111415881550ae9a0136664efd65a613fdc51c9d1a506d9cc29ead",
+  "artifactDigest": "sha256:04381cce720afcb323c97e63aa6b5bd92ea844cceb558400e1dd9ea990eb41a3",
   "reproducible": true
 }

@@ -6,6 +6,7 @@
   <string name="description">A deterministic app for proving exact-build launch, interaction, and evidence on Android.</string>
   <string name="ready">Ready for Relay</string>
   <string name="passed">Checkpoint passed</string>
+  <string name="passed_description">Relay reached a distinct, inspectable destination after one semantic interaction.</string>
   <string name="prove">Prove interaction</string>
   <string name="reset">Reset fixture</string>
   <string name="build_identity">Fixture build 1 · no account or network state</string>
