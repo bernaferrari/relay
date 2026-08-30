@@ -46,8 +46,7 @@ export function isExecutableVerificationPlan(plan: VerificationPlan): boolean {
     plan.coverageGaps.length === 0 &&
     plan.builds.length > 0 &&
     plan.selection.affectedJourneys.length > 0 &&
-    plan.selection.targetCases.some(({ required }) => required) &&
-    (plan.selection.cells?.length ?? 0) > 0 &&
+    (plan.selection.cells?.some(({ requirement }) => requirement === "required") ?? false) &&
     plan.pilotCellId !== undefined
   );
 }

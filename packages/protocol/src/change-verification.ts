@@ -1,5 +1,23 @@
 import * as z from "zod/v4";
 import { browserCaseProfileSchema } from "./browser-case-profile.js";
+import {
+  changeTestedSha,
+  changeVerificationAffectedJourneySchema,
+  changeVerificationBuildSchema,
+  changeVerificationChangeSchema,
+} from "./change-verification-change-schemas.js";
+
+export {
+  changeMergeBaseSha,
+  changeRefSchema,
+  changeRequestedHeadSha,
+  changeTestedSha,
+  changeVerificationAffectedJourneySchema,
+  changeVerificationBuildSchema,
+  changeVerificationChangeSchema,
+  materializeChangeRef,
+} from "./change-verification-change-schemas.js";
+export type { ChangeRef, ChangeVerificationChange } from "./change-verification-change-schemas.js";
 
 export const CHANGE_VERIFICATION_STATES = [
   "planning",
@@ -52,55 +70,8 @@ export const CHANGE_VERIFICATION_MUTATIONS = [
 
 const identifier = z.string().trim().min(1).max(256);
 const boundedText = z.string().trim().min(1).max(4_096);
-const exactGitSha = z
-  .string()
-  .regex(/^[a-f0-9]{40}$/u, "must be one exact 40-character lowercase Git SHA");
 const sha256 = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
 const timestamp = z.number().int().nonnegative();
-
-export const changeVerificationChangeSchema = z
-  .object({
-    repository: z.string().trim().min(1).max(512),
-    baseSha: exactGitSha,
-    headSha: exactGitSha,
-    pullRequest: z.number().int().positive().optional(),
-    agentClaim: z
-      .object({
-        summary: boundedText,
-        acceptanceCriteria: z.array(boundedText).max(64).readonly(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict()
-  .superRefine((change, context) => {
-    if (change.baseSha === change.headSha) {
-      context.addIssue({ code: "custom", message: "baseSha and headSha must identify a change" });
-    }
-  });
-
-export const changeVerificationBuildSchema = z
-  .object({
-    id: identifier,
-    platform: z.enum(["web", "android", "ios"]),
-    artifactDigest: sha256,
-    sourceSha: exactGitSha,
-    configuration: identifier,
-    environmentRevision: identifier,
-  })
-  .strict();
-
-export const changeVerificationAffectedJourneySchema = z
-  .object({
-    appMapId: identifier,
-    testId: identifier,
-    /** Exact reviewed App Map revision. Historical/planning documents may
-     * omit it, but live execution requires it before target control. */
-    appMapRevision: z.number().int().positive().optional(),
-    reason: boundedText,
-    confidence: z.enum(["definite", "probable", "coverage-gap"]),
-  })
-  .strict();
 
 const executionTargetSchema = z
   .discriminatedUnion("kind", [
@@ -246,6 +217,16 @@ export const verificationCellSchema = z
       .strict(),
     targetCaseId: identifier,
     buildId: identifier,
+    /** Required cells authorize merge; advisory cells only contribute residual risk. */
+    requirement: z.enum(["required", "advisory"]),
+    /** Human-reviewable explanation for why this exact journey/target/build unit exists. */
+    selectionReason: boundedText,
+    /** Exact route/world inputs reviewed for this cell, independent of target identity. */
+    dimensions: z.record(identifier, identifier),
+    routeVariantDigest: sha256.optional(),
+    evidencePolicyDigest: sha256.optional(),
+    executionRiskDigest: sha256.optional(),
+    estimatedDurationMs: z.number().int().positive().max(86_400_000).optional(),
     cleanupRequired: z.boolean(),
   })
   .strict();
@@ -257,6 +238,8 @@ export const changeVerificationSelectionSchema = z
     /** Optional while reading historical planning records; executable Proofs
      * must carry this explicitly materialized list. */
     cells: z.array(verificationCellSchema).max(1_000).readonly().optional(),
+    /** Explicit reviewed pilot. Array order is never used as hidden pilot authority. */
+    pilotCellId: identifier.optional(),
   })
   .strict();
 
@@ -393,8 +376,18 @@ function validateChangeVerification(
     );
     const targets = new Map(proof.selection.targetCases.map((target) => [target.id, target]));
     const builds = new Map(proof.builds.map((build) => [build.id, build]));
-    const cellKeys = proof.selection.cells.map(
-      (cell) => `${cell.journey.appMapId}\0${cell.journey.testId}\0${cell.targetCaseId}`,
+    const cellKeys = proof.selection.cells.map((cell) =>
+      JSON.stringify([
+        cell.journey.appMapId,
+        cell.journey.testId,
+        cell.journey.appMapRevision,
+        cell.targetCaseId,
+        cell.buildId,
+        Object.entries(cell.dimensions).sort(([left], [right]) =>
+          left < right ? -1 : left > right ? 1 : 0,
+        ),
+        cell.routeVariantDigest ?? null,
+      ]),
     );
     unique(cellKeys, ["selection", "cells"]);
     for (const cell of proof.selection.cells) {
@@ -407,17 +400,30 @@ function validateChangeVerification(
         });
       }
       const target = targets.get(cell.targetCaseId);
-      if (!target || !target.required) {
+      if (!target) {
         context.addIssue({
           code: "custom",
           path: ["selection", "cells"],
-          message: `cell ${cell.id} must bind a policy-required frozen target case`,
+          message: `cell ${cell.id} must bind one frozen target case`,
         });
-      } else if ((target.cleanupRequired ?? false) !== cell.cleanupRequired) {
+      } else if (
+        target.cleanupRequired !== undefined &&
+        target.cleanupRequired !== cell.cleanupRequired
+      ) {
         context.addIssue({
           code: "custom",
           path: ["selection", "cells"],
           message: `cell ${cell.id} cleanup requirement disagrees with its target case`,
+        });
+      } else if (
+        Object.entries(target.dimensions).some(
+          ([dimension, value]) => cell.dimensions[dimension] !== value,
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["selection", "cells"],
+          message: `cell ${cell.id} must retain every frozen target dimension`,
         });
       }
       const build = builds.get(cell.buildId);
@@ -436,30 +442,22 @@ function validateChangeVerification(
         });
       }
     }
-    const expectedCellKeys = proof.selection.affectedJourneys.flatMap((journey) =>
-      proof.selection.targetCases
-        .filter(({ required }) => required)
-        .map((target) => `${journey.appMapId}\0${journey.testId}\0${target.id}`),
-    );
-    if (
-      cellKeys.length !== expectedCellKeys.length ||
-      expectedCellKeys.some((key) => !cellKeys.includes(key))
-    ) {
+    const pilot = proof.selection.cells.find((cell) => cell.id === proof.selection.pilotCellId);
+    if (!pilot || pilot.requirement !== "required") {
       context.addIssue({
         code: "custom",
-        path: ["selection", "cells"],
-        message:
-          "must materialize exactly one cell for every affected journey and required target case",
+        path: ["selection", "pilotCellId"],
+        message: "must name one explicit policy-required Verification Cell",
       });
     }
   }
   unique(proof.runIds, ["runIds"]);
   unique(proof.evidenceDigests, ["evidenceDigests"]);
-  if (proof.builds.some((build) => build.sourceSha !== proof.change.headSha)) {
+  if (proof.builds.some((build) => build.sourceSha !== changeTestedSha(proof.change))) {
     context.addIssue({
       code: "custom",
       path: ["builds"],
-      message: "every build must bind to the exact headSha",
+      message: "every build must bind to the exact testedSha",
     });
   }
   if (proof.updatedAt < proof.createdAt) {
@@ -532,7 +530,7 @@ function validateChangeVerification(
       proof.selection.affectedJourneys.some(({ appMapRevision }) => appMapRevision === undefined) ||
       !proof.selection.targetCases.length ||
       (requiresDurableLifecycle && !proof.planApproval) ||
-      (requiresFrozenCells && !proof.selection.cells?.length))
+      (requiresFrozenCells && (!proof.selection.cells?.length || !proof.selection.pilotCellId)))
   ) {
     if (
       proof.selection.affectedJourneys.some(({ appMapRevision }) => appMapRevision === undefined)
@@ -601,7 +599,6 @@ export const changeVerificationSchema = sharedChangeVerificationSchema
 export type ChangeVerificationState = (typeof CHANGE_VERIFICATION_STATES)[number];
 export type ChangeVerificationDecision = (typeof CHANGE_VERIFICATION_DECISIONS)[number];
 export type ChangeVerificationMutation = (typeof CHANGE_VERIFICATION_MUTATIONS)[number];
-export type ChangeVerificationChange = z.output<typeof changeVerificationChangeSchema>;
 export type ChangeVerificationBuild = z.output<typeof changeVerificationBuildSchema>;
 export type ChangeVerificationAffectedJourney = z.output<
   typeof changeVerificationAffectedJourneySchema

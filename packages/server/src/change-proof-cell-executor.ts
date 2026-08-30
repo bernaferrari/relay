@@ -9,7 +9,7 @@ import {
   type ChangeProofCellExecutor,
   type ChangeProofExecutionRecord,
 } from "@relay/core";
-import type { OperationInput } from "@relay/protocol";
+import { changeTestedSha, type OperationInput } from "@relay/protocol";
 import type { RequestContext } from "./security.js";
 import { handleAppMapRunRoute } from "./app-map-run-routes.js";
 
@@ -20,6 +20,7 @@ import { handleAppMapRunRoute } from "./app-map-run-routes.js";
 export function changeProofCellRunInput(
   execution: Pick<ChangeProofExecutionRecord, "frozenProof">,
   cell: {
+    cellId: string;
     appMapId: string;
     testId: string;
     appMapRevision: number;
@@ -36,6 +37,25 @@ export function changeProofCellRunInput(
       `Proof cell ${cell.appMapId}/${cell.testId} does not bind a frozen target and build`,
     );
   }
+  const verificationCell = execution.frozenProof.selection.cells?.find(
+    (candidate) => candidate.id === cell.cellId,
+  );
+  if (!verificationCell) {
+    throw new Error(`Proof cell ${cell.cellId} is absent from the frozen Verification Plan`);
+  }
+  const repeatDimensions = Object.fromEntries(
+    Object.entries(verificationCell.dimensions).filter(
+      ([dimension, value]) => targetCase.dimensions[dimension] !== value,
+    ),
+  );
+  const repeat = Object.keys(repeatDimensions).length
+    ? {
+        in: Object.fromEntries(
+          Object.entries(repeatDimensions).map(([dimension, value]) => [dimension, [value]]),
+        ),
+        pilotCase: repeatDimensions,
+      }
+    : {};
   const platform = targetCase.executionTarget.platform;
   const target = {
     kind: platform === "browser" ? ("browser" as const) : ("device" as const),
@@ -44,7 +64,7 @@ export function changeProofCellRunInput(
   };
   const sourceRevision = {
     vcs: "git" as const,
-    sha: execution.frozenProof.change.headSha,
+    sha: changeTestedSha(execution.frozenProof.change),
     artifactDigest: build.artifactDigest,
     ...(platform === "browser" ? {} : { buildId: build.id }),
   };
@@ -55,6 +75,7 @@ export function changeProofCellRunInput(
     target,
     targetProfileId: targetCase.targetProfile.id,
     executionMode: "pilot",
+    ...repeat,
     sourceRevision,
   } as OperationInput<"app-map.test.run">;
 }

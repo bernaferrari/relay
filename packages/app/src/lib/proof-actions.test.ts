@@ -15,7 +15,8 @@ function proof(
     selection: {
       affectedJourneys: [{ appMapId: "map", testId: "test" }],
       targetCases: [{ id: "target", required: true }],
-      cells: [{ id: "cell" }],
+      cells: [{ id: "cell", requirement: "required" }],
+      pilotCellId: "cell",
     },
     ...overrides,
   } as unknown as ChangeVerification;

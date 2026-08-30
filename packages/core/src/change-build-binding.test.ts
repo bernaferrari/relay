@@ -57,7 +57,7 @@ test("content-addresses files and directory bundles deterministically", async ()
   }
 });
 
-test("binds a ready mobile artifact to the exact Proof head and observed bytes", async () => {
+test("binds a ready mobile artifact to the exact tested revision and observed bytes", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-proof-build-bind-"));
   const artifact = join(root, "app.apk");
   await writeFile(artifact, "apk");
@@ -65,7 +65,7 @@ test("binds a ready mobile artifact to the exact Proof head and observed bytes",
     const build = registeredBuild(artifact);
     const bound = await bindRegisteredBuildToProof({
       build,
-      changeHeadSha: headSha,
+      changeTestedSha: headSha,
       preflight: {
         buildId: build.id,
         ok: true,
@@ -98,7 +98,7 @@ test("binds a ready mobile artifact to the exact Proof head and observed bytes",
           checks: [],
         },
       }),
-      /does not match the exact Proof headSha/,
+      /does not match the exact Proof testedSha/,
     );
     await assert.rejects(
       bindRegisteredBuildToProof({
@@ -145,7 +145,7 @@ test("requires complete mobile provenance and exact observed application identit
   );
 });
 
-test("binds only provider-verified web deployments for the exact head", () => {
+test("binds only provider-verified web deployments for the exact tested revision", () => {
   const deployment = {
     id: "web-production",
     url: "https://preview.example.com/pr-184",
@@ -154,7 +154,7 @@ test("binds only provider-verified web deployments for the exact head", () => {
     configuration: "web.production",
     environmentRevision: "production-v12",
   };
-  assert.deepEqual(bindVerifiedWebDeploymentToProof({ deployment, changeHeadSha: headSha }), {
+  assert.deepEqual(bindVerifiedWebDeploymentToProof({ deployment, changeTestedSha: headSha }), {
     id: "web-production",
     platform: "web",
     artifactDigest: deployment.deploymentDigest,
@@ -168,7 +168,7 @@ test("binds only provider-verified web deployments for the exact head", () => {
         deployment: { ...deployment, sourceSha: baseSha },
         changeHeadSha: headSha,
       }),
-    /does not match the exact Proof headSha/,
+    /does not match the exact Proof testedSha/,
   );
   assert.throws(
     () =>

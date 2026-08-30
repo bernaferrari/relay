@@ -8,6 +8,7 @@ import { chromium, firefox, webkit } from "playwright-core";
 import type { BrowserCaseProfile, BrowserEngine, TargetDefinition } from "@relay/protocol";
 import { compileBrowserEnvironment } from "@relay/protocol";
 import { browserExecutable, browserProfileDir } from "./targets.js";
+import { browserAuthenticationStorageState } from "./browser-authentication-fixtures.js";
 import { assertSupportedBrowserCaseProfile } from "./browser-profile-support.js";
 import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { browserHostPool } from "./browser-host-pool.js";
@@ -34,6 +35,8 @@ export type BrowserContextOpenOptions = {
   headless?: boolean;
   recordVideoDir?: string;
   profile?: BrowserCaseProfile;
+  /** Project scope is mandatory when a Proof imports an encrypted authentication fixture. */
+  projectId?: string;
 };
 
 const BROWSER_TYPES: Record<BrowserEngine, BrowserType> = { chromium, firefox, webkit };
@@ -116,6 +119,18 @@ async function openFreshProofContext(
   options: BrowserContextOpenOptions,
 ): Promise<BrowserContextHandle> {
   const launch = launchOptions(target, profile, options);
+  if (profile.authenticationFixtureId && !options.projectId) {
+    throw new Error(
+      "Browser authentication fixture requires one explicit project scope before browser launch",
+    );
+  }
+  const storageState = profile.authenticationFixtureId
+    ? await browserAuthenticationStorageState({
+        projectId: options.projectId!,
+        targetId: target.id,
+        reference: profile.authenticationFixtureId,
+      })
+    : undefined;
   const lease = await browserHostPool.openContext({
     identity: {
       engine: profile.engine,
@@ -124,7 +139,10 @@ async function openFreshProofContext(
       launchOptions: launch,
     },
     browserType: BROWSER_TYPES[profile.engine],
-    contextOptions: browserContextOptionsForProfile(profile, options),
+    contextOptions: {
+      ...browserContextOptionsForProfile(profile, options),
+      ...(storageState === undefined ? {} : { storageState }),
+    },
   });
   return {
     context: lease.context,

@@ -2,6 +2,7 @@ import * as z from "zod/v4";
 import {
   changeVerificationBuildSchema,
   changeVerificationChangeSchema,
+  changeTestedSha,
   changeVerificationPolicySchema,
   changeVerificationSelectionSchema,
   frozenVerificationTargetCaseSchema,
@@ -170,14 +171,14 @@ export const verificationPlanSchema = z
   })
   .strict()
   .superRefine((plan, context) => {
-    if (plan.impact.change.headSha !== plan.change.headSha) {
+    if (changeTestedSha(plan.impact.change) !== changeTestedSha(plan.change)) {
       context.addIssue({ code: "custom", path: ["impact"], message: "must bind the exact change" });
     }
-    if (plan.builds.some((build) => build.sourceSha !== plan.change.headSha)) {
+    if (plan.builds.some((build) => build.sourceSha !== changeTestedSha(plan.change))) {
       context.addIssue({
         code: "custom",
         path: ["builds"],
-        message: "every build must bind to the exact headSha",
+        message: "every build must bind to the exact testedSha",
       });
     }
     if (new Set(plan.builds.map(({ id }) => id)).size !== plan.builds.length) {
@@ -206,6 +207,13 @@ export const verificationPlanSchema = z
         message: "must name a materialized Verification Cell",
       });
     }
+    if (plan.pilotCellId !== plan.selection.pilotCellId) {
+      context.addIssue({
+        code: "custom",
+        path: ["selection", "pilotCellId"],
+        message: "must equal the reviewed plan pilotCellId",
+      });
+    }
     if (plan.expansion.targetCaseIds.some((id) => !targetIds.has(id))) {
       context.addIssue({
         code: "custom",
@@ -221,7 +229,8 @@ export const verificationPlanSchema = z
           message: "must contain only materialized Verification Cells",
         });
       }
-      const expectedCellIds = plan.selection.cells?.slice(1).map(({ id }) => id) ?? [];
+      const expectedCellIds =
+        plan.selection.cells?.filter(({ id }) => id !== plan.pilotCellId).map(({ id }) => id) ?? [];
       if (JSON.stringify(plan.expansion.cellIds) !== JSON.stringify(expectedCellIds)) {
         context.addIssue({
           code: "custom",
@@ -250,6 +259,14 @@ export const verificationPlanSchema = z
         code: "custom",
         path: ["pilotTargetCaseId"],
         message: "must name a policy-required target case",
+      });
+    }
+    const pilotCell = plan.selection.cells?.find(({ id }) => id === plan.pilotCellId);
+    if (pilotCell && pilotCell.requirement !== "required") {
+      context.addIssue({
+        code: "custom",
+        path: ["pilotCellId"],
+        message: "must name a policy-required Verification Cell",
       });
     }
     const selectedJourneyKeys = plan.selection.affectedJourneys

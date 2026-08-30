@@ -16,7 +16,10 @@ import {
   VERIFY_CHANGE_MAX_REPORT_ITEMS,
   VERIFY_CHANGE_POLICY as PROTOCOL_VERIFY_CHANGE_POLICY,
 } from "@relay/protocol";
-import { evaluateApprovalPolicy } from "./approval-policy.js";
+import {
+  approvalPolicyDecisionFromChangeDecision,
+  evaluateChangeDecisionPolicy,
+} from "./change-decision-policy.js";
 import { compileExecutionRisk } from "./execution-risk-compiler.js";
 import { replayPersistedRunOffline } from "./offline-run-replay.js";
 import { analyzeTracePack, frozenRunFromTracePack, verifyTracePack } from "./trace-pack.js";
@@ -86,7 +89,19 @@ function aggregateRisk(
   relationship: "sequential" | "alternatives" = "sequential",
 ): ExecutionRisk {
   if (!risks.length) {
-    return compileExecutionRisk({ kind: "recipe-graph", rootRecipeId: "missing", recipes: {} });
+    // No selected Test means execution has not been planned; it does not mean
+    // a prohibited Test was selected. Keep the risk neutral so the shared
+    // decision authority classifies the missing selection/evidence as
+    // insufficient instead of manufacturing a definitive regression.
+    return {
+      schemaVersion: 1,
+      level: "safe",
+      reasons: [],
+      externalEffects: [],
+      confirmation: "none",
+      expectedAppBoundaries: [],
+      cleanupRequired: false,
+    };
   }
   const level = risks.reduce((worst, risk) =>
     RISK_RANK[risk.level] > RISK_RANK[worst.level] ? risk : worst,
@@ -260,7 +275,7 @@ export function verifyChangeOffline(input: OfflineVerifyChangeInput): VerifyChan
         .concat(findings.flatMap((finding) => finding.evidenceRefs)),
     ),
   ];
-  const policy = evaluateApprovalPolicy({
+  const canonicalPolicy = evaluateChangeDecisionPolicy({
     schemaVersion: 1,
     policy: PROTOCOL_VERIFY_CHANGE_POLICY,
     executionRisk: aggregateRisk(affected.map(({ risk }) => risk)),
@@ -354,15 +369,15 @@ export function verifyChangeOffline(input: OfflineVerifyChangeInput): VerifyChan
     review: affectedTests.filter(({ verdict }) => verdict === "review").length,
     insufficient: affectedTests.filter(({ verdict }) => verdict === "insufficient").length,
   };
-  const verdict: VerifyChangeVerdict = !affectedTests.length
-    ? "insufficient"
-    : counts.regressions > 0 || policy.decision === "reject"
-      ? "regressions"
-      : counts.review > 0 || policy.decision === "ask-human"
-        ? "review"
-        : counts.insufficient > 0 || policy.decision === "insufficient-evidence"
-          ? "insufficient"
-          : "passed";
+  const policy = approvalPolicyDecisionFromChangeDecision(canonicalPolicy);
+  const verdict: VerifyChangeVerdict =
+    canonicalPolicy.decision === "proved"
+      ? "passed"
+      : canonicalPolicy.decision === "rejected"
+        ? "regressions"
+        : canonicalPolicy.decision === "needs-review"
+          ? "review"
+          : "insufficient";
   const completeEvidence = evidence.filter(({ status }) => status === "complete").length;
   const partialEvidence = evidence.length - completeEvidence;
   const boundedMissing = boundedUniqueSorted(evidenceMissing, "evidence-missing");

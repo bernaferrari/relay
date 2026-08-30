@@ -1,4 +1,6 @@
 import {
+  changeMergeBaseSha,
+  changeTestedSha,
   type ChangeVerification,
   type ChangeVerificationDecision,
   type ChangeVerificationMutation,
@@ -174,7 +176,7 @@ function enqueueTerminalPublication(
     proofVersion: proof.version,
     provider: publication.provider,
     repository: proof.change.repository,
-    headSha: proof.change.headSha,
+    headSha: changeTestedSha(proof.change),
     externalId: proof.id,
     check,
     ...(publication.maxAttempts ? { maxAttempts: publication.maxAttempts } : {}),
@@ -212,11 +214,12 @@ function assertExecutablePlan(proof: ChangeVerification): void {
     !proof.selection.affectedJourneys.length ||
     proof.selection.affectedJourneys.some(({ appMapRevision }) => appMapRevision === undefined) ||
     !proof.selection.targetCases.length ||
-    !proof.selection.cells?.length
+    !proof.selection.cells?.length ||
+    !proof.selection.pilotCellId
   ) {
     throw new ChangeVerificationConflictError(
       "PROOF_IMMUTABLE",
-      `state ${proof.state} requires exact builds, App Map revisions, affected journeys, target cases, and Verification Cells`,
+      `state ${proof.state} requires exact builds, App Map revisions, affected journeys, target cases, Verification Cells, and an explicit pilot`,
     );
   }
 }
@@ -495,10 +498,15 @@ export async function supersedeChangeVerification(
         "Only a completed Proof can be superseded for an affected-case rerun",
       );
     }
+    const priorTestedSha = changeTestedSha(current.change);
+    // New ChangeRefs name the superseded revision explicitly, while legacy
+    // callers represented the same continuation as baseSha/mergeBaseSha.
+    const replacementPreviousSha =
+      input.replacement.change.previousHeadSha ?? changeMergeBaseSha(input.replacement.change);
     if (
       input.replacement.change.repository !== current.change.repository ||
-      input.replacement.change.baseSha !== current.change.headSha ||
-      input.replacement.change.headSha === current.change.headSha
+      replacementPreviousSha !== priorTestedSha ||
+      changeTestedSha(input.replacement.change) === priorTestedSha
     ) {
       throw new ChangeVerificationConflictError(
         "PROOF_IMMUTABLE",

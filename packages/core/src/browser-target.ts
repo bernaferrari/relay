@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { BrowserContext, Page, Request, Video } from "playwright-core";
@@ -13,6 +12,14 @@ import { runBrowserMutationAdmission } from "./browser-mutation-admission.js";
 import { browserProfileDir, readTarget } from "./targets.js";
 import { getEvidenceCollectionPolicy, hasSensitiveEvidenceConsent } from "./evidence-policy.js";
 import { redactValue, visualEvidenceAllowed } from "./redaction.js";
+import {
+  attachBrowserEvidence,
+  snapshotBrowserPage,
+  type BrowserNetworkEntry,
+} from "./browser-target-evidence.js";
+
+export { browserPageVisualFingerprint } from "./browser-target-evidence.js";
+export type { BrowserNetworkEntry } from "./browser-target-evidence.js";
 
 export type BrowserSession = {
   sessionId: string;
@@ -42,27 +49,7 @@ export type BrowserSession = {
   traceStarted: boolean;
 };
 
-export type BrowserNetworkEntry = {
-  method: string;
-  url: string;
-  status?: number;
-  /** Playwright requestfailed is distinct from an HTTP error response. */
-  failed?: boolean;
-  failureText?: string;
-  at: number;
-  requestHeaders?: Record<string, string>;
-  requestBody?: string;
-  responseHeaders?: Record<string, string>;
-  responseBody?: string;
-  responseBodyEncoding?: "utf8" | "base64";
-  responseBodyTruncated?: boolean;
-};
-
 const sessions = new Map<string, Promise<BrowserSession>>();
-const INTERACTIVE =
-  'button, a[href], input, textarea, select, [role], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
-const MAX_EVIDENCE_ENTRIES = 1_000;
-const MAX_NETWORK_BODY_BYTES = 256 * 1024;
 
 async function createSession(
   targetId: string,
@@ -71,6 +58,7 @@ async function createSession(
     mode: BrowserContextPurpose;
     profile?: BrowserCaseProfile;
     recordVideo?: boolean;
+    projectId?: string;
   },
 ): Promise<BrowserSession> {
   const target = await readTarget(targetId);
@@ -96,6 +84,7 @@ async function createSession(
           })
         : await factory.openProof(profile, {
             headless: options.headless,
+            projectId: options.projectId,
             ...(recordVideo ? { recordVideoDir: recordingDir } : {}),
           });
   } catch (error) {
@@ -106,7 +95,10 @@ async function createSession(
     contextHandle =
       options.mode === "authoring"
         ? await factory.openAuthoring({ headless: options.headless, profile })
-        : await factory.openProof(profile, { headless: options.headless });
+        : await factory.openProof(profile, {
+            headless: options.headless,
+            projectId: options.projectId,
+          });
   }
   const context = contextHandle.context;
   const page = context.pages()[0] ?? (await context.newPage());
@@ -135,7 +127,7 @@ async function createSession(
     mutationVersion: 0,
     traceStarted: false,
   };
-  context.on("page", (next) => attachEvidence(session, next));
+  context.on("page", (next) => attachBrowserEvidence(session, next));
   if (options.mode === "proof") {
     try {
       await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
@@ -145,91 +137,11 @@ async function createSession(
       // host cannot start Playwright tracing. Other channels remain useful.
     }
   }
-  attachEvidence(session, page);
+  attachBrowserEvidence(session, page);
   if (page.url() === "about:blank") {
     await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
   }
   return session;
-}
-
-function attachEvidence(session: BrowserSession, page: Page): void {
-  page.on("console", (message) => {
-    if (session.console.length >= MAX_EVIDENCE_ENTRIES) {
-      session.console.shift();
-      session.consoleDropped += 1;
-    }
-    session.console.push({ level: message.type(), text: message.text(), at: Date.now() });
-  });
-  page.on("pageerror", (error) => {
-    if (session.pageErrors.length >= MAX_EVIDENCE_ENTRIES) {
-      session.pageErrors.shift();
-      session.pageErrorsDropped += 1;
-    }
-    session.pageErrors.push({
-      at: Date.now(),
-      source: "browser-pageerror",
-      message: error.message,
-    });
-    if (session.crashCapture) {
-      if (session.crashes.length >= MAX_EVIDENCE_ENTRIES) session.crashes.shift();
-      session.crashes.push({ at: Date.now(), source: "browser-pageerror", message: error.message });
-    }
-  });
-  page.on("request", (request) => {
-    if (session.network.length >= MAX_EVIDENCE_ENTRIES) {
-      session.network.shift();
-      session.networkDropped += 1;
-    }
-    const includeHeaders = session.networkInclude === "headers" || session.networkInclude === "all";
-    const includeBody = session.networkInclude === "body" || session.networkInclude === "all";
-    const entry: BrowserNetworkEntry = {
-      method: request.method(),
-      url: request.url(),
-      at: Date.now(),
-      ...(includeHeaders ? { requestHeaders: request.headers() } : {}),
-      ...(includeBody && request.postData() ? { requestBody: request.postData()! } : {}),
-    };
-    session.network.push(entry);
-    session.networkByRequest.set(request, entry);
-  });
-  page.on("response", (response) => {
-    const entry = session.networkByRequest.get(response.request());
-    if (!entry) return;
-    entry.status = response.status();
-    if (session.networkInclude === "headers" || session.networkInclude === "all") {
-      entry.responseHeaders = response.headers();
-    }
-    if (session.networkInclude === "body" || session.networkInclude === "all") {
-      const pending = captureResponseBody(response, entry);
-      session.networkPending.add(pending);
-      void pending.finally(() => session.networkPending.delete(pending));
-    }
-  });
-  page.on("requestfailed", (request) => {
-    const entry = session.networkByRequest.get(request);
-    if (!entry) return;
-    entry.failed = true;
-    const failureText = request.failure()?.errorText?.trim();
-    if (failureText) entry.failureText = failureText.slice(0, 512);
-  });
-}
-
-async function captureResponseBody(
-  response: import("playwright-core").Response,
-  entry: BrowserNetworkEntry,
-): Promise<void> {
-  try {
-    const body = await response.body();
-    const truncated = body.byteLength > MAX_NETWORK_BODY_BYTES;
-    const bounded = body.subarray(0, MAX_NETWORK_BODY_BYTES);
-    const contentType = response.headers()["content-type"] ?? "";
-    const textual = /(?:json|text|javascript|xml|html|css|form-urlencoded)/i.test(contentType);
-    entry.responseBody = textual ? bounded.toString("utf8") : bounded.toString("base64");
-    entry.responseBodyEncoding = textual ? "utf8" : "base64";
-    if (truncated) entry.responseBodyTruncated = true;
-  } catch {
-    // Redirects, cached responses, and streaming bodies may not be readable.
-  }
 }
 
 export async function performBrowserFind(
@@ -323,7 +235,7 @@ export async function openBrowserAuthoringRuntime(
     activePage: () => activePage(session),
     setActivePage: (page) => {
       session.page = page;
-      attachEvidence(session, page);
+      attachBrowserEvidence(session, page);
     },
     mutationVersion: () => session.mutationVersion,
     markMutation: () => {
@@ -372,52 +284,8 @@ export async function openBrowserTarget(targetId: string): Promise<OpenBrowserTa
 export async function activePage(session: BrowserSession): Promise<Page> {
   if (!session.page.isClosed()) return session.page;
   session.page = await session.context.newPage();
-  attachEvidence(session, session.page);
+  attachBrowserEvidence(session, session.page);
   return session.page;
-}
-
-async function snapshotPage(page: Page, maxNodes = 256): Promise<SnapshotNode[]> {
-  return await page.locator(INTERACTIVE).evaluateAll((elements, limit) => {
-    const identifierCounts = new Map<string, number>();
-    for (const element of elements) {
-      const identifier = element.id || element.getAttribute("data-testid");
-      if (identifier) identifierCounts.set(identifier, (identifierCounts.get(identifier) ?? 0) + 1);
-    }
-    const visible = elements.filter((element) => {
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden";
-    });
-    return visible.slice(0, limit).map((element, index) => {
-      const html = element as HTMLElement;
-      const input = element as HTMLInputElement;
-      const rect = element.getBoundingClientRect();
-      const role = element.getAttribute("role") || element.tagName.toLowerCase();
-      const identifier = element.id || element.getAttribute("data-testid") || undefined;
-      const label =
-        element.getAttribute("aria-label") ||
-        element.getAttribute("title") ||
-        (input.labels?.[0]?.textContent ?? "") ||
-        html.innerText?.trim() ||
-        input.placeholder ||
-        input.name ||
-        "";
-      return {
-        index,
-        role,
-        type: role,
-        label: label.slice(0, 500),
-        value: input.type === "password" ? "••••••••" : String(input.value ?? "").slice(0, 500),
-        identifier: identifier && identifierCounts.get(identifier) === 1 ? identifier : undefined,
-        enabled: !(input.disabled || element.getAttribute("aria-disabled") === "true"),
-        selected: element.getAttribute("aria-selected") === "true",
-        focused: document.activeElement === element,
-        visibleToUser: true,
-        hittable: true,
-        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      };
-    });
-  }, maxNodes);
 }
 
 /**
@@ -429,16 +297,8 @@ export async function snapshotBrowserPageSemantics(
   page: Page,
   maxNodes = 128,
 ): Promise<{ nodes: SnapshotNode[]; truncated: boolean }> {
-  const nodes = await snapshotPage(page, maxNodes + 1);
+  const nodes = await snapshotBrowserPage(page, maxNodes + 1);
   return { nodes: nodes.slice(0, maxNodes), truncated: nodes.length > maxNodes };
-}
-
-/** Fingerprint one Browser Device screenshot with the same bounded capture
- * settings used for the painted frame. This remains server-side and brackets
- * semantic inspection against autonomous page changes. */
-export async function browserPageVisualFingerprint(page: Page): Promise<string> {
-  const buffer = await page.screenshot({ type: "jpeg", quality: 76, animations: "disabled" });
-  return createHash("sha256").update(buffer).digest("base64url");
 }
 
 function quotedSelector(
@@ -488,7 +348,20 @@ export type BrowserDeviceOptions = {
   mode?: BrowserContextPurpose;
   profile?: BrowserCaseProfile;
   recordVideo?: boolean;
+  projectId?: string;
 };
+
+/** Capture the current persistent authoring state only after an explicit human
+ * login/setup session exists. The returned value is execution-only and must be
+ * passed directly to the encrypted fixture store, never to logs or evidence. */
+export async function captureBrowserAuthenticationStorageState(targetId: string): Promise<unknown> {
+  const pending = sessions.get(`authoring:${targetId}`);
+  if (!pending) {
+    throw new Error("Open the managed browser and complete sign-in before saving authentication");
+  }
+  const session = await pending;
+  return session.context.storageState({ indexedDB: true });
+}
 
 export async function getBrowserDevice(
   targetId: string,
@@ -560,7 +433,7 @@ export async function getBrowserDevice(
     },
     capture: {
       snapshot: async () => ({
-        nodes: await snapshotPage(await activePage(session)),
+        nodes: await snapshotBrowserPage(await activePage(session)),
         truncated: false,
         identifiers,
       }),
@@ -842,7 +715,7 @@ export async function getBrowserDevice(
             const returnUrl = previous.url();
             await previous.close();
             session.page = await session.context.newPage();
-            attachEvidence(session, session.page);
+            attachBrowserEvidence(session, session.page);
             if (returnUrl && returnUrl !== "about:blank") {
               await session.page.goto(returnUrl, { waitUntil: "domcontentloaded" });
             }
@@ -858,7 +731,7 @@ export async function getBrowserDevice(
             await session.recordingVideo.saveAs(output);
           }
           session.page = await session.context.newPage();
-          attachEvidence(session, session.page);
+          attachBrowserEvidence(session, session.page);
           if (returnUrl && returnUrl !== "about:blank") {
             await session.page.goto(returnUrl, { waitUntil: "domcontentloaded" });
           }

@@ -4,9 +4,11 @@ import {
   changeSignalsSchema,
   changeVerificationBuildSchema,
   changeVerificationChangeSchema,
+  changeTestedSha,
   changeVerificationPolicySchema,
   frozenVerificationTargetCaseSchema,
   journeyAssociationSchema,
+  verificationCellSchema,
   verificationPlanSchema,
   type ChangeCoverageGap,
   type ChangeImpact,
@@ -30,6 +32,9 @@ export type CompileVerificationPlanInput = ComputeChangeImpactInput & {
   policy: unknown;
   maxCases?: number;
   maxDurationMs?: number;
+  /** Reviewed cells replace implicit Cartesian expansion when supplied. */
+  cells?: readonly unknown[];
+  pilotCellId?: string;
 };
 
 /** Stable across equivalent plan compiles and independent of array order. */
@@ -179,8 +184,8 @@ export function compileVerificationPlan(input: CompileVerificationPlanInput): Ve
   if (new Set(builds.map(({ id }) => id)).size !== builds.length) {
     throw new Error("build ids must be unique");
   }
-  if (builds.some(({ sourceSha }) => sourceSha !== impact.change.headSha)) {
-    throw new Error("every build must bind to the exact change headSha");
+  if (builds.some(({ sourceSha }) => sourceSha !== changeTestedSha(impact.change))) {
+    throw new Error("every build must bind to the exact change testedSha");
   }
   const targetCases = input.targetCases
     .map((value) => frozenVerificationTargetCaseSchema.parse(value))
@@ -198,10 +203,9 @@ export function compileVerificationPlan(input: CompileVerificationPlanInput): Ve
       confidence:
         classification === "definitely-affected" ? ("definite" as const) : ("probable" as const),
     }));
-  const requiredCases = targetCases.filter(({ required }) => required);
-  const cells = builds.length
+  const generatedCells = builds.length
     ? affectedJourneys.flatMap((journey) =>
-        requiredCases.map((targetCase) => {
+        targetCases.map((targetCase) => {
           const platform =
             targetCase.executionTarget.platform === "browser"
               ? "web"
@@ -230,19 +234,34 @@ export function compileVerificationPlan(input: CompileVerificationPlanInput): Ve
             },
             targetCaseId: targetCase.id,
             buildId: build.id,
+            requirement: targetCase.required ? ("required" as const) : ("advisory" as const),
+            selectionReason: `${journey.reason} Reviewed target case ${targetCase.id} supplies ${platform} runtime coverage.`,
+            dimensions: targetCase.dimensions,
             cleanupRequired: targetCase.cleanupRequired ?? false,
           };
         }),
       )
     : [];
-  const pilot = requiredCases[0];
+  if (input.cells?.length && !builds.length) {
+    throw new Error("Reviewed Verification Cells require their exact frozen builds");
+  }
+  const cells = input.cells
+    ? input.cells.map((value) => verificationCellSchema.parse(value))
+    : generatedCells;
+  if (new Set(cells.map(({ id }) => id)).size !== cells.length) {
+    throw new Error("Verification Cell ids must be unique");
+  }
+  const pilotCellId =
+    input.pilotCellId ?? cells.find(({ requirement }) => requirement === "required")?.id;
+  const pilotCell = cells.find(({ id }) => id === pilotCellId);
+  const pilot = targetCases.find(({ id }) => id === pilotCell?.targetCaseId);
   const maxCases = input.maxCases ?? Math.max(1, cells.length);
   const maxDurationMs = input.maxDurationMs ?? 1_800_000;
   const planGaps: ChangeCoverageGap[] = [...impact.coverageGaps];
-  if (!pilot) {
+  if (!pilotCell || pilotCell.requirement !== "required" || !pilot) {
     planGaps.push({
       code: "missing-target-case",
-      reason: "The Verification Plan requires at least one policy-required frozen target case.",
+      reason: "The Verification Plan requires one explicit policy-required pilot cell.",
     });
   }
   if (cells.length > maxCases) {
@@ -263,13 +282,22 @@ export function compileVerificationPlan(input: CompileVerificationPlanInput): Ve
     change: impact.change,
     impact,
     builds,
-    selection: { affectedJourneys, targetCases, ...(cells.length ? { cells } : {}) },
+    selection: {
+      affectedJourneys,
+      targetCases,
+      ...(cells.length ? { cells } : {}),
+      ...(pilotCellId ? { pilotCellId } : {}),
+    },
     policy,
     ...(pilot ? { pilotTargetCaseId: pilot.id } : {}),
-    ...(cells[0] ? { pilotCellId: cells[0].id } : {}),
+    ...(pilotCellId ? { pilotCellId } : {}),
     expansion: {
-      cellIds: cells.slice(1).map(({ id }) => id),
-      targetCaseIds: [...new Set(cells.slice(1).map(({ targetCaseId }) => targetCaseId))],
+      cellIds: cells.filter(({ id }) => id !== pilotCellId).map(({ id }) => id),
+      targetCaseIds: [
+        ...new Set(
+          cells.filter(({ id }) => id !== pilotCellId).map(({ targetCaseId }) => targetCaseId),
+        ),
+      ],
       maxCases,
       maxDurationMs,
       conditions: ["pilot-passed", "evidence-complete", "no-unreconciled-input"],

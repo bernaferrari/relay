@@ -1,9 +1,10 @@
 import { For, Show, type JSX } from "solid-js";
-import type {
-  ChangeProofPublicationOutboxRecord,
-  ChangeProofPublicationReceipt,
-  ChangeProofExecutionSummary,
-  ChangeVerification,
+import {
+  type ChangeProofPublicationOutboxRecord,
+  type ChangeProofPublicationReceipt,
+  type ChangeProofExecutionSummary,
+  type ChangeVerification,
+  changeTestedSha,
 } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import { mono, eyebrow, productIconButton } from "../lib/ui";
@@ -63,8 +64,16 @@ export function ProofDetail(props: {
               )}
             >
               <span class="break-all">{props.proof.change.repository}</span>
-              <span class="break-all">base {props.proof.change.baseSha}</span>
-              <span class="break-all">head {props.proof.change.headSha}</span>
+              <span class="break-all">
+                base tip {props.proof.change.baseTipSha ?? props.proof.change.baseSha}
+              </span>
+              <span class="break-all">
+                merge base {props.proof.change.mergeBaseSha ?? props.proof.change.baseSha}
+              </span>
+              <span class="break-all">
+                requested {props.proof.change.requestedHeadSha ?? props.proof.change.headSha}
+              </span>
+              <span class="break-all">tested {changeTestedSha(props.proof.change)}</span>
             </div>
           </details>
           <Show when={props.proof.change.agentClaim?.acceptanceCriteria.length}>
@@ -333,7 +342,7 @@ function changeTitle(proof: ChangeVerification): string {
     proof.change.agentClaim?.summary ||
     (proof.change.pullRequest
       ? `Pull request #${proof.change.pullRequest}`
-      : shortSha(proof.change.headSha))
+      : shortSha(changeTestedSha(proof.change)))
   );
 }
 

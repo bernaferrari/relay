@@ -63,8 +63,47 @@ test(
         headless: true,
         environment: { viewport: { width: 800, height: 600 } },
       });
+      await assert.rejects(
+        client.invoke("target.browser-auth.save", {
+          targetId: target.id,
+          name: "Missing reviewed session",
+          confirm: true,
+        }),
+        (error) =>
+          error instanceof ApiError &&
+          error.status === 409 &&
+          /Open the managed browser/u.test(error.message),
+      );
       const opened = await client.invoke("target.browser-device.open", { targetId: target.id });
       assert.equal(opened.session.ownership, "controlled");
+      const savedAuthentication = await client.invoke("target.browser-auth.save", {
+        targetId: target.id,
+        name: "Reviewed signed-in state",
+        confirm: true,
+      });
+      assert.match(savedAuthentication.fixture.reference, /^authfx:.+:1$/u);
+      assert.equal(
+        savedAuthentication.target.browser?.environment?.authenticationFixtureId,
+        savedAuthentication.fixture.reference,
+      );
+      const fixtures = await client.invoke("target.browser-auth.list", { targetId: target.id });
+      assert.deepEqual(fixtures.fixtures, [savedAuthentication.fixture]);
+      const agentClient = new RelayClient({
+        url: `http://127.0.0.1:${server.port}`,
+        auth: { type: "none" },
+        organizationId: "relay",
+        projectId: "browser-device",
+        actorId: "agent:browser-device-route-test",
+        actorKind: "agent",
+      });
+      await assert.rejects(
+        agentClient.invoke("target.browser-auth.save", {
+          targetId: target.id,
+          name: "Unreviewed agent state",
+          confirm: true,
+        }),
+        (error) => error instanceof ApiError && error.status === 403,
+      );
       const first = await client.invoke("target.browser-device.frame", { targetId: target.id });
       assert.equal(first.frame.sequence, 1);
       assert.equal(first.frame.sessionId, opened.session.sessionId);
@@ -252,6 +291,16 @@ test(
       assert.equal(metadata.frame.pageId, controlFrame.frame.pageId);
       assert.equal(metadata.frame.sequence, controlFrame.frame.sequence + 1);
       assert.equal(typeof metadata.frame.visualFingerprint, "string");
+      const revokedAuthentication = await client.invoke("target.browser-auth.revoke", {
+        targetId: target.id,
+        reference: savedAuthentication.fixture.reference,
+        confirm: true,
+      });
+      assert.equal(revokedAuthentication.fixture.revokedBy, "human:browser-device-route-test");
+      assert.equal(
+        revokedAuthentication.target.browser?.environment?.authenticationFixtureId,
+        undefined,
+      );
       await client.invoke("target.delete", { targetId: target.id });
       await assert.rejects(
         client.invoke("target.browser-device.frame", { targetId: target.id }),

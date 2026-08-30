@@ -165,6 +165,18 @@ export async function inspectWorkspaceChange(
     mergeBaseSha && /^[a-f0-9]{40}$/u.test(mergeBaseSha)
       ? { sha: mergeBaseSha, label: selectedBase!.label }
       : undefined;
+  const changeRef =
+    selectedBase && mergeBaseSha && /^[a-f0-9]{40}$/u.test(mergeBaseSha)
+      ? {
+          baseTipSha: selectedBase.sha,
+          mergeBaseSha,
+          requestedHeadSha: headSha,
+          testedSha: headSha,
+          testedKind: "head" as const,
+          ...(branch ? { targetBranch: branch } : {}),
+          ...(repository ? { repositoryId: repository } : {}),
+        }
+      : undefined;
   const changed = frozenBase
     ? boundedPaths(
         nulList(
@@ -206,6 +218,7 @@ export async function inspectWorkspaceChange(
     ...(branch ? { branch } : {}),
     head: { sha: headSha, label: headSummary || branch || headSha.slice(0, 12) },
     ...(frozenBase ? { base: frozenBase } : {}),
+    ...(changeRef ? { changeRef } : {}),
     baseCandidates,
     changedFileCount: changed.count,
     changedFiles: changed.paths,

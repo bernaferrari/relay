@@ -291,3 +291,75 @@ test("case budgets count explicit journey and target cells", () => {
   assert.equal(plan.status, "needs-review");
   assert.ok(plan.coverageGaps.some(({ code }) => code === "required-case-budget-exceeded"));
 });
+
+test("reviewed Verification Cells express a non-Cartesian required and advisory plan", () => {
+  const compact = browserCase("compact", 390);
+  const expanded = browserCase("expanded", 1280);
+  const builds = [
+    {
+      id: "web",
+      platform: "web" as const,
+      artifactDigest: digest,
+      sourceSha: headSha,
+      configuration: "production",
+      environmentRevision: "deploy-184",
+    },
+  ];
+  const cells = [
+    {
+      id: "settings-compact-required",
+      journey: { appMapId: "settings", testId: "settings-language" },
+      targetCaseId: compact.id,
+      buildId: "web",
+      requirement: "required" as const,
+      selectionReason: "The changed localization path must pass on compact RTL web.",
+      dimensions: compact.dimensions,
+      cleanupRequired: false,
+    },
+    {
+      id: "help-expanded-advisory",
+      journey: { appMapId: "settings", testId: "settings-language-help" },
+      targetCaseId: expanded.id,
+      buildId: "web",
+      requirement: "advisory" as const,
+      selectionReason:
+        "Desktop help copy is useful residual-risk coverage, but not merge-blocking.",
+      dimensions: expanded.dimensions,
+      cleanupRequired: false,
+    },
+  ];
+  const plan = compileVerificationPlan({
+    change,
+    changed: signals({ localizationKeys: ["settings.language.title"] }),
+    associations: [
+      association(
+        "settings-language-copy",
+        "settings-language",
+        signals({ localizationKeys: ["settings.language.title"] }),
+      ),
+      association(
+        "settings-language-help",
+        "settings-language-help",
+        signals({ localizationKeys: ["settings.language.title"] }),
+      ),
+    ],
+    builds,
+    targetCases: [compact, expanded],
+    cells,
+    pilotCellId: "settings-compact-required",
+    policy: { id: "relay.default", version: 3 },
+  });
+
+  assert.equal(plan.status, "ready-for-approval");
+  assert.equal(plan.selection.cells?.length, 2);
+  assert.equal(plan.selection.pilotCellId, "settings-compact-required");
+  assert.deepEqual(
+    plan.selection.cells?.map(({ id, requirement }) => ({ id, requirement })),
+    [
+      { id: "settings-compact-required", requirement: "required" },
+      { id: "help-expanded-advisory", requirement: "advisory" },
+    ],
+  );
+  assert.deepEqual(plan.expansion.cellIds, ["help-expanded-advisory"]);
+  assert.equal(proofStartInputFromVerificationPlan(plan).selection?.pilotCellId, plan.pilotCellId);
+});

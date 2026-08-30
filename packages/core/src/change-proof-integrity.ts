@@ -2,6 +2,7 @@ import {
   VERIFY_CHANGE_POLICY as VERIFY_CHANGE_POLICY_IDENTITY,
   changeVerificationPolicySchema,
   parseChangeVerification,
+  materializeChangeRef,
   type ChangeVerification,
   type ChangeVerificationDecision,
 } from "@relay/protocol";
@@ -228,7 +229,14 @@ export function verifyDurableChangeVerification(value: unknown): ChangeVerificat
  * identities are checked rather than overwritten, so a forged mutation cannot
  * repair its own digest while entering persistence. */
 export function materializeChangeVerificationIntegrity(value: unknown): ChangeVerification {
-  const proof = parseChangeVerification(value);
+  const parsed = parseChangeVerification(value);
+  // Freeze the source identity before computing plan/decision digests. Legacy
+  // callers still provide baseSha/headSha; the protocol helper maps those
+  // aliases to mergeBaseSha/testedSha while preserving the aliases for old
+  // readers. New callers can provide the complete provider-neutral ChangeRef.
+  const proof = parsed.change
+    ? ({ ...parsed, change: materializeChangeRef(parsed.change) } as ChangeVerification)
+    : parsed;
   const expectedPolicyDigest = verifyChangePolicyDigest(proof.policy);
   if (proof.policyDigest && proof.policyDigest !== expectedPolicyDigest) {
     throw new ChangeProofIntegrityError(

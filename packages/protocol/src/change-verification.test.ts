@@ -94,9 +94,13 @@ function fixture(overrides: Partial<ChangeVerification> = {}): ChangeVerificatio
           journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 7 },
           targetCaseId: "chromium-compact-ar",
           buildId: "web",
+          requirement: "required",
+          selectionReason: "Compact Arabic web is required for this localization change.",
+          dimensions: { locale: "ar", viewport: "compact" },
           cleanupRequired: false,
         },
       ],
+      pilotCellId: "cell-settings-chromium",
     },
     planApproval: {
       decisionId: "decision-1",
@@ -150,6 +154,12 @@ test("Change Verification freezes one exact change, build, plan, and policy", ()
     }),
   );
   assert.throws(() => parseChangeVerification({ ...fixture(), extra: true }));
+  assert.throws(() =>
+    parseChangeVerification({
+      ...fixture(),
+      change: { ...fixture().change, unexpected: true },
+    }),
+  );
 });
 
 test("legacy v1 Proofs migrate fail-closed before execution or merge", () => {
@@ -188,33 +198,64 @@ test("approved v2 Proofs without cells migrate to review before execution or mer
   assert.equal(migrated.smallestNextVerification?.kind, "review");
 });
 
-test("a Proof cannot omit one required journey and target cell", () => {
+test("a Proof can retain an unselected target without forcing Cartesian cells", () => {
   const value = fixture();
   const targetCase = value.selection.targetCases[0]!;
-  assert.throws(
-    () =>
-      parseChangeVerification({
-        ...value,
-        selection: {
-          ...value.selection,
-          targetCases: [
-            targetCase,
-            {
-              ...targetCase,
-              id: "webkit-compact-ar",
-              targetProfile: {
-                ...targetCase.targetProfile,
-                id: "web:compact:webkit:ar",
-                browserCaseProfile: {
-                  ...targetCase.targetProfile.browserCaseProfile!,
-                  engine: "webkit",
-                },
-              },
+  const parsed = parseChangeVerification({
+    ...value,
+    selection: {
+      ...value.selection,
+      targetCases: [
+        targetCase,
+        {
+          ...targetCase,
+          id: "webkit-compact-ar",
+          targetProfile: {
+            ...targetCase.targetProfile,
+            id: "web:compact:webkit:ar",
+            browserCaseProfile: {
+              ...targetCase.targetProfile.browserCaseProfile!,
+              engine: "webkit",
             },
-          ],
+          },
         },
-      }),
-    /materialize exactly one cell/u,
+      ],
+    },
+  });
+  assert.deepEqual(
+    parsed.selection.cells?.map(({ id }) => id),
+    ["cell-settings-chromium"],
+  );
+});
+
+test("reviewed cells may repeat a journey and target for distinct frozen dimensions", () => {
+  const value = fixture();
+  const first = value.selection.cells![0]!;
+  const parsed = parseChangeVerification({
+    ...value,
+    selection: {
+      ...value.selection,
+      cells: [
+        first,
+        {
+          ...first,
+          id: "cell-settings-chromium-light",
+          requirement: "advisory",
+          selectionReason: "Light theme is retained as reviewed advisory coverage.",
+          dimensions: { ...first.dimensions, theme: "light" },
+        },
+      ],
+    },
+  });
+  assert.equal(parsed.selection.cells?.length, 2);
+  assert.throws(() =>
+    parseChangeVerification({
+      ...value,
+      selection: {
+        ...value.selection,
+        cells: [first, { ...first, id: "duplicate-cell" }],
+      },
+    }),
   );
 });
 

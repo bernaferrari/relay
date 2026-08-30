@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { changeRefSchema } from "./change-verification.js";
 
 const revision = z
   .object({
@@ -21,6 +22,9 @@ export const workspaceChangeContextSchema = z
     branch: z.string().min(1).max(512).optional(),
     head: revision.optional(),
     base: revision.optional(),
+    /** Canonical source identity for starting a new Proof. Kept separate from
+     * the display-oriented head/base projections for old clients. */
+    changeRef: changeRefSchema.optional(),
     baseCandidates: z.array(baseCandidate).max(32),
     changedFileCount: z.number().int().nonnegative(),
     changedFiles: z.array(z.string().min(1).max(4096)).max(100),

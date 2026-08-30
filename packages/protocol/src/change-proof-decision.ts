@@ -8,6 +8,9 @@ const exactGitSha = z.string().regex(/^[a-f0-9]{40}$/u);
 
 export const changeProofCaseResultSchema = z
   .object({
+    /** Exact reviewed Verification Cell. Optional only for historical results
+     * created before cells could repeat a journey/target across dimensions. */
+    cellId: identifier.optional(),
     appMapId: identifier,
     testId: identifier,
     targetCaseId: identifier,

@@ -29,6 +29,7 @@ import {
 } from "@relay/core";
 import {
   CHANGE_VERIFICATION_STATES,
+  materializeChangeRef,
   changeProofCaseResultSchema,
   type ChangeVerification,
   type OperationInput,
@@ -112,7 +113,8 @@ function sameStartIntent(
 ): boolean {
   return (
     proof.requestedBy === actorId &&
-    sameValue(proof.change, body.change) &&
+    canonicalSha256(materializeChangeRef(proof.change)) ===
+      canonicalSha256(materializeChangeRef(body.change)) &&
     sameValue(proof.builds, body.builds ?? []) &&
     sameValue(proof.selection, body.selection ?? { affectedJourneys: [], targetCases: [] }) &&
     sameValue(proof.policy, body.policy) &&

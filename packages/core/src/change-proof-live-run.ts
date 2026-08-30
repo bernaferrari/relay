@@ -1,6 +1,7 @@
 import {
   changeProofCaseResultSchema,
   parseChangeVerification,
+  changeTestedSha,
   type ChangeProofCaseResult,
   type ChangeVerification,
 } from "@relay/protocol";
@@ -28,17 +29,27 @@ function platformForTargetCase(
   return item.executionTarget.platform === "browser" ? "web" : item.executionTarget.platform;
 }
 
-/** Return the exact frozen cells. The first entry is the pilot; the remainder
- * is the smallest policy-required expansion. */
+/** Return the exact frozen cells. The explicit pilot runs first, then every
+ * remaining required cell, then advisory coverage. Advisory failures can add
+ * residual risk but never prevent a later required cell from running. */
 export function changeProofRequiredRunCases(value: unknown): ChangeProofRunCase[] {
   const proof = parseChangeVerification(value);
   const cells = proof.selection.cells;
   if (!cells?.length) throw new Error("Proof has no frozen Verification Cells.");
+  const pilot = cells.find(({ id }) => id === proof.selection.pilotCellId);
+  if (!pilot || pilot.requirement !== "required") {
+    throw new Error("Proof has no explicit policy-required pilot Verification Cell.");
+  }
+  const orderedCells = [
+    pilot,
+    ...cells.filter(({ id, requirement }) => id !== pilot.id && requirement === "required"),
+    ...cells.filter(({ requirement }) => requirement === "advisory"),
+  ];
   const targetCases = new Map(
     proof.selection.targetCases.map((targetCase) => [targetCase.id, targetCase]),
   );
   const builds = new Map(proof.builds.map((build) => [build.id, build]));
-  return cells.map((cell) => {
+  return orderedCells.map((cell) => {
     const journey = proof.selection.affectedJourneys.find(
       (candidate) =>
         candidate.appMapId === cell.journey.appMapId &&
@@ -56,7 +67,7 @@ export function changeProofRequiredRunCases(value: unknown): ChangeProofRunCase[
       throw new Error(`Verification Cell ${cell.id} references a missing frozen target or build.`);
     }
     const expectedPlatform = platformForTargetCase(targetCase);
-    if (build.platform !== expectedPlatform || build.sourceSha !== proof.change.headSha) {
+    if (build.platform !== expectedPlatform || build.sourceSha !== changeTestedSha(proof.change)) {
       throw new Error(`Verification Cell ${cell.id} does not bind a compatible exact build.`);
     }
     return {
@@ -233,15 +244,25 @@ export async function changeProofCaseResultFromPersistedRun(input: {
   const targetCase = targetCaseForRun(proof, run);
   const build = buildForRun(proof, run);
   assertBuildProvenanceReceipt(run, targetCase, build);
-  const cell = proof.selection.cells?.find(
-    (candidate) =>
-      candidate.journey.appMapId === identity.appMapId &&
-      candidate.journey.testId === identity.testId &&
-      candidate.journey.appMapRevision === identity.appMapRevision &&
-      candidate.targetCaseId === targetCase.id &&
-      candidate.buildId === build.id,
-  );
-  if (!cell) throw new Error(`Run ${run.id} does not bind one frozen Verification Cell.`);
+  const matchingCells =
+    proof.selection.cells?.filter(
+      (candidate) =>
+        candidate.journey.appMapId === identity.appMapId &&
+        candidate.journey.testId === identity.testId &&
+        candidate.journey.appMapRevision === identity.appMapRevision &&
+        candidate.targetCaseId === targetCase.id &&
+        candidate.buildId === build.id &&
+        Object.entries(candidate.dimensions).every(
+          ([dimension, value]) =>
+            targetCase.dimensions[dimension] === value || run.resolvedInputs[dimension] === value,
+        ),
+    ) ?? [];
+  if (matchingCells.length !== 1) {
+    throw new Error(
+      `Run ${run.id} must bind exactly one frozen Verification Cell; found ${matchingCells.length}.`,
+    );
+  }
+  const cell = matchingCells[0]!;
   const pack = await exportTracePack(run);
   const analysis = analyzeTracePack(pack);
   const recomputed = analysis.recomputed ?? [];
@@ -281,6 +302,7 @@ export async function changeProofCaseResultFromPersistedRun(input: {
             ? "passed"
             : "insufficient-evidence";
   return changeProofCaseResultSchema.parse({
+    cellId: cell.id,
     appMapId: identity.appMapId,
     testId: identity.testId,
     targetCaseId: targetCase.id,

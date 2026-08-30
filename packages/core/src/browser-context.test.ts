@@ -7,6 +7,7 @@ import { after, before, test } from "node:test";
 import { compileBrowserEnvironment, type TargetDefinition } from "@relay/protocol";
 import { chromium } from "playwright-core";
 import { browserContextOptionsForProfile, createBrowserContextFactory } from "./browser-context.js";
+import { saveBrowserAuthenticationFixture } from "./browser-authentication-fixtures.js";
 import { closeBrowserHostPool } from "./browser-host-pool.js";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -134,6 +135,43 @@ test("authoring context is separate while proof contexts are fresh and explicitl
   }
 });
 
+test("proof contexts import only the exact encrypted authentication fixture revision", async (t) => {
+  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  if (t.signal.aborted) return;
+
+  const fixture = await saveBrowserAuthenticationFixture({
+    projectId: "browser-context-project",
+    targetId: target().id,
+    name: "Reviewed member state",
+    createdBy: "human:test-reviewer",
+    storageState: {
+      cookies: [{ name: "member", value: "yes", url: startUrl }],
+      origins: [
+        {
+          origin: startUrl,
+          localStorage: [{ name: "relay-member", value: "yes" }],
+        },
+      ],
+    },
+  });
+  const profile = compileBrowserEnvironment({
+    ...target().browser!.environment,
+    authenticationFixtureId: fixture.reference,
+  });
+  const context = await createBrowserContextFactory(target()).openProof(profile, {
+    headless: true,
+    projectId: "browser-context-project",
+  });
+  try {
+    const page = context.context.pages()[0] ?? (await context.context.newPage());
+    await page.goto(startUrl);
+    assert.match(await page.evaluate(() => document.cookie), /(?:^|; )member=yes(?:;|$)/u);
+    assert.equal(await page.evaluate(() => localStorage.getItem("relay-member")), "yes");
+  } finally {
+    await context.close();
+  }
+});
+
 test("100 sequential proof Run contexts leak no browser state", async (t) => {
   await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
   if (t.signal.aborted) return;
@@ -193,21 +231,25 @@ test("100 sequential proof Run contexts leak no browser state", async (t) => {
   }
 });
 
-test("requested fixture-backed environments fail before browser launch", async () => {
+test("requested fixture-backed environments require exact project-scoped ciphertext", async () => {
   const factory = createBrowserContextFactory({
     ...target(),
     browser: {
       ...target().browser!,
       environment: {
         ...target().browser!.environment,
-        authenticationFixtureId: "fixture:missing",
+        authenticationFixtureId: "authfx:00000000-0000-4000-8000-000000000000:1",
       },
     },
   });
 
   await assert.rejects(
     factory.openProof(undefined, { headless: true }),
-    /unavailable host resolvers: authenticationFixtureId/u,
+    /requires one explicit project scope/u,
+  );
+  await assert.rejects(
+    factory.openProof(undefined, { headless: true, projectId: "project-a" }),
+    /not found in this project and target/u,
   );
 });
 

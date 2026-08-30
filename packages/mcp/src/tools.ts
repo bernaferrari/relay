@@ -94,6 +94,12 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Persist frames with the CLI: relay device survey <serial> --dir <folder>. Do not dump base64 in the tool result. A survey directory is raw capture evidence; use Combine export when a person needs a portable review folder.",
   "target.recover":
     " Repair the runner without rebooting the device. A missing XCTest session is not a failed launch.",
+  "target.browser-auth.save":
+    " Human-only. Open the managed Browser Device, complete sign-in or MFA, and review the current account before saving. Relay returns only non-secret metadata and an exact encrypted fixture reference.",
+  "target.browser-auth.list":
+    " Read-only metadata. Credentials, cookies, and local storage are never returned through MCP or evidence.",
+  "target.browser-auth.revoke":
+    " Human-only. Revocation is permanent for the exact fixture revision and future Proof runs fail closed.",
   "step.run":
     " Runs one standalone step only. If it returns terminal: review-needed, capture the current screen from stepReview before any retry; never repeat the command automatically.",
   "lease.create":
@@ -465,6 +471,9 @@ const adminOperations = [
   "target.list",
   "target.create",
   "target.delete",
+  "target.browser-auth.save",
+  "target.browser-auth.list",
+  "target.browser-auth.revoke",
   "build.list",
   "build.save",
   "build.preflight",
@@ -498,6 +507,7 @@ const proofOperations = [
   "system.doctor.get",
   "target.devices.list",
   "target.list",
+  "target.browser-auth.list",
   "target.screenshot.capture",
   "lease.list",
   "workspace.change.inspect",

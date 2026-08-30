@@ -17,6 +17,7 @@ import {
 
 const scope = { organizationId: "acme", projectId: "relay" } as const;
 const headSha = "2".repeat(40);
+const requestedHeadSha = "3".repeat(40);
 const digest = `sha256:${"a".repeat(64)}` as const;
 
 async function withStateRoot(operation: () => Promise<void>): Promise<void> {
@@ -37,7 +38,17 @@ async function terminalProof() {
   const created = await createChangeVerification({
     ...scope,
     id: "proof-1",
-    change: { repository: "acme/settings", baseSha: "1".repeat(40), headSha },
+    change: {
+      repository: "acme/settings",
+      baseSha: "1".repeat(40),
+      headSha,
+      baseTipSha: "1".repeat(40),
+      mergeBaseSha: "1".repeat(40),
+      requestedHeadSha,
+      testedSha: headSha,
+      testedKind: "merge-group",
+      mergeGroupId: "merge-queue/main/pr-42",
+    },
     policy: { id: "relay.verify-change", version: 1 },
     requestedBy: "agent:coder",
     actorId: "agent:coder",

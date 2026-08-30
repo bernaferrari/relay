@@ -3,7 +3,10 @@ import test from "node:test";
 import type { ChangeProofExecutionRecord } from "@relay/core";
 import { changeProofCellRunInput } from "./change-proof-cell-executor.js";
 
-const execution = (platform: "browser" | "ios") =>
+const execution = (
+  platform: "browser" | "ios",
+  cellDimensions: Record<string, string> = { locale: "ar" },
+) =>
   ({
     frozenProof: {
       change: { headSha: "2".repeat(40) },
@@ -30,6 +33,19 @@ const execution = (platform: "browser" | "ios") =>
               identity: { kind: "test-target", value: "target-1" },
             },
             targetProfile: { id: "profile-1" },
+            dimensions: { locale: "ar" },
+          },
+        ],
+        cells: [
+          {
+            id: "cell-1",
+            journey: { appMapId: "settings", testId: "language", appMapRevision: 4 },
+            targetCaseId: "target-1",
+            buildId: "build-1",
+            requirement: "required",
+            selectionReason: "Reviewed exact execution cell.",
+            dimensions: cellDimensions,
+            cleanupRequired: false,
           },
         ],
       },
@@ -38,6 +54,7 @@ const execution = (platform: "browser" | "ios") =>
 
 test("the default cell adapter binds a browser deployment without an invalid build id", () => {
   const input = changeProofCellRunInput(execution("browser"), {
+    cellId: "cell-1",
     appMapId: "settings",
     testId: "language",
     appMapRevision: 4,
@@ -51,6 +68,7 @@ test("the default cell adapter binds a browser deployment without an invalid bui
 
 test("the default cell adapter retains registered build identity for a device", () => {
   const input = changeProofCellRunInput(execution("ios"), {
+    cellId: "cell-1",
     appMapId: "settings",
     testId: "language",
     appMapRevision: 4,
@@ -59,4 +77,19 @@ test("the default cell adapter retains registered build identity for a device", 
   });
   assert.deepEqual(input.target, { kind: "device", platform: "ios", targetId: "ios-1" });
   assert.equal(input.sourceRevision?.buildId, "build-1");
+});
+
+test("the default cell adapter executes reviewed non-target dimensions as one exact Repeat", () => {
+  const input = changeProofCellRunInput(execution("browser", { locale: "ar", theme: "dark" }), {
+    cellId: "cell-1",
+    appMapId: "settings",
+    testId: "language",
+    appMapRevision: 4,
+    targetCaseId: "target-1",
+    buildId: "build-1",
+  });
+
+  assert.deepEqual(input.in, { theme: ["dark"] });
+  assert.deepEqual(input.pilotCase, { theme: "dark" });
+  assert.equal(input.executionMode, "pilot");
 });

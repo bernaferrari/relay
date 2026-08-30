@@ -10,7 +10,6 @@ export function unsupportedBrowserCaseProfileFields(
 ): readonly string[] {
   return [
     ...(profile.revision ? ["revision"] : []),
-    ...(profile.authenticationFixtureId ? ["authenticationFixtureId"] : []),
     ...(profile.featureFlagFixtureId ? ["featureFlagFixtureId"] : []),
     ...(profile.networkProfile ? ["networkProfile"] : []),
   ];

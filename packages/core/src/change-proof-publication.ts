@@ -2,6 +2,7 @@ import {
   changeProofProviderCheckSchema,
   changeProofPublicationReceiptSchema,
   parseChangeVerification,
+  changeTestedSha,
   type ChangeProofPublicationReceipt,
 } from "@relay/protocol";
 import { canonicalSha256 } from "./canonical-json.js";
@@ -122,12 +123,22 @@ export async function recordChangeProofPublication(
     provider: "github";
     checkRunId: number;
     externalId: string;
-    headSha: string;
+    /** GitHub's adapter name for the exact tested revision. */
+    headSha?: string;
+    /** Provider-neutral spelling accepted by new callers. */
+    testedSha?: string;
     htmlUrl?: string;
     publishedAt: number;
   },
 ): Promise<ChangeProofPublicationReceipt> {
   const check = changeProofProviderCheckSchema.parse(input.check);
+  const acknowledgedSha = input.testedSha ?? input.headSha;
+  if (!acknowledgedSha) {
+    throw new ChangeProofPublicationConflictError(
+      "PUBLICATION_IDENTITY_MISMATCH",
+      "a provider acknowledgement must identify the exact tested revision",
+    );
+  }
   return withControlStore((store) => {
     const rawProof = input.proofVersion
       ? store
@@ -145,14 +156,14 @@ export async function recordChangeProofPublication(
     const proof = verifyDurableChangeVerification(parsedProof);
     if (
       input.repository !== proof.change.repository ||
-      input.headSha !== proof.change.headSha ||
+      acknowledgedSha !== changeTestedSha(proof.change) ||
       input.externalId !== proof.id ||
-      check.headSha !== proof.change.headSha ||
+      check.headSha !== changeTestedSha(proof.change) ||
       check.externalId !== proof.id
     ) {
       throw new ChangeProofPublicationConflictError(
         "PUBLICATION_IDENTITY_MISMATCH",
-        "the provider acknowledgement does not identify this exact Proof head",
+        "the provider acknowledgement does not identify this exact Proof tested revision",
       );
     }
     const expectedConclusion =
@@ -208,7 +219,7 @@ export async function recordChangeProofPublication(
       proofVersion: proof.version,
       provider: input.provider,
       repository: input.repository,
-      headSha: input.headSha,
+      headSha: acknowledgedSha,
       externalId: input.externalId,
       checkRunId: input.checkRunId,
       ...(input.htmlUrl ? { htmlUrl: input.htmlUrl } : {}),

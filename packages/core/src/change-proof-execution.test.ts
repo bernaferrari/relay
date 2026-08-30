@@ -99,6 +99,9 @@ function selection(cellCount = 1): ChangeVerification["selection"] {
       journey: { appMapId: "settings", testId: "language", appMapRevision: 4 },
       targetCaseId: "browser-ar",
       buildId: "web-build",
+      requirement: "required" as const,
+      selectionReason: "Arabic is the reviewed pilot coverage.",
+      dimensions: { locale: "ar" },
       cleanupRequired: false,
     },
     {
@@ -106,6 +109,9 @@ function selection(cellCount = 1): ChangeVerification["selection"] {
       journey: { appMapId: "settings", testId: "language", appMapRevision: 4 },
       targetCaseId: "browser-en",
       buildId: "web-build",
+      requirement: "required" as const,
+      selectionReason: "English is required expansion coverage.",
+      dimensions: { locale: "en" },
       cleanupRequired: false,
     },
   ];
@@ -121,6 +127,7 @@ function selection(cellCount = 1): ChangeVerification["selection"] {
     ],
     targetCases: [browserAr, browserEn].slice(0, cellCount),
     cells: cells.slice(0, cellCount),
+    pilotCellId: "language__browser-ar",
   };
 }
 

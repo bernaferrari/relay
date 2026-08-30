@@ -110,8 +110,8 @@ test("verify-change fails closed when affected-test selection and evidence are u
     selectionUncertainty: ["affected-test-selection-unavailable:source-revision:abcdef0"],
   });
 
-  assert.equal(result.decision, "reject");
-  assert.deepEqual(result.ruleIds, ["execution.prohibited"]);
+  assert.equal(result.decision, "insufficient-evidence");
+  assert.deepEqual(result.ruleIds, ["evidence.incomplete"]);
   assert.equal(result.affectedTests.length, 0);
   assert.equal(result.summary.verdict, "insufficient");
   assert.equal(result.smallestRequiredLiveVerification.action, "select-and-run-one-test");

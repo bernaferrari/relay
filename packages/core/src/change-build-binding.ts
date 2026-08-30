@@ -24,7 +24,9 @@ export { artifactDigestForProof } from "./artifact-digest.js";
 
 export type BindRegisteredBuildToProofInput = {
   build: Build;
-  changeHeadSha: string;
+  /** Compatibility alias. New callers should bind against changeTestedSha. */
+  changeHeadSha?: string;
+  changeTestedSha?: string;
   target?: TargetContext;
   run?: BuildCommandRunner;
   preflight?: RegisteredBuildPreflight;
@@ -36,13 +38,16 @@ export type BindRegisteredBuildToProofInput = {
 export async function bindRegisteredBuildToProof(
   input: BindRegisteredBuildToProofInput,
 ): Promise<ChangeVerificationBuild> {
-  if (!EXACT_GIT_SHA.test(input.changeHeadSha)) {
-    throw new Error("changeHeadSha must be an exact lowercase 40-character Git SHA");
+  const expectedSha = input.changeTestedSha ?? input.changeHeadSha;
+  if (!expectedSha || !EXACT_GIT_SHA.test(expectedSha)) {
+    throw new Error(
+      "changeTestedSha (legacy changeHeadSha) must be an exact lowercase 40-character Git SHA",
+    );
   }
   if (input.build.status !== "ready") throw new Error("Proof build must be ready");
   const sourceSha = requiredProvenance(input.build.sourceSha, "sourceSha");
-  if (sourceSha !== input.changeHeadSha) {
-    throw new Error("Build sourceSha does not match the exact Proof headSha");
+  if (sourceSha !== expectedSha) {
+    throw new Error("Build sourceSha does not match the exact Proof testedSha (legacy headSha)");
   }
   const configuration = requiredProvenance(input.build.configuration, "configuration");
   const environmentRevision = requiredProvenance(
@@ -99,8 +104,11 @@ export type VerifiedWebDeployment = {
  * digest, otherwise the build is insufficient evidence. */
 export function bindVerifiedWebDeploymentToProof(input: {
   deployment: VerifiedWebDeployment;
-  changeHeadSha: string;
+  /** Compatibility alias. New callers should bind against changeTestedSha. */
+  changeHeadSha?: string;
+  changeTestedSha?: string;
 }): ChangeVerificationBuild {
+  const expectedSha = input.changeTestedSha ?? input.changeHeadSha;
   const url = new URL(input.deployment.url);
   const local =
     url.protocol === "http:" &&
@@ -108,8 +116,10 @@ export function bindVerifiedWebDeploymentToProof(input: {
   if (url.protocol !== "https:" && !local) {
     throw new Error("Web Proof deployment must use https or a loopback development URL");
   }
-  if (input.deployment.sourceSha !== input.changeHeadSha) {
-    throw new Error("Web deployment sourceSha does not match the exact Proof headSha");
+  if (!expectedSha || input.deployment.sourceSha !== expectedSha) {
+    throw new Error(
+      "Web deployment sourceSha does not match the exact Proof testedSha (legacy headSha)",
+    );
   }
   return changeVerificationBuildSchema.parse({
     id: input.deployment.id,

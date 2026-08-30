@@ -2,6 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, onMount } from "soli
 import { Button } from "@relay/ui/button";
 import {
   VERIFY_CHANGE_POLICY,
+  changeTestedSha,
   type ChangeProofPublicationReceipt,
   type ChangeProofPublicationOutboxRecord,
   type ChangeVerification,
@@ -53,7 +54,7 @@ function changeTitle(proof: ChangeVerification): string {
     proof.change.agentClaim?.summary ||
     (proof.change.pullRequest
       ? `Pull request #${proof.change.pullRequest}`
-      : shortSha(proof.change.headSha))
+      : shortSha(changeTestedSha(proof.change)))
   );
 }
 
@@ -161,8 +162,8 @@ export function ChangesWorkspace(props: {
       }
       if (
         change.repository !== proof.change.repository ||
-        change.base.sha !== proof.change.headSha ||
-        change.head.sha === proof.change.headSha
+        change.head.sha === changeTestedSha(proof.change) ||
+        !change.changeRef
       ) {
         throw new Error(
           "The active workspace must continue this project from the exact revision this Proof tested.",
@@ -175,6 +176,8 @@ export function ChangesWorkspace(props: {
           repository: change.repository,
           baseSha: change.base.sha,
           headSha: change.head.sha,
+          ...change.changeRef,
+          previousHeadSha: changeTestedSha(proof.change),
           ...(proof.change.pullRequest ? { pullRequest: proof.change.pullRequest } : {}),
           ...(proof.change.agentClaim ? { agentClaim: proof.change.agentClaim } : {}),
         },
@@ -305,6 +308,7 @@ export function ChangesWorkspace(props: {
           repository: change.repository,
           baseSha: change.base.sha,
           headSha: change.head.sha,
+          ...change.changeRef,
           ...(normalized.pullRequest ? { pullRequest: Number(normalized.pullRequest) } : {}),
           ...(normalized.summary
             ? {

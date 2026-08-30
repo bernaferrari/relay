@@ -102,7 +102,7 @@ export function formatVerifyChangeResult(value: unknown): string | undefined {
     const gaps = plan.coverageGaps.map((gap) => `  - ${gap.code}: ${gap.reason}`);
     return [
       `Verify change plan: ${plan.status}`,
-      `Change: ${git.baseRef} (${shortRevision(git.baseSha)}) → current revision (${shortRevision(git.headSha)})`,
+      `Change: ${git.baseRef} (${shortRevision(git.baseSha)}) → tested revision (${shortRevision(git.headSha)})`,
       `Changed files: ${git.changedFiles.length}`,
       ...(git.changedFiles.length ? git.changedFiles.map((path) => `  - ${path}`) : []),
       `Affected Tests: ${plan.selection.affectedJourneys.length}`,

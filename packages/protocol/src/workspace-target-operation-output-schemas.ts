@@ -7,6 +7,7 @@ import {
   browserDeviceSemanticOverlaySchema,
   browserDeviceSessionSchema,
 } from "./browser-device.js";
+import { browserAuthenticationFixtureSchema } from "./browser-authentication-fixture.js";
 
 const text = z.string().min(1);
 const natural = z.number().int().nonnegative();
@@ -705,6 +706,15 @@ export const workspaceTargetOperationOutputSchemas = {
       session: browserDeviceSessionSchema,
       resolution: browserDeviceInputResolutionSchema.optional(),
     })
+    .strict(),
+  "target.browser-auth.save": z
+    .object({ fixture: browserAuthenticationFixtureSchema, target: targetDefinition })
+    .strict(),
+  "target.browser-auth.list": z
+    .object({ fixtures: z.array(browserAuthenticationFixtureSchema) })
+    .strict(),
+  "target.browser-auth.revoke": z
+    .object({ fixture: browserAuthenticationFixtureSchema, target: targetDefinition })
     .strict(),
   "target.boot": z.object({ ok: z.literal(true), serial: text }).strict(),
   "target.avds.list": z.object({ inventory: androidAvdInventory }).strict(),

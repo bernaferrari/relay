@@ -145,9 +145,13 @@ function selection(): ChangeVerification["selection"] {
         },
         targetCaseId: "chromium-compact-ar",
         buildId: "web",
+        requirement: "required",
+        selectionReason: "Compact Arabic web is required coverage.",
+        dimensions: { locale: "ar", viewport: "compact" },
         cleanupRequired: false,
       },
     ],
+    pilotCellId: "settings-language__chromium-compact-ar",
   };
 }
 
@@ -379,8 +383,14 @@ test("a repaired head creates a new Proof and supersedes without rewriting histo
         id: "proof-2",
         change: {
           ...createInput().change,
-          baseSha: headSha,
+          baseSha,
           headSha: repairedHeadSha,
+          baseTipSha: baseSha,
+          mergeBaseSha: baseSha,
+          requestedHeadSha: repairedHeadSha,
+          testedSha: repairedHeadSha,
+          testedKind: "head",
+          previousHeadSha: headSha,
         },
         builds: buildsFor(repairedHeadSha, repairedDigest),
         actorId: "agent:coder",
@@ -391,6 +401,8 @@ test("a repaired head creates a new Proof and supersedes without rewriting histo
     assert.equal(superseded.previous.supersededByProofId, "proof-2");
     assert.equal(superseded.replacement.supersedesProofId, "proof-1");
     assert.equal(superseded.replacement.change.headSha, repairedHeadSha);
+    assert.equal(superseded.replacement.change.previousHeadSha, headSha);
+    assert.equal(superseded.replacement.change.mergeBaseSha, baseSha);
 
     const oldHistory = await readChangeVerificationHistory(scope, "proof-1");
     assert.equal(oldHistory.at(-2)?.state, "rejected");

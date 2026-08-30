@@ -58,6 +58,44 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   mapped("target.preflight", path("target preflight", ["targetId"])),
   mapped("target.open", path("target open", ["targetId"])),
   mapped(
+    "target.browser-auth.save",
+    path("browser auth save", ["targetId"], undefined, {
+      summary: "Encrypt and freeze the current reviewed browser sign-in state",
+      argumentHelp: [
+        { name: "targetId", type: "string", description: "Managed browser target identifier" },
+      ],
+      inputHelp: [
+        { name: "name", type: "string", description: "Human-readable fixture name" },
+        {
+          name: "expiresAt",
+          type: "unix milliseconds",
+          description: "Optional required expiry for this exact fixture revision",
+        },
+      ],
+      examples: [
+        'relay browser auth save staging-web --input \'{"name":"Reviewed staging account"}\' --confirm --json',
+      ],
+      note: "Human-only. Open the Browser Device and complete sign-in first. Relay stores encrypted browser state and returns a non-secret exact reference.",
+    }),
+  ),
+  mapped(
+    "target.browser-auth.list",
+    path("browser auth list", ["targetId"], undefined, {
+      summary: "List non-secret browser sign-in fixture metadata",
+      examples: ["relay browser auth list staging-web --json"],
+    }),
+  ),
+  mapped(
+    "target.browser-auth.revoke",
+    path("browser auth revoke", ["targetId", "reference"], undefined, {
+      summary: "Revoke one exact browser sign-in fixture revision",
+      examples: [
+        "relay browser auth revoke staging-web authfx:00000000-0000-4000-8000-000000000000:1 --confirm --json",
+      ],
+      note: "Human-only. A revoked fixture fails closed in every future Proof.",
+    }),
+  ),
+  mapped(
     "target.boot",
     path("target boot", ["serial"]),
     path("device boot", ["serial"], undefined, {

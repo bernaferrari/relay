@@ -7,7 +7,9 @@ import {
   VERIFY_CHANGE_POLICY,
   changeVerificationChangeSchema,
   changeVerificationPolicySchema,
+  changeRefSchema,
   journeyAssociationSchema,
+  verificationCellSchema,
 } from "@relay/protocol";
 import {
   compileVerificationPlan,
@@ -70,12 +72,15 @@ type SignalPatch = Partial<Record<SignalKind, readonly string[]>>;
 
 type ReviewedChangeProofConfig = {
   repository: string;
+  changeRef?: ReturnType<typeof changeRefSchema.parse>;
   pullRequest?: number;
   agentClaim?: unknown;
   changed: SignalPatch;
   associations: readonly unknown[];
   builds: readonly unknown[];
   targetCases: readonly unknown[];
+  cells?: readonly ReturnType<typeof verificationCellSchema.parse>[];
+  pilotCellId?: string;
   policy: unknown;
   maxCases?: number;
   maxDurationMs?: number;
@@ -111,12 +116,15 @@ function parseReviewedConfig(value: unknown): ReviewedChangeProofConfig {
   const allowed = new Set([
     "schemaVersion",
     "repository",
+    "changeRef",
     "pullRequest",
     "agentClaim",
     "changed",
     "associations",
     "builds",
     "targetCases",
+    "cells",
+    "pilotCellId",
     "policy",
     "maxCases",
     "maxDurationMs",
@@ -129,6 +137,14 @@ function parseReviewedConfig(value: unknown): ReviewedChangeProofConfig {
   }
 
   const repository = boundedText(input.repository, "change-proof.json repository", 512);
+  let changeRef: ReviewedChangeProofConfig["changeRef"];
+  if (input.changeRef !== undefined) {
+    try {
+      changeRef = changeRefSchema.parse(input.changeRef);
+    } catch (error) {
+      throw configError("change-proof.json changeRef", error);
+    }
+  }
   const pullRequest =
     input.pullRequest === undefined
       ? undefined
@@ -172,14 +188,34 @@ function parseReviewedConfig(value: unknown): ReviewedChangeProofConfig {
     input.maxDurationMs === undefined
       ? undefined
       : boundedInteger(input.maxDurationMs, "change-proof.json maxDurationMs", 86_400_000);
+  let cells: ReviewedChangeProofConfig["cells"];
+  if (input.cells !== undefined) {
+    if (!Array.isArray(input.cells) || input.cells.length > 1_000) {
+      throw new UsageError("change-proof.json cells must be an array of at most 1000 entries");
+    }
+    cells = input.cells.map((cell, index) => {
+      try {
+        return verificationCellSchema.parse(cell);
+      } catch (error) {
+        throw configError(`change-proof.json cells[${index}]`, error);
+      }
+    });
+  }
+  const pilotCellId =
+    input.pilotCellId === undefined
+      ? undefined
+      : boundedText(input.pilotCellId, "change-proof.json pilotCellId", 256);
   return {
     repository,
+    ...(changeRef ? { changeRef } : {}),
     ...(pullRequest === undefined ? {} : { pullRequest }),
     ...(input.agentClaim === undefined ? {} : { agentClaim: input.agentClaim }),
     changed: parseSignalPatch(input.changed),
     associations,
     builds: list("builds", 32),
     targetCases: list("targetCases", 250),
+    ...(cells ? { cells } : {}),
+    ...(pilotCellId ? { pilotCellId } : {}),
     policy,
     ...(maxCases === undefined ? {} : { maxCases }),
     ...(maxDurationMs === undefined ? {} : { maxDurationMs }),
@@ -351,7 +387,7 @@ export async function runVerifyChangeCommand(
     ),
     "base ref",
   );
-  const headSha = exactSha(
+  const workspaceHeadSha = exactSha(
     await git(
       runner,
       ["rev-parse", "--verify", "--end-of-options", "HEAD^{commit}"],
@@ -360,12 +396,36 @@ export async function runVerifyChangeCommand(
     "HEAD",
   );
   const baseSha = exactSha(
-    await git(runner, ["merge-base", "--", baseTipSha, headSha], repositoryRoot),
+    await git(runner, ["merge-base", "--", baseTipSha, workspaceHeadSha], repositoryRoot),
     "merge base",
   );
+  const configuredChangeRef = config.changeRef;
+  if (
+    configuredChangeRef &&
+    (configuredChangeRef.baseTipSha !== baseTipSha || configuredChangeRef.mergeBaseSha !== baseSha)
+  ) {
+    throw new UsageError(
+      "change-proof.json changeRef must match the exact base tip and merge base resolved from Git",
+    );
+  }
+  const requestedHeadSha = configuredChangeRef?.requestedHeadSha ?? workspaceHeadSha;
+  const testedSha = configuredChangeRef?.testedSha ?? workspaceHeadSha;
+  // A configured tested revision is still resolved through Git before it can
+  // influence the diff or Proof. This prevents a provider payload from
+  // becoming durable merely because it has a SHA-shaped string.
+  if (configuredChangeRef) {
+    exactSha(
+      await git(
+        runner,
+        ["rev-parse", "--verify", "--end-of-options", `${testedSha}^{commit}`],
+        repositoryRoot,
+      ),
+      "tested revision",
+    );
+  }
   const diffOutput = await git(
     runner,
-    ["diff", "--name-only", "-z", "--diff-filter=ACDMRTUXB", baseSha, headSha, "--"],
+    ["diff", "--name-only", "-z", "--diff-filter=ACDMRTUXB", baseSha, testedSha, "--"],
     repositoryRoot,
   );
   const changedFiles = diffOutput.split("\0").filter(Boolean).sort();
@@ -379,7 +439,25 @@ export async function runVerifyChangeCommand(
   const change = changeVerificationChangeSchema.parse({
     repository: config.repository,
     baseSha,
-    headSha,
+    headSha: testedSha,
+    baseTipSha: configuredChangeRef?.baseTipSha ?? baseTipSha,
+    mergeBaseSha: configuredChangeRef?.mergeBaseSha ?? baseSha,
+    requestedHeadSha,
+    testedSha,
+    testedKind: configuredChangeRef?.testedKind ?? "head",
+    ...(configuredChangeRef?.previousHeadSha
+      ? { previousHeadSha: configuredChangeRef.previousHeadSha }
+      : {}),
+    ...(configuredChangeRef?.targetBranch
+      ? { targetBranch: configuredChangeRef.targetBranch }
+      : {}),
+    ...(configuredChangeRef?.repositoryId
+      ? { repositoryId: configuredChangeRef.repositoryId }
+      : { repositoryId: config.repository }),
+    ...(configuredChangeRef?.provider ? { provider: configuredChangeRef.provider } : {}),
+    ...(configuredChangeRef?.mergeGroupId
+      ? { mergeGroupId: configuredChangeRef.mergeGroupId }
+      : {}),
     ...(config.pullRequest === undefined ? {} : { pullRequest: config.pullRequest }),
     ...(config.agentClaim === undefined ? {} : { agentClaim: config.agentClaim }),
   });
@@ -396,6 +474,8 @@ export async function runVerifyChangeCommand(
     associations: config.associations,
     builds: config.builds,
     targetCases: config.targetCases,
+    ...(config.cells ? { cells: config.cells } : {}),
+    ...(config.pilotCellId ? { pilotCellId: config.pilotCellId } : {}),
     policy: config.policy,
     ...(config.maxCases === undefined ? {} : { maxCases: config.maxCases }),
     ...(config.maxDurationMs === undefined ? {} : { maxDurationMs: config.maxDurationMs }),
@@ -430,6 +510,25 @@ export async function runVerifyChangeCommand(
           );
         }
       }
+      const remappedCells = plan.selection.cells?.map((cell) => ({
+        ...cell,
+        id: verificationCellId({
+          appMapId: cell.journey.appMapId,
+          testId: cell.journey.testId,
+          appMapRevision: revisions.get(cell.journey.appMapId)!,
+          targetCaseId: cell.targetCaseId,
+          buildId: cell.buildId,
+        }),
+        journey: {
+          ...cell.journey,
+          appMapRevision: revisions.get(cell.journey.appMapId)!,
+        },
+      }));
+      const pilotCellId = plan.selection.pilotCellId
+        ? remappedCells?.find(
+            (_, index) => plan.selection.cells?.[index]?.id === plan.selection.pilotCellId,
+          )?.id
+        : undefined;
       proofStart = {
         ...proofStart,
         selection: {
@@ -438,20 +537,8 @@ export async function runVerifyChangeCommand(
             ...journey,
             appMapRevision: revisions.get(journey.appMapId)!,
           })),
-          cells: plan.selection.cells?.map((cell) => ({
-            ...cell,
-            id: verificationCellId({
-              appMapId: cell.journey.appMapId,
-              testId: cell.journey.testId,
-              appMapRevision: revisions.get(cell.journey.appMapId)!,
-              targetCaseId: cell.targetCaseId,
-              buildId: cell.buildId,
-            }),
-            journey: {
-              ...cell.journey,
-              appMapRevision: revisions.get(cell.journey.appMapId)!,
-            },
-          })),
+          cells: remappedCells,
+          ...(pilotCellId ? { pilotCellId } : {}),
         },
       };
     }
@@ -495,7 +582,7 @@ export async function runVerifyChangeCommand(
     schemaVersion: 1,
     kind: "verify-change-plan",
     configFile: configPath,
-    git: { repositoryRoot, baseRef, baseSha, headSha, changedFiles },
+    git: { repositoryRoot, baseRef, baseSha, headSha: testedSha, changedFiles },
     plan,
     proofStart,
     ...(proof === undefined ? {} : { proof }),

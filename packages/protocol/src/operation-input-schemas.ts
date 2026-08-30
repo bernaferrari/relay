@@ -6,6 +6,7 @@ import {
   browserDeviceInspectInputSchema,
   browserDeviceOpenInputSchema,
 } from "./browser-device.js";
+import { browserAuthenticationFixtureOperationInputSchemas } from "./browser-authentication-fixture.js";
 import {
   appMapTestCompileInputSchema,
   appMapTestRunInputSchema,
@@ -55,6 +56,7 @@ export const operationInputSchemas = {
   ...combineStartOperationInputSchemas,
   ...workflowRecordOperationInputSchemas,
   ...changeVerificationOperationInputSchemas,
+  ...browserAuthenticationFixtureOperationInputSchemas,
   "system.audit.list": z.object({ limit: z.number().int().positive().optional() }).strict(),
   "workspace.privacy.update": z.object({ enabled: z.boolean() }).strict(),
   "workspace.evidence.update": z

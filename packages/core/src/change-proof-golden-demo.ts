@@ -2,6 +2,7 @@ import {
   type ChangeSignals,
   type ChangeProofDecision,
   type ChangeVerification,
+  changeTestedSha,
   type VerificationPlanTargetCase,
   BROWSER_PROOF_REQUIRED_CHANNELS,
   browserProofEvidenceArtifact,
@@ -257,6 +258,23 @@ export function goldenDemoReadyProof(
   baseSha: string = CHANGE_PROOF_GOLDEN_DEMO.baseSha,
 ): ChangeVerification {
   const plan = goldenDemoVerificationPlan(headSha, baseSha);
+  const cells = plan.selection.cells?.map((cell) => ({
+    ...cell,
+    id: verificationCellId({
+      appMapId: cell.journey.appMapId,
+      testId: cell.journey.testId,
+      appMapRevision: CHANGE_PROOF_GOLDEN_DEMO.appMapRevision,
+      targetCaseId: cell.targetCaseId,
+      buildId: cell.buildId,
+    }),
+    journey: {
+      ...cell.journey,
+      appMapRevision: CHANGE_PROOF_GOLDEN_DEMO.appMapRevision,
+    },
+  }));
+  const pilotCellId = cells?.find(
+    (_, index) => plan.selection.cells?.[index]?.id === plan.selection.pilotCellId,
+  )?.id;
   return materializeChangeVerificationIntegrity({
     schemaVersion: 2,
     id,
@@ -272,20 +290,8 @@ export function goldenDemoReadyProof(
         ...journey,
         appMapRevision: CHANGE_PROOF_GOLDEN_DEMO.appMapRevision,
       })),
-      cells: plan.selection.cells?.map((cell) => ({
-        ...cell,
-        id: verificationCellId({
-          appMapId: cell.journey.appMapId,
-          testId: cell.journey.testId,
-          appMapRevision: CHANGE_PROOF_GOLDEN_DEMO.appMapRevision,
-          targetCaseId: cell.targetCaseId,
-          buildId: cell.buildId,
-        }),
-        journey: {
-          ...cell.journey,
-          appMapRevision: CHANGE_PROOF_GOLDEN_DEMO.appMapRevision,
-        },
-      })),
+      cells,
+      ...(pilotCellId ? { pilotCellId } : {}),
     },
     planApproval: {
       decisionId: `${id}:approval`,
@@ -517,7 +523,7 @@ export function goldenDemoPersistedRun(input: {
     dir: browser ? browserEvidenceDirectory() : "",
     writtenAt: capturedAt + 2,
     artifacts,
-    inputDigest: runInputDigest(runId, input.proof.change.headSha),
+    inputDigest: runInputDigest(runId, changeTestedSha(input.proof.change)),
     resolvedInputs: structuredClone(target.dimensions),
     evidence: {
       schemaVersion: 1,
@@ -543,7 +549,7 @@ export function goldenDemoPersistedRun(input: {
     },
     sourceRevision: {
       vcs: "git",
-      sha: input.proof.change.headSha,
+      sha: changeTestedSha(input.proof.change),
       artifactDigest: build.artifactDigest,
     },
   };

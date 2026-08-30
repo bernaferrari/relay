@@ -27,8 +27,8 @@ export function proofPrimaryAction(proof: ChangeVerification): ProofPrimaryActio
     proof.coverageGaps.length === 0 &&
     proof.builds.length > 0 &&
     proof.selection.affectedJourneys.length > 0 &&
-    proof.selection.targetCases.some(({ required }) => required) &&
-    (proof.selection.cells?.length ?? 0) > 0
+    proof.selection.cells?.some(({ requirement }) => requirement === "required") &&
+    proof.selection.pilotCellId !== undefined
   ) {
     return {
       kind: "approve-plan",

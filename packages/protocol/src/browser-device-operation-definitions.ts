@@ -7,7 +7,10 @@ type BrowserDeviceOperationId =
   | "target.browser-device.frame"
   | "target.browser-device.frame-binary"
   | "target.browser-device.inspect"
-  | "target.browser-device.control";
+  | "target.browser-device.control"
+  | "target.browser-auth.save"
+  | "target.browser-auth.list"
+  | "target.browser-auth.revoke";
 
 const { command, query } =
   createOperationBuilders<Pick<RelayOperationMap, BrowserDeviceOperationId>>();
@@ -50,5 +53,37 @@ export const browserDeviceOperationDefinitions = [
     "POST",
     "/targets/:targetId/browser-device/input",
     { category: "target", lease: "exclusive", targetCapabilities: ["tap"] },
+  ),
+  command(
+    "target.browser-auth.save",
+    "Save reviewed browser sign-in state",
+    "POST",
+    "/targets/:targetId/browser-auth-fixtures",
+    {
+      category: "target",
+      confirmation: "confirm",
+      idempotency: "required",
+      lease: "exclusive",
+      minimumRole: "author",
+      targetCapabilities: ["snapshot"],
+    },
+  ),
+  query(
+    "target.browser-auth.list",
+    "List browser sign-in fixtures",
+    "/targets/:targetId/browser-auth-fixtures",
+    { category: "target", minimumRole: "viewer" },
+  ),
+  command(
+    "target.browser-auth.revoke",
+    "Revoke browser sign-in fixture",
+    "POST",
+    "/targets/:targetId/browser-auth-fixtures/revoke",
+    {
+      category: "target",
+      confirmation: "confirm",
+      idempotency: "inherent",
+      minimumRole: "author",
+    },
   ),
 ] as const;

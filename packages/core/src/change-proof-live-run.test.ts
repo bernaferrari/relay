@@ -88,6 +88,9 @@ function proof(): ChangeVerification {
           journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 1 },
           targetCaseId: "chromium-ar",
           buildId: "web",
+          requirement: "required",
+          selectionReason: "Chromium Arabic is required coverage.",
+          dimensions: { locale: "ar" },
           cleanupRequired: false,
         },
         {
@@ -95,9 +98,13 @@ function proof(): ChangeVerification {
           journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 1 },
           targetCaseId: "webkit-ar",
           buildId: "web",
+          requirement: "required",
+          selectionReason: "WebKit Arabic is required coverage.",
+          dimensions: { locale: "ar" },
           cleanupRequired: false,
         },
       ],
+      pilotCellId: "cell-settings-chromium",
     },
     planApproval: {
       decisionId: "decision-1",

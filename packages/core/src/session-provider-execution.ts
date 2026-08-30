@@ -195,6 +195,7 @@ export async function acquirePreparedSessionDevice(
     return await getBrowserDevice(target.browserTarget.id, {
       mode: "proof",
       profile: job.browserCaseProfile,
+      projectId: job.projectId ?? "default",
     });
   }
 

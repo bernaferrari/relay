@@ -4,6 +4,7 @@ import {
   changeProofDecisionSchema,
   changeProofProviderCheckSchema,
   parseChangeVerification,
+  changeTestedSha,
   type AgentRepairPacket,
   type ChangeProofCaseResult,
   type ChangeProofDecision,
@@ -22,9 +23,43 @@ import {
   verifyDurableChangeVerification,
   materializeChangeVerificationIntegrity,
 } from "./change-proof-integrity.js";
+import { evaluateChangeDecisionPolicy } from "./change-decision-policy.js";
 
-function identityKey(value: { appMapId: string; testId: string; targetCaseId: string }): string {
+function legacyIdentityKey(value: {
+  appMapId: string;
+  testId: string;
+  targetCaseId: string;
+}): string {
   return `${value.appMapId}\0${value.testId}\0${value.targetCaseId}`;
+}
+
+function cellForResult(
+  proof: ChangeVerification,
+  result: ChangeProofCaseResult,
+): NonNullable<ChangeVerification["selection"]["cells"]>[number] {
+  const cells = proof.selection.cells ?? [];
+  const matching = result.cellId
+    ? cells.filter(({ id }) => id === result.cellId)
+    : cells.filter(
+        (cell) =>
+          cell.journey.appMapId === result.appMapId &&
+          cell.journey.testId === result.testId &&
+          cell.targetCaseId === result.targetCaseId,
+      );
+  if (matching.length !== 1) {
+    throw new Error(
+      `Run ${result.runId} must identify exactly one frozen Verification Cell; found ${matching.length}`,
+    );
+  }
+  const cell = matching[0]!;
+  if (
+    cell.journey.appMapId !== result.appMapId ||
+    cell.journey.testId !== result.testId ||
+    cell.targetCaseId !== result.targetCaseId
+  ) {
+    throw new Error(`Run ${result.runId} identity disagrees with Verification Cell ${cell.id}`);
+  }
+  return cell;
 }
 
 function unique<T>(values: readonly T[]): T[] {
@@ -70,7 +105,9 @@ function validateCaseResults(
 ): ChangeProofCaseResult[] {
   if (values.length > 1_000) throw new Error("Proof decisions are bounded to 1,000 Run results");
   const results = values.map((value) => changeProofCaseResultSchema.parse(value));
-  const keys = results.map(identityKey);
+  const keys = results.map((result) =>
+    result.cellId ? `cell:${result.cellId}` : `legacy:${legacyIdentityKey(result)}`,
+  );
   if (new Set(keys).size !== keys.length)
     throw new Error("Proof Run result identities must be unique");
   const journeys = new Set(
@@ -78,19 +115,6 @@ function validateCaseResults(
   );
   const cells = proof.selection.cells;
   if (!cells?.length) throw new Error("Proof has no frozen Verification Cells");
-  const cellByIdentity = new Map(
-    cells.map(
-      (cell) =>
-        [
-          identityKey({
-            appMapId: cell.journey.appMapId,
-            testId: cell.journey.testId,
-            targetCaseId: cell.targetCaseId,
-          }),
-          cell,
-        ] as const,
-    ),
-  );
   const targetCases = new Map(proof.selection.targetCases.map((item) => [item.id, item]));
   const builds = new Map(proof.builds.map((item) => [item.id, item]));
   for (const result of results) {
@@ -105,14 +129,14 @@ function validateCaseResults(
       throw new Error(`Run ${result.runId} build platform does not match its frozen target case`);
     }
     if (
-      result.sourceSha !== proof.change.headSha ||
+      result.sourceSha !== changeTestedSha(proof.change) ||
       result.sourceSha !== build.sourceSha ||
       result.artifactDigest !== build.artifactDigest
     ) {
       throw new Error(`Run ${result.runId} provenance does not match the exact Proof build`);
     }
-    const cell = cellByIdentity.get(identityKey(result));
-    if (!cell || cell.buildId !== result.buildId) {
+    const cell = cellForResult(proof, result);
+    if (cell.buildId !== result.buildId) {
       throw new Error(`Run ${result.runId} does not match its frozen Verification Cell`);
     }
     if (cell.cleanupRequired && result.cleanup === "not-required") {
@@ -133,20 +157,18 @@ export function decideChangeVerification(input: {
   if (!proof.planApproval)
     throw new Error("A Proof decision requires an approved Verification Plan");
   const results = validateCaseResults(proof, input.caseResults);
-  const requiredIdentities = proof.selection.cells!.map((cell) => ({
-    appMapId: cell.journey.appMapId,
-    testId: cell.journey.testId,
-    targetCaseId: cell.targetCaseId,
-  }));
-  const byIdentity = new Map(results.map((result) => [identityKey(result), result]));
-  const requiredResults = requiredIdentities
-    .map((identity) => byIdentity.get(identityKey(identity)))
+  const requiredCellIds = proof.selection
+    .cells!.filter(({ requirement }) => requirement === "required")
+    .map(({ id }) => id);
+  const byCellId = new Map(results.map((result) => [cellForResult(proof, result).id, result]));
+  const requiredResults = requiredCellIds
+    .map((cellId) => byCellId.get(cellId))
     .filter((result): result is ChangeProofCaseResult => result !== undefined);
-  const missing = requiredIdentities.filter((identity) => !byIdentity.has(identityKey(identity)));
-  const advisory = results.filter((result) => {
-    const target = proof.selection.targetCases.find(({ id }) => id === result.targetCaseId);
-    return target?.required === false;
-  });
+  const missing = requiredCellIds.filter((cellId) => !byCellId.has(cellId));
+  const firstMissingCell = proof.selection.cells!.find(({ id }) => id === missing[0]);
+  const advisory = results.filter(
+    (result) => cellForResult(proof, result).requirement === "advisory",
+  );
   const firstRejected = requiredResults.find(({ outcome }) => outcome === "rejected");
   const firstReview = requiredResults.find(
     (result) =>
@@ -167,10 +189,7 @@ export function decideChangeVerification(input: {
   );
   const coverageGaps = bounded([
     ...proof.coverageGaps,
-    ...missing.map(
-      ({ appMapId, testId, targetCaseId }) =>
-        `Missing required Run for ${appMapId}/${testId} on target case ${targetCaseId}.`,
-    ),
+    ...missing.map((cellId) => `Missing required Run for Verification Cell ${cellId}.`),
     ...insufficient.map(({ runId }) => `Run ${runId} did not produce complete mandatory proof.`),
     ...(firstInfrastructure?.failure
       ? [
@@ -188,13 +207,72 @@ export function decideChangeVerification(input: {
       ),
   ]);
 
-  const decision = firstRejected
-    ? "rejected"
-    : firstReview
-      ? "needs-review"
-      : coverageGaps.length || insufficient.length
-        ? "insufficient-evidence"
-        : "proved";
+  // Durable cells are an adapter of the same policy input consumed by
+  // offline verify-change. Keep this translation deliberately boring: the
+  // evaluator owns precedence, while this module only supplies immutable
+  // cell facts and preserves the durable decision envelope below.
+  const policyDecision = evaluateChangeDecisionPolicy({
+    schemaVersion: 1,
+    policy: proof.policy,
+    executionRisk: {
+      schemaVersion: 1,
+      level: "safe",
+      reasons: [],
+      externalEffects: [],
+      confirmation: "none",
+      expectedAppBoundaries: [],
+      cleanupRequired: false,
+    },
+    confirmationSatisfied: true,
+    evidence: {
+      status: coverageGaps.length === 0 && insufficient.length === 0 ? "complete" : "partial",
+      requiredChannels: ["frozen-run", "trace-pack"],
+      missing: coverageGaps,
+      tracePackDigests: unique(results.flatMap(({ evidenceDigests }) => evidenceDigests)),
+      runIds: unique(results.map(({ runId }) => runId)),
+      evidenceRefs: unique(
+        results.flatMap(({ evidenceDigests, failure }) => [
+          ...evidenceDigests,
+          ...(failure?.evidenceRefs ?? []),
+        ]),
+      ),
+    },
+    verification: {
+      requiredPaths: firstRejected
+        ? "failed"
+        : requiredResults.length === requiredCellIds.length &&
+            requiredResults.every(({ outcome }) => outcome === "passed")
+          ? "passed"
+          : "unproven",
+      selectorResolution: firstReview
+        ? "ambiguous"
+        : requiredResults.some(({ selectorResolution }) => selectorResolution === "unproven")
+          ? "unproven"
+          : "deterministic",
+      unresolved: [
+        ...missing.map((cellId) => `missing:${cellId}`),
+        ...insufficient.map(({ runId }) => `incomplete:${runId}`),
+      ],
+    },
+    findings: requiredResults.flatMap((result) =>
+      result.outcome === "rejected"
+        ? [
+            {
+              id: `${result.runId}:rejected`,
+              runId: result.runId,
+              category: "assertion" as const,
+              severity: "regression" as const,
+              summary: result.failure?.summary ?? `Run ${result.runId} rejected.`,
+              evidenceRefs: unique([
+                ...result.evidenceDigests,
+                ...(result.failure?.evidenceRefs ?? []),
+              ]),
+            },
+          ]
+        : [],
+    ),
+  });
+  const decision = policyDecision.decision;
   const firstCausalFailure = firstRejected?.failure
     ? {
         runId: firstRejected.runId,
@@ -231,14 +309,19 @@ export function decideChangeVerification(input: {
           : {
               kind: "expand" as const,
               reason: "Run the smallest missing or incomplete required case.",
-              ...(missing[0] ??
-                (insufficient[0]
+              ...(firstMissingCell
+                ? {
+                    appMapId: firstMissingCell.journey.appMapId,
+                    testId: firstMissingCell.journey.testId,
+                    targetCaseId: firstMissingCell.targetCaseId,
+                  }
+                : insufficient[0]
                   ? {
                       appMapId: insufficient[0].appMapId,
                       testId: insufficient[0].testId,
                       targetCaseId: insufficient[0].targetCaseId,
                     }
-                  : {})),
+                  : {}),
             };
 
   return changeProofDecisionSchema.parse({
@@ -246,7 +329,7 @@ export function decideChangeVerification(input: {
     decision,
     state: decision,
     summary: {
-      required: requiredIdentities.length,
+      required: requiredCellIds.length,
       passed: requiredResults.filter(({ outcome }) => outcome === "passed").length,
       rejected: requiredResults.filter(({ outcome }) => outcome === "rejected").length,
       needsReview: requiredResults.filter(({ outcome }) => outcome === "needs-review").length,
@@ -283,7 +366,7 @@ export function agentRepairPacketForDecision(input: {
   return agentRepairPacketSchema.parse({
     schemaVersion: 1,
     proofId: proof.id,
-    headSha: proof.change.headSha,
+    headSha: changeTestedSha(proof.change),
     runId: failed.runId,
     appMapId: failed.appMapId,
     testId: failed.testId,
@@ -330,7 +413,7 @@ export function providerCheckForChangeProof(input: {
         : "action-required";
   const title = `Relay Proof — ${classification.toUpperCase().replaceAll("-", " ")}`;
   const lines = [
-    `Head: ${proof.change.headSha}`,
+    `Head: ${changeTestedSha(proof.change)}`,
     `Required cases: ${decision.summary.passed}/${decision.summary.required} passed`,
     `Evidence objects: ${decision.evidenceDigests.length}`,
     `Policy: ${proof.policy.id}.v${proof.policy.version}`,
@@ -348,7 +431,7 @@ export function providerCheckForChangeProof(input: {
     schemaVersion: 1,
     name: "Relay Proof",
     externalId: proof.id,
-    headSha: proof.change.headSha,
+    headSha: changeTestedSha(proof.change),
     status: "completed",
     conclusion,
     classification,
@@ -408,9 +491,10 @@ export function providerCheckForStoredChangeProof(input: {
         : "action-required";
   // A legacy approved Proof without cells is migrated to needs-review by the
   // protocol parser, so this count can never grant it green authority.
-  const requiredCases = proof.selection.cells?.length ?? 0;
+  const requiredCases =
+    proof.selection.cells?.filter(({ requirement }) => requirement === "required").length ?? 0;
   const lines = [
-    `Head: ${proof.change.headSha}`,
+    `Head: ${changeTestedSha(proof.change)}`,
     `Required cases: ${requiredCases}`,
     `Recorded Runs: ${proof.runIds.length}`,
     `Evidence objects: ${proof.evidenceDigests.length}`,
@@ -432,7 +516,7 @@ export function providerCheckForStoredChangeProof(input: {
     schemaVersion: 1,
     name: "Relay Proof",
     externalId: proof.id,
-    headSha: proof.change.headSha,
+    headSha: changeTestedSha(proof.change),
     status: "completed",
     conclusion,
     classification,

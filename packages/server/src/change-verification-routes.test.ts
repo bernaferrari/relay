@@ -92,9 +92,13 @@ function selection(): ChangeVerification["selection"] {
         journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 7 },
         targetCaseId: "chromium-compact-ar",
         buildId: "web",
+        requirement: "required",
+        selectionReason: "Compact Arabic web is required coverage.",
+        dimensions: { locale: "ar", viewport: "compact" },
         cleanupRequired: false,
       },
     ],
+    pilotCellId: "cell-settings-chromium",
   };
 }
 
@@ -557,6 +561,8 @@ test("Proof execution records only server-derived Run facts and advances pilot t
               ...initial.selection!.cells![0]!,
               id: "cell-settings-desktop",
               targetCaseId: secondCase.id,
+              selectionReason: "Desktop Arabic web is required expansion coverage.",
+              dimensions: secondCase.dimensions,
             },
           ],
         },

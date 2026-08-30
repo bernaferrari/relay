@@ -3,7 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { ChangeProofCaseResult, ChangeVerification } from "@relay/protocol";
+import type {
+  ApprovalPolicyInput,
+  ChangeProofCaseResult,
+  ChangeVerification,
+} from "@relay/protocol";
 import {
   agentRepairPacketForDecision,
   decideChangeVerification,
@@ -18,6 +22,7 @@ import {
 } from "./change-verification-store.js";
 import { resetControlDatabaseCache } from "./collaboration-db.js";
 import { materializeChangeVerificationIntegrity } from "./change-proof-integrity.js";
+import { evaluateChangeDecisionPolicy } from "./change-decision-policy.js";
 
 const headSha = "2".repeat(40);
 const digest = (character: string) => `sha256:${character.repeat(64)}` as const;
@@ -104,6 +109,9 @@ function proof(): ChangeVerification {
           journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 7 },
           targetCaseId: "chromium-compact-ar",
           buildId: "web",
+          requirement: "required",
+          selectionReason: "Chromium compact Arabic is required coverage.",
+          dimensions: { locale: "ar", engine: "chromium" },
           cleanupRequired: false,
         },
         {
@@ -111,9 +119,13 @@ function proof(): ChangeVerification {
           journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 7 },
           targetCaseId: "webkit-compact-ar",
           buildId: "web",
+          requirement: "required",
+          selectionReason: "WebKit compact Arabic is required coverage.",
+          dimensions: { locale: "ar", engine: "webkit" },
           cleanupRequired: false,
         },
       ],
+      pilotCellId: "cell-settings-chromium",
     },
     planApproval: {
       decisionId: "decision-1",
@@ -166,6 +178,165 @@ function result(
     ...overrides,
   };
 }
+
+function policyInput(
+  overrides: {
+    evidence?: Partial<ApprovalPolicyInput["evidence"]>;
+    verification?: Partial<ApprovalPolicyInput["verification"]>;
+  } = {},
+): ApprovalPolicyInput {
+  return {
+    schemaVersion: 1,
+    policy: { id: "relay.verify-change", version: 1 },
+    executionRisk: {
+      schemaVersion: 1,
+      level: "safe",
+      reasons: [],
+      externalEffects: [],
+      confirmation: "none",
+      expectedAppBoundaries: [],
+      cleanupRequired: false,
+    },
+    confirmationSatisfied: true,
+    evidence: {
+      status: "complete",
+      requiredChannels: ["frozen-run", "trace-pack"],
+      missing: [],
+      tracePackDigests: [digest("a")],
+      ...overrides.evidence,
+    },
+    verification: {
+      requiredPaths: "passed",
+      selectorResolution: "deterministic",
+      unresolved: [],
+      ...overrides.verification,
+    },
+    findings: [],
+  };
+}
+
+test("offline and durable Proof adapters share one ordered decision vocabulary", () => {
+  const cases = [
+    {
+      name: "proved",
+      results: [result("chromium-compact-ar"), result("webkit-compact-ar")],
+      policy: policyInput(),
+      expectedPolicy: "proved" as const,
+      expectedProof: "proved" as const,
+      expectedRules: ["verification.proved"],
+    },
+    {
+      name: "rejected",
+      results: [
+        result("chromium-compact-ar", {
+          outcome: "rejected",
+          failure: { summary: "The required assertion failed.", evidenceRefs: [] },
+        }),
+      ],
+      policy: policyInput({ verification: { requiredPaths: "failed" } }),
+      expectedPolicy: "rejected" as const,
+      expectedProof: "rejected" as const,
+      expectedRules: ["verification.required-path-lost"],
+    },
+    {
+      name: "needs-review",
+      results: [
+        result("chromium-compact-ar", { selectorResolution: "ambiguous" }),
+        result("webkit-compact-ar"),
+      ],
+      policy: policyInput({ verification: { selectorResolution: "ambiguous" } }),
+      expectedPolicy: "needs-review" as const,
+      expectedProof: "needs-review" as const,
+      expectedRules: ["verification.selector-ambiguous"],
+    },
+    {
+      name: "insufficient-evidence",
+      results: [result("chromium-compact-ar")],
+      policy: policyInput({
+        evidence: { status: "partial", missing: ["webkit-compact-ar"] },
+        verification: { requiredPaths: "unproven" },
+      }),
+      expectedPolicy: "insufficient-evidence" as const,
+      expectedProof: "insufficient-evidence" as const,
+      expectedRules: ["evidence.incomplete"],
+    },
+  ] as const;
+
+  for (const item of cases) {
+    const policy = evaluateChangeDecisionPolicy(item.policy);
+    const durable = decideChangeVerification({ proof: proof(), caseResults: item.results });
+    assert.equal(policy.decision, item.expectedPolicy, item.name);
+    assert.deepEqual(policy.ruleIds, item.expectedRules, item.name);
+    assert.equal(durable.decision, item.expectedProof, item.name);
+  }
+});
+
+test("an advisory cell contributes residual risk without gaining merge authority", () => {
+  const base = proof();
+  const advisoryProof: ChangeVerification = {
+    ...base,
+    selection: {
+      ...base.selection,
+      cells: base.selection.cells!.map((cell) =>
+        cell.id === "cell-settings-webkit" ? { ...cell, requirement: "advisory" as const } : cell,
+      ),
+    },
+  };
+  const decision = decideChangeVerification({
+    proof: advisoryProof,
+    caseResults: [
+      result("chromium-compact-ar"),
+      result("webkit-compact-ar", {
+        outcome: "rejected",
+        failure: { summary: "Advisory WebKit layout changed.", evidenceRefs: [digest("c")] },
+      }),
+    ],
+  });
+
+  assert.equal(decision.decision, "proved");
+  assert.equal(decision.summary.required, 1);
+  assert.match(decision.residualRisk[0]!, /Advisory target case webkit-compact-ar/u);
+});
+
+test("cell identity distinguishes reviewed dimensions on the same journey and target", () => {
+  const base = proof();
+  const first = base.selection.cells![0]!;
+  const dimensionProof: ChangeVerification = {
+    ...base,
+    selection: {
+      ...base.selection,
+      cells: [
+        { ...first, dimensions: { ...first.dimensions, theme: "dark" } },
+        {
+          ...first,
+          id: "cell-settings-chromium-light",
+          selectionReason: "Light theme is a separately reviewed required case.",
+          dimensions: { ...first.dimensions, theme: "light" },
+        },
+      ],
+    },
+  };
+  const decision = decideChangeVerification({
+    proof: dimensionProof,
+    caseResults: [
+      result("chromium-compact-ar", { cellId: first.id }),
+      result("chromium-compact-ar", {
+        cellId: "cell-settings-chromium-light",
+        runId: "run-chromium-light",
+        evidenceDigests: [digest("d")],
+      }),
+    ],
+  });
+
+  assert.equal(decision.decision, "proved");
+  assert.equal(decision.summary.required, 2);
+  assert.throws(() =>
+    decideChangeVerification({
+      proof: dimensionProof,
+      caseResults: [result("chromium-compact-ar")],
+    }),
+  );
+});
 
 test("proves only the complete required journey and target matrix", () => {
   const decision = decideChangeVerification({
@@ -418,7 +589,7 @@ test("provider publication projects only the durable terminal Proof", () => {
   assert.equal(check.conclusion, "action-required");
   assert.match(check.text, /Required cases: 2/u);
   assert.match(check.text, /Recorded Runs: 1/u);
-  assert.match(check.text, /Missing required Run.*webkit-compact-ar/u);
+  assert.match(check.text, /Missing required Run.*cell-settings-webkit/u);
   assert.throws(() => providerCheckForStoredChangeProof({ proof: source }), /terminal Proof/u);
 });
 

@@ -1,4 +1,9 @@
-import type { ChangeProofDecision, ChangeVerification } from "@relay/protocol";
+import {
+  changeMergeBaseSha,
+  changeTestedSha,
+  type ChangeProofDecision,
+  type ChangeVerification,
+} from "@relay/protocol";
 import {
   CHANGE_PROOF_GOLDEN_DEMO,
   runChangeProofGoldenDemo,
@@ -90,8 +95,8 @@ function sha(value: string): string {
 
 function exactHeadEvidence(proof: ChangeVerification): string[] {
   return [
-    `base=${sha(proof.change.baseSha)}`,
-    `head=${sha(proof.change.headSha)}`,
+    `base=${sha(changeMergeBaseSha(proof.change))}`,
+    `tested=${sha(changeTestedSha(proof.change))}`,
     ...proof.builds.map(
       ({ id, sourceSha, artifactDigest }) =>
         `${id}: source=${sha(sourceSha)} artifact=${artifactDigest.slice(0, 15)}…`,
@@ -118,9 +123,11 @@ function stepsFor(demo: ChangeProofGoldenDemoResult): ChangeProofGoldenHarnessSt
       id: "bind-change",
       title: "Bind the exact change and builds",
       outcome:
-        demo.oldProof.change.baseSha === CHANGE_PROOF_GOLDEN_DEMO.baseSha &&
-        demo.oldProof.change.headSha === CHANGE_PROOF_GOLDEN_DEMO.failedHeadSha &&
-        demo.oldProof.builds.every(({ sourceSha }) => sourceSha === demo.oldProof.change.headSha)
+        changeMergeBaseSha(demo.oldProof.change) === CHANGE_PROOF_GOLDEN_DEMO.baseSha &&
+        changeTestedSha(demo.oldProof.change) === CHANGE_PROOF_GOLDEN_DEMO.failedHeadSha &&
+        demo.oldProof.builds.every(
+          ({ sourceSha }) => sourceSha === changeTestedSha(demo.oldProof.change),
+        )
           ? "passed"
           : "failed",
       detail: "The old Proof freezes base/head SHA and build source revisions before execution.",
@@ -164,8 +171,8 @@ function stepsFor(demo: ChangeProofGoldenDemoResult): ChangeProofGoldenHarnessSt
       id: "supersede-proof",
       title: "Create a new Proof for the repaired head",
       outcome:
-        demo.oldProof.change.headSha !== demo.repairedProof.change.headSha &&
-        demo.repairedProof.change.baseSha === demo.oldProof.change.headSha
+        changeTestedSha(demo.oldProof.change) !== changeTestedSha(demo.repairedProof.change) &&
+        changeMergeBaseSha(demo.repairedProof.change) === changeTestedSha(demo.oldProof.change)
           ? "passed"
           : "failed",
       detail:
@@ -306,9 +313,9 @@ export async function runChangeProofGoldenHarness(input: {
     },
     scenario: {
       repository: demo.oldProof.change.repository,
-      baseSha: demo.oldProof.change.baseSha,
-      failedHeadSha: demo.oldProof.change.headSha,
-      repairedHeadSha: demo.repairedProof.change.headSha,
+      baseSha: changeMergeBaseSha(demo.oldProof.change),
+      failedHeadSha: changeTestedSha(demo.oldProof.change),
+      repairedHeadSha: changeTestedSha(demo.repairedProof.change),
       journey: {
         appMapId: CHANGE_PROOF_GOLDEN_DEMO.appMapId,
         testId: CHANGE_PROOF_GOLDEN_DEMO.testId,

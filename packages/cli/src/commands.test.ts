@@ -110,6 +110,41 @@ test("device health exposes the bounded read-only supervisor projection", () => 
   assert.deepEqual(resolved.input, { serial: "ipad-1" });
 });
 
+test("browser authentication commands expose only exact reviewed fixture inputs", () => {
+  assert.deepEqual(
+    resolveCommand(["browser", "auth", "save", "browser-1"], {
+      name: "Reviewed staging account",
+    }),
+    {
+      operationId: "target.browser-auth.save",
+      commandPath: "browser auth save",
+      input: { targetId: "browser-1", name: "Reviewed staging account" },
+    },
+  );
+  assert.deepEqual(resolveCommand(["browser", "auth", "list", "browser-1"]), {
+    operationId: "target.browser-auth.list",
+    commandPath: "browser auth list",
+    input: { targetId: "browser-1" },
+  });
+  assert.deepEqual(
+    resolveCommand([
+      "browser",
+      "auth",
+      "revoke",
+      "browser-1",
+      "authfx:8bb4854a-182c-4df2-825f-bbc3c2a2dfac:2",
+    ]),
+    {
+      operationId: "target.browser-auth.revoke",
+      commandPath: "browser auth revoke",
+      input: {
+        targetId: "browser-1",
+        reference: "authfx:8bb4854a-182c-4df2-825f-bbc3c2a2dfac:2",
+      },
+    },
+  );
+});
+
 test("all plan-035 authoring operations have friendly command paths", () => {
   const authoringOperationIds = [
     "authoring.session.list",
