@@ -463,6 +463,33 @@ test("named control resolver taps Home by identifier then label, and records the
   assert.equal(byLabel?.bounds.width, 80);
 });
 
+test("named control resolver keeps a hittable Android control inside a hittable scroll view", () => {
+  const scroll = {
+    index: 1,
+    type: "android.widget.ScrollView",
+    enabled: true,
+    hittable: true,
+    rect: { x: 0, y: 0, width: 1080, height: 2400 },
+  };
+  const button = {
+    index: 2,
+    parentIndex: 1,
+    type: "android.widget.Button",
+    identifier: "dev.relay.prooffixture:id/prove_button",
+    label: "Prove interaction",
+    enabled: true,
+    visibleToUser: true,
+    hittable: true,
+    rect: { x: 126, y: 1315, width: 828, height: 147 },
+  };
+
+  const resolved = resolveNamedControl([scroll, button], { identifier: button.identifier });
+  assert.equal(resolved?.method, "identifier");
+  assert.equal(resolved?.activation, undefined);
+  assert.deepEqual(resolved?.bounds, button.rect);
+  assert.deepEqual(resolved?.point, { x: 540, y: 1389 });
+});
+
 test("named control resolver uses current bounds for a unique non-hittable child", () => {
   const row = {
     index: 1,

@@ -164,10 +164,19 @@ function resolveSnapshotTarget(
    * hittability leaves such a row with no semantic path at all and forces the
    * caller back to a recorded coordinate. The title's own bounds still win
    * whenever they are worth pressing.
-   */
-  const activationAncestor = (node: SnapshotNode): SnapshotNode | undefined =>
-    closestUsableAncestor(node, true) ??
-    (isUsableTapTarget(node) ? undefined : closestUsableAncestor(node, false));
+  */
+  const activationAncestor = (node: SnapshotNode): SnapshotNode | undefined => {
+    // A uniquely matched native control already owns its activation bounds.
+    // Walking past a hittable Android Button to its hittable ScrollView turns
+    // an exact identifier into a tap in the middle of the screen.
+    if (node.hittable === true && isUsableTapTarget(node) && !isActivationContainer(node)) {
+      return undefined;
+    }
+    return (
+      closestUsableAncestor(node, true) ??
+      (isUsableTapTarget(node) ? undefined : closestUsableAncestor(node, false))
+    );
+  };
   const explicitViewport =
     nodes.find((node) => (node.type ?? node.role)?.toLocaleLowerCase() === "application")?.rect ??
     nodes.find((node) => (node.type ?? node.role)?.toLocaleLowerCase() === "window")?.rect;

@@ -212,6 +212,48 @@ function buttonTree(input: { identifier?: string; label: string }) {
   };
 }
 
+test("keeps the exact Android AVD identity on loaded raw selector evidence", async () => {
+  const tree = rawTree(
+    "medium-phone-prove",
+    buttonTree({ identifier: "dev.relay.prooffixture:id/prove_button", label: "Prove interaction" }),
+  );
+  const variant = {
+    id: "medium-phone-ready",
+    targetProfileId: "device:emulator-5554-1080x2400",
+    targetId: "emulator-5554",
+    platform: "android" as const,
+    androidAvdName: "medium_phone",
+    viewport: { width: 1080, height: 2400 },
+  };
+  const compiled = scopedSelectorPlan({
+    sources: [boundSource(tree, variant, 10)],
+    variants: [variant],
+    targetProfiles: [
+      {
+        id: variant.targetProfileId,
+        targetId: variant.targetId,
+        platform: variant.platform,
+        androidAvdName: variant.androidAvdName,
+        viewport: variant.viewport,
+      },
+    ],
+    target: { identifier: "dev.relay.prooffixture:id/prove_button" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) => (sha256 === tree.reference.sha256 ? tree.bytes : null),
+  });
+
+  assert.equal(
+    evidence.rawSourcesByScreenId?.profile?.[0]?.source.variant?.androidAvdName,
+    "medium_phone",
+  );
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: variant.targetProfileId,
+  });
+  assert.equal(report.selectors[0]?.status, "resolved");
+  assert.deepEqual(report.findings, []);
+});
+
 test("loads a translated/reflowed raw tree with immutable source provenance", async () => {
   const tree = rawTree("profile-pt-tree", reflowedBirthYearTree);
   const source: AppMapCompiledRawAccessibilitySource = {

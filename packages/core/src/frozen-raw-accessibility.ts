@@ -68,6 +68,9 @@ function source(
             targetProfileId: provenance.variant.targetProfileId,
             targetId: provenance.variant.targetId,
             platform: provenance.variant.platform,
+            ...(provenance.variant.androidAvdName
+              ? { androidAvdName: provenance.variant.androidAvdName }
+              : {}),
             ...(provenance.variant.viewport
               ? { viewport: { ...provenance.variant.viewport } }
               : {}),
